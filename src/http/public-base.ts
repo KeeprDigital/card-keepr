@@ -118,11 +118,11 @@ function rewrite(value: unknown, base: PublicBase, inLinks: boolean): unknown {
 
 function replaceIfChanged<T extends object>(
   original: T,
-  candidate: T,
+  replacement: T,
 ): T {
   const originalValues = Object.values(original);
-  const candidateValues = Object.values(candidate);
-  return originalValues.every((entry, index) => entry === candidateValues[index])
+  const replacementValues = Object.values(replacement);
+  return originalValues.every((entry, index) => entry === replacementValues[index])
     ? original
-    : candidate;
+    : replacement;
 }

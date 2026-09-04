@@ -1,107 +1,12 @@
-import type {
-  CatalogueDistributionContext,
-  CatalogueProduct,
-  ProductRelationship,
-} from "./product-release-catalogue";
-import type { CatalogueErratum } from "./errata-rules-text";
-import type { LegalityRegion, LegalityRule } from "./legality-rule";
-import type { CuratedProvenanceBearing } from "./curated-provenance";
-
-export const catalogueCandidateContract =
-  "card-keepr-catalogue-candidate@1" as const;
-
-export type SupportedGame =
-  | "one-piece"
-  | "fusion-world"
-  | "digimon"
-  | "gundam";
-
-export type CatalogueCandidate = {
-  contract: typeof catalogueCandidateContract;
-  selected_games: readonly SupportedGame[];
-  cards: readonly CatalogueCard[];
-  printings: readonly CataloguePrinting[];
-  printing_images?: readonly CataloguePrintingImage[];
-  products?: readonly CatalogueProduct[];
-  distribution_contexts?: readonly CatalogueDistributionContext[];
-  product_relationships?: readonly ProductRelationship[];
-  card_observed_games?: readonly SupportedGame[];
-  product_observed_games?: readonly SupportedGame[];
-  product_observed_lineages?: readonly string[];
-  source_checks?: readonly CatalogueSourceCheck[];
-  errata?: readonly CatalogueErratum[];
-  legality_rules?: readonly LegalityRule[];
-};
-
-export type CatalogueSourceCheck =
-  | {
-      game: SupportedGame;
-      area:
-        | "cards-and-printings"
-        | "products-and-releases"
-        | "errata";
-      checked_at: string;
-    }
-  | {
-      game: SupportedGame;
-      area: "legality-rules";
-      source_lineage: string;
-      region: LegalityRegion;
-      checked_at: string;
-    };
-
-export type CatalogueCard = CuratedProvenanceBearing & {
-  id: string;
-  game: SupportedGame;
-  official_identity:
-    | {
-        kind: "card_number";
-        value: string;
-      }
-    | {
-        kind: "functional_designation";
-        value: "DON!!";
-      };
-  name: string;
-  effective_rules_text: string | null;
-  game_data: {
-    profile:
-      | "one-piece@1"
-      | "fusion-world@1"
-      | "digimon@1"
-      | "gundam@1";
-    attributes: Record<string, unknown>;
-  };
-};
-
-export type CataloguePrinting = CuratedProvenanceBearing & {
-  id: string;
-  card_id: string;
-  rarity: {
-    normalized: string | null;
-    raw: string | null;
-  };
-  printed_rules_text: string | null;
-  game_data: {
-    profile:
-      | "one-piece@1"
-      | "fusion-world@1"
-      | "digimon@1"
-      | "gundam@1";
-    attributes: Record<string, unknown>;
-  } | null;
-};
-
-export type CataloguePrintingImage = {
-  id: string;
-  printing_id: string;
-  role: "front" | "back" | "other";
-  media_type: `image/${string}`;
-  width: number;
-  height: number;
-  content_sha256: string;
-  content_byte_length: number;
-  object_key: string;
-  source_url: string;
-  content_base64: string;
-};
+// The Catalogue Candidate's shape lives in the leaf module
+// `catalogue-candidate-types`; this module keeps the historical import path
+// working for every consumer outside the candidate's own behaviour modules.
+export {
+  catalogueCandidateContract,
+  type CatalogueCandidate,
+  type CatalogueCard,
+  type CataloguePrinting,
+  type CataloguePrintingImage,
+  type CatalogueSourceCheck,
+  type SupportedGame,
+} from "./catalogue-candidate-types";

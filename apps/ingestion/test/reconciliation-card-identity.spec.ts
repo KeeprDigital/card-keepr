@@ -308,7 +308,7 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
   expect(productMismatch.document.diagnostics).toEqual(
     expect.arrayContaining([expect.objectContaining({
       code: "printing_match_insufficient_evidence",
-      candidate_printing_ids: [printingId],
+      matched_printing_ids: [printingId],
       detail: expect.stringContaining("Product"),
     })]),
   );
@@ -480,7 +480,7 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     diagnostics: [
       {
         code: "printing_match_contradictory",
-        candidate_printing_ids: [printingId],
+        matched_printing_ids: [printingId],
       },
     ],
   });
@@ -653,7 +653,7 @@ test("historical Gundam locators survive disappearance without retaining stale C
   expect(historicalProductConflict.document.diagnostics).toEqual(
     expect.arrayContaining([expect.objectContaining({
       code: "printing_match_insufficient_evidence",
-      candidate_printing_ids: [printingId],
+      matched_printing_ids: [printingId],
       detail: expect.stringContaining("Product"),
     })]),
   );
@@ -959,7 +959,7 @@ test("Gundam substantive Printing fact conflicts outside the identity tuple bloc
       diagnostics: [
         expect.objectContaining({
           code: "printing_match_contradictory",
-          candidate_printing_ids: [printingId],
+          matched_printing_ids: [printingId],
           detail:
             "The retained Printing facts conflict across Gundam English " +
             "source lineages; EN-ASIA precedence cannot erase a substantive " +

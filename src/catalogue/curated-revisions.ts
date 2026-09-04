@@ -57,6 +57,12 @@ addFormats(fieldAjv);
 
 type FieldTarget = CuratedFieldTarget;
 type RelationshipTarget = CuratedRelationshipTarget;
+/**
+ * The Curated Revision Proposal (CONTEXT.md). Inside this module, and in the
+ * administration routes and CLI it serves, the bare names `proposal`,
+ * `proposal_json`, and `proposal_digest` are its short form; `Proposal` is
+ * the structurally validated document, never a Curated Revision itself.
+ */
 type Proposal = {
   game: SupportedGame;
   target: FieldTarget | RelationshipTarget;

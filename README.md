@@ -46,8 +46,39 @@ level by one.
 database starts at the schema-valid `catrev_spine_000` bootstrap pointer until
 the first controlled fixture is approved.
 
-The read-only CLI health check takes credentials only from the environment,
-never from command arguments:
+Each Worker serves two health routes under its mount (issue #144).
+
+- **Liveness**, `GET /healthz` (`/api/healthz`, `/ingest/healthz`), needs no
+  credential and answers `{ "status": "ok", "runtime": "api" | "ingestion" }`
+  and nothing else: no version, no bindings, no catalogue facts. It has its
+  own per-IP rate limit, separate from the catalogue and administration
+  limits, and is not written to the operational request log. Every other
+  route still requires its bearer key, and an unknown path under the mount
+  still answers `404`. Point external monitors here: a Cloudflare Health
+  Check (Traffic → Health Checks) against `https://card.keepr.digital/api/healthz`
+  and a second one against `https://card.keepr.digital/ingest/healthz`, method
+  `GET`, expecting HTTP `200` and the body `"status":"ok"`, watches both
+  mounts without holding a credential.
+- **Readiness**, `GET /health`, needs the Worker's bearer key and extends the
+  runtime health document with a `checks` block that proves the deployed
+  bindings: `database` (a `SELECT 1`, the schema level from
+  `catalogue_schema_state`, the current Catalogue Revision pointer, and on
+  the ingestion Worker the configured `CATALOGUE_D1_DATABASE_ID`), `objects`
+  (a bounded listing of every bound R2 bucket), `workflows` (ingestion only:
+  each Workflow binding answers a `get` of an id that never exists with the
+  expected not-found error rather than a binding error), `public_base` (the
+  configured `PUBLIC_BASE_URL` and whether the request arrived through it),
+  and `version` (the deployed Worker version id, tag, and timestamp from the
+  `CF_VERSION_METADATA` binding). Any failed check turns `status` to
+  `degraded` and the response to HTTP `503`; failures carry a closed reason
+  code, never the binding's own error text. The D1 binding does not expose
+  its database id at runtime, so `database.configured_database_id` reports
+  the var for comparison and the guarded release proves the binding and the
+  var agree before activation.
+
+The read-only CLI health check reads readiness on both runtimes, prints the
+checks, and exits non-zero when either runtime is degraded. It takes
+credentials only from the environment, never from command arguments:
 
 ```sh
 export KEEPR_API_KEY='...'
@@ -177,6 +208,46 @@ CAS-guarded batches of at most 500 search entries plus one cursor statement,
 with a 20-second cooperative invocation budget and a 65,536-byte per-statement
 parameter bound.
 
+Curated Revisions are administered through the authenticated ingestion
+routes under `/admin/v1/curated-revisions` and the matching
+`keepr curated-revision` commands. In those routes, commands, and
+`src/catalogue/curated-revisions.ts`, the request field `proposal` (with
+`--proposal`, `proposal_digest`, and the retained `proposal_json` column) is
+the short form of the Curated Revision Proposal defined in `CONTEXT.md`: the
+owner-authored request that becomes a Curated Revision only when created
+exactly as validated. It is never a Curated Revision itself.
+
+```sh
+npm run keepr -- curated-revision validate \
+  --proposal proposal.json \
+  --expected-current-revision CURRENT_CATREV_ID \
+  --json
+
+npm run keepr -- curated-revision create \
+  --proposal proposal.json \
+  --proposal-digest PROPOSAL_SHA256 \
+  --expected-current-revision CURRENT_CATREV_ID \
+  --idempotency-key curated_001 \
+  --environment production \
+  --confirm "$PRODUCTION_TARGET" \
+  --yes \
+  --json
+
+npm run keepr -- curated-revision list --game one-piece --status active
+npm run keepr -- curated-revision show --revision-id CURATED_REVISION_ID
+```
+
+`validate` posts the proposal to
+`POST /admin/v1/curated-revisions/validate` and returns its canonical
+`proposal_digest`; `create` posts the same proposal and digest to
+`POST /admin/v1/curated-revisions`, and fails closed unless the digest, the
+current Catalogue Revision, and the reviewed Official Source state still
+match. `reaffirm`, `supersede`, and `retire` post to
+`POST /admin/v1/curated-revisions/{id}/{operation}`; only `supersede` takes
+a replacement `--proposal` and `--proposal-digest`, and that proposal must
+name the exact prior Curated Revision in `supersedes_revision_id`. Pass
+`--proposal -` to read the proposal from stdin.
+
 The parent Cloudflare Workflow dynamically starts one child Workflow per
 Official Source hostname. Requests for a hostname are sequential and durably
 paced, while different hostname shards can progress concurrently.
@@ -244,9 +315,10 @@ Replace `CLOUDFLARE_ACCOUNT_ID` and both D1 IDs in
 
 Set `API_BEARER_KEY` only on the API Worker and `ADMINISTRATION_KEY` only on
 the ingestion Worker using `wrangler secret put`. Each Worker also accepts the
-matching `*_REPLACEMENT` key so a rotation never has a gap; rotate either key
-by the dual-key procedure in `docs/runbooks/credential-rotation.md`. Set
-`D1_EXPORT_TOKEN` and `D1_VERIFICATION_TOKEN` only on ingestion. Set the
-production CORS allowlist to the exact owner origins before deploying. API and
-administration bearer replacements use token68 characters and must encode at
-least 128 bits (22 characters without padding).
+matching `*_REPLACEMENT` key as a second valid bearer, so a key can be changed
+without a gap; both slots must hold a value because the guarded Production
+Release verifies the secret inventory. Set `D1_EXPORT_TOKEN` and
+`D1_VERIFICATION_TOKEN` only on ingestion. Set the production CORS allowlist to
+the exact owner origins before deploying. API and administration bearer keys
+use token68 characters and must encode at least 128 bits (22 characters
+without padding).

@@ -23,7 +23,7 @@ import {
   onePieceRecordingMemberships,
 } from "./one-piece-source-adapter.ts";
 import { parse as parseHtml } from "parse5";
-import type { ListingReconciliationTraits } from "./source-adapters.ts";
+import type { ListingReconciliationTraits } from "./source-adapter-registration-types.ts";
 
 type ProductSourceGame =
   | "one-piece"
@@ -427,7 +427,7 @@ export function officialSourceDiscoveryRequests(
   headers: Record<string, string>;
 }[] {
   const contract = officialRawAdapterContracts.filter(
-    (candidate) => candidate.sourceLineage === sourceLineage,
+    (adapterContract) => adapterContract.sourceLineage === sourceLineage,
   ).at(-1);
   if (contract === undefined) {
     throw new Error("Official Source lineage has no discovery contract.");
@@ -550,7 +550,7 @@ function bandaiRequestDiscovery(
       completeDigimonCatalogue,
       completeGundamCatalogue,
     );
-    const candidates: {
+    const discoveredRequests: {
       role: "listing" | "detail" | "product_detail" | "image";
       url: string;
       headers: Record<string, string>;
@@ -563,7 +563,7 @@ function bandaiRequestDiscovery(
       );
       if (structured !== null) {
         if (!completeGundamCatalogue || completeGundamLeaf) {
-          candidates.push(
+          discoveredRequests.push(
             ...structuredImageUrls(structured, current, sourceLineage).map(
               (url) => ({
                 role: "image" as const,
@@ -580,7 +580,7 @@ function bandaiRequestDiscovery(
       (initialSurface === "errata" ||
         gundamErrataListingUrl(current, sourceLineage))
     ) {
-      candidates.push(
+      discoveredRequests.push(
         ...gundamErrataArticleUrls(
           discoveryHtml,
           current,
@@ -599,7 +599,7 @@ function bandaiRequestDiscovery(
         (initialSurface === "errata" ||
           gundamErrataListingUrl(current, sourceLineage)))
     ) {
-      candidates.push(
+      discoveredRequests.push(
         ...discoveredPartitionRequests(
           format,
           discoveryHtml,
@@ -682,7 +682,7 @@ function bandaiRequestDiscovery(
         resolved,
         role === "image" ? "image" : "document",
       )) continue;
-      candidates.push({
+      discoveredRequests.push({
         role,
         url: resolved.href,
         headers: officialDiscoveredRequestHeaders(role),
@@ -690,9 +690,9 @@ function bandaiRequestDiscovery(
     }
     return [
       ...new Map(
-        candidates.map((candidate) => [
-          `${candidate.role}:${candidate.url}`,
-          candidate,
+        discoveredRequests.map((discovered) => [
+          `${discovered.role}:${discovered.url}`,
+          discovered,
         ]),
       ).values(),
     ].sort((left, right) =>
@@ -1046,7 +1046,7 @@ type HtmlTreeNode = {
 };
 
 function visibleFusionPublisherCount(html: string): string | null {
-  const candidates: HtmlTreeNode[] = [];
+  const resultNodes: HtmlTreeNode[] = [];
   const stack: { hiddenAncestor: boolean; node: HtmlTreeNode }[] = [{
     hiddenAncestor: false,
     node: parseHtml(html) as unknown as HtmlTreeNode,
@@ -1061,7 +1061,7 @@ function visibleFusionPublisherCount(html: string): string | null {
       !hidden && node.tagName === "div" &&
       asciiClassTokens(attributes.get("class") ?? "").includes("resultTxt")
     ) {
-      candidates.push(node);
+      resultNodes.push(node);
     }
     if (
       node.tagName !== undefined &&
@@ -1074,9 +1074,9 @@ function visibleFusionPublisherCount(html: string): string | null {
       stack.push({ hiddenAncestor: hidden, node: children[index]! });
     }
   }
-  if (candidates.length !== 1) return null;
+  if (resultNodes.length !== 1) return null;
 
-  const children = candidates[0]!.childNodes ?? [];
+  const children = resultNodes[0]!.childNodes ?? [];
   if (children.length !== 3) return null;
   const [prefix, countContainer, suffix] = children;
   if (
@@ -1460,7 +1460,7 @@ function officialUrl(
   role: "document" | "image",
 ): boolean {
   const contract = officialRawAdapterContracts.filter(
-    (candidate) => candidate.sourceLineage === sourceLineage,
+    (adapterContract) => adapterContract.sourceLineage === sourceLineage,
   ).at(-1);
   return contract !== undefined &&
     url.origin === contract.sourceOrigin &&

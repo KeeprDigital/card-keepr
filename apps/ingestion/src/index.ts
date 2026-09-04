@@ -10,14 +10,11 @@ import {
   showRun,
 } from "../../../src/catalogue/ingestion";
 import {
-  assertBindingsAvailable,
-  healthResponse,
+  isLivenessRequest,
+  livenessRequest,
+  readinessResponse,
 } from "../../../src/http/health";
 import { prepareProductionRelease } from "../../../src/catalogue/production-release";
-import {
-  appendCredentialRotationLogEntry,
-  listCredentialRotationLogEntries,
-} from "../../../src/catalogue/credential-rotation-log";
 import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { readBoundedJsonObject } from "../../../src/http/bounded-json";
@@ -144,19 +141,24 @@ async function handleIngestionRequest(
 
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/health") {
-        assertBindingsAvailable(
-          "mutation",
-          env.CATALOGUE_DB,
-          env.EVIDENCE_OBJECTS,
-          env.PRINTING_IMAGES,
-          env.CATALOGUE_EXPORTS,
-          env.BACKUPS,
-        );
-        return healthResponse({
-          contract: "card-keepr-runtime-health@1",
-          runtime: "ingestion",
-          status: "ok",
-          capabilities: ingestionCapabilities,
+        return readinessResponse("ingestion", ingestionCapabilities, {
+          database: env.CATALOGUE_DB,
+          configuredDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
+          buckets: {
+            EVIDENCE_OBJECTS: env.EVIDENCE_OBJECTS,
+            PRINTING_IMAGES: env.PRINTING_IMAGES,
+            CATALOGUE_EXPORTS: env.CATALOGUE_EXPORTS,
+            BACKUPS: env.BACKUPS,
+          },
+          workflows: {
+            EVIDENCE_INGESTION_WORKFLOW: env.EVIDENCE_INGESTION_WORKFLOW,
+            EVIDENCE_HOST_WORKFLOW: env.EVIDENCE_HOST_WORKFLOW,
+            RECONCILIATION_WORKFLOW: env.RECONCILIATION_WORKFLOW,
+            CATALOGUE_BACKUP_WORKFLOW: env.CATALOGUE_BACKUP_WORKFLOW,
+          },
+          publicBase: base,
+          request,
+          version: env.CF_VERSION_METADATA,
         });
       }
       const observedAt = administrationObservedAt(request, env);
@@ -802,34 +804,6 @@ async function handleIngestionRequest(
         );
       }
 
-      if (url.pathname === "/v1/credential-rotation-log") {
-        if (request.method === "GET") {
-          return Response.json(
-            await listCredentialRotationLogEntries(env.CATALOGUE_DB),
-          );
-        }
-        if (request.method === "POST") {
-          const body = await readAdministrationBody(request);
-          assertOnlyFields(body, [
-            "credential_class",
-            "operator_note",
-            "idempotency_key",
-          ]);
-          const appended = await appendCredentialRotationLogEntry(
-            env.CATALOGUE_DB,
-            {
-              credential_class: body.credential_class,
-              operator_note: body.operator_note,
-              idempotency_key: requiredString(body, "idempotency_key"),
-            },
-            observedAt,
-          );
-          return Response.json(appended.entry, {
-            status: appended.created ? 201 : 200,
-          });
-        }
-      }
-
       if (request.method === "GET" && url.pathname === "/v1/status") {
         return Response.json(
           await administrationStatus(
@@ -1095,6 +1069,23 @@ const ingestionWorker = {
       );
     }
     const mounted = mountedRequest(request, route);
+    // Liveness (issue #144) is unauthenticated, behind its own rate limit,
+    // and kept out of the operational request log.
+    if (isLivenessRequest(request.method, route)) {
+      return withOperationalRequestLog(
+        "ingestion",
+        mounted,
+        env,
+        (observedEnv, requestId) =>
+          livenessRequest(
+            mounted,
+            observedEnv.INGESTION_LIVENESS_RATE_LIMIT,
+            "ingestion",
+            requestId,
+          ),
+        { logged: false },
+      );
+    }
     return withOperationalRequestLog(
       "ingestion",
       mounted,

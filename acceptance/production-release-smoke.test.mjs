@@ -2,6 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { runBootstrapSmoke, runProductionSmoke } from "../scripts/production-smoke.mjs";
 
+// The health documents of a ready, live deployment (issue #144): readiness
+// carries the checks block, liveness only status and runtime.
+function healthDocument(pathname) {
+  const runtime = pathname.startsWith("/ingest/") ? "ingestion" : "api";
+  if (pathname.endsWith("/healthz")) return { status: "ok", runtime };
+  if (pathname.endsWith("/health")) return { status: "ok", runtime, checks: { database: { status: "pass" } } };
+  return null;
+}
+
 test("black-box smoke covers auth, representative reads, retained exports, and stale cursors", async () => {
   const visited = [];
   const revisions = ["catrev-current", "catrev-previous", "catrev-old"].map((revision_id, index) => ({
@@ -29,7 +38,7 @@ test("black-box smoke covers auth, representative reads, retained exports, and s
     if (after === staleCursor) {
       return new Response(JSON.stringify({ code: "cursor_revision_unavailable" }), { status: 409, headers: { "content-type": "application/problem+json" } });
     }
-    const body = parsed.pathname === "/v1/catalogue"
+    const body = healthDocument(parsed.pathname) ?? (parsed.pathname === "/v1/catalogue"
       ? { meta: { catalogue_revision_id: "catrev-current" } }
       : parsed.pathname === "/v1/catalogue-exports/catrev-current"
         ? { data: { components: [{ name: "cards" }] } }
@@ -37,7 +46,7 @@ test("black-box smoke covers auth, representative reads, retained exports, and s
           ? { data: [{ id: fixture.card_id }], meta: { catalogue_revision_id: revision } }
           : parsed.pathname === "/v1/printings" && fixture
             ? { data: [{ id: fixture.printing_id }], meta: { catalogue_revision_id: revision } }
-            : {};
+            : {});
     return new Response(JSON.stringify(body), { status: 200, headers });
   });
   assert.equal(result.contract, "card-keepr-production-smoke@1");
@@ -78,7 +87,7 @@ test("black-box smoke appends route paths to an API base that carries a mount pa
     if (after === staleCursor) {
       return new Response(JSON.stringify({ code: "cursor_revision_unavailable" }), { status: 409, headers: { "content-type": "application/problem+json" } });
     }
-    const body = parsed.pathname === "/api/v1/catalogue"
+    const body = healthDocument(parsed.pathname) ?? (parsed.pathname === "/api/v1/catalogue"
       ? { meta: { catalogue_revision_id: "catrev-current" } }
       : parsed.pathname === "/api/v1/catalogue-exports/catrev-current"
         ? { data: { components: [{ name: "cards" }] } }
@@ -86,7 +95,7 @@ test("black-box smoke appends route paths to an API base that carries a mount pa
           ? { data: [{ id: fixture.card_id }], meta: { catalogue_revision_id: revision } }
           : parsed.pathname === "/api/v1/printings" && fixture
             ? { data: [{ id: fixture.printing_id }], meta: { catalogue_revision_id: revision } }
-            : {};
+            : {});
     return new Response(JSON.stringify(body), { status: 200, headers });
   });
   assert.equal(visited[0], "/api/health");
@@ -114,17 +123,35 @@ test("Bootstrap Mode smoke proves health and auth on both mounts and the Spine R
   }, async (url, init) => {
     const parsed = new URL(url);
     visited.push(`${parsed.pathname}${parsed.search}`);
+    // Liveness answers without a credential; everything else is authenticated.
+    if (parsed.pathname.endsWith("/healthz")) {
+      assert.equal(init.headers.authorization, undefined);
+      return new Response(JSON.stringify(healthDocument(parsed.pathname)), { status: 200 });
+    }
     if (init.headers.authorization !== "Bearer traffic-key") {
       return new Response(JSON.stringify({ code: "authentication_required" }), { status: 401, headers: { "content-type": "application/problem+json" } });
     }
-    if (parsed.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+    if (parsed.pathname === "/api/health") return new Response(JSON.stringify(healthDocument(parsed.pathname)), { status: 200 });
     if (parsed.pathname === "/api/v1/catalogue") {
       return new Response(JSON.stringify({ meta: { catalogue_revision_id: "catrev_spine_000" } }), { status: 200, headers: { "x-catalogue-revision": "catrev_spine_000" } });
     }
     return new Response("unexpected", { status: 500 });
   });
-  assert.deepEqual(result, { contract: "card-keepr-production-bootstrap-smoke@1", revision_id: "catrev_spine_000", checks: 4 });
-  assert.deepEqual(visited, ["/api/health", "/api/health", "/ingest/health", "/api/v1/catalogue"]);
+  assert.deepEqual(result, { contract: "card-keepr-production-bootstrap-smoke@1", revision_id: "catrev_spine_000", checks: 6 });
+  assert.deepEqual(visited, ["/api/health", "/api/health", "/ingest/health", "/api/healthz", "/ingest/healthz", "/api/v1/catalogue"]);
+});
+
+test("smoke fails when readiness reports a degraded runtime", async () => {
+  await assert.rejects(runBootstrapSmoke({
+    apiUrl: "https://card.keepr.digital/api", apiKey: "traffic-key",
+    ingestionUrl: "https://card.keepr.digital/ingest", currentRevisionId: "catrev_spine_000",
+  }, async (url) => {
+    const parsed = new URL(url);
+    if (parsed.pathname === "/api/health") {
+      return new Response(JSON.stringify({ status: "degraded", runtime: "api", checks: { database: { status: "fail", reason: "query_failed" } } }), { status: 503 });
+    }
+    return new Response("{}", { status: 200 });
+  }), /smoke_http_503_\/api\/health/u);
 });
 
 test("Bootstrap Mode smoke fails when the catalogue no longer reports the Spine Revision", async () => {
@@ -133,11 +160,12 @@ test("Bootstrap Mode smoke fails when the catalogue no longer reports the Spine 
     ingestionUrl: "https://card.keepr.digital/ingest", currentRevisionId: "catrev_spine_000",
   }, async (url, init) => {
     const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/healthz")) return new Response(JSON.stringify(healthDocument(parsed.pathname)), { status: 200 });
     if (init.headers.authorization !== "Bearer traffic-key") return new Response(JSON.stringify({ code: "authentication_required" }), { status: 401 });
     if (parsed.pathname === "/api/v1/catalogue") {
       return new Response(JSON.stringify({ meta: { catalogue_revision_id: "catrev_first" } }), { status: 200, headers: { "x-catalogue-revision": "catrev_first" } });
     }
-    return new Response("{}", { status: 200 });
+    return new Response(JSON.stringify(healthDocument(parsed.pathname) ?? {}), { status: 200 });
   }), /smoke_revision_header_\/api\/v1\/catalogue/u);
 });
 

@@ -1,127 +1,41 @@
 import { createHash } from "node:crypto";
-import type { SupportedGame } from "./catalogue-candidate";
-import type { CuratedProvenanceBearing } from "./curated-provenance";
+import type {
+  CatalogueDistributionContext,
+  CatalogueProduct,
+  CatalogueRelease,
+  EvidenceCategory,
+  ProductAuthorityClass,
+  ProductDisagreement,
+  ProductEntityReference,
+  ProductEvidenceResource,
+  ProductReference,
+  ProductRelationship,
+  ProductSourceObservation,
+  ProductWithdrawal,
+  ReleasePrecision,
+  ReleaseStatus,
+  SupportedGame,
+} from "./catalogue-candidate-types";
 import { canonicalJson, sha256Text } from "./serialization";
 
-export type EvidenceCategory = "explicit" | "derived" | "curated";
-export type ReleaseStatus = "announced" | "released";
-export type ReleasePrecision =
-  | "day"
-  | "month"
-  | "quarter"
-  | "season"
-  | "year"
-  | "unknown";
-
-export type ProductReference = {
-  kind: "official_code" | "name";
-  value: string;
-};
-
-export type ProductEvidenceResource = {
-  type: "source_observation";
-  id: string;
-  captured_at: string;
-  source: string;
-  surface?: string;
-  request_role?: "surface" | "listing" | "detail" | "product_detail" | "image";
-  authority_class?: ProductAuthorityClass;
-};
-
-export type ProductAuthorityClass =
-  | "product_detail"
-  | "release_schedule"
-  | "product_listing"
-  | "card_detail"
-  | "card_listing"
-  | "policy"
-  | "unknown";
-
-export type ProductDisagreement = {
-  path: string;
-  status: "unresolved" | "resolved_by_authority";
-  candidates: { value: unknown; observation_id: string }[];
-};
-
-export type ProductWithdrawal = {
-  revision_id?: string;
-  evidence: {
-    assertion: "withdrawn";
-    effective_at: string;
-    evidence: string;
-    source_lineage: string;
-    source_snapshot_id: string;
-    source_observation_set_id: string;
-    source_observation_id: string;
-  };
-};
-
-export type CatalogueProduct = CuratedProvenanceBearing & {
-  reference: ProductReference;
-  id: string;
-  game: SupportedGame;
-  official_code: string | null;
-  name: string | null;
-  releases: CatalogueRelease[];
-  observed: boolean;
-  withdrawal: ProductWithdrawal | null;
-  included: ProductEvidenceResource[];
-  provenance: Record<string, string[]>;
-  disagreements: ProductDisagreement[];
-  source_observations?: ProductSourceObservation[];
-};
-
-export type CatalogueRelease = CuratedProvenanceBearing & {
-  id: string;
-  event_key: string;
-  product_id: string;
-  region: "EN-OCEANIA" | "EN-ASIA" | "EN-US" | "unknown";
-  date: {
-    precision: ReleasePrecision | null;
-    value: string | null;
-  };
-  status: ReleaseStatus | null;
-};
-
-export type CatalogueDistributionContext = CuratedProvenanceBearing & {
-  id: string;
-  game: SupportedGame;
-  key: string;
-  kind:
-    | "product"
-    | "tournament_pack"
-    | "winner_prize"
-    | "promotion"
-    | "other";
-  label: string;
-  product_id: string | null;
-  evidence_category: EvidenceCategory;
-  observed: boolean;
-  source_lineages?: string[];
-};
-
-export type ProductEntityReference = {
-  type: "printing" | "product" | "distribution_context" | "card";
-  id: string;
-};
-
-export type ProductRelationship = CuratedProvenanceBearing & {
-  id: string;
-  game: SupportedGame;
-  kind:
-    | "printing-product"
-    | "printing-distribution-context"
-    | "distribution-context-product"
-    | "product-card";
-  from: ProductEntityReference;
-  to: ProductEntityReference;
-  evidence_category: EvidenceCategory;
-  resolution: "canonical";
-  source_lineage?: string;
-  source_observation_ids: string[];
-  relationship_value: string;
-  observed: boolean;
-};
+// The product-and-release shapes of a Catalogue Candidate live in the leaf
+// module `catalogue-candidate-types`; they stay importable from here.
+export type {
+  CatalogueDistributionContext,
+  CatalogueProduct,
+  CatalogueRelease,
+  EvidenceCategory,
+  ProductAuthorityClass,
+  ProductDisagreement,
+  ProductEntityReference,
+  ProductEvidenceResource,
+  ProductReference,
+  ProductRelationship,
+  ProductSourceObservation,
+  ProductWithdrawal,
+  ReleasePrecision,
+  ReleaseStatus,
+} from "./catalogue-candidate-types";
 
 export type ProductReleaseEvidenceInput = {
   value: unknown;
@@ -134,26 +48,6 @@ export type ProductReleaseEvidenceInput = {
   capturedAt: string;
   currentCardId: string | null;
   currentPrintingId: string | null;
-};
-
-export type ProductSourceObservation = {
-  reference: ProductReference;
-  id: string;
-  officialCode: string | null;
-  name: string;
-  releases: {
-    eventKey: string;
-    region: CatalogueRelease["region"];
-    precision: ReleasePrecision;
-    value: string | null;
-    status: ReleaseStatus | null;
-  }[];
-  withdrawal: ProductWithdrawal | null;
-  evidence: ProductEvidenceResource;
-  carriedOfficialCode?: {
-    value: string;
-    evidence: ProductEvidenceResource[];
-  };
 };
 
 type ObservedProduct = ProductSourceObservation;
@@ -351,39 +245,39 @@ async function preservePublishedProductIdentity(
     const gameProducts = priorProducts.filter(
       (prior) => prior.game === game,
     );
-    const nameCandidates = gameProducts.filter(
+    const nameMatches = gameProducts.filter(
       (prior) =>
         normalizedProductName(prior.name) ===
           normalizedProductName(product.name),
     );
-    const sameLineageNameCandidates = nameCandidates.filter((prior) =>
+    const sameLineageNameMatches = nameMatches.filter((prior) =>
       sourceObservationsForProduct(prior).some(
         ({ evidence }) => evidence.source === product.evidence.source,
       )
     );
-    const officialCodeCandidates =
+    const officialCodeMatches =
       product.officialCode === null
         ? []
         : gameProducts.filter(
             (prior) => prior.official_code === product.officialCode,
           );
-    const candidates =
-      officialCodeCandidates.length > 0
-        ? officialCodeCandidates
-        : nameCandidates.filter(
+    const priorMatches =
+      officialCodeMatches.length > 0
+        ? officialCodeMatches
+        : nameMatches.filter(
             (prior) =>
               (product.officialCode === null ||
                 prior.official_code === null),
           );
-    const candidateIds = [...new Set(candidates.map(({ id }) => id))];
-    if (candidateIds.length === 1) {
-      const candidate = candidates.find(({ id }) => id === candidateIds[0])!;
+    const matchedIds = [...new Set(priorMatches.map(({ id }) => id))];
+    if (matchedIds.length === 1) {
+      const priorProduct = priorMatches.find(({ id }) => id === matchedIds[0])!;
       const preservesEstablishedCode =
         product.officialCode === null &&
-        candidate.official_code !== null &&
-        sameLineageNameCandidates.some(({ id }) => id === candidate.id);
+        priorProduct.official_code !== null &&
+        sameLineageNameMatches.some(({ id }) => id === priorProduct.id);
       const carriedOfficialCode = preservesEstablishedCode
-        ? establishedOfficialCode(candidate)
+        ? establishedOfficialCode(priorProduct)
         : undefined;
       if (preservesEstablishedCode && carriedOfficialCode === undefined) {
         throw new Error(
@@ -391,16 +285,16 @@ async function preservePublishedProductIdentity(
         );
       }
       replacements.set(product.id, {
-        id: candidate.id,
+        id: priorProduct.id,
         reference: product.reference,
         ...(carriedOfficialCode === undefined
           ? {}
           : { carriedOfficialCode }),
       });
-    } else if (candidateIds.length > 1) {
+    } else if (matchedIds.length > 1) {
       throw new Error(
         "The Product identity matched multiple published Products and " +
-          `cannot be published canonically: ${candidateIds.sort().join(", ")}.`,
+          `cannot be published canonically: ${matchedIds.sort().join(", ")}.`,
       );
     }
   }
@@ -939,18 +833,18 @@ function resolveFact<T extends { evidence: ProductEvidenceResource }, V>(
   provenance: Record<string, string[]>,
   disagreements: ProductDisagreement[],
 ): V | null {
-  const candidates = observations.map((observation) => ({
+  const observedValues = observations.map((observation) => ({
     value: value(observation),
     observation_id: observation.evidence.id,
   }));
   const distinct = new Map(
-    candidates.map((candidate) => [canonicalJson(candidate.value), candidate]),
+    observedValues.map((observedValue) => [canonicalJson(observedValue.value), observedValue]),
   );
   if (distinct.size === 1) {
     provenance[path] = [
-      ...new Set(candidates.map(({ observation_id }) => observation_id)),
+      ...new Set(observedValues.map(({ observation_id }) => observation_id)),
     ].sort();
-    return candidates[0]!.value;
+    return observedValues[0]!.value;
   }
   const bestAuthority = Math.min(
     ...observations.map(({ evidence }) =>

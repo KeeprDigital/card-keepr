@@ -10,7 +10,7 @@ export type CardSearchChunk = Readonly<{
   text: string;
 }>;
 
-// Literal normalized grams keep the indexed candidate set selective. Exact
+// Literal normalized grams keep the indexed match set selective. Exact
 // matching still happens against field-separated search chunks so a shared
 // trigram can never become a false-positive Card result.
 const maximumRelationalGramLength = 2;

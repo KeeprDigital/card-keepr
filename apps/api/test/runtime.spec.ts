@@ -106,6 +106,19 @@ test("API requests emit useful structured diagnostics without leaking failures",
   expect(records.at(-1)).toContain('\"route\":\"/:ref\"');
   expect(records.at(-1)).not.toContain("source-payload-path-secret");
 
+  // Liveness (issue #144) is polled by monitors: it is not logged, and its
+  // body carries nothing an anonymous caller could learn from.
+  const loggedBefore = records.length;
+  const liveness = await apiWorker.fetch(
+    new Request("https://card-keepr.invalid/healthz?probe=source-payload", {
+      headers: { "x-secret-diagnostic-test": "credential-material" },
+    }),
+    testEnv,
+  );
+  expect(liveness.status).toBe(200);
+  expect(await liveness.text()).toBe('{"status":"ok","runtime":"api"}');
+  expect(records).toHaveLength(loggedBefore);
+
   const secret = "credential-and-source-payload-must-not-leak";
   const failingEnv = new Proxy(testEnv, {
     get(target, property, receiver) {
@@ -313,8 +326,6 @@ test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact 
         compressed_sha256: containsLegality
           ? compressedLegalityDigest
           : compressedEmptyDigest,
-        content_url:
-          `/v1/catalogue-exports/${revisionId}/components/${name}`,
       };
     },
   );
@@ -2589,14 +2600,14 @@ test("Card search keeps a selective two-character relational fallback beside FTS
 
   const query = cardSearchQuery("qu");
   expect(query).toEqual({ text: "qu", anchorTerm: "g2:qu" });
-  const candidates = await testEnv.CATALOGUE_DB.prepare(
+  const indexedCards = await testEnv.CATALOGUE_DB.prepare(
     `SELECT COUNT(DISTINCT card_id) AS count
      FROM revision_card_search_terms
      WHERE catalogue_revision_id = ? AND term = ?`,
   )
     .bind("catrev_selective_trigrams", query!.anchorTerm)
     .first<{ count: number }>();
-  expect(candidates?.count).toBe(1);
+  expect(indexedCards?.count).toBe(1);
 
   const matched = await exports.default.fetch(
     new Request("https://card-keepr.invalid/v1/cards?q=uart", {
@@ -2851,14 +2862,14 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
   ).bind(...productionQuery.bindings).all<{ detail: string }>();
   const planDetails = plan.results.map(({ detail }) => detail);
   expect(planDetails).toEqual([
-    "MATERIALIZE search_candidates",
+    "MATERIALIZE search_matches",
     "SCAN search VIRTUAL TABLE INDEX 0:M6",
     "SEARCH filtered USING INDEX " +
     "sqlite_autoindex_revision_card_query_documents_1 " +
     "(catalogue_revision_id=? AND card_id=?)",
     "USE TEMP B-TREE FOR GROUP BY",
     "USE TEMP B-TREE FOR ORDER BY",
-    "SCAN search_candidates",
+    "SCAN search_matches",
   ]);
   const filteredCursorQuery = cardCollectionPageQuery(
     "catrev_fts_search",
@@ -2889,14 +2900,14 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
     `EXPLAIN QUERY PLAN ${filteredCursorQuery.sql}`,
   ).bind(...filteredCursorQuery.bindings).all<{ detail: string }>();
   expect(filteredPlan.results.map(({ detail }) => detail)).toEqual([
-    "MATERIALIZE search_candidates",
+    "MATERIALIZE search_matches",
     "SCAN search VIRTUAL TABLE INDEX 0:M6",
     "SEARCH filtered USING INDEX " +
     "sqlite_autoindex_revision_card_query_documents_1 " +
     "(catalogue_revision_id=? AND card_id=?)",
     "USE TEMP B-TREE FOR GROUP BY",
     "USE TEMP B-TREE FOR ORDER BY",
-    "SCAN search_candidates",
+    "SCAN search_matches",
   ]);
   const filteredRows = await testEnv.CATALOGUE_DB.prepare(
     filteredCursorQuery.sql,

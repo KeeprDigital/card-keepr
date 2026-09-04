@@ -8,6 +8,8 @@ import {
 import { evidencePlanForRequest } from "./source-evidence-repository";
 import {
   parseEvidencePlans,
+  printingImageRetriesExhaustedFailureCode,
+  toleratesRequestFailure,
   type EvidencePlanRequest,
 } from "./source-evidence-model";
 import {
@@ -31,6 +33,7 @@ type PlannedRequestRow = {
   discovered_from_request_id: string | null;
   state: string;
   source_snapshot_id: string | null;
+  failure_code: string | null;
 };
 
 type EvidenceRow = {
@@ -120,7 +123,8 @@ export async function retainedReconciliationObservation(
         `SELECT request_id, sequence_number, method, url,
                 request_headers_json, representation_fingerprint,
                 request_role,
-                discovered_from_request_id, state, source_snapshot_id
+                discovered_from_request_id, state, source_snapshot_id,
+                failure_code
          FROM source_requests
          WHERE ingestion_run_id = ?
          ORDER BY sequence_number, request_id`,
@@ -276,8 +280,29 @@ export async function retainedReconciliationObservation(
       "Operational Source Requests differ from their immutable request plans.",
     );
   }
+  // A Printing Image whose transport retries were exhausted is a tolerated
+  // failure: it takes no part in the observed evidence graph and is carried
+  // out explicitly so the candidate records the gap instead of failing.
+  const isToleratedImageFailure = (request: PlannedRequestRow): boolean =>
+    request.state === "failed" &&
+    toleratesRequestFailure(request.request_role, request.failure_code);
+  const unavailablePrintingImages = requests.results
+    .filter(isToleratedImageFailure)
+    .map((request) => ({
+      requestId: request.request_id,
+      sourceUrl: request.url,
+      sourceLineage: evidencePlanForRequest(
+        { request_plan_json: evidencePlanRow.request_plan_json },
+        request.request_id,
+      ).source_lineage,
+      failureCode: request.failure_code ??
+        printingImageRetriesExhaustedFailureCode,
+    }));
+  const retainedRequests = requests.results.filter((request) =>
+    !isToleratedImageFailure(request)
+  );
   const selectedSnapshots = new Map<string, PlannedRequestRow>();
-  for (const request of requests.results) {
+  for (const request of retainedRequests) {
     if (request.state !== "observed" || request.source_snapshot_id === null) {
       throw new Error(
         `Planned Source Request ${request.request_id} has no observed Source Snapshot.`,
@@ -304,7 +329,7 @@ export async function retainedReconciliationObservation(
       row,
     ]);
   }
-  const orderedRows = requests.results.map((request) => {
+  const orderedRows = retainedRequests.map((request) => {
     const rows = rowsBySnapshot.get(request.source_snapshot_id!) ?? [];
     if (rows.length !== 1) {
       throw new Error(
@@ -315,7 +340,7 @@ export async function retainedReconciliationObservation(
   });
   const first = orderedRows[0]!;
   for (const [index, row] of orderedRows.entries()) {
-    const request = requests.results[index]!;
+    const request = retainedRequests[index]!;
     const plan = evidencePlanForRequest(
       { request_plan_json: row.request_plan_json },
       row.request_id,
@@ -361,7 +386,7 @@ export async function retainedReconciliationObservation(
     }
     documents.push(await retainedObservationDocument(evidenceObjects, row));
   }
-  assertClosedRequestGraph(requests.results, orderedRows, documents);
+  assertClosedRequestGraph(retainedRequests, orderedRows, documents);
   const retainedImages = new Map(
     await Promise.all(
       printingImageSnapshots.results.map(async (row) => [
@@ -393,12 +418,12 @@ export async function retainedReconciliationObservation(
     }
   >();
   const requestsById = new Map(
-    requests.results.map((request) => [request.request_id, request]),
+    retainedRequests.map((request) => [request.request_id, request]),
   );
   const merged = [];
   for (const [index, document] of documents.entries()) {
     const row = orderedRows[index]!;
-    const request = requests.results[index]!;
+    const request = retainedRequests[index]!;
     for (const [wrappedIndex, wrapped] of document.observations.entries()) {
         if (!isRecord(wrapped) || typeof wrapped.id !== "string") {
           throw new Error("Retained Source Observation identity is invalid.");
@@ -523,7 +548,7 @@ export async function retainedReconciliationObservation(
     await validateOfficialSurfaceCoverage({
       adapter: requiredSourceAdapter(plan.adapter_version),
       plan,
-      requests: requests.results,
+      requests: retainedRequests,
       documents,
       rows: orderedRows,
       completeLegalityRequestIds,
@@ -536,12 +561,12 @@ export async function retainedReconciliationObservation(
     await validateLegacyCollectionPlan(
       collectionPlan,
       await retainedCollectionRequests(collectionPlan),
-      requests.results,
+      retainedRequests,
     );
   }
   const partitions = orderedRows.map((row, index) => ({
-    sequenceNumber: requests.results[index]!.sequence_number,
-    requestId: requests.results[index]!.request_id,
+    sequenceNumber: retainedRequests[index]!.sequence_number,
+    requestId: retainedRequests[index]!.request_id,
     observationSetId: row.observation_set_id,
     sourceSnapshotId: row.source_snapshot_id,
     sourceLineage: row.source_lineage,
@@ -563,6 +588,7 @@ export async function retainedReconciliationObservation(
       requiredSourceAdapter(first.adapter_version).reconciliationCapability,
     structurallyComplete: true,
     countChangeWarnings,
+    unavailablePrintingImages,
     partitions,
     evidencePlans: evidencePlans.map((plan) => {
       return {

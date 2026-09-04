@@ -214,6 +214,7 @@ function bindings(config, worker) {
     ...(config.services ?? []).map((item) => ({ name: item.binding, type: "service", service: item.service, entrypoint: item.entrypoint })),
     ...(config.workflows ?? []).map((item) => ({ name: item.binding, type: "workflow", workflow_name: item.name, class_name: item.class_name, script_name: worker })),
     ...config.ratelimits.map((item) => ({ name: item.name, type: "ratelimit", namespace_id: item.namespace_id, simple: item.simple })),
+    ...(config.version_metadata ? [{ name: config.version_metadata.binding, type: "version_metadata" }] : []),
     ...secrets[worker].map((name) => ({ name, type: "secret_text" })),
   ];
 }

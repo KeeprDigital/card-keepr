@@ -270,10 +270,10 @@ describe("Errata rules-text lifecycle", () => {
       "2026-07-30T00:00:00.000Z",
     );
     const component = built.manifest.components.find(
-      (candidate) => candidate.name === "errata",
+      (entry) => entry.name === "errata",
     );
-    const object = built.objects.find((candidate) =>
-      candidate.key.includes(component?.compressed_sha256 ?? "missing")
+    const object = built.objects.find((entry) =>
+      entry.key.includes(component?.compressed_sha256 ?? "missing")
     );
     expect(object).toBeDefined();
     const body = object!.body();
@@ -613,8 +613,8 @@ describe("Errata rules-text lifecycle", () => {
       }),
     );
     const erratum = errata.find(
-      (candidate) =>
-        candidate.corrected_value ===
+      (entry) =>
+        entry.corrected_value ===
         "[On Play] Draw 2 cards, then discard 1 card.",
     );
     expect(erratum).toBeDefined();
@@ -931,7 +931,7 @@ describe("Errata rules-text lifecycle", () => {
         expect.objectContaining({
           code: "retained_evidence_invalid",
           locator: "/official/multi/shared",
-          candidate_printing_ids: printingIds,
+          matched_printing_ids: printingIds,
           detail: expect.stringContaining("exactly one Printing"),
         }),
       ]),
@@ -949,7 +949,7 @@ describe("Errata rules-text lifecycle", () => {
         expect.objectContaining({
           code: "retained_evidence_invalid",
           locator: "/official/multi/missing",
-          candidate_printing_ids: [],
+          matched_printing_ids: [],
           detail: expect.stringContaining("exactly one Printing"),
         }),
       ]),
@@ -1495,11 +1495,11 @@ function requiredObjectWithField(
     throw new Error(`${collectionField} is not an array`);
   }
   const value = values.find(
-    (candidate) =>
-      candidate !== null &&
-      typeof candidate === "object" &&
-      !Array.isArray(candidate) &&
-      (candidate as Record<string, unknown>)[valueField] === expectedValue,
+    (entry) =>
+      entry !== null &&
+      typeof entry === "object" &&
+      !Array.isArray(entry) &&
+      (entry as Record<string, unknown>)[valueField] === expectedValue,
   );
   if (value === undefined) {
     throw new Error(
@@ -1538,7 +1538,7 @@ async function exportComponentRecords(
     }[];
   }>();
   const component = manifest?.components.find(
-    (candidate) => candidate.name === componentName,
+    (entry) => entry.name === componentName,
   );
   const object = await testEnv.CATALOGUE_EXPORTS.get(
     `catalogue-exports/${revisionId}/components/${component?.compressed_sha256}.ndjson.gz`,

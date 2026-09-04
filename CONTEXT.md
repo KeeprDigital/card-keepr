@@ -57,7 +57,7 @@ An owner-initiated, idempotent, compare-and-set administration action that raise
 _Avoid_: Mutable quota, adapter capacity change, resumed run
 
 **Retry Pause**:
-The non-terminal paused condition an Ingestion Run enters when one Source Request exhausts its bounded transport or storage retries while retrying that exact request remains semantically safe. Nothing is recorded as failed: the request stays pending with its append-only attempt history, and resuming the same run opens that request's next bounded retry generation without deleting or renumbering earlier attempts. Source-contract violations and evidence-integrity failures remain terminal instead of pausing.
+The non-terminal paused condition an Ingestion Run enters when one Source Request exhausts its bounded transport or storage retries while retrying that exact request remains semantically safe. Nothing is recorded as failed: the request stays pending with its append-only attempt history, and resuming the same run opens that request's next bounded retry generation without deleting or renumbering earlier attempts. Source-contract violations and evidence-integrity failures remain terminal instead of pausing, and a Printing Image request never pauses or fails the run: whether it exhausts its transport retries or meets a terminal outcome (a missing or redirected file, a rejected revalidation, a body-contract violation), the failure is tolerated and recorded on that request alone under a class-specific code while collection continues and reconciliation publishes the Printing without the image, naming the gap explicitly.
 _Avoid_: Failed request, Capacity Pause, linked retry run
 
 **Workflow Attempt**:
@@ -65,7 +65,7 @@ One append-only recorded execution identity of the parent or hostname-shard Clou
 _Avoid_: Fetch attempt, retry generation, mutable workflow id
 
 **Workflow Pause**:
-The non-terminal paused condition an Ingestion Run enters when its collection Workflow is deterministically observed stalled, errored, terminated, or unavailable while the retained collection work remains valid, or when the owner deliberately pauses a collecting run (reason `owner_requested`). Stall classification derives last progress from persisted lifecycle events and never counts a durable pacing sleep, Retry-After wait, or scheduled retry as a stall; nothing is recorded as failed, the current Workflow Attempt is abandoned, and resuming opens a new Workflow Attempt for the same run. Pause then Collection Termination is the only way to stop a collecting run.
+The non-terminal paused condition an Ingestion Run enters when its collection Workflow is deterministically observed stalled, errored, terminated, or unavailable while the retained collection work remains valid, or when the owner deliberately pauses a collecting run (reason `owner_requested`). Stall classification derives last progress from persisted lifecycle events and never counts a host pacing wait against its persisted deadline, a durable Retry-After wait, or a scheduled retry as a stall; nothing is recorded as failed, the current Workflow Attempt is abandoned, and resuming opens a new Workflow Attempt for the same run. Pause then Collection Termination is the only way to stop a collecting run.
 _Avoid_: Failed run, Capacity Pause, Retry Pause, Workflow instance pause
 
 **Collection Termination**:

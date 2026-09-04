@@ -55,8 +55,8 @@ export function contextualLegalityFixtureDocument(
       : ["GD30-001"];
   const cards = cardNumbers.map(gundamObservation);
   if (semantics === "changed") {
-    const card = cards.find((candidate) =>
-      candidate.card.official_identity.value === "GD30-001"
+    const card = cards.find((entry) =>
+      entry.card.official_identity.value === "GD30-001"
     );
     if (card !== undefined) {
       card.card.name = "Changed Official Source Card Name";
