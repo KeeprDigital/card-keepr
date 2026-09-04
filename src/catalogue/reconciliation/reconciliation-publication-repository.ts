@@ -1,4 +1,5 @@
-import { byteBoundedJsonArrays, type CatalogueStore, repositoryStatements } from "../shared";
+import { errataTargetsGuardStatement } from "./errata-guard-repository";
+import { byteBoundedJsonArrays, atomicRepositoryStatement, type CatalogueStore, repositoryStatements } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
 export function publicationContextStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
@@ -58,8 +59,10 @@ export function publishReconciledErrataStatement(
   database: CatalogueStore,
   input: Readonly<{ revisionId: string; observedRevisionId: string; payload: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`INSERT INTO reconciled_errata (
+  return atomicRepositoryStatement(database, {
+    before: [errataTargetsGuardStatement(database, input.payload)],
+    statement: repositoryStatements(database)
+      .prepare(`INSERT INTO reconciled_errata (
              id, game, target_type, target_id, effective_from,
              official_wording, corrected_value_json,
              first_revision_id, last_observed_revision_id
@@ -74,7 +77,8 @@ export function publishReconciledErrataStatement(
            FROM json_each(?) WHERE true
            ON CONFLICT (id) DO UPDATE SET
              last_observed_revision_id = excluded.last_observed_revision_id`)
-    .bind(input.revisionId, input.observedRevisionId, input.payload);
+      .bind(input.revisionId, input.observedRevisionId, input.payload),
+  });
 }
 
 export function publishErratumProvenanceStatement(
