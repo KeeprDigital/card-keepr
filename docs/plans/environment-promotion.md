@@ -25,13 +25,21 @@ implement the decision above.
 
 ## Verified starting point
 
-At main `7b5f959c`, each app has one top-level Wrangler configuration, two Workers
-share one catalogue D1, and ingestion owns four Workflow bindings plus a self
-service binding for Official Source transport. Phase 4 removes synthetic adapters
-from shipped code (#94) and moves client-side release validation and canonical plan
-construction into the administration service (#111). A deployed dev environment
-therefore uses the same production adapter bundle; test fixtures remain local test
-composition, even though the original #151 proposal allowed synthetic dev sources.
+At main `97649c4`, each app still has one top-level Wrangler configuration, two
+Workers share one catalogue D1, and ingestion owns four Workflow bindings plus a
+self service binding for Official Source transport. Phase 4 is merged: #94 removed
+synthetic adapters from shipped code and #111 moved client-side release validation
+and canonical plan construction into the administration service. A deployed dev
+environment therefore uses the same production adapter bundle; test fixtures
+remain local test composition, even though the original #151 proposal allowed
+synthetic dev sources.
+
+The #136 baseline draft also identified a separate Go-Live dependency: changing
+bindings to a fresh database cannot transfer the old database's immutable release
+preparation. Its proposed handoff requires a prerequisite protocol release and
+durable mutation fencing on both databases. Environment promotion must not treat
+Bootstrap Mode as a shortcut around that missing authority transfer. The baseline
+fold must be refreshed after that protocol's schema is final.
 
 Read-only account checks on 2026-09-04 found six D1 databases in the account,
 including the catalogue and disposable verification database, and seven R2 buckets,
