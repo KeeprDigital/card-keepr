@@ -86,10 +86,6 @@ export default defineConfig({
     exclude: stressSuite
       ? [...configDefaults.exclude]
       : [...configDefaults.exclude, "**/*.stress.spec.ts"],
-    // Reconciliation files race Workerd polling deadlines when
-    // over-parallelized; two workers match the retired shard runner's proven
-    // concurrency.
-    maxWorkers: 2,
     hookTimeout: 30_000,
     // Workflow steps still running when a file's isolated runtime is torn
     // down forward their operational logs over an rpc that has already
