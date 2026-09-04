@@ -318,10 +318,13 @@ test("a hostname Workflow whose batch step errors is superseded by an attempt th
     "errored",
     20_000,
   );
-  await releaseSnapshotCommit();
+  // Observed while the outage still holds: the parent replaces the errored
+  // shard on its next barrier, and once the commit is released that
+  // replacement may record sequence-3 before this test reads the facts.
   const errored = await showCollection(run.id);
   expect(errored.state).toBe("collecting");
   expect((await attemptFacts(run.id)).filter((attempt) => attempt.request_id === "sequence-3")).toEqual([]);
+  await releaseSnapshotCommit();
 
   // The parent replaces the dead shard with a bounded new Workflow Attempt
   // identity that replays the batch from its retained operation state.

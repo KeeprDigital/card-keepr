@@ -170,7 +170,12 @@ export function exactOnePiecePlan(idempotencyKey: string) {
   };
 }
 
-export async function waitForEvidenceDiagnostic(runId: string, timeoutMs = 2_000): Promise<CollectionDocument> {
+// Every wait here is bounded by a wall-clock deadline that fails the test
+// with the run's state rather than hanging the shard; the default is the
+// same across helpers because each spans the same path (a resume request,
+// the parent Workflow's barrier, one hostname shard's batch) whose latency
+// under a loaded workers pool is shared, not per-helper.
+export async function waitForEvidenceDiagnostic(runId: string, timeoutMs = 8_000): Promise<CollectionDocument> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const current = await showCollection(runId);
