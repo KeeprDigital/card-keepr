@@ -4,7 +4,6 @@ import {
   assertOfficialSourceUrl,
   requiredActiveSourceAdapter,
   requiredOfficialSourceContract,
-  requiredSourceAdapter,
   type SourceAdapterRegistration,
 } from "../adapters";
 import { AdministrationProblem, canonicalJson, decodeDocument, sha256, utf8 } from "../shared";
@@ -183,10 +182,7 @@ export type EvidenceHostWorkflowParams = {
   maximum_sequence_number: number;
 };
 
-export async function validateEvidencePlan(
-  request: EvidencePlanInput & { idempotency_key: string },
-  planOrigin: SourceAdapterRegistration["origin"] = "production",
-): Promise<{
+export async function validateEvidencePlan(request: EvidencePlanInput & { idempotency_key: string }): Promise<{
   plan: EvidencePlan;
   adapter: SourceAdapterRegistration;
 }> {
@@ -194,19 +190,7 @@ export async function validateEvidencePlan(
   assertIdentifier(request.source_lineage, "source_lineage");
   assertIdentifier(request.adapter_version, "adapter_version");
   assertIdentifier(request.idempotency_key, "idempotency_key");
-  const adapter =
-    planOrigin === "production"
-      ? requiredActiveSourceAdapter(request.adapter_version)
-      : requiredSourceAdapter(request.adapter_version);
-  if (adapter.origin !== planOrigin) {
-    throw new AdministrationProblem(
-      422,
-      "adapter_origin_not_permitted",
-      planOrigin === "production"
-        ? "Synthetic fixture adapters are unavailable on the production source-plan route."
-        : "The internal fixture source-plan route accepts only synthetic fixture adapters.",
-    );
-  }
+  const adapter = requiredActiveSourceAdapter(request.adapter_version);
   assertAdapterBinding(adapter, {
     sourceLineage: request.source_lineage,
     supportedGame: request.supported_game,
@@ -341,10 +325,7 @@ export function assertBoundedOfficialSourceRequest(
   }
 }
 
-export async function validateEvidencePlans(
-  request: StartEvidenceRunRequest,
-  planOrigin: SourceAdapterRegistration["origin"] = "production",
-): Promise<EvidencePlan[]> {
+export async function validateEvidencePlans(request: StartEvidenceRunRequest): Promise<EvidencePlan[]> {
   assertIdentifier(request.idempotency_key, "idempotency_key");
   const inputs = "plans" in request ? request.plans : [request];
   if (inputs.length < 1 || inputs.length > 20) {
@@ -354,10 +335,7 @@ export async function validateEvidencePlans(
   const requestIds = new Set<string>();
   const reconciliationCapabilities = new Set<SourceAdapterRegistration["reconciliationCapability"]>();
   for (const input of inputs) {
-    const { adapter, plan } = await validateEvidencePlan(
-      { ...input, idempotency_key: request.idempotency_key },
-      planOrigin,
-    );
+    const { adapter, plan } = await validateEvidencePlan({ ...input, idempotency_key: request.idempotency_key });
     reconciliationCapabilities.add(adapter.reconciliationCapability);
     for (const sourceRequest of plan.requests) {
       if (requestIds.has(sourceRequest.id)) {

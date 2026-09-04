@@ -1,19 +1,20 @@
-import { publishReconciledErrataStatement } from "../../../src/catalogue/reconciliation/reconciliation-publication-repository";
-import { catalogueStore } from "../../../src/catalogue/shared";
-import * as ingestionQueries from "./query-helpers/ingestion";
-import * as reconciliationQueries from "./query-helpers/reconciliation";
-import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
-import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
-import * as catalogueExportQueries from "./query-helpers/catalogue-export";
-import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
+import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, describe, expect, test } from "vitest";
-import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
-import { buildCatalogueExport } from "../../../src/catalogue/export";
-import { fixtureCandidate } from "../../../src/catalogue/ingestion";
-import { parseOnePieceOfficialErrataHtml } from "../../../src/catalogue/adapters";
 import { onePieceOfficialErrataHtml } from "../../../acceptance/fixtures/one-piece-official-errata-html";
+import { parseOnePieceOfficialErrataHtml } from "../../../src/catalogue/adapters";
+import { buildCatalogueExport } from "../../../src/catalogue/export";
+import { publishReconciledErrataStatement } from "../../../src/catalogue/reconciliation/reconciliation-publication-repository";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
+import { fixtureCandidate } from "../../../test/support/catalogue-fixture";
+import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { injectFixtureEvidencePlan, injectFixturePublication } from "./fixture-plan-injection";
+import * as catalogueExportQueries from "./query-helpers/catalogue-export";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as reconciliationQueries from "./query-helpers/reconciliation";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -1031,8 +1032,7 @@ async function collect(
   });
   expect(started.response.status).toBe(201);
   const id = requiredString(started.document, "id");
-  const resumed = await post(`/v1/ingestion-runs/${id}/collection/resume`, {});
-  expect(resumed.response.status).toBe(202);
+  await collectFixtureEvidence(testEnv.CATALOGUE_DB, testEnv.EVIDENCE_OBJECTS, testEnv.OFFICIAL_SOURCE_TRANSPORT, id);
   const document = await waitForRunState(id, "parsing", waitTimeoutMs);
   return { id, document };
 }

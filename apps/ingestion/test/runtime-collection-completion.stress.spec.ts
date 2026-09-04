@@ -90,7 +90,7 @@ test("a single-lineage graph larger than 5,000 requests completes collection thr
       }
     }
   }
-  expect(completed?.state).toBe("parsing");
+  expect(completed?.collection_completed_at).toEqual(expect.any(String));
   expect(completed?.failure_code).toBeNull();
   const collection = completed?.collection as {
     requests: { total: number; by_state: Record<string, number> };

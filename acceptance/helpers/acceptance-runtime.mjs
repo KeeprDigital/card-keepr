@@ -7,7 +7,10 @@ import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
+import { isWranglerSmokeFile } from "./smoke-tier.mjs";
+
 const root = resolve(import.meta.dirname, "../..");
+const wranglerSmoke = isWranglerSmokeFile(process.argv[1]);
 
 // Allocate a free 127.0.0.1 port for a local Worker (wrangler dev does not
 // accept port 0 itself). `node --test` runs every acceptance file in its own
@@ -63,7 +66,7 @@ function portFree(port) {
   });
 }
 
-// Migrate CATALOGUE_DB under statePath. Running the wrangler CLI costs
+// The smoke tier migrates CATALOGUE_DB under statePath. Running the Wrangler CLI costs
 // several seconds per boot, so the migrated D1 directory is built once into
 // a template shared by every acceptance process on the machine, then copied
 // into each fresh statePath. The template is keyed by the migration files
@@ -77,7 +80,10 @@ const D1_STATE = join("v3", "d1");
 const TEMPLATE_ROOT = join(tmpdir(), "card-keepr-migrated");
 const TEMPLATE_WAIT_MS = 120_000;
 
-export async function applyMigrations(statePath, config) {
+export async function applyMigrations(statePath, config, testMigrations = []) {
+  if (wranglerSmoke && testMigrations.length) throw new Error("Wrangler smoke must use only shipped migrations.");
+  if (!wranglerSmoke)
+    return (await import("./inprocess-runtime.mjs")).applyInprocessMigrations(statePath, config, testMigrations);
   const resolvedConfig = config ?? "apps/ingestion/wrangler.jsonc";
   if (existsSync(join(statePath, D1_STATE))) {
     await runMigrations(statePath, resolvedConfig);
@@ -174,13 +180,24 @@ export async function startWorker({
   envFile,
   inspectorPort,
   migrate = false,
+  testMigrations = [],
   pacingMode = "immediate",
   port,
   registryPath,
   statePath,
   vars = {},
 }) {
-  if (migrate) await applyMigrations(statePath, config);
+  if (migrate) await applyMigrations(statePath, config, testMigrations);
+  if (!wranglerSmoke)
+    return (await import("./inprocess-runtime.mjs")).startInprocessWorker({
+      config,
+      envFile,
+      pacingMode,
+      port: port ?? (await allocatePort()),
+      registryPath,
+      statePath,
+      vars,
+    });
   // The probed port is released before wrangler binds it, so another program
   // may still take it first; a boot that dies on that collision retries on
   // fresh ports, and every attempt including the last is checked so a dead
@@ -269,7 +286,7 @@ export function isAddressInUse(output) {
 async function portCollision(worker) {
   const deadline = Date.now() + BOOT_COLLISION_WINDOW_MS;
   while (Date.now() < deadline) {
-    if (hasExited(worker.process)) {
+    if (worker.closed || (worker.process && hasExited(worker.process))) {
       return isAddressInUse(worker.getOutput());
     }
     if (await portHeld(worker.port)) return false;
@@ -293,7 +310,7 @@ function portHeld(port) {
 export async function waitForResponse(url, worker, description, headers) {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (hasExited(worker.process)) {
+    if (worker.closed || (worker.process && hasExited(worker.process))) {
       throw new Error(`${description} exited\n${worker.getOutput()}`);
     }
     try {
@@ -313,10 +330,11 @@ export function waitForHealth(url, key, worker) {
   });
 }
 
-// Stop a Worker and wait until its process has actually exited, so a
-// follow-up boot may safely reuse the same port.
+// Close a runtime handle or stop its Wrangler process before a follow-up boot
+// reuses the same port. The final in-process handle disposes its shared runtime.
 export async function stopWorker(worker) {
-  if (hasExited(worker.process)) return;
+  if (worker.dispose) return worker.dispose();
+  if (worker.closed || (worker.process && hasExited(worker.process))) return;
   const exited = new Promise((resolveExit) => worker.process.once("exit", resolveExit));
   worker.process.kill("SIGTERM");
   await Promise.race([exited, delay(5_000)]);
@@ -338,9 +356,14 @@ export function runCli(arguments_, environment, { secrets, stdin, timeoutMs } = 
   );
 }
 
+export async function persistedDatabaseDirectory(statePath) {
+  return wranglerSmoke ? statePath : (await import("./inprocess-runtime.mjs")).inprocessDatabaseDirectory(statePath);
+}
+
 // Apply a SQL file to the local CATALOGUE_DB behind statePath, so a test may
 // seed the state a Worker will later serve.
 export async function executeSql(statePath, file, config) {
+  if (!wranglerSmoke) return (await import("./inprocess-runtime.mjs")).executeInprocessSql(statePath, file, config);
   const result = await runProcess(
     resolve(root, "node_modules/.bin/wrangler"),
     [
@@ -396,6 +419,12 @@ export async function administrationDocument(pathname, environment, { pollCount 
 // owner's CLI actions before and after polling; 2.5 seconds permits 24/minute.
 export const ADMINISTRATION_POLL_INTERVAL_MS = 2_500;
 
+// In-process fixture configs may explicitly raise the budget; keep the same
+// 20% headroom while honoring that actual binding rather than sleeping for 30/min.
+export function administrationPollInterval(worker) {
+  return worker.administrationPollIntervalMs ?? ADMINISTRATION_POLL_INTERVAL_MS;
+}
+
 // Poll an administration document until the predicate accepts it. The
 // predicate may return true (done), false (keep polling), or a string
 // (fail immediately with that reason).
@@ -404,7 +433,7 @@ export async function waitForAdministrationDocument(
   predicate,
   environment,
   worker,
-  { deadlineMs = 90_000, pollMs = ADMINISTRATION_POLL_INTERVAL_MS, description = pathname } = {},
+  { deadlineMs = 90_000, pollMs, description = pathname } = {},
 ) {
   const deadline = Date.now() + deadlineMs;
   let last = null;
@@ -420,7 +449,7 @@ export async function waitForAdministrationDocument(
         throw new Error(`${description}: ${verdict}\n${JSON.stringify(document)}\n` + worker.getOutput());
       }
     }
-    await delay(Math.max(pollMs, ADMINISTRATION_POLL_INTERVAL_MS));
+    await delay(Math.max(pollMs ?? 0, administrationPollInterval(worker)));
   }
   throw new Error(
     `${description} did not reach the expected state\n` + `${JSON.stringify(last)}\n${worker.getOutput()}`,

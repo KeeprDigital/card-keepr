@@ -1,11 +1,8 @@
-import { catalogueStore } from "../../../src/catalogue/shared";
-import * as ingestionQueries from "./query-helpers/ingestion";
-import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import { exports } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
 import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
-import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
+import { canonicalJson, catalogueStore, sha256, utf8 } from "../../../src/catalogue/shared";
+import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import {
   approve,
   collectFixtureLegality,
@@ -18,6 +15,9 @@ import {
   testEnv,
   waitForState,
 } from "./contextual-legality-helpers";
+import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 
 installContextualLegalitySuite();
 
@@ -36,7 +36,12 @@ test("same-URL legality observations with byte-identical source representations 
     })),
   });
   const runId = requiredString(started, "id");
-  expect((await request(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
+  await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    testEnv.OFFICIAL_SOURCE_TRANSPORT,
+    runId,
+  );
   await waitForState(runId, "parsing");
 
   const shown = await request(`/v1/ingestion-runs/${runId}`);
@@ -78,7 +83,12 @@ test("same-URL legality observations with byte-distinct source representations f
     ],
   });
   const runId = requiredString(started, "id");
-  expect((await request(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
+  await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    testEnv.OFFICIAL_SOURCE_TRANSPORT,
+    runId,
+  );
   await waitForState(runId, "parsing");
 
   const shown = await request(`/v1/ingestion-runs/${runId}`);
@@ -134,7 +144,12 @@ test.each([
       ],
     });
     const runId = requiredString(started, "id");
-    expect((await request(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
+    await collectFixtureEvidence(
+      testEnv.CATALOGUE_DB,
+      testEnv.EVIDENCE_OBJECTS,
+      testEnv.OFFICIAL_SOURCE_TRANSPORT,
+      runId,
+    );
     await waitForState(runId, "parsing");
 
     const shown = await request(`/v1/ingestion-runs/${runId}`);
@@ -621,8 +636,12 @@ test("an Official Source field change requires exact reaffirmation before a fres
     linked_run_id: changed.runId,
   });
   const freshRunId = requiredString(fresh.document, "id");
-  const resumed = await request(`/v1/ingestion-runs/${freshRunId}/collection/resume`, {});
-  expect(resumed.response.status).toBe(202);
+  await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    testEnv.OFFICIAL_SOURCE_TRANSPORT,
+    freshRunId,
+  );
   await waitForState(freshRunId, "parsing");
   const candidate = await reconcile(freshRunId);
   expect(candidate.response.status).toBe(200);
@@ -794,7 +813,12 @@ test("an Official Source relationship change recovers through supersession and r
     linked_run_id: changed.runId,
   });
   const supersessionRunId = requiredString(afterSupersession.document, "id");
-  expect((await request(`/v1/ingestion-runs/${supersessionRunId}/collection/resume`, {})).response.status).toBe(202);
+  await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    testEnv.OFFICIAL_SOURCE_TRANSPORT,
+    supersessionRunId,
+  );
   await waitForState(supersessionRunId, "parsing");
   const supersessionCandidate = await reconcile(supersessionRunId);
   expect(supersessionCandidate.response.status).toBe(200);
@@ -868,7 +892,12 @@ test("an Official Source relationship change recovers through supersession and r
   });
   expect(afterRetirement.response.status).toBe(201);
   const retirementRunId = requiredString(afterRetirement.document, "id");
-  expect((await request(`/v1/ingestion-runs/${retirementRunId}/collection/resume`, {})).response.status).toBe(202);
+  await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    testEnv.OFFICIAL_SOURCE_TRANSPORT,
+    retirementRunId,
+  );
   await waitForState(retirementRunId, "parsing");
   const retirementCandidate = await reconcile(retirementRunId);
   expect(retirementCandidate.response.status).toBe(200);

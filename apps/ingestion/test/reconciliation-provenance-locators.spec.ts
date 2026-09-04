@@ -1,23 +1,24 @@
+import { expect, test } from "vitest";
+import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
+import { injectFixturePublication } from "./fixture-plan-injection";
 import * as catalogueExportQueries from "./query-helpers/catalogue-export";
-import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import * as ingestionQueries from "./query-helpers/ingestion";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
-import { expect, test } from "vitest";
-import { injectFixturePublication } from "./fixture-plan-injection";
 import {
-  installReconciliationSuite,
-  testEnv,
   approve,
   collect,
   exportComponentRecords,
   exportManifest,
   get,
+  installReconciliationSuite,
   post,
   reconcile,
   requiredFirst,
   requiredRecord,
   requiredString,
+  testEnv,
   waitForRunState,
 } from "./reconciliation-helpers";
 
@@ -477,12 +478,16 @@ test("generic retry rejects an evidence-backed terminal run so reconciliation pr
     linked_run_id: run.id,
     source_lineage: "one-piece-en",
     adapter_version: "fixture-one-piece-json@3",
-    plan_origin: "synthetic_fixture",
+    plan_origin: "production",
     expected_current_revision_id: currentRevision,
   });
   const retryId = requiredString(evidenceRetry.document, "id");
-  const resumed = await post(`/v1/ingestion-runs/${retryId}/collection/resume`, {});
-  expect(resumed.response.status).toBe(202);
+  await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    testEnv.OFFICIAL_SOURCE_TRANSPORT,
+    retryId,
+  );
   await waitForRunState(retryId, "parsing");
   const retryCandidate = await reconcile(retryId);
   const rejected = await post(`/v1/ingestion-runs/${retryId}/rejection`, {

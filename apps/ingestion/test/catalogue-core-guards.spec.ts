@@ -13,8 +13,8 @@ import {
   registerCatalogueRevisionStatement,
 } from "../../../src/catalogue/ingestion/publication-commit-repository";
 import {
-  completeFixtureRunStatement,
-  createFixtureRunStatement,
+  completePreparedRunStatement,
+  createPreparedRunStatement,
   transitionRunStatement,
 } from "../../../src/catalogue/ingestion/run-lifecycle-repository";
 import { catalogueStore } from "../../../src/catalogue/shared";
@@ -93,7 +93,7 @@ test("candidate finalization requires its exact seven-day deadline without schem
   const database = catalogueStore(testEnv.CATALOGUE_DB);
   await seedCoreGuardRun(testEnv.CATALOGUE_DB, "run_bad_deadline", "reconciling");
   await expect(
-    completeFixtureRunStatement(database, {
+    completePreparedRunStatement(database, {
       runId: "run_bad_deadline",
       candidateDigest: "candidate",
       candidateCreatedAt: "2026-09-01T00:00:00.000Z",
@@ -272,7 +272,7 @@ for (const mode of ["health", "restore"] as const) {
       await expect(
         database.batch([
           markCoreGuardSibling(database),
-          createFixtureRunStatement(database, {
+          createPreparedRunStatement(database, {
             runId,
             selectedGamesJson: "[]",
             startedAt: "2026-09-01T00:00:00.000Z",

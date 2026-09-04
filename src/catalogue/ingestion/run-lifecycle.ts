@@ -14,15 +14,15 @@ import {
   idempotentAdministration,
   replayAfterConflict,
 } from "./administration-idempotency";
-import { parseCandidate, validatedCatalogueCandidate } from "./candidate-codec";
+import { parseCandidate } from "./candidate-codec";
 import { attemptPublicationCleanup } from "./publication-cleanup";
 import { reconcileAbandonedPublication } from "./publication-lifecycle";
 import { progressFor, publicRun, terminalProgress } from "./run-document-codec";
 import {
   acquireRunLockStatement,
-  completeFixtureRunStatement,
-  createFixtureRunStatement,
-  failFixtureRunStatement,
+  completePreparedRunStatement,
+  createPreparedRunStatement,
+  failPreparedRunStatement,
   rejectRunStatement,
   runEvidencePlanStatement,
 } from "./run-lifecycle-repository";
@@ -40,48 +40,9 @@ import {
   type RejectRunRequest,
   type RetryPublicationCleanupRequest,
   type RetryRunRequest,
-  type StartRunRequest,
   sevenDaysInMilliseconds,
 } from "./run-types";
 import { assertOpaqueId, assertSha256, errorMessage, parseSelectedGames } from "./run-values";
-
-export async function startFixtureRun(
-  database: CatalogueStore,
-  catalogueExports: R2Bucket,
-  request: StartRunRequest,
-  observedAt = new Date().toISOString(),
-): Promise<Record<string, unknown>> {
-  assertOpaqueId(request.idempotency_key, "idempotency_key");
-  const requestJson = canonicalJson({
-    fixture: request.fixture,
-    selected_games: request.selected_games,
-  });
-  return idempotentAdministration(
-    database,
-    {
-      key: request.idempotency_key,
-      operation: "start_ingestion_run",
-      requestJson,
-      observedAt,
-    },
-    async (claimOwner) => {
-      await expireOverdueRuns(database, observedAt);
-      await reconcileAbandonedPublication(database, catalogueExports, observedAt);
-      const candidate = await validatedCatalogueCandidate(request);
-      return startPreparedRun(database, {
-        candidate: candidate.candidate,
-        selectedGames: candidate.candidate.selected_games,
-        idempotencyKey: request.idempotency_key,
-        operationalRequestId: request.operational_request_id ?? null,
-        idempotencyOperation: "start_ingestion_run",
-        idempotencyRequestJson: requestJson,
-        linkedRunId: null,
-        observedAt,
-        claimOwner,
-      });
-    },
-  );
-}
 
 export async function retryRun(
   database: CatalogueStore,
@@ -362,7 +323,7 @@ async function startPreparedRun(
 
   try {
     await database.batch([
-      createFixtureRunStatement(database, {
+      createPreparedRunStatement(database, {
         runId: runId,
         selectedGamesJson: JSON.stringify(input.selectedGames),
         startedAt: startedAt,
@@ -378,7 +339,7 @@ async function startPreparedRun(
       ...(curatedFailure
         ? [
             acquireRunLockStatement(database, runId),
-            failFixtureRunStatement(database, {
+            failPreparedRunStatement(database, {
               candidateDigest: candidateDigest,
               candidateCreatedAt: startedAt,
               approvalDeadline: approvalDeadline,
@@ -394,7 +355,7 @@ async function startPreparedRun(
             transitionStatement(database, runId, "planning", "collecting"),
             transitionStatement(database, runId, "collecting", "parsing"),
             transitionStatement(database, runId, "parsing", "reconciling"),
-            completeFixtureRunStatement(database, {
+            completePreparedRunStatement(database, {
               candidateDigest: candidateDigest,
               candidateCreatedAt: startedAt,
               approvalDeadline: approvalDeadline,

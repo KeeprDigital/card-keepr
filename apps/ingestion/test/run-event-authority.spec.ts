@@ -1,9 +1,9 @@
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
-import { catalogueStore } from "../../../src/catalogue/shared";
 import { publicationWriterAuthorityStatement } from "../../../src/catalogue/ingestion/publication-storage-repository";
-import { evidenceRunByIdempotencyKeyStatement } from "../../../src/catalogue/source-evidence/ingestion-run-repository";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import { parentWorkflowAttemptId } from "../../../src/catalogue/source-evidence/collection-recovery";
+import { evidenceRunByIdempotencyKeyStatement } from "../../../src/catalogue/source-evidence/ingestion-run-repository";
 import {
   isCurrentCollectionWorkflowAttempt,
   recordWorkflowIds,
@@ -13,10 +13,10 @@ import {
   startEvidenceRun,
   terminateEvidenceRun,
 } from "../../../src/catalogue/source-evidence/source-evidence-repository";
-import { seedRunFixtureStatement } from "./query-helpers/run-events";
-import { corruptPublishedRunProjection } from "./query-helpers/reconciliation-run-events";
 import { resetMaintenanceOperation } from "./query-helpers/maintenance-guards";
+import { corruptPublishedRunProjection } from "./query-helpers/reconciliation-run-events";
 import { readEventFixtureReservation } from "./query-helpers/run-event-projection";
+import { seedRunFixtureStatement } from "./query-helpers/run-events";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 const database = catalogueStore(testEnv.CATALOGUE_DB);
@@ -27,17 +27,13 @@ beforeEach(async () => {
 });
 
 async function evidenceRun(key: string): Promise<string> {
-  const run = await startEvidenceRun(
-    database,
-    {
-      supported_game: "one-piece",
-      source_lineage: "one-piece-en",
-      adapter_version: "fixture-one-piece-json@3",
-      idempotency_key: key,
-      requests: [{ id: "cards", url: "https://event-authority.invalid/cards" }],
-    },
-    "synthetic_fixture",
-  );
+  const run = await startEvidenceRun(database, {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "fixture-one-piece-json@3",
+    idempotency_key: key,
+    requests: [{ id: "cards", url: "https://event-authority.invalid/cards" }],
+  });
   if (typeof run.id !== "string") throw new Error("Run identity is missing.");
   return run.id;
 }
