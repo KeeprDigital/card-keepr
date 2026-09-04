@@ -5,16 +5,22 @@
 - `CONTEXT.md` at the repository root.
 - `docs/adr/` entries relevant to the area being changed.
 
-If these files do not exist, proceed silently. Domain-modeling skills create them lazily when terminology or decisions are resolved.
-
 ## File structure
 
-This is a single-context repository:
+This repository has one domain context shared by both Workers:
 
-/
-├── CONTEXT.md
-├── docs/adr/
-└── src/
+```text
+CONTEXT.md             Domain vocabulary and invariants
+docs/adr/              Architecture decisions
+docs/runbooks/         Operator procedures
+src/catalogue/         Shared domain clusters and repositories
+apps/api/              Catalogue read Worker
+apps/ingestion/        Administration and workflow Worker
+cli/                   Operator command interface
+migrations/            Baseline and guarded forward migrations
+test/                  Domain tests and shared test support
+acceptance/            End-to-end and contract tests
+```
 
 ## Use the glossary's vocabulary
 

@@ -281,7 +281,9 @@ remote mutation. Production changes are dispatched only by the guarded
 `keepr release production` command into the serialized, protected GitHub
 workflow. See [the Production Release runbook](docs/runbooks/production-release.md)
 for confirmation bindings, versioned deployment, smoke checks, compatible
-roll-forward, and replacement-D1 handoff.
+roll-forward, and replacement-D1 handoff. See the
+[backup and recovery runbook](docs/runbooks/backup-recovery.md) for post-publication
+restore proof, backup retries, and owner-accepted Catalogue Recovery.
 
 Binding declarations live in each runtime's `wrangler.jsonc`; generated
 `worker-configuration.d.ts` files are checked in and must be regenerated after
