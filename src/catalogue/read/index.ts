@@ -2,10 +2,8 @@
 // the api worker serves, plus the card-search and source-freshness contracts
 // the ingestion side materializes against. See ../README.md (issue #96).
 
-export {
-  cardCollectionPageQuery,
-  cardCollectionResponse,
-} from "./card-collection-read";
+export { cardCollectionResponse } from "./card-collection-read";
+export { cardCollectionPageQuery } from "./card-collection-repository";
 export {
   type CardSearchChunk,
   cardSearchChunks,
@@ -16,7 +14,7 @@ export {
 } from "./card-search";
 export { ReadProblem } from "./collection-endpoint";
 export { contextualLegalityStatusResponse } from "./legality-status";
-export { type PrintingCollectionFilters, printingCollectionQuery } from "./printing-collection-query";
+export { type PrintingCollectionFilters, printingCollectionQuery } from "./printing-collection-repository";
 export { currentPrintingsResponse } from "./printing-collection-read";
 export {
   currentProductResponse,

@@ -4,7 +4,6 @@ import {
   type CardRow,
   type CollectionFilters,
 } from "./card-collection-repository";
-export { cardCollectionPageQuery } from "./card-collection-repository";
 import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
 import { canonicalJson, gameProfileForGame, gameProfileFilterValue } from "../shared";
 import { cardSearchQuery } from "./card-search";
