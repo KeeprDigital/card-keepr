@@ -1,4 +1,14 @@
-import { AdministrationProblem, type CatalogueStore, canonicalJson, SPINE_REVISION_ID, sha256Text } from "../shared";
+import {
+  AdministrationProblem,
+  type CatalogueStore,
+  canonicalJson,
+  isReleaseActor,
+  isReleaseDigest,
+  isReleaseHead,
+  isReleaseIdentity as opaque,
+  SPINE_REVISION_ID,
+  sha256Text,
+} from "../shared";
 import {
   bootstrapGate,
   populatedGate,
@@ -30,6 +40,8 @@ export async function prepareProductionRelease(
     release_id: plan.release_id,
     state: "requested",
     dispatch_digest: dispatchDigest,
+    prepared_plan_json: requestJson,
+    dispatch_inputs: productionReleaseDispatchInputs(plan, requestJson, dispatchDigest),
   };
   const existing = await preparedProductionReleaseStatement(database, plan.idempotency_key).first<{
     operation: string;
@@ -63,7 +75,7 @@ export async function prepareProductionRelease(
   return response;
 }
 
-function validatedPlan(request: Record<string, unknown>, target: ProductionTarget) {
+export function validatedPlan(request: Record<string, unknown>, target: ProductionTarget) {
   const required = [
     "release_id",
     "idempotency_key",
@@ -81,17 +93,16 @@ function validatedPlan(request: Record<string, unknown>, target: ProductionTarge
     "replacement_handoff",
   ];
   if (Object.keys(request).sort().join("|") !== required.sort().join("|")) invalid();
-  const opaque = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$/u.test(value);
   if (
     !opaque(request.release_id) ||
     !opaque(request.idempotency_key) ||
     !opaque(request.expected_current_revision_id) ||
-    !/^[0-9a-f]{40}$/u.test(String(request.expected_head_sha)) ||
-    !/^[A-Za-z0-9-]+\[bot\]$/u.test(String(request.expected_actor)) ||
+    !isReleaseHead(request.expected_head_sha) ||
+    !isReleaseActor(request.expected_actor) ||
     !Number.isSafeInteger(request.expected_migration_level) ||
     (request.expected_migration_level as number) < 1 ||
     canonicalJson(request.production_target) !== canonicalJson(target) ||
-    !/^[0-9a-f]{64}$/u.test(String(request.production_target_digest)) ||
+    !isReleaseDigest(request.production_target_digest) ||
     typeof request.bootstrap !== "boolean"
   )
     invalid();
@@ -253,4 +264,35 @@ function invalid(): never {
     "invalid_production_release_request",
     "The Production Release request is malformed or does not match the configured production target.",
   );
+}
+
+function productionReleaseDispatchInputs(
+  plan: ReturnType<typeof validatedPlan>,
+  requestJson: string,
+  dispatchDigest: string,
+) {
+  const replacement = plan.bootstrap ? null : plan.replacement_handoff;
+  return {
+    operation: "production_release",
+    release_id: plan.release_id,
+    expected_account_id: plan.production_target.cloudflare_account_id,
+    expected_head_sha: plan.expected_head_sha,
+    expected_actor: plan.expected_actor,
+    idempotency_key: plan.idempotency_key,
+    dispatch_digest: dispatchDigest,
+    prepared_plan_json: requestJson,
+    expected_current_revision: plan.expected_current_revision_id,
+    expected_migration_level: String(plan.expected_migration_level),
+    production_target_json: JSON.stringify(plan.production_target),
+    production_target_digest: plan.production_target_digest,
+    bootstrap: String(plan.bootstrap),
+    recovery_bookmark: plan.recovery_bookmark ?? "none",
+    recovery_backup_attempt_id: plan.recovery_backup_attempt_id ?? "none",
+    smoke_targets_json: JSON.stringify(plan.smoke_targets),
+    retained_revision_evidence_json: JSON.stringify(plan.retained_revision_evidence),
+    replacement_recovery_id: replacement?.recovery_id ?? "none",
+    replacement_database_id: replacement?.replacement_database_id ?? "none",
+    retained_database_id: replacement?.retained_database_id ?? "none",
+    replacement_target_digest: replacement?.target_digest ?? "none",
+  };
 }

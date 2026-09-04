@@ -1,3 +1,5 @@
+import { validatedProductionTarget } from "../../http/production-target.mjs";
+import { resolveAdministrationTarget } from "./administration-target";
 import {
   administrationResultStatus,
   assertOnlyFields,
@@ -7,7 +9,7 @@ import {
 import { absoluteDocumentLinks } from "../../http/public-base";
 import { type RouteContext, route } from "../../http/routes";
 import { publicationBackupReservation, startOrObserveCatalogueBackupWorkflow } from "../backup-recovery";
-import type { CatalogueStore } from "../shared";
+import { AdministrationProblem, type CatalogueStore } from "../shared";
 import { evidenceInspectionOptions, showEvidenceRun } from "../source-evidence";
 import { runGuardedCardSearchRepair } from "./card-search-repair-administration";
 import {
@@ -19,7 +21,7 @@ import {
   retryRun,
   showRun,
 } from "./ingestion";
-import { prepareProductionRelease } from "./production-release";
+import { resolveProductionRelease } from "./production-release-preparation";
 import { runHasEvidencePlanStatement } from "./run-lifecycle-repository";
 
 type Environment = Parameters<typeof evidenceInspectionOptions>[0] & {
@@ -30,6 +32,7 @@ type Environment = Parameters<typeof evidenceInspectionOptions>[0] & {
   CLOUDFLARE_ACCOUNT_ID: string;
   DISPOSABLE_D1_DATABASE_ID: string;
   PRINTING_IMAGES: R2Bucket;
+  BACKUPS: R2Bucket;
 };
 export type PublicationBackupWaiter = (
   initial: Record<string, unknown>,
@@ -40,9 +43,12 @@ type Context = RouteContext<Environment> & { observedAt: string; publicationBack
 export const ingestionRoutes = [
   route<Context>("POST", "/v1/production-releases", async ({ request, env, observedAt }) => {
     const body = await readAdministrationBody(request);
-    return Response.json(await prepareProductionRelease(env.CATALOGUE_DB, body, productionTarget(env), observedAt), {
-      status: 201,
-    });
+    return Response.json(
+      await resolveProductionRelease(env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, body, productionTarget(env), observedAt),
+      {
+        status: body.prepare === true ? 200 : 201,
+      },
+    );
   }),
   route<Context>("POST", "/v1/catalogue-search-materialization/repair", async ({ request, env, observedAt }) => {
     const body = await readAdministrationBody(request);
@@ -59,9 +65,17 @@ export const ingestionRoutes = [
       ),
     );
   }),
-  route<Context>("GET", "/v1/status", async ({ env, observedAt }) => {
+  route<Context>("GET", "/v1/status", async ({ env, observedAt, request }) => {
+    const query = new URL(request.url).searchParams;
+    const status = await administrationStatus(
+      env.CATALOGUE_DB,
+      env.CATALOGUE_EXPORTS,
+      observedAt,
+      productionTarget(env),
+      query.size === 0,
+    );
     return Response.json(
-      await administrationStatus(env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, observedAt, productionTarget(env)),
+      query.size === 0 ? status : await resolveAdministrationTarget(env.CATALOGUE_DB, env.BACKUPS, status, query),
     );
   }),
   route<Context>("GET", "/v1/ingestion-runs/:run/candidate", async ({ env, observedAt }, params) => {
@@ -192,7 +206,7 @@ export const ingestionRoutes = [
 ];
 
 function productionTarget(env: Environment) {
-  return {
+  const target = validatedProductionTarget({
     cloudflare_account_id: env.CLOUDFLARE_ACCOUNT_ID,
     worker_scripts: ["card-keepr-api", "card-keepr-ingestion"],
     d1_databases: [
@@ -205,7 +219,14 @@ function productionTarget(env: Environment) {
       "card-keepr-catalogue-exports",
       "card-keepr-backups",
     ],
-  } as const;
+  });
+  if (target === null)
+    throw new AdministrationProblem(
+      500,
+      "invalid_administration_contract",
+      "Production status did not expose exact Cloudflare target identities.",
+    );
+  return target;
 }
 
 async function hasEvidencePlan(database: CatalogueStore, runId: string): Promise<boolean> {
