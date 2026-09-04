@@ -1,4 +1,6 @@
 import { isIsoCalendarDate } from "../shared";
+import type { LegalityRulesObservation } from "./adapter-observations";
+import { AdapterParseFailure } from "./adapter-parse-failure";
 import { requiredOfficialSourceScope } from "./official-source-scope.ts";
 
 type OfficialLegalityGame = "one-piece" | "fusion-world" | "digimon" | "gundam";
@@ -202,7 +204,7 @@ export function officialLegalityRulesObservation(
   sourceLineage: string,
   rawDocument: Record<string, unknown>,
   options: OfficialLegalityParseOptions = {},
-): Record<string, unknown> {
+): LegalityRulesObservation {
   return officialLegalityObservation(game, sourceLineage, rawDocument, false, options);
 }
 
@@ -211,7 +213,7 @@ export function officialLiveLegalityRulesObservation(
   sourceLineage: string,
   rawDocument: Record<string, unknown>,
   options: OfficialLegalityParseOptions = {},
-): Record<string, unknown> {
+): LegalityRulesObservation {
   return officialLegalityObservation(game, sourceLineage, rawDocument, true, options);
 }
 
@@ -221,14 +223,14 @@ function officialLegalityObservation(
   rawDocument: Record<string, unknown>,
   allowKnownPolicyWithUnresolvedInterval: boolean,
   options: OfficialLegalityParseOptions = {},
-): Record<string, unknown> {
+): LegalityRulesObservation {
   const entries = requiredArray(rawDocument.entries, "Official Source Legality entries");
   const declaredRecordCount =
     rawDocument.declared_record_count === undefined
       ? entries.length
       : requiredNonNegativeInteger(rawDocument.declared_record_count, "Official Source Legality declared record count");
   if (declaredRecordCount !== entries.length) {
-    throw new Error(
+    throw new AdapterParseFailure(
       `Official Source Legality declares ${declaredRecordCount} records but exactly ${entries.length} were parsed.`,
     );
   }
@@ -260,7 +262,7 @@ export function officialLegalityRulesHtmlObservation(
   sourceLineage: string,
   html: string,
   options: OfficialLegalityParseOptions = {},
-): Record<string, unknown> | null {
+): LegalityRulesObservation | null {
   const declaredRecordCount = publisherDeclaredRecordCount(html);
   const articles = [...html.matchAll(/<article\b([^>]*)>([\s\S]*?)<\/article>/giu)].filter((match) =>
     /(?:^|\s)restriction-card(?:\s|$)/u.test(htmlAttribute(match[1]!, "class") ?? ""),
@@ -271,7 +273,7 @@ export function officialLegalityRulesHtmlObservation(
       : null;
   }
   if (declaredRecordCount === null) {
-    throw new Error("Official Legality HTML has no exact publisher-declared record total.");
+    throw new AdapterParseFailure("Official Legality HTML has no exact publisher-declared record total.");
   }
 
   const fields = fieldsByGame[game];
@@ -279,18 +281,20 @@ export function officialLegalityRulesHtmlObservation(
   const entries = articles.map((article, articleIndex) => {
     const pairs = [...article[2]!.matchAll(/<dt\b[^>]*>([\s\S]*?)<\/dt>\s*<dd\b[^>]*>([\s\S]*?)<\/dd>/giu)];
     if (pairs.length === 0) {
-      throw new Error(`Official Legality HTML entry ${articleIndex} has no exact label/value fields.`);
+      throw new AdapterParseFailure(`Official Legality HTML entry ${articleIndex} has no exact label/value fields.`);
     }
     const entry: Record<string, unknown> = {};
     for (const pair of pairs) {
       const label = htmlText(pair[1]!);
       const field = labels[label];
       if (field === undefined) {
-        throw new Error(`Official Legality HTML label ${label} is not recognized by this Source Adapter Version.`);
+        throw new AdapterParseFailure(
+          `Official Legality HTML label ${label} is not recognized by this Source Adapter Version.`,
+        );
       }
       const rawField = fields[field];
       if (rawField in entry) {
-        throw new Error(`Official Legality HTML label ${label} is duplicated.`);
+        throw new AdapterParseFailure(`Official Legality HTML label ${label} is duplicated.`);
       }
       const value = htmlText(pair[2]!);
       entry[rawField] =
@@ -317,12 +321,12 @@ export function officialLegalityRulesHtmlObservation(
       .reduce((content, pair) => content.replace(pair[0]!, ""), article[2]!)
       .replace(/<\/?dl\b[^>]*>/giu, "");
     if (htmlText(residual).length > 0) {
-      throw new Error(`Official Legality HTML entry ${articleIndex} contains residual semantic content.`);
+      throw new AdapterParseFailure(`Official Legality HTML entry ${articleIndex} contains residual semantic content.`);
     }
     return entry;
   });
   if (declaredRecordCount !== entries.length) {
-    throw new Error(
+    throw new AdapterParseFailure(
       `Official Legality HTML declares ${declaredRecordCount} records but exactly ${entries.length} were parsed.`,
     );
   }
@@ -335,7 +339,7 @@ function publisherDeclaredRecordCount(html: string): number | null {
   );
   if (declarations.length === 0) return null;
   if (declarations.length !== 1 || !Number.isSafeInteger(declarations[0])) {
-    throw new Error("Official Legality HTML must contain one exact publisher-declared record total.");
+    throw new AdapterParseFailure("Official Legality HTML must contain one exact publisher-declared record total.");
   }
   return declarations[0]!;
 }
@@ -391,13 +395,15 @@ function decodedHtmlEntity(entity: string, reference: string): string {
       codePoint > 0x10ffff ||
       (codePoint >= 0xd800 && codePoint <= 0xdfff)
     ) {
-      throw new Error(`Official Legality HTML entity ${entity} is invalid.`);
+      throw new AdapterParseFailure(`Official Legality HTML entity ${entity} is invalid.`);
     }
     return String.fromCodePoint(codePoint);
   }
   const decoded = namedHtmlEntities[reference.toLowerCase()];
   if (decoded === undefined) {
-    throw new Error(`Official Legality HTML entity ${entity} is not recognized by this Source Adapter Version.`);
+    throw new AdapterParseFailure(
+      `Official Legality HTML entity ${entity} is not recognized by this Source Adapter Version.`,
+    );
   }
   return decoded;
 }
@@ -413,7 +419,7 @@ function exactLegalityRule(
   const allowedFields = new Set(Object.values(fields));
   const unknownField = Object.keys(entry).find((field) => !allowedFields.has(field));
   if (unknownField !== undefined) {
-    throw new Error(`Official Legality entry contains unknown field ${unknownField}.`);
+    throw new AdapterParseFailure(`Official Legality entry contains unknown field ${unknownField}.`);
   }
   const wording = requiredText(entry[fields.wording], "Official Legality wording");
   const directive = requiredText(entry[fields.directive], "Official Legality directive");
@@ -433,7 +439,7 @@ function exactLegalityRule(
     options.allowRestrictionLift === true,
   );
   if (region !== regionForLineage(sourceLineage)) {
-    throw new Error("Official Legality region conflicts with its Source Lineage.");
+    throw new AdapterParseFailure("Official Legality region conflicts with its Source Lineage.");
   }
   const effectiveFrom = nullableDate(entry[fields.effectiveFrom], "Official Legality effective date");
   const effectiveUntil = nullableDate(entry[fields.effectiveUntil], "Official Legality end date");
@@ -461,7 +467,7 @@ function exactLegalityRule(
         (unresolvedScope.dimensions.includes("target_scope") &&
           !isExactPolicyWithUnresolvedTargetScope(wording, cardNumbers))))
   ) {
-    throw new Error("Official Legality unresolved scope conflicts with its exact context.");
+    throw new AdapterParseFailure("Official Legality unresolved scope conflicts with its exact context.");
   }
   assertExactWordingSemantics({
     directive,
@@ -500,7 +506,7 @@ function exactUnresolvedScope(
   const scope = requiredRecord(value, "Official Legality unresolved scope");
   const unknown = Object.keys(scope).find((field) => field !== "dimensions");
   if (unknown !== undefined || !Array.isArray(scope.dimensions)) {
-    throw new Error("Official Legality unresolved scope is invalid.");
+    throw new AdapterParseFailure("Official Legality unresolved scope is invalid.");
   }
   const dimensions = scope.dimensions.map((dimension) => {
     if (
@@ -508,7 +514,7 @@ function exactUnresolvedScope(
       dimension !== "event_tier" &&
       (dimension !== "target_scope" || !allowTargetScope)
     ) {
-      throw new Error("Official Legality unresolved scope dimension is invalid.");
+      throw new AdapterParseFailure("Official Legality unresolved scope dimension is invalid.");
     }
     return dimension as "effective_interval" | "event_tier" | "target_scope";
   });
@@ -517,7 +523,7 @@ function exactUnresolvedScope(
     new Set(dimensions).size !== dimensions.length ||
     dimensions.join(",") !== [...dimensions].sort().join(",")
   ) {
-    throw new Error("Official Legality unresolved scope dimensions are invalid.");
+    throw new AdapterParseFailure("Official Legality unresolved scope dimensions are invalid.");
   }
   return { dimensions };
 }
@@ -742,7 +748,9 @@ function exactEffect(
       };
     }
     default:
-      throw new Error(`Official Legality directive ${directive} is not representable by this Source Adapter Version.`);
+      throw new AdapterParseFailure(
+        `Official Legality directive ${directive} is not representable by this Source Adapter Version.`,
+      );
   }
 }
 
@@ -804,14 +812,14 @@ function isExactPolicyWithUnresolvedInterval(wording: string, reason: string, ca
 
 function assertDirectiveWordingGrammar(directive: string, wording: string): void {
   if (/^(?:If|When|Unless|Except|During|In|Starting|From|Before|After)\b/iu.test(wording)) {
-    throw new Error(
+    throw new AdapterParseFailure(
       "Official Legality wording contains a conditional, qualifier, or scope prefix this Source Adapter Version cannot represent.",
     );
   }
   const normalized = normalizedDirective(directive);
   const grammars = directiveWordingGrammars[normalized];
   if (grammars === undefined || !grammars.some((grammar) => grammar.test(wording))) {
-    throw new Error(
+    throw new AdapterParseFailure(
       "Official Legality wording contains a conditional, qualifier, or residual clause this Source Adapter Version cannot represent.",
     );
   }
@@ -910,7 +918,7 @@ function assertExactWordingSemantics(input: ExactWordingInput): void {
 
   const wordingFormat = input.wording.match(/\b(standard|unlimited)\b/iu)?.[1];
   if (wordingFormat !== undefined && wordingFormat.toLowerCase() !== input.format.toLowerCase()) {
-    throw new Error("Official Legality wording format conflicts with its structured format.");
+    throw new AdapterParseFailure("Official Legality wording format conflicts with its structured format.");
   }
 
   const explicitTier =
@@ -921,7 +929,7 @@ function assertExactWordingSemantics(input: ExactWordingInput): void {
       normalizeWordingOperand(explicitTier) !== normalizeWordingOperand(input.eventTier ?? "")) ||
     (/\bthis event\b/iu.test(input.wording) && input.eventTier === null)
   ) {
-    throw new Error("Official Legality wording event tier conflicts with its structured scope.");
+    throw new AdapterParseFailure("Official Legality wording event tier conflicts with its structured scope.");
   }
 
   const wordingCards = wordingCardNumbers(input.wording);
@@ -945,7 +953,7 @@ function assertExactWordingSemantics(input: ExactWordingInput): void {
   } else if (directive === "release_timing") {
     const wordingDate = wordingReleaseCalendarDate(input.wording);
     if (wordingDate !== input.effect.legal_from) {
-      throw new Error("Official Legality wording release date conflicts with its structured effect.");
+      throw new AdapterParseFailure("Official Legality wording release date conflicts with its structured effect.");
     }
   } else if (directive === "unresolved") {
     assertExactUnresolvedWording(
@@ -964,14 +972,14 @@ function assertWordingRegion(wording: string, structuredRegion: string): void {
     explicitQualifier !== undefined &&
     canonicalLegalityRegion(explicitQualifier, "wording region") !== structuredRegion
   ) {
-    throw new Error("Official Legality wording region conflicts with its structured region.");
+    throw new AdapterParseFailure("Official Legality wording region conflicts with its structured region.");
   }
   const wordingRegions = [
     ...[...wording.matchAll(/\bEN-[A-Z]+\b/giu)].map(([region]) => canonicalLegalityRegion(region, "wording region")),
     ...regionPhrases.flatMap(({ pattern, region }) => (pattern.test(wording) ? [region] : [])),
   ];
   if (wordingRegions.some((region) => region !== structuredRegion.toUpperCase())) {
-    throw new Error("Official Legality wording region conflicts with its structured region.");
+    throw new AdapterParseFailure("Official Legality wording region conflicts with its structured region.");
   }
 }
 
@@ -984,7 +992,7 @@ function canonicalLegalityRegion(
   const normalized = value.trim().replace(/\s+/gu, " ").toUpperCase();
   const region = regionAliases.get(normalized);
   if (region === undefined) {
-    throw new Error(`Official Legality ${source} is unknown or invalid.`);
+    throw new AdapterParseFailure(`Official Legality ${source} is unknown or invalid.`);
   }
   return region;
 }
@@ -1037,7 +1045,7 @@ function assertSameWordingOperands(name: string, wording: readonly string[], str
     normalizedWording.length !== normalizedStructured.length ||
     normalizedWording.some((value, index) => value !== normalizedStructured[index])
   ) {
-    throw new Error(`Official Legality wording ${name} conflict with its structured operands.`);
+    throw new AdapterParseFailure(`Official Legality wording ${name} conflict with its structured operands.`);
   }
 }
 
@@ -1060,7 +1068,9 @@ function assertExactMembershipWording(wording: string, effect: Record<string, un
     normalizeAttribute(wordingAttribute) !==
       normalizeAttribute(requiredText(effect.attribute, "Official Legality membership attribute"))
   ) {
-    throw new Error("Official Legality wording membership attribute conflicts with its structured effect.");
+    throw new AdapterParseFailure(
+      "Official Legality wording membership attribute conflicts with its structured effect.",
+    );
   }
   assertSameWordingOperands(
     "membership values",
@@ -1103,7 +1113,7 @@ function assertExactUnresolvedWording(
     return;
   }
   if (expressed === undefined || normalizeWordingOperand(expressed) !== normalizeWordingOperand(reason)) {
-    throw new Error("Official Legality wording unresolved reason conflicts with its structured effect.");
+    throw new AdapterParseFailure("Official Legality wording unresolved reason conflicts with its structured effect.");
   }
 }
 
@@ -1199,7 +1209,9 @@ function assertDirectiveSpecificOperands(entry: Record<string, unknown>, fields:
     const value = entry[fields[fieldName]];
     const meaningful = value !== undefined && value !== null && (!Array.isArray(value) || value.length > 0);
     if (meaningful && !owned.has(fieldName)) {
-      throw new Error(`Official Legality directive ${directive} contains foreign operand ${fields[fieldName]}.`);
+      throw new AdapterParseFailure(
+        `Official Legality directive ${directive} contains foreign operand ${fields[fieldName]}.`,
+      );
     }
   }
 }
@@ -1217,7 +1229,7 @@ const releaseTimingSemantics =
 
 function assertNoAdditionalStructuredSemantics(directive: string, wording: string, patterns: readonly RegExp[]): void {
   if (patterns.some((pattern) => pattern.test(wording))) {
-    throw new Error(`Official Legality directive ${directive} contains additional structured semantics.`);
+    throw new AdapterParseFailure(`Official Legality directive ${directive} contains additional structured semantics.`);
   }
 }
 
@@ -1225,7 +1237,9 @@ function assertWordingOperands(directive: string, wording: string, operands: rea
   for (const operand of operands) {
     const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(operand)}(?![\\p{L}\\p{N}])`, "iu");
     if (!pattern.test(wording)) {
-      throw new Error(`Official Legality wording does not exactly support ${directive} operand ${operand}.`);
+      throw new AdapterParseFailure(
+        `Official Legality wording does not exactly support ${directive} operand ${operand}.`,
+      );
     }
   }
 }
@@ -1244,7 +1258,7 @@ function assertExactCopyLimitWording(wording: string, maximumCopies: number): vo
     "iu",
   ).test(wording);
   if (!statesExactLimit || statedCopyCounts.length === 0 || statedCopyCounts.some((count) => count !== maximumCopies)) {
-    throw new Error(`Official Legality wording does not exactly support copy limit ${maximumCopies}.`);
+    throw new AdapterParseFailure(`Official Legality wording does not exactly support copy limit ${maximumCopies}.`);
   }
 }
 
@@ -1255,13 +1269,13 @@ function wordingNumber(value: string): number {
 
 function assertWording(directive: string, wording: string, pattern: RegExp): void {
   if (!pattern.test(wording)) {
-    throw new Error(`Official Legality wording does not exactly support directive ${directive}.`);
+    throw new AdapterParseFailure(`Official Legality wording does not exactly support directive ${directive}.`);
   }
 }
 
 function assertNoContradiction(directive: string, wording: string, pattern: RegExp): void {
   if (pattern.test(wording)) {
-    throw new Error(`Official Legality wording contradicts directive ${directive}.`);
+    throw new AdapterParseFailure(`Official Legality wording contradicts directive ${directive}.`);
   }
 }
 
@@ -1279,19 +1293,19 @@ function regionForLineage(sourceLineage: string): string {
 
 function requiredRecord(value: unknown, name: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${name} must be an object.`);
+    throw new AdapterParseFailure(`${name} must be an object.`);
   }
   return value as Record<string, unknown>;
 }
 
 function requiredArray(value: unknown, name: string): unknown[] {
-  if (!Array.isArray(value)) throw new Error(`${name} must be an array.`);
+  if (!Array.isArray(value)) throw new AdapterParseFailure(`${name} must be an array.`);
   return value;
 }
 
 function requiredText(value: unknown, name: string): string {
   if (typeof value !== "string" || value.length === 0 || value !== value.trim()) {
-    throw new Error(`${name} must be non-empty text.`);
+    throw new AdapterParseFailure(`${name} must be non-empty text.`);
   }
   return value;
 }
@@ -1303,24 +1317,24 @@ function nullableText(value: unknown, name: string): string | null {
 function requiredTextArray(value: unknown, name: string, emptyAllowed: boolean): string[] {
   const values = requiredArray(value, name).map((item) => requiredText(item, name));
   if (!emptyAllowed && values.length === 0) {
-    throw new Error(`${name} must not be empty.`);
+    throw new AdapterParseFailure(`${name} must not be empty.`);
   }
   if (new Set(values).size !== values.length) {
-    throw new Error(`${name} must not contain duplicates.`);
+    throw new AdapterParseFailure(`${name} must not contain duplicates.`);
   }
   return values;
 }
 
 function requiredPositiveInteger(value: unknown, name: string): number {
   if (!Number.isInteger(value) || Number(value) < 1) {
-    throw new Error(`${name} must be a positive integer.`);
+    throw new AdapterParseFailure(`${name} must be a positive integer.`);
   }
   return Number(value);
 }
 
 function requiredNonNegativeInteger(value: unknown, name: string): number {
   if (!Number.isSafeInteger(value) || Number(value) < 0) {
-    throw new Error(`${name} is invalid.`);
+    throw new AdapterParseFailure(`${name} is invalid.`);
   }
   return Number(value);
 }
@@ -1328,7 +1342,7 @@ function requiredNonNegativeInteger(value: unknown, name: string): number {
 function requiredDate(value: unknown, name: string): string {
   const date = requiredText(value, name);
   if (!isIsoCalendarDate(date)) {
-    throw new Error(`${name} must be an exact ISO date.`);
+    throw new AdapterParseFailure(`${name} must be an exact ISO date.`);
   }
   return date;
 }

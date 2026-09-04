@@ -1,5 +1,19 @@
-import { ifNoneMatch } from "../../http/conditional";
-import { absoluteDocumentLinks, publicUrl, type PublicBase } from "../../http/public-base";
+import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
+import {
+  canonicalEtag,
+  collectionFilter,
+  collectionLimit,
+  collectionPage,
+  collectionParameters,
+  collectionSelf,
+  conditionalResponse,
+  decodeCursor,
+  encodeCursor,
+  pinRevision,
+  ReadProblem,
+  revisionHeaders,
+  singleParameter,
+} from "./collection-endpoint";
 import { canonicalDetailSelf, detailIncludeProjection, detailRepresentationKey } from "./detail-representation";
 
 type ProductRow = {
@@ -29,20 +43,6 @@ type ProductEnvelope = {
 const productRoute = "/v1/products";
 const productOrder = "supported-game,official-code-null-last,name-null-last,id";
 
-export class ProductReadProblem extends Error {
-  constructor(
-    readonly status: 400 | 409,
-    readonly code: "invalid_parameter" | "invalid_cursor" | "cursor_revision_unavailable",
-    message: string,
-    readonly invalidParameter: Readonly<{
-      name: string;
-      reason: string;
-    }> | null = null,
-  ) {
-    super(message);
-  }
-}
-
 export async function currentProductResponse(
   database: D1Database,
   productId: string,
@@ -65,16 +65,17 @@ export async function currentProductResponse(
   const include = detailIncludeProjection(
     url,
     () =>
-      new ProductReadProblem(400, "invalid_parameter", "Product include projection is invalid.", {
+      new ReadProblem(400, "invalid_parameter", "Product include projection is invalid.", {
         name: "include",
         reason: "Product include projection is invalid.",
       }),
   );
   const envelope = productEnvelope(row.document_json);
-  const etag = quotedEtag(`product:${productId}:${row.current_revision_id}:` + detailRepresentationKey(include));
-  if (ifNoneMatch(request, etag)) {
-    return notModified(etag, row.current_revision_id);
-  }
+  const etag = await canonicalEtag(
+    `product:${productId}:${row.current_revision_id}:${detailRepresentationKey(include)}`,
+  );
+  const conditional = conditionalResponse(request, revisionHeaders(row.current_revision_id, etag));
+  if (conditional !== null) return conditional;
   const evidenceSidecar = include.has("evidence")
     ? await productEvidenceProjection(database, row.current_revision_id, envelope)
     : {};
@@ -90,7 +91,7 @@ export async function currentProductResponse(
       links: { self: publicUrl(base, canonicalDetailSelf(url, include)) },
     },
     {
-      headers: productHeaders(row.current_revision_id, etag),
+      headers: revisionHeaders(row.current_revision_id, etag),
     },
   );
 }
@@ -215,46 +216,20 @@ export async function currentProductsResponse(
   base: PublicBase,
 ): Promise<Response> {
   const url = new URL(request.url);
-  const state = await database
-    .prepare(
-      `SELECT current_revision_id, published_at
-       FROM catalogue_state WHERE singleton = 1`,
-    )
-    .first<{ current_revision_id: string; published_at: string }>();
-  if (state === null) throw new Error("Catalogue state is unavailable");
-  const limit = parseLimit(singleParameter(url, "limit"));
+  collectionParameters(url);
+  const limit = collectionLimit(singleParameter(url, "limit"));
   const q = parseQuery(url);
   const fts = q === null ? null : ftsQuery(q);
-  const game = singleParameter(url, "game");
-  const region = singleParameter(url, "release_region");
+  const game = collectionFilter(url, "game");
+  const region = collectionFilter(url, "release_region");
   assertFilter(game, region);
   const filters = { q, game, region, limit };
   const requestedAfter = singleParameter(url, "after");
   const cursor = parseCursor(requestedAfter, filters);
-  const revisionId = cursor?.revision ?? state.current_revision_id;
-  const revision =
-    revisionId === state.current_revision_id
-      ? { published_at: state.published_at }
-      : await database
-          .prepare(
-            `SELECT revision.published_at
-             FROM catalogue_revisions AS revision
-             JOIN catalogue_query_revisions AS query
-               ON query.catalogue_revision_id = revision.id
-              AND query.state = 'available'
-             WHERE revision.id = ?`,
-          )
-          .bind(revisionId)
-          .first<{ published_at: string }>();
-  if (revision === null) {
-    throw new ProductReadProblem(
-      409,
-      "cursor_revision_unavailable",
-      "The Product cursor Catalogue Revision is unavailable.",
-    );
-  }
+  const revision = await pinRevision(database, cursor?.revision ?? null, productRoute, base);
+  const revisionId = revision.id;
   const after = cursor?.last ?? null;
-  const etag = quotedEtag(
+  const etag = await canonicalEtag(
     `products:${revisionId}:${JSON.stringify({
       route: productRoute,
       ordering: productOrder,
@@ -262,12 +237,12 @@ export async function currentProductsResponse(
       after,
     })}`,
   );
-  if (ifNoneMatch(request, etag)) {
-    return notModified(etag, revisionId);
-  }
-  const rows = await database
-    .prepare(
-      `SELECT document_json
+  const conditional = conditionalResponse(request, revisionHeaders(revisionId, etag));
+  if (conditional !== null) return conditional;
+  const page = await collectionPage<{ document_json: string }>(
+    database
+      .prepare(
+        `SELECT document_json
        FROM revision_products
        WHERE catalogue_revision_id = ?
          AND (? IS NULL OR supported_game = ?)
@@ -302,38 +277,38 @@ export async function currentProductsResponse(
                 name,
                 product_id
        LIMIT ?`,
-    )
-    .bind(
-      revisionId,
-      game,
-      game,
-      q,
-      revisionId,
-      fts,
-      region,
-      region,
-      after === null ? 0 : 1,
-      after?.game ?? "",
-      after?.official_code === null ? 1 : 0,
-      after?.official_code ?? "",
-      after?.name === null ? 1 : 0,
-      after?.name ?? "",
-      after?.id ?? "",
-      limit + 1,
-    )
-    .all<{ document_json: string }>();
-  const selected = rows.results.map(({ document_json }) => storedProductApiProjection(document_json));
+      )
+      .bind(
+        revisionId,
+        game,
+        game,
+        q,
+        revisionId,
+        fts,
+        region,
+        region,
+        after === null ? 0 : 1,
+        after?.game ?? "",
+        after?.official_code === null ? 1 : 0,
+        after?.official_code ?? "",
+        after?.name === null ? 1 : 0,
+        after?.name ?? "",
+        after?.id ?? "",
+        limit + 1,
+      ),
+    limit,
+  );
+  const selected = page.rows.map(({ document_json }) => storedProductApiProjection(document_json));
   const data = selected.slice(0, limit).map((product) => absoluteDocumentLinks(product, base));
-  const next =
-    selected.length > limit
-      ? encodeCursor({
-          route: productRoute,
-          ordering: productOrder,
-          revision: revisionId,
-          filters,
-          last: orderValue(data.at(-1)!),
-        })
-      : null;
+  const next = page.hasMore
+    ? encodeCursor({
+        route: productRoute,
+        ordering: productOrder,
+        revision: revisionId,
+        filters,
+        last: orderValue(data.at(-1)!),
+      })
+    : null;
   return Response.json(
     {
       data,
@@ -350,13 +325,22 @@ export async function currentProductsResponse(
             game,
             region,
             limit,
-            after: requestedAfter,
+            after:
+              cursor === null
+                ? null
+                : encodeCursor({
+                    route: productRoute,
+                    ordering: productOrder,
+                    revision: revisionId,
+                    filters,
+                    last: cursor.last,
+                  }),
           }),
         ),
       },
     },
     {
-      headers: productHeaders(revisionId, etag),
+      headers: revisionHeaders(revisionId, etag),
     },
   );
 }
@@ -364,7 +348,7 @@ export async function currentProductsResponse(
 function ftsQuery(value: string): string {
   const tokens = value.match(/[\p{L}\p{N}]+/gu) ?? [];
   if (tokens.length === 0) {
-    throw new ProductReadProblem(400, "invalid_parameter", "Product search query has no searchable terms.", {
+    throw new ReadProblem(400, "invalid_parameter", "Product search query has no searchable terms.", {
       name: "q",
       reason: "Product search query has no searchable terms.",
     });
@@ -407,29 +391,16 @@ export function storedProductApiProjection(documentJson: string): StoredProductA
 }
 
 function parseQuery(url: URL): string | null {
-  const values = url.searchParams.getAll("q");
-  if (values.length === 0) return null;
-  const raw = values[0]!;
+  const raw = collectionFilter(url, "q");
+  if (raw === null) return null;
   const q = raw.normalize("NFKC").trim().toLocaleLowerCase("en");
-  if (values.length !== 1 || [...raw].length > 500 || q.length < 1 || [...q].length > 500) {
-    throw new ProductReadProblem(400, "invalid_parameter", "Product search query is invalid.", {
+  if (q.length < 1 || [...q].length > 500) {
+    throw new ReadProblem(400, "invalid_parameter", "Product search query is invalid.", {
       name: "q",
       reason: "Product search query is invalid.",
     });
   }
   return q;
-}
-
-function singleParameter(url: URL, name: string): string | null {
-  const values = url.searchParams.getAll(name);
-  if (values.length === 0) return null;
-  if (values.length !== 1) {
-    throw new ProductReadProblem(400, "invalid_parameter", `Product ${name} parameter is repeated.`, {
-      name,
-      reason: `Product ${name} parameter is repeated.`,
-    });
-  }
-  return values[0]!;
 }
 
 function canonicalProductSelf(
@@ -442,43 +413,24 @@ function canonicalProductSelf(
     after: string | null;
   },
 ): string {
-  const query = new URLSearchParams();
-  if (representation.q !== null) query.set("q", representation.q);
-  if (representation.game !== null) query.set("game", representation.game);
-  if (representation.region !== null) {
-    query.set("release_region", representation.region);
-  }
-  if (representation.limit !== 50) {
-    query.set("limit", String(representation.limit));
-  }
-  if (representation.after !== null) {
-    query.set("after", representation.after);
-  }
-  const serialized = query.toString();
-  return serialized.length === 0 ? url.pathname : `${url.pathname}?${serialized}`;
-}
-
-function parseLimit(value: string | null): number {
-  if (value === null) return 50;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
-    throw new ProductReadProblem(400, "invalid_parameter", "Product page limit is invalid.", {
-      name: "limit",
-      reason: "Product page limit is invalid.",
-    });
-  }
-  return parsed;
+  return collectionSelf(url.pathname, {
+    q: representation.q,
+    game: representation.game,
+    release_region: representation.region,
+    limit: representation.limit,
+    after: representation.after,
+  });
 }
 
 function assertFilter(game: string | null, region: string | null): void {
   if (game !== null && !["one-piece", "fusion-world", "digimon", "gundam"].includes(game)) {
-    throw new ProductReadProblem(400, "invalid_parameter", "Product game is invalid.", {
+    throw new ReadProblem(400, "invalid_parameter", "Product game is invalid.", {
       name: "game",
       reason: "Product game is invalid.",
     });
   }
   if (region !== null && !["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"].includes(region)) {
-    throw new ProductReadProblem(400, "invalid_parameter", "Product Release region is invalid.", {
+    throw new ReadProblem(400, "invalid_parameter", "Product Release region is invalid.", {
       name: "release_region",
       reason: "Product Release region is invalid.",
     });
@@ -503,11 +455,7 @@ function parseCursor(
     last?: unknown;
   };
   try {
-    const base64 = value.replaceAll("-", "+").replaceAll("_", "/");
-    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
-    cursor = JSON.parse(
-      new TextDecoder().decode(Uint8Array.from(atob(padded), (character) => character.charCodeAt(0))),
-    ) as typeof cursor;
+    cursor = decodeCursor(value) as typeof cursor;
   } catch {
     throw invalidCursor();
   }
@@ -520,18 +468,11 @@ function parseCursor(
   ) {
     throw invalidCursor();
   }
-  return { revision: cursor.revision, last: cursor.last };
+  return { revision: cursor.revision, last: orderValue(cursor.last) };
 }
 
-function invalidCursor(): ProductReadProblem {
-  return new ProductReadProblem(400, "invalid_cursor", "Product cursor is invalid.");
-}
-
-function encodeCursor(value: unknown): string {
-  const bytes = new TextEncoder().encode(JSON.stringify(value));
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+function invalidCursor(): ReadProblem {
+  return new ReadProblem(400, "invalid_cursor", "Product cursor is invalid.");
 }
 
 function validOrderValue(value: unknown): value is ProductOrderValue {
@@ -553,27 +494,5 @@ function orderValue(value: ProductOrderValue): ProductOrderValue {
     game: value.game,
     official_code: value.official_code,
     name: value.name,
-  };
-}
-
-function quotedEtag(value: string): string {
-  const bytes = new TextEncoder().encode(value);
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return `"${btoa(binary)}"`;
-}
-
-function notModified(etag: string, revisionId: string): Response {
-  return new Response(null, {
-    status: 304,
-    headers: productHeaders(revisionId, etag),
-  });
-}
-
-function productHeaders(revisionId: string, etag: string): HeadersInit {
-  return {
-    "cache-control": "private, no-cache",
-    etag,
-    "x-catalogue-revision": revisionId,
   };
 }

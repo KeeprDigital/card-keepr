@@ -1,0 +1,278 @@
+{
+  "digimon-en-card-list-appmon-leaf.json": {
+    "bytes_sha256": "b6d0b24d0f719bfd2f64a150ac1c0043fed8ed701caf63b8b03ae776c3f75ece",
+    "observations_sha256": "9a8662679438b57177a1bb514b750da2e18a8c21eb260de1e1ecabf96be367a3"
+  },
+  "digimon-en-card-list-bt01-leaf.json": {
+    "bytes_sha256": "f0059b9115c9875b864f5df2eca80dd9767e36fa4e19c4def916825cf88a937f",
+    "observations_sha256": "7ab9b89d6de1bfd2f7b9514bdc92f903bb07785fe03f2d94a6a1b114a30f594e"
+  },
+  "digimon-en-card-list-popup-fragment.html": {
+    "bytes_sha256": "7c4e721ebbcf8162d659aff22cafc65fdae0885404326d4cb4ee0dcf1949e7ef",
+    "observations_sha256": "cf21c736c81c3b5a82a6b2130ad6ea28d5f791bc4560498c8b40f60126f5213b"
+  },
+  "digimon-en-card-list-promo-leaf.json": {
+    "bytes_sha256": "acb2543e7510c921c8d55bc33dae90703044b17e4dfb07055af33219e27d9b37",
+    "observations_sha256": "67f6997f0b6738d446233cd1da6558600550ddbdbfd89563a9b1d8ade4ed3856"
+  },
+  "digimon-en-card-list-related-qa-leaf.json": {
+    "bytes_sha256": "397bf7f67db4d6a82e9057475f6e9371f72b6fa1b0491af34975739322609c8d",
+    "observations_sha256": "2f71ad5c81731230361077bbab186d90b47283311a0234af332ef54e6de23224"
+  },
+  "digimon-en-discovery.json": {
+    "bytes_sha256": "e14f7d2c8a134002453488052b78107a00f0a1b8638f2bdd7a7c1eb34ab56891",
+    "observations_sha256": "489f40566366137bc1a5f9dc1da3ada7706bfedc49d1a3cf80175e185e4d2f89"
+  },
+  "digimon-en-policy.json": {
+    "bytes_sha256": "95057f521b57054f3ade89885a06f0d1891219fbbbe3b80a70923b5bc975350c",
+    "observations_sha256": "54ace79f5733c698dfd3a8089d9196a01d22150538d0cc154e49ff17c547cb4c"
+  },
+  "digimon-en-product-gift-box.json": {
+    "bytes_sha256": "003dbab28a09f4f343fc1309a30487b45cf7f57c658b2e7c7b3f13d8bc768053",
+    "observations_sha256": "afce6b5da300e5e85418265794a99219a640cafe879955d514d252685683c860"
+  },
+  "digimon-en-product-starter-deck.json": {
+    "bytes_sha256": "31aff5ddb2c7b02b9c355965af1b0281082f928dc7dfdd2bb045a601c9b37905",
+    "observations_sha256": "82138445c5c320c6f794a9b81e67eec3792b35ce99a8bf22b8e914a5e57f761d"
+  },
+  "digimon-en-product-theme-booster.json": {
+    "bytes_sha256": "33722dc59e9aca9073d9f108613f0d9867f6fe9896382cff01f5baae4a419513",
+    "observations_sha256": "4760b9f93cee5225ceed6cf87f06f5daa44ef76b62d67cdf7c3a40139088fd56"
+  },
+  "digimon-en-restructured-card-search.json": {
+    "bytes_sha256": "8864fca763faa23cbac064a6269d5a0d2d93af882e4e3591fbe652977ba264bf",
+    "observations_sha256": "2762dfe2478cf882b0fce5c52e97d57ab7ca1ee33c892e11b388c1fff8be9858"
+  },
+  "digimon-en-rules-hub.json": {
+    "bytes_sha256": "d200327fe189b867a14cff2bb3cfcc0bf26e04895421dcd39e18d4413f97e1db",
+    "observations_sha256": "3ba7ecf1586e9d528ac09083ff3c245ac64b19066344ab95bf31cb8050735e6e"
+  },
+  "fusion-world-en-card-detail-battle.json": {
+    "bytes_sha256": "bb9f3d565ea9939cea9c6e9270581e92102fe44aaa5d945a663555996fa92c06",
+    "observations_sha256": "500279fa51782c8083f81a980b1777a1345d37fff6dd27b8d8c2e5e3816bb704"
+  },
+  "fusion-world-en-card-detail-energy-marker-p1.json": {
+    "bytes_sha256": "34b60738ba29fe2cbae7c8c706249d7b1ecc3eea8fee6c49b635e4fefd272f5e",
+    "observations_sha256": "5f0af4cc665e0ece87cb0832732c56af6f1befebe3bb034cd82bde466217fe6a"
+  },
+  "fusion-world-en-card-detail-energy-marker.json": {
+    "bytes_sha256": "8c168a6c66d3a7a1e8cb054d73d33079d9f92a6f65f1b2cebaa8be0944b2b791",
+    "observations_sha256": "c40826a289e339d9dd3eb4407e79e423cdf1773f66630eda46257cd0055d1388"
+  },
+  "fusion-world-en-card-detail-errata-leader-p1.json": {
+    "bytes_sha256": "2f441fc66a10e81759570f466929ff5a8a709a98a8765c7b4129ff45e28b81ac",
+    "observations_sha256": "9cad33662654c7ce6d84da879a01cd40139c7b65e116802722b041dc5d2e6e29"
+  },
+  "fusion-world-en-card-detail-errata-leader.json": {
+    "bytes_sha256": "ded74a8aeccf1369248b17148b63868f61c6adcb0e6a8f05e9972348fe052641",
+    "observations_sha256": "70f951b21a433898282e38baca303d60483c4430954f039b59436e3e8980f935"
+  },
+  "fusion-world-en-card-detail-errata-skills.json": {
+    "bytes_sha256": "5cadc76613d228eedced2ee0ceef649681bc1b1a904f4aded0bd4a8f8fbaac74",
+    "observations_sha256": "4ca4c3b0d1e3fe99a7183eac67097c991a2f4849bfccce3bd41a4eb89da17fe6"
+  },
+  "fusion-world-en-card-detail-errata-traits.json": {
+    "bytes_sha256": "6916546f329f04728f2f5d82287bb90a7a1dad2040688d58681bc6429ec0a8a2",
+    "observations_sha256": "f3436999fb47a2ecd51a8235306d05c7c1b8307ed9a7f6bc6a988ed2d5d8a6c3"
+  },
+  "fusion-world-en-card-detail-leader-p1.json": {
+    "bytes_sha256": "ccf9c52bc27be1e4894540a1a6a044fa1d73cf4f6045fba8dd133c58db5ee57b",
+    "observations_sha256": "c8ab88198c88f20455e841831d869f734c602aa1d808d36f6428e9fa4442196b"
+  },
+  "fusion-world-en-card-detail-leader.json": {
+    "bytes_sha256": "ff84c6e23d0d0a38fce3ec280e5f90a85fb192495c3b5eb8e0800ffba0f93577",
+    "observations_sha256": "fb74fc410f635637b46edd19eab3d0f75a33f23a216503f840e8ec441a682467"
+  },
+  "fusion-world-en-card-detail-promo.json": {
+    "bytes_sha256": "3c09a0f01875549e5139b304bc5e9da678923e341170d6e772916917f36c9413",
+    "observations_sha256": "51de0c1b85c71bf43a99cb06c9588341f7df2eb7b553a658a0d1c3a796390cf1"
+  },
+  "fusion-world-en-legality-history-news.json": {
+    "bytes_sha256": "354441c04b78573a610ce4841b23338345760658097db2b80025d2d0441e88c1",
+    "observations_sha256": "1d82843f244dd312ccbe7a4672457a70b3e38121e66f60afb8a9b889ff040878"
+  },
+  "fusion-world-en-policy-detail.json": {
+    "bytes_sha256": "67c9e75cae71dbf34d97fcc74f322ca15baa0a5172053b72e3db91a987ac4df2",
+    "observations_sha256": "e6c6878169ed3c637cba68959d12ffea9a7645f00160462e0979b5c1bbc832bc"
+  },
+  "fusion-world-en-policy-live.json": {
+    "bytes_sha256": "34996d0add2c9a10555050b5f80fdf078cd05dfabc8b5da76c8eac8cc0442b5c",
+    "observations_sha256": "208c0ceca8593ed9dc7c6dcae9548e0bed2cdc31dcf76c10f0129f73e78c40c7"
+  },
+  "fusion-world-en-product-starter-deck.json": {
+    "bytes_sha256": "23f233c125d5647873c2a133421d9065c03da2573585590df8089ef9a6e43a92",
+    "observations_sha256": "931e35b4c5d0213a662557ccac47c7e5b03f52f97d9adcb307b9ab84f6057195"
+  },
+  "fusion-world-en-product-story-booster.json": {
+    "bytes_sha256": "74edf1b5eee05c1b997d35a9296803d82a88e9930f56dd9138cb1b3cdb9c6278",
+    "observations_sha256": "c1ea6f10b6e4e95c680a37ab9e713010545455fc01e95b97f67b111b86943dc9"
+  },
+  "fusion-world-en-product-winter-booster.json": {
+    "bytes_sha256": "553820eccd491b2119be3b54c703e93c734c785e80e2e0c467dab4aca9801261",
+    "observations_sha256": "c79221b2f91d6526061681fbb61e5707b26fa7a4406d8ca28db6e5772bfff4a1"
+  },
+  "fusion-world-en-products-hub.json": {
+    "bytes_sha256": "f9fdb5a2a514ebfc50066a19843dabec6e27a4b51515ba240d4ba200432808b7",
+    "observations_sha256": "618de46bbf12f6217e83be41d498474800fc190bf9c2863decc6a5019a4d3661"
+  },
+  "fusion-world-en-products-page2.json": {
+    "bytes_sha256": "812a278faf12f2d2531d8d42f35cfa457534d88b77df1dc1aec544d20e644a16",
+    "observations_sha256": "f55b03463e744ff6cc437ffa9e4bcc62a17dfaee6c1ef9fd6e15d361afe8b280"
+  },
+  "fusion-world-en-products-starter-tag.json": {
+    "bytes_sha256": "3441883f7fb4b7f5688381e2aadd49dcb7554857a9fc9cd7478fae099db824ae",
+    "observations_sha256": "257c9ef8499ceef4ed8b9dec23b5efdcdceef37ae9bbca7990d9f7eaee53885b"
+  },
+  "fusion-world-en-restructured-card-search.json": {
+    "bytes_sha256": "fa1e0da1737cb46c3eedd5ae1f1a1d0ed47deefd987de48f9f724dfaa2db7cea",
+    "observations_sha256": "bd5dd7f89779167a6d9a88f8a9afddf38e900209a860c8239e3822a7325d901f"
+  },
+  "gundam-en-asia-card-detail-base-live-fragment.html": {
+    "bytes_sha256": "17dc1a733fbb0362bdde5b94dc9f583386d3077a36a853f3afabf34bcf981804",
+    "observations_sha256": "ee810363a65af98838993a03aae4f72fb70ca2623c04ae111b9905364f98e8fb"
+  },
+  "gundam-en-asia-card-detail-dash-live.json": {
+    "bytes_sha256": "72c8313a09b72d27fe6c71997f36f11da9cb20203c9e834f250b955768a3e126",
+    "observations_sha256": "6c25db2a3a834e61fbadbe68b1ce53d58fc79dc9b8bd82c33b91a7ce36c3026b"
+  },
+  "gundam-en-asia-card-detail-p2-live-fragment.html": {
+    "bytes_sha256": "d99d2bec579edf97ebd3b424b0118135d12b5d47b627f52cf7ba78b9663e7ad6",
+    "observations_sha256": "79208ec7ea0fcdb010b14d84e91e33dd1ecdec22c6630b133d51597d0db7dc87"
+  },
+  "gundam-en-asia-card-list-complete-live.json": {
+    "bytes_sha256": "867c3bcd8d6ccbead978c7bdddc1c009fe9cf6841798e46b82195b4aee8c7fdb",
+    "observations_sha256": "5ff300a60d071ee69a782ed937f51d26a2eab5561c697774056e22a2ea283a7f"
+  },
+  "gundam-en-asia-card-list-package-live-fragment.html": {
+    "bytes_sha256": "69ac76981e92bd072f5b95885a14e5266a161e1196604368ea320929f4348039",
+    "observations_sha256": "4fc7b63635a9de1e79a43201df022704ecfe090ab961f36209e76744a20df0be"
+  },
+  "gundam-en-asia-card-list-root-live-fragment.html": {
+    "bytes_sha256": "069e0c3704e359c3da7eeacf7be47b0e9eccfb24c9e111fa1eac6fff27b36ba1",
+    "observations_sha256": "3aafa719066cb5888bdb58f9c83f31980c30a6579e7319d5c449c56f4162704c"
+  },
+  "gundam-en-asia-discovery.json": {
+    "bytes_sha256": "ac5d3b87203186a9a3737f006283ae43414182a00545ab25350d554809b8fbf7",
+    "observations_sha256": "a034167a261adc9a43b925530f5e25f0b5b968ee282f7c9809c58246e265f698"
+  },
+  "gundam-en-asia-errata-listing.json": {
+    "bytes_sha256": "5ae78bf07eec81af4487afe6309fc045c90c96f365b763ad2f19473a20dac30d",
+    "observations_sha256": "0879a8bfe2481098cde0529f4b233667c93077398bf7e3912c2cce9fb34d8b3c"
+  },
+  "gundam-en-asia-news-hub.json": {
+    "bytes_sha256": "6bfb1a587431fece22fa0193142f5bb27e01fa41850293b5125812706a72646d",
+    "observations_sha256": "0f8862da5423adee821aa17c908ddf9f68ae8c1ffaa6b5d82c0bd9568ff9fa4a"
+  },
+  "gundam-en-asia-policy-detail.json": {
+    "bytes_sha256": "b5289eb79fc7852679d3928442caf8009a35fda44b20df039d0bcc48b54f3aa4",
+    "observations_sha256": "45eb5ee973ea4b00a20ef6d6e8e6a5f580e20fb2bf0764e0f9cb4d0ae69f8166"
+  },
+  "gundam-en-asia-policy.json": {
+    "bytes_sha256": "94c9c13dc5954a6f2a126ac31b536bd41273630c919917f06f7193b378ba2ecf",
+    "observations_sha256": "c7544ab0a6ad61042240d05f478bdfdc6297c1cac7f2dfffa9804ec41f59350d"
+  },
+  "gundam-en-asia-product-anniversary-set.json": {
+    "bytes_sha256": "d7511f52e820cbb8b4113d2d43267e0bedb8899d2997c97aa82ba19957b5bf00",
+    "observations_sha256": "c694be6f0dfd9d3a264ac4c19c9b9e78eb4db3ea1e056700e0b4993b98eb0ef3"
+  },
+  "gundam-en-asia-product-booster.json": {
+    "bytes_sha256": "d8a49d8f15f885edd0190e8dab2d5fc9b50b31be5d2ba27bffd05cea23ad5784",
+    "observations_sha256": "75906b22eda153870565104eb11ec80e798c1f8a2890cb89d7c5dcf3ceb0b4fb"
+  },
+  "gundam-en-asia-product-card-case.json": {
+    "bytes_sha256": "31ff00bee5d9b4156a24fb8e7a611e8bd9511576f77c299dd68e6e751f9b0550",
+    "observations_sha256": "56ad13373eac9ef91e08dbfeb583efc5580c8215e349107c2bb1cc51082d7025"
+  },
+  "gundam-en-asia-product-deck-build-box.json": {
+    "bytes_sha256": "8e166af19bd29d3d680639686f30d5c11d2aab7cc3b9374b770236a3c496978f",
+    "observations_sha256": "da0d6ca164362eae3cff3d141b3fd6e42338863d7b5a0d377b3f65f7792c9ef7"
+  },
+  "gundam-en-asia-restructured-card-search.json": {
+    "bytes_sha256": "3cc0d146b170502bee3ec7e62a9fdaf78ea73b8088f74d138748476c81473ffa",
+    "observations_sha256": "42958bd0d3365de348ca227a183b1b13cdbcab32d702237602aef81e2eb801ca"
+  },
+  "gundam-en-us-card-detail-base-live-fragment.html": {
+    "bytes_sha256": "8ff9381ed14a6d6d445abc6f7880dffb32064e7418b8ec1c043c9e232b055b7a",
+    "observations_sha256": "99d446b920cc87072bad9e294b12cdff2da7ecf2e54551addc8f9a381aefac24"
+  },
+  "gundam-en-us-card-detail-p2-live-fragment.html": {
+    "bytes_sha256": "009e5b8e14fcc445d9ffee788a712b72162b943e7479fe65fbb0ff5060f04ed5",
+    "observations_sha256": "d4f09b77c2ca052be032257418dbe0c8e10bcaa4e9027b2ce58a4d811f501d26"
+  },
+  "gundam-en-us-card-list-package-live-fragment.html": {
+    "bytes_sha256": "89003da8ddb213a3f1d8626c4d4ffdf124f975f97faad18f778648251de2fd81",
+    "observations_sha256": "55a9e4cd1e768ce23960455bbb3758e96c45239e9acc30e92c7decbe01b62a46"
+  },
+  "gundam-en-us-card-list-root-live-fragment.html": {
+    "bytes_sha256": "38c9941f63e2865388862197084d73c47852a83b8a03405315f3c41a42e47c52",
+    "observations_sha256": "6ca93d969c062093ba9f5d01524609eb598a65d32557704d3550e4c46b02515c"
+  },
+  "gundam-en-us-discovery.json": {
+    "bytes_sha256": "47f1e750d0c2ef5bae0b8bccffd8e3403d259fa242ef10dca5838793eba85923",
+    "observations_sha256": "fbec8b1ad3f55f9bbb26a91207e8bb203cb3d20aaf4b05a629fb1b4871f8181a"
+  },
+  "gundam-en-us-news-hub.json": {
+    "bytes_sha256": "492b3eed2846b86c43aeebb64fad925b7d2033e5547820878e549b37322ae23e",
+    "observations_sha256": "af6e1c14a3bde26be09a4111aec2f93f940175bb565bd36e3ad4e6e602640988"
+  },
+  "gundam-en-us-policy-detail.json": {
+    "bytes_sha256": "e905fcc2521e976804a2024c0fad5f5a15c1f5251c1faec60ec2c619c0b14d56",
+    "observations_sha256": "2a21257824a0880601973e826adad9688f1bb20733ac24b8964bd45803ebff9f"
+  },
+  "gundam-en-us-policy.json": {
+    "bytes_sha256": "f96f2c431b2370500faee7dcb67e34d644095f0fcfec87ca36501bfed65a9d23",
+    "observations_sha256": "d6c5c2aaa79e1f61fd2e4b9128cdbd5c2e14e21f50de19b6175dcdad3dbbad60"
+  },
+  "gundam-en-us-product-card-case.json": {
+    "bytes_sha256": "b2f2d9e50eaeec11d92accf4fa816d83b999e7981c9117e7240307c3c59bd589",
+    "observations_sha256": "bea88191fcc1f9c609147b8689db059e2ac7c14bea6dfd3998e564dabf86011a"
+  },
+  "gundam-en-us-product-playmat.json": {
+    "bytes_sha256": "bbf44a21fc3100808f6cc90557fb9b1dca6145cab04d589fabc9962c52d67f6c",
+    "observations_sha256": "845491e3723a8ada4371873fc8aa1b295973eccc9f7d975856431fea4df23056"
+  },
+  "gundam-en-us-restructured-card-search.json": {
+    "bytes_sha256": "a50888ca95e35c9e7c7eba56fee2a82667b2d25c547fcf47c9d6240ced7d3283",
+    "observations_sha256": "c9bbfc0f6d3a2cec14c82daa5a2dfa3b09ab07fe00d17e24b138d420e9995dc0"
+  },
+  "one-piece-en-block-policy-topic.json": {
+    "bytes_sha256": "4b71a77f5cd778a50cd94171cab3ffd55e8f6d208ef74bf6172a86eb1028f4c4",
+    "observations_sha256": "ab0da976f2420eda9b9c551d035ae51ba4be76071757594e52f8c328fb124903"
+  },
+  "one-piece-en-card-list.json": {
+    "bytes_sha256": "93a49866c157de61bf503a81beb0b9951e98f658bf68687e060a4d616eb3872d",
+    "observations_sha256": "334715495e3c638a3356ddb9c966255285d9b820c3ff8f6fe8ba1546152d38ac"
+  },
+  "one-piece-en-don-rules-hub.json": {
+    "bytes_sha256": "b532c2761fb8621b744a9618f48e1141030b82f77c07ece02e5a00ad3f8414b8",
+    "observations_sha256": "08a81189bcaf30f897bc1b030d0c9a4fddbbf139d4c6e4631518badf090908d9"
+  },
+  "one-piece-en-policy.json": {
+    "bytes_sha256": "4aea56c204bc7b3e49a37e85781dbac23062cb9995572a18ee4f9b91d5ac0cb0",
+    "observations_sha256": "b12f15c225704f93eafb7808981b02703982a35b98ba2c7ab30b4d02896aaeac"
+  },
+  "one-piece-en-product-anniversary-set.json": {
+    "bytes_sha256": "d4c325e3fe10e0cc7bf3da3229dea2402087b2b60d49a76a2c01cf91c765280a",
+    "observations_sha256": "78f55499d8915a07ef07d56f891e202b0f15961136a528ed3e2e0d2e2f325b61"
+  },
+  "one-piece-en-product-booster-stub.json": {
+    "bytes_sha256": "b2e1c643c4e9b3ec519b370107d53f40bf653c900e70dd1dab4ee01d8e3f7f4c",
+    "observations_sha256": "77647aec503a4a5f1c16d2ce54305405c1f1c1c9912bd98bd19e43b7657cdfa6"
+  },
+  "one-piece-en-product-card-collection.json": {
+    "bytes_sha256": "38683e6759993bdc6617e7622209325f0bd53b5e6518c6e6ad98694153b559a0",
+    "observations_sha256": "9c41581731e0b5dad4aef82ea9c660f18e70961da22c05129670e16b3f7b659d"
+  },
+  "one-piece-en-product-sleeve.json": {
+    "bytes_sha256": "225c3f1014548ea14a3d34fd2aa2ee68b368c36e104a0a65e7415e380b263d7a",
+    "observations_sha256": "6f27a15f43959b02346c1711d1cb6e0610990b94350b37150aea498cd1097abd"
+  },
+  "one-piece-en-restructured-discovery.json": {
+    "bytes_sha256": "27e169e3345d29cbe60c8e4db87647a16b3adf37de299c5ca64dc3b185a09fe6",
+    "observations_sha256": "9b7bdb77f955f6516b0a5961905deac14a68617eaf45693aafcd597994ec0c65"
+  },
+  "one-piece-en-rules-hub.json": {
+    "bytes_sha256": "c9de2076bf785f2a42b94aecdd6fac97540f488ae709e726b216ec0be787e916",
+    "observations_sha256": "247430c6486e23977092c3ddff3a11a0c8468596f71b642385bc32a84ca68fd2"
+  }
+}

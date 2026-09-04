@@ -1,4 +1,4 @@
-import { AdministrationProblem } from "../shared";
+import { AdapterParseFailure } from "./adapter-parse-failure";
 
 export type OnePieceOfficialErratumObservation = Readonly<{
   kind: "official_erratum";
@@ -561,11 +561,10 @@ export async function parseOnePieceOfficialErrataHtml(
   try {
     await parsed.arrayBuffer();
   } catch (error) {
-    if (error instanceof AdministrationProblem) throw error;
-    throw new AdministrationProblem(
-      422,
-      "source_parse_failed",
+    if (error instanceof AdapterParseFailure) throw error;
+    throw new AdapterParseFailure(
       error instanceof Error ? error.message : "The Official Errata HTML could not be parsed.",
+      { cause: error },
     );
   }
 
@@ -802,5 +801,5 @@ function unsupportedSemanticContent(): never {
 }
 
 function parseFailure(detail: string): never {
-  throw new AdministrationProblem(422, "source_parse_failed", detail);
+  throw new AdapterParseFailure(detail);
 }

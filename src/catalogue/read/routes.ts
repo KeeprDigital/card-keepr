@@ -1,18 +1,18 @@
 import { catalogueResponse } from "../../http/catalogue";
-import { route, type RouteContext } from "../../http/routes";
+import { type RouteContext, route } from "../../http/routes";
+import { cardCollectionResponse } from "./card-collection-read";
+import { contextualLegalityStatusResponse } from "./legality-status";
+import { currentPrintingsResponse } from "./printing-collection-read";
+import { currentProductResponse, currentProductsResponse } from "./product-release-read";
 import {
-  currentCatalogueStatus,
+  catalogueExportComponentResponse,
+  catalogueExportResponse,
+  catalogueExportsResponse,
   currentCardResponse,
+  currentCatalogueStatus,
   currentPrintingResponse,
   printingImageContentResponse,
-  catalogueExportComponentResponse,
-  catalogueExportsResponse,
-  catalogueExportResponse,
 } from "./read";
-import { cardCollectionResponse } from "./card-collection-read";
-import { currentPrintingsResponse } from "./printing-collection-read";
-import { currentProductsResponse, currentProductResponse } from "./product-release-read";
-import { contextualLegalityStatusResponse } from "./legality-status";
 
 type Context = RouteContext<{
   CATALOGUE_DB: D1Database;
@@ -24,8 +24,8 @@ export const catalogueRoutes = [
   route<Context>("GET", "/v1/catalogue", async ({ env, base, request }) =>
     catalogueResponse(await currentCatalogueStatus(env.CATALOGUE_DB), base, request),
   ),
-  route<Context>("GET", "/v1/cards", async ({ env, request, requestId, base }) =>
-    cardCollectionResponse(env.CATALOGUE_DB, request, requestId, base),
+  route<Context>("GET", "/v1/cards", async ({ env, request, base }) =>
+    cardCollectionResponse(env.CATALOGUE_DB, request, base),
   ),
   route<Context>("GET", "/v1/cards/:card", async ({ env, request, base }, params) =>
     currentCardResponse(env.CATALOGUE_DB, params.card!, request, base),
@@ -40,8 +40,8 @@ export const catalogueRoutes = [
     currentPrintingResponse(env.CATALOGUE_DB, params.printing!, request, base),
   ),
   ...["GET", "HEAD"].map((method) =>
-    route<Context>(method, "/v1/printing-images/:image/content", async ({ env, request, requestId }, params) =>
-      printingImageContentResponse(request, env.CATALOGUE_DB, env.PRINTING_IMAGES, params.image!, requestId),
+    route<Context>(method, "/v1/printing-images/:image/content", async ({ env, request }, params) =>
+      printingImageContentResponse(request, env.CATALOGUE_DB, env.PRINTING_IMAGES, params.image!),
     ),
   ),
   route<Context>("GET", "/v1/products", async ({ env, request, base }) =>
@@ -51,18 +51,14 @@ export const catalogueRoutes = [
     currentProductResponse(env.CATALOGUE_DB, params.product!, request, base),
   ),
   ...["GET", "HEAD"].map((method) =>
-    route<Context>(
-      method,
-      "/v1/catalogue-exports/:revision/components/:component",
-      async ({ env, request, requestId }, params) =>
-        catalogueExportComponentResponse(
-          request,
-          env.CATALOGUE_DB,
-          env.CATALOGUE_EXPORTS,
-          params.revision!,
-          params.component!,
-          requestId,
-        ),
+    route<Context>(method, "/v1/catalogue-exports/:revision/components/:component", async ({ env, request }, params) =>
+      catalogueExportComponentResponse(
+        request,
+        env.CATALOGUE_DB,
+        env.CATALOGUE_EXPORTS,
+        params.revision!,
+        params.component!,
+      ),
     ),
   ),
   route<Context>("GET", "/v1/catalogue-exports", async ({ env, request, base }) =>
