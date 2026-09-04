@@ -61,14 +61,21 @@ Wrangler migration-template cache. Each shard still runs its files concurrently.
 Times exclude installation and GitHub runner provisioning; these are local
 measurements, not claimed CI timings. The baseline is commit `7b5f959c`.
 
-| Baseline shard | Seconds |
-| --- | ---: |
-|1/3|38.942|
-|2/3|104.156|
-|3/3|41.775|
-|Sum|184.873|
+| CI shard command | Before (seconds) | After (seconds) |
+| --- | ---: | ---: |
+| `--shard=1/3` | 38.942 | 38.567 |
+| `--shard=2/3` | 104.156 | 44.691 |
+| `--shard=3/3` | 41.775 | 25.281 |
+| Sum | 184.873 | 108.539 |
+| Slowest shard | 104.156 | 44.691 |
 
-The post-change measurement is recorded in the follow-up timing commit.
+The sum fell **41.3%**; the slowest shard fell **57.1%**. Every shard passed:
+174 tests before, 179 after (three offline recapture cases, smoke coverage, and
+fixture polling added). No existing flow was removed. Polling time includes real
+Workflow completion and respects each fixture's configured request budget.
+The [measurement record](timings/2026-09-04.json) contains commits, commands,
+counts, environment and methodology. Workerd startup and timing-window-dependent
+rate-limit probes can vary between runs; these are one complete before/after pair.
 
 ## Live-source freshness
 
