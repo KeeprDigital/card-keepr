@@ -187,6 +187,7 @@ function expectedBindings(config, secrets, worker) {
     ...(config.services ?? []).map((binding) => ({ name: binding.binding, type: "service", service: binding.service, environment: binding.environment ?? null, entrypoint: binding.entrypoint ?? null })),
     ...(config.workflows ?? []).map((binding) => ({ name: binding.binding, type: "workflow", workflow_name: binding.name, class_name: binding.class_name ?? null, script_name: binding.script_name ?? worker })),
     ...(config.ratelimits ?? []).map((binding) => ({ name: binding.name, type: "ratelimit", namespace_id: binding.namespace_id, simple: { limit: binding.simple.limit, period: binding.simple.period } })),
+    ...(config.version_metadata ? [{ name: config.version_metadata.binding, type: "version_metadata" }] : []),
     ...secrets.map((name) => ({ name, type: "secret_text" })),
   ].sort(bindingOrder);
 }
@@ -199,6 +200,7 @@ function normalizedBindings(bindings, worker) {
     switch (binding.type) {
       case "plain_text": return requireFields(binding, ["text"], { name: binding.name, type: binding.type, text: binding.text });
       case "secret_text": return { name: binding.name, type: binding.type };
+      case "version_metadata": return { name: binding.name, type: binding.type };
       case "d1": return { name: binding.name, type: binding.type, database_id: unambiguousIdentity(binding, "database_id", "id") };
       case "r2_bucket": return requireFields(binding, ["bucket_name"], { name: binding.name, type: binding.type, bucket_name: binding.bucket_name });
       case "service": return requireFields(binding, ["service"], { name: binding.name, type: binding.type, service: binding.service, environment: binding.environment ?? null, entrypoint: binding.entrypoint ?? null });

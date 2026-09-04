@@ -13,24 +13,27 @@ export async function runBootstrapSmoke(input, fetchImpl = fetch) {
   const apiUrl = (path) => runtimeUrl(input.apiUrl, path);
   const ingestionUrl = (path) => runtimeUrl(input.ingestionUrl, path);
   const authorized = { authorization: `Bearer ${input.apiKey}` };
-  await expectStatus(fetchImpl, apiUrl("/health"), authorized, 200);
+  await expectReadiness(fetchImpl, apiUrl("/health"), authorized, "api");
   await expectStatus(fetchImpl, apiUrl("/health"), { authorization: "Bearer deliberately-invalid" }, 401);
   // The workflow holds no administration credential. An unauthenticated 401
   // problem from the ingestion mount proves the route reaches the Worker and
   // that it enforces authentication; the placeholder origin never answers so.
   const unauthenticated = await expectJson(fetchImpl, ingestionUrl("/health"), {}, 401);
   if (unauthenticated.code !== "authentication_required") throw new Error("ingestion_authentication_not_enforced");
+  await expectLiveness(fetchImpl, apiUrl("/healthz"), "api");
+  await expectLiveness(fetchImpl, ingestionUrl("/healthz"), "ingestion");
   const catalogue = await expectJson(fetchImpl, apiUrl("/v1/catalogue"), authorized, 200, SPINE_REVISION_ID);
   if (catalogue.meta?.catalogue_revision_id !== SPINE_REVISION_ID) throw new Error("current_revision_mismatch");
-  return { contract: "card-keepr-production-bootstrap-smoke@1", revision_id: SPINE_REVISION_ID, checks: 4 };
+  return { contract: "card-keepr-production-bootstrap-smoke@1", revision_id: SPINE_REVISION_ID, checks: 6 };
 }
 
 export async function runProductionSmoke(input, fetchImpl = fetch) {
   validateInput(input);
   const apiUrl = (path) => runtimeUrl(input.apiUrl, path);
   const authorized = { authorization: `Bearer ${input.apiKey}` };
-  await expectStatus(fetchImpl, apiUrl("/health"), authorized, 200);
+  await expectReadiness(fetchImpl, apiUrl("/health"), authorized, "api");
   await expectStatus(fetchImpl, apiUrl("/health"), { authorization: "Bearer deliberately-invalid" }, 401);
+  await expectLiveness(fetchImpl, apiUrl("/healthz"), "api");
 
   const catalogue = await expectJson(fetchImpl, apiUrl("/v1/catalogue"), authorized, 200, input.currentRevisionId);
   if (catalogue.meta?.catalogue_revision_id !== input.currentRevisionId) throw new Error("current_revision_mismatch");
@@ -55,7 +58,22 @@ export async function runProductionSmoke(input, fetchImpl = fetch) {
   await expectStatus(fetchImpl, apiUrl(`/v1/catalogue-exports/${encodeURIComponent(input.currentRevisionId)}/components/${encodeURIComponent(component)}`), authorized, 200, input.currentRevisionId);
   const stale = await expectJson(fetchImpl, apiUrl(`/v1/cards?after=${encodeURIComponent(input.staleCursor)}`), authorized, 409);
   if (stale.code !== "cursor_revision_unavailable") throw new Error("stale_cursor_did_not_fail_predictably");
-  return { contract: "card-keepr-production-smoke@1", revision_id: input.currentRevisionId, revision_ids: input.revisions.map((item) => item.revision_id), stale_revision_id: input.staleRevisionId, checks: 21 };
+  return { contract: "card-keepr-production-smoke@1", revision_id: input.currentRevisionId, revision_ids: input.revisions.map((item) => item.revision_id), stale_revision_id: input.staleRevisionId, checks: 22 };
+}
+
+// Readiness (issue #144): the authenticated health document proves the
+// deployed bindings; a degraded document answers 503 and fails the smoke.
+async function expectReadiness(fetchImpl, url, headers, runtime) {
+  const document = await expectJson(fetchImpl, url, headers, 200);
+  if (document.status !== "ok" || document.runtime !== runtime || typeof document.checks !== "object" || document.checks === null) throw new Error(`smoke_not_ready_${url.pathname}`);
+  return document;
+}
+
+// Liveness: the unauthenticated probe monitors watch.
+async function expectLiveness(fetchImpl, url, runtime) {
+  const document = await expectJson(fetchImpl, url, {}, 200);
+  if (document.status !== "ok" || document.runtime !== runtime) throw new Error(`smoke_not_live_${url.pathname}`);
+  return document;
 }
 
 function validateInput(input) {
