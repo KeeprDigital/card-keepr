@@ -9,29 +9,63 @@ import { dirname, join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "../..");
 
-// Allocate an ephemeral 127.0.0.1 port by binding port 0 and releasing it
-// (wrangler dev does not accept port 0 itself). The listener closes before
-// wrangler binds, so a small reuse race exists; allocations are deduplicated
-// process-wide so one file's workers never race each other.
+// Allocate a free 127.0.0.1 port for a local Worker (wrangler dev does not
+// accept port 0 itself). `node --test` runs every acceptance file in its own
+// process, and processes cannot see each other's allocations, so each process
+// owns a partition of a fixed port range derived from its pid and hands out
+// ports from that partition only: two concurrently running files never draw
+// from the same partition, which removes the bind race between them. The
+// range sits below the Linux (32768+) and macOS (49152+) ephemeral ranges so
+// outbound connections do not land in it. Each candidate is still probed by
+// binding it, so ports another program happens to hold are skipped, and the
+// Worker boot retries on a collision as a last resort.
+const PORT_RANGE_START = 20_000;
+const PORT_RANGE_END = 32_768;
+const PORT_PARTITION_SIZE = 64;
+const PORT_PARTITIONS = Math.floor(
+  (PORT_RANGE_END - PORT_RANGE_START) / PORT_PARTITION_SIZE,
+);
+const portPartitionStart = PORT_RANGE_START +
+  (process.pid % PORT_PARTITIONS) * PORT_PARTITION_SIZE;
 const allocatedPorts = new Set();
 
+export function portPartition() {
+  return {
+    start: portPartitionStart,
+    end: portPartitionStart + PORT_PARTITION_SIZE - 1,
+  };
+}
+
 export async function allocatePort() {
-  for (let attempt = 0; attempt < 16; attempt += 1) {
-    const port = await new Promise((resolvePort, rejectPort) => {
-      const server = createServer();
-      server.unref();
-      server.once("error", rejectPort);
-      server.listen(0, "127.0.0.1", () => {
-        const { port: boundPort } = server.address();
-        server.close(() => resolvePort(boundPort));
-      });
-    });
-    if (!allocatedPorts.has(port)) {
+  for (let offset = 0; offset < PORT_PARTITION_SIZE; offset += 1) {
+    const port = portPartitionStart + offset;
+    if (allocatedPorts.has(port)) continue;
+    if (await portFree(port)) {
       allocatedPorts.add(port);
       return port;
     }
   }
-  throw new Error("An unused local port could not be allocated.");
+  const { start, end } = portPartition();
+  throw new Error(
+    `No free port remains in this process's partition ${start}-${end}.`,
+  );
+}
+
+function portFree(port) {
+  return new Promise((resolveFree, rejectFree) => {
+    const server = createServer();
+    server.unref();
+    server.once("error", (error) => {
+      if (error.code === "EADDRINUSE" || error.code === "EACCES") {
+        resolveFree(false);
+        return;
+      }
+      rejectFree(error);
+    });
+    server.listen(port, "127.0.0.1", () => {
+      server.close(() => resolveFree(true));
+    });
+  });
 }
 
 // Migrate CATALOGUE_DB under statePath. Running the wrangler CLI costs
@@ -161,16 +195,24 @@ export async function startWorker({
   vars = {},
 }) {
   if (migrate) await applyMigrations(statePath, config);
-  // The released-probe-port allocation races other concurrent processes, so a
-  // boot that dies on the collision retries on fresh ports. A caller-pinned
-  // port is never retried: reusing it is the caller's stated intent.
-  const retriable = port === undefined && inspectorPort === undefined;
-  for (let attempt = 0; ; attempt += 1) {
+  // The probed port is released before wrangler binds it, so another program
+  // may still take it first; a boot that dies on that collision retries on
+  // fresh ports, and every attempt including the last is checked so a dead
+  // Worker is never handed back. A caller-pinned port is never retried:
+  // reusing it is the caller's stated intent.
+  if (port !== undefined || inspectorPort !== undefined) return spawnWorker();
+  const outputs = [];
+  for (let attempt = 1; attempt <= BOOT_ATTEMPTS; attempt += 1) {
     const worker = await spawnWorker();
-    if (!retriable || attempt >= 3) return worker;
-    const collided = await portCollision(worker);
-    if (!collided) return worker;
+    if (!(await portCollision(worker))) return worker;
+    outputs.push(`attempt ${attempt} (port ${worker.port}, inspector ${
+      worker.inspectorPort
+    }):\n${worker.getOutput()}`);
   }
+  throw new Error(
+    `${config} could not bind a local port in ${BOOT_ATTEMPTS} attempts\n` +
+      outputs.join("\n"),
+  );
 
   async function spawnWorker() {
   const boundPort = port ?? await allocatePort();
@@ -219,13 +261,23 @@ export async function startWorker({
 }
 
 // Wait briefly for a just-spawned Worker to either hold its port (no
-// collision) or exit with the address-collision error; only that exact early
-// exit reports a collision.
+// collision) or exit with an address-collision error; only that early exit
+// reports a collision. The error is matched on the EADDRINUSE code and the
+// common phrasings wrangler, workerd, and Node have used for it, rather than
+// one exact wrangler-version string.
+const BOOT_ATTEMPTS = 4;
+const BOOT_COLLISION_WINDOW_MS = 5_000;
+const ADDRESS_IN_USE = /EADDRINUSE|address (?:is )?already in use|port \S+ is (?:already )?in use/iu;
+
+export function isAddressInUse(output) {
+  return ADDRESS_IN_USE.test(output);
+}
+
 async function portCollision(worker) {
-  const deadline = Date.now() + 3_000;
+  const deadline = Date.now() + BOOT_COLLISION_WINDOW_MS;
   while (Date.now() < deadline) {
-    if (worker.process.exitCode !== null) {
-      return worker.getOutput().includes("Address already in use");
+    if (hasExited(worker.process)) {
+      return isAddressInUse(worker.getOutput());
     }
     if (await portHeld(worker.port)) return false;
     await delay(50);
@@ -248,7 +300,7 @@ function portHeld(port) {
 export async function waitForResponse(url, worker, description, headers) {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (worker.process.exitCode !== null) {
+    if (hasExited(worker.process)) {
       throw new Error(`${description} exited\n${worker.getOutput()}`);
     }
     try {
@@ -271,26 +323,31 @@ export function waitForHealth(url, key, worker) {
 // Stop a Worker and wait until its process has actually exited, so a
 // follow-up boot may safely reuse the same port.
 export async function stopWorker(worker) {
-  if (worker.process.exitCode !== null) return;
+  if (hasExited(worker.process)) return;
   const exited = new Promise((resolveExit) =>
     worker.process.once("exit", resolveExit)
   );
   worker.process.kill("SIGTERM");
   await Promise.race([exited, delay(5_000)]);
-  if (worker.process.exitCode === null) {
+  if (!hasExited(worker.process)) {
     worker.process.kill("SIGKILL");
     await exited;
   }
 }
 
 // Run the repository CLI. "secrets" is delivered as JSON on file descriptor 3,
-// matching the --secrets-stdin-fd 3 contract the CLI documents.
-export function runCli(arguments_, environment, { secrets, stdin } = {}) {
+// matching the --secrets-stdin-fd 3 contract the CLI documents. The
+// invocation is killed and reported after timeoutMs (default two minutes).
+export function runCli(
+  arguments_,
+  environment,
+  { secrets, stdin, timeoutMs } = {},
+) {
   return runProcess(
     process.execPath,
     [resolve(root, "cli/keepr.mjs"), ...arguments_],
     { ...processEnvironment("/tmp"), ...environment },
-    { secrets, stdin },
+    { secrets, stdin, timeoutMs },
   );
 }
 
@@ -392,8 +449,20 @@ function delay(milliseconds) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
 
-function runProcess(command, arguments_, environment, { secrets, stdin } = {}) {
-  return new Promise((resolveExit) => {
+// Run a subprocess to completion under a deadline, like the HTTP polling
+// helpers above: a CLI or wrangler invocation that hangs is killed and
+// reported with its captured output instead of stalling the file until the
+// CI job cap. The default covers a cold wrangler migration run; callers with
+// a longer legitimate wait pass timeoutMs.
+const PROCESS_TIMEOUT_MS = 120_000;
+
+export function runProcess(
+  command,
+  arguments_,
+  environment,
+  { secrets, stdin, timeoutMs = PROCESS_TIMEOUT_MS } = {},
+) {
+  return new Promise((resolveExit, rejectExit) => {
     const child = spawn(command, arguments_, {
       cwd: root,
       env: environment,
@@ -412,8 +481,41 @@ function runProcess(command, arguments_, environment, { secrets, stdin } = {}) {
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => stdout += chunk);
     child.stderr.on("data", (chunk) => stderr += chunk);
-    child.once("exit", (code) => resolveExit({ code, stdout, stderr }));
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      setTimeout(() => {
+        if (!hasExited(child)) child.kill("SIGKILL");
+      }, 5_000).unref();
+    }, timeoutMs);
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      rejectExit(error);
+    });
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      if (timedOut) {
+        rejectExit(new Error(
+          `${describeCommand(command, arguments_)} did not exit within ` +
+            `${timeoutMs} ms and was killed\nstdout:\n${stdout}\n` +
+            `stderr:\n${stderr}`,
+        ));
+        return;
+      }
+      resolveExit({ code, stdout, stderr });
+    });
   });
+}
+
+function describeCommand(command, arguments_) {
+  return [command, ...arguments_]
+    .map((part) => (part.startsWith(root) ? part.slice(root.length + 1) : part))
+    .join(" ");
+}
+
+function hasExited(child) {
+  return child.exitCode !== null || child.signalCode !== null;
 }
 
 function processEnvironment(statePath) {
