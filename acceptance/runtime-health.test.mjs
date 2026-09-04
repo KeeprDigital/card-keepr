@@ -6,29 +6,15 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import {
-  runCli,
-  startWorker,
-  stopWorker,
-  waitForHealth,
-} from "./helpers/acceptance-runtime.mjs";
+import { runCli, startWorker, stopWorker, waitForHealth } from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const apiSchema = JSON.parse(
-  readFileSync(
-    resolve(
-      root,
-      "prototype/formalize-implementation-contracts/schemas/api.schema.json",
-    ),
-    "utf8",
-  ),
+  readFileSync(resolve(root, "prototype/formalize-implementation-contracts/schemas/api.schema.json"), "utf8"),
 );
 const exportManifestSchemaV5 = JSON.parse(
   readFileSync(
-    resolve(
-      root,
-      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json",
-    ),
+    resolve(root, "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json"),
     "utf8",
   ),
 );
@@ -37,16 +23,11 @@ addFormats(ajv);
 ajv.addSchema(exportManifestSchemaV5);
 ajv.addSchema(apiSchema);
 const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`);
-const validateCatalogue = ajv.getSchema(
-  `${apiSchema.$id}#/$defs/CatalogueDocument`,
-);
+const validateCatalogue = ajv.getSchema(`${apiSchema.$id}#/$defs/CatalogueDocument`);
 // Every checked-in migration bumps the schema level by one (ADR 0006), so
 // the readiness document of a migrated local database reports their count.
-const migrationLevel = readdirSync(resolve(root, "migrations"))
-  .filter((entry) => entry.endsWith(".sql")).length;
-const ingestionConfig = JSON.parse(
-  readFileSync(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"),
-);
+const migrationLevel = readdirSync(resolve(root, "migrations")).filter((entry) => entry.endsWith(".sql")).length;
+const ingestionConfig = JSON.parse(readFileSync(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
 
 const rateLimitWindowSeconds = 60;
 const rateLimitBatchSize = 25;
@@ -63,9 +44,7 @@ async function exhaustRateLimit(request, limit) {
   let finalBatch = [];
   for (let sent = 0; sent < total; sent += rateLimitBatchSize) {
     const batchSize = Math.min(rateLimitBatchSize, total - sent);
-    finalBatch = await Promise.all(
-      Array.from({ length: batchSize }, () => request()),
-    );
+    finalBatch = await Promise.all(Array.from({ length: batchSize }, () => request()));
     await Promise.all(finalBatch.map((response) => response.arrayBuffer()));
   }
   const elapsedMs = Math.round(performance.now() - startedAt);
@@ -143,12 +122,7 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
       {
         name: "api",
         status: "ok",
-        capabilities: [
-          "catalogue:read",
-          "printing-image:read",
-          "catalogue-export:read",
-          "legality-status:read",
-        ],
+        capabilities: ["catalogue:read", "printing-image:read", "catalogue-export:read", "legality-status:read"],
         checks: apiChecks,
       },
       {
@@ -168,19 +142,8 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
   });
   // Readiness (issue #144): every check of both runtimes passes against the
   // emulated bindings, and the document names what it proved.
-  assert.deepEqual(Object.keys(apiChecks), [
-    "database",
-    "objects",
-    "public_base",
-    "version",
-  ]);
-  assert.deepEqual(Object.keys(ingestionChecks), [
-    "database",
-    "objects",
-    "workflows",
-    "public_base",
-    "version",
-  ]);
+  assert.deepEqual(Object.keys(apiChecks), ["database", "objects", "public_base", "version"]);
+  assert.deepEqual(Object.keys(ingestionChecks), ["database", "objects", "workflows", "public_base", "version"]);
   for (const checks of [apiChecks, ingestionChecks]) {
     for (const check of Object.values(checks)) {
       assert.equal(check.status, "pass", JSON.stringify(check));
@@ -191,17 +154,11 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
     // wrangler.jsonc, not at the bound local origin, so locally the request
     // never arrives through the configured (local) public base.
     assert.equal(checks.public_base.arrived_through_public_base, false);
-    assert.deepEqual(
-      Object.keys(checks.version).sort(),
-      ["id", "status", "tag", "timestamp"],
-    );
+    assert.deepEqual(Object.keys(checks.version).sort(), ["id", "status", "tag", "timestamp"]);
   }
   assert.equal(apiChecks.public_base.configured, api.url);
   assert.equal(ingestionChecks.public_base.configured, ingestion.url);
-  assert.deepEqual(Object.keys(apiChecks.objects.buckets), [
-    "PRINTING_IMAGES",
-    "CATALOGUE_EXPORTS",
-  ]);
+  assert.deepEqual(Object.keys(apiChecks.objects.buckets), ["PRINTING_IMAGES", "CATALOGUE_EXPORTS"]);
   assert.deepEqual(Object.keys(ingestionChecks.objects.buckets), [
     "EVIDENCE_OBJECTS",
     "PRINTING_IMAGES",
@@ -214,16 +171,12 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
     "RECONCILIATION_WORKFLOW",
     "CATALOGUE_BACKUP_WORKFLOW",
   ]);
-  assert.equal(
-    ingestionChecks.database.configured_database_id,
-    ingestionConfig.d1_databases[0].database_id,
-  );
+  assert.equal(ingestionChecks.database.configured_database_id, ingestionConfig.d1_databases[0].database_id);
   assert.equal(apiChecks.database.configured_database_id, undefined);
 
   const humanCli = await runCli(["health"], cliEnvironment);
   assert.equal(humanCli.code, 0, humanCli.stderr);
-  const versionLine = (checks) =>
-    `  version: pass (id ${checks.version.id ?? "unknown"})`;
+  const versionLine = (checks) => `  version: pass (id ${checks.version.id ?? "unknown"})`;
   assert.equal(
     humanCli.stdout,
     [
@@ -245,7 +198,10 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
 
   // Liveness (issue #144) needs no credential, says nothing beyond status
   // and runtime, and leaves every sibling route authenticated.
-  for (const [runtime, worker] of [["api", api], ["ingestion", ingestion]]) {
+  for (const [runtime, worker] of [
+    ["api", api],
+    ["ingestion", ingestion],
+  ]) {
     const liveness = await fetch(`${worker.url}/healthz`);
     assert.equal(liveness.status, 200);
     assert.equal(liveness.headers.get("cache-control"), "no-store");
@@ -264,10 +220,7 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
       headers: { authorization: `Bearer ${apiKey}` },
     }),
   ]);
-  const [apiProblem, ingestionProblem] = await Promise.all([
-    apiRejectsAdminKey.json(),
-    ingestionRejectsApiKey.json(),
-  ]);
+  const [apiProblem, ingestionProblem] = await Promise.all([apiRejectsAdminKey.json(), ingestionRejectsApiKey.json()]);
   assert.equal(apiRejectsAdminKey.status, 401);
   assert.equal(validateProblem?.(apiProblem), true, JSON.stringify(validateProblem?.errors));
   assert.equal(apiProblem.code, "invalid_api_key");
@@ -358,18 +311,16 @@ test("the CLI exit code follows readiness when a runtime is degraded", async (t)
   assert.equal(cliDocument.status, "degraded");
   assert.equal(cliDocument.runtimes[0].status, "ok");
   assert.equal(cliDocument.runtimes[1].status, "degraded");
-  assert.deepEqual(
-    cliDocument.runtimes[1].checks.database,
-    document.checks.database,
-  );
+  assert.deepEqual(cliDocument.runtimes[1].checks.database, document.checks.database);
 
   const humanCli = await runCli(["health"], cliEnvironment);
   assert.equal(humanCli.code, 9, humanCli.stderr);
   const lines = humanCli.stdout.split("\n");
   assert.equal(lines[0], "Card Keepr runtimes are degraded");
-  assert.ok(lines.includes(
-    "  database: fail (configured database not-a-database-id, database_id_not_configured)",
-  ), humanCli.stdout);
+  assert.ok(
+    lines.includes("  database: fail (configured database not-a-database-id, database_id_not_configured)"),
+    humanCli.stdout,
+  );
 });
 
 test("the API accepts an unauthenticated preflight for an exact allowed origin", async (t) => {
@@ -398,18 +349,9 @@ test("the API accepts an unauthenticated preflight for an exact allowed origin",
   });
 
   assert.equal(response.status, 204);
-  assert.equal(
-    response.headers.get("access-control-allow-origin"),
-    "http://localhost:3000",
-  );
-  assert.equal(
-    response.headers.get("access-control-allow-methods"),
-    "GET, HEAD, OPTIONS",
-  );
-  assert.equal(
-    response.headers.get("access-control-allow-headers"),
-    "Authorization",
-  );
+  assert.equal(response.headers.get("access-control-allow-origin"), "http://localhost:3000");
+  assert.equal(response.headers.get("access-control-allow-methods"), "GET, HEAD, OPTIONS");
+  assert.equal(response.headers.get("access-control-allow-headers"), "Authorization");
   assert.equal(response.headers.get("vary"), "Origin");
   assert.equal(await response.text(), "");
 });
@@ -439,10 +381,7 @@ test("the API rejects a browser origin that only prefixes the allowed origin", a
   const problem = await response.json();
 
   assert.equal(response.status, 403);
-  assert.match(
-    response.headers.get("content-type") ?? "",
-    /^application\/problem\+json/,
-  );
+  assert.match(response.headers.get("content-type") ?? "", /^application\/problem\+json/);
   assert.equal(validateProblem?.(problem), true, JSON.stringify(validateProblem?.errors));
   assert.equal(problem.code, "forbidden_origin");
   assert.equal(response.headers.get("access-control-allow-origin"), null);
@@ -473,14 +412,8 @@ test("an allowed browser origin receives a CORS-shaped authentication problem", 
   assert.equal(response.status, 401);
   assert.equal(validateProblem?.(problem), true, JSON.stringify(validateProblem?.errors));
   assert.equal(problem.code, "authentication_required");
-  assert.equal(
-    response.headers.get("access-control-allow-origin"),
-    "http://localhost:3000",
-  );
-  assert.equal(
-    response.headers.get("access-control-expose-headers"),
-    "ETag, X-Catalogue-Revision",
-  );
+  assert.equal(response.headers.get("access-control-allow-origin"), "http://localhost:3000");
+  assert.equal(response.headers.get("access-control-expose-headers"), "ETag, X-Catalogue-Revision");
   assert.equal(response.headers.get("vary"), "Origin");
 });
 
@@ -535,15 +468,12 @@ test("Printing Image requests use their independent per-IP limit", async (t) => 
   await waitForHealth(`${api.url}/health`, apiKey, api);
 
   const request = (clientIp) =>
-    fetch(
-      `${api.url}/v1/printing-images/image_test/content`,
-      {
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          "cf-connecting-ip": clientIp,
-        },
+    fetch(`${api.url}/v1/printing-images/image_test/content`, {
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "cf-connecting-ip": clientIp,
       },
-    );
+    });
   let response;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const clientIp = `192.0.2.${20 + attempt}`;
@@ -573,11 +503,7 @@ test("administration requests return a stable problem after the per-IP limit", a
   const testDirectory = await mkdtemp(join(tmpdir(), "card-keepr-admin-rate-"));
   const administrationKey = crypto.randomUUID();
   const ingestionEnv = join(testDirectory, "ingestion.env");
-  await writeFile(
-    ingestionEnv,
-    `ADMINISTRATION_KEY=${administrationKey}\n`,
-    { mode: 0o600 },
-  );
+  await writeFile(ingestionEnv, `ADMINISTRATION_KEY=${administrationKey}\n`, { mode: 0o600 });
   const ingestion = await startWorker({
     config: "apps/ingestion/wrangler.jsonc",
     envFile: ingestionEnv,
@@ -632,24 +558,11 @@ test("authenticated API responses expose the accepted browser headers", async (t
   const document = await response.json();
 
   assert.equal(response.status, 200);
-  assert.equal(
-    validateCatalogue?.(document),
-    true,
-    JSON.stringify(validateCatalogue?.errors),
-  );
-  assert.equal(
-    response.headers.get("x-catalogue-revision"),
-    document.meta.catalogue_revision_id,
-  );
+  assert.equal(validateCatalogue?.(document), true, JSON.stringify(validateCatalogue?.errors));
+  assert.equal(response.headers.get("x-catalogue-revision"), document.meta.catalogue_revision_id);
   assert.match(response.headers.get("etag") ?? "", /^".+"$/);
-  assert.equal(
-    response.headers.get("access-control-allow-origin"),
-    "http://localhost:3000",
-  );
-  assert.equal(
-    response.headers.get("access-control-expose-headers"),
-    "ETag, X-Catalogue-Revision",
-  );
+  assert.equal(response.headers.get("access-control-allow-origin"), "http://localhost:3000");
+  assert.equal(response.headers.get("access-control-expose-headers"), "ETag, X-Catalogue-Revision");
   assert.equal(response.headers.get("vary"), "Origin");
 });
 
