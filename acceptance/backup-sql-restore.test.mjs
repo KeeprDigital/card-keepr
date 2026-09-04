@@ -275,11 +275,11 @@ function seedGlobalLegalityRuleOnly(database) {
     INSERT INTO revision_legality_rules (
       catalogue_revision_id, legality_rule_id, supported_game, region,
       format, event_tier, effective_from, effective_until,
-      unresolved_scope_json, card_ids_json, document_json
+      unresolved_scope_json, card_ids_json, source_retrieved_at, document_json
     ) VALUES (
       'catrev_restore_acceptance', 'legality_global', 'one-piece',
       'EN-OCEANIA', 'standard', NULL, '2026-01-01', NULL, 'null', '[]',
-      '${JSON.stringify(document)}'
+      '2026-08-05T00:00:01.000Z', '${JSON.stringify(document)}'
     );
   `);
 }
@@ -511,11 +511,11 @@ function seedRepresentativeCatalogue(database) {
     INSERT INTO revision_legality_rules (
       catalogue_revision_id, legality_rule_id, supported_game, region,
       format, event_tier, effective_from, effective_until,
-      unresolved_scope_json, card_ids_json, document_json
+      unresolved_scope_json, card_ids_json, source_retrieved_at, document_json
     ) VALUES (
       'catrev_restore_acceptance', 'legality_alpha', 'one-piece',
       'EN-OCEANIA', 'standard', NULL, '2026-01-01', NULL, 'null',
-      '["card_alpha"]',
+      '["card_alpha"]', '2026-08-05T00:00:01.000Z',
       '${JSON.stringify(validStoredLegalityRule("legality_alpha", ["card_alpha"], "Alpha is restricted."))}'
     );
     INSERT INTO catalogue_query_revisions (catalogue_revision_id, state)

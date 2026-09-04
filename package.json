@@ -27,6 +27,7 @@
     "types:generate": "node scripts/worker-types.mjs",
     "types:check": "node scripts/worker-types.mjs --check",
     "check:catalogue-cycles": "node scripts/catalogue-import-cycles.mjs",
+    "check:catalogue-boundary": "node scripts/catalogue-import-boundary.mjs",
     "db:migrate:local": "WRANGLER_LOG_PATH=.wrangler/logs wrangler d1 migrations apply CATALOGUE_DB --local --config apps/ingestion/wrangler.jsonc",
     "deploy:dry-run": "npm run deploy:dry-run:api && npm run deploy:dry-run:ingestion",
     "deploy:dry-run:api": "WRANGLER_LOG_PATH=.wrangler/logs wrangler deploy --dry-run --config apps/api/wrangler.jsonc",

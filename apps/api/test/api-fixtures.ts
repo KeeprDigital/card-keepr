@@ -357,6 +357,9 @@ export function canonicalLegalityRuleStatements(
     source_snapshot_id: string;
     source_observation_set_id: string;
     source_observation_id: string;
+    // The retrieval instant the publication projects onto the revision row
+    // (migration 0004); defaults to the legalitySourceStatements snapshot.
+    source_retrieved_at?: string;
   }[],
 ): D1PreparedStatement[] {
   return rules.map((rule, index) => {
@@ -404,7 +407,7 @@ export function revisionLegalityRuleStatements(
   revisionId: string,
   rules: Parameters<typeof canonicalLegalityRuleStatements>[1],
 ): D1PreparedStatement[] {
-  return rules.map((rule, index) => {
+  return rules.map(({ source_retrieved_at: sourceRetrievedAt, ...rule }, index) => {
     const pointer = `/observations/0/value/legality_rules/${index}`;
     const unresolvedScope = rule.unresolved_scope ?? null;
     const document = {
@@ -421,8 +424,9 @@ export function revisionLegalityRuleStatements(
       `INSERT INTO revision_legality_rules (
         catalogue_revision_id, legality_rule_id, supported_game,
         region, format, event_tier, effective_from, effective_until,
-        unresolved_scope_json, card_ids_json, document_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        unresolved_scope_json, card_ids_json, source_retrieved_at,
+        document_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       revisionId,
       rule.id,
@@ -434,6 +438,7 @@ export function revisionLegalityRuleStatements(
       rule.effective_until,
       JSON.stringify(unresolvedScope),
       JSON.stringify(canonicalLegalityCardIds(rule)),
+      sourceRetrievedAt ?? "2026-07-30T00:00:01.000Z",
       JSON.stringify(document),
     );
   });

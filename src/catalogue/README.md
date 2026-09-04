@@ -1,33 +1,80 @@
 # Catalogue clusters
 
-`src/catalogue` is being moved from one flat directory into ten cluster
-directories by an expand-contract series:
+`src/catalogue` is ten cluster directories. It got there by an
+expand-contract series:
 
-- **#96 (expand, done)**: each cluster directory exists with an
-  `index.ts` that re-exports its intended public surface from the flat
-  files. Nothing has moved; every existing import keeps working.
-- **#97 (migrate, this step)**: each flat file moves into its cluster, one
-  cluster per commit, and imports are repointed at the cluster indexes.
-  Cross-cluster imports go through indexes only; within a cluster, modules
-  import each other by relative path.
-- **#98 (contract)**: the flat layout and compatibility re-exports are
-  removed, and a boundary check enforces that the api worker imports only
-  `read` and `shared`, and that no `read` module imports `ingestion`,
-  `reconciliation`, or `curated` internals.
+- **#96 (expand)**: each cluster directory gained an `index.ts` that
+  re-exported its intended public surface from the flat files.
+- **#97 (migrate)**: each flat file moved into its cluster and imports were
+  repointed at the cluster indexes.
+- **#98 (contract)**: the compatibility re-exports were removed, the read
+  paths that reached past published projections were given
+  projection-backed alternatives (migration `0004_read_projection_facts.sql`),
+  and the boundary below became a CI gate.
 
-`npm run check:catalogue-cycles` walks every module under `src/catalogue`,
-including the cluster directories, and fails on any import cycle.
+## The contract, and how it is enforced
+
+Two scripts run in the `checks` job of `.github/workflows/ci.yml`:
+
+- `npm run check:catalogue-cycles` (`scripts/catalogue-import-cycles.mjs`)
+  walks every module under `src/catalogue` and fails on any import cycle.
+- `npm run check:catalogue-boundary`
+  (`scripts/catalogue-import-boundary.mjs`) walks the worker entrypoints,
+  `src/http`, and every module under `src/catalogue`, resolves each
+  relative import, and fails on any edge that breaks a rule below. A
+  violation names the importing file, the import specifier, and the rule.
+
+The rules:
+
+| Rule | What it enforces |
+| --- | --- |
+| `api-worker-surface` | `apps/api/src/**` imports, out of `src/`, only the `read` and `shared` cluster indexes, `src/http/**`, and `src/runtime-capabilities.mjs`. The api worker never reaches an administration cluster or a cluster internal. |
+| `worker-cluster-index` | A worker entrypoint imports a catalogue cluster only through its `index.ts`. |
+| `cluster-direction` | A module under `src/catalogue/<cluster>/` imports only the clusters listed for it under "Dependency direction" below. In particular no `read` module imports `ingestion`, `reconciliation`, `curated`, or `source-evidence`, and `shared` imports no other cluster. |
+| `cluster-index` | A cross-cluster import targets the cluster's `index.ts`, never a module inside it. Within a cluster, modules import each other by relative path. |
+| `http-leaf` | `src/http/**` imports nothing under `src/catalogue`, so the api worker cannot reach a cluster through it. |
+
+Type-only imports count. Tests, scripts, the CLI, and acceptance may
+import cluster internals by path; they are not scanned.
+
+The boundary is also a data contract: the `read` cluster queries only
+published projections (`catalogue_state`, `catalogue_revisions`,
+`catalogue_query_revisions`, `revision_*`, `card_search_fts_state`,
+`catalogue_exports`, `catalogue_export_deletion*`,
+`catalogue_curated_provenance`, `source_freshness`), never a
+reconciliation, source-evidence, or curated table. The facts it serves are
+written into those tables at publication time by the owning cluster:
+
+- Printing Image content (`read.ts`) used to join
+  `reconciled_printing_images`; `revision_printing_images` now carries
+  `media_type`, `content_sha256`, `content_byte_length`, and `object_key`,
+  written by the `ingestion` cluster's publication statements.
+- The Legality Status evidence sidecar (`legality-status.ts`) used to join
+  `source_snapshots` for each rule's capture instant;
+  `revision_legality_rules.source_retrieved_at` now carries it, written by
+  `legality-publication.ts`.
+- Product evidence (`product-release-read.ts`) used to join
+  `curated_revisions` for each Curated Revision's author and creation
+  instant; it now reads them from `catalogue_curated_provenance`, which
+  `curatedPublicationStatements` already projected per revision.
+
+Migration 0004 backfills the two new column sets on a populated database
+and adds an `AFTER INSERT` guard on each table that rejects a revision row
+without them (`acceptance/schema-hygiene.test.mjs` proves both).
 
 ## Which cluster owns which file
 
 Every module belongs to exactly one cluster directory (the former flat
 file names are unchanged). The right-hand column is the public surface the
-cluster's `index.ts` re-exports today; anything a module exports that is
-not listed there is cluster-internal.
+cluster's `index.ts` re-exports; anything a module exports that is not
+listed there is cluster-internal. The rule for what an index exposes:
+whatever a worker entrypoint, another cluster, a script, the CLI,
+acceptance, or a test consumes. No index uses `export *`; every re-export
+is enumerated, and each is re-exported from the module that defines it.
 
 | Cluster | Files | Public surface (`index.ts`) |
 | --- | --- | --- |
-| `shared` | `serialization.ts`, `export-compression.ts`, `calendar-date.ts`, `streaming-sha256.ts`, `idempotent-identities.ts`, `administration-problem.ts`, `operational-diagnostics.ts`, `spine-revision.mjs` (+ `.d.mts`), `catalogue-candidate-types.ts`, `catalogue-candidate.ts`, `curated-provenance.ts`, `reconciliation-profile.ts`, `reconciliation-payload.ts`, `export-limits.ts` | Canonical JSON and hashing, deterministic gzip, calendar-date check, streaming SHA-256, idempotent identities, `AdministrationProblem`, operational diagnostics, `SPINE_REVISION_ID`, the Catalogue Candidate contract and its leaf types, Curated Provenance types, Game Profile contract helpers, D1 payload chunking and the guarded atomic batch, export limits |
+| `shared` | `serialization.ts`, `export-compression.ts`, `calendar-date.ts`, `streaming-sha256.ts`, `idempotent-identities.ts`, `administration-problem.ts`, `operational-diagnostics.ts`, `spine-revision.mjs` (+ `.d.mts`), `catalogue-candidate-types.ts`, `curated-provenance.ts`, `reconciliation-profile.ts`, `reconciliation-payload.ts`, `export-limits.ts` | Canonical JSON and hashing, deterministic gzip, calendar-date check, streaming SHA-256, idempotent identities, `AdministrationProblem`, operational diagnostics, `SPINE_REVISION_ID`, the Catalogue Candidate contract and its leaf types, Curated Provenance types, Game Profile contract helpers, D1 payload chunking and the guarded atomic batch, export limits |
 | `read` | `read.ts`, `detail-representation.ts`, `card-collection-read.ts`, `printing-collection-read.ts`, `product-release-read.ts`, `legality-status.ts`, `card-search.ts`, `source-freshness.ts` | The api worker's response builders and read problems (cards, printings, products, exports, status, Legality Status), the card-search text and query contract, source-freshness storage helpers |
 | `ingestion` | `ingestion.ts`, `fixture.ts`, `candidate-inspection.ts`, `catalogue-revision-retention.ts`, `card-search-materialization.ts`, `card-search-repair-administration.ts`, `production-release.ts` | Ingestion Run administration (`startFixtureRun`, `approveRun`, `rejectRun`, `retryRun`, `retryPublicationCleanup`, `showRun`, `inspectCandidate`, `administrationStatus`), Production Release smoke targets, fixture helpers, guarded card-search repair, `prepareProductionRelease` |
 | `reconciliation` | `card-printing-reconciliation.ts`, `digimon-reconciliation.ts`, `errata-rules-text.ts`, `reconciliation-candidate-store.ts`, `reconciliation-evidence.ts`, `reconciliation-model.ts`, `reconciliation-observation.ts`, `reconciliation-publication.ts`, `reconciliation-read.ts`, `reconciliation-relationships.ts`, `reconciliation-repository.ts`, `reconciliation-workflow.ts`, `product-release-catalogue.ts`, `product-release-projection.ts`, `product-release-publication.ts`, `publication-lifecycle-types.ts` | Card and Printing reconciliation entry points, the reconciliation Workflow, candidate persistence (`digestBoundCandidatePayload`, `failReconciliationWorkflow`, `retainedReconciliationResult`), the publication plan and its evidence types, observation parsing, Gundam listing-graph validation, erratum export helpers, Product and Release reconciliation, projection, and publication statements |
@@ -38,16 +85,11 @@ not listed there is cluster-internal.
 | `backup-recovery` | `backup-recovery.ts`, `backup-workflow.ts`, `recovery.ts`, `card-search-recovery.ts`, `card-search-recovery-statements.ts` | Backup Attempt creation, status, and verification, the backup Workflow, Catalogue Recovery (begin, inspect, verify, accept, restore guard), the D1 providers, card-search export and restore reconstruction |
 | `export` | `export.ts`, `export-validation.ts`, `catalogue-export-deletion.ts` | `buildCatalogueExport` and its types, export record and manifest verification, Catalogue Export deletion |
 
-No index uses `export *`; every re-export is enumerated. The rule for what
-an index exposes: whatever a worker entrypoint, another cluster, a script,
-the CLI, acceptance, or a test consumes today. Tests may keep importing
-cluster-internal modules by path after #97; #98 decides whether to narrow
-the surfaces to worker and cross-cluster use only.
-
 ## Dependency direction
 
-`shared` imports nothing outside itself. The intended direction between the
-other clusters, read as "may import from":
+`shared` imports nothing outside itself. The direction between the other
+clusters, read as "may import from", is the `allowedImports` table the
+boundary check enforces:
 
 - `adapters` -> `shared`
 - `legality` -> `shared`, `adapters`
@@ -59,9 +101,10 @@ other clusters, read as "may import from":
 - `backup-recovery` -> `shared`, `read`, `legality`
 - `ingestion` -> every cluster
 
-The api worker imports `read` only (its transitive reach into `legality`
-and `adapters` through `legality-status.ts` and `source-freshness.ts` is
-what #98 addresses); the ingestion worker imports everything else.
+The api worker imports `read` and `shared` only; its transitive reach
+into `legality` and `adapters` through `legality-status.ts` and
+`source-freshness.ts` is the read cluster's own dependency, bounded by the
+direction above. The ingestion worker imports everything else.
 
 ## Edges #97 repointed to keep the cluster graph acyclic
 
@@ -81,11 +124,13 @@ the direction above. Each was a compatibility re-export whose real owner is
   `./legality-rule`; the type is defined in `catalogue-candidate-types.ts`
   (`shared`).
 
-Other compatibility re-exports that #98 removes once nothing imports them:
-`catalogue-candidate.ts` (a re-export of `catalogue-candidate-types.ts`),
-the `ListingReconciliationTraits` re-export on `source-adapters.ts`, the
-type re-exports on `legality-rule.ts` and `product-release-catalogue.ts`,
-and `deterministicGzip` on `serialization.ts`.
+The other compatibility re-exports (`catalogue-candidate.ts`, the
+`ListingReconciliationTraits` re-export on `source-adapters.ts`, the type
+re-exports on `legality-rule.ts`, `legality-effect-policy.ts`,
+`product-release-catalogue.ts`, `errata-rules-text.ts`,
+`reconciliation-publication.ts`, and `source-evidence-repository.ts`,
+`AdministrationProblem` on `ingestion.ts`, and `deterministicGzip` on
+`serialization.ts`) were removed by #98 once nothing imported them.
 
 ## Placement notes
 
@@ -98,8 +143,8 @@ and `deterministicGzip` on `serialization.ts`.
 - `reconciliation-profile.ts` and `reconciliation-payload.ts` sit in
   `shared` despite their names: the Game Profile contract is consumed by
   `legality`, `curated`, `export`, and `reconciliation`, and the payload
-  chunking by every cluster that writes publication statements. Renaming
-  them is #97's call when they move.
+  chunking by every cluster that writes publication statements. They kept
+  their names when they moved.
 - `curated-provenance.ts` sits in `shared` because
   `catalogue-candidate-types.ts` imports it; keeping it in `curated` would
   make `shared` depend on `curated`.

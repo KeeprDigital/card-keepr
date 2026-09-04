@@ -1,5 +1,6 @@
 import { type CatalogueCandidate, byteBoundedJsonArrays, canonicalJson } from "../shared";
-import { legalityRuleCardIds, normalizedLegalityRuleLifecycle } from "./legality-rule";
+import { legalityRuleCardIds } from "./legality-rule";
+import { normalizedLegalityRuleLifecycle } from "./legality-rule-lifecycle";
 
 export function legalityPublicationStatements(
   database: D1Database,
@@ -93,13 +94,21 @@ export function legalityPublicationStatements(
           `INSERT INTO revision_legality_rules (
              catalogue_revision_id, legality_rule_id, supported_game,
              region, format, event_tier, effective_from, effective_until,
-             unresolved_scope_json, card_ids_json, document_json
+             unresolved_scope_json, card_ids_json, source_retrieved_at,
+             document_json
            )
            SELECT ?, canonical.id, canonical.supported_game,
                   canonical.region, canonical.format,
                   canonical.event_tier, canonical.effective_from,
                   canonical.effective_until, canonical.unresolved_scope_json,
                   canonical.card_ids_json,
+                  -- The Legality Status evidence sidecar reports the Source
+                  -- Snapshot's retrieval instant as captured_at; projecting it
+                  -- here keeps the api worker on published projections
+                  -- (issue #98). A rule whose snapshot is absent leaves it
+                  -- NULL and the projection guard rejects the publication.
+                  (SELECT snapshot.retrieved_at FROM source_snapshots AS snapshot
+                   WHERE snapshot.id = canonical.source_snapshot_id),
                   json_set(
                     json_extract(value, '$.document_json'),
                     '$.source_snapshot_id',

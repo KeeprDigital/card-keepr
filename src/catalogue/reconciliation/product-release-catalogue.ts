@@ -19,25 +19,6 @@ import {
   sha256Text,
 } from "../shared";
 
-// The product-and-release shapes of a Catalogue Candidate live in the leaf
-// module `catalogue-candidate-types`; they stay importable from here.
-export type {
-  CatalogueDistributionContext,
-  CatalogueProduct,
-  CatalogueRelease,
-  EvidenceCategory,
-  ProductAuthorityClass,
-  ProductDisagreement,
-  ProductEntityReference,
-  ProductEvidenceResource,
-  ProductReference,
-  ProductRelationship,
-  ProductSourceObservation,
-  ProductWithdrawal,
-  ReleasePrecision,
-  ReleaseStatus,
-} from "../shared";
-
 export type ProductReleaseEvidenceInput = {
   value: unknown;
   sourceObservationId: string;

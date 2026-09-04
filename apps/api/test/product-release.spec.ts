@@ -208,9 +208,17 @@ beforeEach(async () => {
     ),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_printing_images (
-         catalogue_revision_id, image_id, printing_id
-       ) VALUES ('catrev_products', ?, ?)`,
-    ).bind(printingImage.id, printingImage.printing_id),
+         catalogue_revision_id, image_id, printing_id,
+         media_type, content_sha256, content_byte_length, object_key
+       ) VALUES ('catrev_products', ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      printingImage.id,
+      printingImage.printing_id,
+      printingImage.media_type,
+      printingImage.content_sha256,
+      18,
+      `printing-images/${printingImage.content_sha256}`,
+    ),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO reconciled_printing_images (
          id, printing_id, role, media_type, width, height,
@@ -229,9 +237,17 @@ beforeEach(async () => {
     ),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_printing_images (
-         catalogue_revision_id, image_id, printing_id
-       ) VALUES ('catrev_products', ?, ?)`,
-    ).bind(backPrintingImage.id, backPrintingImage.printing_id),
+         catalogue_revision_id, image_id, printing_id,
+         media_type, content_sha256, content_byte_length, object_key
+       ) VALUES ('catrev_products', ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      backPrintingImage.id,
+      backPrintingImage.printing_id,
+      backPrintingImage.media_type,
+      backPrintingImage.content_sha256,
+      17,
+      `printing-images/${backPrintingImage.content_sha256}`,
+    ),
     testEnv.CATALOGUE_DB.prepare(
       `UPDATE catalogue_state
        SET current_revision_id = 'catrev_products',
@@ -493,6 +509,40 @@ test("authenticated Printing Image content is immutable, conditional, and range-
     status: 416,
     code: "range_not_satisfiable",
   });
+});
+
+test("Printing Image content is served from the revision projection, not the reconciled identity row", async () => {
+  // The read cluster queries published projections only (issue #98). The
+  // reconciled identity row here satisfies the foreign key but names an
+  // object that does not exist; only the projection's content facts reach
+  // the response.
+  const projectedSha256 = "2".repeat(64);
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO reconciled_printing_images (
+         id, printing_id, role, media_type, width, height,
+         content_sha256, content_byte_length, object_key
+       ) VALUES ('printing_image_st15_projected', 'printing_st15_event', 'other',
+         'image/png', 1, 1, ?, 3, 'printing-images/unpublished')`,
+    ).bind("3".repeat(64)),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_printing_images (
+         catalogue_revision_id, image_id, printing_id,
+         media_type, content_sha256, content_byte_length, object_key
+       ) VALUES ('catrev_products', 'printing_image_st15_projected', 'printing_st15_event',
+         'image/webp', ?, 15, ?)`,
+    ).bind(projectedSha256, `printing-images/${projectedSha256}`),
+  ]);
+  await testEnv.PRINTING_IMAGES.put(`printing-images/${projectedSha256}`, new TextEncoder().encode("projected-image"), {
+    httpMetadata: { contentType: "image/webp" },
+  });
+
+  const content = await api("/v1/printing-images/printing_image_st15_projected/content");
+  expect(content.status).toBe(200);
+  expect(content.headers.get("content-type")).toBe("image/webp");
+  expect(content.headers.get("content-length")).toBe("15");
+  expect(content.headers.get("etag")).toBe(`"${projectedSha256}"`);
+  expect(new TextDecoder().decode(await content.arrayBuffer())).toBe("projected-image");
 });
 
 test("Printing Image content rejects unknown identities before private content is returned", async () => {
@@ -1011,20 +1061,27 @@ test("Product evidence projects Curated Revisions onto exact Product and nested 
       `UPDATE operation_state SET active_ingestion_run_id = NULL
        WHERE singleton = 1`,
     ),
+    // Publication projects each pinned Curated Revision's author and
+    // creation instant into catalogue_curated_provenance, and the evidence
+    // sidecar reads that projection (issue #98). The curated_revisions rows
+    // satisfy the foreign key and deliberately carry a later created_at so
+    // a read that reached into the curated table would be caught.
     ...[
       {
         id: "currev_product_name",
         target: productRevision.target,
         digest: productRevision.content_digest,
+        rationale: productRevision.rationale,
         createdAt: "2026-01-02T00:00:00.000Z",
       },
       {
         id: "currev_release_status",
         target: releaseRevision.target,
         digest: releaseRevision.content_digest,
+        rationale: releaseRevision.rationale,
         createdAt: "2026-01-03T00:00:00.000Z",
       },
-    ].map(({ id, target, digest, createdAt }) =>
+    ].flatMap(({ id, target, digest, rationale, createdAt }) => [
       testEnv.CATALOGUE_DB.prepare(
         `INSERT INTO curated_revisions (
            id, game, target_key, target_kind, effective_from, effective_to,
@@ -1041,9 +1098,25 @@ test("Product evidence projects Curated Revisions onto exact Product and nested 
         digest,
         "d".repeat(64),
         JSON.stringify({ catalogue_revision_id: "catrev_products" }),
-        createdAt,
+        "2026-02-01T00:00:00.000Z",
       ),
-    ),
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO catalogue_curated_provenance (
+           catalogue_revision_id, curated_revision_id, target_key,
+           content_digest, provenance_json
+         ) VALUES ('catrev_products', ?, ?, ?, ?)`,
+      ).bind(
+        id,
+        JSON.stringify(target),
+        digest,
+        JSON.stringify({
+          author: "owner",
+          created_at: createdAt,
+          evidence: [],
+          rationale,
+        }),
+      ),
+    ]),
     testEnv.CATALOGUE_DB.prepare(
       `UPDATE revision_products SET document_json = ?
        WHERE catalogue_revision_id = 'catrev_products'

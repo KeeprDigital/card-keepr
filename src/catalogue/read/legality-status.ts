@@ -26,11 +26,15 @@ type ContextRow = {
 
 type RuleRow = {
   document_json: string;
+  // The Source Snapshot retrieval instant the publication projected for the
+  // rule's Source Observation (issue #98); NULL only on a row published
+  // before migration 0004 whose snapshot had already gone.
+  source_retrieved_at: string | null;
 };
 
-type SnapshotEvidenceRow = {
-  id: string;
-  retrieved_at: string;
+type StoredRule = {
+  rule: StoredLegalityStatusRule;
+  sourceRetrievedAt: string | null;
 };
 
 export class LegalityStatusProblem extends Error {
@@ -101,7 +105,7 @@ export async function contextualLegalityStatusResponse(
            AND applicability_kind = 'all_cards'
            AND card_id = ''
        )
-       SELECT rule.document_json
+       SELECT rule.document_json, rule.source_retrieved_at
        FROM applicable
        JOIN revision_legality_rules AS rule
          ON rule.catalogue_revision_id = ?
@@ -154,12 +158,16 @@ export async function contextualLegalityStatusResponse(
   if (rows.results.length > maximumLegalityStatusRules) {
     throw new LegalityStatusProblem(500, "internal_error", "The request could not be completed.");
   }
-  const rules = rows.results.map((row) => parsedStoredDocument(() => parseStoredLegalityRule(row.document_json)));
+  const stored: StoredRule[] = rows.results.map((row) => ({
+    rule: parsedStoredDocument(() => parseStoredLegalityRule(row.document_json)),
+    sourceRetrievedAt: row.source_retrieved_at,
+  }));
+  const rules = stored.map(({ rule }) => rule);
   const data = regions.map((region) => deriveRegionStatus(card, rules, query, region));
   const self = publicUrl(base, `${url.pathname}${url.search}`);
   const document = {
     data,
-    ...(query.includeEvidence ? await legalityEvidenceSidecar(database, rules, query, regions) : {}),
+    ...(query.includeEvidence ? legalityEvidenceSidecar(stored, query, regions) : {}),
     meta: {
       catalogue_revision_id: context.current_revision_id,
       published_at: context.published_at,
@@ -245,12 +253,11 @@ function applicableRules(
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 
-async function legalityEvidenceSidecar(
-  database: D1Database,
-  rules: readonly StoredLegalityStatusRule[],
+function legalityEvidenceSidecar(
+  stored: readonly StoredRule[],
   query: { cardId: string },
   regions: readonly LegalityRegion[],
-): Promise<{
+): {
   included: Array<{
     type: "source_observation";
     id: string;
@@ -258,25 +265,11 @@ async function legalityEvidenceSidecar(
     source: string;
   }>;
   provenance: Record<string, string[]>;
-}> {
+} {
+  const rules = stored.map(({ rule }) => rule);
+  const capturedAtByRule = new Map(stored.map(({ rule, sourceRetrievedAt }) => [rule.id, sourceRetrievedAt]));
   const applicableByRegion = regions.map((region) => applicableRules(rules, query, region));
   const applicable = applicableByRegion.flat();
-  const snapshotIds = [...new Set(applicable.map((rule) => rule.source_snapshot_id))].sort();
-  const snapshots =
-    snapshotIds.length === 0
-      ? []
-      : (
-          await database
-            .prepare(
-              `SELECT id, retrieved_at
-       FROM source_snapshots
-       WHERE id IN (SELECT value FROM json_each(?))
-       ORDER BY id`,
-            )
-            .bind(JSON.stringify(snapshotIds))
-            .all<SnapshotEvidenceRow>()
-        ).results;
-  const capturedAtBySnapshot = new Map(snapshots.map((snapshot) => [snapshot.id, snapshot.retrieved_at]));
   const evidenceById = new Map<
     string,
     {
@@ -287,8 +280,8 @@ async function legalityEvidenceSidecar(
     }
   >();
   for (const rule of applicable) {
-    const capturedAt = capturedAtBySnapshot.get(rule.source_snapshot_id);
-    if (capturedAt === undefined) {
+    const capturedAt = capturedAtByRule.get(rule.id) ?? null;
+    if (capturedAt === null) {
       throw new Error("Legality Status Source Observation evidence disappeared.");
     }
     evidenceById.set(rule.source_observation_id, {

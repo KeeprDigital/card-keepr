@@ -3,9 +3,6 @@ import { officialRawAdapterContracts } from "./product-release-source-adapters.t
 import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.ts";
 import { requiredOfficialSourceScope } from "./official-source-scope.ts";
 import type { ListingReconciliationTraits } from "./source-adapter-registration-types.ts";
-// The listing reconciliation traits live in the leaf module
-// `source-adapter-registration-types`; they stay importable from here.
-export type { ListingReconciliationTraits } from "./source-adapter-registration-types.ts";
 
 export type OfficialSourceContract = Readonly<{
   supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam";

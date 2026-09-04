@@ -13,32 +13,12 @@ import {
   sha256Text,
   isIsoCalendarDate,
 } from "../shared";
-// The Legality Rule shapes live in the leaf module `catalogue-candidate-types`;
-// they stay importable from here.
-export type {
-  LegalityRegion,
-  LegalityRule,
-  LegalityRuleSourceFieldPointers,
-  UnresolvedLegalityScope,
-  UnresolvedLegalityScopeDimension,
-} from "../shared";
 import {
   parseLegalityRuleEffect,
   parseStoredLegalityRuleEffect,
   type ParsedLegalityRuleEffect,
 } from "./legality-effect-policy";
-export {
-  evaluateLegalityRuleEffect,
-  legalityExportKind,
-  type LegalityEvaluation,
-  type LegalityRuleEffect,
-} from "./legality-effect-policy";
 import { registeredLegalitySourceScope } from "../adapters";
-export {
-  legalityRulesForCandidate,
-  normalizedLegalityRuleLifecycle,
-  type LegalityRuleLifecycle,
-} from "./legality-rule-lifecycle";
 
 /**
  * A rule whose unresolved scope names the `target_scope` dimension targets an

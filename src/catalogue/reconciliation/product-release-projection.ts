@@ -1,10 +1,10 @@
 import type {
   CatalogueDistributionContext,
   CatalogueProduct,
+  CuratedProvenance,
   EvidenceCategory,
   ProductRelationship,
-} from "./product-release-catalogue";
-import type { CuratedProvenance } from "../shared";
+} from "../shared";
 
 export type PrintingProductProjection = {
   id: string;

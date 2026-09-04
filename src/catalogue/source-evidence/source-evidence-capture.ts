@@ -28,8 +28,8 @@ import {
   type EvidenceRequestRow,
   type IngestionEvidenceRow,
   type RetryExhaustionFacts,
-  type SnapshotRow,
 } from "./source-evidence-repository";
+import type { SnapshotRow } from "./source-evidence-repository-types";
 const multipartPartBytes = 5 * 1024 * 1024;
 const representedRequestHeaders = new Set(["accept", "accept-language", "user-agent"]);
 

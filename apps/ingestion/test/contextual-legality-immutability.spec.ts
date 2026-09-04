@@ -615,8 +615,9 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
         `INSERT INTO revision_legality_rules (
          catalogue_revision_id, legality_rule_id, supported_game,
          region, format, event_tier, effective_from, effective_until,
-         card_ids_json, document_json
-       ) VALUES ('catrev_upgraded_legality_guard', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         card_ids_json, source_retrieved_at, document_json
+       ) VALUES ('catrev_upgraded_legality_guard', ?, ?, ?, ?, ?, ?, ?, ?,
+         '2026-08-01T00:00:01.000Z', ?)`,
       )
       .bind(
         upgradedRule.id,

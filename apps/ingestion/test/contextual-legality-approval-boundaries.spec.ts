@@ -107,6 +107,22 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   expect(copyLimit!.source_observation_pointer).not.toBe(combination!.source_observation_pointer);
   const published = await approve(first.reconciled, "publish-current-rules");
   expect(published.response.status).toBe(200);
+  // Publication projects each rule's Source Snapshot retrieval instant onto
+  // the revision row, so the api's evidence sidecar reads the projection
+  // rather than source_snapshots (issue #98).
+  const projectedEvidence = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT rule.source_retrieved_at, snapshot.retrieved_at
+     FROM revision_legality_rules AS rule
+     JOIN source_snapshots AS snapshot
+       ON snapshot.id = json_extract(rule.document_json, '$.source_snapshot_id')
+     WHERE rule.catalogue_revision_id = ?`,
+  )
+    .bind(requiredString(published.document, "resulting_revision_id"))
+    .all<{ source_retrieved_at: string | null; retrieved_at: string }>();
+  expect(projectedEvidence.results.length).toBeGreaterThan(0);
+  for (const row of projectedEvidence.results) {
+    expect(row.source_retrieved_at).toBe(row.retrieved_at);
+  }
 
   const omitted = await collectFixtureLegality(
     "https://official-source.invalid/reconciliation/contextual-legality-domain?rules=omitted",

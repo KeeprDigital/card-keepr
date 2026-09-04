@@ -8,7 +8,9 @@ import {
   maximumLegalityRuleRelationships,
   maximumLegalityStatusRules,
 } from "../shared";
-import { legalityExportKind, legalityRuleCardIds, normalizedLegalityRuleLifecycle } from "./legality-rule";
+import { legalityRuleCardIds } from "./legality-rule";
+import { legalityExportKind } from "./legality-effect-policy";
+import { normalizedLegalityRuleLifecycle } from "./legality-rule-lifecycle";
 import { canonicalLegalityRuleEffect } from "./legality-effect-policy";
 
 export function legalityRuleExportRecords(candidate: CatalogueCandidate, revisionId: string) {
