@@ -1,12 +1,8 @@
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import {
-  type PrintingQueryFact,
-  printingQueryProjectionStatements,
-} from "../../../src/catalogue/ingestion/printing-query-materialization";
 import { printingCollectionQuery } from "../../../src/catalogue/read";
-import { seedPrintingQueryFixture } from "./printing-query-fixtures";
+import { seedPrintingQueryFixture, seedPrintingQueryProjection } from "./printing-query-fixtures";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 test("Printing filters seek publication indexes without scanning thousands of unrelated Printings", async () => {
@@ -32,7 +28,7 @@ test("Printing filters seek publication indexes without scanning thousands of un
           'lifecycle', json_object('current', json('true')))
       FROM revision_printings WHERE catalogue_revision_id = 'catrev_products'`),
   ]);
-  await seedPrintingQueryProjection();
+  await seedPrintingQueryProjection(testEnv.CATALOGUE_DB);
   const none = { card_id: null, game: null, rarity: null, product_id: null, release_region: null };
   const cases = [
     [{ card_id: "card_st15_event" }, "revision_printing_query_by_card"],
@@ -74,19 +70,4 @@ function api(path: string): Promise<Response> {
       headers: { authorization: "Bearer vitest-api-key", "cf-connecting-ip": "203.0.113.28" },
     }),
   );
-}
-
-async function seedPrintingQueryProjection() {
-  const rows = await testEnv.CATALOGUE_DB.prepare(`
-    SELECT printing.printing_id, printing.card_id,
-           coalesce(json_extract(card.document_json, '$.data.game'), json_extract(card.document_json, '$.game')) AS supported_game,
-           coalesce(json_extract(printing.document_json, '$.data.rarity.normalized'), json_extract(printing.document_json, '$.rarity.normalized')) AS normalized_rarity
-    FROM revision_printings AS printing JOIN revision_cards AS card
-      ON card.catalogue_revision_id = printing.catalogue_revision_id AND card.card_id = printing.card_id
-    WHERE printing.catalogue_revision_id = 'catrev_products'
-  `).all<PrintingQueryFact>();
-  await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare("DELETE FROM revision_printing_query WHERE catalogue_revision_id = 'catrev_products'"),
-    ...printingQueryProjectionStatements(testEnv.CATALOGUE_DB, "catrev_products", rows.results),
-  ]);
 }

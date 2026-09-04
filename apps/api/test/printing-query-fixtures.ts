@@ -1,3 +1,8 @@
+import {
+  type PrintingQueryFact,
+  printingQueryProjectionStatements,
+} from "../../../src/catalogue/ingestion/printing-query-materialization";
+
 export async function seedPrintingQueryFixture(database: D1Database): Promise<void> {
   await database.batch([
     database
@@ -39,5 +44,22 @@ export async function seedPrintingQueryFixture(database: D1Database): Promise<vo
       `INSERT INTO revision_products VALUES ('catrev_products','product_st15','one-piece','ST-15','Starter','starter','["EN-OCEANIA"]','{}')`,
     ),
     database.prepare("UPDATE catalogue_state SET current_revision_id='catrev_products' WHERE singleton=1"),
+  ]);
+}
+
+export async function seedPrintingQueryProjection(database: D1Database): Promise<void> {
+  const rows = await database
+    .prepare(`
+    SELECT printing.printing_id, printing.card_id,
+           coalesce(json_extract(card.document_json, '$.data.game'), json_extract(card.document_json, '$.game')) AS supported_game,
+           coalesce(json_extract(printing.document_json, '$.data.rarity.normalized'), json_extract(printing.document_json, '$.rarity.normalized')) AS normalized_rarity
+    FROM revision_printings AS printing JOIN revision_cards AS card
+      ON card.catalogue_revision_id = printing.catalogue_revision_id AND card.card_id = printing.card_id
+    WHERE printing.catalogue_revision_id = 'catrev_products'
+  `)
+    .all<PrintingQueryFact>();
+  await database.batch([
+    database.prepare("DELETE FROM revision_printing_query WHERE catalogue_revision_id = 'catrev_products'"),
+    ...printingQueryProjectionStatements(database, "catrev_products", rows.results),
   ]);
 }

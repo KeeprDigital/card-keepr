@@ -4,13 +4,10 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { beforeEach, expect, test } from "vitest";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
-import {
-  type PrintingQueryFact,
-  printingQueryProjectionStatements,
-} from "../../../src/catalogue/ingestion/printing-query-materialization";
 import { productReleasePublicationStatements } from "../../../src/catalogue/reconciliation";
 import { type CatalogueCandidate, catalogueCandidateContract } from "../../../src/catalogue/shared";
 import { apiPublicBase } from "./api-fixtures";
+import { seedPrintingQueryProjection } from "./printing-query-fixtures";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 
@@ -286,7 +283,7 @@ beforeEach(async () => {
       sha256: backPrintingImage.content_sha256,
     },
   );
-  await seedPrintingQueryProjection();
+  await seedPrintingQueryProjection(testEnv.CATALOGUE_DB);
 });
 
 test("authenticated Product reads preserve regional precision and announced status", async () => {
@@ -1462,7 +1459,7 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     ),
   ]);
 
-  await seedPrintingQueryProjection();
+  await seedPrintingQueryProjection(testEnv.CATALOGUE_DB);
 
   const firstResponse = await api("/v1/printings?product_id=product_st15&release_region=EN-OCEANIA&limit=1");
   expect(firstResponse.status).toBe(200);
@@ -1613,19 +1610,4 @@ function expectSchema(definition: string, value: unknown): void {
   const validate = ajv.getSchema(`${apiSchema.$id}#/$defs/${definition}`);
   expect(validate).toBeDefined();
   expect(validate!(value), JSON.stringify(validate!.errors)).toBe(true);
-}
-
-async function seedPrintingQueryProjection() {
-  const rows = await testEnv.CATALOGUE_DB.prepare(`
-    SELECT printing.printing_id, printing.card_id,
-           coalesce(json_extract(card.document_json, '$.data.game'), json_extract(card.document_json, '$.game')) AS supported_game,
-           coalesce(json_extract(printing.document_json, '$.data.rarity.normalized'), json_extract(printing.document_json, '$.rarity.normalized')) AS normalized_rarity
-    FROM revision_printings AS printing JOIN revision_cards AS card
-      ON card.catalogue_revision_id = printing.catalogue_revision_id AND card.card_id = printing.card_id
-    WHERE printing.catalogue_revision_id = 'catrev_products'
-  `).all<PrintingQueryFact>();
-  await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare("DELETE FROM revision_printing_query WHERE catalogue_revision_id = 'catrev_products'"),
-    ...printingQueryProjectionStatements(testEnv.CATALOGUE_DB, "catrev_products", rows.results),
-  ]);
 }
