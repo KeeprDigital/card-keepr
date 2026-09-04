@@ -46,8 +46,39 @@ level by one.
 database starts at the schema-valid `catrev_spine_000` bootstrap pointer until
 the first controlled fixture is approved.
 
-The read-only CLI health check takes credentials only from the environment,
-never from command arguments:
+Each Worker serves two health routes under its mount (issue #144).
+
+- **Liveness**, `GET /healthz` (`/api/healthz`, `/ingest/healthz`), needs no
+  credential and answers `{ "status": "ok", "runtime": "api" | "ingestion" }`
+  and nothing else: no version, no bindings, no catalogue facts. It has its
+  own per-IP rate limit, separate from the catalogue and administration
+  limits, and is not written to the operational request log. Every other
+  route still requires its bearer key, and an unknown path under the mount
+  still answers `404`. Point external monitors here: a Cloudflare Health
+  Check (Traffic → Health Checks) against `https://card.keepr.digital/api/healthz`
+  and a second one against `https://card.keepr.digital/ingest/healthz`, method
+  `GET`, expecting HTTP `200` and the body `"status":"ok"`, watches both
+  mounts without holding a credential.
+- **Readiness**, `GET /health`, needs the Worker's bearer key and extends the
+  runtime health document with a `checks` block that proves the deployed
+  bindings: `database` (a `SELECT 1`, the schema level from
+  `catalogue_schema_state`, the current Catalogue Revision pointer, and on
+  the ingestion Worker the configured `CATALOGUE_D1_DATABASE_ID`), `objects`
+  (a bounded listing of every bound R2 bucket), `workflows` (ingestion only:
+  each Workflow binding answers a `get` of an id that never exists with the
+  expected not-found error rather than a binding error), `public_base` (the
+  configured `PUBLIC_BASE_URL` and whether the request arrived through it),
+  and `version` (the deployed Worker version id, tag, and timestamp from the
+  `CF_VERSION_METADATA` binding). Any failed check turns `status` to
+  `degraded` and the response to HTTP `503`; failures carry a closed reason
+  code, never the binding's own error text. The D1 binding does not expose
+  its database id at runtime, so `database.configured_database_id` reports
+  the var for comparison and the guarded release proves the binding and the
+  var agree before activation.
+
+The read-only CLI health check reads readiness on both runtimes, prints the
+checks, and exits non-zero when either runtime is degraded. It takes
+credentials only from the environment, never from command arguments:
 
 ```sh
 export KEEPR_API_KEY='...'

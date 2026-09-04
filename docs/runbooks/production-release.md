@@ -69,10 +69,12 @@ direct `wrangler deploy`.
    (`verify-target`), uploaded-version bindings (`verify-version`), and the
    route triggers. The live gate additionally proves the catalogue is empty.
 4. The workflow runs a reduced smoke instead of the data-dependent checks:
-   `/health` with and without a valid key on the API mount, an
-   unauthenticated `401` from the ingestion mount (the workflow holds no
-   administration credential; the placeholder origin never answers so), and
-   `/v1/catalogue` reporting the Spine Revision.
+   readiness (`/health`) reporting `status: ok` with a valid key on the API
+   mount and `401` without one, an unauthenticated `401` from the ingestion
+   mount's `/health` (the workflow holds no administration credential; the
+   placeholder origin never answers so), liveness (`/healthz`) answering
+   `200` without a credential on both mounts, and `/v1/catalogue` reporting
+   the Spine Revision.
 5. No `production_releases` row is written: its recovery columns presuppose a
    verified backup. The Production Release holds the same lease and keeps its
    phase evidence (`release-deploying`, `release-binding`, `release-smoke`)
@@ -114,8 +116,15 @@ checked-in forward migrations, uploads tagged immutable Worker versions,
 verifies that each uploaded version binds exactly the checked-in vars,
 bindings, and expected secrets, activates the API and ingestion pair,
 deploys both Workers' route triggers, observes the resulting binding, and
-runs black-box health/auth/revision/Card/Printing/search/Legality
-Status/export/image checks against `API_BASE_URL`.
+runs black-box readiness/liveness/auth/revision/Card/Printing/search/Legality
+Status/export/image checks against `API_BASE_URL`. The readiness check
+(`/health`, issue #144) proves the activated version's D1, R2, Workflow, and
+version bindings from inside the Worker: a `degraded` document answers `503`
+and fails the smoke, so a release that activated with a broken binding never
+reaches the smoke-passed evidence. After a release, `keepr health` reads the
+same document and exits non-zero while either runtime is degraded, and the
+liveness routes (`/api/healthz`, `/ingest/healthz`) are what an external
+Cloudflare Health Check watches (see the README health section).
 
 Versions carry code, vars, and bindings, but the zone routes that mount the
 Workers at `card.keepr.digital/api` and `/ingest` are script-level triggers
