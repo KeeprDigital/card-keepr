@@ -453,8 +453,19 @@ test("a partial Gundam refresh accepts one selected production lineage independe
 test("publication stays readable while its immutable degraded backup blocks the next approval", async () => {
   const firstRun = await collect("/reconciliation/base", "publication-backup-degraded-first");
   const firstCandidate = await reconcile(firstRun.id);
+  let dispatchBeforeCreation: unknown;
   const failingWorkflow = {
     async create() {
+      if (dispatchBeforeCreation === undefined) {
+        const pending = await ingestionWorker.fetch(
+          new Request("https://card-keepr.invalid/v1/status", {
+            headers: { authorization: "Bearer vitest-administration-key", "cf-connecting-ip": "203.0.113.243" },
+          }),
+          publicEnv,
+        );
+        dispatchBeforeCreation = (await pending.json<{ diagnostics: { backup_dispatches: unknown[] } }>()).diagnostics
+          .backup_dispatches[0];
+      }
       throw new Error("synthetic backup dispatch outage");
     },
     async get() {
@@ -464,6 +475,7 @@ test("publication stays readable while its immutable degraded backup blocks the 
   const publicEnv = {
     ...testEnv,
     CATALOGUE_BACKUP_WORKFLOW: failingWorkflow,
+    ADMINISTRATION_CLOCK_MODE: "system",
   } as unknown as Env;
   const approvalResponse = await ingestionWorker.fetch(
     new Request(`https://card-keepr.invalid/v1/ingestion-runs/${firstRun.id}/approval`, {
@@ -486,6 +498,7 @@ test("publication stays readable while its immutable degraded backup blocks the 
     } as unknown as ExecutionContext,
   );
   expect(approvalResponse.status).toBe(200);
+  expect(dispatchBeforeCreation).toMatchObject({ state: "pending", attempt_count: 1 });
   const published = await approvalResponse.json<Record<string, unknown>>();
   const revisionId = requiredString(published, "resulting_revision_id");
   const statusResponse = await ingestionWorker.fetch(
@@ -502,9 +515,32 @@ test("publication stays readable while its immutable degraded backup blocks the 
       current_revision_id: revisionId,
       recovery_health: "degraded",
     },
+    diagnostics: { backup_dispatches: [{ state: "failed", attempt_count: 3 }] },
   });
   await expect(currentCatalogueStatus(testEnv.CATALOGUE_DB)).resolves.toMatchObject({
     revisionId,
+  });
+  const backups = await ingestionWorker.fetch(
+    new Request(`https://card-keepr.invalid/v1/catalogue-revisions/${revisionId}/backups`, {
+      headers: { authorization: "Bearer vitest-administration-key", "cf-connecting-ip": "203.0.113.242" },
+    }),
+    publicEnv,
+  );
+  const backupStatus = await backups.json<{
+    attempts: { dispatch: { state: string; attempt_count: number; retry: { body: Record<string, unknown> } } }[];
+  }>();
+  expect(backupStatus.attempts[0]?.dispatch).toMatchObject({ state: "failed", attempt_count: 3 });
+  const dispatchRetry = backupStatus.attempts[0]!.dispatch.retry;
+  let recovered = await post("/v1/backups", dispatchRetry.body);
+  for (let observation = 0; observation < 100 && recovered.document.status !== "complete"; observation += 1) {
+    expect([200, 202]).toContain(recovered.response.status);
+    expect(recovered.document.status).not.toBe("dispatch_failed");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    recovered = await post("/v1/backups", dispatchRetry.body);
+  }
+  expect(recovered.document).toMatchObject({
+    status: "complete",
+    output: { verified: true, catalogue_revision_id: revisionId },
   });
 
   await testEnv.CATALOGUE_DB.prepare(

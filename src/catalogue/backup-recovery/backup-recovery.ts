@@ -1,6 +1,7 @@
 import { parseStoredLegalityRule } from "../legality";
 import { storedProductApiProjection } from "../read";
 import { AdministrationProblem, canonicalJson, StreamingSha256, sha256Text } from "../shared";
+import { backupDispatchStatus } from "./backup-dispatch";
 import * as backupStatements from "./backup-repository";
 import {
   type BackupAttemptEvidenceRow,
@@ -184,6 +185,7 @@ export async function catalogueBackupAttemptStatus(
     restore_phase: attempt.restore_phase,
     failure: attempt.state === "failed" ? { code: attempt.failure_code, detail: attempt.failure_detail } : null,
     workflow_instance_id: workflow?.workflow_instance_id ?? null,
+    dispatch: await backupDispatchStatus(database, idempotencyKey),
     resume:
       attempt.state === "pending" || isActiveAttemptState(attempt.state)
         ? {
