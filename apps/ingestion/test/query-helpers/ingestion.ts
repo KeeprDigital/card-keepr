@@ -915,135 +915,33 @@ export function setOperationStateRecoveryHealthActiveProductionReleaseId(databas
   );
 }
 
-export function insertIngestionRunsForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-       id, state, selected_games_json, started_at,
-       expected_current_revision_id, idempotency_key, candidate_json
-     ) VALUES (
-       ?, 'planning', '[]', ?, ?, ?,
-       '{"production_release_bootstrap":true}'
-     )`);
-}
-
-export function setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`UPDATE operation_state SET active_ingestion_run_id = ?
-     WHERE singleton = 1 AND active_ingestion_run_id IS NULL
-       AND recovery_health = 'healthy'`);
-}
-
-export function setIngestionRunsStateTerminalAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs
-       SET state = 'failed', terminal_at = ?, failure_code = ?,
-           progress_json =
-             '{"completed_stages":[],"current_stage":"failed"}'
-       WHERE id = ? AND state = 'planning'
-         AND EXISTS (
-           SELECT 1 FROM operation_state
-           WHERE singleton = 1 AND active_ingestion_run_id = ?
-         )`);
-}
-
-export function setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewalWithundefined(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`UPDATE operation_state SET active_ingestion_run_id = NULL
-     WHERE singleton = 1 AND active_ingestion_run_id = ?`);
-}
-
-export function deleteIngestionRuns(database: D1Database): D1PreparedStatement {
-  return database.prepare(`DELETE FROM ingestion_runs
-         WHERE id = ? AND idempotency_key = id
-           AND selected_games_json = '[]'
-           AND candidate_json = '{"production_release_bootstrap":true}'
-           AND state IN ('planning', 'failed')
-           AND NOT EXISTS (
-             SELECT 1 FROM operation_state
-             WHERE singleton = 1
-               AND active_ingestion_run_id = ingestion_runs.id
-           )`);
-}
-
-export function setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewalWithPublishing(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`UPDATE operation_state SET active_ingestion_run_id = NULL
-     WHERE singleton = 1 AND active_ingestion_run_id IS NOT NULL
-       AND NOT EXISTS (
-         SELECT 1 FROM ingestion_runs
-         WHERE id = operation_state.active_ingestion_run_id
-           AND state IN (
-             'planning', 'collecting', 'parsing', 'reconciling',
-             'awaiting_approval', 'publishing'
-           )
-       )`);
-}
-
 export function readIngestionRunsId(database: D1Database): D1PreparedStatement {
-  return database.prepare("SELECT id FROM ingestion_runs WHERE id = ?");
+  return database.prepare("SELECT id FROM ingestion_run_read WHERE id = ?");
 }
 
-export function setOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAt(
-  database: D1Database,
-): D1PreparedStatement {
+export function claimCanonicalReleaseLease(database: D1Database): D1PreparedStatement {
   return database.prepare(`UPDATE operation_state
-     SET active_production_release_id = ?, active_production_release_expires_at = ?,
-         active_ingestion_run_id = NULL
-     WHERE singleton = 1 AND active_ingestion_run_id = ?
-       AND (active_production_release_id IS NULL OR active_production_release_expires_at <= ?)`);
+    SET active_production_release_id = ?1, active_production_release_expires_at = ?2
+    WHERE singleton = 1 AND active_ingestion_run_id IS NULL
+      AND recovery_health = 'healthy' AND recovery_restore_guard = 'clear' AND active_recovery_id IS NULL
+      AND (active_production_release_id IS NULL OR active_production_release_expires_at <= ?3)`);
 }
 
-export function countIngestionRunsBootstrapCount(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT count(*) AS bootstrap_count FROM ingestion_runs
-     WHERE id IN (?, ?)`);
-}
-
-export function setOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
-  database: D1Database,
-): D1PreparedStatement {
+export function clearCanonicalReleaseLease(database: D1Database): D1PreparedStatement {
   return database.prepare(`UPDATE operation_state
-     SET active_production_release_id = NULL, active_production_release_expires_at = NULL
-     WHERE singleton = 1 AND active_production_release_id = ?`);
+    SET active_production_release_id = NULL, active_production_release_expires_at = NULL
+    WHERE singleton = 1 AND active_production_release_id = ? AND active_production_release_expires_at = ?`);
 }
 
-export function setOperationStateActiveProductionReleaseExpiresAt(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE operation_state SET active_production_release_expires_at = ?
-     WHERE singleton = 1 AND active_production_release_id = ?
-       AND active_production_release_expires_at > ?`);
+export function renewCanonicalReleaseLease(database: D1Database): D1PreparedStatement {
+  return database.prepare(`UPDATE operation_state SET active_production_release_expires_at = ?1
+    WHERE singleton = 1 AND active_production_release_id = ?2
+      AND active_production_release_expires_at = ?3 AND active_production_release_expires_at > ?4`);
 }
 
-export function readOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAt(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`SELECT active_production_release_id, active_production_release_expires_at
-     FROM operation_state WHERE singleton = 1`);
-}
-
-export function setOperationStateActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(
-    "UPDATE operation_state SET active_production_release_expires_at = ? WHERE singleton = 1 AND active_production_release_id = ?",
-  );
-}
-
-export function setOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewalWithundefined(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`UPDATE operation_state
-     SET active_production_release_id = ?, active_production_release_expires_at = ?,
-         active_ingestion_run_id = NULL
-     WHERE singleton = 1 AND active_ingestion_run_id = ?
-       AND active_production_release_expires_at <= ?`);
-}
-
-export function readOperationStateActiveProductionReleaseId(database: D1Database): D1PreparedStatement {
-  return database.prepare("SELECT active_production_release_id FROM operation_state WHERE singleton = 1");
+export function readCanonicalReleaseLease(database: D1Database): D1PreparedStatement {
+  return database.prepare(`SELECT active_ingestion_run_id, active_production_release_id,
+    active_production_release_expires_at FROM operation_state WHERE singleton = 1`);
 }
 
 export function readIngestionRunsCandidateJsonForCandidateInspectionExposesExactPinnedSetEveryCuratedEffect(

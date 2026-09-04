@@ -859,160 +859,38 @@ test("the atomic mutation boundary rechecks the current Catalogue Revision", asy
 });
 
 test("release leases reclaim stale owners and fence cleanup and renewal", async () => {
-  const database = catalogueStore(env.CATALOGUE_DB);
-  const insertBootstrap = async (id: string) =>
-    atomicRepositoryStatement(database, {
-      statement: ingestionQueries
-        .insertIngestionRunsForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(env.CATALOGUE_DB)
-        .bind(id, now, currentRevision, id),
-      after: [runStartGuardStatement(database)],
-    }).run();
-  const claimBootstrap = async (id: string) =>
+  const claim = (id: string, expiresAt: string, observedAt: string) =>
+    ingestionQueries.claimCanonicalReleaseLease(env.CATALOGUE_DB).bind(id, expiresAt, observedAt).run();
+  const clear = (id: string, expiresAt: string) =>
+    ingestionQueries.clearCanonicalReleaseLease(env.CATALOGUE_DB).bind(id, expiresAt).run();
+  const renew = (id: string, previousExpiry: string, nextExpiry: string, observedAt: string) =>
     ingestionQueries
-      .setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(env.CATALOGUE_DB)
-      .bind(id)
+      .renewCanonicalReleaseLease(env.CATALOGUE_DB)
+      .bind(nextExpiry, id, previousExpiry, observedAt)
       .run();
-  const failBootstrap = async (id: string, failureCode: string) =>
-    ingestionQueries
-      .setIngestionRunsStateTerminalAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(env.CATALOGUE_DB)
-      .bind(now, failureCode, id, id)
-      .run();
-  const clearBootstrap = async (id: string) =>
-    ingestionQueries
-      .setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewalWithundefined(
-        env.CATALOGUE_DB,
-      )
-      .bind(id)
-      .run();
-  const deleteBootstrap = async (id: string) => {
-    const [result] = await env.CATALOGUE_DB.batch([ingestionQueries.deleteIngestionRuns(env.CATALOGUE_DB).bind(id)]);
-    if (result === undefined) {
-      throw new Error("The bootstrap cleanup batch did not return a result.");
-    }
-    return result;
-  };
-
-  const firstFence = `release_first_${sequence}`;
-  const firstBootstrap = `release-bootstrap|2099-01-01T00:00:00.000Z|${firstFence}`;
-  await insertBootstrap(firstBootstrap);
-  const firstClaim = await claimBootstrap(firstBootstrap);
-  expect(firstClaim.meta.changes).toBe(1);
-
-  // This is the cleanup query used by the previously deployed ingestion
-  // worker. A matching active planning row prevents it from dropping the
-  // pre-migration release fence as an orphan.
-  await ingestionQueries
-    .setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewalWithPublishing(
-      env.CATALOGUE_DB,
-    )
-    .run();
-  expect(await ingestionQueries.readOperationStateActiveIngestionRunId(env.CATALOGUE_DB).first()).toEqual({
-    active_ingestion_run_id: firstBootstrap,
+  const first = `release_first_${sequence}`;
+  const second = `release_second_${sequence}`;
+  const initialExpiry = "2099-01-01T00:00:00.000Z";
+  const renewedExpiry = "2099-01-01T00:15:00.000Z";
+  expect((await claim(first, initialExpiry, now)).meta.changes).toBe(1);
+  expect((await claim(second, initialExpiry, now)).meta.changes).toBe(0);
+  expect(await ingestionQueries.readCanonicalReleaseLease(env.CATALOGUE_DB).first()).toEqual({
+    active_ingestion_run_id: null,
+    active_production_release_id: first,
+    active_production_release_expires_at: initialExpiry,
   });
-
-  const blockedBootstrap = `release-bootstrap|2099-01-01T00:00:00.000Z|release_blocked_${sequence}`;
-  await expect(insertBootstrap(blockedBootstrap)).rejects.toThrow("active_ingestion_run_or_release");
-
-  // Failure cleanup retains an immutable audit on the legacy schema, while
-  // the migrated schema can remove this exact non-domain marker and retry.
-  expect((await failBootstrap(firstBootstrap, "production_release_bootstrap_abandoned")).meta.changes).toBeGreaterThan(
-    0,
-  );
-  expect((await clearBootstrap(firstBootstrap)).meta.changes).toBe(1);
-  expect((await deleteBootstrap(firstBootstrap)).meta.changes).toBe(1);
-  expect(await ingestionQueries.readIngestionRunsId(env.CATALOGUE_DB).bind(firstBootstrap).first()).toBeNull();
-
-  const staleBootstrap = `release-bootstrap|2000-01-01T00:00:00.000Z|${firstFence}`;
-  await insertBootstrap(staleBootstrap);
-  expect((await claimBootstrap(staleBootstrap)).meta.changes).toBe(1);
-  expect((await failBootstrap(staleBootstrap, "production_release_bootstrap_expired")).meta.changes).toBeGreaterThan(0);
-  expect((await clearBootstrap(staleBootstrap)).meta.changes).toBe(1);
-
-  const secondFence = `release_second_${sequence}`;
-  const secondBootstrap = `release-bootstrap|2099-01-01T00:00:00.000Z|${secondFence}`;
-  await insertBootstrap(secondBootstrap);
-  const reclaimed = await claimBootstrap(secondBootstrap);
-  expect(reclaimed.meta.changes).toBe(1);
-  const transferred = await ingestionQueries
-    .setOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAt(env.CATALOGUE_DB)
-    .bind(secondFence, "2099-01-01T00:00:00.000Z", secondBootstrap, now)
-    .run();
-  expect(transferred.meta.changes).toBeGreaterThan(0);
-  expect((await deleteBootstrap(secondBootstrap)).meta.changes).toBe(1);
-  expect((await deleteBootstrap(staleBootstrap)).meta.changes).toBe(1);
-  expect(
-    await ingestionQueries
-      .countIngestionRunsBootstrapCount(env.CATALOGUE_DB)
-      .bind(staleBootstrap, secondBootstrap)
-      .first(),
-  ).toEqual({
-    bootstrap_count: 0,
-  });
-
-  const staleCleanup = await ingestionQueries
-    .setOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
-      env.CATALOGUE_DB,
-    )
-    .bind(firstFence)
-    .run();
-  expect(staleCleanup.meta.changes).toBe(0);
-  const renewed = await ingestionQueries
-    .setOperationStateActiveProductionReleaseExpiresAt(env.CATALOGUE_DB)
-    .bind("2099-01-01T00:15:00.000Z", secondFence, now)
-    .run();
-  expect(renewed.meta.changes).toBeGreaterThan(0);
-  expect(
-    await ingestionQueries
-      .readOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAt(env.CATALOGUE_DB)
-      .first(),
-  ).toEqual({
-    active_production_release_id: secondFence,
-    active_production_release_expires_at: "2099-01-01T00:15:00.000Z",
-  });
-
-  await ingestionQueries
-    .setOperationStateActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
-      env.CATALOGUE_DB,
-    )
-    .bind("2000-01-01T00:00:00.000Z", secondFence)
-    .run();
-  const thirdFence = `release_third_${sequence}`;
-  const thirdBootstrap = `release-bootstrap|2099-01-01T00:00:00.000Z|${thirdFence}`;
-  await insertBootstrap(thirdBootstrap);
-  expect((await claimBootstrap(thirdBootstrap)).meta.changes).toBe(1);
-  expect(
-    (
-      await ingestionQueries
-        .setOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewalWithundefined(
-          env.CATALOGUE_DB,
-        )
-        .bind(thirdFence, "2099-01-01T00:00:00.000Z", thirdBootstrap, now)
-        .run()
-    ).meta.changes,
-  ).toBeGreaterThan(0);
-  expect((await deleteBootstrap(thirdBootstrap)).meta.changes).toBe(1);
-  expect(
-    (
-      await ingestionQueries
-        .setOperationStateActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
-          env.CATALOGUE_DB,
-        )
-        .bind("2099-01-01T00:30:00.000Z", secondFence)
-        .run()
-    ).meta.changes,
-  ).toBe(0);
-  expect(
-    (
-      await ingestionQueries
-        .setOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
-          env.CATALOGUE_DB,
-        )
-        .bind(secondFence)
-        .run()
-    ).meta.changes,
-  ).toBe(0);
-  expect(await ingestionQueries.readOperationStateActiveProductionReleaseId(env.CATALOGUE_DB).first()).toEqual({
-    active_production_release_id: thirdFence,
+  expect((await renew(first, initialExpiry, renewedExpiry, now)).meta.changes).toBe(1);
+  expect((await clear(first, initialExpiry)).meta.changes).toBe(0);
+  expect((await renew(first, initialExpiry, "2099-01-01T00:30:00.000Z", now)).meta.changes).toBe(0);
+  expect((await clear(first, renewedExpiry)).meta.changes).toBe(1);
+  expect((await claim(first, "2000-01-01T00:00:00.000Z", "1999-01-01T00:00:00.000Z")).meta.changes).toBe(1);
+  expect((await claim(second, initialExpiry, now)).meta.changes).toBe(1);
+  expect((await clear(first, "2000-01-01T00:00:00.000Z")).meta.changes).toBe(0);
+  expect((await renew(first, "2000-01-01T00:00:00.000Z", renewedExpiry, now)).meta.changes).toBe(0);
+  expect(await ingestionQueries.readCanonicalReleaseLease(env.CATALOGUE_DB).first()).toEqual({
+    active_ingestion_run_id: null,
+    active_production_release_id: second,
+    active_production_release_expires_at: initialExpiry,
   });
 });
 
