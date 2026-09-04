@@ -1304,9 +1304,9 @@ export const cloudflareD1BackupProvider: D1BackupProvider = {
       throw new Error("Disposable D1 database inventory is invalid.");
     }
     const databaseIds = new Set<string>();
-    for (const candidate of listed) {
-      if (isRecord(candidate) && typeof candidate.uuid === "string") {
-        databaseIds.add(candidate.uuid);
+    for (const entry of listed) {
+      if (isRecord(entry) && typeof entry.uuid === "string") {
+        databaseIds.add(entry.uuid);
       }
     }
     if (input.previousDatabaseId !== null) {

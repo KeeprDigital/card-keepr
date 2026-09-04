@@ -49,7 +49,7 @@ export type ReconciliationWarning = ProfileWarning;
 export type ParsedCardPrintingObservation = Readonly<{
   kind: "card_printing";
   sourceObservationId: string;
-  candidateWithoutIdentities: {
+  observedCardAndPrinting: {
     card: Omit<CatalogueCard, "id"> | null;
     printing: Omit<CataloguePrinting, "id" | "card_id"> | null;
   };
@@ -232,7 +232,7 @@ export function parseReconciliationObservation(
     return {
       kind: "card_printing",
       sourceObservationId,
-      candidateWithoutIdentities: { card: null, printing: null },
+      observedCardAndPrinting: { card: null, printing: null },
       locator: null,
       variantKey: null,
       artworkFingerprint: null,
@@ -350,7 +350,7 @@ export function parseReconciliationObservation(
     return {
       kind: "card_printing",
       sourceObservationId,
-      candidateWithoutIdentities: { card, printing: null },
+      observedCardAndPrinting: { card, printing: null },
       locator: null,
       variantKey: null,
       artworkFingerprint: null,
@@ -459,7 +459,7 @@ export function parseReconciliationObservation(
   return {
     kind: "card_printing",
     sourceObservationId,
-    candidateWithoutIdentities: { card, printing },
+    observedCardAndPrinting: { card, printing },
     locator: requiredString(
       identityEvidence.locator,
       "identity_evidence.locator",

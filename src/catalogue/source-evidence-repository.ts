@@ -17,7 +17,7 @@ import {
   globalEmergencySourceRequestCeiling,
   type SourceAdapterRegistration,
 } from "./source-adapters";
-import { evidenceRunIdentity } from "./idempotent-identities";
+import { evidenceRunIdentity, replayByDigest } from "./idempotent-identities";
 import {
   curatedRevisionSetForRun,
   curatedRevisionPinStatementsForNewRun,
@@ -2330,22 +2330,21 @@ async function terminationReplay(
   idempotencyKey: string,
   requestDigest: string,
 ): Promise<Record<string, unknown> | null> {
-  const retained = await database
-    .prepare(
-      `SELECT request_digest, response_json
-       FROM ingestion_run_terminations
-       WHERE idempotency_key = ?`,
-    )
-    .bind(idempotencyKey)
-    .first<Pick<TerminationRow, "request_digest" | "response_json">>();
-  if (retained === null) return null;
-  if (retained.request_digest !== requestDigest) {
-    throw new AdministrationProblem(
-      409,
-      "idempotency_conflict",
+  const retained = await replayByDigest({
+    lookup: () => database
+      .prepare(
+        `SELECT request_digest, response_json
+         FROM ingestion_run_terminations
+         WHERE idempotency_key = ?`,
+      )
+      .bind(idempotencyKey)
+      .first<Pick<TerminationRow, "request_digest" | "response_json">>(),
+    retainedDigest: (row) => row.request_digest,
+    requestDigest,
+    conflictDetail:
       "The idempotency key was already used for a different termination.",
-    );
-  }
+  });
+  if (retained === null) return null;
   return JSON.parse(retained.response_json) as Record<string, unknown>;
 }
 

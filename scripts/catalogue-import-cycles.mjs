@@ -1,47 +1,65 @@
 #!/usr/bin/env node
 // Reports import cycles among the modules in src/catalogue.
 //
-// Walks static `import` / `export ... from` statements across src/catalogue/*.ts,
-// builds a module graph over relative imports that resolve within the directory,
-// and prints every strongly connected component larger than one module
-// (Tarjan's algorithm). Type-only imports (`import type`) count by default,
-// because a type-level cycle still couples the modules; pass --runtime-only
-// to ignore them and report only cycles that survive compilation.
+// Walks static `import` / `export ... from` statements across every module
+// under src/catalogue (the flat files and the cluster directories' modules,
+// see src/catalogue/README.md), builds a module graph over relative imports
+// that resolve within the directory tree, and prints every strongly
+// connected component larger than one module (Tarjan's algorithm).
+// Type-only imports (`import type`) count by default, because a type-level
+// cycle still couples the modules; pass --runtime-only to ignore them and
+// report only cycles that survive compilation.
+//
+// Modules are named by their path relative to src/catalogue without the
+// extension, so a flat file is `ingestion` and a cluster index is
+// `ingestion/index`.
 //
 // Usage: node scripts/catalogue-import-cycles.mjs [--runtime-only]
 // Exit code is 1 when at least one cycle is found.
 
 import { readdirSync, readFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const includeTypeImports = !process.argv.includes("--runtime-only");
 const catalogueDir = resolve(dirname(fileURLToPath(import.meta.url)), "../src/catalogue");
 
-const moduleFiles = readdirSync(catalogueDir)
-  .filter((name) => /\.(ts|mts|mjs)$/.test(name) && !name.endsWith(".d.ts") && !name.endsWith(".d.mts"))
-  .sort();
+function isModuleFile(name) {
+  return /\.(ts|mts|mjs)$/.test(name) && !name.endsWith(".d.ts") && !name.endsWith(".d.mts");
+}
+
+function moduleFilesUnder(directory) {
+  const files = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...moduleFilesUnder(path));
+    else if (entry.isFile() && isModuleFile(entry.name)) files.push(path);
+  }
+  return files;
+}
+
+const moduleFiles = moduleFilesUnder(catalogueDir).sort();
+
+function moduleName(filePath) {
+  return relative(catalogueDir, filePath).replace(/\.(ts|mts|mjs)$/, "");
+}
 
 const moduleNames = new Set(moduleFiles.map(moduleName));
 
-function moduleName(fileName) {
-  return basename(fileName).replace(/\.(ts|mts|mjs)$/, "");
-}
-
-const importPattern =
-  /^\s*(import|export)\s+(type\s+)?(?:[^'";]*?\s+from\s+)?["'](\.\/[^"']+)["']/gm;
+const importPattern = /^\s*(import|export)\s+(type\s+)?(?:[^'";]*?\s+from\s+)?["'](\.\.?\/[^"']+)["']/gm;
 
 const graph = new Map();
-for (const fileName of moduleFiles) {
-  const source = readFileSync(join(catalogueDir, fileName), "utf8");
+for (const filePath of moduleFiles) {
+  const source = readFileSync(filePath, "utf8");
+  const name = moduleName(filePath);
   const edges = new Set();
   for (const match of source.matchAll(importPattern)) {
     const [, , typeOnly, specifier] = match;
     if (typeOnly && !includeTypeImports) continue;
-    const target = moduleName(specifier.slice(2).replace(/\.js$/, ""));
-    if (moduleNames.has(target) && target !== moduleName(fileName)) edges.add(target);
+    const target = moduleName(resolve(dirname(filePath), specifier.replace(/\.js$/, "")));
+    if (moduleNames.has(target) && target !== name) edges.add(target);
   }
-  graph.set(moduleName(fileName), [...edges].sort());
+  graph.set(name, [...edges].sort());
 }
 
 // Tarjan's strongly connected components.

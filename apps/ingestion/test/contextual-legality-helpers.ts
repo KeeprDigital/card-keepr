@@ -343,7 +343,7 @@ export async function exportedLegalityRule(
   const rule = (await exportedComponentRecords(
     revisionId,
     "legality-rules",
-  )).find((candidate) => candidate.official_id === officialId);
+  )).find((entry) => entry.official_id === officialId);
   if (rule === undefined) throw new Error("Exported Legality Rule is absent");
   return rule;
 }
@@ -378,7 +378,7 @@ export async function exportedComponentRecords(
     components: Array<{ name: string; compressed_sha256: string }>;
   }>();
   const component = manifest.components.find(
-    (candidate) => candidate.name === componentName,
+    (entry) => entry.name === componentName,
   );
   if (component === undefined) {
     throw new Error(`Catalogue Export ${componentName} component is absent`);

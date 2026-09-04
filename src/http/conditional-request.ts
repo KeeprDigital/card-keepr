@@ -8,10 +8,10 @@ export function ifNoneMatchMatches(
   if (currentOpaqueTag === null) {
     throw new Error("The current ETag is invalid.");
   }
-  const candidates = parseEntityTagList(header);
+  const entityTags = parseEntityTagList(header);
   return (
-    candidates === "*" ||
-    candidates?.some((candidate) => candidate === currentOpaqueTag) === true
+    entityTags === "*" ||
+    entityTags?.some((entityTag) => entityTag === currentOpaqueTag) === true
   );
 }
 

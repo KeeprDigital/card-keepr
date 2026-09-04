@@ -688,7 +688,7 @@ export async function catalogueExportComponentResponse(
   if (verifiedExport === null) return null;
   const { manifest } = verifiedExport;
   const component = manifest.components.find(
-    (candidate) => candidate.name === componentName,
+    (component) => component.name === componentName,
   );
   if (component === undefined) return null;
 

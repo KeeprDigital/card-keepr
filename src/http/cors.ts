@@ -15,7 +15,7 @@ export function allowedPreflightResponse(
     .filter(Boolean);
   const origins = configuredOrigins
     .split(",")
-    .map((candidate) => candidate.trim())
+    .map((origin) => origin.trim())
     .filter(Boolean);
 
   if (
@@ -47,7 +47,7 @@ export function hasAllowedOrigin(
   if (origin === null) return true;
   return configuredOrigins
     .split(",")
-    .map((candidate) => candidate.trim())
+    .map((configured) => configured.trim())
     .filter(Boolean)
     .includes(origin);
 }

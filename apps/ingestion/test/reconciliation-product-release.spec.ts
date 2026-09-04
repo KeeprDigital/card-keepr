@@ -52,7 +52,7 @@ test("a complete Product fixture publishes separated release and distribution re
       exportComponentRecords(revisionId, "printings"),
     ]);
   const product = products.find(
-    (candidate) => candidate.official_code === "ST-15",
+    (entry) => entry.official_code === "ST-15",
   );
   expect(product).toMatchObject({
     official_code: "ST-15",
@@ -66,9 +66,9 @@ test("a complete Product fixture publishes separated release and distribution re
   if (product === undefined) throw new Error("ST-15 Product missing");
   const productId = requiredString(product, "id");
   const release = releases.find(
-    (candidate) =>
-      candidate.product_id === productId &&
-      candidate.region === "EN-OCEANIA",
+    (entry) =>
+      entry.product_id === productId &&
+      entry.region === "EN-OCEANIA",
   );
   expect(release).toMatchObject({
     product_id: productId,
@@ -86,9 +86,9 @@ test("a complete Product fixture publishes separated release and distribution re
     ]),
   );
   const context = contexts.find(
-    (candidate) =>
-      candidate.product_id === productId &&
-      candidate.label === "Championship 2026 Participation Pack",
+    (entry) =>
+      entry.product_id === productId &&
+      entry.label === "Championship 2026 Participation Pack",
   );
   expect(context).toMatchObject({
     kind: "tournament_pack",

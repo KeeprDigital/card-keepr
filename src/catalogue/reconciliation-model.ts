@@ -62,8 +62,8 @@ export function compatibilityFor(
   observation: ParsedCardPrintingObservation,
 ): PrintingCompatibility {
   if (
-    observation.candidateWithoutIdentities.card === null ||
-    observation.candidateWithoutIdentities.printing === null ||
+    observation.observedCardAndPrinting.card === null ||
+    observation.observedCardAndPrinting.printing === null ||
     observation.artworkFingerprint === null ||
     observation.printedFieldsDigest === null
   ) {
@@ -75,7 +75,7 @@ export function compatibilityFor(
     artwork_fingerprint: observation.artworkFingerprint,
     printed_fields_digest: observation.printedFieldsDigest,
     rarity_normalized:
-      observation.candidateWithoutIdentities.printing.rarity.normalized,
+      observation.observedCardAndPrinting.printing.rarity.normalized,
     treatment: observation.treatment,
   };
 }

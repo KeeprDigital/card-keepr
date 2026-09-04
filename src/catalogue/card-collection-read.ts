@@ -334,7 +334,7 @@ function ftsCardCollectionPageQuery(
   bindings.push(rowLimit);
   return {
     sql:
-      `WITH search_candidates AS MATERIALIZED (
+      `WITH search_matches AS MATERIALIZED (
          SELECT filtered.summary_json,
                 filtered.sort_game,
                 filtered.sort_identity_kind,
@@ -355,7 +355,7 @@ function ftsCardCollectionPageQuery(
        )
        SELECT summary_json, sort_game, sort_identity_kind,
               sort_identity_value, sort_id
-       FROM search_candidates
+       FROM search_matches
        ORDER BY sort_game, sort_identity_kind, sort_identity_value, sort_id`,
     bindings,
   };

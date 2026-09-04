@@ -95,6 +95,20 @@ Release.
 
 ## Production Release behavior
 
+Before checkout, the workflow resolves `expected_head_sha` through the
+GitHub API with its own read-only token (issue #75): the value must be a
+full 40-character commit id, `main` must contain it (compare status
+`identical` or `behind`), and every `ci.yml` job must have a successful
+latest check run for it. `ci` runs on pull requests only, so a merge commit
+on `main` has no `ci` check runs of its own; the workflow resolves the pull
+request that merged into that commit and requires the check runs of its
+head commit instead. The list of required jobs lives in the workflow step's
+`REQUIRED_CI_JOBS` and the contract test keeps it equal to the `ci.yml` job
+ids. A SHA that never went through a pull request, or whose pull request
+was merged before the `lint` job existed, fails the gate. The production
+environment's branch policy and reviewers remain the human gate on top of
+this; the gate makes provenance mechanical, not optional.
+
 `migrations/` is one schema baseline (`0001_baseline.sql`, schema level 1,
 ADR 0006) followed by guarded forward migrations. An empty database is
 built by applying the baseline; `keepr status` reports the level of the

@@ -170,8 +170,8 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   );
   expect(emptyPublished.response.status).toBe(200);
   const card = (empty.reconciled.cards as Array<Record<string, unknown>>)
-    .find((candidate) =>
-      (candidate.official_identity as Record<string, unknown>).value ===
+    .find((entry) =>
+      (entry.official_identity as Record<string, unknown>).value ===
         "GD30-001"
     );
   if (card === undefined) throw new Error("GD30-001 is absent");

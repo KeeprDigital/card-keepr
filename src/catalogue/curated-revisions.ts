@@ -3,6 +3,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { AdministrationProblem } from "./administration-problem.ts";
 import { canonicalJson, sha256Text } from "./serialization";
+import { replayByDigest } from "./idempotent-identities";
 import { retainedPayload } from "./reconciliation-payload";
 import type {
   CuratedEvidence,
@@ -178,15 +179,8 @@ export async function createCuratedRevision(
   onlyFields(input, ["environment", "expected_current_revision_id", "proposal", "proposal_digest", "idempotency_key"]);
   const idempotencyKey = requiredString(input.idempotency_key, "idempotency_key");
   const requestDigest = await sha256Text(canonicalJson(input));
-  const replay = await database.prepare(
-    "SELECT request_digest, response_json FROM curated_revision_idempotency WHERE idempotency_key = ?",
-  ).bind(idempotencyKey).first<{ request_digest: string; response_json: string }>();
-  if (replay !== null) {
-    if (replay.request_digest !== requestDigest) {
-      throw new AdministrationProblem(409, "idempotency_conflict", "The idempotency key is already bound to another request.");
-    }
-    return { created: false, document: JSON.parse(replay.response_json) as MutationResult };
-  }
+  const replay = await idempotencyReplay(database, idempotencyKey, requestDigest);
+  if (replay !== null) return replay;
   if (input.environment !== "production") {
     throw new AdministrationProblem(422, "production_target_required", "Curated Revision mutations require environment production.");
   }
@@ -249,18 +243,8 @@ export async function createCuratedRevision(
       ).bind(idempotencyKey, requestDigest, canonicalJson(document), observedAt),
     ]);
   } catch (error) {
-    const concurrentReplay = await database.prepare(
-      "SELECT request_digest, response_json FROM curated_revision_idempotency WHERE idempotency_key = ?",
-    ).bind(idempotencyKey).first<{ request_digest: string; response_json: string }>();
-    if (concurrentReplay !== null) {
-      if (concurrentReplay.request_digest !== requestDigest) {
-        throw new AdministrationProblem(409, "idempotency_conflict", "The idempotency key is already bound to another request.");
-      }
-      return {
-        created: false,
-        document: JSON.parse(concurrentReplay.response_json) as MutationResult,
-      };
-    }
+    const concurrentReplay = await idempotencyReplay(database, idempotencyKey, requestDigest);
+    if (concurrentReplay !== null) return concurrentReplay;
     throw lifecycleWriteProblem(error);
   }
   return { created: true, document };
@@ -1371,13 +1355,15 @@ async function idempotencyReplay(
   key: string,
   requestDigest: string,
 ): Promise<{ created: boolean; document: MutationResult } | null> {
-  const row = await database.prepare(
-    "SELECT request_digest, response_json FROM curated_revision_idempotency WHERE idempotency_key = ?",
-  ).bind(key).first<{ request_digest: string; response_json: string }>();
+  const row = await replayByDigest({
+    lookup: () => database.prepare(
+      "SELECT request_digest, response_json FROM curated_revision_idempotency WHERE idempotency_key = ?",
+    ).bind(key).first<{ request_digest: string; response_json: string }>(),
+    retainedDigest: (retained) => retained.request_digest,
+    requestDigest,
+    conflictDetail: "The idempotency key is already bound to another request.",
+  });
   if (row === null) return null;
-  if (row.request_digest !== requestDigest) {
-    throw new AdministrationProblem(409, "idempotency_conflict", "The idempotency key is already bound to another request.");
-  }
   return { created: false, document: JSON.parse(row.response_json) as MutationResult };
 }
 
