@@ -1,3 +1,4 @@
+import { request as httpRequest } from "./lib/http-client.mjs";
 import { createHash } from "node:crypto";
 import { parseOptions, runtimeUrl, writeCliFailure } from "./command-support.mjs";
 import { validatedProductionTarget } from "./production-target.mjs";
@@ -239,7 +240,7 @@ async function prepareRequest(environment, body) {
   const base = environment.KEEPR_INGESTION_URL;
   const key = environment.KEEPR_ADMINISTRATION_KEY;
   try {
-    const response = await fetch(runtimeUrl(base, "/v1/production-releases"), {
+    const response = await httpRequest(runtimeUrl(base, "/v1/production-releases"), {
       method: "POST",
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -281,7 +282,7 @@ async function readStatus(environment) {
       exitCode: 2,
     };
   try {
-    const response = await fetch(runtimeUrl(base, "/v1/status"), {
+    const response = await httpRequest(runtimeUrl(base, "/v1/status"), {
       headers: { authorization: `Bearer ${key}` },
       signal: AbortSignal.timeout(10_000),
     });

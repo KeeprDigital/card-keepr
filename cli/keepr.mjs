@@ -1,18 +1,11 @@
 #!/usr/bin/env node
+import { request as httpRequest } from "./lib/http-client.mjs";
 
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import {
-  apiCapabilities,
-  ingestionCapabilities,
-} from "../src/runtime-capabilities.mjs";
+import { apiCapabilities, ingestionCapabilities } from "../src/runtime-capabilities.mjs";
 import { runCatalogueCommand } from "./catalogue.mjs";
-import {
-  exitCodeForStatus,
-  parseOptions,
-  runtimeUrl,
-  writeCliFailure as writeFailure,
-} from "./command-support.mjs";
+import { exitCodeForStatus, parseOptions, runtimeUrl, writeCliFailure as writeFailure } from "./command-support.mjs";
 import { runLegalityStatusCommand } from "./contextual-legality.mjs";
 import { runCuratedRevisionCommand } from "./curated-revisions.mjs";
 import { validatedProductionTarget } from "./production-target.mjs";
@@ -30,12 +23,7 @@ export async function main(arguments_, environment) {
     if (arguments_.slice(1).some((option) => option !== "--json")) {
       return usageFailure(json);
     }
-    return administrationRequest(
-      environment,
-      json,
-      "/v1/status",
-      "GET",
-    );
+    return administrationRequest(environment, json, "/v1/status", "GET");
   }
   if (isCommand(arguments_, "release", "production")) {
     return runProductionReleaseCommand(arguments_.slice(2), environment, json);
@@ -65,16 +53,8 @@ export async function main(arguments_, environment) {
   if (isCommand(arguments_, "run", "reconcile")) {
     return reconcileRun(arguments_.slice(2), environment, json);
   }
-  if (
-    arguments_[0] === "catalogue" &&
-    arguments_[1] === "search" &&
-    arguments_[2] === "repair"
-  ) {
-    return repairCatalogueSearch(
-      arguments_.slice(3),
-      environment,
-      json,
-    );
+  if (arguments_[0] === "catalogue" && arguments_[1] === "search" && arguments_[2] === "repair") {
+    return repairCatalogueSearch(arguments_.slice(3), environment, json);
   }
   if (isCommand(arguments_, "backup", "create")) {
     return createBackup(arguments_.slice(2), environment, json);
@@ -97,16 +77,8 @@ export async function main(arguments_, environment) {
   if (isCommand(arguments_, "recovery", "accept")) {
     return acceptRecovery(arguments_.slice(2), environment, json);
   }
-  if (
-    arguments_[0] === "catalogue-export" &&
-    arguments_[1] === "deletion"
-  ) {
-    return catalogueExportDeletion(
-      arguments_[2],
-      arguments_.slice(3),
-      environment,
-      json,
-    );
+  if (arguments_[0] === "catalogue-export" && arguments_[1] === "deletion") {
+    return catalogueExportDeletion(arguments_[2], arguments_.slice(3), environment, json);
   }
   if (isCommand(arguments_, "source", "collect")) {
     return collectSource(arguments_.slice(2), environment, json);
@@ -114,11 +86,7 @@ export async function main(arguments_, environment) {
   if (isCommand(arguments_, "source", "show")) {
     return showSourceEvidence(arguments_.slice(2), environment, json);
   }
-  if (
-    arguments_[0] === "source" &&
-    arguments_[1] === "capacity" &&
-    arguments_[2] === "extend"
-  ) {
+  if (arguments_[0] === "source" && arguments_[1] === "capacity" && arguments_[2] === "extend") {
     return extendSourceCapacity(arguments_.slice(3), environment, json);
   }
   if (isCommand(arguments_, "source", "pause")) {
@@ -137,34 +105,19 @@ export async function main(arguments_, environment) {
     return reparseSourceSnapshot(arguments_.slice(2), environment, json);
   }
   if (arguments_[0] === "cards") {
-    return runCatalogueCommand(
-      arguments_.slice(1),
-      environment,
-      json,
-    );
+    return runCatalogueCommand(arguments_.slice(1), environment, json);
   }
   if (isCommand(arguments_, "legality", "status")) {
-    return runLegalityStatusCommand(
-      arguments_.slice(2),
-      environment,
-      json,
-    );
+    return runLegalityStatusCommand(arguments_.slice(2), environment, json);
   }
   if (arguments_[0] === "curated-revision") {
-    return runCuratedRevisionCommand(
-      arguments_.slice(1),
-      environment,
-      json,
-    );
+    return runCuratedRevisionCommand(arguments_.slice(1), environment, json);
   }
 
   return usageFailure(json);
 }
 
-if (
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.exitCode = await main(process.argv.slice(2), process.env);
 }
 
@@ -181,9 +134,7 @@ async function health(environment, json) {
     );
   }
 
-  const results = await Promise.all(
-    configuration.runtimes.map(async (runtime) => checkRuntime(runtime)),
-  );
+  const results = await Promise.all(configuration.runtimes.map(async (runtime) => checkRuntime(runtime)));
   const failure = results.find((result) => !result.ok);
   if (failure !== undefined) {
     return writeFailure(json, failure, failure.exitCode);
@@ -201,19 +152,11 @@ async function health(environment, json) {
   if (json) {
     process.stdout.write(`${JSON.stringify(document)}\n`);
   } else {
-    process.stdout.write(
-      degraded
-        ? "Card Keepr runtimes are degraded\n"
-        : "Card Keepr runtimes are healthy\n",
-    );
+    process.stdout.write(degraded ? "Card Keepr runtimes are degraded\n" : "Card Keepr runtimes are healthy\n");
     for (const runtime of document.runtimes) {
-      process.stdout.write(
-        `${runtime.name}: ${runtime.status} (${runtime.capabilities.join(", ")})\n`,
-      );
+      process.stdout.write(`${runtime.name}: ${runtime.status} (${runtime.capabilities.join(", ")})\n`);
       for (const [name, check] of Object.entries(runtime.checks)) {
-        process.stdout.write(
-          `  ${name}: ${check.status}${describeHealthCheck(name, check)}\n`,
-        );
+        process.stdout.write(`  ${name}: ${check.status}${describeHealthCheck(name, check)}\n`);
       }
     }
   }
@@ -227,16 +170,10 @@ function describeHealthCheck(name, check) {
   if (name === "database") {
     if (check.status === "pass") {
       parts.push(`schema level ${safeDiagnosticCount(check.migration_level)}`);
-      parts.push(
-        `revision ${safeDiagnosticReference(check.current_revision_id) ?? "unknown"}`,
-      );
+      parts.push(`revision ${safeDiagnosticReference(check.current_revision_id) ?? "unknown"}`);
     }
     if (typeof check.configured_database_id === "string") {
-      parts.push(
-        `configured database ${
-          safeDiagnosticReference(check.configured_database_id) ?? "unknown"
-        }`,
-      );
+      parts.push(`configured database ${safeDiagnosticReference(check.configured_database_id) ?? "unknown"}`);
     }
   } else if (name === "objects" || name === "workflows") {
     const members = name === "objects" ? check.buckets : check.bindings;
@@ -250,11 +187,7 @@ function describeHealthCheck(name, check) {
     }
   } else if (name === "public_base") {
     parts.push(safeUrl(check.configured) ?? "unknown");
-    parts.push(
-      `arrived through it: ${
-        check.arrived_through_public_base === true ? "yes" : "no"
-      }`,
-    );
+    parts.push(`arrived through it: ${check.arrived_through_public_base === true ? "yes" : "no"}`);
   } else if (name === "version") {
     parts.push(`id ${safeDiagnosticReference(check.id) ?? "unknown"}`);
   }
@@ -279,21 +212,20 @@ function validHealthChecks(checks) {
     return false;
   }
   const names = Object.keys(checks);
-  return names.length > 0 && names.every((name) =>
-    ["database", "objects", "workflows", "public_base", "version"]
-      .includes(name) &&
-    checks[name] !== null &&
-    typeof checks[name] === "object" &&
-    (checks[name].status === "pass" || checks[name].status === "fail")
+  return (
+    names.length > 0 &&
+    names.every(
+      (name) =>
+        ["database", "objects", "workflows", "public_base", "version"].includes(name) &&
+        checks[name] !== null &&
+        typeof checks[name] === "object" &&
+        (checks[name].status === "pass" || checks[name].status === "fail"),
+    )
   );
 }
 
 async function startRun(arguments_, environment, json) {
-  const options = parseOptions(arguments_, [
-    "--fixture",
-    "--games",
-    "--idempotency-key",
-  ]);
+  const options = parseOptions(arguments_, ["--fixture", "--games", "--idempotency-key"]);
   if (
     options.error !== null ||
     options.values["--fixture"] === undefined ||
@@ -302,20 +234,14 @@ async function startRun(arguments_, environment, json) {
   ) {
     return usageFailure(json);
   }
-  return administrationRequest(
-    environment,
-    json,
-    "/v1/ingestion-runs",
-    "POST",
-    {
-      fixture: options.values["--fixture"],
-      selected_games: options.values["--games"]
-        .split(",")
-        .map((game) => game.trim())
-        .filter(Boolean),
-      idempotency_key: options.values["--idempotency-key"],
-    },
-  );
+  return administrationRequest(environment, json, "/v1/ingestion-runs", "POST", {
+    fixture: options.values["--fixture"],
+    selected_games: options.values["--games"]
+      .split(",")
+      .map((game) => game.trim())
+      .filter(Boolean),
+    idempotency_key: options.values["--idempotency-key"],
+  });
 }
 
 async function showRun(arguments_, environment, json) {
@@ -324,12 +250,7 @@ async function showRun(arguments_, environment, json) {
   if (options.error !== null || runId === undefined) {
     return usageFailure(json);
   }
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/ingestion-runs/${encodeURIComponent(runId)}`,
-    "GET",
-  );
+  return administrationRequest(environment, json, `/v1/ingestion-runs/${encodeURIComponent(runId)}`, "GET");
 }
 
 async function inspectCandidate(arguments_, environment, json) {
@@ -338,29 +259,18 @@ async function inspectCandidate(arguments_, environment, json) {
   if (options.error !== null || runId === undefined) {
     return usageFailure(json);
   }
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/ingestion-runs/${encodeURIComponent(runId)}/candidate`,
-    "GET",
-  );
+  return administrationRequest(environment, json, `/v1/ingestion-runs/${encodeURIComponent(runId)}/candidate`, "GET");
 }
 
 async function approveRun(arguments_, environment, json) {
   const options = parseOptions(
     arguments_,
-    [
-      "--run-id",
-      "--candidate-digest",
-      "--expected-current-revision",
-      "--idempotency-key",
-    ],
+    ["--run-id", "--candidate-digest", "--expected-current-revision", "--idempotency-key"],
     ["--yes"],
   );
   const runId = options.values["--run-id"];
   const candidateDigest = options.values["--candidate-digest"];
-  const expectedCurrentRevision =
-    options.values["--expected-current-revision"];
+  const expectedCurrentRevision = options.values["--expected-current-revision"];
   const idempotencyKey = options.values["--idempotency-key"];
   if (
     options.error !== null ||
@@ -372,29 +282,15 @@ async function approveRun(arguments_, environment, json) {
   ) {
     return usageFailure(json);
   }
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/ingestion-runs/${encodeURIComponent(runId)}/approval`,
-    "POST",
-    {
-      candidate_digest: candidateDigest,
-      expected_current_revision_id: expectedCurrentRevision,
-      idempotency_key: idempotencyKey,
-    },
-  );
+  return administrationRequest(environment, json, `/v1/ingestion-runs/${encodeURIComponent(runId)}/approval`, "POST", {
+    candidate_digest: candidateDigest,
+    expected_current_revision_id: expectedCurrentRevision,
+    idempotency_key: idempotencyKey,
+  });
 }
 
 async function rejectRun(arguments_, environment, json) {
-  const options = parseOptions(
-    arguments_,
-    [
-      "--run-id",
-      "--candidate-digest",
-      "--idempotency-key",
-    ],
-    ["--yes"],
-  );
+  const options = parseOptions(arguments_, ["--run-id", "--candidate-digest", "--idempotency-key"], ["--yes"]);
   const runId = options.values["--run-id"];
   const candidateDigest = options.values["--candidate-digest"];
   const idempotencyKey = options.values["--idempotency-key"];
@@ -407,63 +303,35 @@ async function rejectRun(arguments_, environment, json) {
   ) {
     return usageFailure(json);
   }
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/ingestion-runs/${encodeURIComponent(runId)}/rejection`,
-    "POST",
-    {
-      candidate_digest: candidateDigest,
-      idempotency_key: idempotencyKey,
-    },
-  );
+  return administrationRequest(environment, json, `/v1/ingestion-runs/${encodeURIComponent(runId)}/rejection`, "POST", {
+    candidate_digest: candidateDigest,
+    idempotency_key: idempotencyKey,
+  });
 }
 
 async function retryRun(arguments_, environment, json) {
-  const options = parseOptions(arguments_, [
-    "--run-id",
-    "--idempotency-key",
-  ]);
+  const options = parseOptions(arguments_, ["--run-id", "--idempotency-key"]);
   const runId = options.values["--run-id"];
   const idempotencyKey = options.values["--idempotency-key"];
-  if (
-    options.error !== null ||
-    runId === undefined ||
-    idempotencyKey === undefined
-  ) {
+  if (options.error !== null || runId === undefined || idempotencyKey === undefined) {
     return usageFailure(json);
   }
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/ingestion-runs/${encodeURIComponent(runId)}/retry`,
-    "POST",
-    {
-      idempotency_key: idempotencyKey,
-    },
-  );
+  return administrationRequest(environment, json, `/v1/ingestion-runs/${encodeURIComponent(runId)}/retry`, "POST", {
+    idempotency_key: idempotencyKey,
+  });
 }
 
 async function cleanupRun(arguments_, environment, json) {
-  const options = parseOptions(arguments_, [
-    "--run-id",
-    "--idempotency-key",
-  ]);
+  const options = parseOptions(arguments_, ["--run-id", "--idempotency-key"]);
   const runId = options.values["--run-id"];
   const idempotencyKey = options.values["--idempotency-key"];
-  if (
-    options.error !== null ||
-    runId === undefined ||
-    idempotencyKey === undefined
-  ) {
+  if (options.error !== null || runId === undefined || idempotencyKey === undefined) {
     return usageFailure(json);
   }
   return administrationRequest(
     environment,
     json,
-    `/v1/ingestion-runs/${encodeURIComponent(
-      runId,
-    )}/publication-cleanup`,
+    `/v1/ingestion-runs/${encodeURIComponent(runId)}/publication-cleanup`,
     "POST",
     {
       idempotency_key: idempotencyKey,
@@ -474,18 +342,11 @@ async function cleanupRun(arguments_, environment, json) {
 async function reconcileRun(arguments_, environment, json) {
   const options = parseOptions(
     arguments_,
-    [
-      "--run-id",
-      "--expected-current-revision",
-      "--idempotency-key",
-      "--environment",
-      "--confirm",
-    ],
+    ["--run-id", "--expected-current-revision", "--idempotency-key", "--environment", "--confirm"],
     ["--yes"],
   );
   const runId = options.values["--run-id"];
-  const expectedCurrentRevision =
-    options.values["--expected-current-revision"];
+  const expectedCurrentRevision = options.values["--expected-current-revision"];
   const idempotencyKey = options.values["--idempotency-key"];
   const target = options.values["--environment"];
   const confirmation = options.values["--confirm"];
@@ -500,23 +361,11 @@ async function reconcileRun(arguments_, environment, json) {
     return usageFailure(json);
   }
   if (target !== "production") {
-    return productionTargetFailure(
-      json,
-      "Reconciliation requires --environment production.",
-    );
+    return productionTargetFailure(json, "Reconciliation requires --environment production.");
   }
-  const resolved = await resolveReconciliationTarget(
-    environment,
-    json,
-    runId,
-    expectedCurrentRevision,
-  );
+  const resolved = await resolveReconciliationTarget(environment, json, runId, expectedCurrentRevision);
   if (typeof resolved === "number") return resolved;
-  const confirmed = confirmProductionTarget(
-    json,
-    resolved.productionTarget,
-    confirmation,
-  );
+  const confirmed = confirmProductionTarget(json, resolved.productionTarget, confirmation);
   if (confirmed !== 0) return confirmed;
   return administrationRequest(
     environment,
@@ -533,18 +382,11 @@ async function reconcileRun(arguments_, environment, json) {
 async function repairCatalogueSearch(arguments_, environment, json) {
   const options = parseOptions(
     arguments_,
-    [
-      "--target-revision",
-      "--expected-current-revision",
-      "--idempotency-key",
-      "--environment",
-      "--confirm",
-    ],
+    ["--target-revision", "--expected-current-revision", "--idempotency-key", "--environment", "--confirm"],
     ["--yes"],
   );
   const targetRevision = options.values["--target-revision"];
-  const expectedCurrentRevision =
-    options.values["--expected-current-revision"];
+  const expectedCurrentRevision = options.values["--expected-current-revision"];
   const idempotencyKey = options.values["--idempotency-key"];
   const target = options.values["--environment"];
   const confirmation = options.values["--confirm"];
@@ -559,50 +401,26 @@ async function repairCatalogueSearch(arguments_, environment, json) {
     return usageFailure(json);
   }
   if (target !== "production") {
-    return productionTargetFailure(
-      json,
-      "Card search repair requires --environment production.",
-    );
+    return productionTargetFailure(json, "Card search repair requires --environment production.");
   }
-  const resolved = await resolveSearchRepairTarget(
-    environment,
-    json,
-    targetRevision,
-    expectedCurrentRevision,
-  );
+  const resolved = await resolveSearchRepairTarget(environment, json, targetRevision, expectedCurrentRevision);
   if (typeof resolved === "number") return resolved;
-  const confirmed = confirmProductionTarget(
-    json,
-    resolved.productionTarget,
-    confirmation,
-  );
+  const confirmed = confirmProductionTarget(json, resolved.productionTarget, confirmation);
   if (confirmed !== 0) return confirmed;
-  return administrationRequest(
-    environment,
-    json,
-    "/v1/catalogue-search-materialization/repair",
-    "POST",
-    {
-      target_revision_id: targetRevision,
-      expected_current_revision_id: expectedCurrentRevision,
-      idempotency_key: idempotencyKey,
-    },
-  );
+  return administrationRequest(environment, json, "/v1/catalogue-search-materialization/repair", "POST", {
+    target_revision_id: targetRevision,
+    expected_current_revision_id: expectedCurrentRevision,
+    idempotency_key: idempotencyKey,
+  });
 }
 
 async function createBackup(arguments_, environment, json) {
   const options = parseOptions(
     arguments_,
-    [
-      "--expected-current-revision",
-      "--idempotency-key",
-      "--environment",
-      "--confirm",
-    ],
+    ["--expected-current-revision", "--idempotency-key", "--environment", "--confirm"],
     ["--yes"],
   );
-  const expectedCurrentRevision =
-    options.values["--expected-current-revision"];
+  const expectedCurrentRevision = options.values["--expected-current-revision"];
   const idempotencyKey = options.values["--idempotency-key"];
   const target = options.values["--environment"];
   const confirmation = options.values["--confirm"];
@@ -616,16 +434,9 @@ async function createBackup(arguments_, environment, json) {
     return usageFailure(json);
   }
   if (target !== "production") {
-    return productionTargetFailure(
-      json,
-      "Catalogue backup requires --environment production.",
-    );
+    return productionTargetFailure(json, "Catalogue backup requires --environment production.");
   }
-  const resolved = await resolveProductionStatus(
-    environment,
-    json,
-    expectedCurrentRevision,
-  );
+  const resolved = await resolveProductionStatus(environment, json, expectedCurrentRevision);
   if (typeof resolved === "number") return resolved;
   const confirmed = confirmProductionTarget(
     json,
@@ -637,29 +448,18 @@ async function createBackup(arguments_, environment, json) {
     confirmation,
   );
   if (confirmed !== 0) return confirmed;
-  return administrationRequest(
-    environment,
-    json,
-    "/v1/backups",
-    "POST",
-    {
-      expected_current_revision_id: expectedCurrentRevision,
-      idempotency_key: idempotencyKey,
-    },
-  );
+  return administrationRequest(environment, json, "/v1/backups", "POST", {
+    expected_current_revision_id: expectedCurrentRevision,
+    idempotency_key: idempotencyKey,
+  });
 }
 
 async function backupStatus(arguments_, environment, json) {
-  const options = parseOptions(arguments_, [
-    "--attempt-id",
-    "--catalogue-revision",
-  ]);
+  const options = parseOptions(arguments_, ["--attempt-id", "--catalogue-revision"]);
   const attemptId = options.values["--attempt-id"];
   const catalogueRevision = options.values["--catalogue-revision"];
-  if (
-    options.error !== null ||
-    (attemptId === undefined) === (catalogueRevision === undefined)
-  ) return usageFailure(json);
+  if (options.error !== null || (attemptId === undefined) === (catalogueRevision === undefined))
+    return usageFailure(json);
   return administrationRequest(
     environment,
     json,
@@ -671,14 +471,18 @@ async function backupStatus(arguments_, environment, json) {
 }
 
 async function retryBackup(arguments_, environment, json) {
-  const options = parseOptions(arguments_, [
-    "--expected-current-revision",
-    "--idempotency-key",
-    "--failed-attempt-id",
-    "--failed-attempt-digest",
-    "--environment",
-    "--confirm",
-  ], ["--yes"]);
+  const options = parseOptions(
+    arguments_,
+    [
+      "--expected-current-revision",
+      "--idempotency-key",
+      "--failed-attempt-id",
+      "--failed-attempt-digest",
+      "--environment",
+      "--confirm",
+    ],
+    ["--yes"],
+  );
   const expected = options.values["--expected-current-revision"];
   const idempotencyKey = options.values["--idempotency-key"];
   const failedAttemptId = options.values["--failed-attempt-id"];
@@ -686,16 +490,17 @@ async function retryBackup(arguments_, environment, json) {
   const target = options.values["--environment"];
   const confirmation = options.values["--confirm"];
   if (
-    options.error !== null || expected === undefined ||
-    idempotencyKey === undefined || failedAttemptId === undefined ||
-    failedAttemptDigest === undefined || target === undefined ||
+    options.error !== null ||
+    expected === undefined ||
+    idempotencyKey === undefined ||
+    failedAttemptId === undefined ||
+    failedAttemptDigest === undefined ||
+    target === undefined ||
     !options.flags.has("--yes")
-  ) return usageFailure(json);
+  )
+    return usageFailure(json);
   if (target !== "production") {
-    return productionTargetFailure(
-      json,
-      "Catalogue backup retry requires --environment production.",
-    );
+    return productionTargetFailure(json, "Catalogue backup retry requires --environment production.");
   }
   const resolved = await resolveProductionStatus(environment, json, expected);
   if (typeof resolved === "number") return resolved;
@@ -741,21 +546,19 @@ async function catalogueExportDeletion(action, arguments_, environment, json) {
     const expected = options.values["--expected-current-revision"];
     const planId = options.values["--plan-id"];
     if (
-      options.error !== null || revision === undefined ||
-      manifest === undefined || expected === undefined || planId === undefined
-    ) return usageFailure(json);
-    return administrationRequest(
-      environment,
-      json,
-      "/v1/catalogue-export-deletion-plans",
-      "POST",
-      {
-        catalogue_revision_id: revision,
-        manifest_digest: manifest,
-        expected_current_revision_id: expected,
-        plan_id: planId,
-      },
-    );
+      options.error !== null ||
+      revision === undefined ||
+      manifest === undefined ||
+      expected === undefined ||
+      planId === undefined
+    )
+      return usageFailure(json);
+    return administrationRequest(environment, json, "/v1/catalogue-export-deletion-plans", "POST", {
+      catalogue_revision_id: revision,
+      manifest_digest: manifest,
+      expected_current_revision_id: expected,
+      plan_id: planId,
+    });
   }
   if (action === "status") {
     const options = parseOptions(arguments_, ["--deletion-id"]);
@@ -771,7 +574,24 @@ async function catalogueExportDeletion(action, arguments_, environment, json) {
     );
   }
   if (action === "confirm") {
-    const options = parseOptions(arguments_, [
+    const options = parseOptions(
+      arguments_,
+      [
+        "--plan-id",
+        "--plan-digest",
+        "--catalogue-revision",
+        "--manifest-digest",
+        "--expected-current-revision",
+        "--confirm-revision",
+        "--deletion-id",
+        "--idempotency-key",
+        "--environment",
+        "--confirm",
+      ],
+      ["--yes"],
+    );
+    const values = options.values;
+    const required = [
       "--plan-id",
       "--plan-digest",
       "--catalogue-revision",
@@ -781,31 +601,13 @@ async function catalogueExportDeletion(action, arguments_, environment, json) {
       "--deletion-id",
       "--idempotency-key",
       "--environment",
-      "--confirm",
-    ], ["--yes"]);
-    const values = options.values;
-    const required = [
-      "--plan-id", "--plan-digest", "--catalogue-revision",
-      "--manifest-digest", "--expected-current-revision",
-      "--confirm-revision", "--deletion-id", "--idempotency-key",
-      "--environment",
     ];
-    if (
-      options.error !== null ||
-      required.some((name) => values[name] === undefined) ||
-      !options.flags.has("--yes")
-    ) return usageFailure(json);
+    if (options.error !== null || required.some((name) => values[name] === undefined) || !options.flags.has("--yes"))
+      return usageFailure(json);
     if (values["--environment"] !== "production") {
-      return productionTargetFailure(
-        json,
-        "Catalogue Export deletion requires --environment production.",
-      );
+      return productionTargetFailure(json, "Catalogue Export deletion requires --environment production.");
     }
-    const resolved = await resolveProductionStatus(
-      environment,
-      json,
-      values["--expected-current-revision"],
-    );
+    const resolved = await resolveProductionStatus(environment, json, values["--expected-current-revision"]);
     if (typeof resolved === "number") return resolved;
     const confirmation = {
       production_target: resolved.productionTarget,
@@ -817,59 +619,46 @@ async function catalogueExportDeletion(action, arguments_, environment, json) {
       deletion_id: values["--deletion-id"],
       idempotency_key: values["--idempotency-key"],
     };
-    const confirmed = confirmProductionTarget(
-      json,
-      confirmation,
-      values["--confirm"],
-    );
+    const confirmed = confirmProductionTarget(json, confirmation, values["--confirm"]);
     if (confirmed !== 0) return confirmed;
-    return administrationRequest(
-      environment,
-      json,
-      "/v1/catalogue-export-deletions",
-      "POST",
-      {
-        plan_id: values["--plan-id"],
-        plan_digest: values["--plan-digest"],
-        catalogue_revision_id: values["--catalogue-revision"],
-        manifest_digest: values["--manifest-digest"],
-        expected_current_revision_id: values["--expected-current-revision"],
-        confirmation_revision_id: values["--confirm-revision"],
-        deletion_id: values["--deletion-id"],
-        idempotency_key: values["--idempotency-key"],
-      },
-    );
+    return administrationRequest(environment, json, "/v1/catalogue-export-deletions", "POST", {
+      plan_id: values["--plan-id"],
+      plan_digest: values["--plan-digest"],
+      catalogue_revision_id: values["--catalogue-revision"],
+      manifest_digest: values["--manifest-digest"],
+      expected_current_revision_id: values["--expected-current-revision"],
+      confirmation_revision_id: values["--confirm-revision"],
+      deletion_id: values["--deletion-id"],
+      idempotency_key: values["--idempotency-key"],
+    });
   }
   if (action === "retry") {
-    const options = parseOptions(arguments_, [
+    const options = parseOptions(
+      arguments_,
+      [
+        "--deletion-id",
+        "--object-set-digest",
+        "--expected-current-revision",
+        "--idempotency-key",
+        "--environment",
+        "--confirm",
+      ],
+      ["--yes"],
+    );
+    const values = options.values;
+    const required = [
       "--deletion-id",
       "--object-set-digest",
       "--expected-current-revision",
       "--idempotency-key",
       "--environment",
-      "--confirm",
-    ], ["--yes"]);
-    const values = options.values;
-    const required = [
-      "--deletion-id", "--object-set-digest", "--expected-current-revision",
-      "--idempotency-key", "--environment",
     ];
-    if (
-      options.error !== null ||
-      required.some((name) => values[name] === undefined) ||
-      !options.flags.has("--yes")
-    ) return usageFailure(json);
+    if (options.error !== null || required.some((name) => values[name] === undefined) || !options.flags.has("--yes"))
+      return usageFailure(json);
     if (values["--environment"] !== "production") {
-      return productionTargetFailure(
-        json,
-        "Catalogue Export deletion retry requires --environment production.",
-      );
+      return productionTargetFailure(json, "Catalogue Export deletion retry requires --environment production.");
     }
-    const resolved = await resolveProductionStatus(
-      environment,
-      json,
-      values["--expected-current-revision"],
-    );
+    const resolved = await resolveProductionStatus(environment, json, values["--expected-current-revision"]);
     if (typeof resolved === "number") return resolved;
     const confirmation = {
       production_target: resolved.productionTarget,
@@ -878,11 +667,7 @@ async function catalogueExportDeletion(action, arguments_, environment, json) {
       expected_current_revision_id: values["--expected-current-revision"],
       idempotency_key: values["--idempotency-key"],
     };
-    const confirmed = confirmProductionTarget(
-      json,
-      confirmation,
-      values["--confirm"],
-    );
+    const confirmed = confirmProductionTarget(json, confirmation, values["--confirm"]);
     if (confirmed !== 0) return confirmed;
     return administrationRequest(
       environment,
@@ -903,56 +688,56 @@ function writeResolvedBackupRetry(json, resolved) {
     process.stderr.write(`${JSON.stringify(resolved)}\n`);
     return;
   }
-  process.stderr.write(
-    `Resolved backup retry ${JSON.stringify(resolved)}\n`,
-  );
+  process.stderr.write(`Resolved backup retry ${JSON.stringify(resolved)}\n`);
 }
 
 async function beginRecovery(arguments_, environment, json) {
-  const options = parseOptions(arguments_, [
-    "--recovery-id",
-    "--method",
-    "--target-revision",
-    "--target-bookmark",
-    "--target-digest",
-    "--backup-attempt-id",
-    "--expected-current-revision",
-    "--idempotency-key",
-    "--linked-operation-id",
-    "--environment",
-    "--confirm",
-  ], ["--yes"]);
+  const options = parseOptions(
+    arguments_,
+    [
+      "--recovery-id",
+      "--method",
+      "--target-revision",
+      "--target-bookmark",
+      "--target-digest",
+      "--backup-attempt-id",
+      "--expected-current-revision",
+      "--idempotency-key",
+      "--linked-operation-id",
+      "--environment",
+      "--confirm",
+    ],
+    ["--yes"],
+  );
   const recoveryId = options.values["--recovery-id"];
   const method = options.values["--method"];
   const targetRevision = options.values["--target-revision"];
   const targetBookmark = options.values["--target-bookmark"];
   const targetDigest = options.values["--target-digest"];
   const backupAttemptId = options.values["--backup-attempt-id"];
-  const expectedCurrentRevision =
-    options.values["--expected-current-revision"];
+  const expectedCurrentRevision = options.values["--expected-current-revision"];
   const idempotencyKey = options.values["--idempotency-key"];
   const linkedOperationId = options.values["--linked-operation-id"];
   const target = options.values["--environment"];
   const confirmation = options.values["--confirm"];
   if (
-    options.error !== null || recoveryId === undefined ||
+    options.error !== null ||
+    recoveryId === undefined ||
     !["time_travel", "replacement_database"].includes(method) ||
-    targetRevision === undefined || targetBookmark === undefined ||
-    targetDigest === undefined || backupAttemptId === undefined ||
-    expectedCurrentRevision === undefined || idempotencyKey === undefined ||
-    target === undefined || !options.flags.has("--yes")
-  ) return usageFailure(json);
+    targetRevision === undefined ||
+    targetBookmark === undefined ||
+    targetDigest === undefined ||
+    backupAttemptId === undefined ||
+    expectedCurrentRevision === undefined ||
+    idempotencyKey === undefined ||
+    target === undefined ||
+    !options.flags.has("--yes")
+  )
+    return usageFailure(json);
   if (target !== "production") {
-    return productionTargetFailure(
-      json,
-      "Catalogue recovery requires --environment production.",
-    );
+    return productionTargetFailure(json, "Catalogue recovery requires --environment production.");
   }
-  const resolved = await resolveProductionStatus(
-    environment,
-    json,
-    expectedCurrentRevision,
-  );
+  const resolved = await resolveProductionStatus(environment, json, expectedCurrentRevision);
   if (typeof resolved === "number") return resolved;
   const request = {
     environment: "production",
@@ -964,22 +749,18 @@ async function beginRecovery(arguments_, environment, json) {
     backup_attempt_id: backupAttemptId,
     expected_current_revision_id: expectedCurrentRevision,
     idempotency_key: idempotencyKey,
-    ...(linkedOperationId === undefined
-      ? {}
-      : { linked_operation_id: linkedOperationId }),
+    ...(linkedOperationId === undefined ? {} : { linked_operation_id: linkedOperationId }),
   };
-  const confirmed = confirmProductionTarget(json, {
-    production_target: resolved.productionTarget,
-    ...request,
-  }, confirmation);
-  if (confirmed !== 0) return confirmed;
-  return administrationRequest(
-    environment,
+  const confirmed = confirmProductionTarget(
     json,
-    "/v1/recoveries",
-    "POST",
-    request,
+    {
+      production_target: resolved.productionTarget,
+      ...request,
+    },
+    confirmation,
   );
+  if (confirmed !== 0) return confirmed;
+  return administrationRequest(environment, json, "/v1/recoveries", "POST", request);
 }
 
 async function inspectRecovery(arguments_, environment, json) {
@@ -988,54 +769,47 @@ async function inspectRecovery(arguments_, environment, json) {
   if (options.error !== null || recoveryId === undefined) {
     return usageFailure(json);
   }
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/recoveries/${encodeURIComponent(recoveryId)}`,
-    "GET",
-  );
+  return administrationRequest(environment, json, `/v1/recoveries/${encodeURIComponent(recoveryId)}`, "GET");
 }
 
 async function verifyRecovery(arguments_, environment, json) {
-  const options = parseOptions(arguments_, [
-    "--recovery-id",
-    "--target-digest",
-    "--idempotency-key",
-    "--environment",
-    "--confirm",
-  ], ["--yes"]);
+  const options = parseOptions(
+    arguments_,
+    ["--recovery-id", "--target-digest", "--idempotency-key", "--environment", "--confirm"],
+    ["--yes"],
+  );
   const recoveryId = options.values["--recovery-id"];
   const targetDigest = options.values["--target-digest"];
   const idempotencyKey = options.values["--idempotency-key"];
   const target = options.values["--environment"];
   const confirmation = options.values["--confirm"];
   if (
-    options.error !== null || recoveryId === undefined ||
-    targetDigest === undefined || idempotencyKey === undefined ||
-    target === undefined || !options.flags.has("--yes")
-  ) return usageFailure(json);
+    options.error !== null ||
+    recoveryId === undefined ||
+    targetDigest === undefined ||
+    idempotencyKey === undefined ||
+    target === undefined ||
+    !options.flags.has("--yes")
+  )
+    return usageFailure(json);
   if (target !== "production") {
-    return productionTargetFailure(
-      json,
-      "Catalogue recovery verification requires --environment production.",
-    );
+    return productionTargetFailure(json, "Catalogue recovery verification requires --environment production.");
   }
-  const resolved = await resolveRecoveryTarget(
-    environment,
-    json,
-    recoveryId,
-    targetDigest,
-  );
+  const resolved = await resolveRecoveryTarget(environment, json, recoveryId, targetDigest);
   if (typeof resolved === "number") return resolved;
   const request = {
     target_digest: targetDigest,
     idempotency_key: idempotencyKey,
   };
-  const confirmed = confirmProductionTarget(json, {
-    production_target: resolved.productionTarget,
-    recovery_id: recoveryId,
-    ...request,
-  }, confirmation);
+  const confirmed = confirmProductionTarget(
+    json,
+    {
+      production_target: resolved.productionTarget,
+      recovery_id: recoveryId,
+      ...request,
+    },
+    confirmation,
+  );
   if (confirmed !== 0) return confirmed;
   return administrationRequest(
     environment,
@@ -1047,43 +821,41 @@ async function verifyRecovery(arguments_, environment, json) {
 }
 
 async function acceptRecovery(arguments_, environment, json) {
-  const options = parseOptions(arguments_, [
-    "--recovery-id",
-    "--expected-restored-revision",
-    "--target-digest",
-    "--confirmation-recovery-id",
-    "--idempotency-key",
-    "--environment",
-    "--confirm",
-  ], ["--yes"]);
+  const options = parseOptions(
+    arguments_,
+    [
+      "--recovery-id",
+      "--expected-restored-revision",
+      "--target-digest",
+      "--confirmation-recovery-id",
+      "--idempotency-key",
+      "--environment",
+      "--confirm",
+    ],
+    ["--yes"],
+  );
   const recoveryId = options.values["--recovery-id"];
-  const expectedRestoredRevision =
-    options.values["--expected-restored-revision"];
+  const expectedRestoredRevision = options.values["--expected-restored-revision"];
   const targetDigest = options.values["--target-digest"];
-  const confirmationRecoveryId =
-    options.values["--confirmation-recovery-id"];
+  const confirmationRecoveryId = options.values["--confirmation-recovery-id"];
   const idempotencyKey = options.values["--idempotency-key"];
   const target = options.values["--environment"];
   const confirmation = options.values["--confirm"];
   if (
-    options.error !== null || recoveryId === undefined ||
-    expectedRestoredRevision === undefined || targetDigest === undefined ||
-    confirmationRecoveryId === undefined || idempotencyKey === undefined ||
-    target === undefined || !options.flags.has("--yes")
-  ) return usageFailure(json);
+    options.error !== null ||
+    recoveryId === undefined ||
+    expectedRestoredRevision === undefined ||
+    targetDigest === undefined ||
+    confirmationRecoveryId === undefined ||
+    idempotencyKey === undefined ||
+    target === undefined ||
+    !options.flags.has("--yes")
+  )
+    return usageFailure(json);
   if (target !== "production") {
-    return productionTargetFailure(
-      json,
-      "Catalogue recovery acceptance requires --environment production.",
-    );
+    return productionTargetFailure(json, "Catalogue recovery acceptance requires --environment production.");
   }
-  const resolved = await resolveRecoveryTarget(
-    environment,
-    json,
-    recoveryId,
-    targetDigest,
-    expectedRestoredRevision,
-  );
+  const resolved = await resolveRecoveryTarget(environment, json, recoveryId, targetDigest, expectedRestoredRevision);
   if (typeof resolved === "number") return resolved;
   const request = {
     expected_restored_revision_id: expectedRestoredRevision,
@@ -1091,11 +863,15 @@ async function acceptRecovery(arguments_, environment, json) {
     confirmation_recovery_id: confirmationRecoveryId,
     idempotency_key: idempotencyKey,
   };
-  const confirmed = confirmProductionTarget(json, {
-    production_target: resolved.productionTarget,
-    recovery_id: recoveryId,
-    ...request,
-  }, confirmation);
+  const confirmed = confirmProductionTarget(
+    json,
+    {
+      production_target: resolved.productionTarget,
+      recovery_id: recoveryId,
+      ...request,
+    },
+    confirmation,
+  );
   if (confirmed !== 0) return confirmed;
   return administrationRequest(
     environment,
@@ -1122,13 +898,9 @@ async function collectSource(arguments_, environment, json) {
     options.error === null &&
     planFile !== undefined &&
     idempotencyKey !== undefined &&
-    [
-      "--game",
-      "--lineage",
-      "--adapter",
-      "--request-id",
-      "--url",
-    ].every((option) => options.values[option] === undefined)
+    ["--game", "--lineage", "--adapter", "--request-id", "--url"].every(
+      (option) => options.values[option] === undefined,
+    )
   ) {
     let planDocument;
     try {
@@ -1144,16 +916,10 @@ async function collectSource(arguments_, environment, json) {
     ) {
       return usageFailure(json);
     }
-    return administrationRequest(
-      environment,
-      json,
-      "/v1/ingestion-runs/evidence",
-      "POST",
-      {
-        plans: planDocument.plans,
-        idempotency_key: idempotencyKey,
-      },
-    );
+    return administrationRequest(environment, json, "/v1/ingestion-runs/evidence", "POST", {
+      plans: planDocument.plans,
+      idempotency_key: idempotencyKey,
+    });
   }
   const game = options.values["--game"];
   const lineage = options.values["--lineage"];
@@ -1172,19 +938,13 @@ async function collectSource(arguments_, environment, json) {
   ) {
     return usageFailure(json);
   }
-  return administrationRequest(
-    environment,
-    json,
-    "/v1/ingestion-runs/evidence",
-    "POST",
-    {
-      supported_game: game,
-      source_lineage: lineage,
-      adapter_version: adapter,
-      idempotency_key: idempotencyKey,
-      requests: [{ id: requestId, url }],
-    },
-  );
+  return administrationRequest(environment, json, "/v1/ingestion-runs/evidence", "POST", {
+    supported_game: game,
+    source_lineage: lineage,
+    adapter_version: adapter,
+    idempotency_key: idempotencyKey,
+    requests: [{ id: requestId, url }],
+  });
 }
 
 async function showSourceEvidence(arguments_, environment, json) {
@@ -1193,12 +953,7 @@ async function showSourceEvidence(arguments_, environment, json) {
   if (options.error !== null || runId === undefined) {
     return usageFailure(json);
   }
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/ingestion-runs/${encodeURIComponent(runId)}/evidence`,
-    "GET",
-  );
+  return administrationRequest(environment, json, `/v1/ingestion-runs/${encodeURIComponent(runId)}/evidence`, "GET");
 }
 
 // The compare-and-set numbers of a capacity extension travel as JSON
@@ -1218,12 +973,8 @@ async function extendSourceCapacity(arguments_, environment, json) {
     "--idempotency-key",
   ]);
   const runId = options.values["--run-id"];
-  const expectedCapacity = parsedCapacityInteger(
-    options.values["--expected-capacity"],
-  );
-  const expectedGeneration = parsedCapacityInteger(
-    options.values["--expected-generation"],
-  );
+  const expectedCapacity = parsedCapacityInteger(options.values["--expected-capacity"]);
+  const expectedGeneration = parsedCapacityInteger(options.values["--expected-generation"]);
   const capacity = parsedCapacityInteger(options.values["--capacity"]);
   const idempotencyKey = options.values["--idempotency-key"];
   if (
@@ -1269,17 +1020,10 @@ async function resumeEvidenceCollection(arguments_, environment, json) {
 // evidence object, and then resumes or is terminated. It is idempotent under
 // its key.
 async function pauseEvidenceCollection(arguments_, environment, json) {
-  const options = parseOptions(arguments_, [
-    "--run-id",
-    "--idempotency-key",
-  ]);
+  const options = parseOptions(arguments_, ["--run-id", "--idempotency-key"]);
   const runId = options.values["--run-id"];
   const idempotencyKey = options.values["--idempotency-key"];
-  if (
-    options.error !== null ||
-    runId === undefined ||
-    idempotencyKey === undefined
-  ) {
+  if (options.error !== null || runId === undefined || idempotencyKey === undefined) {
     return usageFailure(json);
   }
   return administrationRequest(
@@ -1295,17 +1039,10 @@ async function pauseEvidenceCollection(arguments_, environment, json) {
 // Ingestion Run: it is idempotent under its key and releases the single
 // active-run reservation while retaining every evidence object.
 async function terminateEvidenceCollection(arguments_, environment, json) {
-  const options = parseOptions(arguments_, [
-    "--run-id",
-    "--idempotency-key",
-  ]);
+  const options = parseOptions(arguments_, ["--run-id", "--idempotency-key"]);
   const runId = options.values["--run-id"];
   const idempotencyKey = options.values["--idempotency-key"];
-  if (
-    options.error !== null ||
-    runId === undefined ||
-    idempotencyKey === undefined
-  ) {
+  if (options.error !== null || runId === undefined || idempotencyKey === undefined) {
     return usageFailure(json);
   }
   return administrationRequest(
@@ -1318,17 +1055,10 @@ async function terminateEvidenceCollection(arguments_, environment, json) {
 }
 
 async function retryEvidenceCollection(arguments_, environment, json) {
-  const options = parseOptions(arguments_, [
-    "--run-id",
-    "--idempotency-key",
-  ]);
+  const options = parseOptions(arguments_, ["--run-id", "--idempotency-key"]);
   const runId = options.values["--run-id"];
   const idempotencyKey = options.values["--idempotency-key"];
-  if (
-    options.error !== null ||
-    runId === undefined ||
-    idempotencyKey === undefined
-  ) {
+  if (options.error !== null || runId === undefined || idempotencyKey === undefined) {
     return usageFailure(json);
   }
   return administrationRequest(
@@ -1341,20 +1071,11 @@ async function retryEvidenceCollection(arguments_, environment, json) {
 }
 
 async function reparseSourceSnapshot(arguments_, environment, json) {
-  const options = parseOptions(arguments_, [
-    "--snapshot-id",
-    "--adapter",
-    "--idempotency-key",
-  ]);
+  const options = parseOptions(arguments_, ["--snapshot-id", "--adapter", "--idempotency-key"]);
   const snapshotId = options.values["--snapshot-id"];
   const adapter = options.values["--adapter"];
   const idempotencyKey = options.values["--idempotency-key"];
-  if (
-    options.error !== null ||
-    snapshotId === undefined ||
-    adapter === undefined ||
-    idempotencyKey === undefined
-  ) {
+  if (options.error !== null || snapshotId === undefined || adapter === undefined || idempotencyKey === undefined) {
     return usageFailure(json);
   }
   return administrationRequest(
@@ -1369,25 +1090,10 @@ async function reparseSourceSnapshot(arguments_, environment, json) {
   );
 }
 
-async function administrationRequest(
-  environment,
-  json,
-  pathname,
-  method,
-  body,
-) {
-  const observed = await fetchAdministrationDocument(
-    environment,
-    pathname,
-    method,
-    body,
-  );
+async function administrationRequest(environment, json, pathname, method, body) {
+  const observed = await fetchAdministrationDocument(environment, pathname, method, body);
   if (observed.error !== null) {
-    return writeFailure(
-      json,
-      observed.error,
-      observed.exitCode,
-    );
+    return writeFailure(json, observed.error, observed.exitCode);
   }
   const document = observed.document;
   if (json) {
@@ -1396,28 +1102,16 @@ async function administrationRequest(
     process.stdout.write(`${formatAdministrationResult(document)}\n`);
   }
   const incomplete =
-    (document.contract ===
-      "card-keepr-reconciliation-workflow@1" &&
-      document.status !== "complete"
-    ) ||
-    (document.contract ===
-      "card-keepr-catalogue-backup-workflow@1" &&
-      document.status !== "complete"
-    ) ||
-    (document.contract ===
-      "card-keepr-card-search-repair@1" &&
-      document.complete !== true) ||
+    (document.contract === "card-keepr-reconciliation-workflow@1" && document.status !== "complete") ||
+    (document.contract === "card-keepr-catalogue-backup-workflow@1" && document.status !== "complete") ||
+    (document.contract === "card-keepr-card-search-repair@1" && document.complete !== true) ||
     (document.contract === "card-keepr-catalogue-export-deletion@1" &&
-      document.state === "deleting" && observed.responseStatus === 202);
+      document.state === "deleting" &&
+      observed.responseStatus === 202);
   return incomplete ? 10 : 0;
 }
 
-async function fetchAdministrationDocument(
-  environment,
-  pathname,
-  method = "GET",
-  body,
-) {
+async function fetchAdministrationDocument(environment, pathname, method = "GET", body) {
   const configuration = readAdministrationConfiguration(environment);
   if (configuration.error !== null) {
     return {
@@ -1431,16 +1125,12 @@ async function fetchAdministrationDocument(
   }
   let response;
   try {
-    response = await fetch(runtimeUrl(configuration.url, pathname), {
+    response = await httpRequest(runtimeUrl(configuration.url, pathname), {
       method,
       headers: {
         authorization: `Bearer ${configuration.key}`,
-        ...(configuration.testNow === undefined
-          ? {}
-          : { "x-keepr-test-now": configuration.testNow }),
-        ...(body === undefined
-          ? {}
-          : { "content-type": "application/json" }),
+        ...(configuration.testNow === undefined ? {} : { "x-keepr-test-now": configuration.testNow }),
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(10_000),
@@ -1472,14 +1162,9 @@ async function fetchAdministrationDocument(
     };
   }
   if (!response.ok) {
-    const code =
-      typeof document?.code === "string"
-        ? document.code
-        : "administration_error";
+    const code = typeof document?.code === "string" ? document.code : "administration_error";
     const detail =
-      typeof document?.detail === "string"
-        ? document.detail
-        : `ingestion runtime returned HTTP ${response.status}`;
+      typeof document?.detail === "string" ? document.detail : `ingestion runtime returned HTTP ${response.status}`;
     return {
       error: { code, detail },
       exitCode: exitCodeForStatus(response.status),
@@ -1494,57 +1179,29 @@ async function fetchAdministrationDocument(
   };
 }
 
-async function resolveReconciliationTarget(
-  environment,
-  json,
-  runId,
-  expectedCurrentRevision,
-) {
-  const run = await fetchAdministrationDocument(
-    environment,
-    `/v1/ingestion-runs/${encodeURIComponent(runId)}`,
-  );
+async function resolveReconciliationTarget(environment, json, runId, expectedCurrentRevision) {
+  const run = await fetchAdministrationDocument(environment, `/v1/ingestion-runs/${encodeURIComponent(runId)}`);
   const failedRun = writeObservedFailure(run, json);
   if (failedRun !== null) return failedRun;
-  if (
-    run.document?.id !== runId ||
-    run.document?.expected_current_revision_id !== expectedCurrentRevision
-  ) {
+  if (run.document?.id !== runId || run.document?.expected_current_revision_id !== expectedCurrentRevision) {
     return resolvedTargetFailure(
       json,
       "The production Ingestion Run does not resolve to the supplied run and expected Catalogue Revision.",
     );
   }
-  return resolveProductionStatus(
-    environment,
-    json,
-    expectedCurrentRevision,
-  );
+  return resolveProductionStatus(environment, json, expectedCurrentRevision);
 }
 
-async function resolveSearchRepairTarget(
-  environment,
-  json,
-  targetRevision,
-  expectedCurrentRevision,
-) {
-  const resolved = await resolveProductionStatus(
-    environment,
-    json,
-    expectedCurrentRevision,
-  );
+async function resolveSearchRepairTarget(environment, json, targetRevision, expectedCurrentRevision) {
+  const resolved = await resolveProductionStatus(environment, json, expectedCurrentRevision);
   if (typeof resolved === "number") return resolved;
-  const repairableRevisionIds = validatedRepairableRevisionIds(
-    resolved.repairableRevisionIds,
-    expectedCurrentRevision,
-  );
+  const repairableRevisionIds = validatedRepairableRevisionIds(resolved.repairableRevisionIds, expectedCurrentRevision);
   if (repairableRevisionIds === null) {
     return writeFailure(
       json,
       {
         code: "invalid_administration_contract",
-        detail:
-          "Production status did not expose the authoritative retained revision chain.",
+        detail: "Production status did not expose the authoritative retained revision chain.",
       },
       8,
     );
@@ -1558,24 +1215,15 @@ async function resolveSearchRepairTarget(
   return resolved;
 }
 
-async function resolveRecoveryTarget(
-  environment,
-  json,
-  recoveryId,
-  targetDigest,
-  expectedRestoredRevision,
-) {
-  const observed = await fetchAdministrationDocument(
-    environment,
-    `/v1/recoveries/${encodeURIComponent(recoveryId)}`,
-  );
+async function resolveRecoveryTarget(environment, json, recoveryId, targetDigest, expectedRestoredRevision) {
+  const observed = await fetchAdministrationDocument(environment, `/v1/recoveries/${encodeURIComponent(recoveryId)}`);
   const failed = writeObservedFailure(observed, json);
   if (failed !== null) return failed;
   const recovery = observed.document;
   if (
-    recovery?.id !== recoveryId || recovery?.target_digest !== targetDigest ||
-    (expectedRestoredRevision !== undefined &&
-      recovery?.target_revision_id !== expectedRestoredRevision) ||
+    recovery?.id !== recoveryId ||
+    recovery?.target_digest !== targetDigest ||
+    (expectedRestoredRevision !== undefined && recovery?.target_revision_id !== expectedRestoredRevision) ||
     typeof recovery?.expected_current_revision_id !== "string"
   ) {
     return resolvedTargetFailure(
@@ -1587,25 +1235,19 @@ async function resolveRecoveryTarget(
   const failedStatus = writeObservedFailure(status, json);
   if (failedStatus !== null) return failedStatus;
   const currentRevision = status.document?.safe_state?.current_revision_id;
-  if (
-    currentRevision !== recovery.expected_current_revision_id &&
-    currentRevision !== recovery.target_revision_id
-  ) {
+  if (currentRevision !== recovery.expected_current_revision_id && currentRevision !== recovery.target_revision_id) {
     return resolvedTargetFailure(
       json,
       "Production does not resolve to either the recovery source or restored Catalogue Revision.",
     );
   }
-  const productionTarget = validatedProductionTarget(
-    status.document?.production_target,
-  );
+  const productionTarget = validatedProductionTarget(status.document?.production_target);
   if (productionTarget === null) {
     return writeFailure(
       json,
       {
         code: "invalid_administration_contract",
-        detail:
-          "Production status did not expose exact Cloudflare target identities.",
+        detail: "Production status did not expose exact Cloudflare target identities.",
       },
       8,
     );
@@ -1613,15 +1255,8 @@ async function resolveRecoveryTarget(
   return { productionTarget };
 }
 
-async function resolveProductionStatus(
-  environment,
-  json,
-  expectedCurrentRevision,
-) {
-  const status = await fetchAdministrationDocument(
-    environment,
-    "/v1/status",
-  );
+async function resolveProductionStatus(environment, json, expectedCurrentRevision) {
+  const status = await fetchAdministrationDocument(environment, "/v1/status");
   const failedStatus = writeObservedFailure(status, json);
   if (failedStatus !== null) return failedStatus;
   const currentRevision = status.document?.safe_state?.current_revision_id;
@@ -1633,18 +1268,14 @@ async function resolveProductionStatus(
       }, not ${expectedCurrentRevision}.`,
     );
   }
-  const productionTarget = validatedProductionTarget(
-    status.document?.production_target,
-  );
-  const repairableRevisionIds =
-    status.document?.repairable_catalogue_revision_ids;
+  const productionTarget = validatedProductionTarget(status.document?.production_target);
+  const repairableRevisionIds = status.document?.repairable_catalogue_revision_ids;
   if (productionTarget === null) {
     return writeFailure(
       json,
       {
         code: "invalid_administration_contract",
-        detail:
-          "Production status did not expose exact Cloudflare target identities.",
+        detail: "Production status did not expose exact Cloudflare target identities.",
       },
       8,
     );
@@ -1657,11 +1288,7 @@ function validatedRepairableRevisionIds(value, currentRevision) {
     !Array.isArray(value) ||
     value.length > 3 ||
     (value.length > 0 && value[0] !== currentRevision) ||
-    !value.every(
-      (revision) =>
-        typeof revision === "string" &&
-        /^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(revision),
-    )
+    !value.every((revision) => typeof revision === "string" && /^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(revision))
   ) {
     return null;
   }
@@ -1675,9 +1302,7 @@ function confirmProductionTarget(json, productionTarget, confirmation) {
     json,
     {
       code: "confirmation_required",
-      detail:
-        `Resolved production target ${required}. ` +
-        `Re-run with --confirm '${required}'.`,
+      detail: `Resolved production target ${required}. ` + `Re-run with --confirm '${required}'.`,
     },
     3,
   );
@@ -1685,27 +1310,27 @@ function confirmProductionTarget(json, productionTarget, confirmation) {
 
 function sameKeys(value, expected) {
   const keys = Object.keys(value).sort();
-  return keys.length === expected.length &&
-    expected.slice().sort().every((key, index) => key === keys[index]);
+  return (
+    keys.length === expected.length &&
+    expected
+      .slice()
+      .sort()
+      .every((key, index) => key === keys[index])
+  );
 }
 
 function sameStringArray(value, expected) {
-  return Array.isArray(value) &&
-    value.length === expected.length &&
-    value.every((item, index) => item === expected[index]);
+  return (
+    Array.isArray(value) && value.length === expected.length && value.every((item, index) => item === expected[index])
+  );
 }
 
 function writeObservedFailure(observed, json) {
-  return observed.error === null
-    ? null
-    : writeFailure(json, observed.error, observed.exitCode);
+  return observed.error === null ? null : writeFailure(json, observed.error, observed.exitCode);
 }
 
 function readHealthConfiguration(environment) {
-  const required = [
-    "KEEPR_API_KEY",
-    "KEEPR_ADMINISTRATION_KEY",
-  ];
+  const required = ["KEEPR_API_KEY", "KEEPR_ADMINISTRATION_KEY"];
   const missing = required.filter((name) => !environment[name]);
   if (missing.length > 0) {
     return {
@@ -1766,19 +1391,11 @@ function usageFailure(json) {
 }
 
 function productionTargetFailure(json, detail) {
-  return writeFailure(
-    json,
-    { code: "production_target_required", detail },
-    2,
-  );
+  return writeFailure(json, { code: "production_target_required", detail }, 2);
 }
 
 function resolvedTargetFailure(json, detail) {
-  return writeFailure(
-    json,
-    { code: "production_target_mismatch", detail },
-    7,
-  );
+  return writeFailure(json, { code: "production_target_mismatch", detail }, 7);
 }
 
 function formatAdministrationResult(document) {
@@ -1801,26 +1418,17 @@ function formatAdministrationResult(document) {
     document.state &&
     document.id
   ) {
-    const lines = [
-      `Ingestion Run ${document.id} evidence: ${document.state}`,
-      ...formatEvidenceVolume(document),
-    ];
+    const lines = [`Ingestion Run ${document.id} evidence: ${document.state}`, ...formatEvidenceVolume(document)];
     lines.push(...formatEvidencePause(document.pause));
     lines.push(...formatEvidenceTermination(document.termination));
     lines.push(...formatCollectionProgress(document.collection));
     lines.push(...formatEvidenceWorkflow(document.workflow));
     lines.push(...formatEvidenceActions(document.actions ?? document.pause?.actions));
-    const requestId = safeDiagnosticReference(
-      document.operational_diagnostics?.references?.request_id,
-    );
+    const requestId = safeDiagnosticReference(document.operational_diagnostics?.references?.request_id);
     if (requestId !== null) lines.push(`Request reference: ${requestId}`);
     return lines.join("; ");
   }
-  if (
-    document.source_snapshot_id &&
-    document.adapter_version &&
-    document.id
-  ) {
+  if (document.source_snapshot_id && document.adapter_version && document.id) {
     return `Source Observation set ${document.id} for Source Snapshot ${document.source_snapshot_id} (${document.adapter_version})`;
   }
   if (document.state && document.id) {
@@ -1842,24 +1450,22 @@ function formatCount(count, noun) {
 function formatEvidenceVolume(document) {
   const evidence = document.collection?.evidence;
   if (
-    typeof evidence === "object" && evidence !== null &&
+    typeof evidence === "object" &&
+    evidence !== null &&
     Number.isSafeInteger(evidence.snapshot_count) &&
     Number.isSafeInteger(evidence.observation_set_count) &&
     Number.isSafeInteger(evidence.fetch_attempt_count)
   ) {
     return [
       `${formatCount(evidence.snapshot_count, "Source Snapshot")}${
-        Number.isSafeInteger(evidence.retained_byte_total)
-          ? ` (${evidence.retained_byte_total} bytes)`
-          : ""
+        Number.isSafeInteger(evidence.retained_byte_total) ? ` (${evidence.retained_byte_total} bytes)` : ""
       }`,
       formatCount(evidence.observation_set_count, "Source Observation set"),
       `${formatCount(evidence.fetch_attempt_count, "fetch attempt")}${
-        Number.isSafeInteger(evidence.retry_attempt_count) &&
-          Number.isSafeInteger(evidence.failed_attempt_count)
+        Number.isSafeInteger(evidence.retry_attempt_count) && Number.isSafeInteger(evidence.failed_attempt_count)
           ? ` (${evidence.retry_attempt_count} ${
-            evidence.retry_attempt_count === 1 ? "retry" : "retries"
-          }, ${formatCount(evidence.failed_attempt_count, "failure")})`
+              evidence.retry_attempt_count === 1 ? "retry" : "retries"
+            }, ${formatCount(evidence.failed_attempt_count, "failure")})`
           : ""
       }`,
     ];
@@ -1874,9 +1480,7 @@ function formatEvidenceVolume(document) {
 function formatCountMap(map) {
   if (typeof map !== "object" || map === null) return "";
   return Object.entries(map)
-    .filter(([key, value]) =>
-      safeMachineCode(key) !== null && Number.isSafeInteger(value)
-    )
+    .filter(([key, value]) => safeMachineCode(key) !== null && Number.isSafeInteger(value))
     .map(([key, value]) => `${key} ${value}`)
     .join(", ");
 }
@@ -1886,11 +1490,7 @@ function formatDuration(milliseconds) {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  return hours > 0
-    ? `${hours}h ${minutes}m ${seconds}s`
-    : minutes > 0
-      ? `${minutes}m ${seconds}s`
-      : `${seconds}s`;
+  return hours > 0 ? `${hours}h ${minutes}m ${seconds}s` : minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
 // The aggregated collection progress: request counts by state and role,
@@ -1902,35 +1502,22 @@ function formatCollectionProgress(collection) {
   if (typeof collection !== "object" || collection === null) return [];
   const lines = [];
   const requests = collection.requests;
-  if (
-    typeof requests === "object" && requests !== null &&
-    Number.isSafeInteger(requests.total)
-  ) {
-    const groups = [
-      formatCountMap(requests.by_state),
-      formatCountMap(requests.by_role),
-    ].filter((group) => group !== "");
-    lines.push(
-      `Requests: ${requests.total}${
-        groups.length === 0 ? "" : ` (${groups.join("; ")})`
-      }`,
+  if (typeof requests === "object" && requests !== null && Number.isSafeInteger(requests.total)) {
+    const groups = [formatCountMap(requests.by_state), formatCountMap(requests.by_role)].filter(
+      (group) => group !== "",
     );
+    lines.push(`Requests: ${requests.total}${groups.length === 0 ? "" : ` (${groups.join("; ")})`}`);
     // Per-lineage counts only add information when a run spans lineages.
-    const byLineage = Array.isArray(requests.by_lineage)
-      ? requests.by_lineage
-      : [];
+    const byLineage = Array.isArray(requests.by_lineage) ? requests.by_lineage : [];
     if (byLineage.length > 1) {
       for (const group of byLineage) {
         const lineage = safeDiagnosticReference(group?.source_lineage);
         if (lineage === null || !Number.isSafeInteger(group.total)) continue;
-        const lineageGroups = [
-          formatCountMap(group.by_state),
-          formatCountMap(group.by_role),
-        ].filter((part) => part !== "");
+        const lineageGroups = [formatCountMap(group.by_state), formatCountMap(group.by_role)].filter(
+          (part) => part !== "",
+        );
         lines.push(
-          `Requests ${lineage}: ${group.total}${
-            lineageGroups.length === 0 ? "" : ` (${lineageGroups.join("; ")})`
-          }`,
+          `Requests ${lineage}: ${group.total}${lineageGroups.length === 0 ? "" : ` (${lineageGroups.join("; ")})`}`,
         );
       }
     }
@@ -1956,27 +1543,20 @@ function formatCollectionProgress(collection) {
       details.push(`${formatCount(capacity.overflow_request_count, "overflow request")}`);
     }
     lines.push(
-      `Capacity ${lineage}: ${capacity.used_capacity} used of ${
-        capacity.request_capacity
-      } (${details.join(", ")})`,
+      `Capacity ${lineage}: ${capacity.used_capacity} used of ${capacity.request_capacity} (${details.join(", ")})`,
     );
   }
   const evidence = collection.evidence;
-  if (
-    typeof evidence === "object" && evidence !== null &&
-    Number.isSafeInteger(evidence.detail_limit)
-  ) {
+  if (typeof evidence === "object" && evidence !== null && Number.isSafeInteger(evidence.detail_limit)) {
     const truncated = [
       ["snapshots", evidence.snapshots_truncated],
       ["observation sets", evidence.observation_sets_truncated],
       ["diagnostics", evidence.diagnostics_truncated],
-    ].filter(([, flag]) => flag === true).map(([name]) => name);
+    ]
+      .filter(([, flag]) => flag === true)
+      .map(([name]) => name);
     if (truncated.length > 0) {
-      lines.push(
-        `Detail lists bounded to the newest ${evidence.detail_limit}: ${
-          truncated.join(", ")
-        } truncated`,
-      );
+      lines.push(`Detail lists bounded to the newest ${evidence.detail_limit}: ${truncated.join(", ")} truncated`);
     }
   }
   const failure = collection.evidence?.latest_failure;
@@ -1987,32 +1567,26 @@ function formatCollectionProgress(collection) {
       const at = safeDiagnosticReference(failure.at);
       lines.push(
         `Latest failure: ${classification}${
-          Number.isSafeInteger(failure.http_status)
-            ? ` (HTTP ${failure.http_status})`
-            : ""
+          Number.isSafeInteger(failure.http_status) ? ` (HTTP ${failure.http_status})` : ""
         } on ${requestId}${
-          Number.isSafeInteger(failure.attempt_number)
-            ? ` attempt ${failure.attempt_number}`
-            : ""
+          Number.isSafeInteger(failure.attempt_number) ? ` attempt ${failure.attempt_number}` : ""
         }${at === null ? "" : ` at ${at}`}`,
       );
     }
   }
   const failedImages = collection.failed_images;
   if (
-    typeof failedImages === "object" && failedImages !== null &&
-    Number.isSafeInteger(failedImages.count) && failedImages.count > 0
+    typeof failedImages === "object" &&
+    failedImages !== null &&
+    Number.isSafeInteger(failedImages.count) &&
+    failedImages.count > 0
   ) {
-    const listed = (Array.isArray(failedImages.requests)
-      ? failedImages.requests
-      : [])
+    const listed = (Array.isArray(failedImages.requests) ? failedImages.requests : [])
       .map((image) => safeDiagnosticReference(image?.request_id))
       .filter((requestId) => requestId !== null);
     lines.push(
       `Failed images: ${formatCount(failedImages.count, "Printing Image")}${
-        failedImages.truncated === true
-          ? ` (first ${listed.length} listed)`
-          : ""
+        failedImages.truncated === true ? ` (first ${listed.length} listed)` : ""
       } not collected; the run continued and a later run can collect them${
         listed.length === 0 ? "" : `: ${listed.join(", ")}`
       }`,
@@ -2026,15 +1600,9 @@ function formatCollectionProgress(collection) {
         safeDiagnosticReference(current.hostname),
         safeMachineCode(current.role),
         safeMachineCode(current.state),
-        Number.isSafeInteger(current.attempt_count)
-          ? formatCount(current.attempt_count, "attempt")
-          : null,
+        Number.isSafeInteger(current.attempt_count) ? formatCount(current.attempt_count, "attempt") : null,
       ].filter((fact) => fact !== null);
-      lines.push(
-        `Current request: ${requestId}${
-          facts.length === 0 ? "" : ` (${facts.join(", ")})`
-        }`,
-      );
+      lines.push(`Current request: ${requestId}${facts.length === 0 ? "" : ` (${facts.join(", ")})`}`);
     }
   }
   const pacing = collection.pacing;
@@ -2048,44 +1616,24 @@ function formatCollectionProgress(collection) {
             return null;
           }
           return `${hostname} ${host.pending_request_count} pending${
-            Number.isSafeInteger(host.captured_request_count) &&
-              host.captured_request_count > 0
+            Number.isSafeInteger(host.captured_request_count) && host.captured_request_count > 0
               ? `, ${host.captured_request_count} captured`
               : ""
-          }${
-            Number.isSafeInteger(host.waiting_ms) && host.waiting_ms > 0
-              ? ` (waiting ${host.waiting_ms}ms)`
-              : ""
-          }`;
+          }${Number.isSafeInteger(host.waiting_ms) && host.waiting_ms > 0 ? ` (waiting ${host.waiting_ms}ms)` : ""}`;
         })
         .filter((host) => host !== null);
       lines.push(
-        `Pacing: ${mode}${
-          Number.isSafeInteger(pacing.interval_ms)
-            ? ` ${pacing.interval_ms}ms`
-            : ""
-        }${
-          hosts.length === 0
-            ? ""
-            : `; ${formatCount(hosts.length, "host")}: ${hosts.join(", ")}`
+        `Pacing: ${mode}${Number.isSafeInteger(pacing.interval_ms) ? ` ${pacing.interval_ms}ms` : ""}${
+          hosts.length === 0 ? "" : `; ${formatCount(hosts.length, "host")}: ${hosts.join(", ")}`
         }`,
       );
     }
   }
   const estimate = collection.estimate;
-  if (
-    typeof estimate === "object" && estimate !== null &&
-    Number.isSafeInteger(estimate.minimum_remaining_ms)
-  ) {
-    lines.push(
-      `Estimated minimum remaining: ${
-        formatDuration(estimate.minimum_remaining_ms)
-      } (advisory)`,
-    );
+  if (typeof estimate === "object" && estimate !== null && Number.isSafeInteger(estimate.minimum_remaining_ms)) {
+    lines.push(`Estimated minimum remaining: ${formatDuration(estimate.minimum_remaining_ms)} (advisory)`);
   }
-  const expectedRevision = safeDiagnosticReference(
-    collection.expected_catalogue_revision_id,
-  );
+  const expectedRevision = safeDiagnosticReference(collection.expected_catalogue_revision_id);
   if (expectedRevision !== null) {
     lines.push(`Expected Catalogue Revision: ${expectedRevision}`);
   }
@@ -2131,9 +1679,7 @@ function formatEvidencePause(pause) {
   const reason = safeMachineCode(pause.reason);
   const pausedAt = safeDiagnosticReference(pause.paused_at);
   if (reason !== null) {
-    lines.push(
-      `Paused: ${reason}${pausedAt === null ? "" : ` at ${pausedAt}`}`,
-    );
+    lines.push(`Paused: ${reason}${pausedAt === null ? "" : ` at ${pausedAt}`}`);
   }
   const sourceLineage = safeDiagnosticReference(pause.source_lineage);
   if (sourceLineage !== null) {
@@ -2149,16 +1695,12 @@ function formatEvidencePause(pause) {
         `${pause.request_capacity} (generation ${pause.capacity_generation})`,
     );
   }
-  if (
-    Number.isSafeInteger(pause.overflow_request_count) &&
-    Number.isSafeInteger(pause.required_capacity)
-  ) {
+  if (Number.isSafeInteger(pause.overflow_request_count) && Number.isSafeInteger(pause.required_capacity)) {
     lines.push(
-      `Overflow: ${
-        formatCount(pause.overflow_request_count, "request")
-      } require${pause.overflow_request_count === 1 ? "s" : ""} capacity ${
-        pause.required_capacity
-      }`,
+      `Overflow: ${formatCount(
+        pause.overflow_request_count,
+        "request",
+      )} require${pause.overflow_request_count === 1 ? "s" : ""} capacity ${pause.required_capacity}`,
     );
   }
   const parentRequestId = safeDiagnosticReference(pause.parent_request_id);
@@ -2171,37 +1713,23 @@ function formatEvidencePause(pause) {
   if (requestId !== null) lines.push(`Request: ${requestId}`);
   const hostname = safeDiagnosticReference(pause.hostname);
   if (hostname !== null) lines.push(`Hostname: ${hostname}`);
-  if (
-    Number.isSafeInteger(pause.attempt_count) &&
-    Number.isSafeInteger(pause.retry_generation)
-  ) {
-    lines.push(
-      `Attempts: ${pause.attempt_count} in retry generation ` +
-        `${pause.retry_generation}`,
-    );
+  if (Number.isSafeInteger(pause.attempt_count) && Number.isSafeInteger(pause.retry_generation)) {
+    lines.push(`Attempts: ${pause.attempt_count} in retry generation ` + `${pause.retry_generation}`);
   }
   const classification = safeMachineCode(pause.failure_classification);
   if (classification !== null) {
     lines.push(
-      `Last failure: ${classification}${
-        Number.isSafeInteger(pause.http_status)
-          ? ` (HTTP ${pause.http_status})`
-          : ""
-      }`,
+      `Last failure: ${classification}${Number.isSafeInteger(pause.http_status) ? ` (HTTP ${pause.http_status})` : ""}`,
     );
   }
   // A Workflow Pause identifies the abandoned Workflow Attempt, the safe
   // status that classified it, and the deterministic last-progress time the
   // classification was derived from.
-  const workflowInstanceId = safeDiagnosticReference(
-    pause.workflow_instance_id,
-  );
+  const workflowInstanceId = safeDiagnosticReference(pause.workflow_instance_id);
   if (workflowInstanceId !== null) {
     const workflowStatus = safeMachineCode(pause.workflow_status);
     lines.push(
-      `Workflow attempt: ${workflowInstanceId}${
-        workflowStatus === null ? "" : ` (status ${workflowStatus})`
-      }`,
+      `Workflow attempt: ${workflowInstanceId}${workflowStatus === null ? "" : ` (status ${workflowStatus})`}`,
     );
   }
   const lastProgressAt = safeDiagnosticReference(pause.last_progress_at);
@@ -2216,9 +1744,7 @@ function formatEvidencePause(pause) {
 // from the JSON document.
 function formatEvidenceActions(actions) {
   if (!Array.isArray(actions)) return [];
-  const safe = actions
-    .map((action) => safeMachineCode(action))
-    .filter((action) => action !== null);
+  const safe = actions.map((action) => safeMachineCode(action)).filter((action) => action !== null);
   return safe.length === 0 ? [] : [`Available actions: ${safe.join(", ")}`];
 }
 
@@ -2231,14 +1757,8 @@ function formatEvidenceTermination(termination) {
   const terminatedAt = safeDiagnosticReference(termination.terminated_at);
   const pauseReason = safeMachineCode(termination.pause_reason);
   const pausedAt = safeDiagnosticReference(termination.paused_at);
-  const abandoned = pauseReason === null
-    ? ""
-    : ` (paused ${pauseReason}${pausedAt === null ? "" : ` at ${pausedAt}`})`;
-  return [
-    `Terminated: ${reason}${
-      terminatedAt === null ? "" : ` at ${terminatedAt}`
-    }${abandoned}`,
-  ];
+  const abandoned = pauseReason === null ? "" : ` (paused ${pauseReason}${pausedAt === null ? "" : ` at ${pausedAt}`})`;
+  return [`Terminated: ${reason}${terminatedAt === null ? "" : ` at ${terminatedAt}`}${abandoned}`];
 }
 
 // The confirmation facts of an applied owner pause: which run paused, when,
@@ -2251,14 +1771,9 @@ function formatCollectionPause(document) {
   const pauseReason = safeMachineCode(document.pause_reason);
   const pausedAt = safeDiagnosticReference(document.paused_at);
   if (pauseReason !== null) {
-    lines.push(
-      `Paused: ${pauseReason}${pausedAt === null ? "" : ` at ${pausedAt}`}`,
-    );
+    lines.push(`Paused: ${pauseReason}${pausedAt === null ? "" : ` at ${pausedAt}`}`);
   }
-  const workflow = typeof document.workflow === "object" &&
-      document.workflow !== null
-    ? document.workflow
-    : {};
+  const workflow = typeof document.workflow === "object" && document.workflow !== null ? document.workflow : {};
   const workflowId = safeDiagnosticReference(workflow.id);
   const status = safeMachineCode(workflow.status);
   if (workflowId !== null) {
@@ -2283,16 +1798,12 @@ function formatCollectionTermination(document) {
   const pauseReason = safeMachineCode(document.pause_reason);
   const pausedAt = safeDiagnosticReference(document.paused_at);
   if (pauseReason !== null) {
-    lines.push(
-      `Paused: ${pauseReason}${pausedAt === null ? "" : ` at ${pausedAt}`}`,
-    );
+    lines.push(`Paused: ${pauseReason}${pausedAt === null ? "" : ` at ${pausedAt}`}`);
   }
   const terminatedAt = safeDiagnosticReference(document.terminated_at);
   if (terminatedAt !== null) lines.push(`Terminated at: ${terminatedAt}`);
   if (typeof document.active_run_released === "boolean") {
-    lines.push(
-      `Active run released: ${document.active_run_released ? "yes" : "no"}`,
-    );
+    lines.push(`Active run released: ${document.active_run_released ? "yes" : "no"}`);
   }
   return lines.length === 0 ? JSON.stringify(document) : lines.join("; ");
 }
@@ -2308,11 +1819,7 @@ function formatEvidenceWorkflow(workflow) {
     const id = safeDiagnosticReference(current.id);
     if (id !== null && Number.isSafeInteger(current.attempt_number)) {
       const status = safeMachineCode(workflow.status);
-      lines.push(
-        `Workflow attempt ${current.attempt_number}: ${id}${
-          status === null ? "" : ` (status ${status})`
-        }`,
-      );
+      lines.push(`Workflow attempt ${current.attempt_number}: ${id}${status === null ? "" : ` (status ${status})`}`);
     }
   }
   const classification = safeMachineCode(workflow.classification);
@@ -2333,28 +1840,18 @@ function formatEvidenceWorkflow(workflow) {
           kind,
           current: attempt.current === true,
           text: `${kind} ${id}${
-            Number.isSafeInteger(attempt.attempt_number)
-              ? ` attempt ${attempt.attempt_number}`
-              : ""
+            Number.isSafeInteger(attempt.attempt_number) ? ` attempt ${attempt.attempt_number}` : ""
           }${
-            safeMachineCode(attempt.status) === null
-              ? ""
-              : ` ${attempt.status}`
+            safeMachineCode(attempt.status) === null ? "" : ` ${attempt.status}`
           }${attempt.current === true ? " (current)" : ""}`,
         };
       })
       .filter((attempt) => attempt !== null);
     // The current parent attempt already has its own line above.
-    const listed = attempts.filter((attempt) =>
-      attempt.kind !== "parent" || !attempt.current
-    );
+    const listed = attempts.filter((attempt) => attempt.kind !== "parent" || !attempt.current);
     lines.push(
-      `Workflow attempts: ${attempts.length} recorded, ${
-        attempts.filter((attempt) => attempt.current).length
-      } current${
-        listed.length === 0
-          ? ""
-          : `; ${listed.map((attempt) => attempt.text).join("; ")}`
+      `Workflow attempts: ${attempts.length} recorded, ${attempts.filter((attempt) => attempt.current).length} current${
+        listed.length === 0 ? "" : `; ${listed.map((attempt) => attempt.text).join("; ")}`
       }`,
     );
   }
@@ -2367,59 +1864,37 @@ function formatStatus(document) {
     `Catalogue Revision: ${safeState.current_revision_id ?? "unknown"}`,
     `Recovery health: ${safeState.recovery_health ?? "unknown"}`,
     `Mutation safe: ${safeState.mutation_safe === true ? "yes" : "no"}`,
-    `Active Ingestion Run: ${
-      safeState.active_ingestion_run_id ?? "none"
-    }`,
+    `Active Ingestion Run: ${safeState.active_ingestion_run_id ?? "none"}`,
     `Active Recovery: ${safeState.active_recovery_id ?? "none"}`,
   ];
   const diagnostics = document.diagnostics ?? {};
   lines.push(
-    `Catalogue diagnostics: ${
-      diagnostics.catalogue_revision_count ?? "unknown"
-    } revisions, ${
+    `Catalogue diagnostics: ${diagnostics.catalogue_revision_count ?? "unknown"} revisions, ${
       diagnostics.catalogue_export_count ?? "unknown"
     } exports`,
   );
   lines.push(
-    `export_objects: ${
-      diagnostics.catalogue_export_object_count ?? "unknown"
-    }`,
-    `orphaned_export_objects: ${
-      diagnostics.orphaned_catalogue_export_object_count ?? "unknown"
-    }`,
-    `pending_publication_cleanups: ${
-      diagnostics.pending_publication_cleanup_count ?? "unknown"
-    }`,
+    `export_objects: ${diagnostics.catalogue_export_object_count ?? "unknown"}`,
+    `orphaned_export_objects: ${diagnostics.orphaned_catalogue_export_object_count ?? "unknown"}`,
+    `pending_publication_cleanups: ${diagnostics.pending_publication_cleanup_count ?? "unknown"}`,
   );
-  const freshness = Array.isArray(document.source_freshness)
-    ? document.source_freshness
-    : [];
+  const freshness = Array.isArray(document.source_freshness) ? document.source_freshness : [];
   lines.push("Source freshness:");
   if (freshness.length === 0) {
     lines.push("  none");
   } else {
     for (const item of freshness) {
-      const scope = item.area === "legality-rules"
-        ? `/${item.source_lineage}/${item.region}`
-        : "";
-      lines.push(
-        `  ${item.game}/${item.area}${scope}: ${item.checked_at} (${item.ingestion_run_id})`,
-      );
+      const scope = item.area === "legality-rules" ? `/${item.source_lineage}/${item.region}` : "";
+      lines.push(`  ${item.game}/${item.area}${scope}: ${item.checked_at} (${item.ingestion_run_id})`);
     }
   }
-  const recentRuns = Array.isArray(document.recent_runs)
-    ? document.recent_runs
-    : [];
+  const recentRuns = Array.isArray(document.recent_runs) ? document.recent_runs : [];
   lines.push("Recent Ingestion Runs:");
   if (recentRuns.length === 0) {
     lines.push("  none");
   } else {
     for (const run of recentRuns) {
-      lines.push(
-        `  ${run.id}: ${run.state} (${
-          run.progress?.current_stage ?? "unknown progress"
-        })`,
-      );
+      lines.push(`  ${run.id}: ${run.state} (${run.progress?.current_stage ?? "unknown progress"})`);
     }
     const nextRunId = safeDiagnosticReference(recentRuns[0]?.id);
     if (nextRunId !== null) {
@@ -2434,17 +1909,9 @@ function formatRun(document) {
     `Ingestion Run ${document.id}: ${document.state}`,
     `Progress: ${document.progress?.current_stage ?? "unknown"}`,
   ];
-  const completed = Array.isArray(document.progress?.completed_stages)
-    ? document.progress.completed_stages
-    : [];
-  lines.push(
-    `Completed stages: ${
-      completed.length === 0 ? "none" : completed.join(", ")
-    }`,
-  );
-  const warnings = Array.isArray(document.warnings)
-    ? document.warnings
-    : [];
+  const completed = Array.isArray(document.progress?.completed_stages) ? document.progress.completed_stages : [];
+  lines.push(`Completed stages: ${completed.length === 0 ? "none" : completed.join(", ")}`);
+  const warnings = Array.isArray(document.warnings) ? document.warnings : [];
   if (warnings.length === 0) {
     lines.push("Warnings: none");
   } else {
@@ -2455,37 +1922,17 @@ function formatRun(document) {
   lines.push(`Failure: ${safeMachineCode(document.failure_code) ?? "none"}`);
   const cleanup = document.publication_cleanup;
   lines.push(
-    `Publication cleanup: ${
-      cleanup?.state ?? "not required"
-    }${
-      cleanup?.failure_code
-        ? ` (${cleanup.failure_code})`
-        : ""
+    `Publication cleanup: ${cleanup?.state ?? "not required"}${
+      cleanup?.failure_code ? ` (${cleanup.failure_code})` : ""
     }`,
   );
-  const history = Array.isArray(document.approval_history)
-    ? document.approval_history
-    : [];
-  lines.push(
-    `Approval history: ${history.length} ${
-      history.length === 1 ? "decision" : "decisions"
-    }`,
-  );
+  const history = Array.isArray(document.approval_history) ? document.approval_history : [];
+  lines.push(`Approval history: ${history.length} ${history.length === 1 ? "decision" : "decisions"}`);
   for (const decision of history) {
-    lines.push(
-      `  ${decision.action ?? "decision"} at ${
-        decision.approved_at ?? decision.rejected_at ?? "unknown"
-      }`,
-    );
+    lines.push(`  ${decision.action ?? "decision"} at ${decision.approved_at ?? decision.rejected_at ?? "unknown"}`);
   }
-  lines.push(
-    `Publication outcome: ${document.publication_outcome ?? "none"}`,
-  );
-  lines.push(
-    `Resulting Catalogue Revision: ${
-      document.resulting_revision_id ?? "none"
-    }`,
-  );
+  lines.push(`Publication outcome: ${document.publication_outcome ?? "none"}`);
+  lines.push(`Resulting Catalogue Revision: ${document.resulting_revision_id ?? "none"}`);
   appendOperationalDiagnostics(lines, document.operational_diagnostics);
   return lines.join("\n");
 }
@@ -2495,50 +1942,37 @@ function appendOperationalDiagnostics(lines, value) {
     return;
   }
   const references = value.references;
-  if (
-    references === null || typeof references !== "object" ||
-    Array.isArray(references)
-  ) return;
-  lines.push(
-    `Request reference: ${
-      safeDiagnosticReference(references.request_id) ?? "none"
-    }`,
-  );
+  if (references === null || typeof references !== "object" || Array.isArray(references)) return;
+  lines.push(`Request reference: ${safeDiagnosticReference(references.request_id) ?? "none"}`);
   const workflow = references.workflow;
   lines.push(
     `Workflow: ${
-      workflow !== null && typeof workflow === "object" &&
-        !Array.isArray(workflow)
-        ? safeDiagnosticReference(workflow.parent_id) ?? "none"
+      workflow !== null && typeof workflow === "object" && !Array.isArray(workflow)
+        ? (safeDiagnosticReference(workflow.parent_id) ?? "none")
         : "none"
     }`,
   );
   const adapters = Array.isArray(references.adapter_versions)
     ? references.adapter_versions.flatMap((adapter) => {
-      const safe = safeDiagnosticReference(adapter);
-      return safe === null ? [] : [safe];
-    })
+        const safe = safeDiagnosticReference(adapter);
+        return safe === null ? [] : [safe];
+      })
     : [];
   lines.push(`Adapter versions: ${adapters.length === 0 ? "none" : adapters.join(", ")}`);
-  lines.push(
-    `Candidate: ${
-      safeDiagnosticReference(references.candidate_digest) ?? "none"
-    }`,
-  );
+  lines.push(`Candidate: ${safeDiagnosticReference(references.candidate_digest) ?? "none"}`);
   const backup = references.backup;
   lines.push(
     `Backup: ${
       backup !== null && typeof backup === "object" && !Array.isArray(backup)
-        ? safeDiagnosticPath(backup.status_path) ?? "none"
+        ? (safeDiagnosticPath(backup.status_path) ?? "none")
         : "none"
     }`,
   );
   const recovery = references.recovery;
   lines.push(
     `Recovery: ${
-      recovery !== null && typeof recovery === "object" &&
-        !Array.isArray(recovery)
-        ? safeDiagnosticPath(recovery.status_path) ?? "none"
+      recovery !== null && typeof recovery === "object" && !Array.isArray(recovery)
+        ? (safeDiagnosticPath(recovery.status_path) ?? "none")
         : "none"
     }`,
   );
@@ -2547,81 +1981,66 @@ function appendOperationalDiagnostics(lines, value) {
     `Retry: ${
       retry !== null && typeof retry === "object" && !Array.isArray(retry)
         ? `${safeMachineCode(retry.code) ?? "unclassified"} (${
-          safeDiagnosticReference(retry.source_run_id) ?? "unknown"
-        })`
+            safeDiagnosticReference(retry.source_run_id) ?? "unknown"
+          })`
         : "not available"
     }`,
   );
   const terminalFailure = value.terminal_evidence?.failure;
-  if (
-    terminalFailure !== null && typeof terminalFailure === "object" &&
-    !Array.isArray(terminalFailure)
-  ) {
-    lines.push(
-      `Retry classification: ${
-        safeMachineCode(terminalFailure.retryability_code) ?? "unclassified"
-      }`,
-    );
+  if (terminalFailure !== null && typeof terminalFailure === "object" && !Array.isArray(terminalFailure)) {
+    lines.push(`Retry classification: ${safeMachineCode(terminalFailure.retryability_code) ?? "unclassified"}`);
   }
   const diagnosis = Array.isArray(value.diagnosis_sequence)
     ? value.diagnosis_sequence.flatMap((entry) => {
-      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
-        return [];
-      }
-      const method = safeDiagnosticMethod(entry.method);
-      const path = safeDiagnosticPath(entry.path);
-      const code = safeMachineCode(entry.code);
-      return method === null || path === null || code === null
-        ? []
-        : [{ method, path, code }];
-    })
+        if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+          return [];
+        }
+        const method = safeDiagnosticMethod(entry.method);
+        const path = safeDiagnosticPath(entry.path);
+        const code = safeMachineCode(entry.code);
+        return method === null || path === null || code === null ? [] : [{ method, path, code }];
+      })
     : [];
   for (const entry of diagnosis) {
     lines.push(`Diagnosis: ${entry.method} ${entry.path} (${entry.code})`);
   }
-  const retryMethod = retry !== null && typeof retry === "object" &&
-      !Array.isArray(retry)
-    ? safeDiagnosticMethod(retry.method)
-    : null;
-  const retryPath = retry !== null && typeof retry === "object" &&
-      !Array.isArray(retry)
-    ? safeDiagnosticPath(retry.path)
-    : null;
-  const next = retryMethod !== null && retryPath !== null
-    ? { method: retryMethod, path: retryPath }
-    : diagnosis[0];
+  const retryMethod =
+    retry !== null && typeof retry === "object" && !Array.isArray(retry) ? safeDiagnosticMethod(retry.method) : null;
+  const retryPath =
+    retry !== null && typeof retry === "object" && !Array.isArray(retry) ? safeDiagnosticPath(retry.path) : null;
+  const next = retryMethod !== null && retryPath !== null ? { method: retryMethod, path: retryPath } : diagnosis[0];
   if (next !== undefined && next !== null) {
     lines.push(`Next: ${next.method} ${next.path}`);
   }
   const evidence = value.terminal_evidence;
-  const coverage = evidence !== null && typeof evidence === "object" &&
-      !Array.isArray(evidence) && evidence.coverage !== null &&
-      typeof evidence.coverage === "object" && !Array.isArray(evidence.coverage)
-    ? evidence.coverage
-    : {};
+  const coverage =
+    evidence !== null &&
+    typeof evidence === "object" &&
+    !Array.isArray(evidence) &&
+    evidence.coverage !== null &&
+    typeof evidence.coverage === "object" &&
+    !Array.isArray(evidence.coverage)
+      ? evidence.coverage
+      : {};
   lines.push(
-    `Coverage: ${safeDiagnosticCount(coverage.source_snapshot_count)} snapshots, ${
-      safeDiagnosticCount(coverage.source_observation_set_count)
-    } observation sets, ${safeDiagnosticCount(coverage.fetch_attempt_count)} attempts`,
+    `Coverage: ${safeDiagnosticCount(coverage.source_snapshot_count)} snapshots, ${safeDiagnosticCount(
+      coverage.source_observation_set_count,
+    )} observation sets, ${safeDiagnosticCount(coverage.fetch_attempt_count)} attempts`,
   );
 }
 
 function safeDiagnosticReference(value) {
-  return typeof value === "string" && value.length <= 512 &&
-      /^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/u.test(value)
+  return typeof value === "string" && value.length <= 512 && /^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/u.test(value)
     ? value
     : null;
 }
 
 function safeMachineCode(value) {
-  return typeof value === "string" && /^[a-z][a-z0-9_]{0,127}$/u.test(value)
-    ? value
-    : null;
+  return typeof value === "string" && /^[a-z][a-z0-9_]{0,127}$/u.test(value) ? value : null;
 }
 
 function safeDiagnosticPath(value) {
-  return typeof value === "string" && value.length <= 1024 &&
-      /^\/v1\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/u.test(value)
+  return typeof value === "string" && value.length <= 1024 && /^\/v1\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/u.test(value)
     ? value
     : null;
 }
@@ -2637,7 +2056,7 @@ function safeDiagnosticCount(value) {
 async function checkRuntime(runtime) {
   let response;
   try {
-    response = await fetch(runtimeUrl(runtime.url, "/health"), {
+    response = await httpRequest(runtimeUrl(runtime.url, "/health"), {
       headers: {
         authorization: `Bearer ${runtime.key}`,
       },

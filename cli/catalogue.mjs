@@ -1,23 +1,9 @@
-import {
-  exitCodeForStatus,
-  parseOptions,
-  runtimeUrl,
-  writeCliFailure,
-} from "./command-support.mjs";
+import { request as httpRequest } from "./lib/http-client.mjs";
+import { exitCodeForStatus, parseOptions, runtimeUrl, writeCliFailure } from "./command-support.mjs";
 
-export async function runCatalogueCommand(
-  arguments_,
-  environment,
-  json,
-) {
+export async function runCatalogueCommand(arguments_, environment, json) {
   if (arguments_[0] !== "search") return usageFailure(json);
-  const options = parseOptions(arguments_.slice(1), [
-    "--query",
-    "--game",
-    "--card-number",
-    "--limit",
-    "--after",
-  ]);
+  const options = parseOptions(arguments_.slice(1), ["--query", "--game", "--card-number", "--limit", "--after"]);
   if (options.error !== null) return usageFailure(json);
   const parameters = new URLSearchParams();
   for (const [option, parameter] of [
@@ -30,11 +16,7 @@ export async function runCatalogueCommand(
     const value = options.values[option];
     if (value !== undefined) parameters.set(parameter, value);
   }
-  return catalogueRequest(
-    environment,
-    json,
-    `/v1/cards${parameters.size === 0 ? "" : `?${parameters}`}`,
-  );
+  return catalogueRequest(environment, json, `/v1/cards${parameters.size === 0 ? "" : `?${parameters}`}`);
 }
 
 async function catalogueRequest(environment, json, pathname) {
@@ -50,18 +32,12 @@ async function catalogueRequest(environment, json, pathname) {
   }
   let response;
   try {
-    response = await fetch(
-      runtimeUrl(
-        environment.KEEPR_API_URL ?? "http://127.0.0.1:8787",
-        pathname,
-      ),
-      {
-        headers: {
-          authorization: `Bearer ${environment.KEEPR_API_KEY}`,
-        },
-        signal: AbortSignal.timeout(10_000),
+    response = await httpRequest(runtimeUrl(environment.KEEPR_API_URL ?? "http://127.0.0.1:8787", pathname), {
+      headers: {
+        authorization: `Bearer ${environment.KEEPR_API_KEY}`,
       },
-    );
+      signal: AbortSignal.timeout(10_000),
+    });
   } catch {
     return writeCliFailure(
       json,
@@ -91,14 +67,8 @@ async function catalogueRequest(environment, json, pathname) {
     return writeCliFailure(
       json,
       {
-        code:
-          typeof document?.code === "string"
-            ? document.code
-            : "catalogue_error",
-        detail:
-          typeof document?.detail === "string"
-            ? document.detail
-            : `API runtime returned HTTP ${response.status}`,
+        code: typeof document?.code === "string" ? document.code : "catalogue_error",
+        detail: typeof document?.detail === "string" ? document.detail : `API runtime returned HTTP ${response.status}`,
       },
       exitCodeForStatus(response.status),
     );
@@ -107,9 +77,7 @@ async function catalogueRequest(environment, json, pathname) {
     process.stdout.write(`${JSON.stringify(document)}\n`);
   } else {
     for (const card of document.data ?? []) {
-      process.stdout.write(
-        `${card.game} ${card.official_identity?.value ?? "unknown"} ${card.name}\n`,
-      );
+      process.stdout.write(`${card.game} ${card.official_identity?.value ?? "unknown"} ${card.name}\n`);
     }
   }
   return 0;

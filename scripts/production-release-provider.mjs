@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
+import { readWorkerConfig } from "../cli/lib/config.mjs";
+import { request as httpRequest } from "../cli/lib/http-client.mjs";
 
 const api = "https://api.cloudflare.com/client/v4";
 const workerConfigs = {
@@ -9,8 +10,10 @@ const workerConfigs = {
 const expectedSecrets = {
   "card-keepr-api": ["API_BEARER_KEY", "API_BEARER_KEY_REPLACEMENT"],
   "card-keepr-ingestion": [
-    "ADMINISTRATION_KEY", "ADMINISTRATION_KEY_REPLACEMENT",
-    "D1_EXPORT_TOKEN", "D1_VERIFICATION_TOKEN",
+    "ADMINISTRATION_KEY",
+    "ADMINISTRATION_KEY_REPLACEMENT",
+    "D1_EXPORT_TOKEN",
+    "D1_VERIFICATION_TOKEN",
   ],
 };
 
@@ -43,22 +46,31 @@ export async function verifyUploadedVersion(environment, fetchImpl = fetch) {
   const tag = required(environment, "RELEASE_VERSION_TAG");
   const configPath = required(environment, "RELEASE_WORKER_CONFIG");
   if (!(worker in workerConfigs)) throw new Error(`unknown_release_worker:${worker}`);
-  const config = JSON.parse(await readFile(configPath, "utf8"));
+  const config = await readWorkerConfig(configPath);
   if (config.name !== worker) throw new Error("worker_config_name_mismatch");
   const root = `/accounts/${account(environment)}/workers/scripts/${encodeURIComponent(worker)}/versions`;
   const listing = await cloudflare(fetchImpl, token, root);
-  if (!record(listing.result) || !Array.isArray(listing.result.items)) throw new Error(`malformed_worker_versions:${worker}`);
-  const tagged = listing.result.items.filter((item) => record(item) && record(item.annotations) && item.annotations["workers/tag"] === tag);
+  if (!record(listing.result) || !Array.isArray(listing.result.items))
+    throw new Error(`malformed_worker_versions:${worker}`);
+  const tagged = listing.result.items.filter(
+    (item) => record(item) && record(item.annotations) && item.annotations["workers/tag"] === tag,
+  );
   if (tagged.length === 0) throw new Error(`release_version_not_found:${worker}:${tag}`);
-  if (tagged.length > 1 || typeof tagged[0].id !== "string" || tagged[0].id.length === 0) throw new Error(`release_version_ambiguous:${worker}:${tag}`);
+  if (tagged.length > 1 || typeof tagged[0].id !== "string" || tagged[0].id.length === 0)
+    throw new Error(`release_version_ambiguous:${worker}:${tag}`);
   const versionId = tagged[0].id;
   const version = await cloudflare(fetchImpl, token, `${root}/${encodeURIComponent(versionId)}`);
-  if (!record(version.result) || !record(version.result.resources) || !Array.isArray(version.result.resources.bindings)) {
+  if (
+    !record(version.result) ||
+    !record(version.result.resources) ||
+    !Array.isArray(version.result.resources.bindings)
+  ) {
     throw new Error(`malformed_worker_version:${worker}:${versionId}`);
   }
   const actual = normalizedBindings(version.result.resources.bindings, worker);
   const expected = expectedBindings(config, expectedSecrets[worker], worker);
-  if (stableJson(actual) !== stableJson(expected)) throw new Error(`uploaded_version_binding_mismatch:${worker}:${versionId}`);
+  if (stableJson(actual) !== stableJson(expected))
+    throw new Error(`uploaded_version_binding_mismatch:${worker}:${versionId}`);
   return { worker, version_tag: tag, version_id: versionId };
 }
 
@@ -67,9 +79,10 @@ export async function observeCatalogueBindings(environment, fetchImpl = fetch) {
   const target = parseTarget(environment);
   const configs = await configuredWorkers();
   assertExactTarget(environment, target, configs);
-  const expectedDatabase = environment.REPLACEMENT_DATABASE_ID === "none"
-    ? target.d1_databases[0].id
-    : required(environment, "REPLACEMENT_DATABASE_ID");
+  const expectedDatabase =
+    environment.REPLACEMENT_DATABASE_ID === "none"
+      ? target.d1_databases[0].id
+      : required(environment, "REPLACEMENT_DATABASE_ID");
   for (const config of Object.values(configs)) {
     config.d1_databases[0].database_id = expectedDatabase;
     if (config.name === "card-keepr-ingestion") {
@@ -78,21 +91,19 @@ export async function observeCatalogueBindings(environment, fetchImpl = fetch) {
   }
   await verifyWorkers(fetchImpl, token, environment, configs);
   return {
-    worker_database_ids: Object.fromEntries(
-      target.worker_scripts.map((worker) => [worker, expectedDatabase]),
-    ),
+    worker_database_ids: Object.fromEntries(target.worker_scripts.map((worker) => [worker, expectedDatabase])),
     retained_database_id: environment.RETAINED_DATABASE_ID,
   };
 }
 
 async function configuredWorkers() {
-  const entries = await Promise.all(Object.entries(workerConfigs).map(
-    async ([worker, path]) => {
-      const config = JSON.parse(await readFile(path, "utf8"));
+  const entries = await Promise.all(
+    Object.entries(workerConfigs).map(async ([worker, path]) => {
+      const config = await readWorkerConfig(path);
       if (config.name !== worker) throw new Error("worker_config_name_mismatch");
       return [worker, config];
-    },
-  ));
+    }),
+  );
   return Object.fromEntries(entries);
 }
 
@@ -108,85 +119,145 @@ function assertExactTarget(environment, target, configs) {
         id: configs["card-keepr-ingestion"].vars.DISPOSABLE_D1_DATABASE_ID,
       },
     ],
-    r2_buckets: configs["card-keepr-ingestion"].r2_buckets.map(
-      (binding) => binding.bucket_name,
-    ),
+    r2_buckets: configs["card-keepr-ingestion"].r2_buckets.map((binding) => binding.bucket_name),
   };
   if (stableJson(target) !== stableJson(expected)) throw new Error("production_target_mismatch");
 }
 
 async function verifyDatabases(fetchImpl, token, environment, databases) {
-  const observed = await Promise.all(databases.d1_databases.map(async (expected) => {
-    const document = await cloudflare(fetchImpl, token, `/accounts/${account(environment)}/d1/database/${encodeURIComponent(expected.id)}`);
-    if (!record(document.result)) throw new Error("malformed_d1_response");
-    const id = unambiguousIdentity(document.result, "uuid", "id");
-    if (id !== expected.id || document.result.name !== expected.name) throw new Error("d1_identity_mismatch");
-    return id;
-  }));
+  const observed = await Promise.all(
+    databases.d1_databases.map(async (expected) => {
+      const document = await cloudflare(
+        fetchImpl,
+        token,
+        `/accounts/${account(environment)}/d1/database/${encodeURIComponent(expected.id)}`,
+      );
+      if (!record(document.result)) throw new Error("malformed_d1_response");
+      const id = unambiguousIdentity(document.result, "uuid", "id");
+      if (id !== expected.id || document.result.name !== expected.name) throw new Error("d1_identity_mismatch");
+      return id;
+    }),
+  );
   if (new Set(observed).size !== databases.d1_databases.length) throw new Error("ambiguous_d1_response");
 }
 
 async function verifyBuckets(fetchImpl, token, environment, buckets) {
-  await Promise.all(buckets.map(async (bucket) => {
-    const encoded = encodeURIComponent(bucket);
-    const root = `/accounts/${account(environment)}/r2/buckets/${encoded}`;
-    const [details, managed, custom] = await Promise.all([
-      cloudflare(fetchImpl, token, root),
-      cloudflare(fetchImpl, token, `${root}/domains/managed`),
-      cloudflare(fetchImpl, token, `${root}/domains/custom`),
-    ]);
-    if (!record(details.result) || details.result.name !== bucket) throw new Error(`r2_identity_mismatch:${bucket}`);
-    if (!record(managed.result) || typeof managed.result.bucketId !== "string" || managed.result.bucketId.length === 0 ||
-        typeof managed.result.domain !== "string" || managed.result.domain.length === 0 || managed.result.enabled !== false) {
-      throw new Error(`r2_managed_domain_not_private:${bucket}`);
-    }
-    if (!record(custom.result) || !Array.isArray(custom.result.domains) ||
-        !custom.result.domains.every(validPrivateCustomDomain)) {
-      throw new Error(`r2_custom_domain_not_private:${bucket}`);
-    }
-  }));
+  await Promise.all(
+    buckets.map(async (bucket) => {
+      const encoded = encodeURIComponent(bucket);
+      const root = `/accounts/${account(environment)}/r2/buckets/${encoded}`;
+      const [details, managed, custom] = await Promise.all([
+        cloudflare(fetchImpl, token, root),
+        cloudflare(fetchImpl, token, `${root}/domains/managed`),
+        cloudflare(fetchImpl, token, `${root}/domains/custom`),
+      ]);
+      if (!record(details.result) || details.result.name !== bucket) throw new Error(`r2_identity_mismatch:${bucket}`);
+      if (
+        !record(managed.result) ||
+        typeof managed.result.bucketId !== "string" ||
+        managed.result.bucketId.length === 0 ||
+        typeof managed.result.domain !== "string" ||
+        managed.result.domain.length === 0 ||
+        managed.result.enabled !== false
+      ) {
+        throw new Error(`r2_managed_domain_not_private:${bucket}`);
+      }
+      if (
+        !record(custom.result) ||
+        !Array.isArray(custom.result.domains) ||
+        !custom.result.domains.every(validPrivateCustomDomain)
+      ) {
+        throw new Error(`r2_custom_domain_not_private:${bucket}`);
+      }
+    }),
+  );
 }
 
 function validPrivateCustomDomain(domain) {
   const states = new Set(["pending", "active", "deactivated", "blocked", "error", "unknown"]);
   const sslStates = new Set(["initializing", "pending", "active", "deactivated", "error", "unknown"]);
-  return record(domain) && typeof domain.domain === "string" && domain.domain.length > 0 &&
-    domain.enabled === false && record(domain.status) &&
-    states.has(domain.status.ownership) && sslStates.has(domain.status.ssl);
+  return (
+    record(domain) &&
+    typeof domain.domain === "string" &&
+    domain.domain.length > 0 &&
+    domain.enabled === false &&
+    record(domain.status) &&
+    states.has(domain.status.ownership) &&
+    sslStates.has(domain.status.ssl)
+  );
 }
 
 // Secrets outlive versions and are managed by operators, so the exact secret
 // inventory of the deployed script is a precondition of the release.
 async function verifyWorkerSecrets(fetchImpl, token, environment, configs) {
-  await Promise.all(Object.keys(configs).map(async (worker) => {
-    const document = await cloudflare(fetchImpl, token, `/accounts/${account(environment)}/workers/scripts/${encodeURIComponent(worker)}/settings`);
-    if (!record(document.result) || !Array.isArray(document.result.bindings)) throw new Error(`malformed_worker_settings:${worker}`);
-    const actual = normalizedBindings(document.result.bindings, worker)
-      .filter((binding) => binding.type === "secret_text")
-      .map((binding) => binding.name);
-    const expected = [...expectedSecrets[worker]].sort((left, right) => left.localeCompare(right));
-    if (stableJson(actual) !== stableJson(expected)) throw new Error(`worker_secret_inventory_mismatch:${worker}`);
-  }));
+  await Promise.all(
+    Object.keys(configs).map(async (worker) => {
+      const document = await cloudflare(
+        fetchImpl,
+        token,
+        `/accounts/${account(environment)}/workers/scripts/${encodeURIComponent(worker)}/settings`,
+      );
+      if (!record(document.result) || !Array.isArray(document.result.bindings))
+        throw new Error(`malformed_worker_settings:${worker}`);
+      const actual = normalizedBindings(document.result.bindings, worker)
+        .filter((binding) => binding.type === "secret_text")
+        .map((binding) => binding.name);
+      const expected = [...expectedSecrets[worker]].sort((left, right) => left.localeCompare(right));
+      if (stableJson(actual) !== stableJson(expected)) throw new Error(`worker_secret_inventory_mismatch:${worker}`);
+    }),
+  );
 }
 
 async function verifyWorkers(fetchImpl, token, environment, configs) {
-  await Promise.all(Object.entries(configs).map(async ([worker, config]) => {
-    const document = await cloudflare(fetchImpl, token, `/accounts/${account(environment)}/workers/scripts/${encodeURIComponent(worker)}/settings`);
-    if (!record(document.result) || !Array.isArray(document.result.bindings)) throw new Error(`malformed_worker_settings:${worker}`);
-    const actual = normalizedBindings(document.result.bindings, worker);
-    const expected = expectedBindings(config, expectedSecrets[worker], worker);
-    if (stableJson(actual) !== stableJson(expected)) throw new Error(`worker_binding_inventory_mismatch:${worker}`);
-  }));
+  await Promise.all(
+    Object.entries(configs).map(async ([worker, config]) => {
+      const document = await cloudflare(
+        fetchImpl,
+        token,
+        `/accounts/${account(environment)}/workers/scripts/${encodeURIComponent(worker)}/settings`,
+      );
+      if (!record(document.result) || !Array.isArray(document.result.bindings))
+        throw new Error(`malformed_worker_settings:${worker}`);
+      const actual = normalizedBindings(document.result.bindings, worker);
+      const expected = expectedBindings(config, expectedSecrets[worker], worker);
+      if (stableJson(actual) !== stableJson(expected)) throw new Error(`worker_binding_inventory_mismatch:${worker}`);
+    }),
+  );
 }
 
 function expectedBindings(config, secrets, worker) {
   return [
     ...Object.entries(config.vars ?? {}).map(([name, text]) => ({ name, type: "plain_text", text: String(text) })),
-    ...(config.d1_databases ?? []).map((binding) => ({ name: binding.binding, type: "d1", database_id: binding.database_id })),
-    ...(config.r2_buckets ?? []).map((binding) => ({ name: binding.binding, type: "r2_bucket", bucket_name: binding.bucket_name })),
-    ...(config.services ?? []).map((binding) => ({ name: binding.binding, type: "service", service: binding.service, environment: binding.environment ?? null, entrypoint: binding.entrypoint ?? null })),
-    ...(config.workflows ?? []).map((binding) => ({ name: binding.binding, type: "workflow", workflow_name: binding.name, class_name: binding.class_name ?? null, script_name: binding.script_name ?? worker })),
-    ...(config.ratelimits ?? []).map((binding) => ({ name: binding.name, type: "ratelimit", namespace_id: binding.namespace_id, simple: { limit: binding.simple.limit, period: binding.simple.period } })),
+    ...(config.d1_databases ?? []).map((binding) => ({
+      name: binding.binding,
+      type: "d1",
+      database_id: binding.database_id,
+    })),
+    ...(config.r2_buckets ?? []).map((binding) => ({
+      name: binding.binding,
+      type: "r2_bucket",
+      bucket_name: binding.bucket_name,
+    })),
+    ...(config.services ?? []).map((binding) => ({
+      name: binding.binding,
+      type: "service",
+      service: binding.service,
+      environment: binding.environment ?? null,
+      entrypoint: binding.entrypoint ?? null,
+    })),
+    ...(config.workflows ?? []).map((binding) => ({
+      name: binding.binding,
+      type: "workflow",
+      workflow_name: binding.name,
+      class_name: binding.class_name ?? null,
+      script_name: binding.script_name ?? worker,
+    })),
+    ...(config.ratelimits ?? []).map((binding) => ({
+      name: binding.name,
+      type: "ratelimit",
+      namespace_id: binding.namespace_id,
+      simple: { limit: binding.simple.limit, period: binding.simple.period },
+    })),
     ...(config.version_metadata ? [{ name: config.version_metadata.binding, type: "version_metadata" }] : []),
     ...secrets.map((name) => ({ name, type: "secret_text" })),
   ].sort(bindingOrder);
@@ -195,53 +266,130 @@ function expectedBindings(config, secrets, worker) {
 function normalizedBindings(bindings, worker) {
   const names = new Set();
   const normalized = bindings.map((binding) => {
-    if (!record(binding) || typeof binding.name !== "string" || names.has(binding.name)) throw new Error(`ambiguous_worker_binding:${worker}`);
+    if (!record(binding) || typeof binding.name !== "string" || names.has(binding.name))
+      throw new Error(`ambiguous_worker_binding:${worker}`);
     names.add(binding.name);
     switch (binding.type) {
-      case "plain_text": return requireFields(binding, ["text"], { name: binding.name, type: binding.type, text: binding.text });
-      case "secret_text": return { name: binding.name, type: binding.type };
-      case "version_metadata": return { name: binding.name, type: binding.type };
-      case "d1": return { name: binding.name, type: binding.type, database_id: unambiguousIdentity(binding, "database_id", "id") };
-      case "r2_bucket": return requireFields(binding, ["bucket_name"], { name: binding.name, type: binding.type, bucket_name: binding.bucket_name });
-      case "service": return requireFields(binding, ["service"], { name: binding.name, type: binding.type, service: binding.service, environment: binding.environment ?? null, entrypoint: binding.entrypoint ?? null });
-      case "workflow": return requireFields(binding, ["workflow_name"], { name: binding.name, type: binding.type, workflow_name: binding.workflow_name, class_name: binding.class_name ?? null, script_name: binding.script_name ?? worker });
+      case "plain_text":
+        return requireFields(binding, ["text"], { name: binding.name, type: binding.type, text: binding.text });
+      case "secret_text":
+        return { name: binding.name, type: binding.type };
+      case "version_metadata":
+        return { name: binding.name, type: binding.type };
+      case "d1":
+        return {
+          name: binding.name,
+          type: binding.type,
+          database_id: unambiguousIdentity(binding, "database_id", "id"),
+        };
+      case "r2_bucket":
+        return requireFields(binding, ["bucket_name"], {
+          name: binding.name,
+          type: binding.type,
+          bucket_name: binding.bucket_name,
+        });
+      case "service":
+        return requireFields(binding, ["service"], {
+          name: binding.name,
+          type: binding.type,
+          service: binding.service,
+          environment: binding.environment ?? null,
+          entrypoint: binding.entrypoint ?? null,
+        });
+      case "workflow":
+        return requireFields(binding, ["workflow_name"], {
+          name: binding.name,
+          type: binding.type,
+          workflow_name: binding.workflow_name,
+          class_name: binding.class_name ?? null,
+          script_name: binding.script_name ?? worker,
+        });
       case "ratelimit":
-        if (!record(binding.simple) || !Number.isFinite(binding.simple.limit) || !Number.isFinite(binding.simple.period)) throw new Error(`malformed_worker_binding:${binding.name}`);
-        return requireFields(binding, ["namespace_id"], { name: binding.name, type: binding.type, namespace_id: binding.namespace_id, simple: { limit: binding.simple.limit, period: binding.simple.period } });
-      default: throw new Error(`unexpected_worker_binding_type:${String(binding.type)}`);
+        if (
+          !record(binding.simple) ||
+          !Number.isFinite(binding.simple.limit) ||
+          !Number.isFinite(binding.simple.period)
+        )
+          throw new Error(`malformed_worker_binding:${binding.name}`);
+        return requireFields(binding, ["namespace_id"], {
+          name: binding.name,
+          type: binding.type,
+          namespace_id: binding.namespace_id,
+          simple: { limit: binding.simple.limit, period: binding.simple.period },
+        });
+      default:
+        throw new Error(`unexpected_worker_binding_type:${String(binding.type)}`);
     }
   });
   return normalized.sort(bindingOrder);
 }
 
 function requireFields(source, fields, value) {
-  if (fields.some((field) => typeof source[field] !== "string" || source[field].length === 0)) throw new Error(`malformed_worker_binding:${source.name}`);
+  if (fields.some((field) => typeof source[field] !== "string" || source[field].length === 0))
+    throw new Error(`malformed_worker_binding:${source.name}`);
   return value;
 }
 
 function unambiguousIdentity(value, current, legacy) {
   const currentValue = value[current];
   const legacyValue = value[legacy];
-  if (currentValue !== undefined && legacyValue !== undefined && currentValue !== legacyValue) throw new Error("ambiguous_resource_identity");
+  if (currentValue !== undefined && legacyValue !== undefined && currentValue !== legacyValue)
+    throw new Error("ambiguous_resource_identity");
   const identity = currentValue ?? legacyValue;
   if (typeof identity !== "string" || identity.length === 0) throw new Error("missing_resource_identity");
   return identity;
 }
 
 async function cloudflare(fetchImpl, token, pathname) {
-  const response = await fetchImpl(`${api}${pathname}`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000) });
+  const response = await httpRequest(
+    `${api}${pathname}`,
+    { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000) },
+    fetchImpl,
+  );
   let document;
-  try { document = await response.json(); } catch { throw new Error(`cloudflare_malformed_response:${pathname}`); }
-  if (!response.ok || !record(document) || document.success !== true || !("result" in document)) throw new Error(`cloudflare_request_failed:${pathname}`);
+  try {
+    document = await response.json();
+  } catch {
+    throw new Error(`cloudflare_malformed_response:${pathname}`);
+  }
+  if (!response.ok || !record(document) || document.success !== true || !("result" in document))
+    throw new Error(`cloudflare_request_failed:${pathname}`);
   return document;
 }
-function parseTarget(environment) { try { return JSON.parse(required(environment, "PRODUCTION_TARGET_JSON")); } catch { throw new Error("invalid_production_target_json"); } }
-function bindingOrder(left, right) { return left.name.localeCompare(right.name); }
-function stableJson(value) { if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`; if (record(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`; return JSON.stringify(value); }
-function record(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
-function account(environment) { return required(environment, "CLOUDFLARE_ACCOUNT_ID"); }
-function required(environment, name) { const value = environment[name]; if (typeof value !== "string" || value.length === 0) throw new Error(`missing_${name.toLowerCase()}`); return value; }
+function parseTarget(environment) {
+  try {
+    return JSON.parse(required(environment, "PRODUCTION_TARGET_JSON"));
+  } catch {
+    throw new Error("invalid_production_target_json");
+  }
+}
+function bindingOrder(left, right) {
+  return left.name.localeCompare(right.name);
+}
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (record(value))
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(",")}}`;
+  return JSON.stringify(value);
+}
+function record(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function account(environment) {
+  return required(environment, "CLOUDFLARE_ACCOUNT_ID");
+}
+function required(environment, name) {
+  const value = environment[name];
+  if (typeof value !== "string" || value.length === 0) throw new Error(`missing_${name.toLowerCase()}`);
+  return value;
+}
 
-if (process.argv[2] === "verify-target") process.stdout.write(`${JSON.stringify(await verifyProductionTarget(process.env))}\n`);
-else if (process.argv[2] === "verify-version") process.stdout.write(`${JSON.stringify(await verifyUploadedVersion(process.env))}\n`);
-else if (process.argv[2] === "observe-bindings") process.stdout.write(`${JSON.stringify(await observeCatalogueBindings(process.env))}\n`);
+if (process.argv[2] === "verify-target")
+  process.stdout.write(`${JSON.stringify(await verifyProductionTarget(process.env))}\n`);
+else if (process.argv[2] === "verify-version")
+  process.stdout.write(`${JSON.stringify(await verifyUploadedVersion(process.env))}\n`);
+else if (process.argv[2] === "observe-bindings")
+  process.stdout.write(`${JSON.stringify(await observeCatalogueBindings(process.env))}\n`);

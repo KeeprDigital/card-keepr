@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import {
   productionReleaseTransitionSql,
   productionReleaseLeaseAssignmentsSql,
@@ -918,7 +919,7 @@ function exactKeys(value, keys) {
 }
 
 async function replaceDatabase(source, databaseId, output, ingestion) {
-  const document = JSON.parse(await readFile(source, "utf8"));
+  const document = await readWorkerConfig(source);
   const binding = document.d1_databases.find((item) => item.binding === "CATALOGUE_DB");
   if (!binding) throw new Error("catalogue_binding_missing");
   binding.database_id = databaseId;
