@@ -129,3 +129,22 @@ export {
 } from "./workflow-driver";
 export { observeWorkflowProgress, type WorkflowProgress } from "./workflow-progress";
 export { advancesCollectionProgress, type WorkflowKind, workflowStepName, workflowSteps } from "./workflow-steps";
+
+export {
+  verifiedRunCurrentSql,
+  releaseTerminalRunEventLockStatement,
+  rebuildRunProjection,
+  expireRunEventsStatement,
+  runEventCommand,
+  runEventIdentitySql,
+  runEventStatement,
+  createRunEventStatement,
+  foldRunEvents,
+} from "./ingestion-run-event-repository";
+export {
+  runCurrentColumns,
+  runCompletedStageCount,
+  projectIngestionRunEvent,
+  type RunCurrent,
+  type RunEventRow,
+} from "./ingestion-run-events";

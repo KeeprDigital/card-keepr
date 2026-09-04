@@ -2,14 +2,16 @@ import { type CatalogueStore, repositoryStatements } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
 export function reconciliationRunStateStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
-  return repositoryStatements(database).prepare("SELECT state FROM ingestion_runs WHERE id = ?").bind(runId);
+  return repositoryStatements(database)
+    .prepare("SELECT state FROM ingestion_run_current WHERE ingestion_run_id = ?")
+    .bind(runId);
 }
 
 export function candidateAtRevisionStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT run.id AS ingestion_run_id, run.candidate_json
        FROM catalogue_revisions AS revision
-       JOIN ingestion_runs AS run ON run.id = revision.ingestion_run_id
+       JOIN ingestion_run_read AS run ON run.id = revision.ingestion_run_id
        WHERE revision.id = ?`)
     .bind(revisionId);
 }
@@ -64,7 +66,7 @@ export function activeParsingRunStatement(database: CatalogueStore, runId: strin
               run.expected_current_revision_id,
               operation.active_ingestion_run_id,
               operation.recovery_health
-       FROM ingestion_runs AS run
+       FROM ingestion_run_read AS run
        JOIN operation_state AS operation ON operation.singleton = 1
        WHERE run.id = ?`)
     .bind(runId);

@@ -132,12 +132,14 @@ export function explainRecentIngestionRuns(database) {
 
 export function explainRecoverablePublications(database) {
   return database.prepare(
-    "EXPLAIN QUERY PLAN SELECT * FROM ingestion_runs\n       WHERE state = 'publishing'\n         AND publication_reconcile_after IS NOT NULL\n         AND publication_reconcile_after <= ?\n       ORDER BY publication_reconcile_after, id LIMIT 1",
+    "EXPLAIN QUERY PLAN SELECT * FROM ingestion_run_current\n       WHERE state = 'publishing'\n         AND publication_reconcile_after IS NOT NULL\n         AND publication_reconcile_after <= ?\n       ORDER BY publication_reconcile_after, ingestion_run_id LIMIT 1",
   );
 }
 
 export function explainExpiredRuns(database) {
-  return database.prepare("EXPLAIN QUERY PLAN SELECT id FROM ingestion_runs WHERE state = 'expired'");
+  return database.prepare(
+    "EXPLAIN QUERY PLAN SELECT ingestion_run_id AS id FROM ingestion_run_current WHERE state = 'expired'",
+  );
 }
 
 export function explainRevisionProducts(database) {

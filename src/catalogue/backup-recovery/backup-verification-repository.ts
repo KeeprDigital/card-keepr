@@ -1,5 +1,5 @@
 import { cardCollectionPageQuery } from "../read";
-import { type CatalogueStore, repositoryStatements } from "../shared";
+import { type CatalogueStore, repositoryStatements, runCurrentColumns } from "../shared";
 
 export type CatalogueVerificationQuery =
   | Readonly<{ kind: "evidence"; revisionId: string; expectedJson: string }>
@@ -74,8 +74,65 @@ function verificationEvidenceSql(): string {
          )) AS invalid_curated_provenance,
       (SELECT count(*) FROM catalogue_revisions AS revision
        JOIN ingestion_runs AS run ON run.id = revision.ingestion_run_id
-       WHERE revision.id = catalogue.current_revision_id
-         AND json_valid(run.progress_json) = 0) AS invalid_audit_rows,
+       LEFT JOIN ingestion_run_current AS current ON current.ingestion_run_id = run.id
+       LEFT JOIN ingestion_run_events AS latest ON latest.ingestion_run_id = run.id
+         AND latest.sequence_number = current.last_event_sequence
+       LEFT JOIN ingestion_run_events AS birth ON birth.ingestion_run_id = run.id AND birth.sequence_number = 1
+       WHERE revision.id = catalogue.current_revision_id AND (
+         current.ingestion_run_id IS NULL OR latest.event_id IS NULL
+         OR latest.event_id IS NOT current.last_event_id
+         OR latest.to_state IS NOT current.state
+         OR latest.from_state IS NOT current.previous_state
+         OR current.state <> 'published' OR current.published_revision_id IS NOT revision.id
+         OR current.candidate_digest IS NOT revision.approved_candidate_digest
+         OR json_extract(latest.payload_json, '$.current') IS NOT
+           json_object(${runCurrentColumns.map((column) => `'${column}', current.${column}`).join(", ")})
+         OR (SELECT COUNT(*) FROM ingestion_run_events WHERE ingestion_run_id = run.id) <> current.last_event_sequence
+         OR (SELECT MAX(sequence_number) FROM ingestion_run_events WHERE ingestion_run_id = run.id) <> current.last_event_sequence
+         OR birth.event_kind IS NOT 'created' OR birth.from_state IS NOT NULL
+         OR json_extract(birth.payload_json, '$.selected_games') IS NOT (
+           SELECT json_group_array(game) FROM (
+             SELECT game FROM ingestion_run_selected_games WHERE ingestion_run_id = run.id ORDER BY ordinal
+           )
+         )
+         OR run.approval_idempotency_key IS NOT (
+           SELECT json_extract(payload_json, '$.approval_idempotency_key') FROM ingestion_run_events
+           WHERE ingestion_run_id = run.id AND json_type(payload_json, '$.approval_idempotency_key') = 'text'
+           ORDER BY sequence_number DESC LIMIT 1
+         )
+         OR EXISTS (
+           SELECT 1 FROM ingestion_run_events AS event, json_each(event.payload_json, '$.payloads') AS payload
+           WHERE event.ingestion_run_id = run.id AND (
+             payload.key NOT IN ('candidate', 'diagnostics')
+             OR json_extract(payload.value, '$.chunks') IS NOT (
+               SELECT COUNT(*) FROM ingestion_run_event_payload_chunks AS chunk
+               WHERE chunk.ingestion_run_id = run.id AND chunk.event_sequence = event.sequence_number
+                 AND chunk.payload_kind = payload.key
+             )
+             OR json_extract(payload.value, '$.bytes') IS NOT (
+               SELECT SUM(length(CAST(content AS BLOB))) FROM ingestion_run_event_payload_chunks AS chunk
+               WHERE chunk.ingestion_run_id = run.id AND chunk.event_sequence = event.sequence_number
+                 AND chunk.payload_kind = payload.key
+             )
+             OR (SELECT MIN(chunk_index) FROM ingestion_run_event_payload_chunks AS chunk
+                 WHERE chunk.ingestion_run_id = run.id AND chunk.event_sequence = event.sequence_number
+                   AND chunk.payload_kind = payload.key) IS NOT 0
+             OR (SELECT MAX(chunk_index) FROM ingestion_run_event_payload_chunks AS chunk
+                 WHERE chunk.ingestion_run_id = run.id AND chunk.event_sequence = event.sequence_number
+                   AND chunk.payload_kind = payload.key) IS NOT json_extract(payload.value, '$.chunks') - 1
+           )
+         )
+         OR (current.candidate_payload_event_sequence IS NOT NULL AND NOT EXISTS (
+           SELECT 1 FROM ingestion_run_events WHERE ingestion_run_id = run.id
+             AND sequence_number = current.candidate_payload_event_sequence
+             AND json_type(payload_json, '$.payloads.candidate') = 'object'
+         ))
+         OR (current.diagnostics_event_sequence IS NOT NULL AND NOT EXISTS (
+           SELECT 1 FROM ingestion_run_events WHERE ingestion_run_id = run.id
+             AND sequence_number = current.diagnostics_event_sequence
+             AND json_type(payload_json, '$.payloads.diagnostics') = 'object'
+         ))
+       )) AS invalid_audit_rows,
       (SELECT count(*) FROM revision_cards
        WHERE catalogue_revision_id = catalogue.current_revision_id) AS cards,
       (SELECT count(*) FROM revision_printings

@@ -95,7 +95,7 @@ export async function seedApiRevision(input: {
   if (previousRevisionId === null) {
     throw new Error("The API test catalogue state is unavailable.");
   }
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries.insertIngestionRunsForSeedApiRevision(testEnv.CATALOGUE_DB).bind(
       input.runId,
       previousRevisionId,
@@ -117,15 +117,18 @@ export async function seedApiRevision(input: {
     .insertCatalogueRevisionsForSeedApiRevision(testEnv.CATALOGUE_DB)
     .bind(input.revisionId, input.runId, digest, previousRevisionId, digest)
     .run();
-  await testEnv.CATALOGUE_DB.batch([
-    ...input.cards.flatMap((card) => [
-      publishedCatalogueQueries
-        .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-          testEnv.CATALOGUE_DB,
-        )
-        .bind(input.revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
-      ...cardSearchStatements(input.revisionId, card),
-    ]),
+  const cardStatements = input.cards.flatMap((card) => [
+    publishedCatalogueQueries
+      .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(input.revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
+    ...cardSearchStatements(input.revisionId, card),
+  ]);
+  for (let offset = 0; offset < cardStatements.length; offset += 400) {
+    await catalogueStore(testEnv.CATALOGUE_DB).batch(cardStatements.slice(offset, offset + 400));
+  }
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     publishedCatalogueQueries
       .insertCatalogueQueryRevisionsForSeedApiRevision(testEnv.CATALOGUE_DB)
       .bind(input.revisionId),

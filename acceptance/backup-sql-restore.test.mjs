@@ -11,6 +11,8 @@ import {
   reconstructCardSearchAfterD1RestoreStatements,
 } from "../src/catalogue/backup-recovery/card-search-recovery-statements.ts";
 import * as backupQueries from "./helpers/query-helpers/backup.mjs";
+import * as runQueries from "./helpers/query-helpers/backup-run-events.mjs";
+import { renderRunFixtureSql } from "./helpers/query-helpers/run-event-fixture.mjs";
 import * as schemaQueries from "./helpers/query-helpers/schema.mjs";
 import { d1Adapter } from "./helpers/query-helpers/sqlite-d1-adapter.mjs";
 
@@ -30,7 +32,6 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
   const currentSchemaMigrationLevel = Number.parseInt(migrations.at(-1) ?? "", 10);
   assert.ok(Number.isSafeInteger(currentSchemaMigrationLevel));
   assert.equal(expectedSchemaMigrationLevel, currentSchemaMigrationLevel);
-  seedRepresentativeCatalogue(source);
 
   const vite = await createServer({
     root,
@@ -38,6 +39,13 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
     server: { middlewareMode: true },
   });
   t.after(() => vite.close());
+  await seedRepresentativeCatalogue(source, vite);
+  const runEvidence = restoredRunEvidence(source);
+  assert.ok(runEvidence.events.length > 1);
+  assert.ok(runEvidence.payloads.length > 0);
+  assert.equal(runEvidence.events.at(-1).event_kind, "published");
+  assert.equal(JSON.parse(runEvidence.document.approval_history_json).length, 1);
+
   const recovery = await vite.ssrLoadModule("/src/catalogue/backup-recovery/backup-recovery.ts");
   const { catalogueStore } = await vite.ssrLoadModule("/src/catalogue/shared/index.ts");
   const expected = await recovery.captureCatalogueVerificationEvidence(
@@ -70,6 +78,7 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
   }
   backupQueries.completeSearchReconstruction(restored).run();
   const database = catalogueStore(d1Adapter(restored));
+  assert.deepEqual(restoredRunEvidence(restored), runEvidence);
   await assert.doesNotReject(
     recovery.verifyRestoredCatalogue(database, {
       expectedRevisionId: "catrev_restore_acceptance",
@@ -279,23 +288,39 @@ function validStoredLegalityRule(id, cardIds, officialWording = "The global tour
   };
 }
 
-function seedRepresentativeCatalogue(database) {
+async function seedRepresentativeCatalogue(database, vite) {
   const digest = "a".repeat(64);
+  const approval = {
+    action: "approved",
+    candidate_digest: digest,
+    expected_current_revision_id: "catrev_spine_000",
+    approved_at: "2026-08-05T00:01:30.000Z",
+  };
+  database.exec(
+    await renderRunFixtureSql(vite, {
+      id: "run_restore_acceptance",
+      state: "published",
+      selected_games_json: '["one-piece"]',
+      started_at: "2026-08-05T00:00:00.000Z",
+      expected_current_revision_id: "catrev_spine_000",
+      idempotency_key: "run-restore-acceptance",
+      candidate_digest: digest,
+      candidate_created_at: "2026-08-05T00:01:00.000Z",
+      approval_deadline: "2026-08-12T00:01:00.000Z",
+      approval_json: JSON.stringify(approval),
+      approval_history_json: JSON.stringify([approval]),
+      approval_idempotency_key: "run-restore-approval",
+      candidate_json: "{}",
+      warnings_json: "[]",
+      published_revision_id: "catrev_restore_acceptance",
+      resulting_revision_id: "catrev_restore_acceptance",
+      publication_outcome: "revision",
+      terminal_at: "2026-08-05T00:02:00.000Z",
+      progress_json:
+        '{"completed_stages":["planning","collecting","parsing","reconciling","awaiting_approval","publishing"],"current_stage":"published"}',
+    }),
+  );
   database.exec(`
-    INSERT INTO ingestion_runs (
-      id, state, selected_games_json, started_at,
-      expected_current_revision_id, idempotency_key, candidate_digest,
-      candidate_created_at, approval_deadline, approval_json,
-      candidate_json, progress_json
-    ) VALUES (
-      'run_restore_acceptance', 'publishing', '["one-piece"]',
-      '2026-08-05T00:00:00.000Z', 'catrev_spine_000',
-      'run-restore-acceptance', '${digest}', '2026-08-05T00:01:00.000Z',
-      '2099-01-01T00:00:00.000Z',
-      '{"candidate_digest":"${digest}","expected_current_revision_id":"catrev_spine_000"}',
-      '{}',
-      '{"completed_stages":["planning","collecting","parsing","reconciling","awaiting_approval"],"current_stage":"publishing"}'
-    );
     INSERT INTO ingestion_evidence_plans (
       ingestion_run_id, source_lineage, supported_game,
       game_profile_version, adapter_version, request_plan_json, plan_origin
@@ -366,11 +391,6 @@ function seedRepresentativeCatalogue(database) {
       'catrev_restore_acceptance', 'run_restore_acceptance',
       '2026-08-05T00:02:00.000Z', '${digest}', 'catrev_spine_000', '${digest}'
     );
-    UPDATE ingestion_runs SET state = 'published',
-      published_revision_id = 'catrev_restore_acceptance',
-      terminal_at = '2026-08-05T00:02:00.000Z',
-      progress_json = '{"completed_stages":["planning","collecting","parsing","reconciling","awaiting_approval","publishing","published"],"current_stage":"published"}'
-      WHERE id = 'run_restore_acceptance';
     UPDATE catalogue_state SET
       current_revision_id = 'catrev_restore_acceptance',
       published_at = '2026-08-05T00:02:00.000Z'
@@ -466,4 +486,16 @@ function seedRepresentativeCatalogue(database) {
       '{"author":"owner","created_at":"2026-08-05T00:01:30.000Z","evidence":[],"rationale":"Owner-reviewed name."}'
     );
   `);
+}
+
+function restoredRunEvidence(database) {
+  const runId = "run_restore_acceptance";
+  return {
+    identity: runQueries.backupRunIdentity(database).get(runId),
+    current: runQueries.backupRunCurrent(database).get(runId),
+    games: runQueries.backupRunGames(database).all(runId),
+    events: runQueries.backupRunEvents(database).all(runId),
+    payloads: runQueries.backupRunPayloads(database).all(runId),
+    document: runQueries.backupRunDocument(database).get(runId),
+  };
 }

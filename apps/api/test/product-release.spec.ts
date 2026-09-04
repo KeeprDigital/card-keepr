@@ -122,7 +122,7 @@ beforeEach(async () => {
     lifecycle: product.lifecycle,
     links: { self: `/v1/cards/${printing.card_id}` },
   };
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries.insertIngestionRunsForProductRelease(testEnv.CATALOGUE_DB).bind(
       "a".repeat(64),
       JSON.stringify({
@@ -376,7 +376,7 @@ test("Product search normalizes compatibility-form official facts during publica
       });
     }
   } finally {
-    await testEnv.CATALOGUE_DB.batch([
+    await catalogueStore(testEnv.CATALOGUE_DB).batch([
       publishedCatalogueQueries.deleteRevisionProductsFts(testEnv.CATALOGUE_DB).bind(productId),
       publishedCatalogueQueries.deleteRevisionProducts(testEnv.CATALOGUE_DB).bind(productId),
       reconciliationQueries.deleteReconciledReleases(testEnv.CATALOGUE_DB).bind(releaseId),
@@ -448,7 +448,7 @@ test("Printing Image content is served from the revision projection, not the rec
   // object that does not exist; only the projection's content facts reach
   // the response.
   const projectedSha256 = "2".repeat(64);
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     reconciliationQueries
       .insertReconciledPrintingImagesForPrintingImageContentServedFromRevisionProjectionNotReconciled(
         testEnv.CATALOGUE_DB,
@@ -529,7 +529,7 @@ test("Printing detail conditional reads bind exact response bytes to one revisio
     expect(conditional.headers.get("x-catalogue-revision")).toBe("catrev_products");
   }
 
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries.setOperationStateActiveIngestionRunIdForInstallApiSuite(testEnv.CATALOGUE_DB),
     ingestionQueries
       .insertIngestionRunsForPrintingDetailConditionalReadsBindExactResponseBytesOne(testEnv.CATALOGUE_DB)
@@ -917,7 +917,7 @@ test("Product evidence projects Curated Revisions onto exact Product and nested 
     "/data/releases/0/status": ["srcobs_release_status"],
   };
 
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries.setOperationStateActiveIngestionRunIdForInstallApiSuite(testEnv.CATALOGUE_DB),
     // Publication projects each pinned Curated Revision's author and
     // creation instant into catalogue_curated_provenance, and the evidence
@@ -1216,7 +1216,7 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     lifecycle: secondPrinting.lifecycle,
     links: { self: "/v1/products/product_us" },
   };
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     publishedCatalogueQueries
       .insertRevisionCardsForProductRelease(testEnv.CATALOGUE_DB)
       .bind(secondCard.id, JSON.stringify(secondCard)),

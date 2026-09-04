@@ -9,6 +9,9 @@ import {
   ingestionRunTransitionSql,
   repositoryStatements,
   runTransitionGuardStatement,
+  runEventCommand,
+  runEventStatement,
+  runEventIdentitySql,
   type SupportedGame,
 } from "../shared";
 
@@ -213,7 +216,11 @@ export function curatedRunSelectedGamesStatement(
   input: Readonly<{ runId: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare("SELECT selected_games_json FROM ingestion_runs WHERE id = ?")
+    .prepare(
+      `SELECT (SELECT json_group_array(game) FROM (
+        SELECT game FROM ingestion_run_selected_games WHERE ingestion_run_id = identity.id ORDER BY ordinal
+      )) AS selected_games_json FROM ingestion_runs AS identity WHERE identity.id = ?`,
+    )
     .bind(input.runId);
 }
 
@@ -330,8 +337,10 @@ export function failInvalidCuratedCandidateStatement(
   database: CatalogueStore,
   input: Readonly<{ observedAt: string; runId: string }>,
 ): D1PreparedStatement {
-  return atomicRepositoryStatement(database, {
-    after: [
+  const event = runEventCommand("failed", { runId: input.runId, occurredAt: input.observedAt });
+  return runEventStatement(database, {
+    event,
+    guards: [
       runTransitionGuardStatement(database, {
         runId: input.runId,
         from: ["planning", "collecting", "parsing", "reconciling", "awaiting_approval"],
@@ -339,12 +348,11 @@ export function failInvalidCuratedCandidateStatement(
       }),
     ],
     statement: repositoryStatements(database)
-      .prepare(`UPDATE ingestion_runs
-         SET state = 'failed', terminal_at = ?,
-             failure_code = 'curated_revision_composed_candidate_invalid',
-             progress_json = json_set(progress_json, '$.current_stage', 'failed')
-         WHERE id = ? AND ${ingestionRunTransitionSql(["planning", "collecting", "parsing", "reconciling", "awaiting_approval"], "failed")}`)
-      .bind(input.observedAt, input.runId),
+      .prepare(`UPDATE ingestion_run_current
+         SET ${runEventIdentitySql}, state = 'failed', terminal_at = ?,
+             failure_code = 'curated_revision_composed_candidate_invalid'
+         WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql(["planning", "collecting", "parsing", "reconciling", "awaiting_approval"], "failed")}`)
+      .bind(event.eventId, input.observedAt, input.runId),
   });
 }
 
@@ -374,7 +382,7 @@ export function curatedRunStateStatement(
   input: Readonly<{ runId: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare("SELECT state, failure_code FROM ingestion_runs WHERE id = ?")
+    .prepare("SELECT state, failure_code FROM ingestion_run_current WHERE ingestion_run_id = ?")
     .bind(input.runId);
 }
 
@@ -409,8 +417,8 @@ export function insertPublishedCuratedProvenanceStatement(
        ON prior_revision.id = prior.curated_revision_id
      WHERE run.id = ?
        AND NOT EXISTS (
-         SELECT 1 FROM json_each(run.selected_games_json)
-         WHERE value = prior_revision.game
+         SELECT 1 FROM ingestion_run_selected_games
+         WHERE ingestion_run_id = run.id AND game = prior_revision.game
        )
      UNION ALL
      SELECT ?, revision.id, revision.target_key,
@@ -475,8 +483,10 @@ export function failCuratedSourceChangeRunStatement(
   database: CatalogueStore,
   input: Readonly<{ at: string; runId: string }>,
 ): D1PreparedStatement {
-  return atomicRepositoryStatement(database, {
-    after: [
+  const event = runEventCommand("failed", { runId: input.runId, occurredAt: input.at });
+  return runEventStatement(database, {
+    event,
+    guards: [
       runTransitionGuardStatement(database, {
         runId: input.runId,
         from: ["planning", "collecting", "parsing", "reconciling", "awaiting_approval"],
@@ -484,12 +494,11 @@ export function failCuratedSourceChangeRunStatement(
       }),
     ],
     statement: repositoryStatements(database)
-      .prepare(`UPDATE ingestion_runs
-       SET state = 'failed', terminal_at = ?,
-           failure_code = 'curated_revision_reconfirmation_required',
-           progress_json = json_set(progress_json, '$.current_stage', 'failed')
-       WHERE id = ? AND ${ingestionRunTransitionSql(["planning", "collecting", "parsing", "reconciling", "awaiting_approval"], "failed")}`)
-      .bind(input.at, input.runId),
+      .prepare(`UPDATE ingestion_run_current
+       SET ${runEventIdentitySql}, state = 'failed', terminal_at = ?,
+           failure_code = 'curated_revision_reconfirmation_required'
+       WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql(["planning", "collecting", "parsing", "reconciling", "awaiting_approval"], "failed")}`)
+      .bind(event.eventId, input.at, input.runId),
   });
 }
 
@@ -555,7 +564,7 @@ export function curatedCatalogueCandidateStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT run.id AS ingestion_run_id, run.candidate_json FROM catalogue_revisions AS revision
-     JOIN ingestion_runs AS run ON run.id = revision.ingestion_run_id
+     JOIN ingestion_run_read AS run ON run.id = revision.ingestion_run_id
      WHERE revision.id = ?`)
     .bind(input.revisionId);
 }

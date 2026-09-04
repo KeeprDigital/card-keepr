@@ -1,3 +1,4 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as curatedQueries from "./query-helpers/curated";
 import * as catalogueExportQueries from "./query-helpers/catalogue-export";
@@ -22,8 +23,11 @@ export function installReconciliationSuite(): void {
   });
 
   afterEach(async () => {
-    await testEnv.CATALOGUE_DB.batch([
-      ingestionQueries.setIngestionRunsStateTerminalAtForCuratedRevisions(testEnv.CATALOGUE_DB),
+    const activeRunId = await ingestionQueries
+      .readOperationStateActiveIngestionRunId(testEnv.CATALOGUE_DB)
+      .first<string>("active_ingestion_run_id");
+    await catalogueStore(testEnv.CATALOGUE_DB).batch([
+      ingestionQueries.setIngestionRunsStateTerminalAtForCuratedRevisions(testEnv.CATALOGUE_DB).bind(activeRunId ?? ""),
       ingestionQueries.setOperationStateActiveIngestionRunIdActiveProductionReleaseId(testEnv.CATALOGUE_DB),
       curatedQueries.setCuratedRevisionsStatusEventVersion(testEnv.CATALOGUE_DB),
     ]);

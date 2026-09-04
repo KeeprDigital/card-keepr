@@ -1,11 +1,27 @@
+import {
+  catalogueStore,
+  runEventCommand,
+  runEventStatement,
+  runEventIdentitySql,
+  runCompletedStageCount,
+} from "../../../../src/catalogue/shared";
+import { bindRunFixtureStatement, seedRunFixtureStatement } from "./run-events";
 // Dedicated test queries. Tests retain binding, execution, and atomic batch composition.
 
 export function insertIngestionRuns(database: D1Database): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-      id, state, selected_games_json, started_at, expected_current_revision_id, idempotency_key,
-      candidate_digest, candidate_created_at, approval_deadline, approval_json, candidate_json
-    ) VALUES ('run_products', 'publishing', '["one-piece"]', '2026-01-01T00:00:00.000Z',
-      'catrev_spine_000', 'printing-query-fixture', ?, '2026-01-01T00:00:00.000Z', '2099-01-01T00:00:00.000Z', ?, '{}')`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: "run_products",
+    state: "publishing",
+    selected_games_json: '["one-piece"]',
+    started_at: "2026-01-01T00:00:00.000Z",
+    expected_current_revision_id: "catrev_spine_000",
+    idempotency_key: "printing-query-fixture",
+    candidate_digest: values[0],
+    candidate_created_at: "2026-01-01T00:00:00.000Z",
+    approval_deadline: "2099-01-01T00:00:00.000Z",
+    approval_json: values[1],
+    candidate_json: "{}",
+  }));
 }
 
 export function setOperationStateActiveIngestionRunId(database: D1Database): D1PreparedStatement {
@@ -15,17 +31,24 @@ export function setOperationStateActiveIngestionRunId(database: D1Database): D1P
 export function insertIngestionRunsForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, linked_run_id, idempotency_key,
-        candidate_digest, candidate_created_at, approval_deadline,
-        approval_json, published_revision_id, export_manifest_digest,
-        terminal_at, candidate_json, approval_idempotency_key
-      ) VALUES (
-        'run_retained_export', 'publishing', '["gundam"]', ?,
-        'catrev_spine_000', NULL, 'historical-v1-seed', ?, ?,
-        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-      )`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: "run_retained_export",
+    state: "publishing",
+    selected_games_json: '["gundam"]',
+    started_at: values[0],
+    expected_current_revision_id: "catrev_spine_000",
+    linked_run_id: null,
+    idempotency_key: "historical-v1-seed",
+    candidate_digest: values[1],
+    candidate_created_at: values[2],
+    approval_deadline: "2099-01-01T00:00:00.000Z",
+    approval_json: values[3],
+    published_revision_id: null,
+    export_manifest_digest: null,
+    terminal_at: null,
+    candidate_json: "{}",
+    approval_idempotency_key: null,
+  }));
 }
 
 export function setOperationStateActiveIngestionRunIdForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(
@@ -48,17 +71,24 @@ export function insertCatalogueRevisionsForAuthenticatedCatalogueExportReadsPres
 export function insertIngestionRunsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, linked_run_id, idempotency_key,
-        candidate_digest, candidate_created_at, approval_deadline,
-        approval_json, published_revision_id, export_manifest_digest,
-        terminal_at, candidate_json, approval_idempotency_key
-      ) VALUES (
-        ?, 'publishing', '["gundam"]', ?, 'catrev_spine_000', NULL,
-        'api-legality-precedence-seed', ?, ?,
-        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-      )`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "publishing",
+    selected_games_json: '["gundam"]',
+    started_at: values[1],
+    expected_current_revision_id: "catrev_spine_000",
+    linked_run_id: null,
+    idempotency_key: "api-legality-precedence-seed",
+    candidate_digest: values[2],
+    candidate_created_at: values[3],
+    approval_deadline: "2099-01-01T00:00:00.000Z",
+    approval_json: values[4],
+    published_revision_id: null,
+    export_manifest_digest: null,
+    terminal_at: null,
+    candidate_json: "{}",
+    approval_idempotency_key: null,
+  }));
 }
 
 export function setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
@@ -80,64 +110,93 @@ export function insertCatalogueRevisionsForAuthenticatedLegalityStatusGivesDefin
 export function insertIngestionRunsForLegalityStatusEvidenceReportsCapturedAtPublicationProjected(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, linked_run_id, idempotency_key,
-        candidate_digest, candidate_created_at, approval_deadline,
-        approval_json, published_revision_id, export_manifest_digest,
-        terminal_at, candidate_json, approval_idempotency_key
-      ) VALUES (
-        ?, 'publishing', '["gundam"]', ?, 'catrev_spine_000', NULL,
-        'api-legality-projected-evidence-seed', ?, ?,
-        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-      )`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "publishing",
+    selected_games_json: '["gundam"]',
+    started_at: values[1],
+    expected_current_revision_id: "catrev_spine_000",
+    linked_run_id: null,
+    idempotency_key: "api-legality-projected-evidence-seed",
+    candidate_digest: values[2],
+    candidate_created_at: values[3],
+    approval_deadline: "2099-01-01T00:00:00.000Z",
+    approval_json: values[4],
+    published_revision_id: null,
+    export_manifest_digest: null,
+    terminal_at: null,
+    candidate_json: "{}",
+    approval_idempotency_key: null,
+  }));
 }
 
 export function insertIngestionRunsForUnresolvedTargetScopeRuleAnswersExplicitlyIndeterminateEveryOverlapping(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, linked_run_id, idempotency_key,
-        candidate_digest, candidate_created_at, approval_deadline,
-        approval_json, published_revision_id, export_manifest_digest,
-        terminal_at, candidate_json, approval_idempotency_key
-      ) VALUES (
-        ?, 'publishing', '["gundam"]', ?, 'catrev_spine_000', NULL,
-        'api-legality-target-scope-seed', ?, ?,
-        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-      )`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "publishing",
+    selected_games_json: '["gundam"]',
+    started_at: values[1],
+    expected_current_revision_id: "catrev_spine_000",
+    linked_run_id: null,
+    idempotency_key: "api-legality-target-scope-seed",
+    candidate_digest: values[2],
+    candidate_created_at: values[3],
+    approval_deadline: "2099-01-01T00:00:00.000Z",
+    approval_json: values[4],
+    published_revision_id: null,
+    export_manifest_digest: null,
+    terminal_at: null,
+    candidate_json: "{}",
+    approval_idempotency_key: null,
+  }));
 }
 
 export function insertIngestionRunsForAuthenticatedLegalityStatusTargetsFunctionalDONCardAuditsUnresolved(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, linked_run_id, idempotency_key,
-        candidate_digest, candidate_created_at, approval_deadline,
-        approval_json, published_revision_id, export_manifest_digest,
-        terminal_at, candidate_json, approval_idempotency_key
-      ) VALUES (?, 'publishing', '["one-piece"]', ?,
-        'catrev_spine_000', NULL, 'api-don-seed', ?, ?,
-        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL)`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "publishing",
+    selected_games_json: '["one-piece"]',
+    started_at: values[1],
+    expected_current_revision_id: "catrev_spine_000",
+    linked_run_id: null,
+    idempotency_key: "api-don-seed",
+    candidate_digest: values[2],
+    candidate_created_at: values[3],
+    approval_deadline: "2099-01-01T00:00:00.000Z",
+    approval_json: values[4],
+    published_revision_id: null,
+    export_manifest_digest: null,
+    terminal_at: null,
+    candidate_json: "{}",
+    approval_idempotency_key: null,
+  }));
 }
 
 export function insertIngestionRunsForPublicPrintingResponseValidatesFullDistributionContextObjects(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, linked_run_id, idempotency_key,
-        candidate_digest, candidate_created_at, approval_deadline,
-        approval_json, published_revision_id, export_manifest_digest,
-        terminal_at, candidate_json, approval_idempotency_key
-      ) VALUES (
-        'run_api_context', 'publishing', '["one-piece"]',
-        '2026-01-01T00:00:00.000Z', ?, NULL,
-        'api-context-seed', ?, '2026-01-01T00:00:00.000Z',
-        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-      )`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: "run_api_context",
+    state: "publishing",
+    selected_games_json: '["one-piece"]',
+    started_at: "2026-01-01T00:00:00.000Z",
+    expected_current_revision_id: values[0],
+    linked_run_id: null,
+    idempotency_key: "api-context-seed",
+    candidate_digest: values[1],
+    candidate_created_at: "2026-01-01T00:00:00.000Z",
+    approval_deadline: "2099-01-01T00:00:00.000Z",
+    approval_json: values[2],
+    published_revision_id: null,
+    export_manifest_digest: null,
+    terminal_at: null,
+    candidate_json: "{}",
+    approval_idempotency_key: null,
+  }));
 }
 
 export function setOperationStateActiveIngestionRunIdForPublicPrintingResponseValidatesFullDistributionContextObjects(
@@ -162,13 +221,20 @@ export function insertCatalogueRevisionsForPublicPrintingResponseValidatesFullDi
 }
 
 export function setIngestionRunsStatePublishedRevisionId(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs
-       SET state = 'published',
+  const store = catalogueStore(database);
+  const event = runEventCommand("published", { runId: "run_api_context" });
+  return runEventStatement(store, {
+    event,
+    statement: database
+      .prepare(`UPDATE ingestion_run_current
+       SET ${runEventIdentitySql}, state = 'published',
            published_revision_id = 'catrev_api_context',
            resulting_revision_id = 'catrev_api_context',
            publication_outcome = 'revision',
            terminal_at = '2026-01-01T00:00:00.000Z'
-       WHERE id = 'run_api_context'`);
+       WHERE ingestion_run_id = 'run_api_context'`)
+      .bind(event.eventId),
+  });
 }
 
 export function setOperationStateActiveIngestionRunIdForPublicPrintingResponseValidatesFullDistributionContextObjectsWithRunApiContext(
@@ -182,18 +248,24 @@ export function setOperationStateActiveIngestionRunIdForPublicPrintingResponseVa
 export function insertIngestionRunsForAuthenticatedCardPrintingReadsExposeEffectivePrintedRulesText(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, linked_run_id, idempotency_key,
-        candidate_digest, candidate_created_at, approval_deadline,
-        approval_json, published_revision_id, export_manifest_digest,
-        terminal_at, candidate_json, approval_idempotency_key
-      ) VALUES (
-        'run_errata_read', 'publishing', '["one-piece"]',
-        '2026-07-01T00:00:00.000Z', ?, NULL,
-        'errata-read-seed', ?, '2026-07-01T00:00:00.000Z',
-        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-      )`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: "run_errata_read",
+    state: "publishing",
+    selected_games_json: '["one-piece"]',
+    started_at: "2026-07-01T00:00:00.000Z",
+    expected_current_revision_id: values[0],
+    linked_run_id: null,
+    idempotency_key: "errata-read-seed",
+    candidate_digest: values[1],
+    candidate_created_at: "2026-07-01T00:00:00.000Z",
+    approval_deadline: "2099-01-01T00:00:00.000Z",
+    approval_json: values[2],
+    published_revision_id: null,
+    export_manifest_digest: null,
+    terminal_at: null,
+    candidate_json: "{}",
+    approval_idempotency_key: null,
+  }));
 }
 
 export function setOperationStateActiveIngestionRunIdForAuthenticatedCardPrintingReadsExposeEffectivePrintedRulesText(
@@ -220,13 +292,20 @@ export function insertCatalogueRevisionsForAuthenticatedCardPrintingReadsExposeE
 export function setIngestionRunsStatePublishedRevisionIdForAuthenticatedCardPrintingReadsExposeEffectivePrintedRulesText(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs
-       SET state = 'published',
+  const store = catalogueStore(database);
+  const event = runEventCommand("published", { runId: "run_errata_read" });
+  return runEventStatement(store, {
+    event,
+    statement: database
+      .prepare(`UPDATE ingestion_run_current
+       SET ${runEventIdentitySql}, state = 'published',
            published_revision_id = 'catrev_errata_read',
            resulting_revision_id = 'catrev_errata_read',
            publication_outcome = 'revision',
            terminal_at = '2026-07-01T00:00:00.000Z'
-       WHERE id = 'run_errata_read'`);
+       WHERE ingestion_run_id = 'run_errata_read'`)
+      .bind(event.eventId),
+  });
 }
 
 export function setOperationStateActiveIngestionRunIdForAuthenticatedCardPrintingReadsExposeEffectivePrintedRulesTextWithRunErrataRead(
@@ -243,18 +322,24 @@ export function setOperationStateActiveIngestionRunIdForInstallApiSuite(database
 }
 
 export function insertIngestionRunsForSeedApiRevision(database: D1Database): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_digest, candidate_created_at, approval_deadline,
-         approval_json, published_revision_id, export_manifest_digest,
-         terminal_at, candidate_json, approval_idempotency_key
-       ) VALUES (
-         ?, 'publishing', '["one-piece"]',
-         '2026-07-20T00:00:00.000Z', ?, NULL, ?, ?,
-         '2026-07-20T00:00:00.000Z',
-         '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-       )`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "publishing",
+    selected_games_json: '["one-piece"]',
+    started_at: "2026-07-20T00:00:00.000Z",
+    expected_current_revision_id: values[1],
+    linked_run_id: null,
+    idempotency_key: values[2],
+    candidate_digest: values[3],
+    candidate_created_at: "2026-07-20T00:00:00.000Z",
+    approval_deadline: "2099-01-01T00:00:00.000Z",
+    approval_json: values[4],
+    published_revision_id: null,
+    export_manifest_digest: null,
+    terminal_at: null,
+    candidate_json: "{}",
+    approval_idempotency_key: null,
+  }));
 }
 
 export function insertCatalogueRevisionsForSeedApiRevision(database: D1Database): D1PreparedStatement {
@@ -265,13 +350,22 @@ export function insertCatalogueRevisionsForSeedApiRevision(database: D1Database)
 }
 
 export function setIngestionRunsStatePublishedRevisionIdForSeedApiRevision(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs
-       SET state = 'published',
+  return bindFixtureMutation((...values) => {
+    const store = catalogueStore(database);
+    const event = runEventCommand("published", { runId: String(values[2]) });
+    return runEventStatement(store, {
+      event,
+      statement: database
+        .prepare(`UPDATE ingestion_run_current
+       SET ${runEventIdentitySql}, state = 'published',
            published_revision_id = ?,
            resulting_revision_id = ?,
            publication_outcome = 'revision',
            terminal_at = '2026-07-20T00:00:00.000Z'
-       WHERE id = ?`);
+       WHERE ingestion_run_id = ?`)
+        .bind(event.eventId, ...values),
+    });
+  });
 }
 
 export function setOperationStateActiveIngestionRunIdForSeedApiRevision(database: D1Database): D1PreparedStatement {
@@ -281,18 +375,24 @@ export function setOperationStateActiveIngestionRunIdForSeedApiRevision(database
 }
 
 export function insertIngestionRunsForProductRelease(database: D1Database): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_digest, candidate_created_at, approval_deadline,
-         approval_json, published_revision_id, export_manifest_digest,
-         terminal_at, candidate_json, approval_idempotency_key
-       ) VALUES (
-         'run_products', 'publishing', '["one-piece"]',
-         '2026-01-01T00:00:00.000Z', 'catrev_spine_000', NULL,
-         'products-seed', ?, '2026-01-01T00:00:00.000Z',
-         '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-       )`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: "run_products",
+    state: "publishing",
+    selected_games_json: '["one-piece"]',
+    started_at: "2026-01-01T00:00:00.000Z",
+    expected_current_revision_id: "catrev_spine_000",
+    linked_run_id: null,
+    idempotency_key: "products-seed",
+    candidate_digest: values[0],
+    candidate_created_at: "2026-01-01T00:00:00.000Z",
+    approval_deadline: "2099-01-01T00:00:00.000Z",
+    approval_json: values[1],
+    published_revision_id: null,
+    export_manifest_digest: null,
+    terminal_at: null,
+    candidate_json: "{}",
+    approval_idempotency_key: null,
+  }));
 }
 
 export function insertCatalogueRevisionsForProductRelease(database: D1Database): D1PreparedStatement {
@@ -309,18 +409,24 @@ export function insertCatalogueRevisionsForProductRelease(database: D1Database):
 export function insertIngestionRunsForPrintingDetailConditionalReadsBindExactResponseBytesOne(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_digest, candidate_created_at, approval_deadline,
-         approval_json, published_revision_id, export_manifest_digest,
-         terminal_at, candidate_json, approval_idempotency_key
-       ) VALUES (
-         'run_products_next', 'publishing', '["one-piece"]',
-         '2026-01-02T00:00:00.000Z', 'catrev_products', NULL,
-         'products-next-seed', ?, '2026-01-02T00:00:00.000Z',
-         '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-       )`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: "run_products_next",
+    state: "publishing",
+    selected_games_json: '["one-piece"]',
+    started_at: "2026-01-02T00:00:00.000Z",
+    expected_current_revision_id: "catrev_products",
+    linked_run_id: null,
+    idempotency_key: "products-next-seed",
+    candidate_digest: values[0],
+    candidate_created_at: "2026-01-02T00:00:00.000Z",
+    approval_deadline: "2099-01-01T00:00:00.000Z",
+    approval_json: values[1],
+    published_revision_id: null,
+    export_manifest_digest: null,
+    terminal_at: null,
+    candidate_json: "{}",
+    approval_idempotency_key: null,
+  }));
 }
 
 export function setOperationStateActiveIngestionRunIdForPrintingDetailConditionalReadsBindExactResponseBytesOne(
@@ -349,55 +455,69 @@ export function readOperationStateActiveIngestionRunId(database: D1Database): D1
 }
 
 export function countIngestionRunsCount(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT COUNT(*) AS count FROM ingestion_runs
+  return database.prepare(`SELECT COUNT(*) AS count FROM ingestion_run_read
        WHERE idempotency_key = ?`);
 }
 
 export function insertIngestionRunsForAuthenticatedReparseRejectsNormalizedFixtureEnvelopeThroughUnavailableProduction(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_json
-       ) VALUES (?, 'parsing', '["one-piece"]',
-         '2026-08-01T00:00:00.000Z', 'catrev_spine_000', NULL, ?, '{}')`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "parsing",
+    selected_games_json: '["one-piece"]',
+    started_at: "2026-08-01T00:00:00.000Z",
+    expected_current_revision_id: "catrev_spine_000",
+    linked_run_id: null,
+    idempotency_key: values[1],
+    candidate_json: "{}",
+  }));
 }
 
 export function insertIngestionRunsForContextualLegalitySourceChanges(database: D1Database): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-           id, state, selected_games_json, started_at,
-           expected_current_revision_id, linked_run_id, idempotency_key,
-           candidate_json
-         ) VALUES (?, 'parsing', ?, '2026-08-01T00:00:00.000Z',
-           'catrev_spine_000', NULL, ?, '{}')`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "parsing",
+    selected_games_json: values[1],
+    started_at: "2026-08-01T00:00:00.000Z",
+    expected_current_revision_id: "catrev_spine_000",
+    linked_run_id: null,
+    idempotency_key: values[2],
+    candidate_json: "{}",
+  }));
 }
 
 export function insertIngestionRunsForPublicRunBoundaryReadsRetriesImmutableFixedPointLegacy(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-      id, state, selected_games_json, started_at,
-      expected_current_revision_id, linked_run_id, idempotency_key,
-      candidate_digest, candidate_created_at, approval_deadline,
-      approval_json, published_revision_id, export_manifest_digest,
-      terminal_at, candidate_json, approval_idempotency_key,
-      failure_code, progress_json
-    ) VALUES (
-      ?, 'failed', '["one-piece"]', '2026-07-29T01:00:00.000Z',
-      'catrev_spine_000', NULL, 'historical-fixed-point-seed',
-      ?, '2026-07-29T01:00:00.000Z',
-      '2026-08-05T01:00:00.000Z', NULL, NULL, NULL,
-      '2026-07-29T01:02:00.000Z', ?, NULL,
-      'legacy_ingestion_failure',
-      '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}'
-    )`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "failed",
+    selected_games_json: '["one-piece"]',
+    started_at: "2026-07-29T01:00:00.000Z",
+    expected_current_revision_id: "catrev_spine_000",
+    linked_run_id: null,
+    idempotency_key: "historical-fixed-point-seed",
+    candidate_digest: values[1],
+    candidate_created_at: "2026-07-29T01:00:00.000Z",
+    approval_deadline: "2026-08-05T01:00:00.000Z",
+    approval_json: null,
+    published_revision_id: null,
+    export_manifest_digest: null,
+    terminal_at: "2026-07-29T01:02:00.000Z",
+    candidate_json: values[2],
+    approval_idempotency_key: null,
+    failure_code: "legacy_ingestion_failure",
+    progress_json: '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}',
+  }));
 }
 
 export function readIngestionRunsIdCandidateJson(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT id, candidate_json FROM ingestion_runs
+  return database.prepare(
+    `SELECT id, candidate_json FROM ingestion_run_read
      WHERE id IN (?, ?)
-     ORDER BY id`);
+     ORDER BY id`,
+  );
 }
 
 export function setOperationStateActiveIngestionRunIdForStaleMismatchedApprovalsLeaveCandidateUnchangedBeforeExactApproval(
@@ -427,22 +547,19 @@ export function readAdministrationIdempotencyClaimsIdempotencyKey(database: D1Da
 }
 
 export function setIngestionRunsProgressJson(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs
-    SET progress_json = '{"completed_stages":["planning","parsing"],"current_stage":"awaiting_approval"}'
-    WHERE id = ?`);
+  return database.prepare(`UPDATE ingestion_run_current SET completed_stage_count = 2 WHERE ingestion_run_id = ?`);
 }
 
 export function setIngestionRunsProgressJsonApprovalHistoryJson(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs
-    SET progress_json = ?,
-        approval_history_json = '[{"action":"approved"}]'
-    WHERE id = ?`);
+  return database.prepare(
+    `UPDATE ingestion_run_current SET completed_stage_count = json_array_length(json_extract(?, '$.completed_stages')), approved_at = 'invalid', approved_candidate_digest = NULL, approved_expected_revision_id = NULL WHERE ingestion_run_id = ?`,
+  );
 }
 
 export function setIngestionRunsApprovalHistoryJson(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs
-    SET approval_history_json = '[]'
-    WHERE id = ?`);
+  return database.prepare(
+    `UPDATE ingestion_run_current SET approved_at = NULL, approved_candidate_digest = NULL, approved_expected_revision_id = NULL WHERE ingestion_run_id = ?`,
+  );
 }
 
 export function insertAdministrationIdempotency(database: D1Database): D1PreparedStatement {
@@ -480,24 +597,33 @@ export function setOperationStateActiveIngestionRunIdForExpiryRepairsDanglingAct
 }
 
 export function setIngestionRunsStateApprovalJson(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs
-    SET state = 'publishing',
-        approval_json = ?,
-        approval_idempotency_key = ?,
-        approval_history_json = ?,
-        progress_json = ?,
-        publication_revision_id = ?,
-        publication_started_at = ?,
-        publication_reconcile_after = ?,
-        publication_manifest_digest = ?,
-        publication_writer_token = ?
-    WHERE id = ? AND state = 'awaiting_approval'`);
+  return bindFixtureMutation((...values) => {
+    const store = catalogueStore(database);
+    const event = runEventCommand("approval_reserved", { runId: String(values[9]) });
+    return runEventStatement(store, {
+      event,
+      statement: database
+        .prepare(
+          `UPDATE ingestion_run_current SET ${runEventIdentitySql}, state='publishing', approved_at=json_extract(?,'$.approved_at'),approved_candidate_digest=json_extract(?,'$.candidate_digest'), approved_expected_revision_id=json_extract(?,'$.expected_current_revision_id'), completed_stage_count=?, publication_revision_id=?,publication_started_at=?,publication_reconcile_after=?,publication_manifest_digest=?,publication_writer_token=? WHERE ingestion_run_id=? AND state='awaiting_approval'`,
+        )
+        .bind(
+          event.eventId,
+          values[0],
+          values[0],
+          values[0],
+          runCompletedStageCount(String(values[3])),
+          ...values.slice(4),
+        ),
+      approvalIdempotencyKey: String(values[1]),
+      decisionJson: JSON.stringify((JSON.parse(String(values[2])) as unknown[]).at(-1)),
+    });
+  });
 }
 
 export function setIngestionRunsApprovalJson(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs
-      SET approval_json = '{}'
-      WHERE id = ?`);
+  return database.prepare(
+    `UPDATE ingestion_run_events SET payload_json = '{}' WHERE ingestion_run_id = ? AND event_kind = 'approval_reserved'`,
+  );
 }
 
 export function setIngestionPublicationCleanupStateAttempts(database: D1Database): D1PreparedStatement {
@@ -558,7 +684,7 @@ export function deleteAdministrationIdempotencyClaims(database: D1Database): D1P
 
 export function readIngestionRunsCandidateCatalogueDigest(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT candidate_catalogue_digest
-           FROM ingestion_runs WHERE id = ?`);
+           FROM ingestion_run_read WHERE id = ?`);
 }
 
 export function insertCatalogueRevisionsForNormalApprovalNeverAdoptsPrefixThatBecomesRegisteredExport(
@@ -571,13 +697,15 @@ export function insertCatalogueRevisionsForNormalApprovalNeverAdoptsPrefixThatBe
 }
 
 export function countIngestionPublicationCleanupState(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT
+  return database.prepare(
+    `SELECT
        run.state,
        (SELECT COUNT(*) FROM ingestion_publication_cleanup
         WHERE ingestion_run_id = run.id) AS cleanup_count,
        (SELECT current_revision_id FROM catalogue_state
         WHERE singleton = 1) AS current_revision_id
-     FROM ingestion_runs AS run WHERE run.id = ?`);
+     FROM ingestion_run_read AS run WHERE run.id = ?`,
+  );
 }
 
 export function readIngestionPublicationCleanupNotBefore(database: D1Database): D1PreparedStatement {
@@ -586,32 +714,49 @@ export function readIngestionPublicationCleanupNotBefore(database: D1Database): 
 }
 
 export function insertIngestionRunsForSeedDeletionExport(database: D1Database): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_digest, candidate_created_at, approval_deadline,
-         approval_json, published_revision_id, export_manifest_digest,
-         terminal_at, candidate_json, approval_idempotency_key
-       ) VALUES (
-         ?, 'publishing', '["one-piece"]', ?, ?, NULL, ?, ?, ?,
-         '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, ?, NULL
-       )`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "publishing",
+    selected_games_json: '["one-piece"]',
+    started_at: values[1],
+    expected_current_revision_id: values[2],
+    linked_run_id: null,
+    idempotency_key: values[3],
+    candidate_digest: values[4],
+    candidate_created_at: values[5],
+    approval_deadline: "2099-01-01T00:00:00.000Z",
+    approval_json: values[6],
+    published_revision_id: null,
+    export_manifest_digest: null,
+    terminal_at: null,
+    candidate_json: values[7],
+    approval_idempotency_key: null,
+  }));
 }
 
 export function setIngestionRunsStatePublishedRevisionIdForSeedDeletionExport(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs SET state = 'published', published_revision_id = ?,
+  return bindFixtureMutation((...values) => {
+    const store = catalogueStore(database);
+    const event = runEventCommand("published", { runId: String(values[3]) });
+    return runEventStatement(store, {
+      event,
+      statement: database
+        .prepare(`UPDATE ingestion_run_current SET ${runEventIdentitySql}, state = 'published', published_revision_id = ?,
          resulting_revision_id = ?, publication_outcome = 'revision', terminal_at = ?
-       WHERE id = ?`);
+       WHERE ingestion_run_id = ?`)
+        .bind(event.eventId, ...values),
+    });
+  });
 }
 
 export function readIngestionRunsState(database: D1Database): D1PreparedStatement {
-  return database.prepare("SELECT state FROM ingestion_runs WHERE id = ?");
+  return database.prepare("SELECT state FROM ingestion_run_read WHERE id = ?");
 }
 
 export function readIngestionRunsCandidateJson(database: D1Database): D1PreparedStatement {
-  return database.prepare("SELECT candidate_json FROM ingestion_runs WHERE id = ?");
+  return database.prepare("SELECT candidate_json FROM ingestion_run_read WHERE id = ?");
 }
 
 export function insertAdministrationIdempotencyClaimsForAdministrationOperationLinksAreAbsolutePublicURLs(
@@ -626,20 +771,27 @@ export function insertAdministrationIdempotencyClaimsForAdministrationOperationL
 export function countIngestionRunsCountForProductionWorkerHasNoRouteCapableInjectingSyntheticFixture(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`SELECT COUNT(*) AS count
-     FROM ingestion_runs
-     WHERE idempotency_key = 'production-fixture-publication-bypass'`);
+  return database.prepare(
+    `SELECT COUNT(*) AS count
+     FROM ingestion_run_read
+     WHERE idempotency_key = 'production-fixture-publication-bypass'`,
+  );
 }
 
 export function insertIngestionRunsForProductionReleaseSearchFixturesComeFromRealisticRevisionPinned(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (id,state,selected_games_json,started_at,
-       expected_current_revision_id,idempotency_key,candidate_digest,
-       approval_deadline,candidate_json)
-       VALUES ('run_release_fixture','awaiting_approval','[]',
-       '2026-08-05T00:00:00.000Z','catrev_spine_000','run-release-fixture',?,
-       '2099-01-01T00:00:00.000Z','{}')`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: "run_release_fixture",
+    state: "awaiting_approval",
+    selected_games_json: "[]",
+    started_at: "2026-08-05T00:00:00.000Z",
+    expected_current_revision_id: "catrev_spine_000",
+    idempotency_key: "run-release-fixture",
+    candidate_digest: values[0],
+    approval_deadline: "2099-01-01T00:00:00.000Z",
+    candidate_json: "{}",
+  }));
 }
 
 export function setOperationStateActiveIngestionRunIdForProductionReleaseSearchFixturesComeFromRealisticRevisionPinned(
@@ -662,12 +814,14 @@ export function setOperationStateRecoveryHealth(database: D1Database): D1Prepare
 }
 
 export function countIngestionRuns(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT
-       (SELECT COUNT(*) FROM ingestion_runs
+  return database.prepare(
+    `SELECT
+       (SELECT COUNT(*) FROM ingestion_run_read
         WHERE idempotency_key = 'blocked-recovery-start') AS runs,
        active_ingestion_run_id
      FROM operation_state
-     WHERE singleton = 1`);
+     WHERE singleton = 1`,
+  );
 }
 
 export function setOperationStateRecoveryHealthForRecoveryHealthGatesFixtureEvidenceInjectionReconciliationBeforeMutation(
@@ -683,11 +837,18 @@ export function setOperationStateRecoveryHealthForDegradedRecoveryPermitsEvidenc
 }
 
 export function setIngestionRunsStateTerminalAt(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs
-       SET state = 'failed', terminal_at = started_at,
-           failure_code = 'synthetic_retry_source',
-           progress_json = json_set(progress_json, '$.current_stage', 'failed')
-       WHERE id = ?`);
+  return bindFixtureMutation((...values) => {
+    const store = catalogueStore(database);
+    const event = runEventCommand("failed", { runId: String(values[0]) });
+    return runEventStatement(store, {
+      event,
+      statement: database
+        .prepare(
+          `UPDATE ingestion_run_current SET ${runEventIdentitySql}, state='failed',terminal_at=(SELECT started_at FROM ingestion_runs WHERE id=ingestion_run_id),failure_code='synthetic_retry_source' WHERE ingestion_run_id=?`,
+        )
+        .bind(event.eventId, values[0]),
+    });
+  });
 }
 
 export function setOperationStateActiveIngestionRunIdRecoveryHealth(database: D1Database): D1PreparedStatement {
@@ -704,40 +865,50 @@ export function countOfficialSourceCollectionPlansCount(database: D1Database): D
 export function insertIngestionRunsForD1FreshnessScopeRemainsStructuralWhileRegisteredSourceMetadata(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-       id, state, selected_games_json, started_at,
-       expected_current_revision_id, linked_run_id, idempotency_key,
-       candidate_json
-     ) VALUES (
-       'run_future_legality_scope', 'planning', '["gundam"]',
-       '2026-08-02T00:00:00.000Z', 'catrev_spine_000', NULL,
-       'future-legality-scope', '{}'
-     )`);
+  return seedRunFixtureStatement(database, {
+    id: "run_future_legality_scope",
+    state: "planning",
+    selected_games_json: '["gundam"]',
+    started_at: "2026-08-02T00:00:00.000Z",
+    expected_current_revision_id: "catrev_spine_000",
+    linked_run_id: null,
+    idempotency_key: "future-legality-scope",
+    candidate_json: "{}",
+  });
 }
 
 export function insertIngestionRunsForAppliedD1RequestCopiesOwningRunIdentitiesAreImmutable(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_json
-       ) VALUES (?, 'collecting', '["one-piece"]',
-         '2026-08-01T00:00:00.000Z', 'catrev_spine_000', NULL, ?, '{}')`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "collecting",
+    selected_games_json: '["one-piece"]',
+    started_at: "2026-08-01T00:00:00.000Z",
+    expected_current_revision_id: "catrev_spine_000",
+    linked_run_id: null,
+    idempotency_key: values[1],
+    candidate_json: "{}",
+  }));
 }
 
 export function insertIngestionRunsForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_digest, candidate_created_at, approval_deadline,
-         approval_json, candidate_json
-       ) VALUES ('run_upgraded_legality_guard', 'publishing',
-         '["one-piece"]', '2026-08-01T00:00:00.000Z',
-         'catrev_spine_000', NULL, 'upgraded-legality-guard', ?,
-         '2026-08-01T00:00:02.000Z', '2099-01-01T00:00:00.000Z', ?, '{}')`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: "run_upgraded_legality_guard",
+    state: "publishing",
+    selected_games_json: '["one-piece"]',
+    started_at: "2026-08-01T00:00:00.000Z",
+    expected_current_revision_id: "catrev_spine_000",
+    linked_run_id: null,
+    idempotency_key: "upgraded-legality-guard",
+    candidate_digest: values[0],
+    candidate_created_at: "2026-08-01T00:00:02.000Z",
+    approval_deadline: "2099-01-01T00:00:00.000Z",
+    approval_json: values[1],
+    candidate_json: "{}",
+  }));
 }
 
 export function setOperationStateActiveIngestionRunIdForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(
@@ -762,57 +933,51 @@ export function insertCatalogueRevisionsForFreshD1EnforcesFullLowercaseDigestsCa
 export function insertIngestionRunsForAuthenticatedParsingRetainsStagedLiveFusionPolicyRootDetail(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_json
-       ) VALUES (?, 'parsing', '["fusion-world"]',
-         '2026-08-03T00:00:00.000Z', 'catrev_spine_000', NULL, ?, '{}')`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "parsing",
+    selected_games_json: '["fusion-world"]',
+    started_at: "2026-08-03T00:00:00.000Z",
+    expected_current_revision_id: "catrev_spine_000",
+    linked_run_id: null,
+    idempotency_key: values[1],
+    candidate_json: "{}",
+  }));
 }
 
 export function countIngestionRunsCountForUnregisteredGenericCardAdapterCannotSelfAssertOfficialErrata(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`SELECT COUNT(*) AS count FROM ingestion_runs
-       WHERE idempotency_key = 'reject-generic-production-errata-authority'`);
+  return database.prepare(
+    `SELECT COUNT(*) AS count FROM ingestion_run_read
+       WHERE idempotency_key = 'reject-generic-production-errata-authority'`,
+  );
 }
 
+export function readRunFixtureForLegacyCandidate(database: D1Database): D1PreparedStatement {
+  return database.prepare("SELECT * FROM ingestion_run_read WHERE id = ?");
+}
 export function insertIngestionRunsForLegacyPersistedCandidatesWithoutErrataRemainInspectableRetryable(
   database: D1Database,
+  row: Record<string, unknown>,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_digest, candidate_created_at, approval_deadline,
-         approval_json, published_revision_id, export_manifest_digest,
-         terminal_at, candidate_json, approval_idempotency_key,
-         failure_code, progress_json, warnings_json,
-         approval_history_json, publication_outcome,
-         resulting_revision_id, freshness_checked_at,
-         publication_revision_id, publication_started_at,
-         publication_reconcile_after, publication_manifest_digest,
-         publication_writer_token, candidate_catalogue_digest
-       )
-       SELECT ?, state, selected_games_json, started_at,
-              expected_current_revision_id, NULL, ?,
-              candidate_digest, candidate_created_at, approval_deadline,
-              approval_json, published_revision_id, export_manifest_digest,
-              terminal_at, ?, NULL,
-              failure_code, progress_json, warnings_json,
-              approval_history_json, publication_outcome,
-              resulting_revision_id, freshness_checked_at,
-              publication_revision_id, publication_started_at,
-              publication_reconcile_after, publication_manifest_digest,
-              publication_writer_token, candidate_catalogue_digest
-       FROM ingestion_runs WHERE id = ?`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    ...row,
+    id: values[0],
+    state: row.state,
+    idempotency_key: values[1],
+    candidate_json: values[2],
+    linked_run_id: null,
+    approval_idempotency_key: null,
+  }));
 }
 
 export function readIngestionRunsStateTerminalAt(database: D1Database): D1PreparedStatement {
-  return database.prepare("SELECT state, terminal_at, failure_code FROM ingestion_runs WHERE id = ?");
+  return database.prepare("SELECT state, terminal_at, failure_code FROM ingestion_run_read WHERE id = ?");
 }
 
 export function readIngestionRunsStateFailureCode(database: D1Database): D1PreparedStatement {
-  return database.prepare("SELECT state, failure_code FROM ingestion_runs WHERE id = ?");
+  return database.prepare("SELECT state, failure_code FROM ingestion_run_read WHERE id = ?");
 }
 
 export function countIngestionPublicationCleanup(database: D1Database): D1PreparedStatement {
@@ -828,7 +993,7 @@ export function countIngestionPublicationCleanup(database: D1Database): D1Prepar
 }
 
 export function readIngestionRunsWarningsJson(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT warnings_json FROM ingestion_runs WHERE id = ?`);
+  return database.prepare("SELECT warnings_json FROM ingestion_run_read WHERE id = ?");
 }
 
 export function countAdministrationIdempotencyClaims(database: D1Database): D1PreparedStatement {
@@ -870,18 +1035,23 @@ export function setOperationStateActiveIngestionRunIdActiveProductionReleaseId(
 }
 
 export function insertIngestionRunsForCuratedRevisions(database: D1Database): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, idempotency_key, candidate_digest,
-        candidate_catalogue_digest, candidate_created_at, approval_deadline,
-        candidate_json, approval_json, progress_json, warnings_json, approval_history_json
-      ) VALUES (
-        ?, 'publishing', '["one-piece"]', ?,
-        ?, ?, 'seed-digest', 'seed-digest', ?,
-        '2099-01-01T00:00:00.000Z', ?,
-        ?,
-        '{"completed_stages":[],"current_stage":"publishing"}', '[]', '[]'
-      )`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "publishing",
+    selected_games_json: '["one-piece"]',
+    started_at: values[1],
+    expected_current_revision_id: values[2],
+    idempotency_key: values[3],
+    candidate_digest: "seed-digest",
+    candidate_catalogue_digest: "seed-digest",
+    candidate_created_at: values[4],
+    approval_deadline: "2099-01-01T00:00:00.000Z",
+    candidate_json: values[5],
+    approval_json: values[6],
+    progress_json: '{"completed_stages":[],"current_stage":"publishing"}',
+    warnings_json: "[]",
+    approval_history_json: "[]",
+  }));
 }
 
 export function insertCatalogueRevisionsForCuratedRevisions(database: D1Database): D1PreparedStatement {
@@ -892,21 +1062,18 @@ export function insertCatalogueRevisionsForCuratedRevisions(database: D1Database
 }
 
 export function setIngestionRunsStateTerminalAtForCuratedRevisions(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs
-       SET state = 'failed',
-           terminal_at = COALESCE(candidate_created_at, started_at),
-           failure_code = CASE WHEN state = 'publishing'
-             THEN 'publication_abandoned'
-             ELSE 'test_cleanup_active_run'
-           END,
-           progress_json = json_set(progress_json, '$.current_stage', 'failed')
-       WHERE id = (
-         SELECT active_ingestion_run_id FROM operation_state
-         WHERE singleton = 1
-       ) AND state IN (
-         'planning', 'collecting', 'parsing', 'reconciling',
-         'awaiting_approval', 'publishing'
-       )`);
+  return bindFixtureMutation((...values) => {
+    const store = catalogueStore(database);
+    const event = runEventCommand("failed", { runId: String(values[0]) });
+    return runEventStatement(store, {
+      event,
+      statement: database
+        .prepare(
+          `UPDATE ingestion_run_current SET ${runEventIdentitySql},state='failed',terminal_at=COALESCE(candidate_created_at,(SELECT started_at FROM ingestion_runs WHERE id=ingestion_run_id)),failure_code=CASE WHEN state='publishing' THEN 'publication_abandoned' ELSE 'test_cleanup_active_run' END WHERE ingestion_run_id=? AND ingestion_run_id=(SELECT active_ingestion_run_id FROM operation_state WHERE singleton=1) AND state IN ('planning','collecting','parsing','reconciling','awaiting_approval','publishing')`,
+        )
+        .bind(event.eventId, values[0]),
+    });
+  });
 }
 
 export function setOperationStateRecoveryHealthActiveProductionReleaseId(database: D1Database): D1PreparedStatement {
@@ -915,169 +1082,87 @@ export function setOperationStateRecoveryHealthActiveProductionReleaseId(databas
   );
 }
 
-export function insertIngestionRunsForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-       id, state, selected_games_json, started_at,
-       expected_current_revision_id, idempotency_key, candidate_json
-     ) VALUES (
-       ?, 'planning', '[]', ?, ?, ?,
-       '{"production_release_bootstrap":true}'
-     )`);
-}
-
-export function setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`UPDATE operation_state SET active_ingestion_run_id = ?
-     WHERE singleton = 1 AND active_ingestion_run_id IS NULL
-       AND recovery_health = 'healthy'`);
-}
-
-export function setIngestionRunsStateTerminalAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs
-       SET state = 'failed', terminal_at = ?, failure_code = ?,
-           progress_json =
-             '{"completed_stages":[],"current_stage":"failed"}'
-       WHERE id = ? AND state = 'planning'
-         AND EXISTS (
-           SELECT 1 FROM operation_state
-           WHERE singleton = 1 AND active_ingestion_run_id = ?
-         )`);
-}
-
-export function setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewalWithundefined(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`UPDATE operation_state SET active_ingestion_run_id = NULL
-     WHERE singleton = 1 AND active_ingestion_run_id = ?`);
-}
-
-export function deleteIngestionRuns(database: D1Database): D1PreparedStatement {
-  return database.prepare(`DELETE FROM ingestion_runs
-         WHERE id = ? AND idempotency_key = id
-           AND selected_games_json = '[]'
-           AND candidate_json = '{"production_release_bootstrap":true}'
-           AND state IN ('planning', 'failed')
-           AND NOT EXISTS (
-             SELECT 1 FROM operation_state
-             WHERE singleton = 1
-               AND active_ingestion_run_id = ingestion_runs.id
-           )`);
-}
-
-export function setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewalWithPublishing(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`UPDATE operation_state SET active_ingestion_run_id = NULL
-     WHERE singleton = 1 AND active_ingestion_run_id IS NOT NULL
-       AND NOT EXISTS (
-         SELECT 1 FROM ingestion_runs
-         WHERE id = operation_state.active_ingestion_run_id
-           AND state IN (
-             'planning', 'collecting', 'parsing', 'reconciling',
-             'awaiting_approval', 'publishing'
-           )
-       )`);
-}
-
 export function readIngestionRunsId(database: D1Database): D1PreparedStatement {
-  return database.prepare("SELECT id FROM ingestion_runs WHERE id = ?");
+  return database.prepare("SELECT id FROM ingestion_run_read WHERE id = ?");
 }
 
-export function setOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAt(
-  database: D1Database,
-): D1PreparedStatement {
+export function claimCanonicalReleaseLease(database: D1Database): D1PreparedStatement {
   return database.prepare(`UPDATE operation_state
-     SET active_production_release_id = ?, active_production_release_expires_at = ?,
-         active_ingestion_run_id = NULL
-     WHERE singleton = 1 AND active_ingestion_run_id = ?
-       AND (active_production_release_id IS NULL OR active_production_release_expires_at <= ?)`);
+    SET active_production_release_id = ?1, active_production_release_expires_at = ?2
+    WHERE singleton = 1 AND active_ingestion_run_id IS NULL
+      AND recovery_health = 'healthy' AND recovery_restore_guard = 'clear' AND active_recovery_id IS NULL
+      AND (active_production_release_id IS NULL OR active_production_release_expires_at <= ?3)`);
 }
 
-export function countIngestionRunsBootstrapCount(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT count(*) AS bootstrap_count FROM ingestion_runs
-     WHERE id IN (?, ?)`);
-}
-
-export function setOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
-  database: D1Database,
-): D1PreparedStatement {
+export function clearCanonicalReleaseLease(database: D1Database): D1PreparedStatement {
   return database.prepare(`UPDATE operation_state
-     SET active_production_release_id = NULL, active_production_release_expires_at = NULL
-     WHERE singleton = 1 AND active_production_release_id = ?`);
+    SET active_production_release_id = NULL, active_production_release_expires_at = NULL
+    WHERE singleton = 1 AND active_production_release_id = ? AND active_production_release_expires_at = ?`);
 }
 
-export function setOperationStateActiveProductionReleaseExpiresAt(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE operation_state SET active_production_release_expires_at = ?
-     WHERE singleton = 1 AND active_production_release_id = ?
-       AND active_production_release_expires_at > ?`);
+export function renewCanonicalReleaseLease(database: D1Database): D1PreparedStatement {
+  return database.prepare(`UPDATE operation_state SET active_production_release_expires_at = ?1
+    WHERE singleton = 1 AND active_production_release_id = ?2
+      AND active_production_release_expires_at = ?3 AND active_production_release_expires_at > ?4`);
 }
 
-export function readOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAt(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`SELECT active_production_release_id, active_production_release_expires_at
-     FROM operation_state WHERE singleton = 1`);
-}
-
-export function setOperationStateActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(
-    "UPDATE operation_state SET active_production_release_expires_at = ? WHERE singleton = 1 AND active_production_release_id = ?",
-  );
-}
-
-export function setOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewalWithundefined(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`UPDATE operation_state
-     SET active_production_release_id = ?, active_production_release_expires_at = ?,
-         active_ingestion_run_id = NULL
-     WHERE singleton = 1 AND active_ingestion_run_id = ?
-       AND active_production_release_expires_at <= ?`);
-}
-
-export function readOperationStateActiveProductionReleaseId(database: D1Database): D1PreparedStatement {
-  return database.prepare("SELECT active_production_release_id FROM operation_state WHERE singleton = 1");
+export function readCanonicalReleaseLease(database: D1Database): D1PreparedStatement {
+  return database.prepare(`SELECT active_ingestion_run_id, active_production_release_id,
+    active_production_release_expires_at FROM operation_state WHERE singleton = 1`);
 }
 
 export function readIngestionRunsCandidateJsonForCandidateInspectionExposesExactPinnedSetEveryCuratedEffect(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare("SELECT candidate_json FROM ingestion_runs WHERE idempotency_key = ?");
+  return database.prepare("SELECT candidate_json FROM ingestion_run_read WHERE idempotency_key = ?");
 }
 
 export function setIngestionRunsStateProgressJson(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs SET state = 'reconciling',
-       progress_json =
-         '{"completed_stages":["planning","collecting","parsing"],"current_stage":"reconciling"}'
-     WHERE id = ?`);
+  return bindFixtureMutation((...values) => {
+    const store = catalogueStore(database);
+    const event = runEventCommand("stage_changed", { runId: String(values[0]) });
+    return runEventStatement(store, {
+      event,
+      statement: database
+        .prepare(
+          `UPDATE ingestion_run_current SET ${runEventIdentitySql}, state='reconciling', completed_stage_count=3 WHERE ingestion_run_id=?`,
+        )
+        .bind(event.eventId, values[0]),
+    });
+  });
 }
 
 export function setIngestionRunsStateCandidateJson(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs
-     SET state = 'awaiting_approval', candidate_json = ?,
-         candidate_digest = ?, candidate_catalogue_digest = ?,
-         candidate_created_at = ?, approval_deadline = ?,
-         progress_json =
-           '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"awaiting_approval"}'
-     WHERE id = ?`);
+  return bindFixtureMutation((...values) => {
+    const store = catalogueStore(database);
+    const event = runEventCommand("candidate_prepared", { runId: String(values[5]) });
+    return runEventStatement(store, {
+      event,
+      statement: database
+        .prepare(
+          `UPDATE ingestion_run_current SET ${runEventIdentitySql},state='awaiting_approval',candidate_payload_event_sequence=last_event_sequence+1,candidate_digest=?,candidate_catalogue_digest=?,candidate_created_at=?,approval_deadline=?,completed_stage_count=4 WHERE ingestion_run_id=?`,
+        )
+        .bind(event.eventId, ...values.slice(1)),
+      candidateJson: String(values[0]),
+    });
+  });
 }
 
 export function insertIngestionRunsForPreparedRunsStripPriorEffectsReapplyExactPinsPersist(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, idempotency_key, candidate_json,
-         progress_json, warnings_json, approval_history_json
-       ) VALUES (?, 'planning', '["one-piece"]', ?, ?, ?, '{}',
-         '{"completed_stages":[],"current_stage":"planning"}', '[]', '[]')`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "planning",
+    selected_games_json: '["one-piece"]',
+    started_at: values[1],
+    expected_current_revision_id: values[2],
+    idempotency_key: values[3],
+    candidate_json: "{}",
+    progress_json: '{"completed_stages":[],"current_stage":"planning"}',
+    warnings_json: "[]",
+    approval_history_json: "[]",
+  }));
 }
 
 export function readIngestionRunCuratedRevisionSetsRevisionIdsJsonSetDigest(database: D1Database): D1PreparedStatement {
@@ -1088,64 +1173,96 @@ export function readIngestionRunCuratedRevisionSetsRevisionIdsJsonSetDigest(data
 export function insertIngestionRunsForPreparedRetryPersistsFailedRunEverySourceChangeConflict(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-       id, state, selected_games_json, started_at,
-       expected_current_revision_id, idempotency_key, candidate_digest,
-       candidate_catalogue_digest, candidate_created_at, terminal_at,
-       candidate_json, failure_code, progress_json, warnings_json,
-       approval_history_json
-     ) VALUES (?, 'failed', '["one-piece"]', ?, ?, ?, ?, ?, ?, ?, ?,
-       'prior_failure',
-       '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}',
-       '[]', '[]')`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "failed",
+    selected_games_json: '["one-piece"]',
+    started_at: values[1],
+    expected_current_revision_id: values[2],
+    idempotency_key: values[3],
+    candidate_digest: values[4],
+    candidate_catalogue_digest: values[5],
+    candidate_created_at: values[6],
+    terminal_at: values[7],
+    candidate_json: values[8],
+    failure_code: "prior_failure",
+    progress_json: '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}',
+    warnings_json: "[]",
+    approval_history_json: "[]",
+  }));
 }
 
 export function setIngestionRunsCandidateJson(database: D1Database): D1PreparedStatement {
-  return database.prepare("UPDATE ingestion_runs SET candidate_json = '{}' WHERE id = ?");
+  return database.prepare(
+    `UPDATE ingestion_run_event_payload_chunks SET content = '{}' WHERE ingestion_run_id = ? AND payload_kind = 'candidate'`,
+  );
 }
 
 export function insertIngestionRunsForWorkerBindsSourceChangeReaffirmationExactPublicConflict(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-       id, state, selected_games_json, started_at,
-       expected_current_revision_id, idempotency_key, candidate_digest,
-       candidate_catalogue_digest, candidate_created_at, terminal_at,
-       candidate_json, failure_code, progress_json, warnings_json,
-       approval_history_json
-     ) VALUES (?, 'failed', '["one-piece"]', ?, ?, ?, ?, ?, ?, ?, ?,
-       'test_source_changed',
-       '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}',
-       '[]', '[]')`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "failed",
+    selected_games_json: '["one-piece"]',
+    started_at: values[1],
+    expected_current_revision_id: values[2],
+    idempotency_key: values[3],
+    candidate_digest: values[4],
+    candidate_catalogue_digest: values[5],
+    candidate_created_at: values[6],
+    terminal_at: values[7],
+    candidate_json: values[8],
+    failure_code: "test_source_changed",
+    progress_json: '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}',
+    warnings_json: "[]",
+    approval_history_json: "[]",
+  }));
 }
 
 export function insertIngestionRunsForWorkerBindsSourceChangeReaffirmationExactPublicConflictWithCompletedStagesPlanningCollectingParsingReconciling(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-       id, state, selected_games_json, started_at,
-       expected_current_revision_id, idempotency_key, candidate_digest,
-       candidate_catalogue_digest, candidate_created_at, terminal_at,
-       candidate_json, failure_code, progress_json, warnings_json,
-       approval_history_json
-     ) VALUES (?, 'failed', '["digimon"]', ?, ?, ?, ?, ?, ?, ?, ?,
-       'test_unaffected_game',
-       '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}',
-       '[]', '[]')`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "failed",
+    selected_games_json: '["digimon"]',
+    started_at: values[1],
+    expected_current_revision_id: values[2],
+    idempotency_key: values[3],
+    candidate_digest: values[4],
+    candidate_catalogue_digest: values[5],
+    candidate_created_at: values[6],
+    terminal_at: values[7],
+    candidate_json: values[8],
+    failure_code: "test_unaffected_game",
+    progress_json: '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}',
+    warnings_json: "[]",
+    approval_history_json: "[]",
+  }));
 }
 
 export function readIngestionRunsStateFailureCodeForChangedOfficialValueRequiresReconfirmationInsteadSilentlyApplying(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare("SELECT state, failure_code, terminal_at FROM ingestion_runs WHERE id = ?");
+  return database.prepare("SELECT state, failure_code, terminal_at FROM ingestion_run_read WHERE id = ?");
 }
 
 export function setIngestionRunsStateTerminalAtForFieldAbsenceDistinctFromNullRetirementRestoresExactAbsence(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(
-    "UPDATE ingestion_runs SET state = 'failed', terminal_at = ?, failure_code = 'test_complete' WHERE id = ?",
-  );
+  return bindFixtureMutation((...values) => {
+    const store = catalogueStore(database);
+    const event = runEventCommand("failed", { runId: String(values[1]) });
+    return runEventStatement(store, {
+      event,
+      statement: database
+        .prepare(
+          `UPDATE ingestion_run_current SET ${runEventIdentitySql}, state='failed',terminal_at=?,failure_code='test_complete' WHERE ingestion_run_id=?`,
+        )
+        .bind(event.eventId, ...values),
+    });
+  });
 }
 
 export function setOperationStateRecoveryHealthActiveProductionReleaseIdForWorkerLifecycleEndpointsFailClosedOnEveryMutationGuard(
@@ -1178,55 +1295,73 @@ export function setIngestionRunCuratedRevisionSetsSetDigest(database: D1Database
 }
 
 export function insertIngestionRunsForInsertParsingRun(database: D1Database): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, idempotency_key, candidate_json,
-        progress_json, warnings_json, approval_history_json
-      ) VALUES (?, 'parsing', ?, ?, ?, ?, '{}',
-        '{"completed_stages":["planning","collecting"],"current_stage":"parsing"}', '[]', '[]')`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "parsing",
+    selected_games_json: values[1],
+    started_at: values[2],
+    expected_current_revision_id: values[3],
+    idempotency_key: values[4],
+    candidate_json: "{}",
+    progress_json: '{"completed_stages":["planning","collecting"],"current_stage":"parsing"}',
+    warnings_json: "[]",
+    approval_history_json: "[]",
+  }));
 }
 
 export function insertIngestionRunsForPublishedEvidenceDiagnosticsExplicitlyAdvertiseNoRetryRoute(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         operational_request_id, terminal_at, candidate_json
-       ) VALUES (
-         ?, 'published', '["one-piece"]', ?, 'catrev_spine_000', NULL, ?,
-         ?, ?, '{}'
-       )`);
+  return bindRunFixtureStatement(database, (...values) => ({
+    id: values[0],
+    state: "published",
+    selected_games_json: '["one-piece"]',
+    started_at: values[1],
+    expected_current_revision_id: "catrev_spine_000",
+    linked_run_id: null,
+    idempotency_key: values[2],
+    operational_request_id: values[3],
+    terminal_at: values[4],
+    candidate_json: "{}",
+  }));
 }
 
 export function readIngestionRunsStateCandidateDigest(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT state, candidate_digest, expected_current_revision_id,
+  return database.prepare(
+    `SELECT state, candidate_digest, expected_current_revision_id,
               approval_json, approval_idempotency_key,
               published_revision_id, publication_outcome,
               resulting_revision_id
-       FROM ingestion_runs WHERE id = ?`);
+       FROM ingestion_run_read WHERE id = ?`,
+  );
 }
 
 export function readIngestionRunsCandidateCatalogueDigestContentDigest(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT run.candidate_catalogue_digest, revision.content_digest
-     FROM ingestion_runs AS run
+  return database.prepare(
+    `SELECT run.candidate_catalogue_digest, revision.content_digest
+     FROM ingestion_run_read AS run
      JOIN catalogue_revisions AS revision ON revision.id = ?
-     WHERE run.id = ?`);
+     WHERE run.id = ?`,
+  );
 }
 
 export function readIngestionRunsCandidateDigestCandidateCatalogueDigest(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT run.candidate_digest, run.candidate_catalogue_digest,
+  return database.prepare(
+    `SELECT run.candidate_digest, run.candidate_catalogue_digest,
             revision.content_digest
-     FROM ingestion_runs AS run
+     FROM ingestion_run_read AS run
      JOIN catalogue_revisions AS revision ON revision.id = ?
-     WHERE run.id = ?`);
+     WHERE run.id = ?`,
+  );
 }
 
 export function readIngestionRunsStateTerminalAtForReachingRequestCapacityPausesIngestionRunWithoutFailingRetained(
   database: D1Database,
 ): D1PreparedStatement {
-  return database.prepare(`SELECT state, terminal_at, failure_code, progress_json
-     FROM ingestion_runs WHERE id = ?`);
+  return database.prepare(
+    `SELECT state, terminal_at, failure_code, progress_json
+     FROM ingestion_run_read WHERE id = ?`,
+  );
 }
 
 export function setOperationStateActiveRecoveryIdActiveIngestionRunId(database: D1Database): D1PreparedStatement {
@@ -1260,4 +1395,14 @@ export function setOperationStateRecoveryHealthActiveIngestionRunId(database: D1
   return database.prepare(`UPDATE operation_state
      SET recovery_health = 'healthy', active_ingestion_run_id = NULL
      WHERE singleton = 1`);
+}
+
+function bindFixtureMutation(bind: (...values: unknown[]) => D1PreparedStatement): D1PreparedStatement {
+  return {
+    bind,
+    run: () => bind().run(),
+    all: () => bind().all(),
+    first: (column?: string) => (column === undefined ? bind().first() : bind().first(column)),
+    raw: () => bind().raw(),
+  } as D1PreparedStatement;
 }

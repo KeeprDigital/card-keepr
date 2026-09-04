@@ -1,3 +1,4 @@
+import { seedRunFixtureStatement } from "./run-events";
 import { catalogueStore, atomicRepositoryStatement } from "../../../../src/catalogue/shared";
 import { guardRevisionLegalityRulesStatement } from "../../../../src/catalogue/legality/legality-guard-repository";
 export async function disableLegalityPublicationTriggers(database: D1Database): Promise<void> {
@@ -97,11 +98,16 @@ export function insertCheckedLegalityProjectionFixture(
 }
 
 export async function seedLegalityProjectionGuardTarget(database: D1Database): Promise<void> {
-  await database.batch([
-    database.prepare(`INSERT INTO ingestion_runs
-      (id, state, selected_games_json, started_at, expected_current_revision_id, idempotency_key, candidate_json)
-      VALUES ('run_projection_guard_target', 'planning', '["one-piece"]',
-        '2026-01-01T00:00:00.000Z', 'catrev_spine_000', 'projection-guard-target', '{}')`),
+  await catalogueStore(database).batch([
+    seedRunFixtureStatement(database, {
+      id: "run_projection_guard_target",
+      state: "planning",
+      selected_games_json: '["one-piece"]',
+      started_at: "2026-01-01T00:00:00.000Z",
+      expected_current_revision_id: "catrev_spine_000",
+      idempotency_key: "projection-guard-target",
+      candidate_json: "{}",
+    }),
     database.prepare(`INSERT INTO catalogue_revisions
       (id, ingestion_run_id, published_at, content_digest, expected_previous_revision_id, approved_candidate_digest)
       VALUES ('catrev_projection_guard_target', 'run_projection_guard_target',

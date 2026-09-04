@@ -1,4 +1,13 @@
-import { type CatalogueStore, repositoryStatements } from "../../../../src/catalogue/shared";
+import { seedRunFixtureStatement } from "./run-events";
+import {
+  catalogueStore,
+  runEventCommand,
+  runEventIdentitySql,
+  runEventStatement,
+  runTransitionGuardStatement,
+  type CatalogueStore,
+  repositoryStatements,
+} from "../../../../src/catalogue/shared";
 
 export async function removeCoreRunGuards(database: D1Database): Promise<void> {
   await database.batch([
@@ -10,16 +19,21 @@ export async function removeCoreRunGuards(database: D1Database): Promise<void> {
 }
 
 export async function seedCoreGuardRun(database: D1Database, id: string, state: string, active = true): Promise<void> {
-  await database.batch([
+  await catalogueStore(database).batch([
     database.prepare("UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1"),
-    database
-      .prepare(`INSERT INTO ingestion_runs (
-      id, state, selected_games_json, started_at, expected_current_revision_id,
-      idempotency_key, candidate_json, candidate_digest, candidate_catalogue_digest,
-      candidate_created_at, approval_deadline, progress_json
-    ) VALUES (?, ?, '[]', '2026-09-01T00:00:00.000Z', 'catrev_spine_000', ?, '{}',
-      'candidate', 'catalogue', '2026-09-01T00:00:00.000Z', '2026-09-08T00:00:00.000Z', '{}')`)
-      .bind(id, state, id),
+    seedRunFixtureStatement(database, {
+      id,
+      state,
+      selected_games_json: '["one-piece"]',
+      started_at: "2026-09-01T00:00:00.000Z",
+      expected_current_revision_id: "catrev_spine_000",
+      idempotency_key: id,
+      candidate_json: "{}",
+      candidate_digest: "candidate",
+      candidate_catalogue_digest: "catalogue",
+      candidate_created_at: "2026-09-01T00:00:00.000Z",
+      approval_deadline: "2026-09-08T00:00:00.000Z",
+    }),
   ]);
   if (active)
     await database.prepare("UPDATE operation_state SET active_ingestion_run_id = ? WHERE singleton = 1").bind(id).run();
@@ -27,7 +41,7 @@ export async function seedCoreGuardRun(database: D1Database, id: string, state: 
 
 export function coreGuardRun(database: CatalogueStore, id: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare("SELECT state, failure_code, candidate_digest FROM ingestion_runs WHERE id = ?")
+    .prepare("SELECT state, failure_code, candidate_digest FROM ingestion_run_read WHERE id = ?")
     .bind(id);
 }
 
@@ -63,10 +77,15 @@ export function terminateCoreRunWithFailureCode(
   runId: string,
   failureCode: string | null,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs SET state = 'failed', failure_code = ?,
-    terminal_at = '2026-09-01T00:00:00.000Z' WHERE id = ? AND state = 'paused'`)
-    .bind(failureCode, runId);
+  const event = runEventCommand("collection_terminated", { runId, occurredAt: "2026-09-01T00:00:00.000Z" });
+  return runEventStatement(database, {
+    event,
+    statement: repositoryStatements(database)
+      .prepare(`UPDATE ingestion_run_current SET ${runEventIdentitySql}, state = 'failed', failure_code = ?,
+        terminal_at = ? WHERE ingestion_run_id = ? AND state = 'paused'`)
+      .bind(event.eventId, failureCode, event.occurredAt, runId),
+    guards: [runTransitionGuardStatement(database, { runId, from: "paused", to: "failed" })],
+  });
 }
 
 export async function removePublicationGuards(database: D1Database): Promise<void> {

@@ -1,3 +1,4 @@
+import { verifiedRunCurrentSql } from "../shared";
 import { runTransitionGuardStatement, administrationOutcomeGuardStatement } from "../shared";
 import {
   bulkSourceRequestInsertionStatements,
@@ -8,6 +9,9 @@ import {
 import {
   AdministrationProblem,
   atomicRepositoryStatement,
+  runEventCommand,
+  runEventIdentitySql,
+  runEventStatement,
   assertIngestionRunTransition,
   type CatalogueStore,
   canonicalJson,
@@ -30,7 +34,6 @@ import {
   evidenceRunByIdempotencyKeyStatement,
   evidenceRunByIdStatement,
   type IngestionEvidenceRow,
-  type IngestionRunInsertInput,
   ingestionRunInsertStatement,
 } from "./ingestion-run-repository";
 
@@ -128,7 +131,7 @@ export async function startEvidenceRun(
   if (catalogue === null) throw new Error("Catalogue state is unavailable");
   assertRecoveryAvailable(catalogue.recovery_health);
   const statements: D1PreparedStatement[] = [
-    await ingestionRunInsert(database, {
+    ingestionRunInsertStatement(database, {
       runId,
       supportedGames: [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
       startedAt,
@@ -241,7 +244,7 @@ export async function retryEvidenceRun(
   const startedAt = new Date().toISOString();
   try {
     await database.batch([
-      await ingestionRunInsert(database, {
+      ingestionRunInsertStatement(database, {
         runId,
         supportedGames: [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
         startedAt,
@@ -1006,9 +1009,10 @@ export async function isCurrentCollectionWorkflowAttempt(
   const current = await repositoryStatements(database)
     .prepare(`
     SELECT 1 AS current FROM ingestion_evidence_plans AS plan
+    JOIN ingestion_run_current AS current ON current.ingestion_run_id = plan.ingestion_run_id
     JOIN ingestion_workflow_attempts AS attempt ON attempt.ingestion_run_id = plan.ingestion_run_id
     WHERE plan.ingestion_run_id = ?1 AND plan.parent_workflow_id = ?2
-      AND attempt.workflow_instance_id = ?3
+      AND attempt.workflow_instance_id = ?3 AND ${verifiedRunCurrentSql}
       AND NOT EXISTS (
         SELECT 1 FROM ingestion_workflow_attempts AS later
         WHERE later.ingestion_run_id = attempt.ingestion_run_id
@@ -1115,18 +1119,17 @@ export async function pauseEvidenceRunForRequestCapacity(
   problem: RequestCapacityProblem,
 ): Promise<void> {
   const pausedAt = new Date().toISOString();
+  const event = runEventCommand("collection_paused", { runId, occurredAt: pausedAt });
   await database.batch([
-    atomicRepositoryStatement(database, {
+    runEventStatement(database, {
+      event,
       statement: repositoryStatements(database)
-        .prepare(
-          `UPDATE ingestion_runs
-         SET state = 'paused',
-             progress_json =
-               '{"completed_stages":["planning"],"current_stage":"paused"}'
-         WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "paused")}`,
-        )
-        .bind(runId),
-      after: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "paused" })],
+        .prepare(`UPDATE ingestion_run_current
+         SET ${runEventIdentitySql}, state = 'paused',
+             completed_stage_count = 1
+         WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("collecting", "paused")}`)
+        .bind(event.eventId, runId),
+      guards: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "paused" })],
     }),
     // Guarded and idempotent under durable Workflow step replay: the run is
     // paused by the statement above (or already was), and one immutable pause
@@ -1143,7 +1146,7 @@ export async function pauseEvidenceRunForRequestCapacity(
          )
          SELECT ?, ?, 'source_request_capacity_exhausted', ?, ?, ?, ?, ?, ?, ?
          WHERE EXISTS (
-           SELECT 1 FROM ingestion_runs WHERE id = ?1 AND state = 'paused'
+           SELECT 1 FROM ingestion_run_read WHERE id = ?1 AND state = 'paused'
          )
          AND NOT EXISTS (
            SELECT 1 FROM ingestion_run_capacity_pauses
@@ -1194,22 +1197,22 @@ export function retryExhaustionPauseStatements(
   runId: string,
   facts: RetryExhaustionFacts,
 ): D1PreparedStatement[] {
+  const pausedAt = new Date().toISOString();
+  const event = runEventCommand("collection_paused", { runId, occurredAt: pausedAt });
   const pauseReason =
     facts.failure_classification === "storage_failure"
       ? "source_storage_retries_exhausted"
       : "source_transport_retries_exhausted";
   return [
-    atomicRepositoryStatement(database, {
+    runEventStatement(database, {
+      event,
       statement: repositoryStatements(database)
-        .prepare(
-          `UPDATE ingestion_runs
-         SET state = 'paused',
-             progress_json =
-               '{"completed_stages":["planning"],"current_stage":"paused"}'
-         WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "paused")}`,
-        )
-        .bind(runId),
-      after: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "paused" })],
+        .prepare(`UPDATE ingestion_run_current
+         SET ${runEventIdentitySql}, state = 'paused',
+             completed_stage_count = 1
+         WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("collecting", "paused")}`)
+        .bind(event.eventId, runId),
+      guards: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "paused" })],
     }),
     // Guarded and idempotent under durable Workflow step replay, mirroring
     // the capacity pause: the run is paused by the statement above (or a
@@ -1228,7 +1231,7 @@ export function retryExhaustionPauseStatements(
          )
          SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
          WHERE EXISTS (
-           SELECT 1 FROM ingestion_runs WHERE id = ?1 AND state = 'paused'
+           SELECT 1 FROM ingestion_run_read WHERE id = ?1 AND state = 'paused'
          )
          AND NOT EXISTS (
            SELECT 1 FROM ingestion_run_retry_pauses
@@ -1241,7 +1244,7 @@ export function retryExhaustionPauseStatements(
         facts.request_id,
         facts.retry_generation,
         pauseReason,
-        new Date().toISOString(),
+        pausedAt,
         facts.source_lineage,
         facts.hostname,
         facts.attempt_count,
@@ -1279,26 +1282,25 @@ function workflowPauseStatements(
   facts: WorkflowRecoveryFacts,
   pausedAt: string,
 ): D1PreparedStatement[] {
+  const event = runEventCommand("collection_paused", { runId, occurredAt: pausedAt });
   return [
     // Compare-and-set on the abandoned instance still being the bound
     // parent: a concurrent recovery that already superseded it rebound the
     // identity, so a stale classification of the old instance must not
     // re-pause the freshly recovered run.
-    atomicRepositoryStatement(database, {
+    runEventStatement(database, {
+      event,
       statement: repositoryStatements(database)
-        .prepare(
-          `UPDATE ingestion_runs
-         SET state = 'paused',
-             progress_json =
-               '{"completed_stages":["planning"],"current_stage":"paused"}'
-         WHERE id = ?1 AND ${ingestionRunTransitionSql("collecting", "paused")}
+        .prepare(`UPDATE ingestion_run_current
+         SET ${runEventIdentitySql}, state = 'paused',
+             completed_stage_count = 1
+         WHERE ingestion_run_id = ?2 AND ${ingestionRunTransitionSql("collecting", "paused")}
            AND EXISTS (
              SELECT 1 FROM ingestion_evidence_plans
-             WHERE ingestion_run_id = ?1 AND parent_workflow_id = ?2
-           )`,
-        )
-        .bind(runId, facts.workflow_instance_id),
-      after: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "paused" })],
+             WHERE ingestion_run_id = ?2 AND parent_workflow_id = ?3
+           )`)
+        .bind(event.eventId, runId, facts.workflow_instance_id),
+      guards: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "paused" })],
     }),
     // Guarded and idempotent, mirroring the capacity and retry pauses: the
     // run is paused by the statement above (or already was), and one
@@ -1312,7 +1314,7 @@ function workflowPauseStatements(
          )
          SELECT ?1, ?2, ?3, ?4, ?5, ?6
          WHERE EXISTS (
-           SELECT 1 FROM ingestion_runs WHERE id = ?1 AND state = 'paused'
+           SELECT 1 FROM ingestion_run_read WHERE id = ?1 AND state = 'paused'
          )
          AND NOT EXISTS (
            SELECT 1 FROM ingestion_run_workflow_pauses
@@ -1484,8 +1486,8 @@ export async function collectionProgressFacts(
     repositoryStatements(database)
       .prepare(
         `SELECT
-           (SELECT candidate_created_at FROM ingestion_runs WHERE id = ?1) AS reconciled_at,
-           (SELECT terminal_at FROM ingestion_runs WHERE id = ?1) AS terminal_at,
+           (SELECT MAX(occurred_at) FROM ingestion_run_events
+            WHERE ingestion_run_id = ?1) AS transitioned_at,
            (SELECT MAX(completed_at) FROM source_fetch_attempts
             WHERE ingestion_run_id = ?1) AS fetched_at,
            (SELECT MAX(COALESCE(completed_at, requested_at))
@@ -1511,7 +1513,7 @@ export async function collectionProgressFacts(
             WHERE snapshots.ingestion_run_id = ?1) AS parsed_at,
            (SELECT MAX(created_at) FROM official_source_collection_plans
             WHERE ingestion_run_id = ?1) AS planned_at,
-           (SELECT started_at FROM ingestion_runs WHERE id = ?1) AS started_at`,
+           (SELECT started_at FROM ingestion_run_read WHERE id = ?1) AS started_at`,
       )
       .bind(runId)
       .first<Record<string, string | null>>(),
@@ -1570,13 +1572,14 @@ export async function resumePausedEvidenceRun(database: CatalogueStore, runId: s
               (SELECT COALESCE(MAX(attempt_number), 1)
                FROM ingestion_workflow_attempts
                WHERE ingestion_run_id = run.id AND workflow_kind = 'parent') AS attempt_number
-       FROM ingestion_runs AS run
+       FROM ingestion_run_read AS run
        JOIN ingestion_evidence_plans AS plan ON plan.ingestion_run_id = run.id
        WHERE run.id = ? LIMIT 1`,
     )
     .bind(runId)
     .first<{ state: string; parent_workflow_id: string | null; attempt_number: number }>();
   if (previous === null || previous.state !== "paused") return;
+  const event = runEventCommand("collection_resumed", { runId });
   const parentWorkflowId = parentWorkflowAttemptId(runId, previous.attempt_number + 1);
   const attemptRecord = workflowAttemptRecord(runId, parentWorkflowId);
   // Parameters are shared by the guarded statements below: run, prior parent,
@@ -1585,7 +1588,7 @@ export async function resumePausedEvidenceRun(database: CatalogueStore, runId: s
     FROM ingestion_workflow_attempts
     WHERE ingestion_run_id = ?1 AND workflow_kind = 'parent') = ?3`;
   const priorPauseMatches = `EXISTS (
-    SELECT 1 FROM ingestion_runs AS run
+    SELECT 1 FROM ingestion_run_read AS run
     JOIN ingestion_evidence_plans AS plan ON plan.ingestion_run_id = run.id
     WHERE run.id = ?1 AND run.state = 'paused' AND plan.parent_workflow_id IS ?2
   ) AND ${priorAttemptMatches}`;
@@ -1612,22 +1615,20 @@ export async function resumePausedEvidenceRun(database: CatalogueStore, runId: s
            AND ${priorPauseMatches}`,
       )
       .bind(runId, previous.parent_workflow_id, previous.attempt_number, parentWorkflowId),
-    atomicRepositoryStatement(database, {
+    runEventStatement(database, {
+      event,
       statement: repositoryStatements(database)
-        .prepare(
-          `UPDATE ingestion_runs
-         SET state = 'collecting',
-             progress_json =
-               '{"completed_stages":["planning"],"current_stage":"collecting"}'
-         WHERE id = ?1 AND ${ingestionRunTransitionSql("paused", "collecting")}
-           AND ${priorAttemptMatches}
+        .prepare(`UPDATE ingestion_run_current
+         SET ${runEventIdentitySql}, state = 'collecting',
+             completed_stage_count = 1
+         WHERE ingestion_run_id = ?2 AND ${ingestionRunTransitionSql("paused", "collecting")}
+           AND (SELECT COALESCE(MAX(attempt_number), 1) FROM ingestion_workflow_attempts WHERE ingestion_run_id = ?2 AND workflow_kind = 'parent') = ?4
            AND EXISTS (
              SELECT 1 FROM ingestion_evidence_plans
-             WHERE ingestion_run_id = ?1 AND parent_workflow_id = ?2
-           )`,
-        )
-        .bind(runId, parentWorkflowId, previous.attempt_number),
-      after: [runTransitionGuardStatement(database, { runId, from: "paused", to: "collecting" })],
+             WHERE ingestion_run_id = ?2 AND parent_workflow_id = ?3
+           )`)
+        .bind(event.eventId, runId, parentWorkflowId, previous.attempt_number),
+      guards: [runTransitionGuardStatement(database, { runId, from: "paused", to: "collecting" })],
     }),
     repositoryStatements(database)
       .prepare(
@@ -1638,7 +1639,7 @@ export async function resumePausedEvidenceRun(database: CatalogueStore, runId: s
          SELECT ?1, 'parent', ?4, ?5, ?2, ?6
          WHERE ${priorAttemptMatches}
            AND EXISTS (
-             SELECT 1 FROM ingestion_runs AS run
+             SELECT 1 FROM ingestion_run_read AS run
              JOIN ingestion_evidence_plans AS plan ON plan.ingestion_run_id = run.id
              WHERE run.id = ?1 AND run.state = 'collecting' AND plan.parent_workflow_id = ?2
            )`,
@@ -1649,7 +1650,7 @@ export async function resumePausedEvidenceRun(database: CatalogueStore, runId: s
         previous.attempt_number,
         attemptRecord.base_workflow_id,
         attemptRecord.attempt_number,
-        new Date().toISOString(),
+        event.occurredAt,
       ),
   ]);
 }
@@ -1756,7 +1757,7 @@ export async function extendRunRequestCapacity(
          )
          SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9
          WHERE EXISTS (
-           SELECT 1 FROM ingestion_runs WHERE id = ?1 AND state = 'paused'
+           SELECT 1 FROM ingestion_run_read WHERE id = ?1 AND state = 'paused'
          )
          AND NOT EXISTS (
            SELECT 1 FROM ingestion_run_capacity_extensions
@@ -1978,7 +1979,7 @@ type TerminationRow = {
 
 // Terminate a paused Ingestion Run deliberately. The guarded batch is a
 // compare-and-set on the run still being paused: the immutable termination
-// record is inserted first (its trigger requires the paused run), and the
+// record is inserted first while the run is paused, and the
 // paused -> failed transition is legal only once that record exists, so a
 // concurrent resume, capacity extension, or second termination resolves as
 // an explicit state conflict rather than a double outcome. Nothing retained
@@ -2014,6 +2015,7 @@ export async function terminateEvidenceRun(
     throw new Error("The paused Ingestion Run has no retained pause record.");
   }
   const terminatedAt = new Date().toISOString();
+  const event = runEventCommand("collection_terminated", { runId, occurredAt: terminatedAt });
   const response: Record<string, unknown> = {
     contract: "card-keepr-collection-termination@1",
     ingestion_run_id: runId,
@@ -2034,7 +2036,7 @@ export async function terminateEvidenceRun(
            )
            SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
            WHERE EXISTS (
-             SELECT 1 FROM ingestion_runs WHERE id = ?1 AND state = 'paused'
+             SELECT 1 FROM ingestion_run_read WHERE id = ?1 AND state = 'paused'
            )`,
         )
         .bind(
@@ -2046,28 +2048,26 @@ export async function terminateEvidenceRun(
           requestDigest,
           canonicalJson(response),
         ),
-      atomicRepositoryStatement(database, {
+      runEventStatement(database, {
+        event,
         statement: repositoryStatements(database)
-          .prepare(
-            `UPDATE ingestion_runs
-           SET state = 'failed', terminal_at = ?2, failure_code = ?3,
-               progress_json =
-                 '{"completed_stages":["planning"],"current_stage":"failed"}'
-           WHERE id = ?1 AND ${ingestionRunTransitionSql("paused", "failed", { failureCode: ingestionRunTerminatedFailureCode, terminationRecorded: true })}
+          .prepare(`UPDATE ingestion_run_current
+           SET ${runEventIdentitySql}, state = 'failed', terminal_at = ?3, failure_code = ?4,
+               completed_stage_count = 1
+           WHERE ingestion_run_id = ?2 AND ${ingestionRunTransitionSql("paused", "failed", { failureCode: ingestionRunTerminatedFailureCode, terminationRecorded: true })}
              AND EXISTS (
                SELECT 1 FROM ingestion_run_terminations
-               WHERE ingestion_run_id = ?1 AND idempotency_key = ?4
-             )`,
-          )
-          .bind(runId, terminatedAt, ingestionRunTerminatedFailureCode, request.idempotency_key),
-        after: [runTransitionGuardStatement(database, { runId, from: "paused", to: "failed" })],
+               WHERE ingestion_run_id = ?2 AND idempotency_key = ?5
+             )`)
+          .bind(event.eventId, runId, terminatedAt, ingestionRunTerminatedFailureCode, request.idempotency_key),
+        guards: [runTransitionGuardStatement(database, { runId, from: "paused", to: "failed" })],
       }),
       repositoryStatements(database)
         .prepare(
           `UPDATE ingestion_evidence_plans SET failure_code = ?2
            WHERE ingestion_run_id = ?1
              AND EXISTS (
-               SELECT 1 FROM ingestion_runs
+               SELECT 1 FROM ingestion_run_read
                WHERE id = ?1 AND state = 'failed' AND failure_code = ?2
              )`,
         )
@@ -2135,8 +2135,9 @@ export async function releaseTerminatedEvidenceRun(database: CatalogueStore, run
       `UPDATE operation_state SET active_ingestion_run_id = NULL
        WHERE singleton = 1 AND active_ingestion_run_id = ?1
          AND EXISTS (
-           SELECT 1 FROM ingestion_runs
-           WHERE id = ?1 AND state = 'failed' AND failure_code = ?2
+           SELECT 1 FROM ingestion_run_current AS current
+           WHERE ingestion_run_id = ?1 AND state = 'failed' AND failure_code = ?2 AND ${verifiedRunCurrentSql}
+           AND EXISTS (SELECT 1 FROM ingestion_run_terminations WHERE ingestion_run_id = current.ingestion_run_id)
          )`,
     )
     .bind(runId, ingestionRunTerminatedFailureCode)
@@ -2211,7 +2212,11 @@ export async function finalizeEvidenceRun(database: CatalogueStore, runId: strin
     .first<{ active: number | null; failed: number | null }>();
   if (counts === null || (counts.active ?? 0) > 0) return;
   const completedAt = new Date().toISOString();
-  const lifecycleV2 = await supportsLifecycleV2(database);
+  const event = runEventCommand((counts.failed ?? 0) > 0 ? "failed" : "stage_changed", {
+    runId,
+    occurredAt: completedAt,
+  });
+
   if ((counts.failed ?? 0) > 0) {
     const failure = await repositoryStatements(database)
       .prepare(
@@ -2225,29 +2230,16 @@ export async function finalizeEvidenceRun(database: CatalogueStore, runId: strin
       .first<{ failure_code: string | null }>();
     const failureCode = failure?.failure_code ?? "source_evidence_failed";
     await database.batch([
-      lifecycleV2
-        ? atomicRepositoryStatement(database, {
-            statement: repositoryStatements(database)
-              .prepare(
-                `UPDATE ingestion_runs
-               SET state = 'failed', terminal_at = ?, failure_code = ?,
-                   progress_json =
-                     '{"completed_stages":["planning"],"current_stage":"failed"}'
-               WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "failed")}`,
-              )
-              .bind(completedAt, failureCode, runId),
-            after: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "failed" })],
-          })
-        : atomicRepositoryStatement(database, {
-            statement: repositoryStatements(database)
-              .prepare(
-                `UPDATE ingestion_runs
-               SET state = 'failed', terminal_at = ?
-               WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "failed")}`,
-              )
-              .bind(completedAt, runId),
-            after: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "failed" })],
-          }),
+      runEventStatement(database, {
+        event,
+        statement: repositoryStatements(database)
+          .prepare(`UPDATE ingestion_run_current
+            SET ${runEventIdentitySql}, state = 'failed', terminal_at = ?, failure_code = ?,
+                completed_stage_count = 1
+            WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("collecting", "failed")}`)
+          .bind(event.eventId, completedAt, failureCode, runId),
+        guards: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "failed" })],
+      }),
       // Completion is recorded once: a superseded parent attempt that wakes
       // from its barrier sleep after the run completed under a later attempt
       // must not move the retained completion facts.
@@ -2268,28 +2260,15 @@ export async function finalizeEvidenceRun(database: CatalogueStore, runId: strin
     return;
   }
   await database.batch([
-    lifecycleV2
-      ? atomicRepositoryStatement(database, {
-          statement: repositoryStatements(database)
-            .prepare(
-              `UPDATE ingestion_runs
-             SET state = 'parsing',
-                 progress_json =
-                   '{"completed_stages":["planning","collecting"],"current_stage":"parsing"}'
-             WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "parsing")}`,
-            )
-            .bind(runId),
-          after: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "parsing" })],
-        })
-      : atomicRepositoryStatement(database, {
-          statement: repositoryStatements(database)
-            .prepare(
-              `UPDATE ingestion_runs SET state = 'parsing'
-             WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "parsing")}`,
-            )
-            .bind(runId),
-          after: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "parsing" })],
-        }),
+    runEventStatement(database, {
+      event,
+      statement: repositoryStatements(database)
+        .prepare(`UPDATE ingestion_run_current
+          SET ${runEventIdentitySql}, state = 'parsing', completed_stage_count = 2
+          WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("collecting", "parsing")}`)
+        .bind(event.eventId, runId),
+      guards: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "parsing" })],
+    }),
     repositoryStatements(database)
       .prepare(
         `UPDATE ingestion_evidence_plans
@@ -2692,18 +2671,4 @@ export function publicObservationSet(row: ObservationSetRow): Record<string, unk
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-async function ingestionRunInsert(
-  database: CatalogueStore,
-  input: IngestionRunInsertInput,
-): Promise<D1PreparedStatement> {
-  return ingestionRunInsertStatement(database, input, await supportsLifecycleV2(database));
-}
-
-async function supportsLifecycleV2(database: CatalogueStore): Promise<boolean> {
-  const columns = await repositoryStatements(database)
-    .prepare("PRAGMA table_info(ingestion_runs)")
-    .all<{ name: string }>();
-  return columns.results.some((column) => column.name === "progress_json");
 }

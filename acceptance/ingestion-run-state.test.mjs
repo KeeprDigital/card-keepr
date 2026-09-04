@@ -45,10 +45,12 @@ test("repository batches enforce all 726 Ingestion Run transition and terminatio
   t.after(() => database.close());
   // The transition-rule seam supplies valid unrelated approval and lock facts.
   // SQL runs in real SQLite, with no transition trigger or mocked guard result.
-  database.exec(`CREATE TABLE ingestion_runs (
-    id TEXT PRIMARY KEY, state TEXT NOT NULL, failure_code TEXT,
+  database.exec(`CREATE TABLE ingestion_runs (id TEXT PRIMARY KEY, expected_current_revision_id TEXT);
+  INSERT INTO ingestion_runs VALUES ('run','revision');
+  CREATE TABLE ingestion_run_current (
+    ingestion_run_id TEXT PRIMARY KEY, state TEXT NOT NULL, failure_code TEXT,
     candidate_digest TEXT, candidate_catalogue_digest TEXT, candidate_created_at TEXT,
-    approval_deadline TEXT, terminal_at TEXT, expected_current_revision_id TEXT, approval_json TEXT
+    approval_deadline TEXT, terminal_at TEXT, approved_candidate_digest TEXT, approved_expected_revision_id TEXT, approved_at TEXT
   );
   CREATE TABLE ingestion_run_terminations (ingestion_run_id TEXT PRIMARY KEY);
   CREATE TABLE operation_state (singleton INTEGER, active_ingestion_run_id TEXT, recovery_health TEXT);
@@ -61,7 +63,7 @@ test("repository batches enforce all 726 Ingestion Run transition and terminatio
     for (const to of ingestionRunStates) {
       for (const terminationRecorded of [false, true]) {
         for (const failureCode of [null, "source_evidence_failed", "ingestion_run_terminated"]) {
-          database.exec("DELETE FROM ingestion_runs; DELETE FROM ingestion_run_terminations;");
+          database.exec("DELETE FROM ingestion_run_current; DELETE FROM ingestion_run_terminations;");
           ingestionQueries.insertTransitionMatrixRun(database).run(from);
           if (terminationRecorded) database.exec("INSERT INTO ingestion_run_terminations VALUES ('run')");
           const message = `${from} -> ${to}; termination=${terminationRecorded}; failure=${failureCode}`;
@@ -93,8 +95,10 @@ test("a retained termination decision cannot fail a paused run with a missing fa
     database.exec(await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
   }
   database.exec(`INSERT INTO ingestion_runs (
-    id, state, selected_games_json, started_at, expected_current_revision_id, idempotency_key, candidate_json
-  ) VALUES ('run', 'paused', '["one-piece"]', '2026-09-04T00:00:00.000Z', 'catrev_spine_000', 'start_run', '{}');
+    id, started_at, expected_current_revision_id, idempotency_key
+  ) VALUES ('run', '2026-09-04T00:00:00.000Z', 'catrev_spine_000', 'start_run');
+  INSERT INTO ingestion_run_current (ingestion_run_id, state, last_event_sequence, last_event_id, completed_stage_count)
+  VALUES ('run', 'paused', 1, 'guard-fixture', 1);
   UPDATE operation_state SET active_ingestion_run_id = 'run' WHERE singleton = 1;
   INSERT INTO ingestion_run_terminations VALUES (
     'run', 'owner_requested', '2026-09-04T00:01:00.000Z', '2026-09-04T00:02:00.000Z', 'terminate_run', '${"a".repeat(64)}', '{}'

@@ -273,7 +273,7 @@ test("degraded recovery permits evidence collection starts and retries while blo
   expect(started.document).toMatchObject({ state: "collecting" });
 
   const sourceRunId = requiredString(started.document, "id");
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries.setIngestionRunsStateTerminalAt(testEnv.CATALOGUE_DB).bind(sourceRunId),
     ingestionQueries.setOperationStateActiveIngestionRunIdRecoveryHealth(testEnv.CATALOGUE_DB),
   ]);

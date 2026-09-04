@@ -393,7 +393,7 @@ async function retainProductionSnapshot(
   const fetchId = `srcfetch_${digest}`;
   const objectKey = `source-snapshots/${snapshotId}.bin`;
   await env.EVIDENCE_OBJECTS.put(objectKey, bytes);
-  await env.CATALOGUE_DB.batch([
+  await catalogueStore(env.CATALOGUE_DB).batch([
     sourceEvidenceQueries
       .insertSourceFetchAttemptsForRetainCapturedDiscoveryRoot(env.CATALOGUE_DB)
       .bind(fetchId, runId, requestId),
@@ -506,7 +506,7 @@ test("an Official Source Collection Plan beyond the adapter capacity is rejected
     utf8("<html>fusion discovery</html>"),
   );
   const observationSetId = "srcobsset_collection_capacity_001";
-  await env.CATALOGUE_DB.batch([
+  await catalogueStore(env.CATALOGUE_DB).batch([
     sourceEvidenceQueries
       .insertSourceParseOperationsForOfficialSourceCollectionPlanBeyondAdapterCapacityRejectedWithout(env.CATALOGUE_DB)
       .bind(
@@ -529,7 +529,7 @@ test("an Official Source Collection Plan beyond the adapter capacity is rejected
   // the exact fusion-world-en@9 capacity (the discovery root is the
   // 15,000th). The immutable-plan trigger admits a source_requests row only
   // through a matching retained discovery plan row, so retain those first.
-  await env.CATALOGUE_DB.batch([
+  await catalogueStore(env.CATALOGUE_DB).batch([
     sourceEvidenceQueries
       .inspectFillerForOfficialSourceCollectionPlanBeyondAdapterCapacityRejectedWithout(env.CATALOGUE_DB)
       .bind(run.id, root.request_id),
@@ -597,7 +597,7 @@ test.each([true, false])(
       utf8(`<html>fusion bulk discovery ${validTail}</html>`),
     );
     const observationSetId = `srcobsset_collection_bulk_${validTail}`;
-    await env.CATALOGUE_DB.batch([
+    await catalogueStore(env.CATALOGUE_DB).batch([
       sourceEvidenceQueries
         .insertSourceParseOperationsForOfficialSourceCollectionPlanBeyondAdapterCapacityRejectedWithout(
           env.CATALOGUE_DB,

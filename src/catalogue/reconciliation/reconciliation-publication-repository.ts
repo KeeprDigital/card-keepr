@@ -9,7 +9,7 @@ export function publicationContextStatement(database: CatalogueStore, runId: str
   return repositoryStatements(database)
     .prepare(`SELECT run.candidate_created_at AS observed_at
        FROM reconciliation_contexts AS context
-       JOIN ingestion_runs AS run
+       JOIN ingestion_run_read AS run
          ON run.id = context.ingestion_run_id
        WHERE context.ingestion_run_id = ?`)
     .bind(runId);
@@ -376,7 +376,9 @@ export function publishPrintingMembershipsStatement(
 }
 
 export function requiredPublicationCandidateStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
-  return repositoryStatements(database).prepare("SELECT candidate_json FROM ingestion_runs WHERE id = ?").bind(runId);
+  return repositoryStatements(database)
+    .prepare("SELECT candidate_json FROM ingestion_run_read WHERE id = ?")
+    .bind(runId);
 }
 
 export function publicationEntityLifecyclesStatement(

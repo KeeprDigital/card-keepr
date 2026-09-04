@@ -1,5 +1,6 @@
+import { verifiedRunCurrentSql } from "../shared";
 import { curatedRunStartGuardStatement } from "../curated";
-import { atomicRepositoryStatement, runStartGuardStatement } from "../shared";
+import { createRunEventStatement, runStartGuardStatement } from "../shared";
 import type { SourceAdapterRegistration } from "../adapters";
 import { type CatalogueStore, canonicalJson, type IngestionRunState, repositoryStatements } from "../shared";
 
@@ -44,64 +45,12 @@ export type IngestionRunInsertInput = {
 export function ingestionRunInsertStatement(
   database: CatalogueStore,
   input: IngestionRunInsertInput,
-  lifecycleV2: boolean,
 ): D1PreparedStatement {
-  const baseValues = [
-    input.runId,
-    canonicalJson(input.supportedGames),
-    input.startedAt,
-    input.linkedRunId,
-    input.idempotencyKey,
-    input.operationalRequestId ?? null,
-  ];
-  if (lifecycleV2) {
-    return atomicRepositoryStatement(database, {
-      statement: repositoryStatements(database)
-        .prepare(
-          `INSERT INTO ingestion_runs (
-          id, state, selected_games_json, started_at,
-          expected_current_revision_id, linked_run_id, idempotency_key,
-          operational_request_id,
-          candidate_digest, candidate_created_at, approval_deadline,
-          approval_json, published_revision_id, export_manifest_digest,
-          terminal_at, candidate_json, approval_idempotency_key,
-          progress_json, warnings_json, approval_history_json
-        ) SELECT
-          ?, 'collecting', ?, ?, catalogue.current_revision_id, ?, ?, ?,
-          NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{}', NULL,
-          '{"completed_stages":["planning"],"current_stage":"collecting"}',
-          '[]', '[]'
-        FROM catalogue_state AS catalogue
-        JOIN operation_state AS operation ON operation.singleton = 1
-        WHERE catalogue.singleton = 1
-          AND operation.recovery_health <> 'blocked'
-          AND operation.active_ingestion_run_id IS NULL`,
-        )
-        .bind(...baseValues),
-      after: [runStartGuardStatement(database), curatedRunStartGuardStatement(database, input.runId)],
-    });
-  }
-  return atomicRepositoryStatement(database, {
-    statement: repositoryStatements(database)
-      .prepare(
-        `INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, linked_run_id, idempotency_key,
-        operational_request_id,
-        candidate_digest, candidate_created_at, approval_deadline,
-        approval_json, published_revision_id, export_manifest_digest,
-        terminal_at, candidate_json, approval_idempotency_key
-      ) SELECT
-        ?, 'collecting', ?, ?, catalogue.current_revision_id, ?, ?, ?,
-        NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{}', NULL
-      FROM catalogue_state AS catalogue
-      JOIN operation_state AS operation ON operation.singleton = 1
-      WHERE catalogue.singleton = 1
-        AND operation.recovery_health <> 'blocked'
-        AND operation.active_ingestion_run_id IS NULL`,
-      )
-      .bind(...baseValues),
-    after: [runStartGuardStatement(database), curatedRunStartGuardStatement(database, input.runId)],
+  return createRunEventStatement(database, {
+    ...input,
+    selectedGamesJson: canonicalJson(input.supportedGames),
+    state: "collecting",
+    guards: [runStartGuardStatement(database), curatedRunStartGuardStatement(database, input.runId)],
   });
 }
 
@@ -114,10 +63,11 @@ export function evidenceRunByIdStatement(database: CatalogueStore, runId: string
               plans.parent_workflow_id,
               plans.child_workflow_ids_json,
               plans.collection_completed_at
-       FROM ingestion_runs AS runs
+       FROM ingestion_run_read AS runs
+       JOIN ingestion_run_current AS current ON current.ingestion_run_id = runs.id
        JOIN ingestion_evidence_plans AS plans
          ON plans.ingestion_run_id = runs.id
-       WHERE runs.id = ?`,
+       WHERE runs.id = ? AND CASE WHEN ${verifiedRunCurrentSql} THEN 1 ELSE json_extract('{}', 'ingestion_run_projection_mismatch') END`,
     )
     .bind(runId);
 }
@@ -131,10 +81,11 @@ export function evidenceRunByIdempotencyKeyStatement(database: CatalogueStore, k
               plans.parent_workflow_id,
               plans.child_workflow_ids_json,
               plans.collection_completed_at
-       FROM ingestion_runs AS runs
+       FROM ingestion_run_read AS runs
+       JOIN ingestion_run_current AS current ON current.ingestion_run_id = runs.id
        JOIN ingestion_evidence_plans AS plans
          ON plans.ingestion_run_id = runs.id
-       WHERE runs.idempotency_key = ?`,
+       WHERE runs.idempotency_key = ? AND CASE WHEN ${verifiedRunCurrentSql} THEN 1 ELSE json_extract('{}', 'ingestion_run_projection_mismatch') END`,
     )
     .bind(key);
 }

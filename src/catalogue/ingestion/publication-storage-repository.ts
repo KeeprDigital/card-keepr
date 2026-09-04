@@ -1,5 +1,6 @@
+import { verifiedRunCurrentSql } from "../shared";
+import { runEventCommand, runEventIdentitySql, runEventStatement, runCompletedStageCount } from "../shared";
 import {
-  atomicRepositoryStatement,
   type CatalogueStore,
   ingestionRunTransitionSql,
   repositoryStatements,
@@ -12,7 +13,6 @@ export function reservePublicationWriterStatement(
   input: Readonly<{
     approvalJson: string;
     idempotencyKey: string;
-    approvalHistoryJson: string;
     progressJson: string;
     revisionId: string;
     startedAt: string;
@@ -22,25 +22,27 @@ export function reservePublicationWriterStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
+  const event = runEventCommand("approval_reserved", { runId: input.runId, occurredAt: input.startedAt });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-      SET state = 'publishing',
-          approval_json = ?,
-          approval_idempotency_key = ?,
-          approval_history_json = ?,
-          progress_json = ?,
+    .prepare(`UPDATE ingestion_run_current
+      SET ${runEventIdentitySql}, state = 'publishing',
+          approved_at = json_extract(?, '$.approved_at'),
+          approved_candidate_digest = json_extract(?, '$.candidate_digest'),
+          approved_expected_revision_id = json_extract(?, '$.expected_current_revision_id'),
+          completed_stage_count = ?,
           publication_revision_id = ?,
           publication_started_at = ?,
           publication_reconcile_after = ?,
           publication_manifest_digest = ?,
           publication_writer_token = ?
-      WHERE id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "publishing")}
-      RETURNING id`)
+      WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "publishing")}
+      RETURNING ingestion_run_id AS id`)
     .bind(
+      event.eventId,
       input.approvalJson,
-      input.idempotencyKey,
-      input.approvalHistoryJson,
-      input.progressJson,
+      input.approvalJson,
+      input.approvalJson,
+      runCompletedStageCount(input.progressJson),
       input.revisionId,
       input.startedAt,
       input.reconcileAfter,
@@ -48,9 +50,14 @@ export function reservePublicationWriterStatement(
       input.writerToken,
       input.runId,
     );
-  return atomicRepositoryStatement(database, {
+  return runEventStatement(database, {
+    event,
     statement,
-    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "awaiting_approval", to: "publishing" })],
+    approvalIdempotencyKey: input.idempotencyKey,
+    decisionJson: input.approvalJson,
+    guards: [
+      runTransitionGuardStatement(database, { runId: input.runId, from: "awaiting_approval", to: "publishing" }),
+    ],
   });
 }
 
@@ -59,15 +66,15 @@ export function publicationWriterAuthorityStatement(
   input: Readonly<{ runId: string; includePublished: number; revisionId: string; writerToken: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT id
-      FROM ingestion_runs
-      WHERE id = ?
+    .prepare(`SELECT ingestion_run_id AS id
+      FROM ingestion_run_current AS current
+      WHERE ingestion_run_id = ?
         AND (
           state = 'publishing'
           OR (? = 1 AND state = 'published')
         )
         AND publication_revision_id = ?
-        AND publication_writer_token = ?`)
+        AND publication_writer_token = ? AND ${verifiedRunCurrentSql}`)
     .bind(input.runId, input.includePublished, input.revisionId, input.writerToken);
 }
 
@@ -137,8 +144,8 @@ export function publicationRegistrationStateStatement(
          WHERE catalogue_revision_id = ?
        ) AS export_registered,
        EXISTS(
-         SELECT 1 FROM ingestion_runs
-         WHERE id <> ? AND publication_revision_id = ?
+         SELECT 1 FROM ingestion_run_current
+         WHERE ingestion_run_id <> ? AND publication_revision_id = ?
        ) AS other_run_reserved`)
     .bind(input.revisionId, input.revisionId, input.runId, input.revisionId);
 }
@@ -146,7 +153,7 @@ export function publicationRegistrationStateStatement(
 export function nextPublicationToReconcileStatement(database: CatalogueStore, observedAt: string): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT *
-      FROM ingestion_runs
+      FROM ingestion_run_read
       WHERE state = 'publishing'
         AND publication_reconcile_after IS NOT NULL
         AND publication_reconcile_after <= ?

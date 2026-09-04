@@ -63,7 +63,7 @@ test("D1 freshness scope remains structural while registered Source metadata own
 test("applied D1 request copies and owning run identities are immutable", async () => {
   const runId = "run_operational_plan_immutability";
   const ownerTargetRunId = "run_operational_plan_owner_target";
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries
       .insertIngestionRunsForAppliedD1RequestCopiesOwningRunIdentitiesAreImmutable(testEnv.CATALOGUE_DB)
       .bind(runId, "operational-plan-immutability"),
@@ -209,7 +209,7 @@ test("an Official Source Collection Plan cannot freeze another run's discovery e
       },
     ],
   });
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ...[sourceRunId, targetRunId].map((runId, index) =>
       ingestionQueries
         .insertIngestionRunsForAppliedD1RequestCopiesOwningRunIdentitiesAreImmutable(testEnv.CATALOGUE_DB)
@@ -352,7 +352,7 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
     current: true,
     last_missing_revision_id: null,
   };
-  await scratchDatabase.batch([
+  await catalogueStore(scratchDatabase).batch([
     ingestionQueries
       .insertIngestionRunsForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(scratchDatabase)
       .bind(
@@ -914,7 +914,7 @@ test("authenticated parsing retains staged live Fusion policy root and detail ob
       return { ...item, bytes, digest: await sha256(bytes) };
     }),
   );
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries
       .insertIngestionRunsForAuthenticatedParsingRetainsStagedLiveFusionPolicyRootDetail(testEnv.CATALOGUE_DB)
       .bind(runId, "live-fusion-policy-evidence"),

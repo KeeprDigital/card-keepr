@@ -310,9 +310,17 @@ describe("Errata rules-text lifecycle", () => {
     const legacy = JSON.parse(stored?.candidate_json ?? "{}") as Record<string, unknown>;
     delete legacy.errata;
     const legacyRunId = "run_legacy_candidate_without_errata";
+    const sourceRun = await ingestionQueries
+      .readRunFixtureForLegacyCandidate(testEnv.CATALOGUE_DB)
+      .bind(runId)
+      .first<Record<string, unknown>>();
+    if (sourceRun === null) throw new Error("Missing legacy fixture source run.");
     await ingestionQueries
-      .insertIngestionRunsForLegacyPersistedCandidatesWithoutErrataRemainInspectableRetryable(testEnv.CATALOGUE_DB)
-      .bind(legacyRunId, "persisted-legacy-candidate-without-errata", JSON.stringify(legacy), runId)
+      .insertIngestionRunsForLegacyPersistedCandidatesWithoutErrataRemainInspectableRetryable(
+        testEnv.CATALOGUE_DB,
+        sourceRun,
+      )
+      .bind(legacyRunId, "persisted-legacy-candidate-without-errata", JSON.stringify(legacy))
       .run();
 
     expect((await get(`/v1/ingestion-runs/${legacyRunId}`)).response.status).toBe(200);

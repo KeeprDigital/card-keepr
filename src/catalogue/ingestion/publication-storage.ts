@@ -43,7 +43,6 @@ export async function reservePublication(
   const reserved = await reservePublicationWriterStatement(database, {
     approvalJson: JSON.stringify(approval),
     idempotencyKey: idempotencyKey,
-    approvalHistoryJson: JSON.stringify([approval]),
     progressJson: JSON.stringify(progressFor("publishing")),
     revisionId: revisionId,
     startedAt: startedAt,

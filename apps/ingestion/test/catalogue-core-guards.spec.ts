@@ -17,7 +17,7 @@ import {
   createFixtureRunStatement,
   transitionRunStatement,
 } from "../../../src/catalogue/ingestion/run-lifecycle-repository";
-import { atomicRepositoryStatement, catalogueStore, runTransitionGuardStatement } from "../../../src/catalogue/shared";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import {
   coreGuardPublicationTime,
   coreGuardRun,
@@ -49,7 +49,7 @@ test("an unreserved run cannot advance and rolls back its sibling write without 
         runId: "run_unreserved",
         from: "planning",
         to: "collecting",
-        progressJson: "{}",
+        progressJson: '{"completed_stages":["planning"],"current_stage":"collecting"}',
       }),
     ]),
   ).rejects.toThrow("run_not_active");
@@ -98,7 +98,8 @@ test("candidate finalization requires its exact seven-day deadline without schem
       candidateDigest: "candidate",
       candidateCreatedAt: "2026-09-01T00:00:00.000Z",
       approvalDeadline: "2026-09-09T00:00:00.000Z",
-      progressJson: "{}",
+      progressJson:
+        '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"awaiting_approval"}',
     }).run(),
   ).rejects.toThrow("invalid_candidate_deadline");
   expect(await coreGuardRun(database, "run_bad_deadline").first("state")).toBe("reconciling");
@@ -112,8 +113,8 @@ test("an approval with absent digest fields fails closed without schema guards",
       runId: "run_bad_approval",
       approvalJson: "{}",
       idempotencyKey: "bad_approval",
-      approvalHistoryJson: "[]",
-      progressJson: "{}",
+      progressJson:
+        '{"completed_stages":["planning","collecting","parsing","reconciling","awaiting_approval"],"current_stage":"publishing"}',
     }).run(),
   ).rejects.toThrow("approval_guard_failed");
   expect(await coreGuardRun(database, "run_bad_approval").first("state")).toBe("awaiting_approval");
@@ -124,10 +125,7 @@ test("a retained termination still requires the exact non-NULL failure code afte
   await seedCoreGuardRun(testEnv.CATALOGUE_DB, "run_null_termination", "paused");
   await retainCoreTermination(testEnv.CATALOGUE_DB, "run_null_termination");
   const terminate = (failureCode: string | null) =>
-    atomicRepositoryStatement(database, {
-      statement: terminateCoreRunWithFailureCode(database, "run_null_termination", failureCode),
-      after: [runTransitionGuardStatement(database, { runId: "run_null_termination", from: "paused", to: "failed" })],
-    });
+    terminateCoreRunWithFailureCode(database, "run_null_termination", failureCode);
   await expect(terminate(null).run()).rejects.toThrow("illegal_ingestion_transition");
   expect(await coreGuardRun(database, "run_null_termination").first("state")).toBe("paused");
   await terminate("ingestion_run_terminated").run();
@@ -144,7 +142,7 @@ test("a stale transition compare-and-set retains its no-op result without changi
     runId: "run_replayed_transition",
     from: "planning",
     to: "collecting",
-    progressJson: "{}",
+    progressJson: '{"completed_stages":["planning"],"current_stage":"collecting"}',
   }).run();
   expect(result.meta.changes).toBe(0);
   expect(await coreGuardRun(database, "run_replayed_transition").first("state")).toBe("parsing");

@@ -4,6 +4,9 @@ import {
   ingestionRunTransitionSql,
   repositoryStatements,
   runTransitionGuardStatement,
+  runEventCommand,
+  runEventStatement,
+  runEventIdentitySql,
 } from "../shared";
 import { retainCandidateEvidenceStatement } from "./evidence-retention-repository";
 // Prepared statements only; callers own execution and atomic batch composition.
@@ -23,16 +26,17 @@ export function createReconciliationContextStatement(
 }
 
 export function beginReconciliationStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  const event = runEventCommand("stage_changed", { runId: runId });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-         SET state = 'reconciling',
-             progress_json =
-               '{"completed_stages":["planning","collecting","parsing"],"current_stage":"reconciling"}'
-         WHERE id = ? AND ${ingestionRunTransitionSql("parsing", "reconciling")}`)
-    .bind(runId);
-  return atomicRepositoryStatement(database, {
+    .prepare(`UPDATE ingestion_run_current
+         SET ${runEventIdentitySql}, state = 'reconciling',
+             completed_stage_count = 3
+         WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("parsing", "reconciling")}`)
+    .bind(event.eventId, runId);
+  return runEventStatement(database, {
+    event,
     statement,
-    after: [runTransitionGuardStatement(database, { runId: runId, from: "parsing", to: "reconciling" })],
+    guards: [runTransitionGuardStatement(database, { runId: runId, from: "parsing", to: "reconciling" })],
   });
 }
 
@@ -48,30 +52,32 @@ export function reviewableCandidateStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
+  const event = runEventCommand("candidate_prepared", { runId: input.runId, occurredAt: input.createdAt });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-         SET state = 'awaiting_approval',
-             candidate_json = ?,
+    .prepare(`UPDATE ingestion_run_current
+         SET ${runEventIdentitySql}, state = 'awaiting_approval',
+             candidate_payload_event_sequence = last_event_sequence + 1,
              candidate_digest = ?,
              candidate_catalogue_digest = ?,
              candidate_created_at = ?,
              approval_deadline = ?,
-             warnings_json = ?,
-             progress_json =
-               '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"awaiting_approval"}'
-         WHERE id = ? AND ${ingestionRunTransitionSql("reconciling", "awaiting_approval")}`)
+             diagnostics_event_sequence = last_event_sequence + 1,
+             completed_stage_count = 4
+         WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("reconciling", "awaiting_approval")}`)
     .bind(
-      input.candidatePayload,
+      event.eventId,
       input.candidateDigest,
       input.catalogueDigest,
       input.createdAt,
       input.approvalDeadline,
-      input.warningsJson,
       input.runId,
     );
-  return atomicRepositoryStatement(database, {
+  return runEventStatement(database, {
+    event,
     statement,
-    after: [
+    candidateJson: input.candidatePayload,
+    diagnosticsJson: input.warningsJson,
+    guards: [
       runTransitionGuardStatement(database, { runId: input.runId, from: "reconciling", to: "awaiting_approval" }),
     ],
   });
@@ -91,34 +97,36 @@ export function blockedCandidateStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
+  const event = runEventCommand("candidate_blocked", { runId: input.runId, occurredAt: input.terminalAt });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-         SET state = 'failed',
-             candidate_json = ?,
+    .prepare(`UPDATE ingestion_run_current
+         SET ${runEventIdentitySql}, state = 'failed',
+             candidate_payload_event_sequence = last_event_sequence + 1,
              candidate_digest = ?,
              candidate_catalogue_digest = ?,
              candidate_created_at = ?,
              approval_deadline = ?,
              terminal_at = ?,
              failure_code = ?,
-             warnings_json = ?,
-             progress_json =
-               '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}'
-         WHERE id = ? AND ${ingestionRunTransitionSql("reconciling", "failed")}`)
+             diagnostics_event_sequence = last_event_sequence + 1,
+             completed_stage_count = 4
+         WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("reconciling", "failed")}`)
     .bind(
-      input.candidatePayload,
+      event.eventId,
       input.candidateDigest,
       input.catalogueDigest,
       input.createdAt,
       input.approvalDeadline,
       input.terminalAt,
       input.failureCode,
-      input.diagnosticsJson,
       input.runId,
     );
-  return atomicRepositoryStatement(database, {
+  return runEventStatement(database, {
+    event,
     statement,
-    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "reconciling", to: "failed" })],
+    candidateJson: input.candidatePayload,
+    diagnosticsJson: input.diagnosticsJson,
+    guards: [runTransitionGuardStatement(database, { runId: input.runId, from: "reconciling", to: "failed" })],
   });
 }
 
@@ -134,18 +142,20 @@ export function failedReconciliationStatement(
   database: CatalogueStore,
   input: Readonly<{ terminalAt: string; diagnosticsJson: string; runId: string }>,
 ): D1PreparedStatement {
+  const event = runEventCommand("failed", { runId: input.runId, occurredAt: input.terminalAt });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-         SET state = 'failed', terminal_at = ?,
+    .prepare(`UPDATE ingestion_run_current
+         SET ${runEventIdentitySql}, state = 'failed', terminal_at = ?,
              failure_code = 'printing_reconciliation_blocked',
-             warnings_json = ?,
-             progress_json =
-               '{"completed_stages":["planning","collecting","parsing"],"current_stage":"failed"}'
-         WHERE id = ? AND ${ingestionRunTransitionSql("reconciling", "failed")}`)
-    .bind(input.terminalAt, input.diagnosticsJson, input.runId);
-  return atomicRepositoryStatement(database, {
+             diagnostics_event_sequence = last_event_sequence + 1,
+             completed_stage_count = 3
+         WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("reconciling", "failed")}`)
+    .bind(event.eventId, input.terminalAt, input.runId);
+  return runEventStatement(database, {
+    event,
     statement,
-    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "reconciling", to: "failed" })],
+    diagnosticsJson: input.diagnosticsJson,
+    guards: [runTransitionGuardStatement(database, { runId: input.runId, from: "reconciling", to: "failed" })],
   });
 }
 
@@ -153,18 +163,20 @@ export function failedReconciliationWorkflowStatement(
   database: CatalogueStore,
   input: Readonly<{ terminalAt: string; failureCode: string; diagnosticsJson: string; runId: string }>,
 ): D1PreparedStatement {
+  const event = runEventCommand("failed", { runId: input.runId, occurredAt: input.terminalAt });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-         SET state = 'failed', terminal_at = ?,
+    .prepare(`UPDATE ingestion_run_current
+         SET ${runEventIdentitySql}, state = 'failed', terminal_at = ?,
              failure_code = ?,
-             warnings_json = ?,
-             progress_json =
-               '{"completed_stages":["planning","collecting","parsing"],"current_stage":"failed"}'
-         WHERE id = ? AND ${ingestionRunTransitionSql(["parsing", "reconciling"], "failed")}`)
-    .bind(input.terminalAt, input.failureCode, input.diagnosticsJson, input.runId);
-  return atomicRepositoryStatement(database, {
+             diagnostics_event_sequence = last_event_sequence + 1,
+             completed_stage_count = 3
+         WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql(["parsing", "reconciling"], "failed")}`)
+    .bind(event.eventId, input.terminalAt, input.failureCode, input.runId);
+  return runEventStatement(database, {
+    event,
     statement,
-    after: [
+    diagnosticsJson: input.diagnosticsJson,
+    guards: [
       runTransitionGuardStatement(database, { runId: input.runId, from: ["parsing", "reconciling"], to: "failed" }),
     ],
   });
@@ -180,8 +192,8 @@ export function releaseFailedReconciliationWorkflowStatement(
          WHERE singleton = 1
            AND active_ingestion_run_id = ?
            AND EXISTS (
-             SELECT 1 FROM ingestion_runs
-             WHERE id = ? AND state = 'failed'
+             SELECT 1 FROM ingestion_run_current
+             WHERE ingestion_run_id = ? AND state = 'failed'
                AND failure_code = ?
            )`)
     .bind(input.activeRunId, input.runId, input.failureCode);
@@ -266,7 +278,7 @@ export function retainedCandidateResultStatement(database: CatalogueStore, runId
     .prepare(`SELECT run.candidate_json, run.candidate_digest,
               run.expected_current_revision_id,
               context.digest_payload_json
-       FROM ingestion_runs AS run
+       FROM ingestion_run_read AS run
        JOIN reconciliation_contexts AS context
          ON context.ingestion_run_id = run.id
        WHERE run.id = ?`)

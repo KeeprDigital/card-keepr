@@ -1,3 +1,4 @@
+import { replayProjectionBackfill } from "./query-helpers/projection-backfill";
 import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
 import { applyD1Migrations } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
@@ -5,10 +6,7 @@ import { expect, test } from "vitest";
 import { apiCard, apiHeaders, cardSearchStatements, seedApiRevision, testEnv } from "./api-fixtures";
 
 test("Card attribute migration backfills typed values and nested array leaves for retained revisions", async () => {
-  await applyD1Migrations(
-    testEnv.CATALOGUE_DB,
-    testEnv.TEST_MIGRATIONS.filter(({ name }) => Number.parseInt(name, 10) < 8),
-  );
+  await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
   const card = apiCard({ id: "card_digimon", cardNumber: "BT01-001", name: "Agumon" });
   card.game = "digimon";
   card.game_data = {
@@ -36,7 +34,7 @@ test("Card attribute migration backfills typed values and nested array leaves fo
       .bind(JSON.stringify(bare)),
     ...cardSearchStatements("catrev_attribute_backfill", bare),
   ]);
-  await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
+  await replayProjectionBackfill(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS, "card-attributes");
   for (const attribute of [
     "level=3",
     "colours=red",

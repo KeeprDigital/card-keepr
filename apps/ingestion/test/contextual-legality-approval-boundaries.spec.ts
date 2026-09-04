@@ -719,7 +719,7 @@ test.each(["missing", "false"])(
     await sourceEvidenceQueries
       .dropSourceObservationSetsAreImmutableOnUpdateForContextualLegalityApprovalBoundaries(testEnv.CATALOGUE_DB)
       .run();
-    await testEnv.CATALOGUE_DB.batch([
+    await catalogueStore(testEnv.CATALOGUE_DB).batch([
       sourceEvidenceQueries
         .setSourceObservationSetsContentDigestContentByteLength(testEnv.CATALOGUE_DB)
         .bind(digest, bytes.byteLength, changedDocument.observations.length, retained.id),

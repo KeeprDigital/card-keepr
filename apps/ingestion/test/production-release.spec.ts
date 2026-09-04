@@ -31,7 +31,7 @@ test("Production Release search fixtures come from realistic revision-pinned Car
   const document = JSON.stringify({ data });
   const summary = JSON.stringify(data);
   const searchDocument = cardSearchText(data);
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries
       .insertIngestionRunsForProductionReleaseSearchFixturesComeFromRealisticRevisionPinned(testEnv.CATALOGUE_DB)
       .bind("a".repeat(64)),
@@ -43,7 +43,7 @@ test("Production Release search fixtures come from realistic revision-pinned Car
     .insertCatalogueRevisionsForProductionReleaseSearchFixturesComeFromRealisticRevisionPinned(testEnv.CATALOGUE_DB)
     .bind(revision, "b".repeat(64), "a".repeat(64))
     .run();
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     publishedCatalogueQueries
       .insertRevisionCardsForProductionReleaseSearchFixturesComeFromRealisticRevisionPinned(testEnv.CATALOGUE_DB)
       .bind(revision, cardId, document),

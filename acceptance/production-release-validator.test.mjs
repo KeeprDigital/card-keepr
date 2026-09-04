@@ -35,7 +35,8 @@ test("workflow validator accepts only the exact durably prepared plan", async (t
   assert.match(preflight, /prepare_production_release/u);
   assert.match(preflight, /catalogue_schema_state/u);
   assert.match(preflight, /catalogue_backup_attempts/u);
-  assert.match(claim, /production_release_bootstrap/u);
+  assert.match(claim, /active_production_release_id/u);
+  assert.doesNotMatch(claim, /(?:INTO|UPDATE|FROM) ingestion_runs/u);
   assert.match(materialize, /'requested'[\s\S]*state='preflight'[\s\S]*state='migrating'/u);
   assert.match(materialize, /request_json=.*idempotency_key=.*prepare_production_release/u);
   assert.match(migrationStarted, /production_release_migration_started/u);
@@ -110,6 +111,11 @@ test("replacement release state is rehydrated into a distinct blocked database b
     productionReleaseQueries.setCurrentCatalogueRevision(database).run(environment.EXPECTED_CURRENT_REVISION);
   }
   seedOriginalReplacementRelease(original, environment);
+  const leaseExpiry = /active_production_release_expires_at='([^']+)'/u.exec(
+    await readFile(join(directory, "migration-started.sql"), "utf8"),
+  )?.[1];
+  assert.ok(leaseExpiry);
+  productionReleaseQueries.setReleaseLease(original).run(environment.RELEASE_ID, leaseExpiry);
   const exportSql = await readFile(join(directory, "replacement-handoff.sql"), "utf8");
   const handoff = original.prepare(exportSql).get().handoff_json;
   const exactHandoff = JSON.parse(handoff);
@@ -233,6 +239,11 @@ test("a durable pre-command marker conservatively terminalizes partial migration
   seedRealReleaseBoundary(database, environment, await readFile(join(directory, "migration-started.sql"), "utf8"));
   database.exec(await readFile(join(directory, "migration-started.sql"), "utf8"));
   assert.equal(productionReleaseQueries.countMigrationStartedEvidence(database).get().count, 1);
+  assert.equal(lastRow(database, await readFile(join(directory, "cleanup.sql"), "utf8")).fence_released, 0);
+  assert.equal(
+    productionReleaseQueries.activeReleaseIdentity(database).get().active_production_release_id,
+    environment.RELEASE_ID,
+  );
   database.exec(await readFile(join(directory, "failure-evidence.sql"), "utf8"));
   const failure = JSON.parse(productionReleaseQueries.migrationFailureResponse(database).get().response_json);
   assert.equal(failure.release_id, environment.RELEASE_ID);
@@ -316,6 +327,16 @@ test("a Bootstrap Mode dispatch relaxes only the data-dependent gates and keeps 
   seedPreparedRequest(database, environment);
   assert.equal(database.prepare(preflight).get().ready, 1);
   assert.equal(lastRow(database, await readFile(join(directory, "claim.sql"), "utf8")).claimed, 1);
+  assert.equal(productionReleaseQueries.countIngestionRuns(database).get().count, 0);
+  assert.deepEqual(
+    { ...productionReleaseQueries.activeOperationIdentities(database).get() },
+    {
+      active_ingestion_run_id: null,
+      active_production_release_id: environment.RELEASE_ID,
+    },
+  );
+  // Holding a lease alone does not prove that migration work was authorized.
+  assert.equal(lastRow(database, await readFile(join(directory, "materialize.sql"), "utf8")).transferred, 0);
   assert.equal(
     lastRow(database, await readFile(join(directory, "migration-started.sql"), "utf8")).migration_started,
     1,
@@ -801,8 +822,8 @@ async function realDatabase() {
 }
 
 function seedRealReleaseBoundary(database, environment, migrationStartedSql) {
-  const bootstrap = /active_ingestion_run_id='([^']+)'/u.exec(migrationStartedSql)?.[1];
-  assert.ok(bootstrap);
+  const expiry = /active_production_release_expires_at='([^']+)'/u.exec(migrationStartedSql)?.[1];
+  assert.ok(expiry);
   productionReleaseQueries.insertPreparedAdministrationEvidence(database).run(
     environment.IDEMPOTENCY_KEY,
     "prepare_production_release",
@@ -824,10 +845,7 @@ function seedRealReleaseBoundary(database, environment, migrationStartedSql) {
       dispatch_digest: environment.DISPATCH_DIGEST,
     }),
   );
-  productionReleaseQueries
-    .insertBootstrapFence(database)
-    .run(bootstrap, environment.EXPECTED_CURRENT_REVISION, bootstrap);
-  productionReleaseQueries.reserveActiveIngestionIdentity(database).run(bootstrap);
+  productionReleaseQueries.setReleaseLease(database).run(environment.RELEASE_ID, expiry);
   productionReleaseQueries
     .insertReleaseRecoveryBackup(database)
     .run(environment.RECOVERY_BACKUP_ATTEMPT_ID, environment.EXPECTED_CURRENT_REVISION, "backups/release.sql");
@@ -869,3 +887,96 @@ function stableJson(value) {
       .join(",")}}`;
   return JSON.stringify(value);
 }
+
+test("a compiled release lease fences claim replay and cleanup across expiry takeover", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "keepr-release-lease-ownership-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const environment = bootstrapEnvironment();
+  await validateDispatchAndWriteSql(environment, directory);
+  const database = await realDatabase();
+  t.after(() => database.close());
+  seedPreparedRequest(database, environment);
+  const claim = await readFile(join(directory, "claim.sql"), "utf8");
+  const cleanup = await readFile(join(directory, "cleanup.sql"), "utf8");
+  const migration = await readFile(join(directory, "migration-started.sql"), "utf8");
+  assert.deepEqual({ ...lastRow(database, claim) }, { changed_rows: 1, claimed: 1 });
+  const lease = { ...productionReleaseQueries.operationLease(database).get() };
+  assert.equal(lease.active_production_release_id, environment.RELEASE_ID);
+  assert.equal(lease.active_ingestion_run_id, null);
+  assert.equal(productionReleaseQueries.countIngestionRuns(database).get().count, 0);
+  assert.deepEqual({ ...lastRow(database, claim) }, { changed_rows: 0, claimed: 1 });
+  assert.equal(productionReleaseQueries.countDispatchClaims(database).get().count, 1);
+  productionReleaseQueries.setReleaseLease(database).run(environment.RELEASE_ID, "2099-09-04T00:00:00.000Z");
+  assert.equal(lastRow(database, migration).migration_started, 0);
+  assert.equal(lastRow(database, cleanup).fence_released, 0);
+  assert.equal(
+    productionReleaseQueries.operationLease(database).get().active_production_release_expires_at,
+    "2099-09-04T00:00:00.000Z",
+  );
+  productionReleaseQueries
+    .setReleaseLease(database)
+    .run(environment.RELEASE_ID, lease.active_production_release_expires_at);
+  assert.equal(lastRow(database, cleanup).fence_released, 1);
+  assert.equal(productionReleaseQueries.countIngestionRuns(database).get().count, 0);
+});
+
+test("the event migration preflight refuses populated old runs before claiming", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "keepr-release-regeneration-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const environment = bootstrapEnvironment();
+  const plan = JSON.parse(environment.PREPARED_PLAN_JSON);
+  plan.expected_migration_level = 11;
+  Object.assign(environment, {
+    EXPECTED_MIGRATION_LEVEL: "11",
+    PREPARED_PLAN_JSON: stableJson(plan),
+    DISPATCH_DIGEST: hash(stableJson(plan)),
+  });
+  await validateDispatchAndWriteSql(environment, directory);
+  const database = new DatabaseSync(":memory:");
+  t.after(() => database.close());
+  for (const migration of (await readdir("migrations")).sort()) {
+    if (Number.parseInt(migration, 10) <= 11) database.exec(await readFile(join("migrations", migration), "utf8"));
+  }
+  seedPreparedRequest(database, environment);
+  const preflight = await readFile(join(directory, "live-preflight.sql"), "utf8");
+  const claim = await readFile(join(directory, "claim.sql"), "utf8");
+  assert.equal(database.prepare(preflight).get().ready, 1);
+  productionReleaseQueries.insertPreEventRun(database).run();
+  assert.deepEqual(
+    { ...database.prepare(preflight).get() },
+    { ready: 0, problem: "ingestion_run_regeneration_required" },
+  );
+  assert.equal(lastRow(database, claim).claimed, 0);
+  assert.equal(productionReleaseQueries.countDispatchClaims(database).get().count, 0);
+  assert.equal(productionReleaseQueries.countIngestionRuns(database).get().count, 1);
+});
+
+test("an empty run cutover keeps the claimed lease through the event migration", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "keepr-release-event-cutover-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const environment = bootstrapEnvironment();
+  const plan = JSON.parse(environment.PREPARED_PLAN_JSON);
+  plan.expected_migration_level = 11;
+  Object.assign(environment, {
+    EXPECTED_MIGRATION_LEVEL: "11",
+    PREPARED_PLAN_JSON: stableJson(plan),
+    DISPATCH_DIGEST: hash(stableJson(plan)),
+  });
+  await validateDispatchAndWriteSql(environment, directory);
+  const database = new DatabaseSync(":memory:");
+  t.after(() => database.close());
+  for (const migration of (await readdir("migrations")).sort()) {
+    if (Number.parseInt(migration, 10) <= 11) database.exec(await readFile(join("migrations", migration), "utf8"));
+  }
+  seedPreparedRequest(database, environment);
+  assert.equal(lastRow(database, await readFile(join(directory, "claim.sql"), "utf8")).claimed, 1);
+  assert.equal(
+    lastRow(database, await readFile(join(directory, "migration-started.sql"), "utf8")).migration_started,
+    1,
+  );
+  const lease = { ...productionReleaseQueries.operationLease(database).get() };
+  database.exec(await readFile("migrations/0012_ingestion_run_events.sql", "utf8"));
+  assert.deepEqual({ ...productionReleaseQueries.operationLease(database).get() }, lease);
+  assert.equal(lastRow(database, await readFile(join(directory, "materialize.sql"), "utf8")).transferred, 1);
+  assert.equal(productionReleaseQueries.countIngestionRuns(database).get().count, 0);
+});
