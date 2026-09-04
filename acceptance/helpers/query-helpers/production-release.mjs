@@ -112,7 +112,7 @@ export function insertBootstrapAdministrationEvidence(database) {
 
 export function insertFirstIngestionRun(database) {
   return database.prepare(
-    "INSERT INTO ingestion_runs (id,state,selected_games_json,started_at,expected_current_revision_id,idempotency_key,candidate_json) VALUES ('run_first','planning','[\"one-piece\"]','2026-09-03T00:00:00.000Z','catrev_spine_000','run-first','{}')",
+    "INSERT INTO ingestion_runs (id,started_at,expected_current_revision_id,idempotency_key) VALUES ('run_first','2026-09-03T00:00:00.000Z','catrev_spine_000','run-first')",
   );
 }
 
@@ -183,17 +183,6 @@ export function insertClaimedAdministrationEvidence(database) {
   );
 }
 
-export function insertBootstrapFence(database) {
-  return database.prepare(`INSERT INTO ingestion_runs (id,state,selected_games_json,started_at,
-     expected_current_revision_id,idempotency_key,candidate_json)
-     VALUES (?,'planning','[]','2026-08-05T00:00:01.000Z',?,?,
-     '{"production_release_bootstrap":true}')`);
-}
-
-export function reserveActiveIngestionIdentity(database) {
-  return database.prepare("UPDATE operation_state SET active_ingestion_run_id=? WHERE singleton=1");
-}
-
 export function insertReleaseRecoveryBackup(database) {
   return database.prepare(`INSERT INTO catalogue_backup_attempts
      (idempotency_key,request_json,owner_token,catalogue_revision_id,state,
@@ -250,4 +239,17 @@ export function deleteReleaseOutcomeClaim(database) {
 
 export function countReleaseOutcome(database) {
   return database.prepare("SELECT COUNT(*) AS count FROM administration_idempotency WHERE idempotency_key=?");
+}
+
+export function setReleaseLease(database) {
+  return database.prepare(
+    "UPDATE operation_state SET active_production_release_id=?,active_production_release_expires_at=? WHERE singleton=1",
+  );
+}
+
+// The migration preflight intentionally runs against the previous schema.
+export function insertPreEventRun(database) {
+  return database.prepare(
+    "INSERT INTO ingestion_runs (id,state,selected_games_json,started_at,expected_current_revision_id,idempotency_key,candidate_json) VALUES ('old_run','planning','[]','2026-09-03T00:00:00.000Z','catrev_spine_000','old-run','{}')",
+  );
 }
