@@ -8,6 +8,7 @@ import {
   type CatalogueStore,
   ingestionRunTransitionSql,
   repositoryStatements,
+  runTransitionGuardStatement,
   type SupportedGame,
 } from "../shared";
 
@@ -329,13 +330,22 @@ export function failInvalidCuratedCandidateStatement(
   database: CatalogueStore,
   input: Readonly<{ observedAt: string; runId: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
+  return atomicRepositoryStatement(database, {
+    after: [
+      runTransitionGuardStatement(database, {
+        runId: input.runId,
+        from: ["planning", "collecting", "parsing", "reconciling", "awaiting_approval"],
+        to: "failed",
+      }),
+    ],
+    statement: repositoryStatements(database)
+      .prepare(`UPDATE ingestion_runs
          SET state = 'failed', terminal_at = ?,
              failure_code = 'curated_revision_composed_candidate_invalid',
              progress_json = json_set(progress_json, '$.current_stage', 'failed')
          WHERE id = ? AND ${ingestionRunTransitionSql(["planning", "collecting", "parsing", "reconciling", "awaiting_approval"], "failed")}`)
-    .bind(input.observedAt, input.runId);
+      .bind(input.observedAt, input.runId),
+  });
 }
 
 export function releaseCuratedRunStatement(
@@ -465,13 +475,22 @@ export function failCuratedSourceChangeRunStatement(
   database: CatalogueStore,
   input: Readonly<{ at: string; runId: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
+  return atomicRepositoryStatement(database, {
+    after: [
+      runTransitionGuardStatement(database, {
+        runId: input.runId,
+        from: ["planning", "collecting", "parsing", "reconciling", "awaiting_approval"],
+        to: "failed",
+      }),
+    ],
+    statement: repositoryStatements(database)
+      .prepare(`UPDATE ingestion_runs
        SET state = 'failed', terminal_at = ?,
            failure_code = 'curated_revision_reconfirmation_required',
            progress_json = json_set(progress_json, '$.current_stage', 'failed')
        WHERE id = ? AND ${ingestionRunTransitionSql(["planning", "collecting", "parsing", "reconciling", "awaiting_approval"], "failed")}`)
-    .bind(input.at, input.runId);
+      .bind(input.at, input.runId),
+  });
 }
 
 export function curatedPendingConflictStatement(

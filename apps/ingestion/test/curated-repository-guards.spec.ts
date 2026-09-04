@@ -3,11 +3,19 @@ import { beforeEach, expect, test } from "vitest";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import {
   curatedLifecycleMutationStatements,
+  failInvalidCuratedCandidateStatement,
+  failCuratedSourceChangeRunStatement,
   curatedRevisionStatement,
   insertAuthoredCuratedRevisionStatement,
   insertCuratedRunPinSetStatement,
 } from "../../../src/catalogue/curated/curated-repository";
-import { coreGuardPublicationTime, markCoreGuardSibling } from "./query-helpers/core-guards";
+import {
+  coreGuardPublicationTime,
+  markCoreGuardSibling,
+  removeCoreRunGuards,
+  seedCoreGuardRun,
+  coreGuardRun,
+} from "./query-helpers/core-guards";
 import {
   removeCuratedGuards,
   occupyCuratedAdministration,
@@ -141,3 +149,18 @@ test("the pinned set cannot omit an active Curated revision without schema guard
     }).run(),
   ).rejects.toThrow("curated_revision_pin_set_changed");
 });
+
+for (const kind of ["invalid_candidate", "source_change"] as const) {
+  test(`Curated ${kind} cannot fail a run whose reservation belongs elsewhere`, async () => {
+    await removeCoreRunGuards(testEnv.CATALOGUE_DB);
+    const database = catalogueStore(testEnv.CATALOGUE_DB);
+    const runId = `curated_unreserved_${kind}`;
+    await seedCoreGuardRun(testEnv.CATALOGUE_DB, runId, "collecting", false);
+    const statement =
+      kind === "invalid_candidate"
+        ? failInvalidCuratedCandidateStatement(database, { runId, observedAt: baseRevision.observedAt })
+        : failCuratedSourceChangeRunStatement(database, { runId, at: baseRevision.observedAt });
+    await expect(statement.run()).rejects.toThrow("run_not_active");
+    expect(await coreGuardRun(database, runId).first("state")).toBe("collecting");
+  });
+}
