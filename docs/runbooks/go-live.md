@@ -33,23 +33,41 @@ renumbering migration or changing the bytes' contract identities.
   serving Catalogue Consumers, the approved reset scope, exact SHA and release ID.
   A general request to clear the backlog is not that decision.
 
-## Execute the approved cutover
+## Unresolved fresh-database handoff
 
-1. Record the old production database identity and retained evidence. Create a
-   fresh production catalogue database with enough quota for the old database to
-   remain available until acceptance. Never apply the new baseline over the old
-   schema, delete the old database to make room without separate authorization,
-   or mark the rewritten baseline as already applied in an old migration ledger.
-2. Apply the baseline to the empty database through the approved deployment
-   procedure and update both checked-in Worker bindings to the same new ID.
-   Obtain the exact successful CI SHA after any binding change. Verify schema
-   level 1, the baseline digest proof, production-only adapter registrations,
-   foreign keys, integrity and expected empty bootstrap state before activation.
-3. Follow the [guarded release runbook](production-release.md), including live
-   target attestation and exact owner confirmation. The selected bootstrap or
-   ordinary release mode must match live status. Keep the existing canonical
-   lease, credential split and smoke gates; the database recreation does not
-   authorize bypassing them.
+The existing release protocol cannot yet execute the proposed fresh-baseline
+rebind. The deployed ingestion Worker would prepare the immutable request against
+the old database and target. Merely changing checked-in bindings makes the workflow
+query the new database, where that prepared request does not exist. Bootstrap Mode
+only relaxes data-dependent checks for an already-bound empty catalogue; it forbids
+a replacement recovery handoff and does not transfer preparation authority.
+
+Before scheduling Go-Live, design, implement and review a supported fresh-database
+cutover that binds owner approval to both old and new database identities and the
+baseline digest, preserves the canonical lease across the handoff, and gives the
+new database verifiable immutable preparation evidence. Exercise it against two
+isolated databases, including failure before and after activation. Do not copy or
+forge ledger rows manually, directly deploy around the guard, or repurpose
+replacement recovery to evade its restore evidence requirements.
+
+This missing protocol is a blocker to completing #136. The following acceptance
+sequence describes required outcomes; it is not an executable reset procedure.
+
+## Cutover acceptance sequence, after the handoff is supported
+
+1. Record the old production database identity and retained evidence. The reviewed
+   cutover must create a fresh catalogue database with quota to retain the old one
+   until acceptance. Never apply the new baseline over the old schema or mark it
+   as already applied in an old migration ledger.
+2. Prove the fresh database has the exact level-1 baseline, production-only adapter
+   registrations, valid foreign keys, integrity and expected bootstrap state.
+   Bind both Workers and immutable release preparation to that exact approved
+   target through the reviewed handoff protocol.
+3. Require exact-SHA CI, live target attestation, owner confirmation, the canonical
+   lease, the credential split and paired activation/smoke checks from the
+   [guarded release runbook](production-release.md). An empty database does not
+   authorize skipping preparation or authority checks.
+
 4. Regenerate catalogue data with the active Official Source adapters and publish
    through ordinary approval. Bootstrap Mode only relaxes data-dependent gates
    while empty; it is not evidence that the first consumer release is ready.

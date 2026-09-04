@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import * as runQueries from "./helpers/query-helpers/run-event-schema.mjs";
@@ -8,10 +8,7 @@ import * as schemaQueries from "./helpers/query-helpers/schema.mjs";
 async function migrationFixture(t) {
   const database = new DatabaseSync(":memory:");
   t.after(() => database.close());
-  for (const name of (await readdir(new URL("../migrations/", import.meta.url)))
-    .filter((name) => name.endsWith(".sql"))
-    .sort())
-    database.exec(await readFile(new URL(`../migrations/${name}`, import.meta.url), "utf8"));
+  database.exec(await readFile(new URL("../migrations/0001_baseline.sql", import.meta.url), "utf8"));
   return { database };
 }
 
