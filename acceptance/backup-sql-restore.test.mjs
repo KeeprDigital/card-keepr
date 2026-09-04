@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -10,6 +10,9 @@ import {
   prepareCardSearchForD1ExportStatements,
   reconstructCardSearchAfterD1RestoreStatements,
 } from "../src/catalogue/backup-recovery/card-search-recovery-statements.ts";
+import * as backupQueries from "./helpers/query-helpers/backup.mjs";
+import * as schemaQueries from "./helpers/query-helpers/schema.mjs";
+import { d1Adapter } from "./helpers/query-helpers/sqlite-d1-adapter.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -23,9 +26,7 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
   for (const migration of migrations) {
     source.exec(await readFile(join(root, "migrations", migration), "utf8"));
   }
-  const expectedSchemaMigrationLevel = source
-    .prepare("SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1")
-    .get().migration_level;
+  const expectedSchemaMigrationLevel = schemaQueries.schemaMigrationLevel(source).get().migration_level;
   const currentSchemaMigrationLevel = Number.parseInt(migrations.at(-1) ?? "", 10);
   assert.ok(Number.isSafeInteger(currentSchemaMigrationLevel));
   assert.equal(expectedSchemaMigrationLevel, currentSchemaMigrationLevel);
@@ -38,20 +39,18 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
   });
   t.after(() => vite.close());
   const recovery = await vite.ssrLoadModule("/src/catalogue/backup-recovery/backup-recovery.ts");
-  const expected = await recovery.captureCatalogueVerificationEvidence(d1Adapter(source), "catrev_restore_acceptance");
+  const { catalogueStore } = await vite.ssrLoadModule("/src/catalogue/shared/index.ts");
+  const expected = await recovery.captureCatalogueVerificationEvidence(
+    catalogueStore(d1Adapter(source)),
+    "catrev_restore_acceptance",
+  );
   assert.equal(expected.cards, 2);
   assert.equal(expected.provenance, 1);
 
   for (const statement of prepareCardSearchForD1ExportStatements) {
     source.exec(statement);
   }
-  source
-    .prepare(
-      `UPDATE card_search_fts_state
-     SET state = 'reconstructing', owner_token = ?, lease_expires_at = ?
-     WHERE singleton = 1`,
-    )
-    .run("backup:restore-acceptance", "2099-01-01T00:00:00.000Z");
+  backupQueries.reserveSearchReconstruction(source).run("backup:restore-acceptance", "2099-01-01T00:00:00.000Z");
   source.close();
   const sqlExport = execFileSync("/usr/bin/sqlite3", [sourcePath, ".dump"], {
     encoding: "utf8",
@@ -69,14 +68,8 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
   for (const statement of reconstructCardSearchAfterD1RestoreStatements) {
     restored.exec(statement);
   }
-  restored
-    .prepare(
-      `UPDATE card_search_fts_state
-     SET state = 'ready', owner_token = NULL, lease_expires_at = NULL
-     WHERE singleton = 1`,
-    )
-    .run();
-  const database = d1Adapter(restored);
+  backupQueries.completeSearchReconstruction(restored).run();
+  const database = catalogueStore(d1Adapter(restored));
   await assert.doesNotReject(
     recovery.verifyRestoredCatalogue(database, {
       expectedRevisionId: "catrev_restore_acceptance",
@@ -85,7 +78,7 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
     }),
   );
 
-  restored.prepare("DELETE FROM revision_card_search_fts WHERE card_id = ?").run("card_alpha");
+  backupQueries.deleteCardSearchFts(restored).run("card_alpha");
   await assert.rejects(
     recovery.verifyRestoredCatalogue(database, {
       expectedRevisionId: "catrev_restore_acceptance",
@@ -94,27 +87,8 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
     }),
     /Restored D1 verification failed/u,
   );
-  restored
-    .prepare(
-      `INSERT INTO revision_card_search_fts (
-       rowid, revision_token, catalogue_revision_id, card_id,
-       field_ordinal, chunk_ordinal, search_text
-     ) SELECT indexed.fts_rowid, '|' || chunk.catalogue_revision_id || '|',
-              chunk.catalogue_revision_id, chunk.card_id,
-              chunk.field_ordinal, chunk.chunk_ordinal, chunk.search_text
-       FROM revision_card_search_chunks AS chunk
-       JOIN revision_card_search_fts_rows AS indexed USING (
-         catalogue_revision_id, card_id, field_ordinal, chunk_ordinal
-       ) WHERE chunk.card_id = ?`,
-    )
-    .run("card_alpha");
-  restored
-    .prepare(
-      `UPDATE revision_card_query_documents
-     SET summary_json = json_set(summary_json, '$.id', 'corrupt_api_id')
-     WHERE catalogue_revision_id = ? AND card_id = ?`,
-    )
-    .run("catrev_restore_acceptance", "card_alpha");
+  backupQueries.reinsertCardSearchFts(restored).run("card_alpha");
+  backupQueries.corruptCardApiIdentity(restored).run("catrev_restore_acceptance", "card_alpha");
   await assert.rejects(
     recovery.verifyRestoredCatalogue(database, {
       expectedRevisionId: "catrev_restore_acceptance",
@@ -156,13 +130,7 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
     }),
   );
 
-  restored
-    .prepare(
-      `UPDATE revision_products
-     SET document_json = json_set(document_json, '$.name', 'Corrupted Product')
-     WHERE catalogue_revision_id = ? AND product_id = ?`,
-    )
-    .run("catrev_restore_acceptance", "product_alpha");
+  backupQueries.corruptProductName(restored).run("catrev_restore_acceptance", "product_alpha");
   await assert.rejects(
     recovery.verifyRestoredCatalogue(database, {
       expectedRevisionId: "catrev_restore_acceptance",
@@ -172,13 +140,7 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
     /Restored D1 verification failed/u,
   );
 
-  restored
-    .prepare(
-      `UPDATE revision_products
-     SET document_json = json_set(document_json, '$.releases', 'malformed')
-     WHERE catalogue_revision_id = ? AND product_id = ?`,
-    )
-    .run("catrev_restore_acceptance", "product_alpha");
+  backupQueries.corruptProductReleases(restored).run("catrev_restore_acceptance", "product_alpha");
   const malformedProductExpected = await recovery.captureCatalogueVerificationEvidence(
     database,
     "catrev_restore_acceptance",
@@ -210,13 +172,7 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
     }),
   );
 
-  restored
-    .prepare(
-      `UPDATE revision_legality_rules
-     SET document_json = json_set(document_json, '$.source_field_pointers', json('{}'))
-     WHERE catalogue_revision_id = ? AND legality_rule_id = ?`,
-    )
-    .run("catrev_restore_acceptance", "legality_global");
+  backupQueries.corruptLegalityFieldPointers(restored).run("catrev_restore_acceptance", "legality_global");
   const malformedRuleExpected = await recovery.captureCatalogueVerificationEvidence(
     database,
     "catrev_restore_acceptance",
@@ -326,12 +282,7 @@ function validStoredLegalityRule(id, cardIds, officialWording = "The global tour
 
 function seedRepresentativeCatalogue(database) {
   const digest = "a".repeat(64);
-  const legalityOwnerTrigger = database
-    .prepare(
-      `SELECT sql FROM sqlite_schema
-     WHERE type = 'trigger' AND name = 'legality_rule_provenance_owner_insert'`,
-    )
-    .get().sql;
+  const legalityOwnerTrigger = schemaQueries.legalityProvenanceOwnerTrigger(database).get().sql;
   database.exec("DROP TRIGGER legality_rule_provenance_owner_insert");
   database.exec(`
     INSERT INTO ingestion_runs (
@@ -445,35 +396,15 @@ function seedRepresentativeCatalogue(database) {
       lifecycle: {},
       links: {},
     });
-    database
-      .prepare(
-        `INSERT INTO revision_cards (
-         catalogue_revision_id, card_id, document_json
-       ) VALUES (?, ?, ?)`,
-      )
-      .run("catrev_restore_acceptance", id, summary);
-    database
-      .prepare(
-        `INSERT INTO revision_card_query_documents (
-         catalogue_revision_id, card_id, summary_json, search_text
-       ) VALUES (?, ?, ?, ?)`,
-      )
+    backupQueries.insertRevisionCard(database).run("catrev_restore_acceptance", id, summary);
+    backupQueries
+      .insertCardQueryDocument(database)
       .run("catrev_restore_acceptance", id, summary, `${number} ${name}`.toLowerCase());
-    database
-      .prepare(
-        `INSERT INTO revision_card_search_chunks (
-         catalogue_revision_id, card_id, field_ordinal, chunk_ordinal,
-         search_text
-       ) VALUES (?, ?, 0, 0, ?)`,
-      )
+    backupQueries
+      .insertCardSearchChunk(database)
       .run("catrev_restore_acceptance", id, `${number} ${name}`.toLowerCase());
-    database
-      .prepare(
-        `INSERT INTO revision_card_search_terms (
-         catalogue_revision_id, card_id, term, sort_game,
-         sort_identity_kind, sort_identity_value, sort_id
-       ) VALUES (?, ?, ?, 'one-piece', 'card_number', ?, ?)`,
-      )
+    backupQueries
+      .insertCardSearchTerm(database)
       .run("catrev_restore_acceptance", id, `g3:${number.slice(0, 3).toLowerCase()}`, number, id);
   }
   database.exec(`
@@ -542,25 +473,4 @@ function seedRepresentativeCatalogue(database) {
     );
   `);
   database.exec(legalityOwnerTrigger);
-}
-
-function d1Adapter(database) {
-  return {
-    prepare(sql) {
-      let bindings = [];
-      const prepared = {
-        bind(...values) {
-          bindings = values;
-          return prepared;
-        },
-        async all() {
-          return { results: database.prepare(sql).all(...bindings) };
-        },
-        async first() {
-          return database.prepare(sql).get(...bindings) ?? null;
-        },
-      };
-      return prepared;
-    },
-  };
 }

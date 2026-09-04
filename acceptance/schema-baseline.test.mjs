@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import * as schemaQueries from "./helpers/query-helpers/schema.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -30,21 +31,16 @@ test("the baseline is the first migration and a fresh apply yields level 1", asy
   const database = new DatabaseSync(":memory:");
   database.exec(await readFile(resolve(root, "migrations", names[0]), "utf8"));
   assert.equal(schemaLevel(database), 1);
-  assert.deepEqual(database.prepare("PRAGMA foreign_key_check").all(), []);
-  assert.equal(
-    database.prepare("PRAGMA integrity_check").get().integrity_check,
-    "ok",
-  );
+  assert.deepEqual(schemaQueries.foreignKeyViolations(database).all(), []);
+  assert.equal(schemaQueries.integrityCheck(database).get().integrity_check, "ok");
   database.close();
 });
 
 test("the baseline schema equals the level-36 chain and its seed rows are pinned", async () => {
   const baseline = new DatabaseSync(":memory:");
-  baseline.exec(
-    await readFile(resolve(root, "migrations", "0001_baseline.sql"), "utf8"),
-  );
+  baseline.exec(await readFile(resolve(root, "migrations", "0001_baseline.sql"), "utf8"));
   const baselineSchema = schemaObjects(baseline);
-  const baselineSeeds = seedRows(baseline);
+  const baselineSeeds = schemaQueries.seedRows(baseline);
   assert.equal(schemaLevel(baseline), 1);
   baseline.close();
 
@@ -71,7 +67,9 @@ function chainDatabase() {
     return null;
   }
   const names = git(["ls-tree", "--name-only", chainCommit, "migrations/"])
-    .split("\n").filter((name) => name.endsWith(".sql")).sort();
+    .split("\n")
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
   const database = new DatabaseSync(":memory:");
   for (const name of names) database.exec(git(["show", `${chainCommit}:${name}`]));
   return database;
@@ -86,14 +84,15 @@ function git(args) {
 }
 
 function schemaObjects(database) {
-  return database.prepare(
-    "SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY type, name",
-  ).all().map((row) => ({
-    type: row.type,
-    name: row.name,
-    tbl_name: row.tbl_name,
-    sql: row.sql === null ? null : normalizeSql(row.sql),
-  }));
+  return schemaQueries
+    .schemaDefinitionRows(database)
+    .all()
+    .map((row) => ({
+      type: row.type,
+      name: row.name,
+      tbl_name: row.tbl_name,
+      sql: row.sql === null ? null : normalizeSql(row.sql),
+    }));
 }
 
 // sqlite_schema stores DDL text as written, so a column added by ALTER TABLE
@@ -109,39 +108,14 @@ function normalizeSql(sql) {
     .trim();
 }
 
-// Every row of every table except the schema level itself.
-function seedRows(database) {
-  const tables = database.prepare(
-    `SELECT name FROM sqlite_schema
-     WHERE type = 'table' AND name NOT IN ('catalogue_schema_state')
-     ORDER BY name`,
-  ).all().map((row) => row.name);
-  const seeds = {};
-  for (const table of tables) {
-    const rows = database.prepare(`SELECT * FROM "${table}"`).all()
-      .map((row) => JSON.stringify(row, blobsAsHex))
-      .sort();
-    if (rows.length > 0) seeds[table] = rows;
-  }
-  return seeds;
-}
-
-function blobsAsHex(_key, value) {
-  return value instanceof Uint8Array ? Buffer.from(value).toString("hex") : value;
-}
-
 function digest(value) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
 function schemaLevel(database) {
-  return database.prepare(
-    "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
-  ).get().migration_level;
+  return schemaQueries.schemaMigrationLevel(database).get().migration_level;
 }
 
 async function migrationNames() {
-  return (await readdir(resolve(root, "migrations")))
-    .filter((name) => name.endsWith(".sql"))
-    .sort();
+  return (await readdir(resolve(root, "migrations"))).filter((name) => name.endsWith(".sql")).sort();
 }
