@@ -908,11 +908,15 @@ function exactSurfaceUrl(
   surface: string,
 ): string {
   if (!requiredSurfaces.includes(surface)) {
-    throw new AdapterParseFailure(`Official Source lineage ${sourceLineage} has no ${surface} surface.`);
+    throw new AdapterParseFailure(`Official Source lineage ${sourceLineage} has no ${surface} surface.`, {
+      category: "configuration",
+    });
   }
   const url = urls[surface];
   if (url === undefined) {
-    throw new AdapterParseFailure(`Official Source lineage ${sourceLineage} has no ${surface} URL.`);
+    throw new AdapterParseFailure(`Official Source lineage ${sourceLineage} has no ${surface} URL.`, {
+      category: "configuration",
+    });
   }
   return adapterUrl(url).href;
 }

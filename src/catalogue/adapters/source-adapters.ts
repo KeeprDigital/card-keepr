@@ -185,7 +185,7 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
       requiredSurfaces: ["errata"],
       requestUrlForSurface: (surface: string) => {
         if (surface !== "errata") {
-          throw new AdapterParseFailure("Official Errata surface identity is invalid.");
+          throw new AdapterParseFailure("Official Errata surface identity is invalid.", { category: "configuration" });
         }
         return "https://en.onepiece-cardgame.com/rules/errata_card/";
       },

@@ -22,10 +22,12 @@ export function officialSourceDiscoveryRequests(sourceLineage: string): readonly
     .filter((adapterContract) => adapterContract.sourceLineage === sourceLineage)
     .at(-1);
   if (contract === undefined) {
-    throw new AdapterParseFailure("Official Source lineage has no discovery contract.");
+    throw new AdapterParseFailure("Official Source lineage has no discovery contract.", { category: "configuration" });
   }
   if (contract.requestUrlForDiscovery === undefined) {
-    throw new AdapterParseFailure("Official Source lineage has no active discovery root.");
+    throw new AdapterParseFailure("Official Source lineage has no active discovery root.", {
+      category: "configuration",
+    });
   }
   return [
     {
