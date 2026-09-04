@@ -1,5 +1,11 @@
 name: stress
 
+# Cron liveness (issue #75): GitHub runs a schedule only from the default
+# branch, disables it after 60 days without repository activity, and disables
+# it when the last actor to touch this file loses repository access. A
+# disabled schedule fails nothing and notifies nobody, so a quiet stress
+# workflow is not evidence that the stress suite passes. The check and the
+# re-enable command are in docs/runbooks/scheduled-stress.md.
 on:
   workflow_dispatch:
   schedule:
@@ -14,10 +20,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run test:stress
+
+  # Nobody watches a scheduled run, so a failure opens one `bug` issue (or
+  # comments on the open one) with the run link. The issue is the only place
+  # the failure surfaces; the stress job itself keeps its read-only token.
+  report-failure:
+    needs: stress
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TITLE: "stress: scheduled stress suite failed"
+      EVENT_NAME: ${{ github.event_name }}
+    steps:
+      - name: Open or update the stress failure issue
+        run: |
+          set -euo pipefail
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body="$(printf 'The `stress` workflow failed.\n\n- Run: %s\n- Trigger: `%s`\n- Commit: `%s`\n\nInspect the run log, fix or file the regression, then close this issue. See `docs/runbooks/scheduled-stress.md`.\n' "${run_url}" "${EVENT_NAME}" "${GITHUB_SHA}")"
+          existing="$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --label bug --search "\"${TITLE}\" in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)] | .[0].number // empty')"
+          if test -n "${existing}"; then
+            gh issue comment "${existing}" --repo "${GITHUB_REPOSITORY}" --body "${body}"
+          else
+            gh issue create --repo "${GITHUB_REPOSITORY}" --title "${TITLE}" --label bug --body "${body}"
+          fi
