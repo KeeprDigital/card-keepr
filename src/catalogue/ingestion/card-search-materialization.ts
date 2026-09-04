@@ -28,7 +28,7 @@ type PendingRevision = {
   repaired_through_card_id: string | null;
   repair_card_id: string | null;
   repair_search_offset: number;
-  repair_term_offset: number;
+  repair_chunk_offset: number;
 };
 
 type RevisionCardRow = {
@@ -183,10 +183,10 @@ async function repairCardSearchMaterializationStep(
   }
 
   const entries = cardSearchChunks(searchText);
-  if (revision.repair_term_offset < entries.length) {
+  if (revision.repair_chunk_offset < entries.length) {
     const selectedEntries = entries.slice(
-      revision.repair_term_offset,
-      revision.repair_term_offset + maximumMaterializationEntriesPerBatch,
+      revision.repair_chunk_offset,
+      revision.repair_chunk_offset + maximumMaterializationEntriesPerBatch,
     );
     const statements = selectedEntries.map((entry) => {
       const measured = boundBytes(entry.text, revision.catalogue_revision_id, revision.repair_card_id!);
@@ -201,13 +201,13 @@ async function repairCardSearchMaterializationStep(
         searchText: entry.text,
       });
     });
-    const nextOffset = revision.repair_term_offset + selectedEntries.length;
+    const nextOffset = revision.repair_chunk_offset + selectedEntries.length;
     statements.push(
       advanceCardSearchChunkOffsetStatement(database, {
         nextOffset: nextOffset,
         revisionId: revision.catalogue_revision_id,
         cardId: revision.repair_card_id,
-        expectedOffset: revision.repair_term_offset,
+        expectedOffset: revision.repair_chunk_offset,
       }),
     );
     const inserted = await database.batch(statements);

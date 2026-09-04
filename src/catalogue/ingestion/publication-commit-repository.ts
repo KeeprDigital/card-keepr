@@ -264,7 +264,7 @@ export function archiveOldQueryRevisionsStatement(database: CatalogueStore, revi
            repaired_through_card_id = NULL,
            repair_card_id = NULL,
            repair_search_offset = 0,
-           repair_term_offset = 0
+           repair_chunk_offset = 0
        WHERE catalogue_revision_id NOT IN (
          SELECT catalogue_revision_id
          FROM retained

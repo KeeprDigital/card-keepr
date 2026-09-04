@@ -50,6 +50,46 @@ test("Reconciliation Context migration discards pre-Go-Live anchors and retains 
   database.close();
 });
 
+test("repository-guard migration retains immutability and removes obsolete schema objects", async () => {
+  const migrations = await readMigrations();
+  const database = new DatabaseSync(":memory:");
+  for (const migration of migrations.filter(({ level }) => level <= 10)) database.exec(migration.sql);
+  assert.equal(
+    schemaQueries
+      .schemaDefinitionRows(database)
+      .all()
+      .filter(({ type }) => type === "trigger").length,
+    175,
+  );
+  schemaQueries.seedPreGuardMigrationLease(database).run();
+  const lease = schemaQueries.canonicalReleaseLease(database).get();
+  const migration = migrations.find(({ level }) => level === 11);
+  assert.ok(migration);
+  database.exec(migration.sql);
+  const objects = schemaQueries.schemaDefinitionRows(database).all();
+  const triggers = objects.filter(({ type }) => type === "trigger");
+  assert.equal(triggers.length, 103);
+  assert.ok(triggers.every(({ sql }) => /BEFORE (UPDATE|DELETE)/u.test(sql)));
+  for (const name of ["ingestion_run_transitions", "production_release_transitions", "revision_card_search_terms"])
+    assert.ok(!objects.some((object) => object.name === name), name);
+  const leaseColumns = schemaQueries
+    .operationStateColumns(database)
+    .all()
+    .map(({ name }) => name);
+  assert.ok(!leaseColumns.includes("active_release_id"));
+  assert.ok(!leaseColumns.includes("active_release_expires_at"));
+  assert.deepEqual(schemaQueries.canonicalReleaseLease(database).get(), lease);
+  const repairColumns = schemaQueries
+    .queryRevisionColumns(database)
+    .all()
+    .map(({ name }) => name);
+  assert.ok(repairColumns.includes("repair_chunk_offset"));
+  assert.ok(!repairColumns.includes("repair_term_offset"));
+  assert.equal(schemaQueries.integrityCheck(database).get().integrity_check, "ok");
+  assert.deepEqual(schemaQueries.foreignKeyViolations(database).all(), []);
+  database.close();
+});
+
 test("every migration leaves catalogue_schema_state at its own level", async () => {
   const migrations = await readMigrations();
   const database = new DatabaseSync(":memory:");

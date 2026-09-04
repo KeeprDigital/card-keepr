@@ -844,10 +844,7 @@ test("release leases reclaim stale owners and fence cleanup and renewal", async 
       .bind(id)
       .run();
   const deleteBootstrap = async (id: string) => {
-    const [, result] = await env.CATALOGUE_DB.batch([
-      ingestionQueries.deleteIngestionRunTransitions(env.CATALOGUE_DB).bind(id),
-      ingestionQueries.deleteIngestionRuns(env.CATALOGUE_DB).bind(id),
-    ]);
+    const [result] = await env.CATALOGUE_DB.batch([ingestionQueries.deleteIngestionRuns(env.CATALOGUE_DB).bind(id)]);
     if (result === undefined) {
       throw new Error("The bootstrap cleanup batch did not return a result.");
     }

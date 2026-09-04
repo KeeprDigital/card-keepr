@@ -124,7 +124,7 @@ export function createPendingSearchProjectionStatement(
   return repositoryStatements(database)
     .prepare(`INSERT INTO catalogue_query_revisions (
          catalogue_revision_id, state, repaired_through_card_id,
-         repair_card_id, repair_search_offset, repair_term_offset
+         repair_card_id, repair_search_offset, repair_chunk_offset
        ) VALUES (?, 'pending', NULL, NULL, 0, 0)
        ON CONFLICT(catalogue_revision_id) DO NOTHING`)
     .bind(revisionId);
@@ -151,7 +151,7 @@ export function completeSearchProjectionStatement(database: CatalogueStore, revi
              repaired_through_card_id = NULL,
              repair_card_id = NULL,
              repair_search_offset = 0,
-             repair_term_offset = 0
+             repair_chunk_offset = 0
          WHERE catalogue_revision_id = ? AND state = 'pending'`)
     .bind(revisionId);
 }
@@ -216,7 +216,7 @@ export function beginCardRepairStatement(
     .prepare(`UPDATE catalogue_query_revisions
          SET repair_card_id = ?,
              repair_search_offset = 0,
-             repair_term_offset = 0
+             repair_chunk_offset = 0
          WHERE catalogue_revision_id = ?
            AND state = 'pending'
            AND repair_card_id IS NULL`)
@@ -302,11 +302,11 @@ export function advanceCardSearchChunkOffsetStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`UPDATE catalogue_query_revisions
-         SET repair_term_offset = ?
+         SET repair_chunk_offset = ?
          WHERE catalogue_revision_id = ?
            AND state = 'pending'
            AND repair_card_id = ?
-           AND repair_term_offset = ?`)
+           AND repair_chunk_offset = ?`)
     .bind(input.nextOffset, input.revisionId, input.cardId, input.expectedOffset);
 }
 
@@ -319,12 +319,12 @@ export function completeCardSearchRepairStatement(
      SET repaired_through_card_id = repair_card_id,
          repair_card_id = NULL,
          repair_search_offset = 0,
-         repair_term_offset = 0
+         repair_chunk_offset = 0
      WHERE catalogue_revision_id = ?
        AND state = 'pending'
        AND repair_card_id = ?
        AND repair_search_offset = ?
-       AND repair_term_offset = ?`)
+       AND repair_chunk_offset = ?`)
     .bind(input.revisionId, input.cardId, input.expectedSearchBytes, input.expectedChunkCount);
 }
 
@@ -334,7 +334,7 @@ export function pendingSearchProjectionStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT catalogue_revision_id, repaired_through_card_id,
-            repair_card_id, repair_search_offset, repair_term_offset
+            repair_card_id, repair_search_offset, repair_chunk_offset
      FROM catalogue_query_revisions
      WHERE state = 'pending'
        AND (? IS NULL OR catalogue_revision_id = ?)

@@ -48,7 +48,7 @@ export function removeArchivedCardSearchStatements(database: CatalogueStore): D1
 
 export function archiveEmptyCardQueryRevisionStatement(database: CatalogueStore): D1PreparedStatement {
   return repositoryStatements(database).prepare(`UPDATE catalogue_query_revisions SET state = 'archived',
-    repaired_through_card_id = NULL, repair_card_id = NULL, repair_search_offset = 0, repair_term_offset = 0
+    repaired_through_card_id = NULL, repair_card_id = NULL, repair_search_offset = 0, repair_chunk_offset = 0
     WHERE state = 'archived' AND NOT EXISTS (
       SELECT 1 FROM revision_card_query_documents AS document
       WHERE document.catalogue_revision_id = catalogue_query_revisions.catalogue_revision_id
