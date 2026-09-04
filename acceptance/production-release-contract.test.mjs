@@ -91,9 +91,11 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.match(release, /changed_rows[\s\S]*transition_rows[\s\S]*changed_rows/u);
   assert.doesNotMatch(release, /d1 delete|databases\/\$\{RETAINED_DATABASE_ID\}/u);
   assert.match(ci, /pull_request:/u);
-  // Pull requests already test refs/pull/N/merge; a push-to-main run repeats it.
+  // A pull request's refs/pull/N/merge only matches the eventual merge when
+  // the PR was current with main, so main is also tested on push; the
+  // concurrency group cancels superseded main runs.
+  assert.match(ci, /^\s*push:\n\s*branches: \[main\]/mu);
   assert.match(ci, /workflow_dispatch:/u);
-  assert.doesNotMatch(ci, /^\s*push:/mu);
   assert.doesNotMatch(
     ci,
     /CLOUDFLARE_API_TOKEN|environment:\s*production|--remote|wrangler (?:deploy|versions deploy)/u,
