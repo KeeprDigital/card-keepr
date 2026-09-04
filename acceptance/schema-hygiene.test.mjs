@@ -29,13 +29,13 @@ test("Reconciliation Context migration discards pre-Go-Live anchors and retains 
   database.exec("PRAGMA foreign_keys = ON");
   database.exec(migration.sql);
   assert.deepEqual(
-    database
-      .prepare("PRAGMA table_info(reconciliation_contexts)")
+    schemaQueries
+      .reconciliationContextColumns(database)
       .all()
       .map(({ name }) => name),
     ["ingestion_run_id", "digest_payload_json"],
   );
-  assert.equal(database.prepare("SELECT count(*) AS count FROM reconciliation_contexts").get().count, 0);
+  assert.equal(schemaQueries.reconciliationContextCount(database).get().count, 0);
   database.exec("INSERT INTO reconciliation_contexts VALUES ('run_context', '{\"partitions\":[]}')");
   assert.throws(
     () => database.exec("UPDATE reconciliation_contexts SET digest_payload_json = '{}'"),
@@ -46,7 +46,7 @@ test("Reconciliation Context migration discards pre-Go-Live anchors and retains 
     () => database.exec("INSERT INTO reconciliation_contexts VALUES ('missing_run', '{}')"),
     /FOREIGN KEY constraint failed/u,
   );
-  assert.deepEqual(database.prepare("PRAGMA foreign_key_check").all(), []);
+  assert.deepEqual(schemaQueries.foreignKeyViolations(database).all(), []);
   database.close();
 });
 
