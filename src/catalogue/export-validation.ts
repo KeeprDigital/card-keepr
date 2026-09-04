@@ -27,10 +27,12 @@ const componentValidators = new Map<string, ValidateFunction>(
 );
 
 export function verifyExportManifest(manifest: unknown): void {
+  assertHostIndependent(manifest, "manifest");
   assertValid(validateManifest, manifest, "manifest");
 }
 
 export function verifyExportRecord(record: unknown): void {
+  assertHostIndependent(record, "record");
   assertValid(validateRecord, record, "record");
 }
 
@@ -44,6 +46,7 @@ export function verifyComponentExportRecord(
       `Catalogue Export component advertises an unresolved record_schema ${recordSchemaUri}.`,
     );
   }
+  assertHostIndependent(record, "component record");
   assertValid(validate, record, "component record");
 }
 
@@ -55,6 +58,41 @@ function requiredValidator(uri: string): ValidateFunction {
     );
   }
   return validate;
+}
+
+// A Catalogue Export is an immutable offline package: it references API
+// resources by identifier and never by link, so a consumer applies the route
+// templates in SERIALIZATION.md to its own configured API base. Any string
+// that addresses an API route, absolute or root-relative, is a defect.
+const apiLinkPattern = /^(https?:\/\/[^/?#]+)?(\/[^?#]*)?\/v1\//u;
+
+function assertHostIndependent(value: unknown, artifact: string): void {
+  const link = firstApiLink(value);
+  if (link !== undefined) {
+    throw new Error(
+      `Catalogue Export ${artifact} embeds an API link: ${link}`,
+    );
+  }
+}
+
+function firstApiLink(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return apiLinkPattern.test(value) ? value : undefined;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const link = firstApiLink(item);
+      if (link !== undefined) return link;
+    }
+    return undefined;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const item of Object.values(value)) {
+      const link = firstApiLink(item);
+      if (link !== undefined) return link;
+    }
+  }
+  return undefined;
 }
 
 function assertValid(
