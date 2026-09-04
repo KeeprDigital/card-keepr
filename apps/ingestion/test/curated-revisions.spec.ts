@@ -1,8 +1,15 @@
-import { catalogueStore } from "../../../src/catalogue/shared";
+import { catalogueStore, atomicRepositoryStatement, runStartGuardStatement } from "../../../src/catalogue/shared";
+import {
+  insertAuthoredCuratedRevisionStatement,
+  curatedLifecycleMutationStatements,
+} from "../../../src/catalogue/curated/curated-repository";
+import {
+  publishRevisionProductsStatements,
+  publishProductRelationshipLifecyclesStatements,
+} from "../../../src/catalogue/reconciliation/product-release-publication-repository";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as curatedQueries from "./query-helpers/curated";
-import * as reconciliationQueries from "./query-helpers/reconciliation";
 import { env, exports } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { afterEach, beforeEach, expect, test } from "vitest";
@@ -462,38 +469,55 @@ test("product-only Source Observations remain valid Curated Revision evidence", 
     context: `srcobs_context_only_${sequence}`,
     relationship: `srcobs_relationship_only_${sequence}`,
   };
-  await env.CATALOGUE_DB.batch([
-    publishedCatalogueQueries
-      .insertRevisionProductsForProductOnlySourceObservationsRemainValidCuratedRevisionEvidence(env.CATALOGUE_DB)
-      .bind(
-        currentRevision,
-        `product_${sequence}`,
-        canonicalJson({
-          data: { id: `product_${sequence}` },
-          included: Object.values(evidenceIds)
-            .slice(0, 3)
-            .map((id) => ({
-              type: "source_observation",
-              id,
-              captured_at: now,
-              source: "one-piece-en",
-            })),
-          provenance: {},
-          disagreements: [],
-        }),
-      ),
-    reconciliationQueries.insertReconciledProductRelationships(env.CATALOGUE_DB).bind(
-      `relationship_product_card_${sequence}`,
-      `product_${sequence}`,
-      card.id,
-      canonicalJson([evidenceIds.relationship]),
-      card.official_identity.value,
+  const database = catalogueStore(env.CATALOGUE_DB);
+  await database.batch([
+    ...publishRevisionProductsStatements(
+      database,
+      [
+        {
+          product_id: `product_${sequence}`,
+          supported_game: "one-piece",
+          official_code: "OP-01",
+          name: "Booster",
+          search_text: "op-01 booster",
+          release_regions_json: '["EN-OCEANIA"]',
+          document_json: canonicalJson({
+            data: { id: `product_${sequence}` },
+            included: Object.values(evidenceIds)
+              .slice(0, 3)
+              .map((id) => ({
+                type: "source_observation",
+                id,
+                captured_at: now,
+                source: "one-piece-en",
+              })),
+            provenance: {},
+            disagreements: [],
+          }),
+        },
+      ],
       currentRevision,
-      currentRevision,
-      canonicalJson({
-        source_observation_ids: [evidenceIds.relationship],
-      }),
     ),
+    ...publishProductRelationshipLifecyclesStatements(database, [
+      {
+        id: `relationship_product_card_${sequence}`,
+        game: "one-piece",
+        kind: "product-card",
+        from_type: "product",
+        from_id: `product_${sequence}`,
+        to_type: "card",
+        to_id: card.id,
+        evidence_category: "explicit",
+        source_lineage: "one-piece-en",
+        source_observation_ids_json: canonicalJson([evidenceIds.relationship]),
+        relationship_value: card.official_identity.value,
+        first_revision_id: currentRevision,
+        last_observed_revision_id: currentRevision,
+        current: 1,
+        last_missing_revision_id: null,
+        document_json: canonicalJson({ source_observation_ids: [evidenceIds.relationship] }),
+      },
+    ]),
   ]);
 
   const cases = [
@@ -788,17 +812,21 @@ test("create is guarded by production binding, current revision, idle operation,
 
 test("the atomic mutation boundary rechecks the current Catalogue Revision", async () => {
   const authored = await proposal("/name", "Curated Name");
+  const database = catalogueStore(env.CATALOGUE_DB);
   await expect(
-    curatedQueries
-      .insertCuratedRevisionsForAtomicMutationBoundaryRechecksCurrentCatalogueRevision(env.CATALOGUE_DB)
-      .bind(
-        canonicalJson(authored),
-        await sha256Text(canonicalJson(authored)),
-        authored.reviewed_source_digest,
-        canonicalJson({ catalogue_revision_id: "catrev_stale", game_profile: "one-piece@1" }),
-        now,
-      )
-      .run(),
+    insertAuthoredCuratedRevisionStatement(database, {
+      revisionId: "currev_stale_atomic",
+      game: "one-piece",
+      targetKey: "stale-target",
+      targetKind: "field",
+      effectiveFrom: null,
+      effectiveTo: null,
+      proposalJson: canonicalJson(authored),
+      contentDigest: await sha256Text(canonicalJson(authored)),
+      reviewedSourceDigest: authored.reviewed_source_digest,
+      schemaBindingJson: canonicalJson({ catalogue_revision_id: "catrev_stale", game_profile: "one-piece@1" }),
+      observedAt: now,
+    }).run(),
   ).rejects.toThrow("curated_revision_current_revision_mismatch");
 
   const created = await createCuratedRevision(
@@ -813,19 +841,32 @@ test("the atomic mutation boundary rechecks the current Catalogue Revision", asy
     now,
   );
   await expect(
-    curatedQueries
-      .insertCuratedRevisionEvents(env.CATALOGUE_DB)
-      .bind(created.document.curated_revision_id, canonicalJson({ expected_current_revision_id: "catrev_stale" }), now)
-      .run(),
+    database.batch(
+      curatedLifecycleMutationStatements(database, {
+        revisionId: String(created.document.curated_revision_id),
+        expectedEventVersion: 1,
+        status: "retired",
+        eventVersion: 2,
+        kind: "retired",
+        eventJson: canonicalJson({ expected_current_revision_id: "catrev_stale" }),
+        observedAt: now,
+        idempotencyKey: `stale-retire-${sequence}`,
+        requestDigest: "a".repeat(64),
+        responseJson: "{}",
+      }),
+    ),
   ).rejects.toThrow("curated_revision_current_revision_mismatch");
 });
 
 test("release leases reclaim stale owners and fence cleanup and renewal", async () => {
+  const database = catalogueStore(env.CATALOGUE_DB);
   const insertBootstrap = async (id: string) =>
-    ingestionQueries
-      .insertIngestionRunsForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(env.CATALOGUE_DB)
-      .bind(id, now, currentRevision, id)
-      .run();
+    atomicRepositoryStatement(database, {
+      statement: ingestionQueries
+        .insertIngestionRunsForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(env.CATALOGUE_DB)
+        .bind(id, now, currentRevision, id),
+      after: [runStartGuardStatement(database)],
+    }).run();
   const claimBootstrap = async (id: string) =>
     ingestionQueries
       .setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(env.CATALOGUE_DB)
@@ -1321,7 +1362,7 @@ test("prepared runs strip prior effects, reapply exact pins, and persist the rea
     ],
   });
   expect(prepared.candidate.cards[1]).toEqual(unselectedCard);
-  await env.CATALOGUE_DB.batch([
+  await catalogueStore(env.CATALOGUE_DB).batch([
     ingestionQueries
       .insertIngestionRunsForPreparedRunsStripPriorEffectsReapplyExactPinsPersist(env.CATALOGUE_DB)
       .bind(runId, now, currentRevision, `prepared-${sequence}`),
@@ -2893,10 +2934,14 @@ function digimonAttributes(): Record<string, unknown> {
 }
 
 async function insertParsingRun(runId: string, selectedGames: readonly string[] = ["one-piece"]) {
-  await env.CATALOGUE_DB.batch([
-    ingestionQueries
-      .insertIngestionRunsForInsertParsingRun(env.CATALOGUE_DB)
-      .bind(runId, canonicalJson(selectedGames), now, currentRevision, `parse-${runId}`),
+  const database = catalogueStore(env.CATALOGUE_DB);
+  await database.batch([
+    atomicRepositoryStatement(database, {
+      statement: ingestionQueries
+        .insertIngestionRunsForInsertParsingRun(env.CATALOGUE_DB)
+        .bind(runId, canonicalJson(selectedGames), now, currentRevision, `parse-${runId}`),
+      after: [runStartGuardStatement(database)],
+    }),
     ingestionQueries
       .setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
         env.CATALOGUE_DB,
