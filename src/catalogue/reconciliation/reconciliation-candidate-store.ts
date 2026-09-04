@@ -1,25 +1,38 @@
 import {
-  ingestionRunTransitionSql,
+  byteBoundedJsonArrays,
   type CatalogueCandidate,
   canonicalJson,
-  byteBoundedJsonArrays,
   chunkedPayloadMarker,
   guardedAtomicBatch,
   payloadChunkStatements,
   retainedPayload,
 } from "../shared";
-import {
-  type ReconciliationTerminalResultRow,
-  terminalResultInsertion,
-  terminalResultStatement,
-} from "./reconciliation-repository";
-
 import type {
   Memberships,
   PrintingCompatibility,
   ProvenancedWithdrawal,
   ReconciliationWarning,
 } from "./reconciliation-model";
+import {
+  type ReconciliationTerminalResultRow,
+  terminalResultInsertion,
+  terminalResultStatement,
+} from "./reconciliation-repository";
+import {
+  beginReconciliationStatement,
+  blockedCandidateStatement,
+  candidatePlansStatement,
+  createReconciliationContextStatement,
+  evidencePartitionsStatement,
+  failedReconciliationStatement,
+  failedReconciliationWorkflowStatement,
+  reconciliationCandidatePlansStatement,
+  reconciliationDigestPayloadStatement,
+  releaseFailedReconciliationWorkflowStatement,
+  releaseReconciliationRunStatement,
+  retainedCandidateResultStatement,
+  reviewableCandidateStatement,
+} from "./reconciliation-state-repository";
 
 type EvidencePartitionInput = {
   sequenceNumber: number;
@@ -88,56 +101,27 @@ export async function persistReviewableCandidate(
     detail: String(warning.detail),
   }));
   const statements = [
-    database
-      .prepare(
-        `INSERT INTO reconciliation_contexts (
-          ingestion_run_id, source_observation_set_id,
-          source_snapshot_id, source_lineage, digest_payload_json
-        ) VALUES (?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        input.runId,
-        input.observationSetId,
-        input.sourceSnapshotId,
-        input.sourceLineage,
-        chunkedPayloadMarker("digest"),
-      ),
+    createReconciliationContextStatement(database, {
+      runId: input.runId,
+      observationSetId: input.observationSetId,
+      snapshotId: input.sourceSnapshotId,
+      sourceLineage: input.sourceLineage,
+      digestPayload: chunkedPayloadMarker("digest"),
+    }),
     ...evidencePartitionStatements(database, input.runId, input.partitions),
     ...payloadChunkStatements(database, input.runId, "candidate", canonicalJson(input.candidate)),
     ...payloadChunkStatements(database, input.runId, "digest", input.digestPayloadJson),
-    database
-      .prepare(
-        `UPDATE ingestion_runs
-         SET state = 'reconciling',
-             progress_json =
-               '{"completed_stages":["planning","collecting","parsing"],"current_stage":"reconciling"}'
-         WHERE id = ? AND ${ingestionRunTransitionSql("parsing", "reconciling")}`,
-      )
-      .bind(input.runId),
+    beginReconciliationStatement(database, input.runId),
     ...candidatePlanInsertionStatements(database, input.runId, input.plans, canonicalJson(input.warnings)),
-    database
-      .prepare(
-        `UPDATE ingestion_runs
-         SET state = 'awaiting_approval',
-             candidate_json = ?,
-             candidate_digest = ?,
-             candidate_catalogue_digest = ?,
-             candidate_created_at = ?,
-             approval_deadline = ?,
-             warnings_json = ?,
-             progress_json =
-               '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"awaiting_approval"}'
-         WHERE id = ? AND ${ingestionRunTransitionSql("reconciling", "awaiting_approval")}`,
-      )
-      .bind(
-        chunkedPayloadMarker("candidate"),
-        input.candidateDigest,
-        input.candidateCatalogueDigest,
-        input.observedAt,
-        approvalDeadline,
-        canonicalJson(runWarnings),
-        input.runId,
-      ),
+    reviewableCandidateStatement(database, {
+      candidatePayload: chunkedPayloadMarker("candidate"),
+      candidateDigest: input.candidateDigest,
+      catalogueDigest: input.candidateCatalogueDigest,
+      createdAt: input.observedAt,
+      approvalDeadline: approvalDeadline,
+      warningsJson: canonicalJson(runWarnings),
+      runId: input.runId,
+    }),
   ];
   await database.batch(guardedAtomicBatch(statements));
 }
@@ -179,68 +163,31 @@ export async function persistBlockedCandidate(
   const runDiagnostics = input.diagnostics.map(publicRunDiagnostic);
   const failureCode = input.failureCode ?? "printing_reconciliation_blocked";
   const statements = [
-    database
-      .prepare(
-        `INSERT INTO reconciliation_contexts (
-          ingestion_run_id, source_observation_set_id,
-          source_snapshot_id, source_lineage, digest_payload_json
-        ) VALUES (?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        input.runId,
-        input.observationSetId,
-        input.sourceSnapshotId,
-        input.sourceLineage,
-        chunkedPayloadMarker("digest"),
-      ),
+    createReconciliationContextStatement(database, {
+      runId: input.runId,
+      observationSetId: input.observationSetId,
+      snapshotId: input.sourceSnapshotId,
+      sourceLineage: input.sourceLineage,
+      digestPayload: chunkedPayloadMarker("digest"),
+    }),
     ...evidencePartitionStatements(database, input.runId, input.partitions),
     ...payloadChunkStatements(database, input.runId, "candidate", canonicalJson(input.candidate)),
     ...payloadChunkStatements(database, input.runId, "digest", input.digestPayloadJson),
-    database
-      .prepare(
-        `UPDATE ingestion_runs
-         SET state = 'reconciling',
-             progress_json =
-               '{"completed_stages":["planning","collecting","parsing"],"current_stage":"reconciling"}'
-         WHERE id = ? AND ${ingestionRunTransitionSql("parsing", "reconciling")}`,
-      )
-      .bind(input.runId),
+    beginReconciliationStatement(database, input.runId),
     ...candidatePlanInsertionStatements(database, input.runId, input.plans, canonicalJson(input.diagnostics)),
     ...(input.atomicStatements ?? []),
-    database
-      .prepare(
-        `UPDATE ingestion_runs
-         SET state = 'failed',
-             candidate_json = ?,
-             candidate_digest = ?,
-             candidate_catalogue_digest = ?,
-             candidate_created_at = ?,
-             approval_deadline = ?,
-             terminal_at = ?,
-             failure_code = ?,
-             warnings_json = ?,
-             progress_json =
-               '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}'
-         WHERE id = ? AND ${ingestionRunTransitionSql("reconciling", "failed")}`,
-      )
-      .bind(
-        chunkedPayloadMarker("candidate"),
-        input.candidateDigest,
-        input.candidateCatalogueDigest,
-        input.observedAt,
-        approvalDeadline,
-        input.observedAt,
-        failureCode,
-        canonicalJson(runDiagnostics),
-        input.runId,
-      ),
-    database
-      .prepare(
-        `UPDATE operation_state
-         SET active_ingestion_run_id = NULL
-         WHERE singleton = 1 AND active_ingestion_run_id = ?`,
-      )
-      .bind(input.runId),
+    blockedCandidateStatement(database, {
+      candidatePayload: chunkedPayloadMarker("candidate"),
+      candidateDigest: input.candidateDigest,
+      catalogueDigest: input.candidateCatalogueDigest,
+      createdAt: input.observedAt,
+      approvalDeadline: approvalDeadline,
+      terminalAt: input.observedAt,
+      failureCode: failureCode,
+      diagnosticsJson: canonicalJson(runDiagnostics),
+      runId: input.runId,
+    }),
+    releaseReconciliationRunStatement(database, input.runId),
   ];
   await database.batch(guardedAtomicBatch(statements));
 }
@@ -274,33 +221,13 @@ export async function failReconciliation(
   const result = terminalFailureResult(runId, diagnostics);
   await database.batch([
     terminalResultInsertion(database, runId, result),
-    database
-      .prepare(
-        `UPDATE ingestion_runs
-         SET state = 'reconciling',
-             progress_json =
-               '{"completed_stages":["planning","collecting","parsing"],"current_stage":"reconciling"}'
-         WHERE id = ? AND ${ingestionRunTransitionSql("parsing", "reconciling")}`,
-      )
-      .bind(runId),
-    database
-      .prepare(
-        `UPDATE ingestion_runs
-         SET state = 'failed', terminal_at = ?,
-             failure_code = 'printing_reconciliation_blocked',
-             warnings_json = ?,
-             progress_json =
-               '{"completed_stages":["planning","collecting","parsing"],"current_stage":"failed"}'
-         WHERE id = ? AND ${ingestionRunTransitionSql("reconciling", "failed")}`,
-      )
-      .bind(observedAt, canonicalJson(runDiagnostics), runId),
-    database
-      .prepare(
-        `UPDATE operation_state
-         SET active_ingestion_run_id = NULL
-         WHERE singleton = 1 AND active_ingestion_run_id = ?`,
-      )
-      .bind(runId),
+    beginReconciliationStatement(database, runId),
+    failedReconciliationStatement(database, {
+      terminalAt: observedAt,
+      diagnosticsJson: canonicalJson(runDiagnostics),
+      runId: runId,
+    }),
+    releaseReconciliationRunStatement(database, runId),
   ]);
   return requiredTerminalResult(database, runId);
 }
@@ -321,30 +248,17 @@ export async function failReconciliationWorkflow(
   const result = terminalFailureResult(runId, [diagnostic]);
   await database.batch([
     terminalResultInsertion(database, runId, result),
-    database
-      .prepare(
-        `UPDATE ingestion_runs
-         SET state = 'failed', terminal_at = ?,
-             failure_code = ?,
-             warnings_json = ?,
-             progress_json =
-               '{"completed_stages":["planning","collecting","parsing"],"current_stage":"failed"}'
-         WHERE id = ? AND ${ingestionRunTransitionSql(["parsing", "reconciling"], "failed")}`,
-      )
-      .bind(observedAt, failureCode, canonicalJson([diagnostic]), runId),
-    database
-      .prepare(
-        `UPDATE operation_state
-         SET active_ingestion_run_id = NULL
-         WHERE singleton = 1
-           AND active_ingestion_run_id = ?
-           AND EXISTS (
-             SELECT 1 FROM ingestion_runs
-             WHERE id = ? AND state = 'failed'
-               AND failure_code = ?
-           )`,
-      )
-      .bind(runId, runId, failureCode),
+    failedReconciliationWorkflowStatement(database, {
+      terminalAt: observedAt,
+      failureCode: failureCode,
+      diagnosticsJson: canonicalJson([diagnostic]),
+      runId: runId,
+    }),
+    releaseFailedReconciliationWorkflowStatement(database, {
+      activeRunId: runId,
+      runId: runId,
+      failureCode: failureCode,
+    }),
   ]);
   return requiredTerminalResult(database, runId);
 }
@@ -387,33 +301,7 @@ function candidatePlanInsertionStatements(
     source_card_facts_json: plan.sourceCardFactsJson,
   }));
   return byteBoundedJsonArrays(rows).map((chunk) =>
-    database
-      .prepare(
-        `INSERT INTO reconciliation_candidates (
-         ingestion_run_id, source_observation_set_id, source_snapshot_id,
-         source_observation_id, card_id, printing_id, source_lineage,
-         locator, variant_key, compatibility_json, memberships_json,
-         withdrawal_json, source_card_facts_json,
-         warnings_json, digest_payload_json,
-         observation_kind
-       )
-       SELECT ?, json_extract(planned.value, '$.observation_set_id'),
-              json_extract(planned.value, '$.snapshot_id'),
-              json_extract(planned.value, '$.observation_id'),
-              json_extract(planned.value, '$.card_id'),
-              json_extract(planned.value, '$.printing_id'),
-              json_extract(planned.value, '$.source_lineage'),
-              json_extract(planned.value, '$.locator'),
-              json_extract(planned.value, '$.variant_key'),
-              json_extract(planned.value, '$.compatibility_json'),
-              json_extract(planned.value, '$.memberships_json'),
-              json_extract(planned.value, '$.withdrawal_json'),
-              json_extract(planned.value, '$.source_card_facts_json'), ?,
-              '{"reconciliation_context":"shared"}',
-              json_extract(planned.value, '$.observation_kind')
-       FROM json_each(?) AS planned`,
-      )
-      .bind(runId, warningsJson, chunk),
+    candidatePlansStatement(database, { runId: runId, warningsJson: warningsJson, plansJson: chunk }),
   );
 }
 
@@ -433,50 +321,17 @@ function evidencePartitionStatements(
     adapter_version: partition.adapterVersion,
   }));
   return byteBoundedJsonArrays(rows).map((chunk) =>
-    database
-      .prepare(
-        `INSERT INTO reconciliation_evidence_partitions (
-           ingestion_run_id, sequence_number, request_id,
-           source_observation_set_id, source_snapshot_id, source_lineage,
-           supported_game, game_profile_version, adapter_version
-         )
-         SELECT ?, json_extract(value, '$.sequence_number'),
-                json_extract(value, '$.request_id'),
-                json_extract(value, '$.observation_set_id'),
-                json_extract(value, '$.snapshot_id'),
-                json_extract(value, '$.source_lineage'),
-                json_extract(value, '$.supported_game'),
-                json_extract(value, '$.profile_version'),
-                json_extract(value, '$.adapter_version')
-         FROM json_each(?)`,
-      )
-      .bind(runId, chunk),
+    evidencePartitionsStatement(database, { runId: runId, partitionsJson: chunk }),
   );
 }
 
 export async function reconciliationCandidatePlans(database: D1Database, runId: string): Promise<CandidatePlanRow[]> {
-  const rows = await database
-    .prepare(
-      `SELECT *
-       FROM reconciliation_candidates
-       WHERE ingestion_run_id = ?
-       ORDER BY source_lineage, card_id, printing_id,
-                source_observation_id`,
-    )
-    .bind(runId)
-    .all<CandidatePlanRow>();
+  const rows = await reconciliationCandidatePlansStatement(database, runId).all<CandidatePlanRow>();
   return rows.results;
 }
 
 export async function digestBoundCandidatePayload(database: D1Database, runId: string): Promise<string | null> {
-  const row = await database
-    .prepare(
-      `SELECT digest_payload_json
-       FROM reconciliation_contexts
-       WHERE ingestion_run_id = ?`,
-    )
-    .bind(runId)
-    .first<{ digest_payload_json: string }>();
+  const row = await reconciliationDigestPayloadStatement(database, runId).first<{ digest_payload_json: string }>();
   return row === null ? null : retainedPayload(database, runId, "digest", row.digest_payload_json);
 }
 
@@ -486,23 +341,12 @@ export async function retainedReconciliationResult(
 ): Promise<Record<string, unknown>> {
   const terminal = await terminalResult(database, runId);
   if (terminal !== null) return terminal;
-  const row = await database
-    .prepare(
-      `SELECT run.candidate_json, run.candidate_digest,
-              run.expected_current_revision_id,
-              context.digest_payload_json
-       FROM ingestion_runs AS run
-       JOIN reconciliation_contexts AS context
-         ON context.ingestion_run_id = run.id
-       WHERE run.id = ?`,
-    )
-    .bind(runId)
-    .first<{
-      candidate_json: string;
-      candidate_digest: string | null;
-      expected_current_revision_id: string;
-      digest_payload_json: string;
-    }>();
+  const row = await retainedCandidateResultStatement(database, runId).first<{
+    candidate_json: string;
+    candidate_digest: string | null;
+    expected_current_revision_id: string;
+    digest_payload_json: string;
+  }>();
   if (row?.candidate_digest === null || row === null) {
     throw new Error("The retained reconciliation result is unavailable.");
   }

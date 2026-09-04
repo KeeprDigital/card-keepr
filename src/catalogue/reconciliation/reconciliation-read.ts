@@ -1,11 +1,19 @@
 import type { Memberships } from "./reconciliation-model";
-import type { ReconciledPrintingRow } from "./reconciliation-repository";
+import type { LocatorEvidence, LocatorEvidenceCollection } from "./reconciliation-publication";
+import {
+  disappearedCardsStatement,
+  disappearedPrintingsStatement,
+  printingRelationshipsForLineageStatement,
+  reconciledPrintingDocumentStatement,
+  reconciledPrintingLocatorsStatement,
+  reconciledPrintingRelationshipsStatement,
+} from "./reconciliation-read-repository";
 import {
   aggregateRelationshipEvidence,
   membershipEntries,
   type RelationshipEvidenceRow,
 } from "./reconciliation-relationships";
-import type { LocatorEvidence, LocatorEvidenceCollection } from "./reconciliation-publication";
+import type { ReconciledPrintingRow } from "./reconciliation-repository";
 
 type MembershipRow = RelationshipEvidenceRow;
 
@@ -15,29 +23,10 @@ export async function relationshipDisappearanceWarnings(
   sourceLineage: string,
   memberships: Memberships,
 ): Promise<Record<string, unknown>[]> {
-  const existing = await database
-    .prepare(
-      `SELECT source_lineage, source_observation_id,
-              relationship_kind, relationship_value,
-              membership.first_revision_id,
-              membership.last_observed_revision_id,
-              first_revision.published_at AS first_revision_order,
-              last_revision.published_at AS last_observed_revision_order,
-              current, last_missing_revision_id
-       FROM reconciled_printing_memberships AS membership
-       JOIN catalogue_revisions AS first_revision
-         ON first_revision.id = membership.first_revision_id
-       JOIN catalogue_revisions AS last_revision
-         ON last_revision.id = membership.last_observed_revision_id
-       WHERE printing_id = ? AND source_lineage = ? AND current = 1
-       ORDER BY relationship_kind, relationship_value,
-                first_revision.published_at, membership.first_revision_id,
-                last_revision.published_at,
-                membership.last_observed_revision_id,
-                source_observation_id`,
-    )
-    .bind(printingId, sourceLineage)
-    .all<MembershipRow>();
+  const existing = await printingRelationshipsForLineageStatement(database, {
+    printingId: printingId,
+    sourceLineage: sourceLineage,
+  }).all<MembershipRow>();
   const current = new Set(membershipEntries(memberships).map(membershipKey));
   const disappeared = new Map(
     existing.results.filter((row) => !current.has(membershipKey(row))).map((row) => [membershipKey(row), row]),
@@ -56,23 +45,10 @@ export async function printingDisappearanceWarnings(
   sourceLineage: string,
   observedPrintingIds: readonly string[],
 ): Promise<Record<string, unknown>[]> {
-  const result = await database
-    .prepare(
-      `SELECT DISTINCT printing.id
-       FROM reconciled_printings AS printing
-       JOIN reconciled_printing_locators AS locator
-         ON locator.printing_id = printing.id
-       WHERE locator.source_lineage = ?
-         AND locator.current = 1
-         AND NOT EXISTS (
-           SELECT 1 FROM json_each(?) AS observed
-           WHERE observed.value = printing.id
-         )
-         AND printing.withdrawn = 0
-       ORDER BY printing.id`,
-    )
-    .bind(sourceLineage, JSON.stringify(observedPrintingIds))
-    .all<{ id: string }>();
+  const result = await disappearedPrintingsStatement(database, {
+    sourceLineage: sourceLineage,
+    observedPrintingIdsJson: JSON.stringify(observedPrintingIds),
+  }).all<{ id: string }>();
   return result.results.map((row) => ({
     code: "record_not_observed",
     printing_id: row.id,
@@ -85,23 +61,10 @@ export async function cardDisappearanceWarnings(
   sourceLineage: string,
   observedCardIds: readonly string[],
 ): Promise<Record<string, unknown>[]> {
-  const result = await database
-    .prepare(
-      `SELECT DISTINCT card.id
-       FROM reconciled_cards AS card
-       JOIN reconciled_card_observations AS observation
-         ON observation.card_id = card.id
-       WHERE observation.source_lineage = ?
-         AND observation.current = 1
-         AND NOT EXISTS (
-           SELECT 1 FROM json_each(?) AS observed
-           WHERE observed.value = card.id
-         )
-         AND card.withdrawn = 0
-       ORDER BY card.id`,
-    )
-    .bind(sourceLineage, JSON.stringify(observedCardIds))
-    .all<{ id: string }>();
+  const result = await disappearedCardsStatement(database, {
+    sourceLineage: sourceLineage,
+    observedCardIdsJson: JSON.stringify(observedCardIds),
+  }).all<{ id: string }>();
   return result.results.map((row) => ({
     code: "record_not_observed",
     card_id: row.id,
@@ -113,46 +76,13 @@ export async function publicReconciledPrinting(
   database: D1Database,
   printingId: string,
 ): Promise<Record<string, unknown> | null> {
-  const printing = await database
-    .prepare("SELECT * FROM reconciled_printings WHERE id = ?")
-    .bind(printingId)
-    .first<ReconciledPrintingRow>();
+  const printing = await reconciledPrintingDocumentStatement(database, printingId).first<ReconciledPrintingRow>();
   if (printing === null) return null;
   const [locators, memberships] = await Promise.all([
-    database
-      .prepare(
-        `SELECT source_lineage, locator, variant_key,
-                first_revision_id, last_observed_revision_id,
-                current, last_missing_revision_id
-         FROM reconciled_printing_locators
-         WHERE printing_id = ? ORDER BY locator`,
-      )
-      .bind(printingId)
-      .all<Omit<LocatorEvidence, "current"> & { current: number }>(),
-    database
-      .prepare(
-        `SELECT source_lineage, source_observation_id,
-                relationship_kind, relationship_value,
-                membership.first_revision_id,
-                membership.last_observed_revision_id,
-                first_revision.published_at AS first_revision_order,
-                last_revision.published_at AS last_observed_revision_order,
-                current, last_missing_revision_id
-         FROM reconciled_printing_memberships AS membership
-         JOIN catalogue_revisions AS first_revision
-           ON first_revision.id = membership.first_revision_id
-         JOIN catalogue_revisions AS last_revision
-           ON last_revision.id = membership.last_observed_revision_id
-         WHERE printing_id = ?
-         ORDER BY source_lineage, relationship_kind, relationship_value,
-                  first_revision.published_at,
-                  membership.first_revision_id,
-                  last_revision.published_at,
-                  membership.last_observed_revision_id,
-                  source_observation_id`,
-      )
-      .bind(printingId)
-      .all<MembershipRow>(),
+    reconciledPrintingLocatorsStatement(database, printingId).all<
+      Omit<LocatorEvidence, "current"> & { current: number }
+    >(),
+    reconciledPrintingRelationshipsStatement(database, printingId).all<MembershipRow>(),
   ]);
   const current = membershipProjection<string[]>(() => []);
   const historical = membershipProjection<

@@ -1,0 +1,177 @@
+// Prepared statements only; callers own execution and atomic batch composition.
+
+export function reconciliationRunStateStatement(database: D1Database, runId: string): D1PreparedStatement {
+  return database.prepare("SELECT state FROM ingestion_runs WHERE id = ?").bind(runId);
+}
+
+export function candidateAtRevisionStatement(database: D1Database, revisionId: string): D1PreparedStatement {
+  return database
+    .prepare(`SELECT run.id AS ingestion_run_id, run.candidate_json
+       FROM catalogue_revisions AS revision
+       JOIN ingestion_runs AS run ON run.id = revision.ingestion_run_id
+       WHERE revision.id = ?`)
+    .bind(revisionId);
+}
+
+export function errataProvenanceByIdsStatement(database: D1Database, erratumIdsJson: string): D1PreparedStatement {
+  return database
+    .prepare(`SELECT erratum_id, source_lineage, source_observation_id
+         FROM erratum_provenance
+         WHERE erratum_id IN (SELECT value FROM json_each(?))
+         ORDER BY erratum_id, source_lineage, source_observation_id`)
+    .bind(erratumIdsJson);
+}
+
+export function currentPrintingMembershipsStatement(database: D1Database): D1PreparedStatement {
+  return database.prepare(`SELECT printing_id, source_lineage, relationship_kind,
+                  relationship_value
+           FROM reconciled_printing_memberships
+           WHERE current = 1
+           ORDER BY printing_id, source_lineage,
+                    relationship_kind, relationship_value`);
+}
+
+export function currentCardWithdrawalEvidenceStatement(database: D1Database): D1PreparedStatement {
+  return database.prepare(`SELECT id, withdrawal_evidence_json
+           FROM reconciled_cards
+           WHERE withdrawn = 1
+           ORDER BY id`);
+}
+
+export function currentPrintingWithdrawalEvidenceStatement(database: D1Database): D1PreparedStatement {
+  return database.prepare(`SELECT id, withdrawal_evidence_json
+           FROM reconciled_printings
+           WHERE withdrawn = 1
+           ORDER BY id`);
+}
+
+export function publishedWithdrawalAssertionsStatement(
+  database: D1Database,
+  input: Readonly<{ entityType: string; entityId: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT assertion, state, effective_at
+           FROM reconciled_withdrawal_assertions
+           WHERE entity_type = ? AND entity_id = ?
+           ORDER BY published_catalogue_revision_id, source_observation_id`)
+    .bind(input.entityType, input.entityId);
+}
+
+export function activeParsingRunStatement(database: D1Database, runId: string): D1PreparedStatement {
+  return database
+    .prepare(`SELECT run.id, run.state, run.selected_games_json,
+              run.expected_current_revision_id,
+              operation.active_ingestion_run_id,
+              operation.recovery_health
+       FROM ingestion_runs AS run
+       JOIN operation_state AS operation ON operation.singleton = 1
+       WHERE run.id = ?`)
+    .bind(runId);
+}
+
+export function printingRelationshipsForLineageStatement(
+  database: D1Database,
+  input: Readonly<{ printingId: string; sourceLineage: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT source_lineage, source_observation_id,
+              relationship_kind, relationship_value,
+              membership.first_revision_id,
+              membership.last_observed_revision_id,
+              first_revision.published_at AS first_revision_order,
+              last_revision.published_at AS last_observed_revision_order,
+              current, last_missing_revision_id
+       FROM reconciled_printing_memberships AS membership
+       JOIN catalogue_revisions AS first_revision
+         ON first_revision.id = membership.first_revision_id
+       JOIN catalogue_revisions AS last_revision
+         ON last_revision.id = membership.last_observed_revision_id
+       WHERE printing_id = ? AND source_lineage = ? AND current = 1
+       ORDER BY relationship_kind, relationship_value,
+                first_revision.published_at, membership.first_revision_id,
+                last_revision.published_at,
+                membership.last_observed_revision_id,
+                source_observation_id`)
+    .bind(input.printingId, input.sourceLineage);
+}
+
+export function disappearedPrintingsStatement(
+  database: D1Database,
+  input: Readonly<{ sourceLineage: string; observedPrintingIdsJson: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT DISTINCT printing.id
+       FROM reconciled_printings AS printing
+       JOIN reconciled_printing_locators AS locator
+         ON locator.printing_id = printing.id
+       WHERE locator.source_lineage = ?
+         AND locator.current = 1
+         AND NOT EXISTS (
+           SELECT 1 FROM json_each(?) AS observed
+           WHERE observed.value = printing.id
+         )
+         AND printing.withdrawn = 0
+       ORDER BY printing.id`)
+    .bind(input.sourceLineage, input.observedPrintingIdsJson);
+}
+
+export function disappearedCardsStatement(
+  database: D1Database,
+  input: Readonly<{ sourceLineage: string; observedCardIdsJson: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT DISTINCT card.id
+       FROM reconciled_cards AS card
+       JOIN reconciled_card_observations AS observation
+         ON observation.card_id = card.id
+       WHERE observation.source_lineage = ?
+         AND observation.current = 1
+         AND NOT EXISTS (
+           SELECT 1 FROM json_each(?) AS observed
+           WHERE observed.value = card.id
+         )
+         AND card.withdrawn = 0
+       ORDER BY card.id`)
+    .bind(input.sourceLineage, input.observedCardIdsJson);
+}
+
+export function reconciledPrintingDocumentStatement(database: D1Database, printingId: string): D1PreparedStatement {
+  return database.prepare("SELECT * FROM reconciled_printings WHERE id = ?").bind(printingId);
+}
+
+export function reconciledPrintingLocatorsStatement(database: D1Database, printingId: string): D1PreparedStatement {
+  return database
+    .prepare(`SELECT source_lineage, locator, variant_key,
+                first_revision_id, last_observed_revision_id,
+                current, last_missing_revision_id
+         FROM reconciled_printing_locators
+         WHERE printing_id = ? ORDER BY locator`)
+    .bind(printingId);
+}
+
+export function reconciledPrintingRelationshipsStatement(
+  database: D1Database,
+  printingId: string,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT source_lineage, source_observation_id,
+                relationship_kind, relationship_value,
+                membership.first_revision_id,
+                membership.last_observed_revision_id,
+                first_revision.published_at AS first_revision_order,
+                last_revision.published_at AS last_observed_revision_order,
+                current, last_missing_revision_id
+         FROM reconciled_printing_memberships AS membership
+         JOIN catalogue_revisions AS first_revision
+           ON first_revision.id = membership.first_revision_id
+         JOIN catalogue_revisions AS last_revision
+           ON last_revision.id = membership.last_observed_revision_id
+         WHERE printing_id = ?
+         ORDER BY source_lineage, relationship_kind, relationship_value,
+                  first_revision.published_at,
+                  membership.first_revision_id,
+                  last_revision.published_at,
+                  membership.last_observed_revision_id,
+                  source_observation_id`)
+    .bind(printingId);
+}

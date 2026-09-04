@@ -1,58 +1,23 @@
+import { applyPinnedCuratedRevisions, CuratedRevisionSourceChangeError, stripCuratedRevisionEffects } from "../curated";
+import { legalityRulesForCandidate, normalizedLegalityRuleLifecycle, resolveLegalityRuleCards } from "../legality";
 import {
-  assertIngestionRunTransition,
-  type IngestionRunState,
   AdministrationProblem,
-  catalogueCandidateContract,
+  assertIngestionRunTransition,
+  byteBoundedJsonArrays,
   type CatalogueCandidate,
   type CatalogueCard,
   type CatalogueErratum,
-  type CataloguePrintingImage,
   type CataloguePrinting,
-  type SupportedGame,
-  canonicalJson,
-  sha256Text,
+  type CataloguePrintingImage,
   type CuratedProvenance,
-  byteBoundedJsonArrays,
+  canonicalJson,
+  catalogueCandidateContract,
+  type IngestionRunState,
   retainedPayload,
+  type SupportedGame,
+  sha256Text,
 } from "../shared";
-
-import { retainedReconciliationObservation } from "./reconciliation-evidence";
-import {
-  cardIdFor,
-  compatibilityFor,
-  isCompatible,
-  printingIdFor,
-  type Memberships,
-  type PrintingCompatibility,
-  type ProvenancedWithdrawal,
-} from "./reconciliation-model";
-import {
-  compatiblePrintings,
-  canonicalCardConflict,
-  canonicalPrintingConflict,
-  gundamPrintingLineages,
-  gundamPrintingProductMemberships,
-  gundamCardLineages,
-  existingCard,
-  printingFactsFormattingEquivalent,
-  printingAtLocatorVariant,
-  printingsAtLocator,
-  printingsWithAppearance,
-} from "./reconciliation-repository";
-import {
-  failReconciliation,
-  persistBlockedCandidate,
-  persistReviewableCandidate,
-  retainedReconciliationResult,
-} from "./reconciliation-candidate-store";
-import {
-  cardDisappearanceWarnings,
-  printingDisappearanceWarnings,
-  publicReconciledPrinting,
-  relationshipDisappearanceWarnings,
-} from "./reconciliation-read";
-import { applyPinnedCuratedRevisions, CuratedRevisionSourceChangeError, stripCuratedRevisionEffects } from "../curated";
-import { reconcileProductReleaseCatalogue } from "./product-release-catalogue";
+import { type DigimonCardAuthority, reconcileDigimonCardAuthority } from "./digimon-reconciliation";
 import {
   canonicalErratum,
   deriveEffectiveRulesText,
@@ -60,8 +25,52 @@ import {
   identifyRulesTextErrata,
   mergeCatalogueErrata,
 } from "./errata-rules-text";
-import { legalityRulesForCandidate, normalizedLegalityRuleLifecycle, resolveLegalityRuleCards } from "../legality";
-import { reconcileDigimonCardAuthority, type DigimonCardAuthority } from "./digimon-reconciliation";
+import { reconcileProductReleaseCatalogue } from "./product-release-catalogue";
+import {
+  failReconciliation,
+  persistBlockedCandidate,
+  persistReviewableCandidate,
+  retainedReconciliationResult,
+} from "./reconciliation-candidate-store";
+import { retainedReconciliationObservation } from "./reconciliation-evidence";
+import {
+  cardIdFor,
+  compatibilityFor,
+  isCompatible,
+  type Memberships,
+  type PrintingCompatibility,
+  type ProvenancedWithdrawal,
+  printingIdFor,
+} from "./reconciliation-model";
+import {
+  cardDisappearanceWarnings,
+  printingDisappearanceWarnings,
+  publicReconciledPrinting,
+  relationshipDisappearanceWarnings,
+} from "./reconciliation-read";
+import {
+  activeParsingRunStatement,
+  candidateAtRevisionStatement,
+  currentCardWithdrawalEvidenceStatement,
+  currentPrintingMembershipsStatement,
+  currentPrintingWithdrawalEvidenceStatement,
+  errataProvenanceByIdsStatement,
+  publishedWithdrawalAssertionsStatement,
+  reconciliationRunStateStatement,
+} from "./reconciliation-read-repository";
+import {
+  canonicalCardConflict,
+  canonicalPrintingConflict,
+  compatiblePrintings,
+  existingCard,
+  gundamCardLineages,
+  gundamPrintingLineages,
+  gundamPrintingProductMemberships,
+  printingAtLocatorVariant,
+  printingFactsFormattingEquivalent,
+  printingsAtLocator,
+  printingsWithAppearance,
+} from "./reconciliation-repository";
 
 type ActiveRunRow = {
   id: string;
@@ -1217,10 +1226,7 @@ async function finalizedReconciliationResult(
   database: D1Database,
   runId: string,
 ): Promise<Record<string, unknown> | null> {
-  const row = await database
-    .prepare("SELECT state FROM ingestion_runs WHERE id = ?")
-    .bind(runId)
-    .first<{ state: string }>();
+  const row = await reconciliationRunStateStatement(database, runId).first<{ state: string }>();
   return row !== null && (row.state === "awaiting_approval" || row.state === "failed")
     ? retainedReconciliationResult(database, runId)
     : null;
@@ -1261,15 +1267,10 @@ async function candidateAtRevision(
   revisionId: string,
   selectedGames: readonly SupportedGame[],
 ): Promise<CatalogueCandidate | null> {
-  const row = await database
-    .prepare(
-      `SELECT run.id AS ingestion_run_id, run.candidate_json
-       FROM catalogue_revisions AS revision
-       JOIN ingestion_runs AS run ON run.id = revision.ingestion_run_id
-       WHERE revision.id = ?`,
-    )
-    .bind(revisionId)
-    .first<{ ingestion_run_id: string; candidate_json: string }>();
+  const row = await candidateAtRevisionStatement(database, revisionId).first<{
+    ingestion_run_id: string;
+    candidate_json: string;
+  }>();
   if (row === null) return null;
   const candidate = stripCuratedRevisionEffects(
     JSON.parse(
@@ -1280,19 +1281,11 @@ async function candidateAtRevision(
   const errata = candidate.errata ?? [];
   const provenanceByErratum = new Map<string, CatalogueErratum["provenance"][number][]>();
   for (const idsJson of byteBoundedJsonArrays(errata.map(({ id }) => id))) {
-    const rows = await database
-      .prepare(
-        `SELECT erratum_id, source_lineage, source_observation_id
-         FROM erratum_provenance
-         WHERE erratum_id IN (SELECT value FROM json_each(?))
-         ORDER BY erratum_id, source_lineage, source_observation_id`,
-      )
-      .bind(idsJson)
-      .all<{
-        erratum_id: string;
-        source_lineage: string;
-        source_observation_id: string;
-      }>();
+    const rows = await errataProvenanceByIdsStatement(database, idsJson).all<{
+      erratum_id: string;
+      source_lineage: string;
+      source_observation_id: string;
+    }>();
     for (const provenance of rows.results) {
       provenanceByErratum.set(provenance.erratum_id, [
         ...(provenanceByErratum.get(provenance.erratum_id) ?? []),
@@ -1372,37 +1365,14 @@ async function catalogueDataDigest(
   const printingIds = new Set(candidate.printings.map((printing) => printing.id));
   const cardIds = new Set(candidate.cards.map((card) => card.id));
   const [storedMemberships, storedCards, storedPrintings] = await Promise.all([
-    database
-      .prepare(
-        `SELECT printing_id, source_lineage, relationship_kind,
-                  relationship_value
-           FROM reconciled_printing_memberships
-           WHERE current = 1
-           ORDER BY printing_id, source_lineage,
-                    relationship_kind, relationship_value`,
-      )
-      .all<{
-        printing_id: string;
-        source_lineage: string;
-        relationship_kind: string;
-        relationship_value: string;
-      }>(),
-    database
-      .prepare(
-        `SELECT id, withdrawal_evidence_json
-           FROM reconciled_cards
-           WHERE withdrawn = 1
-           ORDER BY id`,
-      )
-      .all<{ id: string; withdrawal_evidence_json: string | null }>(),
-    database
-      .prepare(
-        `SELECT id, withdrawal_evidence_json
-           FROM reconciled_printings
-           WHERE withdrawn = 1
-           ORDER BY id`,
-      )
-      .all<{ id: string; withdrawal_evidence_json: string | null }>(),
+    currentPrintingMembershipsStatement(database).all<{
+      printing_id: string;
+      source_lineage: string;
+      relationship_kind: string;
+      relationship_value: string;
+    }>(),
+    currentCardWithdrawalEvidenceStatement(database).all<{ id: string; withdrawal_evidence_json: string | null }>(),
+    currentPrintingWithdrawalEvidenceStatement(database).all<{ id: string; withdrawal_evidence_json: string | null }>(),
   ]);
   const memberships = new Map<string, Record<string, unknown>>();
   const observedSourceLineages = new Set(checkedSourceLineages);
@@ -1616,7 +1586,7 @@ function groupObservationsByGame<T extends { supportedGame: SupportedGame }>(
   return [...grouped].sort(([left], [right]) => left.localeCompare(right));
 }
 
-function groupPlansByLineage<T extends { sourceLineage: string }>(plans: readonly T[]): [string, T[]][] {
+function _groupPlansByLineage<T extends { sourceLineage: string }>(plans: readonly T[]): [string, T[]][] {
   const grouped = new Map<string, T[]>();
   for (const plan of plans) {
     grouped.set(plan.sourceLineage, [...(grouped.get(plan.sourceLineage) ?? []), plan]);
@@ -1649,19 +1619,14 @@ async function publishedWithdrawalConflictDiagnostics(
         : []),
     ];
     for (const target of targets) {
-      const prior = await database
-        .prepare(
-          `SELECT assertion, state, effective_at
-           FROM reconciled_withdrawal_assertions
-           WHERE entity_type = ? AND entity_id = ?
-           ORDER BY published_catalogue_revision_id, source_observation_id`,
-        )
-        .bind(target.entityType, target.entityId)
-        .all<{
-          assertion: string;
-          state: string;
-          effective_at: string;
-        }>();
+      const prior = await publishedWithdrawalAssertionsStatement(database, {
+        entityType: target.entityType,
+        entityId: target.entityId,
+      }).all<{
+        assertion: string;
+        state: string;
+        effective_at: string;
+      }>();
       const proposedSemantic = canonicalJson({
         assertion: withdrawal.assertion,
         state: withdrawal.state,
@@ -1858,18 +1823,7 @@ function printingImageEvidenceEquivalent(left: CataloguePrintingImage, right: Ca
 }
 
 async function requiredActiveParsingRun(database: D1Database, runId: string): Promise<ActiveRunRow> {
-  const row = await database
-    .prepare(
-      `SELECT run.id, run.state, run.selected_games_json,
-              run.expected_current_revision_id,
-              operation.active_ingestion_run_id,
-              operation.recovery_health
-       FROM ingestion_runs AS run
-       JOIN operation_state AS operation ON operation.singleton = 1
-       WHERE run.id = ?`,
-    )
-    .bind(runId)
-    .first<ActiveRunRow>();
+  const row = await activeParsingRunStatement(database, runId).first<ActiveRunRow>();
   if (row === null || row.active_ingestion_run_id !== runId) {
     throw new AdministrationProblem(
       409,
