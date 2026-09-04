@@ -1,3 +1,4 @@
+import { replayProjectionBackfill } from "./query-helpers/projection-backfill";
 import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
@@ -7,10 +8,7 @@ import { seedPrintingQueryFixture } from "./printing-query-fixtures";
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 
 test("Printing projection backfills retained bare and enveloped documents and current Product memberships", async () => {
-  await applyD1Migrations(
-    testEnv.CATALOGUE_DB,
-    testEnv.TEST_MIGRATIONS.filter(({ name }) => Number.parseInt(name, 10) < 6),
-  );
+  await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
   await seedPrintingQueryFixture(testEnv.CATALOGUE_DB);
   await testEnv.CATALOGUE_DB.batch([
     publishedCatalogueQueries.setRevisionCardsDocumentJson(testEnv.CATALOGUE_DB),
@@ -38,7 +36,7 @@ test("Printing projection backfills retained bare and enveloped documents and cu
       ),
     ),
   ]);
-  await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
+  await replayProjectionBackfill(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS, "printings");
   for (const [filters, ids] of [
     ["game=one-piece&rarity=leader", ["printing_enveloped", "printing_st15_event"]],
     ["product_id=product_st15&release_region=EN-OCEANIA", ["printing_st15_event"]],
