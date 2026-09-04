@@ -1,3 +1,13 @@
+import { sourceSnapshotStatement } from "./evidence-repository";
+import {
+  uploadedParseStatement,
+  retainedDiscoveryObservationsStatement,
+  createParseOperationStatement,
+  finalizedObservationSetStatement,
+  finalizeParseStatement,
+  parseOperationStatement,
+  observationSetByParseOperationStatement,
+} from "./source-parse-repository";
 import {
   AdapterParseFailure,
   assertAdapterBinding,
@@ -35,10 +45,7 @@ export async function parseSnapshot(
   adapterVersion: string,
   parseIntent: ParseIntent,
 ): Promise<ObservationSetRow> {
-  const snapshot = await database
-    .prepare("SELECT * FROM source_snapshots WHERE id = ?")
-    .bind(snapshotId)
-    .first<SnapshotRow>();
+  const snapshot = await sourceSnapshotStatement(database, snapshotId).first<SnapshotRow>();
   if (snapshot === null) {
     throw new AdministrationProblem(404, "source_snapshot_not_found", "The requested Source Snapshot does not exist.");
   }
@@ -134,15 +141,12 @@ export async function parseSnapshot(
     const observationBytes = utf8(canonicalJson(observationDocument));
     const digest = await sha256(observationBytes);
     await putImmutableBytes(evidenceObjects, operation.content_object_key, observationBytes, digest);
-    await database
-      .prepare(
-        `UPDATE source_parse_operations
-         SET state = 'uploaded', content_digest = ?,
-             content_byte_length = ?, observation_count = ?
-         WHERE id = ? AND state = 'planned'`,
-      )
-      .bind(digest, observationBytes.byteLength, observations.length, operation.id)
-      .run();
+    await uploadedParseStatement(database, {
+      digest: digest,
+      byteLength: observationBytes.byteLength,
+      observationCount: observations.length,
+      operationId: operation.id,
+    }).run();
   }
   return finalizeParseOperation(database, operation.id, snapshot);
 }
@@ -160,10 +164,7 @@ export async function discoverSnapshotRequests(
     headers: Record<string, string>;
   }[]
 > {
-  const snapshot = await database
-    .prepare("SELECT * FROM source_snapshots WHERE id = ?")
-    .bind(snapshotId)
-    .first<SnapshotRow>();
+  const snapshot = await sourceSnapshotStatement(database, snapshotId).first<SnapshotRow>();
   if (snapshot === null) {
     throw new Error("Source Snapshot disappeared before request discovery.");
   }
@@ -313,22 +314,14 @@ export async function retainedOfficialDiscoveryRunRecords(
   discoveryObservationSetId: string;
   records: unknown[];
 }> {
-  const retained = await database
-    .prepare(
-      `SELECT observation_set.*, snapshot.request_id
-     FROM source_observation_sets AS observation_set
-     JOIN source_snapshots AS snapshot
-       ON snapshot.id = observation_set.source_snapshot_id
-     WHERE snapshot.ingestion_run_id = ?
-       AND snapshot.source_lineage = ?
-     ORDER BY snapshot.retrieved_at, observation_set.id`,
-    )
-    .bind(runId, sourceLineage)
-    .all<
-      ObservationSetRow & {
-        request_id: string;
-      }
-    >();
+  const retained = await retainedDiscoveryObservationsStatement(database, {
+    runId: runId,
+    sourceLineage: sourceLineage,
+  }).all<
+    ObservationSetRow & {
+      request_id: string;
+    }
+  >();
   const rootRequestId = `${sourceLineage}:discovery`;
   const root = retained.results.find(({ request_id }) => request_id === rootRequestId);
   if (root === undefined) {
@@ -378,24 +371,16 @@ async function prepareParseOperation(
   );
   const id = `srcparse_${digest}`;
   const observationSetId = `srcobsset_${digest}`;
-  await database
-    .prepare(
-      `INSERT OR IGNORE INTO source_parse_operations (
-        id, source_snapshot_id, adapter_version, intent, idempotency_key,
-        observation_set_id, content_object_key, parsed_at, state
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'planned')`,
-    )
-    .bind(
-      id,
-      snapshotId,
-      adapterVersion,
-      parseIntent.intent,
-      parseIntent.idempotencyKey,
-      observationSetId,
-      `source-observations/${observationSetId}.json`,
-      new Date().toISOString(),
-    )
-    .run();
+  await createParseOperationStatement(database, {
+    operationId: id,
+    snapshotId: snapshotId,
+    adapterVersion: adapterVersion,
+    intent: parseIntent.intent,
+    idempotencyKey: parseIntent.idempotencyKey,
+    observationSetId: observationSetId,
+    objectKey: `source-observations/${observationSetId}.json`,
+    parsedAt: new Date().toISOString(),
+  }).run();
   return requiredParseOperation(database, id);
 }
 
@@ -417,53 +402,33 @@ async function finalizeParseOperation(
     throw new Error("Parse operation upload metadata is incomplete");
   }
   await database.batch([
-    database
-      .prepare(
-        `INSERT OR IGNORE INTO source_observation_sets (
-          id, parse_operation_id, source_snapshot_id, source_lineage,
-          supported_game, game_profile_version, adapter_version, parsed_at,
-          content_digest, content_byte_length, content_object_key,
-          observation_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        operation.observation_set_id,
-        operation.id,
-        snapshot.id,
-        snapshot.source_lineage,
-        snapshot.supported_game,
-        snapshot.game_profile_version,
-        operation.adapter_version,
-        operation.parsed_at,
-        operation.content_digest,
-        operation.content_byte_length,
-        operation.content_object_key,
-        operation.observation_count,
-      ),
-    database
-      .prepare(
-        `UPDATE source_parse_operations SET state = 'finalized'
-         WHERE id = ? AND state = 'uploaded'`,
-      )
-      .bind(operation.id),
+    finalizedObservationSetStatement(database, {
+      observationSetId: operation.observation_set_id,
+      operationId: operation.id,
+      snapshotId: snapshot.id,
+      sourceLineage: snapshot.source_lineage,
+      supportedGame: snapshot.supported_game,
+      gameProfileVersion: snapshot.game_profile_version,
+      adapterVersion: operation.adapter_version,
+      parsedAt: operation.parsed_at,
+      digest: operation.content_digest,
+      byteLength: operation.content_byte_length,
+      objectKey: operation.content_object_key,
+      observationCount: operation.observation_count,
+    }),
+    finalizeParseStatement(database, operation.id),
   ]);
   return requiredObservationSet(database, operation.id);
 }
 
 async function requiredParseOperation(database: D1Database, id: string): Promise<ParseOperationRow> {
-  const operation = await database
-    .prepare("SELECT * FROM source_parse_operations WHERE id = ?")
-    .bind(id)
-    .first<ParseOperationRow>();
+  const operation = await parseOperationStatement(database, id).first<ParseOperationRow>();
   if (operation === null) throw new Error("Parse operation disappeared");
   return operation;
 }
 
 async function requiredObservationSet(database: D1Database, operationId: string): Promise<ObservationSetRow> {
-  const stored = await database
-    .prepare("SELECT * FROM source_observation_sets WHERE parse_operation_id = ?")
-    .bind(operationId)
-    .first<ObservationSetRow>();
+  const stored = await observationSetByParseOperationStatement(database, operationId).first<ObservationSetRow>();
   if (stored === null) throw new Error("Source Observation Set disappeared");
   return stored;
 }

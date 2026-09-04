@@ -1,3 +1,26 @@
+import {
+  hostPacingStatement,
+  advanceHostPacingStatement,
+  latestCaptureOperationStatement,
+  latestAttemptNumberStatement,
+  latestTransportAttemptStatement,
+  createCaptureOperationStatement,
+  refreshCaptureRequestedAtStatement,
+  revalidatedCaptureStatement,
+  receivedCaptureResponseStatement,
+  uploadedCaptureContentStatement,
+  capturedSnapshotStatement,
+  capturedSourceRequestStatement,
+  finalizeCaptureStatement,
+  remainingLineageRequestsStatement,
+  observedSourceRequestStatement,
+  sourceRequestStatement,
+  captureOperationStatement,
+  failedCaptureTransportStatement,
+  rejectedCaptureStatement,
+  failedSourceRequestStatement,
+  reusableSnapshotsStatement,
+} from "./source-capture-repository";
 import { type AttemptOutcome, attemptStatement, sourceSnapshotStatement } from "./evidence-repository";
 import { createHash } from "node:crypto";
 import { AdministrationProblem, canonicalJson, sha256, utf8 } from "../shared";
@@ -142,10 +165,7 @@ export async function hostPacingDelay(
   mode: SourceHostPacingMode = "production",
 ): Promise<number> {
   if (mode === "immediate") return 0;
-  const row = await database
-    .prepare("SELECT next_request_not_before FROM source_host_pacing WHERE hostname = ?")
-    .bind(hostname)
-    .first<{ next_request_not_before: string }>();
+  const row = await hostPacingStatement(database, hostname).first<{ next_request_not_before: string }>();
   if (row === null) return 0;
   return Math.max(0, Date.parse(row.next_request_not_before) - Date.now());
 }
@@ -159,16 +179,7 @@ export async function advanceHostPacing(
   const next = new Date(
     Date.now() + (mode === "immediate" ? 0 : intervalMilliseconds + jitter(Math.floor(intervalMilliseconds / 4))),
   ).toISOString();
-  await database
-    .prepare(
-      `INSERT INTO source_host_pacing (
-        hostname, next_request_not_before, locked_by, lease_expires_at
-       ) VALUES (?, ?, NULL, NULL)
-       ON CONFLICT(hostname) DO UPDATE SET
-         next_request_not_before = excluded.next_request_not_before`,
-    )
-    .bind(hostname, next)
-    .run();
+  await advanceHostPacingStatement(database, { hostname: hostname, nextRequestAt: next }).run();
 }
 
 // Only a collecting run admits capture or parse work. A paused run keeps its
@@ -204,25 +215,15 @@ export async function prepareCaptureAttempt(
     };
   }
 
-  const open = await database
-    .prepare(
-      `SELECT * FROM source_capture_operations
-       WHERE ingestion_run_id = ? AND request_id = ?
-         AND state IN ('planned', 'response_received', 'uploaded')
-       ORDER BY attempt_number DESC LIMIT 1`,
-    )
-    .bind(run.id, request.request_id)
-    .first<CaptureOperationRow>();
+  const open = await latestCaptureOperationStatement(database, {
+    runId: run.id,
+    requestId: request.request_id,
+  }).first<CaptureOperationRow>();
   if (open !== null) return publicPreparedAttempt(open);
 
-  const latest = await database
-    .prepare(
-      `SELECT COALESCE(MAX(attempt_number), 0) AS attempt_number
-       FROM source_fetch_attempts
-       WHERE ingestion_run_id = ? AND request_id = ?`,
-    )
-    .bind(run.id, request.request_id)
-    .first<{ attempt_number: number }>();
+  const latest = await latestAttemptNumberStatement(database, { runId: run.id, requestId: request.request_id }).first<{
+    attempt_number: number;
+  }>();
   const attemptNumber = (latest?.attempt_number ?? 0) + 1;
   if (attemptNumber > retryBudget(request)) {
     // The current retry generation is exhausted but no capture operation is
@@ -230,19 +231,14 @@ export async function prepareCaptureAttempt(
     // new generation. Recoverable exhaustion follows the role's transport
     // policy (re-pause the run, or fail a Printing Image request alone);
     // only a terminal latest outcome fails closed.
-    const previous = await database
-      .prepare(
-        `SELECT outcome, http_status, attempt_number
-         FROM source_fetch_attempts
-         WHERE ingestion_run_id = ? AND request_id = ?
-         ORDER BY attempt_number DESC LIMIT 1`,
-      )
-      .bind(run.id, request.request_id)
-      .first<{
-        outcome: string;
-        http_status: number | null;
-        attempt_number: number;
-      }>();
+    const previous = await latestTransportAttemptStatement(database, {
+      runId: run.id,
+      requestId: request.request_id,
+    }).first<{
+      outcome: string;
+      http_status: number | null;
+      attempt_number: number;
+    }>();
     const classification = recoverableExhaustionClassification(previous?.outcome ?? null);
     if (previous === null || classification === null) {
       const failureCode = requestFailureCode(
@@ -265,23 +261,15 @@ export async function prepareCaptureAttempt(
   }
   const identity = await captureOperationIdentity(run.id, request.request_id, attemptNumber);
   const requestedAt = new Date().toISOString();
-  await database
-    .prepare(
-      `INSERT OR IGNORE INTO source_capture_operations (
-        attempt_id, ingestion_run_id, request_id, attempt_number,
-        source_snapshot_id, content_object_key, state, requested_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'planned', ?)`,
-    )
-    .bind(
-      identity.attemptId,
-      run.id,
-      request.request_id,
-      attemptNumber,
-      identity.snapshotId,
-      identity.objectKey,
-      requestedAt,
-    )
-    .run();
+  await createCaptureOperationStatement(database, {
+    attemptId: identity.attemptId,
+    runId: run.id,
+    requestId: request.request_id,
+    attemptNumber: attemptNumber,
+    snapshotId: identity.snapshotId,
+    objectKey: identity.objectKey,
+    requestedAt: requestedAt,
+  }).run();
   const stored = await requiredCaptureOperation(database, identity.attemptId);
   return publicPreparedAttempt(stored);
 }
@@ -344,13 +332,10 @@ export async function capturePreparedAttempt(
   }
 
   if (operation.state === "planned") {
-    await database
-      .prepare(
-        `UPDATE source_capture_operations SET requested_at = ?
-         WHERE attempt_id = ? AND state = 'planned'`,
-      )
-      .bind(new Date().toISOString(), operation.attempt_id)
-      .run();
+    await refreshCaptureRequestedAtStatement(database, {
+      requestedAt: new Date().toISOString(),
+      attemptId: operation.attempt_id,
+    }).run();
     operation = await requiredCaptureOperation(database, operation.attempt_id);
   }
 
@@ -403,30 +388,18 @@ export async function capturePreparedAttempt(
       });
     }
     if (response.body !== null) await response.body.cancel();
-    await database
-      .prepare(
-        `UPDATE source_capture_operations
-         SET state = 'uploaded', completed_at = ?,
-             request_headers_json = ?, http_status = ?,
-             response_headers_json = ?, response_vary_json = ?,
-             media_type = ?, content_digest = ?,
-             content_byte_length = ?, reused_source_snapshot_id = ?
-         WHERE attempt_id = ?
-           AND state IN ('planned', 'response_received')`,
-      )
-      .bind(
-        completedAt,
-        canonicalJson(requestHeaders),
-        response.status,
-        canonicalJson(responseHeaders),
-        reusable.response_vary_json,
-        reusable.media_type,
-        reusable.content_digest,
-        reusable.content_byte_length,
-        reusable.id,
-        operation.attempt_id,
-      )
-      .run();
+    await revalidatedCaptureStatement(database, {
+      completedAt: completedAt,
+      requestHeadersJson: canonicalJson(requestHeaders),
+      status: response.status,
+      responseHeadersJson: canonicalJson(responseHeaders),
+      responseVaryJson: reusable.response_vary_json,
+      mediaType: reusable.media_type,
+      digest: reusable.content_digest,
+      byteLength: reusable.content_byte_length,
+      reusedSnapshotId: reusable.id,
+      attemptId: operation.attempt_id,
+    }).run();
     return {
       kind: "uploaded",
       attempt_id: operation.attempt_id,
@@ -453,25 +426,15 @@ export async function capturePreparedAttempt(
     });
   }
 
-  await database
-    .prepare(
-      `UPDATE source_capture_operations
-       SET state = 'response_received', completed_at = ?,
-           request_headers_json = ?, http_status = ?,
-           response_headers_json = ?, response_vary_json = ?,
-           media_type = ?
-       WHERE attempt_id = ? AND state = 'planned'`,
-    )
-    .bind(
-      completedAt,
-      canonicalJson(requestHeaders),
-      response.status,
-      canonicalJson(responseHeaders),
-      canonicalJson(responseVary(response.headers)),
-      response.headers.get("content-type"),
-      operation.attempt_id,
-    )
-    .run();
+  await receivedCaptureResponseStatement(database, {
+    completedAt: completedAt,
+    requestHeadersJson: canonicalJson(requestHeaders),
+    status: response.status,
+    responseHeadersJson: canonicalJson(responseHeaders),
+    responseVaryJson: canonicalJson(responseVary(response.headers)),
+    mediaType: response.headers.get("content-type"),
+    attemptId: operation.attempt_id,
+  }).run();
   operation = await requiredCaptureOperation(database, operation.attempt_id);
   try {
     const content = await streamSnapshotToR2(
@@ -480,15 +443,11 @@ export async function capturePreparedAttempt(
       response,
       requiredSourceAdapter(evidencePlan.adapter_version).maximumSnapshotBytes,
     );
-    await database
-      .prepare(
-        `UPDATE source_capture_operations
-         SET state = 'uploaded', content_digest = ?,
-             content_byte_length = ?
-         WHERE attempt_id = ? AND state = 'response_received'`,
-      )
-      .bind(content.digest, content.byteLength, operation.attempt_id)
-      .run();
+    await uploadedCaptureContentStatement(database, {
+      digest: content.digest,
+      byteLength: content.byteLength,
+      attemptId: operation.attempt_id,
+    }).run();
     return {
       kind: "uploaded",
       attempt_id: operation.attempt_id,
@@ -578,53 +537,34 @@ export async function completeUploadedCapture(
       retryAfterMs: null,
       diagnostic: null,
     }),
-    database
-      .prepare(
-        `INSERT OR IGNORE INTO source_snapshots (
-          id, ingestion_run_id, request_id, fetch_attempt_id,
-          request_method, request_url, request_headers_json,
-          representation_fingerprint, response_vary_json, retrieved_at,
-          http_status, response_headers_json, media_type, content_digest,
-          content_byte_length, content_object_key, source_lineage,
-          supported_game, game_profile_version, adapter_version,
-          reused_source_snapshot_id
-        ) VALUES (?, ?, ?, ?, 'GET', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        operation.source_snapshot_id,
-        run.id,
-        sourceRequest.request_id,
-        operation.attempt_id,
-        sourceRequest.url,
-        operation.request_headers_json,
-        sourceRequest.representation_fingerprint,
-        operation.response_vary_json,
-        operation.completed_at,
-        operation.http_status,
-        operation.response_headers_json,
-        operation.media_type,
-        operation.content_digest,
-        operation.content_byte_length,
-        contentObjectKey,
-        evidencePlan.source_lineage,
-        evidencePlan.supported_game,
-        evidencePlan.game_profile_version,
-        evidencePlan.adapter_version,
-        operation.reused_source_snapshot_id,
-      ),
-    database
-      .prepare(
-        `UPDATE source_requests
-         SET state = 'captured', source_snapshot_id = ?
-         WHERE ingestion_run_id = ? AND request_id = ? AND state = 'pending'`,
-      )
-      .bind(operation.source_snapshot_id, run.id, sourceRequest.request_id),
-    database
-      .prepare(
-        `UPDATE source_capture_operations SET state = 'finalized'
-         WHERE attempt_id = ? AND state = 'uploaded'`,
-      )
-      .bind(operation.attempt_id),
+    capturedSnapshotStatement(database, {
+      snapshotId: operation.source_snapshot_id,
+      runId: run.id,
+      requestId: sourceRequest.request_id,
+      attemptId: operation.attempt_id,
+      requestUrl: sourceRequest.url,
+      requestHeadersJson: operation.request_headers_json,
+      representationFingerprint: sourceRequest.representation_fingerprint,
+      responseVaryJson: operation.response_vary_json,
+      retrievedAt: operation.completed_at,
+      status: operation.http_status,
+      responseHeadersJson: operation.response_headers_json,
+      mediaType: operation.media_type,
+      digest: operation.content_digest,
+      byteLength: operation.content_byte_length,
+      objectKey: contentObjectKey,
+      sourceLineage: evidencePlan.source_lineage,
+      supportedGame: evidencePlan.supported_game,
+      gameProfileVersion: evidencePlan.game_profile_version,
+      adapterVersion: evidencePlan.adapter_version,
+      reusedSnapshotId: operation.reused_source_snapshot_id,
+    }),
+    capturedSourceRequestStatement(database, {
+      snapshotId: operation.source_snapshot_id,
+      runId: run.id,
+      requestId: sourceRequest.request_id,
+    }),
+    finalizeCaptureStatement(database, operation.attempt_id),
   ]);
   return {
     kind: "captured",
@@ -681,16 +621,11 @@ export async function parseCapturedRequest(
         // empty Official Source Collection Plan must fail closed here with a
         // specific code instead of reporting structural completeness and
         // dying much later at printing reconciliation.
-        const outstanding = await database
-          .prepare(
-            `SELECT COUNT(*) AS count FROM source_requests
-             WHERE ingestion_run_id = ?
-               AND request_id LIKE ?
-               AND request_id != ?
-               AND state IN ('pending', 'captured')`,
-          )
-          .bind(run.id, `${evidencePlan.source_lineage}:%`, sourceRequest.request_id)
-          .first<{ count: number }>();
+        const outstanding = await remainingLineageRequestsStatement(database, {
+          runId: run.id,
+          lineagePattern: `${evidencePlan.source_lineage}:%`,
+          excludedRequestId: sourceRequest.request_id,
+        }).first<{ count: number }>();
         if (outstanding === null || outstanding.count === 0) {
           throw new AdministrationProblem(
             422,
@@ -700,14 +635,11 @@ export async function parseCapturedRequest(
         }
       }
     }
-    await database
-      .prepare(
-        `UPDATE source_requests SET state = 'observed'
-         WHERE ingestion_run_id = ? AND request_id = ?
-           AND source_snapshot_id = ? AND state = 'captured'`,
-      )
-      .bind(run.id, sourceRequest.request_id, snapshotId)
-      .run();
+    await observedSourceRequestStatement(database, {
+      runId: run.id,
+      requestId: sourceRequest.request_id,
+      snapshotId: snapshotId,
+    }).run();
     return {
       kind: "done",
       failure_code: null,
@@ -749,22 +681,16 @@ function publicPreparedAttempt(operation: CaptureOperationRow): Extract<Prepared
 }
 
 async function currentRequest(database: D1Database, runId: string, requestId: string): Promise<EvidenceRequestRow> {
-  const request = await database
-    .prepare(
-      `SELECT * FROM source_requests
-       WHERE ingestion_run_id = ? AND request_id = ?`,
-    )
-    .bind(runId, requestId)
-    .first<EvidenceRequestRow>();
+  const request = await sourceRequestStatement(database, {
+    runId: runId,
+    requestId: requestId,
+  }).first<EvidenceRequestRow>();
   if (request === null) throw new Error("Evidence request disappeared");
   return request;
 }
 
 async function requiredCaptureOperation(database: D1Database, attemptId: string): Promise<CaptureOperationRow> {
-  const operation = await database
-    .prepare("SELECT * FROM source_capture_operations WHERE attempt_id = ?")
-    .bind(attemptId)
-    .first<CaptureOperationRow>();
+  const operation = await captureOperationStatement(database, attemptId).first<CaptureOperationRow>();
   if (operation === null) throw new Error("Capture operation disappeared");
   return operation;
 }
@@ -785,15 +711,11 @@ async function recoverCompletedUpload(
     byteLength += read.value.byteLength;
     hash.update(read.value);
   }
-  await database
-    .prepare(
-      `UPDATE source_capture_operations
-       SET state = 'uploaded', content_digest = ?,
-           content_byte_length = ?
-       WHERE attempt_id = ? AND state = 'response_received'`,
-    )
-    .bind(hash.digest("hex"), byteLength, operation.attempt_id)
-    .run();
+  await uploadedCaptureContentStatement(database, {
+    digest: hash.digest("hex"),
+    byteLength: byteLength,
+    attemptId: operation.attempt_id,
+  }).run();
   return true;
 }
 
@@ -1008,22 +930,14 @@ async function recordFailedTransportAttempt(
       retryAfterMs: null,
       diagnostic: failure.diagnostic,
     }),
-    database
-      .prepare(
-        `UPDATE source_capture_operations
-         SET state = 'failed', completed_at = ?, http_status = ?,
-             response_headers_json = ?, failure_outcome = ?,
-             diagnostic = ?
-         WHERE attempt_id = ? AND state <> 'finalized'`,
-      )
-      .bind(
-        failure.completedAt,
-        failure.status,
-        canonicalJson(failure.headers),
-        failure.outcome,
-        failure.diagnostic,
-        operation.attempt_id,
-      ),
+    failedCaptureTransportStatement(database, {
+      completedAt: failure.completedAt,
+      status: failure.status,
+      responseHeadersJson: canonicalJson(failure.headers),
+      outcome: failure.outcome,
+      diagnostic: failure.diagnostic,
+      attemptId: operation.attempt_id,
+    }),
     ...(exhausted && classification === null ? [failRequestStatement(database, request, bodyContractFailureCode)] : []),
     ...(exhaustion?.statements ?? []),
   ]);
@@ -1084,20 +998,13 @@ async function recordRejectedAttempt(
       retryAfterMs: rejection.retryAfterMs ?? null,
       diagnostic: rejection.diagnostic,
     }),
-    database
-      .prepare(
-        `UPDATE source_capture_operations
-         SET state = 'failed', completed_at = ?, http_status = ?,
-             response_headers_json = ?, diagnostic = ?
-         WHERE attempt_id = ? AND state <> 'finalized'`,
-      )
-      .bind(
-        rejection.completedAt,
-        rejection.status,
-        canonicalJson(rejection.headers),
-        rejection.diagnostic,
-        operation.attempt_id,
-      ),
+    rejectedCaptureStatement(database, {
+      completedAt: rejection.completedAt,
+      status: rejection.status,
+      responseHeadersJson: canonicalJson(rejection.headers),
+      diagnostic: rejection.diagnostic,
+      attemptId: operation.attempt_id,
+    }),
     ...(failureCode === null ? [] : [failRequestStatement(database, request, failureCode)]),
     ...(exhaustion?.statements ?? []),
   ]);
@@ -1191,14 +1098,11 @@ function failRequestStatement(
   request: EvidenceRequestRow,
   failureCode: string,
 ): D1PreparedStatement {
-  return database
-    .prepare(
-      `UPDATE source_requests
-       SET state = 'failed', failure_code = ?
-       WHERE ingestion_run_id = ? AND request_id = ?
-         AND state IN ('pending', 'captured')`,
-    )
-    .bind(failureCode, request.ingestion_run_id, request.request_id);
+  return failedSourceRequestStatement(database, {
+    failureCode: failureCode,
+    runId: request.ingestion_run_id,
+    requestId: request.request_id,
+  });
 }
 
 async function findReusableSnapshot(
@@ -1207,19 +1111,12 @@ async function findReusableSnapshot(
   request: EvidenceRequestRow,
 ): Promise<SnapshotRow | null> {
   const evidencePlan = evidencePlanForRequest(run, request.request_id);
-  const priorSnapshots = await database
-    .prepare(
-      `SELECT * FROM source_snapshots
-       WHERE source_lineage = ? AND request_url = ?
-         AND adapter_version = ? AND representation_fingerprint = ?
-         AND (
-           json_extract(response_headers_json, '$.etag') IS NOT NULL
-           OR json_extract(response_headers_json, '$."last-modified"') IS NOT NULL
-         )
-       ORDER BY retrieved_at DESC, id DESC LIMIT 10`,
-    )
-    .bind(evidencePlan.source_lineage, request.url, evidencePlan.adapter_version, request.representation_fingerprint)
-    .all<SnapshotRow>();
+  const priorSnapshots = await reusableSnapshotsStatement(database, {
+    sourceLineage: evidencePlan.source_lineage,
+    requestUrl: request.url,
+    adapterVersion: evidencePlan.adapter_version,
+    representationFingerprint: request.representation_fingerprint,
+  }).all<SnapshotRow>();
   return (
     priorSnapshots.results.find((snapshot) => {
       const vary: unknown = JSON.parse(snapshot.response_vary_json);

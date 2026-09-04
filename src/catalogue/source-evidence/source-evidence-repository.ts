@@ -1,3 +1,4 @@
+import { sourceRequestHostnameSql } from "./collection-inspection-repository";
 import {
   assertIngestionRunTransition,
   canTransitionIngestionRun,
@@ -50,12 +51,7 @@ import {
   type RecordedWorkflowPauseReason,
   type SafeWorkflowStatus,
 } from "./collection-recovery";
-import {
-  boundedEvidenceDetail,
-  collectionInspection,
-  type PacingConfiguration,
-  sourceRequestHostnameSql,
-} from "./collection-inspection";
+import { boundedEvidenceDetail, collectionInspection, type PacingConfiguration } from "./collection-inspection";
 import type {
   CurrentPause,
   ObservationSetRow,

@@ -1,3 +1,4 @@
+import { bindInitialParentWorkflowStatement } from "./ingestion-run-repository";
 import { AdministrationProblem } from "../shared";
 import type { EvidenceParentWorkflowParams, EvidenceHostWorkflowParams } from "./source-evidence-model";
 import {
@@ -98,13 +99,7 @@ export async function resumeEvidenceRun(
     // recovery pause below is compare-and-set on the bound identity, so an
     // unbound run could otherwise never recover a first attempt that died
     // between creation and binding.
-    await database
-      .prepare(
-        `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
-         WHERE ingestion_run_id = ? AND parent_workflow_id IS NULL`,
-      )
-      .bind(workflowId, runId)
-      .run();
+    await bindInitialParentWorkflowStatement(database, { workflowId: workflowId, runId: runId }).run();
   }
   const progress = await collectionProgressFacts(database, runId);
   let recovery: Record<string, unknown> | null = null;
@@ -180,13 +175,10 @@ export async function pauseEvidenceCollection(
     // A first attempt that has not bound its identity yet is bound before
     // the pause, exactly as resume does, so the pause record names the
     // attempt it abandons and the fence has an identity to compare against.
-    await database
-      .prepare(
-        `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
-         WHERE ingestion_run_id = ? AND parent_workflow_id IS NULL`,
-      )
-      .bind(parentWorkflowAttemptId(runId, 1), runId)
-      .run();
+    await bindInitialParentWorkflowStatement(database, {
+      workflowId: parentWorkflowAttemptId(runId, 1),
+      runId: runId,
+    }).run();
     run = await requiredEvidenceRun(database, runId);
   }
   const workflowId = run.parent_workflow_id ?? parentWorkflowAttemptId(runId, 1);
