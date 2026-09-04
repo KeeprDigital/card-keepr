@@ -1,3 +1,5 @@
+import { publishLegalityApplicabilityStatement } from "../../../src/catalogue/legality/legality-guard-repository";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import * as ingestionQueries from "../../ingestion/test/query-helpers/ingestion";
 import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
 import * as cardSearchQueries from "../../ingestion/test/query-helpers/card-search";
@@ -315,7 +317,7 @@ export function revisionLegalityRuleStatements(
   revisionId: string,
   rules: Parameters<typeof canonicalLegalityRuleStatements>[1],
 ): D1PreparedStatement[] {
-  return rules.map(({ source_retrieved_at: sourceRetrievedAt, ...rule }, index) => {
+  const statements = rules.map(({ source_retrieved_at: sourceRetrievedAt, ...rule }, index) => {
     const pointer = `/observations/0/value/legality_rules/${index}`;
     const unresolvedScope = rule.unresolved_scope ?? null;
     const document = {
@@ -345,6 +347,15 @@ export function revisionLegalityRuleStatements(
         JSON.stringify(document),
       );
   });
+  // Fixture projections bypass publication, so explicitly materialize the same
+  // applicability rows in their caller-owned batch after all inserts.
+  statements.push(
+    publishLegalityApplicabilityStatement(catalogueStore(testEnv.CATALOGUE_DB), {
+      revisionId,
+      payload: JSON.stringify(rules.map(({ id }) => ({ id }))),
+    }),
+  );
+  return statements;
 }
 
 function canonicalLegalityCardIds(rule: Parameters<typeof canonicalLegalityRuleStatements>[1][number]): string[] {
