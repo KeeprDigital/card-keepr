@@ -72,6 +72,11 @@ override a machine-readable artifact.
 - The later Catalogue Export decision supersedes only the earlier exclusion of
   bulk export. It adds the three routes in `openapi.json`; it does not add raw
   Source Snapshots or provenance bundles.
+- A Catalogue Export package is host-independent: its manifest and records
+  reference Printing Images and components by identifier, never by link, and
+  `SERIALIZATION.md` declares the route templates a consumer applies to its own
+  configured API base. Before Go-Live the one export schema major is edited in
+  place (ADR 0008).
 - A Catalogue Export in `deleting` or `deleted` state is absent from the export
   collection. Its known manifest and component URLs return `410
   catalogue_export_deleted`; a never-known Catalogue Revision remains `404
