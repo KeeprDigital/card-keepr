@@ -23,11 +23,10 @@ export type OperationalRequestLogOptions = {
    * dominate the per-route record, so it is not written at all.
    */
   logged?: boolean;
+  routeSegments?: ReadonlySet<string>;
 };
 
-export async function withOperationalRequestLog<
-  Environment extends { CATALOGUE_DB: D1Database },
->(
+export async function withOperationalRequestLog<Environment extends { CATALOGUE_DB: D1Database }>(
   runtime: OperationalRuntime,
   request: Request,
   env: Environment,
@@ -55,52 +54,44 @@ export async function withOperationalRequestLog<
     return response;
   } finally {
     const status = response?.status ?? 500;
-    if (logged) console.info(JSON.stringify({
-      contract: "card-keepr-operational-log@1",
-      event: "request.completed",
-      runtime,
-      request: {
-        id: requestId,
-        method: request.method,
-        route: safeRoute(new URL(request.url).pathname),
-      },
-      status,
-      duration_ms: Math.max(0, Date.now() - startedAt),
-      workflow: { step: null },
-      retry: {
-        count: 0,
-        classification: retryClassification(status),
-      },
-      cache: {
-        status: response?.headers.get("cf-cache-status")?.toLowerCase() ??
-          "unknown",
-      },
-      d1: {
-        prepared_statements: d1.preparedStatements,
-        batch_calls: d1.batchCalls,
-        batch_statements: d1.batchStatements,
-      },
-    }));
+    if (logged)
+      console.info(
+        JSON.stringify({
+          contract: "card-keepr-operational-log@1",
+          event: "request.completed",
+          runtime,
+          request: {
+            id: requestId,
+            method: request.method,
+            route: safeRoute(new URL(request.url).pathname, options.routeSegments ?? new Set()),
+          },
+          status,
+          duration_ms: Math.max(0, Date.now() - startedAt),
+          workflow: { step: null },
+          retry: {
+            count: 0,
+            classification: retryClassification(status),
+          },
+          cache: {
+            status: response?.headers.get("cf-cache-status")?.toLowerCase() ?? "unknown",
+          },
+          d1: {
+            prepared_statements: d1.preparedStatements,
+            batch_calls: d1.batchCalls,
+            batch_statements: d1.batchStatements,
+          },
+        }),
+      );
   }
 }
 
-const staticRouteSegments = new Set([
-  "admin", "approval", "backups", "candidate", "cards", "catalogue",
-  "catalogue-exports", "catalogue-revisions",
-  "catalogue-search-materialization", "collection", "components", "content",
-  "curated-revisions", "evidence", "health", "healthz", "ingestion-runs",
-  "legality-status", "observations", "printing-images", "printings",
-  "products", "publication-cleanup", "reaffirm", "reconciliation",
-  "rejection", "repair", "resume", "retire", "retry",
-  "source-observation-sets", "source-snapshots", "status", "supersede",
-  "v1", "validate",
-]);
-
-function safeRoute(pathname: string): string {
+function safeRoute(pathname: string, staticRouteSegments: ReadonlySet<string>): string {
   if (pathname === "/") return pathname;
-  return `/${pathname.split("/").filter(Boolean).map((segment) =>
-    staticRouteSegments.has(segment) ? segment : ":ref"
-  ).join("/")}`;
+  return `/${pathname
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => (staticRouteSegments.has(segment) ? segment : ":ref"))
+    .join("/")}`;
 }
 
 function observeD1(database: D1Database, metrics: D1Metrics): D1Database {
@@ -125,9 +116,7 @@ function observeD1(database: D1Database, metrics: D1Metrics): D1Database {
   });
 }
 
-export function observeOperationalWorkflow<
-  Environment extends { CATALOGUE_DB: D1Database },
->(
+export function observeOperationalWorkflow<Environment extends { CATALOGUE_DB: D1Database }>(
   step: WorkflowStep,
   event: WorkflowEventReference,
   env: Environment,
@@ -165,14 +154,10 @@ export function observeOperationalWorkflow<
       if (property !== "do") {
         return Reflect.get(target, property, target);
       }
-      return (
-        name: string,
-        configOrCallback: unknown,
-        possibleCallback?: unknown,
-      ) => {
-        const callback = (typeof configOrCallback === "function"
-          ? configOrCallback
-          : possibleCallback) as (context: WorkflowContext) => Promise<unknown>;
+      return (name: string, configOrCallback: unknown, possibleCallback?: unknown) => {
+        const callback = (typeof configOrCallback === "function" ? configOrCallback : possibleCallback) as (
+          context: WorkflowContext,
+        ) => Promise<unknown>;
         const wrapped = async (context?: WorkflowContext) => {
           const observedContext = context ?? {
             step: { name, count: 1 },
@@ -193,36 +178,34 @@ export function observeOperationalWorkflow<
             throw error;
           } finally {
             activeMetrics = null;
-            console.info(JSON.stringify({
-              contract: "card-keepr-operational-log@1",
-              event: "workflow.step.completed",
-              runtime: "ingestion",
-              request: {
-                id: safeLogReference(event.instanceId),
-                method: "WORKFLOW",
-                route: `/workflows/${
-                  safeLogReference(event.workflowName) ?? ":ref"
-                }`,
-              },
-              status,
-              duration_ms: Math.max(0, Date.now() - startedAt),
-              workflow: {
-                step: safeWorkflowStep(observedContext.step.name),
-                step_count: observedContext.step.count,
-              },
-              retry: {
-                count: Math.max(0, observedContext.attempt - 1),
-                classification: status === 500
-                  ? "retryable"
-                  : "not_applicable",
-              },
-              cache: { status: "unknown" },
-              d1: {
-                prepared_statements: metrics.preparedStatements,
-                batch_calls: metrics.batchCalls,
-                batch_statements: metrics.batchStatements,
-              },
-            }));
+            console.info(
+              JSON.stringify({
+                contract: "card-keepr-operational-log@1",
+                event: "workflow.step.completed",
+                runtime: "ingestion",
+                request: {
+                  id: safeLogReference(event.instanceId),
+                  method: "WORKFLOW",
+                  route: `/workflows/${safeLogReference(event.workflowName) ?? ":ref"}`,
+                },
+                status,
+                duration_ms: Math.max(0, Date.now() - startedAt),
+                workflow: {
+                  step: safeWorkflowStep(observedContext.step.name),
+                  step_count: observedContext.step.count,
+                },
+                retry: {
+                  count: Math.max(0, observedContext.attempt - 1),
+                  classification: status === 500 ? "retryable" : "not_applicable",
+                },
+                cache: { status: "unknown" },
+                d1: {
+                  prepared_statements: metrics.preparedStatements,
+                  batch_calls: metrics.batchCalls,
+                  batch_statements: metrics.batchStatements,
+                },
+              }),
+            );
           }
         };
         const invoke = target.do as unknown as (...args: unknown[]) => unknown;
@@ -236,21 +219,14 @@ export function observeOperationalWorkflow<
 }
 
 function safeLogReference(value: unknown): string | null {
-  return typeof value === "string" &&
-      /^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,511}$/u.test(value)
-    ? value
-    : null;
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,511}$/u.test(value) ? value : null;
 }
 
 function safeWorkflowStep(value: string): string {
-  return value.length <= 256 && /^[A-Za-z0-9][A-Za-z0-9 .,:@_-]*$/u.test(value)
-    ? value
-    : "redacted_step";
+  return value.length <= 256 && /^[A-Za-z0-9][A-Za-z0-9 .,:@_-]*$/u.test(value) ? value : "redacted_step";
 }
 
-function retryClassification(
-  status: number,
-): "retryable" | "non_retryable" | "not_applicable" {
+function retryClassification(status: number): "retryable" | "non_retryable" | "not_applicable" {
   if ([408, 425, 429, 500, 502, 503, 504].includes(status)) {
     return "retryable";
   }

@@ -22,3 +22,5 @@ export {
   supersedeCuratedRevision,
   validateCuratedRevision,
 } from "./curated-revisions";
+
+export { curatedRoutes } from "./routes";

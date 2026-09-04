@@ -59,3 +59,5 @@ export {
   type ProductRelationshipLifecycle,
   type ProductReleaseLifecyclePlan,
 } from "./product-release-publication";
+
+export { reconciliationRoutes } from "./routes";
