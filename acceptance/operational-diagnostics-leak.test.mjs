@@ -84,7 +84,10 @@ test("operational logs and diagnostics retain correlation fields without leaking
     },
   ];
   await writeFile(ingestionConfig, JSON.stringify(config));
-  await Promise.all([applyMigrations(apiState), applyMigrations(ingestionState)]);
+  // Cold Miniflare instances share persistence metadata even with distinct D1
+  // IDs. Close the first migration runtime before opening the second one.
+  await applyMigrations(apiState);
+  await applyMigrations(ingestionState);
 
   const api = await startWorker({
     config: "apps/api/wrangler.jsonc",
