@@ -1,16 +1,9 @@
-import {
-  WorkflowEntrypoint,
-  type WorkflowEvent,
-  type WorkflowStep,
-} from "cloudflare:workers";
+import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import {
   sourceHostPacingIntervalMilliseconds,
   sourceHostPacingMode,
 } from "../../../src/catalogue/source-evidence-capture";
-import {
-  collectSourceRequestBatch,
-  collectionBatchSize,
-} from "../../../src/catalogue/source-evidence-batch";
+import { collectSourceRequestBatch, collectionBatchSize } from "../../../src/catalogue/source-evidence-batch";
 import {
   type EvidenceHostWorkflowParams,
   type EvidenceParentWorkflowParams,
@@ -23,17 +16,10 @@ import {
   requiredEvidenceRun,
   type EvidenceRequestRow,
 } from "../../../src/catalogue/source-evidence-repository";
-import {
-  reconcileRetainedCardPrintingEvidence,
-} from "../../../src/catalogue/card-printing-reconciliation";
+import { reconcileRetainedCardPrintingEvidence } from "../../../src/catalogue/card-printing-reconciliation";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/serialization";
-import {
-  collectionBarrierSleepDuration,
-  isWorkflowInstanceNotFound,
-} from "../../../src/catalogue/collection-recovery";
-import {
-  requiredSourceAdapter,
-} from "../../../src/catalogue/source-adapters";
+import { collectionBarrierSleepDuration, isWorkflowInstanceNotFound } from "../../../src/catalogue/collection-recovery";
+import { requiredSourceAdapter } from "../../../src/catalogue/source-adapters";
 import { durableReconciliationResult } from "./reconciliation-workflow";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 
@@ -68,10 +54,7 @@ type HostShard = Readonly<{
   pendingRequestCount?: number;
 }>;
 
-export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
-  Env,
-  EvidenceParentWorkflowParams
-> {
+export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceParentWorkflowParams> {
   override async run(
     event: Readonly<WorkflowEvent<EvidenceParentWorkflowParams>>,
     step: WorkflowStep,
@@ -85,50 +68,36 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
       deterministicDatabaseStep,
       async () => {
         const run = await requiredEvidenceRun(this.env.CATALOGUE_DB, runId);
-        const parsed: unknown = run.child_workflow_ids_json === null
-          ? []
-          : JSON.parse(run.child_workflow_ids_json);
-        return Array.isArray(parsed)
-          ? parsed.filter((id): id is string => typeof id === "string")
-          : [];
+        const parsed: unknown = run.child_workflow_ids_json === null ? [] : JSON.parse(run.child_workflow_ids_json);
+        return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
       },
     );
     const allChildIds = new Set<string>(retainedChildIds);
     let barrierStage = 0;
     for (;;) {
-      const pendingShards = await loadPendingHostShards(
-        step,
-        this.env.CATALOGUE_DB,
-        runId,
-        `barrier ${barrierStage}`,
-      );
-      const pendingChildren = await Promise.all(pendingShards.map(
-        async (shard) => ({
+      const pendingShards = await loadPendingHostShards(step, this.env.CATALOGUE_DB, runId, `barrier ${barrierStage}`);
+      const pendingChildren = await Promise.all(
+        pendingShards.map(async (shard) => ({
           ...shard,
           id: await evidenceHostWorkflowId(runId, shard),
-        }),
-      ));
-      const activeChildren = [...pendingChildren.reduce(
-        (byHostname, child) => {
-          if (!byHostname.has(child.hostname)) {
-            byHostname.set(child.hostname, child);
-          }
-          return byHostname;
-        },
-        new Map<string, (typeof pendingChildren)[number]>(),
-      ).values()];
+        })),
+      );
+      const activeChildren = [
+        ...pendingChildren
+          .reduce((byHostname, child) => {
+            if (!byHostname.has(child.hostname)) {
+              byHostname.set(child.hostname, child);
+            }
+            return byHostname;
+          }, new Map<string, (typeof pendingChildren)[number]>())
+          .values(),
+      ];
       const shardDepths = new Map<string, number>();
       for (const child of pendingChildren) {
-        shardDepths.set(
-          child.hostname,
-          (shardDepths.get(child.hostname) ?? 0) + 1,
-        );
+        shardDepths.set(child.hostname, (shardDepths.get(child.hostname) ?? 0) + 1);
       }
       const maximumShardDepth = Math.max(0, ...shardDepths.values());
-      const maximumActiveRequestCount = Math.max(
-        0,
-        ...activeChildren.map((child) => child.pendingRequestCount ?? 0),
-      );
+      const maximumActiveRequestCount = Math.max(0, ...activeChildren.map((child) => child.pendingRequestCount ?? 0));
       let selectedChildIds: string[] = [];
       if (activeChildren.length > 0) {
         selectedChildIds = await step.do(
@@ -159,15 +128,11 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
                 // failing the shard's Source Requests.
                 if (!isWorkflowInstanceNotFound(error)) throw error;
                 if (attempts.length >= maximumHostWorkflowIdentities) {
-                  await failActiveEvidenceRequestsForWorkflowExhaustion(
-                    this.env.CATALOGUE_DB,
-                    runId,
-                    {
-                      hostname: child.hostname,
-                      minimumSequenceNumber: child.minimumSequenceNumber,
-                      maximumSequenceNumber: child.maximumSequenceNumber,
-                    },
-                  );
+                  await failActiveEvidenceRequestsForWorkflowExhaustion(this.env.CATALOGUE_DB, runId, {
+                    hostname: child.hostname,
+                    minimumSequenceNumber: child.minimumSequenceNumber,
+                    maximumSequenceNumber: child.maximumSequenceNumber,
+                  });
                   continue;
                 }
                 selected.push({
@@ -176,21 +141,13 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
                 });
                 continue;
               }
-              if (
-                status.status === "complete" ||
-                status.status === "errored" ||
-                status.status === "terminated"
-              ) {
+              if (status.status === "complete" || status.status === "errored" || status.status === "terminated") {
                 if (attempts.length >= maximumHostWorkflowIdentities) {
-                  await failActiveEvidenceRequestsForWorkflowExhaustion(
-                    this.env.CATALOGUE_DB,
-                    runId,
-                    {
-                      hostname: child.hostname,
-                      minimumSequenceNumber: child.minimumSequenceNumber,
-                      maximumSequenceNumber: child.maximumSequenceNumber,
-                    },
-                  );
+                  await failActiveEvidenceRequestsForWorkflowExhaustion(this.env.CATALOGUE_DB, runId, {
+                    hostname: child.hostname,
+                    minimumSequenceNumber: child.minimumSequenceNumber,
+                    maximumSequenceNumber: child.maximumSequenceNumber,
+                  });
                   continue;
                 }
                 selected.push({
@@ -220,11 +177,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
                   },
                 })),
               );
-              const children = await Promise.all(
-                batch.map((child) =>
-                  this.env.EVIDENCE_HOST_WORKFLOW.get(child.id),
-                ),
-              );
+              const children = await Promise.all(batch.map((child) => this.env.EVIDENCE_HOST_WORKFLOW.get(child.id)));
               for (const child of children) {
                 const status = await child.status();
                 if (status.status === "paused") {
@@ -243,12 +196,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
         `record hostname Workflow identities stage ${barrierStage}`,
         deterministicDatabaseStep,
         async () => {
-          await recordWorkflowIds(
-            this.env.CATALOGUE_DB,
-            runId,
-            event.instanceId,
-            recordedChildIds,
-          );
+          await recordWorkflowIds(this.env.CATALOGUE_DB, runId, event.instanceId, recordedChildIds);
           return recordedChildIds;
         },
       );
@@ -263,10 +211,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
       if (run.state === "collecting") {
         await step.sleep(
           `await collection barrier stage ${barrierStage}`,
-          collectionBarrierSleepDuration(
-            maximumShardDepth,
-            maximumActiveRequestCount,
-          ),
+          collectionBarrierSleepDuration(maximumShardDepth, maximumActiveRequestCount),
         );
         barrierStage += 1;
         continue;
@@ -274,8 +219,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
       if (
         run.state === "parsing" &&
         run.plan_origin === "production" &&
-        requiredSourceAdapter(run.adapter_version)
-            .reconciliationCapability === "catalogue"
+        requiredSourceAdapter(run.adapter_version).reconciliationCapability === "catalogue"
       ) {
         const reconciliationResultJson = await step.do(
           "reconcile retained Official Source evidence",
@@ -318,10 +262,7 @@ function isChildWorkflowIdentity(baseId: string, id: string): boolean {
   return /^(?:0|[1-9]\d*)$/u.test(id.slice(`${baseId}-attempt-`.length));
 }
 
-function nextChildWorkflowIdentity(
-  baseId: string,
-  attempts: readonly string[],
-): string {
+function nextChildWorkflowIdentity(baseId: string, attempts: readonly string[]): string {
   const attemptNumber = Math.max(...attempts.map(childAttempt));
   return `${baseId}-attempt-${attemptNumber}`;
 }
@@ -339,25 +280,24 @@ async function loadPendingHostShards(
     const page = await step.do(
       `load pending evidence page ${pageNumber} ${stepPrefix}`,
       deterministicDatabaseStep,
-      () => pendingEvidenceRequestPage(
-        database,
-        runId,
-        afterSequenceNumber,
-        Number.MAX_SAFE_INTEGER,
-        workflowRequestPageSize,
-      ),
+      () =>
+        pendingEvidenceRequestPage(
+          database,
+          runId,
+          afterSequenceNumber,
+          Number.MAX_SAFE_INTEGER,
+          workflowRequestPageSize,
+        ),
     );
     for (const request of page) {
-      const minimumSequenceNumber = Math.floor(
-        request.sequence_number / hostShardRequestCapacity,
-      ) * hostShardRequestCapacity;
+      const minimumSequenceNumber =
+        Math.floor(request.sequence_number / hostShardRequestCapacity) * hostShardRequestCapacity;
       const shardKey = `${new URL(request.url).hostname}\u0000${minimumSequenceNumber}`;
       const prior = shards.get(shardKey);
       const shard: HostShard = {
         hostname: new URL(request.url).hostname,
         minimumSequenceNumber,
-        maximumSequenceNumber:
-          minimumSequenceNumber + hostShardRequestCapacity - 1,
+        maximumSequenceNumber: minimumSequenceNumber + hostShardRequestCapacity - 1,
         pendingRequestCount: (prior?.pendingRequestCount ?? 0) + 1,
       };
       shards.set(shardKey, shard);
@@ -366,9 +306,9 @@ async function loadPendingHostShards(
     afterSequenceNumber = page.at(-1)!.sequence_number;
     pageNumber += 1;
   }
-  return [...shards.values()].sort((left, right) =>
-    left.minimumSequenceNumber - right.minimumSequenceNumber ||
-    left.hostname.localeCompare(right.hostname)
+  return [...shards.values()].sort(
+    (left, right) =>
+      left.minimumSequenceNumber - right.minimumSequenceNumber || left.hostname.localeCompare(right.hostname),
   );
 }
 
@@ -384,10 +324,8 @@ async function loadPendingShardRequests(
   let afterSequenceNumber = shard.minimumSequenceNumber - 1;
   let pageNumber = 0;
   for (;;) {
-    const page = await step.do(
-      `${purpose} shard page ${pageNumber} stage ${stage}`,
-      deterministicDatabaseStep,
-      () => pendingEvidenceRequestPage(
+    const page = await step.do(`${purpose} shard page ${pageNumber} stage ${stage}`, deterministicDatabaseStep, () =>
+      pendingEvidenceRequestPage(
         database,
         runId,
         afterSequenceNumber,
@@ -395,9 +333,7 @@ async function loadPendingShardRequests(
         workflowRequestPageSize,
       ),
     );
-    requests.push(...page.filter(
-      (request) => new URL(request.url).hostname === shard.hostname,
-    ));
+    requests.push(...page.filter((request) => new URL(request.url).hostname === shard.hostname));
     if (page.length < workflowRequestPageSize) break;
     afterSequenceNumber = page.at(-1)!.sequence_number;
     pageNumber += 1;
@@ -405,10 +341,7 @@ async function loadPendingShardRequests(
   return requests;
 }
 
-async function evidenceHostWorkflowId(
-  runId: string,
-  shard: HostShard,
-): Promise<string> {
+async function evidenceHostWorkflowId(runId: string, shard: HostShard): Promise<string> {
   const digest = await sha256(
     utf8(
       canonicalJson({
@@ -422,14 +355,8 @@ async function evidenceHostWorkflowId(
   return `evidence-host-${digest}`;
 }
 
-export class EvidenceHostWorkflow extends WorkflowEntrypoint<
-  Env,
-  EvidenceHostWorkflowParams
-> {
-  override async run(
-    event: Readonly<WorkflowEvent<EvidenceHostWorkflowParams>>,
-    step: WorkflowStep,
-  ): Promise<unknown> {
+export class EvidenceHostWorkflow extends WorkflowEntrypoint<Env, EvidenceHostWorkflowParams> {
+  override async run(event: Readonly<WorkflowEvent<EvidenceHostWorkflowParams>>, step: WorkflowStep): Promise<unknown> {
     const operational = observeOperationalWorkflow(step, event, this.env);
     this.env = operational.env;
     step = operational.step;
@@ -441,9 +368,7 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<
     } = event.payload;
     // Fails closed on unrecognized values before any capture work begins.
     const pacingMode = sourceHostPacingMode(this.env.SOURCE_HOST_PACING_MODE);
-    const pacingIntervalMilliseconds = sourceHostPacingIntervalMilliseconds(
-      this.env.SOURCE_HOST_PACING_INTERVAL_MS,
-    );
+    const pacingIntervalMilliseconds = sourceHostPacingIntervalMilliseconds(this.env.SOURCE_HOST_PACING_INTERVAL_MS);
     let stage = 0;
     for (;;) {
       // A paused run keeps its pending and captured Source Requests, so this
@@ -452,8 +377,7 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<
       const runState = await step.do(
         `read run state stage ${stage}`,
         deterministicDatabaseStep,
-        async () =>
-          (await requiredEvidenceRun(this.env.CATALOGUE_DB, runId)).state,
+        async () => (await requiredEvidenceRun(this.env.CATALOGUE_DB, runId)).state,
       );
       if (runState === "paused") break;
       const requests = await loadPendingShardRequests(
@@ -466,11 +390,7 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<
       // Batches persist through one durable step each; see the step-layout
       // note in source-evidence-batch.ts for what stays a separate step.
       let halted = false;
-      for (
-        let offset = 0;
-        offset < requests.length && !halted;
-        offset += collectionBatchSize
-      ) {
+      for (let offset = 0; offset < requests.length && !halted; offset += collectionBatchSize) {
         const batch = requests.slice(offset, offset + collectionBatchSize);
         let cursor = 0;
         let pass = 0;
@@ -499,10 +419,7 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<
             break;
           }
           if (outcome.halt.kind === "retry_wait" && outcome.halt.wait_ms > 0) {
-            await step.sleep(
-              `retry ${outcome.halt.request_id} pass ${pass}`,
-              outcome.halt.wait_ms,
-            );
+            await step.sleep(`retry ${outcome.halt.request_id} pass ${pass}`, outcome.halt.wait_ms);
           }
         }
       }
