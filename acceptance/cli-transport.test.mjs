@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
+import { createServer } from "./helpers/cli-http.mjs";
 import test from "node:test";
 import { runCli } from "./helpers/acceptance-runtime.mjs";
 
@@ -24,4 +24,26 @@ test("authenticated CLI requests refuse redirects before another endpoint receiv
   assert.equal(forwarded, 0);
   assert.notEqual(result.code, 0);
   assert.equal(result.stdout.includes("transport-test-administration-key"), false);
+});
+
+test("the shared client refuses non-local plaintext credentials before transport", async () => {
+  const { request } = await import("../cli/lib/http-client.mjs");
+  let calls = 0;
+  const fetchImpl = async (_url, options) => {
+    calls++;
+    assert.equal(options.redirect, "error");
+    return new Response("{}");
+  };
+  assert.throws(
+    () => request("http://production.invalid/v1/status", { headers: { authorization: "Bearer private" } }, fetchImpl),
+    /credential_transport_requires_https/,
+  );
+  assert.throws(
+    () => request("https://owner:private@production.invalid/v1/status", {}, fetchImpl),
+    /credential_url_forbidden/,
+  );
+  assert.equal(calls, 0);
+  await request("http://127.0.0.1:8788/v1/status", { headers: { authorization: "Bearer development" } }, fetchImpl);
+  await request("https://production.invalid/v1/status", { headers: { authorization: "Bearer private" } }, fetchImpl);
+  assert.equal(calls, 2);
 });

@@ -1,5 +1,5 @@
-import { request as httpRequest } from "./lib/http-client.mjs";
-import { exitCodeForStatus, parseOptions, runtimeUrl, writeCliFailure } from "./command-support.mjs";
+import { parseOptions, writeCliFailure } from "./command-support.mjs";
+import { requestDocument } from "./lib/json-client.mjs";
 
 export async function runCatalogueCommand(arguments_, environment, json) {
   if (arguments_[0] !== "search") return usageFailure(json);
@@ -20,59 +20,13 @@ export async function runCatalogueCommand(arguments_, environment, json) {
 }
 
 async function catalogueRequest(environment, json, pathname) {
-  if (!environment.KEEPR_API_KEY) {
-    return writeCliFailure(
-      json,
-      {
-        code: "configuration_error",
-        detail: "Missing required environment: KEEPR_API_KEY",
-      },
-      2,
-    );
-  }
-  let response;
-  try {
-    response = await httpRequest(runtimeUrl(environment.KEEPR_API_URL ?? "http://127.0.0.1:8787", pathname), {
-      headers: {
-        authorization: `Bearer ${environment.KEEPR_API_KEY}`,
-      },
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch {
-    return writeCliFailure(
-      json,
-      {
-        code: "runtime_unavailable",
-        detail: "API runtime is unavailable",
-        runtime: "api",
-      },
-      9,
-    );
-  }
-  let document;
-  try {
-    document = await response.json();
-  } catch {
-    return writeCliFailure(
-      json,
-      {
-        code: "invalid_catalogue_contract",
-        detail: "API runtime returned invalid JSON",
-        runtime: "api",
-      },
-      8,
-    );
-  }
-  if (!response.ok) {
-    return writeCliFailure(
-      json,
-      {
-        code: typeof document?.code === "string" ? document.code : "catalogue_error",
-        detail: typeof document?.detail === "string" ? document.detail : `API runtime returned HTTP ${response.status}`,
-      },
-      exitCodeForStatus(response.status),
-    );
-  }
+  const result = await requestDocument(environment, pathname, {
+    runtime: "api",
+    key: environment.KEEPR_API_KEY,
+    contract: "catalogue",
+  });
+  if (result.error !== null) return writeCliFailure(json, result.error, result.exitCode);
+  const document = result.document;
   if (json) {
     process.stdout.write(`${JSON.stringify(document)}\n`);
   } else {

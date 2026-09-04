@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { createServer } from "node:http";
+import { createServer } from "./helpers/cli-http.mjs";
 import { resolve } from "node:path";
 import test from "node:test";
 import { runCli } from "./helpers/acceptance-runtime.mjs";
@@ -1047,12 +1047,12 @@ test("CLI reconciliation reports an accepted non-terminal Workflow with exit 10"
   assert.deepEqual(requests, [
     {
       method: "GET",
-      path: "/v1/ingestion-runs/run_cli_demo",
+      path: "/v1/status",
       body: null,
     },
     {
       method: "GET",
-      path: "/v1/status",
+      path: "/v1/ingestion-runs/run_cli_demo",
       body: null,
     },
     {
@@ -1473,12 +1473,12 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
   assert.deepEqual(requests.slice(-10), [
     {
       method: "GET",
-      path: "/v1/ingestion-runs/run_cli_demo",
+      path: "/v1/status",
       body: null,
     },
     {
       method: "GET",
-      path: "/v1/status",
+      path: "/v1/ingestion-runs/run_cli_demo",
       body: null,
     },
     {

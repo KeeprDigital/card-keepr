@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
+import { createServer } from "./helpers/cli-http.mjs";
 import { resolve } from "node:path";
 import test from "node:test";
 import { runCli } from "./helpers/acceptance-runtime.mjs";

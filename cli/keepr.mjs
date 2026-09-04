@@ -1,15 +1,261 @@
 #!/usr/bin/env node
-import { request as httpRequest } from "./lib/http-client.mjs";
 
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { apiCapabilities, ingestionCapabilities } from "../src/runtime-capabilities.mjs";
 import { runCatalogueCommand } from "./catalogue.mjs";
-import { exitCodeForStatus, parseOptions, runtimeUrl, writeCliFailure as writeFailure } from "./command-support.mjs";
+import { parseOptions, runtimeUrl, writeCliFailure as writeFailure } from "./command-support.mjs";
 import { runLegalityStatusCommand } from "./contextual-legality.mjs";
 import { runCuratedRevisionCommand } from "./curated-revisions.mjs";
-import { validatedProductionTarget } from "./production-target.mjs";
+import { request as httpRequest } from "./lib/http-client.mjs";
+import { requestDocument } from "./lib/json-client.mjs";
 import { runProductionReleaseCommand } from "./production-release.mjs";
+
+const commandRoutes = {
+  reconcileRun: {
+    path: "/v1/ingestion-runs/{run-id}/reconciliation",
+    fields: {
+      expected_current_revision_id: "expected-current-revision",
+      idempotency_key: "idempotency-key",
+    },
+    production: "Reconciliation",
+    query: {
+      ingestion_run_id: "run-id",
+      expected_current_revision_id: "expected-current-revision",
+    },
+  },
+  repairCatalogueSearch: {
+    path: "/v1/catalogue-search-materialization/repair",
+    fields: {
+      target_revision_id: "target-revision",
+      expected_current_revision_id: "expected-current-revision",
+      idempotency_key: "idempotency-key",
+    },
+    production: "Card search repair",
+    query: {
+      repair_revision_id: "target-revision",
+      expected_current_revision_id: "expected-current-revision",
+    },
+  },
+  createBackup: {
+    path: "/v1/backups",
+    fields: {
+      expected_current_revision_id: "expected-current-revision",
+      idempotency_key: "idempotency-key",
+    },
+    production: "Catalogue backup",
+    query: {
+      expected_current_revision_id: "expected-current-revision",
+    },
+    confirmBody: true,
+  },
+  verifyRecovery: {
+    path: "/v1/recoveries/{recovery-id}/verification",
+    fields: {
+      target_digest: "target-digest",
+      idempotency_key: "idempotency-key",
+    },
+    production: "Catalogue recovery verification",
+    query: {
+      recovery_id: "recovery-id",
+      target_digest: "target-digest",
+    },
+    confirmBody: true,
+    confirmRoute: {
+      recovery_id: "recovery-id",
+    },
+  },
+  acceptRecovery: {
+    path: "/v1/recoveries/{recovery-id}/acceptance",
+    fields: {
+      expected_restored_revision_id: "expected-restored-revision",
+      target_digest: "target-digest",
+      confirmation_recovery_id: "confirmation-recovery-id",
+      idempotency_key: "idempotency-key",
+    },
+    production: "Catalogue recovery acceptance",
+    query: {
+      recovery_id: "recovery-id",
+      target_digest: "target-digest",
+      expected_restored_revision_id: "expected-restored-revision",
+    },
+    confirmBody: true,
+    confirmRoute: {
+      recovery_id: "recovery-id",
+    },
+  },
+  beginRecovery: {
+    path: "/v1/recoveries",
+    fields: {
+      recovery_id: "recovery-id",
+      method: "method",
+      target_revision_id: "target-revision",
+      target_bookmark: "target-bookmark",
+      target_digest: "target-digest",
+      backup_attempt_id: "backup-attempt-id",
+      expected_current_revision_id: "expected-current-revision",
+      idempotency_key: "idempotency-key",
+      linked_operation_id: "linked-operation-id",
+    },
+    production: "Catalogue recovery",
+    query: {
+      expected_current_revision_id: "expected-current-revision",
+    },
+    confirmBody: true,
+    bodyEnvironment: true,
+    optional: ["linked-operation-id"],
+    choices: {
+      method: ["time_travel", "replacement_database"],
+    },
+  },
+  showRun: {
+    path: "/v1/ingestion-runs/{run-id}",
+  },
+  inspectCandidate: {
+    path: "/v1/ingestion-runs/{run-id}/candidate",
+  },
+  approveRun: {
+    path: "/v1/ingestion-runs/{run-id}/approval",
+    yes: true,
+    fields: {
+      candidate_digest: "candidate-digest",
+      expected_current_revision_id: "expected-current-revision",
+      idempotency_key: "idempotency-key",
+    },
+  },
+  rejectRun: {
+    path: "/v1/ingestion-runs/{run-id}/rejection",
+    yes: true,
+    fields: {
+      candidate_digest: "candidate-digest",
+      idempotency_key: "idempotency-key",
+    },
+  },
+  retryRun: {
+    path: "/v1/ingestion-runs/{run-id}/retry",
+    fields: {
+      idempotency_key: "idempotency-key",
+    },
+  },
+  cleanupRun: {
+    path: "/v1/ingestion-runs/{run-id}/publication-cleanup",
+    fields: {
+      idempotency_key: "idempotency-key",
+    },
+  },
+  inspectRecovery: {
+    path: "/v1/recoveries/{recovery-id}",
+  },
+  showSourceEvidence: {
+    path: "/v1/ingestion-runs/{run-id}/evidence",
+  },
+  resumeEvidenceCollection: {
+    path: "/v1/ingestion-runs/{run-id}/collection/resume",
+    fields: {},
+  },
+  pauseEvidenceCollection: {
+    path: "/v1/ingestion-runs/{run-id}/collection/pause",
+    fields: {
+      idempotency_key: "idempotency-key",
+    },
+  },
+  terminateEvidenceCollection: {
+    path: "/v1/ingestion-runs/{run-id}/collection/termination",
+    fields: {
+      idempotency_key: "idempotency-key",
+    },
+  },
+  retryEvidenceCollection: {
+    path: "/v1/ingestion-runs/{run-id}/collection/retry",
+    fields: {
+      idempotency_key: "idempotency-key",
+    },
+  },
+  reparseSourceSnapshot: {
+    path: "/v1/source-snapshots/{snapshot-id}/observations",
+    fields: {
+      adapter_version: "adapter",
+      idempotency_key: "idempotency-key",
+    },
+  },
+};
+async function routeCommand(name, arguments_, environment, json) {
+  const definition = commandRoutes[name];
+  const routeFields = [...definition.path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]);
+  const fields = [
+    ...new Set([...routeFields, ...Object.values(definition.fields ?? {}), ...Object.values(definition.query ?? {})]),
+  ];
+  const yes = definition.yes || definition.production;
+  const options = parseOptions(
+    arguments_,
+    fields.map((field) => `--${field}`).concat(definition.production ? ["--environment", "--confirm"] : []),
+    yes ? ["--yes"] : [],
+  );
+  const value = (field) => options.values[`--${field}`];
+  if (
+    options.error !== null ||
+    fields.some((field) => value(field) === undefined && !definition.optional?.includes(field)) ||
+    (yes && !options.flags.has("--yes")) ||
+    (definition.production && value("environment") === undefined) ||
+    Object.entries(definition.choices ?? {}).some(([field, choices]) => !choices.includes(value(field)))
+  )
+    return usageFailure(json);
+  if (definition.production && value("environment") !== "production")
+    return productionTargetFailure(json, `${definition.production} requires --environment production.`);
+  const mapped = (fields) =>
+    Object.fromEntries(
+      Object.entries(fields ?? {})
+        .filter(([, option]) => value(option) !== undefined)
+        .map(([field, option]) => [field, value(option)]),
+    );
+  const body =
+    definition.fields === undefined
+      ? undefined
+      : { ...(definition.bodyEnvironment ? { environment: "production" } : {}), ...mapped(definition.fields) };
+  if (definition.production) {
+    const resolved = await resolveTarget(environment, json, mapped(definition.query));
+    if (typeof resolved === "number") return resolved;
+    const confirmation = definition.confirmBody
+      ? { production_target: resolved.productionTarget, ...mapped(definition.confirmRoute), ...body }
+      : resolved.productionTarget;
+    const confirmed = confirmProductionTarget(json, confirmation, value("confirm"));
+    if (confirmed !== 0) return confirmed;
+  }
+  const pathname = definition.path.replace(/\{([^}]+)\}/g, (_, field) => encodeURIComponent(value(field)));
+  return administrationRequest(
+    environment,
+    json,
+    pathname,
+    definition.fields === undefined ? "GET" : "POST",
+    Object.keys(body ?? {}).length === 0 ? undefined : body,
+  );
+}
+
+const commands = {
+  "release production": runProductionReleaseCommand,
+  "run show": (args, env, json) => routeCommand("showRun", args, env, json),
+  "candidate inspect": (args, env, json) => routeCommand("inspectCandidate", args, env, json),
+  "run approve": (args, env, json) => routeCommand("approveRun", args, env, json),
+  "run reject": (args, env, json) => routeCommand("rejectRun", args, env, json),
+  "run retry": (args, env, json) => routeCommand("retryRun", args, env, json),
+  "run cleanup": (args, env, json) => routeCommand("cleanupRun", args, env, json),
+  "run reconcile": (args, env, json) => routeCommand("reconcileRun", args, env, json),
+  "backup create": (args, env, json) => routeCommand("createBackup", args, env, json),
+  "backup status": backupStatus,
+  "backup retry": retryBackup,
+  "recovery begin": (args, env, json) => routeCommand("beginRecovery", args, env, json),
+  "recovery inspect": (args, env, json) => routeCommand("inspectRecovery", args, env, json),
+  "recovery verify": (args, env, json) => routeCommand("verifyRecovery", args, env, json),
+  "recovery accept": (args, env, json) => routeCommand("acceptRecovery", args, env, json),
+  "source collect": collectSource,
+  "source show": (args, env, json) => routeCommand("showSourceEvidence", args, env, json),
+  "source pause": (args, env, json) => routeCommand("pauseEvidenceCollection", args, env, json),
+  "source resume": (args, env, json) => routeCommand("resumeEvidenceCollection", args, env, json),
+  "source terminate": (args, env, json) => routeCommand("terminateEvidenceCollection", args, env, json),
+  "source retry": (args, env, json) => routeCommand("retryEvidenceCollection", args, env, json),
+  "snapshot reparse": (args, env, json) => routeCommand("reparseSourceSnapshot", args, env, json),
+  "legality status": runLegalityStatusCommand,
+};
 
 export async function main(arguments_, environment) {
   const json = arguments_.includes("--json");
@@ -25,96 +271,29 @@ export async function main(arguments_, environment) {
     }
     return administrationRequest(environment, json, "/v1/status", "GET");
   }
-  if (isCommand(arguments_, "release", "production")) {
-    return runProductionReleaseCommand(arguments_.slice(2), environment, json);
+
+  if (arguments_[0] === "catalogue" && arguments_[1] === "search" && arguments_[2] === "repair") {
+    return routeCommand("repairCatalogueSearch", arguments_.slice(3), environment, json);
   }
 
-  if (isCommand(arguments_, "run", "start")) {
-    return startRun(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "run", "show")) {
-    return showRun(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "candidate", "inspect")) {
-    return inspectCandidate(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "run", "approve")) {
-    return approveRun(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "run", "reject")) {
-    return rejectRun(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "run", "retry")) {
-    return retryRun(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "run", "cleanup")) {
-    return cleanupRun(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "run", "reconcile")) {
-    return reconcileRun(arguments_.slice(2), environment, json);
-  }
-  if (arguments_[0] === "catalogue" && arguments_[1] === "search" && arguments_[2] === "repair") {
-    return repairCatalogueSearch(arguments_.slice(3), environment, json);
-  }
-  if (isCommand(arguments_, "backup", "create")) {
-    return createBackup(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "backup", "status")) {
-    return backupStatus(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "backup", "retry")) {
-    return retryBackup(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "recovery", "begin")) {
-    return beginRecovery(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "recovery", "inspect")) {
-    return inspectRecovery(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "recovery", "verify")) {
-    return verifyRecovery(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "recovery", "accept")) {
-    return acceptRecovery(arguments_.slice(2), environment, json);
-  }
   if (arguments_[0] === "catalogue-export" && arguments_[1] === "deletion") {
     return catalogueExportDeletion(arguments_[2], arguments_.slice(3), environment, json);
   }
-  if (isCommand(arguments_, "source", "collect")) {
-    return collectSource(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "source", "show")) {
-    return showSourceEvidence(arguments_.slice(2), environment, json);
-  }
+
   if (arguments_[0] === "source" && arguments_[1] === "capacity" && arguments_[2] === "extend") {
     return extendSourceCapacity(arguments_.slice(3), environment, json);
   }
-  if (isCommand(arguments_, "source", "pause")) {
-    return pauseEvidenceCollection(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "source", "resume")) {
-    return resumeEvidenceCollection(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "source", "terminate")) {
-    return terminateEvidenceCollection(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "source", "retry")) {
-    return retryEvidenceCollection(arguments_.slice(2), environment, json);
-  }
-  if (isCommand(arguments_, "snapshot", "reparse")) {
-    return reparseSourceSnapshot(arguments_.slice(2), environment, json);
-  }
+
   if (arguments_[0] === "cards") {
     return runCatalogueCommand(arguments_.slice(1), environment, json);
   }
-  if (isCommand(arguments_, "legality", "status")) {
-    return runLegalityStatusCommand(arguments_.slice(2), environment, json);
-  }
+
   if (arguments_[0] === "curated-revision") {
     return runCuratedRevisionCommand(arguments_.slice(1), environment, json);
   }
 
-  return usageFailure(json);
+  const handler = commands[arguments_.slice(0, 2).join(" ")];
+  return handler === undefined ? usageFailure(json) : handler(arguments_.slice(2), environment, json);
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -222,236 +401,6 @@ function validHealthChecks(checks) {
         (checks[name].status === "pass" || checks[name].status === "fail"),
     )
   );
-}
-
-async function startRun(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--fixture", "--games", "--idempotency-key"]);
-  if (
-    options.error !== null ||
-    options.values["--fixture"] === undefined ||
-    options.values["--games"] === undefined ||
-    options.values["--idempotency-key"] === undefined
-  ) {
-    return usageFailure(json);
-  }
-  return administrationRequest(environment, json, "/v1/ingestion-runs", "POST", {
-    fixture: options.values["--fixture"],
-    selected_games: options.values["--games"]
-      .split(",")
-      .map((game) => game.trim())
-      .filter(Boolean),
-    idempotency_key: options.values["--idempotency-key"],
-  });
-}
-
-async function showRun(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--run-id"]);
-  const runId = options.values["--run-id"];
-  if (options.error !== null || runId === undefined) {
-    return usageFailure(json);
-  }
-  return administrationRequest(environment, json, `/v1/ingestion-runs/${encodeURIComponent(runId)}`, "GET");
-}
-
-async function inspectCandidate(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--run-id"]);
-  const runId = options.values["--run-id"];
-  if (options.error !== null || runId === undefined) {
-    return usageFailure(json);
-  }
-  return administrationRequest(environment, json, `/v1/ingestion-runs/${encodeURIComponent(runId)}/candidate`, "GET");
-}
-
-async function approveRun(arguments_, environment, json) {
-  const options = parseOptions(
-    arguments_,
-    ["--run-id", "--candidate-digest", "--expected-current-revision", "--idempotency-key"],
-    ["--yes"],
-  );
-  const runId = options.values["--run-id"];
-  const candidateDigest = options.values["--candidate-digest"];
-  const expectedCurrentRevision = options.values["--expected-current-revision"];
-  const idempotencyKey = options.values["--idempotency-key"];
-  if (
-    options.error !== null ||
-    runId === undefined ||
-    candidateDigest === undefined ||
-    expectedCurrentRevision === undefined ||
-    idempotencyKey === undefined ||
-    !options.flags.has("--yes")
-  ) {
-    return usageFailure(json);
-  }
-  return administrationRequest(environment, json, `/v1/ingestion-runs/${encodeURIComponent(runId)}/approval`, "POST", {
-    candidate_digest: candidateDigest,
-    expected_current_revision_id: expectedCurrentRevision,
-    idempotency_key: idempotencyKey,
-  });
-}
-
-async function rejectRun(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--run-id", "--candidate-digest", "--idempotency-key"], ["--yes"]);
-  const runId = options.values["--run-id"];
-  const candidateDigest = options.values["--candidate-digest"];
-  const idempotencyKey = options.values["--idempotency-key"];
-  if (
-    options.error !== null ||
-    runId === undefined ||
-    candidateDigest === undefined ||
-    idempotencyKey === undefined ||
-    !options.flags.has("--yes")
-  ) {
-    return usageFailure(json);
-  }
-  return administrationRequest(environment, json, `/v1/ingestion-runs/${encodeURIComponent(runId)}/rejection`, "POST", {
-    candidate_digest: candidateDigest,
-    idempotency_key: idempotencyKey,
-  });
-}
-
-async function retryRun(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--run-id", "--idempotency-key"]);
-  const runId = options.values["--run-id"];
-  const idempotencyKey = options.values["--idempotency-key"];
-  if (options.error !== null || runId === undefined || idempotencyKey === undefined) {
-    return usageFailure(json);
-  }
-  return administrationRequest(environment, json, `/v1/ingestion-runs/${encodeURIComponent(runId)}/retry`, "POST", {
-    idempotency_key: idempotencyKey,
-  });
-}
-
-async function cleanupRun(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--run-id", "--idempotency-key"]);
-  const runId = options.values["--run-id"];
-  const idempotencyKey = options.values["--idempotency-key"];
-  if (options.error !== null || runId === undefined || idempotencyKey === undefined) {
-    return usageFailure(json);
-  }
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/ingestion-runs/${encodeURIComponent(runId)}/publication-cleanup`,
-    "POST",
-    {
-      idempotency_key: idempotencyKey,
-    },
-  );
-}
-
-async function reconcileRun(arguments_, environment, json) {
-  const options = parseOptions(
-    arguments_,
-    ["--run-id", "--expected-current-revision", "--idempotency-key", "--environment", "--confirm"],
-    ["--yes"],
-  );
-  const runId = options.values["--run-id"];
-  const expectedCurrentRevision = options.values["--expected-current-revision"];
-  const idempotencyKey = options.values["--idempotency-key"];
-  const target = options.values["--environment"];
-  const confirmation = options.values["--confirm"];
-  if (
-    options.error !== null ||
-    runId === undefined ||
-    expectedCurrentRevision === undefined ||
-    idempotencyKey === undefined ||
-    target === undefined ||
-    !options.flags.has("--yes")
-  ) {
-    return usageFailure(json);
-  }
-  if (target !== "production") {
-    return productionTargetFailure(json, "Reconciliation requires --environment production.");
-  }
-  const resolved = await resolveReconciliationTarget(environment, json, runId, expectedCurrentRevision);
-  if (typeof resolved === "number") return resolved;
-  const confirmed = confirmProductionTarget(json, resolved.productionTarget, confirmation);
-  if (confirmed !== 0) return confirmed;
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/ingestion-runs/${encodeURIComponent(runId)}/reconciliation`,
-    "POST",
-    {
-      expected_current_revision_id: expectedCurrentRevision,
-      idempotency_key: idempotencyKey,
-    },
-  );
-}
-
-async function repairCatalogueSearch(arguments_, environment, json) {
-  const options = parseOptions(
-    arguments_,
-    ["--target-revision", "--expected-current-revision", "--idempotency-key", "--environment", "--confirm"],
-    ["--yes"],
-  );
-  const targetRevision = options.values["--target-revision"];
-  const expectedCurrentRevision = options.values["--expected-current-revision"];
-  const idempotencyKey = options.values["--idempotency-key"];
-  const target = options.values["--environment"];
-  const confirmation = options.values["--confirm"];
-  if (
-    options.error !== null ||
-    targetRevision === undefined ||
-    expectedCurrentRevision === undefined ||
-    idempotencyKey === undefined ||
-    target === undefined ||
-    !options.flags.has("--yes")
-  ) {
-    return usageFailure(json);
-  }
-  if (target !== "production") {
-    return productionTargetFailure(json, "Card search repair requires --environment production.");
-  }
-  const resolved = await resolveSearchRepairTarget(environment, json, targetRevision, expectedCurrentRevision);
-  if (typeof resolved === "number") return resolved;
-  const confirmed = confirmProductionTarget(json, resolved.productionTarget, confirmation);
-  if (confirmed !== 0) return confirmed;
-  return administrationRequest(environment, json, "/v1/catalogue-search-materialization/repair", "POST", {
-    target_revision_id: targetRevision,
-    expected_current_revision_id: expectedCurrentRevision,
-    idempotency_key: idempotencyKey,
-  });
-}
-
-async function createBackup(arguments_, environment, json) {
-  const options = parseOptions(
-    arguments_,
-    ["--expected-current-revision", "--idempotency-key", "--environment", "--confirm"],
-    ["--yes"],
-  );
-  const expectedCurrentRevision = options.values["--expected-current-revision"];
-  const idempotencyKey = options.values["--idempotency-key"];
-  const target = options.values["--environment"];
-  const confirmation = options.values["--confirm"];
-  if (
-    options.error !== null ||
-    expectedCurrentRevision === undefined ||
-    idempotencyKey === undefined ||
-    target === undefined ||
-    !options.flags.has("--yes")
-  ) {
-    return usageFailure(json);
-  }
-  if (target !== "production") {
-    return productionTargetFailure(json, "Catalogue backup requires --environment production.");
-  }
-  const resolved = await resolveProductionStatus(environment, json, expectedCurrentRevision);
-  if (typeof resolved === "number") return resolved;
-  const confirmed = confirmProductionTarget(
-    json,
-    {
-      production_target: resolved.productionTarget,
-      expected_current_revision_id: expectedCurrentRevision,
-      idempotency_key: idempotencyKey,
-    },
-    confirmation,
-  );
-  if (confirmed !== 0) return confirmed;
-  return administrationRequest(environment, json, "/v1/backups", "POST", {
-    expected_current_revision_id: expectedCurrentRevision,
-    idempotency_key: idempotencyKey,
-  });
 }
 
 async function backupStatus(arguments_, environment, json) {
@@ -691,197 +640,6 @@ function writeResolvedBackupRetry(json, resolved) {
   process.stderr.write(`Resolved backup retry ${JSON.stringify(resolved)}\n`);
 }
 
-async function beginRecovery(arguments_, environment, json) {
-  const options = parseOptions(
-    arguments_,
-    [
-      "--recovery-id",
-      "--method",
-      "--target-revision",
-      "--target-bookmark",
-      "--target-digest",
-      "--backup-attempt-id",
-      "--expected-current-revision",
-      "--idempotency-key",
-      "--linked-operation-id",
-      "--environment",
-      "--confirm",
-    ],
-    ["--yes"],
-  );
-  const recoveryId = options.values["--recovery-id"];
-  const method = options.values["--method"];
-  const targetRevision = options.values["--target-revision"];
-  const targetBookmark = options.values["--target-bookmark"];
-  const targetDigest = options.values["--target-digest"];
-  const backupAttemptId = options.values["--backup-attempt-id"];
-  const expectedCurrentRevision = options.values["--expected-current-revision"];
-  const idempotencyKey = options.values["--idempotency-key"];
-  const linkedOperationId = options.values["--linked-operation-id"];
-  const target = options.values["--environment"];
-  const confirmation = options.values["--confirm"];
-  if (
-    options.error !== null ||
-    recoveryId === undefined ||
-    !["time_travel", "replacement_database"].includes(method) ||
-    targetRevision === undefined ||
-    targetBookmark === undefined ||
-    targetDigest === undefined ||
-    backupAttemptId === undefined ||
-    expectedCurrentRevision === undefined ||
-    idempotencyKey === undefined ||
-    target === undefined ||
-    !options.flags.has("--yes")
-  )
-    return usageFailure(json);
-  if (target !== "production") {
-    return productionTargetFailure(json, "Catalogue recovery requires --environment production.");
-  }
-  const resolved = await resolveProductionStatus(environment, json, expectedCurrentRevision);
-  if (typeof resolved === "number") return resolved;
-  const request = {
-    environment: "production",
-    recovery_id: recoveryId,
-    method,
-    target_revision_id: targetRevision,
-    target_bookmark: targetBookmark,
-    target_digest: targetDigest,
-    backup_attempt_id: backupAttemptId,
-    expected_current_revision_id: expectedCurrentRevision,
-    idempotency_key: idempotencyKey,
-    ...(linkedOperationId === undefined ? {} : { linked_operation_id: linkedOperationId }),
-  };
-  const confirmed = confirmProductionTarget(
-    json,
-    {
-      production_target: resolved.productionTarget,
-      ...request,
-    },
-    confirmation,
-  );
-  if (confirmed !== 0) return confirmed;
-  return administrationRequest(environment, json, "/v1/recoveries", "POST", request);
-}
-
-async function inspectRecovery(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--recovery-id"]);
-  const recoveryId = options.values["--recovery-id"];
-  if (options.error !== null || recoveryId === undefined) {
-    return usageFailure(json);
-  }
-  return administrationRequest(environment, json, `/v1/recoveries/${encodeURIComponent(recoveryId)}`, "GET");
-}
-
-async function verifyRecovery(arguments_, environment, json) {
-  const options = parseOptions(
-    arguments_,
-    ["--recovery-id", "--target-digest", "--idempotency-key", "--environment", "--confirm"],
-    ["--yes"],
-  );
-  const recoveryId = options.values["--recovery-id"];
-  const targetDigest = options.values["--target-digest"];
-  const idempotencyKey = options.values["--idempotency-key"];
-  const target = options.values["--environment"];
-  const confirmation = options.values["--confirm"];
-  if (
-    options.error !== null ||
-    recoveryId === undefined ||
-    targetDigest === undefined ||
-    idempotencyKey === undefined ||
-    target === undefined ||
-    !options.flags.has("--yes")
-  )
-    return usageFailure(json);
-  if (target !== "production") {
-    return productionTargetFailure(json, "Catalogue recovery verification requires --environment production.");
-  }
-  const resolved = await resolveRecoveryTarget(environment, json, recoveryId, targetDigest);
-  if (typeof resolved === "number") return resolved;
-  const request = {
-    target_digest: targetDigest,
-    idempotency_key: idempotencyKey,
-  };
-  const confirmed = confirmProductionTarget(
-    json,
-    {
-      production_target: resolved.productionTarget,
-      recovery_id: recoveryId,
-      ...request,
-    },
-    confirmation,
-  );
-  if (confirmed !== 0) return confirmed;
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/recoveries/${encodeURIComponent(recoveryId)}/verification`,
-    "POST",
-    request,
-  );
-}
-
-async function acceptRecovery(arguments_, environment, json) {
-  const options = parseOptions(
-    arguments_,
-    [
-      "--recovery-id",
-      "--expected-restored-revision",
-      "--target-digest",
-      "--confirmation-recovery-id",
-      "--idempotency-key",
-      "--environment",
-      "--confirm",
-    ],
-    ["--yes"],
-  );
-  const recoveryId = options.values["--recovery-id"];
-  const expectedRestoredRevision = options.values["--expected-restored-revision"];
-  const targetDigest = options.values["--target-digest"];
-  const confirmationRecoveryId = options.values["--confirmation-recovery-id"];
-  const idempotencyKey = options.values["--idempotency-key"];
-  const target = options.values["--environment"];
-  const confirmation = options.values["--confirm"];
-  if (
-    options.error !== null ||
-    recoveryId === undefined ||
-    expectedRestoredRevision === undefined ||
-    targetDigest === undefined ||
-    confirmationRecoveryId === undefined ||
-    idempotencyKey === undefined ||
-    target === undefined ||
-    !options.flags.has("--yes")
-  )
-    return usageFailure(json);
-  if (target !== "production") {
-    return productionTargetFailure(json, "Catalogue recovery acceptance requires --environment production.");
-  }
-  const resolved = await resolveRecoveryTarget(environment, json, recoveryId, targetDigest, expectedRestoredRevision);
-  if (typeof resolved === "number") return resolved;
-  const request = {
-    expected_restored_revision_id: expectedRestoredRevision,
-    target_digest: targetDigest,
-    confirmation_recovery_id: confirmationRecoveryId,
-    idempotency_key: idempotencyKey,
-  };
-  const confirmed = confirmProductionTarget(
-    json,
-    {
-      production_target: resolved.productionTarget,
-      recovery_id: recoveryId,
-      ...request,
-    },
-    confirmation,
-  );
-  if (confirmed !== 0) return confirmed;
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/recoveries/${encodeURIComponent(recoveryId)}/acceptance`,
-    "POST",
-    request,
-  );
-}
-
 async function collectSource(arguments_, environment, json) {
   const options = parseOptions(arguments_, [
     "--game",
@@ -947,15 +705,6 @@ async function collectSource(arguments_, environment, json) {
   });
 }
 
-async function showSourceEvidence(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--run-id"]);
-  const runId = options.values["--run-id"];
-  if (options.error !== null || runId === undefined) {
-    return usageFailure(json);
-  }
-  return administrationRequest(environment, json, `/v1/ingestion-runs/${encodeURIComponent(runId)}/evidence`, "GET");
-}
-
 // The compare-and-set numbers of a capacity extension travel as JSON
 // integers, so the CLI accepts only canonical positive decimal digits.
 function parsedCapacityInteger(value) {
@@ -1001,97 +750,17 @@ async function extendSourceCapacity(arguments_, environment, json) {
   );
 }
 
-async function resumeEvidenceCollection(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--run-id"]);
-  const runId = options.values["--run-id"];
-  if (options.error !== null || runId === undefined) {
-    return usageFailure(json);
-  }
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/ingestion-runs/${encodeURIComponent(runId)}/collection/resume`,
-    "POST",
-  );
-}
-
 // An owner pause stops a collecting Ingestion Run deliberately: the run
 // enters its Workflow Pause with the reason owner_requested, retains every
 // evidence object, and then resumes or is terminated. It is idempotent under
 // its key.
-async function pauseEvidenceCollection(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--run-id", "--idempotency-key"]);
-  const runId = options.values["--run-id"];
-  const idempotencyKey = options.values["--idempotency-key"];
-  if (options.error !== null || runId === undefined || idempotencyKey === undefined) {
-    return usageFailure(json);
-  }
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/ingestion-runs/${encodeURIComponent(runId)}/collection/pause`,
-    "POST",
-    { idempotency_key: idempotencyKey },
-  );
-}
 
 // Termination is the owner's deliberate decision to abandon a paused
 // Ingestion Run: it is idempotent under its key and releases the single
 // active-run reservation while retaining every evidence object.
-async function terminateEvidenceCollection(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--run-id", "--idempotency-key"]);
-  const runId = options.values["--run-id"];
-  const idempotencyKey = options.values["--idempotency-key"];
-  if (options.error !== null || runId === undefined || idempotencyKey === undefined) {
-    return usageFailure(json);
-  }
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/ingestion-runs/${encodeURIComponent(runId)}/collection/termination`,
-    "POST",
-    { idempotency_key: idempotencyKey },
-  );
-}
-
-async function retryEvidenceCollection(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--run-id", "--idempotency-key"]);
-  const runId = options.values["--run-id"];
-  const idempotencyKey = options.values["--idempotency-key"];
-  if (options.error !== null || runId === undefined || idempotencyKey === undefined) {
-    return usageFailure(json);
-  }
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/ingestion-runs/${encodeURIComponent(runId)}/collection/retry`,
-    "POST",
-    { idempotency_key: idempotencyKey },
-  );
-}
-
-async function reparseSourceSnapshot(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--snapshot-id", "--adapter", "--idempotency-key"]);
-  const snapshotId = options.values["--snapshot-id"];
-  const adapter = options.values["--adapter"];
-  const idempotencyKey = options.values["--idempotency-key"];
-  if (options.error !== null || snapshotId === undefined || adapter === undefined || idempotencyKey === undefined) {
-    return usageFailure(json);
-  }
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/source-snapshots/${encodeURIComponent(snapshotId)}/observations`,
-    "POST",
-    {
-      adapter_version: adapter,
-      idempotency_key: idempotencyKey,
-    },
-  );
-}
 
 async function administrationRequest(environment, json, pathname, method, body) {
-  const observed = await fetchAdministrationDocument(environment, pathname, method, body);
+  const observed = await fetchAdministrationDocument(environment, pathname, method, body, true);
   if (observed.error !== null) {
     return writeFailure(json, observed.error, observed.exitCode);
   }
@@ -1099,150 +768,23 @@ async function administrationRequest(environment, json, pathname, method, body) 
   if (json) {
     process.stdout.write(`${JSON.stringify(document)}\n`);
   } else {
-    process.stdout.write(`${formatAdministrationResult(document)}\n`);
+    process.stdout.write(`${observed.presentation.text}\n`);
   }
-  const incomplete =
-    (document.contract === "card-keepr-reconciliation-workflow@1" && document.status !== "complete") ||
-    (document.contract === "card-keepr-catalogue-backup-workflow@1" && document.status !== "complete") ||
-    (document.contract === "card-keepr-card-search-repair@1" && document.complete !== true) ||
-    (document.contract === "card-keepr-catalogue-export-deletion@1" &&
-      document.state === "deleting" &&
-      observed.responseStatus === 202);
-  return incomplete ? 10 : 0;
+  return observed.presentation?.exit_code ?? (observed.responseStatus === 202 ? 10 : 0);
 }
 
-async function fetchAdministrationDocument(environment, pathname, method = "GET", body) {
-  const configuration = readAdministrationConfiguration(environment);
-  if (configuration.error !== null) {
-    return {
-      error: {
-        code: "configuration_error",
-        detail: configuration.error,
-      },
-      exitCode: 2,
-      document: null,
-    };
-  }
-  let response;
-  try {
-    response = await httpRequest(runtimeUrl(configuration.url, pathname), {
-      method,
-      headers: {
-        authorization: `Bearer ${configuration.key}`,
-        ...(configuration.testNow === undefined ? {} : { "x-keepr-test-now": configuration.testNow }),
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch {
-    return {
-      error: {
-        code: "runtime_unavailable",
-        detail: "ingestion runtime is unavailable",
-        runtime: "ingestion",
-      },
-      exitCode: 9,
-      document: null,
-    };
-  }
-
-  let document;
-  try {
-    document = await response.json();
-  } catch {
-    return {
-      error: {
-        code: "invalid_administration_contract",
-        detail: "ingestion runtime returned invalid JSON",
-        runtime: "ingestion",
-      },
-      exitCode: 8,
-      document: null,
-    };
-  }
-  if (!response.ok) {
-    const code = typeof document?.code === "string" ? document.code : "administration_error";
-    const detail =
-      typeof document?.detail === "string" ? document.detail : `ingestion runtime returned HTTP ${response.status}`;
-    return {
-      error: { code, detail },
-      exitCode: exitCodeForStatus(response.status),
-      document: null,
-    };
-  }
-  return {
-    error: null,
-    exitCode: 0,
-    responseStatus: response.status,
-    document,
-  };
+function fetchAdministrationDocument(environment, pathname, method = "GET", body, present = false) {
+  return requestDocument(environment, pathname, { method, body, present });
 }
 
-async function resolveReconciliationTarget(environment, json, runId, expectedCurrentRevision) {
-  const run = await fetchAdministrationDocument(environment, `/v1/ingestion-runs/${encodeURIComponent(runId)}`);
-  const failedRun = writeObservedFailure(run, json);
-  if (failedRun !== null) return failedRun;
-  if (run.document?.id !== runId || run.document?.expected_current_revision_id !== expectedCurrentRevision) {
-    return resolvedTargetFailure(
-      json,
-      "The production Ingestion Run does not resolve to the supplied run and expected Catalogue Revision.",
-    );
-  }
-  return resolveProductionStatus(environment, json, expectedCurrentRevision);
+function resolveProductionStatus(environment, json, expectedCurrentRevision) {
+  return resolveTarget(environment, json, { expected_current_revision_id: expectedCurrentRevision });
 }
-
-async function resolveSearchRepairTarget(environment, json, targetRevision, expectedCurrentRevision) {
-  const resolved = await resolveProductionStatus(environment, json, expectedCurrentRevision);
-  if (typeof resolved === "number") return resolved;
-  const repairableRevisionIds = validatedRepairableRevisionIds(resolved.repairableRevisionIds, expectedCurrentRevision);
-  if (repairableRevisionIds === null) {
-    return writeFailure(
-      json,
-      {
-        code: "invalid_administration_contract",
-        detail: "Production status did not expose the authoritative retained revision chain.",
-      },
-      8,
-    );
-  }
-  if (!repairableRevisionIds.includes(targetRevision)) {
-    return resolvedTargetFailure(
-      json,
-      "The target Catalogue Revision was not resolved from the authoritative retained revision chain.",
-    );
-  }
-  return resolved;
-}
-
-async function resolveRecoveryTarget(environment, json, recoveryId, targetDigest, expectedRestoredRevision) {
-  const observed = await fetchAdministrationDocument(environment, `/v1/recoveries/${encodeURIComponent(recoveryId)}`);
-  const failed = writeObservedFailure(observed, json);
-  if (failed !== null) return failed;
-  const recovery = observed.document;
-  if (
-    recovery?.id !== recoveryId ||
-    recovery?.target_digest !== targetDigest ||
-    (expectedRestoredRevision !== undefined && recovery?.target_revision_id !== expectedRestoredRevision) ||
-    typeof recovery?.expected_current_revision_id !== "string"
-  ) {
-    return resolvedTargetFailure(
-      json,
-      "The production recovery operation does not match the supplied exact target evidence.",
-    );
-  }
-  const status = await fetchAdministrationDocument(environment, "/v1/status");
-  const failedStatus = writeObservedFailure(status, json);
-  if (failedStatus !== null) return failedStatus;
-  const currentRevision = status.document?.safe_state?.current_revision_id;
-  if (currentRevision !== recovery.expected_current_revision_id && currentRevision !== recovery.target_revision_id) {
-    return resolvedTargetFailure(
-      json,
-      "Production does not resolve to either the recovery source or restored Catalogue Revision.",
-    );
-  }
-  const productionTarget = validatedProductionTarget(status.document?.production_target);
-  if (productionTarget === null) {
+async function resolveTarget(environment, json, parameters) {
+  const observed = await fetchAdministrationDocument(environment, `/v1/status?${new URLSearchParams(parameters)}`);
+  if (observed.error !== null) return writeObservedFailure(observed, json);
+  const resolved = observed.document?.resolved_target;
+  if (typeof resolved?.confirmation !== "string")
     return writeFailure(
       json,
       {
@@ -1251,48 +793,7 @@ async function resolveRecoveryTarget(environment, json, recoveryId, targetDigest
       },
       8,
     );
-  }
-  return { productionTarget };
-}
-
-async function resolveProductionStatus(environment, json, expectedCurrentRevision) {
-  const status = await fetchAdministrationDocument(environment, "/v1/status");
-  const failedStatus = writeObservedFailure(status, json);
-  if (failedStatus !== null) return failedStatus;
-  const currentRevision = status.document?.safe_state?.current_revision_id;
-  if (currentRevision !== expectedCurrentRevision) {
-    return resolvedTargetFailure(
-      json,
-      `Production currently resolves to Catalogue Revision ${
-        typeof currentRevision === "string" ? currentRevision : "unknown"
-      }, not ${expectedCurrentRevision}.`,
-    );
-  }
-  const productionTarget = validatedProductionTarget(status.document?.production_target);
-  const repairableRevisionIds = status.document?.repairable_catalogue_revision_ids;
-  if (productionTarget === null) {
-    return writeFailure(
-      json,
-      {
-        code: "invalid_administration_contract",
-        detail: "Production status did not expose exact Cloudflare target identities.",
-      },
-      8,
-    );
-  }
-  return { productionTarget, repairableRevisionIds };
-}
-
-function validatedRepairableRevisionIds(value, currentRevision) {
-  if (
-    !Array.isArray(value) ||
-    value.length > 3 ||
-    (value.length > 0 && value[0] !== currentRevision) ||
-    !value.every((revision) => typeof revision === "string" && /^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(revision))
-  ) {
-    return null;
-  }
-  return value;
+  return { productionTarget: resolved.production_target };
 }
 
 function confirmProductionTarget(json, productionTarget, confirmation) {
@@ -1305,23 +806,6 @@ function confirmProductionTarget(json, productionTarget, confirmation) {
       detail: `Resolved production target ${required}. ` + `Re-run with --confirm '${required}'.`,
     },
     3,
-  );
-}
-
-function sameKeys(value, expected) {
-  const keys = Object.keys(value).sort();
-  return (
-    keys.length === expected.length &&
-    expected
-      .slice()
-      .sort()
-      .every((key, index) => key === keys[index])
-  );
-}
-
-function sameStringArray(value, expected) {
-  return (
-    Array.isArray(value) && value.length === expected.length && value.every((item, index) => item === expected[index])
   );
 }
 
@@ -1357,34 +841,13 @@ function readHealthConfiguration(environment) {
   };
 }
 
-function readAdministrationConfiguration(environment) {
-  if (!environment.KEEPR_ADMINISTRATION_KEY) {
-    return {
-      error: "Missing required environment: KEEPR_ADMINISTRATION_KEY",
-      url: "",
-      key: "",
-      testNow: undefined,
-    };
-  }
-  return {
-    error: null,
-    url: environment.KEEPR_INGESTION_URL ?? "http://127.0.0.1:8788",
-    key: environment.KEEPR_ADMINISTRATION_KEY,
-    testNow: environment.KEEPR_TEST_NOW,
-  };
-}
-
-function isCommand(arguments_, first, second) {
-  return arguments_[0] === first && arguments_[1] === second;
-}
-
 function usageFailure(json) {
   return writeFailure(
     json,
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
+        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
     },
     2,
   );
@@ -1392,665 +855,6 @@ function usageFailure(json) {
 
 function productionTargetFailure(json, detail) {
   return writeFailure(json, { code: "production_target_required", detail }, 2);
-}
-
-function resolvedTargetFailure(json, detail) {
-  return writeFailure(json, { code: "production_target_mismatch", detail }, 7);
-}
-
-function formatAdministrationResult(document) {
-  if (document.contract === "card-keepr-administration-status@1") {
-    return formatStatus(document);
-  }
-  if (document.contract === "card-keepr-capacity-extension@1") {
-    return formatCapacityExtension(document);
-  }
-  if (document.contract === "card-keepr-collection-pause@1") {
-    return formatCollectionPause(document);
-  }
-  if (document.contract === "card-keepr-collection-termination@1") {
-    return formatCollectionTermination(document);
-  }
-  if (
-    Array.isArray(document.snapshots) &&
-    Array.isArray(document.observation_sets) &&
-    Array.isArray(document.diagnostics) &&
-    document.state &&
-    document.id
-  ) {
-    const lines = [`Ingestion Run ${document.id} evidence: ${document.state}`, ...formatEvidenceVolume(document)];
-    lines.push(...formatEvidencePause(document.pause));
-    lines.push(...formatEvidenceTermination(document.termination));
-    lines.push(...formatCollectionProgress(document.collection));
-    lines.push(...formatEvidenceWorkflow(document.workflow));
-    lines.push(...formatEvidenceActions(document.actions ?? document.pause?.actions));
-    const requestId = safeDiagnosticReference(document.operational_diagnostics?.references?.request_id);
-    if (requestId !== null) lines.push(`Request reference: ${requestId}`);
-    return lines.join("; ");
-  }
-  if (document.source_snapshot_id && document.adapter_version && document.id) {
-    return `Source Observation set ${document.id} for Source Snapshot ${document.source_snapshot_id} (${document.adapter_version})`;
-  }
-  if (document.state && document.id) {
-    return formatRun(document);
-  }
-  if (document.run_id && document.candidate_digest) {
-    return `Candidate ${document.candidate_digest} for Ingestion Run ${document.run_id}`;
-  }
-  return JSON.stringify(document);
-}
-
-function formatCount(count, noun) {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
-
-// Evidence volume prefers the aggregate counts of the collection block: the
-// per-request detail lists are bounded, so their lengths understate a
-// production-sized run.
-function formatEvidenceVolume(document) {
-  const evidence = document.collection?.evidence;
-  if (
-    typeof evidence === "object" &&
-    evidence !== null &&
-    Number.isSafeInteger(evidence.snapshot_count) &&
-    Number.isSafeInteger(evidence.observation_set_count) &&
-    Number.isSafeInteger(evidence.fetch_attempt_count)
-  ) {
-    return [
-      `${formatCount(evidence.snapshot_count, "Source Snapshot")}${
-        Number.isSafeInteger(evidence.retained_byte_total) ? ` (${evidence.retained_byte_total} bytes)` : ""
-      }`,
-      formatCount(evidence.observation_set_count, "Source Observation set"),
-      `${formatCount(evidence.fetch_attempt_count, "fetch attempt")}${
-        Number.isSafeInteger(evidence.retry_attempt_count) && Number.isSafeInteger(evidence.failed_attempt_count)
-          ? ` (${evidence.retry_attempt_count} ${
-              evidence.retry_attempt_count === 1 ? "retry" : "retries"
-            }, ${formatCount(evidence.failed_attempt_count, "failure")})`
-          : ""
-      }`,
-    ];
-  }
-  return [
-    formatCount(document.snapshots.length, "Source Snapshot"),
-    formatCount(document.observation_sets.length, "Source Observation set"),
-    formatCount(document.diagnostics.length, "diagnostic"),
-  ];
-}
-
-function formatCountMap(map) {
-  if (typeof map !== "object" || map === null) return "";
-  return Object.entries(map)
-    .filter(([key, value]) => safeMachineCode(key) !== null && Number.isSafeInteger(value))
-    .map(([key, value]) => `${key} ${value}`)
-    .join(", ");
-}
-
-function formatDuration(milliseconds) {
-  const totalSeconds = Math.floor(milliseconds / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return hours > 0 ? `${hours}h ${minutes}m ${seconds}s` : minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-}
-
-// The aggregated collection progress: request counts by state and role,
-// per-lineage capacity, the latest safe failure, the current safe request
-// reference, host pacing, the advisory remaining-time floor, and the
-// lifecycle timestamps. Human output carries the same material facts as the
-// JSON document, in the same closed vocabulary.
-function formatCollectionProgress(collection) {
-  if (typeof collection !== "object" || collection === null) return [];
-  const lines = [];
-  const requests = collection.requests;
-  if (typeof requests === "object" && requests !== null && Number.isSafeInteger(requests.total)) {
-    const groups = [formatCountMap(requests.by_state), formatCountMap(requests.by_role)].filter(
-      (group) => group !== "",
-    );
-    lines.push(`Requests: ${requests.total}${groups.length === 0 ? "" : ` (${groups.join("; ")})`}`);
-    // Per-lineage counts only add information when a run spans lineages.
-    const byLineage = Array.isArray(requests.by_lineage) ? requests.by_lineage : [];
-    if (byLineage.length > 1) {
-      for (const group of byLineage) {
-        const lineage = safeDiagnosticReference(group?.source_lineage);
-        if (lineage === null || !Number.isSafeInteger(group.total)) continue;
-        const lineageGroups = [formatCountMap(group.by_state), formatCountMap(group.by_role)].filter(
-          (part) => part !== "",
-        );
-        lines.push(
-          `Requests ${lineage}: ${group.total}${lineageGroups.length === 0 ? "" : ` (${lineageGroups.join("; ")})`}`,
-        );
-      }
-    }
-  }
-  for (const capacity of Array.isArray(collection.capacity) ? collection.capacity : []) {
-    const lineage = safeDiagnosticReference(capacity?.source_lineage);
-    if (
-      lineage === null ||
-      !Number.isSafeInteger(capacity.used_capacity) ||
-      !Number.isSafeInteger(capacity.request_capacity) ||
-      !Number.isSafeInteger(capacity.capacity_generation)
-    ) {
-      continue;
-    }
-    const details = [`generation ${capacity.capacity_generation}`];
-    if (Number.isSafeInteger(capacity.remaining_capacity)) {
-      details.push(`${capacity.remaining_capacity} remaining`);
-    }
-    if (Number.isSafeInteger(capacity.required_capacity)) {
-      details.push(`${capacity.required_capacity} required`);
-    }
-    if (Number.isSafeInteger(capacity.overflow_request_count)) {
-      details.push(`${formatCount(capacity.overflow_request_count, "overflow request")}`);
-    }
-    lines.push(
-      `Capacity ${lineage}: ${capacity.used_capacity} used of ${capacity.request_capacity} (${details.join(", ")})`,
-    );
-  }
-  const evidence = collection.evidence;
-  if (typeof evidence === "object" && evidence !== null && Number.isSafeInteger(evidence.detail_limit)) {
-    const truncated = [
-      ["snapshots", evidence.snapshots_truncated],
-      ["observation sets", evidence.observation_sets_truncated],
-      ["diagnostics", evidence.diagnostics_truncated],
-    ]
-      .filter(([, flag]) => flag === true)
-      .map(([name]) => name);
-    if (truncated.length > 0) {
-      lines.push(`Detail lists bounded to the newest ${evidence.detail_limit}: ${truncated.join(", ")} truncated`);
-    }
-  }
-  const failure = collection.evidence?.latest_failure;
-  if (typeof failure === "object" && failure !== null) {
-    const classification = safeMachineCode(failure.classification);
-    const requestId = safeDiagnosticReference(failure.request_id);
-    if (classification !== null && requestId !== null) {
-      const at = safeDiagnosticReference(failure.at);
-      lines.push(
-        `Latest failure: ${classification}${
-          Number.isSafeInteger(failure.http_status) ? ` (HTTP ${failure.http_status})` : ""
-        } on ${requestId}${
-          Number.isSafeInteger(failure.attempt_number) ? ` attempt ${failure.attempt_number}` : ""
-        }${at === null ? "" : ` at ${at}`}`,
-      );
-    }
-  }
-  const failedImages = collection.failed_images;
-  if (
-    typeof failedImages === "object" &&
-    failedImages !== null &&
-    Number.isSafeInteger(failedImages.count) &&
-    failedImages.count > 0
-  ) {
-    const listed = (Array.isArray(failedImages.requests) ? failedImages.requests : [])
-      .map((image) => safeDiagnosticReference(image?.request_id))
-      .filter((requestId) => requestId !== null);
-    lines.push(
-      `Failed images: ${formatCount(failedImages.count, "Printing Image")}${
-        failedImages.truncated === true ? ` (first ${listed.length} listed)` : ""
-      } not collected; the run continued and a later run can collect them${
-        listed.length === 0 ? "" : `: ${listed.join(", ")}`
-      }`,
-    );
-  }
-  const current = collection.progress?.current_request;
-  if (typeof current === "object" && current !== null) {
-    const requestId = safeDiagnosticReference(current.request_id);
-    if (requestId !== null) {
-      const facts = [
-        safeDiagnosticReference(current.hostname),
-        safeMachineCode(current.role),
-        safeMachineCode(current.state),
-        Number.isSafeInteger(current.attempt_count) ? formatCount(current.attempt_count, "attempt") : null,
-      ].filter((fact) => fact !== null);
-      lines.push(`Current request: ${requestId}${facts.length === 0 ? "" : ` (${facts.join(", ")})`}`);
-    }
-  }
-  const pacing = collection.pacing;
-  if (typeof pacing === "object" && pacing !== null) {
-    const mode = safeMachineCode(pacing.mode);
-    if (mode !== null) {
-      const hosts = (Array.isArray(pacing.hosts) ? pacing.hosts : [])
-        .map((host) => {
-          const hostname = safeDiagnosticReference(host?.hostname);
-          if (hostname === null || !Number.isSafeInteger(host.pending_request_count)) {
-            return null;
-          }
-          return `${hostname} ${host.pending_request_count} pending${
-            Number.isSafeInteger(host.captured_request_count) && host.captured_request_count > 0
-              ? `, ${host.captured_request_count} captured`
-              : ""
-          }${Number.isSafeInteger(host.waiting_ms) && host.waiting_ms > 0 ? ` (waiting ${host.waiting_ms}ms)` : ""}`;
-        })
-        .filter((host) => host !== null);
-      lines.push(
-        `Pacing: ${mode}${Number.isSafeInteger(pacing.interval_ms) ? ` ${pacing.interval_ms}ms` : ""}${
-          hosts.length === 0 ? "" : `; ${formatCount(hosts.length, "host")}: ${hosts.join(", ")}`
-        }`,
-      );
-    }
-  }
-  const estimate = collection.estimate;
-  if (typeof estimate === "object" && estimate !== null && Number.isSafeInteger(estimate.minimum_remaining_ms)) {
-    lines.push(`Estimated minimum remaining: ${formatDuration(estimate.minimum_remaining_ms)} (advisory)`);
-  }
-  const expectedRevision = safeDiagnosticReference(collection.expected_catalogue_revision_id);
-  if (expectedRevision !== null) {
-    lines.push(`Expected Catalogue Revision: ${expectedRevision}`);
-  }
-  return lines;
-}
-
-// The confirmation facts of an applied capacity extension: which Ingestion
-// Run and Source Lineage were extended, and how the compare-and-set advanced
-// the capacity and its generation.
-function formatCapacityExtension(document) {
-  const lines = [];
-  const runId = safeDiagnosticReference(document.ingestion_run_id);
-  if (runId !== null) {
-    lines.push(`Ingestion Run ${runId} capacity extended`);
-  }
-  if (
-    Number.isSafeInteger(document.previous_request_capacity) &&
-    Number.isSafeInteger(document.request_capacity) &&
-    Number.isSafeInteger(document.previous_capacity_generation) &&
-    Number.isSafeInteger(document.capacity_generation)
-  ) {
-    lines.push(
-      `Request Capacity: ${document.previous_request_capacity} -> ` +
-        `${document.request_capacity} (generation ` +
-        `${document.previous_capacity_generation} -> ` +
-        `${document.capacity_generation})`,
-    );
-  }
-  const sourceLineage = safeDiagnosticReference(document.source_lineage);
-  if (sourceLineage !== null) {
-    lines.push(`Source Lineage: ${sourceLineage}`);
-  }
-  return lines.length === 0 ? JSON.stringify(document) : lines.join("; ");
-}
-
-// The minimum pause facts of a paused Ingestion Run: why collection stopped,
-// and either the capacity consumption the rejected overflow batch requires
-// (a Capacity Pause) or the exhausted request's safe reference, hostname,
-// retry generation, and latest safe failure classification (a retry pause).
-function formatEvidencePause(pause) {
-  if (typeof pause !== "object" || pause === null) return [];
-  const lines = [];
-  const reason = safeMachineCode(pause.reason);
-  const pausedAt = safeDiagnosticReference(pause.paused_at);
-  if (reason !== null) {
-    lines.push(`Paused: ${reason}${pausedAt === null ? "" : ` at ${pausedAt}`}`);
-  }
-  const sourceLineage = safeDiagnosticReference(pause.source_lineage);
-  if (sourceLineage !== null) {
-    lines.push(`Source Lineage: ${sourceLineage}`);
-  }
-  if (
-    Number.isSafeInteger(pause.request_capacity) &&
-    Number.isSafeInteger(pause.used_capacity) &&
-    Number.isSafeInteger(pause.capacity_generation)
-  ) {
-    lines.push(
-      `Request Capacity: ${pause.used_capacity} used of ` +
-        `${pause.request_capacity} (generation ${pause.capacity_generation})`,
-    );
-  }
-  if (Number.isSafeInteger(pause.overflow_request_count) && Number.isSafeInteger(pause.required_capacity)) {
-    lines.push(
-      `Overflow: ${formatCount(
-        pause.overflow_request_count,
-        "request",
-      )} require${pause.overflow_request_count === 1 ? "s" : ""} capacity ${pause.required_capacity}`,
-    );
-  }
-  const parentRequestId = safeDiagnosticReference(pause.parent_request_id);
-  if (parentRequestId !== null) {
-    lines.push(`Parent request: ${parentRequestId}`);
-  }
-  // A retry-exhaustion pause identifies the exhausted Source Request and its
-  // bounded retry generation instead of lineage capacity facts.
-  const requestId = safeDiagnosticReference(pause.request_id);
-  if (requestId !== null) lines.push(`Request: ${requestId}`);
-  const hostname = safeDiagnosticReference(pause.hostname);
-  if (hostname !== null) lines.push(`Hostname: ${hostname}`);
-  if (Number.isSafeInteger(pause.attempt_count) && Number.isSafeInteger(pause.retry_generation)) {
-    lines.push(`Attempts: ${pause.attempt_count} in retry generation ` + `${pause.retry_generation}`);
-  }
-  const classification = safeMachineCode(pause.failure_classification);
-  if (classification !== null) {
-    lines.push(
-      `Last failure: ${classification}${Number.isSafeInteger(pause.http_status) ? ` (HTTP ${pause.http_status})` : ""}`,
-    );
-  }
-  // A Workflow Pause identifies the abandoned Workflow Attempt, the safe
-  // status that classified it, and the deterministic last-progress time the
-  // classification was derived from.
-  const workflowInstanceId = safeDiagnosticReference(pause.workflow_instance_id);
-  if (workflowInstanceId !== null) {
-    const workflowStatus = safeMachineCode(pause.workflow_status);
-    lines.push(
-      `Workflow attempt: ${workflowInstanceId}${workflowStatus === null ? "" : ` (status ${workflowStatus})`}`,
-    );
-  }
-  const lastProgressAt = safeDiagnosticReference(pause.last_progress_at);
-  if (lastProgressAt !== null) {
-    lines.push(`Last progress: ${lastProgressAt}`);
-  }
-  return lines;
-}
-
-// The exact owner actions the collection lifecycle currently admits, so an
-// operator reading the human form sees the same choices automation reads
-// from the JSON document.
-function formatEvidenceActions(actions) {
-  if (!Array.isArray(actions)) return [];
-  const safe = actions.map((action) => safeMachineCode(action)).filter((action) => action !== null);
-  return safe.length === 0 ? [] : [`Available actions: ${safe.join(", ")}`];
-}
-
-// The retained owner decision of a terminated run: the stable terminal
-// reason, when it was taken, and which pause it abandoned.
-function formatEvidenceTermination(termination) {
-  if (typeof termination !== "object" || termination === null) return [];
-  const reason = safeMachineCode(termination.reason);
-  if (reason === null) return [];
-  const terminatedAt = safeDiagnosticReference(termination.terminated_at);
-  const pauseReason = safeMachineCode(termination.pause_reason);
-  const pausedAt = safeDiagnosticReference(termination.paused_at);
-  const abandoned = pauseReason === null ? "" : ` (paused ${pauseReason}${pausedAt === null ? "" : ` at ${pausedAt}`})`;
-  return [`Terminated: ${reason}${terminatedAt === null ? "" : ` at ${terminatedAt}`}${abandoned}`];
-}
-
-// The confirmation facts of an applied owner pause: which run paused, when,
-// which parent Workflow Attempt was abandoned with the safe status observed
-// at the time, and the actions the paused run now admits.
-function formatCollectionPause(document) {
-  const lines = [];
-  const runId = safeDiagnosticReference(document.ingestion_run_id);
-  if (runId !== null) lines.push(`Ingestion Run ${runId} paused`);
-  const pauseReason = safeMachineCode(document.pause_reason);
-  const pausedAt = safeDiagnosticReference(document.paused_at);
-  if (pauseReason !== null) {
-    lines.push(`Paused: ${pauseReason}${pausedAt === null ? "" : ` at ${pausedAt}`}`);
-  }
-  const workflow = typeof document.workflow === "object" && document.workflow !== null ? document.workflow : {};
-  const workflowId = safeDiagnosticReference(workflow.id);
-  const status = safeMachineCode(workflow.status);
-  if (workflowId !== null) {
-    const attempt = Number.isSafeInteger(workflow.attempt_number)
-      ? `Workflow attempt ${workflow.attempt_number} (${workflowId})`
-      : `Workflow ${workflowId}`;
-    lines.push(status === null ? attempt : `${attempt}: ${status}`);
-  }
-  const lastProgressAt = safeDiagnosticReference(document.last_progress_at);
-  if (lastProgressAt !== null) lines.push(`Last progress: ${lastProgressAt}`);
-  lines.push(...formatEvidenceActions(document.actions));
-  return lines.length === 0 ? JSON.stringify(document) : lines.join("; ");
-}
-
-// The confirmation facts of an applied termination: which run became
-// terminal, which pause it abandoned, and whether the single active-run
-// reservation was released.
-function formatCollectionTermination(document) {
-  const lines = [];
-  const runId = safeDiagnosticReference(document.ingestion_run_id);
-  if (runId !== null) lines.push(`Ingestion Run ${runId} terminated`);
-  const pauseReason = safeMachineCode(document.pause_reason);
-  const pausedAt = safeDiagnosticReference(document.paused_at);
-  if (pauseReason !== null) {
-    lines.push(`Paused: ${pauseReason}${pausedAt === null ? "" : ` at ${pausedAt}`}`);
-  }
-  const terminatedAt = safeDiagnosticReference(document.terminated_at);
-  if (terminatedAt !== null) lines.push(`Terminated at: ${terminatedAt}`);
-  if (typeof document.active_run_released === "boolean") {
-    lines.push(`Active run released: ${document.active_run_released ? "yes" : "no"}`);
-  }
-  return lines.length === 0 ? JSON.stringify(document) : lines.join("; ");
-}
-
-// The collection Workflow observability facts: the current Workflow Attempt
-// with its safe status, its stall classification while collecting, and the
-// deterministic last-progress time.
-function formatEvidenceWorkflow(workflow) {
-  if (typeof workflow !== "object" || workflow === null) return [];
-  const lines = [];
-  const current = workflow.current_attempt;
-  if (typeof current === "object" && current !== null) {
-    const id = safeDiagnosticReference(current.id);
-    if (id !== null && Number.isSafeInteger(current.attempt_number)) {
-      const status = safeMachineCode(workflow.status);
-      lines.push(`Workflow attempt ${current.attempt_number}: ${id}${status === null ? "" : ` (status ${status})`}`);
-    }
-  }
-  const classification = safeMachineCode(workflow.classification);
-  if (classification !== null) {
-    lines.push(`Workflow classification: ${classification}`);
-  }
-  const lastProgressAt = safeDiagnosticReference(workflow.last_progress_at);
-  if (lastProgressAt !== null) {
-    lines.push(`Last progress: ${lastProgressAt}`);
-  }
-  if (Array.isArray(workflow.attempts) && workflow.attempts.length > 0) {
-    const attempts = workflow.attempts
-      .map((attempt) => {
-        const id = safeDiagnosticReference(attempt?.id);
-        const kind = safeMachineCode(attempt?.kind);
-        if (id === null || kind === null) return null;
-        return {
-          kind,
-          current: attempt.current === true,
-          text: `${kind} ${id}${
-            Number.isSafeInteger(attempt.attempt_number) ? ` attempt ${attempt.attempt_number}` : ""
-          }${
-            safeMachineCode(attempt.status) === null ? "" : ` ${attempt.status}`
-          }${attempt.current === true ? " (current)" : ""}`,
-        };
-      })
-      .filter((attempt) => attempt !== null);
-    // The current parent attempt already has its own line above.
-    const listed = attempts.filter((attempt) => attempt.kind !== "parent" || !attempt.current);
-    lines.push(
-      `Workflow attempts: ${attempts.length} recorded, ${attempts.filter((attempt) => attempt.current).length} current${
-        listed.length === 0 ? "" : `; ${listed.map((attempt) => attempt.text).join("; ")}`
-      }`,
-    );
-  }
-  return lines;
-}
-
-function formatStatus(document) {
-  const safeState = document.safe_state ?? {};
-  const lines = [
-    `Catalogue Revision: ${safeState.current_revision_id ?? "unknown"}`,
-    `Recovery health: ${safeState.recovery_health ?? "unknown"}`,
-    `Mutation safe: ${safeState.mutation_safe === true ? "yes" : "no"}`,
-    `Active Ingestion Run: ${safeState.active_ingestion_run_id ?? "none"}`,
-    `Active Recovery: ${safeState.active_recovery_id ?? "none"}`,
-  ];
-  const diagnostics = document.diagnostics ?? {};
-  lines.push(
-    `Catalogue diagnostics: ${diagnostics.catalogue_revision_count ?? "unknown"} revisions, ${
-      diagnostics.catalogue_export_count ?? "unknown"
-    } exports`,
-  );
-  lines.push(
-    `export_objects: ${diagnostics.catalogue_export_object_count ?? "unknown"}`,
-    `orphaned_export_objects: ${diagnostics.orphaned_catalogue_export_object_count ?? "unknown"}`,
-    `pending_publication_cleanups: ${diagnostics.pending_publication_cleanup_count ?? "unknown"}`,
-  );
-  const freshness = Array.isArray(document.source_freshness) ? document.source_freshness : [];
-  lines.push("Source freshness:");
-  if (freshness.length === 0) {
-    lines.push("  none");
-  } else {
-    for (const item of freshness) {
-      const scope = item.area === "legality-rules" ? `/${item.source_lineage}/${item.region}` : "";
-      lines.push(`  ${item.game}/${item.area}${scope}: ${item.checked_at} (${item.ingestion_run_id})`);
-    }
-  }
-  const recentRuns = Array.isArray(document.recent_runs) ? document.recent_runs : [];
-  lines.push("Recent Ingestion Runs:");
-  if (recentRuns.length === 0) {
-    lines.push("  none");
-  } else {
-    for (const run of recentRuns) {
-      lines.push(`  ${run.id}: ${run.state} (${run.progress?.current_stage ?? "unknown progress"})`);
-    }
-    const nextRunId = safeDiagnosticReference(recentRuns[0]?.id);
-    if (nextRunId !== null) {
-      lines.push(`Next: keepr run show --run-id ${nextRunId}`);
-    }
-  }
-  return lines.join("\n");
-}
-
-function formatRun(document) {
-  const lines = [
-    `Ingestion Run ${document.id}: ${document.state}`,
-    `Progress: ${document.progress?.current_stage ?? "unknown"}`,
-  ];
-  const completed = Array.isArray(document.progress?.completed_stages) ? document.progress.completed_stages : [];
-  lines.push(`Completed stages: ${completed.length === 0 ? "none" : completed.join(", ")}`);
-  const warnings = Array.isArray(document.warnings) ? document.warnings : [];
-  if (warnings.length === 0) {
-    lines.push("Warnings: none");
-  } else {
-    for (const warning of warnings) {
-      lines.push(`Warning: ${safeMachineCode(warning.code) ?? "unspecified"}`);
-    }
-  }
-  lines.push(`Failure: ${safeMachineCode(document.failure_code) ?? "none"}`);
-  const cleanup = document.publication_cleanup;
-  lines.push(
-    `Publication cleanup: ${cleanup?.state ?? "not required"}${
-      cleanup?.failure_code ? ` (${cleanup.failure_code})` : ""
-    }`,
-  );
-  const history = Array.isArray(document.approval_history) ? document.approval_history : [];
-  lines.push(`Approval history: ${history.length} ${history.length === 1 ? "decision" : "decisions"}`);
-  for (const decision of history) {
-    lines.push(`  ${decision.action ?? "decision"} at ${decision.approved_at ?? decision.rejected_at ?? "unknown"}`);
-  }
-  lines.push(`Publication outcome: ${document.publication_outcome ?? "none"}`);
-  lines.push(`Resulting Catalogue Revision: ${document.resulting_revision_id ?? "none"}`);
-  appendOperationalDiagnostics(lines, document.operational_diagnostics);
-  return lines.join("\n");
-}
-
-function appendOperationalDiagnostics(lines, value) {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return;
-  }
-  const references = value.references;
-  if (references === null || typeof references !== "object" || Array.isArray(references)) return;
-  lines.push(`Request reference: ${safeDiagnosticReference(references.request_id) ?? "none"}`);
-  const workflow = references.workflow;
-  lines.push(
-    `Workflow: ${
-      workflow !== null && typeof workflow === "object" && !Array.isArray(workflow)
-        ? (safeDiagnosticReference(workflow.parent_id) ?? "none")
-        : "none"
-    }`,
-  );
-  const adapters = Array.isArray(references.adapter_versions)
-    ? references.adapter_versions.flatMap((adapter) => {
-        const safe = safeDiagnosticReference(adapter);
-        return safe === null ? [] : [safe];
-      })
-    : [];
-  lines.push(`Adapter versions: ${adapters.length === 0 ? "none" : adapters.join(", ")}`);
-  lines.push(`Candidate: ${safeDiagnosticReference(references.candidate_digest) ?? "none"}`);
-  const backup = references.backup;
-  lines.push(
-    `Backup: ${
-      backup !== null && typeof backup === "object" && !Array.isArray(backup)
-        ? (safeDiagnosticPath(backup.status_path) ?? "none")
-        : "none"
-    }`,
-  );
-  const recovery = references.recovery;
-  lines.push(
-    `Recovery: ${
-      recovery !== null && typeof recovery === "object" && !Array.isArray(recovery)
-        ? (safeDiagnosticPath(recovery.status_path) ?? "none")
-        : "none"
-    }`,
-  );
-  const retry = value.retry;
-  lines.push(
-    `Retry: ${
-      retry !== null && typeof retry === "object" && !Array.isArray(retry)
-        ? `${safeMachineCode(retry.code) ?? "unclassified"} (${
-            safeDiagnosticReference(retry.source_run_id) ?? "unknown"
-          })`
-        : "not available"
-    }`,
-  );
-  const terminalFailure = value.terminal_evidence?.failure;
-  if (terminalFailure !== null && typeof terminalFailure === "object" && !Array.isArray(terminalFailure)) {
-    lines.push(`Retry classification: ${safeMachineCode(terminalFailure.retryability_code) ?? "unclassified"}`);
-  }
-  const diagnosis = Array.isArray(value.diagnosis_sequence)
-    ? value.diagnosis_sequence.flatMap((entry) => {
-        if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
-          return [];
-        }
-        const method = safeDiagnosticMethod(entry.method);
-        const path = safeDiagnosticPath(entry.path);
-        const code = safeMachineCode(entry.code);
-        return method === null || path === null || code === null ? [] : [{ method, path, code }];
-      })
-    : [];
-  for (const entry of diagnosis) {
-    lines.push(`Diagnosis: ${entry.method} ${entry.path} (${entry.code})`);
-  }
-  const retryMethod =
-    retry !== null && typeof retry === "object" && !Array.isArray(retry) ? safeDiagnosticMethod(retry.method) : null;
-  const retryPath =
-    retry !== null && typeof retry === "object" && !Array.isArray(retry) ? safeDiagnosticPath(retry.path) : null;
-  const next = retryMethod !== null && retryPath !== null ? { method: retryMethod, path: retryPath } : diagnosis[0];
-  if (next !== undefined && next !== null) {
-    lines.push(`Next: ${next.method} ${next.path}`);
-  }
-  const evidence = value.terminal_evidence;
-  const coverage =
-    evidence !== null &&
-    typeof evidence === "object" &&
-    !Array.isArray(evidence) &&
-    evidence.coverage !== null &&
-    typeof evidence.coverage === "object" &&
-    !Array.isArray(evidence.coverage)
-      ? evidence.coverage
-      : {};
-  lines.push(
-    `Coverage: ${safeDiagnosticCount(coverage.source_snapshot_count)} snapshots, ${safeDiagnosticCount(
-      coverage.source_observation_set_count,
-    )} observation sets, ${safeDiagnosticCount(coverage.fetch_attempt_count)} attempts`,
-  );
-}
-
-function safeDiagnosticReference(value) {
-  return typeof value === "string" && value.length <= 512 && /^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/u.test(value)
-    ? value
-    : null;
-}
-
-function safeMachineCode(value) {
-  return typeof value === "string" && /^[a-z][a-z0-9_]{0,127}$/u.test(value) ? value : null;
-}
-
-function safeDiagnosticPath(value) {
-  return typeof value === "string" && value.length <= 1024 && /^\/v1\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/u.test(value)
-    ? value
-    : null;
-}
-
-function safeDiagnosticMethod(value) {
-  return value === "GET" || value === "POST" ? value : null;
-}
-
-function safeDiagnosticCount(value) {
-  return Number.isSafeInteger(value) && value >= 0 ? value : "unknown";
 }
 
 async function checkRuntime(runtime) {
@@ -2139,4 +943,18 @@ function sameStrings(actual, expected) {
     actual.length === expected.length &&
     actual.every((value, index) => value === expected[index])
   );
+}
+
+function safeDiagnosticReference(value) {
+  return typeof value === "string" && value.length <= 512 && /^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/u.test(value)
+    ? value
+    : null;
+}
+
+function safeMachineCode(value) {
+  return typeof value === "string" && /^[a-z][a-z0-9_]{0,127}$/u.test(value) ? value : null;
+}
+
+function safeDiagnosticCount(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : "unknown";
 }

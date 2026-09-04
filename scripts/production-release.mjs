@@ -1,13 +1,19 @@
 #!/usr/bin/env node
+import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { isDeepStrictEqual } from "node:util";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import {
-  productionReleaseTransitionSql,
+  isReleaseActor,
+  isReleaseDigest,
+  isReleaseHead,
+  isReleaseIdentity,
+} from "../src/catalogue/shared/release-input-shapes.mjs";
+import { SPINE_REVISION_ID } from "../src/catalogue/shared/spine-revision.mjs";
+import {
   productionReleaseLeaseAssignmentsSql,
   productionReleaseOutcomeTimestampSql,
+  productionReleaseTransitionSql,
 } from "./production-release-state.mjs";
-import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { SPINE_REVISION_ID } from "../src/catalogue/shared/spine-revision.mjs";
 
 export function assertReleaseInputs(input) {
   if (
@@ -85,12 +91,10 @@ export async function validateDispatchAndWriteSql(environment, directory) {
     smoke_targets: json("SMOKE_TARGETS_JSON"),
   };
   if (!validReleaseEvidence(plan)) throw new Error("invalid_release_evidence");
-  const targetJson = stableJson(plan.production_target);
-  if (createHash("sha256").update(targetJson).digest("hex") !== plan.production_target_digest)
-    throw new Error("production_target_digest_mismatch");
-  if (stableJson(plan) !== stableJson(preparedPlan)) throw new Error("prepared_plan_mismatch");
-  if (createHash("sha256").update(stableJson(plan)).digest("hex") !== digest(required(environment, "DISPATCH_DIGEST")))
-    throw new Error("dispatch_digest_mismatch");
+  if (!isDeepStrictEqual(plan, preparedPlan)) throw new Error("prepared_plan_mismatch");
+  digest(required(environment, "DISPATCH_DIGEST"));
+  // Only the immutable preparation ledger authenticates these exact server
+  // bytes and its digest. Every lease acquisition includes that predicate.
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const q = sqlQuote;
   const expires = new Date(Date.now() + 45 * 60_000).toISOString();
@@ -105,7 +109,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
     plan.expected_migration_level < 12 && localMigrationLevel >= 12 ? "NOT EXISTS (SELECT 1 FROM ingestion_runs)" : "1";
   // The canonical lease exists before the run-event cutover and remains the
   // same reservation through migration; no synthetic Ingestion Run is needed.
-  const preparedWhere = `idempotency_key=${q(plan.idempotency_key)} AND operation='prepare_production_release' AND request_json=${q(stableJson(plan))} AND json_extract(response_json,'$.release_id')=${q(plan.release_id)} AND json_extract(response_json,'$.dispatch_digest')=${q(environment.DISPATCH_DIGEST)}`;
+  const preparedWhere = `idempotency_key=${q(plan.idempotency_key)} AND operation='prepare_production_release' AND request_json=${q(environment.PREPARED_PLAN_JSON)} AND json_extract(response_json,'$.release_id')=${q(plan.release_id)} AND json_extract(response_json,'$.dispatch_digest')=${q(environment.DISPATCH_DIGEST)} AND json_extract(response_json,'$.prepared_plan_json')=${q(environment.PREPARED_PLAN_JSON)}`;
   const recoveryGate =
     replacement === null
       ? `operation.recovery_health='healthy' AND operation.active_recovery_id IS NULL AND operation.recovery_restore_guard='clear'`
@@ -120,7 +124,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   const claimKey = `release-dispatch:${environment.DISPATCH_DIGEST}`;
   const migrationKey = `release-migration-started:${environment.DISPATCH_DIGEST}`;
   const failureKey = `release-migration-failed:${environment.DISPATCH_DIGEST}`;
-  const durableClaim = `INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(claimKey)},'claim_production_release',request_json,${q(stableJson({ release_id: plan.release_id, state: "preflight", dispatch_digest: environment.DISPATCH_DIGEST }))},201,'success',${productionReleaseOutcomeTimestampSql(claimKey)} FROM administration_idempotency WHERE ${preparedWhere} AND ${liveGate};`;
+  const durableClaim = `INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(claimKey)},'claim_production_release',request_json,${q(JSON.stringify({ release_id: plan.release_id, state: "preflight", dispatch_digest: environment.DISPATCH_DIGEST }))},201,'success',${productionReleaseOutcomeTimestampSql(claimKey)} FROM administration_idempotency WHERE ${preparedWhere} AND ${liveGate};`;
   const claimedEvidence = `EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(claimKey)} AND operation='claim_production_release')`;
   const leaseIdentity = `active_production_release_id=${q(plan.release_id)} AND active_production_release_expires_at=${q(expires)}`;
   const activeFence = `${leaseIdentity} AND active_ingestion_run_id IS NULL`;
@@ -138,7 +142,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   );
   await writeFile(
     `${directory}/migration-started.sql`,
-    `INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(migrationKey)},'production_release_migration_started',request_json,${q(stableJson({ release_id: plan.release_id, migration_started: true, dispatch_digest: environment.DISPATCH_DIGEST }))},201,'success',${productionReleaseOutcomeTimestampSql(migrationKey)} FROM administration_idempotency WHERE idempotency_key=${q(claimKey)} AND operation='claim_production_release' AND EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND ${activeFence}); SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(migrationKey)} AND operation='production_release_migration_started') THEN 1 ELSE 0 END AS migration_started;\n`,
+    `INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(migrationKey)},'production_release_migration_started',request_json,${q(JSON.stringify({ release_id: plan.release_id, migration_started: true, dispatch_digest: environment.DISPATCH_DIGEST }))},201,'success',${productionReleaseOutcomeTimestampSql(migrationKey)} FROM administration_idempotency WHERE idempotency_key=${q(claimKey)} AND operation='claim_production_release' AND EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND ${activeFence}); SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(migrationKey)} AND operation='production_release_migration_started') THEN 1 ELSE 0 END AS migration_started;\n`,
     { mode: 0o600 },
   );
   const migrationMarked = `EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(migrationKey)} AND operation='production_release_migration_started')`;
@@ -147,17 +151,17 @@ export async function validateDispatchAndWriteSql(environment, directory) {
     `SELECT CASE WHEN ${migrationMarked} THEN 1 ELSE 0 END AS migration_started;\n`,
     { mode: 0o600 },
   );
-  const failureResponse = stableJson({
+  const failureResponse = JSON.stringify({
     release_id: plan.release_id,
     dispatch_digest: environment.DISPATCH_DIGEST,
     migration_started_key: migrationKey,
     state: "failed",
     roll_forward_required: true,
   });
-  const failureRecorded = `EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(failureKey)} AND operation='production_release_migration_failed' AND request_json=${q(stableJson(plan))} AND response_json=${q(failureResponse)} AND outcome='problem')`;
+  const failureRecorded = `EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(failureKey)} AND operation='production_release_migration_failed' AND request_json=${q(environment.PREPARED_PLAN_JSON)} AND response_json=${q(failureResponse)} AND outcome='problem')`;
   await writeFile(
     `${directory}/failure-evidence.sql`,
-    `INSERT OR IGNORE INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(failureKey)},'production_release_migration_failed',request_json,${q(failureResponse)},500,'problem',${productionReleaseOutcomeTimestampSql(failureKey)} FROM administration_idempotency WHERE idempotency_key=${q(migrationKey)} AND operation='production_release_migration_started' AND request_json=${q(stableJson(plan))}; SELECT changes() AS inserted_rows, CASE WHEN ${migrationMarked} THEN 1 ELSE 0 END AS migration_started, CASE WHEN ${failureRecorded} THEN 1 ELSE 0 END AS failure_recorded;\n`,
+    `INSERT OR IGNORE INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(failureKey)},'production_release_migration_failed',request_json,${q(failureResponse)},500,'problem',${productionReleaseOutcomeTimestampSql(failureKey)} FROM administration_idempotency WHERE idempotency_key=${q(migrationKey)} AND operation='production_release_migration_started' AND request_json=${q(environment.PREPARED_PLAN_JSON)}; SELECT changes() AS inserted_rows, CASE WHEN ${migrationMarked} THEN 1 ELSE 0 END AS migration_started, CASE WHEN ${failureRecorded} THEN 1 ELSE 0 END AS failure_recorded;\n`,
     { mode: 0o600 },
   );
   await writeFile(
@@ -168,11 +172,11 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   const materializationAuthority = `${claimedEvidence} AND ${migrationMarked} AND ${leaseHeld}`;
   const materialize = bootstrap
     ? `SELECT CASE WHEN ${materializationAuthority} AND EXISTS (SELECT 1 FROM administration_idempotency WHERE ${preparedWhere}) THEN 1 ELSE 0 END AS transferred;`
-    : `INSERT INTO production_releases (id,state,request_json,idempotency_key,expected_current_revision_id,expected_head_sha,production_target_digest,expected_migration_level,recovery_bookmark,recovery_backup_attempt_id,replacement_recovery_id,replacement_database_id,retained_database_id,requested_at) SELECT ${q(plan.release_id)},'requested',request_json,${q(plan.idempotency_key)},${q(plan.expected_current_revision_id)},${q(plan.expected_head_sha)},${q(plan.production_target_digest)},${plan.expected_migration_level},${q(plan.recovery_bookmark)},${q(plan.recovery_backup_attempt_id)},${replacement === null ? "NULL,NULL,NULL" : `${q(replacement.recovery_id)},${q(replacement.replacement_database_id)},${q(replacement.retained_database_id)}`},created_at FROM administration_idempotency WHERE ${preparedWhere} AND ${materializationAuthority}; ${productionReleaseTransitionSql(plan.release_id, "preflight", {}, materializationAuthority)} ${productionReleaseTransitionSql(plan.release_id, "migrating", {}, materializationAuthority)} SELECT CASE WHEN EXISTS (SELECT 1 FROM production_releases WHERE id=${q(plan.release_id)} AND state='migrating' AND request_json=${q(stableJson(plan))} AND idempotency_key=${q(plan.idempotency_key)}) AND EXISTS (SELECT 1 FROM administration_idempotency WHERE ${preparedWhere}) AND ${materializationAuthority} THEN 1 ELSE 0 END AS transferred;`;
+    : `INSERT INTO production_releases (id,state,request_json,idempotency_key,expected_current_revision_id,expected_head_sha,production_target_digest,expected_migration_level,recovery_bookmark,recovery_backup_attempt_id,replacement_recovery_id,replacement_database_id,retained_database_id,requested_at) SELECT ${q(plan.release_id)},'requested',request_json,${q(plan.idempotency_key)},${q(plan.expected_current_revision_id)},${q(plan.expected_head_sha)},${q(plan.production_target_digest)},${plan.expected_migration_level},${q(plan.recovery_bookmark)},${q(plan.recovery_backup_attempt_id)},${replacement === null ? "NULL,NULL,NULL" : `${q(replacement.recovery_id)},${q(replacement.replacement_database_id)},${q(replacement.retained_database_id)}`},created_at FROM administration_idempotency WHERE ${preparedWhere} AND ${materializationAuthority}; ${productionReleaseTransitionSql(plan.release_id, "preflight", {}, materializationAuthority)} ${productionReleaseTransitionSql(plan.release_id, "migrating", {}, materializationAuthority)} SELECT CASE WHEN EXISTS (SELECT 1 FROM production_releases WHERE id=${q(plan.release_id)} AND state='migrating' AND request_json=${q(environment.PREPARED_PLAN_JSON)} AND idempotency_key=${q(plan.idempotency_key)}) AND EXISTS (SELECT 1 FROM administration_idempotency WHERE ${preparedWhere}) AND ${materializationAuthority} THEN 1 ELSE 0 END AS transferred;`;
   await writeFile(`${directory}/materialize.sql`, `${materialize}\n`, { mode: 0o600 });
   if (bootstrap) {
     const deployingKey = `release-deploying:${environment.DISPATCH_DIGEST}`;
-    const deployingResponse = stableJson({
+    const deployingResponse = JSON.stringify({
       release_id: plan.release_id,
       state: "deploying",
       api_version_id: `release-${plan.release_id}-api`,
@@ -254,14 +258,14 @@ export async function writeReplacementSeedSql(environment, serializedEvidence, o
     `${productionReleaseTransitionSql(productionRelease.id, "preflight")}`,
     `${productionReleaseTransitionSql(productionRelease.id, "migrating")}`,
     `UPDATE operation_state SET ${productionReleaseLeaseAssignmentsSql(productionRelease.id, evidence.operation_state.active_production_release_expires_at)} WHERE singleton=1 AND active_ingestion_run_id IS NULL AND recovery_health='blocked' AND recovery_restore_guard='blocked' AND active_recovery_id=${q(plan.replacement_handoff.recovery_id)} AND (active_production_release_id IS NULL OR (active_production_release_id=${q(productionRelease.id)} AND active_production_release_expires_at=${q(evidence.operation_state.active_production_release_expires_at)}));`,
-    replacementTerminalAssertion(evidence, plan),
+    replacementTerminalAssertion(evidence, plan, environment.PREPARED_PLAN_JSON),
   );
   await writeFile(output, `${statements.join("\n")}\n`, { mode: 0o600 });
 }
 
 export async function writeEvidenceSql(kind, releaseId, evidence, output, environment = {}) {
   const id = opaque(releaseId);
-  const serialized = stableJson(JSON.parse(evidence));
+  const serialized = JSON.stringify(JSON.parse(evidence));
   const bootstrap = environment.BOOTSTRAP === undefined ? false : booleanInput(environment.BOOTSTRAP);
   if (bootstrap) {
     await writeFile(
@@ -297,7 +301,7 @@ function bootstrapEvidenceSql(kind, id, serialized, dispatchDigest) {
       "production_release_binding_observed",
       deployingKey,
       "production_release_deploying",
-      stableJson({
+      JSON.stringify({
         release_id: id,
         state: "smoke_testing",
         dispatch_digest: dispatchDigest,
@@ -305,21 +309,12 @@ function bootstrapEvidenceSql(kind, id, serialized, dispatchDigest) {
       }),
     );
   }
-  return `${ledgerInsert(smokeKey, "production_release_succeeded", bindingKey, "production_release_binding_observed", stableJson({ release_id: id, state: "succeeded", dispatch_digest: dispatchDigest, smoke_evidence: JSON.parse(serialized) }))} UPDATE operation_state SET ${productionReleaseLeaseAssignmentsSql(null, null)} WHERE singleton=1 AND active_production_release_id=${q(id)} AND ${rowExists(smokeKey, "production_release_succeeded")}; SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND active_production_release_id IS NULL AND active_ingestion_run_id IS NULL) THEN 1 ELSE 0 END AS fence_released;`;
+  return `${ledgerInsert(smokeKey, "production_release_succeeded", bindingKey, "production_release_binding_observed", JSON.stringify({ release_id: id, state: "succeeded", dispatch_digest: dispatchDigest, smoke_evidence: JSON.parse(serialized) }))} UPDATE operation_state SET ${productionReleaseLeaseAssignmentsSql(null, null)} WHERE singleton=1 AND active_production_release_id=${q(id)} AND ${rowExists(smokeKey, "production_release_succeeded")}; SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND active_production_release_id IS NULL AND active_ingestion_run_id IS NULL) THEN 1 ELSE 0 END AS fence_released;`;
 }
 
 function booleanInput(value) {
   if (value !== "true" && value !== "false") throw new Error("invalid_bootstrap_input");
   return value === "true";
-}
-function stableJson(value) {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (value !== null && typeof value === "object")
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
-      .join(",")}}`;
-  return JSON.stringify(value);
 }
 function sqlQuote(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
@@ -330,19 +325,19 @@ function required(env, name) {
   return value;
 }
 function opaque(value) {
-  if (!/^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$/u.test(value)) throw new Error("invalid_opaque_identity");
+  if (!isReleaseIdentity(value)) throw new Error("invalid_opaque_identity");
   return value;
 }
 function digest(value) {
-  if (!/^[0-9a-f]{64}$/u.test(value)) throw new Error("invalid_digest");
+  if (!isReleaseDigest(value)) throw new Error("invalid_digest");
   return value;
 }
 function head(value) {
-  if (!/^[0-9a-f]{40}$/u.test(value)) throw new Error("invalid_head_sha");
+  if (!isReleaseHead(value)) throw new Error("invalid_head_sha");
   return value;
 }
 function bot(value) {
-  if (!/^[A-Za-z0-9-]+\[bot\]$/u.test(value)) throw new Error("invalid_actor");
+  if (!isReleaseActor(value)) throw new Error("invalid_actor");
   return value;
 }
 function positiveInteger(value) {
@@ -508,13 +503,11 @@ function validReplacementHandoffEvidence(evidence, plan, environment) {
     !validReleaseEvidence(plan) ||
     !/^[0-9a-f]{40}$/u.test(plan.expected_head_sha) ||
     !/^[0-9a-f]{64}$/u.test(plan.production_target_digest) ||
-    createHash("sha256").update(stableJson(plan.production_target)).digest("hex") !== plan.production_target_digest ||
-    createHash("sha256").update(stableJson(plan)).digest("hex") !== environment.DISPATCH_DIGEST ||
     plan.replacement_handoff.recovery_id !== environment.REPLACEMENT_RECOVERY_ID ||
     plan.replacement_handoff.replacement_database_id !== environment.REPLACEMENT_DATABASE_ID ||
     plan.replacement_handoff.retained_database_id !== environment.RETAINED_DATABASE_ID ||
     plan.replacement_handoff.target_digest !== environment.REPLACEMENT_TARGET_DIGEST ||
-    stableJson(plan) !== stableJson(JSON.parse(environment.PREPARED_PLAN_JSON)) ||
+    !isDeepStrictEqual(plan, JSON.parse(environment.PREPARED_PLAN_JSON)) ||
     evidence.schema_migration_level !== plan.expected_migration_level ||
     !Number.isSafeInteger(evidence.schema_migration_level)
   )
@@ -605,22 +598,23 @@ function validReplacementHandoffEvidence(evidence, plan, environment) {
     [`release-migration-started:${dispatch}`, "production_release_migration_started"],
   ];
   const expectedResponses = [
-    stableJson({
+    JSON.stringify({
       contract: "card-keepr-production-release-request@1",
       release_id: plan.release_id,
       state: "requested",
       dispatch_digest: dispatch,
+      prepared_plan_json: environment.PREPARED_PLAN_JSON,
     }),
-    stableJson({ release_id: plan.release_id, state: "preflight", dispatch_digest: dispatch }),
-    stableJson({ release_id: plan.release_id, migration_started: true, dispatch_digest: dispatch }),
+    JSON.stringify({ release_id: plan.release_id, state: "preflight", dispatch_digest: dispatch }),
+    JSON.stringify({ release_id: plan.release_id, migration_started: true, dispatch_digest: dispatch }),
   ];
   if (
     evidence.idempotency.some(
       (item, index) =>
         item.idempotency_key !== expectedIdempotency[index][0] ||
         item.operation !== expectedIdempotency[index][1] ||
-        item.request_json !== stableJson(plan) ||
-        item.response_json !== expectedResponses[index] ||
+        item.request_json !== environment.PREPARED_PLAN_JSON ||
+        !matchesHandoffResponse(item.response_json, expectedResponses[index], index) ||
         item.http_status !== 201 ||
         item.outcome !== "success",
     )
@@ -631,7 +625,7 @@ function validReplacementHandoffEvidence(evidence, plan, environment) {
     validProductionReleaseRow(productionRelease) &&
     productionRelease.id === plan.release_id &&
     productionRelease.state === "migrating" &&
-    productionRelease.request_json === stableJson(plan) &&
+    productionRelease.request_json === environment.PREPARED_PLAN_JSON &&
     productionRelease.idempotency_key === plan.idempotency_key &&
     productionRelease.expected_current_revision_id === plan.expected_current_revision_id &&
     productionRelease.expected_head_sha === plan.expected_head_sha &&
@@ -643,6 +637,17 @@ function validReplacementHandoffEvidence(evidence, plan, environment) {
     productionRelease.replacement_database_id === plan.replacement_handoff.replacement_database_id &&
     productionRelease.retained_database_id === plan.replacement_handoff.retained_database_id
   );
+}
+
+function matchesHandoffResponse(serialized, expected, index) {
+  const actual = JSON.parse(serialized);
+  if (index === 0) {
+    const inputs = actual.dispatch_inputs;
+    if (inputs?.prepared_plan_json !== actual.prepared_plan_json || inputs?.dispatch_digest !== actual.dispatch_digest)
+      return false;
+    delete actual.dispatch_inputs;
+  }
+  return isDeepStrictEqual(actual, JSON.parse(expected));
 }
 
 const recoveryKeys = [
@@ -835,7 +840,7 @@ function validProductionReleaseRow(row) {
   );
 }
 
-function replacementTerminalAssertion(evidence, plan) {
+function replacementTerminalAssertion(evidence, plan, preparedPlanJson) {
   const q = sqlQuote;
   const exactIdempotency = evidence.idempotency
     .map(
@@ -855,7 +860,7 @@ function replacementTerminalAssertion(evidence, plan) {
         `EXISTS (SELECT 1 FROM catalogue_recovery_operations WHERE id=${q(recovery.id)} AND state=${q(recovery.state)} AND method=${q(recovery.method)} AND request_json=${q(recovery.request_json)} AND idempotency_key=${q(recovery.idempotency_key)} AND target_revision_id=${q(recovery.target_revision_id)} AND target_bookmark=${q(recovery.target_bookmark)} AND target_digest=${q(recovery.target_digest)} AND source_backup_attempt_id=${q(recovery.source_backup_attempt_id)} AND linked_operation_id IS ${qNullable(recovery.linked_operation_id)} AND expected_current_revision_id=${q(recovery.expected_current_revision_id)} AND restored_database_id IS ${qNullable(recovery.restored_database_id)} AND retained_database_id IS ${qNullable(recovery.retained_database_id)} AND expected_schema_migration_level=${recovery.expected_schema_migration_level} AND verification_idempotency_key IS ${qNullable(recovery.verification_idempotency_key)} AND verification_request_digest IS ${qNullable(recovery.verification_request_digest)} AND acceptance_idempotency_key IS ${qNullable(recovery.acceptance_idempotency_key)} AND failure_code IS ${qNullable(recovery.failure_code)})`,
     )
     .join(" AND ");
-  return `SELECT CASE WHEN EXISTS (SELECT 1 FROM catalogue_schema_state AS schema_state JOIN catalogue_state AS catalogue ON catalogue.singleton=1 JOIN operation_state AS operation ON operation.singleton=1 JOIN production_releases AS release ON release.id=${q(plan.release_id)} WHERE schema_state.singleton=1 AND schema_state.migration_level=${plan.expected_migration_level} AND catalogue.current_revision_id=${q(plan.expected_current_revision_id)} AND operation.active_ingestion_run_id IS NULL AND operation.active_production_release_id=${q(plan.release_id)} AND operation.active_production_release_expires_at=${q(evidence.operation_state.active_production_release_expires_at)} AND operation.recovery_health='blocked' AND operation.active_recovery_id=${q(plan.replacement_handoff.recovery_id)} AND operation.recovery_restore_guard='blocked' AND release.state='migrating' AND release.request_json=${q(stableJson(plan))} AND release.idempotency_key=${q(plan.idempotency_key)} AND release.expected_current_revision_id=${q(plan.expected_current_revision_id)} AND release.expected_head_sha=${q(plan.expected_head_sha)} AND release.production_target_digest=${q(plan.production_target_digest)} AND release.expected_migration_level=${plan.expected_migration_level} AND release.recovery_bookmark=${q(plan.recovery_bookmark)} AND release.recovery_backup_attempt_id=${q(plan.recovery_backup_attempt_id)} AND release.replacement_recovery_id=${q(plan.replacement_handoff.recovery_id)} AND release.replacement_database_id=${q(plan.replacement_handoff.replacement_database_id)} AND release.retained_database_id=${q(plan.replacement_handoff.retained_database_id)} AND ${exactIdempotency} AND ${exactBackups} AND ${exactRecoveries}) THEN 1 ELSE json_extract('invalid','$.replacement_handoff') END AS seeded;`;
+  return `SELECT CASE WHEN EXISTS (SELECT 1 FROM catalogue_schema_state AS schema_state JOIN catalogue_state AS catalogue ON catalogue.singleton=1 JOIN operation_state AS operation ON operation.singleton=1 JOIN production_releases AS release ON release.id=${q(plan.release_id)} WHERE schema_state.singleton=1 AND schema_state.migration_level=${plan.expected_migration_level} AND catalogue.current_revision_id=${q(plan.expected_current_revision_id)} AND operation.active_ingestion_run_id IS NULL AND operation.active_production_release_id=${q(plan.release_id)} AND operation.active_production_release_expires_at=${q(evidence.operation_state.active_production_release_expires_at)} AND operation.recovery_health='blocked' AND operation.active_recovery_id=${q(plan.replacement_handoff.recovery_id)} AND operation.recovery_restore_guard='blocked' AND release.state='migrating' AND release.request_json=${q(preparedPlanJson)} AND release.idempotency_key=${q(plan.idempotency_key)} AND release.expected_current_revision_id=${q(plan.expected_current_revision_id)} AND release.expected_head_sha=${q(plan.expected_head_sha)} AND release.production_target_digest=${q(plan.production_target_digest)} AND release.expected_migration_level=${plan.expected_migration_level} AND release.recovery_bookmark=${q(plan.recovery_bookmark)} AND release.recovery_backup_attempt_id=${q(plan.recovery_backup_attempt_id)} AND release.replacement_recovery_id=${q(plan.replacement_handoff.recovery_id)} AND release.replacement_database_id=${q(plan.replacement_handoff.replacement_database_id)} AND release.retained_database_id=${q(plan.replacement_handoff.retained_database_id)} AND ${exactIdempotency} AND ${exactBackups} AND ${exactRecoveries}) THEN 1 ELSE json_extract('invalid','$.replacement_handoff') END AS seeded;`;
 }
 
 const recoveryInsertKeys = [

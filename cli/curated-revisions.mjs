@@ -1,8 +1,7 @@
-import { request as httpRequest } from "./lib/http-client.mjs";
 import { readFile } from "node:fs/promises";
+import { parseOptions, writeCliFailure } from "./command-support.mjs";
+import { requestDocument } from "./lib/json-client.mjs";
 import { readAdministrationSecret } from "./lib/secret-input.mjs";
-import { exitCodeForStatus, parseOptions, runtimeUrl, writeCliFailure } from "./command-support.mjs";
-import { validatedProductionTarget } from "./production-target.mjs";
 
 export async function runCuratedRevisionCommand(arguments_, environment, json) {
   const operation = arguments_[0];
@@ -211,20 +210,15 @@ async function mutationContext(operation, options, environment, json, binding) {
   if (secret.error !== null) {
     return writeCliFailure(json, { code: "secret_input_error", detail: secret.error }, 2);
   }
-  const status = await rawRequest(environment, "/v1/status", "GET", undefined, secret.value);
-  if (!status.ok) return requestFailure(json, status);
-  if (status.document?.safe_state?.current_revision_id !== options.values["--expected-current-revision"]) {
-    return writeCliFailure(
-      json,
-      {
-        code: "resolved_target_mismatch",
-        detail: "Production does not resolve to the expected Catalogue Revision.",
-      },
-      7,
-    );
-  }
-  const target = validatedProductionTarget(status.document?.production_target);
-  if (target === null) {
+  const query = new URLSearchParams({
+    expected_current_revision_id: options.values["--expected-current-revision"],
+    curated_operation: operation,
+    curated_binding: JSON.stringify(binding),
+  });
+  const status = await rawRequest(environment, `/v1/status?${query}`, "GET", undefined, secret.value);
+  if (status.error !== null) return requestFailure(json, status);
+  const required = status.document?.resolved_target?.confirmation;
+  if (typeof required !== "string")
     return writeCliFailure(
       json,
       {
@@ -233,70 +227,7 @@ async function mutationContext(operation, options, environment, json, binding) {
       },
       8,
     );
-  }
-  let resolvedBinding = binding;
-  if (binding.curated_revision_id !== undefined) {
-    const shown = await rawRequest(
-      environment,
-      `/admin/v1/curated-revisions/${encodeURIComponent(binding.curated_revision_id)}`,
-      "GET",
-      undefined,
-      secret.value,
-    );
-    if (!shown.ok) return requestFailure(json, shown);
-    const revision = shown.document?.revision;
-    if (
-      revision?.id !== binding.curated_revision_id ||
-      typeof revision?.content?.game !== "string" ||
-      typeof revision?.content_digest !== "string" ||
-      !Number.isSafeInteger(revision?.event_version)
-    ) {
-      return writeCliFailure(
-        json,
-        {
-          code: "invalid_administration_contract",
-          detail: "The Curated Revision inspection document is invalid.",
-        },
-        8,
-      );
-    }
-    if (revision.event_version !== binding.expected_event_version) {
-      return writeCliFailure(
-        json,
-        {
-          code: "resolved_target_mismatch",
-          detail: "The Curated Revision does not resolve to the supplied lifecycle event version.",
-        },
-        7,
-      );
-    }
-    const resolvedConflict = revision.pending_conflict?.digest ?? null;
-    if (binding.conflict_digest !== resolvedConflict) {
-      return writeCliFailure(
-        json,
-        {
-          code: "resolved_target_mismatch",
-          detail: "The Curated Revision does not resolve to the supplied conflict digest.",
-        },
-        7,
-      );
-    }
-    resolvedBinding = {
-      ...binding,
-      affected_supported_game: revision.content.game,
-      current_content_digest: revision.content_digest,
-      target: revision.content.target,
-      conflict_id: revision.pending_conflict?.id ?? null,
-    };
-  }
-  const summary = {
-    production_target: target,
-    operation,
-    current_catalogue_revision_id: options.values["--expected-current-revision"],
-    ...resolvedBinding,
-  };
-  const required = JSON.stringify(summary);
-  if (options.values["--confirm"] !== required) {
+  if (options.values["--confirm"] !== required)
     return writeCliFailure(
       json,
       {
@@ -305,7 +236,6 @@ async function mutationContext(operation, options, environment, json, binding) {
       },
       3,
     );
-  }
   return { administrationKey: secret.value };
 }
 
@@ -342,105 +272,16 @@ async function readProposal(path, json) {
 }
 
 async function request(environment, json, pathname, method, body, administrationKey) {
-  if (!administrationKey) {
-    return writeCliFailure(
-      json,
-      { code: "configuration_error", detail: "Missing required environment: KEEPR_ADMINISTRATION_KEY" },
-      2,
-    );
-  }
-  let response;
-  try {
-    response = await httpRequest(runtimeUrl(environment.KEEPR_INGESTION_URL ?? "http://127.0.0.1:8788", pathname), {
-      method,
-      headers: {
-        authorization: `Bearer ${administrationKey}`,
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
-        ...(environment.KEEPR_TEST_NOW === undefined ? {} : { "x-keepr-test-now": environment.KEEPR_TEST_NOW }),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch {
-    return writeCliFailure(
-      json,
-      { code: "runtime_unavailable", detail: "ingestion runtime is unavailable", runtime: "ingestion" },
-      9,
-    );
-  }
-  let document;
-  try {
-    document = await response.json();
-  } catch {
-    return writeCliFailure(
-      json,
-      {
-        code: "invalid_administration_contract",
-        detail: "ingestion runtime returned invalid JSON",
-        runtime: "ingestion",
-      },
-      8,
-    );
-  }
-  if (!response.ok) {
-    return writeCliFailure(
-      json,
-      {
-        code: typeof document?.code === "string" ? document.code : "administration_error",
-        detail:
-          typeof document?.detail === "string" ? document.detail : `ingestion runtime returned HTTP ${response.status}`,
-      },
-      exitCodeForStatus(response.status),
-    );
-  }
-  process.stdout.write(json ? `${JSON.stringify(document)}\n` : `${format(document)}\n`);
+  const result = await rawRequest(environment, pathname, method, body, administrationKey);
+  if (result.error !== null) return requestFailure(json, result);
+  process.stdout.write(json ? `${JSON.stringify(result.document)}\n` : `${format(result.document)}\n`);
   return 0;
 }
-
-async function rawRequest(environment, pathname, method, body, administrationKey) {
-  let response;
-  try {
-    response = await httpRequest(runtimeUrl(environment.KEEPR_INGESTION_URL ?? "http://127.0.0.1:8788", pathname), {
-      method,
-      headers: {
-        authorization: `Bearer ${administrationKey}`,
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch {
-    return {
-      ok: false,
-      status: 503,
-      document: { code: "runtime_unavailable", detail: "ingestion runtime is unavailable" },
-    };
-  }
-  let document;
-  try {
-    document = await response.json();
-  } catch {
-    return {
-      ok: false,
-      status: 502,
-      document: { code: "invalid_administration_contract", detail: "ingestion runtime returned invalid JSON" },
-    };
-  }
-  return { ok: response.ok, status: response.status, document };
+function rawRequest(environment, pathname, method, body, key) {
+  return requestDocument(environment, pathname, { method, body, key });
 }
-
 function requestFailure(json, result) {
-  return writeCliFailure(
-    json,
-    {
-      code: typeof result.document?.code === "string" ? result.document.code : "administration_error",
-      detail:
-        typeof result.document?.detail === "string"
-          ? result.document.detail
-          : `ingestion runtime returned HTTP ${result.status}`,
-    },
-    exitCodeForStatus(result.status),
-  );
+  return writeCliFailure(json, result.error, result.exitCode);
 }
 
 function format(document) {

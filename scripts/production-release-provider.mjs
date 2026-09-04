@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isDeepStrictEqual } from "node:util";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import { request as httpRequest } from "../cli/lib/http-client.mjs";
 
@@ -69,8 +70,7 @@ export async function verifyUploadedVersion(environment, fetchImpl = fetch) {
   }
   const actual = normalizedBindings(version.result.resources.bindings, worker);
   const expected = expectedBindings(config, expectedSecrets[worker], worker);
-  if (stableJson(actual) !== stableJson(expected))
-    throw new Error(`uploaded_version_binding_mismatch:${worker}:${versionId}`);
+  if (!isDeepStrictEqual(actual, expected)) throw new Error(`uploaded_version_binding_mismatch:${worker}:${versionId}`);
   return { worker, version_tag: tag, version_id: versionId };
 }
 
@@ -107,6 +107,9 @@ async function configuredWorkers() {
   return Object.fromEntries(entries);
 }
 
+// Independent deployment attestation compares the server-resolved target with
+// the checked-out Worker bindings before any provider mutation. This is not
+// owner-input target resolution (owned by the ingestion administration route).
 function assertExactTarget(environment, target, configs) {
   const configuredD1 = configs["card-keepr-ingestion"].d1_databases[0];
   const expected = {
@@ -121,7 +124,7 @@ function assertExactTarget(environment, target, configs) {
     ],
     r2_buckets: configs["card-keepr-ingestion"].r2_buckets.map((binding) => binding.bucket_name),
   };
-  if (stableJson(target) !== stableJson(expected)) throw new Error("production_target_mismatch");
+  if (!isDeepStrictEqual(target, expected)) throw new Error("production_target_mismatch");
 }
 
 async function verifyDatabases(fetchImpl, token, environment, databases) {
@@ -203,7 +206,7 @@ async function verifyWorkerSecrets(fetchImpl, token, environment, configs) {
         .filter((binding) => binding.type === "secret_text")
         .map((binding) => binding.name);
       const expected = [...expectedSecrets[worker]].sort((left, right) => left.localeCompare(right));
-      if (stableJson(actual) !== stableJson(expected)) throw new Error(`worker_secret_inventory_mismatch:${worker}`);
+      if (!isDeepStrictEqual(actual, expected)) throw new Error(`worker_secret_inventory_mismatch:${worker}`);
     }),
   );
 }
@@ -220,7 +223,7 @@ async function verifyWorkers(fetchImpl, token, environment, configs) {
         throw new Error(`malformed_worker_settings:${worker}`);
       const actual = normalizedBindings(document.result.bindings, worker);
       const expected = expectedBindings(config, expectedSecrets[worker], worker);
-      if (stableJson(actual) !== stableJson(expected)) throw new Error(`worker_binding_inventory_mismatch:${worker}`);
+      if (!isDeepStrictEqual(actual, expected)) throw new Error(`worker_binding_inventory_mismatch:${worker}`);
     }),
   );
 }
@@ -365,15 +368,6 @@ function parseTarget(environment) {
 }
 function bindingOrder(left, right) {
   return left.name.localeCompare(right.name);
-}
-function stableJson(value) {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (record(value))
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
-      .join(",")}}`;
-  return JSON.stringify(value);
 }
 function record(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);

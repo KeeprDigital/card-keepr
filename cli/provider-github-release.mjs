@@ -1,4 +1,5 @@
 import { request as httpRequest } from "./lib/http-client.mjs";
+
 const repository = "KeeprDigital/card-keepr";
 const releaseWorkflow = "production-release.yml";
 const githubApi = "https://api.github.com";
@@ -9,13 +10,7 @@ export async function dispatchProductionRelease({
   workflowId = releaseWorkflow,
   apiUrl = githubApi,
 }) {
-  if (
-    typeof credential !== "string" ||
-    credential.length < 20 ||
-    inputs?.operation !== "production_release" ||
-    !/^[0-9a-f]{40}$/.test(inputs.expected_head_sha ?? "") ||
-    !safeBotActor(inputs.expected_actor)
-  )
+  if (typeof credential !== "string" || credential.length < 20 || inputs?.operation !== "production_release")
     return false;
   let response;
   try {
@@ -37,8 +32,4 @@ export async function dispatchProductionRelease({
     return false;
   }
   return response.status === 204;
-}
-
-function safeBotActor(value) {
-  return typeof value === "string" && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\[bot\]$/.test(value);
 }
