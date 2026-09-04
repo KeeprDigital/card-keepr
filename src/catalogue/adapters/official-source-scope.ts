@@ -1,3 +1,4 @@
+import { AdapterParseFailure } from "./adapter-parse-failure";
 import type { LegalityRegion, SupportedGame } from "../shared";
 
 export type OfficialSourceScope = Readonly<{
@@ -37,7 +38,7 @@ const scopes: readonly OfficialSourceScope[] = Object.freeze([
 export function requiredOfficialSourceScope(sourceLineage: string): OfficialSourceScope {
   const scope = scopes.find((entry) => entry.sourceLineage === sourceLineage);
   if (scope === undefined) {
-    throw new Error("Official Source Lineage has no registered scope.");
+    throw new AdapterParseFailure("Official Source Lineage has no registered scope.", { category: "configuration" });
   }
   return scope;
 }
@@ -47,7 +48,9 @@ export function requiredLegalityRegionsForGame(game: SupportedGame): readonly Le
     ...new Set(scopes.filter((scope) => scope.game === game).map((scope) => scope.legalityRegion)),
   ].sort();
   if (regions.length === 0) {
-    throw new Error("Supported Game has no registered Official Source scope.");
+    throw new AdapterParseFailure("Supported Game has no registered Official Source scope.", {
+      category: "configuration",
+    });
   }
   return regions;
 }

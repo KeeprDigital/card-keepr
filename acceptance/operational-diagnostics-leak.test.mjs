@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import {
+  ADMINISTRATION_POLL_INTERVAL_MS,
   applyMigrations,
   runCli,
   startWorker,
@@ -45,16 +46,10 @@ const workflowFailureEventKeys = [
 // Distinctive substrings of the synthetic Official Source card-list body.
 // Snapshot bytes are retained in R2 only; none of them may surface in
 // operational logs or diagnostics responses.
-const rawSourcePayloadMarkers = [
-  "Synthetic Leader",
-  "ONE PIECE CARD LIST",
-  "Synthetic Set [OP99]",
-];
+const rawSourcePayloadMarkers = ["Synthetic Leader", "ONE PIECE CARD LIST", "Synthetic Set [OP99]"];
 
 test("operational logs and diagnostics retain correlation fields without leaking secrets or source payloads", async (t) => {
-  const directory = await mkdtemp(
-    join(tmpdir(), "card-keepr-diagnostics-leak-"),
-  );
+  const directory = await mkdtemp(join(tmpdir(), "card-keepr-diagnostics-leak-"));
   const secrets = {
     API_BEARER_KEY: `api-bearer-secret-${randomUUID()}`,
     ADMINISTRATION_KEY: `administration-secret-${randomUUID()}`,
@@ -68,11 +63,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
   const apiState = join(directory, "api-state");
   const ingestionState = join(directory, "ingestion-state");
   const sourceState = join(directory, "source-state");
-  await writeFile(
-    apiEnv,
-    `API_BEARER_KEY=${secrets.API_BEARER_KEY}\n`,
-    { mode: 0o600 },
-  );
+  await writeFile(apiEnv, `API_BEARER_KEY=${secrets.API_BEARER_KEY}\n`, { mode: 0o600 });
   await writeFile(
     ingestionEnv,
     Object.entries(secrets)
@@ -81,9 +72,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
       .join(""),
     { mode: 0o600 },
   );
-  const config = JSON.parse(
-    readFileSync(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"),
-  );
+  const config = JSON.parse(readFileSync(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
   delete config.$schema;
   config.main = resolve(root, "apps/ingestion/src/index.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
@@ -112,29 +101,13 @@ test("operational logs and diagnostics retain correlation fields without leaking
     statePath: sourceState,
   });
   t.after(async () => {
-    await Promise.all([
-      stopWorker(api),
-      stopWorker(ingestion),
-      stopWorker(source),
-    ]);
+    await Promise.all([stopWorker(api), stopWorker(ingestion), stopWorker(source)]);
     await rm(directory, { recursive: true, force: true });
   });
   await Promise.all([
-    waitForHealth(
-      `${api.url}/health`,
-      secrets.API_BEARER_KEY,
-      api,
-    ),
-    waitForHealth(
-      `${ingestion.url}/health`,
-      secrets.ADMINISTRATION_KEY,
-      ingestion,
-    ),
-    waitForHealth(
-      `${source.url}/success`,
-      "no-credential-required",
-      source,
-    ),
+    waitForHealth(`${api.url}/health`, secrets.API_BEARER_KEY, api),
+    waitForHealth(`${ingestion.url}/health`, secrets.ADMINISTRATION_KEY, ingestion),
+    waitForHealth(`${source.url}/success`, "no-credential-required", source),
   ]);
 
   const capturedResponses = [];
@@ -163,10 +136,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
   );
   assert.equal(ingestionRejection.status, 401);
   assert.equal(ingestionRejection.body.code, "invalid_administration_key");
-  assert.match(
-    ingestionRejection.body.request_id,
-    /^[A-Za-z0-9][A-Za-z0-9._:-]*$/,
-  );
+  assert.match(ingestionRejection.body.request_id, /^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
 
   // 2. A failing evidence-backed Ingestion Run that retains real source
   //    snapshot bytes before failing to parse (declared pagination mismatch).
@@ -204,19 +174,15 @@ test("operational logs and diagnostics retain correlation fields without leaking
   const runId = started.body.id;
   const resumed = await capture(
     "evidence run resume response",
-    await fetch(
-      `${ingestion.url}/v1/ingestion-runs/${
-        encodeURIComponent(runId)
-      }/collection/resume`,
-      { method: "POST", headers: administrationHeaders },
-    ),
+    await fetch(`${ingestion.url}/v1/ingestion-runs/${encodeURIComponent(runId)}/collection/resume`, {
+      method: "POST",
+      headers: administrationHeaders,
+    }),
   );
   assert.equal(resumed.status, 202, JSON.stringify(resumed.body));
 
   const failedRun = await waitForRunState(
-    `${ingestion.url}/v1/ingestion-runs/${
-      encodeURIComponent(runId)
-    }`,
+    `${ingestion.url}/v1/ingestion-runs/${encodeURIComponent(runId)}`,
     secrets.ADMINISTRATION_KEY,
     ingestion,
     capturedResponses,
@@ -243,10 +209,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
   );
   assert.equal(diagnostics.retry_available, true);
   assert.equal(diagnostics.retry.code, "evidence_collection_retry_available");
-  assert.equal(
-    diagnostics.terminal_evidence.coverage.source_snapshot_count,
-    failedRun.snapshots.length,
-  );
+  assert.equal(diagnostics.terminal_evidence.coverage.source_snapshot_count, failedRun.snapshots.length);
 
   // 3. A paused, inspected, then deliberately terminated collection: the
   //    pause facts, the aggregated collection inspection, the termination
@@ -281,12 +244,10 @@ test("operational logs and diagnostics retain correlation fields without leaking
   const pausedRunId = pausedStart.body.id;
   const pausedResume = await capture(
     "paused evidence run resume response",
-    await fetch(
-      `${ingestion.url}/v1/ingestion-runs/${
-        encodeURIComponent(pausedRunId)
-      }/collection/resume`,
-      { method: "POST", headers: administrationHeaders },
-    ),
+    await fetch(`${ingestion.url}/v1/ingestion-runs/${encodeURIComponent(pausedRunId)}/collection/resume`, {
+      method: "POST",
+      headers: administrationHeaders,
+    }),
   );
   assert.equal(pausedResume.status, 202, JSON.stringify(pausedResume.body));
   const pausedRun = await waitForRunState(
@@ -301,22 +262,16 @@ test("operational logs and diagnostics retain correlation fields without leaking
   assert.deepEqual(pausedRun.actions, ["resume", "terminate"]);
   assert.equal(pausedRun.collection.pause_reason, "source_transport_retries_exhausted");
   assert.equal(pausedRun.collection.evidence.fetch_attempt_count, 4);
-  assert.equal(
-    pausedRun.collection.progress.current_request.hostname,
-    "en.onepiece-cardgame.com",
-  );
+  assert.equal(pausedRun.collection.progress.current_request.hostname, "en.onepiece-cardgame.com");
   assert.ok(Array.isArray(pausedRun.collection.pacing.hosts));
   assert.equal(pausedRun.collection.estimate.advisory, true);
   for (const attempt of pausedRun.workflow.attempts) {
     assert.match(attempt.status, /^[a-z_]+$/);
   }
-  const cliPaused = await runCli(
-    ["source", "show", "--run-id", pausedRunId],
-    {
-      KEEPR_INGESTION_URL: ingestion.url,
-      KEEPR_ADMINISTRATION_KEY: secrets.ADMINISTRATION_KEY,
-    },
-  );
+  const cliPaused = await runCli(["source", "show", "--run-id", pausedRunId], {
+    KEEPR_INGESTION_URL: ingestion.url,
+    KEEPR_ADMINISTRATION_KEY: secrets.ADMINISTRATION_KEY,
+  });
   assert.equal(cliPaused.code, 0, cliPaused.stderr);
   capturedResponses.push(
     { label: "CLI paused source show stdout", text: cliPaused.stdout },
@@ -324,49 +279,37 @@ test("operational logs and diagnostics retain correlation fields without leaking
   );
   const termination = await capture(
     "collection termination response",
-    await fetch(
-      `${ingestion.url}/v1/ingestion-runs/${
-        encodeURIComponent(pausedRunId)
-      }/collection/termination`,
-      {
-        method: "POST",
-        headers: administrationHeaders,
-        body: JSON.stringify({
-          idempotency_key: "operational-diagnostics-leak-terminate-001",
-        }),
-      },
-    ),
+    await fetch(`${ingestion.url}/v1/ingestion-runs/${encodeURIComponent(pausedRunId)}/collection/termination`, {
+      method: "POST",
+      headers: administrationHeaders,
+      body: JSON.stringify({
+        idempotency_key: "operational-diagnostics-leak-terminate-001",
+      }),
+    }),
   );
   assert.equal(termination.status, 200, JSON.stringify(termination.body));
   assert.equal(termination.body.failure_code, "ingestion_run_terminated");
   const terminatedRun = await capture(
     "terminated evidence run show response",
-    await fetch(
-      `${ingestion.url}/v1/ingestion-runs/${encodeURIComponent(pausedRunId)}`,
-      { headers: { authorization: `Bearer ${secrets.ADMINISTRATION_KEY}` } },
-    ),
+    await fetch(`${ingestion.url}/v1/ingestion-runs/${encodeURIComponent(pausedRunId)}`, {
+      headers: { authorization: `Bearer ${secrets.ADMINISTRATION_KEY}` },
+    }),
   );
   assert.equal(terminatedRun.status, 200);
   assert.equal(terminatedRun.body.state, "failed");
-  assert.equal(
-    terminatedRun.body.termination.pause_reason,
-    "source_transport_retries_exhausted",
-  );
+  assert.equal(terminatedRun.body.termination.pause_reason, "source_transport_retries_exhausted");
   assert.deepEqual(terminatedRun.body.actions, ["retry"]);
-  assert.equal(
-    terminatedRun.body.operational_diagnostics.terminal_evidence.failure.code,
-    "ingestion_run_terminated",
-  );
+  assert.equal(terminatedRun.body.operational_diagnostics.terminal_evidence.failure.code, "ingestion_run_terminated");
 
   // 4. Liveness and readiness documents (issue #144) on both runtimes:
   //    liveness carries exactly status and runtime; readiness carries the
   //    binding checks and passes through the same sweep as every other
   //    diagnostic surface, as does the CLI rendering of it.
-  for (const [runtime, worker] of [["api", api], ["ingestion", ingestion]]) {
-    const liveness = await capture(
-      `${runtime} liveness response`,
-      await fetch(`${worker.url}/healthz`),
-    );
+  for (const [runtime, worker] of [
+    ["api", api],
+    ["ingestion", ingestion],
+  ]) {
+    const liveness = await capture(`${runtime} liveness response`, await fetch(`${worker.url}/healthz`));
     assert.equal(liveness.status, 200);
     assert.deepEqual(liveness.body, { status: "ok", runtime });
     const anonymousReadiness = await capture(
@@ -383,10 +326,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
   );
   assert.equal(apiReadiness.status, 200);
   assert.equal(apiReadiness.body.status, "ok");
-  assert.deepEqual(
-    Object.keys(apiReadiness.body.checks).sort(),
-    ["database", "objects", "public_base", "version"],
-  );
+  assert.deepEqual(Object.keys(apiReadiness.body.checks).sort(), ["database", "objects", "public_base", "version"]);
   const ingestionReadiness = await capture(
     "ingestion readiness response",
     await fetch(`${ingestion.url}/health`, {
@@ -395,10 +335,13 @@ test("operational logs and diagnostics retain correlation fields without leaking
   );
   assert.equal(ingestionReadiness.status, 200);
   assert.equal(ingestionReadiness.body.status, "ok");
-  assert.deepEqual(
-    Object.keys(ingestionReadiness.body.checks).sort(),
-    ["database", "objects", "public_base", "version", "workflows"],
-  );
+  assert.deepEqual(Object.keys(ingestionReadiness.body.checks).sort(), [
+    "database",
+    "objects",
+    "public_base",
+    "version",
+    "workflows",
+  ]);
   for (const document of [apiReadiness.body, ingestionReadiness.body]) {
     for (const check of Object.values(document.checks)) {
       assert.equal(check.status, "pass", JSON.stringify(check));
@@ -436,11 +379,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
 
   // Stop the Workers so the wrangler debug logs (which retain Worker console
   // output even at --log-level error) are complete, then sweep everything.
-  await Promise.all([
-    stopWorker(api),
-    stopWorker(ingestion),
-    stopWorker(source),
-  ]);
+  await Promise.all([stopWorker(api), stopWorker(ingestion), stopWorker(source)]);
   const channels = [
     { label: "API worker console output", text: api.getOutput() },
     { label: "ingestion worker console output", text: ingestion.getOutput() },
@@ -464,10 +403,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
   ];
   for (const channel of channels) {
     for (const secret of secretValues) {
-      assert.ok(
-        !channel.text.includes(secret.value),
-        `${secret.name} leaked into ${channel.label}`,
-      );
+      assert.ok(!channel.text.includes(secret.value), `${secret.name} leaked into ${channel.label}`);
     }
     for (const marker of rawSourcePayloadMarkers) {
       assert.ok(
@@ -481,24 +417,16 @@ test("operational logs and diagnostics retain correlation fields without leaking
   const operationalEvents = channels
     .flatMap(({ text }) => text.split("\n"))
     .map((line) => line.trim())
-    .filter((line) =>
-      line.startsWith("{") &&
-      line.includes('"contract":"card-keepr-operational-log@1"')
-    )
+    .filter((line) => line.startsWith("{") && line.includes('"contract":"card-keepr-operational-log@1"'))
     .map((line) => JSON.parse(line));
   assert.ok(operationalEvents.length >= 3);
   for (const event of operationalEvents) {
     assert.ok(
       JSON.stringify(event).length < 2_048,
-      `operational log event is too large to be metadata-only: ${
-        JSON.stringify(event).slice(0, 200)
-      }`,
+      `operational log event is too large to be metadata-only: ${JSON.stringify(event).slice(0, 200)}`,
     );
     if (event.event === "workflow.failed") {
-      assert.deepEqual(
-        Object.keys(event).sort(),
-        [...workflowFailureEventKeys].sort(),
-      );
+      assert.deepEqual(Object.keys(event).sort(), [...workflowFailureEventKeys].sort());
       continue;
     }
     assert.ok(
@@ -506,10 +434,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
       `unexpected operational log event: ${event.event}`,
     );
     assert.deepEqual(Object.keys(event).sort(), [...requestEventKeys].sort());
-    assert.deepEqual(
-      Object.keys(event.request).sort(),
-      ["id", "method", "route"],
-    );
+    assert.deepEqual(Object.keys(event.request).sort(), ["id", "method", "route"]);
     assert.equal(typeof event.status, "number");
   }
 
@@ -520,56 +445,46 @@ test("operational logs and diagnostics retain correlation fields without leaking
     "liveness requests must not be written to the operational log",
   );
   assert.ok(
-    operationalEvents.some((event) =>
-      event.request?.route === "/health" && event.status === 200
-    ),
+    operationalEvents.some((event) => event.request?.route === "/health" && event.status === 200),
     "readiness requests are logged like any other authenticated route",
   );
 
   const requestEvent = (requestId) =>
-    operationalEvents.find(
-      (event) =>
-        event.event === "request.completed" && event.request.id === requestId,
-    );
+    operationalEvents.find((event) => event.event === "request.completed" && event.request.id === requestId);
   const apiRejectionEvent = requestEvent(apiRejection.body.request_id);
   assert.ok(apiRejectionEvent, "the API auth failure was logged");
   assert.equal(apiRejectionEvent.runtime, "api");
   assert.equal(apiRejectionEvent.request.route, "/v1/catalogue");
   assert.equal(apiRejectionEvent.status, 401);
 
-  const ingestionRejectionEvent = requestEvent(
-    ingestionRejection.body.request_id,
-  );
+  const ingestionRejectionEvent = requestEvent(ingestionRejection.body.request_id);
   assert.ok(ingestionRejectionEvent, "the ingestion auth failure was logged");
   assert.equal(ingestionRejectionEvent.runtime, "ingestion");
   assert.equal(ingestionRejectionEvent.request.route, "/v1/status");
   assert.equal(ingestionRejectionEvent.status, 401);
 
   const creationEvent = requestEvent(diagnostics.references.request_id);
-  assert.ok(
-    creationEvent,
-    "the retained operational request id correlates with a logged request",
-  );
+  assert.ok(creationEvent, "the retained operational request id correlates with a logged request");
   assert.equal(creationEvent.request.method, "POST");
   assert.equal(creationEvent.request.route, "/v1/ingestion-runs/evidence");
   assert.equal(creationEvent.status, 201);
 });
 
-async function waitForRunState(
-  url,
-  key,
-  worker,
-  capturedResponses,
-  expectedState,
-  label,
-) {
+async function waitForRunState(url, key, worker, capturedResponses, expectedState, label) {
   const deadline = Date.now() + 120_000;
   let lastBody = null;
+  let pollCount = 0;
   while (Date.now() < deadline) {
+    pollCount += 1;
     if (worker.process.exitCode !== null) throw new Error(worker.getOutput());
     const response = await fetch(url, {
       headers: { authorization: `Bearer ${key}` },
     });
+    if (response.status === 429) {
+      throw new Error(
+        `ADMINISTRATION_RATE_LIMIT returned HTTP 429 on poll ${pollCount} while waiting for ${expectedState}.`,
+      );
+    }
     const text = await response.text();
     if (response.status === 200) {
       lastBody = text;
@@ -579,11 +494,9 @@ async function waitForRunState(
         return document;
       }
     }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, ADMINISTRATION_POLL_INTERVAL_MS));
   }
-  throw new Error(
-    `the evidence run did not reach ${expectedState}: ${lastBody}\n${worker.getOutput()}`,
-  );
+  throw new Error(`the evidence run did not reach ${expectedState}: ${lastBody}\n${worker.getOutput()}`);
 }
 
 async function wranglerLogChannels(statePath) {

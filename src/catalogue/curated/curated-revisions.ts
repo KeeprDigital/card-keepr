@@ -1,9 +1,5 @@
 import {
-  type CuratedRevisionRow as RevisionRow,
-  curatedRevisionStatement,
-  curatedLifecycleMutationStatements,
-} from "./curated-repository";
-import {
+  ingestionRunTransitionSql,
   type CatalogueCandidate,
   type SupportedGame,
   AdministrationProblem,
@@ -21,6 +17,12 @@ import {
   exportedGameProfileSchema,
   type LegalityRule,
 } from "../shared";
+import {
+  type CuratedRevisionRow as RevisionRow,
+  curatedRevisionStatement,
+  curatedLifecycleMutationStatements,
+} from "./curated-repository";
+
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { assertCanonicalLegalityRule } from "../legality";
@@ -983,10 +985,7 @@ export async function applyPinnedCuratedRevisions(
          SET state = 'failed', terminal_at = ?,
              failure_code = 'curated_revision_composed_candidate_invalid',
              progress_json = json_set(progress_json, '$.current_stage', 'failed')
-         WHERE id = ? AND state IN (
-           'planning', 'collecting', 'parsing', 'reconciling',
-           'awaiting_approval'
-         )`,
+         WHERE id = ? AND ${ingestionRunTransitionSql(["planning", "collecting", "parsing", "reconciling", "awaiting_approval"], "failed")}`,
         )
         .bind(observedAt, runId),
       database
@@ -1293,10 +1292,7 @@ function sourceChangeRunFailureStatements(database: D1Database, runId: string, a
        SET state = 'failed', terminal_at = ?,
            failure_code = 'curated_revision_reconfirmation_required',
            progress_json = json_set(progress_json, '$.current_stage', 'failed')
-       WHERE id = ? AND state IN (
-         'planning', 'collecting', 'parsing', 'reconciling',
-         'awaiting_approval'
-       )`,
+       WHERE id = ? AND ${ingestionRunTransitionSql(["planning", "collecting", "parsing", "reconciling", "awaiting_approval"], "failed")}`,
       )
       .bind(at, runId),
     database

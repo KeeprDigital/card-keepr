@@ -1,3 +1,4 @@
+import type { IngestionRunState } from "../shared";
 import type { SourceFreshnessStorageRow } from "../read";
 
 export const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
@@ -14,7 +15,7 @@ export const maximumPublicationExportBytes = 32 * 1024 * 1024;
 
 export type RunRow = {
   id: string;
-  state: string;
+  state: IngestionRunState;
   selected_games_json: string;
   started_at: string;
   expected_current_revision_id: string;

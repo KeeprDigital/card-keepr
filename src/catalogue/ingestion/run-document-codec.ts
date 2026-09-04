@@ -1,10 +1,13 @@
 import {
+  isTerminalIngestionRunState,
   activeRunStages,
+  type IngestionRunState,
   AdministrationProblem,
   canonicalJson,
   decodeDocument,
   operationalDiagnostics,
 } from "../shared";
+
 import { parseCandidate } from "./candidate-codec";
 import {
   type ApproveRunRequest,
@@ -19,7 +22,6 @@ import {
   parseSelectedGames,
   publicationWriterToken,
   requiredPublicationValue,
-  terminalRunStates,
 } from "./run-values";
 
 export function approvalInProgress(
@@ -73,7 +75,11 @@ export function parseProgress(value: string, expectedState?: string): Record<str
 
 function decodeProgress(input: unknown, expectedState?: string): Record<string, unknown> {
   const invalid = "The persisted Ingestion Run progress is invalid.";
-  const value = decodeDocument<{ completed_stages: string[]; current_stage: string }>("progress", input, invalid);
+  const value = decodeDocument<{ completed_stages: string[]; current_stage: IngestionRunState }>(
+    "progress",
+    input,
+    invalid,
+  );
   if (
     value.completed_stages.some((stage, index) => stage !== activeRunStages[index]) ||
     (expectedState !== undefined && value.current_stage !== expectedState) ||
@@ -91,7 +97,7 @@ function decodeWarnings(value: unknown): Record<string, unknown>[] {
   return decodeDocument("warnings", value, "The persisted Ingestion Run warnings are invalid.");
 }
 
-function validCompletedStageCount(state: string, completedCount: number): boolean {
+function validCompletedStageCount(state: IngestionRunState, completedCount: number): boolean {
   const activeIndex = activeRunStages.findIndex((knownStage) => knownStage === state);
   if (activeIndex >= 0) return completedCount === activeIndex;
   if (state === "paused") {
@@ -252,7 +258,7 @@ function publicPublicationCleanup(cleanup: PublicationCleanupRow | null): Record
 
 export function decodePublicRunDocument(input: unknown): Record<string, unknown> {
   const invalid = "The persisted administration success outcome is invalid.";
-  const value = decodeDocument<Record<string, unknown> & { state: string }>("publicRun", input, invalid);
+  const value = decodeDocument<Record<string, unknown> & { state: IngestionRunState }>("publicRun", input, invalid);
   if (
     !isIsoInstant(value.started_at) ||
     ![value.candidate_created_at, value.approval_deadline, value.freshness_checked_at, value.terminal_at].every(
@@ -389,7 +395,7 @@ function assertPublicRunCrossFieldInvariants(
   },
 ): void {
   const state = value.state;
-  const terminal = typeof state === "string" && terminalRunStates.has(state);
+  const terminal = typeof state === "string" && isTerminalIngestionRunState(state);
   const completedStages = decoded.progress.completed_stages;
   const candidateRequired =
     state === "awaiting_approval" ||
@@ -493,7 +499,7 @@ function isNullableIsoInstant(value: unknown): boolean {
   return value === null || isIsoInstant(value);
 }
 
-export function progressFor(state: string): Record<string, unknown> {
+export function progressFor(state: IngestionRunState): Record<string, unknown> {
   const position = activeRunStages.findIndex((knownStage) => knownStage === state);
   if (position >= 0) {
     return {

@@ -1,3 +1,4 @@
+import { AdapterParseFailure } from "./adapter-parse-failure";
 const monthNumbers = new Map([
   ["january", "01"],
   ["february", "02"],
@@ -56,7 +57,7 @@ export function normalizedOfficialReleaseDate(value: string, options: { seasons?
   if (/^\d{4}-\d{2}$/u.test(normalized)) {
     const month = Number.parseInt(normalized.slice(5), 10);
     if (month < 1 || month > 12) {
-      throw new Error(`Unrecognized official Release date: ${normalized}.`);
+      throw new AdapterParseFailure(`Unrecognized official Release date: ${normalized}.`);
     }
     return { precision: "month", value: normalized };
   }
@@ -78,7 +79,7 @@ export function normalizedOfficialReleaseDate(value: string, options: { seasons?
     const day = monthFirst?.[2] ?? dayFirst?.[1] ?? "";
     const year = monthFirst?.[3] ?? dayFirst?.[3] ?? "";
     if (month === undefined) {
-      throw new Error(`Unrecognized official Release date: ${normalized}.`);
+      throw new AdapterParseFailure(`Unrecognized official Release date: ${normalized}.`);
     }
     const date = `${year}-${month}-${day.padStart(2, "0")}`;
     assertCalendarDay(date);
@@ -90,7 +91,7 @@ export function normalizedOfficialReleaseDate(value: string, options: { seasons?
       return { precision: "month", value: `${displayMonth[2]}-${month}` };
     }
   }
-  throw new Error(`Unrecognized official Release date: ${normalized}.`);
+  throw new AdapterParseFailure(`Unrecognized official Release date: ${normalized}.`);
 }
 
 export function normalizedOfficialReleaseStatus(value: string | null): "announced" | "released" | null {
@@ -105,7 +106,7 @@ export function normalizedOfficialReleaseStatus(value: string | null): "announce
   if (/^(?:announced|upcoming|coming soon|preorders? open|pre-orders? open|preorder|pre-order)$/u.test(normalized)) {
     return "announced";
   }
-  throw new Error(`Unrecognized official Release status: ${value}.`);
+  throw new AdapterParseFailure(`Unrecognized official Release status: ${value}.`);
 }
 
 export function officialReleaseDateNeedsSchemaReview(value: string | null): boolean {
@@ -127,6 +128,6 @@ function assertCalendarDay(value: string): void {
   const [year, month, day] = value.split("-").map(Number) as [number, number, number];
   const parsed = new Date(Date.UTC(year, month - 1, day));
   if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() + 1 !== month || parsed.getUTCDate() !== day) {
-    throw new Error(`Unrecognized official Release date: ${value}.`);
+    throw new AdapterParseFailure(`Unrecognized official Release date: ${value}.`);
   }
 }

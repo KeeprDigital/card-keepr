@@ -1,5 +1,16 @@
+import {
+  assertIngestionRunTransition,
+  ingestionRunTransitionSql,
+  isTerminalIngestionRunState,
+  AdministrationProblem,
+  type CatalogueCandidate,
+  canonicalJson,
+  type SupportedGame,
+  sha256,
+} from "../shared";
+
 import { assertCuratedGamesUnblocked, prepareCuratedRevisionRunStart } from "../curated";
-import { AdministrationProblem, type CatalogueCandidate, canonicalJson, type SupportedGame, sha256 } from "../shared";
+
 import { idempotencyCompletionStatements } from "./administration-idempotency";
 import { idempotentAdministration, replayAfterConflict } from "./administration-idempotency";
 import { parseCandidate, validatedCatalogueCandidate } from "./candidate-codec";
@@ -23,7 +34,7 @@ import {
   type StartRunRequest,
   sevenDaysInMilliseconds,
 } from "./run-types";
-import { assertOpaqueId, assertSha256, errorMessage, parseSelectedGames, terminalRunStates } from "./run-values";
+import { assertOpaqueId, assertSha256, errorMessage, parseSelectedGames } from "./run-values";
 
 export async function startFixtureRun(
   database: D1Database,
@@ -85,7 +96,7 @@ export async function retryRun(
       await expireOverdueRuns(database, observedAt);
       await reconcileAbandonedPublication(database, catalogueExports, observedAt);
       const source = await requiredRun(database, sourceRunId);
-      if (!terminalRunStates.has(source.state)) {
+      if (!isTerminalIngestionRunState(source.state)) {
         throw new AdministrationProblem(
           409,
           "source_run_not_terminal",
@@ -209,9 +220,10 @@ async function rejectRunAttempt(
   if (run.state === "expired") {
     throw new AdministrationProblem(409, "candidate_expired", "The candidate approval deadline has passed.");
   }
-  if (run.state !== "awaiting_approval") {
-    throw new AdministrationProblem(409, "run_not_awaiting_approval", "The Ingestion Run is not awaiting approval.");
-  }
+  assertIngestionRunTransition(run.state, "rejected", {
+    invalid: () =>
+      new AdministrationProblem(409, "run_not_awaiting_approval", "The Ingestion Run is not awaiting approval."),
+  });
   if (run.candidate_digest !== request.candidate_digest) {
     throw new AdministrationProblem(
       409,
@@ -241,7 +253,7 @@ async function rejectRunAttempt(
               terminal_at = ?,
               progress_json = ?,
               approval_history_json = ?
-          WHERE id = ? AND state = 'awaiting_approval'`,
+          WHERE id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "rejected")}`,
         )
         .bind(now, JSON.stringify(rejectedProgress), JSON.stringify([decision]), run.id),
       releaseRunLockStatement(database, run.id),
@@ -417,7 +429,7 @@ async function startPreparedRun(
                terminal_at = ?,
                failure_code = ?,
                progress_json = ?
-           WHERE id = ? AND state = 'planning'`,
+           WHERE id = ? AND ${ingestionRunTransitionSql("planning", "failed")}`,
               )
               .bind(
                 candidateDigest,
@@ -453,7 +465,7 @@ async function startPreparedRun(
               candidate_created_at = ?,
               approval_deadline = ?,
               progress_json = ?
-          WHERE id = ? AND state = 'reconciling'`,
+          WHERE id = ? AND ${ingestionRunTransitionSql("reconciling", "awaiting_approval")}`,
               )
               .bind(
                 candidateDigest,

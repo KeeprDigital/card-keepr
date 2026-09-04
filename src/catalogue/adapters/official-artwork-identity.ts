@@ -1,3 +1,4 @@
+import { AdapterParseFailure } from "./adapter-parse-failure";
 const prefix = "official-artwork:";
 
 export type OfficialArtworkIdentity = Readonly<{
@@ -46,7 +47,7 @@ function normalizedOfficialArtworkIdentity(
   const normalizedArtworkId = artworkId?.normalize("NFC").trim().toLocaleLowerCase() ?? null;
   const stableRoles = [...new Set(roles.map((role) => role.normalize("NFC").trim().toLocaleLowerCase()))].sort();
   if (card.length === 0 || stableRoles.length === 0 || stableRoles.some((role) => role.length === 0)) {
-    throw new Error("Official Printing has no stable semantic artwork identity.");
+    throw new AdapterParseFailure("Official Printing has no stable semantic artwork identity.");
   }
   return {
     official_card_identity: card,

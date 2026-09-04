@@ -31,3 +31,5 @@ export {
 } from "./official-artwork-identity";
 export { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html";
 export { officialLegalityRulesObservation } from "./official-legality-source-adapters";
+
+export { AdapterParseFailure } from "./adapter-parse-failure";
