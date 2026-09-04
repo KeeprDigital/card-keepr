@@ -1,8 +1,3 @@
-import {
-  nextPublicationToReconcileStatement,
-  candidateLegalityEvidenceStatement,
-  catalogueRevisionDigestStatement,
-} from "./publication-storage-repository";
 import { type BuiltCatalogueExport, buildCatalogueExport } from "../export";
 import { digestBoundCandidatePayload, reconciliationPublication } from "../reconciliation";
 import {
@@ -10,6 +5,7 @@ import {
   byteBoundedJsonArrays,
   type CatalogueCandidate,
   CatalogueExportLimitError,
+  type CatalogueStore,
   canonicalJson,
   catalogueRevisionIdentity,
   retainedPayload,
@@ -36,6 +32,11 @@ import {
   storeAndVerifyExport,
   storeAndVerifyPrintingImages,
 } from "./publication-storage";
+import {
+  candidateLegalityEvidenceStatement,
+  catalogueRevisionDigestStatement,
+  nextPublicationToReconcileStatement,
+} from "./publication-storage-repository";
 import { approvalInProgress, parseApproval } from "./run-document-codec";
 import { checkedFreshnessAreasForRun, sourceFreshnessForExport } from "./run-freshness";
 import {
@@ -61,7 +62,7 @@ import {
 } from "./run-values";
 
 export async function reconcileAbandonedPublication(
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
   observedAt: string,
 ): Promise<void> {
@@ -119,7 +120,7 @@ export async function reconcileAbandonedPublication(
 }
 
 async function reconcileReservedPublication(
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
   run: RunRow,
   observedAt: string,
@@ -285,7 +286,7 @@ type CanonicalLegalityProvenance = {
 };
 
 export async function candidateWithCanonicalLegalityProvenance(
-  database: D1Database,
+  database: CatalogueStore,
   candidate: CatalogueCandidate,
 ): Promise<CatalogueCandidate> {
   const rules = candidate.legality_rules ?? [];
@@ -314,7 +315,7 @@ export async function candidateWithCanonicalLegalityProvenance(
 }
 
 export async function approveRun(
-  database: D1Database,
+  database: CatalogueStore,
   catalogueExports: R2Bucket,
   runId: string,
   request: ApproveRunRequest,
@@ -356,7 +357,7 @@ export async function approveRun(
 }
 
 async function approveRunAttempt(
-  database: D1Database,
+  database: CatalogueStore,
   catalogueExports: R2Bucket,
   runId: string,
   request: ApproveRunRequest,

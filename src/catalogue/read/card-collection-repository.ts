@@ -1,4 +1,4 @@
-import { gameProfileForGame } from "../shared";
+import { type CatalogueStore, gameProfileForGame, repositoryStatements } from "../shared";
 import { cardSearchFtsQuery, cardSearchQuery } from "./card-search";
 export type CardPagePosition = { game: string; identity_kind: string; identity_value: string; id: string };
 export type CardRow = {
@@ -182,14 +182,14 @@ function addCardFilterPredicates(
   }
 }
 export function cardCollectionPageStatement(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
   filters: CollectionFilters,
   after: CardPagePosition | null,
   maximumDocumentBytes: number,
 ): D1PreparedStatement {
   const query = cardCollectionPageQuery(revisionId, filters, after, filters.limit + 1, true);
-  return database
+  return repositoryStatements(database)
     .prepare(`
     WITH candidates AS MATERIALIZED (${query.sql}),
     sized AS (
@@ -216,7 +216,7 @@ export function cardCollectionPageStatement(
     .bind(...query.bindings, revisionId, filters.limit, maximumDocumentBytes);
 }
 export function cardPublishedFilterStatements(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
   filters: CollectionFilters,
 ): { parameter: string; statement: D1PreparedStatement }[] {
@@ -243,6 +243,8 @@ export function cardPublishedFilterStatements(
 
   return checks.map(({ parameter, sql, values }) => ({
     parameter,
-    statement: database.prepare(sql).bind(revisionId, ...values),
+    statement: repositoryStatements(database)
+      .prepare(sql)
+      .bind(revisionId, ...values),
   }));
 }

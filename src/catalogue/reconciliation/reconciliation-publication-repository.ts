@@ -1,8 +1,8 @@
-import { byteBoundedJsonArrays } from "../shared";
+import { byteBoundedJsonArrays, type CatalogueStore, repositoryStatements } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
-export function publicationContextStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function publicationContextStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT context.source_lineage, plan.adapter_version,
               run.candidate_created_at AS observed_at
        FROM reconciliation_contexts AS context
@@ -14,8 +14,8 @@ export function publicationContextStatement(database: D1Database, runId: string)
     .bind(runId);
 }
 
-export function publicationLineagesStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function publicationLineagesStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT DISTINCT source_lineage, adapter_version
        FROM reconciliation_evidence_partitions
        WHERE ingestion_run_id = ?
@@ -23,8 +23,8 @@ export function publicationLineagesStatement(database: D1Database, runId: string
     .bind(runId);
 }
 
-export function publicationEvidenceStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function publicationEvidenceStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT plan.source_observation_id AS id,
               plan.source_lineage AS source,
               snapshot.retrieved_at AS captured_at
@@ -37,10 +37,10 @@ export function publicationEvidenceStatement(database: D1Database, runId: string
 }
 
 export function publicationEvidenceByIdsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   observationIdsJson: string,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT candidate.source_observation_id AS id,
                 candidate.source_lineage AS source,
                 snapshot.retrieved_at AS captured_at
@@ -55,10 +55,10 @@ export function publicationEvidenceByIdsStatement(
 }
 
 export function publishReconciledErrataStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; observedRevisionId: string; payload: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO reconciled_errata (
              id, game, target_type, target_id, effective_from,
              official_wording, corrected_value_json,
@@ -78,10 +78,10 @@ export function publishReconciledErrataStatement(
 }
 
 export function publishErratumProvenanceStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; observedRevisionId: string; payload: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO erratum_provenance (
              erratum_id, source_lineage, source_observation_id,
              first_revision_id, last_observed_revision_id
@@ -97,10 +97,10 @@ export function publishErratumProvenanceStatement(
 }
 
 export function publishRevisionErrataStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; payload: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT OR IGNORE INTO revision_errata (
              catalogue_revision_id, erratum_id
            )
@@ -109,8 +109,8 @@ export function publishRevisionErrataStatement(
     .bind(input.revisionId, input.payload);
 }
 
-export function erratumTargetLifecycleStatement(database: D1Database, erratumIdsJson: string): D1PreparedStatement {
-  return database
+export function erratumTargetLifecycleStatement(database: CatalogueStore, erratumIdsJson: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT provenance.erratum_id,
                 provenance.source_lineage,
                 provenance.first_revision_id,
@@ -129,24 +129,31 @@ export function erratumTargetLifecycleStatement(database: D1Database, erratumIds
     .bind(erratumIdsJson);
 }
 
-export function inferredProductRevisionTimeStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database.prepare("SELECT published_at FROM catalogue_revisions WHERE id = ?").bind(revisionId);
+export function inferredProductRevisionTimeStatement(
+  database: CatalogueStore,
+  revisionId: string,
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare("SELECT published_at FROM catalogue_revisions WHERE id = ?")
+    .bind(revisionId);
 }
 
-export function carriedRevisionStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database.prepare("SELECT expected_current_revision_id FROM ingestion_runs WHERE id = ?").bind(runId);
+export function carriedRevisionStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare("SELECT expected_current_revision_id FROM ingestion_runs WHERE id = ?")
+    .bind(runId);
 }
 
-export function carriedCardLifecyclesStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database
+export function carriedCardLifecyclesStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT card_id AS id, document_json
          FROM revision_cards
          WHERE catalogue_revision_id = ?`)
     .bind(revisionId);
 }
 
-export function carriedPrintingLifecyclesStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database
+export function carriedPrintingLifecyclesStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT printing_id AS id, document_json
          FROM revision_printings
          WHERE catalogue_revision_id = ?`)
@@ -154,10 +161,10 @@ export function carriedPrintingLifecyclesStatement(database: D1Database, revisio
 }
 
 export function printingRelationshipLifecycleStatement(
-  database: D1Database,
+  database: CatalogueStore,
   printingIdsJson: string,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT membership.printing_id, source_lineage, source_observation_id,
               relationship_kind, relationship_value,
               membership.first_revision_id,
@@ -178,8 +185,11 @@ export function printingRelationshipLifecycleStatement(
     .bind(printingIdsJson);
 }
 
-export function printingLocatorLifecycleStatement(database: D1Database, printingIdsJson: string): D1PreparedStatement {
-  return database
+export function printingLocatorLifecycleStatement(
+  database: CatalogueStore,
+  printingIdsJson: string,
+): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT printing_id, source_lineage, locator, variant_key,
               first_revision_id, last_observed_revision_id,
               current, last_missing_revision_id
@@ -191,10 +201,10 @@ export function printingLocatorLifecycleStatement(database: D1Database, printing
 }
 
 export function publishWithdrawalAssertionsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; payload: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO reconciled_withdrawal_assertions (
            entity_type, entity_id, source_lineage, source_snapshot_id,
            source_observation_set_id, source_observation_id, assertion,
@@ -218,10 +228,10 @@ export function publishWithdrawalAssertionsStatement(
 }
 
 export function publishReconciledCardsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; payload: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO reconciled_cards (
            id, supported_game, official_identity_kind,
            official_identity_value, first_revision_id,
@@ -254,10 +264,10 @@ export function publishReconciledCardsStatement(
 }
 
 export function publishCardObservationsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; payload: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO reconciled_card_observations (
            card_id, source_lineage, source_observation_id,
            catalogue_revision_id, canonical_facts_json, current,
@@ -272,10 +282,10 @@ export function publishCardObservationsStatement(
 }
 
 export function publishReconciledPrintingsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; payload: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO reconciled_printings (
            id, card_id, source_lineage, artwork_fingerprint,
            printed_fields_digest, rarity_normalized, treatment,
@@ -314,10 +324,10 @@ export function publishReconciledPrintingsStatement(
 }
 
 export function publishPrintingLocatorsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; observedRevisionId: string; payload: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO reconciled_printing_locators (
            printing_id, source_lineage, locator, variant_key,
            variant_identity,
@@ -337,10 +347,10 @@ export function publishPrintingLocatorsStatement(
 }
 
 export function publishPrintingMembershipsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; observedRevisionId: string; payload: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO reconciled_printing_memberships (
            printing_id, source_lineage, source_observation_id,
            relationship_kind, relationship_value, first_revision_id,
@@ -361,17 +371,17 @@ export function publishPrintingMembershipsStatement(
     .bind(input.revisionId, input.observedRevisionId, input.payload);
 }
 
-export function requiredPublicationCandidateStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database.prepare("SELECT candidate_json FROM ingestion_runs WHERE id = ?").bind(runId);
+export function requiredPublicationCandidateStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database).prepare("SELECT candidate_json FROM ingestion_runs WHERE id = ?").bind(runId);
 }
 
 export function publicationEntityLifecyclesStatement(
-  database: D1Database,
+  database: CatalogueStore,
   kind: "card" | "printing",
   idsJson: string,
 ): D1PreparedStatement {
   const table = kind === "card" ? "reconciled_cards" : "reconciled_printings";
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT * FROM ${table}
        WHERE id IN (SELECT value FROM json_each(?))
        ORDER BY id`)
@@ -379,7 +389,7 @@ export function publicationEntityLifecyclesStatement(
 }
 
 export function deactivatePublicationEvidenceStatements(
-  database: D1Database,
+  database: CatalogueStore,
   kind: "card-observation" | "printing-locator" | "printing-membership",
   rows: readonly Record<string, unknown>[],
   revisionId: string,
@@ -390,7 +400,7 @@ export function deactivatePublicationEvidenceStatements(
     "printing-membership": { table: "reconciled_printing_memberships", idColumn: "printing_id" },
   }[kind];
   return byteBoundedJsonArrays(rows).map((payload) =>
-    database
+    repositoryStatements(database)
       .prepare(
         `UPDATE ${table}
          SET current = 0, last_missing_revision_id = ?

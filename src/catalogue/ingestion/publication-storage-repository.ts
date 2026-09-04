@@ -1,8 +1,8 @@
-import { ingestionRunTransitionSql } from "../shared";
+import { type CatalogueStore, ingestionRunTransitionSql, repositoryStatements } from "../shared";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
 export function reservePublicationWriterStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     approvalJson: string;
     idempotencyKey: string;
@@ -16,7 +16,7 @@ export function reservePublicationWriterStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
       SET state = 'publishing',
           approval_json = ?,
@@ -45,10 +45,10 @@ export function reservePublicationWriterStatement(
 }
 
 export function publicationWriterAuthorityStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; includePublished: number; revisionId: string; writerToken: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT id
       FROM ingestion_runs
       WHERE id = ?
@@ -62,10 +62,10 @@ export function publicationWriterAuthorityStatement(
 }
 
 export function recordLatePublicationObjectStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; objectKey: string; failedAt: string; notBefore: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO ingestion_publication_cleanup (
         ingestion_run_id,
         state,
@@ -114,10 +114,10 @@ export function recordLatePublicationObjectStatement(
 }
 
 export function publicationRegistrationStateStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; runId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT
        EXISTS(
          SELECT 1 FROM catalogue_revisions WHERE id = ?
@@ -133,8 +133,8 @@ export function publicationRegistrationStateStatement(
     .bind(input.revisionId, input.revisionId, input.runId, input.revisionId);
 }
 
-export function nextPublicationToReconcileStatement(database: D1Database, observedAt: string): D1PreparedStatement {
-  return database
+export function nextPublicationToReconcileStatement(database: CatalogueStore, observedAt: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT *
       FROM ingestion_runs
       WHERE state = 'publishing'
@@ -145,8 +145,8 @@ export function nextPublicationToReconcileStatement(database: D1Database, observ
     .bind(observedAt);
 }
 
-export function candidateLegalityEvidenceStatement(database: D1Database, ruleIdsJson: string): D1PreparedStatement {
-  return database
+export function candidateLegalityEvidenceStatement(database: CatalogueStore, ruleIdsJson: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT id, source_lineage, source_snapshot_id,
               source_observation_set_id, source_observation_id,
               source_observation_pointer, source_field_pointers_json
@@ -155,8 +155,8 @@ export function candidateLegalityEvidenceStatement(database: D1Database, ruleIds
     .bind(ruleIdsJson);
 }
 
-export function catalogueRevisionDigestStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database
+export function catalogueRevisionDigestStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT content_digest
       FROM catalogue_revisions
       WHERE id = ?`)

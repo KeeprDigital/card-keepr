@@ -1,16 +1,16 @@
+import { AdministrationProblem, type CatalogueStore, canonicalJson, replayByDigest } from "../shared";
+import { assertIdentifier } from "../source-evidence";
+import { type CardSearchRepairResult, repairCardSearchMaterialization } from "./card-search-materialization";
 import {
-  createSearchRepairRequestStatement,
   claimSearchRepairRequestStatement,
-  searchRepairCurrentRevisionStatement,
-  releaseSearchRepairClaimStatement,
   completeSearchRepairRequestStatement,
+  createSearchRepairRequestStatement,
   oversizedSearchRepairCardStatement,
+  releaseSearchRepairClaimStatement,
+  searchRepairCurrentRevisionStatement,
   searchRepairRequestStatement,
 } from "./card-search-repair-repository";
-import { repairCardSearchMaterialization, type CardSearchRepairResult } from "./card-search-materialization";
 import { repairableCatalogueRevisionTarget } from "./catalogue-revision-retention";
-import { AdministrationProblem, replayByDigest, canonicalJson } from "../shared";
-import { assertIdentifier } from "../source-evidence";
 
 type SearchRepairRequestRow = {
   idempotency_key: string;
@@ -25,7 +25,7 @@ type SearchRepairRequestRow = {
 const maximumSearchRepairSourceBytes = 64 * 1024;
 
 export async function runGuardedCardSearchRepair(
-  database: D1Database,
+  database: CatalogueStore,
   input: {
     target_revision_id: string;
     expected_current_revision_id: string;
@@ -137,7 +137,7 @@ export async function runGuardedCardSearchRepair(
   return parseRepairResult(completed.result_json);
 }
 
-async function assertRepairSourceBound(database: D1Database, targetRevisionId: string): Promise<void> {
+async function assertRepairSourceBound(database: CatalogueStore, targetRevisionId: string): Promise<void> {
   const oversized = await oversizedSearchRepairCardStatement(database, {
     revisionId: targetRevisionId,
     maximumBytes: maximumSearchRepairSourceBytes,
@@ -152,7 +152,7 @@ async function assertRepairSourceBound(database: D1Database, targetRevisionId: s
 }
 
 async function searchRepairRequest(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
 ): Promise<SearchRepairRequestRow | null> {
   return searchRepairRequestStatement(database, idempotencyKey).first<SearchRepairRequestRow>();
@@ -161,7 +161,7 @@ async function searchRepairRequest(
 // The retained fingerprint is the canonical request itself rather than a
 // digest of it, so the comparison is exact-JSON equality.
 function searchRepairReplay(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
   requestJson: string,
 ): Promise<SearchRepairRequestRow | null> {

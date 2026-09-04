@@ -1,10 +1,10 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import {
+  type CatalogueBackupWorkflowParams,
   createVerifiedCatalogueBackup,
   failActiveCatalogueBackupAttempt,
-  type CatalogueBackupWorkflowParams,
 } from "../../../src/catalogue/backup-recovery";
-import { canonicalJson, workflowSteps } from "../../../src/catalogue/shared";
+import { canonicalJson, catalogueStore, workflowSteps } from "../../../src/catalogue/shared";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 
 const backupStep = {
@@ -31,7 +31,7 @@ export async function runCatalogueBackupWorkflow(
   try {
     const document = await step.do(workflowSteps.backup.backup, backupStep, async () => {
       return createVerifiedCatalogueBackup(
-        env.CATALOGUE_DB,
+        catalogueStore(env.CATALOGUE_DB),
         env.BACKUPS,
         {
           expectedCurrentRevisionId: params.expected_current_revision_id,
@@ -60,7 +60,12 @@ export async function runCatalogueBackupWorkflow(
   } catch (error) {
     const detail = error instanceof Error ? error.message : "The Catalogue backup Workflow exhausted its retries.";
     await step.do(workflowSteps.backup.failure, backupStep, () =>
-      failActiveCatalogueBackupAttempt(env.CATALOGUE_DB, params.idempotency_key, params.observed_at, detail),
+      failActiveCatalogueBackupAttempt(
+        catalogueStore(env.CATALOGUE_DB),
+        params.idempotency_key,
+        params.observed_at,
+        detail,
+      ),
     );
     return {
       result_json: canonicalJson({

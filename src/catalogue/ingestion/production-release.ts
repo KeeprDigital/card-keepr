@@ -1,9 +1,10 @@
-import { bootstrapGate, populatedGate } from "./production-release-repository";
+import { AdministrationProblem, type CatalogueStore, canonicalJson, SPINE_REVISION_ID, sha256Text } from "../shared";
 import {
+  bootstrapGate,
+  populatedGate,
   preparedProductionReleaseStatement,
   recordPreparedProductionReleaseStatement,
 } from "./production-release-repository";
-import { AdministrationProblem, canonicalJson, sha256Text, SPINE_REVISION_ID } from "../shared";
 
 export { SPINE_REVISION_ID };
 
@@ -15,7 +16,7 @@ export type ProductionTarget = Readonly<{
 }>;
 
 export async function prepareProductionRelease(
-  database: D1Database,
+  database: CatalogueStore,
   request: Record<string, unknown>,
   expectedTarget: ProductionTarget,
   observedAt: string,

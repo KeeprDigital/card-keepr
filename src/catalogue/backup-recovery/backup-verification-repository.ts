@@ -1,4 +1,5 @@
 import { cardCollectionPageQuery } from "../read";
+import { type CatalogueStore, repositoryStatements } from "../shared";
 
 export type CatalogueVerificationQuery =
   | Readonly<{ kind: "evidence"; revisionId: string; expectedJson: string }>
@@ -29,11 +30,11 @@ export function catalogueVerificationQuery(input: CatalogueVerificationQuery): {
 }
 
 export function catalogueVerificationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: CatalogueVerificationQuery,
 ): D1PreparedStatement {
   const query = catalogueVerificationQuery(input);
-  const statement = database.prepare(query.sql);
+  const statement = repositoryStatements(database).prepare(query.sql);
   return query.params.length === 0 ? statement : statement.bind(...query.params);
 }
 

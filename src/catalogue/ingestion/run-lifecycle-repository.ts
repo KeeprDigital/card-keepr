@@ -1,14 +1,20 @@
-import { type IngestionRunState, ingestionRunTransitionSources, ingestionRunTransitionSql } from "../shared";
+import {
+  type CatalogueStore,
+  type IngestionRunState,
+  ingestionRunTransitionSources,
+  ingestionRunTransitionSql,
+  repositoryStatements,
+} from "../shared";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
-export function currentCatalogueStateStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT current_revision_id, published_at
+export function currentCatalogueStateStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`SELECT current_revision_id, published_at
       FROM catalogue_state
       WHERE singleton = 1`);
 }
 
-export function currentOperationStateStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT active_ingestion_run_id,
+export function currentOperationStateStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`SELECT active_ingestion_run_id,
               active_release_id AS active_production_release_id,
               active_release_expires_at AS active_production_release_expires_at,
               active_recovery_id, recovery_health
@@ -16,28 +22,28 @@ export function currentOperationStateStatement(database: D1Database): D1Prepared
       WHERE singleton = 1`);
 }
 
-export function runByIdStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database.prepare("SELECT * FROM ingestion_runs WHERE id = ?").bind(runId);
+export function runByIdStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database).prepare("SELECT * FROM ingestion_runs WHERE id = ?").bind(runId);
 }
 
-export function publicationCleanupStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function publicationCleanupStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT *
       FROM ingestion_publication_cleanup
       WHERE ingestion_run_id = ?`)
     .bind(runId);
 }
 
-export function releaseActiveRunLockStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function releaseActiveRunLockStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`UPDATE operation_state
       SET active_ingestion_run_id = NULL
       WHERE singleton = 1 AND active_ingestion_run_id = ?`)
     .bind(runId);
 }
 
-export function expireOverdueRunsStatement(database: D1Database, observedAt: string): D1PreparedStatement {
-  return database
+export function expireOverdueRunsStatement(database: CatalogueStore, observedAt: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
         SET state = 'expired',
             terminal_at = approval_deadline,
@@ -52,8 +58,11 @@ export function expireOverdueRunsStatement(database: D1Database, observedAt: str
     .bind(observedAt);
 }
 
-export function releaseTerminalRunLockStatement(database: D1Database, activeStatesJson: string): D1PreparedStatement {
-  return database
+export function releaseTerminalRunLockStatement(
+  database: CatalogueStore,
+  activeStatesJson: string,
+): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`UPDATE operation_state
       SET active_ingestion_run_id = NULL
       WHERE singleton = 1
@@ -75,10 +84,10 @@ export function releaseTerminalRunLockStatement(database: D1Database, activeStat
 }
 
 export function failRunStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ terminalAt: string; failureCode: string; runId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
         SET state = 'failed',
             terminal_at = ?,
@@ -93,17 +102,17 @@ export function failRunStatement(
     .bind(input.terminalAt, input.failureCode, input.runId);
 }
 
-export function runEvidencePlanStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function runEvidencePlanStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare("SELECT ingestion_run_id FROM ingestion_evidence_plans WHERE ingestion_run_id = ?")
     .bind(runId);
 }
 
 export function rejectRunStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ terminalAt: string; progressJson: string; approvalHistoryJson: string; runId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
           SET state = 'rejected',
               terminal_at = ?,
@@ -114,7 +123,7 @@ export function rejectRunStatement(
 }
 
 export function createFixtureRunStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     runId: string;
     selectedGamesJson: string;
@@ -128,7 +137,7 @@ export function createFixtureRunStatement(
     diagnosticsJson: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO ingestion_runs (
             id,
             state,
@@ -174,8 +183,8 @@ export function createFixtureRunStatement(
     );
 }
 
-export function acquireRunLockStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function acquireRunLockStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`UPDATE operation_state
            SET active_ingestion_run_id = ?
            WHERE singleton = 1
@@ -185,7 +194,7 @@ export function acquireRunLockStatement(database: D1Database, runId: string): D1
 }
 
 export function failFixtureRunStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     candidateDigest: string;
     candidateCreatedAt: string;
@@ -196,7 +205,7 @@ export function failFixtureRunStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
            SET state = 'failed',
                candidate_digest = ?,
@@ -220,7 +229,7 @@ export function failFixtureRunStatement(
 }
 
 export function completeFixtureRunStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     candidateDigest: string;
     candidateCreatedAt: string;
@@ -229,7 +238,7 @@ export function completeFixtureRunStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
           SET state = 'awaiting_approval',
               candidate_digest = ?,
@@ -248,15 +257,17 @@ export function completeFixtureRunStatement(
     );
 }
 
-export function runHasEvidencePlanStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database.prepare("SELECT 1 AS present FROM ingestion_evidence_plans WHERE ingestion_run_id = ?").bind(runId);
+export function runHasEvidencePlanStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare("SELECT 1 AS present FROM ingestion_evidence_plans WHERE ingestion_run_id = ?")
+    .bind(runId);
 }
 
 export function transitionRunStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; from: IngestionRunState; to: IngestionRunState; progressJson: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
       SET state = ?, progress_json = ?
       WHERE id = ? AND ${ingestionRunTransitionSql(input.from, input.to)}`)

@@ -1,4 +1,4 @@
-import { AdministrationProblem, canonicalJson, isTerminalIngestionRunState } from "../shared";
+import { AdministrationProblem, type CatalogueStore, canonicalJson, isTerminalIngestionRunState } from "../shared";
 import {
   acquireAdministrationClaimStatement,
   administrationClaimStatement,
@@ -24,12 +24,12 @@ import {
 } from "./run-types";
 import { errorMessage, hasOnlyKeys, isExactStringTuple, isIsoInstant, isRecord, parseJson } from "./run-values";
 
-export async function administrationClaim(database: D1Database, key: string): Promise<IdempotencyClaimRow | null> {
+export async function administrationClaim(database: CatalogueStore, key: string): Promise<IdempotencyClaimRow | null> {
   return administrationClaimStatement(database, key).first<IdempotencyClaimRow>();
 }
 
 export async function currentAdministrationClaimOwner(
-  database: D1Database,
+  database: CatalogueStore,
   key: string,
   operation: string,
   requestJson: string,
@@ -46,7 +46,7 @@ export async function currentAdministrationClaimOwner(
 }
 
 export function administrationClaimDeleteStatement(
-  database: D1Database,
+  database: CatalogueStore,
   context: {
     key: string;
     operation: string;
@@ -64,7 +64,7 @@ export function administrationClaimDeleteStatement(
 }
 
 export function idempotencyCompletionStatements(
-  database: D1Database,
+  database: CatalogueStore,
   input: {
     key: string;
     operation: string;
@@ -91,7 +91,7 @@ export function idempotencyCompletionStatements(
 }
 
 export async function replayAdministration(
-  database: D1Database,
+  database: CatalogueStore,
   key: string,
   operation: string,
   requestJson: string,
@@ -128,7 +128,7 @@ export async function replayAdministration(
 }
 
 async function assertSuccessfulReplayCorrelation(
-  database: D1Database,
+  database: CatalogueStore,
   run: Record<string, unknown>,
   prior: IdempotencyRow,
   key: string,
@@ -192,7 +192,7 @@ async function assertSuccessfulReplayCorrelation(
 }
 
 export async function idempotentAdministration(
-  database: D1Database,
+  database: CatalogueStore,
   context: IdempotencyContext,
   operation: (owner: IdempotencyClaimOwner) => Promise<Record<string, unknown>>,
 ): Promise<Record<string, unknown>> {
@@ -287,7 +287,7 @@ function isAdministrationInProgress(value: Record<string, unknown>): boolean {
 }
 
 async function claimAdministration(
-  database: D1Database,
+  database: CatalogueStore,
   context: IdempotencyContext,
 ): Promise<{
   claim: IdempotencyClaimRow;
@@ -403,7 +403,7 @@ function pendingAdministrationOperation(
 }
 
 async function releaseAdministrationClaim(
-  database: D1Database,
+  database: CatalogueStore,
   context: IdempotencyContext,
   owner: IdempotencyClaimOwner,
 ): Promise<void> {
@@ -411,7 +411,7 @@ async function releaseAdministrationClaim(
 }
 
 async function replayLegacyAdministration(
-  database: D1Database,
+  database: CatalogueStore,
   key: string,
   operation: string,
   requestJson: string,
@@ -446,7 +446,7 @@ async function replayLegacyAdministration(
 }
 
 export async function replayAfterConflict(
-  database: D1Database,
+  database: CatalogueStore,
   key: string,
   operation: string,
   requestJson: string,

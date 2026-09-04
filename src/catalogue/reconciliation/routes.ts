@@ -1,10 +1,11 @@
-import { route, type RouteContext } from "../../http/routes";
+import { assertOnlyFields, readAdministrationBody, requiredString } from "../../http/administration";
+import { type RouteContext, route } from "../../http/routes";
+import type { CatalogueStore } from "../shared";
 import { showReconciledPrinting } from "./card-printing-reconciliation";
 import { startOrObserveReconciliationWorkflow } from "./reconciliation-workflow";
-import { readAdministrationBody, requiredString, assertOnlyFields } from "../../http/administration";
 
 type Environment = {
-  CATALOGUE_DB: D1Database;
+  CATALOGUE_DB: CatalogueStore;
   RECONCILIATION_WORKFLOW: Parameters<typeof startOrObserveReconciliationWorkflow>[1];
 };
 type Context = RouteContext<Environment> & { observedAt: string };

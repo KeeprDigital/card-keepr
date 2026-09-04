@@ -1,10 +1,11 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
 export function createSearchRepairRequestStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ key: string; targetRevisionId: string; expectedRevisionId: string; requestJson: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT OR IGNORE INTO catalogue_search_repair_requests (
            idempotency_key, target_revision_id,
            expected_current_revision_id, request_json, result_json
@@ -13,10 +14,10 @@ export function createSearchRepairRequestStatement(
 }
 
 export function claimSearchRepairRequestStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ claimToken: string; expiresAt: string; key: string; observedAt: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_search_repair_requests
        SET claim_token = ?, claim_expires_at = ?
        WHERE idempotency_key = ?
@@ -38,17 +39,17 @@ export function claimSearchRepairRequestStatement(
     .bind(input.claimToken, input.expiresAt, input.key, input.observedAt);
 }
 
-export function searchRepairCurrentRevisionStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT current_revision_id
+export function searchRepairCurrentRevisionStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`SELECT current_revision_id
          FROM catalogue_state
          WHERE singleton = 1`);
 }
 
 export function releaseSearchRepairClaimStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ key: string; claimToken: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_search_repair_requests
          SET claim_token = NULL, claim_expires_at = NULL
          WHERE idempotency_key = ? AND claim_token = ?
@@ -60,10 +61,10 @@ export function releaseSearchRepairClaimStatement(
 }
 
 export function completeSearchRepairRequestStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ resultJson: string; key: string; claimToken: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_search_repair_requests
        SET result_json = ?, claim_token = NULL, claim_expires_at = NULL
        WHERE idempotency_key = ? AND claim_token = ?
@@ -75,10 +76,10 @@ export function completeSearchRepairRequestStatement(
 }
 
 export function oversizedSearchRepairCardStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; maximumBytes: number }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT card_id
        FROM revision_cards
        WHERE catalogue_revision_id = ?
@@ -88,8 +89,8 @@ export function oversizedSearchRepairCardStatement(
     .bind(input.revisionId, input.maximumBytes);
 }
 
-export function searchRepairRequestStatement(database: D1Database, key: string): D1PreparedStatement {
-  return database
+export function searchRepairRequestStatement(database: CatalogueStore, key: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT idempotency_key, target_revision_id,
               expected_current_revision_id, request_json, result_json,
               claim_token, claim_expires_at
@@ -99,10 +100,10 @@ export function searchRepairRequestStatement(database: D1Database, key: string):
 }
 
 export function revisionWithoutSearchProjectionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   targetRevisionId: string | null,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT revision.id AS catalogue_revision_id
        FROM catalogue_revisions AS revision
        WHERE NOT EXISTS (
@@ -115,8 +116,11 @@ export function revisionWithoutSearchProjectionStatement(
     .bind(targetRevisionId, targetRevisionId);
 }
 
-export function createPendingSearchProjectionStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database
+export function createPendingSearchProjectionStatement(
+  database: CatalogueStore,
+  revisionId: string,
+): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`INSERT INTO catalogue_query_revisions (
          catalogue_revision_id, state, repaired_through_card_id,
          repair_card_id, repair_search_offset, repair_term_offset
@@ -126,10 +130,10 @@ export function createPendingSearchProjectionStatement(database: D1Database, rev
 }
 
 export function nextCardToRepairStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; afterCardId: string | null }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT card_id
        FROM revision_cards
        WHERE catalogue_revision_id = ?
@@ -139,8 +143,8 @@ export function nextCardToRepairStatement(
     .bind(input.revisionId, input.afterCardId, input.afterCardId);
 }
 
-export function completeSearchProjectionStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database
+export function completeSearchProjectionStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_query_revisions
          SET state = 'available',
              repaired_through_card_id = NULL,
@@ -152,10 +156,10 @@ export function completeSearchProjectionStatement(database: D1Database, revision
 }
 
 export function createCardQuerySummaryStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; cardId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT OR IGNORE INTO revision_card_query_documents (
            catalogue_revision_id, card_id, summary_json, search_text
          )
@@ -204,10 +208,10 @@ export function createCardQuerySummaryStatement(
 }
 
 export function beginCardRepairStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ cardId: string; revisionId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_query_revisions
          SET repair_card_id = ?,
              repair_search_offset = 0,
@@ -219,10 +223,10 @@ export function beginCardRepairStatement(
 }
 
 export function cardRepairSourceDocumentStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; cardId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT document_json
      FROM revision_cards
      WHERE catalogue_revision_id = ? AND card_id = ?`)
@@ -230,10 +234,10 @@ export function cardRepairSourceDocumentStatement(
 }
 
 export function appendRepairedCardSearchTextStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ chunk: string; revisionId: string; cardId: string; expectedOffset: number }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE revision_card_query_documents
          SET search_text = search_text || ?
          WHERE catalogue_revision_id = ? AND card_id = ?
@@ -242,10 +246,10 @@ export function appendRepairedCardSearchTextStatement(
 }
 
 export function advanceCardSearchOffsetStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ nextOffset: number; revisionId: string; cardId: string; expectedOffset: number }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_query_revisions
          SET repair_search_offset = ?
          WHERE catalogue_revision_id = ?
@@ -265,10 +269,10 @@ export function advanceCardSearchOffsetStatement(
 }
 
 export function insertRepairedCardSearchTermStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ term: string; revisionId: string; cardId: string | null }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT OR IGNORE INTO revision_card_search_terms (
              catalogue_revision_id, card_id, term, sort_game,
              sort_identity_kind, sort_identity_value, sort_id
@@ -281,7 +285,7 @@ export function insertRepairedCardSearchTermStatement(
 }
 
 export function insertRepairedCardSearchChunkStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     revisionId: string;
     cardId: string | null;
@@ -290,7 +294,7 @@ export function insertRepairedCardSearchChunkStatement(
     searchText: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT OR IGNORE INTO revision_card_search_chunks (
              catalogue_revision_id, card_id, field_ordinal,
              chunk_ordinal, search_text
@@ -299,10 +303,10 @@ export function insertRepairedCardSearchChunkStatement(
 }
 
 export function advanceCardSearchTermOffsetStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ nextOffset: number; revisionId: string; cardId: string; expectedOffset: number }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_query_revisions
          SET repair_term_offset = ?
          WHERE catalogue_revision_id = ?
@@ -313,10 +317,10 @@ export function advanceCardSearchTermOffsetStatement(
 }
 
 export function completeCardSearchRepairStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; cardId: string; expectedSearchBytes: number; expectedTermCount: number }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_query_revisions
      SET repaired_through_card_id = repair_card_id,
          repair_card_id = NULL,
@@ -331,10 +335,10 @@ export function completeCardSearchRepairStatement(
 }
 
 export function pendingSearchProjectionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   targetRevisionId: string | null,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT catalogue_revision_id, repaired_through_card_id,
             repair_card_id, repair_search_offset, repair_term_offset
      FROM catalogue_query_revisions
@@ -346,10 +350,10 @@ export function pendingSearchProjectionStatement(
 }
 
 export function searchRepairProgressStatement(
-  database: D1Database,
+  database: CatalogueStore,
   targetRevisionId: string | null,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT
        sum(CASE WHEN state = 'pending' THEN 1 ELSE 0 END) AS pending,
        sum(CASE WHEN state = 'available' THEN 1 ELSE 0 END) AS available,

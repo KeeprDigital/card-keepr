@@ -1,6 +1,7 @@
 import {
   AdministrationProblem,
   assertIngestionRunTransition,
+  type CatalogueStore,
   canonicalJson,
   canTransitionIngestionRun,
   evidenceRunIdentity,
@@ -10,6 +11,7 @@ import {
   isWorkflowInstanceNotFound,
   operationalDiagnostics,
   replayByDigest,
+  repositoryStatements,
   sha256,
   utf8,
   workflowDriver,
@@ -86,7 +88,7 @@ export type DiscoveredEvidenceRequest = {
 };
 
 export async function startEvidenceRun(
-  database: D1Database,
+  database: CatalogueStore,
   request: StartEvidenceRunRequest,
   planOrigin: SourceAdapterRegistration["origin"] = "production",
 ): Promise<Record<string, unknown>> {
@@ -107,7 +109,7 @@ export async function startEvidenceRun(
 
   const runId = await evidenceRunIdentity(request.idempotency_key);
   const startedAt = new Date().toISOString();
-  const catalogue = await database
+  const catalogue = await repositoryStatements(database)
     .prepare(
       `SELECT catalogue.current_revision_id, operation.recovery_health
        FROM catalogue_state AS catalogue
@@ -132,7 +134,7 @@ export async function startEvidenceRun(
       [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
       startedAt,
     )),
-    database
+    repositoryStatements(database)
       .prepare(
         `INSERT INTO ingestion_evidence_plans (
           ingestion_run_id, source_lineage, supported_game,
@@ -150,7 +152,7 @@ export async function startEvidenceRun(
         planOrigin,
       ),
     ...requestStatements(database, runId, plans),
-    database
+    repositoryStatements(database)
       .prepare(
         `UPDATE operation_state
          SET active_ingestion_run_id = ?
@@ -203,7 +205,7 @@ function sameEvidencePlanIntent(retainedJson: string, requestedJson: string): bo
 }
 
 export async function retryEvidenceRun(
-  database: D1Database,
+  database: CatalogueStore,
   sourceRunId: string,
   idempotencyKey: string,
   operationalRequestId: string,
@@ -230,7 +232,7 @@ export async function retryEvidenceRun(
   }
   const plans = parseEvidencePlans(source.request_plan_json);
   const firstPlan = plans[0]!;
-  const operation = await database
+  const operation = await repositoryStatements(database)
     .prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1")
     .first<{ recovery_health: string }>();
   if (operation === null) throw new Error("Operation state is unavailable.");
@@ -253,7 +255,7 @@ export async function retryEvidenceRun(
         [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
         startedAt,
       )),
-      database
+      repositoryStatements(database)
         .prepare(
           `INSERT INTO ingestion_evidence_plans (
             ingestion_run_id, source_lineage, supported_game,
@@ -271,7 +273,7 @@ export async function retryEvidenceRun(
           source.plan_origin,
         ),
       ...requestStatements(database, runId, plans),
-      database
+      repositoryStatements(database)
         .prepare(
           `UPDATE operation_state
            SET active_ingestion_run_id = ?
@@ -323,16 +325,16 @@ function assertRecoveryAvailable(recoveryHealth: string): void {
   }
 }
 
-async function throwIfRecoveryBlocked(database: D1Database): Promise<void> {
-  const operation = await database
+async function throwIfRecoveryBlocked(database: CatalogueStore): Promise<void> {
+  const operation = await repositoryStatements(database)
     .prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1")
     .first<{ recovery_health: string }>();
   if (operation === null) throw new Error("Operation state is unavailable.");
   assertRecoveryAvailable(operation.recovery_health);
 }
 
-async function throwIfAnotherRunActive(database: D1Database): Promise<void> {
-  const operation = await database
+async function throwIfAnotherRunActive(database: CatalogueStore): Promise<void> {
+  const operation = await repositoryStatements(database)
     .prepare(
       `SELECT active_ingestion_run_id
        FROM operation_state
@@ -349,11 +351,15 @@ function activeRunProblem(): AdministrationProblem {
   return new AdministrationProblem(409, "active_ingestion_run", "Another Ingestion Run is already active.");
 }
 
-function requestStatements(database: D1Database, runId: string, plans: readonly EvidencePlan[]): D1PreparedStatement[] {
+function requestStatements(
+  database: CatalogueStore,
+  runId: string,
+  plans: readonly EvidencePlan[],
+): D1PreparedStatement[] {
   return plans
     .flatMap(({ requests }) => requests)
     .map((sourceRequest, sequenceNumber) =>
-      database
+      repositoryStatements(database)
         .prepare(
           `INSERT INTO source_requests (
             ingestion_run_id, request_id, sequence_number, method, url,
@@ -396,8 +402,8 @@ export function evidencePlanForRequest(
 // Source Request identities across initial, dynamically discovered, and
 // collection-plan roles. The registered column is clamped by the global
 // emergency ceiling so no database row can authorize unbounded discovery.
-async function adapterRequestCapacity(database: D1Database, adapterVersion: string): Promise<number> {
-  const registered = await database
+async function adapterRequestCapacity(database: CatalogueStore, adapterVersion: string): Promise<number> {
+  const registered = await repositoryStatements(database)
     .prepare(
       `SELECT request_capacity FROM source_adapter_versions
        WHERE adapter_version = ?`,
@@ -443,11 +449,11 @@ export class RequestCapacityProblem extends AdministrationProblem {
 export const initialRequestCapacityGeneration = 1;
 
 export async function runRequestCapacityPolicy(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   adapterVersion: string,
 ): Promise<RunCapacityPolicy> {
-  const extension = await database
+  const extension = await repositoryStatements(database)
     .prepare(
       `SELECT capacity_generation, request_capacity
        FROM ingestion_run_capacity_extensions
@@ -522,7 +528,7 @@ const admittedLineageCountSql = `(
 )`;
 
 export async function appendDiscoveredEvidenceRequests(
-  database: D1Database,
+  database: CatalogueStore,
   run: Pick<IngestionEvidenceRow, "id" | "request_plan_json">,
   parent: EvidenceRequestRow,
   discovered: readonly DiscoveredEvidenceRequest[],
@@ -581,7 +587,7 @@ export async function appendDiscoveredEvidenceRequests(
   const requestCapacity = capacityPolicy.request_capacity;
   const planRequestIds = JSON.stringify(plan.requests.map(({ id }) => id));
   const lineageRequestPattern = `${plan.source_lineage}:%`;
-  const count = await database
+  const count = await repositoryStatements(database)
     .prepare(
       `SELECT COUNT(*) AS count
        FROM source_requests
@@ -596,7 +602,7 @@ export async function appendDiscoveredEvidenceRequests(
   const existing =
     normalized.length === 0
       ? { count: 0 }
-      : await database
+      : await repositoryStatements(database)
           .prepare(
             `SELECT COUNT(*) AS count FROM source_requests
          WHERE ingestion_run_id = ?
@@ -619,7 +625,7 @@ export async function appendDiscoveredEvidenceRequests(
     // deliberately selects json('source_discovery_too_large') — invalid JSON
     // — to abort the whole batch; the catch below maps that opaque SQLite
     // error back to the admission problem.
-    database
+    repositoryStatements(database)
       .prepare(
         `SELECT CASE WHEN ${admittedLineageCountSql} > ?5
          THEN json('source_discovery_too_large') ELSE 1 END`,
@@ -629,7 +635,7 @@ export async function appendDiscoveredEvidenceRequests(
   for (const chunk of chunks) {
     const json = JSON.stringify(chunk);
     statements.push(
-      database
+      repositoryStatements(database)
         .prepare(
           `SELECT CASE WHEN EXISTS (
            SELECT 1
@@ -648,7 +654,7 @@ export async function appendDiscoveredEvidenceRequests(
          ) THEN json('source_discovery_identity_collision') ELSE 1 END`,
         )
         .bind(json, run.id),
-      database
+      repositoryStatements(database)
         .prepare(
           `INSERT OR IGNORE INTO source_discovery_request_plans (
              ingestion_run_id, request_id, sequence_number,
@@ -671,7 +677,7 @@ export async function appendDiscoveredEvidenceRequests(
            ) AS base`,
         )
         .bind(run.id, parent.request_id, json, run.id),
-      database
+      repositoryStatements(database)
         .prepare(
           `INSERT OR IGNORE INTO source_requests (
              ingestion_run_id, request_id, sequence_number, method, url,
@@ -707,7 +713,7 @@ export async function appendDiscoveredEvidenceRequests(
   }
   const retainedResults = await database.batch<EvidenceRequestRow>(
     chunks.map((chunk) =>
-      database
+      repositoryStatements(database)
         .prepare(
           `SELECT * FROM source_requests
          WHERE ingestion_run_id = ?
@@ -748,7 +754,7 @@ export async function appendDiscoveredEvidenceRequests(
 // conservatively reported as the capacity problem instead.
 async function mappedDiscoveryAdmissionError(
   error: unknown,
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   sourceLineage: string,
   lineageRequestPattern: string,
@@ -776,17 +782,17 @@ async function mappedDiscoveryAdmissionError(
 // an in-batch admission abort: nothing was inserted, so retained state still
 // reflects the rejected admission.
 async function admittedLineageCapacityFacts(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   lineageRequestPattern: string,
   planRequestIds: string,
   proposedRequestIds: string,
 ): Promise<{ admitted: number; overflow: number } | null> {
   const [admitted, overflow] = await database.batch<{ count: number }>([
-    database
+    repositoryStatements(database)
       .prepare(`SELECT ${admittedLineageCountSql} AS count`)
       .bind(runId, lineageRequestPattern, planRequestIds, proposedRequestIds),
-    database
+    repositoryStatements(database)
       .prepare(
         `SELECT COUNT(*) AS count FROM json_each(?2) AS proposed
          WHERE NOT EXISTS (
@@ -812,13 +818,13 @@ function chunked<T>(values: readonly T[], size: number): T[][] {
 }
 
 export async function persistOfficialSourceCollectionPlan(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   discoveryObservationSetId: string,
   discoveredRequests: readonly OfficialSourceCollectionRequest[],
 ): Promise<void> {
   const run = await requiredEvidenceRun(database, runId);
-  const owner = await database
+  const owner = await repositoryStatements(database)
     .prepare(
       `SELECT snapshot.source_lineage
      FROM source_observation_sets AS observation_set
@@ -854,7 +860,7 @@ export async function persistOfficialSourceCollectionPlan(
   };
   const collectionPlanJson = canonicalJson(collectionPlan);
   const contentDigest = await sha256(utf8(collectionPlanJson));
-  const retained = await database
+  const retained = await repositoryStatements(database)
     .prepare(
       `SELECT collection_plan_json, content_digest
        FROM official_source_collection_plans
@@ -891,13 +897,13 @@ export async function persistOfficialSourceCollectionPlan(
       // Collection-plan requests consume the same per-lineage capacity as
       // dynamically discovered requests, admitted atomically inside the batch
       // through the documented json('source_discovery_too_large') abort.
-      database
+      repositoryStatements(database)
         .prepare(
           `SELECT CASE WHEN ${admittedLineageCountSql} > ?5
              THEN json('source_discovery_too_large') ELSE 1 END`,
         )
         .bind(runId, lineageRequestPattern, planRequestIds, collectionRequestIds, requestCapacity),
-      database
+      repositoryStatements(database)
         .prepare(
           `INSERT INTO official_source_collection_plans (
              ingestion_run_id, source_lineage,
@@ -915,7 +921,7 @@ export async function persistOfficialSourceCollectionPlan(
           new Date().toISOString(),
         ),
       ...discoveredRequests.map((request, index) =>
-        database
+        repositoryStatements(database)
           .prepare(
             `INSERT INTO source_requests (
                ingestion_run_id, request_id, sequence_number, method, url,
@@ -956,7 +962,7 @@ export async function persistOfficialSourceCollectionPlan(
   }
 }
 
-export async function requiredEvidenceRun(database: D1Database, runId: string): Promise<IngestionEvidenceRow> {
+export async function requiredEvidenceRun(database: CatalogueStore, runId: string): Promise<IngestionEvidenceRow> {
   assertIdentifier(runId, "run_id");
   const row = await evidenceRunByIdStatement(database, runId).first<IngestionEvidenceRow>();
   if (row === null) {
@@ -969,16 +975,19 @@ export async function requiredEvidenceRun(database: D1Database, runId: string): 
   return row;
 }
 
-async function evidenceRunByIdempotencyKey(database: D1Database, key: string): Promise<IngestionEvidenceRow | null> {
+async function evidenceRunByIdempotencyKey(
+  database: CatalogueStore,
+  key: string,
+): Promise<IngestionEvidenceRow | null> {
   return evidenceRunByIdempotencyKeyStatement(database, key).first<IngestionEvidenceRow>();
 }
 
 export async function pendingEvidenceRequests(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   hostname?: string,
 ): Promise<EvidenceRequestRow[]> {
-  const result = await database
+  const result = await repositoryStatements(database)
     .prepare(
       `SELECT * FROM source_requests
        WHERE ingestion_run_id = ? AND state IN ('pending', 'captured')
@@ -992,7 +1001,7 @@ export async function pendingEvidenceRequests(
 }
 
 export async function pendingEvidenceRequestPage(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   afterSequenceNumber: number,
   maximumSequenceNumber: number,
@@ -1001,7 +1010,7 @@ export async function pendingEvidenceRequestPage(
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
     throw new Error("Pending evidence request pages must contain 1-100 rows.");
   }
-  const result = await database
+  const result = await repositoryStatements(database)
     .prepare(
       `SELECT * FROM source_requests
        WHERE ingestion_run_id = ? AND state IN ('pending', 'captured')
@@ -1016,12 +1025,12 @@ export async function pendingEvidenceRequestPage(
 
 /** A Workflow can act only while its parent and its own scope still own the run. */
 export async function isCurrentCollectionWorkflowAttempt(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   parentWorkflowId: string,
   instanceId: string,
 ): Promise<boolean> {
-  const current = await database
+  const current = await repositoryStatements(database)
     .prepare(`
     SELECT 1 AS current FROM ingestion_evidence_plans AS plan
     JOIN ingestion_workflow_attempts AS attempt ON attempt.ingestion_run_id = plan.ingestion_run_id
@@ -1040,13 +1049,13 @@ export async function isCurrentCollectionWorkflowAttempt(
 }
 
 export async function recordWorkflowIds(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   parentWorkflowId: string,
   childWorkflowIds: readonly string[],
 ): Promise<void> {
   await database.batch([
-    database
+    repositoryStatements(database)
       .prepare(
         `UPDATE ingestion_evidence_plans
          SET parent_workflow_id = ?, child_workflow_ids_json = ?
@@ -1063,7 +1072,7 @@ export async function recordWorkflowIds(
 // same record is recomputed idempotently wherever an identity is observed
 // and INSERT OR IGNORE preserves the first recorded creation time.
 export function workflowAttemptStatements(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   workflowInstanceIds: readonly string[],
   expectedParentId: string | null = null,
@@ -1071,7 +1080,7 @@ export function workflowAttemptStatements(
   const createdAt = new Date().toISOString();
   return workflowInstanceIds.map((instanceId) => {
     const record = workflowAttemptRecord(runId, instanceId);
-    return database
+    return repositoryStatements(database)
       .prepare(
         `INSERT OR IGNORE INTO ingestion_workflow_attempts (
            ingestion_run_id, workflow_kind, base_workflow_id,
@@ -1100,7 +1109,7 @@ export function workflowAttemptStatements(
 // The host is extracted from the normalized request URL and compared for
 // equality (evidence requests are plain https URLs without ports).
 export async function failActiveEvidenceRequestsForWorkflowExhaustion(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   shard: Readonly<{
     hostname: string;
@@ -1108,7 +1117,7 @@ export async function failActiveEvidenceRequestsForWorkflowExhaustion(
     maximumSequenceNumber: number;
   }>,
 ): Promise<void> {
-  await database
+  await repositoryStatements(database)
     .prepare(
       `UPDATE source_requests
        SET state = 'failed', failure_code = 'source_workflow_retries_exhausted'
@@ -1127,14 +1136,14 @@ export async function failActiveEvidenceRequestsForWorkflowExhaustion(
 // Request stays 'captured' so the overflow batch can be derived again from
 // its retained Source Snapshot without another Official Source fetch.
 export async function pauseEvidenceRunForRequestCapacity(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   parentRequestId: string,
   problem: RequestCapacityProblem,
 ): Promise<void> {
   const pausedAt = new Date().toISOString();
   await database.batch([
-    database
+    repositoryStatements(database)
       .prepare(
         `UPDATE ingestion_runs
          SET state = 'paused',
@@ -1149,7 +1158,7 @@ export async function pauseEvidenceRunForRequestCapacity(
     // NOT EXISTS rather than INSERT OR IGNORE so an unexpected constraint
     // failure (a facts-computation bug violating the table CHECKs) aborts
     // loudly instead of silently pausing without a record.
-    database
+    repositoryStatements(database)
       .prepare(
         `INSERT INTO ingestion_run_capacity_pauses (
            ingestion_run_id, capacity_generation, pause_reason, paused_at,
@@ -1205,7 +1214,7 @@ export type RetryExhaustionFacts = {
 // The statements are returned unexecuted so callers can commit them in the
 // same atomic batch that records the final failed attempt.
 export function retryExhaustionPauseStatements(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   facts: RetryExhaustionFacts,
 ): D1PreparedStatement[] {
@@ -1214,7 +1223,7 @@ export function retryExhaustionPauseStatements(
       ? "source_storage_retries_exhausted"
       : "source_transport_retries_exhausted";
   return [
-    database
+    repositoryStatements(database)
       .prepare(
         `UPDATE ingestion_runs
          SET state = 'paused',
@@ -1231,7 +1240,7 @@ export function retryExhaustionPauseStatements(
     // instead of silently pausing without a record. When the run already
     // reached a terminal state through a sibling request, both statements
     // deliberately record nothing: the terminal outcome stands.
-    database
+    repositoryStatements(database)
       .prepare(
         `INSERT INTO ingestion_run_retry_pauses (
            ingestion_run_id, request_id, retry_generation, pause_reason,
@@ -1277,7 +1286,7 @@ export type WorkflowRecoveryFacts = {
 // the safe status that classified it, and the deterministic last-progress
 // time the classification was derived from.
 export async function pauseEvidenceRunForWorkflowRecovery(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   facts: WorkflowRecoveryFacts,
 ): Promise<void> {
@@ -1286,7 +1295,7 @@ export async function pauseEvidenceRunForWorkflowRecovery(
 
 // The two guarded statements every Workflow Pause applies atomically.
 function workflowPauseStatements(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   facts: WorkflowRecoveryFacts,
   pausedAt: string,
@@ -1296,7 +1305,7 @@ function workflowPauseStatements(
     // parent: a concurrent recovery that already superseded it rebound the
     // identity, so a stale classification of the old instance must not
     // re-pause the freshly recovered run.
-    database
+    repositoryStatements(database)
       .prepare(
         `UPDATE ingestion_runs
          SET state = 'paused',
@@ -1313,7 +1322,7 @@ function workflowPauseStatements(
     // run is paused by the statement above (or already was), and one
     // immutable record exists per abandoned Workflow instance. When the run
     // already reached another state, both statements record nothing.
-    database
+    repositoryStatements(database)
       .prepare(
         `INSERT INTO ingestion_run_workflow_pauses (
            ingestion_run_id, workflow_instance_id, pause_reason,
@@ -1363,7 +1372,7 @@ const collectionPauseContract = "card-keepr-collection-pause@1";
 // retained response replays without applying anything, and a key reused for
 // another request is refused. Only a collecting run can be paused.
 export async function pauseEvidenceRunOnOwnerRequest(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   request: CollectionPauseRequest,
 ): Promise<CollectionPauseOutcome> {
@@ -1408,7 +1417,7 @@ export async function pauseEvidenceRunOnOwnerRequest(
       // The retained response exists only when this request's own pause
       // record does, so a request that lost the race records no outcome and
       // re-reads the winner's instead.
-      database
+      repositoryStatements(database)
         .prepare(
           `INSERT INTO administration_idempotency (
              idempotency_key, operation, request_json, response_json,
@@ -1456,13 +1465,13 @@ function ingestionRunNotCollectingForPause(): AdministrationProblem {
 }
 
 async function collectionPauseReplay(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
   requestJson: string,
 ): Promise<Record<string, unknown> | null> {
   const retained = await replayByDigest({
     lookup: () =>
-      database
+      repositoryStatements(database)
         .prepare(
           `SELECT operation, request_json, response_json
        FROM administration_idempotency WHERE idempotency_key = ?`,
@@ -1482,9 +1491,12 @@ async function collectionPauseReplay(
 // never log arrival time — plus the persisted wait deadlines that must not
 // be misread as silence (the host pacing table's next-request deadline and
 // the newest scheduled Retry-After deadline).
-export async function collectionProgressFacts(database: D1Database, runId: string): Promise<CollectionProgressFacts> {
+export async function collectionProgressFacts(
+  database: CatalogueStore,
+  runId: string,
+): Promise<CollectionProgressFacts> {
   const [progress, pacing, retry] = await Promise.all([
-    database
+    repositoryStatements(database)
       .prepare(
         `SELECT
            (SELECT MAX(transitioned_at) FROM ingestion_run_transitions
@@ -1525,7 +1537,7 @@ export async function collectionProgressFacts(database: D1Database, runId: strin
     // residual over-approximation is bounded by the pacing interval cap plus
     // jitter — it can only delay a stall verdict briefly, never manufacture
     // one.
-    database
+    repositoryStatements(database)
       .prepare(
         `SELECT MAX(pacing.next_request_not_before) AS pacing_deadline_at
          FROM source_host_pacing AS pacing
@@ -1538,7 +1550,7 @@ export async function collectionProgressFacts(database: D1Database, runId: strin
       )
       .bind(runId)
       .first<{ pacing_deadline_at: string | null }>(),
-    database
+    repositoryStatements(database)
       .prepare(
         `SELECT MAX(
            (julianday(completed_at) - 2440587.5) * 86400000.0 + retry_after_ms
@@ -1569,8 +1581,8 @@ export async function collectionProgressFacts(database: D1Database, runId: strin
 // no-op once the run collects again, and the identity is derived from the
 // count of recorded paused -> collecting transitions, so a replay reassigns
 // the same value.
-export async function resumePausedEvidenceRun(database: D1Database, runId: string): Promise<void> {
-  const resumed = await database
+export async function resumePausedEvidenceRun(database: CatalogueStore, runId: string): Promise<void> {
+  const resumed = await repositoryStatements(database)
     .prepare(
       `SELECT COUNT(*) AS count FROM ingestion_run_transitions
        WHERE ingestion_run_id = ?
@@ -1588,7 +1600,7 @@ export async function resumePausedEvidenceRun(database: D1Database, runId: strin
     // captureAttemptsPerRetryGeneration attempts. Requests that still have
     // budget (every request after a capacity pause) are untouched, which
     // also makes a replayed resume a natural no-op.
-    database
+    repositoryStatements(database)
       .prepare(
         `UPDATE source_requests
          SET retry_generation = retry_generation + 1
@@ -1602,7 +1614,7 @@ export async function resumePausedEvidenceRun(database: D1Database, runId: strin
            ) >= retry_generation * ?2`,
       )
       .bind(runId, captureAttemptsPerRetryGeneration),
-    database
+    repositoryStatements(database)
       .prepare(
         `UPDATE ingestion_runs
          SET state = 'collecting',
@@ -1617,7 +1629,7 @@ export async function resumePausedEvidenceRun(database: D1Database, runId: strin
     // derived from: a concurrent resume that lost the paused -> collecting
     // race derived a later identity, records nothing here, and re-reads the
     // winner's identity instead of binding a competing Workflow Attempt.
-    database
+    repositoryStatements(database)
       .prepare(
         `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?1
          WHERE ingestion_run_id = ?2
@@ -1636,7 +1648,7 @@ export async function resumePausedEvidenceRun(database: D1Database, runId: strin
     // The Workflow Attempt row appends atomically with the binding above and
     // under the same guard, so exactly one new current parent attempt exists
     // per recorded resume.
-    database
+    repositoryStatements(database)
       .prepare(
         `INSERT OR IGNORE INTO ingestion_workflow_attempts (
            ingestion_run_id, workflow_kind, base_workflow_id,
@@ -1683,7 +1695,7 @@ function requiredCapacityInteger(value: unknown, code: string, field: string): n
 // immutable extension row doubles as the idempotency record, so an exact
 // replay returns the original response without applying another extension.
 export async function extendRunRequestCapacity(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   request: CapacityExtensionRequest,
 ): Promise<Record<string, unknown>> {
@@ -1754,7 +1766,7 @@ export async function extendRunRequestCapacity(
   };
   let outcome: D1Result | null = null;
   try {
-    outcome = await database
+    outcome = await repositoryStatements(database)
       .prepare(
         `INSERT INTO ingestion_run_capacity_extensions (
            ingestion_run_id, capacity_generation, previous_request_capacity,
@@ -1835,13 +1847,13 @@ function assertExpectedCapacityPolicy(
 }
 
 async function capacityExtensionReplay(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
   requestDigest: string,
 ): Promise<Record<string, unknown> | null> {
   const retained = await replayByDigest({
     lookup: () =>
-      database
+      repositoryStatements(database)
         .prepare(
           `SELECT request_digest, response_json
        FROM ingestion_run_capacity_extensions
@@ -1922,9 +1934,9 @@ type WorkflowPauseRow = {
 // closed shape: correlation identifiers, bounded counters, and machine codes
 // only, so the owner-facing status surface stays free of request headers,
 // payloads, and credentials.
-export async function currentPause(database: D1Database, runId: string): Promise<CurrentPause | null> {
+export async function currentPause(database: CatalogueStore, runId: string): Promise<CurrentPause | null> {
   const [capacity, retry, workflow] = await Promise.all([
-    database
+    repositoryStatements(database)
       .prepare(
         `SELECT * FROM ingestion_run_capacity_pauses
          WHERE ingestion_run_id = ?
@@ -1932,7 +1944,7 @@ export async function currentPause(database: D1Database, runId: string): Promise
       )
       .bind(runId)
       .first<CapacityPauseRow>(),
-    database
+    repositoryStatements(database)
       .prepare(
         `SELECT * FROM ingestion_run_retry_pauses
          WHERE ingestion_run_id = ?
@@ -1940,7 +1952,7 @@ export async function currentPause(database: D1Database, runId: string): Promise
       )
       .bind(runId)
       .first<RetryPauseRow>(),
-    database
+    repositoryStatements(database)
       .prepare(
         `SELECT * FROM ingestion_run_workflow_pauses
          WHERE ingestion_run_id = ?
@@ -1993,7 +2005,7 @@ type TerminationRow = {
 // administration layer after it has fenced late Workflow work, so the
 // retained response records only the decision, never the release.
 export async function terminateEvidenceRun(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   request: CollectionTerminationRequest,
 ): Promise<Record<string, unknown>> {
@@ -2033,7 +2045,7 @@ export async function terminateEvidenceRun(
   let transitioned = false;
   try {
     const outcome = await database.batch([
-      database
+      repositoryStatements(database)
         .prepare(
           `INSERT INTO ingestion_run_terminations (
              ingestion_run_id, pause_reason, paused_at, terminated_at,
@@ -2053,7 +2065,7 @@ export async function terminateEvidenceRun(
           requestDigest,
           canonicalJson(response),
         ),
-      database
+      repositoryStatements(database)
         .prepare(
           `UPDATE ingestion_runs
            SET state = 'failed', terminal_at = ?2, failure_code = ?3,
@@ -2066,7 +2078,7 @@ export async function terminateEvidenceRun(
              )`,
         )
         .bind(runId, terminatedAt, ingestionRunTerminatedFailureCode, request.idempotency_key),
-      database
+      repositoryStatements(database)
         .prepare(
           `UPDATE ingestion_evidence_plans SET failure_code = ?2
            WHERE ingestion_run_id = ?1
@@ -2107,13 +2119,13 @@ function ingestionRunNotPausedForTermination(): AdministrationProblem {
 }
 
 async function terminationReplay(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
   requestDigest: string,
 ): Promise<Record<string, unknown> | null> {
   const retained = await replayByDigest({
     lookup: () =>
-      database
+      repositoryStatements(database)
         .prepare(
           `SELECT request_digest, response_json
          FROM ingestion_run_terminations
@@ -2133,8 +2145,8 @@ async function terminationReplay(
 // whether the run holds it no longer. Guarded on the terminal owner decision
 // so it can never release a live run, and idempotent so a replayed
 // termination re-runs it harmlessly.
-export async function releaseTerminatedEvidenceRun(database: D1Database, runId: string): Promise<boolean> {
-  await database
+export async function releaseTerminatedEvidenceRun(database: CatalogueStore, runId: string): Promise<boolean> {
+  await repositoryStatements(database)
     .prepare(
       `UPDATE operation_state SET active_ingestion_run_id = NULL
        WHERE singleton = 1 AND active_ingestion_run_id = ?1
@@ -2145,7 +2157,7 @@ export async function releaseTerminatedEvidenceRun(database: D1Database, runId: 
     )
     .bind(runId, ingestionRunTerminatedFailureCode)
     .run();
-  const operation = await database
+  const operation = await repositoryStatements(database)
     .prepare("SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1")
     .first<{ active_ingestion_run_id: string | null }>();
   return operation !== null && operation.active_ingestion_run_id !== runId;
@@ -2154,10 +2166,10 @@ export async function releaseTerminatedEvidenceRun(database: D1Database, runId: 
 // The retained owner decision of a terminated run, or null while the run was
 // never terminated.
 export async function terminationDocument(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
 ): Promise<Record<string, unknown> | null> {
-  const row = await database
+  const row = await repositoryStatements(database)
     .prepare(
       `SELECT pause_reason, paused_at, terminated_at
        FROM ingestion_run_terminations WHERE ingestion_run_id = ?`,
@@ -2177,7 +2189,7 @@ export async function terminationDocument(
 // The Workflow instance identities termination must fence: the current
 // parent attempt and every current hostname-shard child attempt.
 export async function currentCollectionWorkflowIds(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
 ): Promise<{ parent: string[]; child: string[] }> {
   const run = await requiredEvidenceRun(database, runId);
@@ -2194,14 +2206,14 @@ export async function currentCollectionWorkflowIds(
   };
 }
 
-export async function finalizeEvidenceRun(database: D1Database, runId: string): Promise<void> {
+export async function finalizeEvidenceRun(database: CatalogueStore, runId: string): Promise<void> {
   // A Printing Image that failed under one of its tolerated codes (exhausted
   // transport retries, or a terminal outcome such as a missing or redirected
   // file) is recorded on its own request, reported by inspection, and
   // carried into reconciliation as an explicit gap, but it never fails the
   // run. Every other failed request is missing catalogue facts.
   const toleratedImageCodes = JSON.stringify(toleratedPrintingImageFailureCodes);
-  const counts = await database
+  const counts = await repositoryStatements(database)
     .prepare(
       `SELECT
         SUM(CASE WHEN state IN ('pending', 'captured') THEN 1 ELSE 0 END) AS active,
@@ -2217,7 +2229,7 @@ export async function finalizeEvidenceRun(database: D1Database, runId: string): 
   const completedAt = new Date().toISOString();
   const lifecycleV2 = await supportsLifecycleV2(database);
   if ((counts.failed ?? 0) > 0) {
-    const failure = await database
+    const failure = await repositoryStatements(database)
       .prepare(
         `SELECT failure_code FROM source_requests
          WHERE ingestion_run_id = ?1 AND state = 'failed'
@@ -2230,7 +2242,7 @@ export async function finalizeEvidenceRun(database: D1Database, runId: string): 
     const failureCode = failure?.failure_code ?? "source_evidence_failed";
     await database.batch([
       lifecycleV2
-        ? database
+        ? repositoryStatements(database)
             .prepare(
               `UPDATE ingestion_runs
                SET state = 'failed', terminal_at = ?, failure_code = ?,
@@ -2239,7 +2251,7 @@ export async function finalizeEvidenceRun(database: D1Database, runId: string): 
                WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "failed")}`,
             )
             .bind(completedAt, failureCode, runId)
-        : database
+        : repositoryStatements(database)
             .prepare(
               `UPDATE ingestion_runs
                SET state = 'failed', terminal_at = ?
@@ -2249,14 +2261,14 @@ export async function finalizeEvidenceRun(database: D1Database, runId: string): 
       // Completion is recorded once: a superseded parent attempt that wakes
       // from its barrier sleep after the run completed under a later attempt
       // must not move the retained completion facts.
-      database
+      repositoryStatements(database)
         .prepare(
           `UPDATE ingestion_evidence_plans
            SET collection_completed_at = ?, failure_code = ?
            WHERE ingestion_run_id = ? AND collection_completed_at IS NULL`,
         )
         .bind(completedAt, failureCode, runId),
-      database
+      repositoryStatements(database)
         .prepare(
           `UPDATE operation_state SET active_ingestion_run_id = NULL
            WHERE singleton = 1 AND active_ingestion_run_id = ?`,
@@ -2267,7 +2279,7 @@ export async function finalizeEvidenceRun(database: D1Database, runId: string): 
   }
   await database.batch([
     lifecycleV2
-      ? database
+      ? repositoryStatements(database)
           .prepare(
             `UPDATE ingestion_runs
              SET state = 'parsing',
@@ -2276,13 +2288,13 @@ export async function finalizeEvidenceRun(database: D1Database, runId: string): 
              WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "parsing")}`,
           )
           .bind(runId)
-      : database
+      : repositoryStatements(database)
           .prepare(
             `UPDATE ingestion_runs SET state = 'parsing'
              WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "parsing")}`,
           )
           .bind(runId),
-    database
+    repositoryStatements(database)
       .prepare(
         `UPDATE ingestion_evidence_plans
          SET collection_completed_at = ?, failure_code = NULL
@@ -2307,7 +2319,7 @@ const defaultPacingConfiguration: PacingConfiguration = {
 };
 
 export async function showEvidenceRun(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   options: EvidenceInspectionOptions = {},
 ): Promise<Record<string, unknown>> {
@@ -2315,7 +2327,7 @@ export async function showEvidenceRun(
   const evidencePlans = parseEvidencePlans(run.request_plan_json);
   const [detail, collectionPlans, curatedSet, pause, termination, workflowAttempts, progress] = await Promise.all([
     boundedEvidenceDetail(database, runId),
-    database
+    repositoryStatements(database)
       .prepare(
         `SELECT source_lineage, discovery_observation_set_id, contract,
                 collection_plan_json, content_digest, created_at
@@ -2474,8 +2486,8 @@ type WorkflowAttemptRow = {
   last_phase?: string | null;
 };
 
-async function workflowAttemptRows(database: D1Database, runId: string): Promise<WorkflowAttemptRow[]> {
-  const rows = await database
+async function workflowAttemptRows(database: CatalogueStore, runId: string): Promise<WorkflowAttemptRow[]> {
+  const rows = await repositoryStatements(database)
     .prepare(
       `SELECT workflow_kind, base_workflow_id, attempt_number,
               workflow_instance_id, created_at,
@@ -2686,11 +2698,16 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function ingestionRunInsert(database: D1Database, input: IngestionRunInsertInput): Promise<D1PreparedStatement> {
+async function ingestionRunInsert(
+  database: CatalogueStore,
+  input: IngestionRunInsertInput,
+): Promise<D1PreparedStatement> {
   return ingestionRunInsertStatement(database, input, await supportsLifecycleV2(database));
 }
 
-async function supportsLifecycleV2(database: D1Database): Promise<boolean> {
-  const columns = await database.prepare("PRAGMA table_info(ingestion_runs)").all<{ name: string }>();
+async function supportsLifecycleV2(database: CatalogueStore): Promise<boolean> {
+  const columns = await repositoryStatements(database)
+    .prepare("PRAGMA table_info(ingestion_runs)")
+    .all<{ name: string }>();
   return columns.results.some((column) => column.name === "progress_json");
 }

@@ -1,4 +1,10 @@
-import { type CatalogueCard, type CataloguePrinting, canonicalJson } from "../shared";
+import {
+  type CatalogueCard,
+  type CataloguePrinting,
+  type CatalogueStore,
+  canonicalJson,
+  repositoryStatements,
+} from "../shared";
 import { compatibilityFields, isGundamEnglishLineage, type PrintingCompatibility } from "./reconciliation-model";
 
 export type ReconciledCardRow = {
@@ -25,14 +31,14 @@ export type ReconciledPrintingRow = PrintingCompatibility & {
 const compatibilityPredicate = compatibilityFields.map((field) => `${field} IS ?`).join(" AND ");
 
 export async function existingCard(
-  database: D1Database,
+  database: CatalogueStore,
   input: {
     supportedGame: string;
     identityKind: string;
     identityValue: string;
   },
 ): Promise<ReconciledCardRow | null> {
-  return database
+  return repositoryStatements(database)
     .prepare(
       `SELECT * FROM reconciled_cards
        WHERE supported_game = ?
@@ -44,11 +50,11 @@ export async function existingCard(
 }
 
 export async function compatiblePrintings(
-  database: D1Database,
+  database: CatalogueStore,
   compatibility: PrintingCompatibility,
 ): Promise<ReconciledPrintingRow[]> {
   const crossLocale = isGundamEnglishLineage(compatibility.source_lineage);
-  const result = await database
+  const result = await repositoryStatements(database)
     .prepare(
       crossLocale
         ? `SELECT * FROM reconciled_printings
@@ -79,10 +85,10 @@ export async function compatiblePrintings(
 }
 
 export async function printingsWithAppearance(
-  database: D1Database,
+  database: CatalogueStore,
   compatibility: PrintingCompatibility,
 ): Promise<ReconciledPrintingRow[]> {
-  const rows = await database
+  const rows = await repositoryStatements(database)
     .prepare(
       `SELECT * FROM reconciled_printings
        WHERE card_id = ?
@@ -96,12 +102,12 @@ export async function printingsWithAppearance(
 }
 
 export async function printingAtLocatorVariant(
-  database: D1Database,
+  database: CatalogueStore,
   sourceLineage: string,
   locator: string,
   variantKey: string | null,
 ): Promise<ReconciledPrintingRow | null> {
-  const row = await database
+  const row = await repositoryStatements(database)
     .prepare(
       `SELECT printing.*
        FROM reconciled_printing_locators AS locator
@@ -119,11 +125,11 @@ export async function printingAtLocatorVariant(
 }
 
 export async function printingsAtLocator(
-  database: D1Database,
+  database: CatalogueStore,
   sourceLineage: string,
   locator: string,
 ): Promise<ReconciledPrintingRow[]> {
-  const rows = await database
+  const rows = await repositoryStatements(database)
     .prepare(
       `SELECT printing.*
        FROM reconciled_printing_locators AS locator
@@ -140,14 +146,14 @@ export async function printingsAtLocator(
   return rows.results;
 }
 
-export async function gundamPrintingLineages(database: D1Database): Promise<
+export async function gundamPrintingLineages(database: CatalogueStore): Promise<
   {
     printing_id: string;
     source_lineage: "gundam-en-asia" | "gundam-en-us";
     current: number;
   }[]
 > {
-  const rows = await database
+  const rows = await repositoryStatements(database)
     .prepare(
       `SELECT printing_id, source_lineage, MAX(current) AS current
        FROM reconciled_printing_locators
@@ -163,14 +169,14 @@ export async function gundamPrintingLineages(database: D1Database): Promise<
   return rows.results;
 }
 
-export async function gundamCardLineages(database: D1Database): Promise<
+export async function gundamCardLineages(database: CatalogueStore): Promise<
   {
     card_id: string;
     source_lineage: "gundam-en-asia" | "gundam-en-us";
     current: number;
   }[]
 > {
-  const rows = await database
+  const rows = await repositoryStatements(database)
     .prepare(
       `SELECT card_id, source_lineage, MAX(current) AS current
        FROM reconciled_card_observations
@@ -186,13 +192,13 @@ export async function gundamCardLineages(database: D1Database): Promise<
   return rows.results;
 }
 
-export async function gundamPrintingProductMemberships(database: D1Database): Promise<
+export async function gundamPrintingProductMemberships(database: CatalogueStore): Promise<
   {
     printing_id: string;
     relationship_value: string;
   }[]
 > {
-  const rows = await database
+  const rows = await repositoryStatements(database)
     .prepare(
       `SELECT DISTINCT printing_id, relationship_value
        FROM reconciled_printing_memberships
@@ -207,11 +213,11 @@ export async function gundamPrintingProductMemberships(database: D1Database): Pr
 }
 
 export async function hasPrintingLocatorFromLineage(
-  database: D1Database,
+  database: CatalogueStore,
   printingId: string,
   sourceLineage: string,
 ): Promise<boolean> {
-  const row = await database
+  const row = await repositoryStatements(database)
     .prepare(
       `SELECT printing_id
        FROM reconciled_printing_locators
@@ -224,7 +230,7 @@ export async function hasPrintingLocatorFromLineage(
 }
 
 export async function canonicalCardConflict(
-  database: D1Database,
+  database: CatalogueStore,
   cardId: string,
   proposed: Omit<CatalogueCard, "id">,
   sourceLineage: string,
@@ -232,7 +238,7 @@ export async function canonicalCardConflict(
     effectiveRulesText: false,
   },
 ): Promise<string | null> {
-  const row = await database
+  const row = await repositoryStatements(database)
     .prepare(
       `SELECT card.document_json
        FROM catalogue_state AS state
@@ -263,7 +269,7 @@ export async function canonicalCardConflict(
   ) {
     return null;
   }
-  const authorities = await database
+  const authorities = await repositoryStatements(database)
     .prepare(
       `SELECT DISTINCT source_lineage
        FROM reconciled_card_observations
@@ -289,12 +295,12 @@ export async function canonicalCardConflict(
 type PrintingFacts = Omit<CataloguePrinting, "id" | "card_id">;
 
 export async function canonicalPrintingConflict(
-  database: D1Database,
+  database: CatalogueStore,
   printingId: string,
   proposed: PrintingFacts,
   sourceLineage: string,
 ): Promise<string | null> {
-  const row = await database
+  const row = await repositoryStatements(database)
     .prepare(
       `SELECT printing.document_json
        FROM catalogue_state AS state
@@ -314,7 +320,7 @@ export async function canonicalPrintingConflict(
   if (printingFactsFormattingEquivalent(currentCanonical, proposed)) {
     return null;
   }
-  const authorities = await database
+  const authorities = await repositoryStatements(database)
     .prepare(
       `SELECT DISTINCT source_lineage
        FROM reconciled_printing_locators
@@ -390,11 +396,11 @@ function compatibilityValues(compatibility: PrintingCompatibility): (string | nu
 export type ReconciliationTerminalResultRow = { result_json: string };
 
 export function terminalResultInsertion(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   result: Record<string, unknown>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(
       `INSERT OR IGNORE INTO reconciliation_terminal_results (
          ingestion_run_id, result_json
@@ -403,8 +409,8 @@ export function terminalResultInsertion(
     .bind(runId, canonicalJson(result));
 }
 
-export function terminalResultStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function terminalResultStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(
       `SELECT result_json
        FROM reconciliation_terminal_results

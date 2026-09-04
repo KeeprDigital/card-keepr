@@ -1,3 +1,4 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 export type CatalogueRevisionWindowRow = { revision_id: string; depth: number };
 export type CatalogueRevisionTargetRow = {
   current_revision_id: string;
@@ -24,8 +25,8 @@ const repairableCatalogueRevisionCte = `WITH RECURSIVE repairable_catalogue_revi
      WHERE repairable_catalogue_revisions.depth < 2
    )`;
 
-export function repairableCatalogueRevisionWindowStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(
+export function repairableCatalogueRevisionWindowStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(
     `${repairableCatalogueRevisionCte}
        SELECT revision_id, depth
        FROM repairable_catalogue_revisions
@@ -34,10 +35,10 @@ export function repairableCatalogueRevisionWindowStatement(database: D1Database)
 }
 
 export function repairableCatalogueRevisionTargetStatement(
-  database: D1Database,
+  database: CatalogueStore,
   targetRevisionId: string,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(
       `${repairableCatalogueRevisionCte}
        SELECT state.current_revision_id,

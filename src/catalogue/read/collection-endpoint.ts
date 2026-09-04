@@ -1,7 +1,7 @@
-import { collectionRevisionStatement } from "./collection-revision-repository";
 import { ifNoneMatchMatches } from "../../http/conditional-request";
 import { type PublicBase, publicUrl } from "../../http/public-base";
-import { canonicalJson, sha256Text } from "../shared";
+import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
+import { collectionRevisionStatement } from "./collection-revision-repository";
 
 export class ReadProblem extends Error {
   readonly detail: string;
@@ -88,7 +88,7 @@ export function decodeCursor(value: string): unknown {
 }
 
 export async function pinRevision(
-  database: D1Database,
+  database: CatalogueStore,
   cursorRevision: string | null,
   route: string,
   base: PublicBase,

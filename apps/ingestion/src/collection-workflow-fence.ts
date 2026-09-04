@@ -1,5 +1,6 @@
 import type { WorkflowStep } from "cloudflare:workers";
 import { NonRetryableError } from "cloudflare:workflows";
+import type { CatalogueStore } from "../../../src/catalogue/shared";
 import { isCurrentCollectionWorkflowAttempt } from "../../../src/catalogue/source-evidence";
 
 const supersededName = "SupersededCollectionWorkflowAttempt";
@@ -7,7 +8,7 @@ const supersededName = "SupersededCollectionWorkflowAttempt";
 /** A replayed step result is never permission for a superseded attempt to act. */
 export function fenceCollectionWorkflow(
   step: WorkflowStep,
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   parentId: string,
   instanceId: string,

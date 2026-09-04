@@ -137,6 +137,18 @@ function report(file, specifier, rule, detail) {
 for (const file of scannedFiles) {
   const source = readFileSync(file, "utf8");
   const importer = locate(file);
+  if (importer.kind === "cluster") {
+    const repository = file.endsWith("-repository.ts");
+    if (/\bD1Database\b/u.test(source) && !file.endsWith("/catalogue-store-repository.ts")) {
+      violations.push(`${relative(root, file)} violates catalogue-data-port: use CatalogueStore instead of D1Database`);
+    }
+    if (!repository && /\.prepare\s*\(/u.test(source)) {
+      violations.push(`${relative(root, file)} violates repository-sql: prepare statements only in repositories`);
+    }
+    if (!repository && !isClusterIndex(file) && /\brepositoryStatements\b/u.test(source)) {
+      violations.push(`${relative(root, file)} violates repository-capability: domain modules cannot unwrap the store`);
+    }
+  }
   for (const match of source.matchAll(importPattern)) {
     const specifier = match[3];
     edges += 1;

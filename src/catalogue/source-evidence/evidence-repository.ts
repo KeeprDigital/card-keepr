@@ -1,5 +1,6 @@
-import { canonicalJson } from "../shared";
-export type { SnapshotRow, ObservationSetRow } from "./source-evidence-repository-types";
+import { type CatalogueStore, canonicalJson, repositoryStatements } from "../shared";
+
+export type { ObservationSetRow, SnapshotRow } from "./source-evidence-repository-types";
 
 export type AttemptOutcome =
   | "success"
@@ -25,8 +26,8 @@ export type AttemptInput = {
   diagnostic: string | null;
 };
 
-export function attemptStatement(database: D1Database, attempt: AttemptInput): D1PreparedStatement {
-  return database
+export function attemptStatement(database: CatalogueStore, attempt: AttemptInput): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(
       `INSERT OR IGNORE INTO source_fetch_attempts (
         id, ingestion_run_id, request_id, attempt_number, requested_at,
@@ -49,10 +50,12 @@ export function attemptStatement(database: D1Database, attempt: AttemptInput): D
     );
 }
 
-export function sourceSnapshotStatement(database: D1Database, snapshotId: string): D1PreparedStatement {
-  return database.prepare("SELECT * FROM source_snapshots WHERE id = ?").bind(snapshotId);
+export function sourceSnapshotStatement(database: CatalogueStore, snapshotId: string): D1PreparedStatement {
+  return repositoryStatements(database).prepare("SELECT * FROM source_snapshots WHERE id = ?").bind(snapshotId);
 }
 
-export function sourceObservationSetStatement(database: D1Database, observationSetId: string): D1PreparedStatement {
-  return database.prepare("SELECT * FROM source_observation_sets WHERE id = ?").bind(observationSetId);
+export function sourceObservationSetStatement(database: CatalogueStore, observationSetId: string): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare("SELECT * FROM source_observation_sets WHERE id = ?")
+    .bind(observationSetId);
 }

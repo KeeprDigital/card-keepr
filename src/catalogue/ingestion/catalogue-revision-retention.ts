@@ -1,16 +1,19 @@
+import type { CatalogueStore } from "../shared";
 import {
-  type CatalogueRevisionWindowRow,
   type CatalogueRevisionTargetRow,
-  repairableCatalogueRevisionWindowStatement,
+  type CatalogueRevisionWindowRow,
   repairableCatalogueRevisionTargetStatement,
+  repairableCatalogueRevisionWindowStatement,
 } from "./catalogue-revision-repository";
 
-export function repairableCatalogueRevisionWindow(database: D1Database): Promise<D1Result<CatalogueRevisionWindowRow>> {
+export function repairableCatalogueRevisionWindow(
+  database: CatalogueStore,
+): Promise<D1Result<CatalogueRevisionWindowRow>> {
   return repairableCatalogueRevisionWindowStatement(database).all<CatalogueRevisionWindowRow>();
 }
 
 export function repairableCatalogueRevisionTarget(
-  database: D1Database,
+  database: CatalogueStore,
   targetRevisionId: string,
 ): Promise<CatalogueRevisionTargetRow | null> {
   return repairableCatalogueRevisionTargetStatement(database, targetRevisionId).first<CatalogueRevisionTargetRow>();

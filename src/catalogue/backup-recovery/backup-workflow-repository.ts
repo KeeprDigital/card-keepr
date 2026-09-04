@@ -1,8 +1,9 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 export function backupWorkflowStartStateStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ idempotency_key: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT catalogue.current_revision_id,
               operation.active_ingestion_run_id,
               operation.recovery_health,
@@ -18,7 +19,7 @@ export function backupWorkflowStartStateStatement(
 }
 
 export function insertBackupWorkflowRequestStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     idempotency_key: string;
     expected_current_revision_id: string;
@@ -29,7 +30,7 @@ export function insertBackupWorkflowRequestStatement(
     linkedAttemptId: string | null;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT OR IGNORE INTO catalogue_backup_workflow_requests (
          idempotency_key, expected_current_revision_id, request_json,
          workflow_params_json, workflow_instance_id, observed_at,
@@ -47,20 +48,20 @@ export function insertBackupWorkflowRequestStatement(
 }
 
 export function linkedBackupWorkflowRequestStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ linkedAttemptId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT idempotency_key FROM catalogue_backup_workflow_requests
          WHERE linked_attempt_id = ? LIMIT 1`)
     .bind(input.linkedAttemptId);
 }
 
 export function retainedBackupOutcomeStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ idempotency_key: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT attempt.state, attempt.catalogue_revision_id, attempt.object_key,
             attempt.d1_bookmark, attempt.failure_code, attempt.failure_detail,
             attempt.content_sha256, attempt.manifest_key,
@@ -74,10 +75,10 @@ export function retainedBackupOutcomeStatement(
 }
 
 export function backupWorkflowRequestStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ idempotencyKey: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT idempotency_key, expected_current_revision_id, request_json,
             workflow_params_json, workflow_instance_id, observed_at,
             linked_attempt_id

@@ -181,7 +181,11 @@ reconciliation publication, Workflow progress, and the Card/Printing query
 projections. Existing cluster entrypoints stay unchanged. Domain callers own
 execution and batch composition; the repositories prepare statements and bind
 closed, typed inputs. Dynamic table choices are selected inside the repository.
-The raw D1 argument is retained until the #105 port contraction.
+#105 contracts that argument to `CatalogueStore`: a branded port exposing atomic
+batch execution, without SQL preparation or other D1 operations. Worker
+composition adapts the binding; only repository factories can request the
+statement-preparation capability. The boundary gate rejects raw D1 types and
+repository capability access in domain modules.
 Lifecycle capability detection stays in the Ingestion Run caller; the repository
 receives that decision explicitly. Curated lifecycle batches retain statement
 ordering, event-version predicates, and append-only audit/idempotency writes.

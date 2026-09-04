@@ -1,7 +1,8 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
 export function exportCollectionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     revisionId: string;
     afterPublishedAt: string | null;
@@ -10,7 +11,7 @@ export function exportCollectionStatement(
     rowLimit: number;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`WITH RECURSIVE pinned_revision(id) AS (
          SELECT ?
          UNION ALL
@@ -47,18 +48,20 @@ export function exportCollectionStatement(
     );
 }
 
-export function catalogueStatusStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare("SELECT current_revision_id, published_at FROM catalogue_state WHERE singleton = 1");
+export function catalogueStatusStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(
+    "SELECT current_revision_id, published_at FROM catalogue_state WHERE singleton = 1",
+  );
 }
 
-export function catalogueFreshnessStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT game, area, source_lineage, region, checked_at
+export function catalogueFreshnessStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`SELECT game, area, source_lineage, region, checked_at
          FROM source_freshness
          ORDER BY game, area, source_lineage, region`);
 }
 
-export function currentCardStatement(database: D1Database, cardId: string): D1PreparedStatement {
-  return database
+export function currentCardStatement(database: CatalogueStore, cardId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT
         card.document_json,
         catalogue.current_revision_id,
@@ -71,10 +74,10 @@ export function currentCardStatement(database: D1Database, cardId: string): D1Pr
 }
 
 export function cardPrintingsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; cardId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT document_json
            FROM revision_printings
            WHERE catalogue_revision_id = ? AND card_id = ?
@@ -82,8 +85,8 @@ export function cardPrintingsStatement(
     .bind(input.revisionId, input.cardId);
 }
 
-export function currentPrintingStatement(database: D1Database, printingId: string): D1PreparedStatement {
-  return database
+export function currentPrintingStatement(database: CatalogueStore, printingId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT
         printing.document_json,
         catalogue.current_revision_id,
@@ -95,8 +98,8 @@ export function currentPrintingStatement(database: D1Database, printingId: strin
     .bind(printingId);
 }
 
-export function printingImageStatement(database: D1Database, imageId: string): D1PreparedStatement {
-  return database
+export function printingImageStatement(database: CatalogueStore, imageId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT
          image.media_type,
          image.content_sha256,
@@ -114,10 +117,10 @@ export function printingImageStatement(database: D1Database, imageId: string): D
 }
 
 export function pendingExportComponentDeletionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; componentName: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT 1 AS present
        FROM catalogue_exports AS export
        JOIN catalogue_export_deletions AS deletion
@@ -129,8 +132,8 @@ export function pendingExportComponentDeletionStatement(
     .bind(input.revisionId, input.componentName);
 }
 
-export function catalogueExportStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database
+export function catalogueExportStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT
         export.catalogue_revision_id,
         revision.published_at,
@@ -144,8 +147,8 @@ export function catalogueExportStatement(database: D1Database, revisionId: strin
     .bind(revisionId);
 }
 
-export function currentProductStatement(database: D1Database, productId: string): D1PreparedStatement {
-  return database
+export function currentProductStatement(database: CatalogueStore, productId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT product.document_json, catalogue.current_revision_id,
               catalogue.published_at
        FROM catalogue_state AS catalogue
@@ -156,10 +159,10 @@ export function currentProductStatement(database: D1Database, productId: string)
 }
 
 export function productCuratedEvidenceStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; revisionIdsJson: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT curated_revision_id AS id,
               json_extract(provenance_json, '$.created_at') AS created_at,
               json_extract(provenance_json, '$.author') AS author
@@ -170,7 +173,7 @@ export function productCuratedEvidenceStatement(
 }
 
 export function productCollectionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     revisionId: string;
     game: string | null;
@@ -187,7 +190,7 @@ export function productCollectionStatement(
     rowLimit: number;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT document_json
        FROM revision_products
        WHERE catalogue_revision_id = ?
@@ -244,10 +247,10 @@ export function productCollectionStatement(
 }
 
 export function legalityCardStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ cardId: string; revisionId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT catalogue.id AS current_revision_id, catalogue.published_at,
               card.document_json
        FROM catalogue_revisions AS catalogue
@@ -258,7 +261,7 @@ export function legalityCardStatement(
 }
 
 export function applicableLegalityRulesStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     revisionId: string;
     cardId: string;
@@ -270,7 +273,7 @@ export function applicableLegalityRulesStatement(
     rowLimit: number;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`WITH applicable AS (
          SELECT legality_rule_id
          FROM revision_legality_rule_applicability

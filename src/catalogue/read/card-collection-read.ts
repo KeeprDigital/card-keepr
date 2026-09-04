@@ -1,11 +1,11 @@
+import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
+import { type CatalogueStore, canonicalJson, gameProfileFilterValue, gameProfileForGame } from "../shared";
 import {
-  cardCollectionPageStatement,
-  cardPublishedFilterStatements,
   type CardRow,
   type CollectionFilters,
+  cardCollectionPageStatement,
+  cardPublishedFilterStatements,
 } from "./card-collection-repository";
-import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
-import { canonicalJson, gameProfileForGame, gameProfileFilterValue } from "../shared";
 import { cardSearchQuery } from "./card-search";
 import {
   canonicalEtag,
@@ -44,7 +44,7 @@ type CardCursor = {
 const cardCollectionOrder = "game,official_identity.kind,official_identity.value,id" as const;
 
 export async function cardCollectionResponse(
-  database: D1Database,
+  database: CatalogueStore,
   request: Request,
   base: PublicBase,
 ): Promise<Response> {
@@ -131,7 +131,7 @@ export async function cardCollectionResponse(
 }
 
 async function queryCardPage(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
   filters: CollectionFilters,
   after: CardCursor["after"] | null,
@@ -258,7 +258,7 @@ function invalidCursor(): ReadProblem {
 }
 
 async function validatePublishedFilters(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
   filters: CollectionFilters,
 ): Promise<void> {

@@ -1,22 +1,20 @@
-import { sourceSnapshotStatement, sourceObservationSetStatement } from "./evidence-repository";
-import { AdministrationProblem } from "../shared";
-import { parseSnapshot, reparseSnapshot } from "./source-evidence-parsing";
+import { AdministrationProblem, type CatalogueStore } from "../shared";
+import { sourceObservationSetStatement, sourceSnapshotStatement } from "./evidence-repository";
 import { assertIdentifier, type StartEvidenceRunRequest } from "./source-evidence-model";
+import { parseSnapshot, reparseSnapshot } from "./source-evidence-parsing";
 import {
   extendRunRequestCapacity,
-  publicObservationSet,
-  requiredEvidenceRun,
   retryEvidenceRun,
   showEvidenceRun,
   startEvidenceRun,
 } from "./source-evidence-repository";
 import type { ObservationSetRow, SnapshotRow } from "./source-evidence-repository-types";
 
-export { extendRunRequestCapacity, retryEvidenceRun, showEvidenceRun, startEvidenceRun };
 export type { StartEvidenceRunRequest };
+export { extendRunRequestCapacity, retryEvidenceRun, showEvidenceRun, startEvidenceRun };
 
 export async function reparseSourceSnapshot(
-  database: D1Database,
+  database: CatalogueStore,
   evidenceObjects: R2Bucket,
   snapshotId: string,
   adapterVersion: string,
@@ -29,7 +27,7 @@ export async function reparseSourceSnapshot(
 }
 
 export async function sourceSnapshotContent(
-  database: D1Database,
+  database: CatalogueStore,
   evidenceObjects: R2Bucket,
   snapshotId: string,
 ): Promise<Response> {
@@ -47,7 +45,7 @@ export async function sourceSnapshotContent(
 }
 
 export async function sourceObservationSetContent(
-  database: D1Database,
+  database: CatalogueStore,
   evidenceObjects: R2Bucket,
   observationSetId: string,
 ): Promise<Response> {

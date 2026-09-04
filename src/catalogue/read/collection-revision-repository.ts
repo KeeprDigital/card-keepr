@@ -1,9 +1,10 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 export function collectionRevisionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   cursorRevision: string | null,
   options: { search?: boolean; projection?: boolean },
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`
     SELECT revision.id, revision.published_at
     FROM catalogue_revisions AS revision

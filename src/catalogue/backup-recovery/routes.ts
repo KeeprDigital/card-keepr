@@ -1,8 +1,8 @@
-import { route, type RouteContext } from "../../http/routes";
-import { AdministrationProblem } from "../shared";
-import { readAdministrationBody, requiredString, assertOnlyFields } from "../../http/administration";
-import { startOrObserveCatalogueBackupWorkflow } from "./backup-workflow";
+import { assertOnlyFields, readAdministrationBody, requiredString } from "../../http/administration";
+import { type RouteContext, route } from "../../http/routes";
+import { AdministrationProblem, type CatalogueStore } from "../shared";
 import { catalogueBackupAttemptStatus, catalogueRevisionBackupStatus } from "./backup-recovery";
+import { startOrObserveCatalogueBackupWorkflow } from "./backup-workflow";
 import {
   acceptCatalogueRecovery,
   beginCatalogueRecovery,
@@ -14,7 +14,7 @@ type Environment = {
   BACKUPS: R2Bucket;
   CATALOGUE_BACKUP_WORKFLOW: Parameters<typeof startOrObserveCatalogueBackupWorkflow>[1];
   CATALOGUE_D1_DATABASE_ID: string;
-  CATALOGUE_DB: D1Database;
+  CATALOGUE_DB: CatalogueStore;
   CLOUDFLARE_ACCOUNT_ID: string;
   D1_VERIFICATION_TOKEN: string;
 };

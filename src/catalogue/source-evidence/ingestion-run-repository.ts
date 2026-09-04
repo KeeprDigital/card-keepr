@@ -1,6 +1,5 @@
-import { type IngestionRunState, canonicalJson } from "../shared";
-
 import type { SourceAdapterRegistration } from "../adapters";
+import { type CatalogueStore, canonicalJson, type IngestionRunState, repositoryStatements } from "../shared";
 
 export type IngestionEvidenceRow = {
   id: string;
@@ -41,7 +40,7 @@ export type IngestionRunInsertInput = {
 };
 
 export function ingestionRunInsertStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: IngestionRunInsertInput,
   lifecycleV2: boolean,
 ): D1PreparedStatement {
@@ -54,7 +53,7 @@ export function ingestionRunInsertStatement(
     input.operationalRequestId ?? null,
   ];
   if (lifecycleV2) {
-    return database
+    return repositoryStatements(database)
       .prepare(
         `INSERT INTO ingestion_runs (
           id, state, selected_games_json, started_at,
@@ -77,7 +76,7 @@ export function ingestionRunInsertStatement(
       )
       .bind(...baseValues);
   }
-  return database
+  return repositoryStatements(database)
     .prepare(
       `INSERT INTO ingestion_runs (
         id, state, selected_games_json, started_at,
@@ -98,8 +97,8 @@ export function ingestionRunInsertStatement(
     .bind(...baseValues);
 }
 
-export function evidenceRunByIdStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function evidenceRunByIdStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(
       `SELECT runs.*, plans.source_lineage, plans.supported_game,
               plans.game_profile_version, plans.adapter_version,
@@ -115,8 +114,8 @@ export function evidenceRunByIdStatement(database: D1Database, runId: string): D
     .bind(runId);
 }
 
-export function evidenceRunByIdempotencyKeyStatement(database: D1Database, key: string): D1PreparedStatement {
-  return database
+export function evidenceRunByIdempotencyKeyStatement(database: CatalogueStore, key: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(
       `SELECT runs.*, plans.source_lineage, plans.supported_game,
               plans.game_profile_version, plans.adapter_version,
@@ -133,10 +132,10 @@ export function evidenceRunByIdempotencyKeyStatement(database: D1Database, key: 
 }
 
 export function bindInitialParentWorkflowStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ workflowId: string; runId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
          WHERE ingestion_run_id = ? AND parent_workflow_id IS NULL`)
     .bind(input.workflowId, input.runId);

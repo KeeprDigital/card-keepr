@@ -7,7 +7,7 @@ import {
   sourceFreshnessKey,
   sourceFreshnessStorageScope,
 } from "../read";
-import type { CatalogueCandidate, SupportedGame } from "../shared";
+import type { CatalogueCandidate, CatalogueStore, SupportedGame } from "../shared";
 import {
   publishedSourceFreshnessStatement,
   recordSourceFreshnessStatement,
@@ -15,7 +15,7 @@ import {
 } from "./run-freshness-repository";
 
 export async function freshnessStatementsForRun(
-  database: D1Database,
+  database: CatalogueStore,
   games: readonly string[],
   runId: string,
   candidate: CatalogueCandidate,
@@ -29,7 +29,7 @@ export async function freshnessStatementsForRun(
 }
 
 export async function checkedFreshnessAreasForRun(
-  database: D1Database,
+  database: CatalogueStore,
   games: readonly string[],
   runId: string,
   candidate: CatalogueCandidate,
@@ -47,7 +47,7 @@ export async function checkedFreshnessAreasForRun(
 }
 
 function freshnessStatements(
-  database: D1Database,
+  database: CatalogueStore,
   checks: readonly SourceFreshness[],
   runId: string,
 ): D1PreparedStatement[] {
@@ -113,7 +113,7 @@ function checkedFreshnessAreas(
 }
 
 async function freshnessCoverage(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   games: readonly string[],
 ): Promise<
@@ -142,7 +142,7 @@ async function freshnessCoverage(
 }
 
 export async function sourceFreshnessForExport(
-  database: D1Database,
+  database: CatalogueStore,
   catalogueGames: readonly SupportedGame[],
   refreshedChecks: readonly SourceFreshness[],
   publishedAt: string,

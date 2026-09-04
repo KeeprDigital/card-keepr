@@ -1,22 +1,22 @@
-import { sourceSnapshotStatement } from "./evidence-repository";
-import {
-  uploadedParseStatement,
-  retainedDiscoveryObservationsStatement,
-  createParseOperationStatement,
-  finalizedObservationSetStatement,
-  finalizeParseStatement,
-  parseOperationStatement,
-  observationSetByParseOperationStatement,
-} from "./source-parse-repository";
 import {
   AdapterParseFailure,
   assertAdapterBinding,
   assertAdapterRequestSurface,
   requiredSourceAdapter,
 } from "../adapters";
-import { AdministrationProblem, canonicalJson, sha256, utf8 } from "../shared";
+import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256, utf8 } from "../shared";
+import { sourceSnapshotStatement } from "./evidence-repository";
 import { publicObservationSet } from "./source-evidence-repository";
 import type { ObservationSetRow, SnapshotRow } from "./source-evidence-repository-types";
+import {
+  createParseOperationStatement,
+  finalizedObservationSetStatement,
+  finalizeParseStatement,
+  observationSetByParseOperationStatement,
+  parseOperationStatement,
+  retainedDiscoveryObservationsStatement,
+  uploadedParseStatement,
+} from "./source-parse-repository";
 
 type ParseOperationRow = {
   id: string;
@@ -39,7 +39,7 @@ type ParseIntent = {
 };
 
 export async function parseSnapshot(
-  database: D1Database,
+  database: CatalogueStore,
   evidenceObjects: R2Bucket,
   snapshotId: string,
   adapterVersion: string,
@@ -152,7 +152,7 @@ export async function parseSnapshot(
 }
 
 export async function discoverSnapshotRequests(
-  database: D1Database,
+  database: CatalogueStore,
   evidenceObjects: R2Bucket,
   snapshotId: string,
   adapterVersion: string,
@@ -306,7 +306,7 @@ async function retainedOfficialDiscoverySurfaces(
 }
 
 export async function retainedOfficialDiscoveryRunRecords(
-  database: D1Database,
+  database: CatalogueStore,
   evidenceObjects: R2Bucket,
   runId: string,
   sourceLineage: string,
@@ -339,7 +339,7 @@ export async function retainedOfficialDiscoveryRunRecords(
 }
 
 export async function reparseSnapshot(
-  database: D1Database,
+  database: CatalogueStore,
   evidenceObjects: R2Bucket,
   snapshotId: string,
   adapterVersion: string,
@@ -354,7 +354,7 @@ export async function reparseSnapshot(
 }
 
 async function prepareParseOperation(
-  database: D1Database,
+  database: CatalogueStore,
   snapshotId: string,
   adapterVersion: string,
   parseIntent: ParseIntent,
@@ -385,7 +385,7 @@ async function prepareParseOperation(
 }
 
 async function finalizeParseOperation(
-  database: D1Database,
+  database: CatalogueStore,
   operationId: string,
   snapshot: SnapshotRow,
 ): Promise<ObservationSetRow> {
@@ -421,13 +421,13 @@ async function finalizeParseOperation(
   return requiredObservationSet(database, operation.id);
 }
 
-async function requiredParseOperation(database: D1Database, id: string): Promise<ParseOperationRow> {
+async function requiredParseOperation(database: CatalogueStore, id: string): Promise<ParseOperationRow> {
   const operation = await parseOperationStatement(database, id).first<ParseOperationRow>();
   if (operation === null) throw new Error("Parse operation disappeared");
   return operation;
 }
 
-async function requiredObservationSet(database: D1Database, operationId: string): Promise<ObservationSetRow> {
+async function requiredObservationSet(database: CatalogueStore, operationId: string): Promise<ObservationSetRow> {
   const stored = await observationSetByParseOperationStatement(database, operationId).first<ObservationSetRow>();
   if (stored === null) throw new Error("Source Observation Set disappeared");
   return stored;

@@ -3,6 +3,7 @@ import {
   AdministrationProblem,
   assertIngestionRunTransition,
   type CatalogueCandidate,
+  type CatalogueStore,
   canonicalJson,
   isTerminalIngestionRunState,
   type SupportedGame,
@@ -45,7 +46,7 @@ import {
 import { assertOpaqueId, assertSha256, errorMessage, parseSelectedGames } from "./run-values";
 
 export async function startFixtureRun(
-  database: D1Database,
+  database: CatalogueStore,
   catalogueExports: R2Bucket,
   request: StartRunRequest,
   observedAt = new Date().toISOString(),
@@ -83,7 +84,7 @@ export async function startFixtureRun(
 }
 
 export async function retryRun(
-  database: D1Database,
+  database: CatalogueStore,
   catalogueExports: R2Bucket,
   sourceRunId: string,
   request: RetryRunRequest,
@@ -136,7 +137,7 @@ export async function retryRun(
 }
 
 export async function retryPublicationCleanup(
-  database: D1Database,
+  database: CatalogueStore,
   catalogueExports: R2Bucket,
   runId: string,
   request: RetryPublicationCleanupRequest,
@@ -170,7 +171,7 @@ export async function retryPublicationCleanup(
 }
 
 export async function showRun(
-  database: D1Database,
+  database: CatalogueStore,
   catalogueExports: R2Bucket,
   runId: string,
   observedAt = new Date().toISOString(),
@@ -183,7 +184,7 @@ export async function showRun(
 }
 
 export async function rejectRun(
-  database: D1Database,
+  database: CatalogueStore,
   catalogueExports: R2Bucket,
   runId: string,
   request: RejectRunRequest,
@@ -213,7 +214,7 @@ export async function rejectRun(
 }
 
 async function rejectRunAttempt(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   request: RejectRunRequest,
   requestJson: string,
@@ -286,7 +287,7 @@ async function rejectRunAttempt(
 }
 
 async function startPreparedRun(
-  database: D1Database,
+  database: CatalogueStore,
   input: {
     candidate: CatalogueCandidate;
     selectedGames: readonly SupportedGame[];

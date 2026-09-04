@@ -1,6 +1,12 @@
 import { requiredSourceAdapter } from "../adapters";
 import { curatedPublicationStatements } from "../curated";
-import { byteBoundedJsonArrays, type CatalogueCandidate, canonicalJson, retainedPayload } from "../shared";
+import {
+  byteBoundedJsonArrays,
+  type CatalogueCandidate,
+  type CatalogueStore,
+  canonicalJson,
+  retainedPayload,
+} from "../shared";
 import { applicableRulesTextErrata, erratumTargetLifecycleKey } from "./errata-rules-text";
 import { type ProductRelationshipLifecycle, productReleaseLifecyclePlan } from "./product-release-publication";
 import type { NormalizedLifecycle } from "./publication-lifecycle-types";
@@ -99,7 +105,7 @@ type PublicationRows = {
 };
 
 export async function reconciliationPublication(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   revisionId: string,
   revisionOrder = revisionId,
@@ -362,7 +368,7 @@ export async function reconciliationPublication(
 }
 
 async function publicationEvidenceResources(
-  database: D1Database,
+  database: CatalogueStore,
   plans: readonly CandidatePlanRow[],
 ): Promise<Map<string, PublicationEvidenceResource>> {
   if (plans.length === 0) return new Map();
@@ -380,7 +386,7 @@ async function publicationEvidenceResources(
 }
 
 async function publicationEvidenceResourcesByIds(
-  database: D1Database,
+  database: CatalogueStore,
   observationIds: readonly string[],
 ): Promise<Map<string, PublicationEvidenceResource>> {
   const resources = new Map<string, PublicationEvidenceResource>();
@@ -407,7 +413,7 @@ async function publicationEvidenceResourcesByIds(
 }
 
 function errataPublicationStatements(
-  database: D1Database,
+  database: CatalogueStore,
   errata: NonNullable<CatalogueCandidate["errata"]>,
   observedProvenance: ReadonlySet<string>,
   revisionId: string,
@@ -463,7 +469,7 @@ function errataPublicationStatements(
 }
 
 async function erratumTargetLifecycles(
-  database: D1Database,
+  database: CatalogueStore,
   errata: NonNullable<CatalogueCandidate["errata"]>,
   observedProvenance: ReadonlySet<string>,
   revisionId: string,
@@ -525,7 +531,7 @@ function provenanceKey(sourceLineage: string, sourceObservationId: string): stri
 }
 
 async function aggregateInferredProductLifecycles(
-  database: D1Database,
+  database: CatalogueStore,
   candidate: CatalogueCandidate,
   relationships: Readonly<Record<string, readonly RelationshipEvidence[]>>,
   revisionId: string,
@@ -611,7 +617,7 @@ function inferredProductLifecycleKey(game: string, officialCode: string): string
 }
 
 async function retainCarriedLifecycles(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   candidate: CatalogueCandidate,
   result: ReconciliationPublicationPlan,
@@ -885,7 +891,7 @@ function printingPersistenceRow(
 }
 
 async function rowsById<T extends { id: string }>(
-  database: D1Database,
+  database: CatalogueStore,
   kind: "card" | "printing",
   ids: readonly string[],
 ): Promise<Map<string, T>> {
@@ -895,7 +901,7 @@ async function rowsById<T extends { id: string }>(
 }
 
 async function relationshipRowsByPrinting(
-  database: D1Database,
+  database: CatalogueStore,
   printingIds: readonly string[],
 ): Promise<Map<string, RelationshipEvidenceRow[]>> {
   if (printingIds.length === 0) return new Map();
@@ -920,7 +926,7 @@ type LocatorRow = {
 };
 
 async function locatorRowsByPrinting(
-  database: D1Database,
+  database: CatalogueStore,
   printingIds: readonly string[],
 ): Promise<Map<string, LocatorRow[]>> {
   if (printingIds.length === 0) return new Map();
@@ -935,7 +941,7 @@ async function locatorRowsByPrinting(
 }
 
 function publicationStatements(
-  database: D1Database,
+  database: CatalogueStore,
   rows: PublicationRows,
   plans: readonly CandidatePlanRow[],
   revisionId: string,
@@ -1193,7 +1199,7 @@ function normalizedLifecycle(
   };
 }
 
-async function requiredRunCandidate(database: D1Database, runId: string): Promise<string> {
+async function requiredRunCandidate(database: CatalogueStore, runId: string): Promise<string> {
   const row = await requiredPublicationCandidateStatement(database, runId).first<{ candidate_json: string }>();
   if (row === null) throw new Error("Reconciled candidate is unavailable.");
   return retainedPayload(database, runId, "candidate", row.candidate_json);

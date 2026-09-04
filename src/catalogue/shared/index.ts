@@ -2,32 +2,10 @@
 // modules every other cluster may import. Nothing here imports another
 // cluster. See ../README.md for the cluster map (issue #96).
 
-export {
-  canonicalJson,
-  canonicalNdjson,
-  compareUtf8,
-  sha256,
-  sha256Text,
-  utf8,
-} from "./serialization";
-export {
-  deterministicGzip,
-  deterministicGzipStream,
-} from "./export-compression";
-export { isIsoCalendarDate } from "./calendar-date";
-export { StreamingSha256 } from "./streaming-sha256";
-export {
-  catalogueRevisionIdentity,
-  evidenceRunIdentity,
-  replayByDigest,
-} from "./idempotent-identities";
 export { AdministrationProblem } from "./administration-problem";
-export { operationalDiagnostics } from "./operational-diagnostics";
-export { SPINE_REVISION_ID } from "./spine-revision.mjs";
-
+export { isIsoCalendarDate } from "./calendar-date";
 // The Catalogue Candidate's shape (the leaf types from issue #90).
 export {
-  catalogueCandidateContract,
   type CatalogueCandidate,
   type CatalogueCard,
   type CatalogueDistributionContext,
@@ -37,6 +15,7 @@ export {
   type CatalogueProduct,
   type CatalogueRelease,
   type CatalogueSourceCheck,
+  catalogueCandidateContract,
   type EvidenceCategory,
   type LegalityRegion,
   type LegalityRule,
@@ -56,6 +35,7 @@ export {
   type UnresolvedLegalityScope,
   type UnresolvedLegalityScopeDimension,
 } from "./catalogue-candidate-types";
+export { type CatalogueStore, catalogueStore, repositoryStatements } from "./catalogue-store-repository";
 export type {
   CuratedEvidence,
   CuratedFieldTarget,
@@ -63,21 +43,40 @@ export type {
   CuratedProvenanceBearing,
   CuratedRelationshipTarget,
 } from "./curated-provenance";
-
-// Game Profile contract helpers, consumed by legality, curated, export,
-// and reconciliation alike.
+export { type DocumentSchema, decodeDocument } from "./document-decoder";
 export {
-  canonicalProfileAttributes,
-  exportedGameProfileSchema,
-  gameProfileForGame,
-  gameProfileFilterValue,
-  rawSourceValue,
-  requiredProfileContract,
-  sourceFieldWarning,
-  sourceVocabularyWarning,
-  validateMembershipPredicate,
-  type ProfileWarning,
-} from "./reconciliation-profile";
+  deterministicGzip,
+  deterministicGzipStream,
+} from "./export-compression";
+export {
+  CatalogueExportLimitError,
+  maximumCatalogueExportBytes,
+  maximumCatalogueExportObjectBytes,
+  maximumExportComponentBytes,
+  maximumExportRecordBytes,
+  maximumLegalityRuleRelationships,
+  maximumLegalityStatusRules,
+} from "./export-limits";
+export {
+  catalogueRevisionIdentity,
+  evidenceRunIdentity,
+  replayByDigest,
+} from "./idempotent-identities";
+export {
+  activeRunStages,
+  assertIngestionRunTransition,
+  canTransitionIngestionRun,
+  IngestionRunState,
+  type IngestionRunTransitionFacts,
+  ingestionRunStates,
+  ingestionRunTerminatedFailureCode,
+  ingestionRunTransitionSources,
+  ingestionRunTransitionSql,
+  ingestionRunTransitions,
+  isIngestionRunState,
+  isTerminalIngestionRunState,
+} from "./ingestion-run-state";
+export { operationalDiagnostics } from "./operational-diagnostics";
 
 // D1 payload chunking and the guarded atomic batch, consumed by every
 // cluster that writes publication statements.
@@ -88,41 +87,36 @@ export {
   payloadChunkStatements,
   retainedPayload,
 } from "./reconciliation-payload";
-
+// Game Profile contract helpers, consumed by legality, curated, export,
+// and reconciliation alike.
 export {
-  CatalogueExportLimitError,
-  maximumCatalogueExportBytes,
-  maximumCatalogueExportObjectBytes,
-  maximumExportComponentBytes,
-  maximumExportRecordBytes,
-  maximumLegalityRuleRelationships,
-  maximumLegalityStatusRules,
-} from "./export-limits";
-
-export { decodeDocument, type DocumentSchema } from "./document-decoder";
-
+  canonicalProfileAttributes,
+  exportedGameProfileSchema,
+  gameProfileFilterValue,
+  gameProfileForGame,
+  type ProfileWarning,
+  rawSourceValue,
+  requiredProfileContract,
+  sourceFieldWarning,
+  sourceVocabularyWarning,
+  validateMembershipPredicate,
+} from "./reconciliation-profile";
 export {
-  activeRunStages,
-  IngestionRunState,
-  ingestionRunStates,
-  ingestionRunTransitions,
-  ingestionRunTransitionSources,
-  ingestionRunTransitionSql,
-  ingestionRunTerminatedFailureCode,
-  isIngestionRunState,
-  isTerminalIngestionRunState,
-  canTransitionIngestionRun,
-  assertIngestionRunTransition,
-  type IngestionRunTransitionFacts,
-} from "./ingestion-run-state";
-
+  canonicalJson,
+  canonicalNdjson,
+  compareUtf8,
+  sha256,
+  sha256Text,
+  utf8,
+} from "./serialization";
+export { SPINE_REVISION_ID } from "./spine-revision.mjs";
+export { StreamingSha256 } from "./streaming-sha256";
 export {
-  workflowDriver,
   inspectWorkflowInstance,
   isWorkflowInstanceNotFound,
   type WorkflowStatus,
+  workflowDriver,
 } from "./workflow-driver";
 
-export { workflowSteps, workflowStepName, advancesCollectionProgress, type WorkflowKind } from "./workflow-steps";
-
 export { observeWorkflowProgress, type WorkflowProgress } from "./workflow-progress";
+export { advancesCollectionProgress, type WorkflowKind, workflowStepName, workflowSteps } from "./workflow-steps";

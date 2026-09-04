@@ -1,6 +1,6 @@
 import { parseStoredLegalityRule } from "../legality";
 import { storedProductApiProjection } from "../read";
-import { AdministrationProblem, canonicalJson, StreamingSha256, sha256Text } from "../shared";
+import { AdministrationProblem, type CatalogueStore, canonicalJson, StreamingSha256, sha256Text } from "../shared";
 import * as backupStatements from "./backup-repository";
 import {
   type BackupAttemptEvidenceRow,
@@ -158,7 +158,7 @@ export type CatalogueBackupDocument = Readonly<{
 }>;
 
 export async function catalogueBackupAttemptStatus(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
 ): Promise<Record<string, unknown>> {
   const attempt = await backupAttemptEvidenceRow(database, idempotencyKey);
@@ -206,7 +206,7 @@ export async function catalogueBackupAttemptStatus(
 }
 
 export async function catalogueRevisionBackupStatus(
-  database: D1Database,
+  database: CatalogueStore,
   catalogueRevisionId: string,
 ): Promise<Record<string, unknown>> {
   const known = await backupStatements
@@ -226,7 +226,7 @@ export async function catalogueRevisionBackupStatus(
 }
 
 async function backupAttemptEvidenceRow(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
 ): Promise<BackupAttemptEvidenceRow | null> {
   return backupAttemptEvidenceStatement(database, idempotencyKey).first<BackupAttemptEvidenceRow>();
@@ -237,7 +237,7 @@ async function backupAttemptDigest(row: BackupAttemptEvidenceRow): Promise<strin
 }
 
 export async function validateCatalogueBackupRetryEvidence(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     expectedCurrentRevisionId: string;
     idempotencyKey: string;
@@ -312,7 +312,7 @@ function backupRetrySourceSuperseded(): AdministrationProblem {
 }
 
 export async function createVerifiedCatalogueBackup(
-  database: D1Database,
+  database: CatalogueStore,
   backups: R2Bucket,
   input: BackupInput,
   provider: D1BackupProvider = cloudflareD1BackupProvider,
@@ -695,7 +695,7 @@ export async function createVerifiedCatalogueBackup(
 }
 
 export async function verifyRestoredCatalogue(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     expectedRevisionId: string;
     expectedSchemaMigrationLevel: number;
@@ -709,14 +709,14 @@ export async function verifyRestoredCatalogue(
 }
 
 export async function captureCatalogueVerificationEvidence(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
 ): Promise<CatalogueVerificationEvidence> {
   return (await captureCatalogueVerificationEvidenceWithDocuments(database, revisionId)).expected;
 }
 
 async function captureCatalogueVerificationEvidenceWithDocuments(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
 ): Promise<
   Readonly<{
@@ -1145,7 +1145,7 @@ function backupDocument(
 }
 
 async function persistPreparedRestoreTarget(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
   ownerToken: string,
   disposableDatabaseId: string,
@@ -1167,7 +1167,7 @@ async function persistPreparedRestoreTarget(
 }
 
 async function transitionRestorePhase(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
   ownerToken: string,
   from: string,
@@ -1180,7 +1180,7 @@ async function transitionRestorePhase(
 }
 
 async function transitionRestoredAttempt(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
   ownerToken: string,
 ): Promise<void> {
@@ -1193,7 +1193,7 @@ async function transitionRestoredAttempt(
 }
 
 async function transitionExportedAttempt(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
   ownerToken: string,
   bookmark: string,
@@ -1217,7 +1217,7 @@ async function transitionExportedAttempt(
 }
 
 export async function failActiveCatalogueBackupAttempt(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
   completedAt: string,
   detail: string,
@@ -1230,7 +1230,7 @@ export async function failActiveCatalogueBackupAttempt(
 }
 
 async function failAttempt(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
   ownerToken: string,
   completedAt: string,
@@ -1381,7 +1381,7 @@ async function sha256(value: string): Promise<string> {
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function currentSchemaMigrationLevel(database: D1Database): Promise<number> {
+async function currentSchemaMigrationLevel(database: CatalogueStore): Promise<number> {
   const row = await backupStatements.backupSchemaMigrationLevelStatement(database).first<{ migration_level: number }>();
   if (!Number.isSafeInteger(row?.migration_level) || row!.migration_level <= 0) {
     throw new Error("The Catalogue schema migration level is unavailable.");

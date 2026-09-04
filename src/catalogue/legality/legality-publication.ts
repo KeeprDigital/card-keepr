@@ -1,13 +1,13 @@
+import { byteBoundedJsonArrays, type CatalogueCandidate, type CatalogueStore, canonicalJson } from "../shared";
 import {
   publishLegalityRuleFactsStatement,
   publishRevisionLegalityRulesStatement,
 } from "./legality-publication-repository";
-import { byteBoundedJsonArrays, type CatalogueCandidate, canonicalJson } from "../shared";
 import { legalityRuleCardIds } from "./legality-rule";
 import { normalizedLegalityRuleLifecycle } from "./legality-rule-lifecycle";
 
 export function legalityPublicationStatements(
-  database: D1Database,
+  database: CatalogueStore,
   candidate: CatalogueCandidate,
   revisionId: string,
 ): D1PreparedStatement[] {

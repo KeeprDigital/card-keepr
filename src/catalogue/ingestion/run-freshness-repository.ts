@@ -1,7 +1,8 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
 export function recordSourceFreshnessStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     game: string;
     area: string;
@@ -11,7 +12,7 @@ export function recordSourceFreshnessStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO source_freshness (
           game,
           area,
@@ -26,8 +27,8 @@ export function recordSourceFreshnessStatement(
     .bind(input.game, input.area, input.sourceLineage, input.region, input.checkedAt, input.runId);
 }
 
-export function runObservationAdaptersStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function runObservationAdaptersStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT DISTINCT
          observation.adapter_version,
          observation.supported_game
@@ -39,8 +40,8 @@ export function runObservationAdaptersStatement(database: D1Database, runId: str
     .bind(runId);
 }
 
-export function publishedSourceFreshnessStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT game, area, source_lineage, region, checked_at
+export function publishedSourceFreshnessStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`SELECT game, area, source_lineage, region, checked_at
        FROM source_freshness
        WHERE area IN (
          'cards-and-printings', 'products-and-releases',

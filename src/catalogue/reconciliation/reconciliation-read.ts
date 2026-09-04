@@ -1,3 +1,4 @@
+import type { CatalogueStore } from "../shared";
 import type { Memberships } from "./reconciliation-model";
 import type { LocatorEvidence, LocatorEvidenceCollection } from "./reconciliation-publication";
 import {
@@ -18,7 +19,7 @@ import type { ReconciledPrintingRow } from "./reconciliation-repository";
 type MembershipRow = RelationshipEvidenceRow;
 
 export async function relationshipDisappearanceWarnings(
-  database: D1Database,
+  database: CatalogueStore,
   printingId: string,
   sourceLineage: string,
   memberships: Memberships,
@@ -41,7 +42,7 @@ export async function relationshipDisappearanceWarnings(
 }
 
 export async function printingDisappearanceWarnings(
-  database: D1Database,
+  database: CatalogueStore,
   sourceLineage: string,
   observedPrintingIds: readonly string[],
 ): Promise<Record<string, unknown>[]> {
@@ -57,7 +58,7 @@ export async function printingDisappearanceWarnings(
 }
 
 export async function cardDisappearanceWarnings(
-  database: D1Database,
+  database: CatalogueStore,
   sourceLineage: string,
   observedCardIds: readonly string[],
 ): Promise<Record<string, unknown>[]> {
@@ -73,7 +74,7 @@ export async function cardDisappearanceWarnings(
 }
 
 export async function publicReconciledPrinting(
-  database: D1Database,
+  database: CatalogueStore,
   printingId: string,
 ): Promise<Record<string, unknown> | null> {
   const printing = await reconciledPrintingDocumentStatement(database, printingId).first<ReconciledPrintingRow>();

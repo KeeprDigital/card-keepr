@@ -1,6 +1,13 @@
 import { curatedRevisionInspectionForRun } from "../curated";
 import { cardSearchFtsQuery, cardSearchText, sourceFreshnessFromStorage } from "../read";
-import { AdministrationProblem, type CatalogueCandidate, canonicalJson, retainedPayload, sha256Text } from "../shared";
+import {
+  AdministrationProblem,
+  type CatalogueCandidate,
+  type CatalogueStore,
+  canonicalJson,
+  retainedPayload,
+  sha256Text,
+} from "../shared";
 import {
   activeProductionReleaseStatement,
   administrationSourceFreshnessStatement,
@@ -32,7 +39,7 @@ import type { FreshnessRow, PublicationCleanupRow, RunRow } from "./run-types";
 import { assertOpaqueId, isRecord } from "./run-values";
 
 export async function administrationStatus(
-  database: D1Database,
+  database: CatalogueStore,
   catalogueExports: R2Bucket,
   observedAt: string,
   productionTarget: Readonly<{
@@ -169,7 +176,7 @@ export async function administrationStatus(
 }
 
 export async function inspectCandidate(
-  database: D1Database,
+  database: CatalogueStore,
   catalogueExports: R2Bucket,
   runId: string,
   observedAt = new Date().toISOString(),
@@ -221,7 +228,7 @@ export async function inspectCandidate(
 }
 
 export async function productionReleaseSmokeTargets(
-  database: D1Database,
+  database: CatalogueStore,
   revisionIds: readonly string[],
 ): Promise<Record<string, unknown> | null> {
   if (revisionIds.length !== 3) return null;
@@ -351,7 +358,7 @@ function encodeReleaseCursor(value: unknown): string {
 }
 
 async function catalogueExportObjectDiagnostics(
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
 ): Promise<{
   objectCount: number;
@@ -392,7 +399,7 @@ async function catalogueExportObjectDiagnostics(
 }
 
 async function publicationCleanupsForRuns(
-  database: D1Database,
+  database: CatalogueStore,
   runIds: readonly string[],
 ): Promise<Map<string, PublicationCleanupRow>> {
   const uniqueRunIds = [...new Set(runIds)].slice(0, 21);

@@ -9,6 +9,7 @@ import {
   type CatalogueErratum,
   type CataloguePrinting,
   type CataloguePrintingImage,
+  type CatalogueStore,
   type CuratedProvenance,
   canonicalJson,
   catalogueCandidateContract,
@@ -96,7 +97,7 @@ type Diagnostic = {
 };
 
 export async function reconcileRetainedCardPrintingEvidence(
-  database: D1Database,
+  database: CatalogueStore,
   evidenceObjects: R2Bucket,
   runId: string,
   observedAt: string,
@@ -1223,7 +1224,7 @@ function erratumDisappearanceWarnings(
 }
 
 async function finalizedReconciliationResult(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
 ): Promise<Record<string, unknown> | null> {
   const row = await reconciliationRunStateStatement(database, runId).first<{ state: string }>();
@@ -1263,7 +1264,7 @@ function reconciliationDigestPayload(input: {
 }
 
 async function candidateAtRevision(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
   selectedGames: readonly SupportedGame[],
 ): Promise<CatalogueCandidate | null> {
@@ -1313,7 +1314,7 @@ async function candidateAtRevision(
 }
 
 export async function showReconciledPrinting(
-  database: D1Database,
+  database: CatalogueStore,
   printingId: string,
 ): Promise<Record<string, unknown>> {
   const printing = await publicReconciledPrinting(database, printingId);
@@ -1349,7 +1350,7 @@ function digestObservationPlans(
 }
 
 async function catalogueDataDigest(
-  database: D1Database,
+  database: CatalogueStore,
   candidate: CatalogueCandidate,
   plans: readonly {
     cardId: string;
@@ -1598,7 +1599,7 @@ function compareCanonical(left: Record<string, unknown>, right: Record<string, u
 }
 
 async function publishedWithdrawalConflictDiagnostics(
-  database: D1Database,
+  database: CatalogueStore,
   plans: readonly {
     sourceObservationId: string;
     cardId: string;
@@ -1807,7 +1808,7 @@ function addGundamLineage(
 }
 
 async function blockedResult(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   diagnostics: readonly Diagnostic[],
   observedAt: string,
@@ -1822,7 +1823,7 @@ function printingImageEvidenceEquivalent(left: CataloguePrintingImage, right: Ca
   return canonicalJson(leftEvidence) === canonicalJson(rightEvidence);
 }
 
-async function requiredActiveParsingRun(database: D1Database, runId: string): Promise<ActiveRunRow> {
+async function requiredActiveParsingRun(database: CatalogueStore, runId: string): Promise<ActiveRunRow> {
   const row = await activeParsingRunStatement(database, runId).first<ActiveRunRow>();
   if (row === null || row.active_ingestion_run_id !== runId) {
     throw new AdministrationProblem(

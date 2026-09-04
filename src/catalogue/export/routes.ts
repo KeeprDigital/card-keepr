@@ -1,19 +1,20 @@
-import { route, type RouteContext } from "../../http/routes";
+import {
+  assertOnlyFields,
+  catalogueExportDeletionResultStatus,
+  readAdministrationBody,
+  requiredString,
+} from "../../http/administration";
+import { type RouteContext, route } from "../../http/routes";
+import type { CatalogueStore } from "../shared";
 import {
   catalogueExportDeletionStatus,
   confirmCatalogueExportDeletion,
   prepareCatalogueExportDeletion,
   retryCatalogueExportDeletion,
 } from "./catalogue-export-deletion";
-import {
-  readAdministrationBody,
-  requiredString,
-  assertOnlyFields,
-  catalogueExportDeletionResultStatus,
-} from "../../http/administration";
 
 type Environment = {
-  CATALOGUE_DB: D1Database;
+  CATALOGUE_DB: CatalogueStore;
   CATALOGUE_EXPORTS: R2Bucket;
 };
 type Context = RouteContext<Environment> & { observedAt: string };

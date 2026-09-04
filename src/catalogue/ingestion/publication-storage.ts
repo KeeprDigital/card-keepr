@@ -1,18 +1,19 @@
-import {
-  reservePublicationWriterStatement,
-  publicationWriterAuthorityStatement,
-  recordLatePublicationObjectStatement,
-  publicationRegistrationStateStatement,
-} from "./publication-storage-repository";
+import type { BuiltCatalogueExport, ExportObject } from "../export";
+import { cardSearchChunks, cardSearchTerms, cardSearchText } from "../read";
 import {
   AdministrationProblem,
   type CatalogueCandidate,
+  type CatalogueStore,
   canonicalJson,
   catalogueRevisionIdentity,
   sha256,
 } from "../shared";
-import type { BuiltCatalogueExport, ExportObject } from "../export";
-import { cardSearchChunks, cardSearchTerms, cardSearchText } from "../read";
+import {
+  publicationRegistrationStateStatement,
+  publicationWriterAuthorityStatement,
+  recordLatePublicationObjectStatement,
+  reservePublicationWriterStatement,
+} from "./publication-storage-repository";
 
 import { progressFor } from "./run-document-codec";
 import { publicationCleanupNotBefore, requiredRun } from "./run-storage";
@@ -29,7 +30,7 @@ import { isSha256Digest } from "./run-values";
 export class PublicationPrefixOwnershipError extends Error {}
 
 export async function reservePublication(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   approval: Record<string, unknown>,
   idempotencyKey: string,
@@ -61,7 +62,7 @@ export async function reservePublication(
 }
 
 export async function storeAndVerifyExport(
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
   runId: string,
   revisionId: string,
@@ -255,7 +256,7 @@ export function assertBuiltPublicationBudget(catalogueExport: BuiltCatalogueExpo
 }
 
 async function assertPublicationWriterActive(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   revisionId: string,
   writerToken: string,
@@ -277,7 +278,7 @@ async function assertPublicationWriterActive(
 }
 
 async function compensateLatePublicationWrite(
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
   runId: string,
   objectKey: string,
@@ -301,7 +302,10 @@ async function compensateLatePublicationWrite(
   }).run();
 }
 
-export async function reservedPublicationOwnsUnpublishedPrefix(database: D1Database, run: RunRow): Promise<boolean> {
+export async function reservedPublicationOwnsUnpublishedPrefix(
+  database: CatalogueStore,
+  run: RunRow,
+): Promise<boolean> {
   if (
     run.candidate_digest === null ||
     !isSha256Digest(run.candidate_digest) ||
@@ -330,7 +334,7 @@ export async function reservedPublicationOwnsUnpublishedPrefix(database: D1Datab
 }
 
 export async function assertReservedPublicationOwnsUnpublishedPrefix(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
 ): Promise<void> {
   const run = await requiredRun(database, runId);

@@ -1,4 +1,4 @@
-import { type CatalogueCandidate, canonicalJson } from "../shared";
+import { type CatalogueCandidate, type CatalogueStore, canonicalJson } from "../shared";
 import {
   candidateSourceLineagesStatement,
   candidateWarningDocumentStatement,
@@ -12,7 +12,7 @@ import {
 } from "./candidate-inspection-repository";
 
 export async function inspectCatalogueCandidate(
-  database: D1Database,
+  database: CatalogueStore,
   input: {
     runId: string;
     expectedRevisionId: string;
@@ -148,7 +148,11 @@ function intersects(left: ReadonlySet<string>, right: ReadonlySet<string>): bool
   return [...left].some((value) => right.has(value));
 }
 
-async function candidateWarnings(database: D1Database, runId: string, fallback: readonly Record<string, unknown>[]) {
+async function candidateWarnings(
+  database: CatalogueStore,
+  runId: string,
+  fallback: readonly Record<string, unknown>[],
+) {
   const reconciled = await candidateWarningDocumentStatement(database, runId).first<{ warnings_json: string }>();
   if (reconciled === null) return fallback;
   const parsed: unknown = JSON.parse(reconciled.warnings_json);

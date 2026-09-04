@@ -1,8 +1,8 @@
+import { byteBoundedJsonArrays, type CatalogueStore, type SupportedGame } from "../shared";
 import {
-  publishPrintingQueryFactsStatement,
   publishPrintingProductQueryFactsStatement,
+  publishPrintingQueryFactsStatement,
 } from "./printing-query-repository";
-import { byteBoundedJsonArrays, type SupportedGame } from "../shared";
 
 export type PrintingQueryFact = {
   printing_id: string;
@@ -13,7 +13,7 @@ export type PrintingQueryFact = {
 
 /** One publication step owns Printing filters and the Printing-derived facts #52 consumes. */
 export function printingQueryProjectionStatements(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
   printings: readonly PrintingQueryFact[],
 ): D1PreparedStatement[] {

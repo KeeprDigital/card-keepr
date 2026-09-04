@@ -1,7 +1,8 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
-export function reconciliationSourceRequestsStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function reconciliationSourceRequestsStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT request_id, sequence_number, method, url,
                 request_headers_json, representation_fingerprint,
                 request_role,
@@ -13,8 +14,8 @@ export function reconciliationSourceRequestsStatement(database: D1Database, runI
     .bind(runId);
 }
 
-export function reconciliationObservationSetsStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function reconciliationObservationSetsStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT
           snapshots.request_id,
           observations.id AS observation_set_id,
@@ -52,8 +53,8 @@ export function reconciliationObservationSetsStatement(database: D1Database, run
     .bind(runId);
 }
 
-export function reconciliationSnapshotEvidenceStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function reconciliationSnapshotEvidenceStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT
           snapshot.request_url,
           snapshot.media_type,
@@ -71,8 +72,8 @@ export function reconciliationSnapshotEvidenceStatement(database: D1Database, ru
     .bind(runId);
 }
 
-export function reconciliationCollectionPlansStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function reconciliationCollectionPlansStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT source_lineage, discovery_observation_set_id, contract,
                 collection_plan_json, content_digest
          FROM official_source_collection_plans
@@ -81,16 +82,16 @@ export function reconciliationCollectionPlansStatement(database: D1Database, run
     .bind(runId);
 }
 
-export function reconciliationEvidencePlanStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function reconciliationEvidencePlanStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT request_plan_json
          FROM ingestion_evidence_plans
          WHERE ingestion_run_id = ?`)
     .bind(runId);
 }
 
-export function reconciliationOverflowRequestsStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function reconciliationOverflowRequestsStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT ingestion_run_id, request_id, sequence_number,
                   parent_request_id, method, url, request_headers_json,
                   representation_fingerprint, request_role
@@ -100,8 +101,8 @@ export function reconciliationOverflowRequestsStatement(database: D1Database, ru
     .bind(runId);
 }
 
-export function reconciliationObservationCountsStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function reconciliationObservationCountsStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT snapshots.request_id, snapshots.source_lineage,
               observations.observation_count
        FROM catalogue_revisions AS prior_revision

@@ -1,10 +1,11 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
 export function recordWorkflowProgressStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ instanceId: string; progressAt: string; workAt: string | null; stepName: string; phase: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO ingestion_workflow_progress (
       workflow_instance_id, last_progress_at, last_work_at, last_step_name, last_phase
     ) VALUES (?, ?, ?, ?, ?)

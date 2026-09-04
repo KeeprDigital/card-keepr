@@ -1,11 +1,12 @@
-import { workflowDriver } from "../shared";
 import {
   AdministrationProblem,
   assertIngestionRunTransition,
+  type CatalogueStore,
   canonicalJson,
   type IngestionRunState,
   replayByDigest,
   sha256Text,
+  workflowDriver,
 } from "../shared";
 import { assertIdentifier } from "../source-evidence";
 
@@ -35,7 +36,7 @@ type ReconciliationWorkflowRequestRow = {
 };
 
 export async function startOrObserveReconciliationWorkflow(
-  database: D1Database,
+  database: CatalogueStore,
   workflow: Workflow<ReconciliationWorkflowParams>,
   input: Omit<ReconciliationWorkflowParams, "observed_at">,
   observedAt: string,
@@ -138,7 +139,7 @@ export async function startOrObserveReconciliationWorkflow(
 }
 
 async function publicWorkflowRequest(
-  database: D1Database,
+  database: CatalogueStore,
   workflow: Workflow<ReconciliationWorkflowParams>,
   request: ReconciliationWorkflowRequestRow,
   createRequested = false,
@@ -175,7 +176,7 @@ async function publicWorkflowRequest(
 }
 
 async function recoverTerminalWorkflow(
-  database: D1Database,
+  database: CatalogueStore,
   request: ReconciliationWorkflowRequestRow,
   detail: string,
 ): Promise<Record<string, unknown>> {
@@ -192,7 +193,7 @@ async function recoverTerminalWorkflow(
 }
 
 async function workflowOutput(
-  database: D1Database,
+  database: CatalogueStore,
   request: ReconciliationWorkflowRequestRow,
   value: unknown,
 ): Promise<Record<string, unknown>> {
@@ -239,14 +240,14 @@ async function workflowOutput(
 }
 
 function recoverMalformedCompleteWorkflow(
-  database: D1Database,
+  database: CatalogueStore,
   request: ReconciliationWorkflowRequestRow,
 ): Promise<Record<string, unknown>> {
   return recoverTerminalWorkflow(database, request, "The completed reconciliation Workflow output was unavailable.");
 }
 
 async function workflowRequest(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
 ): Promise<ReconciliationWorkflowRequestRow | null> {
   return reconciliationWorkflowRequestStatement(database, idempotencyKey).first<ReconciliationWorkflowRequestRow>();

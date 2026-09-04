@@ -1,7 +1,7 @@
-import { byteBoundedJsonArrays } from "../shared";
+import { byteBoundedJsonArrays, type CatalogueStore, repositoryStatements } from "../shared";
 
-export function productLifecycleRowsStatement(database: D1Database, idsJson: string): D1PreparedStatement {
-  return database
+export function productLifecycleRowsStatement(database: CatalogueStore, idsJson: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT id, first_revision_id, last_observed_revision_id,
                 withdrawn, withdrawal_revision_id, withdrawal_evidence_json
          FROM reconciled_products
@@ -9,16 +9,19 @@ export function productLifecycleRowsStatement(database: D1Database, idsJson: str
     .bind(idsJson);
 }
 
-export function releaseLifecycleRowsStatement(database: D1Database, idsJson: string): D1PreparedStatement {
-  return database
+export function releaseLifecycleRowsStatement(database: CatalogueStore, idsJson: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT id, first_revision_id, last_observed_revision_id
          FROM reconciled_releases
          WHERE id IN (SELECT value FROM json_each(?))`)
     .bind(idsJson);
 }
 
-export function productRelationshipLifecycleRowsStatement(database: D1Database, idsJson: string): D1PreparedStatement {
-  return database
+export function productRelationshipLifecycleRowsStatement(
+  database: CatalogueStore,
+  idsJson: string,
+): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT id, first_revision_id, last_observed_revision_id,
                 current, last_missing_revision_id
          FROM reconciled_product_relationships
@@ -27,10 +30,10 @@ export function productRelationshipLifecycleRowsStatement(database: D1Database, 
 }
 
 export function inferredProductLifecycleStatement(
-  database: D1Database,
+  database: CatalogueStore,
   officialCodesJson: string,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT card.supported_game AS game,
                   membership.relationship_value AS official_code,
                   membership.first_revision_id,
@@ -55,11 +58,11 @@ export function inferredProductLifecycleStatement(
 }
 
 export function publishProductLifecyclesStatements(
-  database: D1Database,
+  database: CatalogueStore,
   rows: readonly Record<string, unknown>[],
 ): D1PreparedStatement[] {
   return byteBoundedJsonArrays(rows).map((chunk) =>
-    database
+    repositoryStatements(database)
       .prepare(`INSERT INTO reconciled_products (
          id, supported_game, official_code, name, first_revision_id,
          last_observed_revision_id, withdrawn, withdrawal_revision_id,
@@ -87,11 +90,11 @@ export function publishProductLifecyclesStatements(
 }
 
 export function publishReleaseLifecyclesStatements(
-  database: D1Database,
+  database: CatalogueStore,
   rows: readonly Record<string, unknown>[],
 ): D1PreparedStatement[] {
   return byteBoundedJsonArrays(rows).map((chunk) =>
-    database
+    repositoryStatements(database)
       .prepare(`INSERT INTO reconciled_releases (
          id, product_id, event_key, region, date_precision, date_value,
          release_status, first_revision_id, last_observed_revision_id
@@ -118,11 +121,11 @@ export function publishReleaseLifecyclesStatements(
 }
 
 export function publishDistributionContextsStatements(
-  database: D1Database,
+  database: CatalogueStore,
   rows: readonly Record<string, unknown>[],
 ): D1PreparedStatement[] {
   return byteBoundedJsonArrays(rows).map((chunk) =>
-    database
+    repositoryStatements(database)
       .prepare(`INSERT INTO reconciled_distribution_contexts (
          id, supported_game, context_key, kind, label, product_id,
          evidence_category, source_lineages_json, current
@@ -148,11 +151,11 @@ export function publishDistributionContextsStatements(
 }
 
 export function publishProductRelationshipLifecyclesStatements(
-  database: D1Database,
+  database: CatalogueStore,
   rows: readonly Record<string, unknown>[],
 ): D1PreparedStatement[] {
   return byteBoundedJsonArrays(rows).map((chunk) =>
-    database
+    repositoryStatements(database)
       .prepare(`INSERT INTO reconciled_product_relationships (
          id, supported_game, relationship_kind, from_type, from_id,
          to_type, to_id, evidence_category, source_lineage,
@@ -191,12 +194,12 @@ export function publishProductRelationshipLifecyclesStatements(
 }
 
 export function publishRevisionProductsStatements(
-  database: D1Database,
+  database: CatalogueStore,
   rows: readonly Record<string, unknown>[],
   revisionId: string,
 ): D1PreparedStatement[] {
   return byteBoundedJsonArrays(rows).map((chunk) =>
-    database
+    repositoryStatements(database)
       .prepare(`INSERT INTO revision_products (
          catalogue_revision_id, product_id, supported_game,
          official_code, name, search_text, release_regions_json,
@@ -215,12 +218,12 @@ export function publishRevisionProductsStatements(
 }
 
 export function publishProductSearchStatements(
-  database: D1Database,
+  database: CatalogueStore,
   rows: readonly Record<string, unknown>[],
   revisionId: string,
 ): D1PreparedStatement[] {
   return byteBoundedJsonArrays(rows).map((chunk) =>
-    database
+    repositoryStatements(database)
       .prepare(`INSERT INTO revision_products_fts (
          catalogue_revision_id, product_id, search_text
        )
@@ -232,12 +235,12 @@ export function publishProductSearchStatements(
 }
 
 export function publishRevisionProductRelationshipsStatements(
-  database: D1Database,
+  database: CatalogueStore,
   rows: readonly Record<string, unknown>[],
   revisionId: string,
 ): D1PreparedStatement[] {
   return byteBoundedJsonArrays(rows).map((chunk) =>
-    database
+    repositoryStatements(database)
       .prepare(`INSERT INTO revision_product_relationships (
          catalogue_revision_id, relationship_id, document_json
        )

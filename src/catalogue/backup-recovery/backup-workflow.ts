@@ -1,4 +1,4 @@
-import { AdministrationProblem, canonicalJson, sha256Text, workflowDriver } from "../shared";
+import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text, workflowDriver } from "../shared";
 import { failActiveCatalogueBackupAttempt, validateCatalogueBackupRetryEvidence } from "./backup-recovery";
 import * as workflowStatements from "./backup-workflow-repository";
 
@@ -19,7 +19,7 @@ type BackupWorkflowRequest = CatalogueBackupWorkflowParams &
   }>;
 
 export async function startOrObserveCatalogueBackupWorkflow(
-  database: D1Database,
+  database: CatalogueStore,
   workflow: Workflow<CatalogueBackupWorkflowParams>,
   input: Omit<CatalogueBackupWorkflowParams, "observed_at">,
   observedAt: string,
@@ -92,7 +92,7 @@ export async function startOrObserveCatalogueBackupWorkflow(
 }
 
 async function publicWorkflowDocument(
-  database: D1Database,
+  database: CatalogueStore,
   workflow: Workflow<CatalogueBackupWorkflowParams>,
   request: BackupWorkflowRequest,
   createRequested = false,
@@ -173,7 +173,7 @@ function workflowOutput(
 }
 
 async function retainedBackupOutcome(
-  database: D1Database,
+  database: CatalogueStore,
   request: BackupWorkflowRequest,
 ): Promise<ReturnType<typeof workflowOutput>> {
   const attempt = await workflowStatements
@@ -230,7 +230,10 @@ async function retainedBackupOutcome(
   throw new Error("The completed backup Workflow output is unavailable.");
 }
 
-async function workflowRequest(database: D1Database, idempotencyKey: string): Promise<BackupWorkflowRequest | null> {
+async function workflowRequest(
+  database: CatalogueStore,
+  idempotencyKey: string,
+): Promise<BackupWorkflowRequest | null> {
   return workflowStatements.backupWorkflowRequestStatement(database, { idempotencyKey }).first<BackupWorkflowRequest>();
 }
 
