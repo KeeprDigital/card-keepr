@@ -1,4 +1,4 @@
-import { type CatalogueCandidate, byteBoundedJsonArrays, canonicalJson } from "./shared";
+import { type CatalogueCandidate, byteBoundedJsonArrays, canonicalJson } from "../shared";
 import { legalityRuleCardIds, normalizedLegalityRuleLifecycle } from "./legality-rule";
 
 export function legalityPublicationStatements(

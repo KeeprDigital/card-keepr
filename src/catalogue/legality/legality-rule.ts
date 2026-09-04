@@ -12,7 +12,7 @@ import {
   compareUtf8,
   sha256Text,
   isIsoCalendarDate,
-} from "./shared";
+} from "../shared";
 // The Legality Rule shapes live in the leaf module `catalogue-candidate-types`;
 // they stay importable from here.
 export type {
@@ -21,7 +21,7 @@ export type {
   LegalityRuleSourceFieldPointers,
   UnresolvedLegalityScope,
   UnresolvedLegalityScopeDimension,
-} from "./shared";
+} from "../shared";
 import {
   parseLegalityRuleEffect,
   parseStoredLegalityRuleEffect,
@@ -33,7 +33,7 @@ export {
   type LegalityEvaluation,
   type LegalityRuleEffect,
 } from "./legality-effect-policy";
-import { registeredLegalitySourceScope } from "./adapters";
+import { registeredLegalitySourceScope } from "../adapters";
 export {
   legalityRulesForCandidate,
   normalizedLegalityRuleLifecycle,

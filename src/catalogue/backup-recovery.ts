@@ -6,7 +6,7 @@ import {
 import { withCardSearchPreparedForD1Export } from "./card-search-recovery";
 import { cardCollectionPageQuery } from "./card-collection-read";
 import { storedProductApiProjection } from "./product-release-read";
-import { parseStoredLegalityRule } from "./stored-legality-documents";
+import { parseStoredLegalityRule } from "./legality";
 
 export type D1BackupProvider = Readonly<{
   exportSql(

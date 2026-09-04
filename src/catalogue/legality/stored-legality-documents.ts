@@ -7,10 +7,10 @@ import {
   isIsoCalendarDate,
   canonicalJson,
   compareUtf8,
-} from "./shared";
+} from "../shared";
 import { type LegalityRegion, type LegalityRule, regionForLineage } from "./legality-rule";
 import { parseStoredLegalityRuleEffect } from "./legality-effect-policy";
-import { registeredLegalitySourceScope } from "./adapters";
+import { registeredLegalitySourceScope } from "../adapters";
 
 const games = new Set<SupportedGame>(["one-piece", "fusion-world", "digimon", "gundam"]);
 const regions = new Set<LegalityRegion>(["EN-OCEANIA", "EN-ASIA", "EN-US"]);

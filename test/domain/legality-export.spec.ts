@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { type CatalogueCandidate, canonicalNdjson } from "../../src/catalogue/shared";
-import { legalityRuleExportRecords } from "../../src/catalogue/legality-export";
-import type { LegalityRuleEffect } from "../../src/catalogue/legality-rule";
+import { legalityRuleExportRecords } from "../../src/catalogue/legality";
+import type { LegalityRuleEffect } from "../../src/catalogue/legality/legality-rule";
 
 test("v3 Legality Rule export canonicalizes every set-valued effect operand", () => {
   const rule = {

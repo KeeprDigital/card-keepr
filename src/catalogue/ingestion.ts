@@ -46,7 +46,7 @@ import { typedPrintingProjections } from "./product-release-projection";
 import { cardSearchChunks, cardSearchFtsQuery, cardSearchTerms, cardSearchText } from "./card-search";
 import { repairableCatalogueRevisionWindow } from "./catalogue-revision-retention";
 import { adapterReconciliationAreas, requiredSourceAdapter } from "./adapters";
-import { legalityPublicationStatements } from "./legality-publication";
+import { legalityPublicationStatements } from "./legality";
 import { publicationBackupReservation } from "./backup-recovery";
 import { SPINE_REVISION_ID } from "./production-release";
 

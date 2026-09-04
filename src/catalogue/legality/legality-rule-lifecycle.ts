@@ -1,4 +1,4 @@
-import { type CatalogueCandidate, type LegalityRule, canonicalJson, compareUtf8 } from "./shared";
+import { type CatalogueCandidate, type LegalityRule, canonicalJson, compareUtf8 } from "../shared";
 
 export type LegalityRuleLifecycle = {
   first_revision_id: string;

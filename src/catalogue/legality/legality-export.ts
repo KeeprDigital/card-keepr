@@ -7,7 +7,7 @@ import {
   maximumExportComponentBytes,
   maximumLegalityRuleRelationships,
   maximumLegalityStatusRules,
-} from "./shared";
+} from "../shared";
 import { legalityExportKind, legalityRuleCardIds, normalizedLegalityRuleLifecycle } from "./legality-rule";
 import { canonicalLegalityRuleEffect } from "./legality-effect-policy";
 

@@ -61,7 +61,7 @@ import {
   mergeCatalogueErrata,
   type CatalogueErratum,
 } from "./errata-rules-text";
-import { legalityRulesForCandidate, normalizedLegalityRuleLifecycle, resolveLegalityRuleCards } from "./legality-rule";
+import { legalityRulesForCandidate, normalizedLegalityRuleLifecycle, resolveLegalityRuleCards } from "./legality";
 import { reconcileDigimonCardAuthority, type DigimonCardAuthority } from "./digimon-reconciliation";
 
 type ActiveRunRow = {

@@ -23,7 +23,7 @@ import type {
 import { verifyComponentExportRecord, verifyExportManifest } from "./export-validation";
 import { typedPrintingProjections } from "./product-release-projection";
 import { erratumTargetLifecycleKey, exportErratum } from "./errata-rules-text";
-import { legalityRuleExportRecords, legalityRuleRelationshipRecords } from "./legality-export";
+import { legalityRuleExportRecords, legalityRuleRelationshipRecords } from "./legality";
 
 const componentDefinitions = [
   ["supported-games", "SupportedGameRecord", "id:utf8", 5],

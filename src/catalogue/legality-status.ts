@@ -1,19 +1,22 @@
 import {
   type LegalityRegion,
+  canonicalJson,
+  sha256Text,
+  isIsoCalendarDate,
+  maximumLegalityStatusRules,
+} from "./shared";
+import {
   evaluateLegalityRuleEffect,
   legalityRuleCardIds,
   unresolvedTargetScope,
-} from "./legality-rule";
-import { canonicalJson, sha256Text, isIsoCalendarDate, maximumLegalityStatusRules } from "./shared";
-import { ifNoneMatchMatches } from "../http/conditional-request";
-import { publicUrl, type PublicBase } from "../http/public-base";
-import { requiredLegalityRegionsForGame } from "./adapters";
-import {
   parseStoredCatalogueCard,
   parseStoredLegalityRule,
   type StoredLegalityStatusCard,
   type StoredLegalityStatusRule,
-} from "./stored-legality-documents";
+} from "./legality";
+import { ifNoneMatchMatches } from "../http/conditional-request";
+import { publicUrl, type PublicBase } from "../http/public-base";
+import { requiredLegalityRegionsForGame } from "./adapters";
 
 type ContextRow = {
   current_revision_id: string;
