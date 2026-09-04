@@ -9,21 +9,14 @@ import * as schemaQueries from "./helpers/query-helpers/schema.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
-// ADR 0006: migrations/0001_baseline.sql replaces the 36-file chain that
-// ended at level 36. The chain's last commit is the source of truth for the
-// baseline's schema DDL; that digest was computed from it and is recorded
-// in the ADR. The digest check always runs; when the commit is present
-// locally (it is not in a shallow CI checkout) the chain is also replayed
-// and diffed object by object so a mismatch names the object.
-//
-// Seed rows are no longer compared with the chain: under ADR 0008 the
-// baseline's source_adapter_versions seed was edited in place (#134, #135)
-// and legitimately diverges. The baseline's own seed digest is pinned
-// instead so an unintended seed change still fails here.
-const chainCommit = "30751a2a46548530d48dc37a1dc507efbbd07c03";
-const chainLevel = 36;
-const chainSchemaDigest = "4e16338cc27afa79f3ac39bacee5c36ad4807bb09a41d8ea06fcf2fdc78c1bf4";
-const baselineSeedDigest = "f5523576e21a352acd13f70a41fe5cdb5fd067d6bd4e2abc78f1c7d0dbe5856e";
+// #136 folds the final pre-Go-Live chain into one baseline. Compare logical
+// schema, seeds and trigger creation order against the retained git commit.
+// The chain left an empty sqlite_sequence after deleting its last AUTOINCREMENT
+// table; that unused SQLite internal object is the sole schema exclusion.
+const chainCommit = "23b1b1128cf9bf5827034d15dcaebf1964ce7c76";
+const chainLevel = 13;
+const chainSchemaDigest = "12c3e223cdcb1623e1a362307eea051b36797b4735a95a18d96dfb067f1b2a60";
+const baselineSeedDigest = "0a7b7d721a7e6d343ca38e607c4285ab46ea32856802a4f2b6a4d35733cc5483";
 
 test("the baseline is the first migration and a fresh apply yields level 1", async () => {
   const names = await migrationNames();
@@ -36,11 +29,12 @@ test("the baseline is the first migration and a fresh apply yields level 1", asy
   database.close();
 });
 
-test("the baseline schema equals the level-36 chain and its seed rows are pinned", async () => {
+test("the baseline preserves the final pre-Go-Live schema, seeds and trigger order", async () => {
   const baseline = new DatabaseSync(":memory:");
   baseline.exec(await readFile(resolve(root, "migrations", "0001_baseline.sql"), "utf8"));
   const baselineSchema = schemaObjects(baseline);
   const baselineSeeds = schemaQueries.seedRows(baseline);
+  const baselineTriggers = schemaQueries.triggerCreationOrder(baseline).all();
   assert.equal(schemaLevel(baseline), 1);
   baseline.close();
 
@@ -48,13 +42,22 @@ test("the baseline schema equals the level-36 chain and its seed rows are pinned
   if (chain !== null) {
     assert.equal(schemaLevel(chain), chainLevel);
     assert.deepEqual(baselineSchema, schemaObjects(chain));
+    assert.deepEqual(baselineSeeds, schemaQueries.seedRows(chain));
+    assert.deepEqual(baselineTriggers, schemaQueries.triggerCreationOrder(chain).all());
+    assert.deepEqual(schemaQueries.orphanSequenceRows(chain).all(), []);
+    assert.ok(
+      schemaQueries
+        .schemaDefinitionRows(chain)
+        .all()
+        .every(({ sql }) => !/AUTOINCREMENT/u.test(sql ?? "")),
+    );
     chain.close();
   }
   assert.equal(digest(baselineSchema), chainSchemaDigest);
   assert.equal(digest(baselineSeeds), baselineSeedDigest);
 });
 
-// Replays the 36-file chain from git history, or returns null when the
+// Replays the final pre-Go-Live chain from git history, or returns null when the
 // commit is not in the checkout (a shallow clone). Any other git failure
 // propagates so the proof cannot silently degrade to the digest check.
 function chainDatabase() {
@@ -87,6 +90,7 @@ function schemaObjects(database) {
   return schemaQueries
     .schemaDefinitionRows(database)
     .all()
+    .filter((row) => row.name !== "sqlite_sequence")
     .map((row) => ({
       type: row.type,
       name: row.name,

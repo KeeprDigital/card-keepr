@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Pending supersession by #136. This draft must receive the owner's explicit Go-Live call and the actual cutover date before merge. No live cutover is recorded yet.
 
 ## Context
 

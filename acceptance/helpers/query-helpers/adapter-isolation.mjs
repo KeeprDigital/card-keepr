@@ -13,19 +13,6 @@ export const schemaLevel = (database) =>
   database.prepare("SELECT migration_level FROM catalogue_schema_state WHERE singleton=1");
 export const foreignKeyViolations = (database) => database.prepare("PRAGMA foreign_key_check");
 
-export function snapshot(database) {
-  return database
-    .prepare("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name")
-    .all()
-    .map(({ name }) => ({
-      name,
-      rows: database
-        .prepare(`SELECT * FROM "${name.replaceAll('"', '""')}" `)
-        .all()
-        .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
-    }));
-}
-
 let runFixtureSql;
 async function seedRun(database) {
   if (runFixtureSql === undefined) {
@@ -48,10 +35,8 @@ async function seedRun(database) {
   database.exec(runFixtureSql);
 }
 
-/** All evidence links are valid; each adapter field can independently name a
- * synthetic registration so the migration must guard every retained surface.
- */
-export async function seedEvidence(database, overrides = {}) {
+/** Seed linked production evidence against the baseline registration. */
+export async function seedEvidence(database) {
   await seedRun(database);
   const adapter = "one-piece-en@6";
   const identity = ["one-piece-en", "one-piece", "one-piece@1"];
@@ -59,7 +44,7 @@ export async function seedEvidence(database, overrides = {}) {
     .prepare(`INSERT INTO ingestion_evidence_plans
     (ingestion_run_id, source_lineage, supported_game, game_profile_version, adapter_version, request_plan_json, plan_origin)
     VALUES ('adapter-isolation-run', ?, ?, ?, ?, '{}', ?)`)
-    .run(...identity, overrides.planAdapter ?? adapter, overrides.planOrigin ?? "production");
+    .run(...identity, adapter, "production");
   database
     .prepare(`INSERT INTO source_requests
     (ingestion_run_id, request_id, sequence_number, method, url, request_headers_json, representation_fingerprint, state)
@@ -77,24 +62,24 @@ export async function seedEvidence(database, overrides = {}) {
     source_lineage, supported_game, game_profile_version, adapter_version)
     VALUES ('adapter-isolation-snapshot', 'adapter-isolation-run', 'one-piece-en:cards', 'adapter-isolation-fetch', 'GET',
     'https://en.onepiece-cardgame.com/cardlist/', '{}', 'fingerprint', '[]', '2026-09-04T00:00:00Z', 200, '{}', ?, 2, 'source/bytes', ?, ?, ?, ?)`)
-    .run("a".repeat(64), ...identity, overrides.snapshotAdapter ?? adapter);
+    .run("a".repeat(64), ...identity, adapter);
   database
     .prepare(`INSERT INTO source_parse_operations
     (id, source_snapshot_id, adapter_version, intent, idempotency_key, observation_set_id, content_object_key, parsed_at, state)
     VALUES ('adapter-isolation-parse', 'adapter-isolation-snapshot', ?, 'collection', 'adapter-isolation-parse',
     'adapter-isolation-observations', 'observations/bytes', '2026-09-04T00:00:00Z', 'finalized')`)
-    .run(overrides.parseAdapter ?? adapter);
+    .run(adapter);
   database
     .prepare(`INSERT INTO source_observation_sets
     (id, parse_operation_id, source_snapshot_id, source_lineage, supported_game, game_profile_version, adapter_version,
     parsed_at, content_digest, content_byte_length, content_object_key, observation_count)
     VALUES ('adapter-isolation-observations', 'adapter-isolation-parse', 'adapter-isolation-snapshot', ?, ?, ?, ?,
     '2026-09-04T00:00:00Z', ?, 2, 'observations/bytes', 0)`)
-    .run(...identity, overrides.observationAdapter ?? adapter, "b".repeat(64));
+    .run(...identity, adapter, "b".repeat(64));
   database
     .prepare(`INSERT INTO reconciliation_evidence_partitions
     (ingestion_run_id, sequence_number, request_id, source_observation_set_id, source_snapshot_id,
     source_lineage, supported_game, game_profile_version, adapter_version)
     VALUES ('adapter-isolation-run', 1, 'one-piece-en:cards', 'adapter-isolation-observations', 'adapter-isolation-snapshot', ?, ?, ?, ?)`)
-    .run(...identity, overrides.partitionAdapter ?? adapter);
+    .run(...identity, adapter);
 }

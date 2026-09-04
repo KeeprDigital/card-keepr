@@ -1,12 +1,12 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { SPINE_REVISION_ID } from "../src/catalogue/shared/spine-revision.mjs";
 import {
-  productionReleaseTransitionSql,
   productionReleaseLeaseAssignmentsSql,
   productionReleaseOutcomeTimestampSql,
+  productionReleaseTransitionSql,
 } from "./production-release-state.mjs";
-import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { SPINE_REVISION_ID } from "../src/catalogue/shared/spine-revision.mjs";
 
 export function assertReleaseInputs(input) {
   if (
@@ -93,17 +93,6 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const q = sqlQuote;
   const expires = new Date(Date.now() + 45 * 60_000).toISOString();
-  // This known cutover regenerates pre-Go-Live data instead of backfilling events.
-  // Consult the checked-out migration level so ordinary releases after it stay valid.
-  const localMigrationLevel = Math.max(
-    ...(await readdir(new URL("../migrations/", import.meta.url)))
-      .filter((name) => /^\d+_.*\.sql$/u.test(name))
-      .map((name) => Number.parseInt(name, 10)),
-  );
-  const regenerationGate =
-    plan.expected_migration_level < 12 && localMigrationLevel >= 12 ? "NOT EXISTS (SELECT 1 FROM ingestion_runs)" : "1";
-  // The canonical lease exists before the run-event cutover and remains the
-  // same reservation through migration; no synthetic Ingestion Run is needed.
   const preparedWhere = `idempotency_key=${q(plan.idempotency_key)} AND operation='prepare_production_release' AND request_json=${q(stableJson(plan))} AND json_extract(response_json,'$.release_id')=${q(plan.release_id)} AND json_extract(response_json,'$.dispatch_digest')=${q(environment.DISPATCH_DIGEST)}`;
   const recoveryGate =
     replacement === null
@@ -112,7 +101,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   const expectedRetention = bootstrap
     ? ""
     : plan.retained_revision_evidence.map((item) => `(${q(item.revision_id)},${item.depth})`).join(",");
-  const idleGate = `catalogue.singleton=1 AND catalogue.current_revision_id=${q(plan.expected_current_revision_id)} AND schema_state.migration_level=${plan.expected_migration_level} AND operation.active_ingestion_run_id IS NULL AND (operation.active_production_release_id IS NULL OR operation.active_production_release_expires_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now')) AND ${recoveryGate} AND (${regenerationGate})`;
+  const idleGate = `catalogue.singleton=1 AND catalogue.current_revision_id=${q(plan.expected_current_revision_id)} AND schema_state.migration_level=${plan.expected_migration_level} AND operation.active_ingestion_run_id IS NULL AND (operation.active_production_release_id IS NULL OR operation.active_production_release_expires_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now')) AND ${recoveryGate}`;
   const liveGate = bootstrap
     ? `EXISTS (SELECT 1 FROM catalogue_state AS catalogue JOIN operation_state AS operation ON operation.singleton=1 JOIN catalogue_schema_state AS schema_state ON schema_state.singleton=1 WHERE ${idleGate} AND catalogue.current_revision_id=${q(SPINE_REVISION_ID)} AND NOT EXISTS (SELECT 1 FROM catalogue_revisions))`
     : `EXISTS (SELECT 1 FROM catalogue_state AS catalogue JOIN operation_state AS operation ON operation.singleton=1 JOIN catalogue_schema_state AS schema_state ON schema_state.singleton=1 WHERE ${idleGate} AND EXISTS (SELECT 1 FROM catalogue_backup_attempts AS backup WHERE backup.idempotency_key=${q(plan.recovery_backup_attempt_id)} AND backup.catalogue_revision_id=${q(plan.expected_current_revision_id)} AND backup.state='verified' AND backup.d1_bookmark=${q(plan.recovery_bookmark)} AND backup.manifest_sha256 IS NOT NULL) AND 3=(WITH RECURSIVE retained(revision_id,depth) AS (SELECT catalogue.current_revision_id,0 UNION ALL SELECT revision.expected_previous_revision_id,retained.depth+1 FROM retained JOIN catalogue_revisions AS revision ON revision.id=retained.revision_id WHERE retained.depth<2 AND revision.expected_previous_revision_id IS NOT NULL), expected(revision_id,depth) AS (VALUES ${expectedRetention}) SELECT COUNT(*) FROM retained JOIN expected USING (revision_id,depth) JOIN catalogue_exports AS export ON export.catalogue_revision_id=retained.revision_id WHERE export.verified=1 AND export.maintenance_state='available' AND EXISTS (SELECT 1 FROM catalogue_backup_attempts AS backup WHERE backup.catalogue_revision_id=retained.revision_id AND backup.state='verified' AND backup.d1_bookmark IS NOT NULL AND backup.manifest_sha256 IS NOT NULL)) AND EXISTS (SELECT 1 FROM catalogue_query_revisions WHERE catalogue_revision_id=${q(plan.smoke_targets.stale_revision_id)} AND state='archived'))`;
@@ -127,7 +116,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   const claim = `UPDATE operation_state SET ${productionReleaseLeaseAssignmentsSql(plan.release_id, expires)} WHERE singleton=1 AND ${claimedEvidence} AND ${liveGate};`;
   await writeFile(
     `${directory}/live-preflight.sql`,
-    `SELECT CASE WHEN EXISTS (SELECT 1 FROM administration_idempotency WHERE ${preparedWhere}) AND ${liveGate} THEN 1 ELSE 0 END AS ready, CASE WHEN NOT (${regenerationGate}) THEN 'ingestion_run_regeneration_required' ELSE NULL END AS problem;\n`,
+    `SELECT CASE WHEN EXISTS (SELECT 1 FROM administration_idempotency WHERE ${preparedWhere}) AND ${liveGate} THEN 1 ELSE 0 END AS ready, NULL AS problem;\n`,
     { mode: 0o600 },
   );
   await writeFile(

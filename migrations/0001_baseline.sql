@@ -1,55 +1,21 @@
--- Schema baseline (ADR 0006).
---
--- This file replaces the 36 forward migrations that took the catalogue
--- database to schema level 36 (0001_catalogue_publication through
--- 0036_drop_credential_rotation, last applied together at commit 30751a2a46548530d48dc37a1dc507efbbd07c03).
--- It creates the level-36 schema in one pass and seeds the rows every
--- environment starts from, recording schema level 1. The old files remain
--- in git history; acceptance/schema-baseline.test.mjs proves this file
--- yields the same sqlite_schema and seed rows as the old chain.
---
--- Every migration after this one must open with the level guard:
---
---   SELECT CASE
---     WHEN (SELECT migration_level FROM catalogue_schema_state
---           WHERE singleton = 1) = <previous level>
---     THEN 1
---     ELSE json_extract('schema_level_mismatch_expected_<previous level>', '$')
---   END;
---
--- json_extract on a non-JSON string raises "malformed JSON" and aborts the
--- whole migration, so a stale or skipped level can never be papered over.
--- The migration's final statement bumps catalogue_schema_state to its own
--- level without a WHERE clause, because the guard has proven it.
---
--- Objects appear in the order the chain created them, except that the
--- singleton state tables and ingestion_runs are hoisted to the top. Trigger
--- order is unchanged: SQLite fires overlapping triggers in creation order.
+-- Go-Live baseline: final pre-Go-Live schema through migration 0013.
+-- Replayed from commit 23b1b11; object creation order preserves trigger order.
+-- ADR 0006 / #136: apply only to a newly created, empty database.
+-- The prior chain remains in git history; no historical data is migrated.
+PRAGMA foreign_keys = ON;
 
--- Singleton state.
---
--- A fresh database starts at the schema-valid catrev_spine_000 bootstrap
--- pointer (seeded at the end of this file) until the first approved
--- candidate is published.
 CREATE TABLE catalogue_state (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   current_revision_id TEXT NOT NULL,
   published_at TEXT NOT NULL
 );
 
--- active_release_id / active_release_expires_at were the original
--- Production Release lease columns; active_production_release_id and its
--- expiry are the later vocabulary. Both pairs stay and are kept equal by
--- the production_release_lease_sync_* triggers so a Worker built against
--- either name keeps working during a compatible rollout.
 CREATE TABLE operation_state (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   active_ingestion_run_id TEXT,
   recovery_health TEXT NOT NULL CHECK (
     recovery_health IN ('healthy', 'degraded', 'blocked')
   ),
-  active_release_id TEXT,
-  active_release_expires_at TEXT,
   active_recovery_id TEXT,
   recovery_restore_guard TEXT NOT NULL DEFAULT 'clear'
     CHECK (recovery_restore_guard IN ('clear', 'blocked')),
@@ -57,82 +23,21 @@ CREATE TABLE operation_state (
   active_production_release_expires_at TEXT
 );
 
--- The schema level is read by backup and restore verification, which
--- compares a backup's stamped level with the live one, and by the
--- Production Release preflight. The baseline seeds level 1; every later
--- migration opens with the level guard described in ADR 0006 and ends by
--- bumping this row.
 CREATE TABLE catalogue_schema_state (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   migration_level INTEGER NOT NULL CHECK (migration_level > 0)
 );
 
--- Ingestion Runs.
---
--- 'paused' is a non-terminal state reachable only from 'collecting': a
--- run pauses when atomic admission of a discovered request batch would
--- exceed its Source Adapter Version's request capacity, when transport or
--- R2 retries are exhausted, or when its collection Workflow stalls. The
--- paused run keeps the single active-run reservation, its expected
--- Catalogue Revision, and every retained Source Request, Source Snapshot,
--- and Source Observation Set. Termination (paused -> failed) is the only
--- exit besides resuming.
---
--- operational_request_id is one safe request identity linking a durable
--- run to the structured request-completion event that created it; it is
--- deliberately distinct from the owner-supplied idempotency key.
 CREATE TABLE ingestion_runs (
   id TEXT PRIMARY KEY,
-  state TEXT NOT NULL CHECK (
-    state IN (
-      'planning',
-      'collecting',
-      'paused',
-      'parsing',
-      'reconciling',
-      'awaiting_approval',
-      'publishing',
-      'published',
-      'rejected',
-      'expired',
-      'failed'
-    )
-  ),
-  selected_games_json TEXT NOT NULL,
   started_at TEXT NOT NULL,
   expected_current_revision_id TEXT NOT NULL,
   linked_run_id TEXT REFERENCES ingestion_runs(id),
   idempotency_key TEXT NOT NULL UNIQUE,
-  candidate_digest TEXT,
-  candidate_created_at TEXT,
-  approval_deadline TEXT,
-  approval_json TEXT,
-  published_revision_id TEXT,
-  export_manifest_digest TEXT,
-  terminal_at TEXT,
-  candidate_json TEXT NOT NULL,
   approval_idempotency_key TEXT UNIQUE,
-  failure_code TEXT,
-  progress_json TEXT NOT NULL
-    DEFAULT '{"completed_stages":[],"current_stage":"planning"}',
-  warnings_json TEXT NOT NULL DEFAULT '[]',
-  approval_history_json TEXT NOT NULL DEFAULT '[]',
-  publication_outcome TEXT CHECK (
-    publication_outcome IN ('revision', 'no_change')
-  ),
-  resulting_revision_id TEXT,
-  freshness_checked_at TEXT,
-  publication_revision_id TEXT,
-  publication_started_at TEXT,
-  publication_reconcile_after TEXT,
-  publication_manifest_digest TEXT,
-  publication_writer_token TEXT,
-  candidate_catalogue_digest TEXT,
   operational_request_id TEXT
 );
 
--- Published catalogue: revisions, their per-revision documents, and the
--- verified export packages.
 CREATE TABLE catalogue_revisions (
   id TEXT PRIMARY KEY,
   ingestion_run_id TEXT NOT NULL UNIQUE REFERENCES ingestion_runs(id),
@@ -168,8 +73,6 @@ CREATE TABLE catalogue_exports (
   deleted_at TEXT
 );
 
--- Administration idempotency: completed outcomes are immutable, and an
--- in-flight claim must be finished by the same owner that opened it.
 CREATE TABLE administration_idempotency (
   idempotency_key TEXT PRIMARY KEY,
   operation TEXT NOT NULL,
@@ -190,46 +93,6 @@ CREATE TABLE administration_idempotency_claims (
   owner_token TEXT NOT NULL,
   claim_version INTEGER NOT NULL,
   claim_expires_at TEXT NOT NULL
-);
-
-CREATE TRIGGER guard_idempotency_claim_after_completion
-BEFORE INSERT ON administration_idempotency_claims
-WHEN EXISTS (
-  SELECT 1
-  FROM administration_idempotency AS outcome
-  WHERE outcome.idempotency_key = NEW.idempotency_key
-)
-BEGIN
-  SELECT RAISE(ABORT, 'administration_idempotency_completed');
-END;
-
-CREATE TRIGGER guard_idempotency_outcome_owner
-BEFORE INSERT ON administration_idempotency
-WHEN EXISTS (
-  SELECT 1
-  FROM administration_idempotency_claims AS claim
-  WHERE claim.idempotency_key = NEW.idempotency_key
-)
-  AND NOT EXISTS (
-    SELECT 1
-    FROM administration_idempotency_claims AS claim
-    WHERE claim.idempotency_key = NEW.idempotency_key
-      AND claim.operation = NEW.operation
-      AND claim.request_json = NEW.request_json
-      AND claim.owner_token = NEW.claim_owner_token
-      AND claim.claim_version = NEW.claim_version
-  )
-BEGIN
-  SELECT RAISE(ABORT, 'administration_idempotency_owner_changed');
-END;
-
--- Ingestion lifecycle audit and publication bookkeeping.
-CREATE TABLE ingestion_run_transitions (
-  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-  ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
-  from_state TEXT,
-  to_state TEXT NOT NULL,
-  transitioned_at TEXT NOT NULL
 );
 
 CREATE TABLE ingestion_no_change_results (
@@ -257,12 +120,6 @@ CREATE TABLE ingestion_publication_cleanup (
   claim_expires_at TEXT
 );
 
-CREATE TRIGGER guard_ingestion_transition_update
-BEFORE UPDATE ON ingestion_run_transitions
-BEGIN
-  SELECT RAISE(ABORT, 'ingestion_transition_audit_immutable');
-END;
-
 CREATE TRIGGER guard_administration_idempotency_update
 BEFORE UPDATE ON administration_idempotency
 BEGIN
@@ -273,28 +130,6 @@ CREATE TRIGGER guard_administration_idempotency_delete
 BEFORE DELETE ON administration_idempotency
 BEGIN
   SELECT RAISE(ABORT, 'administration_idempotency_immutable');
-END;
-
-CREATE TRIGGER guard_cleanup_idempotency_completion
-BEFORE INSERT ON administration_idempotency
-WHEN NEW.operation = 'retry_publication_cleanup'
-  AND NEW.outcome = 'success'
-  AND NOT EXISTS (
-    SELECT 1
-    FROM ingestion_publication_cleanup AS cleanup
-    WHERE cleanup.ingestion_run_id =
-      json_extract(NEW.request_json, '$.run_id')
-      AND cleanup.state = 'completed'
-      AND cleanup.idempotency_key = NEW.idempotency_key
-      AND cleanup.request_json = NEW.request_json
-      AND cleanup.claim_token IS NULL
-      AND cleanup.claim_version = json_extract(
-        NEW.response_json,
-        '$.publication_cleanup.generation'
-      )
-  )
-BEGIN
-  SELECT RAISE(ABORT, 'cleanup_completion_claim_changed');
 END;
 
 CREATE TRIGGER guard_no_change_result_update
@@ -309,18 +144,6 @@ BEGIN
   SELECT RAISE(ABORT, 'ingestion_no_change_result_immutable');
 END;
 
--- Immutable Source Evidence.
---
--- Source Adapter Versions are append-only identities: a row retains the
--- parser contract and origin under which evidence was captured, and
--- earlier identities stay installed for retained-snapshot replay.
--- request_capacity is an immutable request-capacity policy owned by each
--- exact version, constrained by the larger global emergency ceiling
--- (25,000) declared in src/catalogue/source-adapters.ts. The seed rows at
--- the end of this file are a database constraint copy of
--- installedSourceAdapterRegistrations there; the Worker drift test
--- requires exact agreement, request_capacity included, because SQLite
--- migrations cannot import runtime TypeScript.
 CREATE TABLE source_adapter_versions (
   adapter_version TEXT PRIMARY KEY,
   source_lineage TEXT NOT NULL,
@@ -599,25 +422,12 @@ BEGIN
   SELECT RAISE(ABORT, 'immutable_source_observation_set');
 END;
 
-CREATE TRIGGER ingestion_evidence_plan_origin_matches_adapter
-BEFORE INSERT ON ingestion_evidence_plans
-WHEN NOT EXISTS (
-  SELECT 1
-  FROM source_adapter_versions AS adapter
-  WHERE adapter.adapter_version = NEW.adapter_version
-    AND adapter.adapter_origin = NEW.plan_origin
-)
-BEGIN
-  SELECT RAISE(ABORT, 'evidence_plan_origin_mismatch');
-END;
-
 CREATE TRIGGER ingestion_evidence_plan_origin_is_immutable
 BEFORE UPDATE OF plan_origin ON ingestion_evidence_plans
 BEGIN
   SELECT RAISE(ABORT, 'evidence_plan_origin_immutable');
 END;
 
--- Card and Printing reconciliation.
 CREATE TABLE reconciled_cards (
   id TEXT PRIMARY KEY,
   supported_game TEXT NOT NULL,
@@ -770,16 +580,6 @@ CREATE TABLE reconciliation_candidates (
     REFERENCES source_observation_sets (id, source_snapshot_id)
 );
 
-CREATE TABLE reconciliation_contexts (
-  ingestion_run_id TEXT PRIMARY KEY REFERENCES ingestion_runs(id),
-  source_observation_set_id TEXT NOT NULL REFERENCES source_observation_sets(id),
-  source_snapshot_id TEXT NOT NULL REFERENCES source_snapshots(id),
-  source_lineage TEXT NOT NULL,
-  digest_payload_json TEXT NOT NULL,
-  FOREIGN KEY (source_observation_set_id, source_snapshot_id)
-    REFERENCES source_observation_sets (id, source_snapshot_id)
-);
-
 CREATE TABLE reconciliation_evidence_partitions (
   ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
   sequence_number INTEGER NOT NULL,
@@ -806,18 +606,6 @@ CREATE TABLE reconciliation_payload_chunks (
   content TEXT NOT NULL CHECK (length(CAST(content AS BLOB)) <= 524288),
   PRIMARY KEY (ingestion_run_id, payload_kind, chunk_index)
 );
-
-CREATE TRIGGER reconciliation_contexts_are_immutable_on_update
-BEFORE UPDATE ON reconciliation_contexts
-BEGIN
-  SELECT RAISE(ABORT, 'reconciliation_context_immutable');
-END;
-
-CREATE TRIGGER reconciliation_contexts_are_immutable_on_delete
-BEFORE DELETE ON reconciliation_contexts
-BEGIN
-  SELECT RAISE(ABORT, 'reconciliation_context_immutable');
-END;
 
 CREATE TRIGGER reconciliation_candidates_are_immutable_on_update
 BEFORE UPDATE ON reconciliation_candidates
@@ -882,7 +670,6 @@ BEGIN
   SELECT RAISE(ABORT, 'reconciled_printing_identity_immutable');
 END;
 
--- Products, Releases, and distribution contexts.
 CREATE TABLE revision_products (
   catalogue_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   product_id TEXT NOT NULL,
@@ -938,7 +725,17 @@ ON reconciled_printing_images (object_key);
 CREATE TABLE revision_printing_images (
   catalogue_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   image_id TEXT NOT NULL REFERENCES reconciled_printing_images(id),
-  printing_id TEXT NOT NULL,
+  printing_id TEXT NOT NULL, media_type TEXT CHECK (
+  media_type IS NULL OR media_type LIKE 'image/%'
+), content_sha256 TEXT CHECK (
+  content_sha256 IS NULL OR (
+    length(content_sha256) = 64 AND content_sha256 NOT GLOB '*[^0-9a-f]*'
+  )
+), content_byte_length INTEGER CHECK (
+  content_byte_length IS NULL OR content_byte_length > 0
+), object_key TEXT CHECK (
+  object_key IS NULL OR length(object_key) > 0
+),
   PRIMARY KEY (catalogue_revision_id, image_id)
 );
 
@@ -1084,7 +881,6 @@ BEGIN
   SELECT RAISE(ABORT, 'source_adapter_version_immutable');
 END;
 
--- Reconciliation Workflow bookkeeping and Errata rules text.
 CREATE TABLE reconciliation_workflow_requests (
   idempotency_key TEXT PRIMARY KEY,
   ingestion_run_id TEXT NOT NULL UNIQUE
@@ -1168,7 +964,6 @@ BEGIN
   SELECT RAISE(ABORT, 'catalogue_search_repair_request_immutable');
 END;
 
--- Revision-pinned Card query documents and substring search.
 CREATE TABLE revision_card_query_documents (
   catalogue_revision_id TEXT NOT NULL,
   card_id TEXT NOT NULL,
@@ -1204,30 +999,6 @@ CREATE INDEX revision_card_query_documents_by_identity
     sort_game, sort_id
   );
 
-CREATE TABLE revision_card_search_terms (
-  catalogue_revision_id TEXT NOT NULL,
-  card_id TEXT NOT NULL,
-  term TEXT NOT NULL CHECK (
-    (substr(term, 1, 3) = 'g1:' AND length(term) = 4)
-    OR (substr(term, 1, 3) = 'g2:' AND length(term) = 5)
-    OR (substr(term, 1, 3) = 'g3:' AND length(term) = 6)
-  ),
-  sort_game TEXT NOT NULL,
-  sort_identity_kind TEXT NOT NULL,
-  sort_identity_value TEXT NOT NULL,
-  sort_id TEXT NOT NULL,
-  PRIMARY KEY (catalogue_revision_id, card_id, term),
-  FOREIGN KEY (catalogue_revision_id, card_id)
-    REFERENCES revision_card_query_documents(catalogue_revision_id, card_id)
-    ON DELETE CASCADE
-);
-
-CREATE INDEX revision_card_search_by_term
-  ON revision_card_search_terms(
-    catalogue_revision_id, term, sort_game, sort_identity_kind,
-    sort_identity_value, sort_id, card_id
-  );
-
 CREATE TABLE revision_card_search_chunks (
   catalogue_revision_id TEXT NOT NULL,
   card_id TEXT NOT NULL,
@@ -1255,27 +1026,10 @@ CREATE TABLE catalogue_query_revisions (
   repair_search_offset INTEGER NOT NULL DEFAULT 0 CHECK (
     repair_search_offset >= 0
   ),
-  repair_term_offset INTEGER NOT NULL DEFAULT 0 CHECK (
-    repair_term_offset >= 0
+  repair_chunk_offset INTEGER NOT NULL DEFAULT 0 CHECK (
+    repair_chunk_offset >= 0
   )
 );
-
-CREATE TRIGGER archive_removed_card_query_material
-AFTER DELETE ON revision_card_query_documents
-WHEN NOT EXISTS (
-  SELECT 1
-  FROM revision_card_query_documents
-  WHERE catalogue_revision_id = OLD.catalogue_revision_id
-)
-BEGIN
-  UPDATE catalogue_query_revisions
-  SET state = 'archived',
-      repaired_through_card_id = NULL,
-      repair_card_id = NULL,
-      repair_search_offset = 0,
-      repair_term_offset = 0
-  WHERE catalogue_revision_id = OLD.catalogue_revision_id;
-END;
 
 CREATE TABLE reconciled_errata (
   id TEXT PRIMARY KEY,
@@ -1300,34 +1054,6 @@ CREATE TABLE reconciled_errata (
   first_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id)
 );
-
-CREATE TRIGGER reconciled_card_erratum_target_is_valid
-BEFORE INSERT ON reconciled_errata
-WHEN NEW.target_type = 'card'
-  AND NOT EXISTS (
-    SELECT 1
-    FROM reconciled_cards AS card
-    WHERE card.id = NEW.target_id
-      AND card.supported_game = NEW.game
-  )
-BEGIN
-  SELECT RAISE(ABORT, 'reconciled_erratum_target_invalid');
-END;
-
-CREATE TRIGGER reconciled_printing_erratum_target_is_valid
-BEFORE INSERT ON reconciled_errata
-WHEN NEW.target_type = 'printing'
-  AND NOT EXISTS (
-    SELECT 1
-    FROM reconciled_printings AS printing
-    JOIN reconciled_cards AS card
-      ON card.id = printing.card_id
-    WHERE printing.id = NEW.target_id
-      AND card.supported_game = NEW.game
-  )
-BEGIN
-  SELECT RAISE(ABORT, 'reconciled_erratum_target_invalid');
-END;
 
 CREATE TABLE erratum_provenance (
   erratum_id TEXT NOT NULL REFERENCES reconciled_errata(id),
@@ -1445,24 +1171,6 @@ CREATE TABLE official_source_collection_plans (
   UNIQUE (discovery_observation_set_id)
 );
 
-CREATE TRIGGER official_source_collection_plan_discovery_owner
-BEFORE INSERT ON official_source_collection_plans
-WHEN NOT EXISTS (
-  SELECT 1
-  FROM source_observation_sets AS observation_set
-  JOIN source_snapshots AS snapshot
-    ON snapshot.id = observation_set.source_snapshot_id
-  WHERE observation_set.id = NEW.discovery_observation_set_id
-    AND snapshot.ingestion_run_id = NEW.ingestion_run_id
-    AND snapshot.source_lineage = NEW.source_lineage
-)
-BEGIN
-  SELECT RAISE(
-    ABORT,
-    'official_source_collection_plan_discovery_owner_mismatch'
-  );
-END;
-
 CREATE TRIGGER official_source_collection_plans_immutable_update
 BEFORE UPDATE ON official_source_collection_plans
 BEGIN
@@ -1531,112 +1239,12 @@ BEGIN
   SELECT RAISE(ABORT, 'source_discovery_request_plan_immutable');
 END;
 
-CREATE TRIGGER source_requests_must_match_immutable_plan
-BEFORE INSERT ON source_requests
-WHEN NOT EXISTS (
-  SELECT 1
-  FROM ingestion_evidence_plans AS plan,
-       json_each(
-         CASE
-           WHEN json_type(plan.request_plan_json, '$.plans') = 'array'
-             THEN json_extract(plan.request_plan_json, '$.plans')
-           ELSE json_array(json(plan.request_plan_json))
-         END
-       ) AS evidence_plan,
-       json_each(evidence_plan.value, '$.requests') AS planned
-  WHERE plan.ingestion_run_id = NEW.ingestion_run_id
-    AND json_extract(planned.value, '$.id') = NEW.request_id
-    AND CAST(planned.key AS INTEGER) + (
-      SELECT COALESCE(
-        SUM(json_array_length(json_extract(preceding.value, '$.requests'))),
-        0
-      )
-      FROM json_each(
-        CASE
-          WHEN json_type(plan.request_plan_json, '$.plans') = 'array'
-            THEN json_extract(plan.request_plan_json, '$.plans')
-          ELSE json_array(json(plan.request_plan_json))
-        END
-      ) AS preceding
-      WHERE CAST(preceding.key AS INTEGER) <
-        CAST(evidence_plan.key AS INTEGER)
-    ) = NEW.sequence_number
-    AND json_extract(planned.value, '$.method') = NEW.method
-    AND json_extract(planned.value, '$.url') = NEW.url
-    AND json_extract(planned.value, '$.headers') = NEW.request_headers_json
-    AND json_extract(planned.value, '$.representation_fingerprint') =
-      NEW.representation_fingerprint
-)
-AND NOT EXISTS (
-  SELECT 1
-  FROM ingestion_evidence_plans AS plan
-  JOIN official_source_collection_plans AS collection
-    ON collection.ingestion_run_id = plan.ingestion_run_id,
-       json_each(collection.collection_plan_json, '$.requests') AS planned
-  WHERE plan.ingestion_run_id = NEW.ingestion_run_id
-    AND json_extract(planned.value, '$.id') = NEW.request_id
-    AND (
-      SELECT SUM(json_array_length(json_extract(value, '$.requests')))
-      FROM json_each(
-        CASE
-          WHEN json_type(plan.request_plan_json, '$.plans') = 'array'
-            THEN json_extract(plan.request_plan_json, '$.plans')
-          ELSE json_array(json(plan.request_plan_json))
-        END
-      )
-    ) + 10000 * (
-      SELECT CAST(key AS INTEGER)
-      FROM json_each(
-        CASE
-          WHEN json_type(plan.request_plan_json, '$.plans') = 'array'
-            THEN json_extract(plan.request_plan_json, '$.plans')
-          ELSE json_array(json(plan.request_plan_json))
-        END
-      )
-      WHERE json_extract(value, '$.source_lineage') =
-        collection.source_lineage
-    ) + CAST(planned.key AS INTEGER) = NEW.sequence_number
-    AND json_extract(planned.value, '$.method') = NEW.method
-    AND json_extract(planned.value, '$.url') = NEW.url
-    AND json_extract(planned.value, '$.headers') = NEW.request_headers_json
-    AND json_extract(planned.value, '$.representation_fingerprint') =
-      NEW.representation_fingerprint
-    AND json_type(planned.value, '$.surface') = 'text'
-    AND length(json_extract(planned.value, '$.surface')) > 0
-)
-AND NOT EXISTS (
-  SELECT 1
-  FROM source_discovery_request_plans AS planned
-  WHERE planned.ingestion_run_id = NEW.ingestion_run_id
-    AND planned.request_id = NEW.request_id
-    AND planned.sequence_number = NEW.sequence_number
-    AND planned.method = NEW.method
-    AND planned.url = NEW.url
-    AND planned.request_headers_json = NEW.request_headers_json
-    AND planned.representation_fingerprint = NEW.representation_fingerprint
-    AND planned.request_role = NEW.request_role
-    AND planned.parent_request_id = NEW.discovered_from_request_id
-)
-BEGIN
-  SELECT RAISE(ABORT, 'source_request_not_in_immutable_plan');
-END;
-
 CREATE TRIGGER source_requests_immutable_delete
 BEFORE DELETE ON source_requests
 BEGIN
   SELECT RAISE(ABORT, 'source_request_immutable');
 END;
 
--- Legality Rules.
---
--- unresolved_scope_json represents open-predicate Official Source
--- restrictions explicitly. The 'target_scope' dimension means the rule's
--- retained Card list is the enumerated set of known matches while the
--- Official Source states that unenumerated (including future) Cards are
--- also in scope; such a rule additionally materializes one explicit
--- 'all_cards' applicability row so every contextual Legality Status query
--- in its game, region, and format retains the uncertainty instead of
--- silently missing it.
 CREATE TABLE legality_rules (
   id TEXT PRIMARY KEY,
   official_id TEXT NOT NULL,
@@ -1690,216 +1298,6 @@ CREATE TABLE legality_rules (
   UNIQUE (source_lineage, official_id)
 );
 
-CREATE TRIGGER legality_rule_effect_valid_insert
-BEFORE INSERT ON legality_rules
-WHEN NOT (
-  (
-    json_extract(NEW.effect_json, '$.type') IN ('eligible', 'ban')
-    AND (SELECT COUNT(*) FROM json_each(NEW.effect_json)) = 1
-  )
-  OR (
-    json_extract(NEW.effect_json, '$.type') = 'copy_limit'
-    AND (SELECT COUNT(*) FROM json_each(NEW.effect_json)) = 2
-    AND json_type(NEW.effect_json, '$.maximum_copies') = 'integer'
-    AND json_extract(NEW.effect_json, '$.maximum_copies') >= 1
-  )
-  OR (
-    json_extract(NEW.effect_json, '$.type') = 'prohibited_combination'
-    AND (SELECT COUNT(*) FROM json_each(NEW.effect_json)) = 2
-    AND json_type(NEW.effect_json, '$.with_card_ids') = 'array'
-    AND json_array_length(NEW.direct_card_ids_json) >= 1
-    AND json_array_length(NEW.effect_json, '$.with_card_ids') >= 1
-    AND NOT EXISTS (
-      SELECT 1 FROM json_each(NEW.effect_json, '$.with_card_ids')
-      WHERE type <> 'text' OR length(trim(value)) = 0
-    )
-    AND NOT EXISTS (
-      SELECT value FROM json_each(NEW.effect_json, '$.with_card_ids')
-      GROUP BY value HAVING COUNT(*) > 1
-    )
-  )
-  OR (
-    json_extract(NEW.effect_json, '$.type') = 'membership'
-    AND (SELECT COUNT(*) FROM json_each(NEW.effect_json)) = 3
-    AND json_type(NEW.effect_json, '$.attribute') = 'text'
-    AND length(trim(json_extract(NEW.effect_json, '$.attribute'))) > 0
-    AND json_type(NEW.effect_json, '$.includes_any') = 'array'
-    AND json_array_length(NEW.effect_json, '$.includes_any') >= 1
-    AND NOT EXISTS (
-      SELECT 1 FROM json_each(NEW.effect_json, '$.includes_any')
-      WHERE type <> 'text' OR length(trim(value)) = 0
-    )
-    AND NOT EXISTS (
-      SELECT value FROM json_each(NEW.effect_json, '$.includes_any')
-      GROUP BY value HAVING COUNT(*) > 1
-    )
-  )
-  OR (
-    json_extract(NEW.effect_json, '$.type') = 'rotation'
-    AND (SELECT COUNT(*) FROM json_each(NEW.effect_json)) = 2
-    AND json_type(NEW.effect_json, '$.eligible_blocks') = 'array'
-    AND json_array_length(NEW.effect_json, '$.eligible_blocks') >= 1
-    AND NOT EXISTS (
-      SELECT 1 FROM json_each(NEW.effect_json, '$.eligible_blocks')
-      WHERE type <> 'text' OR length(trim(value)) = 0
-    )
-    AND NOT EXISTS (
-      SELECT value FROM json_each(NEW.effect_json, '$.eligible_blocks')
-      GROUP BY value HAVING COUNT(*) > 1
-    )
-  )
-  OR (
-    json_extract(NEW.effect_json, '$.type') = 'release_timing'
-    AND (SELECT COUNT(*) FROM json_each(NEW.effect_json)) = 2
-    AND json_type(NEW.effect_json, '$.legal_from') = 'text'
-    AND json_extract(NEW.effect_json, '$.legal_from')
-      GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-    AND date(json_extract(NEW.effect_json, '$.legal_from')) =
-      json_extract(NEW.effect_json, '$.legal_from')
-  )
-  OR (
-    json_extract(NEW.effect_json, '$.type') = 'unresolved'
-    AND (SELECT COUNT(*) FROM json_each(NEW.effect_json)) = 2
-    AND json_type(NEW.effect_json, '$.reason') = 'text'
-    AND length(trim(json_extract(NEW.effect_json, '$.reason'))) > 0
-  )
-)
-BEGIN
-  SELECT RAISE(ABORT, 'legality_rule_effect_invalid');
-END;
-
-CREATE TRIGGER legality_rule_card_ids_canonical_insert
-BEFORE INSERT ON legality_rules
-WHEN NOT (
-  json_valid(NEW.card_ids_json)
-  AND json_type(NEW.card_ids_json) = 'array'
-  AND json_valid(NEW.direct_card_ids_json)
-  AND json_type(NEW.direct_card_ids_json) = 'array'
-  AND json_valid(NEW.effect_json)
-  AND json_type(NEW.effect_json) = 'object'
-  AND NOT EXISTS (
-    SELECT 1
-    FROM json_each(NEW.direct_card_ids_json) AS item
-    WHERE item.type <> 'text'
-      OR length(item.value) NOT BETWEEN 1 AND 200
-      OR substr(item.value, 1, 1) NOT GLOB '[A-Za-z0-9]'
-      OR item.value GLOB '*[^A-Za-z0-9._:-]*'
-  )
-  AND NOT EXISTS (
-    SELECT 1
-    FROM json_each(NEW.direct_card_ids_json) AS item
-    JOIN json_each(NEW.direct_card_ids_json) AS prior
-      ON prior.key = item.key - 1
-    WHERE CAST(prior.value AS BLOB) >= CAST(item.value AS BLOB)
-  )
-  AND (
-    (
-      json_extract(NEW.effect_json, '$.type') =
-        'prohibited_combination'
-      AND json_type(
-        NEW.effect_json,
-        '$.with_card_ids'
-      ) = 'array'
-      AND NOT EXISTS (
-        SELECT 1
-        FROM json_each(
-          json_extract(NEW.effect_json, '$.with_card_ids')
-        ) AS item
-        WHERE item.type <> 'text'
-          OR length(item.value) NOT BETWEEN 1 AND 200
-          OR substr(item.value, 1, 1) NOT GLOB '[A-Za-z0-9]'
-          OR item.value GLOB '*[^A-Za-z0-9._:-]*'
-      )
-      AND NOT EXISTS (
-        SELECT 1
-        FROM json_each(
-          json_extract(NEW.effect_json, '$.with_card_ids')
-        ) AS item
-        JOIN json_each(
-          json_extract(NEW.effect_json, '$.with_card_ids')
-        ) AS prior ON prior.key = item.key - 1
-        WHERE CAST(prior.value AS BLOB) >= CAST(item.value AS BLOB)
-      )
-    )
-    OR (
-      COALESCE(json_extract(NEW.effect_json, '$.type'), '') <>
-        'prohibited_combination'
-      AND json_type(
-        NEW.effect_json,
-        '$.with_card_ids'
-      ) IS NULL
-    )
-  )
-  AND NOT EXISTS (
-    SELECT 1
-    FROM json_each(NEW.card_ids_json) AS item
-    WHERE item.type <> 'text'
-      OR length(item.value) NOT BETWEEN 1 AND 200
-      OR substr(item.value, 1, 1) NOT GLOB '[A-Za-z0-9]'
-      OR item.value GLOB '*[^A-Za-z0-9._:-]*'
-  )
-  AND NOT EXISTS (
-    SELECT 1
-    FROM json_each(NEW.card_ids_json) AS item
-    JOIN json_each(NEW.card_ids_json) AS prior
-      ON prior.key = item.key - 1
-    WHERE CAST(prior.value AS BLOB) >= CAST(item.value AS BLOB)
-  )
-  AND NOT EXISTS (
-    SELECT value FROM json_each(NEW.card_ids_json)
-    EXCEPT
-    SELECT value FROM (
-      SELECT value FROM json_each(NEW.direct_card_ids_json)
-      UNION
-      SELECT value
-      FROM json_each(
-        CASE
-          WHEN json_type(
-            NEW.effect_json,
-            '$.with_card_ids'
-          ) = 'array'
-          THEN json_extract(NEW.effect_json, '$.with_card_ids')
-          ELSE '[]'
-        END
-      )
-    )
-  )
-  AND NOT EXISTS (
-    SELECT value FROM (
-      SELECT value FROM json_each(NEW.direct_card_ids_json)
-      UNION
-      SELECT value
-      FROM json_each(
-        CASE
-          WHEN json_type(
-            NEW.effect_json,
-            '$.with_card_ids'
-          ) = 'array'
-          THEN json_extract(NEW.effect_json, '$.with_card_ids')
-          ELSE '[]'
-        END
-      )
-    )
-    EXCEPT
-    SELECT value FROM json_each(NEW.card_ids_json)
-  )
-  AND json_array_length(NEW.card_ids_json) =
-    json_array_length(NEW.direct_card_ids_json) +
-    json_array_length(
-      CASE
-        WHEN json_type(
-          NEW.effect_json,
-          '$.with_card_ids'
-        ) = 'array'
-        THEN json_extract(NEW.effect_json, '$.with_card_ids')
-        ELSE '[]'
-      END
-    )
-)
-BEGIN
-  SELECT RAISE(ABORT, 'legality_rule_card_ids_not_canonical');
-END;
-
 CREATE TRIGGER legality_rule_card_ids_canonical_update
 BEFORE UPDATE OF effect_json, card_ids_json, direct_card_ids_json,
   unresolved_scope_json
@@ -1917,44 +1315,6 @@ CREATE INDEX legality_rules_context
     effective_from,
     effective_until
   );
-
-CREATE TRIGGER legality_rule_provenance_owner_insert
-BEFORE INSERT ON legality_rules
-WHEN NOT EXISTS (
-  SELECT 1
-  FROM source_observation_sets AS observation_set
-  JOIN source_snapshots AS snapshot
-    ON snapshot.id = observation_set.source_snapshot_id
-  WHERE observation_set.id = NEW.source_observation_set_id
-    AND observation_set.source_snapshot_id = NEW.source_snapshot_id
-    AND observation_set.source_lineage = NEW.source_lineage
-    AND observation_set.supported_game = NEW.supported_game
-    AND snapshot.source_lineage = NEW.source_lineage
-    AND snapshot.supported_game = NEW.supported_game
-)
-BEGIN
-  SELECT RAISE(ABORT, 'legality_rule_provenance_owner_mismatch');
-END;
-
-CREATE TRIGGER legality_rule_provenance_owner_update
-BEFORE UPDATE OF supported_game, source_lineage, source_snapshot_id,
-  source_observation_set_id
-ON legality_rules
-WHEN NOT EXISTS (
-  SELECT 1
-  FROM source_observation_sets AS observation_set
-  JOIN source_snapshots AS snapshot
-    ON snapshot.id = observation_set.source_snapshot_id
-  WHERE observation_set.id = NEW.source_observation_set_id
-    AND observation_set.source_snapshot_id = NEW.source_snapshot_id
-    AND observation_set.source_lineage = NEW.source_lineage
-    AND observation_set.supported_game = NEW.supported_game
-    AND snapshot.source_lineage = NEW.source_lineage
-    AND snapshot.supported_game = NEW.supported_game
-)
-BEGIN
-  SELECT RAISE(ABORT, 'legality_rule_provenance_owner_mismatch');
-END;
 
 CREATE TRIGGER legality_rule_provenance_immutable
 BEFORE UPDATE OF supported_game, source_lineage, source_snapshot_id,
@@ -2014,7 +1374,7 @@ CREATE TABLE revision_legality_rules (
   ),
   document_json TEXT NOT NULL CHECK (
     json_valid(document_json) AND json_type(document_json) = 'object'
-  ),
+  ), source_retrieved_at TEXT,
   CHECK (
     (effective_from IS NOT NULL AND (
       effective_until IS NULL OR effective_until > effective_from
@@ -2076,241 +1436,12 @@ BEGIN
   SELECT RAISE(ABORT, 'revision_legality_rule_applicability_immutable');
 END;
 
-CREATE TRIGGER revision_legality_rule_effect_valid_insert
-BEFORE INSERT ON revision_legality_rules
-WHEN NOT (
-  (
-    json_extract(NEW.document_json, '$.effect.type') IN ('eligible', 'ban')
-    AND (SELECT COUNT(*) FROM json_each(NEW.document_json, '$.effect')) = 1
-  )
-  OR (
-    json_extract(NEW.document_json, '$.effect.type') = 'copy_limit'
-    AND (SELECT COUNT(*) FROM json_each(NEW.document_json, '$.effect')) = 2
-    AND json_type(NEW.document_json, '$.effect.maximum_copies') = 'integer'
-    AND json_extract(NEW.document_json, '$.effect.maximum_copies') >= 1
-  )
-  OR (
-    json_extract(NEW.document_json, '$.effect.type') = 'prohibited_combination'
-    AND (SELECT COUNT(*) FROM json_each(NEW.document_json, '$.effect')) = 2
-    AND json_type(NEW.document_json, '$.effect.with_card_ids') = 'array'
-    AND json_array_length(NEW.document_json, '$.card_ids') >= 1
-    AND json_array_length(NEW.document_json, '$.effect.with_card_ids') >= 1
-    AND NOT EXISTS (
-      SELECT 1 FROM json_each(NEW.document_json, '$.effect.with_card_ids')
-      WHERE type <> 'text' OR length(trim(value)) = 0
-    )
-    AND NOT EXISTS (
-      SELECT value
-      FROM json_each(NEW.document_json, '$.effect.with_card_ids')
-      GROUP BY value HAVING COUNT(*) > 1
-    )
-    AND NOT EXISTS (
-      SELECT direct.value
-      FROM json_each(NEW.document_json, '$.card_ids') AS direct
-      JOIN json_each(
-        NEW.document_json,
-        '$.effect.with_card_ids'
-      ) AS companion ON companion.value = direct.value
-    )
-  )
-  OR (
-    json_extract(NEW.document_json, '$.effect.type') = 'membership'
-    AND (SELECT COUNT(*) FROM json_each(NEW.document_json, '$.effect')) = 3
-    AND json_type(NEW.document_json, '$.effect.attribute') = 'text'
-    AND length(trim(json_extract(NEW.document_json, '$.effect.attribute'))) > 0
-    AND json_type(NEW.document_json, '$.effect.includes_any') = 'array'
-    AND json_array_length(NEW.document_json, '$.effect.includes_any') >= 1
-    AND NOT EXISTS (
-      SELECT 1 FROM json_each(NEW.document_json, '$.effect.includes_any')
-      WHERE type <> 'text' OR length(trim(value)) = 0
-    )
-    AND NOT EXISTS (
-      SELECT value
-      FROM json_each(NEW.document_json, '$.effect.includes_any')
-      GROUP BY value HAVING COUNT(*) > 1
-    )
-  )
-  OR (
-    json_extract(NEW.document_json, '$.effect.type') = 'rotation'
-    AND (SELECT COUNT(*) FROM json_each(NEW.document_json, '$.effect')) = 2
-    AND json_type(NEW.document_json, '$.effect.eligible_blocks') = 'array'
-    AND json_array_length(NEW.document_json, '$.effect.eligible_blocks') >= 1
-    AND NOT EXISTS (
-      SELECT 1 FROM json_each(NEW.document_json, '$.effect.eligible_blocks')
-      WHERE type <> 'text' OR length(trim(value)) = 0
-    )
-    AND NOT EXISTS (
-      SELECT value
-      FROM json_each(NEW.document_json, '$.effect.eligible_blocks')
-      GROUP BY value HAVING COUNT(*) > 1
-    )
-  )
-  OR (
-    json_extract(NEW.document_json, '$.effect.type') = 'release_timing'
-    AND (SELECT COUNT(*) FROM json_each(NEW.document_json, '$.effect')) = 2
-    AND json_type(NEW.document_json, '$.effect.legal_from') = 'text'
-    AND json_extract(NEW.document_json, '$.effect.legal_from')
-      GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-    AND date(json_extract(NEW.document_json, '$.effect.legal_from')) =
-      json_extract(NEW.document_json, '$.effect.legal_from')
-  )
-  OR (
-    json_extract(NEW.document_json, '$.effect.type') = 'unresolved'
-    AND (SELECT COUNT(*) FROM json_each(NEW.document_json, '$.effect')) = 2
-    AND json_type(NEW.document_json, '$.effect.reason') = 'text'
-    AND length(trim(json_extract(NEW.document_json, '$.effect.reason'))) > 0
-  )
-)
-BEGIN
-  SELECT RAISE(ABORT, 'revision_legality_rule_effect_invalid');
-END;
-
-CREATE TRIGGER revision_legality_rule_matches_canonical
-BEFORE INSERT ON revision_legality_rules
-WHEN NOT EXISTS (
-  SELECT 1
-  FROM legality_rules AS canonical
-  WHERE canonical.id = NEW.legality_rule_id
-    AND canonical.supported_game = NEW.supported_game
-    AND canonical.region = NEW.region
-    AND canonical.format = NEW.format
-    AND canonical.event_tier IS NEW.event_tier
-    AND canonical.effective_from IS NEW.effective_from
-    AND canonical.effective_until IS NEW.effective_until
-    AND canonical.unresolved_scope_json = NEW.unresolved_scope_json
-    AND canonical.card_ids_json = NEW.card_ids_json
-    AND json_extract(NEW.document_json, '$.id') = canonical.id
-    AND json_extract(NEW.document_json, '$.official_id') =
-      canonical.official_id
-    AND json_extract(NEW.document_json, '$.game') =
-      canonical.supported_game
-    AND json_extract(NEW.document_json, '$.region') = canonical.region
-    AND json_extract(NEW.document_json, '$.format') = canonical.format
-    AND json_extract(NEW.document_json, '$.event_tier') IS
-      canonical.event_tier
-    AND json_extract(NEW.document_json, '$.effective_from') IS
-      canonical.effective_from
-    AND json_extract(NEW.document_json, '$.effective_until') IS
-      canonical.effective_until
-    AND json_extract(NEW.document_json, '$.unresolved_scope') IS
-      json_extract(canonical.unresolved_scope_json, '$')
-    AND json_type(NEW.document_json, '$.card_ids') = 'array'
-    AND json_extract(NEW.document_json, '$.card_ids') =
-      canonical.direct_card_ids_json
-    AND json_array_length(
-      json_extract(NEW.document_json, '$.card_ids')
-    ) = json_array_length(canonical.direct_card_ids_json)
-    AND json_extract(NEW.document_json, '$.official_wording') =
-      canonical.official_wording
-    AND json_type(NEW.document_json, '$.effect') = 'object'
-    AND json_extract(NEW.document_json, '$.effect') =
-      canonical.effect_json
-    AND (
-      (
-        json_extract(canonical.effect_json, '$.type') =
-          'prohibited_combination'
-        AND json_type(
-          NEW.document_json,
-          '$.effect.with_card_ids'
-        ) = 'array'
-        AND json_extract(
-          NEW.document_json,
-          '$.effect.with_card_ids'
-        ) = json_extract(canonical.effect_json, '$.with_card_ids')
-        AND json_array_length(
-          json_extract(
-            NEW.document_json,
-            '$.effect.with_card_ids'
-          )
-        ) = json_array_length(
-          json_extract(canonical.effect_json, '$.with_card_ids')
-        )
-      )
-      OR (
-        json_extract(canonical.effect_json, '$.type') <>
-          'prohibited_combination'
-        AND json_type(
-          NEW.document_json,
-          '$.effect.with_card_ids'
-        ) IS NULL
-      )
-    )
-    AND json_extract(NEW.document_json, '$.source_lineage') =
-      canonical.source_lineage
-    AND json_extract(NEW.document_json, '$.source_snapshot_id') =
-      canonical.source_snapshot_id
-    AND json_extract(NEW.document_json, '$.source_observation_set_id') =
-      canonical.source_observation_set_id
-    AND json_extract(NEW.document_json, '$.source_observation_id') =
-      canonical.source_observation_id
-    AND json_extract(NEW.document_json, '$.source_observation_pointer') =
-      canonical.source_observation_pointer
-    AND json_extract(NEW.document_json, '$.source_field_pointers') =
-      canonical.source_field_pointers_json
-    AND json_extract(NEW.document_json, '$.first_revision_id') =
-      canonical.first_revision_id
-    AND json_extract(NEW.document_json, '$.last_observed_revision_id') =
-      canonical.last_observed_revision_id
-    AND json_extract(NEW.document_json, '$.current') = canonical.current
-    AND json_extract(NEW.document_json, '$.last_missing_revision_id') IS
-      canonical.last_missing_revision_id
-    AND (SELECT COUNT(*) FROM json_each(NEW.document_json)) = 22
-    AND NOT EXISTS (
-      SELECT value
-      FROM json_each(
-        '["card_ids","current","effect","effective_from",'
-        || '"effective_until","event_tier","first_revision_id",'
-        || '"format","game","id","last_missing_revision_id",'
-        || '"last_observed_revision_id","official_id",'
-        || '"official_wording","region","source_field_pointers",'
-        || '"source_lineage","source_observation_id",'
-        || '"source_observation_pointer",'
-        || '"source_observation_set_id","source_snapshot_id",'
-        || '"unresolved_scope"]'
-      )
-      EXCEPT
-      SELECT key FROM json_each(NEW.document_json)
-    )
-    AND NOT EXISTS (
-      SELECT key FROM json_each(NEW.document_json)
-      EXCEPT
-      SELECT value
-      FROM json_each(
-        '["card_ids","current","effect","effective_from",'
-        || '"effective_until","event_tier","first_revision_id",'
-        || '"format","game","id","last_missing_revision_id",'
-        || '"last_observed_revision_id","official_id",'
-        || '"official_wording","region","source_field_pointers",'
-        || '"source_lineage","source_observation_id",'
-        || '"source_observation_pointer",'
-        || '"source_observation_set_id","source_snapshot_id",'
-        || '"unresolved_scope"]'
-      )
-    )
-)
-BEGIN
-  SELECT RAISE(ABORT, 'revision_legality_rule_canonical_mismatch');
-END;
-
-CREATE TRIGGER revision_legality_rules_immutable_update
-BEFORE UPDATE ON revision_legality_rules
-BEGIN
-  SELECT RAISE(ABORT, 'revision_legality_rule_immutable');
-END;
-
 CREATE TRIGGER revision_legality_rules_immutable_delete
 BEFORE DELETE ON revision_legality_rules
 BEGIN
   SELECT RAISE(ABORT, 'revision_legality_rule_immutable');
 END;
 
--- Revision-pinned Card substring search stays inside D1. Normalized search
--- chunks are indexed independently so matches cannot cross field
--- boundaries. The relational chunks remain the exportable source of truth:
--- recovery code temporarily removes the derived virtual index before D1
--- export, then reconstructs it after restore before marking it ready
--- again. Searches of three or more characters use FTS; only the one- and
--- two-character fallback remains in the relational term index.
 CREATE TABLE card_search_fts_state (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   state TEXT NOT NULL CHECK (state IN ('ready', 'reconstructing')),
@@ -2327,12 +1458,6 @@ CREATE TABLE card_search_fts_state (
   )
 );
 
--- Publication backups, verification, and recovery.
---
--- A backup is useful only when its exact bytes and verified restore are
--- durably attributable to one immutable attempt: the manifest, digests,
--- restore target, and complete verification evidence are required before
--- an attempt may become 'verified'.
 CREATE TABLE catalogue_backup_attempts (
   idempotency_key TEXT PRIMARY KEY,
   request_json TEXT NOT NULL,
@@ -2384,18 +1509,6 @@ BEGIN
   SELECT RAISE(ABORT, 'terminal backup attempt is immutable');
 END;
 
-CREATE TRIGGER catalogue_backup_attempts_legal_transition
-BEFORE UPDATE OF state ON catalogue_backup_attempts
-WHEN NOT (
-  (OLD.state = 'pending' AND NEW.state IN ('exporting', 'failed'))
-  OR (OLD.state = 'exporting' AND NEW.state IN ('restoring_verification', 'failed'))
-  OR (OLD.state = 'restoring_verification' AND NEW.state IN ('verifying', 'failed'))
-  OR (OLD.state = 'verifying' AND NEW.state IN ('verified', 'failed'))
-)
-BEGIN
-  SELECT RAISE(ABORT, 'illegal backup attempt transition');
-END;
-
 CREATE TABLE catalogue_backup_workflow_requests (
   idempotency_key TEXT PRIMARY KEY,
   expected_current_revision_id TEXT NOT NULL,
@@ -2439,97 +1552,6 @@ CREATE VIRTUAL TABLE revision_card_search_fts USING fts5(
   tokenize = 'trigram case_sensitive 1'
 );
 
-CREATE TRIGGER revision_card_search_chunks_insert_fts
-AFTER INSERT ON revision_card_search_chunks
-BEGIN
-  INSERT INTO revision_card_search_fts_rows (
-    catalogue_revision_id, card_id, field_ordinal, chunk_ordinal
-  ) VALUES (
-    NEW.catalogue_revision_id, NEW.card_id, NEW.field_ordinal,
-    NEW.chunk_ordinal
-  );
-  INSERT INTO revision_card_search_fts (
-    rowid, revision_token, catalogue_revision_id, card_id,
-    field_ordinal, chunk_ordinal, search_text
-  ) VALUES (
-    last_insert_rowid(), '|' || NEW.catalogue_revision_id || '|',
-    NEW.catalogue_revision_id, NEW.card_id,
-    NEW.field_ordinal,
-    NEW.chunk_ordinal, NEW.search_text
-  );
-END;
-
-CREATE TRIGGER revision_card_search_chunks_delete_fts
-BEFORE DELETE ON revision_card_search_chunks
-BEGIN
-  DELETE FROM revision_card_search_fts
-  WHERE rowid = (
-    SELECT fts_rowid
-    FROM revision_card_search_fts_rows
-    WHERE catalogue_revision_id = OLD.catalogue_revision_id
-      AND card_id = OLD.card_id
-      AND field_ordinal = OLD.field_ordinal
-      AND chunk_ordinal = OLD.chunk_ordinal
-  );
-  DELETE FROM revision_card_search_fts_rows
-  WHERE catalogue_revision_id = OLD.catalogue_revision_id
-    AND card_id = OLD.card_id
-    AND field_ordinal = OLD.field_ordinal
-    AND chunk_ordinal = OLD.chunk_ordinal;
-END;
-
-CREATE TRIGGER revision_card_search_chunks_before_update_fts
-BEFORE UPDATE ON revision_card_search_chunks
-BEGIN
-  DELETE FROM revision_card_search_fts
-  WHERE rowid = (
-    SELECT fts_rowid
-    FROM revision_card_search_fts_rows
-    WHERE catalogue_revision_id = OLD.catalogue_revision_id
-      AND card_id = OLD.card_id
-      AND field_ordinal = OLD.field_ordinal
-      AND chunk_ordinal = OLD.chunk_ordinal
-  );
-  DELETE FROM revision_card_search_fts_rows
-  WHERE catalogue_revision_id = OLD.catalogue_revision_id
-    AND card_id = OLD.card_id
-    AND field_ordinal = OLD.field_ordinal
-    AND chunk_ordinal = OLD.chunk_ordinal;
-END;
-
-CREATE TRIGGER revision_card_search_chunks_after_update_fts
-AFTER UPDATE ON revision_card_search_chunks
-BEGIN
-  INSERT INTO revision_card_search_fts_rows (
-    catalogue_revision_id, card_id, field_ordinal, chunk_ordinal
-  ) VALUES (
-    NEW.catalogue_revision_id, NEW.card_id, NEW.field_ordinal,
-    NEW.chunk_ordinal
-  );
-  INSERT INTO revision_card_search_fts (
-    rowid, revision_token, catalogue_revision_id, card_id,
-    field_ordinal, chunk_ordinal, search_text
-  ) VALUES (
-    last_insert_rowid(), '|' || NEW.catalogue_revision_id || '|',
-    NEW.catalogue_revision_id, NEW.card_id,
-    NEW.field_ordinal,
-    NEW.chunk_ordinal, NEW.search_text
-  );
-END;
-
--- Production Release lease and curated revisions.
-CREATE TRIGGER production_release_lease_shape_guard
-BEFORE UPDATE OF active_release_id, active_release_expires_at ON operation_state
-WHEN (NEW.active_release_id IS NULL) <> (NEW.active_release_expires_at IS NULL)
-  OR (NEW.active_release_expires_at IS NOT NULL AND (
-    NEW.active_release_expires_at NOT GLOB
-      '????-??-??T??:??:??.???Z'
-    OR julianday(NEW.active_release_expires_at) IS NULL
-  ))
-BEGIN
-  SELECT RAISE(ABORT, 'production_release_lease_invalid');
-END;
-
 CREATE TABLE curated_revisions (
   id TEXT PRIMARY KEY,
   game TEXT NOT NULL CHECK (
@@ -2558,55 +1580,6 @@ CREATE TABLE curated_revisions (
 CREATE INDEX curated_revisions_active_target
 ON curated_revisions (target_key, status, effective_from, effective_to);
 
-CREATE TRIGGER curated_revision_mutation_guard
-BEFORE INSERT ON curated_revisions
-WHEN EXISTS (
-  SELECT 1 FROM operation_state
-  WHERE singleton = 1
-    AND (active_ingestion_run_id IS NOT NULL OR recovery_health = 'blocked')
-)
-BEGIN
-  SELECT RAISE(ABORT, 'curated_revision_operation_not_idle');
-END;
-
-CREATE TRIGGER curated_revision_release_guard
-BEFORE INSERT ON curated_revisions
-WHEN EXISTS (
-  SELECT 1 FROM operation_state
-  WHERE singleton = 1 AND active_release_id IS NOT NULL
-    AND active_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-)
-BEGIN
-  SELECT RAISE(ABORT, 'curated_revision_release_not_idle');
-END;
-
-CREATE TRIGGER curated_revision_catalogue_revision_guard
-BEFORE INSERT ON curated_revisions
-WHEN COALESCE(json_extract(
-  NEW.schema_binding_json,
-  '$.catalogue_revision_id'
-), '') <> (
-  SELECT current_revision_id FROM catalogue_state WHERE singleton = 1
-)
-BEGIN
-  SELECT RAISE(ABORT, 'curated_revision_current_revision_mismatch');
-END;
-
-CREATE TRIGGER curated_revision_target_overlap_guard
-BEFORE INSERT ON curated_revisions
-WHEN NEW.status = 'active' AND EXISTS (
-  SELECT 1 FROM curated_revisions AS existing
-  WHERE existing.status IN ('active', 'reconfirmation_required')
-    AND existing.target_key = NEW.target_key
-    AND (existing.effective_to IS NULL OR NEW.effective_from IS NULL
-      OR NEW.effective_from < existing.effective_to)
-    AND (NEW.effective_to IS NULL OR existing.effective_from IS NULL
-      OR existing.effective_from < NEW.effective_to)
-)
-BEGIN
-  SELECT RAISE(ABORT, 'curated_revision_target_conflict');
-END;
-
 CREATE TRIGGER curated_revisions_are_immutable_on_update
 BEFORE UPDATE OF game, target_key, target_kind, effective_from, effective_to,
   proposal_json, content_digest, reviewed_source_digest, schema_binding_json,
@@ -2633,41 +1606,6 @@ CREATE TABLE curated_revision_events (
   author TEXT NOT NULL,
   PRIMARY KEY (revision_id, event_version)
 );
-
-CREATE TRIGGER curated_revision_owner_event_operation_guard
-BEFORE INSERT ON curated_revision_events
-WHEN NEW.kind IN ('reaffirmed', 'superseded', 'retired') AND EXISTS (
-  SELECT 1 FROM operation_state
-  WHERE singleton = 1
-    AND (active_ingestion_run_id IS NOT NULL OR recovery_health = 'blocked')
-)
-BEGIN
-  SELECT RAISE(ABORT, 'curated_revision_operation_not_idle');
-END;
-
-CREATE TRIGGER curated_revision_owner_event_release_guard
-BEFORE INSERT ON curated_revision_events
-WHEN NEW.kind IN ('reaffirmed', 'superseded', 'retired') AND EXISTS (
-  SELECT 1 FROM operation_state
-  WHERE singleton = 1 AND active_release_id IS NOT NULL
-    AND active_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-)
-BEGIN
-  SELECT RAISE(ABORT, 'curated_revision_release_not_idle');
-END;
-
-CREATE TRIGGER curated_revision_owner_event_catalogue_guard
-BEFORE INSERT ON curated_revision_events
-WHEN NEW.kind IN ('reaffirmed', 'superseded', 'retired')
-  AND COALESCE(json_extract(
-    NEW.event_json,
-    '$.expected_current_revision_id'
-  ), '') <> (
-    SELECT current_revision_id FROM catalogue_state WHERE singleton = 1
-  )
-BEGIN
-  SELECT RAISE(ABORT, 'curated_revision_current_revision_mismatch');
-END;
 
 CREATE TRIGGER curated_revision_events_are_immutable_on_update
 BEFORE UPDATE ON curated_revision_events
@@ -2739,34 +1677,6 @@ CREATE TABLE retained_source_observation_evidence (
   retained_record_id TEXT NOT NULL
 );
 
-CREATE TRIGGER retained_source_observation_evidence_must_resolve
-BEFORE INSERT ON retained_source_observation_evidence
-WHEN NOT EXISTS (
-  SELECT 1 FROM reconciliation_candidates
-  WHERE source_observation_id = NEW.source_observation_id
-    AND source_observation_set_id = NEW.retained_record_id
-) AND NOT EXISTS (
-  SELECT 1 FROM legality_rules
-  WHERE source_observation_id = NEW.source_observation_id
-    AND id = NEW.retained_record_id
-) AND NOT EXISTS (
-  SELECT 1
-  FROM revision_products AS product,
-       json_each(product.document_json, '$.included') AS evidence
-  WHERE product.product_id = NEW.retained_record_id
-    AND json_extract(evidence.value, '$.type') = 'source_observation'
-    AND json_extract(evidence.value, '$.id') = NEW.source_observation_id
-) AND NOT EXISTS (
-  SELECT 1
-  FROM reconciled_product_relationships AS relationship,
-       json_each(relationship.source_observation_ids_json) AS observation
-  WHERE relationship.id = NEW.retained_record_id
-    AND observation.value = NEW.source_observation_id
-)
-BEGIN
-  SELECT RAISE(ABORT, 'retained_source_observation_evidence_not_found');
-END;
-
 CREATE TRIGGER retained_source_observation_evidence_is_immutable_on_update
 BEFORE UPDATE ON retained_source_observation_evidence
 BEGIN
@@ -2786,24 +1696,6 @@ WHERE linked_attempt_id IS NOT NULL;
 CREATE UNIQUE INDEX one_catalogue_backup_retry_workflow_per_failed_attempt
 ON catalogue_backup_workflow_requests (linked_attempt_id)
 WHERE linked_attempt_id IS NOT NULL;
-
-CREATE TRIGGER catalogue_backup_verified_evidence_required
-BEFORE UPDATE OF state ON catalogue_backup_attempts
-WHEN NEW.state = 'verified' AND NOT (
-  NEW.manifest_key IS NOT NULL
-  AND NEW.content_sha256 NOT GLOB '*[^0-9a-f]*'
-  AND length(NEW.content_sha256) = 64
-  AND NEW.manifest_sha256 NOT GLOB '*[^0-9a-f]*'
-  AND length(NEW.manifest_sha256) = 64
-  AND NEW.export_bytes >= 0
-  AND NEW.schema_migration_level > 0
-  AND length(NEW.disposable_database_id) > 0
-  AND NEW.restore_generation > 0
-  AND NEW.restore_phase = 'verified'
-)
-BEGIN
-  SELECT RAISE(ABORT, 'verified backup evidence is incomplete');
-END;
 
 CREATE TABLE catalogue_backup_retention (
   attempt_id TEXT PRIMARY KEY REFERENCES catalogue_backup_attempts(idempotency_key),
@@ -2916,39 +1808,12 @@ BEGIN
   SELECT RAISE(ABORT, 'terminal recovery operation is immutable');
 END;
 
-CREATE TRIGGER catalogue_recovery_transition_is_legal
-BEFORE UPDATE OF state ON catalogue_recovery_operations
-WHEN NOT (
-  (OLD.state = 'preparing' AND NEW.state IN ('restoring', 'failed'))
-  OR (OLD.state = 'restoring' AND NEW.state IN ('validating', 'failed'))
-  OR (OLD.state = 'validating'
-      AND NEW.state IN ('awaiting_acceptance', 'failed'))
-  OR (OLD.state = 'awaiting_acceptance'
-      AND NEW.state IN ('accepted', 'failed'))
-)
-BEGIN
-  SELECT RAISE(ABORT, 'illegal recovery transition');
-END;
-
 CREATE TRIGGER catalogue_recovery_operations_are_not_deleted
 BEFORE DELETE ON catalogue_recovery_operations
 BEGIN
   SELECT RAISE(ABORT, 'catalogue_recovery_audit_immutable');
 END;
 
-CREATE TRIGGER catalogue_recovery_health_remains_blocked
-BEFORE UPDATE OF recovery_health ON operation_state
-WHEN OLD.recovery_health = 'blocked'
-  AND NEW.recovery_health <> 'blocked'
-  AND EXISTS (
-    SELECT 1 FROM catalogue_recovery_operations
-    WHERE id = OLD.active_recovery_id AND state <> 'accepted'
-  )
-BEGIN
-  SELECT RAISE(ABORT, 'recovery_not_accepted');
-END;
-
--- Guarded catalogue export deletion.
 CREATE TABLE catalogue_export_deletion_plans (
   id TEXT PRIMARY KEY,
   catalogue_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
@@ -3057,137 +1922,12 @@ BEGIN
   SELECT RAISE(ABORT, 'catalogue_export_deletion_tombstone_immutable');
 END;
 
-CREATE TRIGGER catalogue_export_deletion_operation_guard
-BEFORE INSERT ON catalogue_export_deletions
-WHEN NOT EXISTS (
-  SELECT 1
-  FROM catalogue_export_deletion_plans AS plan
-  JOIN catalogue_exports AS export
-    ON export.catalogue_revision_id = plan.catalogue_revision_id
-  JOIN catalogue_state AS catalogue ON catalogue.singleton = 1
-  JOIN operation_state AS operation ON operation.singleton = 1
-  WHERE plan.id = NEW.plan_id
-    AND plan.catalogue_revision_id = NEW.catalogue_revision_id
-    AND plan.manifest_digest = NEW.manifest_digest
-    AND plan.expected_current_revision_id = NEW.expected_current_revision_id
-    AND plan.object_set_digest = NEW.object_set_digest
-    AND plan.expires_at > NEW.requested_at
-    AND json_extract(NEW.request_json, '$.plan_id') = plan.id
-    AND json_extract(NEW.request_json, '$.plan_digest') = plan.plan_digest
-    AND json_extract(NEW.request_json, '$.catalogue_revision_id') = plan.catalogue_revision_id
-    AND json_extract(NEW.request_json, '$.manifest_digest') = plan.manifest_digest
-    AND json_extract(NEW.request_json, '$.expected_current_revision_id') = plan.expected_current_revision_id
-    AND json_extract(NEW.request_json, '$.confirmation_revision_id') = plan.catalogue_revision_id
-    AND json_extract(NEW.request_json, '$.deletion_id') = NEW.id
-    AND json_extract(NEW.request_json, '$.idempotency_key') = NEW.idempotency_key
-    AND export.maintenance_state = 'available'
-    AND export.manifest_digest = plan.manifest_digest
-    AND export.catalogue_revision_id <> catalogue.current_revision_id
-    AND catalogue.current_revision_id = plan.expected_current_revision_id
-    AND operation.active_ingestion_run_id IS NULL
-    AND (
-      operation.active_release_id IS NULL OR
-      operation.active_release_expires_at <= NEW.requested_at
-    )
-    AND operation.recovery_health = 'healthy'
-)
-BEGIN
-  SELECT RAISE(ABORT, 'catalogue_export_deletion_guard_failed');
-END;
-
-CREATE TRIGGER catalogue_export_maintenance_transition_guard
-BEFORE UPDATE OF maintenance_state, deletion_operation_id, deleted_at
-ON catalogue_exports
-WHEN NOT (
-  (OLD.maintenance_state = 'available' AND NEW.maintenance_state = 'deleting'
-    AND OLD.deletion_operation_id IS NULL AND NEW.deletion_operation_id IS NOT NULL
-    AND NEW.deleted_at IS NULL
-    AND EXISTS (
-      SELECT 1 FROM catalogue_export_deletions AS deletion
-      WHERE deletion.id = NEW.deletion_operation_id
-        AND deletion.catalogue_revision_id = NEW.catalogue_revision_id
-        AND deletion.state = 'deleting'
-    )) OR
-  (OLD.maintenance_state = 'deleting' AND NEW.maintenance_state = 'deleted'
-    AND NEW.deletion_operation_id = OLD.deletion_operation_id
-    AND NEW.deleted_at IS NOT NULL)
-)
-BEGIN
-  SELECT RAISE(ABORT, 'catalogue_export_maintenance_transition_invalid');
-END;
-
-CREATE TRIGGER catalogue_export_deletion_operation_transition_guard
-BEFORE UPDATE ON catalogue_export_deletions
-WHEN NOT (
-  (OLD.state = 'deleting' AND NEW.state IN ('deleted', 'failed')
-    AND NEW.retry_owner_idempotency_key IS OLD.retry_owner_idempotency_key
-    AND NEW.execution_owner_token IS OLD.execution_owner_token
-    AND NEW.execution_lease_expires_at IS OLD.execution_lease_expires_at) OR
-  (OLD.state = 'failed' AND NEW.state = 'deleting'
-    AND NEW.retry_owner_idempotency_key IS NOT NULL
-    AND NEW.execution_owner_token IS NOT NULL
-    AND NEW.execution_lease_expires_at IS NOT NULL) OR
-  (OLD.state = 'deleting' AND NEW.state = 'deleting'
-    AND NEW.retry_owner_idempotency_key IS OLD.retry_owner_idempotency_key
-    AND NEW.execution_owner_token IS NOT NULL
-    AND NEW.execution_lease_expires_at IS NOT NULL)
-)
-OR (
-  OLD.state = 'failed' AND NEW.state = 'deleting' AND NOT EXISTS (
-    SELECT 1
-    FROM catalogue_export_deletion_plans AS plan
-    JOIN catalogue_state AS catalogue ON catalogue.singleton = 1
-    JOIN operation_state AS operation ON operation.singleton = 1
-    WHERE plan.id = OLD.plan_id
-      AND plan.object_set_digest = OLD.object_set_digest
-      AND catalogue.current_revision_id = OLD.expected_current_revision_id
-      AND plan.catalogue_revision_id <> catalogue.current_revision_id
-      AND operation.active_ingestion_run_id IS NULL
-      AND EXISTS (
-        SELECT 1 FROM catalogue_export_deletion_retries AS retry
-        WHERE retry.deletion_id = OLD.id
-          AND retry.idempotency_key = NEW.retry_owner_idempotency_key
-          AND retry.object_set_digest = OLD.object_set_digest
-          AND retry.response_json IS NULL
-      )
-      AND (
-        operation.active_release_id IS NULL OR
-        operation.active_release_expires_at <= (
-          SELECT retry.created_at
-          FROM catalogue_export_deletion_retries AS retry
-          WHERE retry.deletion_id = OLD.id AND retry.response_json IS NULL
-            AND retry.idempotency_key = NEW.retry_owner_idempotency_key
-          ORDER BY retry.created_at DESC LIMIT 1
-        )
-      )
-      AND operation.recovery_health = 'healthy'
-  )
-)
-OR NEW.id <> OLD.id
-OR NEW.plan_id <> OLD.plan_id
-OR NEW.catalogue_revision_id <> OLD.catalogue_revision_id
-OR NEW.manifest_digest <> OLD.manifest_digest
-OR NEW.expected_current_revision_id <> OLD.expected_current_revision_id
-OR NEW.object_set_digest <> OLD.object_set_digest
-OR NEW.idempotency_key <> OLD.idempotency_key
-OR NEW.request_json <> OLD.request_json
-OR NEW.requested_at <> OLD.requested_at
-OR (OLD.confirmation_response_json IS NOT NULL
-    AND NEW.confirmation_response_json IS NOT OLD.confirmation_response_json)
-BEGIN
-  SELECT RAISE(ABORT, 'catalogue_export_deletion_transition_invalid');
-END;
-
 CREATE TRIGGER catalogue_export_deletion_operation_immutable_delete
 BEFORE DELETE ON catalogue_export_deletions
 BEGIN
   SELECT RAISE(ABORT, 'catalogue_export_deletion_operation_immutable');
 END;
 
--- Guarded Production Release.
---
--- After migration begins a failure must be recorded with
--- roll_forward_required = 1; there is no rollback past that point.
 CREATE TABLE production_releases (
   id TEXT PRIMARY KEY,
   state TEXT NOT NULL CHECK (state IN (
@@ -3268,358 +2008,6 @@ BEGIN
   SELECT RAISE(ABORT, 'terminal production release is immutable');
 END;
 
-CREATE TRIGGER production_release_transition_is_legal
-BEFORE UPDATE OF state ON production_releases
-WHEN NOT (
-  (OLD.state = 'requested' AND NEW.state IN ('preflight', 'failed'))
-  OR (OLD.state = 'preflight' AND NEW.state IN ('migrating', 'failed'))
-  OR (OLD.state = 'migrating' AND NEW.state IN ('deploying', 'failed'))
-  OR (OLD.state = 'deploying' AND NEW.state IN ('smoke_testing', 'failed'))
-  OR (OLD.state = 'smoke_testing' AND NEW.state IN ('succeeded', 'failed'))
-)
-BEGIN
-  SELECT RAISE(ABORT, 'illegal production release transition');
-END;
-
-CREATE TRIGGER production_release_no_rollback_after_migration
-BEFORE UPDATE OF state ON production_releases
-WHEN OLD.state IN ('migrating', 'deploying', 'smoke_testing')
-  AND NEW.state = 'failed' AND NEW.roll_forward_required <> 1
-BEGIN
-  SELECT RAISE(ABORT, 'roll_forward_required');
-END;
-
-CREATE TABLE production_release_transitions (
-  release_id TEXT NOT NULL REFERENCES production_releases(id),
-  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
-  from_state TEXT,
-  to_state TEXT NOT NULL,
-  evidence_json TEXT NOT NULL CHECK (json_valid(evidence_json)),
-  observed_at TEXT NOT NULL,
-  PRIMARY KEY (release_id, ordinal)
-);
-
-CREATE TRIGGER production_release_requested_audit
-AFTER INSERT ON production_releases
-BEGIN
-  INSERT INTO production_release_transitions (
-    release_id, ordinal, from_state, to_state, evidence_json, observed_at
-  ) VALUES (
-    NEW.id, 0, NULL, 'requested', NEW.request_json, NEW.requested_at
-  );
-END;
-
-CREATE TRIGGER production_release_state_audit
-AFTER UPDATE OF state ON production_releases
-BEGIN
-  INSERT INTO production_release_transitions (
-    release_id, ordinal, from_state, to_state, evidence_json, observed_at
-  ) VALUES (
-    NEW.id,
-    (SELECT COALESCE(MAX(ordinal), -1) + 1
-     FROM production_release_transitions WHERE release_id = NEW.id),
-    OLD.state,
-    NEW.state,
-    json_object(
-      'api_version_id', NEW.api_version_id,
-      'ingestion_version_id', NEW.ingestion_version_id,
-      'binding_observed', NEW.binding_observation_json IS NOT NULL,
-      'smoke_observed', NEW.smoke_evidence_json IS NOT NULL,
-      'failure_code', NEW.failure_code,
-      'roll_forward_required', NEW.roll_forward_required
-    ),
-    COALESCE(NEW.terminal_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-  );
-END;
-
-CREATE TRIGGER production_release_transition_audit_immutable_update
-BEFORE UPDATE ON production_release_transitions
-BEGIN
-  SELECT RAISE(ABORT, 'production release transition audit is immutable');
-END;
-
-CREATE TRIGGER production_release_transition_audit_immutable_delete
-BEFORE DELETE ON production_release_transitions
-BEGIN
-  SELECT RAISE(ABORT, 'production release transition audit is immutable');
-END;
-
-CREATE TRIGGER retain_reconciliation_candidate_evidence
-AFTER INSERT ON reconciliation_candidates
-BEGIN
-  INSERT INTO retained_source_observation_evidence
-    (source_observation_id, retained_by_table, retained_record_id)
-  SELECT NEW.source_observation_id,
-         'reconciliation_candidates', NEW.source_observation_set_id
-  WHERE NOT EXISTS (
-    SELECT 1 FROM retained_source_observation_evidence AS retained
-    WHERE retained.source_observation_id = NEW.source_observation_id
-  );
-END;
-
-CREATE TRIGGER retain_legality_rule_evidence
-AFTER INSERT ON legality_rules
-BEGIN
-  INSERT INTO retained_source_observation_evidence
-    (source_observation_id, retained_by_table, retained_record_id)
-  SELECT NEW.source_observation_id, 'legality_rules', NEW.id
-  WHERE NOT EXISTS (
-    SELECT 1 FROM retained_source_observation_evidence AS retained
-    WHERE retained.source_observation_id = NEW.source_observation_id
-  );
-END;
-
-CREATE TRIGGER retain_revision_product_evidence
-AFTER INSERT ON revision_products
-BEGIN
-  INSERT INTO retained_source_observation_evidence
-    (source_observation_id, retained_by_table, retained_record_id)
-  SELECT json_extract(evidence.value, '$.id'),
-         'revision_products', NEW.product_id
-  FROM json_each(NEW.document_json, '$.included') AS evidence
-  WHERE json_extract(evidence.value, '$.type') = 'source_observation'
-    AND json_extract(evidence.value, '$.id') IS NOT NULL
-    AND NOT EXISTS (
-      SELECT 1 FROM retained_source_observation_evidence AS retained
-      WHERE retained.source_observation_id =
-        json_extract(evidence.value, '$.id')
-    );
-END;
-
-CREATE TRIGGER retain_product_relationship_evidence
-AFTER INSERT ON reconciled_product_relationships
-BEGIN
-  INSERT INTO retained_source_observation_evidence
-    (source_observation_id, retained_by_table, retained_record_id)
-  SELECT observation.value,
-         'reconciled_product_relationships', NEW.id
-  FROM json_each(NEW.source_observation_ids_json) AS observation
-  WHERE NOT EXISTS (
-    SELECT 1 FROM retained_source_observation_evidence AS retained
-    WHERE retained.source_observation_id = observation.value
-  );
-END;
-
-CREATE TRIGGER retain_updated_product_relationship_evidence
-AFTER UPDATE OF source_observation_ids_json
-ON reconciled_product_relationships
-BEGIN
-  INSERT INTO retained_source_observation_evidence
-    (source_observation_id, retained_by_table, retained_record_id)
-  SELECT observation.value,
-         'reconciled_product_relationships', NEW.id
-  FROM json_each(NEW.source_observation_ids_json) AS observation
-  WHERE NOT EXISTS (
-    SELECT 1 FROM retained_source_observation_evidence AS retained
-    WHERE retained.source_observation_id = observation.value
-  );
-END;
-
--- Keep both Production Release lease vocabularies in step (see
--- operation_state).
-CREATE TRIGGER production_release_lease_shape_guard_v2
-BEFORE UPDATE OF active_production_release_id,
-  active_production_release_expires_at ON operation_state
-WHEN (NEW.active_production_release_id IS NULL) <>
-    (NEW.active_production_release_expires_at IS NULL)
-  OR (NEW.active_production_release_expires_at IS NOT NULL AND (
-    NEW.active_production_release_expires_at NOT GLOB
-      '????-??-??T??:??:??.???Z'
-    OR julianday(NEW.active_production_release_expires_at) IS NULL
-  ))
-BEGIN
-  SELECT RAISE(ABORT, 'production_release_lease_invalid');
-END;
-
-CREATE TRIGGER production_release_lease_sync_from_legacy
-AFTER UPDATE OF active_release_id, active_release_expires_at
-ON operation_state
-WHEN NEW.active_production_release_id IS NOT NEW.active_release_id
-  OR NEW.active_production_release_expires_at IS NOT NEW.active_release_expires_at
-BEGIN
-  UPDATE operation_state
-  SET active_production_release_id = NEW.active_release_id,
-      active_production_release_expires_at = NEW.active_release_expires_at
-  WHERE singleton = NEW.singleton;
-END;
-
-CREATE TRIGGER production_release_lease_sync_to_legacy
-AFTER UPDATE OF active_production_release_id,
-  active_production_release_expires_at ON operation_state
-WHEN NEW.active_release_id IS NOT NEW.active_production_release_id
-  OR NEW.active_release_expires_at IS NOT
-    NEW.active_production_release_expires_at
-BEGIN
-  UPDATE operation_state
-  SET active_release_id = NEW.active_production_release_id,
-      active_release_expires_at = NEW.active_production_release_expires_at
-  WHERE singleton = NEW.singleton;
-END;
-
--- Unresolved-scope validation and applicability materialization (see
--- legality_rules).
-CREATE TRIGGER legality_rule_scope_valid_insert
-BEFORE INSERT ON legality_rules
-WHEN NOT (
-  (
-    json_type(NEW.unresolved_scope_json) = 'null'
-    AND NEW.effective_from IS NOT NULL
-  )
-  OR (
-    json_type(NEW.unresolved_scope_json) = 'object'
-    AND json_extract(NEW.effect_json, '$.type') = 'unresolved'
-    AND json_array_length(NEW.direct_card_ids_json) >= 1
-    AND (SELECT COUNT(*) FROM json_each(NEW.unresolved_scope_json)) = 1
-    AND json_type(NEW.unresolved_scope_json, '$.dimensions') = 'array'
-    AND json_array_length(NEW.unresolved_scope_json, '$.dimensions') >= 1
-    AND NOT EXISTS (
-      SELECT 1 FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
-      WHERE type <> 'text'
-        OR value NOT IN ('effective_interval', 'event_tier', 'target_scope')
-    )
-    AND NOT EXISTS (
-      SELECT value
-      FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
-      GROUP BY value HAVING COUNT(*) > 1
-    )
-    AND NOT EXISTS (
-      SELECT 1
-      FROM json_each(NEW.unresolved_scope_json, '$.dimensions') AS item
-      JOIN json_each(
-        NEW.unresolved_scope_json,
-        '$.dimensions'
-      ) AS prior ON prior.key = item.key - 1
-      WHERE CAST(prior.value AS BLOB) >= CAST(item.value AS BLOB)
-    )
-    AND (
-      (
-        EXISTS (
-          SELECT 1
-          FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
-          WHERE value = 'effective_interval'
-        )
-        AND NEW.effective_from IS NULL
-        AND NEW.effective_until IS NULL
-      )
-      OR (
-        NOT EXISTS (
-          SELECT 1
-          FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
-          WHERE value = 'effective_interval'
-        )
-        AND NEW.effective_from IS NOT NULL
-      )
-    )
-    AND (
-      NOT EXISTS (
-        SELECT 1
-        FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
-        WHERE value = 'event_tier'
-      )
-      OR NEW.event_tier IS NULL
-    )
-  )
-)
-BEGIN
-  SELECT RAISE(ABORT, 'legality_rule_scope_invalid');
-END;
-
-CREATE TRIGGER revision_legality_rule_scope_valid_insert
-BEFORE INSERT ON revision_legality_rules
-WHEN NOT (
-  json_extract(NEW.document_json, '$.unresolved_scope') IS
-    json_extract(NEW.unresolved_scope_json, '$')
-  AND (
-    (
-      json_type(NEW.unresolved_scope_json) = 'null'
-      AND NEW.effective_from IS NOT NULL
-    )
-    OR (
-      json_type(NEW.unresolved_scope_json) = 'object'
-      AND json_extract(NEW.document_json, '$.effect.type') = 'unresolved'
-      AND json_array_length(NEW.document_json, '$.card_ids') >= 1
-      AND (SELECT COUNT(*) FROM json_each(NEW.unresolved_scope_json)) = 1
-      AND json_type(NEW.unresolved_scope_json, '$.dimensions') = 'array'
-      AND json_array_length(NEW.unresolved_scope_json, '$.dimensions') >= 1
-      AND NOT EXISTS (
-        SELECT 1 FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
-        WHERE type <> 'text'
-          OR value NOT IN (
-            'effective_interval', 'event_tier', 'target_scope'
-          )
-      )
-      AND NOT EXISTS (
-        SELECT value
-        FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
-        GROUP BY value HAVING COUNT(*) > 1
-      )
-      AND NOT EXISTS (
-        SELECT 1
-        FROM json_each(NEW.unresolved_scope_json, '$.dimensions') AS item
-        JOIN json_each(
-          NEW.unresolved_scope_json,
-          '$.dimensions'
-        ) AS prior ON prior.key = item.key - 1
-        WHERE CAST(prior.value AS BLOB) >= CAST(item.value AS BLOB)
-      )
-      AND (
-        (
-          EXISTS (
-            SELECT 1
-            FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
-            WHERE value = 'effective_interval'
-          )
-          AND NEW.effective_from IS NULL
-          AND NEW.effective_until IS NULL
-        )
-        OR (
-          NOT EXISTS (
-            SELECT 1
-            FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
-            WHERE value = 'effective_interval'
-          )
-          AND NEW.effective_from IS NOT NULL
-        )
-      )
-      AND (
-        NOT EXISTS (
-          SELECT 1
-          FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
-          WHERE value = 'event_tier'
-        )
-        OR NEW.event_tier IS NULL
-      )
-    )
-  )
-)
-BEGIN
-  SELECT RAISE(ABORT, 'revision_legality_rule_scope_invalid');
-END;
-
-CREATE TRIGGER revision_legality_rule_applicability_insert
-AFTER INSERT ON revision_legality_rules
-BEGIN
-  INSERT INTO revision_legality_rule_applicability (
-    catalogue_revision_id, legality_rule_id, applicability_kind, card_id
-  )
-  SELECT NEW.catalogue_revision_id, NEW.legality_rule_id, 'card', value
-  FROM json_each(NEW.card_ids_json);
-
-  INSERT INTO revision_legality_rule_applicability (
-    catalogue_revision_id, legality_rule_id, applicability_kind, card_id
-  )
-  SELECT NEW.catalogue_revision_id, NEW.legality_rule_id, 'all_cards', ''
-  WHERE (
-    json_array_length(NEW.card_ids_json) = 0
-    AND json_type(NEW.unresolved_scope_json) = 'null'
-  )
-  OR EXISTS (
-    SELECT 1 FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
-    WHERE value = 'target_scope'
-  );
-END;
-
--- Releases carry the 'season' precision Bandai publishes.
 CREATE TABLE reconciled_releases (
   id TEXT PRIMARY KEY,
   product_id TEXT NOT NULL REFERENCES reconciled_products(id),
@@ -3636,8 +2024,6 @@ CREATE TABLE reconciled_releases (
   last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id)
 );
 
--- Curated revision pins are fixed when a run starts and cascade only when
--- a bootstrap run row is deleted (see guard_ingestion_deletion).
 CREATE TABLE ingestion_run_curated_revisions (
   ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id) ON DELETE CASCADE,
   ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
@@ -3686,374 +2072,6 @@ BEGIN
   SELECT RAISE(ABORT, 'curated_revision_pin_set_immutable');
 END;
 
--- Ingestion Run lifecycle triggers, in their original creation order
--- because SQLite fires overlapping triggers in that order.
-CREATE TRIGGER record_initial_ingestion_state
-AFTER INSERT ON ingestion_runs
-BEGIN
-  INSERT INTO ingestion_run_transitions (
-    ingestion_run_id,
-    from_state,
-    to_state,
-    transitioned_at
-  ) VALUES (
-    NEW.id,
-    NULL,
-    NEW.state,
-    NEW.started_at
-  );
-END;
-
-CREATE TRIGGER record_ingestion_transition
-AFTER UPDATE OF state ON ingestion_runs
-WHEN OLD.state <> NEW.state
-BEGIN
-  INSERT INTO ingestion_run_transitions (
-    ingestion_run_id,
-    from_state,
-    to_state,
-    transitioned_at
-  ) VALUES (
-    NEW.id,
-    OLD.state,
-    NEW.state,
-    COALESCE(NEW.terminal_at, NEW.candidate_created_at, NEW.started_at)
-  );
-END;
-
-CREATE TRIGGER guard_active_ingestion_identity
-BEFORE UPDATE OF state ON ingestion_runs
-WHEN OLD.state <> NEW.state
-  AND OLD.state IN (
-    'planning',
-    'collecting',
-    'paused',
-    'parsing',
-    'reconciling',
-    'awaiting_approval',
-    'publishing'
-  )
-  AND NOT (
-    OLD.state = 'publishing'
-    AND NEW.state = 'failed'
-    AND NEW.failure_code IN (
-      'publication_abandoned',
-      'publication_precondition_failed',
-      'export_verification_failed'
-    )
-  )
-  AND NOT (
-    OLD.state = 'awaiting_approval'
-    AND NEW.state = 'expired'
-    AND OLD.approval_deadline IS NOT NULL
-    AND NEW.terminal_at >= OLD.approval_deadline
-  )
-  AND NOT EXISTS (
-    SELECT 1
-    FROM operation_state
-    WHERE singleton = 1
-      AND active_ingestion_run_id = OLD.id
-  )
-BEGIN
-  SELECT RAISE(ABORT, 'run_not_active');
-END;
-
-CREATE TRIGGER guard_terminal_ingestion_immutability
-BEFORE UPDATE ON ingestion_runs
-WHEN OLD.state IN ('published', 'rejected', 'expired', 'failed')
-BEGIN
-  SELECT RAISE(ABORT, 'terminal_ingestion_run_immutable');
-END;
-
-CREATE TRIGGER guard_reserved_approval
-BEFORE UPDATE OF
-  approval_json,
-  approval_history_json,
-  approval_idempotency_key,
-  publication_revision_id,
-  publication_started_at,
-  publication_reconcile_after,
-  publication_manifest_digest,
-  publication_writer_token
-ON ingestion_runs
-WHEN OLD.state IN (
-  'publishing',
-  'published',
-  'rejected',
-  'expired',
-  'failed'
-)
-  AND (
-    OLD.approval_json IS NOT NEW.approval_json
-    OR OLD.approval_history_json IS NOT NEW.approval_history_json
-    OR OLD.approval_idempotency_key
-      IS NOT NEW.approval_idempotency_key
-    OR OLD.publication_revision_id
-      IS NOT NEW.publication_revision_id
-    OR OLD.publication_started_at
-      IS NOT NEW.publication_started_at
-    OR OLD.publication_reconcile_after
-      IS NOT NEW.publication_reconcile_after
-    OR OLD.publication_manifest_digest
-      IS NOT NEW.publication_manifest_digest
-    OR OLD.publication_writer_token
-      IS NOT NEW.publication_writer_token
-  )
-BEGIN
-  SELECT RAISE(ABORT, 'reserved_approval_immutable');
-END;
-
-CREATE TRIGGER guard_approval_transition
-BEFORE UPDATE OF state ON ingestion_runs
-WHEN OLD.state = 'awaiting_approval'
-  AND NEW.state = 'publishing'
-  AND NOT (
-    NEW.approval_json IS NOT NULL
-    AND json_extract(
-      NEW.approval_json,
-      '$.candidate_digest'
-    ) = OLD.candidate_digest
-    AND json_extract(
-      NEW.approval_json,
-      '$.expected_current_revision_id'
-    ) = OLD.expected_current_revision_id
-    AND json_extract(
-      NEW.approval_json,
-      '$.approved_at'
-    ) < OLD.approval_deadline
-    AND EXISTS (
-      SELECT 1
-      FROM catalogue_state AS catalogue
-      JOIN operation_state AS operation ON operation.singleton = 1
-      WHERE catalogue.singleton = 1
-        AND catalogue.current_revision_id =
-          OLD.expected_current_revision_id
-        AND operation.active_ingestion_run_id = OLD.id
-        AND operation.recovery_health = 'healthy'
-    )
-  )
-BEGIN
-  SELECT RAISE(ABORT, 'approval_guard_failed');
-END;
-
-CREATE TRIGGER guard_catalogue_publication
-BEFORE INSERT ON catalogue_revisions
-WHEN NOT EXISTS (
-  SELECT 1
-  FROM ingestion_runs AS run
-  JOIN operation_state AS operation ON operation.singleton = 1
-  JOIN catalogue_state AS catalogue ON catalogue.singleton = 1
-  WHERE run.id = NEW.ingestion_run_id
-    AND run.state = 'publishing'
-    AND run.candidate_digest = NEW.approved_candidate_digest
-    AND run.expected_current_revision_id =
-      NEW.expected_previous_revision_id
-    AND json_extract(
-      run.approval_json,
-      '$.candidate_digest'
-    ) = NEW.approved_candidate_digest
-    AND json_extract(
-      run.approval_json,
-      '$.expected_current_revision_id'
-    ) = NEW.expected_previous_revision_id
-    AND operation.active_ingestion_run_id = run.id
-    AND operation.recovery_health = 'healthy'
-    AND catalogue.current_revision_id =
-      NEW.expected_previous_revision_id
-)
-BEGIN
-  SELECT RAISE(ABORT, 'publication_guard_failed');
-END;
-
-CREATE TRIGGER guard_candidate_finalization
-BEFORE UPDATE OF state ON ingestion_runs
-WHEN OLD.state = 'reconciling'
-  AND NEW.state = 'awaiting_approval'
-  AND (
-    NEW.candidate_digest IS NULL
-    OR NEW.candidate_catalogue_digest IS NULL
-    OR NEW.candidate_created_at IS NULL
-    OR NEW.approval_deadline IS NULL
-    OR NEW.approval_deadline <> strftime(
-      '%Y-%m-%dT%H:%M:%fZ',
-      NEW.candidate_created_at,
-      '+7 days'
-    )
-  )
-BEGIN
-  SELECT RAISE(ABORT, 'invalid_candidate_deadline');
-END;
-
-CREATE TRIGGER guard_fixed_candidate
-BEFORE UPDATE OF
-  candidate_digest,
-  candidate_catalogue_digest,
-  candidate_created_at,
-  approval_deadline,
-  expected_current_revision_id,
-  candidate_json,
-  selected_games_json,
-  warnings_json
-ON ingestion_runs
-WHEN OLD.state IN (
-  'awaiting_approval',
-  'publishing',
-  'published',
-  'rejected',
-  'expired',
-  'failed'
-)
-  AND (
-    OLD.candidate_digest IS NOT NEW.candidate_digest
-    OR OLD.candidate_catalogue_digest
-      IS NOT NEW.candidate_catalogue_digest
-    OR OLD.candidate_created_at IS NOT NEW.candidate_created_at
-    OR OLD.approval_deadline IS NOT NEW.approval_deadline
-    OR OLD.expected_current_revision_id
-      IS NOT NEW.expected_current_revision_id
-    OR OLD.candidate_json IS NOT NEW.candidate_json
-    OR OLD.selected_games_json IS NOT NEW.selected_games_json
-    OR OLD.warnings_json IS NOT NEW.warnings_json
-  )
-BEGIN
-  SELECT RAISE(ABORT, 'candidate_immutable');
-END;
-
-CREATE TRIGGER guard_no_change_result
-BEFORE INSERT ON ingestion_no_change_results
-WHEN NOT EXISTS (
-  SELECT 1
-  FROM ingestion_runs AS run
-  JOIN operation_state AS operation ON operation.singleton = 1
-  JOIN catalogue_state AS catalogue ON catalogue.singleton = 1
-  JOIN catalogue_revisions AS revision
-    ON revision.id = catalogue.current_revision_id
-  WHERE run.id = NEW.ingestion_run_id
-    AND run.state = 'awaiting_approval'
-    AND run.candidate_digest = NEW.candidate_digest
-    AND run.expected_current_revision_id = NEW.catalogue_revision_id
-    AND operation.active_ingestion_run_id = run.id
-    AND operation.recovery_health = 'healthy'
-    AND catalogue.current_revision_id = NEW.catalogue_revision_id
-    AND revision.content_digest = run.candidate_catalogue_digest
-    AND NEW.checked_at < run.approval_deadline
-)
-BEGIN
-  SELECT RAISE(ABORT, 'no_change_guard_failed');
-END;
-
--- The release workflow acquires its lease through a bootstrap ingestion
--- row. That row exists only so the ingestion worker recognises the lock as
--- live; once its exact operation-state pointer is gone it is safe to
--- remove. All domain runs remain immutable.
-CREATE TRIGGER guard_ingestion_deletion
-BEFORE DELETE ON ingestion_runs
-WHEN NOT (
-  OLD.id LIKE 'release-bootstrap|%'
-  AND OLD.idempotency_key = OLD.id
-  AND OLD.selected_games_json = '[]'
-  AND OLD.candidate_json = '{"production_release_bootstrap":true}'
-  AND OLD.state IN ('planning', 'failed')
-  AND NOT EXISTS (
-    SELECT 1 FROM operation_state
-    WHERE singleton = 1 AND active_ingestion_run_id = OLD.id
-  )
-)
-BEGIN
-  SELECT RAISE(ABORT, 'ingestion_run_audit_immutable');
-END;
-
-CREATE TRIGGER guard_ingestion_transition_delete
-BEFORE DELETE ON ingestion_run_transitions
-WHEN NOT EXISTS (
-  SELECT 1 FROM ingestion_runs AS run
-  WHERE run.id = OLD.ingestion_run_id
-    AND run.id LIKE 'release-bootstrap|%'
-    AND run.idempotency_key = run.id
-    AND run.selected_games_json = '[]'
-    AND run.candidate_json = '{"production_release_bootstrap":true}'
-    AND run.state IN ('planning', 'failed')
-    AND NOT EXISTS (
-      SELECT 1 FROM operation_state
-      WHERE singleton = 1 AND active_ingestion_run_id = run.id
-    )
-)
-BEGIN
-  SELECT RAISE(ABORT, 'ingestion_transition_audit_immutable');
-END;
-
-CREATE TRIGGER curated_revision_pin_set_matches_run_start
-BEFORE INSERT ON ingestion_run_curated_revision_sets
-WHEN NEW.revision_ids_json <> COALESCE((
-  SELECT json_group_array(id) FROM (
-    SELECT revision.id
-    FROM curated_revisions AS revision
-    JOIN ingestion_runs AS run ON run.id = NEW.ingestion_run_id
-    WHERE revision.status = 'active'
-      AND revision.game IN (SELECT value FROM json_each(run.selected_games_json))
-      AND (revision.effective_from IS NULL OR revision.effective_from <= substr(run.started_at, 1, 10))
-      AND (revision.effective_to IS NULL OR substr(run.started_at, 1, 10) < revision.effective_to)
-    ORDER BY revision.id
-  )
-), '[]')
-BEGIN
-  SELECT RAISE(ABORT, 'curated_revision_pin_set_changed');
-END;
-
-CREATE TRIGGER curated_revision_reconfirmation_blocks_run
-BEFORE INSERT ON ingestion_runs
-WHEN EXISTS (
-  SELECT 1 FROM curated_revisions AS revision
-  WHERE revision.status = 'reconfirmation_required'
-    AND revision.game IN (
-      SELECT value FROM json_each(NEW.selected_games_json)
-    )
-)
-BEGIN
-  SELECT RAISE(ABORT, 'curated_revision_reconfirmation_required');
-END;
-
-CREATE TRIGGER require_idle_ingestion
-BEFORE INSERT ON ingestion_runs
-WHEN EXISTS (
-  SELECT 1 FROM operation_state
-  WHERE singleton = 1 AND (
-    active_ingestion_run_id IS NOT NULL
-    OR (
-      active_release_id IS NOT NULL
-      AND active_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-    )
-  )
-)
-BEGIN
-  SELECT RAISE(ABORT, 'active_ingestion_run_or_release');
-END;
-
--- Keep the database-level gate aligned with the Worker check so neither a
--- new ingestion nor a production-release bootstrap can begin while
--- recovery is blocked.
-CREATE TRIGGER require_recovery_idle_ingestion
-BEFORE INSERT ON ingestion_runs
-WHEN EXISTS (
-  SELECT 1 FROM operation_state
-  WHERE singleton = 1
-    AND (recovery_health = 'blocked' OR recovery_restore_guard = 'blocked')
-    AND active_ingestion_run_id IS NULL
-    AND NOT (
-      active_release_id IS NOT NULL
-      AND active_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-    )
-)
-BEGIN
-  SELECT RAISE(ABORT, 'recovery_in_progress');
-END;
-
--- One immutable pause record per capacity generation retains the facts the
--- owner needs to choose a meaningful capacity extension: the exact capacity
--- and generation that were exhausted, the unique Source Request identities
--- already held by the Source Lineage, the size of the rejected all-or-nothing
--- overflow batch, and the safe parent Source Request reference whose retained
--- discovery evidence can derive that batch again.
 CREATE TABLE ingestion_run_capacity_pauses (
   ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
   capacity_generation INTEGER NOT NULL CHECK (capacity_generation >= 1),
@@ -4077,16 +2095,6 @@ CREATE TABLE ingestion_run_capacity_pauses (
   PRIMARY KEY (ingestion_run_id, capacity_generation)
 );
 
-CREATE TRIGGER guard_capacity_pause_requires_paused_run
-BEFORE INSERT ON ingestion_run_capacity_pauses
-WHEN NOT EXISTS (
-  SELECT 1 FROM ingestion_runs
-  WHERE id = NEW.ingestion_run_id AND state = 'paused'
-)
-BEGIN
-  SELECT RAISE(ABORT, 'capacity_pause_requires_paused_run');
-END;
-
 CREATE TRIGGER guard_capacity_pause_update
 BEFORE UPDATE ON ingestion_run_capacity_pauses
 BEGIN
@@ -4099,14 +2107,6 @@ BEGIN
   SELECT RAISE(ABORT, 'capacity_pause_immutable');
 END;
 
--- One immutable record per successful extension advances the run's capacity
--- generation through an authenticated, idempotent, compare-and-set
--- administration action. The effective capacity of a Source Lineage within a
--- run becomes the newest extension's absolute capacity (still constrained by
--- the global emergency ceiling); a run without extensions keeps its Source
--- Adapter Version's registered capacity at generation 1. The stored request
--- digest and response document let an idempotent replay return the original
--- result without applying another extension.
 CREATE TABLE ingestion_run_capacity_extensions (
   ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
   capacity_generation INTEGER NOT NULL CHECK (capacity_generation >= 2),
@@ -4127,16 +2127,6 @@ CREATE TABLE ingestion_run_capacity_extensions (
   PRIMARY KEY (ingestion_run_id, capacity_generation)
 );
 
-CREATE TRIGGER guard_capacity_extension_requires_paused_run
-BEFORE INSERT ON ingestion_run_capacity_extensions
-WHEN NOT EXISTS (
-  SELECT 1 FROM ingestion_runs
-  WHERE id = NEW.ingestion_run_id AND state = 'paused'
-)
-BEGIN
-  SELECT RAISE(ABORT, 'capacity_extension_requires_paused_run');
-END;
-
 CREATE TRIGGER guard_capacity_extension_update
 BEFORE UPDATE ON ingestion_run_capacity_extensions
 BEGIN
@@ -4149,16 +2139,6 @@ BEGIN
   SELECT RAISE(ABORT, 'capacity_extension_immutable');
 END;
 
--- Recoverable transport and R2 persistence retry exhaustion pause the
--- Ingestion Run instead of failing it. Each Source Request carries a bounded
--- retry generation: attempts stay append-only and monotonically numbered, and
--- resuming a paused run opens the next generation by raising the counted
--- budget window rather than deleting or renumbering earlier attempts.
---
--- One immutable record per (run, request, generation) retry-exhaustion pause.
--- Unlike ingestion_run_capacity_pauses, the facts here describe the exhausted
--- request, not lineage capacity: the safe request reference, its hostname,
--- the exhausted generation, and the latest safe failure classification.
 CREATE TABLE ingestion_run_retry_pauses (
   ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
   request_id TEXT NOT NULL,
@@ -4193,16 +2173,6 @@ CREATE TABLE ingestion_run_retry_pauses (
   )
 );
 
-CREATE TRIGGER guard_retry_pause_requires_paused_run
-BEFORE INSERT ON ingestion_run_retry_pauses
-WHEN NOT EXISTS (
-  SELECT 1 FROM ingestion_runs
-  WHERE id = NEW.ingestion_run_id AND state = 'paused'
-)
-BEGIN
-  SELECT RAISE(ABORT, 'retry_pause_requires_paused_run');
-END;
-
 CREATE TRIGGER guard_retry_pause_update
 BEFORE UPDATE ON ingestion_run_retry_pauses
 BEGIN
@@ -4215,15 +2185,6 @@ BEGIN
   SELECT RAISE(ABORT, 'retry_pause_immutable');
 END;
 
--- A stalled, errored, terminated, or unavailable collection Workflow pauses
--- the Ingestion Run instead of abandoning it. Parent and hostname-shard child
--- Workflow attempts become append-only records with deterministic identities,
--- so recovery supersedes an attempt by opening a new one without deleting or
--- renumbering history, and exactly one attempt per scope is current.
---
--- One immutable row per Workflow Attempt. The base identity groups the
--- attempts of one scope (the run's parent Workflow, or one hostname shard),
--- and the highest attempt number per scope is the current attempt.
 CREATE TABLE ingestion_workflow_attempts (
   ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
   workflow_kind TEXT NOT NULL CHECK (workflow_kind IN ('parent', 'child')),
@@ -4248,11 +2209,33 @@ BEGIN
   SELECT RAISE(ABORT, 'workflow_attempt_immutable');
 END;
 
--- One immutable record per (run, Workflow instance) Workflow Pause. Unlike
--- the capacity and retry-exhaustion pause tables, the facts here describe
--- the abandoned Workflow Attempt: its safe instance reference, the safe
--- status that classified it, and the deterministic last-progress time the
--- classification was derived from.
+CREATE INDEX revision_printings_by_card
+ON revision_printings (catalogue_revision_id, card_id, printing_id);
+
+CREATE INDEX source_snapshots_by_run
+ON source_snapshots (ingestion_run_id, retrieved_at DESC, id DESC);
+
+CREATE INDEX source_fetch_attempts_by_run
+ON source_fetch_attempts (
+  ingestion_run_id,
+  completed_at DESC,
+  request_id DESC,
+  attempt_number DESC
+);
+
+CREATE INDEX reconciled_printing_locators_by_printing
+ON reconciled_printing_locators (printing_id, source_lineage, locator);
+
+CREATE INDEX catalogue_backup_attempts_by_revision
+ON catalogue_backup_attempts (
+  catalogue_revision_id,
+  started_at DESC,
+  idempotency_key DESC
+);
+
+CREATE INDEX ingestion_runs_recent
+ON ingestion_runs (started_at DESC, id DESC);
+
 CREATE TABLE ingestion_run_workflow_pauses (
   ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
   workflow_instance_id TEXT NOT NULL,
@@ -4261,7 +2244,8 @@ CREATE TABLE ingestion_run_workflow_pauses (
       'source_workflow_stalled',
       'source_workflow_errored',
       'source_workflow_terminated',
-      'source_workflow_unavailable'
+      'source_workflow_unavailable',
+      'owner_requested'
     )
   ),
   workflow_status TEXT NOT NULL CHECK (
@@ -4283,16 +2267,6 @@ CREATE TABLE ingestion_run_workflow_pauses (
   PRIMARY KEY (ingestion_run_id, workflow_instance_id)
 );
 
-CREATE TRIGGER guard_workflow_pause_requires_paused_run
-BEFORE INSERT ON ingestion_run_workflow_pauses
-WHEN NOT EXISTS (
-  SELECT 1 FROM ingestion_runs
-  WHERE id = NEW.ingestion_run_id AND state = 'paused'
-)
-BEGIN
-  SELECT RAISE(ABORT, 'workflow_pause_requires_paused_run');
-END;
-
 CREATE TRIGGER guard_workflow_pause_update
 BEFORE UPDATE ON ingestion_run_workflow_pauses
 BEGIN
@@ -4305,19 +2279,6 @@ BEGIN
   SELECT RAISE(ABORT, 'workflow_pause_immutable');
 END;
 
--- Termination is the owner's explicit decision that a paused run will not be
--- resumed. It is the only path from 'paused' to 'failed': the transition is
--- legal solely when the run carries the stable owner-termination reason and
--- an immutable termination record already exists for it. Every retained
--- Source Snapshot, Source Observation Set, request plan, collection plan,
--- fetch attempt, capture operation, pause record, Workflow Attempt, and
--- transition survives unchanged; the run merely becomes terminal, and the
--- administration action then releases the single active-run reservation.
---
--- One immutable record per terminated run retains the owner decision: which
--- pause was abandoned, when, and under which idempotency key. The stored
--- request digest and response document let an idempotent replay return the
--- original result without applying anything.
 CREATE TABLE ingestion_run_terminations (
   ingestion_run_id TEXT PRIMARY KEY REFERENCES ingestion_runs(id),
   pause_reason TEXT NOT NULL CHECK (
@@ -4328,7 +2289,8 @@ CREATE TABLE ingestion_run_terminations (
       'source_workflow_stalled',
       'source_workflow_errored',
       'source_workflow_terminated',
-      'source_workflow_unavailable'
+      'source_workflow_unavailable',
+      'owner_requested'
     )
   ),
   paused_at TEXT NOT NULL,
@@ -4339,16 +2301,6 @@ CREATE TABLE ingestion_run_terminations (
   ),
   response_json TEXT NOT NULL CHECK (json_valid(response_json))
 );
-
-CREATE TRIGGER guard_termination_requires_paused_run
-BEFORE INSERT ON ingestion_run_terminations
-WHEN NOT EXISTS (
-  SELECT 1 FROM ingestion_runs
-  WHERE id = NEW.ingestion_run_id AND state = 'paused'
-)
-BEGIN
-  SELECT RAISE(ABORT, 'termination_requires_paused_run');
-END;
 
 CREATE TRIGGER guard_termination_update
 BEFORE UPDATE ON ingestion_run_terminations
@@ -4362,174 +2314,306 @@ BEGIN
   SELECT RAISE(ABORT, 'termination_immutable');
 END;
 
--- paused -> collecting is `keepr source resume`; paused -> failed is legal
--- only through explicit termination.
-CREATE TRIGGER guard_legal_ingestion_transition
-BEFORE UPDATE OF state ON ingestion_runs
-WHEN OLD.state <> NEW.state
-  AND NOT (
-    (OLD.state = 'planning' AND NEW.state IN ('collecting', 'failed'))
-    OR (
-      OLD.state = 'collecting'
-      AND NEW.state IN ('paused', 'parsing', 'failed')
-    )
-    OR (OLD.state = 'paused' AND NEW.state = 'collecting')
-    OR (
-      OLD.state = 'paused'
-      AND NEW.state = 'failed'
-      AND NEW.failure_code = 'ingestion_run_terminated'
-      AND EXISTS (
-        SELECT 1 FROM ingestion_run_terminations
-        WHERE ingestion_run_id = OLD.id
-      )
-    )
-    OR (OLD.state = 'parsing' AND NEW.state IN ('reconciling', 'failed'))
-    OR (
-      OLD.state = 'reconciling'
-      AND NEW.state IN ('awaiting_approval', 'failed')
-    )
-    OR (
-      OLD.state = 'awaiting_approval'
-      AND NEW.state IN (
-        'publishing',
-        'rejected',
-        'expired',
-        'failed'
-      )
-    )
-    OR (
-      OLD.state = 'publishing'
-      AND NEW.state IN ('published', 'failed')
-    )
-  )
+CREATE TRIGGER revision_legality_rules_immutable_update
+BEFORE UPDATE ON revision_legality_rules
 BEGIN
-  SELECT RAISE(ABORT, 'illegal_ingestion_transition');
+  SELECT RAISE(ABORT, 'revision_legality_rule_immutable');
 END;
 
--- ADR 0005: rotating a worker bearer key is an operator procedure with no
--- attestation. Each rotation is recorded as one append-only log entry so
--- the history stays queryable. The row is the entry: a replay under the
--- same idempotency key returns it unchanged, and the stored request digest
--- turns a changed request under a reused key into an explicit conflict.
-CREATE TABLE credential_rotation_log (
-  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-  credential_class TEXT NOT NULL CHECK (
-    credential_class IN ('api_bearer_key', 'ingestion_admin_key')
-  ),
-  operator_note TEXT NOT NULL CHECK (
-    length(operator_note) BETWEEN 1 AND 500
-  ),
-  recorded_at TEXT NOT NULL,
-  idempotency_key TEXT NOT NULL UNIQUE,
-  request_digest TEXT NOT NULL CHECK (
-    length(request_digest) = 64 AND request_digest NOT GLOB '*[^0-9a-f]*'
-  )
+CREATE TABLE revision_printing_query (
+  catalogue_revision_id TEXT NOT NULL,
+  printing_id TEXT NOT NULL,
+  card_id TEXT NOT NULL,
+  supported_game TEXT NOT NULL CHECK (supported_game IN ('one-piece', 'fusion-world', 'digimon', 'gundam')),
+  normalized_rarity TEXT,
+  PRIMARY KEY (catalogue_revision_id, printing_id),
+  FOREIGN KEY (catalogue_revision_id, printing_id)
+    REFERENCES revision_printings(catalogue_revision_id, printing_id) ON DELETE CASCADE
 );
 
-CREATE TRIGGER guard_credential_rotation_log_update
-BEFORE UPDATE ON credential_rotation_log
+CREATE INDEX revision_printing_query_by_card
+  ON revision_printing_query(catalogue_revision_id, card_id, printing_id);
+
+CREATE INDEX revision_printing_query_by_game
+  ON revision_printing_query(catalogue_revision_id, supported_game, card_id, printing_id);
+
+CREATE INDEX revision_printing_query_by_rarity
+  ON revision_printing_query(catalogue_revision_id, normalized_rarity, card_id, printing_id);
+
+CREATE INDEX revision_printing_query_by_game_rarity
+  ON revision_printing_query(catalogue_revision_id, supported_game, normalized_rarity, card_id, printing_id);
+
+CREATE TABLE revision_printing_product_query (
+  catalogue_revision_id TEXT NOT NULL,
+  printing_id TEXT NOT NULL,
+  card_id TEXT NOT NULL,
+  product_id TEXT NOT NULL,
+  -- Empty means this current Product membership has no published Release region.
+  release_region TEXT NOT NULL,
+  PRIMARY KEY (catalogue_revision_id, printing_id, product_id, release_region),
+  FOREIGN KEY (catalogue_revision_id, printing_id)
+    REFERENCES revision_printing_query(catalogue_revision_id, printing_id) ON DELETE CASCADE,
+  FOREIGN KEY (catalogue_revision_id, product_id)
+    REFERENCES revision_products(catalogue_revision_id, product_id) ON DELETE CASCADE
+);
+
+CREATE INDEX revision_printing_products_by_product
+  ON revision_printing_product_query(catalogue_revision_id, product_id, card_id, printing_id, release_region);
+
+CREATE INDEX revision_printing_products_by_region
+  ON revision_printing_product_query(catalogue_revision_id, release_region, card_id, printing_id, product_id);
+
+CREATE INDEX revision_printing_products_by_product_region
+  ON revision_printing_product_query(catalogue_revision_id, product_id, release_region, card_id, printing_id);
+
+CREATE TABLE ingestion_workflow_progress (
+  workflow_instance_id TEXT PRIMARY KEY REFERENCES ingestion_workflow_attempts(workflow_instance_id),
+  last_progress_at TEXT NOT NULL,
+  last_work_at TEXT,
+  last_step_name TEXT,
+  last_phase TEXT CHECK (last_phase IN ('started', 'completed', 'failed'))
+);
+
+CREATE TRIGGER workflow_progress_identity_is_immutable
+BEFORE UPDATE OF workflow_instance_id ON ingestion_workflow_progress
+BEGIN SELECT RAISE(ABORT, 'workflow_progress_identity_immutable'); END;
+
+CREATE TABLE revision_card_attributes (
+  catalogue_revision_id TEXT NOT NULL,
+  card_id TEXT NOT NULL,
+  profile TEXT NOT NULL,
+  attribute TEXT NOT NULL,
+  value TEXT NOT NULL,
+  PRIMARY KEY (catalogue_revision_id, card_id, attribute, value),
+  FOREIGN KEY (catalogue_revision_id, card_id)
+    REFERENCES revision_cards(catalogue_revision_id, card_id) ON DELETE CASCADE
+);
+
+CREATE INDEX revision_card_attributes_by_value
+  ON revision_card_attributes(catalogue_revision_id, profile, attribute, value, card_id);
+
+CREATE TABLE catalogue_backup_dispatch (
+  idempotency_key TEXT PRIMARY KEY REFERENCES catalogue_backup_workflow_requests(idempotency_key),
+  state TEXT NOT NULL CHECK (state IN ('pending', 'failed', 'dispatched')),
+  attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+  failure_detail TEXT,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE reconciliation_contexts (
+  ingestion_run_id TEXT PRIMARY KEY REFERENCES ingestion_runs(id),
+  digest_payload_json TEXT NOT NULL
+);
+
+CREATE TRIGGER reconciliation_contexts_are_immutable_on_update
+BEFORE UPDATE ON reconciliation_contexts
 BEGIN
-  SELECT RAISE(ABORT, 'credential_rotation_log_immutable');
+  SELECT RAISE(ABORT, 'reconciliation_context_immutable');
 END;
 
-CREATE TRIGGER guard_credential_rotation_log_delete
-BEFORE DELETE ON credential_rotation_log
+CREATE TRIGGER reconciliation_contexts_are_immutable_on_delete
+BEFORE DELETE ON reconciliation_contexts
 BEGIN
-  SELECT RAISE(ABORT, 'credential_rotation_log_immutable');
+  SELECT RAISE(ABORT, 'reconciliation_context_immutable');
 END;
 
--- Hot-path indexes.
---
--- Card detail (src/catalogue/read.ts) filters one revision's printings by
--- card and orders by printing; the printing collection read and the
--- ingestion diagnostics sample order by (card_id, printing_id) under the
--- same revision. The primary key (catalogue_revision_id, printing_id) seeks
--- the revision and then filters every printing in it.
-CREATE INDEX revision_printings_by_card
-ON revision_printings (catalogue_revision_id, card_id, printing_id);
+CREATE TRIGGER catalogue_export_deletion_identity_is_immutable
+BEFORE UPDATE ON catalogue_export_deletions
+WHEN NEW.id <> OLD.id
+  OR NEW.plan_id <> OLD.plan_id
+  OR NEW.catalogue_revision_id <> OLD.catalogue_revision_id
+  OR NEW.manifest_digest <> OLD.manifest_digest
+  OR NEW.expected_current_revision_id <> OLD.expected_current_revision_id
+  OR NEW.object_set_digest <> OLD.object_set_digest
+  OR NEW.idempotency_key <> OLD.idempotency_key
+  OR NEW.request_json <> OLD.request_json
+  OR NEW.requested_at <> OLD.requested_at
+  OR (OLD.confirmation_response_json IS NOT NULL
+      AND NEW.confirmation_response_json IS NOT OLD.confirmation_response_json)
+BEGIN
+  SELECT RAISE(ABORT, 'catalogue_export_deletion_transition_invalid');
+END;
 
--- Collection inspection counts, sums, and lists one run's snapshots and
--- fetch attempts newest first; both tables are append-only and never pruned.
-CREATE INDEX source_snapshots_by_run
-ON source_snapshots (ingestion_run_id, retrieved_at DESC, id DESC);
+CREATE TRIGGER ingestion_run_identity_is_immutable
+BEFORE UPDATE ON ingestion_runs
+WHEN NEW.id IS NOT OLD.id
+  OR NEW.started_at IS NOT OLD.started_at
+  OR NEW.expected_current_revision_id IS NOT OLD.expected_current_revision_id
+  OR NEW.linked_run_id IS NOT OLD.linked_run_id
+  OR NEW.idempotency_key IS NOT OLD.idempotency_key
+  OR NEW.operational_request_id IS NOT OLD.operational_request_id
+  OR (OLD.approval_idempotency_key IS NOT NULL
+    AND NEW.approval_idempotency_key IS NOT OLD.approval_idempotency_key)
+BEGIN
+  SELECT RAISE(ABORT, 'ingestion_run_identity_immutable');
+END;
 
-CREATE INDEX source_fetch_attempts_by_run
-ON source_fetch_attempts (
-  ingestion_run_id,
-  completed_at DESC,
-  request_id DESC,
-  attempt_number DESC
+CREATE TRIGGER ingestion_run_identity_is_not_deleted
+BEFORE DELETE ON ingestion_runs
+BEGIN
+  SELECT RAISE(ABORT, 'ingestion_run_identity_immutable');
+END;
+
+CREATE TABLE ingestion_run_events (
+  ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
+  sequence_number INTEGER NOT NULL CHECK (sequence_number >= 1),
+  event_id TEXT NOT NULL UNIQUE,
+  event_kind TEXT NOT NULL CHECK (event_kind IN ('created', 'stage_changed', 'collection_paused', 'collection_resumed', 'collection_terminated', 'candidate_prepared', 'candidate_blocked', 'approval_reserved', 'rejected', 'expired', 'failed', 'published')),
+  occurred_at TEXT NOT NULL,
+  from_state TEXT CHECK (from_state IN ('planning', 'collecting', 'paused', 'parsing', 'reconciling', 'awaiting_approval', 'publishing', 'published', 'rejected', 'expired', 'failed')),
+  to_state TEXT NOT NULL CHECK (to_state IN ('planning', 'collecting', 'paused', 'parsing', 'reconciling', 'awaiting_approval', 'publishing', 'published', 'rejected', 'expired', 'failed')),
+  payload_json TEXT NOT NULL CHECK (json_valid(payload_json) AND json_type(payload_json) = 'object'),
+  PRIMARY KEY (ingestion_run_id, sequence_number)
 );
 
--- Locators are keyed by (source_lineage, locator, variant_identity) but
--- publication, candidate reads, and the repository look them up by printing.
-CREATE INDEX reconciled_printing_locators_by_printing
-ON reconciled_printing_locators (printing_id, source_lineage, locator);
+CREATE TRIGGER ingestion_run_events_are_immutable_on_update
+BEFORE UPDATE ON ingestion_run_events
+BEGIN
+  SELECT RAISE(ABORT, 'ingestion_run_event_immutable');
+END;
 
--- Backup attempts are listed per revision newest first; the release and
--- recovery gates seek the same revision and filter the few rows by state.
--- (Retry children are already found through the partial unique index
--- one_catalogue_backup_retry_per_failed_attempt on linked_attempt_id.)
-CREATE INDEX catalogue_backup_attempts_by_revision
-ON catalogue_backup_attempts (
-  catalogue_revision_id,
-  started_at DESC,
-  idempotency_key DESC
+CREATE TRIGGER ingestion_run_events_are_immutable_on_delete
+BEFORE DELETE ON ingestion_run_events
+BEGIN
+  SELECT RAISE(ABORT, 'ingestion_run_event_immutable');
+END;
+
+CREATE TABLE ingestion_run_current (
+  ingestion_run_id TEXT PRIMARY KEY REFERENCES ingestion_runs(id),
+  last_event_sequence INTEGER NOT NULL CHECK (last_event_sequence >= 1),
+  last_event_id TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('planning', 'collecting', 'paused', 'parsing', 'reconciling', 'awaiting_approval', 'publishing', 'published', 'rejected', 'expired', 'failed')),
+  previous_state TEXT CHECK (previous_state IN ('planning', 'collecting', 'paused', 'parsing', 'reconciling', 'awaiting_approval', 'publishing', 'published', 'rejected', 'expired', 'failed')),
+  completed_stage_count INTEGER NOT NULL CHECK (completed_stage_count BETWEEN 0 AND 6),
+  candidate_digest TEXT,
+  candidate_catalogue_digest TEXT,
+  candidate_created_at TEXT,
+  approval_deadline TEXT,
+  candidate_payload_event_sequence INTEGER CHECK (candidate_payload_event_sequence >= 1),
+  diagnostics_event_sequence INTEGER CHECK (diagnostics_event_sequence >= 1),
+  approved_at TEXT,
+  approved_candidate_digest TEXT,
+  approved_expected_revision_id TEXT,
+  failure_code TEXT,
+  terminal_at TEXT,
+  publication_revision_id TEXT,
+  publication_started_at TEXT,
+  publication_reconcile_after TEXT,
+  publication_manifest_digest TEXT,
+  publication_writer_token TEXT,
+  published_revision_id TEXT,
+  export_manifest_digest TEXT,
+  publication_outcome TEXT CHECK (publication_outcome IN ('revision', 'no_change')),
+  resulting_revision_id TEXT,
+  freshness_checked_at TEXT
 );
-
--- The run dashboard lists the twenty most recent runs from a table that
--- grows forever; the publication-reconcile poll picks the next publishing
--- run by its reconcile deadline, and the active-run release sweeps expired
--- runs. Every other state filter is anchored on the primary key.
-CREATE INDEX ingestion_runs_recent
-ON ingestion_runs (started_at DESC, id DESC);
 
 CREATE INDEX ingestion_runs_by_state
-ON ingestion_runs (state, publication_reconcile_after, id);
+ON ingestion_run_current (state, publication_reconcile_after, ingestion_run_id);
 
--- Seed rows.
+CREATE TABLE ingestion_run_selected_games (
+  ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  game TEXT NOT NULL CHECK (game IN ('one-piece', 'fusion-world', 'digimon', 'gundam')),
+  PRIMARY KEY (ingestion_run_id, ordinal),
+  UNIQUE (ingestion_run_id, game)
+);
 
--- The spine Catalogue Revision pointer: schema-valid before any publication.
-INSERT INTO catalogue_state (singleton, current_revision_id, published_at)
+CREATE TABLE ingestion_run_event_payload_chunks (
+  ingestion_run_id TEXT NOT NULL,
+  event_sequence INTEGER NOT NULL CHECK (event_sequence >= 1),
+  payload_kind TEXT NOT NULL CHECK (payload_kind IN ('candidate', 'diagnostics')),
+  chunk_index INTEGER NOT NULL CHECK (chunk_index >= 0),
+  content TEXT NOT NULL CHECK (length(CAST(content AS BLOB)) <= 524288),
+  PRIMARY KEY (ingestion_run_id, event_sequence, payload_kind, chunk_index),
+  FOREIGN KEY (ingestion_run_id, event_sequence)
+    REFERENCES ingestion_run_events(ingestion_run_id, sequence_number)
+);
+
+CREATE TRIGGER ingestion_run_event_payload_chunks_are_immutable_on_update
+BEFORE UPDATE ON ingestion_run_event_payload_chunks
+BEGIN
+  SELECT RAISE(ABORT, 'ingestion_run_event_payload_immutable');
+END;
+
+CREATE TRIGGER ingestion_run_event_payload_chunks_are_immutable_on_delete
+BEFORE DELETE ON ingestion_run_event_payload_chunks
+BEGIN
+  SELECT RAISE(ABORT, 'ingestion_run_event_payload_immutable');
+END;
+
+CREATE VIEW ingestion_run_read AS
+SELECT identity.id, current.state,
+  (SELECT json_group_array(game) FROM (
+    SELECT game FROM ingestion_run_selected_games
+    WHERE ingestion_run_id = identity.id ORDER BY ordinal
+  )) AS selected_games_json,
+  identity.started_at, identity.expected_current_revision_id, identity.linked_run_id,
+  identity.idempotency_key, current.candidate_digest, current.candidate_created_at,
+  current.approval_deadline,
+  CASE WHEN current.approved_at IS NULL THEN NULL ELSE json_object(
+    'action', 'approved',
+    'candidate_digest', current.approved_candidate_digest,
+    'expected_current_revision_id', current.approved_expected_revision_id,
+    'approved_at', current.approved_at
+  ) END AS approval_json,
+  current.published_revision_id, current.export_manifest_digest, current.terminal_at,
+  COALESCE((SELECT group_concat(content, '') FROM (
+    SELECT content FROM ingestion_run_event_payload_chunks
+    WHERE ingestion_run_id = identity.id
+      AND event_sequence = current.candidate_payload_event_sequence
+      AND payload_kind = 'candidate' ORDER BY chunk_index
+  )), '{}') AS candidate_json,
+  identity.approval_idempotency_key, current.failure_code,
+  json_object('completed_stages', json((SELECT json_group_array(value) FROM (
+    SELECT value FROM json_each('["planning","collecting","parsing","reconciling","awaiting_approval","publishing"]')
+    WHERE CAST(key AS INTEGER) < current.completed_stage_count ORDER BY CAST(key AS INTEGER)
+  ))), 'current_stage', current.state) AS progress_json,
+  COALESCE((SELECT group_concat(content, '') FROM (
+    SELECT content FROM ingestion_run_event_payload_chunks
+    WHERE ingestion_run_id = identity.id
+      AND event_sequence = current.diagnostics_event_sequence
+      AND payload_kind = 'diagnostics' ORDER BY chunk_index
+  )), '[]') AS warnings_json,
+  (SELECT json_group_array(json(decision)) FROM (
+    SELECT json_extract(payload_json, '$.decision') AS decision FROM ingestion_run_events
+    WHERE ingestion_run_id = identity.id AND json_type(payload_json, '$.decision') = 'object'
+    ORDER BY sequence_number
+  )) AS approval_history_json,
+  current.publication_outcome, current.resulting_revision_id, current.freshness_checked_at,
+  current.publication_revision_id, current.publication_started_at, current.publication_reconcile_after,
+  current.publication_manifest_digest, current.publication_writer_token,
+  current.candidate_catalogue_digest, identity.operational_request_id
+FROM ingestion_runs AS identity
+JOIN ingestion_run_current AS current ON current.ingestion_run_id = identity.id;
+
+-- Initial singleton state and shipped production adapter registrations.
+INSERT INTO "catalogue_state" ("singleton", "current_revision_id", "published_at")
 VALUES (1, 'catrev_spine_000', '1970-01-01T00:00:00.000Z');
 
-INSERT INTO operation_state (singleton, active_ingestion_run_id, recovery_health)
-VALUES (1, NULL, 'healthy');
+INSERT INTO "operation_state" ("singleton", "active_ingestion_run_id", "recovery_health", "active_recovery_id", "recovery_restore_guard", "active_production_release_id", "active_production_release_expires_at")
+VALUES (1, NULL, 'healthy', NULL, 'clear', NULL, NULL);
 
-INSERT INTO card_search_fts_state (singleton, state, owner_token, lease_expires_at)
-VALUES (1, 'ready', NULL, NULL);
-
--- Source Adapter Version registrations, in registration order. This list
--- must equal installedSourceAdapterRegistrations in
--- src/catalogue/source-adapters.ts. Before Go-Live (ADR 0008) each Source
--- Lineage registers exactly one production Source Adapter Version and one
--- synthetic fixture adapter (the -capped and -large fixtures are distinct
--- behaviours, not versions), and a capacity change edits its row here in
--- place; retired and predecessor rows were removed under #135 and
--- one-piece-en@6 was raised to 10000 under #134.
-INSERT INTO source_adapter_versions (
-  adapter_version,
-  source_lineage,
-  supported_game,
-  game_profile_version,
-  parser_contract,
-  adapter_origin,
-  request_capacity
-) VALUES
-  ('one-piece-official-errata-html@1', 'one-piece-en', 'one-piece', 'one-piece@1', 'one-piece-official-errata-html@1', 'production', 5000),
-  ('one-piece-en@6', 'one-piece-en', 'one-piece', 'one-piece@1', 'one-piece-en-restructured-complete-catalogue@6', 'production', 10000),
-  ('gundam-en-asia@7', 'gundam-en-asia', 'gundam', 'gundam@1', 'gundam-en-asia-restructured-complete-catalogue@6', 'production', 5000),
-  ('gundam-en-us@7', 'gundam-en-us', 'gundam', 'gundam@1', 'gundam-en-us-restructured-complete-catalogue@6', 'production', 5000),
-  ('digimon-en@7', 'digimon-en', 'digimon', 'digimon@1', 'digimon-en-restructured-complete-catalogue@6', 'production', 5000),
-  ('fusion-world-en@9', 'fusion-world-en', 'fusion-world', 'fusion-world@1', 'fusion-world-en-restructured-complete-catalogue@7', 'production', 15000),
-  ('fixture-one-piece-official-errata-json@1', 'one-piece-en', 'one-piece', 'one-piece@1', 'synthetic-official-errata-fixture@1', 'synthetic_fixture', 5000),
-  ('fixture-one-piece-json@3', 'one-piece-en', 'one-piece', 'one-piece@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000),
-  ('fixture-one-piece-json-capped@1', 'one-piece-en', 'one-piece', 'one-piece@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000),
-  ('fixture-fusion-world-json@2', 'fusion-world-en', 'fusion-world', 'fusion-world@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000),
-  ('fixture-fusion-world-json-large@1', 'fusion-world-en', 'fusion-world', 'fusion-world@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 15000),
-  ('fixture-digimon-json@2', 'digimon-en', 'digimon', 'digimon@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000),
-  ('fixture-gundam-en-asia-json@2', 'gundam-en-asia', 'gundam', 'gundam@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000),
-  ('fixture-gundam-en-us-json@2', 'gundam-en-us', 'gundam', 'gundam@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000);
-
-INSERT INTO catalogue_schema_state (singleton, migration_level)
+INSERT INTO "catalogue_schema_state" ("singleton", "migration_level")
 VALUES (1, 1);
+
+INSERT INTO "source_adapter_versions" ("adapter_version", "source_lineage", "supported_game", "game_profile_version", "parser_contract", "adapter_origin", "request_capacity")
+VALUES ('one-piece-official-errata-html@1', 'one-piece-en', 'one-piece', 'one-piece@1', 'one-piece-official-errata-html@1', 'production', 5000);
+
+INSERT INTO "source_adapter_versions" ("adapter_version", "source_lineage", "supported_game", "game_profile_version", "parser_contract", "adapter_origin", "request_capacity")
+VALUES ('one-piece-en@6', 'one-piece-en', 'one-piece', 'one-piece@1', 'one-piece-en-restructured-complete-catalogue@6', 'production', 10000);
+
+INSERT INTO "source_adapter_versions" ("adapter_version", "source_lineage", "supported_game", "game_profile_version", "parser_contract", "adapter_origin", "request_capacity")
+VALUES ('gundam-en-asia@7', 'gundam-en-asia', 'gundam', 'gundam@1', 'gundam-en-asia-restructured-complete-catalogue@6', 'production', 5000);
+
+INSERT INTO "source_adapter_versions" ("adapter_version", "source_lineage", "supported_game", "game_profile_version", "parser_contract", "adapter_origin", "request_capacity")
+VALUES ('gundam-en-us@7', 'gundam-en-us', 'gundam', 'gundam@1', 'gundam-en-us-restructured-complete-catalogue@6', 'production', 5000);
+
+INSERT INTO "source_adapter_versions" ("adapter_version", "source_lineage", "supported_game", "game_profile_version", "parser_contract", "adapter_origin", "request_capacity")
+VALUES ('digimon-en@7', 'digimon-en', 'digimon', 'digimon@1', 'digimon-en-restructured-complete-catalogue@6', 'production', 5000);
+
+INSERT INTO "source_adapter_versions" ("adapter_version", "source_lineage", "supported_game", "game_profile_version", "parser_contract", "adapter_origin", "request_capacity")
+VALUES ('fusion-world-en@9', 'fusion-world-en', 'fusion-world', 'fusion-world@1', 'fusion-world-en-restructured-complete-catalogue@7', 'production', 15000);
+
+INSERT INTO "card_search_fts_state" ("singleton", "state", "owner_token", "lease_expires_at")
+VALUES (1, 'ready', NULL, NULL);

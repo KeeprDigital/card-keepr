@@ -183,3 +183,10 @@ export function seedPreGuardMigrationLease(database) {
     "UPDATE operation_state SET active_production_release_id = 'release_migration', active_production_release_expires_at = '2099-01-01T00:00:00.000Z' WHERE singleton = 1",
   );
 }
+
+export function triggerCreationOrder(database) {
+  return database.prepare("SELECT name FROM sqlite_schema WHERE type = 'trigger' ORDER BY rowid");
+}
+export function orphanSequenceRows(database) {
+  return database.prepare("SELECT * FROM sqlite_sequence");
+}

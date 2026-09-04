@@ -2,22 +2,17 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import * as schemaQueries from "./helpers/query-helpers/schema.mjs";
 import * as runQueries from "./helpers/query-helpers/run-event-schema.mjs";
+import * as schemaQueries from "./helpers/query-helpers/schema.mjs";
 
 async function migrationFixture(t) {
   const database = new DatabaseSync(":memory:");
   t.after(() => database.close());
-  let eventMigration;
   for (const name of (await readdir(new URL("../migrations/", import.meta.url)))
     .filter((name) => name.endsWith(".sql"))
-    .sort()) {
-    const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), "utf8");
-    if (name.startsWith("0012_")) eventMigration = sql;
-    else if (Number.parseInt(name, 10) < 12) database.exec(sql);
-  }
-  assert.ok(eventMigration, "the guarded event migration must exist");
-  return { database, eventMigration };
+    .sort())
+    database.exec(await readFile(new URL(`../migrations/${name}`, import.meta.url), "utf8"));
+  return { database };
 }
 
 function seedIdentity(database) {
@@ -37,19 +32,9 @@ function seedEventAndProjection(database) {
     ('run_schema', '[]', '${"a".repeat(64)}', '2026-09-04T00:00:00.000Z');`);
 }
 
-test("event migration preserves the physical run anchor and every inbound foreign key", async (t) => {
-  const { database, eventMigration } = await migrationFixture(t);
-  const page = runQueries.runAnchorPage(database).get();
-  const foreignKeys = runQueries.runForeignKeys(database).all();
-  schemaQueries.seedPreGuardMigrationLease(database).run();
-  const lease = schemaQueries.canonicalReleaseLease(database).get();
-  database.exec(eventMigration);
-  assert.equal(schemaQueries.schemaMigrationLevel(database).get().migration_level, 12);
-  assert.deepEqual(runQueries.runAnchorPage(database).get(), page);
-  const newForeignKeys = runQueries.runForeignKeys(database).all();
-  for (const foreignKey of foreignKeys)
-    assert.ok(newForeignKeys.some((entry) => JSON.stringify(entry) === JSON.stringify(foreignKey)));
-  assert.deepEqual(schemaQueries.canonicalReleaseLease(database).get(), lease);
+test("the baseline separates the immutable run anchor from typed current state", async (t) => {
+  const { database } = await migrationFixture(t);
+  assert.equal(schemaQueries.schemaMigrationLevel(database).get().migration_level, 1);
   assert.deepEqual(
     runQueries
       .runAnchorColumns(database)
@@ -75,32 +60,8 @@ test("event migration preserves the physical run anchor and every inbound foreig
   assert.equal(schemaQueries.integrityCheck(database).get().integrity_check, "ok");
 });
 
-test("event migration refuses nonempty run history before changing schema or Curated pins", async (t) => {
-  const { database, eventMigration } = await migrationFixture(t);
-  database.exec(`INSERT INTO ingestion_runs
-    (id, state, selected_games_json, started_at, expected_current_revision_id, idempotency_key, candidate_json)
-    VALUES ('run_schema', 'planning', '["one-piece"]', '2026-09-04T00:00:00.000Z', 'catrev_spine_000', 'run_schema_start', '{}');
-    INSERT INTO ingestion_run_curated_revision_sets VALUES
-    ('run_schema', '[]', '${"a".repeat(64)}', '2026-09-04T00:00:00.000Z');`);
-  const schema = schemaQueries.schemaDefinitionRows(database).all();
-  const pins = runQueries.retainedRunPins(database).all();
-  assert.throws(() => database.exec(eventMigration), /ingestion_run_event_migration_requires_empty_runs/u);
-  assert.deepEqual(schemaQueries.schemaDefinitionRows(database).all(), schema);
-  assert.deepEqual(runQueries.retainedRunPins(database).all(), pins);
-  assert.equal(schemaQueries.schemaMigrationLevel(database).get().migration_level, 11);
-});
-
-test("event migration refuses an active run reservation even when no identity row exists", async (t) => {
-  const { database, eventMigration } = await migrationFixture(t);
-  database.exec("UPDATE operation_state SET active_ingestion_run_id = 'missing_run' WHERE singleton = 1");
-  const schema = schemaQueries.schemaDefinitionRows(database).all();
-  assert.throws(() => database.exec(eventMigration), /ingestion_run_event_migration_requires_empty_runs/u);
-  assert.deepEqual(schemaQueries.schemaDefinitionRows(database).all(), schema);
-});
-
 test("run identities, events and payloads remain immutable while current state can be rebuilt without deleting pins", async (t) => {
-  const { database, eventMigration } = await migrationFixture(t);
-  database.exec(eventMigration);
+  const { database } = await migrationFixture(t);
   seedIdentity(database);
   seedEventAndProjection(database);
   runQueries.insertPayloadChunk(database).run(0, "{}");
@@ -144,8 +105,7 @@ test("run identities, events and payloads remain immutable while current state c
 });
 
 test("event identities, references, closed kinds and UTF-8 chunk sizes are structurally bounded", async (t) => {
-  const { database, eventMigration } = await migrationFixture(t);
-  database.exec(eventMigration);
+  const { database } = await migrationFixture(t);
   seedIdentity(database);
   seedEventAndProjection(database);
   assert.throws(
@@ -170,8 +130,7 @@ test("event identities, references, closed kinds and UTF-8 chunk sizes are struc
 });
 
 test("the read projection renders ordered games, payload chunks, progress and decisions without writable JSON columns", async (t) => {
-  const { database, eventMigration } = await migrationFixture(t);
-  database.exec(eventMigration);
+  const { database } = await migrationFixture(t);
   seedIdentity(database);
   seedEventAndProjection(database);
   const empty = runQueries.renderedRun(database).get();

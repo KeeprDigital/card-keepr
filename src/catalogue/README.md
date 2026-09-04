@@ -9,7 +9,7 @@ expand-contract series:
   repointed at the cluster indexes.
 - **#98 (contract)**: the compatibility re-exports were removed, the read
   paths that reached past published projections were given
-  projection-backed alternatives (migration `0004_read_projection_facts.sql`),
+  projection-backed alternatives (the Go-Live baseline),
   and the boundary below became a CI gate.
 
 ## The contract, and how it is enforced
@@ -195,7 +195,7 @@ the caller still checking the affected-row count.
 
 ## Repository guards and materialization
 
-Migration `0011_repository_guards.sql` moves mutable authority and state checks
+The Go-Live baseline reflects the repository guard split: it moves mutable authority and state checks
 into named repository recipes. `atomicRepositoryStatement` binds each primary
 mutation to its before/after guards and side effects. CatalogueStore expands
 those recipes into one native D1 batch and returns only primary results in the
@@ -223,7 +223,7 @@ intermediate updates is retained within the same native transaction.
 
 ## Ingestion Run events
 
-Migration `0012_ingestion_run_events.sql` preserves the `ingestion_runs` identity
+The Go-Live baseline preserves the `ingestion_runs` identity
 anchor and its foreign keys. Mutable run facts live in `ingestion_run_current`,
 with ordered selected games in a child projection. Each accepted repository CAS
 updates the typed projection, checks its guards, and appends an immutable event

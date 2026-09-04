@@ -126,3 +126,36 @@ Production is rebuilt by applying the baseline to the empty database and
 deploying the workers; `keepr status` then reports schema level 1. Issues
 #123 and #124 add their migrations as `0002` and later on top of the
 baseline.
+
+## Final Go-Live baseline (#136)
+
+The owner-approved cutover replaces the final pre-Go-Live chain through level 13
+with one level-1 baseline. Its source is commit
+`23b1b1128cf9bf5827034d15dcaebf1964ce7c76`. The proof test compares every logical
+schema object, every seed row other than the deliberately reset schema level,
+and trigger creation order against that chain. It excludes only the empty,
+unused `sqlite_sequence` left after the chain dropped its last AUTOINCREMENT
+table; the test proves that no sequence row or AUTOINCREMENT definition remains.
+
+| Proof | SHA-256 |
+| --- | --- |
+| Normalized logical schema | `12c3e223cdcb1623e1a362307eea051b36797b4735a95a18d96dfb067f1b2a60` |
+| Seed rows except schema level | `0a7b7d721a7e6d343ca38e607c4285ab46ea32856802a4f2b6a4d35733cc5483` |
+
+The baseline includes 105 immutability triggers and six shipped production
+Source Adapter Version registrations. Synthetic registrations belong exclusively
+to test composition. Historical upgrade/backfill tests leave the active suite
+with their deleted migrations; current constraint, projection, publication and
+query behavior remains covered. The chain and its upgrade tests stay in git
+history, not in a second executable migration path.
+
+At the approved cutover, create a fresh database and apply this baseline. Never
+apply it to the previous production database or edit/fake its migration ledger.
+Retain the previous database identity until the new binding and release evidence
+are accepted. From that cutover onward this baseline is immutable; subsequent
+changes use guarded forward migrations beginning at level 2. The older level-36
+proof above describes the first pre-Go-Live fold and is historical.
+
+All definition identifiers keep their existing suffixes, including
+`one-piece-en@6` and `card-keepr-catalogue-export-manifest@5`. These are contract
+identities, not an application release counter. No `@1` renumbering is performed.

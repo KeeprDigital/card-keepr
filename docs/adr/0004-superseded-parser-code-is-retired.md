@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted from Go-Live (ADR 0008). Before Go-Live there is no predecessor window and no retired registration: each Source Lineage has one Source Adapter Version, edited in place.
+Accepted. The current-and-one-predecessor parser window applies from the owner-approved #136 cutover. The initial baseline has only the current registration for each Source Lineage; the first subsequent version establishes its predecessor.
 
 ## Context
 

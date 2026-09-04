@@ -33,7 +33,7 @@ The stable identity of one Official Source across dated captures and compatible 
 _Avoid_: Request URL, Source Snapshot, hostname
 
 **Source Adapter Version**:
-A parser contract registered to exactly one Source Lineage, Supported Game, and Game Profile. From Go-Live it is immutable and a new version may reparse retained Source Snapshots without changing their captured bytes; before Go-Live each Source Lineage has exactly one, edited in place.
+A parser contract registered to exactly one Source Lineage, Supported Game, and Game Profile. It is immutable and a new version may reparse retained Source Snapshots without changing their captured bytes.
 _Avoid_: Generic parser name, mutable scraper, Source schema
 
 **Go-Live**:
@@ -45,7 +45,7 @@ One immutable planned retrieval within an Ingestion Run's collection coverage, i
 _Avoid_: Fetch attempt, Source Snapshot, request URL
 
 **Request Capacity**:
-The bound each exact Source Adapter Version owns on the unique source request identities one Source Lineage may hold within an Ingestion Run, counted across initial and dynamically discovered roles. A larger global emergency ceiling constrains every Request Capacity; from Go-Live it is immutable and changing it requires registering a new Source Adapter Version, while one capacity-paused Ingestion Run's effective capacity may be raised exceptionally through a Capacity Extension.
+The bound each exact Source Adapter Version owns on the unique source request identities one Source Lineage may hold within an Ingestion Run, counted across initial and dynamically discovered roles. A larger global emergency ceiling constrains every Request Capacity; it is immutable and changing it requires registering a new Source Adapter Version, while one capacity-paused Ingestion Run's effective capacity may be raised exceptionally through a Capacity Extension.
 _Avoid_: Cloudflare platform limit, mutable quota, rate limit
 
 **Capacity Pause**:

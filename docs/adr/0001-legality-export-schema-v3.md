@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. The retention of earlier majors applies from Go-Live only (ADR 0008); before Go-Live the export schema is edited in place and earlier majors are deleted.
+Accepted. Export schema majors are separately named and earlier majors remain readable. The pre-Go-Live exception in ADR 0008 ends with the owner-approved #136 cutover.
 
 Catalogue Export schema v2 cannot represent membership predicates, release
 dates, unresolved reasons, or other rule operands without losing semantics. It

@@ -53,16 +53,8 @@ test("the baseline enforces the reconciliation workflow and Errata constraints",
     database.exec(baseline);
     database.exec(`
       INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, idempotency_key, candidate_digest,
-        candidate_created_at, approval_deadline, candidate_json, approval_json
-      ) VALUES (
-        'run_schema', 'publishing', '["one-piece"]',
-        '2026-07-31T00:00:00.000Z', 'catrev_spine_000', 'schema-run',
-        '${"a".repeat(64)}', '2026-07-31T00:00:00.000Z',
-        '2099-07-31T00:00:00.000Z', '{}',
-        '{"candidate_digest":"${"a".repeat(64)}","expected_current_revision_id":"catrev_spine_000"}'
-      );
+        id, started_at, expected_current_revision_id, idempotency_key
+      ) VALUES ('run_schema', '2026-07-31T00:00:00.000Z', 'catrev_spine_000', 'schema-run');
       UPDATE operation_state
       SET active_ingestion_run_id = 'run_schema'
       WHERE singleton = 1;
@@ -150,16 +142,20 @@ test("the baseline enforces the reconciliation workflow and Errata constraints",
       );
     `);
     const insertErratum = reconciliationQueries.insertReconciledErrata(database);
+    // Cross-game target authority belongs to the publication repository after
+    // #106. SQLite retains structural vocabulary and immutable Erratum facts.
     assert.throws(
-      () => insertErratum.run("erratum_card_wrong_game", "gundam", "card", "card_one_piece", '"Corrected"'),
-      /reconciled_erratum_target_invalid/,
+      () => insertErratum.run("erratum_invalid_target", "one-piece", "product", "card_one_piece", '\"Corrected\"'),
+      /CHECK constraint failed/,
     );
     assert.throws(
-      () => insertErratum.run("erratum_printing_wrong_game", "gundam", "printing", "printing_one_piece", '"Corrected"'),
-      /reconciled_erratum_target_invalid/,
+      () => insertErratum.run("erratum_invalid_value", "one-piece", "card", "card_one_piece", "{}"),
+      /CHECK constraint failed/,
     );
     insertErratum.run("erratum_card_valid", "one-piece", "card", "card_one_piece", '"Corrected"');
     insertErratum.run("erratum_printing_valid", "one-piece", "printing", "printing_one_piece", '"Corrected"');
+    assert.throws(() => database.exec("UPDATE reconciled_errata SET game = 'gundam'"), /reconciled_erratum_immutable/);
+    assert.throws(() => database.exec("DELETE FROM reconciled_errata"), /reconciled_erratum_immutable/);
     assert.deepEqual(publishedCatalogueQueries.inspectForeignKeyCheck(database).all(), []);
     assert.equal(publishedCatalogueQueries.inspectIntegrityCheck(database).get().integrity_check, "ok");
   } finally {
