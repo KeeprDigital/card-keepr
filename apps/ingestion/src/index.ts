@@ -1,7 +1,7 @@
 import { backupRecoveryRoutes, enforceRecoveryRestoreGuard } from "../../../src/catalogue/backup-recovery";
 import { curatedRoutes } from "../../../src/catalogue/curated";
 import { exportRoutes } from "../../../src/catalogue/export";
-import { ingestionRoutes } from "../../../src/catalogue/ingestion";
+import { ingestionRoutes, type PublicationBackupWaiter } from "../../../src/catalogue/ingestion";
 import { reconciliationRoutes } from "../../../src/catalogue/reconciliation";
 import {
   type CatalogueStore,
@@ -19,7 +19,7 @@ import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { type RouteContext, routeSegments, routeTable } from "../../../src/http/routes";
 import { ingestionCapabilities } from "../../../src/runtime-capabilities.mjs";
 import { ingestionProblemResponse } from "./problem";
-import { administrationObservedAt } from "./request-clock";
+import { administrationObservedAt, publicationBackupWaiter } from "./request-clock";
 
 const routes = [
   ...ingestionRoutes,
@@ -30,7 +30,10 @@ const routes = [
   ...backupRecoveryRoutes,
 ];
 const dispatch = routeTable<
-  RouteContext<Omit<Env, "CATALOGUE_DB"> & { CATALOGUE_DB: CatalogueStore }> & { observedAt: string }
+  RouteContext<Omit<Env, "CATALOGUE_DB"> & { CATALOGUE_DB: CatalogueStore }> & {
+    observedAt: string;
+    publicationBackupWaiter: PublicationBackupWaiter;
+  }
 >(routes);
 const logOptions = { routeSegments: routeSegments(routes, ["/health", "/healthz"]) };
 
@@ -97,6 +100,7 @@ async function handleIngestionRequest(
       requestId,
       base,
       observedAt,
+      publicationBackupWaiter: publicationBackupWaiter(env),
     });
     if (response !== null) return response;
 

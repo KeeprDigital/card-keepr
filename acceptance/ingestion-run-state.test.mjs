@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { canTransitionIngestionRun, ingestionRunStates } from "../src/catalogue/shared/ingestion-run-state.ts";
+import * as ingestionQueries from "./helpers/query-helpers/ingestion.mjs";
+import * as schemaQueries from "./helpers/query-helpers/schema.mjs";
 
 test("the migrated database enforces the shared Ingestion Run transition table, including termination facts", async () => {
   const migrated = new DatabaseSync(":memory:");
@@ -12,9 +14,7 @@ test("the migrated database enforces the shared Ingestion Run transition table, 
       .sort()) {
       migrated.exec(await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
     }
-    const { sql } = migrated
-      .prepare("SELECT sql FROM sqlite_schema WHERE name = 'guard_legal_ingestion_transition'")
-      .get();
+    const { sql } = schemaQueries.ingestionTransitionTrigger(migrated).get();
     // Exercise the actual installed trigger independently of unrelated row,
     // publication, and provenance guards; this is the transition-rule seam.
     const database = new DatabaseSync(":memory:");
@@ -27,12 +27,9 @@ test("the migrated database enforces the shared Ingestion Run transition table, 
           for (const terminationRecorded of [false, true]) {
             for (const failureCode of [null, "source_evidence_failed", "ingestion_run_terminated"]) {
               database.exec("DELETE FROM ingestion_runs; DELETE FROM ingestion_run_terminations;");
-              database.prepare("INSERT INTO ingestion_runs VALUES ('run', ?, NULL)").run(from);
+              ingestionQueries.insertTransitionMatrixRun(database).run(from);
               if (terminationRecorded) database.exec("INSERT INTO ingestion_run_terminations VALUES ('run')");
-              const update = () =>
-                database
-                  .prepare("UPDATE ingestion_runs SET state = ?, failure_code = ? WHERE id = 'run'")
-                  .run(to, failureCode);
+              const update = () => ingestionQueries.updateTransitionMatrixRun(database).run(to, failureCode);
               const message = `${from} -> ${to}; termination=${terminationRecorded}; failure=${failureCode}`;
               if (from === to || canTransitionIngestionRun(from, to, { terminationRecorded, failureCode })) {
                 assert.doesNotThrow(update, message);
@@ -72,7 +69,7 @@ test("a retained termination decision cannot fail a paused run with a missing fa
       () => database.exec("UPDATE ingestion_runs SET state = 'failed', failure_code = NULL WHERE id = 'run'"),
       /illegal_ingestion_transition/u,
     );
-    assert.equal(database.prepare("SELECT state FROM ingestion_runs WHERE id = 'run'").get().state, "paused");
+    assert.equal(ingestionQueries.transitionMatrixRunState(database).get().state, "paused");
   } finally {
     database.close();
   }

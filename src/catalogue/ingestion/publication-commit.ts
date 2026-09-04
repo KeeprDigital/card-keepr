@@ -1,4 +1,4 @@
-import { publicationBackupReservation } from "../backup-recovery";
+import { publicationBackupDispatchStatements, publicationBackupReservation } from "../backup-recovery";
 import { type BuiltCatalogueExport, distributionContextExportId } from "../export";
 import { legalityPublicationStatements } from "../legality";
 import { cardSearchChunks, cardSearchText } from "../read";
@@ -287,6 +287,12 @@ export async function commitVerifiedPublication(
   const idempotencyKey = requiredPublicationValue(input.run.approval_idempotency_key, "idempotency key");
   const manifestDigest = requiredPublicationValue(input.run.publication_manifest_digest, "manifest digest");
   const publicationBackup = await publicationBackupReservation(revisionId);
+  const backupDispatchStatements = await publicationBackupDispatchStatements(
+    database,
+    revisionId,
+    publicationBackup.idempotencyKey,
+    input.completedAt,
+  );
   if (
     input.catalogueExport.manifest.manifest_sha256 !== manifestDigest ||
     input.catalogueExport.manifestKey !== `catalogue-exports/${revisionId}/manifest.json`
@@ -490,6 +496,7 @@ export async function commitVerifiedPublication(
       startedAt: input.completedAt,
       runId: input.run.id,
     }),
+    ...backupDispatchStatements,
     degradeRecoveryAfterPublicationStatement(database),
     releaseRunLockStatement(database, input.run.id),
     ...idempotencyCompletionStatements(database, {
