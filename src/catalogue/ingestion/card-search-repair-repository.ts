@@ -268,22 +268,6 @@ export function advanceCardSearchOffsetStatement(
     .bind(input.nextOffset, input.revisionId, input.cardId, input.expectedOffset, input.nextOffset);
 }
 
-export function insertRepairedCardSearchTermStatement(
-  database: CatalogueStore,
-  input: Readonly<{ term: string; revisionId: string; cardId: string | null }>,
-): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`INSERT OR IGNORE INTO revision_card_search_terms (
-             catalogue_revision_id, card_id, term, sort_game,
-             sort_identity_kind, sort_identity_value, sort_id
-           )
-           SELECT catalogue_revision_id, card_id, ?,
-                  sort_game, sort_identity_kind, sort_identity_value, sort_id
-           FROM revision_card_query_documents
-           WHERE catalogue_revision_id = ? AND card_id = ?`)
-    .bind(input.term, input.revisionId, input.cardId);
-}
-
 export function insertRepairedCardSearchChunkStatement(
   database: CatalogueStore,
   input: Readonly<{
@@ -302,7 +286,7 @@ export function insertRepairedCardSearchChunkStatement(
     .bind(input.revisionId, input.cardId, input.fieldOrdinal, input.chunkOrdinal, input.searchText);
 }
 
-export function advanceCardSearchTermOffsetStatement(
+export function advanceCardSearchChunkOffsetStatement(
   database: CatalogueStore,
   input: Readonly<{ nextOffset: number; revisionId: string; cardId: string; expectedOffset: number }>,
 ): D1PreparedStatement {
@@ -318,7 +302,7 @@ export function advanceCardSearchTermOffsetStatement(
 
 export function completeCardSearchRepairStatement(
   database: CatalogueStore,
-  input: Readonly<{ revisionId: string; cardId: string; expectedSearchBytes: number; expectedTermCount: number }>,
+  input: Readonly<{ revisionId: string; cardId: string; expectedSearchBytes: number; expectedChunkCount: number }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`UPDATE catalogue_query_revisions
@@ -331,7 +315,7 @@ export function completeCardSearchRepairStatement(
        AND repair_card_id = ?
        AND repair_search_offset = ?
        AND repair_term_offset = ?`)
-    .bind(input.revisionId, input.cardId, input.expectedSearchBytes, input.expectedTermCount);
+    .bind(input.revisionId, input.cardId, input.expectedSearchBytes, input.expectedChunkCount);
 }
 
 export function pendingSearchProjectionStatement(

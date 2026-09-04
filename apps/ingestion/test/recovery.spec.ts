@@ -894,7 +894,6 @@ async function retainVerifiedBackup(attemptId: string, bookmark: string, schemaM
         products: 1,
         legality_rules: 1,
         api_documents: 1,
-        search_terms: 1,
         search_chunks: 1,
         provenance: 0,
         audit_rows: 1,

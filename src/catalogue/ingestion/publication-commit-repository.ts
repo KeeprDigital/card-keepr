@@ -81,26 +81,6 @@ export function publishCardQueryDocumentsStatement(
     .bind(input.revisionId, input.documentsJson);
 }
 
-export function publishCardSearchTermsStatement(
-  database: CatalogueStore,
-  input: Readonly<{ termsJson: string; revisionId: string }>,
-): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`INSERT INTO revision_card_search_terms (
-           catalogue_revision_id, card_id, term, sort_game,
-           sort_identity_kind, sort_identity_value, sort_id
-         )
-         SELECT query.catalogue_revision_id, query.card_id,
-                json_extract(term.value, '$.term'),
-                query.sort_game, query.sort_identity_kind,
-                query.sort_identity_value, query.sort_id
-         FROM json_each(?) AS term
-         JOIN revision_card_query_documents AS query
-           ON query.catalogue_revision_id = ?
-          AND query.card_id = json_extract(term.value, '$.card_id')`)
-    .bind(input.termsJson, input.revisionId);
-}
-
 export function publishCardSearchChunksStatement(
   database: CatalogueStore,
   input: Readonly<{ revisionId: string; chunksJson: string }>,

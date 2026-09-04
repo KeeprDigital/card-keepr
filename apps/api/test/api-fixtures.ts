@@ -4,7 +4,7 @@ import * as cardSearchQueries from "../../ingestion/test/query-helpers/card-sear
 import * as sourceEvidenceQueries from "../../ingestion/test/query-helpers/source-evidence";
 import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { beforeEach } from "vitest";
-import { cardSearchChunks, cardSearchTerms, cardSearchText } from "../../../src/catalogue/read";
+import { cardSearchChunks, cardSearchText } from "../../../src/catalogue/read";
 
 export const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -142,11 +142,6 @@ export function cardSearchStatements(revisionId: string, card: ApiCardFixture): 
     publishedCatalogueQueries
       .insertRevisionCardQueryDocuments(testEnv.CATALOGUE_DB)
       .bind(revisionId, card.id, JSON.stringify(apiCardSummary(card)), apiCardSearchText(card)),
-    ...cardSearchTerms(apiCardSearchText(card)).map((term) =>
-      cardSearchQueries
-        .insertRevisionCardSearchTerms(testEnv.CATALOGUE_DB)
-        .bind(revisionId, card.id, term, card.game, card.official_identity.kind, card.official_identity.value, card.id),
-    ),
     ...cardSearchChunks(apiCardSearchText(card)).map((chunk) =>
       cardSearchQueries
         .insertRevisionCardSearchChunks(testEnv.CATALOGUE_DB)

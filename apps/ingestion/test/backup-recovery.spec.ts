@@ -52,7 +52,6 @@ test("restored verification executes the real D1 schema and rejects an empty or 
         products: 0,
         legality_rules: 0,
         api_documents: 0,
-        search_terms: 0,
         search_chunks: 0,
         provenance: 0,
         audit_rows: 0,
@@ -93,7 +92,8 @@ test("the Cloudflare provider recreates the disposable D1 for each restore gener
   expect(second.databaseId).not.toBe(first.databaseId);
 });
 
-test("the production backup boundary exports and verifies the exact restored revision", async () => {
+test("the production backup boundary exports and verifies the exact restored revision without the obsolete gram table", async () => {
+  await cardSearchQueries.dropObsoleteCardSearchTerms(testEnv.CATALOGUE_DB).run();
   const events: string[] = [];
   const schemaState = await publishedCatalogueQueries
     .readCatalogueSchemaStateMigrationLevel(testEnv.CATALOGUE_DB)
@@ -220,7 +220,6 @@ test("the production backup boundary exports and verifies the exact restored rev
       products: 0,
       legality_rules: 0,
       api_documents: 0,
-      search_terms: 0,
       search_chunks: 0,
       provenance: 0,
       audit_rows: 0,

@@ -36,7 +36,6 @@ export function cardCollectionPageQuery(
   if (ftsSearch) {
     return ftsCardCollectionPageQuery(revisionId, filters, search.text, ftsQuery, after, rowLimit, sizesOnly);
   }
-  const orderTable = shortSearch ? "search" : "cards";
   const conditions = ["cards.catalogue_revision_id = ?"];
   const bindings: (string | number)[] = [revisionId];
   if (filters.game !== null) {
@@ -50,7 +49,6 @@ export function cardCollectionPageQuery(
   addCardFilterPredicates(conditions, bindings, "cards", filters);
   if (shortSearch) {
     conditions.push(
-      "search.term = ?",
       `EXISTS (
          SELECT 1
          FROM revision_card_search_chunks AS chunk
@@ -59,12 +57,12 @@ export function cardCollectionPageQuery(
            AND instr(chunk.search_text, ?) > 0
        )`,
     );
-    bindings.push(search.anchorTerm, search.text);
+    bindings.push(search.text);
   }
   if (after !== null) {
     conditions.push(
-      `(${orderTable}.sort_game, ${orderTable}.sort_identity_kind,
-        ${orderTable}.sort_identity_value, ${orderTable}.sort_id)
+      `(cards.sort_game, cards.sort_identity_kind,
+        cards.sort_identity_value, cards.sort_id)
        > (?, ?, ?, ?)`,
     );
     bindings.push(after.game, after.identity_kind, after.identity_value, after.id);
@@ -72,26 +70,17 @@ export function cardCollectionPageQuery(
   bindings.push(rowLimit);
   return {
     sql: `SELECT ${sizesOnly ? "length(CAST(cards.summary_json AS BLOB)) AS summary_bytes" : "cards.summary_json"},
-              ${orderTable}.sort_game,
-              ${orderTable}.sort_identity_kind,
-              ${orderTable}.sort_identity_value,
-              ${orderTable}.sort_id
-       FROM ${
-         shortSearch
-           ? `revision_card_search_terms AS search
-             INDEXED BY revision_card_search_by_term
-             JOIN revision_card_query_documents AS cards
-               ON cards.catalogue_revision_id =
-                    search.catalogue_revision_id
-              AND cards.card_id = search.card_id`
-           : `revision_card_query_documents AS cards
-             INDEXED BY revision_card_query_documents_by_order`
-}
+              cards.sort_game,
+              cards.sort_identity_kind,
+              cards.sort_identity_value,
+              cards.sort_id
+       FROM revision_card_query_documents AS cards
+       INDEXED BY revision_card_query_documents_by_order
        WHERE ${conditions.join("\nAND ")}
-       ORDER BY ${orderTable}.sort_game,
-                ${orderTable}.sort_identity_kind,
-                ${orderTable}.sort_identity_value,
-                ${orderTable}.sort_id
+       ORDER BY cards.sort_game,
+                cards.sort_identity_kind,
+                cards.sort_identity_value,
+                cards.sort_id
        LIMIT ?`,
     bindings,
   };

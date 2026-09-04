@@ -17,7 +17,6 @@ import {
   reconstructCardSearchAfterD1Restore,
   withCardSearchPreparedForD1Export,
 } from "../../../src/catalogue/backup-recovery";
-import { cardSearchQuery, cardSearchTerms, cardSearchText } from "../../../src/catalogue/read";
 import { canonicalJson, deterministicGzip, sha256, sha256Text, utf8 } from "../../../src/catalogue/shared";
 import apiWorker from "../src/index";
 import {
@@ -2316,7 +2315,7 @@ test("Card search is canonically Unicode case-insensitive", async () => {
   });
 });
 
-test("Card search keeps a selective two-character relational fallback beside FTS", async () => {
+test("Card search uses literal short queries beside FTS", async () => {
   const ordinaryCards = Array.from({ length: 200 }, (_, index) =>
     apiCard({
       id: `card_selectivity_${String(index).padStart(3, "0")}`,
@@ -2337,16 +2336,8 @@ test("Card search keeps a selective two-character relational fallback beside FTS
     cards: [...ordinaryCards, selected],
   });
 
-  const query = cardSearchQuery("qu");
-  expect(query).toEqual({ text: "qu", anchorTerm: "g2:qu" });
-  const indexedCards = await cardSearchQueries
-    .countRevisionCardSearchTermsCount(testEnv.CATALOGUE_DB)
-    .bind("catrev_selective_trigrams", query!.anchorTerm)
-    .first<{ count: number }>();
-  expect(indexedCards?.count).toBe(1);
-
   const matched = await exports.default.fetch(
-    new Request("https://card-keepr.invalid/v1/cards?q=uart", {
+    new Request("https://card-keepr.invalid/v1/cards?q=qu", {
       headers: apiHeaders("203.0.113.61"),
     }),
   );
@@ -2363,15 +2354,6 @@ test("Card search keeps a selective two-character relational fallback beside FTS
   await expect(collisionWithoutSubstring.json()).resolves.toMatchObject({
     data: [],
   });
-
-  const repeated = cardSearchTerms(
-    cardSearchText({
-      official_identity: { value: "A" },
-      name: "A".repeat(50_000),
-      effective_rules_text: "A".repeat(50_000),
-    }),
-  );
-  expect(repeated).toEqual(["g1:a", "g2:aa"]);
 });
 
 test("authenticated Card search validates raw and normalized q at 1 through 500 characters", async () => {
@@ -2441,59 +2423,63 @@ test("a normal 100-Card page uses one page read after revision lookup", async ()
   expect(record.d1.prepared_statements).toBeLessThanOrEqual(2);
 });
 
-test("authenticated Card collection pages remain byte-bounded for large valid records", async () => {
-  const cards = Array.from({ length: 18 }, (_, index) =>
-    apiCard({
-      id: `card_large_page_${String(index).padStart(3, "0")}`,
-      cardNumber: `OP29-${String(600 + index)}`,
-      name: `Large Card ${String(index).padStart(3, "0")} ${"x".repeat(259_000)}`,
-    }),
-  );
-  await seedApiRevision({
-    revisionId: "catrev_large_page",
-    runId: "run_large_page",
-    cards,
-  });
-  const response = await exports.default.fetch(
-    new Request("https://card-keepr.invalid/v1/cards?limit=100", {
-      headers: apiHeaders("203.0.113.58"),
-    }),
-  );
-  expect(response.status).toBe(200);
-  const bytes = new Uint8Array(await response.clone().arrayBuffer());
-  const document = await response.json<{
-    data: unknown[];
-    page: { next_cursor: string | null };
-  }>();
-  expect(bytes.byteLength).toBeLessThanOrEqual(4 * 1024 * 1024);
-  expect(document.data.length).toBeGreaterThan(0);
-  expect(document.data.length).toBeLessThan(cards.length);
-  expect(document.page.next_cursor).toEqual(expect.any(String));
-  // Link expansion can exceed the database envelope allowance. Follow every
-  // cursor through that fallback and prove no Card is skipped or repeated.
-  const mount = `/${"m".repeat(8_000)}`;
-  const mountedBase = `https://card-keepr.invalid${mount}`;
-  const found: string[] = [];
-  let after: string | null = null;
-  do {
-    const url = new URL(`${mountedBase}/v1/cards?limit=100`);
-    if (after !== null) url.searchParams.set("after", after);
-    const mounted = await apiWorker.fetch(
-      new Request(url, {
-        headers: apiHeaders("203.0.113.59"),
+test.each(["", "&q=La"])(
+  "authenticated Card collection pages remain byte-bounded for large valid records %s",
+  async (query) => {
+    const cards = Array.from({ length: 18 }, (_, index) =>
+      apiCard({
+        id: `card_large_page_${String(index).padStart(3, "0")}`,
+        cardNumber: `OP29-${String(600 + index)}`,
+        name: `Large Card ${String(index).padStart(3, "0")} ${"x".repeat(259_000)}`,
       }),
-      { ...testEnv, PUBLIC_BASE_URL: mountedBase },
     );
-    expect(mounted.status).toBe(200);
-    expect((await mounted.clone().arrayBuffer()).byteLength).toBeLessThanOrEqual(4 * 1024 * 1024);
-    const page = await mounted.json<{ data: { id: string }[]; page: { next_cursor: string | null } }>();
-    if (after === null) expect(page.data.length).toBeLessThan(document.data.length);
-    expect(page.data.length).toBeGreaterThan(0);
-    found.push(...page.data.map((card) => card.id));
-    after = page.page.next_cursor;
-  } while (after !== null);
-  expect(found).toEqual(cards.map((card) => card.id));
-}, 15_000);
+    await seedApiRevision({
+      revisionId: `catrev_large_page_${query === "" ? "all" : "short"}`,
+      runId: `run_large_page_${query === "" ? "all" : "short"}`,
+      cards,
+    });
+    const response = await exports.default.fetch(
+      new Request(`https://card-keepr.invalid/v1/cards?limit=100${query}`, {
+        headers: apiHeaders("203.0.113.58"),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const bytes = new Uint8Array(await response.clone().arrayBuffer());
+    const document = await response.json<{
+      data: unknown[];
+      page: { next_cursor: string | null };
+    }>();
+    expect(bytes.byteLength).toBeLessThanOrEqual(4 * 1024 * 1024);
+    expect(document.data.length).toBeGreaterThan(0);
+    expect(document.data.length).toBeLessThan(cards.length);
+    expect(document.page.next_cursor).toEqual(expect.any(String));
+    // Link expansion can exceed the database envelope allowance. Follow every
+    // cursor through that fallback and prove no Card is skipped or repeated.
+    const mount = `/${"m".repeat(8_000)}`;
+    const mountedBase = `https://card-keepr.invalid${mount}`;
+    const found: string[] = [];
+    let after: string | null = null;
+    do {
+      const url = new URL(`${mountedBase}/v1/cards?limit=100${query}`);
+      if (after !== null) url.searchParams.set("after", after);
+      const mounted = await apiWorker.fetch(
+        new Request(url, {
+          headers: apiHeaders("203.0.113.59"),
+        }),
+        { ...testEnv, PUBLIC_BASE_URL: mountedBase },
+      );
+      expect(mounted.status).toBe(200);
+      expect((await mounted.clone().arrayBuffer()).byteLength).toBeLessThanOrEqual(4 * 1024 * 1024);
+      const page = await mounted.json<{ data: { id: string }[]; page: { next_cursor: string | null } }>();
+      if (after === null) expect(page.data.length).toBeLessThan(document.data.length);
+      expect(page.data.length).toBeGreaterThan(0);
+      found.push(...page.data.map((card) => card.id));
+      after = page.page.next_cursor;
+    } while (after !== null);
+    expect(found).toEqual(cards.map((card) => card.id));
+  },
+  15_000,
+);
 
 test("Card cursors reject route, ordering, and structural misuse", async () => {
   await seedApiRevision({
@@ -2681,12 +2667,7 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
       catalogue_revision_id: string;
     }>();
   expect(matchedRevisions.results).toEqual([{ catalogue_revision_id: "catrev_fts_search" }]);
-  const redundantRelationalTerms = await cardSearchQueries
-    .countRevisionCardSearchTermsCountForCardSearchUsesRevisionScopedD1FTS5Index(testEnv.CATALOGUE_DB)
-    .bind("catrev_fts_search")
-    .first<{ count: number }>();
-  expect(redundantRelationalTerms?.count).toBe(0);
-  await cardSearchQueries.deleteRevisionCardSearchTerms(testEnv.CATALOGUE_DB).bind("catrev_fts_search").run();
+  await cardSearchQueries.dropObsoleteCardSearchTerms(testEnv.CATALOGUE_DB).run();
 
   const response = await exports.default.fetch(
     new Request("https://card-keepr.invalid/v1/cards?q=quartz", { headers: apiHeaders("203.0.113.100") }),

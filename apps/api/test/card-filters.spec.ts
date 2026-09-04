@@ -43,6 +43,7 @@ test("Card Game Profile attributes compose typed scalar and array membership fil
   for (const query of [
     "game=one-piece&attribute.colours=red&attribute.cost=3",
     "game=one-piece&attribute.colours=red&attribute.cost=3&product_id=product_deck&rarity=rare&q=Captain",
+    "game=one-piece&attribute.colours=red&attribute.cost=3&product_id=product_deck&rarity=rare&q=Ca",
   ]) {
     const response = await api(query);
     expect(response.status).toBe(200);

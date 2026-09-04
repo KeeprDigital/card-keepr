@@ -86,8 +86,6 @@ function verificationEvidenceSql(): string {
        WHERE catalogue_revision_id = catalogue.current_revision_id) AS legality_rules,
       (SELECT count(*) FROM revision_card_query_documents
        WHERE catalogue_revision_id = catalogue.current_revision_id) AS api_documents,
-      (SELECT count(*) FROM revision_card_search_terms
-       WHERE catalogue_revision_id = catalogue.current_revision_id) AS search_terms,
       (SELECT count(*) FROM revision_card_search_chunks
        WHERE catalogue_revision_id = catalogue.current_revision_id) AS search_chunks,
       (SELECT count(*) FROM catalogue_curated_provenance

@@ -10,10 +10,8 @@ export type CardSearchChunk = Readonly<{
   text: string;
 }>;
 
-// Literal normalized grams keep the indexed match set selective. Exact
-// matching still happens against field-separated search chunks so a shared
-// trigram can never become a false-positive Card result.
-const maximumRelationalGramLength = 2;
+// FTS handles normalized queries of three or more scalars; shorter
+// literal queries use the same field-separated chunks directly.
 const minimumFtsQueryCodePoints = 3;
 // Unicode NFKC expands one scalar to at most 18 scalars in the runtime's
 // Unicode data. A 500-scalar query therefore remains below this overlap.
@@ -27,19 +25,6 @@ export function cardSearchText(card: SearchableCard): string {
     normalizeSearchText(card.name),
     normalizeSearchText(card.effective_rules_text ?? ""),
   ]);
-}
-
-export function cardSearchTerms(searchDocument: string): string[] {
-  const terms = new Set<string>();
-  for (const field of searchFields(searchDocument)) {
-    const points = [...field];
-    for (let index = 0; index < points.length; index += 1) {
-      for (let length = 1; length <= maximumRelationalGramLength && index + length <= points.length; length += 1) {
-        terms.add(literalGram(points.slice(index, index + length).join("")));
-      }
-    }
-  }
-  return [...terms].sort();
 }
 
 export function cardSearchChunks(searchDocument: string): CardSearchChunk[] {
@@ -59,13 +44,12 @@ export function cardSearchChunks(searchDocument: string): CardSearchChunk[] {
   });
 }
 
-export function cardSearchQuery(value: string | null): { text: string; anchorTerm: string } | null {
+export function cardSearchQuery(value: string | null): { text: string } | null {
   if (value === null) return null;
   const text = normalizeSearchText(value);
   if (text.length === 0) return null;
   return {
     text,
-    anchorTerm: literalGram([...text].slice(0, minimumFtsQueryCodePoints).join("")),
   };
 }
 
@@ -94,10 +78,6 @@ function searchFields(document: string): readonly string[] {
     throw new Error("The Card search document is invalid.");
   }
   return parsed;
-}
-
-function literalGram(value: string): string {
-  return `g${[...value].length}:${value}`;
 }
 
 function normalizeSearchText(value: string): string {

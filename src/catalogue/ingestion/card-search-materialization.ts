@@ -1,8 +1,8 @@
-import { cardSearchChunks, cardSearchTerms, cardSearchText } from "../read";
+import { cardSearchChunks, cardSearchText } from "../read";
 import type { CatalogueStore } from "../shared";
 import {
   advanceCardSearchOffsetStatement,
-  advanceCardSearchTermOffsetStatement,
+  advanceCardSearchChunkOffsetStatement,
   appendRepairedCardSearchTextStatement,
   beginCardRepairStatement,
   cardRepairSourceDocumentStatement,
@@ -11,7 +11,6 @@ import {
   createCardQuerySummaryStatement,
   createPendingSearchProjectionStatement,
   insertRepairedCardSearchChunkStatement,
-  insertRepairedCardSearchTermStatement,
   nextCardToRepairStatement,
   pendingSearchProjectionStatement,
   revisionWithoutSearchProjectionStatement,
@@ -183,47 +182,28 @@ async function repairCardSearchMaterializationStep(
     return repairResult(database, 0, measured, targetRevisionId);
   }
 
-  const entries = [
-    ...cardSearchChunks(searchText).map((chunk) => ({
-      kind: "chunk" as const,
-      chunk,
-    })),
-    ...cardSearchTerms(searchText).map((term) => ({
-      kind: "term" as const,
-      term,
-    })),
-  ];
+  const entries = cardSearchChunks(searchText);
   if (revision.repair_term_offset < entries.length) {
     const selectedEntries = entries.slice(
       revision.repair_term_offset,
       revision.repair_term_offset + maximumMaterializationEntriesPerBatch,
     );
     const statements = selectedEntries.map((entry) => {
-      const measured = boundBytes(
-        entry.kind === "term" ? entry.term : entry.chunk.text,
-        revision.catalogue_revision_id,
-        revision.repair_card_id!,
-      );
+      const measured = boundBytes(entry.text, revision.catalogue_revision_id, revision.repair_card_id!);
       if (measured > maximumBoundParameterBytes) {
         throw new Error("The Card search repair parameter bound was exceeded.");
       }
-      return entry.kind === "term"
-        ? insertRepairedCardSearchTermStatement(database, {
-            term: entry.term,
-            revisionId: revision.catalogue_revision_id,
-            cardId: revision.repair_card_id,
-          })
-        : insertRepairedCardSearchChunkStatement(database, {
-            revisionId: revision.catalogue_revision_id,
-            cardId: revision.repair_card_id,
-            fieldOrdinal: entry.chunk.field,
-            chunkOrdinal: entry.chunk.ordinal,
-            searchText: entry.chunk.text,
-          });
+      return insertRepairedCardSearchChunkStatement(database, {
+        revisionId: revision.catalogue_revision_id,
+        cardId: revision.repair_card_id,
+        fieldOrdinal: entry.field,
+        chunkOrdinal: entry.ordinal,
+        searchText: entry.text,
+      });
     });
     const nextOffset = revision.repair_term_offset + selectedEntries.length;
     statements.push(
-      advanceCardSearchTermOffsetStatement(database, {
+      advanceCardSearchChunkOffsetStatement(database, {
         nextOffset: nextOffset,
         revisionId: revision.catalogue_revision_id,
         cardId: revision.repair_card_id,
@@ -233,18 +213,14 @@ async function repairCardSearchMaterializationStep(
     const inserted = await database.batch(statements);
     const offsetResult = inserted.at(-1);
     if (offsetResult === undefined || (offsetResult.meta.changes !== 0 && offsetResult.meta.changes !== 1)) {
-      throw new Error("The Card search repair term offset CAS is invalid.");
+      throw new Error("The Card search repair chunk offset CAS is invalid.");
     }
     return repairResult(
       database,
       0,
       Math.max(
         ...selectedEntries.map((entry) =>
-          boundBytes(
-            entry.kind === "term" ? entry.term : entry.chunk.text,
-            revision.catalogue_revision_id,
-            revision.repair_card_id!,
-          ),
+          boundBytes(entry.text, revision.catalogue_revision_id, revision.repair_card_id!),
         ),
         boundBytes(nextOffset, revision.catalogue_revision_id, revision.repair_card_id),
       ),
@@ -256,7 +232,7 @@ async function repairCardSearchMaterializationStep(
     revisionId: revision.catalogue_revision_id,
     cardId: revision.repair_card_id,
     expectedSearchBytes: searchBytes.byteLength,
-    expectedTermCount: entries.length,
+    expectedChunkCount: entries.length,
   }).run();
   if (completedCard.meta.changes !== 0 && completedCard.meta.changes !== 1) {
     throw new Error("The Card search repair completion CAS is invalid.");

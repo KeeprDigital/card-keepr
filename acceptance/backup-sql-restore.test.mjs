@@ -241,7 +241,6 @@ function removeCardAndLegalityProjection(database) {
     DELETE FROM revision_card_search_fts;
     DELETE FROM revision_card_search_fts_rows;
     DELETE FROM revision_card_search_chunks;
-    DELETE FROM revision_card_search_terms;
     DELETE FROM revision_card_query_documents;
     DELETE FROM revision_printings;
     DELETE FROM revision_legality_rule_applicability;
@@ -467,14 +466,6 @@ function seedRepresentativeCatalogue(database) {
        ) VALUES (?, ?, 0, 0, ?)`,
       )
       .run("catrev_restore_acceptance", id, `${number} ${name}`.toLowerCase());
-    database
-      .prepare(
-        `INSERT INTO revision_card_search_terms (
-         catalogue_revision_id, card_id, term, sort_game,
-         sort_identity_kind, sort_identity_value, sort_id
-       ) VALUES (?, ?, ?, 'one-piece', 'card_number', ?, ?)`,
-      )
-      .run("catrev_restore_acceptance", id, `g3:${number.slice(0, 3).toLowerCase()}`, number, id);
   }
   database.exec(`
     INSERT INTO revision_printings (

@@ -1127,7 +1127,6 @@ function validVerificationEvidence(value: unknown): value is CatalogueVerificati
     "products",
     "legality_rules",
     "api_documents",
-    "search_terms",
     "search_chunks",
     "provenance",
     "audit_rows",

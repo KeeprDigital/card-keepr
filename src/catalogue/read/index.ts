@@ -9,7 +9,6 @@ export {
   cardSearchChunks,
   cardSearchFtsQuery,
   cardSearchQuery,
-  cardSearchTerms,
   cardSearchText,
 } from "./card-search";
 export { ReadProblem } from "./collection-endpoint";
