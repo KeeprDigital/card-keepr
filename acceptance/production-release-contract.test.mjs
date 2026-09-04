@@ -305,7 +305,10 @@ test("owner preparation is durable before dispatch and post-migration failure is
   const repository = readFileSync("src/catalogue/ingestion/production-release-repository.ts", "utf8");
   const script = readFileSync("scripts/production-release.mjs", "utf8");
   // Resource routes now own the handler; the worker mounts their exported table.
-  assert.match(worker, /import \{ ingestionRoutes \} from "\.\.\/\.\.\/\.\.\/src\/catalogue\/ingestion"/u);
+  assert.match(
+    worker,
+    /import\s*\{[^}]*\bingestionRoutes\b[^}]*\}\s*from "\.\.\/\.\.\/\.\.\/src\/catalogue\/ingestion"/u,
+  );
   assert.match(worker, /const routes = \[[\s\S]*?\.\.\.ingestionRoutes/u);
   assert.match(cluster, /export \{ ingestionRoutes \} from "\.\/routes"/u);
   assert.match(
