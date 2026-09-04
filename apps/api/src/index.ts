@@ -1,32 +1,19 @@
 import { authenticateBearer } from "../../../src/http/authentication";
-import {
-  CardReadProblem,
-  CatalogueExportReadProblem,
-  catalogueExportComponentResponse,
-  catalogueExportResponse,
-  catalogueExportsResponse,
-  currentCardResponse,
-  currentCatalogueStatus,
-  currentPrintingResponse,
-  printingImageContentResponse,
-  PrintingReadProblem,
-  currentProductResponse,
-  currentProductsResponse,
-  ProductReadProblem,
-  currentPrintingsResponse,
-  PrintingCollectionReadProblem,
-  cardCollectionResponse,
-  contextualLegalityStatusResponse,
-  LegalityStatusProblem,
-} from "../../../src/catalogue/read";
-import { catalogueResponse } from "../../../src/http/catalogue";
+import { catalogueRoutes } from "../../../src/catalogue/read";
 import { allowedPreflightResponse, hasAllowedOrigin, withCorsHeaders } from "../../../src/http/cors";
 import { isLivenessRequest, livenessRequest, readinessResponse } from "../../../src/http/health";
 import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { apiCapabilities } from "../../../src/runtime-capabilities.mjs";
 import { withOperationalRequestLog } from "../../../src/http/operational-log";
-import { mountedRequest, publicBase, publicUrl, routePath, type PublicBase } from "../../../src/http/public-base";
+import { mountedRequest, publicBase, routePath, type PublicBase } from "../../../src/http/public-base";
+
+import { routeTable, routeSegments } from "../../../src/http/routes";
+import { apiProblemResponse } from "./problem";
+
+const routes = [...catalogueRoutes];
+const dispatch = routeTable(routes);
+const logOptions = { routeSegments: routeSegments(routes, ["/health", "/healthz"]) };
 
 async function handleApiRequest(request: Request, env: Env, requestId: string, base: PublicBase): Promise<Response> {
   try {
@@ -75,122 +62,6 @@ async function handleApiRequest(request: Request, env: Env, requestId: string, b
       return withCorsHeaders(request, authenticationFailure);
     }
 
-    if (request.method === "GET" && url.pathname === "/v1/catalogue") {
-      return withCorsHeaders(request, catalogueResponse(await currentCatalogueStatus(env.CATALOGUE_DB), base, request));
-    }
-
-    if (request.method === "GET" && url.pathname === "/v1/cards") {
-      return withCorsHeaders(request, await cardCollectionResponse(env.CATALOGUE_DB, request, requestId, base));
-    }
-
-    if (request.method === "GET" && url.pathname === "/v1/legality-status") {
-      try {
-        return withCorsHeaders(request, await contextualLegalityStatusResponse(request, env.CATALOGUE_DB, base));
-      } catch (error) {
-        if (error instanceof LegalityStatusProblem) {
-          return withCorsHeaders(
-            request,
-            problemResponse({
-              requestId,
-              status: error.status,
-              code: error.code,
-              title:
-                error.status === 404
-                  ? "Not found"
-                  : error.status === 422
-                    ? "Invalid Legality region"
-                    : error.status === 500
-                      ? "Catalogue integrity failure"
-                      : "Invalid request",
-              detail: error.message,
-              extensions: error.invalidParameter === null ? undefined : { invalid_params: [error.invalidParameter] },
-            }),
-          );
-        }
-        throw error;
-      }
-    }
-
-    const cardMatch = /^\/v1\/cards\/([^/]+)$/.exec(url.pathname);
-    if (request.method === "GET" && cardMatch !== null) {
-      const response = await currentCardResponse(env.CATALOGUE_DB, decodeURIComponent(cardMatch[1]!), request, base);
-      if (response !== null) return withCorsHeaders(request, response);
-    }
-
-    const printingMatch = /^\/v1\/printings\/([^/]+)$/.exec(url.pathname);
-    if (request.method === "GET" && printingMatch !== null) {
-      const response = await currentPrintingResponse(
-        env.CATALOGUE_DB,
-        decodeURIComponent(printingMatch[1]!),
-        request,
-        base,
-      );
-      if (response !== null) return withCorsHeaders(request, response);
-    }
-
-    if (request.method === "GET" && url.pathname === "/v1/printings") {
-      return withCorsHeaders(request, await currentPrintingsResponse(env.CATALOGUE_DB, request, base));
-    }
-
-    const printingImageContentMatch = /^\/v1\/printing-images\/([^/]+)\/content$/.exec(url.pathname);
-    if ((request.method === "GET" || request.method === "HEAD") && printingImageContentMatch !== null) {
-      const response = await printingImageContentResponse(
-        request,
-        env.CATALOGUE_DB,
-        env.PRINTING_IMAGES,
-        decodeURIComponent(printingImageContentMatch[1]!),
-        requestId,
-      );
-      if (response !== null) return withCorsHeaders(request, response);
-    }
-
-    if (request.method === "GET" && url.pathname === "/v1/products") {
-      return withCorsHeaders(request, await currentProductsResponse(env.CATALOGUE_DB, request, base));
-    }
-
-    const productMatch = /^\/v1\/products\/([^/]+)$/.exec(url.pathname);
-    if (request.method === "GET" && productMatch !== null) {
-      const response = await currentProductResponse(
-        env.CATALOGUE_DB,
-        decodeURIComponent(productMatch[1]!),
-        request,
-        base,
-      );
-      if (response !== null) return withCorsHeaders(request, response);
-    }
-
-    const exportComponentMatch = /^\/v1\/catalogue-exports\/([^/]+)\/components\/([^/]+)$/.exec(url.pathname);
-    if ((request.method === "GET" || request.method === "HEAD") && exportComponentMatch !== null) {
-      const response = await catalogueExportComponentResponse(
-        request,
-        env.CATALOGUE_DB,
-        env.CATALOGUE_EXPORTS,
-        decodeURIComponent(exportComponentMatch[1]!),
-        decodeURIComponent(exportComponentMatch[2]!),
-        requestId,
-      );
-      if (response !== null) return withCorsHeaders(request, response);
-    }
-
-    if (request.method === "GET" && url.pathname === "/v1/catalogue-exports") {
-      return withCorsHeaders(
-        request,
-        await catalogueExportsResponse(request, env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, base),
-      );
-    }
-
-    const exportMatch = /^\/v1\/catalogue-exports\/([^/]+)$/.exec(url.pathname);
-    if (request.method === "GET" && exportMatch !== null) {
-      const response = await catalogueExportResponse(
-        request,
-        env.CATALOGUE_DB,
-        env.CATALOGUE_EXPORTS,
-        decodeURIComponent(exportMatch[1]!),
-        base,
-      );
-      if (response !== null) return withCorsHeaders(request, response);
-    }
-
     if (request.method === "GET" && url.pathname === "/health") {
       return withCorsHeaders(
         request,
@@ -207,6 +78,9 @@ async function handleApiRequest(request: Request, env: Env, requestId: string, b
       );
     }
 
+    const response = await dispatch(request.method, url.pathname, { request, env, requestId, base });
+    if (response !== null) return withCorsHeaders(request, response);
+
     return withCorsHeaders(
       request,
       problemResponse({
@@ -218,118 +92,7 @@ async function handleApiRequest(request: Request, env: Env, requestId: string, b
       }),
     );
   } catch (error) {
-    if (error instanceof ProductReadProblem) {
-      return withCorsHeaders(
-        request,
-        problemResponse({
-          requestId,
-          status: error.status,
-          code: error.code,
-          title: error.status === 409 ? "Cursor revision unavailable" : "Invalid Product request",
-          detail: error.message,
-          ...(error.code === "cursor_revision_unavailable"
-            ? {
-                extensions: {
-                  links: { collection: publicUrl(base, "/v1/products") },
-                },
-              }
-            : error.invalidParameter === null
-              ? {}
-              : {
-                  extensions: {
-                    invalid_params: [error.invalidParameter],
-                  },
-                }),
-        }),
-      );
-    }
-    if (error instanceof PrintingCollectionReadProblem) {
-      return withCorsHeaders(
-        request,
-        problemResponse({
-          requestId,
-          status: error.status,
-          code: error.code,
-          title: error.status === 409 ? "Cursor revision unavailable" : "Invalid Printing request",
-          detail: error.message,
-          ...(error.code === "cursor_revision_unavailable"
-            ? {
-                extensions: {
-                  links: { collection: publicUrl(base, "/v1/printings") },
-                },
-              }
-            : error.invalidParameter === null
-              ? {}
-              : {
-                  extensions: {
-                    invalid_params: [error.invalidParameter],
-                  },
-                }),
-        }),
-      );
-    }
-    if (error instanceof CardReadProblem) {
-      return withCorsHeaders(
-        request,
-        problemResponse({
-          requestId,
-          status: error.status,
-          code: error.code,
-          title: "Invalid Card request",
-          detail: error.message,
-        }),
-      );
-    }
-    if (error instanceof PrintingReadProblem) {
-      return withCorsHeaders(
-        request,
-        problemResponse({
-          requestId,
-          status: error.status,
-          code: error.code,
-          title: "Invalid Printing request",
-          detail: error.message,
-        }),
-      );
-    }
-    if (error instanceof CatalogueExportReadProblem) {
-      return withCorsHeaders(
-        request,
-        problemResponse({
-          requestId,
-          status: error.status,
-          code: error.code,
-          title:
-            error.status === 409
-              ? "Cursor revision unavailable"
-              : error.status === 410
-                ? "Catalogue Export deleted"
-                : error.code === "invalid_cursor"
-                  ? "Invalid Catalogue Export cursor"
-                  : "Invalid Catalogue Export request",
-          detail: error.message,
-          ...(error.status === 409
-            ? {
-                extensions: {
-                  links: {
-                    collection: publicUrl(base, "/v1/catalogue-exports"),
-                  },
-                },
-              }
-            : {}),
-        }),
-      );
-    }
-    return withCorsHeaders(
-      request,
-      problemResponse({
-        requestId,
-        status: 500,
-        code: "internal_error",
-        title: "Internal server error",
-        detail: "The request could not be completed.",
-      }),
-    );
+    return withCorsHeaders(request, apiProblemResponse(error, request, requestId, base));
   }
 }
 
@@ -343,8 +106,12 @@ const apiWorker = {
     const base = publicBase(env);
     const route = routePath(new URL(request.url), base.basePath);
     if (route === null) {
-      return withOperationalRequestLog("api", request, env, async (_observedEnv, requestId) =>
-        withCorsHeaders(request, outsideMountResponse(requestId)),
+      return withOperationalRequestLog(
+        "api",
+        request,
+        env,
+        async (_observedEnv, requestId) => withCorsHeaders(request, outsideMountResponse(requestId)),
+        logOptions,
       );
     }
     const mounted = mountedRequest(request, route);
@@ -359,8 +126,12 @@ const apiWorker = {
         { logged: false },
       );
     }
-    return withOperationalRequestLog("api", mounted, env, (observedEnv, requestId) =>
-      handleApiRequest(mounted, observedEnv, requestId, base),
+    return withOperationalRequestLog(
+      "api",
+      mounted,
+      env,
+      (observedEnv, requestId) => handleApiRequest(mounted, observedEnv, requestId, base),
+      logOptions,
     );
   },
 } satisfies ExportedHandler<Env>;
