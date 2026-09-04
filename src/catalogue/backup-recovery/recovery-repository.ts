@@ -1,4 +1,5 @@
-import { type CatalogueStore, repositoryStatements } from "../shared";
+import { guardRehydratedBackupEvidenceStatement } from "./backup-evidence-repository";
+import { type CatalogueStore, repositoryStatements, atomicRepositoryStatement } from "../shared";
 export function enforceRestoreGuardStatement(database: CatalogueStore): D1PreparedStatement {
   return repositoryStatements(database).prepare(`UPDATE operation_state SET recovery_health = 'blocked'
      WHERE singleton = 1 AND recovery_restore_guard = 'blocked'
@@ -9,8 +10,8 @@ export function recoveryOperationStateStatement(database: CatalogueStore): D1Pre
   return repositoryStatements(
     database,
   ).prepare(`SELECT catalogue.current_revision_id, operation.active_ingestion_run_id,
-            operation.active_release_id AS active_production_release_id,
-            operation.active_release_expires_at AS active_production_release_expires_at,
+            operation.active_production_release_id,
+            operation.active_production_release_expires_at,
             operation.recovery_health, operation.active_recovery_id
      FROM catalogue_state AS catalogue
      JOIN operation_state AS operation ON operation.singleton = 1
@@ -28,8 +29,8 @@ export function guardRecoveryStartStatement(
            WHERE catalogue.singleton = 1
              AND catalogue.current_revision_id = ?
              AND operation.active_ingestion_run_id IS NULL
-             AND (operation.active_release_id IS NULL
-               OR operation.active_release_expires_at <= ?)
+             AND (operation.active_production_release_id IS NULL
+               OR operation.active_production_release_expires_at <= ?)
              AND (
                (? IS NULL AND operation.recovery_health <> 'blocked'
                  AND operation.active_recovery_id IS NULL)
@@ -103,7 +104,7 @@ export function reserveRecoveryOperationStatement(
          SET recovery_health = 'blocked', active_recovery_id = ?,
              recovery_restore_guard = 'blocked'
          WHERE singleton = 1 AND active_ingestion_run_id IS NULL
-           AND (active_release_id IS NULL OR active_release_expires_at <= ?)
+           AND (active_production_release_id IS NULL OR active_production_release_expires_at <= ?)
            AND (
              (? IS NULL AND recovery_health <> 'blocked'
                AND active_recovery_id IS NULL)
@@ -202,7 +203,11 @@ export function releaseAcceptedRecoveryStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`UPDATE operation_state
-         SET recovery_health = 'healthy', active_recovery_id = NULL,
+         SET recovery_health = CASE WHEN recovery_health = 'blocked' AND EXISTS (
+             SELECT 1 FROM catalogue_recovery_operations AS recovery
+             WHERE recovery.id = operation_state.active_recovery_id
+               AND recovery.state <> 'accepted'
+           ) THEN json_extract('{}', 'recovery_not_accepted') ELSE 'healthy' END, active_recovery_id = NULL,
              recovery_restore_guard = 'clear'
          WHERE singleton = 1 AND recovery_health = 'blocked'
            AND active_recovery_id = ?`)
@@ -253,7 +258,11 @@ export function clearBlockedRecoveryStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`UPDATE operation_state
-         SET recovery_health = 'healthy', active_recovery_id = NULL,
+         SET recovery_health = CASE WHEN recovery_health = 'blocked' AND EXISTS (
+             SELECT 1 FROM catalogue_recovery_operations AS recovery
+             WHERE recovery.id = operation_state.active_recovery_id
+               AND recovery.state <> 'accepted'
+           ) THEN json_extract('{}', 'recovery_not_accepted') ELSE 'healthy' END, active_recovery_id = NULL,
              recovery_restore_guard = 'clear'
          WHERE singleton = 1 AND recovery_health = 'blocked'
            AND active_recovery_id = ?
@@ -483,11 +492,15 @@ export function completeRehydratedBackupStatement(
   database: CatalogueStore,
   input: Readonly<{ completed_at: string; idempotency_key: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE catalogue_backup_attempts
        SET state = 'verified', completed_at = ?, restore_phase = 'verified'
        WHERE idempotency_key = ? AND state = 'verifying'`)
     .bind(input.completed_at, input.idempotency_key);
+  return atomicRepositoryStatement(database, {
+    statement,
+    before: [guardRehydratedBackupEvidenceStatement(database, input)],
+  });
 }
 
 export function linkedRecoveryOperationStatement(
@@ -500,13 +513,13 @@ export function linkedRecoveryOperationStatement(
     .bind(input.linkedOperationId);
 }
 
-export function transitionRecoveryOperationStatement(
+export function startRecoveryRestoreStatement(
   database: CatalogueStore,
-  input: Readonly<{ to: string; recoveryId: string; from: string }>,
+  input: Readonly<{ recoveryId: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare("UPDATE catalogue_recovery_operations SET state = ? WHERE id = ? AND state = ?")
-    .bind(input.to, input.recoveryId, input.from);
+    .prepare("UPDATE catalogue_recovery_operations SET state = 'restoring' WHERE id = ? AND state = 'preparing'")
+    .bind(input.recoveryId);
 }
 
 export function startRecoveryValidationStatement(

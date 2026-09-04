@@ -1,3 +1,4 @@
+import { disableBackupTransitionTriggers, disableRecoveryHealthTrigger } from "./query-helpers/maintenance-guards";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as backupRecoveryQueries from "./query-helpers/backup-recovery";
 import * as ingestionQueries from "./query-helpers/ingestion";
@@ -36,6 +37,8 @@ const freshRestoreTarget: D1BackupProvider["prepareRestoreTarget"] = async (inpu
 
 beforeEach(async () => {
   await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
+  await disableBackupTransitionTriggers(testEnv.CATALOGUE_DB);
+  await disableRecoveryHealthTrigger(testEnv.CATALOGUE_DB);
   await backupRecoveryQueries.deleteCatalogueBackupRetention(testEnv.CATALOGUE_DB).run();
   await backupRecoveryQueries.deleteCatalogueBackupAttempts(testEnv.CATALOGUE_DB).run();
   await ingestionQueries.setOperationStateRecoveryHealthActiveIngestionRunId(testEnv.CATALOGUE_DB).run();

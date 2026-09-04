@@ -71,10 +71,3 @@ export function insertCardSearchChunk(database) {
          search_text
        ) VALUES (?, ?, 0, 0, ?)`);
 }
-
-export function insertCardSearchTerm(database) {
-  return database.prepare(`INSERT INTO revision_card_search_terms (
-         catalogue_revision_id, card_id, term, sort_game,
-         sort_identity_kind, sort_identity_value, sort_id
-       ) VALUES (?, ?, ?, 'one-piece', 'card_number', ?, ?)`);
-}

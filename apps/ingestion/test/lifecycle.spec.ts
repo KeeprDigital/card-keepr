@@ -1,3 +1,4 @@
+import { disableExportTransitionTriggers } from "./query-helpers/maintenance-guards";
 import {
   crashAfterRetryTerminalDatabase,
   countDeletionResponseQueriesDatabase,
@@ -36,6 +37,7 @@ let testObservedAt: string | null = null;
 beforeEach(async () => {
   testObservedAt = null;
   await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
+  await disableExportTransitionTriggers(testEnv.CATALOGUE_DB);
 });
 
 afterEach(async () => {

@@ -1,4 +1,5 @@
-import { type CatalogueStore, repositoryStatements } from "../shared";
+import { guardCompletingBackupEvidenceStatement } from "./backup-evidence-repository";
+import { type CatalogueStore, repositoryStatements, atomicRepositoryStatement } from "../shared";
 export type BackupAttemptEvidenceRow = Readonly<{
   idempotency_key: string;
   request_json: string;
@@ -276,7 +277,7 @@ export function completeBackupStatement(
     ownerToken: string;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE catalogue_backup_attempts
            SET state = 'verified', d1_bookmark = ?, completed_at = ?,
                manifest_key = ?, manifest_sha256 = ?,
@@ -291,6 +292,10 @@ export function completeBackupStatement(
       input.idempotencyKey,
       input.ownerToken,
     );
+  return atomicRepositoryStatement(database, {
+    statement,
+    before: [guardCompletingBackupEvidenceStatement(database, input)],
+  });
 }
 
 export function datePreviousBackupRetentionStatement(database: CatalogueStore): D1PreparedStatement {
@@ -316,7 +321,13 @@ export function retainNewestBackupStatement(
 }
 
 export function restoreHealthyBackupStateStatement(database: CatalogueStore): D1PreparedStatement {
-  return repositoryStatements(database).prepare(`UPDATE operation_state SET recovery_health = 'healthy'
+  return repositoryStatements(
+    database,
+  ).prepare(`UPDATE operation_state SET recovery_health = CASE WHEN recovery_health = 'blocked' AND EXISTS (
+             SELECT 1 FROM catalogue_recovery_operations AS recovery
+             WHERE recovery.id = operation_state.active_recovery_id
+               AND recovery.state <> 'accepted'
+           ) THEN json_extract('{}', 'recovery_not_accepted') ELSE 'healthy' END
            WHERE singleton = 1
              AND recovery_health IN ('blocked', 'degraded')`);
 }
@@ -389,7 +400,11 @@ export function degradeActiveBackupStateStatement(
   input: Readonly<{ idempotencyKey: string; ownerToken: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`UPDATE operation_state SET recovery_health = 'degraded'
+    .prepare(`UPDATE operation_state SET recovery_health = CASE WHEN recovery_health = 'blocked' AND EXISTS (
+             SELECT 1 FROM catalogue_recovery_operations AS recovery
+             WHERE recovery.id = operation_state.active_recovery_id
+               AND recovery.state <> 'accepted'
+           ) THEN json_extract('{}', 'recovery_not_accepted') ELSE 'degraded' END
        WHERE singleton = 1 AND recovery_health = 'blocked'
          AND EXISTS (
            SELECT 1 FROM catalogue_backup_attempts

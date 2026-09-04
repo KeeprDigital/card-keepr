@@ -274,7 +274,7 @@ export async function beginCatalogueRecovery(
   }
 
   try {
-    await transitionRecovery(database, input.recoveryId, "preparing", "restoring");
+    await startRecoveryRestore(database, input.recoveryId);
     await persistRecoveryJournal(backups, await requiredRecovery(database, input.recoveryId), backup);
     if (input.method === "time_travel") {
       const restored = await provider.timeTravelRestore({
@@ -943,15 +943,8 @@ async function assertLinkedRecovery(
   }
 }
 
-async function transitionRecovery(
-  database: CatalogueStore,
-  recoveryId: string,
-  from: string,
-  to: string,
-): Promise<void> {
-  const result = await recoveryStatements
-    .transitionRecoveryOperationStatement(database, { to, recoveryId, from })
-    .run();
+async function startRecoveryRestore(database: CatalogueStore, recoveryId: string): Promise<void> {
+  const result = await recoveryStatements.startRecoveryRestoreStatement(database, { recoveryId }).run();
   if (result.meta.changes !== 1) {
     throw new AdministrationProblem(409, "recovery_state_changed", "The recovery operation changed concurrently.");
   }
