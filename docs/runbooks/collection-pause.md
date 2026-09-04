@@ -50,24 +50,36 @@ Both forms carry the same material facts. The `collection` block reports:
 
 Genuine integrity failures (redirects, identity collisions, malformed
 discovery, parser contract failures, completeness contradictions) remain
-terminal and never pause.
+terminal and never pause. On the listing, detail, product, and surface
+roles they fail the run; on the image role they fail that one request
+(see below).
 
-## Failed images do not pause
+## Failed images never pause or fail a run
 
 `source_transport_retries_exhausted` applies to the listing, detail,
 product, and surface roles, where a missing response means missing
-catalogue facts. Image requests follow a different transport policy: they
-get a longer fetch bound (60 s instead of 30 s) and the same bounded
-retries, but when an image exhausts its transport retries that one Source
-Request is recorded as `failed` with the code
-`source_image_retries_exhausted` and collection continues. Storage (R2)
-retry exhaustion still pauses the run for every role.
+catalogue facts, and every terminal outcome on those roles fails the run.
+Image requests follow a different transport policy: they get a longer
+fetch bound (60 s instead of 30 s) and the same bounded retries, but any
+failure of an image records that one Source Request as `failed` under a
+class-specific code and collection continues. Storage (R2) retry
+exhaustion still pauses the run for every role.
 
-The run completes collection, parses, and reconciles with the gap recorded
-explicitly: the Catalogue Candidate carries one `printing_image_unavailable`
-warning per failed image (request reference, source URL, Source Lineage,
-failure code), the affected Printing is published without that Printing
-Image, and nothing blocks approval. Inspect the gap with:
+| Image `failure_code` | Meaning |
+| --- | --- |
+| `source_image_retries_exhausted` | The image's bounded transport retries ran out on recoverable failures (timeouts, network errors, 429 or 5xx responses). |
+| `source_image_not_found` | The Official Source answered 404 or 410: the file is gone. |
+| `source_image_rejected` | The Official Source answered another non-retryable status (for example 400 or 403). |
+| `source_image_redirected` | The Official Source answered with a redirect. Redirects are recorded, never followed: following one would silently change the evidence origin. |
+| `source_image_revalidation_rejected` | A 304 response did not match the retained Source Snapshot's validator and representation. |
+| `source_image_body_contract` | The response body violated its own contract (for example an invalid or contradicted `content-length`) on every bounded attempt. |
+
+None of these codes pauses or fails the run. The run completes collection,
+parses, and reconciles with the gap recorded explicitly: the Catalogue
+Candidate carries one `printing_image_unavailable` warning per failed image
+(request reference, source URL, Source Lineage, failure code), the affected
+Printing is published without that Printing Image, and nothing blocks
+approval. Inspect the gap with:
 
 ```sh
 npm run keepr -- source show --run-id RUN_ID --json

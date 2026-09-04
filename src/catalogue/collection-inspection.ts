@@ -8,7 +8,7 @@
 // response bodies, or unvetted provider text: identifiers, hostnames,
 // bounded counters, timestamps, and closed machine codes only.
 import {
-  printingImageRetriesExhaustedFailureCode,
+  toleratedPrintingImageFailureCodes,
   type EvidencePlan,
 } from "./source-evidence-model";
 import type {
@@ -220,9 +220,11 @@ export async function collectionInspection(
           captured_request_count: number;
           next_request_not_before: string | null;
         }>(),
-      // Printing Images whose transport retries were exhausted: tolerated
-      // failures the run completed around. The list is bounded like every
-      // other per-request detail; the count is exact.
+      // Printing Images that failed under a tolerated code (exhausted
+      // transport retries, a missing or redirected file, a rejected
+      // revalidation, a body-contract violation): failures the run completed
+      // around. The list is bounded like every other per-request detail; the
+      // count is exact.
       database
         .prepare(
           `SELECT requests.request_id, ${hostnameSql} AS hostname,
@@ -236,11 +238,15 @@ export async function collectionInspection(
            WHERE requests.ingestion_run_id = ?1
              AND requests.request_role = 'image'
              AND requests.state = 'failed'
-             AND requests.failure_code = ?2
+             AND requests.failure_code IN (SELECT value FROM json_each(?2))
            ORDER BY requests.request_id
            LIMIT ?3`,
         )
-        .bind(runId, printingImageRetriesExhaustedFailureCode, inspectionDetailLimit)
+        .bind(
+          runId,
+          JSON.stringify(toleratedPrintingImageFailureCodes),
+          inspectionDetailLimit,
+        )
         .all<{
           request_id: string;
           hostname: string;

@@ -222,3 +222,118 @@ test("a run without failed images reports an empty failed-image summary", async 
     requests: [],
   });
 });
+
+// A terminal image outcome (a missing file, a relocated file, a body that
+// violates its own contract) is a gap the catalogue can publish without:
+// the request fails alone under a class-specific code and collection
+// completes. Catalogue-fact roles keep every terminal outcome fatal
+// (runtime-capture-failures.spec.ts). A redirect is recorded, never
+// followed: following it would silently change the evidence origin.
+for (const scenario of [
+  {
+    name: "a 404",
+    key: "image_failure_not_found_001",
+    url: "https://official-source.invalid/missing-image.png",
+    failure_code: "source_image_not_found",
+    attempts: [{ attempt_number: 1, outcome: "http_failure", status: 404 }],
+  },
+  {
+    name: "a redirect",
+    key: "image_failure_redirect_001",
+    url: "https://official-source.invalid/redirect",
+    failure_code: "source_image_redirected",
+    attempts: [{ attempt_number: 1, outcome: "redirect", status: 302 }],
+  },
+  {
+    name: "a body-contract violation",
+    key: "image_failure_body_001",
+    url: "https://official-source.invalid/body-failure",
+    failure_code: "source_image_body_contract",
+    // The body never arrives, so the attempt records no HTTP status.
+    attempts: [1, 2, 3, 4].map((attempt) => ({
+      attempt_number: attempt,
+      outcome: "body_failure",
+      status: null,
+    })),
+  },
+]) {
+  test(`an image request that gets ${scenario.name} fails alone and collection completes`, async () => {
+    const run = await createCollection(
+      scenario.key,
+      "https://official-source.invalid/cards",
+    );
+    const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
+    const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+    if (root === undefined) throw new Error("pending root request missing");
+    const [image] = await appendDiscoveredEvidenceRequests(
+      env.CATALOGUE_DB,
+      storedRun,
+      root,
+      [{ role: "image", url: scenario.url, headers: { accept: "*/*" } }],
+    );
+    if (image === undefined) throw new Error("image request missing");
+
+    const response = await administrationRequest(
+      `/v1/ingestion-runs/${run.id}/collection/resume`,
+      "POST",
+    );
+    expect(response.status).toBe(202);
+    await response.body?.cancel();
+    const completed = await waitForEvidenceCondition(
+      run.id,
+      (current) => current.state !== "collecting",
+      12_000,
+    );
+
+    expect(completed).toMatchObject({
+      state: "parsing",
+      failure_code: null,
+      collection_completed_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    });
+    expect(completed.pause ?? null).toBeNull();
+    expect(
+      completed.diagnostics
+        .filter((diagnostic) => diagnostic.request_id === image.request_id)
+        .map((diagnostic) => ({
+          attempt_number: diagnostic.attempt_number,
+          outcome: diagnostic.outcome,
+          status: diagnostic.http_status,
+        })),
+    ).toEqual(scenario.attempts);
+    // Only the root was captured: a redirected image never yields a
+    // Source Snapshot from its redirect target.
+    expect(completed.snapshots).toHaveLength(1);
+    expect(await env.CATALOGUE_DB.prepare(
+      `SELECT request_id, state, failure_code FROM source_requests
+       WHERE ingestion_run_id = ? ORDER BY sequence_number`,
+    ).bind(run.id).all().then(({ results }) => results)).toEqual([
+      { request_id: "required-source", state: "observed", failure_code: null },
+      {
+        request_id: image.request_id,
+        state: "failed",
+        failure_code: scenario.failure_code,
+      },
+    ]);
+    expect(await env.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count FROM ingestion_run_retry_pauses
+       WHERE ingestion_run_id = ?`,
+    ).bind(run.id).first("count")).toBe(0);
+
+    const collection = completed.collection as {
+      requests: { by_state: Record<string, number> };
+      failed_images: Record<string, unknown>;
+    };
+    expect(collection.requests.by_state).toEqual({ observed: 1, failed: 1 });
+    expect(collection.failed_images).toEqual({
+      count: 1,
+      detail_limit: 200,
+      truncated: false,
+      requests: [{
+        request_id: image.request_id,
+        hostname: "official-source.invalid",
+        failure_code: scenario.failure_code,
+        attempt_count: scenario.attempts.length,
+      }],
+    });
+  });
+}
