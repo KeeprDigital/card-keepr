@@ -1,6 +1,9 @@
 {
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
   "bin": {
     "keepr": "./cli/keepr.mjs"
   },
