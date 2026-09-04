@@ -28,9 +28,7 @@ export type WorkflowPauseReason =
 // classification of the Workflow's health.
 export const ownerRequestedPauseReason = "owner_requested";
 
-export type RecordedWorkflowPauseReason =
-  | WorkflowPauseReason
-  | typeof ownerRequestedPauseReason;
+export type RecordedWorkflowPauseReason = WorkflowPauseReason | typeof ownerRequestedPauseReason;
 
 export type CollectionWorkflowFacts = Readonly<{
   now_ms: number;
@@ -71,14 +69,10 @@ const platformStatuses: Record<string, SafeWorkflowStatus> = {
 // lookup represented by the caller as undefined — reports as 'unavailable'
 // rather than echoing unvetted text into owner-facing documents.
 export function safeWorkflowStatus(value: unknown): SafeWorkflowStatus {
-  return typeof value === "string"
-    ? platformStatuses[value] ?? "unavailable"
-    : "unavailable";
+  return typeof value === "string" ? (platformStatuses[value] ?? "unavailable") : "unavailable";
 }
 
-export function classifyCollectionWorkflow(
-  facts: CollectionWorkflowFacts,
-): CollectionWorkflowClassification {
+export function classifyCollectionWorkflow(facts: CollectionWorkflowFacts): CollectionWorkflowClassification {
   switch (facts.workflow_status) {
     case "errored":
       return { kind: "recover", reason: "source_workflow_errored" };
@@ -149,27 +143,15 @@ export function isWorkflowInstanceNotFound(error: unknown): boolean {
 // paused -> collecting transitions: attempt 1 is the original identity and
 // each recovery appends '-resume-N'. Child hostname-shard attempts append
 // '-attempt-N' to their digest base identity (see evidence-workflows.ts).
-export function parentWorkflowAttemptId(
-  runId: string,
-  attemptNumber: number,
-): string {
-  return attemptNumber === 1
-    ? `evidence-${runId}`
-    : `evidence-${runId}-resume-${attemptNumber - 1}`;
+export function parentWorkflowAttemptId(runId: string, attemptNumber: number): string {
+  return attemptNumber === 1 ? `evidence-${runId}` : `evidence-${runId}-resume-${attemptNumber - 1}`;
 }
 
-export function parentAttemptNumber(
-  runId: string,
-  instanceId: string,
-): number | null {
+export function parentAttemptNumber(runId: string, instanceId: string): number | null {
   const baseId = `evidence-${runId}`;
   if (instanceId === baseId) return 1;
-  const suffix = instanceId.startsWith(`${baseId}-resume-`)
-    ? instanceId.slice(`${baseId}-resume-`.length)
-    : null;
-  return suffix !== null && /^[1-9]\d*$/u.test(suffix)
-    ? Number.parseInt(suffix, 10) + 1
-    : null;
+  const suffix = instanceId.startsWith(`${baseId}-resume-`) ? instanceId.slice(`${baseId}-resume-`.length) : null;
+  return suffix !== null && /^[1-9]\d*$/u.test(suffix) ? Number.parseInt(suffix, 10) + 1 : null;
 }
 
 export type WorkflowAttemptRecord = Readonly<{
@@ -182,10 +164,7 @@ export type WorkflowAttemptRecord = Readonly<{
 // Derive the append-only attempt record for one Workflow instance identity.
 // Identities are self-describing, so the same record is recomputed wherever
 // the identity is observed and INSERT OR IGNORE keeps the history idempotent.
-export function workflowAttemptRecord(
-  runId: string,
-  instanceId: string,
-): WorkflowAttemptRecord {
+export function workflowAttemptRecord(runId: string, instanceId: string): WorkflowAttemptRecord {
   const parentAttempt = parentAttemptNumber(runId, instanceId);
   if (parentAttempt !== null) {
     return {
@@ -198,21 +177,21 @@ export function workflowAttemptRecord(
   const childSuffix = instanceId.match(/-attempt-(0|[1-9]\d*)$/u);
   return childSuffix === null
     ? {
-      workflow_kind: "child",
-      base_workflow_id: instanceId,
-      attempt_number: 1,
-      workflow_instance_id: instanceId,
-    }
+        workflow_kind: "child",
+        base_workflow_id: instanceId,
+        attempt_number: 1,
+        workflow_instance_id: instanceId,
+      }
     : {
-      workflow_kind: "child",
-      base_workflow_id: instanceId.slice(0, -childSuffix[0].length),
-      // Child replacement suffixes are zero-based (see
-      // nextChildWorkflowIdentity in evidence-workflows.ts): the bare digest
-      // identity is attempt 1 and '-attempt-0' is the first replacement, so
-      // suffix N maps to attempt N + 2.
-      attempt_number: Number.parseInt(childSuffix[1]!, 10) + 2,
-      workflow_instance_id: instanceId,
-    };
+        workflow_kind: "child",
+        base_workflow_id: instanceId.slice(0, -childSuffix[0].length),
+        // Child replacement suffixes are zero-based (see
+        // nextChildWorkflowIdentity in evidence-workflows.ts): the bare digest
+        // identity is attempt 1 and '-attempt-0' is the first replacement, so
+        // suffix N maps to attempt N + 2.
+        attempt_number: Number.parseInt(childSuffix[1]!, 10) + 2,
+        workflow_instance_id: instanceId,
+      };
 }
 
 // Deep multi-shard collections poll the completion barrier once a minute;
@@ -221,7 +200,5 @@ export function collectionBarrierSleepDuration(
   maximumShardDepth: number,
   maximumActiveRequestCount: number,
 ): "1 minute" | "1 second" {
-  return maximumShardDepth > 1 && maximumActiveRequestCount > 10
-    ? "1 minute"
-    : "1 second";
+  return maximumShardDepth > 1 && maximumActiveRequestCount > 10 ? "1 minute" : "1 second";
 }

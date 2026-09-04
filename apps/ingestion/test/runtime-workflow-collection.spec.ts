@@ -5,7 +5,7 @@ import {
   pauseEvidenceRunForWorkflowRecovery,
   pendingEvidenceRequests,
   requiredEvidenceRun,
-} from "../../../src/catalogue/source-evidence-repository";
+} from "../../../src/catalogue/source-evidence";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
 import { fusionWorldProductionCollectionRequests } from "./production-collection-request-goldens";

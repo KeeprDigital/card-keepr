@@ -1,7 +1,6 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import { collectSourceRequestBatch } from "../../../src/catalogue/source-evidence-batch";
-import { pendingEvidenceRequests } from "../../../src/catalogue/source-evidence-repository";
+import { collectSourceRequestBatch, pendingEvidenceRequests } from "../../../src/catalogue/source-evidence";
 import {
   administrationRequest,
   type CollectionDocument,

@@ -6,7 +6,7 @@ import {
   evidenceRunIdentity,
   replayByDigest,
   operationalDiagnostics,
-} from "./shared";
+} from "../shared";
 import {
   assertBoundedOfficialSourceRequest,
   assertIdentifier,
@@ -22,8 +22,8 @@ import {
   type EvidenceHostWorkflowParams,
   type EvidenceParentWorkflowParams,
 } from "./source-evidence-model";
-import { globalEmergencySourceRequestCeiling, type SourceAdapterRegistration } from "./adapters";
-import { curatedRevisionSetForRun, curatedRevisionPinStatementsForNewRun } from "./curated";
+import { globalEmergencySourceRequestCeiling, type SourceAdapterRegistration } from "../adapters";
+import { curatedRevisionSetForRun, curatedRevisionPinStatementsForNewRun } from "../curated";
 import {
   classifyCollectionProgress,
   ownerRequestedPauseReason,

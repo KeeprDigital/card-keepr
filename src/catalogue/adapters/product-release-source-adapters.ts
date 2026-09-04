@@ -197,7 +197,7 @@ const rawContractDefinitions: readonly {
       "legality-history": "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
     },
     // Issue #63: request capacity is a policy of each exact Source Adapter
-    // Version, declared in src/catalogue/source-adapters.ts and the
+    // Version, declared in src/catalogue/adapters/source-adapters.ts and the
     // source_adapter_versions seed.
     versions: [
       {

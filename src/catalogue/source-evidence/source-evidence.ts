@@ -1,4 +1,4 @@
-import { AdministrationProblem } from "./shared";
+import { AdministrationProblem } from "../shared";
 import { parseSnapshot, reparseSnapshot } from "./source-evidence-parsing";
 import { assertIdentifier, type StartEvidenceRunRequest } from "./source-evidence-model";
 import {

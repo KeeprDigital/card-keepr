@@ -211,7 +211,7 @@ parameter bound.
 Curated Revisions are administered through the authenticated ingestion
 routes under `/admin/v1/curated-revisions` and the matching
 `keepr curated-revision` commands. In those routes, commands, and
-`src/catalogue/curated-revisions.ts`, the request field `proposal` (with
+`src/catalogue/curated/curated-revisions.ts`, the request field `proposal` (with
 `--proposal`, `proposal_digest`, and the retained `proposal_json` column) is
 the short form of the Curated Revision Proposal defined in `CONTEXT.md`: the
 owner-authored request that becomes a Curated Revision only when created

@@ -7,7 +7,7 @@ import {
   printingImageRetriesExhaustedFailureCode,
   toleratesRequestFailure,
   type EvidencePlanRequest,
-} from "../source-evidence/index";
+} from "../source-evidence";
 import { parseRetainedLegalityRules, regionForLineage, type RetainedLegalityRule } from "../legality";
 
 type PlannedRequestRow = {

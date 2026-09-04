@@ -1,16 +1,17 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import { captureOperationIdentity, parseCapturedRequest } from "../../../src/catalogue/source-evidence-capture";
+import {
+  captureOperationIdentity,
+  parseCapturedRequest,
+  pendingEvidenceRequests,
+  persistOfficialSourceCollectionPlan,
+  requiredEvidenceRun,
+} from "../../../src/catalogue/source-evidence";
 import {
   globalEmergencySourceRequestCeiling,
   installedSourceAdapterRegistrations,
   officialSourceDiscoveryRequests,
 } from "../../../src/catalogue/adapters";
-import {
-  pendingEvidenceRequests,
-  persistOfficialSourceCollectionPlan,
-  requiredEvidenceRun,
-} from "../../../src/catalogue/source-evidence-repository";
 import { sha256, utf8 } from "../../../src/catalogue/shared";
 import retainedFusionWorldDiscovery from "../../../acceptance/fixtures/retained-official-source/fusion-world-en-restructured-card-search.json";
 import {

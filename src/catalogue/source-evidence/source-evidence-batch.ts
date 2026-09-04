@@ -8,10 +8,7 @@ import {
   type CaptureTransportResult,
   type SourceHostPacingMode,
 } from "./source-evidence-capture";
-import {
-  requiredEvidenceRun,
-  type EvidenceRequestRow,
-} from "./source-evidence-repository";
+import { requiredEvidenceRun, type EvidenceRequestRow } from "./source-evidence-repository";
 
 // Durable-step layout for one hostname shard of an Ingestion Run's
 // collection (issue #138).
@@ -96,12 +93,9 @@ export type SourceRequestBatchOutcome = Readonly<{
   halt: SourceRequestBatchHalt | null;
 }>;
 
-export async function collectSourceRequestBatch(
-  input: SourceRequestBatchInput,
-): Promise<SourceRequestBatchOutcome> {
+export async function collectSourceRequestBatch(input: SourceRequestBatchInput): Promise<SourceRequestBatchOutcome> {
   const startedAt = Date.now();
-  const timeBudget =
-    input.timeBudgetMilliseconds ?? collectionBatchTimeBudgetMilliseconds;
+  const timeBudget = input.timeBudgetMilliseconds ?? collectionBatchTimeBudgetMilliseconds;
   const wait = input.wait ?? defaultWait;
   let persistence: Promise<void> = Promise.resolve();
   let persistenceFailure: { error: unknown } | null = null;
@@ -126,11 +120,7 @@ export async function collectSourceRequestBatch(
         halt = { kind: "run_not_collecting" };
         break;
       }
-      const prepared = await prepareCaptureAttempt(
-        input.database,
-        run,
-        request,
-      );
+      const prepared = await prepareCaptureAttempt(input.database, run, request);
       if (prepared.kind === "done") {
         processed += 1;
         continue;
@@ -142,16 +132,12 @@ export async function collectSourceRequestBatch(
             kind: "captured",
             source_snapshot_id: snapshotId,
             request_made: false,
-          })
+          }),
         );
         processed += 1;
         continue;
       }
-      const pacingDelay = await hostPacingDelay(
-        input.database,
-        input.hostname,
-        input.pacingMode,
-      );
+      const pacingDelay = await hostPacingDelay(input.database, input.hostname, input.pacingMode);
       if (pacingDelay > 0) await wait(pacingDelay);
       const result = await capturePreparedAttempt(
         input.database,
@@ -164,12 +150,7 @@ export async function collectSourceRequestBatch(
       if (result.request_made) {
         // Persisted before anything else so a replay after a crash here
         // still waits the full interval from this fetch.
-        await advanceHostPacing(
-          input.database,
-          input.hostname,
-          input.pacingMode,
-          input.pacingIntervalMilliseconds,
-        );
+        await advanceHostPacing(input.database, input.hostname, input.pacingMode, input.pacingIntervalMilliseconds);
       }
       if (result.kind === "wait") {
         halt = {

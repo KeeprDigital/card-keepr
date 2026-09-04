@@ -358,7 +358,7 @@ test("the Catalogue Export schema carries typed Product, Release, and Legality p
 test("the baseline registers exactly the installed adapter versions immutably", async () => {
   const baseline = await readFile(resolve(root, "migrations", "0001_baseline.sql"), "utf8");
   // The seed rows must equal installedSourceAdapterRegistrations in
-  // src/catalogue/source-adapters.ts. Before Go-Live (ADR 0008) each Source
+  // src/catalogue/adapters/source-adapters.ts. Before Go-Live (ADR 0008) each Source
   // Lineage registers exactly one production raw version and a capacity
   // change edits its row in place (#134, #135).
   const expected = installedSourceAdapterRegistrations

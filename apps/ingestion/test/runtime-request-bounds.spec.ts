@@ -6,8 +6,8 @@ import {
   pendingEvidenceRequestPage,
   pendingEvidenceRequests,
   requiredEvidenceRun,
-} from "../../../src/catalogue/source-evidence-repository";
-import { officialCollectionRequestsFromDiscovery } from "../../../src/catalogue/source-evidence-model";
+  officialCollectionRequestsFromDiscovery,
+} from "../../../src/catalogue/source-evidence";
 import { canonicalJson, utf8 } from "../../../src/catalogue/shared";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 import { productionRepresentableFusionLegalityResponse } from "./production-source-fixture-routing";

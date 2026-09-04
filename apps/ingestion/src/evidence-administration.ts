@@ -1,17 +1,13 @@
 import { AdministrationProblem } from "../../../src/catalogue/shared";
-import type {
-  EvidenceParentWorkflowParams,
-  EvidenceHostWorkflowParams,
-} from "../../../src/catalogue/source-evidence-model";
 import {
+  type EvidenceParentWorkflowParams,
+  type EvidenceHostWorkflowParams,
   classifyCollectionProgress,
   parentAttemptNumber,
   parentWorkflowAttemptId,
   safeWorkflowStatus,
   type CollectionProgressFacts,
   type SafeWorkflowStatus,
-} from "../../../src/catalogue/collection-recovery";
-import {
   collectionProgressFacts,
   currentCollectionWorkflowIds,
   pauseEvidenceRunForWorkflowRecovery,
@@ -22,7 +18,7 @@ import {
   terminateEvidenceRun,
   workflowAttemptStatements,
   type IngestionEvidenceRow,
-} from "../../../src/catalogue/source-evidence-repository";
+} from "../../../src/catalogue/source-evidence";
 
 type AcquiredParent = {
   instance: WorkflowInstance;

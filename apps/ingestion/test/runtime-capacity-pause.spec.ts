@@ -1,11 +1,12 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import { parseCapturedRequest, prepareCaptureAttempt } from "../../../src/catalogue/source-evidence-capture";
 import {
+  parseCapturedRequest,
+  prepareCaptureAttempt,
   finalizeEvidenceRun,
   pendingEvidenceRequests,
   requiredEvidenceRun,
-} from "../../../src/catalogue/source-evidence-repository";
+} from "../../../src/catalogue/source-evidence";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import { administrationRequest, type CollectionDocument, installRuntimeSuite, showCollection } from "./runtime-helpers";
 import { fusionWorldRequestCapacity, pauseRunAtCapacity } from "./capacity-pause-helpers";

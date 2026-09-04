@@ -3,12 +3,13 @@
 `src/catalogue` is being moved from one flat directory into ten cluster
 directories by an expand-contract series:
 
-- **#96 (expand, this step)**: each cluster directory exists with an
+- **#96 (expand, done)**: each cluster directory exists with an
   `index.ts` that re-exports its intended public surface from the flat
   files. Nothing has moved; every existing import keeps working.
-- **#97 (migrate)**: each flat file moves into its cluster, one cluster per
-  commit, and imports are repointed at the cluster indexes. Cross-cluster
-  imports go through indexes only.
+- **#97 (migrate, this step)**: each flat file moves into its cluster, one
+  cluster per commit, and imports are repointed at the cluster indexes.
+  Cross-cluster imports go through indexes only; within a cluster, modules
+  import each other by relative path.
 - **#98 (contract)**: the flat layout and compatibility re-exports are
   removed, and a boundary check enforces that the api worker imports only
   `read` and `shared`, and that no `read` module imports `ingestion`,
@@ -17,13 +18,14 @@ directories by an expand-contract series:
 `npm run check:catalogue-cycles` walks every module under `src/catalogue`,
 including the cluster directories, and fails on any import cycle.
 
-## Which cluster owns which flat file
+## Which cluster owns which file
 
-Every flat file belongs to exactly one cluster. The right-hand column is the
-public surface the cluster's `index.ts` re-exports today; anything a flat
-file exports that is not listed there is cluster-internal.
+Every module belongs to exactly one cluster directory (the former flat
+file names are unchanged). The right-hand column is the public surface the
+cluster's `index.ts` re-exports today; anything a module exports that is
+not listed there is cluster-internal.
 
-| Cluster | Flat files | Public surface (`index.ts`) |
+| Cluster | Files | Public surface (`index.ts`) |
 | --- | --- | --- |
 | `shared` | `serialization.ts`, `export-compression.ts`, `calendar-date.ts`, `streaming-sha256.ts`, `idempotent-identities.ts`, `administration-problem.ts`, `operational-diagnostics.ts`, `spine-revision.mjs` (+ `.d.mts`), `catalogue-candidate-types.ts`, `catalogue-candidate.ts`, `curated-provenance.ts`, `reconciliation-profile.ts`, `reconciliation-payload.ts`, `export-limits.ts` | Canonical JSON and hashing, deterministic gzip, calendar-date check, streaming SHA-256, idempotent identities, `AdministrationProblem`, operational diagnostics, `SPINE_REVISION_ID`, the Catalogue Candidate contract and its leaf types, Curated Provenance types, Game Profile contract helpers, D1 payload chunking and the guarded atomic batch, export limits |
 | `read` | `read.ts`, `detail-representation.ts`, `card-collection-read.ts`, `printing-collection-read.ts`, `product-release-read.ts`, `legality-status.ts`, `card-search.ts`, `source-freshness.ts` | The api worker's response builders and read problems (cards, printings, products, exports, status, Legality Status), the card-search text and query contract, source-freshness storage helpers |
@@ -61,11 +63,11 @@ The api worker imports `read` only (its transitive reach into `legality`
 and `adapters` through `legality-status.ts` and `source-freshness.ts` is
 what #98 addresses); the ingestion worker imports everything else.
 
-## Edges #97 must repoint to keep the cluster graph acyclic
+## Edges #97 repointed to keep the cluster graph acyclic
 
-The flat module graph is acyclic, but three edges cross clusters against
-the direction above. Each is a compatibility re-export whose real owner is
-`shared`, so repointing the import removes the edge:
+The flat module graph was acyclic, but three edges crossed clusters against
+the direction above. Each was a compatibility re-export whose real owner is
+`shared`, so #97 repointed the import at the owner, removing the edge:
 
 - `source-evidence-*.ts`, `card-printing-reconciliation.ts`,
   `reconciliation-workflow.ts`, and `card-search-repair-administration.ts`

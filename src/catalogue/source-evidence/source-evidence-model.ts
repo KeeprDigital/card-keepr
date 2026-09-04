@@ -1,4 +1,4 @@
-import { canonicalJson, sha256, utf8, AdministrationProblem } from "./shared";
+import { canonicalJson, sha256, utf8, AdministrationProblem } from "../shared";
 import {
   assertAdapterRequestSurface,
   assertAdapterBinding,
@@ -7,7 +7,7 @@ import {
   requiredOfficialSourceContract,
   requiredSourceAdapter,
   type SourceAdapterRegistration,
-} from "./adapters";
+} from "../adapters";
 
 // The polite steady-state interval between requests to one Official Source
 // hostname when no deployment override is configured.

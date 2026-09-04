@@ -1,7 +1,7 @@
 import { env, exports } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
-import { startEvidenceRun } from "../../../src/catalogue/source-evidence-repository";
+import { startEvidenceRun } from "../../../src/catalogue/source-evidence";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import { fusionWorldProductionCollectionRequests } from "./production-collection-request-goldens";
 

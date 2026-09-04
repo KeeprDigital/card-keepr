@@ -1,9 +1,6 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import {
-  pauseEvidenceRunForWorkflowRecovery,
-  resumePausedEvidenceRun,
-} from "../../../src/catalogue/source-evidence-repository";
+import { pauseEvidenceRunForWorkflowRecovery, resumePausedEvidenceRun } from "../../../src/catalogue/source-evidence";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
 import {
   administrationRequest,

@@ -1,8 +1,6 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import {
-  sourceHostPacingIntervalMilliseconds,
-} from "../../../src/catalogue/source-evidence-capture";
+import { sourceHostPacingIntervalMilliseconds } from "../../../src/catalogue/source-evidence";
 import {
   type CollectionDocument,
   fixtureEvidenceRequest,
@@ -23,9 +21,7 @@ const requestCount = 60;
 const hostname = "throughput-official-source.invalid";
 
 test("a single-host collection spends close to the pacing interval per Source Request", async () => {
-  const pacingIntervalMs = sourceHostPacingIntervalMilliseconds(
-    env.SOURCE_HOST_PACING_INTERVAL_MS,
-  );
+  const pacingIntervalMs = sourceHostPacingIntervalMilliseconds(env.SOURCE_HOST_PACING_INTERVAL_MS);
   const response = await fixtureEvidenceRequest({
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
@@ -78,9 +74,7 @@ test("a single-host collection spends close to the pacing interval per Source Re
   expect(Math.min(...gaps)).toBeGreaterThanOrEqual(pacingIntervalMs - 5);
   // Acceptance criterion from #138: wall time per request within ~0.5 s of
   // the pacing interval.
-  expect(summary.wall_per_request_ms.mean).toBeLessThanOrEqual(
-    pacingIntervalMs + 500,
-  );
+  expect(summary.wall_per_request_ms.mean).toBeLessThanOrEqual(pacingIntervalMs + 500);
 }, 360_000);
 
 function statistics(values: readonly number[]): {

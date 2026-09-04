@@ -24,6 +24,9 @@ import {
   sourceObservationSetContent,
   sourceSnapshotContent,
   startEvidenceRun,
+  sourceHostPacingIntervalMilliseconds,
+  sourceHostPacingMode,
+  type EvidenceInspectionOptions,
 } from "../../../src/catalogue/source-evidence";
 import { showReconciledPrinting, startOrObserveReconciliationWorkflow } from "../../../src/catalogue/reconciliation";
 import {
@@ -62,11 +65,6 @@ import {
   routePath,
   type PublicBase,
 } from "../../../src/http/public-base";
-import {
-  sourceHostPacingIntervalMilliseconds,
-  sourceHostPacingMode,
-} from "../../../src/catalogue/source-evidence-capture";
-import type { EvidenceInspectionOptions } from "../../../src/catalogue/source-evidence-repository";
 
 // The live facts the evidence status document reads beyond D1: hostname-shard
 // Workflow statuses and the configured per-host pacing that grounds its
