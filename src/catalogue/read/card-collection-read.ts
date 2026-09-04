@@ -27,7 +27,6 @@ type CardRow = {
 
 const maximumCollectionResponseBytes = 4 * 1024 * 1024;
 const collectionEnvelopeAllowanceBytes = 32 * 1024;
-const maximumRowsPerDatabaseRead = 8;
 const encoder = new TextEncoder();
 
 type CardCursor = {
@@ -74,22 +73,28 @@ export async function cardCollectionResponse(
   if (conditional !== null) return conditional;
 
   const queried = await queryCardPage(database, revision.id, filters, cursor?.after ?? null);
-  const pageRows = [...queried.rows];
-  let truncated = false;
+  const serializedRows = queried.rows.map((row) =>
+    JSON.stringify(absoluteDocumentLinks(JSON.parse(row.summary_json), base)),
+  );
+  let count = serializedRows.length;
+  let dataBytes =
+    serializedRows.reduce((total, row) => total + encoder.encode(row).byteLength, 0) + Math.max(0, count - 1);
   while (true) {
     const nextCursor =
-      (queried.hasMore || truncated) && pageRows.length > 0
+      (queried.hasMore || count < queried.rows.length) && count > 0
         ? encodeCursor({
             contract: "card-keepr-card-cursor@1",
             route: "/v1/cards",
             order: cardCollectionOrder,
             revision_id: revision.id,
             filters,
-            after: rowCursor(pageRows.at(-1)!),
+            after: rowCursor(queried.rows[count - 1]!),
           })
         : null;
-    const serialized = JSON.stringify({
-      data: pageRows.map((row) => absoluteDocumentLinks(JSON.parse(row.summary_json), base)),
+    // Only the small envelope changes while trimming. Each Card is parsed,
+    // link-expanded, and serialized once, even when link expansion exceeds
+    // the allowance used by the database byte window.
+    const envelope = JSON.stringify({
       meta: {
         catalogue_revision_id: revision.id,
         published_at: revision.published_at,
@@ -108,19 +113,20 @@ export async function cardCollectionResponse(
         ),
       },
     });
-    if (encoder.encode(serialized).byteLength <= maximumCollectionResponseBytes) {
-      return new Response(serialized, {
+    const suffix = `],${envelope.slice(1)}`;
+    if (dataBytes + encoder.encode(`{"data":[${suffix}`).byteLength <= maximumCollectionResponseBytes) {
+      return new Response(`{"data":[${serializedRows.slice(0, count).join(",")}${suffix}`, {
         headers: {
           ...headers,
           "content-type": "application/json",
         },
       });
     }
-    if (pageRows.length <= 1) {
+    if (count <= 1) {
       throw new ReadProblem(503, "catalogue_query_unavailable", "The Card page exceeds its response budget.");
     }
-    pageRows.pop();
-    truncated = true;
+    count -= 1;
+    dataBytes -= encoder.encode(serializedRows[count]!).byteLength + 1;
   }
 }
 
@@ -130,38 +136,46 @@ async function queryCardPage(
   filters: CollectionFilters,
   after: CardCursor["after"] | null,
 ): Promise<{ rows: CardRow[]; hasMore: boolean }> {
+  // First select only keys and byte lengths. The window bounds the documents
+  // crossing D1's binding without fetching every candidate into Worker memory.
+  const query = cardCollectionPageQuery(revisionId, filters, after, filters.limit + 1, true);
+  const result = await database
+    .prepare(`
+    WITH candidates AS MATERIALIZED (${query.sql}),
+    sized AS (
+      SELECT *,
+        sum(summary_bytes + 1) OVER page_order + 1 AS cumulative_bytes,
+        row_number() OVER page_order AS ordinal
+      FROM candidates
+      WINDOW page_order AS (
+        ORDER BY sort_game, sort_identity_kind, sort_identity_value, sort_id
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+      )
+    )
+    SELECT sized.sort_game, sized.sort_identity_kind,
+           sized.sort_identity_value, sized.sort_id, documents.summary_json
+    FROM sized
+    LEFT JOIN revision_card_query_documents AS documents
+      ON documents.catalogue_revision_id = ?
+     AND documents.card_id = sized.sort_id
+     AND sized.ordinal <= ?
+     AND (sized.cumulative_bytes <= ? OR sized.ordinal = 1)
+    ORDER BY sized.sort_game, sized.sort_identity_kind,
+             sized.sort_identity_value, sized.sort_id
+  `)
+    .bind(
+      ...query.bindings,
+      revisionId,
+      filters.limit,
+      maximumCollectionResponseBytes - collectionEnvelopeAllowanceBytes,
+    )
+    .all<Omit<CardRow, "summary_json"> & { summary_json: string | null }>();
   const rows: CardRow[] = [];
-  let dataBytes = 2;
-  let position = after;
-  const singleFtsRead = filters.q !== null && cardSearchFtsQuery(filters.q, revisionId) !== null;
-  while (rows.length < filters.limit + 1) {
-    const remaining = filters.limit + 1 - rows.length;
-    const rowLimit = singleFtsRead ? remaining : Math.min(maximumRowsPerDatabaseRead, remaining);
-    const query = cardCollectionPageQuery(revisionId, filters, position, rowLimit);
-    const result = await database
-      .prepare(query.sql)
-      .bind(...query.bindings)
-      .all<CardRow>();
-    if (result.results.length === 0) {
-      return { rows, hasMore: false };
-    }
-    for (const row of result.results) {
-      const rowBytes = encoder.encode(row.summary_json).byteLength + (rows.length === 0 ? 0 : 1);
-      if (rows.length > 0 && dataBytes + rowBytes > maximumCollectionResponseBytes - collectionEnvelopeAllowanceBytes) {
-        return { rows, hasMore: true };
-      }
-      rows.push(row);
-      dataBytes += rowBytes;
-      if (rows.length > filters.limit) {
-        return { rows: rows.slice(0, filters.limit), hasMore: true };
-      }
-      position = rowCursor(row);
-    }
-    if (result.results.length < rowLimit) {
-      return { rows, hasMore: false };
-    }
+  for (const row of result.results) {
+    if (row.summary_json === null) return { rows, hasMore: true };
+    rows.push({ ...row, summary_json: row.summary_json });
   }
-  return { rows: rows.slice(0, filters.limit), hasMore: true };
+  return { rows, hasMore: false };
 }
 
 export function cardCollectionPageQuery(
@@ -169,6 +183,7 @@ export function cardCollectionPageQuery(
   filters: CollectionFilters,
   after: CardCursor["after"] | null,
   rowLimit = filters.limit + 1,
+  sizesOnly = false,
 ): { sql: string; bindings: (string | number)[] } {
   const search = filters.q === null ? null : cardSearchQuery(filters.q);
   if (filters.q !== null && search === null) {
@@ -178,7 +193,7 @@ export function cardCollectionPageQuery(
   const ftsSearch = search !== null && ftsQuery !== null;
   const shortSearch = search !== null && ftsQuery === null;
   if (ftsSearch) {
-    return ftsCardCollectionPageQuery(revisionId, filters, search.text, ftsQuery, after, rowLimit);
+    return ftsCardCollectionPageQuery(revisionId, filters, search.text, ftsQuery, after, rowLimit, sizesOnly);
   }
   const orderTable = shortSearch ? "search" : "cards";
   const conditions = ["cards.catalogue_revision_id = ?"];
@@ -214,7 +229,7 @@ export function cardCollectionPageQuery(
   }
   bindings.push(rowLimit);
   return {
-    sql: `SELECT cards.summary_json,
+    sql: `SELECT ${sizesOnly ? "length(CAST(cards.summary_json AS BLOB)) AS summary_bytes" : "cards.summary_json"},
               ${orderTable}.sort_game,
               ${orderTable}.sort_identity_kind,
               ${orderTable}.sort_identity_value,
@@ -247,6 +262,7 @@ function ftsCardCollectionPageQuery(
   ftsQuery: string,
   after: CardCursor["after"] | null,
   rowLimit: number,
+  sizesOnly: boolean,
 ): { sql: string; bindings: (string | number)[] } {
   const conditions = [
     "revision_card_search_fts MATCH ?",
@@ -274,7 +290,7 @@ function ftsCardCollectionPageQuery(
   bindings.push(rowLimit);
   return {
     sql: `WITH search_matches AS MATERIALIZED (
-         SELECT filtered.summary_json,
+         SELECT ${sizesOnly ? "length(CAST(filtered.summary_json AS BLOB)) AS summary_bytes" : "filtered.summary_json"},
                 filtered.sort_game,
                 filtered.sort_identity_kind,
                 filtered.sort_identity_value,
@@ -292,7 +308,7 @@ function ftsCardCollectionPageQuery(
                   filtered.sort_id
          LIMIT ?
        )
-       SELECT summary_json, sort_game, sort_identity_kind,
+       SELECT ${sizesOnly ? "summary_bytes" : "summary_json"}, sort_game, sort_identity_kind,
               sort_identity_value, sort_id
        FROM search_matches
        ORDER BY sort_game, sort_identity_kind, sort_identity_value, sort_id`,

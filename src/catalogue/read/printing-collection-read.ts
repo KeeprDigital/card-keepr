@@ -14,6 +14,7 @@ import {
   ReadProblem,
   revisionHeaders,
 } from "./collection-endpoint";
+import { printingCollectionQuery } from "./printing-collection-query";
 
 const printingRoute = "/v1/printings";
 const printingOrder = "card-id,printing-id";
@@ -77,93 +78,9 @@ export async function currentPrintingsResponse(
   const conditional = conditionalResponse(request, revisionHeaders(revisionId, etag));
   if (conditional !== null) return conditional;
 
+  const query = printingCollectionQuery(revisionId, filters, after, limit + 1);
   const page = await collectionPage<{ printing_id: string; card_id: string; document_json: string }>(
-    database
-      .prepare(
-        `SELECT printing.printing_id, printing.card_id,
-              printing.document_json
-       FROM revision_printings AS printing
-       JOIN revision_cards AS card
-         ON card.catalogue_revision_id = printing.catalogue_revision_id
-        AND card.card_id = printing.card_id
-       WHERE printing.catalogue_revision_id = ?
-         AND (? IS NULL OR printing.card_id = ?)
-         AND (
-           ? IS NULL OR
-           json_extract(card.document_json, '$.game') = ?
-         )
-         AND (
-           ? IS NULL OR
-           coalesce(
-             json_extract(
-               printing.document_json, '$.data.rarity.normalized'
-             ),
-             json_extract(
-               printing.document_json, '$.rarity.normalized'
-             )
-           ) = ?
-         )
-         AND (
-           ? = 0 OR
-           (printing.card_id, printing.printing_id) > (?, ?)
-         )
-         AND (
-           (? IS NULL AND ? IS NULL)
-           OR EXISTS (
-             SELECT 1
-             FROM revision_product_relationships AS relationship
-             JOIN revision_products AS product
-               ON product.catalogue_revision_id =
-                    relationship.catalogue_revision_id
-              AND product.product_id =
-                    json_extract(relationship.document_json, '$.to.id')
-             WHERE relationship.catalogue_revision_id =
-                     printing.catalogue_revision_id
-               AND json_extract(
-                     relationship.document_json, '$.kind'
-                   ) = 'printing-product'
-               AND json_extract(
-                     relationship.document_json, '$.from.id'
-                   ) = printing.printing_id
-               AND coalesce(
-                     json_extract(
-                       relationship.document_json, '$.lifecycle.current'
-                     ),
-                     1
-                   ) = 1
-               AND (
-                 ? IS NULL OR product.product_id = ?
-               )
-               AND (
-                 ? IS NULL OR EXISTS (
-                   SELECT 1 FROM json_each(product.release_regions_json)
-                   WHERE value = ?
-                 )
-               )
-           )
-         )
-       ORDER BY printing.card_id, printing.printing_id
-       LIMIT ?`,
-      )
-      .bind(
-        revisionId,
-        cardId,
-        cardId,
-        game,
-        game,
-        rarity,
-        rarity,
-        after === null ? 0 : 1,
-        after?.card_id ?? "",
-        after?.id ?? "",
-        productId,
-        releaseRegion,
-        productId,
-        productId,
-        releaseRegion,
-        releaseRegion,
-        limit + 1,
-      ),
+    database.prepare(query.sql).bind(...query.bindings),
     limit,
   );
   const selected = page.rows.map((row) => ({

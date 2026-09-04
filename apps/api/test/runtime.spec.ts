@@ -2576,12 +2576,40 @@ test("authenticated Card search validates raw and normalized q at 1 through 500 
   }
 });
 
+test("a normal 100-Card page uses one page read after revision lookup", async () => {
+  await seedApiRevision({
+    revisionId: "catrev_page_reads",
+    runId: "run_page_reads",
+    cards: Array.from({ length: 101 }, (_, index) =>
+      apiCard({
+        id: `card_page_reads_${String(index).padStart(3, "0")}`,
+        cardNumber: `OP29-${String(100 + index)}`,
+        name: `Measured Card ${index}`,
+      }),
+    ),
+  });
+  const records: string[] = [];
+  vi.spyOn(console, "info").mockImplementation((value) => records.push(String(value)));
+  const response = await apiWorker.fetch(
+    new Request("https://card-keepr.invalid/v1/cards?limit=100", {
+      headers: apiHeaders("203.0.113.57"),
+    }),
+    testEnv,
+  );
+  expect(response.status).toBe(200);
+  const document = await response.json<{ data: unknown[]; page: { next_cursor: string | null } }>();
+  expect(document.data).toHaveLength(100);
+  expect(document.page.next_cursor).toEqual(expect.any(String));
+  const record = JSON.parse(records.at(-1)!);
+  expect(record.d1.prepared_statements).toBeLessThanOrEqual(2);
+});
+
 test("authenticated Card collection pages remain byte-bounded for large valid records", async () => {
   const cards = Array.from({ length: 18 }, (_, index) =>
     apiCard({
       id: `card_large_page_${String(index).padStart(3, "0")}`,
       cardNumber: `OP29-${String(600 + index)}`,
-      name: `Large Card ${String(index).padStart(3, "0")} ${"x".repeat(250_000)}`,
+      name: `Large Card ${String(index).padStart(3, "0")} ${"x".repeat(259_000)}`,
     }),
   );
   await seedApiRevision({
@@ -2604,6 +2632,30 @@ test("authenticated Card collection pages remain byte-bounded for large valid re
   expect(document.data.length).toBeGreaterThan(0);
   expect(document.data.length).toBeLessThan(cards.length);
   expect(document.page.next_cursor).toEqual(expect.any(String));
+  // Link expansion can exceed the database envelope allowance. Follow every
+  // cursor through that fallback and prove no Card is skipped or repeated.
+  const mount = `/${"m".repeat(8_000)}`;
+  const mountedBase = `https://card-keepr.invalid${mount}`;
+  const found: string[] = [];
+  let after: string | null = null;
+  do {
+    const url = new URL(`${mountedBase}/v1/cards?limit=100`);
+    if (after !== null) url.searchParams.set("after", after);
+    const mounted = await apiWorker.fetch(
+      new Request(url, {
+        headers: apiHeaders("203.0.113.59"),
+      }),
+      { ...testEnv, PUBLIC_BASE_URL: mountedBase },
+    );
+    expect(mounted.status).toBe(200);
+    expect((await mounted.clone().arrayBuffer()).byteLength).toBeLessThanOrEqual(4 * 1024 * 1024);
+    const page = await mounted.json<{ data: { id: string }[]; page: { next_cursor: string | null } }>();
+    if (after === null) expect(page.data.length).toBeLessThan(document.data.length);
+    expect(page.data.length).toBeGreaterThan(0);
+    found.push(...page.data.map((card) => card.id));
+    after = page.page.next_cursor;
+  } while (after !== null);
+  expect(found).toEqual(cards.map((card) => card.id));
 }, 15_000);
 
 test("Card cursors reject route, ordering, and structural misuse", async () => {
