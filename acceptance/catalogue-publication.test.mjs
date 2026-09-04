@@ -4,25 +4,16 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import {
-  runCli,
-  startWorker,
-  stopWorker,
-  waitForHealth,
-} from "./helpers/acceptance-runtime.mjs";
+import { runCli, startWorker, stopWorker, waitForHealth } from "./helpers/acceptance-runtime.mjs";
 
 test("synthetic fixture publication is unavailable through the production Worker and CLI seams", async (t) => {
-  const testDirectory = await mkdtemp(
-    join(tmpdir(), "card-keepr-publication-boundary-"),
-  );
+  const testDirectory = await mkdtemp(join(tmpdir(), "card-keepr-publication-boundary-"));
   const statePath = join(testDirectory, "shared-state");
   const administrationKey = randomUUID();
   const ingestionEnv = join(testDirectory, "ingestion.env");
-  await writeFile(
-    ingestionEnv,
-    `ADMINISTRATION_KEY=${administrationKey}\nADMINISTRATION_CLOCK_MODE=request\n`,
-    { mode: 0o600 },
-  );
+  await writeFile(ingestionEnv, `ADMINISTRATION_KEY=${administrationKey}\nADMINISTRATION_CLOCK_MODE=request\n`, {
+    mode: 0o600,
+  });
 
   const ingestion = await startWorker({
     config: "apps/ingestion/wrangler.jsonc",
@@ -54,24 +45,30 @@ test("synthetic fixture publication is unavailable through the production Worker
   };
   const started = await runCli(
     [
-      "run",
-      "start",
-      "--fixture",
-      "first-catalogue",
-      "--games",
+      "source",
+      "collect",
+      "--game",
       "one-piece",
+      "--lineage",
+      "one-piece-en",
+      "--adapter",
+      "fixture-one-piece-json@3",
+      "--request-id",
+      "one-piece-en:discovery",
+      "--url",
+      "https://en.onepiece-cardgame.com/cardlist/",
       "--idempotency-key",
       "production-fixture-cli-bypass",
       "--json",
     ],
     cliEnvironment,
   );
-  assert.equal(started.code, 6, started.stderr);
+  assert.equal(started.code, 8, started.stderr);
   assert.deepEqual(JSON.parse(started.stdout), {
     contract: "card-keepr-cli-problem@1",
     status: "error",
-    code: "not_found",
-    detail: "The requested administration operation does not exist.",
+    code: "adapter_not_supported",
+    detail: "The requested Official Source adapter version is not active for new collection.",
   });
 
   const status = await runCli(["status", "--json"], cliEnvironment);

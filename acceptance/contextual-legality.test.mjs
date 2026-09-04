@@ -1,3 +1,4 @@
+import { syntheticSourceAdapterMigrations } from "./helpers/synthetic-source-adapters.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -8,7 +9,7 @@ import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import {
-  ADMINISTRATION_POLL_INTERVAL_MS,
+  administrationPollInterval,
   runCli,
   startWorker,
   stopWorker,
@@ -112,7 +113,9 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
       },
     ],
   });
-  const apiConfig = await localConfig("apps/api/wrangler.jsonc", directory, "api");
+  const apiConfig = await localConfig("apps/api/wrangler.jsonc", directory, "api", {
+    main: resolve(root, "test/support/api-worker.ts"),
+  });
   const ingestionEnv = join(directory, "ingestion.env");
   const apiEnv = join(directory, "api.env");
   await Promise.all([
@@ -128,6 +131,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     config: ingestionConfig,
     envFile: ingestionEnv,
     migrate: true,
+    testMigrations: await syntheticSourceAdapterMigrations(),
     statePath,
   });
   let api = null;
@@ -1055,7 +1059,9 @@ test("fixture-backed DON!! ingestion reaches the authenticated consumer boundary
       },
     ],
   });
-  const apiConfig = await localConfig("apps/api/wrangler.jsonc", directory, "don-api");
+  const apiConfig = await localConfig("apps/api/wrangler.jsonc", directory, "don-api", {
+    main: resolve(root, "test/support/api-worker.ts"),
+  });
   const ingestionEnv = join(directory, "don-ingestion.env");
   const apiEnv = join(directory, "don-api.env");
   await Promise.all([
@@ -1070,6 +1076,7 @@ test("fixture-backed DON!! ingestion reaches the authenticated consumer boundary
     config: ingestionConfig,
     envFile: ingestionEnv,
     migrate: true,
+    testMigrations: await syntheticSourceAdapterMigrations(),
     statePath,
   });
   let api = null;
@@ -1145,7 +1152,9 @@ test("authenticated publication serves repeatable contextual legality export byt
       },
     ],
   });
-  const apiConfig = await localConfig("apps/api/wrangler.jsonc", directory, "golden-api");
+  const apiConfig = await localConfig("apps/api/wrangler.jsonc", directory, "golden-api", {
+    main: resolve(root, "test/support/api-worker.ts"),
+  });
   const ingestionEnv = join(directory, "ingestion.env");
   const apiEnv = join(directory, "api.env");
   await Promise.all([
@@ -1161,6 +1170,7 @@ test("authenticated publication serves repeatable contextual legality export byt
     config: ingestionConfig,
     envFile: ingestionEnv,
     migrate: true,
+    testMigrations: await syntheticSourceAdapterMigrations(),
     statePath,
   });
   let api = null;
@@ -1240,12 +1250,13 @@ test("authenticated publication serves repeatable contextual legality export byt
     assert.equal(rule.source_field_pointers.official_wording, `${rule.source_observation_pointer}/official_wording`);
     assert.equal(rule.source_field_pointers.effect, `${rule.source_observation_pointer}/effect`);
   }
+  // The ordinary discovery root is part of this retained observation identity.
   assert.deepEqual([...new Set(rules.flatMap((rule) => rule.source_observation_ids))].sort(), [
-    "srcobs_43dde4d5a225defce9b4b3aeb4df709381fca63d5d8259d2804a4cfa9a771920_6",
+    "srcobs_d6bd89834e49c6b56581840390161e82e1ac86fb3ef64cd120e3feb27bd9bda5_6",
   ]);
   assert.equal(
     rules.find((rule) => rule.effective_until !== null)?.source_observation_ids[0],
-    "srcobs_43dde4d5a225defce9b4b3aeb4df709381fca63d5d8259d2804a4cfa9a771920_6",
+    "srcobs_d6bd89834e49c6b56581840390161e82e1ac86fb3ef64cd120e3feb27bd9bda5_6",
   );
   assert.ok(
     rules.every(
@@ -1302,12 +1313,14 @@ async function ingestAndReconcile({
     );
   }
   const run = JSON.parse(collected.stdout);
-  const resumed = await runCli(["source", "resume", "--run-id", run.id, "--json"], environment);
-  if (resumed.code !== 0) {
-    const shown = await runCli(["source", "show", "--run-id", run.id, "--json"], environment);
-    const state = shown.code === 0 ? JSON.parse(shown.stdout).state : null;
-    if (state !== "parsing") {
-      throw new Error(`source resume exited ${resumed.code} in state ${state}\n${resumed.stdout}\n${resumed.stderr}`);
+  if (run.state === "collecting") {
+    const resumed = await runCli(["source", "resume", "--run-id", run.id, "--json"], environment);
+    if (resumed.code !== 0) {
+      const shown = await runCli(["source", "show", "--run-id", run.id, "--json"], environment);
+      const state = shown.code === 0 ? JSON.parse(shown.stdout).state : null;
+      if (state !== "parsing") {
+        throw new Error(`source resume exited ${resumed.code} in state ${state}\n${resumed.stdout}\n${resumed.stderr}`);
+      }
     }
   }
   const reached = await waitForRunState(
@@ -1354,7 +1367,7 @@ async function ingestAndReconcile({
       }
       return { ...observed.output, http_status: candidateStatus };
     }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, ADMINISTRATION_POLL_INTERVAL_MS));
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, administrationPollInterval(ingestion)));
   }
   throw new Error(`reconciliation Workflow ${run.id} did not complete`);
 }

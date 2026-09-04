@@ -13,10 +13,12 @@ The existing wire shapes distinguish Catalogue, Official Erratum, Legality Rule,
 and surface-evidence observations; canonical builders check those shapes without
 adding new fields to retained output.
 
-`source-adapters.ts` adapts that interface to the existing registered
-`parseBytes(bytes, context)` interface and retains the synthetic fixture
-registrations. `product-release-source-adapters.ts` only assembles the game
-adapters and reads their discovery roots.
+`source-adapters.ts` adapts that interface to the registered
+`parseBytes(bytes, context)` interface and ships only Official Source registrations.
+Synthetic registrations live in `test/support/source-adapters` and are installed
+explicitly by the test Worker entrypoints through the registry seam.
+`product-release-source-adapters.ts` only assembles the game adapters and reads
+their discovery roots.
 
 Shared mechanisms stay below the game modules:
 

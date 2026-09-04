@@ -150,10 +150,8 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
     }
     assert.equal(checks.database.migration_level, migrationLevel);
     assert.equal(checks.database.current_revision_id, "catrev_spine_000");
-    // wrangler dev addresses every request at the zone route host from
-    // wrangler.jsonc, not at the bound local origin, so locally the request
-    // never arrives through the configured (local) public base.
-    assert.equal(checks.public_base.arrived_through_public_base, false);
+    // The in-process HTTP bridge preserves the configured local origin.
+    assert.equal(checks.public_base.arrived_through_public_base, true);
     assert.deepEqual(Object.keys(checks.version).sort(), ["id", "status", "tag", "timestamp"]);
   }
   assert.equal(apiChecks.public_base.configured, api.url);
@@ -184,13 +182,13 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
       "api: ok (catalogue:read, printing-image:read, catalogue-export:read, legality-status:read)",
       `  database: pass (schema level ${migrationLevel}, revision catrev_spine_000)`,
       "  objects: pass (PRINTING_IMAGES pass, CATALOGUE_EXPORTS pass)",
-      `  public_base: pass (${api.url}, arrived through it: no)`,
+      `  public_base: pass (${api.url}, arrived through it: yes)`,
       versionLine(apiChecks),
       "ingestion: ok (catalogue:write, evidence:write, printing-image:write, export:write, backup:write, legality-rule:write)",
       `  database: pass (schema level ${migrationLevel}, revision catrev_spine_000, configured database ${ingestionConfig.d1_databases[0].database_id})`,
       "  objects: pass (EVIDENCE_OBJECTS pass, PRINTING_IMAGES pass, CATALOGUE_EXPORTS pass, BACKUPS pass)",
       "  workflows: pass (EVIDENCE_INGESTION_WORKFLOW pass, EVIDENCE_HOST_WORKFLOW pass, RECONCILIATION_WORKFLOW pass, CATALOGUE_BACKUP_WORKFLOW pass)",
-      `  public_base: pass (${ingestion.url}, arrived through it: no)`,
+      `  public_base: pass (${ingestion.url}, arrived through it: yes)`,
       versionLine(ingestionChecks),
       "",
     ].join("\n"),
