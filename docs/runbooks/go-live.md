@@ -42,6 +42,14 @@ query the new database, where that prepared request does not exist. Bootstrap Mo
 only relaxes data-dependent checks for an already-bound empty catalogue; it forbids
 a replacement recovery handoff and does not transfer preparation authority.
 
+The [proposed fresh-baseline handoff](../plans/fresh-baseline-handoff.md) records
+the implementation seams, durable phases and two-D1 acceptance tests. It is
+unimplemented. A prerequisite guarded protocol release must reach the old Workers
+before the baseline fold; its durable mutation fence must cover both D1s and
+cannot be implemented only in the deployment script. That prerequisite does not
+start Go-Live: the baseline and retention freeze still belong to the single
+owner-approved Go-Live release.
+
 Before scheduling Go-Live, design, implement and review a supported fresh-database
 cutover that binds owner approval to both old and new database identities and the
 baseline digest, preserves the canonical lease across the handoff, and gives the
