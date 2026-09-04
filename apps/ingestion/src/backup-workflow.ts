@@ -4,7 +4,7 @@ import {
   failActiveCatalogueBackupAttempt,
   type CatalogueBackupWorkflowParams,
 } from "../../../src/catalogue/backup-recovery";
-import { canonicalJson } from "../../../src/catalogue/shared";
+import { canonicalJson, workflowSteps } from "../../../src/catalogue/shared";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 
 const backupStep = {
@@ -29,7 +29,7 @@ export async function runCatalogueBackupWorkflow(
   ({ env, step } = observeOperationalWorkflow(step, event, env));
   const params = event.payload;
   try {
-    const document = await step.do("export, retain, restore, and verify Catalogue D1", backupStep, async () => {
+    const document = await step.do(workflowSteps.backup.backup, backupStep, async () => {
       return createVerifiedCatalogueBackup(
         env.CATALOGUE_DB,
         env.BACKUPS,
@@ -59,7 +59,7 @@ export async function runCatalogueBackupWorkflow(
     };
   } catch (error) {
     const detail = error instanceof Error ? error.message : "The Catalogue backup Workflow exhausted its retries.";
-    await step.do("finalize exhausted Catalogue backup failure", backupStep, () =>
+    await step.do(workflowSteps.backup.failure, backupStep, () =>
       failActiveCatalogueBackupAttempt(env.CATALOGUE_DB, params.idempotency_key, params.observed_at, detail),
     );
     return {

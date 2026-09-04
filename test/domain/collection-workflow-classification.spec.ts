@@ -1,9 +1,9 @@
+import { isWorkflowInstanceNotFound } from "../../src/catalogue/shared";
 import { expect, test } from "vitest";
 import {
   classifyCollectionProgress,
   classifyCollectionWorkflow,
   collectionStallGraceMilliseconds,
-  isWorkflowInstanceNotFound,
   parentAttemptNumber,
   parentWorkflowAttemptId,
   safeWorkflowStatus,

@@ -82,7 +82,6 @@ export {
   classifyCollectionWorkflow,
   collectionBarrierSleepDuration,
   collectionStallGraceMilliseconds,
-  isWorkflowInstanceNotFound,
   parentAttemptNumber,
   parentWorkflowAttemptId,
   safeWorkflowStatus,
@@ -97,3 +96,5 @@ export { pauseEvidenceCollection, resumeEvidenceRun, terminateEvidenceCollection
 
 export { sourceEvidenceRoutes, evidenceInspectionOptions } from "./routes";
 export type { IngestionEvidenceRow } from "./ingestion-run-repository";
+
+export { recordIngestionWorkflowProgress } from "./workflow-progress";

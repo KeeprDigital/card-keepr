@@ -10,13 +10,23 @@ import {
   finalizeEvidenceRun,
   pendingEvidenceRequestPage,
   recordWorkflowIds,
+  recordIngestionWorkflowProgress,
   requiredEvidenceRun,
   type EvidenceRequestRow,
   collectionBarrierSleepDuration,
-  isWorkflowInstanceNotFound,
 } from "../../../src/catalogue/source-evidence";
 import { reconcileRetainedCardPrintingEvidence } from "../../../src/catalogue/reconciliation";
-import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
+import {
+  canonicalJson,
+  sha256,
+  utf8,
+  workflowDriver,
+  type WorkflowStatus,
+  isWorkflowInstanceNotFound,
+  workflowSteps,
+  workflowStepName,
+  observeWorkflowProgress,
+} from "../../../src/catalogue/shared";
 import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import { durableReconciliationResult } from "./reconciliation-workflow";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
@@ -59,21 +69,25 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
   ): Promise<unknown> {
     const operational = observeOperationalWorkflow(step, event, this.env);
     this.env = operational.env;
-    step = operational.step;
-    const runId = event.payload.ingestion_run_id;
-    const retainedChildIds = await step.do(
-      "load retained hostname Workflow identities",
-      deterministicDatabaseStep,
-      async () => {
-        const run = await requiredEvidenceRun(this.env.CATALOGUE_DB, runId);
-        const parsed: unknown = run.child_workflow_ids_json === null ? [] : JSON.parse(run.child_workflow_ids_json);
-        return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
-      },
+    step = observeWorkflowProgress(operational.step, (progress) =>
+      recordIngestionWorkflowProgress(
+        this.env.CATALOGUE_DB,
+        event.payload.ingestion_run_id,
+        event.instanceId,
+        "parent",
+        progress,
+      ),
     );
+    const runId = event.payload.ingestion_run_id;
+    const retainedChildIds = await step.do(workflowSteps.parent.identities, deterministicDatabaseStep, async () => {
+      const run = await requiredEvidenceRun(this.env.CATALOGUE_DB, runId);
+      const parsed: unknown = run.child_workflow_ids_json === null ? [] : JSON.parse(run.child_workflow_ids_json);
+      return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+    });
     const allChildIds = new Set<string>(retainedChildIds);
     let barrierStage = 0;
     for (;;) {
-      const pendingShards = await loadPendingHostShards(step, this.env.CATALOGUE_DB, runId, `barrier ${barrierStage}`);
+      const pendingShards = await loadPendingHostShards(step, this.env.CATALOGUE_DB, runId, barrierStage);
       const pendingChildren = await Promise.all(
         pendingShards.map(async (shard) => ({
           ...shard,
@@ -99,7 +113,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
       let selectedChildIds: string[] = [];
       if (activeChildren.length > 0) {
         selectedChildIds = await step.do(
-          `recover pending hostname workflows stage ${barrierStage}`,
+          workflowStepName(workflowSteps.parent.recover, { stage: barrierStage }),
           deterministicDatabaseStep,
           async () => {
             const selected: Array<(typeof activeChildren)[number]> = [];
@@ -112,11 +126,9 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
                 selected.push(child);
                 continue;
               }
-              let latest;
-              let status;
+              let status: WorkflowStatus;
               try {
-                latest = await this.env.EVIDENCE_HOST_WORKFLOW.get(latestId);
-                status = await latest.status();
+                status = await workflowDriver(this.env.EVIDENCE_HOST_WORKFLOW).inspect(latestId);
               } catch (error) {
                 // Only a genuinely absent instance may burn one of the
                 // bounded replacement identities. A transient control-plane
@@ -154,7 +166,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
                 });
               } else {
                 if (status.status === "paused") {
-                  await latest.resume();
+                  await workflowDriver(this.env.EVIDENCE_HOST_WORKFLOW).resume(latestId);
                 }
                 selected.push({ ...child, id: latestId });
               }
@@ -164,7 +176,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
             // each recovery pass closes that gap.
             for (let offset = 0; offset < selected.length; offset += 100) {
               const batch = selected.slice(offset, offset + 100);
-              await this.env.EVIDENCE_HOST_WORKFLOW.createBatch(
+              await workflowDriver(this.env.EVIDENCE_HOST_WORKFLOW).ensureBatch(
                 batch.map((child) => ({
                   id: child.id,
                   params: {
@@ -175,13 +187,6 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
                   },
                 })),
               );
-              const children = await Promise.all(batch.map((child) => this.env.EVIDENCE_HOST_WORKFLOW.get(child.id)));
-              for (const child of children) {
-                const status = await child.status();
-                if (status.status === "paused") {
-                  await child.resume();
-                }
-              }
             }
             return selected.map((child) => child.id);
           },
@@ -191,7 +196,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
       for (const id of selectedChildIds) allChildIds.add(id);
       const recordedChildIds = [...allChildIds].sort();
       await step.do(
-        `record hostname Workflow identities stage ${barrierStage}`,
+        workflowStepName(workflowSteps.parent.record, { stage: barrierStage }),
         deterministicDatabaseStep,
         async () => {
           await recordWorkflowIds(this.env.CATALOGUE_DB, runId, event.instanceId, recordedChildIds);
@@ -199,7 +204,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
         },
       );
       const run = await step.do(
-        `finalize collection barrier stage ${barrierStage}`,
+        workflowStepName(workflowSteps.parent.finalize, { stage: barrierStage }),
         deterministicDatabaseStep,
         async () => {
           await finalizeEvidenceRun(this.env.CATALOGUE_DB, runId);
@@ -208,7 +213,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
       );
       if (run.state === "collecting") {
         await step.sleep(
-          `await collection barrier stage ${barrierStage}`,
+          workflowStepName(workflowSteps.parent.wait, { stage: barrierStage }),
           collectionBarrierSleepDuration(maximumShardDepth, maximumActiveRequestCount),
         );
         barrierStage += 1;
@@ -220,7 +225,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
         requiredSourceAdapter(run.adapter_version).reconciliationCapability === "catalogue"
       ) {
         const reconciliationResultJson = await step.do(
-          "reconcile retained Official Source evidence",
+          workflowSteps.parent.reconcile,
           deterministicDatabaseStep,
           async () => {
             const result = await reconcileRetainedCardPrintingEvidence(
@@ -269,14 +274,14 @@ async function loadPendingHostShards(
   step: WorkflowStep,
   database: D1Database,
   runId: string,
-  stepPrefix: string,
+  barrierStage: number,
 ): Promise<HostShard[]> {
   const shards = new Map<string, HostShard>();
   let afterSequenceNumber = -1;
   let pageNumber = 0;
   for (;;) {
     const page = await step.do(
-      `load pending evidence page ${pageNumber} ${stepPrefix}`,
+      workflowStepName(workflowSteps.parent.pending, { page: pageNumber, stage: barrierStage }),
       deterministicDatabaseStep,
       () =>
         pendingEvidenceRequestPage(
@@ -322,14 +327,17 @@ async function loadPendingShardRequests(
   let afterSequenceNumber = shard.minimumSequenceNumber - 1;
   let pageNumber = 0;
   for (;;) {
-    const page = await step.do(`${purpose} shard page ${pageNumber} stage ${stage}`, deterministicDatabaseStep, () =>
-      pendingEvidenceRequestPage(
-        database,
-        runId,
-        afterSequenceNumber,
-        shard.maximumSequenceNumber,
-        workflowRequestPageSize,
-      ),
+    const page = await step.do(
+      workflowStepName(workflowSteps.child.pending, { purpose, page: pageNumber, stage }),
+      deterministicDatabaseStep,
+      () =>
+        pendingEvidenceRequestPage(
+          database,
+          runId,
+          afterSequenceNumber,
+          shard.maximumSequenceNumber,
+          workflowRequestPageSize,
+        ),
     );
     requests.push(...page.filter((request) => new URL(request.url).hostname === shard.hostname));
     if (page.length < workflowRequestPageSize) break;
@@ -357,7 +365,15 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<Env, EvidenceHostWo
   override async run(event: Readonly<WorkflowEvent<EvidenceHostWorkflowParams>>, step: WorkflowStep): Promise<unknown> {
     const operational = observeOperationalWorkflow(step, event, this.env);
     this.env = operational.env;
-    step = operational.step;
+    step = observeWorkflowProgress(operational.step, (progress) =>
+      recordIngestionWorkflowProgress(
+        this.env.CATALOGUE_DB,
+        event.payload.ingestion_run_id,
+        event.instanceId,
+        "child",
+        progress,
+      ),
+    );
     const {
       ingestion_run_id: runId,
       hostname,
@@ -377,7 +393,7 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<Env, EvidenceHostWo
       // child Workflow finish while the retained work awaits the owner or
       // stays as audit evidence.
       const runState = await step.do(
-        `read run state stage ${stage}`,
+        workflowStepName(workflowSteps.child.state, { stage }),
         deterministicDatabaseStep,
         async () => (await requiredEvidenceRun(this.env.CATALOGUE_DB, runId)).state,
       );
@@ -399,7 +415,7 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<Env, EvidenceHostWo
         while (cursor < batch.length) {
           const remaining = batch.slice(cursor);
           const outcome = await step.do(
-            `collect stage ${stage} batch ${offset} from ${cursor} pass ${pass}`,
+            workflowStepName(workflowSteps.child.collect, { stage, offset, cursor, pass }),
             collectionBatchStep,
             () =>
               collectSourceRequestBatch({
@@ -421,7 +437,10 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<Env, EvidenceHostWo
             break;
           }
           if (outcome.halt.kind === "retry_wait" && outcome.halt.wait_ms > 0) {
-            await step.sleep(`retry ${outcome.halt.request_id} pass ${pass}`, outcome.halt.wait_ms);
+            await step.sleep(
+              workflowStepName(workflowSteps.child.retry, { request: outcome.halt.request_id, pass }),
+              outcome.halt.wait_ms,
+            );
           }
         }
       }

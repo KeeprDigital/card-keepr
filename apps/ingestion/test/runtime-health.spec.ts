@@ -1,5 +1,7 @@
 import { env } from "cloudflare:test";
 import { expect, test, vi } from "vitest";
+import { inspectWorkflowInstance } from "../../../src/catalogue/shared";
+import { checkWorkflows, probeTimeoutMilliseconds } from "../../../src/http/health-checks";
 import ingestionWorker from "../src/index";
 import { installRuntimeSuite } from "./runtime-helpers";
 
@@ -78,27 +80,19 @@ test("liveness answers under the public mount, on its own rate limit, off the re
   const mountedEnv = withOverrides({
     PUBLIC_BASE_URL: "https://card.keepr.digital/ingest",
   });
-  const mounted = await ingestionWorker.fetch(
-    new Request("https://card.keepr.digital/ingest/healthz"),
-    mountedEnv,
-  );
+  const mounted = await ingestionWorker.fetch(new Request("https://card.keepr.digital/ingest/healthz"), mountedEnv);
   expect(mounted.status).toBe(200);
   await expect(mounted.json()).resolves.toEqual({
     status: "ok",
     runtime: "ingestion",
   });
-  expect(records.filter((record) => record.includes("request.completed")))
-    .toHaveLength(0);
+  expect(records.filter((record) => record.includes("request.completed"))).toHaveLength(0);
 
   // Outside the mount the request is not liveness at all: it is the
   // ordinary unrouted 404, which the request log does record.
-  const outside = await ingestionWorker.fetch(
-    new Request("https://card.keepr.digital/healthz"),
-    mountedEnv,
-  );
+  const outside = await ingestionWorker.fetch(new Request("https://card.keepr.digital/healthz"), mountedEnv);
   expect(outside.status).toBe(404);
-  expect(records.filter((record) => record.includes("request.completed")))
-    .toHaveLength(1);
+  expect(records.filter((record) => record.includes("request.completed"))).toHaveLength(1);
 
   const limited = await ingestionWorker.fetch(
     new Request(`${origin}/healthz`),
@@ -195,10 +189,7 @@ test("a broken Workflow binding turns readiness degraded for that binding only",
   });
   expect(text).not.toContain(secret);
 
-  const missing = await authenticated(
-    "/health",
-    withOverrides({ EVIDENCE_HOST_WORKFLOW: undefined }),
-  );
+  const missing = await authenticated("/health", withOverrides({ EVIDENCE_HOST_WORKFLOW: undefined }));
   expect(missing.status).toBe(503);
   await expect(missing.json()).resolves.toMatchObject({
     checks: {
@@ -226,10 +217,7 @@ test("a broken database or bucket binding turns readiness degraded", async () =>
       return Reflect.get(database, property, receiver);
     },
   });
-  const database = await authenticated(
-    "/health",
-    withOverrides({ CATALOGUE_DB: brokenDatabase }),
-  );
+  const database = await authenticated("/health", withOverrides({ CATALOGUE_DB: brokenDatabase }));
   expect(database.status).toBe(503);
   const databaseText = await database.text();
   expect(JSON.parse(databaseText)).toMatchObject({
@@ -268,10 +256,7 @@ test("a broken database or bucket binding turns readiness degraded", async () =>
 });
 
 test("readiness fails when the configured catalogue database id is absent", async () => {
-  const response = await authenticated(
-    "/health",
-    withOverrides({ CATALOGUE_D1_DATABASE_ID: "" }),
-  );
+  const response = await authenticated("/health", withOverrides({ CATALOGUE_D1_DATABASE_ID: "" }));
   expect(response.status).toBe(503);
   await expect(response.json()).resolves.toMatchObject({
     status: "degraded",
@@ -279,4 +264,55 @@ test("readiness fails when the configured catalogue database id is absent", asyn
       database: { status: "fail", reason: "database_id_not_configured" },
     },
   });
+});
+
+test("readiness accepts absent Workflow probes without creating an instance", async () => {
+  const response = await authenticated(
+    "/health",
+    withOverrides({
+      EVIDENCE_INGESTION_WORKFLOW: { get: async () => ({ status: async () => ({ status: "unknown" }) }) },
+      EVIDENCE_HOST_WORKFLOW: {
+        get: async () => {
+          throw new Error("instance.not_found");
+        },
+      },
+      RECONCILIATION_WORKFLOW: {
+        get: async () => {
+          throw new Error("instance does not exist");
+        },
+      },
+    }),
+  );
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toMatchObject({
+    checks: {
+      workflows: {
+        status: "pass",
+        bindings: {
+          EVIDENCE_INGESTION_WORKFLOW: { status: "pass" },
+          EVIDENCE_HOST_WORKFLOW: { status: "pass" },
+          RECONCILIATION_WORKFLOW: { status: "pass" },
+        },
+      },
+    },
+  });
+});
+
+test("readiness bounds a Workflow status probe that never answers", async () => {
+  vi.useFakeTimers();
+  try {
+    const check = checkWorkflows(
+      {
+        EVIDENCE_HOST_WORKFLOW: { get: async () => ({ status: () => new Promise(() => {}) }) },
+      },
+      inspectWorkflowInstance,
+    );
+    await vi.advanceTimersByTimeAsync(probeTimeoutMilliseconds);
+    await expect(check).resolves.toEqual({
+      status: "fail",
+      bindings: { EVIDENCE_HOST_WORKFLOW: { status: "fail", reason: "timed_out" } },
+    });
+  } finally {
+    vi.useRealTimers();
+  }
 });
