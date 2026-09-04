@@ -1,17 +1,18 @@
-import { bindInitialParentWorkflowStatement } from "./ingestion-run-repository";
-import { AdministrationProblem } from "../shared";
-import type { EvidenceParentWorkflowParams, EvidenceHostWorkflowParams } from "./source-evidence-model";
+import { AdministrationProblem, isWorkflowInstanceNotFound, workflowDriver } from "../shared";
 import {
+  type CollectionProgressFacts,
   classifyCollectionProgress,
   parentAttemptNumber,
   parentWorkflowAttemptId,
-  safeWorkflowStatus,
-  type CollectionProgressFacts,
   type SafeWorkflowStatus,
+  safeWorkflowStatus,
 } from "./collection-recovery";
+import { bindInitialParentWorkflowStatement } from "./ingestion-run-repository";
+import type { EvidenceHostWorkflowParams, EvidenceParentWorkflowParams } from "./source-evidence-model";
 import {
   collectionProgressFacts,
   currentCollectionWorkflowIds,
+  type IngestionEvidenceRow,
   pauseEvidenceRunForWorkflowRecovery,
   pauseEvidenceRunOnOwnerRequest,
   releaseTerminatedEvidenceRun,
@@ -19,51 +20,28 @@ import {
   resumePausedEvidenceRun,
   terminateEvidenceRun,
   workflowAttemptStatements,
-  type IngestionEvidenceRow,
 } from "./source-evidence-repository";
 
 type AcquiredParent = {
-  instance: WorkflowInstance;
   status: SafeWorkflowStatus;
   created: boolean;
 };
 
 // Reacquire the parent Workflow instance for one deterministic attempt
 // identity, creating it when the platform has no instance under that name. A
-// null result means the identity is unavailable: it can be neither fetched
-// nor created, which classification treats as a lost Workflow.
+// null result means the platform confirms the identity is absent even after
+// dispatch. Transient control-plane failures propagate without recovery.
 async function acquireParentWorkflow(
   workflow: Workflow<EvidenceParentWorkflowParams>,
   workflowId: string,
   runId: string,
 ): Promise<AcquiredParent | null> {
-  let instance: WorkflowInstance;
-  let created = false;
   try {
-    instance = await workflow.get(workflowId);
-  } catch {
-    try {
-      instance = await workflow.create({
-        id: workflowId,
-        params: { ingestion_run_id: runId },
-      });
-      created = true;
-    } catch {
-      try {
-        instance = await workflow.get(workflowId);
-      } catch {
-        return null;
-      }
-    }
-  }
-  try {
-    return {
-      instance,
-      status: safeWorkflowStatus((await instance.status()).status),
-      created,
-    };
-  } catch {
-    return { instance, status: "unknown", created };
+    const result = await workflowDriver(workflow).ensure(workflowId, { ingestion_run_id: runId });
+    return { created: result.created, status: safeWorkflowStatus(result.status.status) };
+  } catch (error) {
+    if (isWorkflowInstanceNotFound(error)) return null;
+    throw error;
   }
 }
 
@@ -106,26 +84,21 @@ export async function resumeEvidenceRun(
   // A freshly created instance is the new current attempt by construction;
   // classification only judges an attempt that already existed, from its
   // platform status and the persisted progress evidence.
-  const classification =
-    acquired !== null && acquired.created
-      ? { kind: "active" as const }
-      : classifyCollectionProgress(acquired?.status ?? "unavailable", progress);
+  const classification = acquired?.created
+    ? { kind: "active" as const }
+    : classifyCollectionProgress(acquired?.status ?? "unavailable", progress);
   if (classification.kind === "instance_paused" && acquired !== null) {
     // The Workflow instance's own paused status is a platform condition
     // distinct from a paused Ingestion Run: the same attempt resumes in
     // place.
-    try {
-      await acquired.instance.resume();
-    } catch {
-      // The status document below still reports the observed state.
-    }
+    acquired.status = safeWorkflowStatus((await workflowDriver(workflow).resume(workflowId)).status);
   } else if (classification.kind === "recover") {
     // A running-status attempt classified as stalled is superseded, so it
     // must not keep driving collection beside its replacement; termination
     // is best-effort because a genuinely dead instance rejects it.
     if (acquired !== null) {
       try {
-        await acquired.instance.terminate();
+        await workflowDriver(workflow).terminate(workflowId);
       } catch {
         // Already dead or unavailable; recovery proceeds regardless.
       }
@@ -202,17 +175,17 @@ export async function pauseEvidenceCollection(
   return outcome.document;
 }
 
-// The safe status of one parent instance; an absent or unreachable instance
-// reports as unavailable rather than failing the owner's request.
+// The safe status of one parent instance. Only confirmed absence may be
+// classified as unavailable; transient failures must not abandon a live run.
 async function observeWorkflowStatus(
   workflow: Workflow<EvidenceParentWorkflowParams>,
   instanceId: string,
 ): Promise<SafeWorkflowStatus> {
   try {
-    const instance = await workflow.get(instanceId);
-    return safeWorkflowStatus((await instance.status()).status);
-  } catch {
-    return "unavailable";
+    return safeWorkflowStatus((await workflowDriver(workflow).inspect(instanceId)).status);
+  } catch (error) {
+    if (isWorkflowInstanceNotFound(error)) return "unavailable";
+    throw error;
   }
 }
 
@@ -280,8 +253,7 @@ async function terminateWorkflowInstance(
   instanceId: string,
 ): Promise<void> {
   try {
-    const instance = await workflow.get(instanceId);
-    await instance.terminate();
+    await workflowDriver(workflow).terminate(instanceId);
   } catch {
     // Already settled or unavailable.
   }

@@ -1,6 +1,6 @@
-import * as workflowStatements from "./backup-workflow-repository";
-import { AdministrationProblem, canonicalJson, sha256Text } from "../shared";
+import { AdministrationProblem, canonicalJson, sha256Text, workflowDriver } from "../shared";
 import { failActiveCatalogueBackupAttempt, validateCatalogueBackupRetryEvidence } from "./backup-recovery";
+import * as workflowStatements from "./backup-workflow-repository";
 
 export type CatalogueBackupWorkflowParams = Readonly<{
   expected_current_revision_id: string;
@@ -97,34 +97,9 @@ async function publicWorkflowDocument(
   request: BackupWorkflowRequest,
   createRequested = false,
 ): Promise<Record<string, unknown>> {
-  let instance: WorkflowInstance | null = null;
-  if (!createRequested) {
-    try {
-      instance = await workflow.get(request.workflow_instance_id);
-      if ((await instance.status()).status === "unknown") instance = null;
-    } catch {
-      instance = null;
-    }
-  }
-  if (instance === null) {
-    try {
-      instance = await workflow.create({
-        id: request.workflow_instance_id,
-        params: storedParams(request),
-      });
-    } catch {
-      instance = await workflow.get(request.workflow_instance_id);
-    }
-  }
-  let status = await instance.status();
-  if (status.status === "paused") {
-    try {
-      await instance.resume();
-    } catch {
-      // An exact concurrent replay may already have resumed it.
-    }
-    status = await instance.status();
-  }
+  const driver = workflowDriver(workflow);
+  let { status } = await driver.ensure(request.workflow_instance_id, storedParams(request), { createRequested });
+  if (status.status === "paused") status = await driver.resume(request.workflow_instance_id);
   let publicStatus = status.status;
   let output: ReturnType<typeof workflowOutput> | null = null;
   if (status.status === "errored" || status.status === "terminated") {

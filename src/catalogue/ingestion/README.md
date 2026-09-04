@@ -44,3 +44,23 @@ the installed trigger against every state pair and termination fact combination.
 A transition-table edit must update the trigger through a forward migration;
 the parity test fails if either side disagrees. Unchanged-state SQL updates are
 idempotent no-ops and are deliberately not edges in the transition table.
+
+Workflow dispatch uses `shared/workflow-driver.ts` for every binding and instance
+control-plane call. `ensure` reacquires a deterministic ID after a lost create
+response; a transient lookup failure propagates instead of abandoning an attempt.
+A failed resume is accepted only after observing that the same instance resumed.
+The named templates in `shared/workflow-steps.ts` retain the existing durable step
+names and validate restart targets, including their Workflow kind, step type, and
+positive occurrence count. Collection recovery still opens a new deterministic
+attempt through the paused/resume state transition, rather than restarting a
+completed parent at a guessed step.
+
+`ingestion_workflow_attempts` retains immutable parent/child identity and attempt
+number. Migration 0007 adds `ingestion_workflow_progress`, which records each
+attempt's latest executed callback, phase, and timestamp. The progress wrapper
+runs inside durable callbacks: cached replay and administration polls write no
+progress. Productive collection steps also advance `last_work_at`; parent barrier
+polls do not, so a polling parent cannot hide a stuck child. Stall detection reads
+this persisted work timestamp alongside existing retained lifecycle events and
+pacing/retry deadlines. The evidence document exposes per-attempt progress; no
+provider error text or response body is retained in these fields.

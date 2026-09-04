@@ -1,3 +1,4 @@
+import { workflowDriver } from "../shared";
 import {
   AdministrationProblem,
   assertIngestionRunTransition,
@@ -143,40 +144,9 @@ async function publicWorkflowRequest(
   createRequested = false,
 ): Promise<Record<string, unknown>> {
   const createParams = storedWorkflowParams(request);
-  let instance: WorkflowInstance | null = null;
-  let status: Awaited<ReturnType<WorkflowInstance["status"]>> | null = null;
-  if (!createRequested) {
-    try {
-      instance = await workflow.get(request.workflow_instance_id);
-      status = await instance.status();
-      if (status.status === "unknown") {
-        instance = null;
-        status = null;
-      }
-    } catch {
-      instance = null;
-      status = null;
-    }
-  }
-  if (instance === null) {
-    try {
-      instance = await workflow.create({
-        id: request.workflow_instance_id,
-        params: createParams,
-      });
-    } catch {
-      instance = await workflow.get(request.workflow_instance_id);
-    }
-  }
-  status ??= await instance.status();
-  if (status.status === "paused") {
-    try {
-      await instance.resume();
-    } catch {
-      // A concurrent replay may already have resumed the exact instance.
-    }
-    status = await instance.status();
-  }
+  const driver = workflowDriver(workflow);
+  let { status } = await driver.ensure(request.workflow_instance_id, createParams, { createRequested });
+  if (status.status === "paused") status = await driver.resume(request.workflow_instance_id);
   if (status.status === "errored" || status.status === "terminated") {
     return {
       contract: "card-keepr-reconciliation-workflow@1",
