@@ -1180,8 +1180,6 @@ async function rejectRunAttempt(
   return resultingRun;
 }
 
-export { AdministrationProblem } from "../shared";
-
 class PublicationPrefixOwnershipError extends Error {}
 
 async function startPreparedRun(

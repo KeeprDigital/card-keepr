@@ -47,15 +47,6 @@ import type {
   RunCapacityPolicy,
   SnapshotRow,
 } from "./source-evidence-repository-types";
-// The row and policy shapes the collection inspection reads live in the
-// leaf module `source-evidence-repository-types`; they stay importable from
-// here.
-export type {
-  CurrentPause,
-  ObservationSetRow,
-  RunCapacityPolicy,
-  SnapshotRow,
-} from "./source-evidence-repository-types";
 
 export type IngestionEvidenceRow = {
   id: string;
@@ -1498,8 +1489,6 @@ async function collectionPauseReplay(
   }
   return JSON.parse(retained.response_json) as Record<string, unknown>;
 }
-
-export type { CollectionProgressFacts } from "./collection-recovery";
 
 // The deterministic progress evidence stall classification consumes: the
 // newest persisted lifecycle event across transitions, fetch attempts,

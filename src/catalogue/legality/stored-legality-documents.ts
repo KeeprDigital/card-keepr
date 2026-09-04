@@ -1,5 +1,7 @@
 import {
   type CatalogueCard,
+  type LegalityRegion,
+  type LegalityRule,
   type SupportedGame,
   canonicalProfileAttributes,
   validateMembershipPredicate,
@@ -8,7 +10,7 @@ import {
   canonicalJson,
   compareUtf8,
 } from "../shared";
-import { type LegalityRegion, type LegalityRule, regionForLineage } from "./legality-rule";
+import { regionForLineage } from "./legality-rule";
 import { parseStoredLegalityRuleEffect } from "./legality-effect-policy";
 import { registeredLegalitySourceScope } from "../adapters";
 

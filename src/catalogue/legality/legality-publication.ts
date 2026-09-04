@@ -1,5 +1,6 @@
 import { type CatalogueCandidate, byteBoundedJsonArrays, canonicalJson } from "../shared";
-import { legalityRuleCardIds, normalizedLegalityRuleLifecycle } from "./legality-rule";
+import { legalityRuleCardIds } from "./legality-rule";
+import { normalizedLegalityRuleLifecycle } from "./legality-rule-lifecycle";
 
 export function legalityPublicationStatements(
   database: D1Database,

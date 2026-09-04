@@ -8,9 +8,8 @@ import {
   retryEvidenceRun,
   showEvidenceRun,
   startEvidenceRun,
-  type ObservationSetRow,
-  type SnapshotRow,
 } from "./source-evidence-repository";
+import type { ObservationSetRow, SnapshotRow } from "./source-evidence-repository-types";
 
 export { extendRunRequestCapacity, retryEvidenceRun, showEvidenceRun, startEvidenceRun };
 export type { StartEvidenceRunRequest };

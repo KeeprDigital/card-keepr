@@ -24,11 +24,11 @@ export {
   reconciliationPublication,
   type LocatorEvidence,
   type LocatorEvidenceCollection,
-  type NormalizedLifecycle,
   type PublicationEvidenceResource,
   type ReconciliationPublicationPlan,
-  type RelationshipEvidence,
 } from "./reconciliation-publication";
+export type { NormalizedLifecycle } from "./publication-lifecycle-types";
+export type { RelationshipEvidence } from "./reconciliation-relationships";
 export {
   parseReconciliationObservation,
   type ParsedReconciliationObservation,

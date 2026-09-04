@@ -3,6 +3,7 @@ import {
   catalogueCandidateContract,
   type CatalogueCandidate,
   type CatalogueCard,
+  type CatalogueErratum,
   type CataloguePrintingImage,
   type CataloguePrinting,
   type SupportedGame,
@@ -55,7 +56,6 @@ import {
   ErratumRulesTextError,
   identifyRulesTextErrata,
   mergeCatalogueErrata,
-  type CatalogueErratum,
 } from "./errata-rules-text";
 import { legalityRulesForCandidate, normalizedLegalityRuleLifecycle, resolveLegalityRuleCards } from "../legality";
 import { reconcileDigimonCardAuthority, type DigimonCardAuthority } from "./digimon-reconciliation";

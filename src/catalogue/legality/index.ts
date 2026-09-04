@@ -6,19 +6,23 @@
 export {
   assertCanonicalLegalityRule,
   canonicalLegalityRuleId,
-  evaluateLegalityRuleEffect,
-  legalityExportKind,
   legalityRuleCardIds,
-  legalityRulesForCandidate,
-  normalizedLegalityRuleLifecycle,
   parseRetainedLegalityRules,
   regionForLineage,
   resolveLegalityRuleCards,
   unresolvedTargetScope,
-  type LegalityEvaluation,
-  type LegalityRuleLifecycle,
   type RetainedLegalityRule,
 } from "./legality-rule";
+export {
+  evaluateLegalityRuleEffect,
+  legalityExportKind,
+  type LegalityEvaluation,
+} from "./legality-effect-policy";
+export {
+  legalityRulesForCandidate,
+  normalizedLegalityRuleLifecycle,
+  type LegalityRuleLifecycle,
+} from "./legality-rule-lifecycle";
 export {
   legalityRuleExportRecords,
   legalityRuleRelationshipRecords,

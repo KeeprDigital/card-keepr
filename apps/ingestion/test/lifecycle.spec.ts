@@ -4,9 +4,8 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import ingestionWorker from "../src/index";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { fixtureCandidate } from "../../../src/catalogue/ingestion";
-import { catalogueRevisionIdentity, canonicalJson, sha256Text } from "../../../src/catalogue/shared";
+import { AdministrationProblem, catalogueRevisionIdentity, canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 import {
-  AdministrationProblem,
   administrationStatus as administrationStatusDirect,
   approveRun as approveRunDirect,
   retryPublicationCleanup as retryPublicationCleanupDirect,

@@ -15,10 +15,10 @@ export {
   requiredOfficialSourceContract,
   requiredSourceAdapter,
   sourceAdapterRegistrations,
-  type ListingReconciliationTraits,
   type OfficialSourceContract,
   type SourceAdapterRegistration,
 } from "./source-adapters";
+export type { ListingReconciliationTraits } from "./source-adapter-registration-types";
 export {
   requiredLegalityRegionsForGame,
   requiredOfficialSourceScope,

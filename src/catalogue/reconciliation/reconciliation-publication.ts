@@ -18,11 +18,6 @@ import { applicableRulesTextErrata, erratumTargetLifecycleKey } from "./errata-r
 import { requiredSourceAdapter } from "../adapters";
 import { curatedPublicationStatements } from "../curated";
 import type { NormalizedLifecycle } from "./publication-lifecycle-types";
-// The published lifecycle shape lives in the leaf module
-// `publication-lifecycle-types`; it stays importable from here.
-export type { NormalizedLifecycle } from "./publication-lifecycle-types";
-
-export type { RelationshipEvidence } from "./reconciliation-relationships";
 
 export type LocatorEvidence = {
   source_lineage: string;

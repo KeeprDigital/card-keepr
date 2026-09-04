@@ -1,5 +1,4 @@
 const encoder = new TextEncoder();
-export { deterministicGzip } from "./export-compression";
 
 export function canonicalJson(value: unknown): string {
   return canonicalJsonAt(value, "$");
