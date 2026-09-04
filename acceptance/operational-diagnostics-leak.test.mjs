@@ -358,7 +358,65 @@ test("operational logs and diagnostics retain correlation fields without leaking
     "ingestion_run_terminated",
   );
 
-  // 4. Status diagnostics over HTTP and the CLI.
+  // 4. Liveness and readiness documents (issue #144) on both runtimes:
+  //    liveness carries exactly status and runtime; readiness carries the
+  //    binding checks and passes through the same sweep as every other
+  //    diagnostic surface, as does the CLI rendering of it.
+  for (const [runtime, worker] of [["api", api], ["ingestion", ingestion]]) {
+    const liveness = await capture(
+      `${runtime} liveness response`,
+      await fetch(`${worker.url}/healthz`),
+    );
+    assert.equal(liveness.status, 200);
+    assert.deepEqual(liveness.body, { status: "ok", runtime });
+    const anonymousReadiness = await capture(
+      `${runtime} unauthenticated readiness response`,
+      await fetch(`${worker.url}/health`),
+    );
+    assert.equal(anonymousReadiness.status, 401);
+  }
+  const apiReadiness = await capture(
+    "API readiness response",
+    await fetch(`${api.url}/health`, {
+      headers: { authorization: `Bearer ${secrets.API_BEARER_KEY}` },
+    }),
+  );
+  assert.equal(apiReadiness.status, 200);
+  assert.equal(apiReadiness.body.status, "ok");
+  assert.deepEqual(
+    Object.keys(apiReadiness.body.checks).sort(),
+    ["database", "objects", "public_base", "version"],
+  );
+  const ingestionReadiness = await capture(
+    "ingestion readiness response",
+    await fetch(`${ingestion.url}/health`, {
+      headers: { authorization: `Bearer ${secrets.ADMINISTRATION_KEY}` },
+    }),
+  );
+  assert.equal(ingestionReadiness.status, 200);
+  assert.equal(ingestionReadiness.body.status, "ok");
+  assert.deepEqual(
+    Object.keys(ingestionReadiness.body.checks).sort(),
+    ["database", "objects", "public_base", "version", "workflows"],
+  );
+  for (const document of [apiReadiness.body, ingestionReadiness.body]) {
+    for (const check of Object.values(document.checks)) {
+      assert.equal(check.status, "pass", JSON.stringify(check));
+    }
+  }
+  const cliHealth = await runCli(["health", "--json"], {
+    KEEPR_API_URL: api.url,
+    KEEPR_INGESTION_URL: ingestion.url,
+    KEEPR_API_KEY: secrets.API_BEARER_KEY,
+    KEEPR_ADMINISTRATION_KEY: secrets.ADMINISTRATION_KEY,
+  });
+  assert.equal(cliHealth.code, 0, cliHealth.stderr);
+  capturedResponses.push(
+    { label: "CLI health stdout", text: cliHealth.stdout },
+    { label: "CLI health stderr", text: cliHealth.stderr },
+  );
+
+  // 5. Status diagnostics over HTTP and the CLI.
   const status = await capture(
     "status response",
     await fetch(`${ingestion.url}/v1/status`, {
@@ -454,6 +512,19 @@ test("operational logs and diagnostics retain correlation fields without leaking
     );
     assert.equal(typeof event.status, "number");
   }
+
+  // The liveness probe is polled by monitors and stays out of the log.
+  assert.equal(
+    operationalEvents.some((event) => event.request?.route === "/healthz"),
+    false,
+    "liveness requests must not be written to the operational log",
+  );
+  assert.ok(
+    operationalEvents.some((event) =>
+      event.request?.route === "/health" && event.status === 200
+    ),
+    "readiness requests are logged like any other authenticated route",
+  );
 
   const requestEvent = (requestId) =>
     operationalEvents.find(

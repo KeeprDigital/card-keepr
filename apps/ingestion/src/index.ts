@@ -10,8 +10,9 @@ import {
   showRun,
 } from "../../../src/catalogue/ingestion";
 import {
-  assertBindingsAvailable,
-  healthResponse,
+  isLivenessRequest,
+  livenessRequest,
+  readinessResponse,
 } from "../../../src/http/health";
 import { prepareProductionRelease } from "../../../src/catalogue/production-release";
 import { problemResponse } from "../../../src/http/problem";
@@ -140,19 +141,24 @@ async function handleIngestionRequest(
 
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/health") {
-        assertBindingsAvailable(
-          "mutation",
-          env.CATALOGUE_DB,
-          env.EVIDENCE_OBJECTS,
-          env.PRINTING_IMAGES,
-          env.CATALOGUE_EXPORTS,
-          env.BACKUPS,
-        );
-        return healthResponse({
-          contract: "card-keepr-runtime-health@1",
-          runtime: "ingestion",
-          status: "ok",
-          capabilities: ingestionCapabilities,
+        return readinessResponse("ingestion", ingestionCapabilities, {
+          database: env.CATALOGUE_DB,
+          configuredDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
+          buckets: {
+            EVIDENCE_OBJECTS: env.EVIDENCE_OBJECTS,
+            PRINTING_IMAGES: env.PRINTING_IMAGES,
+            CATALOGUE_EXPORTS: env.CATALOGUE_EXPORTS,
+            BACKUPS: env.BACKUPS,
+          },
+          workflows: {
+            EVIDENCE_INGESTION_WORKFLOW: env.EVIDENCE_INGESTION_WORKFLOW,
+            EVIDENCE_HOST_WORKFLOW: env.EVIDENCE_HOST_WORKFLOW,
+            RECONCILIATION_WORKFLOW: env.RECONCILIATION_WORKFLOW,
+            CATALOGUE_BACKUP_WORKFLOW: env.CATALOGUE_BACKUP_WORKFLOW,
+          },
+          publicBase: base,
+          request,
+          version: env.CF_VERSION_METADATA,
         });
       }
       const observedAt = administrationObservedAt(request, env);
@@ -1063,6 +1069,23 @@ const ingestionWorker = {
       );
     }
     const mounted = mountedRequest(request, route);
+    // Liveness (issue #144) is unauthenticated, behind its own rate limit,
+    // and kept out of the operational request log.
+    if (isLivenessRequest(request.method, route)) {
+      return withOperationalRequestLog(
+        "ingestion",
+        mounted,
+        env,
+        (observedEnv, requestId) =>
+          livenessRequest(
+            mounted,
+            observedEnv.INGESTION_LIVENESS_RATE_LIMIT,
+            "ingestion",
+            requestId,
+          ),
+        { logged: false },
+      );
+    }
     return withOperationalRequestLog(
       "ingestion",
       mounted,

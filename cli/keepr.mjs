@@ -189,22 +189,103 @@ async function health(environment, json) {
     return writeFailure(json, failure, failure.exitCode);
   }
 
+  // Readiness (issue #144): a runtime whose checks fail answers 503 with a
+  // "degraded" document. The CLI prints the whole document either way and
+  // its exit code follows readiness.
+  const degraded = results.some((result) => result.health.status !== "ok");
   const document = {
     contract: "card-keepr-cli-health@1",
-    status: "ok",
+    status: degraded ? "degraded" : "ok",
     runtimes: results.map((result) => result.health),
   };
   if (json) {
     process.stdout.write(`${JSON.stringify(document)}\n`);
   } else {
-    process.stdout.write("Card Keepr runtimes are healthy\n");
+    process.stdout.write(
+      degraded
+        ? "Card Keepr runtimes are degraded\n"
+        : "Card Keepr runtimes are healthy\n",
+    );
     for (const runtime of document.runtimes) {
       process.stdout.write(
         `${runtime.name}: ${runtime.status} (${runtime.capabilities.join(", ")})\n`,
       );
+      for (const [name, check] of Object.entries(runtime.checks)) {
+        process.stdout.write(
+          `  ${name}: ${check.status}${describeHealthCheck(name, check)}\n`,
+        );
+      }
     }
   }
-  return 0;
+  return degraded ? 9 : 0;
+}
+
+// The readiness document is rendered from a closed set of fields; anything
+// outside the safe reference shapes is shown as "unknown" rather than echoed.
+function describeHealthCheck(name, check) {
+  const parts = [];
+  if (name === "database") {
+    if (check.status === "pass") {
+      parts.push(`schema level ${safeDiagnosticCount(check.migration_level)}`);
+      parts.push(
+        `revision ${safeDiagnosticReference(check.current_revision_id) ?? "unknown"}`,
+      );
+    }
+    if (typeof check.configured_database_id === "string") {
+      parts.push(
+        `configured database ${
+          safeDiagnosticReference(check.configured_database_id) ?? "unknown"
+        }`,
+      );
+    }
+  } else if (name === "objects" || name === "workflows") {
+    const members = name === "objects" ? check.buckets : check.bindings;
+    for (const [member, verdict] of Object.entries(members ?? {})) {
+      const label = safeDiagnosticReference(member) ?? "unknown";
+      parts.push(
+        verdict?.status === "pass"
+          ? `${label} pass`
+          : `${label} fail (${safeMachineCode(verdict?.reason) ?? "unknown"})`,
+      );
+    }
+  } else if (name === "public_base") {
+    parts.push(safeUrl(check.configured) ?? "unknown");
+    parts.push(
+      `arrived through it: ${
+        check.arrived_through_public_base === true ? "yes" : "no"
+      }`,
+    );
+  } else if (name === "version") {
+    parts.push(`id ${safeDiagnosticReference(check.id) ?? "unknown"}`);
+  }
+  if (check.status !== "pass" && typeof check.reason === "string") {
+    parts.push(safeMachineCode(check.reason) ?? "unknown");
+  }
+  return parts.length === 0 ? "" : ` (${parts.join(", ")})`;
+}
+
+function safeUrl(value) {
+  if (typeof value !== "string" || value.length > 1024) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function validHealthChecks(checks) {
+  if (checks === null || typeof checks !== "object" || Array.isArray(checks)) {
+    return false;
+  }
+  const names = Object.keys(checks);
+  return names.length > 0 && names.every((name) =>
+    ["database", "objects", "workflows", "public_base", "version"]
+      .includes(name) &&
+    checks[name] !== null &&
+    typeof checks[name] === "object" &&
+    (checks[name].status === "pass" || checks[name].status === "fail")
+  );
 }
 
 async function startRun(arguments_, environment, json) {
@@ -2581,7 +2662,9 @@ async function checkRuntime(runtime) {
       runtime: runtime.name,
     };
   }
-  if (!response.ok) {
+  // 503 is the readiness document with a failed check, not a transport
+  // failure; it is validated like a 200 and reported as degraded.
+  if (!response.ok && response.status !== 503) {
     return {
       ok: false,
       exitCode: 9,
@@ -2603,11 +2686,13 @@ async function checkRuntime(runtime) {
       runtime: runtime.name,
     };
   }
+  const expectedStatus = response.status === 503 ? "degraded" : "ok";
   if (
     health?.contract !== "card-keepr-runtime-health@1" ||
     health.runtime !== runtime.name ||
-    health.status !== "ok" ||
-    !sameStrings(health.capabilities, runtime.capabilities)
+    health.status !== expectedStatus ||
+    !sameStrings(health.capabilities, runtime.capabilities) ||
+    !validHealthChecks(health.checks)
   ) {
     return {
       ok: false,
@@ -2624,6 +2709,7 @@ async function checkRuntime(runtime) {
       name: runtime.name,
       status: health.status,
       capabilities: health.capabilities,
+      checks: health.checks,
     },
   };
 }
