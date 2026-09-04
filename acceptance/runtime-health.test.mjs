@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -39,6 +39,13 @@ ajv.addSchema(apiSchema);
 const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`);
 const validateCatalogue = ajv.getSchema(
   `${apiSchema.$id}#/$defs/CatalogueDocument`,
+);
+// Every checked-in migration bumps the schema level by one (ADR 0006), so
+// the readiness document of a migrated local database reports their count.
+const migrationLevel = readdirSync(resolve(root, "migrations"))
+  .filter((entry) => entry.endsWith(".sql")).length;
+const ingestionConfig = JSON.parse(
+  readFileSync(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"),
 );
 
 test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
@@ -90,7 +97,10 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
   const cli = await runCli(["health", "--json"], cliEnvironment);
 
   assert.equal(cli.code, 0, cli.stderr);
-  assert.deepEqual(JSON.parse(cli.stdout), {
+  const cliDocument = JSON.parse(cli.stdout);
+  const apiChecks = cliDocument.runtimes[0].checks;
+  const ingestionChecks = cliDocument.runtimes[1].checks;
+  assert.deepEqual(cliDocument, {
     contract: "card-keepr-cli-health@1",
     status: "ok",
     runtimes: [
@@ -103,6 +113,7 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
           "catalogue-export:read",
           "legality-status:read",
         ],
+        checks: apiChecks,
       },
       {
         name: "ingestion",
@@ -115,21 +126,99 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
           "backup:write",
           "legality-rule:write",
         ],
+        checks: ingestionChecks,
       },
     ],
   });
+  // Readiness (issue #144): every check of both runtimes passes against the
+  // emulated bindings, and the document names what it proved.
+  assert.deepEqual(Object.keys(apiChecks), [
+    "database",
+    "objects",
+    "public_base",
+    "version",
+  ]);
+  assert.deepEqual(Object.keys(ingestionChecks), [
+    "database",
+    "objects",
+    "workflows",
+    "public_base",
+    "version",
+  ]);
+  for (const checks of [apiChecks, ingestionChecks]) {
+    for (const check of Object.values(checks)) {
+      assert.equal(check.status, "pass", JSON.stringify(check));
+    }
+    assert.equal(checks.database.migration_level, migrationLevel);
+    assert.equal(checks.database.current_revision_id, "catrev_spine_000");
+    // wrangler dev addresses every request at the zone route host from
+    // wrangler.jsonc, not at the bound local origin, so locally the request
+    // never arrives through the configured (local) public base.
+    assert.equal(checks.public_base.arrived_through_public_base, false);
+    assert.deepEqual(
+      Object.keys(checks.version).sort(),
+      ["id", "status", "tag", "timestamp"],
+    );
+  }
+  assert.equal(apiChecks.public_base.configured, api.url);
+  assert.equal(ingestionChecks.public_base.configured, ingestion.url);
+  assert.deepEqual(Object.keys(apiChecks.objects.buckets), [
+    "PRINTING_IMAGES",
+    "CATALOGUE_EXPORTS",
+  ]);
+  assert.deepEqual(Object.keys(ingestionChecks.objects.buckets), [
+    "EVIDENCE_OBJECTS",
+    "PRINTING_IMAGES",
+    "CATALOGUE_EXPORTS",
+    "BACKUPS",
+  ]);
+  assert.deepEqual(Object.keys(ingestionChecks.workflows.bindings), [
+    "EVIDENCE_INGESTION_WORKFLOW",
+    "EVIDENCE_HOST_WORKFLOW",
+    "RECONCILIATION_WORKFLOW",
+    "CATALOGUE_BACKUP_WORKFLOW",
+  ]);
+  assert.equal(
+    ingestionChecks.database.configured_database_id,
+    ingestionConfig.d1_databases[0].database_id,
+  );
+  assert.equal(apiChecks.database.configured_database_id, undefined);
 
   const humanCli = await runCli(["health"], cliEnvironment);
   assert.equal(humanCli.code, 0, humanCli.stderr);
+  const versionLine = (checks) =>
+    `  version: pass (id ${checks.version.id ?? "unknown"})`;
   assert.equal(
     humanCli.stdout,
     [
       "Card Keepr runtimes are healthy",
       "api: ok (catalogue:read, printing-image:read, catalogue-export:read, legality-status:read)",
+      `  database: pass (schema level ${migrationLevel}, revision catrev_spine_000)`,
+      "  objects: pass (PRINTING_IMAGES pass, CATALOGUE_EXPORTS pass)",
+      `  public_base: pass (${api.url}, arrived through it: no)`,
+      versionLine(apiChecks),
       "ingestion: ok (catalogue:write, evidence:write, printing-image:write, export:write, backup:write, legality-rule:write)",
+      `  database: pass (schema level ${migrationLevel}, revision catrev_spine_000, configured database ${ingestionConfig.d1_databases[0].database_id})`,
+      "  objects: pass (EVIDENCE_OBJECTS pass, PRINTING_IMAGES pass, CATALOGUE_EXPORTS pass, BACKUPS pass)",
+      "  workflows: pass (EVIDENCE_INGESTION_WORKFLOW pass, EVIDENCE_HOST_WORKFLOW pass, RECONCILIATION_WORKFLOW pass, CATALOGUE_BACKUP_WORKFLOW pass)",
+      `  public_base: pass (${ingestion.url}, arrived through it: no)`,
+      versionLine(ingestionChecks),
       "",
     ].join("\n"),
   );
+
+  // Liveness (issue #144) needs no credential, says nothing beyond status
+  // and runtime, and leaves every sibling route authenticated.
+  for (const [runtime, worker] of [["api", api], ["ingestion", ingestion]]) {
+    const liveness = await fetch(`${worker.url}/healthz`);
+    assert.equal(liveness.status, 200);
+    assert.equal(liveness.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await liveness.json(), { status: "ok", runtime });
+    const readiness = await fetch(`${worker.url}/health`);
+    assert.equal(readiness.status, 401);
+    const unknown = await fetch(`${worker.url}/healthzz`);
+    assert.equal(unknown.status, 401);
+  }
 
   const [apiRejectsAdminKey, ingestionRejectsApiKey] = await Promise.all([
     fetch(`${api.url}/health`, {
@@ -165,6 +254,86 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
     detail: "api runtime rejected its credential",
     runtime: "api",
   });
+});
+
+test("the CLI exit code follows readiness when a runtime is degraded", async (t) => {
+  const testDirectory = await mkdtemp(join(tmpdir(), "card-keepr-degraded-"));
+  const apiKey = crypto.randomUUID();
+  const administrationKey = crypto.randomUUID();
+  const apiEnv = join(testDirectory, "api.env");
+  const ingestionEnv = join(testDirectory, "ingestion.env");
+  await Promise.all([
+    writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
+    writeFile(ingestionEnv, `ADMINISTRATION_KEY=${administrationKey}\n`, {
+      mode: 0o600,
+    }),
+  ]);
+  const api = await startWorker({
+    config: "apps/api/wrangler.jsonc",
+    envFile: apiEnv,
+    migrate: true,
+    statePath: join(testDirectory, "api-state"),
+  });
+  // A broken binding is injected through a var override: the ingestion
+  // Worker's configured catalogue database id is not a database id at all.
+  const ingestion = await startWorker({
+    config: "apps/ingestion/wrangler.jsonc",
+    envFile: ingestionEnv,
+    migrate: true,
+    statePath: join(testDirectory, "ingestion-state"),
+    vars: { CATALOGUE_D1_DATABASE_ID: "not-a-database-id" },
+  });
+  t.after(async () => {
+    await Promise.all([stopWorker(api), stopWorker(ingestion)]);
+  });
+  // Liveness is what a boot can be awaited on while readiness is degraded.
+  await Promise.all([
+    waitForHealth(`${api.url}/healthz`, "no-credential-required", api),
+    waitForHealth(`${ingestion.url}/healthz`, "no-credential-required", ingestion),
+  ]);
+
+  const readiness = await fetch(`${ingestion.url}/health`, {
+    headers: { authorization: `Bearer ${administrationKey}` },
+  });
+  assert.equal(readiness.status, 503);
+  assert.equal(readiness.headers.get("cache-control"), "no-store");
+  const document = await readiness.json();
+  assert.equal(document.status, "degraded");
+  assert.deepEqual(document.checks.database, {
+    status: "fail",
+    migration_level: null,
+    current_revision_id: null,
+    configured_database_id: "not-a-database-id",
+    reason: "database_id_not_configured",
+  });
+  assert.equal(document.checks.workflows.status, "pass");
+
+  const cliEnvironment = {
+    KEEPR_API_URL: api.url,
+    KEEPR_INGESTION_URL: ingestion.url,
+    KEEPR_API_KEY: apiKey,
+    KEEPR_ADMINISTRATION_KEY: administrationKey,
+  };
+  const cli = await runCli(["health", "--json"], cliEnvironment);
+  assert.equal(cli.code, 9, cli.stderr);
+  assert.equal(cli.stderr, "");
+  const cliDocument = JSON.parse(cli.stdout);
+  assert.equal(cliDocument.contract, "card-keepr-cli-health@1");
+  assert.equal(cliDocument.status, "degraded");
+  assert.equal(cliDocument.runtimes[0].status, "ok");
+  assert.equal(cliDocument.runtimes[1].status, "degraded");
+  assert.deepEqual(
+    cliDocument.runtimes[1].checks.database,
+    document.checks.database,
+  );
+
+  const humanCli = await runCli(["health"], cliEnvironment);
+  assert.equal(humanCli.code, 9, humanCli.stderr);
+  const lines = humanCli.stdout.split("\n");
+  assert.equal(lines[0], "Card Keepr runtimes are degraded");
+  assert.ok(lines.includes(
+    "  database: fail (configured database not-a-database-id, database_id_not_configured)",
+  ), humanCli.stdout);
 });
 
 test("the API accepts an unauthenticated preflight for an exact allowed origin", async (t) => {
