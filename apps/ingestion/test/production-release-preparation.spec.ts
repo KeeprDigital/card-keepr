@@ -23,7 +23,9 @@ const intent = {
   expected_current_revision_id: "catrev_spine_000",
   expected_head_sha: "a".repeat(40),
   expected_actor: "keepr-release[bot]",
-  expected_migration_level: 12,
+  expected_migration_level: Math.max(
+    ...testEnv.TEST_MIGRATIONS.map((migration) => Number.parseInt(migration.name, 10)).filter(Number.isSafeInteger),
+  ),
   bootstrap: true,
   replacement_handoff: null,
 };
