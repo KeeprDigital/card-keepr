@@ -1,8 +1,9 @@
+import { dropPausePrerequisiteGuards } from "./query-helpers/collection-resume";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import { env } from "cloudflare:workers";
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 import {
   captureOperationIdentity,
   capturePreparedAttempt,
@@ -20,6 +21,7 @@ import {
 } from "./runtime-helpers";
 
 installRuntimeSuite();
+beforeEach(() => dropPausePrerequisiteGuards(env.CATALOGUE_DB));
 
 test("transport retry exhaustion pauses the Ingestion Run without failing the request", async () => {
   const run = await createCollection(

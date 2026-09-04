@@ -97,3 +97,5 @@ export {
 } from "./source-evidence-repository";
 
 export { recordIngestionWorkflowProgress } from "./workflow-progress";
+
+export { retainedSourceEvidenceGuardStatement } from "./source-plan-repository";

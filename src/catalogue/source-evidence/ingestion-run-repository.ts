@@ -1,3 +1,5 @@
+import { curatedRunStartGuardStatement } from "../curated";
+import { atomicRepositoryStatement, runStartGuardStatement } from "../shared";
 import type { SourceAdapterRegistration } from "../adapters";
 import { type CatalogueStore, canonicalJson, type IngestionRunState, repositoryStatements } from "../shared";
 
@@ -53,9 +55,10 @@ export function ingestionRunInsertStatement(
     input.operationalRequestId ?? null,
   ];
   if (lifecycleV2) {
-    return repositoryStatements(database)
-      .prepare(
-        `INSERT INTO ingestion_runs (
+    return atomicRepositoryStatement(database, {
+      statement: repositoryStatements(database)
+        .prepare(
+          `INSERT INTO ingestion_runs (
           id, state, selected_games_json, started_at,
           expected_current_revision_id, linked_run_id, idempotency_key,
           operational_request_id,
@@ -73,12 +76,15 @@ export function ingestionRunInsertStatement(
         WHERE catalogue.singleton = 1
           AND operation.recovery_health <> 'blocked'
           AND operation.active_ingestion_run_id IS NULL`,
-      )
-      .bind(...baseValues);
+        )
+        .bind(...baseValues),
+      after: [runStartGuardStatement(database), curatedRunStartGuardStatement(database, input.runId)],
+    });
   }
-  return repositoryStatements(database)
-    .prepare(
-      `INSERT INTO ingestion_runs (
+  return atomicRepositoryStatement(database, {
+    statement: repositoryStatements(database)
+      .prepare(
+        `INSERT INTO ingestion_runs (
         id, state, selected_games_json, started_at,
         expected_current_revision_id, linked_run_id, idempotency_key,
         operational_request_id,
@@ -93,8 +99,10 @@ export function ingestionRunInsertStatement(
       WHERE catalogue.singleton = 1
         AND operation.recovery_health <> 'blocked'
         AND operation.active_ingestion_run_id IS NULL`,
-    )
-    .bind(...baseValues);
+      )
+      .bind(...baseValues),
+    after: [runStartGuardStatement(database), curatedRunStartGuardStatement(database, input.runId)],
+  });
 }
 
 export function evidenceRunByIdStatement(database: CatalogueStore, runId: string): D1PreparedStatement {

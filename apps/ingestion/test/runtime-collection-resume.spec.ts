@@ -1,3 +1,7 @@
+import { ingestionRunInsertStatement } from "../../../src/catalogue/source-evidence/ingestion-run-repository";
+import { insertAuthoredCuratedRevisionStatement } from "../../../src/catalogue/curated/curated-repository";
+import { removeCuratedGuards } from "./query-helpers/curated-guards";
+import { requireCuratedReconfirmation, inspectRunCount } from "./query-helpers/collection-resume";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { catalogueStore } from "../../../src/catalogue/shared";
@@ -80,4 +84,38 @@ test("replaying a resume retains its identity and a later pause advances the imm
     `evidence-${run.id}-resume-1`,
     `evidence-${run.id}-resume-2`,
   ]);
+});
+
+test("a source run cannot start for a Curated Revision awaiting reconfirmation after the trigger is removed", async () => {
+  const database = catalogueStore(env.CATALOGUE_DB);
+  await removeCuratedGuards(env.CATALOGUE_DB);
+  await insertAuthoredCuratedRevisionStatement(database, {
+    revisionId: "curated_source_start_guard",
+    game: "one-piece",
+    targetKey: "card:OP01-001:name",
+    targetKind: "field",
+    effectiveFrom: null,
+    effectiveTo: null,
+    proposalJson: "{}",
+    contentDigest: "a".repeat(64),
+    reviewedSourceDigest: "b".repeat(64),
+    schemaBindingJson: '{"catalogue_revision_id":"catrev_spine_000"}',
+    observedAt: "2026-09-01T00:00:00.000Z",
+  }).run();
+  await requireCuratedReconfirmation(env.CATALOGUE_DB, "curated_source_start_guard").run();
+  const runId = "run_source_curated_start_guard";
+  await expect(
+    ingestionRunInsertStatement(
+      database,
+      {
+        runId,
+        supportedGames: ["one-piece"],
+        startedAt: "2026-09-04T00:00:00.000Z",
+        linkedRunId: null,
+        idempotencyKey: "source_curated_start_guard",
+      },
+      true,
+    ).run(),
+  ).rejects.toThrow(/curated_revision_reconfirmation_required/);
+  expect(await inspectRunCount(env.CATALOGUE_DB, runId).first("count")).toBe(0);
 });

@@ -1,9 +1,10 @@
+import { dropPausePrerequisiteGuards } from "./query-helpers/collection-resume";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import { env } from "cloudflare:workers";
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 import { pauseEvidenceRunForRequestCapacity, RequestCapacityProblem } from "../../../src/catalogue/source-evidence";
 import {
   administrationRequest,
@@ -15,6 +16,7 @@ import { reconcile } from "./reconciliation-helpers";
 import { fusionWorldRequestCapacity, pauseRunAtCapacity } from "./capacity-pause-helpers";
 
 installRuntimeSuite();
+beforeEach(() => dropPausePrerequisiteGuards(env.CATALOGUE_DB));
 
 async function catalogueRevisionCount(): Promise<unknown> {
   return publishedCatalogueQueries.countCatalogueRevisionsCount(env.CATALOGUE_DB).first("count");

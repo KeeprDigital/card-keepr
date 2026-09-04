@@ -1,8 +1,9 @@
+import { dropPausePrerequisiteGuards } from "./query-helpers/collection-resume";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { env } from "cloudflare:workers";
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 import { pauseEvidenceRunForWorkflowRecovery, resumePausedEvidenceRun } from "../../../src/catalogue/source-evidence";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
 import {
@@ -19,6 +20,7 @@ import {
 } from "./runtime-helpers";
 
 installRuntimeSuite();
+beforeEach(() => dropPausePrerequisiteGuards(env.CATALOGUE_DB));
 
 // Holds the parent Workflow at its record step so a test can observe or kill
 // a live parent deterministically: recordWorkflowIds is the only writer of

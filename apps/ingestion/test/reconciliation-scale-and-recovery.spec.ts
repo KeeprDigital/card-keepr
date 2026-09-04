@@ -1,3 +1,4 @@
+import { sourceRequestInsertionStatement } from "../../../src/catalogue/source-evidence/source-plan-repository";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
@@ -133,10 +134,15 @@ test("empty first, middle, and last partitions remain durable and digest-bound",
 test("unplanned requests fail at D1 while duplicate and unplanned observation sets fail reconciliation", async () => {
   const missing = await collectRequests([{ id: "partition-a", scenario: "base" }], "multi-request-missing-coverage");
   await expect(
-    sourceEvidenceQueries
-      .insertSourceRequestsForUnplannedRequestsFailAtD1WhileDuplicateUnplannedObservation(testEnv.CATALOGUE_DB)
-      .bind(missing.id)
-      .run(),
+    sourceRequestInsertionStatement(catalogueStore(testEnv.CATALOGUE_DB), {
+      runId: missing.id,
+      requestId: "partition-missing",
+      sequenceNumber: 1,
+      method: "GET",
+      url: "https://official-source.invalid/reconciliation/new-locator",
+      requestHeadersJson: "{}",
+      representationFingerprint: "missing",
+    }).run(),
   ).rejects.toThrow(/source_request_not_in_immutable_plan/);
   const exact = await reconcile(missing.id);
   expect(exact.response.status).toBe(200);

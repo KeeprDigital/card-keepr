@@ -1,5 +1,13 @@
+import { runTransitionGuardStatement, administrationOutcomeGuardStatement } from "../shared";
+import {
+  sourceRequestInsertionStatement,
+  sourceRequestPlanGuardStatement,
+  officialCollectionPlanInsertionStatement,
+  evidencePlanInsertionStatement,
+} from "./source-plan-repository";
 import {
   AdministrationProblem,
+  atomicRepositoryStatement,
   assertIngestionRunTransition,
   type CatalogueStore,
   canonicalJson,
@@ -134,23 +142,15 @@ export async function startEvidenceRun(
       [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
       startedAt,
     )),
-    repositoryStatements(database)
-      .prepare(
-        `INSERT INTO ingestion_evidence_plans (
-          ingestion_run_id, source_lineage, supported_game,
-          game_profile_version, adapter_version, request_plan_json,
-          plan_origin
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        runId,
-        firstPlan.source_lineage,
-        firstPlan.supported_game,
-        firstPlan.game_profile_version,
-        firstPlan.adapter_version,
-        planJson,
-        planOrigin,
-      ),
+    evidencePlanInsertionStatement(database, {
+      runId,
+      sourceLineage: firstPlan.source_lineage,
+      supportedGame: firstPlan.supported_game,
+      gameProfileVersion: firstPlan.game_profile_version,
+      adapterVersion: firstPlan.adapter_version,
+      requestPlanJson: planJson,
+      planOrigin: planOrigin,
+    }),
     ...requestStatements(database, runId, plans),
     repositoryStatements(database)
       .prepare(
@@ -255,23 +255,15 @@ export async function retryEvidenceRun(
         [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
         startedAt,
       )),
-      repositoryStatements(database)
-        .prepare(
-          `INSERT INTO ingestion_evidence_plans (
-            ingestion_run_id, source_lineage, supported_game,
-            game_profile_version, adapter_version, request_plan_json,
-            plan_origin
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .bind(
-          runId,
-          firstPlan.source_lineage,
-          firstPlan.supported_game,
-          firstPlan.game_profile_version,
-          firstPlan.adapter_version,
-          source.request_plan_json,
-          source.plan_origin,
-        ),
+      evidencePlanInsertionStatement(database, {
+        runId,
+        sourceLineage: firstPlan.source_lineage,
+        supportedGame: firstPlan.supported_game,
+        gameProfileVersion: firstPlan.game_profile_version,
+        adapterVersion: firstPlan.adapter_version,
+        requestPlanJson: source.request_plan_json,
+        planOrigin: source.plan_origin,
+      }),
       ...requestStatements(database, runId, plans),
       repositoryStatements(database)
         .prepare(
@@ -359,23 +351,15 @@ function requestStatements(
   return plans
     .flatMap(({ requests }) => requests)
     .map((sourceRequest, sequenceNumber) =>
-      repositoryStatements(database)
-        .prepare(
-          `INSERT INTO source_requests (
-            ingestion_run_id, request_id, sequence_number, method, url,
-            request_headers_json, representation_fingerprint, state,
-            source_snapshot_id, failure_code
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL)`,
-        )
-        .bind(
-          runId,
-          sourceRequest.id,
-          sequenceNumber,
-          sourceRequest.method,
-          sourceRequest.url,
-          canonicalJson(sourceRequest.headers),
-          sourceRequest.representation_fingerprint,
-        ),
+      sourceRequestInsertionStatement(database, {
+        runId,
+        requestId: sourceRequest.id,
+        sequenceNumber,
+        method: sourceRequest.method,
+        url: sourceRequest.url,
+        requestHeadersJson: canonicalJson(sourceRequest.headers),
+        representationFingerprint: sourceRequest.representation_fingerprint,
+      }),
     );
 }
 
@@ -677,9 +661,10 @@ export async function appendDiscoveredEvidenceRequests(
            ) AS base`,
         )
         .bind(run.id, parent.request_id, json, run.id),
-      repositoryStatements(database)
-        .prepare(
-          `INSERT OR IGNORE INTO source_requests (
+      atomicRepositoryStatement(database, {
+        statement: repositoryStatements(database)
+          .prepare(
+            `INSERT OR IGNORE INTO source_requests (
              ingestion_run_id, request_id, sequence_number, method, url,
              request_headers_json, representation_fingerprint, state,
              source_snapshot_id, failure_code, request_role,
@@ -693,8 +678,10 @@ export async function appendDiscoveredEvidenceRequests(
              AND request_id IN (
                SELECT json_extract(value, '$.id') FROM json_each(?)
              )`,
-        )
-        .bind(run.id, json),
+          )
+          .bind(run.id, json),
+        after: [sourceRequestPlanGuardStatement(database, run.id, JSON.stringify(chunk.map(({ id }) => id)))],
+      }),
     );
   }
   try {
@@ -903,40 +890,24 @@ export async function persistOfficialSourceCollectionPlan(
              THEN json('source_discovery_too_large') ELSE 1 END`,
         )
         .bind(runId, lineageRequestPattern, planRequestIds, collectionRequestIds, requestCapacity),
-      repositoryStatements(database)
-        .prepare(
-          `INSERT INTO official_source_collection_plans (
-             ingestion_run_id, source_lineage,
-             discovery_observation_set_id, contract,
-             collection_plan_json, content_digest, created_at
-           ) VALUES (?, ?, ?,
-             'card-keepr-official-source-collection-plan@1', ?, ?, ?)`,
-        )
-        .bind(
-          runId,
-          discoveryPlan.source_lineage,
-          discoveryObservationSetId,
-          collectionPlanJson,
-          contentDigest,
-          new Date().toISOString(),
-        ),
+      officialCollectionPlanInsertionStatement(database, {
+        runId,
+        sourceLineage: discoveryPlan.source_lineage,
+        observationSetId: discoveryObservationSetId,
+        collectionPlanJson,
+        contentDigest,
+        createdAt: new Date().toISOString(),
+      }),
       ...discoveredRequests.map((request, index) =>
-        repositoryStatements(database)
-          .prepare(
-            `INSERT INTO source_requests (
-               ingestion_run_id, request_id, sequence_number, method, url,
-               request_headers_json, representation_fingerprint, state,
-               source_snapshot_id, failure_code
-             ) VALUES (?, ?, ?, 'GET', ?, ?, ?, 'pending', NULL, NULL)`,
-          )
-          .bind(
-            runId,
-            request.id,
-            plans.flatMap((plan) => plan.requests).length + planIndex * 10000 + index,
-            request.url,
-            canonicalJson(request.headers),
-            request.representation_fingerprint,
-          ),
+        sourceRequestInsertionStatement(database, {
+          runId,
+          requestId: request.id,
+          sequenceNumber: plans.flatMap((plan) => plan.requests).length + planIndex * 10000 + index,
+          method: "GET",
+          url: request.url,
+          requestHeadersJson: canonicalJson(request.headers),
+          representationFingerprint: request.representation_fingerprint,
+        }),
       ),
     ]);
   } catch (error) {
@@ -1143,15 +1114,18 @@ export async function pauseEvidenceRunForRequestCapacity(
 ): Promise<void> {
   const pausedAt = new Date().toISOString();
   await database.batch([
-    repositoryStatements(database)
-      .prepare(
-        `UPDATE ingestion_runs
+    atomicRepositoryStatement(database, {
+      statement: repositoryStatements(database)
+        .prepare(
+          `UPDATE ingestion_runs
          SET state = 'paused',
              progress_json =
                '{"completed_stages":["planning"],"current_stage":"paused"}'
          WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "paused")}`,
-      )
-      .bind(runId),
+        )
+        .bind(runId),
+      after: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "paused" })],
+    }),
     // Guarded and idempotent under durable Workflow step replay: the run is
     // paused by the statement above (or already was), and one immutable pause
     // record exists per capacity generation. The replay guard is an explicit
@@ -1223,15 +1197,18 @@ export function retryExhaustionPauseStatements(
       ? "source_storage_retries_exhausted"
       : "source_transport_retries_exhausted";
   return [
-    repositoryStatements(database)
-      .prepare(
-        `UPDATE ingestion_runs
+    atomicRepositoryStatement(database, {
+      statement: repositoryStatements(database)
+        .prepare(
+          `UPDATE ingestion_runs
          SET state = 'paused',
              progress_json =
                '{"completed_stages":["planning"],"current_stage":"paused"}'
          WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "paused")}`,
-      )
-      .bind(runId),
+        )
+        .bind(runId),
+      after: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "paused" })],
+    }),
     // Guarded and idempotent under durable Workflow step replay, mirroring
     // the capacity pause: the run is paused by the statement above (or a
     // concurrent exhaustion already paused it), and one immutable record
@@ -1305,9 +1282,10 @@ function workflowPauseStatements(
     // parent: a concurrent recovery that already superseded it rebound the
     // identity, so a stale classification of the old instance must not
     // re-pause the freshly recovered run.
-    repositoryStatements(database)
-      .prepare(
-        `UPDATE ingestion_runs
+    atomicRepositoryStatement(database, {
+      statement: repositoryStatements(database)
+        .prepare(
+          `UPDATE ingestion_runs
          SET state = 'paused',
              progress_json =
                '{"completed_stages":["planning"],"current_stage":"paused"}'
@@ -1316,8 +1294,10 @@ function workflowPauseStatements(
              SELECT 1 FROM ingestion_evidence_plans
              WHERE ingestion_run_id = ?1 AND parent_workflow_id = ?2
            )`,
-      )
-      .bind(runId, facts.workflow_instance_id),
+        )
+        .bind(runId, facts.workflow_instance_id),
+      after: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "paused" })],
+    }),
     // Guarded and idempotent, mirroring the capacity and retry pauses: the
     // run is paused by the statement above (or already was), and one
     // immutable record exists per abandoned Workflow instance. When the run
@@ -1417,9 +1397,10 @@ export async function pauseEvidenceRunOnOwnerRequest(
       // The retained response exists only when this request's own pause
       // record does, so a request that lost the race records no outcome and
       // re-reads the winner's instead.
-      repositoryStatements(database)
-        .prepare(
-          `INSERT INTO administration_idempotency (
+      atomicRepositoryStatement(database, {
+        statement: repositoryStatements(database)
+          .prepare(
+            `INSERT INTO administration_idempotency (
              idempotency_key, operation, request_json, response_json,
              http_status, outcome, created_at
            )
@@ -1429,17 +1410,19 @@ export async function pauseEvidenceRunOnOwnerRequest(
              WHERE ingestion_run_id = ?6 AND workflow_instance_id = ?7
                AND pause_reason = ?8 AND paused_at = ?5
            )`,
-        )
-        .bind(
-          request.idempotency_key,
-          collectionPauseOperation,
-          requestJson,
-          canonicalJson(response),
-          pausedAt,
-          runId,
-          request.workflow_instance_id,
-          ownerRequestedPauseReason,
-        ),
+          )
+          .bind(
+            request.idempotency_key,
+            collectionPauseOperation,
+            requestJson,
+            canonicalJson(response),
+            pausedAt,
+            runId,
+            request.workflow_instance_id,
+            ownerRequestedPauseReason,
+          ),
+        after: [administrationOutcomeGuardStatement(database, request.idempotency_key)],
+      }),
     ]);
     applied = outcome[2]?.meta.changes === 1;
   } catch {
@@ -1627,9 +1610,10 @@ export async function resumePausedEvidenceRun(database: CatalogueStore, runId: s
            AND ${priorPauseMatches}`,
       )
       .bind(runId, previous.parent_workflow_id, previous.attempt_number, parentWorkflowId),
-    repositoryStatements(database)
-      .prepare(
-        `UPDATE ingestion_runs
+    atomicRepositoryStatement(database, {
+      statement: repositoryStatements(database)
+        .prepare(
+          `UPDATE ingestion_runs
          SET state = 'collecting',
              progress_json =
                '{"completed_stages":["planning"],"current_stage":"collecting"}'
@@ -1639,8 +1623,10 @@ export async function resumePausedEvidenceRun(database: CatalogueStore, runId: s
              SELECT 1 FROM ingestion_evidence_plans
              WHERE ingestion_run_id = ?1 AND parent_workflow_id = ?2
            )`,
-      )
-      .bind(runId, parentWorkflowId, previous.attempt_number),
+        )
+        .bind(runId, parentWorkflowId, previous.attempt_number),
+      after: [runTransitionGuardStatement(database, { runId, from: "paused", to: "collecting" })],
+    }),
     repositoryStatements(database)
       .prepare(
         `INSERT OR IGNORE INTO ingestion_workflow_attempts (
@@ -2058,9 +2044,10 @@ export async function terminateEvidenceRun(
           requestDigest,
           canonicalJson(response),
         ),
-      repositoryStatements(database)
-        .prepare(
-          `UPDATE ingestion_runs
+      atomicRepositoryStatement(database, {
+        statement: repositoryStatements(database)
+          .prepare(
+            `UPDATE ingestion_runs
            SET state = 'failed', terminal_at = ?2, failure_code = ?3,
                progress_json =
                  '{"completed_stages":["planning"],"current_stage":"failed"}'
@@ -2069,8 +2056,10 @@ export async function terminateEvidenceRun(
                SELECT 1 FROM ingestion_run_terminations
                WHERE ingestion_run_id = ?1 AND idempotency_key = ?4
              )`,
-        )
-        .bind(runId, terminatedAt, ingestionRunTerminatedFailureCode, request.idempotency_key),
+          )
+          .bind(runId, terminatedAt, ingestionRunTerminatedFailureCode, request.idempotency_key),
+        after: [runTransitionGuardStatement(database, { runId, from: "paused", to: "failed" })],
+      }),
       repositoryStatements(database)
         .prepare(
           `UPDATE ingestion_evidence_plans SET failure_code = ?2
@@ -2235,22 +2224,28 @@ export async function finalizeEvidenceRun(database: CatalogueStore, runId: strin
     const failureCode = failure?.failure_code ?? "source_evidence_failed";
     await database.batch([
       lifecycleV2
-        ? repositoryStatements(database)
-            .prepare(
-              `UPDATE ingestion_runs
+        ? atomicRepositoryStatement(database, {
+            statement: repositoryStatements(database)
+              .prepare(
+                `UPDATE ingestion_runs
                SET state = 'failed', terminal_at = ?, failure_code = ?,
                    progress_json =
                      '{"completed_stages":["planning"],"current_stage":"failed"}'
                WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "failed")}`,
-            )
-            .bind(completedAt, failureCode, runId)
-        : repositoryStatements(database)
-            .prepare(
-              `UPDATE ingestion_runs
+              )
+              .bind(completedAt, failureCode, runId),
+            after: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "failed" })],
+          })
+        : atomicRepositoryStatement(database, {
+            statement: repositoryStatements(database)
+              .prepare(
+                `UPDATE ingestion_runs
                SET state = 'failed', terminal_at = ?
                WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "failed")}`,
-            )
-            .bind(completedAt, runId),
+              )
+              .bind(completedAt, runId),
+            after: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "failed" })],
+          }),
       // Completion is recorded once: a superseded parent attempt that wakes
       // from its barrier sleep after the run completed under a later attempt
       // must not move the retained completion facts.
@@ -2272,21 +2267,27 @@ export async function finalizeEvidenceRun(database: CatalogueStore, runId: strin
   }
   await database.batch([
     lifecycleV2
-      ? repositoryStatements(database)
-          .prepare(
-            `UPDATE ingestion_runs
+      ? atomicRepositoryStatement(database, {
+          statement: repositoryStatements(database)
+            .prepare(
+              `UPDATE ingestion_runs
              SET state = 'parsing',
                  progress_json =
                    '{"completed_stages":["planning","collecting"],"current_stage":"parsing"}'
              WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "parsing")}`,
-          )
-          .bind(runId)
-      : repositoryStatements(database)
-          .prepare(
-            `UPDATE ingestion_runs SET state = 'parsing'
+            )
+            .bind(runId),
+          after: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "parsing" })],
+        })
+      : atomicRepositoryStatement(database, {
+          statement: repositoryStatements(database)
+            .prepare(
+              `UPDATE ingestion_runs SET state = 'parsing'
              WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "parsing")}`,
-          )
-          .bind(runId),
+            )
+            .bind(runId),
+          after: [runTransitionGuardStatement(database, { runId, from: "collecting", to: "parsing" })],
+        }),
     repositoryStatements(database)
       .prepare(
         `UPDATE ingestion_evidence_plans

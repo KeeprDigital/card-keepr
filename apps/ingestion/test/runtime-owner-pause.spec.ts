@@ -1,8 +1,9 @@
+import { dropPausePrerequisiteGuards } from "./query-helpers/collection-resume";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { env } from "cloudflare:workers";
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 import {
   pauseEvidenceCollection,
   resumeEvidenceRun,
@@ -19,6 +20,7 @@ import {
 } from "./runtime-helpers";
 
 installRuntimeSuite();
+beforeEach(() => dropPausePrerequisiteGuards(env.CATALOGUE_DB));
 
 // Holds the parent Workflow at its record step so a test can pause a live,
 // running parent deterministically (see runtime-workflow-recovery.spec.ts).

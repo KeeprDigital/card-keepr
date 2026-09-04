@@ -1,10 +1,23 @@
+import {
+  dropSourceRequestPlanGuard,
+  dropCollectionPlanDiscoveryGuard,
+  dropEvidencePlanOriginGuard,
+  inspectEvidencePlanCount,
+  inspectSourceRequestIds,
+  inspectCollectionPlanCount,
+} from "./query-helpers/collection-resume";
+import {
+  sourceRequestInsertionStatement,
+  officialCollectionPlanInsertionStatement,
+  evidencePlanInsertionStatement,
+} from "../../../src/catalogue/source-evidence/source-plan-repository";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import * as legalityQueries from "./query-helpers/legality";
 import { applyD1Migrations } from "cloudflare:test";
 import { expect, test } from "vitest";
-import { sha256 } from "../../../src/catalogue/shared";
+import { catalogueStore, sha256 } from "../../../src/catalogue/shared";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 import {
   approve,
@@ -101,15 +114,55 @@ test("applied D1 request copies and owning run identities are immutable", async 
   const deleteError = await rejectedError(
     sourceEvidenceQueries.deleteSourceRequests(testEnv.CATALOGUE_DB).bind(runId).run(),
   );
+  await dropSourceRequestPlanGuard(testEnv.CATALOGUE_DB).run();
   const insertError = await rejectedError(
-    sourceEvidenceQueries
-      .insertSourceRequestWithMismatchedPlanFields(testEnv.CATALOGUE_DB)
-      .bind(runId, "f".repeat(64))
-      .run(),
+    sourceRequestInsertionStatement(catalogueStore(testEnv.CATALOGUE_DB), {
+      runId,
+      requestId: "insert-target",
+      sequenceNumber: 2,
+      method: "GET",
+      url: "https://attacker.example/wrong-plan-fields",
+      requestHeadersJson: '{"accept":"application/json"}',
+      representationFingerprint: "f".repeat(64),
+    }).run(),
   );
   const unplannedInsertError = await rejectedError(
-    sourceEvidenceQueries.insertUnplannedSourceRequest(testEnv.CATALOGUE_DB).bind(runId, "d".repeat(64)).run(),
+    sourceRequestInsertionStatement(catalogueStore(testEnv.CATALOGUE_DB), {
+      runId,
+      requestId: "unplanned",
+      sequenceNumber: 3,
+      method: "GET",
+      url: "https://attacker.example/unplanned",
+      requestHeadersJson: "{}",
+      representationFingerprint: "d".repeat(64),
+    }).run(),
   );
+  await expect(
+    catalogueStore(testEnv.CATALOGUE_DB).batch([
+      sourceRequestInsertionStatement(catalogueStore(testEnv.CATALOGUE_DB), {
+        runId,
+        requestId: "insert-target",
+        sequenceNumber: 2,
+        method: "GET",
+        url: "https://en.onepiece-cardgame.com/products/",
+        requestHeadersJson: '{"accept":"text/html"}',
+        representationFingerprint: "e".repeat(64),
+      }),
+      sourceRequestInsertionStatement(catalogueStore(testEnv.CATALOGUE_DB), {
+        runId,
+        requestId: "unplanned-tail",
+        sequenceNumber: 3,
+        method: "GET",
+        url: "https://attacker.example/unplanned-tail",
+        requestHeadersJson: "{}",
+        representationFingerprint: "d".repeat(64),
+      }),
+    ]),
+  ).rejects.toThrow(/source_request_not_in_immutable_plan/);
+  expect((await inspectSourceRequestIds(testEnv.CATALOGUE_DB, runId).all()).results).toEqual([
+    { request_id: "update-target" },
+    { request_id: "delete-target" },
+  ]);
   const requestOwnerError = await rejectedError(
     sourceEvidenceQueries.setSourceRequestsIngestionRunId(testEnv.CATALOGUE_DB).bind(ownerTargetRunId, runId).run(),
   );
@@ -190,18 +243,21 @@ test("an Official Source Collection Plan cannot freeze another run's discovery e
     discovery_observation_set_id: "srcobsset_collection_owner",
     requests: [],
   });
-  await expect(
-    sourceEvidenceQueries
-      .insertOfficialSourceCollectionPlans(testEnv.CATALOGUE_DB)
-      .bind(sourceRunId, collectionPlan, `a${"Z".repeat(63)}`)
-      .run(),
-  ).rejects.toThrow(/CHECK constraint failed/);
-  await expect(
-    sourceEvidenceQueries
-      .insertOfficialSourceCollectionPlans(testEnv.CATALOGUE_DB)
-      .bind(targetRunId, collectionPlan, "4".repeat(64))
-      .run(),
-  ).rejects.toThrow(/official_source_collection_plan_discovery_owner_mismatch/);
+  await dropCollectionPlanDiscoveryGuard(testEnv.CATALOGUE_DB).run();
+  const insertPlan = (runId: string, contentDigest: string) =>
+    officialCollectionPlanInsertionStatement(catalogueStore(testEnv.CATALOGUE_DB), {
+      runId,
+      sourceLineage: "one-piece-en",
+      observationSetId: "srcobsset_collection_owner",
+      collectionPlanJson: collectionPlan,
+      contentDigest,
+      createdAt: "2026-08-01T00:00:03.000Z",
+    });
+  await expect(insertPlan(sourceRunId, `a${"Z".repeat(63)}`).run()).rejects.toThrow(/CHECK constraint failed/);
+  await expect(insertPlan(targetRunId, "4".repeat(64)).run()).rejects.toThrow(
+    /official_source_collection_plan_discovery_owner_mismatch/,
+  );
+  expect(await inspectCollectionPlanCount(testEnv.CATALOGUE_DB, targetRunId).first("count")).toBe(0);
 });
 
 test("a fresh D1 enforces full lowercase digests and canonical revision rule identity", async () => {
@@ -209,7 +265,7 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
   // the digest and identity guards can be exercised without a real plan.
   const scratchDatabase = testEnv.SCRATCH_DB;
   await applyD1Migrations(scratchDatabase, testEnv.TEST_MIGRATIONS);
-  await publishedCatalogueQueries.dropOfficialSourceCollectionPlanDiscoveryOwner(scratchDatabase).run();
+  await dropCollectionPlanDiscoveryGuard(scratchDatabase).run();
 
   const malformedDigest = await rejectedError(
     sourceEvidenceQueries
@@ -1034,3 +1090,24 @@ test("the One Piece production release surface publishes release timing through 
       .first("current_revision_id"),
   ).toBe(revisionId);
 }, 90_000);
+
+test("a repository Evidence Plan rejects an adapter origin mismatch without the schema trigger", async () => {
+  const runId = "run_plan_origin_repository_guard";
+  await ingestionQueries
+    .insertIngestionRunsForAppliedD1RequestCopiesOwningRunIdentitiesAreImmutable(testEnv.CATALOGUE_DB)
+    .bind(runId, "plan-origin-repository-guard")
+    .run();
+  await dropEvidencePlanOriginGuard(testEnv.CATALOGUE_DB).run();
+  await expect(
+    evidencePlanInsertionStatement(catalogueStore(testEnv.CATALOGUE_DB), {
+      runId,
+      sourceLineage: "one-piece-en",
+      supportedGame: "one-piece",
+      gameProfileVersion: "one-piece@1",
+      adapterVersion: "fixture-one-piece-json@3",
+      requestPlanJson: "{}",
+      planOrigin: "production",
+    }).run(),
+  ).rejects.toThrow(/evidence_plan_origin_mismatch/);
+  expect(await inspectEvidencePlanCount(testEnv.CATALOGUE_DB, runId).first("count")).toBe(0);
+});
