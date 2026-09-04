@@ -1,5 +1,5 @@
 import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
-import { canonicalJson } from "../shared";
+import { canonicalJson, gameProfileForGame, gameProfileFilterValue } from "../shared";
 import { cardSearchFtsQuery, cardSearchQuery } from "./card-search";
 import {
   canonicalEtag,
@@ -49,6 +49,9 @@ type CollectionFilters = {
   q: string | null;
   game: string | null;
   cardNumber: string | null;
+  productId: string | null;
+  rarity: string | null;
+  attributes: Record<string, string>;
   limit: number;
 };
 
@@ -62,6 +65,7 @@ export async function cardCollectionResponse(
   const cursor = parseCursor(url.searchParams.get("after"), filters);
   if (cursor === "invalid") throw invalidCursor();
   const revision = await pinRevision(database, cursor?.revision_id ?? null, "/v1/cards", base, { search: true });
+  await validatePublishedFilters(database, revision.id, filters);
   const etag = await canonicalEtag({
     route: "/v1/cards",
     revision: revision.id,
@@ -107,6 +111,14 @@ export async function cardCollectionResponse(
             q: filters.q,
             game: filters.game,
             card_number: filters.cardNumber,
+            product_id: filters.productId,
+            rarity: filters.rarity,
+            ...Object.fromEntries(
+              Object.entries(filters.attributes).map(([name, value]) => [
+                `attribute.${name}`,
+                attributeQueryValue(value),
+              ]),
+            ),
             limit: filters.limit,
             after: cursor === null ? null : encodeCursor(cursor),
           }),
@@ -206,6 +218,7 @@ export function cardCollectionPageQuery(
     conditions.push("cards.sort_identity_kind = 'card_number'", "cards.sort_identity_value = ?");
     bindings.push(filters.cardNumber);
   }
+  addCardFilterPredicates(conditions, bindings, "cards", filters);
   if (shortSearch) {
     conditions.push(
       "search.term = ?",
@@ -279,6 +292,7 @@ function ftsCardCollectionPageQuery(
     conditions.push("filtered.sort_identity_kind = 'card_number'", "filtered.sort_identity_value = ?");
     bindings.push(filters.cardNumber);
   }
+  addCardFilterPredicates(conditions, bindings, "filtered", filters);
   if (after !== null) {
     conditions.push(
       `(filtered.sort_game, filtered.sort_identity_kind,
@@ -317,7 +331,16 @@ function ftsCardCollectionPageQuery(
 }
 
 function parseFilters(url: URL): CollectionFilters {
-  collectionParameters(url);
+  collectionParameters(url, [
+    "q",
+    "game",
+    "card_number",
+    "product_id",
+    "rarity",
+    "limit",
+    "after",
+    ...[...url.searchParams.keys()].filter((name) => name.startsWith("attribute.")),
+  ]);
   const limit = collectionLimit(url.searchParams.get("limit"));
   const rawQuery = collectionFilter(url, "q");
   const q = collectionFilterValue(cardSearchQuery(rawQuery)?.text ?? null, "q");
@@ -331,7 +354,21 @@ function parseFilters(url: URL): CollectionFilters {
   const cardNumber = collectionFilterValue(normalizedFilter(rawCardNumber), "card_number");
   if (rawCardNumber !== null && cardNumber === null)
     throw invalidParameter("card_number", "card_number must contain at least one character.");
-  return { q, game, cardNumber, limit };
+  const productId = collectionFilter(url, "product_id");
+  const rarity = collectionFilter(url, "rarity")?.normalize("NFC").trim().toLowerCase() ?? null;
+  if (rarity !== null && !/^[a-z0-9_-]{1,100}$/u.test(rarity))
+    throw invalidParameter("rarity", "rarity must be a normalized rarity value.");
+  const attributes: Record<string, string> = {};
+  for (const name of [...url.searchParams.keys()].filter((name) => name.startsWith("attribute.")).sort()) {
+    if (game === null) throw invalidParameter(name, "Game Profile attribute filters require game.");
+    const path = name.slice("attribute.".length);
+    const raw = collectionFilter(url, name)!;
+    const profile = gameProfileForGame(game)!;
+    const value = gameProfileFilterValue(profile, path, raw);
+    if (value === null) throw invalidParameter(name, `${name} or its value is not defined by ${profile}.`);
+    attributes[path] = value;
+  }
+  return { q, game, cardNumber, productId, rarity, attributes, limit };
 }
 
 function rowCursor(row: CardRow): CardCursor["after"] {
@@ -394,4 +431,67 @@ function parseCursor(encoded: string | null, filters: CollectionFilters): CardCu
 
 function invalidCursor(): ReadProblem {
   return new ReadProblem(400, "invalid_cursor", "The Card cursor is invalid.");
+}
+
+function addCardFilterPredicates(
+  conditions: string[],
+  bindings: (string | number)[],
+  alias: string,
+  filters: CollectionFilters,
+): void {
+  if (filters.productId !== null) {
+    conditions.push(`EXISTS (SELECT 1 FROM revision_printing_product_query AS product INDEXED BY revision_printing_products_by_product
+      WHERE product.catalogue_revision_id = ${alias}.catalogue_revision_id AND product.product_id = ? AND product.card_id = ${alias}.card_id)`);
+    bindings.push(filters.productId);
+  }
+  if (filters.rarity !== null) {
+    conditions.push(`EXISTS (SELECT 1 FROM revision_printing_query AS rarity INDEXED BY revision_printing_query_by_rarity
+      WHERE rarity.catalogue_revision_id = ${alias}.catalogue_revision_id AND rarity.normalized_rarity = ? AND rarity.card_id = ${alias}.card_id)`);
+    bindings.push(filters.rarity);
+  }
+  for (const [attribute, value] of Object.entries(filters.attributes)) {
+    conditions.push(`EXISTS (SELECT 1 FROM revision_card_attributes AS attribute INDEXED BY revision_card_attributes_by_value
+      WHERE attribute.catalogue_revision_id = ${alias}.catalogue_revision_id AND attribute.profile = ? AND attribute.attribute = ? AND attribute.value = ? AND attribute.card_id = ${alias}.card_id)`);
+    bindings.push(gameProfileForGame(filters.game!)!, attribute, value);
+  }
+}
+
+async function validatePublishedFilters(
+  database: D1Database,
+  revisionId: string,
+  filters: CollectionFilters,
+): Promise<void> {
+  const checks: { parameter: string; sql: string; values: string[] }[] = [];
+  if (filters.productId !== null)
+    checks.push({
+      parameter: "product_id",
+      sql: "SELECT 1 FROM revision_products WHERE catalogue_revision_id = ? AND product_id = ? LIMIT 1",
+      values: [filters.productId],
+    });
+  if (filters.rarity !== null)
+    checks.push({
+      parameter: "rarity",
+      sql: "SELECT 1 FROM revision_printing_query WHERE catalogue_revision_id = ? AND normalized_rarity = ? LIMIT 1",
+      values: [filters.rarity],
+    });
+  for (const [attribute, value] of Object.entries(filters.attributes)) {
+    checks.push({
+      parameter: `attribute.${attribute}`,
+      sql: "SELECT 1 FROM revision_card_attributes WHERE catalogue_revision_id = ? AND profile = ? AND attribute = ? AND value = ? LIMIT 1",
+      values: [gameProfileForGame(filters.game!)!, attribute, value],
+    });
+  }
+  if (checks.length === 0) return;
+  const results = await database.batch(
+    checks.map(({ sql, values }) => database.prepare(sql).bind(revisionId, ...values)),
+  );
+  for (const [index, check] of checks.entries()) {
+    if (results[index]!.results.length === 0)
+      throw invalidParameter(check.parameter, `${check.parameter} is not known in the pinned Catalogue Revision.`);
+  }
+}
+
+function attributeQueryValue(value: string): string {
+  const parsed: unknown = JSON.parse(value);
+  return typeof parsed === "string" ? parsed : String(parsed);
 }

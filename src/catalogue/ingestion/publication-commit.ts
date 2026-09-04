@@ -17,6 +17,7 @@ import {
   typedPrintingProjections,
 } from "../reconciliation";
 import { idempotencyCompletionStatements, replayAfterConflict } from "./administration-idempotency";
+import { cardAttributeProjectionStatement } from "./card-attribute-materialization";
 import { printingQueryProjectionStatements } from "./printing-query-materialization";
 import { requiredCandidateCatalogueDigest } from "./publication-storage";
 import { progressFor, publicRun } from "./run-document-codec";
@@ -619,6 +620,7 @@ export async function commitVerifiedPublication(
     ...printingImageStatements,
     ...revisionPrintingImageStatements,
     ...productReleaseStatements,
+    cardAttributeProjectionStatement(database, revisionId),
     ...printingQueryProjectionStatements(
       database,
       revisionId,

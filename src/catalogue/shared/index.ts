@@ -69,6 +69,8 @@ export type {
 export {
   canonicalProfileAttributes,
   exportedGameProfileSchema,
+  gameProfileForGame,
+  gameProfileFilterValue,
   rawSourceValue,
   requiredProfileContract,
   sourceFieldWarning,
