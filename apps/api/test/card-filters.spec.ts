@@ -1,3 +1,5 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
 import { exports } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { cardAttributeProjectionStatement } from "../../../src/catalogue/ingestion/card-attribute-repository";
@@ -135,7 +137,7 @@ async function seedCards() {
     gameData.attributes.colours = index === 1 ? ["blue"] : ["red"];
   }
   await seedApiRevision({ revisionId, runId: `run_filters_${suffix}`, cards });
-  await cardAttributeProjectionStatement(testEnv.CATALOGUE_DB, revisionId).run();
+  await cardAttributeProjectionStatement(catalogueStore(testEnv.CATALOGUE_DB), revisionId).run();
   const printings = [
     { printing_id: "printing_captain_common", card_id: "card_captain", normalized_rarity: "common" },
     { printing_id: "printing_captain_rare", card_id: "card_captain", normalized_rarity: "rare" },
@@ -144,18 +146,13 @@ async function seedCards() {
   ];
   await testEnv.CATALOGUE_DB.batch([
     ...printings.map((printing) =>
-      testEnv.CATALOGUE_DB.prepare("INSERT INTO revision_printings VALUES (?, ?, ?, ?)").bind(
-        revisionId,
-        printing.printing_id,
-        printing.card_id,
-        JSON.stringify(printing),
-      ),
+      publishedCatalogueQueries
+        .insertRevisionPrintingsForSeedCards(testEnv.CATALOGUE_DB)
+        .bind(revisionId, printing.printing_id, printing.card_id, JSON.stringify(printing)),
     ),
-    testEnv.CATALOGUE_DB.prepare(
-      "INSERT INTO revision_products VALUES (?, 'product_deck', 'one-piece', 'ST-01', 'Deck', 'deck', '[]', '{}')",
-    ).bind(revisionId),
+    publishedCatalogueQueries.insertRevisionProductsForSeedCards(testEnv.CATALOGUE_DB).bind(revisionId),
     ...["printing_captain_common", "printing_crew"].map((id) =>
-      testEnv.CATALOGUE_DB.prepare("INSERT INTO revision_product_relationships VALUES (?, ?, ?)").bind(
+      publishedCatalogueQueries.insertRevisionProductRelationshipsForSeedCards(testEnv.CATALOGUE_DB).bind(
         revisionId,
         `relationship_${id}`,
         JSON.stringify({
@@ -167,7 +164,7 @@ async function seedCards() {
       ),
     ),
     ...printingQueryProjectionStatements(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       revisionId,
       printings.map((printing) => ({ ...printing, supported_game: "one-piece" as const })),
     ),

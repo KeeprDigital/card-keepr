@@ -1,3 +1,4 @@
+import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
 import { applyD1Migrations } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { expect, test } from "vitest";
@@ -30,9 +31,9 @@ test("Card attribute migration backfills typed values and nested array leaves fo
   // Retained pre-envelope shape is also accepted by the one-time backfill.
   const bare = { ...card, id: "card_bare", official_identity: { kind: "card_number", value: "BT01-002" } };
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      "INSERT INTO revision_cards VALUES ('catrev_attribute_backfill', 'card_bare', ?)",
-    ).bind(JSON.stringify(bare)),
+    publishedCatalogueQueries
+      .insertRevisionCardsForCardAttributeMigrationBackfillsTypedValuesNestedArrayLeaves(testEnv.CATALOGUE_DB)
+      .bind(JSON.stringify(bare)),
     ...cardSearchStatements("catrev_attribute_backfill", bare),
   ]);
   await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);

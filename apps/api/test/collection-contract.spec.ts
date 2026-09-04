@@ -1,3 +1,4 @@
+import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
 import { expect, test } from "vitest";
 import apiWorker from "../src/index";
 import { apiCard, apiHeaders, installApiSuite, seedApiRevision, testEnv } from "./api-fixtures";
@@ -59,9 +60,8 @@ test.each(["cards", "printings", "products"])(
     const url = `https://card-keepr.invalid/v1/${collection}`;
     const first = await apiWorker.fetch(new Request(url, { headers: apiHeaders(`${collection}-available`) }), testEnv);
     expect(first.status).toBe(200);
-    await testEnv.CATALOGUE_DB.prepare(
-      "UPDATE catalogue_query_revisions SET state = 'pending' WHERE catalogue_revision_id = ?",
-    )
+    await publishedCatalogueQueries
+      .setCatalogueQueryRevisionsStateForCollectionContract(testEnv.CATALOGUE_DB)
       .bind(revisionId)
       .run();
     const unavailable = await apiWorker.fetch(

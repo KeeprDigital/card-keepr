@@ -1,3 +1,9 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
+import * as ingestionQueries from "../../ingestion/test/query-helpers/ingestion";
+import * as reconciliationQueries from "../../ingestion/test/query-helpers/reconciliation";
+import * as sourceEvidenceQueries from "../../ingestion/test/query-helpers/source-evidence";
+import * as curatedQueries from "../../ingestion/test/query-helpers/curated";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -13,9 +19,9 @@ const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 
 beforeEach(async () => {
   await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
-  const seeded = await testEnv.CATALOGUE_DB.prepare(
-    "SELECT 1 AS present FROM catalogue_revisions WHERE id = 'catrev_products'",
-  ).first<{ present: number }>();
+  const seeded = await publishedCatalogueQueries
+    .readCatalogueRevisionsPresent(testEnv.CATALOGUE_DB)
+    .first<{ present: number }>();
   if (seeded !== null) return;
   const product = {
     type: "product",
@@ -117,20 +123,7 @@ beforeEach(async () => {
     links: { self: `/v1/cards/${printing.card_id}` },
   };
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_digest, candidate_created_at, approval_deadline,
-         approval_json, published_revision_id, export_manifest_digest,
-         terminal_at, candidate_json, approval_idempotency_key
-       ) VALUES (
-         'run_products', 'publishing', '["one-piece"]',
-         '2026-01-01T00:00:00.000Z', 'catrev_spine_000', NULL,
-         'products-seed', ?, '2026-01-01T00:00:00.000Z',
-         '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-       )`,
-    ).bind(
+    ingestionQueries.insertIngestionRunsForProductRelease(testEnv.CATALOGUE_DB).bind(
       "a".repeat(64),
       JSON.stringify({
         candidate_digest: "a".repeat(64),
@@ -138,31 +131,11 @@ beforeEach(async () => {
         approved_at: "2026-01-01T00:00:00.000Z",
       }),
     ),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE operation_state SET active_ingestion_run_id = 'run_products'
-       WHERE singleton = 1`,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO catalogue_revisions (
-         id, ingestion_run_id, published_at, content_digest,
-         expected_previous_revision_id, approved_candidate_digest
-       ) VALUES (
-         'catrev_products', 'run_products',
-         '2026-01-01T00:00:00.000Z', ?,
-         'catrev_spine_000', ?
-       )`,
-    ).bind("a".repeat(64), "a".repeat(64)),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_products (
-         catalogue_revision_id, product_id, supported_game, official_code,
-         name, search_text, release_regions_json, document_json
-       ) VALUES (
-         'catrev_products', 'product_st15', 'one-piece', 'ST-15',
-         'Starter Deck RED Edward.Newgate',
-         'st-15 starter deck red edward.newgate',
-         '["EN-OCEANIA"]', ?
-       )`,
-    ).bind(
+    ingestionQueries.setOperationStateActiveIngestionRunId(testEnv.CATALOGUE_DB),
+    ingestionQueries
+      .insertCatalogueRevisionsForProductRelease(testEnv.CATALOGUE_DB)
+      .bind("a".repeat(64), "a".repeat(64)),
+    publishedCatalogueQueries.insertRevisionProductsForProductRelease(testEnv.CATALOGUE_DB).bind(
       JSON.stringify({
         data: product,
         included: [],
@@ -170,102 +143,62 @@ beforeEach(async () => {
         disagreements: [],
       }),
     ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO catalogue_query_revisions (
-         catalogue_revision_id, state, repaired_through_card_id
-       ) VALUES ('catrev_products', 'available', NULL)`,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_products_fts (
-         catalogue_revision_id, product_id, search_text
-       ) VALUES ('catrev_products', 'product_st15',
-                 'st-15 starter deck red edward.newgate')`,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_cards (
-         catalogue_revision_id, card_id, document_json
-       ) VALUES ('catrev_products', ?, ?)`,
-    ).bind(card.id, JSON.stringify(card)),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_printings (
-         catalogue_revision_id, printing_id, card_id, document_json
-       ) VALUES ('catrev_products', ?, ?, ?)`,
-    ).bind(printing.id, printing.card_id, JSON.stringify(printing)),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO reconciled_printing_images (
-         id, printing_id, role, media_type, width, height,
-         content_sha256, content_byte_length, object_key
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      printingImage.id,
-      printingImage.printing_id,
-      printingImage.role,
-      printingImage.media_type,
-      printingImage.width,
-      printingImage.height,
-      printingImage.content_sha256,
-      18,
-      `printing-images/${printingImage.content_sha256}`,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_printing_images (
-         catalogue_revision_id, image_id, printing_id,
-         media_type, content_sha256, content_byte_length, object_key
-       ) VALUES ('catrev_products', ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      printingImage.id,
-      printingImage.printing_id,
-      printingImage.media_type,
-      printingImage.content_sha256,
-      18,
-      `printing-images/${printingImage.content_sha256}`,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO reconciled_printing_images (
-         id, printing_id, role, media_type, width, height,
-         content_sha256, content_byte_length, object_key
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      backPrintingImage.id,
-      backPrintingImage.printing_id,
-      backPrintingImage.role,
-      backPrintingImage.media_type,
-      backPrintingImage.width,
-      backPrintingImage.height,
-      backPrintingImage.content_sha256,
-      17,
-      `printing-images/${backPrintingImage.content_sha256}`,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_printing_images (
-         catalogue_revision_id, image_id, printing_id,
-         media_type, content_sha256, content_byte_length, object_key
-       ) VALUES ('catrev_products', ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      backPrintingImage.id,
-      backPrintingImage.printing_id,
-      backPrintingImage.media_type,
-      backPrintingImage.content_sha256,
-      17,
-      `printing-images/${backPrintingImage.content_sha256}`,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE catalogue_state
-       SET current_revision_id = 'catrev_products',
-           published_at = '2026-01-01T00:00:00.000Z'
-       WHERE singleton = 1`,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO source_freshness (
-         game, area, source_lineage, region, checked_at, ingestion_run_id
-       ) VALUES
-         ('one-piece', 'cards-and-printings', '', '',
-          '2026-01-01T01:00:00.000Z', 'run_products'),
-         ('one-piece', 'products-and-releases', '', '',
-          '2026-01-01T02:00:00.000Z', 'run_products'),
-         ('one-piece', 'legality-rules', 'one-piece-en', 'EN-OCEANIA',
-          '2026-01-01T03:00:00.000Z', 'run_products')`,
-    ),
+    publishedCatalogueQueries.insertCatalogueQueryRevisionsForProductRelease(testEnv.CATALOGUE_DB),
+    publishedCatalogueQueries.insertRevisionProductsFts(testEnv.CATALOGUE_DB),
+    publishedCatalogueQueries
+      .insertRevisionCardsForProductRelease(testEnv.CATALOGUE_DB)
+      .bind(card.id, JSON.stringify(card)),
+    publishedCatalogueQueries
+      .insertRevisionPrintingsForProductRelease(testEnv.CATALOGUE_DB)
+      .bind(printing.id, printing.card_id, JSON.stringify(printing)),
+    reconciliationQueries
+      .insertReconciledPrintingImages(testEnv.CATALOGUE_DB)
+      .bind(
+        printingImage.id,
+        printingImage.printing_id,
+        printingImage.role,
+        printingImage.media_type,
+        printingImage.width,
+        printingImage.height,
+        printingImage.content_sha256,
+        18,
+        `printing-images/${printingImage.content_sha256}`,
+      ),
+    publishedCatalogueQueries
+      .insertRevisionPrintingImages(testEnv.CATALOGUE_DB)
+      .bind(
+        printingImage.id,
+        printingImage.printing_id,
+        printingImage.media_type,
+        printingImage.content_sha256,
+        18,
+        `printing-images/${printingImage.content_sha256}`,
+      ),
+    reconciliationQueries
+      .insertReconciledPrintingImages(testEnv.CATALOGUE_DB)
+      .bind(
+        backPrintingImage.id,
+        backPrintingImage.printing_id,
+        backPrintingImage.role,
+        backPrintingImage.media_type,
+        backPrintingImage.width,
+        backPrintingImage.height,
+        backPrintingImage.content_sha256,
+        17,
+        `printing-images/${backPrintingImage.content_sha256}`,
+      ),
+    publishedCatalogueQueries
+      .insertRevisionPrintingImages(testEnv.CATALOGUE_DB)
+      .bind(
+        backPrintingImage.id,
+        backPrintingImage.printing_id,
+        backPrintingImage.media_type,
+        backPrintingImage.content_sha256,
+        17,
+        `printing-images/${backPrintingImage.content_sha256}`,
+      ),
+    publishedCatalogueQueries.setCatalogueStateCurrentRevisionIdPublishedAtForProductRelease(testEnv.CATALOGUE_DB),
+    sourceEvidenceQueries.insertSourceFreshness(testEnv.CATALOGUE_DB),
   ]);
   await testEnv.PRINTING_IMAGES.put(
     `printing-images/${printingImage.content_sha256}`,
@@ -407,7 +340,7 @@ test("Product search normalizes compatibility-form official facts during publica
     ],
   };
   await testEnv.CATALOGUE_DB.batch(
-    productReleasePublicationStatements(testEnv.CATALOGUE_DB, candidate, "catrev_products", {
+    productReleasePublicationStatements(catalogueStore(testEnv.CATALOGUE_DB), candidate, "catrev_products", {
       products: {
         [productId]: {
           first_revision_id: "catrev_products",
@@ -444,14 +377,10 @@ test("Product search normalizes compatibility-form official facts during publica
     }
   } finally {
     await testEnv.CATALOGUE_DB.batch([
-      testEnv.CATALOGUE_DB.prepare(`DELETE FROM revision_products_fts WHERE product_id = ?`).bind(productId),
-      testEnv.CATALOGUE_DB.prepare(
-        `DELETE FROM revision_products
-         WHERE catalogue_revision_id = 'catrev_products'
-           AND product_id = ?`,
-      ).bind(productId),
-      testEnv.CATALOGUE_DB.prepare(`DELETE FROM reconciled_releases WHERE id = ?`).bind(releaseId),
-      testEnv.CATALOGUE_DB.prepare(`DELETE FROM reconciled_products WHERE id = ?`).bind(productId),
+      publishedCatalogueQueries.deleteRevisionProductsFts(testEnv.CATALOGUE_DB).bind(productId),
+      publishedCatalogueQueries.deleteRevisionProducts(testEnv.CATALOGUE_DB).bind(productId),
+      reconciliationQueries.deleteReconciledReleases(testEnv.CATALOGUE_DB).bind(releaseId),
+      reconciliationQueries.deleteReconciledProducts(testEnv.CATALOGUE_DB).bind(productId),
     ]);
   }
 });
@@ -520,20 +449,16 @@ test("Printing Image content is served from the revision projection, not the rec
   // the response.
   const projectedSha256 = "2".repeat(64);
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO reconciled_printing_images (
-         id, printing_id, role, media_type, width, height,
-         content_sha256, content_byte_length, object_key
-       ) VALUES ('printing_image_st15_projected', 'printing_st15_event', 'other',
-         'image/png', 1, 1, ?, 3, 'printing-images/unpublished')`,
-    ).bind("3".repeat(64)),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_printing_images (
-         catalogue_revision_id, image_id, printing_id,
-         media_type, content_sha256, content_byte_length, object_key
-       ) VALUES ('catrev_products', 'printing_image_st15_projected', 'printing_st15_event',
-         'image/webp', ?, 15, ?)`,
-    ).bind(projectedSha256, `printing-images/${projectedSha256}`),
+    reconciliationQueries
+      .insertReconciledPrintingImagesForPrintingImageContentServedFromRevisionProjectionNotReconciled(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind("3".repeat(64)),
+    publishedCatalogueQueries
+      .insertRevisionPrintingImagesForPrintingImageContentServedFromRevisionProjectionNotReconciled(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(projectedSha256, `printing-images/${projectedSha256}`),
   ]);
   await testEnv.PRINTING_IMAGES.put(`printing-images/${projectedSha256}`, new TextEncoder().encode("projected-image"), {
     httpMetadata: { contentType: "image/webp" },
@@ -605,70 +530,31 @@ test("Printing detail conditional reads bind exact response bytes to one revisio
   }
 
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE operation_state
-       SET active_ingestion_run_id = NULL
-       WHERE singleton = 1`,
+    ingestionQueries.setOperationStateActiveIngestionRunIdForInstallApiSuite(testEnv.CATALOGUE_DB),
+    ingestionQueries
+      .insertIngestionRunsForPrintingDetailConditionalReadsBindExactResponseBytesOne(testEnv.CATALOGUE_DB)
+      .bind(
+        "7".repeat(64),
+        JSON.stringify({
+          candidate_digest: "7".repeat(64),
+          expected_current_revision_id: "catrev_products",
+          approved_at: "2026-01-02T00:00:00.000Z",
+        }),
+      ),
+    ingestionQueries.setOperationStateActiveIngestionRunIdForPrintingDetailConditionalReadsBindExactResponseBytesOne(
+      testEnv.CATALOGUE_DB,
     ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_digest, candidate_created_at, approval_deadline,
-         approval_json, published_revision_id, export_manifest_digest,
-         terminal_at, candidate_json, approval_idempotency_key
-       ) VALUES (
-         'run_products_next', 'publishing', '["one-piece"]',
-         '2026-01-02T00:00:00.000Z', 'catrev_products', NULL,
-         'products-next-seed', ?, '2026-01-02T00:00:00.000Z',
-         '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-       )`,
-    ).bind(
-      "7".repeat(64),
-      JSON.stringify({
-        candidate_digest: "7".repeat(64),
-        expected_current_revision_id: "catrev_products",
-        approved_at: "2026-01-02T00:00:00.000Z",
-      }),
+    ingestionQueries
+      .insertCatalogueRevisionsForPrintingDetailConditionalReadsBindExactResponseBytesOne(testEnv.CATALOGUE_DB)
+      .bind("7".repeat(64), "7".repeat(64)),
+    publishedCatalogueQueries.insertRevisionCardsForPrintingDetailConditionalReadsBindExactResponseBytesOne(
+      testEnv.CATALOGUE_DB,
     ),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE operation_state
-       SET active_ingestion_run_id = 'run_products_next'
-       WHERE singleton = 1`,
+    publishedCatalogueQueries.insertRevisionPrintingsForPrintingDetailConditionalReadsBindExactResponseBytesOne(
+      testEnv.CATALOGUE_DB,
     ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO catalogue_revisions (
-         id, ingestion_run_id, published_at, content_digest,
-         expected_previous_revision_id, approved_candidate_digest
-       ) VALUES (
-         'catrev_products_next', 'run_products_next',
-         '2026-01-02T00:00:00.000Z', ?,
-         'catrev_products', ?
-       )`,
-    ).bind("7".repeat(64), "7".repeat(64)),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_cards (
-         catalogue_revision_id, card_id, document_json
-       )
-       SELECT 'catrev_products_next', card_id, document_json
-       FROM revision_cards
-       WHERE catalogue_revision_id = 'catrev_products'
-         AND card_id = 'card_st15_event'`,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_printings (
-         catalogue_revision_id, printing_id, card_id, document_json
-       )
-       SELECT 'catrev_products_next', printing_id, card_id, document_json
-       FROM revision_printings
-       WHERE catalogue_revision_id = 'catrev_products'
-         AND printing_id = 'printing_st15_event'`,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE catalogue_state
-       SET current_revision_id = 'catrev_products_next',
-           published_at = '2026-01-02T00:00:00.000Z'
-       WHERE singleton = 1`,
+    publishedCatalogueQueries.setCatalogueStateCurrentRevisionIdPublishedAtForPrintingDetailConditionalReadsBindExactResponseBytesOne(
+      testEnv.CATALOGUE_DB,
     ),
   ]);
   try {
@@ -680,29 +566,21 @@ test("Printing detail conditional reads bind exact response bytes to one revisio
     expect(changed.headers.get("x-catalogue-revision")).toBe("catrev_products_next");
     expect(await changed.text()).not.toBe(firstBytes);
   } finally {
-    await testEnv.CATALOGUE_DB.prepare(
-      `UPDATE catalogue_state
-       SET current_revision_id = 'catrev_products',
-           published_at = '2026-01-01T00:00:00.000Z'
-       WHERE singleton = 1`,
-    ).run();
+    await publishedCatalogueQueries
+      .setCatalogueStateCurrentRevisionIdPublishedAtForProductRelease(testEnv.CATALOGUE_DB)
+      .run();
   }
 });
 
 test("Printing detail validates and binds optional evidence representations", async () => {
   const path = "/v1/printings/printing_st15_event";
-  const stored = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT document_json FROM revision_printings
-     WHERE catalogue_revision_id = 'catrev_products'
-       AND printing_id = 'printing_st15_event'`,
-  ).first<{ document_json: string }>();
+  const stored = await publishedCatalogueQueries
+    .readRevisionPrintingsDocumentJson(testEnv.CATALOGUE_DB)
+    .first<{ document_json: string }>();
   expect(stored).not.toBeNull();
   const data = JSON.parse(stored!.document_json);
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE revision_printings SET document_json = ?
-     WHERE catalogue_revision_id = 'catrev_products'
-       AND printing_id = 'printing_st15_event'`,
-  )
+  await publishedCatalogueQueries
+    .setRevisionPrintingsDocumentJson(testEnv.CATALOGUE_DB)
     .bind(
       JSON.stringify({
         data,
@@ -778,11 +656,8 @@ test("Printing detail validates and binds optional evidence representations", as
     "if-none-match": evidence.headers.get("etag")!,
   });
   expect(conditional.status).toBe(304);
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE revision_printings SET document_json = ?
-     WHERE catalogue_revision_id = 'catrev_products'
-       AND printing_id = 'printing_st15_event'`,
-  )
+  await publishedCatalogueQueries
+    .setRevisionPrintingsDocumentJson(testEnv.CATALOGUE_DB)
     .bind(stored!.document_json)
     .run();
 });
@@ -863,12 +738,7 @@ test("Catalogue status exposes independently checked areas and freshness-sensiti
   const firstEtag = first.headers.get("etag");
   expect(firstEtag).toMatch(/^".+"$/);
 
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE source_freshness
-     SET checked_at = '2026-01-02T02:00:00.000Z'
-     WHERE game = 'one-piece'
-       AND area = 'products-and-releases'`,
-  ).run();
+  await sourceEvidenceQueries.setSourceFreshnessCheckedAt(testEnv.CATALOGUE_DB).run();
   const changed = await api("/v1/catalogue", {
     "if-none-match": firstEtag!,
   });
@@ -956,15 +826,8 @@ test("Product detail returns revision-pinned immutable provenance and disagreeme
       },
     ],
   };
-  await testEnv.CATALOGUE_DB.prepare(
-    `INSERT INTO revision_products (
-       catalogue_revision_id, product_id, supported_game, official_code,
-       name, search_text, release_regions_json, document_json
-     ) VALUES (
-       'catrev_products', 'product_unresolved', 'one-piece',
-       'ST-UNRESOLVED', NULL, 'st-unresolved', '["EN-OCEANIA"]', ?
-     )`,
-  )
+  await publishedCatalogueQueries
+    .insertRevisionProductsForProductDetailReturnsRevisionPinnedImmutableProvenanceDisagreements(testEnv.CATALOGUE_DB)
     .bind(JSON.stringify(unresolved))
     .run();
 
@@ -981,20 +844,16 @@ test("Product detail returns revision-pinned immutable provenance and disagreeme
       },
     });
   } finally {
-    await testEnv.CATALOGUE_DB.prepare(
-      `DELETE FROM revision_products
-       WHERE catalogue_revision_id = 'catrev_products'
-         AND product_id = 'product_unresolved'`,
-    ).run();
+    await publishedCatalogueQueries
+      .deleteRevisionProductsForProductDetailReturnsRevisionPinnedImmutableProvenanceDisagreements(testEnv.CATALOGUE_DB)
+      .run();
   }
 });
 
 test("Product evidence projects Curated Revisions onto exact Product and nested Release fields", async () => {
-  const stored = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT document_json FROM revision_products
-     WHERE catalogue_revision_id = 'catrev_products'
-       AND product_id = 'product_st15'`,
-  ).first<{ document_json: string }>();
+  const stored = await publishedCatalogueQueries
+    .readRevisionProductsDocumentJson(testEnv.CATALOGUE_DB)
+    .first<{ document_json: string }>();
   expect(stored).not.toBeNull();
   const envelope = JSON.parse(stored!.document_json) as {
     data: Record<string, unknown> & {
@@ -1059,10 +918,7 @@ test("Product evidence projects Curated Revisions onto exact Product and nested 
   };
 
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE operation_state SET active_ingestion_run_id = NULL
-       WHERE singleton = 1`,
-    ),
+    ingestionQueries.setOperationStateActiveIngestionRunIdForInstallApiSuite(testEnv.CATALOGUE_DB),
     // Publication projects each pinned Curated Revision's author and
     // creation instant into catalogue_curated_provenance, and the evidence
     // sidecar reads that projection (issue #98). The curated_revisions rows
@@ -1084,30 +940,18 @@ test("Product evidence projects Curated Revisions onto exact Product and nested 
         createdAt: "2026-01-03T00:00:00.000Z",
       },
     ].flatMap(({ id, target, digest, rationale, createdAt }) => [
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO curated_revisions (
-           id, game, target_key, target_kind, effective_from, effective_to,
-           proposal_json, content_digest, reviewed_source_digest,
-           schema_binding_json, author, created_at, status, event_version
-         ) VALUES (
-           ?, 'one-piece', ?, 'field', NULL, NULL, ?, ?, ?, ?, 'owner', ?,
-           'active', 1
-         )`,
-      ).bind(
-        id,
-        JSON.stringify(target),
-        JSON.stringify({ target }),
-        digest,
-        "d".repeat(64),
-        JSON.stringify({ catalogue_revision_id: "catrev_products" }),
-        "2026-02-01T00:00:00.000Z",
-      ),
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO catalogue_curated_provenance (
-           catalogue_revision_id, curated_revision_id, target_key,
-           content_digest, provenance_json
-         ) VALUES ('catrev_products', ?, ?, ?, ?)`,
-      ).bind(
+      curatedQueries
+        .insertCuratedRevisions(testEnv.CATALOGUE_DB)
+        .bind(
+          id,
+          JSON.stringify(target),
+          JSON.stringify({ target }),
+          digest,
+          "d".repeat(64),
+          JSON.stringify({ catalogue_revision_id: "catrev_products" }),
+          "2026-02-01T00:00:00.000Z",
+        ),
+      curatedQueries.insertCatalogueCuratedProvenance(testEnv.CATALOGUE_DB).bind(
         id,
         JSON.stringify(target),
         digest,
@@ -1119,15 +963,8 @@ test("Product evidence projects Curated Revisions onto exact Product and nested 
         }),
       ),
     ]),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE revision_products SET document_json = ?
-       WHERE catalogue_revision_id = 'catrev_products'
-         AND product_id = 'product_st15'`,
-    ).bind(JSON.stringify(envelope)),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE operation_state SET active_ingestion_run_id = 'run_products'
-       WHERE singleton = 1`,
-    ),
+    publishedCatalogueQueries.setRevisionProductsDocumentJson(testEnv.CATALOGUE_DB).bind(JSON.stringify(envelope)),
+    ingestionQueries.setOperationStateActiveIngestionRunId(testEnv.CATALOGUE_DB),
   ]);
 
   try {
@@ -1162,11 +999,8 @@ test("Product evidence projects Curated Revisions onto exact Product and nested 
       },
     });
   } finally {
-    await testEnv.CATALOGUE_DB.prepare(
-      `UPDATE revision_products SET document_json = ?
-       WHERE catalogue_revision_id = 'catrev_products'
-         AND product_id = 'product_st15'`,
-    )
+    await publishedCatalogueQueries
+      .setRevisionProductsDocumentJson(testEnv.CATALOGUE_DB)
       .bind(stored!.document_json)
       .run();
   }
@@ -1195,16 +1029,8 @@ test("an explicitly unknown Release region is readable and schema-valid", async 
     },
     links: { self: "/v1/products/product_unknown_region" },
   };
-  await testEnv.CATALOGUE_DB.prepare(
-    `INSERT INTO revision_products (
-       catalogue_revision_id, product_id, supported_game, official_code,
-       name, search_text, release_regions_json, document_json
-     ) VALUES (
-       'catrev_products', 'product_unknown_region', 'digimon',
-       'BT-UNKNOWN', 'Unknown-region Product',
-       'bt-unknown unknown-region product', '["unknown"]', ?
-     )`,
-  )
+  await publishedCatalogueQueries
+    .insertRevisionProductsForExplicitlyUnknownReleaseRegionReadableSchemaValid(testEnv.CATALOGUE_DB)
     .bind(
       JSON.stringify({
         data: product,
@@ -1223,11 +1049,9 @@ test("an explicitly unknown Release region is readable and schema-valid", async 
     expect(filtered.status).toBe(200);
     expectSchema("ProductCollection", await filtered.json());
   } finally {
-    await testEnv.CATALOGUE_DB.prepare(
-      `DELETE FROM revision_products
-       WHERE catalogue_revision_id = 'catrev_products'
-         AND product_id = 'product_unknown_region'`,
-    ).run();
+    await publishedCatalogueQueries
+      .deleteRevisionProductsForExplicitlyUnknownReleaseRegionReadableSchemaValid(testEnv.CATALOGUE_DB)
+      .run();
   }
 });
 
@@ -1253,15 +1077,8 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
     },
     links: { self: "/v1/products/product_st14" },
   };
-  await testEnv.CATALOGUE_DB.prepare(
-    `INSERT INTO revision_products (
-       catalogue_revision_id, product_id, supported_game, official_code,
-       name, search_text, release_regions_json, document_json
-     ) VALUES (
-       'catrev_products', 'product_st14', 'one-piece', 'ST-14',
-       'Starter Deck 14', 'st-14 starter deck 14', '["EN-OCEANIA"]', ?
-     )`,
-  )
+  await publishedCatalogueQueries
+    .insertRevisionProductsForProductCursorsPinRoutePreserveFilteredKeysetOrder(testEnv.CATALOGUE_DB)
     .bind(
       JSON.stringify({
         data: earlier,
@@ -1279,11 +1096,9 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
     page: { next_cursor: string };
   }>();
   expect(first.data.map(({ id }) => id)).toEqual(["product_st14"]);
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_state
-     SET current_revision_id = 'catrev_spine_000'
-     WHERE singleton = 1`,
-  ).run();
+  await publishedCatalogueQueries
+    .setCatalogueStateCurrentRevisionIdForProductCursorsPinRoutePreserveFilteredKeysetOrder(testEnv.CATALOGUE_DB)
+    .run();
   const second = await api(
     `/v1/products?game=one-piece&release_region=EN-OCEANIA&limit=1&after=${encodeURIComponent(first.page.next_cursor)}`,
   );
@@ -1293,10 +1108,9 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
     meta: { catalogue_revision_id: "catrev_products" },
   });
 
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_query_revisions SET state = 'archived'
-     WHERE catalogue_revision_id = 'catrev_products'`,
-  ).run();
+  await publishedCatalogueQueries
+    .setCatalogueQueryRevisionsStateForProductCursorsPinRoutePreserveFilteredKeysetOrder(testEnv.CATALOGUE_DB)
+    .run();
   const archived = await api(
     `/v1/products?game=one-piece&release_region=EN-OCEANIA&limit=1&after=${encodeURIComponent(first.page.next_cursor)}`,
   );
@@ -1305,10 +1119,11 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
     code: "cursor_revision_unavailable",
     links: { collection: `${apiPublicBase}/v1/products` },
   });
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_query_revisions SET state = 'available'
-     WHERE catalogue_revision_id = 'catrev_products'`,
-  ).run();
+  await publishedCatalogueQueries
+    .setCatalogueQueryRevisionsStateForProductCursorsPinRoutePreserveFilteredKeysetOrderWithCatrevProducts(
+      testEnv.CATALOGUE_DB,
+    )
+    .run();
 
   const forged = decodeCursor(first.page.next_cursor);
   const unavailableRevision = encodeCursor({
@@ -1331,11 +1146,11 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
   await expect(rejected.json()).resolves.toMatchObject({
     code: "invalid_cursor",
   });
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_state
-     SET current_revision_id = 'catrev_products'
-     WHERE singleton = 1`,
-  ).run();
+  await publishedCatalogueQueries
+    .setCatalogueStateCurrentRevisionIdForProductCursorsPinRoutePreserveFilteredKeysetOrderWithCatrevProducts(
+      testEnv.CATALOGUE_DB,
+    )
+    .run();
 });
 
 test("Printing collection binds every normalized filter to one card-ordered revision-pinned keyset", async () => {
@@ -1402,60 +1217,50 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     links: { self: "/v1/products/product_us" },
   };
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_cards (
-         catalogue_revision_id, card_id, document_json
-       ) VALUES ('catrev_products', ?, ?)`,
-    ).bind(secondCard.id, JSON.stringify(secondCard)),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_printings (
-         catalogue_revision_id, printing_id, card_id, document_json
-       ) VALUES ('catrev_products', ?, ?, ?)`,
-    ).bind(secondPrinting.id, secondPrinting.card_id, JSON.stringify(secondPrinting)),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_products (
-         catalogue_revision_id, product_id, supported_game, official_code,
-         name, search_text, release_regions_json, document_json
-       ) VALUES (
-         'catrev_products', 'product_us', 'one-piece', 'ST-US',
-         'US Product', 'st-us us product', '["EN-US"]', ?
-       )`,
-    ).bind(
-      JSON.stringify({
-        data: usProduct,
-        included: [],
-        provenance: {},
-        disagreements: [],
-      }),
-    ),
+    publishedCatalogueQueries
+      .insertRevisionCardsForProductRelease(testEnv.CATALOGUE_DB)
+      .bind(secondCard.id, JSON.stringify(secondCard)),
+    publishedCatalogueQueries
+      .insertRevisionPrintingsForProductRelease(testEnv.CATALOGUE_DB)
+      .bind(secondPrinting.id, secondPrinting.card_id, JSON.stringify(secondPrinting)),
+    publishedCatalogueQueries
+      .insertRevisionProductsForPrintingCollectionBindsEveryNormalizedFilterOneCardOrdered(testEnv.CATALOGUE_DB)
+      .bind(
+        JSON.stringify({
+          data: usProduct,
+          included: [],
+          provenance: {},
+          disagreements: [],
+        }),
+      ),
     ...[
       ["relationship_st15", "printing_st15_event", "product_st15"],
       ["relationship_us", "printing_zzz_us", "product_us"],
     ].map(([id, printingId, productId]) =>
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO revision_product_relationships (
-           catalogue_revision_id, relationship_id, document_json
-         ) VALUES ('catrev_products', ?, ?)`,
-      ).bind(
-        id,
-        JSON.stringify({
-          type: "relationship",
+      publishedCatalogueQueries
+        .insertRevisionProductRelationshipsForPrintingCollectionBindsEveryNormalizedFilterOneCardOrdered(
+          testEnv.CATALOGUE_DB,
+        )
+        .bind(
           id,
-          kind: "printing-product",
-          from: { type: "printing", id: printingId },
-          to: { type: "product", id: productId },
-          evidence_category: "explicit",
-          source_lineage: "one-piece-en",
-          source_observation_ids: ["srcobs_printing_filter"],
-          relationship_value: productId,
-          lifecycle: {
-            first_revision_id: "catrev_products",
-            last_observed_revision_id: "catrev_products",
-            current: true,
-            last_missing_revision_id: null,
-          },
-        }),
-      ),
+          JSON.stringify({
+            type: "relationship",
+            id,
+            kind: "printing-product",
+            from: { type: "printing", id: printingId },
+            to: { type: "product", id: productId },
+            evidence_category: "explicit",
+            source_lineage: "one-piece-en",
+            source_observation_ids: ["srcobs_printing_filter"],
+            relationship_value: productId,
+            lifecycle: {
+              first_revision_id: "catrev_products",
+              last_observed_revision_id: "catrev_products",
+              current: true,
+              last_missing_revision_id: null,
+            },
+          }),
+        ),
     ),
   ]);
 
@@ -1501,11 +1306,9 @@ test("Printing collection binds every normalized filter to one card-ordered revi
   }>();
   expect(firstPageBody.data).toMatchObject([{ id: "printing_zzz_us", card_id: "card_aaa_us" }]);
   const cursor = firstPageBody.page.next_cursor;
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_state
-     SET current_revision_id = 'catrev_spine_000'
-     WHERE singleton = 1`,
-  ).run();
+  await publishedCatalogueQueries
+    .setCatalogueStateCurrentRevisionIdForProductCursorsPinRoutePreserveFilteredKeysetOrder(testEnv.CATALOGUE_DB)
+    .run();
   const retained = await api(`/v1/printings?game=one-piece&limit=1&after=${encodeURIComponent(cursor)}`);
   expect(retained.status).toBe(200);
   await expect(retained.json()).resolves.toMatchObject({
@@ -1513,20 +1316,20 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     meta: { catalogue_revision_id: "catrev_products" },
   });
 
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_query_revisions SET state = 'archived'
-     WHERE catalogue_revision_id = 'catrev_products'`,
-  ).run();
+  await publishedCatalogueQueries
+    .setCatalogueQueryRevisionsStateForProductCursorsPinRoutePreserveFilteredKeysetOrder(testEnv.CATALOGUE_DB)
+    .run();
   const unavailable = await api(`/v1/printings?game=one-piece&limit=1&after=${encodeURIComponent(cursor)}`);
   expect(unavailable.status).toBe(409);
   await expect(unavailable.json()).resolves.toMatchObject({
     code: "cursor_revision_unavailable",
     links: { collection: `${apiPublicBase}/v1/printings` },
   });
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_query_revisions SET state = 'available'
-     WHERE catalogue_revision_id = 'catrev_products'`,
-  ).run();
+  await publishedCatalogueQueries
+    .setCatalogueQueryRevisionsStateForProductCursorsPinRoutePreserveFilteredKeysetOrderWithCatrevProducts(
+      testEnv.CATALOGUE_DB,
+    )
+    .run();
 
   for (const [path, name] of [
     ["/v1/printings?release_region=not-a-region", "release_region"],
@@ -1566,18 +1369,20 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     code: "invalid_cursor",
   });
 
-  await testEnv.CATALOGUE_DB.prepare(
-    "UPDATE catalogue_state SET current_revision_id = 'catrev_products' WHERE singleton = 1",
-  ).run();
+  await publishedCatalogueQueries
+    .setCatalogueStateCurrentRevisionIdForProductCursorsPinRoutePreserveFilteredKeysetOrderWithCatrevProducts(
+      testEnv.CATALOGUE_DB,
+    )
+    .run();
   const canonical = await api("/v1/printings?game=one-piece&rarity=leader&card_id=card_st15_event");
   const reordered = await api("/v1/printings?card_id=card_st15_event&rarity=leader&game=one-piece");
   expect(canonical.headers.get("etag")).toBe(reordered.headers.get("etag"));
   expect(await canonical.text()).toBe(await reordered.text());
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_state
-     SET current_revision_id = 'catrev_products'
-     WHERE singleton = 1`,
-  ).run();
+  await publishedCatalogueQueries
+    .setCatalogueStateCurrentRevisionIdForProductCursorsPinRoutePreserveFilteredKeysetOrderWithCatrevProducts(
+      testEnv.CATALOGUE_DB,
+    )
+    .run();
 });
 
 function api(path: string, headers: Record<string, string> = {}, method = "GET"): Promise<Response> {
