@@ -45,7 +45,7 @@ Both forms carry the same material facts. The `collection` block reports:
 | `source_request_capacity_exhausted` | Admitting a discovered batch would exceed the Source Adapter Version's Request Capacity. Nothing was inserted or failed. | Extend capacity, then resume. |
 | `source_transport_retries_exhausted` | One Source Request exhausted its bounded transport retries on a recoverable failure. | Resume once the Official Source recovers. |
 | `source_storage_retries_exhausted` | One Source Request exhausted its bounded R2 persistence retries. | Resume once storage recovers. |
-| `source_workflow_stalled` / `source_workflow_errored` / `source_workflow_terminated` / `source_workflow_unavailable` | The collection Workflow stopped driving the run; a durable pacing sleep or Retry-After wait is never a stall. | Resume; a new Workflow Attempt is recorded. |
+| `source_workflow_stalled` / `source_workflow_errored` / `source_workflow_terminated` / `source_workflow_unavailable` | The collection Workflow stopped driving the run; a host pacing wait against its persisted deadline or a durable Retry-After wait is never a stall. | Resume; a new Workflow Attempt is recorded. |
 | `owner_requested` | The owner paused the collecting run with `source pause`. Nothing failed; the current Workflow Attempt was abandoned. | Resume (a new Workflow Attempt is recorded) or terminate. |
 
 Genuine integrity failures (redirects, identity collisions, malformed
