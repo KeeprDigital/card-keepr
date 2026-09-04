@@ -8,7 +8,7 @@ import {
   requiredActiveSourceAdapter,
   requiredSourceAdapter,
   sourceAdapterRegistrations,
-} from "../../src/catalogue/source-adapters.ts";
+} from "../../src/catalogue/adapters/source-adapters.ts";
 import syntheticOfficialSource, {
   officialBandaiNavigationHeader,
   officialDiscoveryDefinitions,
@@ -62,38 +62,24 @@ test("the live Gundam adapters close package leaves by full locator", () => {
     );
     assert.equal(observations[0].printing.rarity.raw, "R");
     assert.equal(observations[0].printing.rarity.normalized, "rare");
-    assert.match(
-      observations[0].identity_evidence.artwork_fingerprint,
-      /^official-artwork:/u,
-    );
-    assert.match(
-      observations[0].identity_evidence.printed_fields_digest,
-      /^printed-material:/u,
-    );
+    assert.match(observations[0].identity_evidence.artwork_fingerprint, /^official-artwork:/u);
+    assert.match(observations[0].identity_evidence.printed_fields_digest, /^printed-material:/u);
     assert.throws(
-      () => current.parseBytes(
-        new TextEncoder().encode(
-          `<html>${officialPublisherPayloadScript(
-            lineage,
-            "packages",
-            complete,
-          )}</html>`,
+      () =>
+        current.parseBytes(
+          new TextEncoder().encode(`<html>${officialPublisherPayloadScript(lineage, "packages", complete)}</html>`),
+          {
+            mediaType: "text/html",
+            url: current.requestUrlForSurface("packages"),
+            requestId: `${lineage}:packages`,
+          },
         ),
-        {
-          mediaType: "text/html",
-          url: current.requestUrlForSurface("packages"),
-          requestId: `${lineage}:packages`,
-        },
-      ),
       /Gundam catalogue facts require an exact package leaf/iu,
     );
 
     const conflicting = structuredClone(complete);
     conflicting.result.partitions[1].entries[0].number = "GD99-999";
-    assert.throws(
-      () => parseRegisteredSurface(current, "packages", conflicting),
-      /full locator.*conflict/iu,
-    );
+    assert.throws(() => parseRegisteredSurface(current, "packages", conflicting), /full locator.*conflict/iu);
     const unknownRarity = structuredClone(complete);
     unknownRarity.card_details[0].printing.rarity = "Experimental Rare";
     assert.throws(
@@ -125,27 +111,22 @@ test("issue-58 Gundam adapters parse the retained compound policy into explicit 
       adapter.requestUrlForSurface("legality"),
       retainedOfficialSourceFixture(descriptor.slug).metadata.source_url,
     );
-    const rules = retainedLegalityRules(
-      adapter,
-      "legality",
-      descriptor.slug,
-      { requestId: `${descriptor.lineage}:legality` },
-    );
+    const rules = retainedLegalityRules(adapter, "legality", descriptor.slug, {
+      requestId: `${descriptor.lineage}:legality`,
+    });
     assert.equal(rules.length, 5);
-    assert.ok(rules.every((rule) =>
-      rule.region === descriptor.region &&
-      rule.effective_from === null &&
-      rule.effect.type === "unresolved" &&
-      rule.unresolved_scope.dimensions.includes("effective_interval")
-    ));
+    assert.ok(
+      rules.every(
+        (rule) =>
+          rule.region === descriptor.region &&
+          rule.effective_from === null &&
+          rule.effect.type === "unresolved" &&
+          rule.unresolved_scope.dimensions.includes("effective_interval"),
+      ),
+    );
     assert.deepEqual(
       rules.slice(0, 4).map((rule) => rule.card_numbers),
-      [
-        ["GD01-020"],
-        ["ST02-016"],
-        ["ST01-010", "ST05-010"],
-        ["GD01-008", "GD05-015"],
-      ],
+      [["GD01-020"], ["ST02-016"], ["ST01-010", "ST05-010"], ["GD01-008", "GD05-015"]],
     );
     const openPredicate = rules[4];
     assert.equal(openPredicate.id, "01_279-current-open-predicate");
@@ -156,10 +137,7 @@ test("issue-58 Gundam adapters parse the retained compound policy into explicit 
     assert.equal(openPredicate.card_numbers[0], "GD01-035");
     assert.equal(openPredicate.card_numbers.at(-1), "ST10-005");
     assert.equal(openPredicate.effect.reason, openPredicateReason);
-    assert.match(
-      openPredicate.official_wording,
-      /^All combinations of cards that match the above description/u,
-    );
+    assert.match(openPredicate.official_wording, /^All combinations of cards that match the above description/u);
   }
 });
 
@@ -171,14 +149,8 @@ test("retained Gundam package snapshots close publisher totals and dedupe full l
     const adapter = requiredSourceAdapter(`${lineage}@7`);
     const rootUrl = adapter.requestUrlForSurface("packages");
     const fixturePrefix = `../../acceptance/fixtures/retained-official-source/${lineage}-card-list`;
-    const rootBytes = readFileSync(new URL(
-      `${fixturePrefix}-root-live-fragment.html`,
-      import.meta.url,
-    ));
-    const packageBytes = readFileSync(new URL(
-      `${fixturePrefix}-package-live-fragment.html`,
-      import.meta.url,
-    ));
+    const rootBytes = readFileSync(new URL(`${fixturePrefix}-root-live-fragment.html`, import.meta.url));
+    const packageBytes = readFileSync(new URL(`${fixturePrefix}-package-live-fragment.html`, import.meta.url));
     const rootContext = {
       mediaType: "text/html; charset=UTF-8",
       url: rootUrl,
@@ -192,16 +164,10 @@ test("retained Gundam package snapshots close publisher totals and dedupe full l
 
     const rootRequests = adapter.discoverRequests(rootBytes, rootContext);
     assert.deepEqual(
-      rootRequests.filter(({ role }) => role === "listing")
-        .map(({ url }) => new URL(url).searchParams.get("package")),
-      lineage === "gundam-en-asia"
-        ? ["619101", "619102"]
-        : ["616101", "616102"],
+      rootRequests.filter(({ role }) => role === "listing").map(({ url }) => new URL(url).searchParams.get("package")),
+      lineage === "gundam-en-asia" ? ["619101", "619102"] : ["616101", "616102"],
     );
-    const packageRequests = adapter.discoverRequests(
-      packageBytes,
-      packageContext,
-    );
+    const packageRequests = adapter.discoverRequests(packageBytes, packageContext);
     const allDetailUrls = [...rootRequests, ...packageRequests]
       .filter(({ role }) => role === "detail")
       .map(({ url }) => url);
@@ -229,10 +195,7 @@ test("retained Gundam package snapshots close publisher totals and dedupe full l
         '<div class="pager"></div>',
         `<div class="pager"><a href="?package=${packageValue}&amp;page=2">2</a></div>`,
       );
-    const [nonterminalCoverage] = adapter.parseBytes(
-      new TextEncoder().encode(nonterminalHtml),
-      packageContext,
-    );
+    const [nonterminalCoverage] = adapter.parseBytes(new TextEncoder().encode(nonterminalHtml), packageContext);
     assert.deepEqual(nonterminalCoverage.completeness, {
       declared_record_count: 4,
       parsed_record_count: 2,
@@ -240,83 +203,68 @@ test("retained Gundam package snapshots close publisher totals and dedupe full l
       partitions_complete: false,
       structurally_complete: true,
     });
-    const nonterminalRequests = adapter.discoverRequests(
-      new TextEncoder().encode(nonterminalHtml),
-      packageContext,
-    );
+    const nonterminalRequests = adapter.discoverRequests(new TextEncoder().encode(nonterminalHtml), packageContext);
     assert.deepEqual(
-      nonterminalRequests
-        .filter(({ role }) => role === "detail")
-        .map(({ url }) => url),
+      nonterminalRequests.filter(({ role }) => role === "detail").map(({ url }) => url),
       [
         `${new URL("detail.php", rootUrl)}?detailSearch=GD02-001`,
         `${new URL("detail.php", rootUrl)}?detailSearch=GD02-001_p1`,
       ],
     );
     assert.equal(
-      nonterminalRequests.some(({ role, url }) =>
-        role === "listing" &&
-        url === `${rootUrl}?package=${packageValue}&page=2`
+      nonterminalRequests.some(
+        ({ role, url }) => role === "listing" && url === `${rootUrl}?package=${packageValue}&page=2`,
       ),
       true,
     );
     assert.throws(
-      () => adapter.parseBytes(
-        new TextEncoder().encode(
-          packageHtml.replace('value="' + packageValue + '"', 'value="wrong"'),
+      () =>
+        adapter.parseBytes(
+          new TextEncoder().encode(packageHtml.replace('value="' + packageValue + '"', 'value="wrong"')),
+          packageContext,
         ),
-        packageContext,
-      ),
       /selected package.*request/iu,
     );
     assert.throws(
-      () => adapter.parseBytes(
-        new TextEncoder().encode(
-          packageHtml.replace('<span class="num">2</span>', '<span class="num">3</span>'),
+      () =>
+        adapter.parseBytes(
+          new TextEncoder().encode(packageHtml.replace('<span class="num">2</span>', '<span class="num">3</span>')),
+          packageContext,
         ),
-        packageContext,
-      ),
       /publisher total.*full locators/iu,
     );
-    const pagedBytes = new TextEncoder().encode(packageHtml.replace(
-      "</section>", '<input type="hidden" name="page" value="2"></section>',
-    ));
-    assert.doesNotThrow(
-      () => adapter.parseBytes(pagedBytes, {
+    const pagedBytes = new TextEncoder().encode(
+      packageHtml.replace("</section>", '<input type="hidden" name="page" value="2"></section>'),
+    );
+    assert.doesNotThrow(() =>
+      adapter.parseBytes(pagedBytes, {
         ...packageContext,
         url: `${packageContext.url}&page=2`,
       }),
     );
     assert.throws(
-      () => adapter.parseBytes(pagedBytes, {
-        ...packageContext,
-        url: `${packageContext.url}&page=3`,
-      }),
+      () =>
+        adapter.parseBytes(pagedBytes, {
+          ...packageContext,
+          url: `${packageContext.url}&page=3`,
+        }),
       /selected page.*request/iu,
     );
     const partialTerminalBytes = new TextEncoder().encode(
       packageHtml
         .replace('<span class="num">2</span>', '<span class="num">4</span>')
-        .replace(
-          "</section>",
-          '<input type="hidden" name="page" value="2"></section>',
-        ),
+        .replace("</section>", '<input type="hidden" name="page" value="2"></section>'),
     );
-    const [partialTerminalCoverage] = adapter.parseBytes(
-      partialTerminalBytes,
-      { ...packageContext, url: `${packageContext.url}&page=2` },
-    );
-    assert.equal(
-      partialTerminalCoverage.completeness.required_surfaces_complete,
-      false,
-    );
+    const [partialTerminalCoverage] = adapter.parseBytes(partialTerminalBytes, {
+      ...packageContext,
+      url: `${packageContext.url}&page=2`,
+    });
+    assert.equal(partialTerminalCoverage.completeness.required_surfaces_complete, false);
   }
 });
 
 test("digest-verified unchanged Gundam publisher listing bytes close their exact result", () => {
-  const fixture = retainedOfficialSourceFixture(
-    "gundam-en-asia-card-list-complete-live",
-  );
+  const fixture = retainedOfficialSourceFixture("gundam-en-asia-card-list-complete-live");
   const adapter = requiredSourceAdapter("gundam-en-asia@7");
   const context = {
     mediaType: fixture.metadata.content_type,
@@ -331,11 +279,7 @@ test("digest-verified unchanged Gundam publisher listing bytes close their exact
     partitions_complete: true,
     structurally_complete: true,
   });
-  assert.equal(
-    adapter.discoverRequests(fixture.bytes, context)
-      .filter(({ role }) => role === "detail").length,
-    187,
-  );
+  assert.equal(adapter.discoverRequests(fixture.bytes, context).filter(({ role }) => role === "detail").length, 187);
 });
 
 test("retained Gundam detail snapshots bind base and alternate art to full locators", () => {
@@ -346,22 +290,18 @@ test("retained Gundam detail snapshots bind base and alternate art to full locat
     const adapter = requiredSourceAdapter(`${lineage}@7`);
     const observations = ["base", "p2"].map((variant) => {
       const suffix = variant === "base" ? "" : "_p2";
-      const bytes = readFileSync(new URL(
-        `../../acceptance/fixtures/retained-official-source/${lineage}-card-detail-${variant}-live-fragment.html`,
-        import.meta.url,
-      ));
+      const bytes = readFileSync(
+        new URL(
+          `../../acceptance/fixtures/retained-official-source/${lineage}-card-detail-${variant}-live-fragment.html`,
+          import.meta.url,
+        ),
+      );
       const detailContext = {
         mediaType: "text/html; charset=UTF-8",
-        url:
-          `https://www.gundam-gcg.com/${locale}/cards/detail.php?detailSearch=GD02-038${suffix}`,
-        requestId:
-          `${lineage}:detail:${(variant === "base" ? "1" : "2").repeat(64)}`,
+        url: `https://www.gundam-gcg.com/${locale}/cards/detail.php?detailSearch=GD02-038${suffix}`,
+        requestId: `${lineage}:detail:${(variant === "base" ? "1" : "2").repeat(64)}`,
       };
-      assert.equal(
-        adapter.discoverRequests(bytes, detailContext)
-          .filter(({ role }) => role === "image").length,
-        1,
-      );
+      assert.equal(adapter.discoverRequests(bytes, detailContext).filter(({ role }) => role === "image").length, 1);
       return adapter.parseBytes(bytes, detailContext)[0];
     });
     assert.deepEqual(
@@ -371,8 +311,7 @@ test("retained Gundam detail snapshots bind base and alternate art to full locat
         variant: observation.identity_evidence.variant_key,
         treatment: observation.identity_evidence.treatment,
         rarity: observation.printing.rarity,
-        alternate_art:
-          observation.printing.game_data.attributes.alternate_art,
+        alternate_art: observation.printing.game_data.attributes.alternate_art,
       })),
       [
         {
@@ -415,23 +354,15 @@ test("retained Gundam detail snapshots bind base and alternate art to full locat
 });
 
 test("digest-verified unchanged Gundam publisher dash remains raw and normalizes", () => {
-  const fixture = retainedOfficialSourceFixture(
-    "gundam-en-asia-card-detail-dash-live",
-  );
+  const fixture = retainedOfficialSourceFixture("gundam-en-asia-card-detail-dash-live");
   const adapter = requiredSourceAdapter("gundam-en-asia@7");
   const [observation] = adapter.parseBytes(fixture.bytes, {
     mediaType: fixture.metadata.content_type,
     url: fixture.metadata.source_url,
     requestId: `gundam-en-asia:detail:${"4".repeat(64)}`,
   });
-  assert.equal(
-    observation.card.game_data.attributes.link_condition,
-    null,
-  );
-  assert.equal(
-    observation.source_sidecar.raw.official_surfaces[0].document.Link,
-    "-",
-  );
+  assert.equal(observation.card.game_data.attributes.link_condition, null);
+  assert.equal(observation.source_sidecar.raw.official_surfaces[0].document.Link, "-");
 });
 
 test("synthetic Gundam dash-glyph variants normalize without changing raw evidence", () => {
@@ -441,37 +372,31 @@ test("synthetic Gundam dash-glyph variants normalize without changing raw eviden
   ]) {
     const adapter = requiredSourceAdapter(`${lineage}@7`);
     const syntheticPlaceholderBytes = new TextEncoder().encode(
-      readFileSync(new URL(
-        `../../acceptance/fixtures/retained-official-source/${lineage}-card-detail-base-live-fragment.html`,
-        import.meta.url,
-      )).toString("utf8")
-        .replace('<div class="blockIcon">1</div>', '<div class="blockIcon">-</div>')
-        .replace('<dt>Zone</dt><dd>Space Earth</dd>', '<dt>Zone</dt><dd>—</dd>')
-        .replace(
-          '<dt>Link</dt><dd>[Amate Yuzuriha (Machu)]</dd>',
-          '<dt>Link</dt><dd>–</dd>',
+      readFileSync(
+        new URL(
+          `../../acceptance/fixtures/retained-official-source/${lineage}-card-detail-base-live-fragment.html`,
+          import.meta.url,
         ),
+      )
+        .toString("utf8")
+        .replace('<div class="blockIcon">1</div>', '<div class="blockIcon">-</div>')
+        .replace("<dt>Zone</dt><dd>Space Earth</dd>", "<dt>Zone</dt><dd>—</dd>")
+        .replace("<dt>Link</dt><dd>[Amate Yuzuriha (Machu)]</dd>", "<dt>Link</dt><dd>–</dd>"),
     );
-    const [placeholderObservation] = adapter.parseBytes(
-      syntheticPlaceholderBytes,
-      {
+    const [placeholderObservation] = adapter.parseBytes(syntheticPlaceholderBytes, {
       mediaType: "text/html; charset=UTF-8",
-      url:
-        `https://www.gundam-gcg.com/${locale}/cards/detail.php?detailSearch=GD02-038`,
+      url: `https://www.gundam-gcg.com/${locale}/cards/detail.php?detailSearch=GD02-038`,
       requestId: `${lineage}:detail:${"3".repeat(64)}`,
-      },
-    );
+    });
     assert.deepEqual(
       {
         block_icon: placeholderObservation.card.game_data.attributes.block_icon,
         zone: placeholderObservation.card.game_data.attributes.zone,
-        link_condition:
-          placeholderObservation.card.game_data.attributes.link_condition,
+        link_condition: placeholderObservation.card.game_data.attributes.link_condition,
       },
       { block_icon: null, zone: null, link_condition: null },
     );
-    const [syntheticRawSurface] =
-      placeholderObservation.source_sidecar.raw.official_surfaces;
+    const [syntheticRawSurface] = placeholderObservation.source_sidecar.raw.official_surfaces;
     assert.deepEqual(
       {
         block_icon: syntheticRawSurface.document["Block icon"],
@@ -493,36 +418,29 @@ test("restructured Gundam card search roots retain their empty state and every p
       requestId: `${lineage}:packages`,
     });
     assert.equal(observations.length, 1, lineage);
-    const document =
-      observations[0].source_sidecar.raw.official_surfaces[0].document;
-    assert.deepEqual(Object.keys(document).sort(), [
-      "empty_search_state",
-      "package_options",
-      "source_lineage",
-      "surface",
-      "url",
-    ], lineage);
+    const document = observations[0].source_sidecar.raw.official_surfaces[0].document;
+    assert.deepEqual(
+      Object.keys(document).sort(),
+      ["empty_search_state", "package_options", "source_lineage", "surface", "url"],
+      lineage,
+    );
     assert.equal(document.source_lineage, lineage);
     assert.equal(document.surface, "packages");
     assert.equal(document.url, url);
-    assert.equal(
-      document.empty_search_state,
-      "Please specify your search criteria.",
-      lineage,
-    );
+    assert.equal(document.empty_search_state, "Please specify your search criteria.", lineage);
     assert.equal(document.package_options.length, 21, lineage);
+    assert.deepEqual(document.package_options, [...document.package_options].sort(), lineage);
     assert.deepEqual(
-      document.package_options,
-      [...document.package_options].sort(),
+      observations[0].completeness,
+      {
+        structurally_complete: true,
+        required_surfaces_complete: true,
+        partitions_complete: true,
+        declared_record_count: 21,
+        parsed_record_count: 21,
+      },
       lineage,
     );
-    assert.deepEqual(observations[0].completeness, {
-      structurally_complete: true,
-      required_surfaces_complete: true,
-      partitions_complete: true,
-      declared_record_count: 21,
-      parsed_record_count: 21,
-    }, lineage);
 
     const listings = retainedRestructuredRequests(adapter, slug, {
       url,
@@ -540,51 +458,43 @@ test("restructured Gundam news discovery pins the errata listing subcategory tab
   for (const lineage of ["gundam-en-asia", "gundam-en-us"]) {
     const adapter = requiredSourceAdapter(`${lineage}@7`);
     const locale = lineage === "gundam-en-asia" ? "asia-en" : "en";
-    const { observations } = retainedRestructuredParse(
-      adapter,
-      `${lineage}-news-hub`,
-      {
-        url: `https://www.gundam-gcg.com/${locale}/news/`,
-        requestId: `${lineage}:listing:news:${restructuredStageDigest}`,
-      },
+    const { observations } = retainedRestructuredParse(adapter, `${lineage}-news-hub`, {
+      url: `https://www.gundam-gcg.com/${locale}/news/`,
+      requestId: `${lineage}:listing:news:${restructuredStageDigest}`,
+    });
+    assert.deepEqual(
+      stageRecordSummaries(observations),
+      [
+        {
+          id: `${lineage}:errata`,
+          surface: "errata",
+          url: adapter.requestUrlForSurface("errata"),
+        },
+      ],
+      lineage,
     );
-    assert.deepEqual(stageRecordSummaries(observations), [
-      {
-        id: `${lineage}:errata`,
-        surface: "errata",
-        url: adapter.requestUrlForSurface("errata"),
-      },
-    ], lineage);
   }
 });
 
 test("the retained Gundam errata listing schedules its article and remaining pages", () => {
   const adapter = requiredSourceAdapter("gundam-en-asia@7");
   const url = adapter.requestUrlForSurface("errata");
-  const { fixture } = retainedRestructuredParse(
-    adapter,
-    "gundam-en-asia-errata-listing",
-    { url, requestId: "gundam-en-asia:errata" },
-  );
+  const { fixture } = retainedRestructuredParse(adapter, "gundam-en-asia-errata-listing", {
+    url,
+    requestId: "gundam-en-asia:errata",
+  });
   assert.equal(fixture.metadata.source_url, url);
-  const staged = retainedRestructuredRequests(
-    adapter,
-    "gundam-en-asia-errata-listing",
-    { url, requestId: "gundam-en-asia:errata" },
-  );
+  const staged = retainedRestructuredRequests(adapter, "gundam-en-asia-errata-listing", {
+    url,
+    requestId: "gundam-en-asia:errata",
+  });
   assert.deepEqual(
-    staged.filter(({ role }) => role === "detail").map(
-      ({ url: detailUrl }) => detailUrl,
-    ),
+    staged.filter(({ role }) => role === "detail").map(({ url: detailUrl }) => detailUrl),
     ["https://www.gundam-gcg.com/asia-en/news/01_236.html"],
   );
   assert.deepEqual(
-    staged.filter(({ role }) => role === "listing").map(
-      ({ url: listingUrl }) => listingUrl,
-    ),
-    [2, 3, 4].map((page) =>
-      `https://www.gundam-gcg.com/asia-en/news/?subcategory=news&tag=all&page=${page}`
-    ),
+    staged.filter(({ role }) => role === "listing").map(({ url: listingUrl }) => listingUrl),
+    [2, 3, 4].map((page) => `https://www.gundam-gcg.com/asia-en/news/?subcategory=news&tag=all&page=${page}`),
   );
 });
 
@@ -594,59 +504,55 @@ function mutatedProductDetail(sourceLineage, slug, from, to, adapter) {
   const html = fixture.bytes.toString("utf8");
   assert.ok(html.includes(from), `${slug} must retain ${from}`);
   return () =>
-    resolved.parseBytes(
-      new TextEncoder().encode(html.replace(from, to)),
-      {
-        mediaType: "text/html",
-        url: fixture.metadata.source_url,
-        requestId: `${sourceLineage}:product_detail:${restructuredStageDigest}`,
-      },
-    );
+    resolved.parseBytes(new TextEncoder().encode(html.replace(from, to)), {
+      mediaType: "text/html",
+      url: fixture.metadata.source_url,
+      requestId: `${sourceLineage}:product_detail:${restructuredStageDigest}`,
+    });
 }
 
 test("retained live Gundam product pages promote every titled Product from its heading contract", () => {
-  const booster = retainedProductDetail(
-    "gundam-en-asia",
-    "gundam-en-asia-product-booster",
-  );
-  assert.deepEqual(booster.catalogue.products, [{
-    reference: { kind: "official_code", value: "GD05" },
-    official_code: "GD05",
-    name: "Freedom Ascension [GD05]",
-    releases: [{
-      event_key: "product-release:GD05",
-      region: "EN-ASIA",
-      date: { precision: "day", value: "2026-07-25" },
-      status: null,
-    }],
-  }]);
+  const booster = retainedProductDetail("gundam-en-asia", "gundam-en-asia-product-booster");
+  assert.deepEqual(booster.catalogue.products, [
+    {
+      reference: { kind: "official_code", value: "GD05" },
+      official_code: "GD05",
+      name: "Freedom Ascension [GD05]",
+      releases: [
+        {
+          event_key: "product-release:GD05",
+          region: "EN-ASIA",
+          date: { precision: "day", value: "2026-07-25" },
+          status: null,
+        },
+      ],
+    },
+  ]);
   assert.deepEqual(booster.catalogue.distribution_contexts, []);
   assert.equal(booster.document.document_title, "Freedom Ascension [GD05]");
 
   // A card-bearing box is an ordinary Product, not an accessory.
-  const deckBuildBox = retainedProductDetail(
-    "gundam-en-asia",
-    "gundam-en-asia-product-deck-build-box",
-  );
-  assert.deepEqual(deckBuildBox.catalogue.products, [{
-    reference: { kind: "official_code", value: "SC01" },
-    official_code: "SC01",
-    name: "Deck Build Box Freedom Ascension [SC01]",
-    releases: [{
-      event_key: "product-release:SC01",
-      region: "EN-ASIA",
-      date: { precision: "day", value: "2026-07-25" },
-      status: null,
-    }],
-  }]);
+  const deckBuildBox = retainedProductDetail("gundam-en-asia", "gundam-en-asia-product-deck-build-box");
+  assert.deepEqual(deckBuildBox.catalogue.products, [
+    {
+      reference: { kind: "official_code", value: "SC01" },
+      official_code: "SC01",
+      name: "Deck Build Box Freedom Ascension [SC01]",
+      releases: [
+        {
+          event_key: "product-release:SC01",
+          region: "EN-ASIA",
+          date: { precision: "day", value: "2026-07-25" },
+          status: null,
+        },
+      ],
+    },
+  ]);
   assert.deepEqual(deckBuildBox.catalogue.distribution_contexts, []);
 });
 
 test("a retained live Gundam set without a bracketed code keeps name identity and its dotted release date", () => {
-  const { catalogue, fixture } = retainedProductDetail(
-    "gundam-en-asia",
-    "gundam-en-asia-product-anniversary-set",
-  );
+  const { catalogue, fixture } = retainedProductDetail("gundam-en-asia", "gundam-en-asia-product-anniversary-set");
   // The publisher prints the shorthand "2026.7.27" on this page.
   assert.ok(fixture.bytes.toString("utf8").includes("2026.7.27"));
   const [product] = catalogue.products;
@@ -662,19 +568,12 @@ test("a retained live Gundam set without a bracketed code keeps name identity an
     value: "2026-07-27",
   });
   assert.equal(product.releases[0].region, "EN-ASIA");
-  assert.match(
-    product.releases[0].event_key,
-    /^product-release:name-[0-9a-f]+-[0-9a-f]{16}$/u,
-  );
+  assert.match(product.releases[0].event_key, /^product-release:name-[0-9a-f]+-[0-9a-f]{16}$/u);
 });
 
 test("retained live Gundam accessory pages retain non-card evidence in both locales", () => {
   for (const lineage of ["gundam-en-asia", "gundam-en-us"]) {
-    retainedAccessoryContext(
-      lineage,
-      `${lineage}-product-card-case`,
-      "Official Card Case Set 02",
-    );
+    retainedAccessoryContext(lineage, `${lineage}-product-card-case`, "Official Card Case Set 02");
   }
   retainedAccessoryContext(
     "gundam-en-us",

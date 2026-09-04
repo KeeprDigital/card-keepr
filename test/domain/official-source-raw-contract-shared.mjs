@@ -10,7 +10,7 @@ import {
   requiredActiveSourceAdapter,
   requiredSourceAdapter,
   sourceAdapterRegistrations,
-} from "../../src/catalogue/source-adapters.ts";
+} from "../../src/catalogue/adapters/source-adapters.ts";
 import syntheticOfficialSource, {
   officialBandaiNavigationHeader,
   officialDiscoveryDefinitions,
@@ -20,27 +20,20 @@ import syntheticOfficialSource, {
 } from "../../acceptance/fixtures/synthetic-official-source.mjs";
 
 export const productionAdapterVersions = sourceAdapterRegistrations
-  .filter(({ origin, reconciliationCapability, parseBytes }) =>
-    origin === "production" &&
-    reconciliationCapability === "catalogue" &&
-    typeof parseBytes === "function"
+  .filter(
+    ({ origin, reconciliationCapability, parseBytes }) =>
+      origin === "production" && reconciliationCapability === "catalogue" && typeof parseBytes === "function",
   )
   .map(({ adapterVersion }) => adapterVersion);
 
 export function registeredProductionAdapters() {
-  return productionAdapterVersions.map((adapterVersion) =>
-    requiredSourceAdapter(adapterVersion)
-  );
+  return productionAdapterVersions.map((adapterVersion) => requiredSourceAdapter(adapterVersion));
 }
 
 export function retainedOfficialSourceFixture(slug) {
-  const metadata = JSON.parse(readFileSync(
-    new URL(
-      `../../acceptance/fixtures/retained-official-source/${slug}.json`,
-      import.meta.url,
-    ),
-    "utf8",
-  ));
+  const metadata = JSON.parse(
+    readFileSync(new URL(`../../acceptance/fixtures/retained-official-source/${slug}.json`, import.meta.url), "utf8"),
+  );
   const bytes = Buffer.from(metadata.body_base64, "base64");
   assert.equal(
     createHash("sha256").update(bytes).digest("hex"),
@@ -69,9 +62,7 @@ export function retainedLegalityRules(adapter, surface, slug, context = {}) {
     url: fixture.metadata.source_url,
     requestId: context.requestId ?? `${adapter.sourceLineage}:${surface}`,
   });
-  return observations.find(
-    (observation) => observation.observation_type === "legality_rules",
-  )?.legality_rules;
+  return observations.find((observation) => observation.observation_type === "legality_rules")?.legality_rules;
 }
 
 export function fusionLegalityContext(adapter) {
@@ -132,9 +123,7 @@ export function retainedRestructuredRequests(adapter, slug, context) {
 }
 
 export function stageRecordSummaries(observations) {
-  return observations.flatMap(({ records }) => records ?? []).map((
-    { id, surface, url },
-  ) => ({ id, surface, url }));
+  return observations.flatMap(({ records }) => records ?? []).map(({ id, surface, url }) => ({ id, surface, url }));
 }
 
 export function exactMessage(message) {
@@ -187,8 +176,7 @@ export const fusionErrataDetailFixtures = [
   },
 ];
 
-export const fusionLegalityHistoryUrl =
-  "https://www.dbs-cardgame.com/fw/en/news/01_399.html";
+export const fusionLegalityHistoryUrl = "https://www.dbs-cardgame.com/fw/en/news/01_399.html";
 
 // The live product-detail generation: every retained page below is a complete
 // publisher body captured from the site that broke production run run_085d6d,
@@ -204,9 +192,7 @@ export const liveProductAdapterVersions = {
 };
 
 export function activeProductionAdapter(sourceLineage) {
-  const adapter = requiredSourceAdapter(
-    liveProductAdapterVersions[sourceLineage],
-  );
+  const adapter = requiredSourceAdapter(liveProductAdapterVersions[sourceLineage]);
   assert.ok(
     registeredProductionAdapters().includes(adapter),
     `${sourceLineage} must resolve its live-product version as the active adapter`,
@@ -234,19 +220,23 @@ export function retainedAccessoryContext(sourceLineage, slug, title) {
   const { catalogue, document } = retainedProductDetail(sourceLineage, slug);
   assert.deepEqual(catalogue.products, [], slug);
   assert.deepEqual(catalogue.relationships, [], slug);
-  assert.deepEqual(catalogue.distribution_contexts, [{
-    key: `non-card:accessory:${title.toLocaleLowerCase()}`,
-    kind: "other",
-    label: "accessory",
-    evidence_category: "explicit",
-  }], slug);
+  assert.deepEqual(
+    catalogue.distribution_contexts,
+    [
+      {
+        key: `non-card:accessory:${title.toLocaleLowerCase()}`,
+        kind: "other",
+        label: "accessory",
+        evidence_category: "explicit",
+      },
+    ],
+    slug,
+  );
   assert.equal(document.document_title, title, slug);
 }
 
 export function rawSurfacePayload(lineage, surface) {
-  const payload = structuredClone(
-    officialRawSurfacePayload(`/${lineage}/${surface}`),
-  );
+  const payload = structuredClone(officialRawSurfacePayload(`/${lineage}/${surface}`));
   if (lineage === "one-piece-en" && surface === "don-rules") {
     payload.don_card = {
       functional_designation: "DON!!",
@@ -259,10 +249,8 @@ export function rawSurfacePayload(lineage, surface) {
 }
 
 export function parseRegisteredSurface(adapter, surface, payload) {
-  const completeDigimonLeaf = adapter.sourceLineage === "digimon-en" &&
-    surface === "card-list";
-  const completeGundamLeaf = adapter.sourceLineage.startsWith("gundam-") &&
-    surface === "packages";
+  const completeDigimonLeaf = adapter.sourceLineage === "digimon-en" && surface === "card-list";
+  const completeGundamLeaf = adapter.sourceLineage.startsWith("gundam-") && surface === "packages";
   const publisherPayload = structuredClone(payload);
   if (adapter.sourceLineage === "one-piece-en" && surface === "card-list") {
     publisherPayload.card_pages.forEach((card) => {
@@ -287,11 +275,7 @@ export function parseRegisteredSurface(adapter, surface, payload) {
   return adapter.parseBytes(
     new TextEncoder().encode(
       `<html><title>BANDAI ${adapter.supportedGame} CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title>
-       ${officialPublisherPayloadScript(
-        adapter.sourceLineage,
-        surface,
-        publisherPayload,
-      )}`,
+       ${officialPublisherPayloadScript(adapter.sourceLineage, surface, publisherPayload)}`,
     ),
     {
       mediaType: "text/html; charset=utf-8",
@@ -299,10 +283,11 @@ export function parseRegisteredSurface(adapter, surface, payload) {
         ? `${adapter.requestUrlForSurface(surface)}&category=all&cardcategory=digimon&colour=blue`
         : completeGundamLeaf
           ? `${adapter.requestUrlForSurface(surface)}?package=all`
-        : adapter.requestUrlForSurface(surface),
-      requestId: completeDigimonLeaf || completeGundamLeaf
-        ? `${adapter.sourceLineage}:listing:${"f".repeat(64)}`
-        : `${adapter.sourceLineage}:${surface}`,
+          : adapter.requestUrlForSurface(surface),
+      requestId:
+        completeDigimonLeaf || completeGundamLeaf
+          ? `${adapter.sourceLineage}:listing:${"f".repeat(64)}`
+          : `${adapter.sourceLineage}:${surface}`,
     },
   );
 }

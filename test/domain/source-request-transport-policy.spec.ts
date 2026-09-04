@@ -6,7 +6,7 @@ import {
   toleratedPrintingImageFailureCodes,
   toleratesRequestFailure,
   transportPolicyForRole,
-} from "../../src/catalogue/source-evidence-model";
+} from "../../src/catalogue/source-evidence";
 
 const catalogueFactRoles = ["surface", "listing", "detail", "product_detail"] as const;
 
@@ -64,9 +64,7 @@ test("image requests record one distinct stable code per failure class", () => {
     revalidation_rejected: "source_image_revalidation_rejected",
     body_contract: "source_image_body_contract",
   });
-  expect(printingImageRetriesExhaustedFailureCode).toBe(
-    "source_image_retries_exhausted",
-  );
+  expect(printingImageRetriesExhaustedFailureCode).toBe("source_image_retries_exhausted");
   expect([...toleratedPrintingImageFailureCodes].sort()).toEqual([
     "source_image_body_contract",
     "source_image_not_found",
@@ -94,13 +92,8 @@ test("every image failure code is tolerated on the image role and nowhere else",
       expect(toleratesRequestFailure(role, code)).toBe(false);
     }
   }
-  expect(toleratesRequestFailure("image", "source_request_retries_exhausted"))
-    .toBe(false);
-  expect(toleratesRequestFailure("image", "source_request_rejected")).toBe(
-    false,
-  );
-  expect(toleratesRequestFailure("image", "source_redirect_rejected")).toBe(
-    false,
-  );
+  expect(toleratesRequestFailure("image", "source_request_retries_exhausted")).toBe(false);
+  expect(toleratesRequestFailure("image", "source_request_rejected")).toBe(false);
+  expect(toleratesRequestFailure("image", "source_redirect_rejected")).toBe(false);
   expect(toleratesRequestFailure("image", null)).toBe(false);
 });

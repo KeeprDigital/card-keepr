@@ -3,7 +3,7 @@ import {
   appendDiscoveredEvidenceRequests,
   pendingEvidenceRequests,
   requiredEvidenceRun,
-} from "../../../src/catalogue/source-evidence-repository";
+} from "../../../src/catalogue/source-evidence";
 import {
   approve,
   installReconciliationSuite,
@@ -46,29 +46,25 @@ for (const scenario of [
       source_lineage: "one-piece-en",
       adapter_version: "fixture-one-piece-json@3",
       idempotency_key: scenario.key,
-      requests: [{
-        id: "cards",
-        method: "GET",
-        url: "https://official-source.invalid/reconciliation/card-without-printing",
-        headers: { accept: "application/json" },
-      }],
+      requests: [
+        {
+          id: "cards",
+          method: "GET",
+          url: "https://official-source.invalid/reconciliation/card-without-printing",
+          headers: { accept: "application/json" },
+        },
+      ],
     });
     expect(started.response.status).toBe(201);
     const id = requiredString(started.document, "id");
     const storedRun = await requiredEvidenceRun(testEnv.CATALOGUE_DB, id);
     const root = (await pendingEvidenceRequests(testEnv.CATALOGUE_DB, id))[0];
     if (root === undefined) throw new Error("pending root request missing");
-    const [image] = await appendDiscoveredEvidenceRequests(
-      testEnv.CATALOGUE_DB,
-      storedRun,
-      root,
-      [{ role: "image", url: scenario.url, headers: { accept: "*/*" } }],
-    );
+    const [image] = await appendDiscoveredEvidenceRequests(testEnv.CATALOGUE_DB, storedRun, root, [
+      { role: "image", url: scenario.url, headers: { accept: "*/*" } },
+    ]);
     if (image === undefined) throw new Error("image request missing");
-    const resumed = await post(
-      `/v1/ingestion-runs/${id}/collection/resume`,
-      {},
-    );
+    const resumed = await post(`/v1/ingestion-runs/${id}/collection/resume`, {});
     expect(resumed.response.status).toBe(202);
     await waitForRunState(id, "parsing");
 

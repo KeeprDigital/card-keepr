@@ -1,16 +1,10 @@
-import {
-  applyD1Migrations,
-  env,
-  type D1Migration,
-} from "cloudflare:test";
+import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, expect } from "vitest";
-import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 
-export type ProductionDiscoveryRequest = ReturnType<
-  typeof officialSourceDiscoveryRequests
->[number];
+export type ProductionDiscoveryRequest = ReturnType<typeof officialSourceDiscoveryRequests>[number];
 
 export const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -20,10 +14,7 @@ let requestSequence = 0;
 
 export function installContextualLegalitySuite(): void {
   beforeEach(async () => {
-    await applyD1Migrations(
-      testEnv.CATALOGUE_DB,
-      testEnv.TEST_MIGRATIONS,
-    );
+    await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
   });
 }
 
@@ -37,10 +28,7 @@ export async function collectFixtureLegality(
 }> {
   const runId = await collectFixtureLegalityEvidence(url, idempotencyKey);
   const reconciled = await reconcile(runId);
-  expect(
-    reconciled.response.status,
-    JSON.stringify(reconciled.document),
-  ).toBe(expectedStatus);
+  expect(reconciled.response.status, JSON.stringify(reconciled.document)).toBe(expectedStatus);
   return { runId, reconciled: reconciled.document };
 }
 
@@ -57,48 +45,40 @@ export async function collectFixtureOnePiece(
     source_lineage: "one-piece-en",
     adapter_version: "fixture-one-piece-json@3",
     idempotency_key: idempotencyKey,
-    requests: [{
-      id: "cards-and-products",
-      method: "GET",
-      url,
-      headers: { accept: "application/json" },
-    }],
+    requests: [
+      {
+        id: "cards-and-products",
+        method: "GET",
+        url,
+        headers: { accept: "application/json" },
+      },
+    ],
   });
   const runId = requiredString(started, "id");
-  expect((await request(
-    `/v1/ingestion-runs/${runId}/collection/resume`,
-    {},
-  )).response.status).toBe(202);
+  expect((await request(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
   await waitForState(runId, "parsing");
   const reconciled = await reconcile(runId);
-  expect(
-    reconciled.response.status,
-    JSON.stringify(reconciled.document),
-  ).toBe(expectedStatus);
+  expect(reconciled.response.status, JSON.stringify(reconciled.document)).toBe(expectedStatus);
   return { runId, reconciled: reconciled.document };
 }
 
-export async function collectFixtureLegalityEvidence(
-  url: string,
-  idempotencyKey: string,
-): Promise<string> {
+export async function collectFixtureLegalityEvidence(url: string, idempotencyKey: string): Promise<string> {
   const started = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
     supported_game: "gundam",
     source_lineage: "gundam-en-asia",
     adapter_version: "fixture-gundam-en-asia-json@2",
     idempotency_key: idempotencyKey,
-    requests: [{
-      id: "cards-and-rules",
-      method: "GET",
-      url,
-      headers: { accept: "application/json" },
-    }],
+    requests: [
+      {
+        id: "cards-and-rules",
+        method: "GET",
+        url,
+        headers: { accept: "application/json" },
+      },
+    ],
   });
   const runId = requiredString(started, "id");
-  const resumed = await request(
-    `/v1/ingestion-runs/${runId}/collection/resume`,
-    {},
-  );
+  const resumed = await request(`/v1/ingestion-runs/${runId}/collection/resume`, {});
   expect(resumed.response.status).toBe(202);
   await waitForState(runId, "parsing");
   return runId;
@@ -107,23 +87,13 @@ export async function collectFixtureLegalityEvidence(
 export async function reconcile(runId: string, observedAt?: string) {
   const shown = await request(`/v1/ingestion-runs/${runId}`);
   const body = {
-    expected_current_revision_id: requiredString(
-      shown.document,
-      "expected_current_revision_id",
-    ),
+    expected_current_revision_id: requiredString(shown.document, "expected_current_revision_id"),
     idempotency_key: `reconcile-${runId}`,
   };
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
-    const observed = await request(
-      `/v1/ingestion-runs/${runId}/reconciliation`,
-      body,
-      observedAt,
-    );
-    if (
-      observed.response.status !== 200 &&
-      observed.response.status !== 202
-    ) {
+    const observed = await request(`/v1/ingestion-runs/${runId}/reconciliation`, body, observedAt);
+    if (observed.response.status !== 200 && observed.response.status !== 202) {
       return observed;
     }
     if (
@@ -145,19 +115,12 @@ export async function reconcile(runId: string, observedAt?: string) {
   throw new Error(`reconciliation Workflow ${runId} did not complete`);
 }
 
-export function approve(
-  reconciled: Record<string, unknown>,
-  idempotencyKey: string,
-  observedAt?: string,
-) {
+export function approve(reconciled: Record<string, unknown>, idempotencyKey: string, observedAt?: string) {
   return request(
     `/v1/ingestion-runs/${requiredString(reconciled, "run_id")}/approval`,
     {
       candidate_digest: requiredString(reconciled, "candidate_digest"),
-      expected_current_revision_id: requiredString(
-        reconciled,
-        "expected_current_revision_id",
-      ),
+      expected_current_revision_id: requiredString(reconciled, "expected_current_revision_id"),
       idempotency_key: idempotencyKey,
     },
     observedAt,
@@ -188,9 +151,9 @@ export async function waitForState(runId: string, expected: string) {
     last = shown.document;
     if (shown.document.state === expected) return shown.document;
     if (shown.document.state === "failed") {
-      const persisted = await testEnv.CATALOGUE_DB.prepare(
-        `SELECT warnings_json FROM ingestion_runs WHERE id = ?`,
-      ).bind(runId).first<{ warnings_json: string }>();
+      const persisted = await testEnv.CATALOGUE_DB.prepare(`SELECT warnings_json FROM ingestion_runs WHERE id = ?`)
+        .bind(runId)
+        .first<{ warnings_json: string }>();
       const sourceFailures = await testEnv.CATALOGUE_DB.prepare(
         `SELECT requests.request_id, requests.state AS request_state,
                 requests.failure_code, requests.request_role,
@@ -226,7 +189,9 @@ export async function waitForState(runId: string, expected: string) {
              OR attempts.diagnostic IS NOT NULL
              OR capture.diagnostic IS NOT NULL)
          ORDER BY requests.request_id, attempts.attempt_number`,
-      ).bind(runId).all();
+      )
+        .bind(runId)
+        .all();
       const discoveryChildren = await testEnv.CATALOGUE_DB.prepare(
         `SELECT parent_request_id, request_id, sequence_number,
                 method, url, request_headers_json,
@@ -234,39 +199,34 @@ export async function waitForState(runId: string, expected: string) {
          FROM source_discovery_request_plans
          WHERE ingestion_run_id = ?
          ORDER BY sequence_number`,
-      ).bind(runId).all();
-      throw new Error(JSON.stringify({
-        id: shown.document.id,
-        state: shown.document.state,
-        failure_code: shown.document.failure_code,
-        reconciliation_diagnostics: JSON.parse(
-          persisted?.warnings_json ?? "[]",
-        ),
-        source_failures: sourceFailures.results,
-        parse_failure_diagnostic_persistence:
-          "parse failures are represented by source_requests.failure_code; source_parse_operations persists state but has no failure diagnostic column",
-        discovery_children: discoveryChildren.results,
-      }));
+      )
+        .bind(runId)
+        .all();
+      throw new Error(
+        JSON.stringify({
+          id: shown.document.id,
+          state: shown.document.state,
+          failure_code: shown.document.failure_code,
+          reconciliation_diagnostics: JSON.parse(persisted?.warnings_json ?? "[]"),
+          source_failures: sourceFailures.results,
+          parse_failure_diagnostic_persistence:
+            "parse failures are represented by source_requests.failure_code; source_parse_operations persists state but has no failure diagnostic column",
+          discovery_children: discoveryChildren.results,
+        }),
+      );
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  throw new Error(
-    `run ${runId} did not reach ${expected}: ${JSON.stringify(last)}`,
-  );
+  throw new Error(`run ${runId} did not reach ${expected}: ${JSON.stringify(last)}`);
 }
 
-export function productionFusionLegalityRequests(
-  marker: string,
-  historyMarker = marker,
-): ProductionDiscoveryRequest[] {
+export function productionFusionLegalityRequests(marker: string, historyMarker = marker): ProductionDiscoveryRequest[] {
   return officialSourceDiscoveryRequests("fusion-world-en").map((request) => ({
     ...request,
     headers: {
       ...request.headers,
       "user-agent": marker,
-      ...(historyMarker === marker
-        ? {}
-        : { "accept-language": historyMarker }),
+      ...(historyMarker === marker ? {} : { "accept-language": historyMarker }),
     },
   }));
 }
@@ -294,12 +254,8 @@ export async function request(
       headers: {
         authorization: "Bearer vitest-administration-key",
         "cf-connecting-ip": `203.0.113.${(requestSequence++ % 250) + 1}`,
-        ...(body === undefined
-          ? {}
-          : { "content-type": "application/json" }),
-        ...(observedAt === undefined
-          ? {}
-          : { "x-keepr-test-now": observedAt }),
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+        ...(observedAt === undefined ? {} : { "x-keepr-test-now": observedAt }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
@@ -310,10 +266,7 @@ export async function request(
   };
 }
 
-export function requiredString(
-  document: Record<string, unknown>,
-  field: string,
-): string {
+export function requiredString(document: Record<string, unknown>, field: string): string {
   const value = document[field];
   if (typeof value !== "string") throw new Error(`${field} is not a string`);
   return value;
@@ -331,19 +284,13 @@ export async function revisionLegalityRule(
   )
     .bind(revisionId, officialId)
     .first<{ document_json: string }>();
-  return retained === null
-    ? undefined
-    : JSON.parse(retained.document_json) as Record<string, unknown>;
+  return retained === null ? undefined : (JSON.parse(retained.document_json) as Record<string, unknown>);
 }
 
-export async function exportedLegalityRule(
-  revisionId: string,
-  officialId: string,
-): Promise<Record<string, unknown>> {
-  const rule = (await exportedComponentRecords(
-    revisionId,
-    "legality-rules",
-  )).find((entry) => entry.official_id === officialId);
+export async function exportedLegalityRule(revisionId: string, officialId: string): Promise<Record<string, unknown>> {
+  const rule = (await exportedComponentRecords(revisionId, "legality-rules")).find(
+    (entry) => entry.official_id === officialId,
+  );
   if (rule === undefined) throw new Error("Exported Legality Rule is absent");
   return rule;
 }
@@ -354,7 +301,9 @@ export async function exportedManifest(revisionId: string): Promise<{
   const exportRow = await testEnv.CATALOGUE_DB.prepare(
     `SELECT manifest_key FROM catalogue_exports
      WHERE catalogue_revision_id = ?`,
-  ).bind(revisionId).first<{ manifest_key: string }>();
+  )
+    .bind(revisionId)
+    .first<{ manifest_key: string }>();
   if (exportRow === null) throw new Error("Catalogue Export is absent");
   const object = await testEnv.CATALOGUE_EXPORTS.get(exportRow.manifest_key);
   if (object === null) throw new Error("Export manifest is absent");
@@ -368,18 +317,16 @@ export async function exportedComponentRecords(
   const exportRow = await testEnv.CATALOGUE_DB.prepare(
     `SELECT manifest_key FROM catalogue_exports
      WHERE catalogue_revision_id = ?`,
-  ).bind(revisionId).first<{ manifest_key: string }>();
+  )
+    .bind(revisionId)
+    .first<{ manifest_key: string }>();
   if (exportRow === null) throw new Error("Catalogue Export is absent");
-  const manifestObject = await testEnv.CATALOGUE_EXPORTS.get(
-    exportRow.manifest_key,
-  );
+  const manifestObject = await testEnv.CATALOGUE_EXPORTS.get(exportRow.manifest_key);
   if (manifestObject === null) throw new Error("Export manifest is absent");
   const manifest = await manifestObject.json<{
     components: Array<{ name: string; compressed_sha256: string }>;
   }>();
-  const component = manifest.components.find(
-    (entry) => entry.name === componentName,
-  );
+  const component = manifest.components.find((entry) => entry.name === componentName);
   if (component === undefined) {
     throw new Error(`Catalogue Export ${componentName} component is absent`);
   }
@@ -387,24 +334,26 @@ export async function exportedComponentRecords(
     `catalogue-exports/${revisionId}/components/${component.compressed_sha256}.ndjson.gz`,
   );
   if (object === null) throw new Error("Catalogue Export component is absent");
-  const text = await new Response(
-    object.body.pipeThrough(new DecompressionStream("gzip")),
-  ).text();
+  const text = await new Response(object.body.pipeThrough(new DecompressionStream("gzip"))).text();
   return text.length === 0
     ? []
-    : text.trim().split("\n").map((line) =>
-        JSON.parse(line) as Record<string, unknown>
-      );
+    : text
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 export function resolveJsonPointer(document: unknown, pointer: string): unknown {
-  return pointer.split("/").slice(1).reduce<unknown>((value, encoded) => {
-    if (value === null || typeof value !== "object") {
-      throw new Error(`JSON Pointer ${pointer} does not resolve`);
-    }
-    const key = encoded.replace(/~1/g, "/").replace(/~0/g, "~");
-    return (value as Record<string, unknown>)[key];
-  }, document);
+  return pointer
+    .split("/")
+    .slice(1)
+    .reduce<unknown>((value, encoded) => {
+      if (value === null || typeof value !== "object") {
+        throw new Error(`JSON Pointer ${pointer} does not resolve`);
+      }
+      const key = encoded.replace(/~1/g, "/").replace(/~0/g, "~");
+      return (value as Record<string, unknown>)[key];
+    }, document);
 }
 
 export async function canonicalLegalityCardIdInvariantErrors(
@@ -426,11 +375,7 @@ export async function canonicalLegalityCardIdInvariantErrors(
     {
       direct: ["card_invariant_z", "card_invariant_a"],
       effect,
-      union: [
-        "card_invariant_a",
-        "card_invariant_b",
-        "card_invariant_z",
-      ],
+      union: ["card_invariant_a", "card_invariant_b", "card_invariant_z"],
     },
     {
       direct,
@@ -459,11 +404,7 @@ export async function canonicalLegalityCardIdInvariantErrors(
         type: "prohibited_combination",
         with_card_ids: ["card_invariant_z", "card_invariant_b"],
       },
-      union: [
-        "card_invariant_a",
-        "card_invariant_b",
-        "card_invariant_z",
-      ],
+      union: ["card_invariant_a", "card_invariant_b", "card_invariant_z"],
     },
     { direct, effect, union: direct },
     {
@@ -481,8 +422,9 @@ export async function canonicalLegalityCardIdInvariantErrors(
   return Promise.all(
     malformed.map((variant, index) =>
       rejectedError(
-        database.prepare(
-          `INSERT INTO legality_rules (
+        database
+          .prepare(
+            `INSERT INTO legality_rules (
              id, official_id, supported_game, region, format, event_tier,
              effective_from, effective_until, official_wording, effect_json,
              card_ids_json, direct_card_ids_json, source_lineage,
@@ -492,30 +434,31 @@ export async function canonicalLegalityCardIdInvariantErrors(
              last_observed_revision_id, current, last_missing_revision_id
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
              ?, ?, 1, NULL)`,
-        ).bind(
-          `legality_rule_${prefix}_malformed_${index}`,
-          `${prefix}-malformed-${index}`,
-          canonical.supported_game ?? canonical.game,
-          canonical.region,
-          canonical.format,
-          canonical.event_tier,
-          canonical.effective_from,
-          canonical.effective_until,
-          canonical.official_wording,
-          JSON.stringify(variant.effect),
-          JSON.stringify(variant.union),
-          JSON.stringify(variant.direct),
-          canonical.source_lineage,
-          canonical.source_snapshot_id,
-          canonical.source_observation_set_id,
-          `srcobs_${prefix}_malformed_${index}`,
-          `/observations/0/value/legality_rules/${index + 20}`,
-          canonical.source_field_pointers_json ??
-            JSON.stringify(canonical.source_field_pointers),
-          canonical.first_revision_id,
-          canonical.last_observed_revision_id,
-        ).run(),
-      )
+          )
+          .bind(
+            `legality_rule_${prefix}_malformed_${index}`,
+            `${prefix}-malformed-${index}`,
+            canonical.supported_game ?? canonical.game,
+            canonical.region,
+            canonical.format,
+            canonical.event_tier,
+            canonical.effective_from,
+            canonical.effective_until,
+            canonical.official_wording,
+            JSON.stringify(variant.effect),
+            JSON.stringify(variant.union),
+            JSON.stringify(variant.direct),
+            canonical.source_lineage,
+            canonical.source_snapshot_id,
+            canonical.source_observation_set_id,
+            `srcobs_${prefix}_malformed_${index}`,
+            `/observations/0/value/legality_rules/${index + 20}`,
+            canonical.source_field_pointers_json ?? JSON.stringify(canonical.source_field_pointers),
+            canonical.first_revision_id,
+            canonical.last_observed_revision_id,
+          )
+          .run(),
+      ),
     ),
   );
 }
@@ -554,14 +497,15 @@ export async function canonicalLegalityEffectInvariantErrors(
   ] as const;
   return Promise.all(
     malformed.map((variant, index) => {
-      const companion = "with_card_ids" in variant.effect &&
-          Array.isArray(variant.effect.with_card_ids)
-        ? variant.effect.with_card_ids
-        : [];
+      const companion =
+        "with_card_ids" in variant.effect && Array.isArray(variant.effect.with_card_ids)
+          ? variant.effect.with_card_ids
+          : [];
       const allCardIds = [...variant.direct, ...companion].sort();
       return rejectedError(
-        database.prepare(
-          `INSERT INTO legality_rules (
+        database
+          .prepare(
+            `INSERT INTO legality_rules (
              id, official_id, supported_game, region, format, event_tier,
              effective_from, effective_until, official_wording, effect_json,
              card_ids_json, direct_card_ids_json, source_lineage,
@@ -571,29 +515,30 @@ export async function canonicalLegalityEffectInvariantErrors(
              last_observed_revision_id, current, last_missing_revision_id
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
              ?, ?, 1, NULL)`,
-        ).bind(
-          `legality_rule_${prefix}_malformed_effect_${index}`,
-          `${prefix}-malformed-effect-${index}`,
-          canonical.supported_game ?? canonical.game,
-          canonical.region,
-          canonical.format,
-          canonical.event_tier,
-          canonical.effective_from,
-          canonical.effective_until,
-          canonical.official_wording,
-          JSON.stringify(variant.effect),
-          JSON.stringify(allCardIds),
-          JSON.stringify(variant.direct),
-          canonical.source_lineage,
-          canonical.source_snapshot_id,
-          canonical.source_observation_set_id,
-          `srcobs_${prefix}_malformed_effect_${index}`,
-          `/observations/0/value/legality_rules/${index + 40}`,
-          canonical.source_field_pointers_json ??
-            JSON.stringify(canonical.source_field_pointers),
-          canonical.first_revision_id,
-          canonical.last_observed_revision_id,
-        ).run(),
+          )
+          .bind(
+            `legality_rule_${prefix}_malformed_effect_${index}`,
+            `${prefix}-malformed-effect-${index}`,
+            canonical.supported_game ?? canonical.game,
+            canonical.region,
+            canonical.format,
+            canonical.event_tier,
+            canonical.effective_from,
+            canonical.effective_until,
+            canonical.official_wording,
+            JSON.stringify(variant.effect),
+            JSON.stringify(allCardIds),
+            JSON.stringify(variant.direct),
+            canonical.source_lineage,
+            canonical.source_snapshot_id,
+            canonical.source_observation_set_id,
+            `srcobs_${prefix}_malformed_effect_${index}`,
+            `/observations/0/value/legality_rules/${index + 40}`,
+            canonical.source_field_pointers_json ?? JSON.stringify(canonical.source_field_pointers),
+            canonical.first_revision_id,
+            canonical.last_observed_revision_id,
+          )
+          .run(),
       );
     }),
   );
@@ -658,9 +603,12 @@ export async function canonicalLegalityScopeInvariantErrors(
       effect: unresolved,
     },
   ] as const;
-  return Promise.all(variants.map((variant, index) =>
-    rejectedError(database.prepare(
-      `INSERT INTO legality_rules (
+  return Promise.all(
+    variants.map((variant, index) =>
+      rejectedError(
+        database
+          .prepare(
+            `INSERT INTO legality_rules (
          id, official_id, supported_game, region, format, event_tier,
          effective_from, effective_until, unresolved_scope_json,
          official_wording, effect_json, card_ids_json, direct_card_ids_json,
@@ -670,31 +618,34 @@ export async function canonicalLegalityScopeInvariantErrors(
          last_observed_revision_id, current, last_missing_revision_id
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
          ?, ?, 1, NULL)`,
-    ).bind(
-      `legality_rule_${prefix}_malformed_scope_${index}`,
-      `${prefix}-malformed-scope-${index}`,
-      canonical.supported_game ?? canonical.game,
-      canonical.region,
-      canonical.format,
-      variant.eventTier,
-      variant.effectiveFrom,
-      variant.effectiveUntil,
-      JSON.stringify(variant.scope),
-      canonical.official_wording,
-      JSON.stringify(variant.effect),
-      JSON.stringify(variant.direct),
-      JSON.stringify(variant.direct),
-      canonical.source_lineage,
-      canonical.source_snapshot_id,
-      canonical.source_observation_set_id,
-      `srcobs_${prefix}_malformed_scope_${index}`,
-      `/observations/0/value/legality_rules/${index + 60}`,
-      canonical.source_field_pointers_json ??
-        JSON.stringify(canonical.source_field_pointers),
-      canonical.first_revision_id,
-      canonical.last_observed_revision_id,
-    ).run())
-  ));
+          )
+          .bind(
+            `legality_rule_${prefix}_malformed_scope_${index}`,
+            `${prefix}-malformed-scope-${index}`,
+            canonical.supported_game ?? canonical.game,
+            canonical.region,
+            canonical.format,
+            variant.eventTier,
+            variant.effectiveFrom,
+            variant.effectiveUntil,
+            JSON.stringify(variant.scope),
+            canonical.official_wording,
+            JSON.stringify(variant.effect),
+            JSON.stringify(variant.direct),
+            JSON.stringify(variant.direct),
+            canonical.source_lineage,
+            canonical.source_snapshot_id,
+            canonical.source_observation_set_id,
+            `srcobs_${prefix}_malformed_scope_${index}`,
+            `/observations/0/value/legality_rules/${index + 60}`,
+            canonical.source_field_pointers_json ?? JSON.stringify(canonical.source_field_pointers),
+            canonical.first_revision_id,
+            canonical.last_observed_revision_id,
+          )
+          .run(),
+      ),
+    ),
+  );
 }
 
 export async function rejectedError(promise: Promise<unknown>): Promise<unknown> {

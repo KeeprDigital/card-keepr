@@ -12,7 +12,7 @@ export {
   sourceSnapshotContent,
   startEvidenceRun,
   type StartEvidenceRunRequest,
-} from "../source-evidence";
+} from "./source-evidence";
 export {
   collectSourceRequestBatch,
   collectionBatchSize,
@@ -20,7 +20,7 @@ export {
   type SourceRequestBatchHalt,
   type SourceRequestBatchInput,
   type SourceRequestBatchOutcome,
-} from "../source-evidence-batch";
+} from "./source-evidence-batch";
 export {
   advanceHostPacing,
   captureOperationIdentity,
@@ -33,7 +33,7 @@ export {
   type CaptureTransportResult,
   type PreparedCaptureAttempt,
   type SourceHostPacingMode,
-} from "../source-evidence-capture";
+} from "./source-evidence-capture";
 export {
   assertIdentifier,
   officialCollectionRequestsFromDiscovery,
@@ -51,7 +51,7 @@ export {
   type OfficialSourceCollectionPlan,
   type SourceRequestFailureClass,
   type SourceRequestRole,
-} from "../source-evidence-model";
+} from "./source-evidence-model";
 // `startEvidenceRun` is the repository's function, re-exported above
 // through `source-evidence.ts`.
 export {
@@ -77,7 +77,7 @@ export {
   type EvidenceInspectionOptions,
   type EvidenceRequestRow,
   type IngestionEvidenceRow,
-} from "../source-evidence-repository";
+} from "./source-evidence-repository";
 export {
   classifyCollectionProgress,
   classifyCollectionWorkflow,
@@ -92,4 +92,4 @@ export {
   type SafeWorkflowStatus,
   type WorkflowAttemptRecord,
   type WorkflowPauseReason,
-} from "../collection-recovery";
+} from "./collection-recovery";

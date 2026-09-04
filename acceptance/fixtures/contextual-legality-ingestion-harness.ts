@@ -11,7 +11,7 @@ import {
 } from "cloudflare:workers";
 import type {
   CatalogueBackupWorkflowParams,
-} from "../../src/catalogue/backup-workflow";
+} from "../../src/catalogue/backup-recovery";
 import {
   startEvidenceRun,
   type StartEvidenceRunRequest,

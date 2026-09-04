@@ -18,15 +18,15 @@ export {
   type LegalityEvaluation,
   type LegalityRuleLifecycle,
   type RetainedLegalityRule,
-} from "../legality-rule";
+} from "./legality-rule";
 export {
   legalityRuleExportRecords,
   legalityRuleRelationshipRecords,
-} from "../legality-export";
-export { legalityPublicationStatements } from "../legality-publication";
+} from "./legality-export";
+export { legalityPublicationStatements } from "./legality-publication";
 export {
   parseStoredCatalogueCard,
   parseStoredLegalityRule,
   type StoredLegalityStatusCard,
   type StoredLegalityStatusRule,
-} from "../stored-legality-documents";
+} from "./stored-legality-documents";

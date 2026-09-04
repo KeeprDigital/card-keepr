@@ -4,7 +4,7 @@ import {
   appendDiscoveredEvidenceRequests,
   pendingEvidenceRequests,
   requiredEvidenceRun,
-} from "../../../src/catalogue/source-evidence-repository";
+} from "../../../src/catalogue/source-evidence";
 import {
   administrationRequest,
   createCollection,

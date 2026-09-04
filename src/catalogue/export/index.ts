@@ -8,12 +8,12 @@ export {
   type BuiltCatalogueExport,
   type ExportObject,
   type SourceFreshness,
-} from "../export";
+} from "./export";
 export {
   verifyComponentExportRecord,
   verifyExportManifest,
   verifyExportRecord,
-} from "../export-validation";
+} from "./export-validation";
 export {
   CatalogueExportDeletionProblem,
   catalogueExportDeletionStatus,
@@ -22,4 +22,4 @@ export {
   retryCatalogueExportDeletion,
   type ConfirmCatalogueExportDeletion,
   type PrepareCatalogueExportDeletion,
-} from "../catalogue-export-deletion";
+} from "./catalogue-export-deletion";

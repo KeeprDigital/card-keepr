@@ -1,8 +1,6 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import {
-  officialSourceDiscoveryRequests,
-} from "../../src/catalogue/product-release-source-adapters.ts";
+import { officialSourceDiscoveryRequests } from "../../src/catalogue/adapters/product-release-source-adapters.ts";
 import {
   adapterReconciliationAreas,
   assertAdapterBinding,
@@ -10,7 +8,7 @@ import {
   requiredActiveSourceAdapter,
   requiredSourceAdapter,
   sourceAdapterRegistrations,
-} from "../../src/catalogue/source-adapters.ts";
+} from "../../src/catalogue/adapters/source-adapters.ts";
 import syntheticOfficialSource, {
   officialBandaiNavigationHeader,
   officialDiscoveryDefinitions,
@@ -34,46 +32,13 @@ import {
 } from "./official-source-raw-contract-shared.mjs";
 
 const expectedSurfaces = {
-  "one-piece-en": [
-    "card-list",
-    "products",
-    "releases",
-    "restrictions",
-    "block-policy",
-    "errata",
-    "don-rules",
-  ],
+  "one-piece-en": ["card-list", "products", "releases", "restrictions", "block-policy", "errata", "don-rules"],
   // The restructured Fusion World EN contract drops "errata": the publisher
   // retired /fw/en/rules/errata-card/ and publishes no replacement.
-  "fusion-world-en": [
-    "card-search",
-    "products",
-    "releases",
-    "legality-current",
-    "legality-history",
-  ],
-  "digimon-en": [
-    "card-list",
-    "products",
-    "releases",
-    "restrictions-current",
-    "restrictions-history",
-    "errata",
-  ],
-  "gundam-en-asia": [
-    "packages",
-    "products",
-    "releases",
-    "legality",
-    "errata",
-  ],
-  "gundam-en-us": [
-    "packages",
-    "products",
-    "releases",
-    "legality",
-    "errata",
-  ],
+  "fusion-world-en": ["card-search", "products", "releases", "legality-current", "legality-history"],
+  "digimon-en": ["card-list", "products", "releases", "restrictions-current", "restrictions-history", "errata"],
+  "gundam-en-asia": ["packages", "products", "releases", "legality", "errata"],
+  "gundam-en-us": ["packages", "products", "releases", "legality", "errata"],
 };
 
 const expectedSurfaceUrls = {
@@ -87,8 +52,7 @@ const expectedSurfaceUrls = {
     "don-rules": "https://en.onepiece-cardgame.com/rules/",
   },
   "fusion-world-en": {
-    "card-search":
-      "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
+    "card-search": "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
     products: "https://www.dbs-cardgame.com/fw/en/products/",
     releases: "https://www.dbs-cardgame.com/fw/en/products/",
     "legality-current": "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
@@ -98,10 +62,8 @@ const expectedSurfaceUrls = {
     "card-list": "https://world.digimoncard.com/cards/index.php?search=true",
     products: "https://world.digimoncard.com/products/",
     releases: "https://world.digimoncard.com/products/",
-    "restrictions-current":
-      "https://world.digimoncard.com/rule/restriction_card/",
-    "restrictions-history":
-      "https://world.digimoncard.com/rule/restriction_card/",
+    "restrictions-current": "https://world.digimoncard.com/rule/restriction_card/",
+    "restrictions-history": "https://world.digimoncard.com/rule/restriction_card/",
     errata: "https://world.digimoncard.com/rule/errata_card/",
   },
   "gundam-en-asia": {
@@ -111,16 +73,14 @@ const expectedSurfaceUrls = {
     // Issue #58: the plan captures the linked current banned/restricted
     // publication directly; the /rules/ hub remains a discovery stage.
     legality: "https://www.gundam-gcg.com/asia-en/news/01_279.html",
-    errata:
-      "https://www.gundam-gcg.com/asia-en/news/?subcategory=news&tag=all&page=1",
+    errata: "https://www.gundam-gcg.com/asia-en/news/?subcategory=news&tag=all&page=1",
   },
   "gundam-en-us": {
     packages: "https://www.gundam-gcg.com/en/cards/index.php",
     products: "https://www.gundam-gcg.com/en/products/list.php",
     releases: "https://www.gundam-gcg.com/en/products/list.php",
     legality: "https://www.gundam-gcg.com/en/news/01_279.html",
-    errata:
-      "https://www.gundam-gcg.com/en/news/?subcategory=news&tag=all&page=1",
+    errata: "https://www.gundam-gcg.com/en/news/?subcategory=news&tag=all&page=1",
   },
 };
 
@@ -165,13 +125,11 @@ const expectedDiscoveryKeys = {
 };
 
 function discoveryHtml(sourceLineage, mutate = (entries) => entries) {
-  const entries = expectedDiscoveryLinks[sourceLineage].map(
-    ([label, url]) => ({ label, url }),
-  );
+  const entries = expectedDiscoveryLinks[sourceLineage].map(([label, url]) => ({ label, url }));
   return `<!doctype html><html><head><title>Bandai Official Source</title>
-    </head><body><header><nav>${mutate(structuredClone(entries)).map(
-      ({ label, url }) => `<a href="${url}">${label}</a>`,
-    ).join("")}</nav></header></body></html>`;
+    </head><body><header><nav>${mutate(structuredClone(entries))
+      .map(({ label, url }) => `<a href="${url}">${label}</a>`)
+      .join("")}</nav></header></body></html>`;
 }
 
 // The single registration per lineage. Before Go-Live (ADR 0008) no
@@ -205,9 +163,7 @@ test("retained live policy roots schedule the exact current detail publications"
     requestId: `fusion-world-en:listing:rules:${"c".repeat(64)}`,
   });
   assert.equal(
-    fusionEvidence[0].records.find(
-      (record) => record.surface === "legality-current",
-    )?.url,
+    fusionEvidence[0].records.find((record) => record.surface === "legality-current")?.url,
     "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
   );
 
@@ -224,30 +180,29 @@ test("retained live policy roots schedule the exact current detail publications"
     });
     assert.deepEqual(
       requests.filter((request) => request.role !== "image"),
-      [{
-        role: "detail",
-        url: `https://www.gundam-gcg.com/${descriptor.locale}/news/01_279.html`,
-        headers: {
-          accept: "text/html",
-          "user-agent":
-            "card-keepr-official-source/1; request-role=detail",
+      [
+        {
+          role: "detail",
+          url: `https://www.gundam-gcg.com/${descriptor.locale}/news/01_279.html`,
+          headers: {
+            accept: "text/html",
+            "user-agent": "card-keepr-official-source/1; request-role=detail",
+          },
         },
-      }],
+      ],
     );
     assert.deepEqual(
-      requests.filter((request) =>
-        request.url ===
-          `https://www.gundam-gcg.com/${descriptor.locale}/news/01_279.html`
-      ),
-      [{
-        role: "detail",
-        url: `https://www.gundam-gcg.com/${descriptor.locale}/news/01_279.html`,
-        headers: {
-          accept: "text/html",
-          "user-agent":
-            "card-keepr-official-source/1; request-role=detail",
+      requests.filter((request) => request.url === `https://www.gundam-gcg.com/${descriptor.locale}/news/01_279.html`),
+      [
+        {
+          role: "detail",
+          url: `https://www.gundam-gcg.com/${descriptor.locale}/news/01_279.html`,
+          headers: {
+            accept: "text/html",
+            "user-agent": "card-keepr-official-source/1; request-role=detail",
+          },
         },
-      }],
+      ],
     );
   }
 });
@@ -287,17 +242,17 @@ test("retained live policy parsers reject tag-agnostic residual conditions", () 
     const adapter = requiredSourceAdapter(descriptor.adapter);
     const fixture = retainedOfficialSourceFixture(descriptor.slug);
     const mutated = Buffer.from(
-      fixture.bytes.toString("utf8").replaceAll(
-        descriptor.wording,
-        `${descriptor.wording} Unless the publisher grants an exception.`,
-      ),
+      fixture.bytes
+        .toString("utf8")
+        .replaceAll(descriptor.wording, `${descriptor.wording} Unless the publisher grants an exception.`),
     );
     assert.throws(
-      () => adapter.parseBytes(mutated, {
-        mediaType: fixture.metadata.content_type,
-        url: fixture.metadata.source_url,
-        requestId: descriptor.requestId,
-      }),
+      () =>
+        adapter.parseBytes(mutated, {
+          mediaType: fixture.metadata.content_type,
+          url: fixture.metadata.source_url,
+          requestId: descriptor.requestId,
+        }),
       /exact|incomplete|unavailable|unparsed|semantics|structure/iu,
       descriptor.adapter,
     );
@@ -322,8 +277,7 @@ test("retained live policy parsers reject separate unconsumed conditions", () =>
       adapter: "digimon-en@7",
       slug: "digimon-en-policy",
       requestId: "digimon-en:restrictions-current",
-      anchor:
-        "Restricted Cards (1) - Decks can only include one copy of these cards.",
+      anchor: "Restricted Cards (1) - Decks can only include one copy of these cards.",
     },
     {
       adapter: "gundam-en-us@7",
@@ -336,17 +290,17 @@ test("retained live policy parsers reject separate unconsumed conditions", () =>
     const adapter = requiredSourceAdapter(descriptor.adapter);
     const fixture = retainedOfficialSourceFixture(descriptor.slug);
     const mutated = Buffer.from(
-      fixture.bytes.toString("utf8").replaceAll(
-        descriptor.anchor,
-        `${descriptor.anchor}</p><p>Except when the publisher grants an exception.`,
-      ),
+      fixture.bytes
+        .toString("utf8")
+        .replaceAll(descriptor.anchor, `${descriptor.anchor}</p><p>Except when the publisher grants an exception.`),
     );
     assert.throws(
-      () => adapter.parseBytes(mutated, {
-        mediaType: fixture.metadata.content_type,
-        url: fixture.metadata.source_url,
-        requestId: descriptor.requestId,
-      }),
+      () =>
+        adapter.parseBytes(mutated, {
+          mediaType: fixture.metadata.content_type,
+          url: fixture.metadata.source_url,
+          requestId: descriptor.requestId,
+        }),
       /condition|exact|incomplete|unparsed|semantics|structure/iu,
       descriptor.adapter,
     );
@@ -356,16 +310,16 @@ test("retained live policy parsers reject separate unconsumed conditions", () =>
 test("retained live discovery bytes derive every production surface family", () => {
   for (const adapter of registeredProductionAdapters()) {
     const request = officialSourceDiscoveryRequests(adapter.sourceLineage)[0];
-    const fixture = retainedOfficialSourceFixture(
-      retainedDiscoveryFixtures[adapter.sourceLineage],
-    );
+    const fixture = retainedOfficialSourceFixture(retainedDiscoveryFixtures[adapter.sourceLineage]);
     assert.equal(fixture.metadata.http_status, 200);
     assert.equal(fixture.metadata.source_url, request.url);
-    const records = adapter.parseBytes(fixture.bytes, {
-      mediaType: fixture.metadata.content_type,
-      url: request.url,
-      requestId: request.id,
-    }).flatMap((observation) => observation.records ?? []);
+    const records = adapter
+      .parseBytes(fixture.bytes, {
+        mediaType: fixture.metadata.content_type,
+        url: request.url,
+        requestId: request.id,
+      })
+      .flatMap((observation) => observation.records ?? []);
     assert.deepEqual(
       records.map(({ surface }) => surface),
       expectedDiscoveryKeys[adapter.sourceLineage].map((key) => `@seed:${key}`),
@@ -376,23 +330,26 @@ test("retained live discovery bytes derive every production surface family", () 
       requestId: request.id,
     });
     assert.ok(staged.length > 0);
-    assert.ok(staged.every(({ headers }) =>
-      headers["user-agent"] ===
-        "card-keepr-official-source/1; request-role=listing"
-    ));
+    assert.ok(
+      staged.every(({ headers }) => headers["user-agent"] === "card-keepr-official-source/1; request-role=listing"),
+    );
   }
 });
 
 test("Product and Release fixture bytes are invariant under retries and reordering", async () => {
   const url = "https://en.onepiece-cardgame.com/products/";
-  const responseBytes = async (surface) => new Uint8Array(
-    await (await syntheticOfficialSource.fetch(new Request(url, {
-      headers: {
-        "user-agent":
-          `card-keepr-product-routing-golden; request-role=surface; request-surface=${surface}`,
-      },
-    }))).arrayBuffer(),
-  );
+  const responseBytes = async (surface) =>
+    new Uint8Array(
+      await (
+        await syntheticOfficialSource.fetch(
+          new Request(url, {
+            headers: {
+              "user-agent": `card-keepr-product-routing-golden; request-role=surface; request-surface=${surface}`,
+            },
+          }),
+        )
+      ).arrayBuffer(),
+    );
   const productA = await responseBytes("products");
   const releaseA = await responseBytes("releases");
   const productB = await responseBytes("products");
@@ -407,21 +364,15 @@ test("Product and Release fixture bytes are invariant under retries and reorderi
 
 test("every production lineage owns an exact raw decoder and discovery plan", () => {
   const production = registeredProductionAdapters();
-  assert.deepEqual(
-    production.map(({ sourceLineage }) => sourceLineage).sort(),
-    Object.keys(expectedSurfaces).sort(),
-  );
-  assert.deepEqual(
-    production.map(({ adapterVersion }) => adapterVersion).sort(),
-    expectedProductionAdapterVersions,
-  );
+  assert.deepEqual(production.map(({ sourceLineage }) => sourceLineage).sort(), Object.keys(expectedSurfaces).sort());
+  assert.deepEqual(production.map(({ adapterVersion }) => adapterVersion).sort(), expectedProductionAdapterVersions);
   for (const adapter of production) {
     assert.doesNotThrow(() =>
       assertAdapterBinding(adapter, {
         sourceLineage: adapter.sourceLineage,
         supportedGame: adapter.supportedGame,
         gameProfileVersion: adapter.gameProfileVersion,
-      })
+      }),
     );
     assert.equal(adapter.origin, "production");
     assert.equal(adapter.reconciliationCapability, "catalogue");
@@ -429,14 +380,9 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       adapter.reconciliationAreas,
       // Fusion World's restructured contract owns no errata surface, so it
       // reconciles catalogue evidence alone.
-      adapter.adapterVersion === "fusion-world-en@9"
-        ? ["catalogue"]
-        : ["catalogue", "errata"],
+      adapter.adapterVersion === "fusion-world-en@9" ? ["catalogue"] : ["catalogue", "errata"],
     );
-    assert.equal(
-      adapter.gameProfileVersion,
-      `${adapter.supportedGame}@1`,
-    );
+    assert.equal(adapter.gameProfileVersion, `${adapter.supportedGame}@1`);
     // After the issue-58 and optional-card-field generations, every active
     // lineage declares the @6 parser contract; the fusion live-shape
     // generation advances its lineage to @7.
@@ -446,20 +392,11 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
         ? "fusion-world-en-restructured-complete-catalogue@7"
         : `${adapter.sourceLineage}-restructured-complete-catalogue@6`,
     );
-    assert.match(
-      adapter.parserContract,
-      /-restructured-complete-catalogue@[67]$/u,
-    );
+    assert.match(adapter.parserContract, /-restructured-complete-catalogue@[67]$/u);
     assert.equal(typeof adapter.parseBytes, "function");
+    assert.deepEqual(adapter.requiredSurfaces, expectedSurfaces[adapter.sourceLineage]);
     assert.deepEqual(
-      adapter.requiredSurfaces,
-      expectedSurfaces[adapter.sourceLineage],
-    );
-    assert.deepEqual(
-      Object.fromEntries(adapter.requiredSurfaces.map((surface) => [
-        surface,
-        adapter.requestUrlForSurface(surface),
-      ])),
+      Object.fromEntries(adapter.requiredSurfaces.map((surface) => [surface, adapter.requestUrlForSurface(surface)])),
       expectedSurfaceUrls[adapter.sourceLineage],
     );
     const requests = officialSourceDiscoveryRequests(adapter.sourceLineage);
@@ -472,40 +409,31 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
     });
     assert.equal(requests.length, 1);
     assert.ok(
-      requests.every(({ url }) =>
-        new URL(url).hostname.endsWith("bandai.com") ||
-        new URL(url).hostname.endsWith("cardgame.com") ||
-        new URL(url).hostname.endsWith("digimoncard.com") ||
-        new URL(url).hostname.endsWith("gundam-gcg.com")
+      requests.every(
+        ({ url }) =>
+          new URL(url).hostname.endsWith("bandai.com") ||
+          new URL(url).hostname.endsWith("cardgame.com") ||
+          new URL(url).hostname.endsWith("digimoncard.com") ||
+          new URL(url).hostname.endsWith("gundam-gcg.com"),
       ),
       `${adapter.sourceLineage} must be bound to Bandai-owned hosts`,
     );
     assert.ok(
-      requests.every(({ url }) =>
-        !new URL(url).pathname.includes(adapter.sourceLineage)
-      ),
+      requests.every(({ url }) => !new URL(url).pathname.includes(adapter.sourceLineage)),
       `${adapter.sourceLineage} must use upstream paths, not Keepr paths`,
     );
 
-    const retainedDiscovery = retainedOfficialSourceFixture(
-      retainedDiscoveryFixtures[adapter.sourceLineage],
-    );
+    const retainedDiscovery = retainedOfficialSourceFixture(retainedDiscoveryFixtures[adapter.sourceLineage]);
     const retainedHtml = retainedDiscovery.bytes.toString("utf8");
-    const discovery = adapter.parseBytes(
-      retainedDiscovery.bytes,
-      {
-        mediaType: retainedDiscovery.metadata.content_type,
-        url: requests[0].url,
-        requestId: requests[0].id,
-      },
-    );
-    const discoveryRecords = discovery.flatMap(
-      (observation) => observation.records ?? [],
-    );
+    const discovery = adapter.parseBytes(retainedDiscovery.bytes, {
+      mediaType: retainedDiscovery.metadata.content_type,
+      url: requests[0].url,
+      requestId: requests[0].id,
+    });
+    const discoveryRecords = discovery.flatMap((observation) => observation.records ?? []);
     assert.ok(
-      discoveryRecords.every(({ url, discovered_from }) =>
-        retainedHtml.includes(discovered_from.resolution) ||
-        url === requests[0].url
+      discoveryRecords.every(
+        ({ url, discovered_from }) => retainedHtml.includes(discovered_from.resolution) || url === requests[0].url,
       ),
       `${adapter.sourceLineage} discovery may only emit URLs literally retained in the source bytes or the retained request URL itself`,
     );
@@ -520,10 +448,7 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       })),
     );
     for (const record of discoveryRecords) {
-      assert.deepEqual(
-        Object.keys(record.discovered_from).sort(),
-        ["kind", "label", "resolution", "url"],
-      );
+      assert.deepEqual(Object.keys(record.discovered_from).sort(), ["kind", "label", "resolution", "url"]);
       assert.equal(record.discovered_from.kind, "publisher_navigation");
       assert.ok(
         expectedDiscoveryLinks[adapter.sourceLineage].some(
@@ -533,13 +458,7 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
             record.discovered_from.url === requests[0].url,
         ),
       );
-      assert.equal(
-        new URL(
-          record.discovered_from.resolution,
-          record.discovered_from.url,
-        ).href,
-        record.url,
-      );
+      assert.equal(new URL(record.discovered_from.resolution, record.discovered_from.url).href, record.url);
     }
   }
 });
@@ -549,9 +468,9 @@ test("production registrations and dynamic discovery enforce exact lineage URL a
     assert.ok(adapter.officialSourceContract);
     const root = new URL(adapter.requestUrlForDiscovery());
     assert.equal(adapter.officialSourceContract.origin, root.origin);
-    assert.ok(adapter.officialSourceContract.documentPathnamePrefixes.some(
-      (prefix) => root.pathname.startsWith(prefix),
-    ));
+    assert.ok(
+      adapter.officialSourceContract.documentPathnamePrefixes.some((prefix) => root.pathname.startsWith(prefix)),
+    );
 
     const validDetailUrl = new URL(root);
     validDetailUrl.searchParams.set(
@@ -562,11 +481,12 @@ test("production registrations and dynamic discovery enforce exact lineage URL a
     const hostileOrigin = new URL(validDetail);
     hostileOrigin.hostname = `assets.${root.hostname}`;
     const hostilePath = new URL(validDetail);
-    hostilePath.pathname = adapter.sourceLineage === "gundam-en-asia"
-      ? hostilePath.pathname.replace("/asia-en/", "/en/")
-      : adapter.sourceLineage === "gundam-en-us"
-        ? hostilePath.pathname.replace("/en/", "/asia-en/")
-        : `/outside-lineage${hostilePath.pathname}`;
+    hostilePath.pathname =
+      adapter.sourceLineage === "gundam-en-asia"
+        ? hostilePath.pathname.replace("/asia-en/", "/en/")
+        : adapter.sourceLineage === "gundam-en-us"
+          ? hostilePath.pathname.replace("/en/", "/asia-en/")
+          : `/outside-lineage${hostilePath.pathname}`;
     const fusionLeaf = adapter.sourceLineage === "fusion-world-en";
     const gundamLeaf = adapter.sourceLineage.startsWith("gundam-en-");
     // The restructured Fusion World card-search URL is already a complete
@@ -575,7 +495,7 @@ test("production registrations and dynamic discovery enforce exact lineage URL a
       ? adapter.requestUrlForSurface(adapter.requiredSurfaces[0])
       : gundamLeaf
         ? `${adapter.requestUrlForSurface(adapter.requiredSurfaces[0])}?package=GD01`
-      : adapter.requestUrlForSurface(adapter.requiredSurfaces[0]);
+        : adapter.requestUrlForSurface(adapter.requiredSurfaces[0]);
     const publisherFacets = fusionLeaf
       ? `<section class="searchColSet-product">
            <a data-val="583301">Series 583301</a>
@@ -592,29 +512,36 @@ test("production registrations and dynamic discovery enforce exact lineage URL a
       {
         mediaType: "text/html; charset=utf-8",
         url: discoveryUrl,
-        requestId: fusionLeaf || gundamLeaf
-          ? `${adapter.sourceLineage}:listing:${"6".repeat(64)}`
-          : `${adapter.sourceLineage}:${adapter.requiredSurfaces[0]}`,
+        requestId:
+          fusionLeaf || gundamLeaf
+            ? `${adapter.sourceLineage}:listing:${"6".repeat(64)}`
+            : `${adapter.sourceLineage}:${adapter.requiredSurfaces[0]}`,
       },
     );
     assert.ok(requests.some(({ url }) => url === validDetail));
-    assert.equal(requests.some(({ url }) => url === hostileOrigin.href), false);
-    assert.equal(requests.some(({ url }) => url === hostilePath.href), false);
+    assert.equal(
+      requests.some(({ url }) => url === hostileOrigin.href),
+      false,
+    );
+    assert.equal(
+      requests.some(({ url }) => url === hostilePath.href),
+      false,
+    );
   }
 });
 
 test("production discovery is proven by complete exact retained navigation", () => {
   for (const adapter of registeredProductionAdapters()) {
     const request = officialSourceDiscoveryRequests(adapter.sourceLineage)[0];
-    const parse = (html) => adapter.parseBytes(new TextEncoder().encode(html), {
-      mediaType: "text/html; charset=utf-8",
-      url: request.url,
-      requestId: request.id,
-    });
+    const parse = (html) =>
+      adapter.parseBytes(new TextEncoder().encode(html), {
+        mediaType: "text/html; charset=utf-8",
+        url: request.url,
+        requestId: request.id,
+      });
     const mutations = {
       blank: () => "<!doctype html><html><body></body></html>",
-      missing: () =>
-        discoveryHtml(adapter.sourceLineage, (entries) => entries.slice(1)),
+      missing: () => discoveryHtml(adapter.sourceLineage, (entries) => entries.slice(1)),
       moved: () =>
         discoveryHtml(adapter.sourceLineage, (entries) => {
           entries[0].url = "https://example.com/moved";
@@ -628,26 +555,16 @@ test("production discovery is proven by complete exact retained navigation", () 
             url: "https://example.com/unknown",
           },
         ]),
-      duplicate: () =>
-        discoveryHtml(adapter.sourceLineage, (entries) => [
-          entries[0],
-          entries[0],
-          ...entries.slice(2),
-        ]),
+      duplicate: () => discoveryHtml(adapter.sourceLineage, (entries) => [entries[0], entries[0], ...entries.slice(2)]),
       "mismatched semantic link": () =>
         discoveryHtml(adapter.sourceLineage, (entries) => {
           entries[0].label = entries[1].label;
           return entries;
         }),
       "undemonstrated anchor attributes": () =>
-        discoveryHtml(adapter.sourceLineage).replace(
-          "<a href=",
-          '<a class="unexpected" href=',
-        ),
+        discoveryHtml(adapter.sourceLineage).replace("<a href=", '<a class="unexpected" href='),
       "undemonstrated anchor nesting": () =>
-        discoveryHtml(adapter.sourceLineage)
-          .replace("<a href=", "<div><a href=")
-          .replace("</a>", "</a></div>"),
+        discoveryHtml(adapter.sourceLineage).replace("<a href=", "<div><a href=").replace("</a>", "</a></div>"),
     };
     for (const [failure, html] of Object.entries(mutations)) {
       assert.throws(
@@ -675,81 +592,60 @@ const expectedRequestCapacities = {
 };
 
 test("every installed adapter version carries its parser and unknown versions are not supported", () => {
-  const rawProduction = installedSourceAdapterRegistrations.filter((adapter) =>
-    adapter.origin === "production" &&
-    adapter.reconciliationCapability === "catalogue" &&
-    typeof adapter.parseBytes === "function"
+  const rawProduction = installedSourceAdapterRegistrations.filter(
+    (adapter) =>
+      adapter.origin === "production" &&
+      adapter.reconciliationCapability === "catalogue" &&
+      typeof adapter.parseBytes === "function",
   );
-  assert.deepEqual(
-    rawProduction.map(({ adapterVersion }) => adapterVersion).sort(),
-    expectedProductionAdapterVersions,
-  );
+  assert.deepEqual(rawProduction.map(({ adapterVersion }) => adapterVersion).sort(), expectedProductionAdapterVersions);
   assert.equal(
     new Set(rawProduction.map(({ sourceLineage }) => sourceLineage)).size,
     rawProduction.length,
     "each Source Lineage registers exactly one raw production version",
   );
   for (const adapter of rawProduction) {
-    assert.equal(
-      adapter.requestCapacity,
-      expectedRequestCapacities[adapter.adapterVersion],
-      adapter.adapterVersion,
-    );
+    assert.equal(adapter.requestCapacity, expectedRequestCapacities[adapter.adapterVersion], adapter.adapterVersion);
   }
   for (const adapter of installedSourceAdapterRegistrations) {
     assert.equal(
-      typeof adapter.parseBytes === "function" ||
-        typeof adapter.parse === "function",
+      typeof adapter.parseBytes === "function" || typeof adapter.parse === "function",
       true,
       adapter.adapterVersion,
     );
     assert.equal(requiredSourceAdapter(adapter.adapterVersion), adapter);
     assert.ok(sourceAdapterRegistrations.includes(adapter));
   }
-  for (
-    const unknown of [
-      "one-piece-en@999",
-      "one-piece-en@4",
-      "one-piece-en@5",
-      "fusion-world-en@8",
-      "digimon-en@6",
-      "gundam-en-asia@6",
-      "gundam-en-us@6",
-    ]
-  ) {
+  for (const unknown of [
+    "one-piece-en@999",
+    "one-piece-en@4",
+    "one-piece-en@5",
+    "fusion-world-en@8",
+    "digimon-en@6",
+    "gundam-en-asia@6",
+    "gundam-en-us@6",
+  ]) {
     assert.throws(
       () => requiredActiveSourceAdapter(unknown),
       isAdministrationProblem("adapter_not_supported"),
       unknown,
     );
-    assert.throws(
-      () => requiredSourceAdapter(unknown),
-      isAdministrationProblem("adapter_not_supported"),
-      unknown,
-    );
+    assert.throws(() => requiredSourceAdapter(unknown), isAdministrationProblem("adapter_not_supported"), unknown);
     assert.ok(!productionAdapterVersions.includes(unknown));
   }
 });
 
 test("known navigation labels cannot hide an unrecognized publisher URL", () => {
   const current = requiredSourceAdapter("fusion-world-en@9");
-  const html = exactFusionLegalityHtml.replace(
-    "</body>",
-    `<main><a href="/new-restriction/">Rules</a></main></body>`,
-  );
+  const html = exactFusionLegalityHtml.replace("</body>", `<main><a href="/new-restriction/">Rules</a></main></body>`);
   assert.throws(
-    () => current.parseBytes(
-      new TextEncoder().encode(html),
-      fusionLegalityContext(current),
-    ),
+    () => current.parseBytes(new TextEncoder().encode(html), fusionLegalityContext(current)),
     /exact, complete Legality Rule parser|navigation/iu,
   );
 });
 
 test("production decoders accept real Bandai-shaped HTML without a Keepr payload wrapper", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "one-piece-en",
-  );
+  const adapter = registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === "one-piece-en");
   const cardListUrl = adapter.requestUrlForSurface("card-list");
   const html = `
       <select id="series">
@@ -786,13 +682,10 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
       </div>
     `;
   const bytes = new TextEncoder().encode(html);
-  const observations = adapter.parseBytes(
-    bytes,
-    {
-      mediaType: "text/html; charset=utf-8",
-      url: adapter.requestUrlForSurface("card-list"),
-    },
-  );
+  const observations = adapter.parseBytes(bytes, {
+    mediaType: "text/html; charset=utf-8",
+    url: adapter.requestUrlForSurface("card-list"),
+  });
   assert.equal(observations.length, 1);
   assert.equal(observations[0].card.official_identity.value, "OP99-001");
   assert.equal(observations[0].identity_evidence.locator, "OP99-001");
@@ -800,26 +693,14 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     observations[0].appearance_evidence.images[0].source_url,
     "https://en.onepiece-cardgame.com/images/cardlist/card/OP99-001.png",
   );
-  assert.equal(
-    observations[0].card.effective_rules_text,
-    "Official effect\nSecond section",
-  );
+  assert.equal(observations[0].card.effective_rules_text, "Official effect\nSecond section");
   assert.equal(observations[0].card.game_data.attributes.cost, null);
   assert.equal(observations[0].card.game_data.attributes.life, 5);
-  assert.equal(
-    observations[0].card.game_data.attributes.trigger_text,
-    "Official trigger",
-  );
+  assert.equal(observations[0].card.game_data.attributes.trigger_text, "Official trigger");
   // A pinned Recording leaf owns its membership: the bucket follows the
   // requested series rather than the printed Card Set label.
-  assert.deepEqual(
-    observations[0].memberships.source_buckets,
-    ["recording:569116"],
-  );
-  assert.deepEqual(
-    observations[0].product_release_catalogue.distribution_contexts,
-    [],
-  );
+  assert.deepEqual(observations[0].memberships.source_buckets, ["recording:569116"]);
+  assert.deepEqual(observations[0].product_release_catalogue.distribution_contexts, []);
   assert.doesNotMatch(
     observations[0].identity_evidence.artwork_fingerprint,
     /https?:|OP99-001\.png|#OP99-001|content_sha|sha256|image\//u,
@@ -829,22 +710,13 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     'official-artwork:{"official_card_identity":"OP99-001","roles":["front"],"artwork_id":"op99-001-standard-art"}',
   );
   assert.equal(observations[0].identity_evidence.treatment, null);
-  assert.equal(
-    Object.hasOwn(
-      observations[0].printing.game_data.attributes,
-      "illustration_types",
-    ),
-    false,
-  );
+  assert.equal(Object.hasOwn(observations[0].printing.game_data.attributes, "illustration_types"), false);
   assert.equal(
     observations[0].identity_evidence.demonstrably_novel,
     false,
     "raw parser output cannot prove an appearance is novel before its image bytes are retained and verified",
   );
-  assert.match(
-    observations[0].identity_evidence.printed_fields_digest,
-    /Official effect\\nSecond section/u,
-  );
+  assert.match(observations[0].identity_evidence.printed_fields_digest, /Official effect\\nSecond section/u);
   const relocated = adapter.parseBytes(
     new TextEncoder().encode(
       html
@@ -864,10 +736,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
   const redistributed = adapter.parseBytes(
     new TextEncoder().encode(
       html
-        .replaceAll(
-          "OP99-001.png",
-          "unrelated-distribution-filename.webp?width=2048&encoding=next",
-        )
+        .replaceAll("OP99-001.png", "unrelated-distribution-filename.webp?width=2048&encoding=next")
         .replace("<img data-src=", '<img width="2048" height="2856" data-src='),
     ),
     {
@@ -880,9 +749,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     observations[0].identity_evidence.artwork_fingerprint,
   );
   const unidentified = adapter.parseBytes(
-    new TextEncoder().encode(
-      html.replace(' data-artwork-id="op99-001-standard-art"', ""),
-    ),
+    new TextEncoder().encode(html.replace(' data-artwork-id="op99-001-standard-art"', "")),
     {
       mediaType: "text/html; charset=utf-8",
       url: cardListUrl,
@@ -896,8 +763,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     new TextEncoder().encode(
       html.replace(
         '<div class="getInfo"><h3>Card Set(s)</h3>',
-        '<div class="treatment"><h3>Treatment</h3>Textured Foil</div>' +
-          '<div class="getInfo"><h3>Card Set(s)</h3>',
+        '<div class="treatment"><h3>Treatment</h3>Textured Foil</div>' + '<div class="getInfo"><h3>Card Set(s)</h3>',
       ),
     ),
     {
@@ -906,17 +772,12 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     },
   )[0];
   assert.equal(unfamiliarTreatment.identity_evidence.treatment, null);
-  assert.ok(
-    unfamiliarTreatment.source_sidecar.unmapped_optional_fields.some(
-      ({ value }) => value === "Textured Foil",
-    ),
-  );
+  assert.ok(unfamiliarTreatment.source_sidecar.unmapped_optional_fields.some(({ value }) => value === "Textured Foil"));
   const unfamiliarLabel = adapter.parseBytes(
     new TextEncoder().encode(
       html.replace(
         '<div class="getInfo"><h3>Card Set(s)</h3>',
-        '<div><h3>New Optional Label</h3>Preserve me</div>' +
-          '<div class="getInfo"><h3>Card Set(s)</h3>',
+        "<div><h3>New Optional Label</h3>Preserve me</div>" + '<div class="getInfo"><h3>Card Set(s)</h3>',
       ),
     ),
     {
@@ -925,71 +786,58 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     },
   )[0];
   assert.ok(
-    unfamiliarLabel.source_sidecar.raw.official_surfaces[0].document
-      .raw_label_pairs.some(({ label, value }) =>
-        label === "New Optional Label" && value === "Preserve me"
-      ),
-  );
-  assert.ok(unfamiliarLabel.source_sidecar.unmapped_optional_fields.some(
-    ({ value }) => value === "Preserve me"
-  ));
-  assert.throws(
-    () => adapter.parseBytes(
-      new TextEncoder().encode(
-        html.replace(
-          "| <span>L</span> |",
-          "| <span>Experimental Rare</span> |",
-        ),
-      ),
-      {
-        mediaType: "text/html; charset=utf-8",
-        url: cardListUrl,
-      },
+    unfamiliarLabel.source_sidecar.raw.official_surfaces[0].document.raw_label_pairs.some(
+      ({ label, value }) => label === "New Optional Label" && value === "Preserve me",
     ),
+  );
+  assert.ok(unfamiliarLabel.source_sidecar.unmapped_optional_fields.some(({ value }) => value === "Preserve me"));
+  assert.throws(
+    () =>
+      adapter.parseBytes(
+        new TextEncoder().encode(html.replace("| <span>L</span> |", "| <span>Experimental Rare</span> |")),
+        {
+          mediaType: "text/html; charset=utf-8",
+          url: cardListUrl,
+        },
+      ),
     /One Piece rarity.*Experimental Rare|Experimental Rare.*rarity/iu,
   );
   assert.throws(
-    () => adapter.parseBytes(
-      new TextEncoder().encode(
-        html.replace(
-          '<div class="cost"><h3>Life</h3>5</div>',
-          '<div class="cost"><h3>Life</h3>5</div>' +
-            '<div><h3>Cost</h3>1</div>',
+    () =>
+      adapter.parseBytes(
+        new TextEncoder().encode(
+          html.replace(
+            '<div class="cost"><h3>Life</h3>5</div>',
+            '<div class="cost"><h3>Life</h3>5</div>' + "<div><h3>Cost</h3>1</div>",
+          ),
         ),
+        {
+          mediaType: "text/html; charset=utf-8",
+          url: cardListUrl,
+        },
       ),
-      {
-        mediaType: "text/html; charset=utf-8",
-        url: cardListUrl,
-      },
-    ),
     /Leader.*cost.*null/iu,
   );
-  const recordingLeaf = requiredSourceAdapter("one-piece-en@6")
-    .parseBytes(bytes, {
-      mediaType: "text/html; charset=utf-8",
-      url: "https://en.onepiece-cardgame.com/cardlist/?recording=569114",
-      requestId: "one-piece-en:card-list",
-    });
-  assert.deepEqual(recordingLeaf[0].memberships.source_buckets, [
-    "card-set:Test Set [OP99]",
-  ]);
+  const recordingLeaf = requiredSourceAdapter("one-piece-en@6").parseBytes(bytes, {
+    mediaType: "text/html; charset=utf-8",
+    url: "https://en.onepiece-cardgame.com/cardlist/?recording=569114",
+    requestId: "one-piece-en:card-list",
+  });
+  assert.deepEqual(recordingLeaf[0].memberships.source_buckets, ["card-set:Test Set [OP99]"]);
   const expandedRecording = adapter.parseBytes(bytes, {
     mediaType: "text/html; charset=utf-8",
     url: "https://en.onepiece-cardgame.com/cardlist/?series=569114",
     requestId: `one-piece-en:listing:${"b".repeat(64)}`,
   });
-  assert.deepEqual(expandedRecording[0].memberships.source_buckets, [
-    "recording:569114",
-  ]);
+  assert.deepEqual(expandedRecording[0].memberships.source_buckets, ["recording:569114"]);
   assert.ok(
-    adapter.discoverRequests(bytes, {
-      mediaType: "text/html; charset=utf-8",
-      url: cardListUrl,
-      requestId: "one-piece-en:card-list",
-    }).some(({ role, url }) =>
-      role === "listing" &&
-      new URL(url).searchParams.get("series") === "569114"
-    ),
+    adapter
+      .discoverRequests(bytes, {
+        mediaType: "text/html; charset=utf-8",
+        url: cardListUrl,
+        requestId: "one-piece-en:card-list",
+      })
+      .some(({ role, url }) => role === "listing" && new URL(url).searchParams.get("series") === "569114"),
   );
 });
 
@@ -997,49 +845,51 @@ test("generic Schema.org Dataset payloads cannot enter production adapters", () 
   const adapter = requiredSourceAdapter("one-piece-en@6");
   const payload = officialRawSurfacePayload("/one-piece-en/card-list");
   assert.throws(
-    () => adapter.parseBytes(
-      new TextEncoder().encode(
-        `<html><script type="application/ld+json">${JSON.stringify({
-          "@context": "https://schema.org",
-          "@type": "Dataset",
-          publisher: { "@type": "Organization", name: "Bandai" },
-          hasPart: [{
+    () =>
+      adapter.parseBytes(
+        new TextEncoder().encode(
+          `<html><script type="application/ld+json">${JSON.stringify({
+            "@context": "https://schema.org",
             "@type": "Dataset",
-            identifier: "one-piece-en:card-list",
-            payload,
-          }],
-        })}</script></html>`,
+            publisher: { "@type": "Organization", name: "Bandai" },
+            hasPart: [
+              {
+                "@type": "Dataset",
+                identifier: "one-piece-en:card-list",
+                payload,
+              },
+            ],
+          })}</script></html>`,
+        ),
+        {
+          mediaType: "text/html; charset=utf-8",
+          url: adapter.requestUrlForSurface("card-list"),
+          requestId: "one-piece-en:card-list",
+        },
       ),
-      {
-        mediaType: "text/html; charset=utf-8",
-        url: adapter.requestUrlForSurface("card-list"),
-        requestId: "one-piece-en:card-list",
-      },
-    ),
     /Card List Recording discovery|publisher|card-list/iu,
   );
 });
 
 test("live split discovery follows each lineage's bounded staged hierarchy", () => {
-  const byLineage = (lineage) =>
-    registeredProductionAdapters().find(
-      ({ sourceLineage }) => sourceLineage === lineage,
-    );
+  const byLineage = (lineage) => registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === lineage);
   const encode = (value) => new TextEncoder().encode(value);
 
   const onePiece = byLineage("one-piece-en");
-  const onePieceRequests = onePiece.discoverRequests(
-    encode(`
+  const onePieceRequests = onePiece
+    .discoverRequests(
+      encode(`
       <select id="series">
         <option value="101">A</option><option value="102">B</option>
       </select>
     `),
-    {
-      mediaType: "text/html",
-      url: onePiece.requestUrlForSurface("card-list"),
-      requestId: "one-piece-en:card-list",
-    },
-  ).filter(({ role }) => role === "listing");
+      {
+        mediaType: "text/html",
+        url: onePiece.requestUrlForSurface("card-list"),
+        requestId: "one-piece-en:card-list",
+      },
+    )
+    .filter(({ role }) => role === "listing");
   assert.deepEqual(
     onePieceRequests.map(({ url }) => new URL(url).searchParams.toString()),
     ["series=101", "series=102"],
@@ -1053,41 +903,33 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
       ${values.map((value) => `<a data-val="${value}">Series ${value}</a>`).join("")}
     </section>
   `;
-  const fusionRoot = fusion.discoverRequests(
-    encode(fusionCategories("583301", "583302", "583303")),
-    {
+  const fusionRoot = fusion
+    .discoverRequests(encode(fusionCategories("583301", "583302", "583303")), {
       mediaType: "text/html",
       url: fusion.requestUrlForSurface("card-search"),
       requestId: "fusion-world-en:card-search",
-    },
-  ).filter(({ role }) => role === "listing");
+    })
+    .filter(({ role }) => role === "listing");
   assert.deepEqual(
     fusionRoot.map(({ url }) => new URL(url).searchParams.toString()),
-    [
-      "search=true&category%5B0%5D=583302",
-      "search=true&category%5B0%5D=583303",
-    ],
+    ["search=true&category%5B0%5D=583302", "search=true&category%5B0%5D=583303"],
   );
-  const fusionSibling = fusion.discoverRequests(
-    encode(fusionCategories("583301", "583302", "583303")),
-    {
+  const fusionSibling = fusion
+    .discoverRequests(encode(fusionCategories("583301", "583302", "583303")), {
       mediaType: "text/html",
-      url:
-        "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583302",
+      url: "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583302",
       requestId: `fusion-world-en:listing:${"a".repeat(64)}`,
-    },
-  ).filter(({ role }) => role === "listing");
+    })
+    .filter(({ role }) => role === "listing");
   assert.deepEqual(
     fusionSibling.map(({ url }) => new URL(url).searchParams.toString()),
-    [
-      "search=true&category%5B0%5D=583301",
-      "search=true&category%5B0%5D=583303",
-    ],
+    ["search=true&category%5B0%5D=583301", "search=true&category%5B0%5D=583303"],
   );
 
   const digimon = byLineage("digimon-en");
-  const digimonRoot = digimon.discoverRequests(
-    encode(`
+  const digimonRoot = digimon
+    .discoverRequests(
+      encode(`
       <select name="category">
         <option value="booster">Booster</option>
         <option value="starter">Starter</option>
@@ -1095,18 +937,20 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
       <select name="card_type"><option value="digimon">Digimon</option></select>
       <select name="colour"><option value="blue">Blue</option></select>
     `),
-    {
-      mediaType: "text/html",
-      url: digimon.requestUrlForSurface("card-list"),
-      requestId: "digimon-en:card-list",
-    },
-  ).filter(({ role }) => role === "listing");
+      {
+        mediaType: "text/html",
+        url: digimon.requestUrlForSurface("card-list"),
+        requestId: "digimon-en:card-list",
+      },
+    )
+    .filter(({ role }) => role === "listing");
   assert.deepEqual(
     digimonRoot.map(({ url }) => new URL(url).searchParams.get("category")),
     ["booster", "starter"],
   );
-  const digimonCardType = digimon.discoverRequests(
-    encode(`
+  const digimonCardType = digimon
+    .discoverRequests(
+      encode(`
       <select name="category"><option value="booster">Booster</option></select>
       <select name="cardcategory">
         <option value="digimon">Digimon</option>
@@ -1114,16 +958,15 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
       </select>
       <select name="colour"><option value="blue">Blue</option></select>
     `),
-    {
-      mediaType: "text/html",
-      url: `${digimon.requestUrlForSurface("card-list")}&category=booster`,
-      requestId: `digimon-en:listing:${"9".repeat(64)}`,
-    },
-  ).filter(({ role }) => role === "listing");
+      {
+        mediaType: "text/html",
+        url: `${digimon.requestUrlForSurface("card-list")}&category=booster`,
+        requestId: `digimon-en:listing:${"9".repeat(64)}`,
+      },
+    )
+    .filter(({ role }) => role === "listing");
   assert.deepEqual(
-    digimonCardType.map(({ url }) =>
-      new URL(url).searchParams.get("cardcategory")
-    ),
+    digimonCardType.map(({ url }) => new URL(url).searchParams.get("cardcategory")),
     ["digimon", "option"],
   );
 
@@ -1139,7 +982,7 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
       mediaType: "text/html",
       url: fusion.requestUrlForSurface("card-search"),
       requestId: `fusion-world-en:listing:${"8".repeat(64)}`,
-    })
+    }),
   );
   assert.throws(
     () =>
@@ -1186,9 +1029,7 @@ test("intermediate publisher discovery stages cannot emit or schedule catalogue 
     },
   ];
   for (const fixture of cases) {
-    const adapter = registeredProductionAdapters().find(
-      ({ sourceLineage }) => sourceLineage === fixture.lineage,
-    );
+    const adapter = registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === fixture.lineage);
     assert.ok(adapter);
     const html = `<html>
       <title>BANDAI Official Product List</title>
@@ -1200,22 +1041,13 @@ test("intermediate publisher discovery stages cannot emit or schedule catalogue 
       url: fixture.url,
       requestId: `${fixture.lineage}:listing:products:${"a".repeat(64)}`,
     };
-    const observations = adapter.parseBytes(
-      new TextEncoder().encode(html),
-      stageContext,
-    );
+    const observations = adapter.parseBytes(new TextEncoder().encode(html), stageContext);
     assert.ok(
-      observations.every(
-        ({ observation_type }) =>
-          observation_type === "official_surface_evidence",
-      ),
+      observations.every(({ observation_type }) => observation_type === "official_surface_evidence"),
       `${fixture.lineage} stage emitted a catalogue observation`,
     );
     assert.deepEqual(
-      adapter.discoverRequests(
-        new TextEncoder().encode(html),
-        stageContext,
-      ),
+      adapter.discoverRequests(new TextEncoder().encode(html), stageContext),
       [],
       `${fixture.lineage} stage scheduled a catalogue-bearing request`,
     );
@@ -1228,14 +1060,15 @@ test("known publisher navigation cannot manufacture catalogue detail requests", 
     assert.ok(surface);
     // Fusion World's restructured leaf must still enumerate its own
     // category; only the currently served one proves no further partition.
-    const publisherFacets = adapter.sourceLineage === "fusion-world-en"
-      ? '<section class="searchColSet-product"><a data-val="583301">Series</a></section>'
-      : "";
+    const publisherFacets =
+      adapter.sourceLineage === "fusion-world-en"
+        ? '<section class="searchColSet-product"><a data-val="583301">Series</a></section>'
+        : "";
     const requests = adapter.discoverRequests(
       new TextEncoder().encode(
-        `<html><title>BANDAI Official Card List</title>${
-          officialBandaiNavigationHeader(adapter.sourceLineage)
-        }${publisherFacets}</html>`,
+        `<html><title>BANDAI Official Card List</title>${officialBandaiNavigationHeader(
+          adapter.sourceLineage,
+        )}${publisherFacets}</html>`,
       ),
       {
         mediaType: "text/html; charset=utf-8",
@@ -1252,9 +1085,7 @@ test("known publisher navigation cannot manufacture catalogue detail requests", 
 });
 
 test("live Product detail normalizes stable release identity and raw vocabulary", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "gundam-en-us",
-  );
+  const adapter = registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === "gundam-en-us");
   const observation = adapter.parseBytes(
     new TextEncoder().encode(`
       <title>Test Booster [GD99] | GUNDAM CARD GAME Official Website</title>
@@ -1272,8 +1103,7 @@ test("live Product detail normalizes stable release identity and raw vocabulary"
       requestId: `gundam-en-us:product_detail:${"c".repeat(64)}`,
     },
   )[0];
-  const release =
-    observation.product_release_catalogue.products[0].releases[0];
+  const release = observation.product_release_catalogue.products[0].releases[0];
   // Release identity is derived from the titled Product itself; a publisher
   // "Release Event ID" is retained as raw vocabulary, never as identity.
   assert.deepEqual(release, {
@@ -1284,22 +1114,18 @@ test("live Product detail normalizes stable release identity and raw vocabulary"
   });
   assert.ok(
     observation.source_sidecar.unmapped_optional_fields.some(
-      ({ path, value }) =>
-        path.endsWith(".Release Event ID") && value === "launch-wave",
+      ({ path, value }) => path.endsWith(".Release Event ID") && value === "launch-wave",
     ),
   );
   assert.ok(
     observation.source_sidecar.unmapped_optional_fields.some(
-      ({ path, value }) =>
-        path.endsWith(".Future Vendor Fact") && value === "Preserve me",
+      ({ path, value }) => path.endsWith(".Future Vendor Fact") && value === "Preserve me",
     ),
   );
 });
 
 test("live Product detail maps official display dates and fails closed on new status vocabulary", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "gundam-en-us",
-  );
+  const adapter = registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === "gundam-en-us");
   const base = `
     <title>Display Date Booster [GD98] | GUNDAM CARD GAME Official Website</title>
     <h1>GUNDAM CARD GAME</h1>
@@ -1314,53 +1140,36 @@ test("live Product detail maps official display dates and fails closed on new st
     url: "https://www.gundam-gcg.com/en/products/detail.php?id=display",
     requestId: `gundam-en-us:product_detail:${"e".repeat(64)}`,
   };
-  const release = adapter.parseBytes(
-    new TextEncoder().encode(base),
-    context,
-  )[0].product_release_catalogue.products[0].releases[0];
+  const release = adapter.parseBytes(new TextEncoder().encode(base), context)[0].product_release_catalogue.products[0]
+    .releases[0];
   assert.deepEqual(release.date, {
     precision: "day",
     value: "2027-09-12",
   });
   assert.equal(release.status, "announced");
   assert.throws(
-    () =>
-      adapter.parseBytes(
-        new TextEncoder().encode(
-          base.replace("Coming Soon", "Vendor Future Phase"),
-        ),
-        context,
-      ),
+    () => adapter.parseBytes(new TextEncoder().encode(base.replace("Coming Soon", "Vendor Future Phase")), context),
     /unrecognized official Release status/iu,
   );
 });
 
 test("nested raw unknown leaves remain warnings when their container is mapped", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "one-piece-en",
-  );
+  const adapter = registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === "one-piece-en");
   const document = rawSurfacePayload("one-piece-en", "card-list");
   document.card_pages[0].future_nested = {
     vendor_rule: "retain this nested leaf",
   };
-  const observation = parseRegisteredSurface(
-    adapter,
-    "card-list",
-    document,
-  )[0];
+  const observation = parseRegisteredSurface(adapter, "card-list", document)[0];
   assert.ok(
     observation.source_sidecar.unmapped_optional_fields.some(
       ({ path, value }) =>
-        path.endsWith(".card_pages[0].future_nested.vendor_rule") &&
-        value === "retain this nested leaf",
+        path.endsWith(".card_pages[0].future_nested.vendor_rule") && value === "retain this nested leaf",
     ),
   );
 });
 
 test("explicit Product links produce typed memberships and relationships", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "digimon-en",
-  );
+  const adapter = registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === "digimon-en");
   const observation = adapter.parseBytes(
     new TextEncoder().encode(`
       <h1>Test Digimon</h1>
@@ -1382,29 +1191,20 @@ test("explicit Product links produce typed memberships and relationships", () =>
     },
   )[0];
   assert.deepEqual(observation.memberships.products, ["BT99"]);
-  assert.match(
-    observation.appearance_evidence.images[0].source_url,
-    /BT99-001\.png$/u,
-  );
-  assert.deepEqual(
-    observation.card.game_data.attributes.digivolution_requirements,
-    [{
+  assert.match(observation.appearance_evidence.images[0].source_url, /BT99-001\.png$/u);
+  assert.deepEqual(observation.card.game_data.attributes.digivolution_requirements, [
+    {
       index: 1,
       from_level: 3,
       colours: ["blue"],
       cost: 2,
       raw_condition: "Blue Lv.3: 2",
-    }],
-  );
-  assert.equal(
-    observation.product_release_catalogue.relationships[0].resolution,
-    "explicit",
-  );
+    },
+  ]);
+  assert.equal(observation.product_release_catalogue.relationships[0].resolution, "explicit");
   assert.ok(
     observation.product_release_catalogue.relationships.some(
-      ({ resolution, product_reference }) =>
-        resolution === "fuzzy" &&
-        product_reference.value === "Possible product",
+      ({ resolution, product_reference }) => resolution === "fuzzy" && product_reference.value === "Possible product",
     ),
   );
   assert.throws(
@@ -1431,9 +1231,7 @@ test("every production lineage preserves its synthetic publisher-contract exampl
   for (const adapter of registeredProductionAdapters()) {
     // A publication surface that carries no catalogue or legality parser of
     // its own; Fusion World publishes no errata surface any more.
-    const surface = adapter.requiredSurfaces.includes("errata")
-      ? "errata"
-      : "releases";
+    const surface = adapter.requiredSurfaces.includes("errata") ? "errata" : "releases";
     assert.ok(adapter.requiredSurfaces.includes(surface));
     const observations = adapter.parseBytes(
       new TextEncoder().encode(`
@@ -1450,19 +1248,14 @@ test("every production lineage preserves its synthetic publisher-contract exampl
       },
     );
     assert.equal(observations.length, 1);
-    const retained =
-      observations[0].source_sidecar.raw.official_surfaces[0].document;
-    assert.deepEqual(retained.discovered_options, [
-      { value: "official", label: "Official partition" },
-    ]);
+    const retained = observations[0].source_sidecar.raw.official_surfaces[0].document;
+    assert.deepEqual(retained.discovered_options, [{ value: "official", label: "Official partition" }]);
     assert.equal(retained.publication_links.length, 1);
   }
 });
 
 test("Product detail ignores unrelated code-shaped prose without losing name authority", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "gundam-en-us",
-  );
+  const adapter = registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === "gundam-en-us");
   const observation = adapter.parseBytes(
     new TextEncoder().encode(`
       <title>Name-authoritative Booster | GUNDAM CARD GAME Official Website</title>
@@ -1476,21 +1269,18 @@ test("Product detail ignores unrelated code-shaped prose without losing name aut
       requestId: `gundam-en-us:product_detail:${"f".repeat(64)}`,
     },
   )[0];
-  assert.deepEqual(
-    observation.product_release_catalogue.products,
-    [{
+  assert.deepEqual(observation.product_release_catalogue.products, [
+    {
       reference: { kind: "name", value: "Name-authoritative Booster" },
       official_code: null,
       name: "Name-authoritative Booster",
       releases: [],
-    }],
-  );
+    },
+  ]);
 });
 
 test("accessory detail traversal retains non-card evidence without publishing a Product", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "fusion-world-en",
-  );
+  const adapter = registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === "fusion-world-en");
   const index = `
     <html><title>BANDAI DRAGON BALL CARD PRODUCTS</title>
       <article class="booster">
@@ -1501,22 +1291,15 @@ test("accessory detail traversal retains non-card evidence without publishing a 
       </article>
     </html>
   `;
-  const discovered = adapter.discoverRequests(
-    new TextEncoder().encode(index),
-    {
-      mediaType: "text/html",
-      url: adapter.requestUrlForSurface("products"),
-      requestId: "fusion-world-en:products",
-    },
-  );
-  assert.ok(
-    discovered.some(({ url }) => url.includes("/booster/fb-booster-01/")),
-  );
+  const discovered = adapter.discoverRequests(new TextEncoder().encode(index), {
+    mediaType: "text/html",
+    url: adapter.requestUrlForSurface("products"),
+    requestId: "fusion-world-en:products",
+  });
+  assert.ok(discovered.some(({ url }) => url.includes("/booster/fb-booster-01/")));
   // The live-product generation fetches accessory pages instead of dropping
   // them by URL vocabulary: the classification is proven from retained markup.
-  assert.ok(
-    discovered.some(({ url }) => url.includes("/accessory/fb-box-01/")),
-  );
+  assert.ok(discovered.some(({ url }) => url.includes("/accessory/fb-box-01/")));
   const observation = adapter.parseBytes(
     new TextEncoder().encode(`
       <title>Storage Box | Dragon Ball Super Card Game Fusion World - Official Web Site</title>
@@ -1524,8 +1307,7 @@ test("accessory detail traversal retains non-card evidence without publishing a 
     `),
     {
       mediaType: "text/html",
-      url:
-        "https://www.dbs-cardgame.com/fw/en/products/accessory/fb-box-01/",
+      url: "https://www.dbs-cardgame.com/fw/en/products/accessory/fb-box-01/",
       requestId: `fusion-world-en:product_detail:${"a".repeat(64)}`,
     },
   )[0];
@@ -1538,17 +1320,13 @@ test("accessory detail traversal retains non-card evidence without publishing a 
 });
 
 test("structured accessory Products remain Distribution Context evidence on every Product-bearing surface", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "fusion-world-en",
-  );
+  const adapter = registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === "fusion-world-en");
   const accessory = {
     productCode: "FB-SLEEVE-01",
     productName: "Official Storage Sleeves",
   };
   for (const surface of ["products", "card-search"]) {
-    const payload = structuredClone(
-      officialRawSurfacePayload(`/fusion-world-en/${surface}`),
-    );
+    const payload = structuredClone(officialRawSurfacePayload(`/fusion-world-en/${surface}`));
     if (surface === "products") {
       payload.result.partitions[0].entries = [accessory];
       payload.result.partitions[0].total = 1;
@@ -1556,13 +1334,7 @@ test("structured accessory Products remain Distribution Context evidence on ever
       payload.products.push(accessory);
     }
     const observations = adapter.parseBytes(
-      new TextEncoder().encode(
-        `<html>${officialPublisherPayloadScript(
-          "fusion-world-en",
-          surface,
-          payload,
-        )}</html>`,
-      ),
+      new TextEncoder().encode(`<html>${officialPublisherPayloadScript("fusion-world-en", surface, payload)}</html>`),
       {
         mediaType: "text/html; charset=utf-8",
         url: adapter.requestUrlForSurface(surface),
@@ -1570,27 +1342,21 @@ test("structured accessory Products remain Distribution Context evidence on ever
       },
     );
     assert.equal(
-      observations.flatMap(
-        ({ product_release_catalogue }) =>
-          product_release_catalogue.products,
-      ).some(({ official_code }) => official_code === "FB-SLEEVE-01"),
+      observations
+        .flatMap(({ product_release_catalogue }) => product_release_catalogue.products)
+        .some(({ official_code }) => official_code === "FB-SLEEVE-01"),
       false,
     );
     assert.ok(
-      observations.flatMap(
-        ({ product_release_catalogue }) =>
-          product_release_catalogue.distribution_contexts,
-      ).some(
-        ({ kind, label }) => kind === "other" && label === "accessory",
-      ),
+      observations
+        .flatMap(({ product_release_catalogue }) => product_release_catalogue.distribution_contexts)
+        .some(({ kind, label }) => kind === "other" && label === "accessory"),
     );
   }
 });
 
 test("code-less structured Products and Releases retain name identity with valid event keys", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "fusion-world-en",
-  );
+  const adapter = registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === "fusion-world-en");
   const product = {
     productCode: null,
     productName: "Announced Product Without Code",
@@ -1604,48 +1370,35 @@ test("code-less structured Products and Releases retain name identity with valid
     status: "announced",
   };
   for (const surface of ["products", "releases"]) {
-    const payload = structuredClone(
-      officialRawSurfacePayload(`/fusion-world-en/${surface}`),
-    );
-    const partition = (surface === "products"
-      ? payload.result
-      : payload.events).partitions[0];
-    partition.entries = surface === "products"
-      ? [product]
-      : [{ product, release }];
+    const payload = structuredClone(officialRawSurfacePayload(`/fusion-world-en/${surface}`));
+    const partition = (surface === "products" ? payload.result : payload.events).partitions[0];
+    partition.entries = surface === "products" ? [product] : [{ product, release }];
     partition.total = 1;
     const observations = adapter.parseBytes(
-      new TextEncoder().encode(
-        `<html>${officialPublisherPayloadScript(
-          "fusion-world-en",
-          surface,
-          payload,
-        )}</html>`,
-      ),
+      new TextEncoder().encode(`<html>${officialPublisherPayloadScript("fusion-world-en", surface, payload)}</html>`),
       {
         mediaType: "text/html; charset=utf-8",
         url: adapter.requestUrlForSurface(surface),
         requestId: `fusion-world-en:${surface}`,
       },
     );
-    const observed = observations.flatMap(
-      ({ product_release_catalogue }) =>
-        product_release_catalogue.products,
-    );
+    const observed = observations.flatMap(({ product_release_catalogue }) => product_release_catalogue.products);
     assert.deepEqual(
       observed.map(({ reference, official_code, name }) => ({
         reference,
         official_code,
         name,
       })),
-      [{
-        reference: {
-          kind: "name",
-          value: "Announced Product Without Code",
+      [
+        {
+          reference: {
+            kind: "name",
+            value: "Announced Product Without Code",
+          },
+          official_code: null,
+          name: "Announced Product Without Code",
         },
-        official_code: null,
-        name: "Announced Product Without Code",
-      }],
+      ],
     );
     for (const { event_key } of observed.flatMap(({ releases }) => releases)) {
       assert.match(event_key, /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u);
@@ -1655,9 +1408,7 @@ test("code-less structured Products and Releases retain name identity with valid
 
 test("code-less named Products and Releases survive registered discovery surfaces", () => {
   const adapter = requiredSourceAdapter("fusion-world-en@9");
-  const payload = structuredClone(
-    officialRawSurfacePayload("/fusion-world-en/card-search"),
-  );
+  const payload = structuredClone(officialRawSurfacePayload("/fusion-world-en/card-search"));
   payload.products.push({
     productCode: null,
     productName: "Discovery Product Without Code",
@@ -1671,19 +1422,11 @@ test("code-less named Products and Releases survive registered discovery surface
     date: null,
     status: "announced",
   });
-  payload.detail_pages[0].product_names = [
-    "Discovery Product Without Code",
-  ];
+  payload.detail_pages[0].product_names = ["Discovery Product Without Code"];
 
-  const observations = parseRegisteredSurface(
-    adapter,
-    "card-search",
-    payload,
-  );
+  const observations = parseRegisteredSurface(adapter, "card-search", payload);
   const product = observations
-    .flatMap(({ product_release_catalogue }) =>
-      product_release_catalogue.products
-    )
+    .flatMap(({ product_release_catalogue }) => product_release_catalogue.products)
     .find(({ name }) => name === "Discovery Product Without Code");
 
   assert.deepEqual(product, {
@@ -1693,19 +1436,19 @@ test("code-less named Products and Releases survive registered discovery surface
     },
     official_code: null,
     name: "Discovery Product Without Code",
-    releases: [{
-      event_key: "discovery-product-without-code",
-      region: "EN-US",
-      date: { precision: "unknown", value: null },
-      status: "announced",
-    }],
+    releases: [
+      {
+        event_key: "discovery-product-without-code",
+        region: "EN-US",
+        date: { precision: "unknown", value: null },
+        status: "announced",
+      },
+    ],
   });
 });
 
 test("code-less HTML Product announcements derive stable opaque event identities", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "gundam-en-us",
-  );
+  const adapter = registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === "gundam-en-us");
   const parse = () =>
     adapter.parseBytes(
       new TextEncoder().encode(`
@@ -1728,17 +1471,12 @@ test("code-less HTML Product announcements derive stable opaque event identities
     value: "Future Product Without Code",
   });
   assert.equal(first.releases[0].event_key, second.releases[0].event_key);
-  assert.match(
-    first.releases[0].event_key,
-    /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u,
-  );
+  assert.match(first.releases[0].event_key, /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u);
   assert.equal(first.releases[0].event_key.includes("Future Product"), false);
 });
 
 test("unavailable Product release vocabulary normalizes to reviewable unknown values", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "gundam-en-us",
-  );
+  const adapter = registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === "gundam-en-us");
   for (const dateToken of ["-", "TBA", ""]) {
     const observation = adapter.parseBytes(
       new TextEncoder().encode(`
@@ -1754,19 +1492,17 @@ test("unavailable Product release vocabulary normalizes to reviewable unknown va
         requestId: `gundam-en-us:product_detail:${"b".repeat(64)}`,
       },
     )[0];
-    assert.deepEqual(
-      observation.product_release_catalogue.products[0].releases,
-      [{
+    assert.deepEqual(observation.product_release_catalogue.products[0].releases, [
+      {
         event_key: "product-release:GD-FUTURE",
         region: "EN-US",
         date: { precision: "unknown", value: null },
         status: "announced",
-      }],
-    );
+      },
+    ]);
     assert.ok(
       observation.source_sidecar.unmapped_optional_fields.some(
-        ({ path, value }) =>
-          path.endsWith(".Release Date") && value === dateToken,
+        ({ path, value }) => path.endsWith(".Release Date") && value === dateToken,
       ),
     );
     assert.ok(
@@ -1780,10 +1516,7 @@ test("unavailable Product release vocabulary normalizes to reviewable unknown va
 test("production coverage rejects keyword-only HTML without structural entries", () => {
   for (const adapter of registeredProductionAdapters()) {
     const surface = adapter.requiredSurfaces.find(
-      (candidate) =>
-        candidate !== "card-list" &&
-        candidate !== "card-search" &&
-        candidate !== "packages",
+      (candidate) => candidate !== "card-list" && candidate !== "card-search" && candidate !== "packages",
     );
     assert.ok(surface);
     assert.throws(
@@ -1808,14 +1541,11 @@ test("the aggregate JSON adapter is fixture-only and cannot claim official cover
   // aggregate document parser belongs to synthetic fixture adapters only.
   assert.equal(
     installedSourceAdapterRegistrations.some(
-      ({ origin, parse }) =>
-        origin === "production" && typeof parse === "function",
+      ({ origin, parse }) => origin === "production" && typeof parse === "function",
     ),
     false,
   );
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "fusion-world-en",
-  );
+  const adapter = registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === "fusion-world-en");
   const surface = "products";
   assert.throws(
     () =>
@@ -1842,34 +1572,16 @@ test("all five raw decoders accept only their exact retained surface bytes", () 
         false,
         "fixture must retain an upstream-shaped document, not a Keepr envelope",
       );
-      const observations = parseRegisteredSurface(
-        contract,
-        surface,
-        payload,
-      );
+      const observations = parseRegisteredSurface(contract, surface, payload);
       assert.ok(observations.length >= 1);
-      if (
-        surface === "card-list" ||
-        surface === "card-search" ||
-        surface === "packages"
-      ) {
+      if (surface === "card-list" || surface === "card-search" || surface === "packages") {
         const sidecar = observations[0].source_sidecar;
-        assert.equal(
-          sidecar.raw.official_surfaces[0].document.vendor_extension
-            .future_field,
-          true,
-        );
-        assert.ok(
-          sidecar.unmapped_optional_fields.some(
-            ({ path }) => path.endsWith(".vendor_extension.future_field"),
-          ),
-        );
+        assert.equal(sidecar.raw.official_surfaces[0].document.vendor_extension.future_field, true);
+        assert.ok(sidecar.unmapped_optional_fields.some(({ path }) => path.endsWith(".vendor_extension.future_field")));
         assert.ok(observations[0].memberships.source_buckets.length > 0);
         if (contract.sourceLineage === "fusion-world-en") {
           assert.deepEqual(
-            observations[0].appearance_evidence.images.map(
-              ({ role }) => role,
-            ),
+            observations[0].appearance_evidence.images.map(({ role }) => role),
             ["front", "back"],
           );
           assert.equal(observations[0].printing.rarity.raw, null);
@@ -1881,9 +1593,7 @@ test("all five raw decoders accept only their exact retained surface bytes", () 
 });
 
 test("the raw discovery decoder fails closed on caps, unfinished pages, and surface mismatch", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "one-piece-en",
-  );
+  const adapter = registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === "one-piece-en");
   const capped = rawSurfacePayload("one-piece-en", "card-list");
   capped.page_info.cap_signal = "Too many search results";
   assert.throws(
@@ -1908,10 +1618,7 @@ test("the raw discovery decoder fails closed on caps, unfinished pages, and surf
 
   const mismatched = rawSurfacePayload("one-piece-en", "card-list");
   mismatched.page = "product-list";
-  assert.throws(
-    () => parseRegisteredSurface(adapter, "card-list", mismatched),
-    /card-list page identity/u,
-  );
+  assert.throws(() => parseRegisteredSurface(adapter, "card-list", mismatched), /card-list page identity/u);
 });
 
 test("the live product listing still fails closed when a status section disappears", () => {
@@ -1923,19 +1630,14 @@ test("the live product listing still fails closed when a status section disappea
   assert.throws(
     () =>
       adapter.parseBytes(
-        new TextEncoder().encode(html.replace(
-          from,
-          '<section class="contentsColInner retiredCol" id="retired">',
-        )),
+        new TextEncoder().encode(html.replace(from, '<section class="contentsColInner retiredCol" id="retired">')),
         {
           mediaType: fixture.metadata.content_type,
           url: fixture.metadata.source_url,
           requestId: "fusion-world-en:products",
         },
       ),
-    exactMessage(
-      "Fusion World Product status sections are incomplete; missing: comingsoon; unexpected: retired.",
-    ),
+    exactMessage("Fusion World Product status sections are incomplete; missing: comingsoon; unexpected: retired."),
   );
 });
 
@@ -1960,9 +1662,7 @@ test("Errata Applied annotations remain fail-closed outside their proven shape",
       "<h6>Combo power</h6>",
       '<h6>Combo power<span class="is-front"> (Errata Applied)</span></h6>',
     ),
-    exactMessage(
-      "Fusion World Card detail publishes an Errata Applied annotation on an unmodelled cell.",
-    ),
+    exactMessage("Fusion World Card detail publishes an Errata Applied annotation on an unmodelled cell."),
     "an annotation on a numeric cell is an unmodelled page",
   );
   assert.throws(
@@ -1972,9 +1672,7 @@ test("Errata Applied annotations remain fail-closed outside their proven shape",
       '<span class="is-front"> (Errata Applied)</span>',
       '<span class="is-back"> (Errata Applied)</span>',
     ),
-    exactMessage(
-      "Fusion World Errata Applied annotation and its Errata Notice link do not match.",
-    ),
+    exactMessage("Fusion World Errata Applied annotation and its Errata Notice link do not match."),
     "a single-faced Card annotated on a face without a notice link fails closed",
   );
   assert.throws(
@@ -1984,9 +1682,7 @@ test("Errata Applied annotations remain fail-closed outside their proven shape",
       '<div class="cardNotesBtnCol"><a class="cardNotesBtn" href=https://www.dbs-cardgame.com/fw/en/news/02_22.html target="_blank" rel="noopener noreferrer">Errata Notice</a></div>',
       "",
     ),
-    exactMessage(
-      "Fusion World Errata Applied annotation and its Errata Notice link do not match.",
-    ),
+    exactMessage("Fusion World Errata Applied annotation and its Errata Notice link do not match."),
     "an annotation without its pinned Errata Notice link fails closed",
   );
 });
@@ -2004,16 +1700,11 @@ test("restructured discovery stages and listing leaves fail closed on missing pu
   };
 
   const onePiece = requiredSourceAdapter("one-piece-en@6");
-  for (
-    const [surface, pinned] of [
-      ["restrictions", "/news/restriction.html"],
-      ["block-policy", "/topics/013.php"],
-    ]
-  ) {
-    const unpinned = mutate(
-      "one-piece-en-rules-hub",
-      (html) => html.replaceAll(pinned, "/news/unrelated-notice.html"),
-    );
+  for (const [surface, pinned] of [
+    ["restrictions", "/news/restriction.html"],
+    ["block-policy", "/topics/013.php"],
+  ]) {
+    const unpinned = mutate("one-piece-en-rules-hub", (html) => html.replaceAll(pinned, "/news/unrelated-notice.html"));
     assert.throws(
       () =>
         onePiece.parseBytes(unpinned.bytes, {
@@ -2021,18 +1712,14 @@ test("restructured discovery stages and listing leaves fail closed on missing pu
           url: "https://en.onepiece-cardgame.com/rules/",
           requestId: `one-piece-en:listing:rules:${restructuredStageDigest}`,
         }),
-      new RegExp(
-        `Official Source rules discovery stage did not retain the ${surface} surface link\\.`,
-        "u",
-      ),
+      new RegExp(`Official Source rules discovery stage did not retain the ${surface} surface link\\.`, "u"),
     );
   }
 
   const gundam = requiredSourceAdapter("gundam-en-asia@7");
   const packagesUrl = gundam.requestUrlForSurface("packages");
-  const withoutEmptyState = mutate(
-    "gundam-en-asia-restructured-card-search",
-    (html) => html.replace(/<section class="errorCol">[\s\S]*?<\/section>/u, ""),
+  const withoutEmptyState = mutate("gundam-en-asia-restructured-card-search", (html) =>
+    html.replace(/<section class="errorCol">[\s\S]*?<\/section>/u, ""),
   );
   assert.throws(
     () =>
@@ -2043,10 +1730,8 @@ test("restructured discovery stages and listing leaves fail closed on missing pu
       }),
     /Official Source Gundam card search root did not retain its empty search state\./u,
   );
-  const unrecognizedEmptyState = mutate(
-    "gundam-en-asia-restructured-card-search",
-    (html) =>
-      html.replace("Please specify your search criteria.", "Search results"),
+  const unrecognizedEmptyState = mutate("gundam-en-asia-restructured-card-search", (html) =>
+    html.replace("Please specify your search criteria.", "Search results"),
   );
   assert.throws(
     () =>
@@ -2057,9 +1742,7 @@ test("restructured discovery stages and listing leaves fail closed on missing pu
       }),
     /Official Source Gundam card search root empty state is unrecognized\./u,
   );
-  const emptyLeaf = retainedOfficialSourceFixture(
-    "gundam-en-asia-restructured-card-search",
-  );
+  const emptyLeaf = retainedOfficialSourceFixture("gundam-en-asia-restructured-card-search");
   assert.throws(
     () =>
       gundam.parseBytes(emptyLeaf.bytes, {
@@ -2071,9 +1754,8 @@ test("restructured discovery stages and listing leaves fail closed on missing pu
   );
 
   const fusion = requiredSourceAdapter("fusion-world-en@9");
-  const withoutCategories = mutate(
-    "fusion-world-en-restructured-card-search",
-    (html) => html.replaceAll("searchColSet-product", "searchColSet-retired"),
+  const withoutCategories = mutate("fusion-world-en-restructured-card-search", (html) =>
+    html.replaceAll("searchColSet-product", "searchColSet-retired"),
   );
   assert.throws(
     () =>

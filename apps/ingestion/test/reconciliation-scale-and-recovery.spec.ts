@@ -1,10 +1,6 @@
 import { expect, test } from "vitest";
-import {
-  officialSourceDiscoveryRequests,
-} from "../../../src/catalogue/product-release-source-adapters";
-import {
-  type CatalogueBackupWorkflowParams,
-} from "../../../src/catalogue/backup-workflow";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
+import { type CatalogueBackupWorkflowParams } from "../../../src/catalogue/backup-recovery";
 import { currentCatalogueStatus } from "../../../src/catalogue/read";
 import {
   installReconciliationSuite,
@@ -57,16 +53,9 @@ test("every planned request contributes exactly one provenance-bound observation
       source_snapshot_id: string;
       source_observation_set_id: string;
     }>();
-  expect(plans.results.map((row) => row.request_id)).toEqual([
-    "partition-a",
-    "partition-b",
-  ]);
-  expect(new Set(plans.results.map((row) => row.source_snapshot_id)).size).toBe(
-    2,
-  );
-  expect(
-    new Set(plans.results.map((row) => row.source_observation_set_id)).size,
-  ).toBe(2);
+  expect(plans.results.map((row) => row.request_id)).toEqual(["partition-a", "partition-b"]);
+  expect(new Set(plans.results.map((row) => row.source_snapshot_id)).size).toBe(2);
+  expect(new Set(plans.results.map((row) => row.source_observation_set_id)).size).toBe(2);
   await post(`/v1/ingestion-runs/${run.id}/rejection`, {
     candidate_digest: requiredString(reconciled.document, "candidate_digest"),
     idempotency_key: "reject-multi-request-complete-coverage",
@@ -89,18 +78,20 @@ test("aggregate reconciliation size is rejected before any retained object is re
        ON snapshots.id = observations.source_snapshot_id
      WHERE snapshots.ingestion_run_id = ?
      ORDER BY snapshots.request_id`,
-  ).bind(run.id).all<{ content_object_key: string }>();
+  )
+    .bind(run.id)
+    .all<{ content_object_key: string }>();
   expect(retained.results).toHaveLength(3);
-  await testEnv.CATALOGUE_DB.prepare(
-    `DROP TRIGGER source_observation_sets_are_immutable_on_update`,
-  ).run();
+  await testEnv.CATALOGUE_DB.prepare(`DROP TRIGGER source_observation_sets_are_immutable_on_update`).run();
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE source_observation_sets
      SET content_byte_length = 12582912
      WHERE source_snapshot_id IN (
        SELECT id FROM source_snapshots WHERE ingestion_run_id = ?
      )`,
-  ).bind(run.id).run();
+  )
+    .bind(run.id)
+    .run();
   await testEnv.CATALOGUE_DB.prepare(
     `CREATE TRIGGER source_observation_sets_are_immutable_on_update
      BEFORE UPDATE ON source_observation_sets
@@ -108,40 +99,30 @@ test("aggregate reconciliation size is rejected before any retained object is re
        SELECT RAISE(ABORT, 'immutable_source_observation_set');
      END`,
   ).run();
-  await testEnv.EVIDENCE_OBJECTS.delete(
-    retained.results[0]!.content_object_key,
-  );
+  await testEnv.EVIDENCE_OBJECTS.delete(retained.results[0]!.content_object_key);
 
   const blocked = await reconcile(run.id);
   expect(blocked.response.status).toBe(409);
   expect(blocked.document).toMatchObject({
     state: "failed",
     publishable: false,
-    diagnostics: [expect.objectContaining({
-      code: "retained_evidence_invalid",
-      detail: expect.stringContaining(
-        "aggregate reconciliation byte budget",
-      ),
-    })],
+    diagnostics: [
+      expect.objectContaining({
+        code: "retained_evidence_invalid",
+        detail: expect.stringContaining("aggregate reconciliation byte budget"),
+      }),
+    ],
   });
-  expect(JSON.stringify(blocked.document)).not.toContain(
-    "bytes are unavailable",
-  );
+  expect(JSON.stringify(blocked.document)).not.toContain("bytes are unavailable");
 });
 
 test("empty first, middle, and last partitions remain durable and digest-bound", async () => {
   for (const emptyIndex of [0, 1, 2]) {
-    const requests = ["base", "new-locator", "base"].map(
-      (scenario, index) => ({
-        id: `partition-${index}`,
-        scenario:
-          index === emptyIndex ? "complete-empty-lineage" : scenario,
-      }),
-    );
-    const run = await collectRequests(
-      requests,
-      `durable-empty-partition-${emptyIndex}`,
-    );
+    const requests = ["base", "new-locator", "base"].map((scenario, index) => ({
+      id: `partition-${index}`,
+      scenario: index === emptyIndex ? "complete-empty-lineage" : scenario,
+    }));
+    const run = await collectRequests(requests, `durable-empty-partition-${emptyIndex}`);
     const reconciled = await reconcile(run.id);
     expect(reconciled.response.status).toBe(200);
     const partitions = await testEnv.CATALOGUE_DB.prepare(
@@ -158,14 +139,11 @@ test("empty first, middle, and last partitions remain durable and digest-bound",
         source_snapshot_id: string;
         source_observation_set_id: string;
       }>();
-    expect(partitions.results.map(({ request_id }) => request_id)).toEqual(
-      requests.map(({ id }) => id),
-    );
+    expect(partitions.results.map(({ request_id }) => request_id)).toEqual(requests.map(({ id }) => id));
     expect(
       partitions.results.every(
         (row) =>
-          row.source_snapshot_id.startsWith("srcsnap_") &&
-          row.source_observation_set_id.startsWith("srcobsset_"),
+          row.source_snapshot_id.startsWith("srcsnap_") && row.source_observation_set_id.startsWith("srcobsset_"),
       ),
     ).toBe(true);
     const digest = await testEnv.CATALOGUE_DB.prepare(
@@ -184,20 +162,14 @@ test("empty first, middle, and last partitions remain durable and digest-bound",
       expect(digest?.value).toContain(`"requestId":"${request.id}"`);
     }
     await post(`/v1/ingestion-runs/${run.id}/rejection`, {
-      candidate_digest: requiredString(
-        reconciled.document,
-        "candidate_digest",
-      ),
+      candidate_digest: requiredString(reconciled.document, "candidate_digest"),
       idempotency_key: `reject-durable-empty-${emptyIndex}`,
     });
   }
 }, 30_000);
 
 test("unplanned requests fail at D1 while duplicate and unplanned observation sets fail reconciliation", async () => {
-  const missing = await collectRequests(
-    [{ id: "partition-a", scenario: "base" }],
-    "multi-request-missing-coverage",
-  );
+  const missing = await collectRequests([{ id: "partition-a", scenario: "base" }], "multi-request-missing-coverage");
   await expect(
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO source_requests (
@@ -217,10 +189,7 @@ test("unplanned requests fail at D1 while duplicate and unplanned observation se
     idempotency_key: "reject-exact-plan-after-unplanned-insert",
   });
 
-  const duplicate = await collectRequests(
-    [{ id: "partition-a", scenario: "base" }],
-    "multi-request-duplicate-set",
-  );
+  const duplicate = await collectRequests([{ id: "partition-a", scenario: "base" }], "multi-request-duplicate-set");
   const duplicateSuffix = crypto.randomUUID();
   await testEnv.CATALOGUE_DB.prepare(
     `INSERT INTO source_parse_operations (
@@ -268,15 +237,9 @@ test("unplanned requests fail at D1 while duplicate and unplanned observation se
       duplicate.id,
     )
     .run();
-  await expectRetainedEvidenceInvalid(
-    duplicate.id,
-    "requires exactly one collection Source Observation Set",
-  );
+  await expectRetainedEvidenceInvalid(duplicate.id, "requires exactly one collection Source Observation Set");
 
-  const unplanned = await collectRequests(
-    [{ id: "partition-a", scenario: "base" }],
-    "multi-request-unplanned-set",
-  );
+  const unplanned = await collectRequests([{ id: "partition-a", scenario: "base" }], "multi-request-unplanned-set");
   const rogue = crypto.randomUUID();
   await testEnv.CATALOGUE_DB.prepare(
     `INSERT INTO source_fetch_attempts (
@@ -363,10 +326,7 @@ test("unplanned requests fail at D1 while duplicate and unplanned observation se
       unplanned.id,
     )
     .run();
-  await expectRetainedEvidenceInvalid(
-    unplanned.id,
-    "Unplanned Source Observation Set",
-  );
+  await expectRetainedEvidenceInvalid(unplanned.id, "Unplanned Source Observation Set");
 });
 
 test("recovery health gates fixture evidence injection and reconciliation before mutation", async () => {
@@ -399,10 +359,7 @@ test("recovery health gates fixture evidence injection and reconciliation before
   await testEnv.CATALOGUE_DB.prepare(
     "UPDATE operation_state SET recovery_health = 'healthy' WHERE singleton = 1",
   ).run();
-  const run = await collect(
-    "/reconciliation/base",
-    "blocked-recovery-reconciliation",
-  );
+  const run = await collect("/reconciliation/base", "blocked-recovery-reconciliation");
   await testEnv.CATALOGUE_DB.prepare(
     "UPDATE operation_state SET recovery_health = 'blocked' WHERE singleton = 1",
   ).run();
@@ -450,10 +407,9 @@ test("degraded recovery permits evidence collection starts and retries while blo
        WHERE singleton = 1`,
     ),
   ]);
-  const retried = await post(
-    `/v1/ingestion-runs/${sourceRunId}/collection/retry`,
-    { idempotency_key: "degraded-recovery-retry" },
-  );
+  const retried = await post(`/v1/ingestion-runs/${sourceRunId}/collection/retry`, {
+    idempotency_key: "degraded-recovery-retry",
+  });
   expect(retried.response.status).toBe(201);
   expect(retried.document).toMatchObject({
     state: "collecting",
@@ -465,22 +421,26 @@ test("a partial Gundam refresh accepts one selected production lineage independe
   const sourceLineage = "gundam-en-asia";
   const adapterVersion = "gundam-en-asia@7";
   const oneLocale = await post("/v1/ingestion-runs/evidence", {
-    plans: [{
-      supported_game: "gundam",
-      source_lineage: sourceLineage,
-      adapter_version: adapterVersion,
-      requests: officialSourceDiscoveryRequests(sourceLineage),
-    }],
+    plans: [
+      {
+        supported_game: "gundam",
+        source_lineage: sourceLineage,
+        adapter_version: adapterVersion,
+        requests: officialSourceDiscoveryRequests(sourceLineage),
+      },
+    ],
     idempotency_key: `gundam-one-lineage-${crypto.randomUUID()}`,
   });
   expect(oneLocale.response.status).toBe(201);
   expect(oneLocale.document).toMatchObject({
     selected_games: ["gundam"],
-    evidence_plans: [{
-      supported_game: "gundam",
-      source_lineage: sourceLineage,
-      adapter_version: adapterVersion,
-    }],
+    evidence_plans: [
+      {
+        supported_game: "gundam",
+        source_lineage: sourceLineage,
+        adapter_version: adapterVersion,
+      },
+    ],
   });
   // Admission is the public behavior under test. Release the test database's
   // singleton lock without depending on a live publisher response so the next
@@ -491,10 +451,7 @@ test("a partial Gundam refresh accepts one selected production lineage independe
 });
 
 test("publication stays readable while its immutable degraded backup blocks the next approval", async () => {
-  const firstRun = await collect(
-    "/reconciliation/base",
-    "publication-backup-degraded-first",
-  );
+  const firstRun = await collect("/reconciliation/base", "publication-backup-degraded-first");
   const firstCandidate = await reconcile(firstRun.id);
   const failingWorkflow = {
     async create() {
@@ -509,28 +466,19 @@ test("publication stays readable while its immutable degraded backup blocks the 
     CATALOGUE_BACKUP_WORKFLOW: failingWorkflow,
   } as unknown as Env;
   const approvalResponse = await ingestionWorker.fetch(
-    new Request(
-      `https://card-keepr.invalid/v1/ingestion-runs/${firstRun.id}/approval`,
-      {
-        method: "POST",
-        headers: {
-          authorization: "Bearer vitest-administration-key",
-          "content-type": "application/json",
-          "cf-connecting-ip": "203.0.113.240",
-        },
-        body: JSON.stringify({
-          candidate_digest: requiredString(
-            firstCandidate.document,
-            "candidate_digest",
-          ),
-          expected_current_revision_id: requiredString(
-            firstCandidate.document,
-            "expected_current_revision_id",
-          ),
-          idempotency_key: "publication-backup-degraded-approval",
-        }),
+    new Request(`https://card-keepr.invalid/v1/ingestion-runs/${firstRun.id}/approval`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer vitest-administration-key",
+        "content-type": "application/json",
+        "cf-connecting-ip": "203.0.113.240",
       },
-    ),
+      body: JSON.stringify({
+        candidate_digest: requiredString(firstCandidate.document, "candidate_digest"),
+        expected_current_revision_id: requiredString(firstCandidate.document, "expected_current_revision_id"),
+        idempotency_key: "publication-backup-degraded-approval",
+      }),
+    }),
     publicEnv,
     {
       waitUntil() {},
@@ -555,18 +503,14 @@ test("publication stays readable while its immutable degraded backup blocks the 
       recovery_health: "degraded",
     },
   });
-  await expect(currentCatalogueStatus(testEnv.CATALOGUE_DB)).resolves
-    .toMatchObject({
-      revisionId,
-    });
+  await expect(currentCatalogueStatus(testEnv.CATALOGUE_DB)).resolves.toMatchObject({
+    revisionId,
+  });
 
   await testEnv.CATALOGUE_DB.prepare(
     "UPDATE operation_state SET recovery_health = 'healthy' WHERE singleton = 1",
   ).run();
-  const secondRun = await collect(
-    "/reconciliation/profile-one-piece",
-    "publication-backup-degraded-second",
-  );
+  const secondRun = await collect("/reconciliation/profile-one-piece", "publication-backup-degraded-second");
   const secondCandidate = await reconcile(secondRun.id);
   await testEnv.CATALOGUE_DB.prepare(
     "UPDATE operation_state SET recovery_health = 'degraded' WHERE singleton = 1",

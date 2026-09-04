@@ -4,11 +4,9 @@ import {
   captureOperationIdentity,
   capturePreparedAttempt,
   prepareCaptureAttempt,
-} from "../../../src/catalogue/source-evidence-capture";
-import {
   pendingEvidenceRequests,
   requiredEvidenceRun,
-} from "../../../src/catalogue/source-evidence-repository";
+} from "../../../src/catalogue/source-evidence";
 import {
   administrationRequest,
   createCollection,
@@ -25,17 +23,10 @@ test("transport retry exhaustion pauses the Ingestion Run without failing the re
     "retry_pause_transport_001",
     "https://transport-pause-official-source.invalid/unavailable",
   );
-  const response = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/resume`,
-    "POST",
-  );
+  const response = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(response.status).toBe(202);
   await response.body?.cancel();
-  const paused = await waitForEvidenceCondition(
-    run.id,
-    (current) => current.state === "paused",
-    12_000,
-  );
+  const paused = await waitForEvidenceCondition(run.id, (current) => current.state === "paused", 12_000);
 
   // Exhausting the bounded transport retries is not proof the Official
   // Source evidence failed: the run pauses non-terminally with its own
@@ -66,35 +57,49 @@ test("transport retry exhaustion pauses the Ingestion Run without failing the re
       outcome: diagnostic.outcome,
       status: diagnostic.http_status,
     })),
-  ).toEqual([1, 2, 3, 4].map((attempt) => ({
-    attempt_number: attempt,
-    outcome: "http_failure",
-    status: 503,
-  })));
+  ).toEqual(
+    [1, 2, 3, 4].map((attempt) => ({
+      attempt_number: attempt,
+      outcome: "http_failure",
+      status: 503,
+    })),
+  );
 
   // The request is not misreported as source failure, and the pause is a
   // recorded lifecycle transition that keeps the active-run reservation.
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT state, failure_code, retry_generation FROM source_requests
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT state, failure_code, retry_generation FROM source_requests
      WHERE ingestion_run_id = ? AND request_id = 'required-source'`,
-  ).bind(run.id).first()).toMatchObject({
+    )
+      .bind(run.id)
+      .first(),
+  ).toMatchObject({
     state: "pending",
     failure_code: null,
     retry_generation: 1,
   });
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT from_state, to_state FROM ingestion_run_transitions
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT from_state, to_state FROM ingestion_run_transitions
      WHERE ingestion_run_id = ? ORDER BY sequence DESC LIMIT 1`,
-  ).bind(run.id).first()).toMatchObject({
+    )
+      .bind(run.id)
+      .first(),
+  ).toMatchObject({
     from_state: "collecting",
     to_state: "paused",
   });
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1`,
-  ).first("active_ingestion_run_id")).toBe(run.id);
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT * FROM ingestion_run_retry_pauses WHERE ingestion_run_id = ?`,
-  ).bind(run.id).first()).toMatchObject({
+  expect(
+    await env.CATALOGUE_DB.prepare(`SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1`).first(
+      "active_ingestion_run_id",
+    ),
+  ).toBe(run.id);
+  expect(
+    await env.CATALOGUE_DB.prepare(`SELECT * FROM ingestion_run_retry_pauses WHERE ingestion_run_id = ?`)
+      .bind(run.id)
+      .first(),
+  ).toMatchObject({
     request_id: "required-source",
     retry_generation: 1,
     pause_reason: "source_transport_retries_exhausted",
@@ -111,36 +116,22 @@ test("resuming a transport-paused run opens a new bounded retry generation and c
     "retry_pause_resume_001",
     "https://recovering-official-source.invalid/unavailable-then-recovered",
   );
-  const started = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/resume`,
-    "POST",
-  );
+  const started = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(started.status).toBe(202);
   await started.body?.cancel();
-  await waitForEvidenceCondition(
-    run.id,
-    (current) => current.state === "paused",
-    12_000,
-  );
+  await waitForEvidenceCondition(run.id, (current) => current.state === "paused", 12_000);
 
   // Resuming the same Ingestion Run opens generation 2 for the exhausted
   // request under a new deterministic parent Workflow identity. Earlier
   // attempts are neither deleted nor renumbered: the recovered fetch is
   // attempt 5 in the same append-only history.
-  const resumedResponse = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/resume`,
-    "POST",
-  );
+  const resumedResponse = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(resumedResponse.status).toBe(202);
   await expect(resumedResponse.json()).resolves.toMatchObject({
     ingestion_run_id: run.id,
     workflow: { id: `evidence-${run.id}-resume-1` },
   });
-  const completed = await waitForEvidenceCondition(
-    run.id,
-    (current) => current.state === "parsing",
-    12_000,
-  );
+  const completed = await waitForEvidenceCondition(run.id, (current) => current.state === "parsing", 12_000);
   expect(completed).toMatchObject({
     state: "parsing",
     failure_code: null,
@@ -161,30 +152,38 @@ test("resuming a transport-paused run opens a new bounded retry generation and c
     { attempt_number: 5, outcome: "success" },
   ]);
 
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT state, retry_generation FROM source_requests
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT state, retry_generation FROM source_requests
      WHERE ingestion_run_id = ? AND request_id = 'required-source'`,
-  ).bind(run.id).first()).toMatchObject({
+    )
+      .bind(run.id)
+      .first(),
+  ).toMatchObject({
     state: "observed",
     retry_generation: 2,
   });
   const transitions = await env.CATALOGUE_DB.prepare(
     `SELECT from_state, to_state FROM ingestion_run_transitions
      WHERE ingestion_run_id = ? ORDER BY sequence`,
-  ).bind(run.id).all<{ from_state: string | null; to_state: string }>();
-  expect(
-    transitions.results.map((row) => `${row.from_state}->${row.to_state}`),
-  ).toEqual([
+  )
+    .bind(run.id)
+    .all<{ from_state: string | null; to_state: string }>();
+  expect(transitions.results.map((row) => `${row.from_state}->${row.to_state}`)).toEqual([
     "null->collecting",
     "collecting->paused",
     "paused->collecting",
     "collecting->parsing",
   ]);
   // The immutable pause record survives the resume as audit history.
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM ingestion_run_retry_pauses
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count FROM ingestion_run_retry_pauses
      WHERE ingestion_run_id = ?`,
-  ).bind(run.id).first("count")).toBe(1);
+    )
+      .bind(run.id)
+      .first("count"),
+  ).toBe(1);
 });
 
 test("a captured request crosses a retry pause without another Official Source fetch", async () => {
@@ -202,21 +201,14 @@ test("a captured request crosses a retry pause without another Official Source f
       },
       {
         id: "exhausting-source",
-        url:
-          "https://staged-exhaust-official-source.invalid/unavailable-then-recovered",
+        url: "https://staged-exhaust-official-source.invalid/unavailable-then-recovered",
       },
     ],
   });
   expect(created.status).toBe(201);
   const run = await created.json<{ id: string }>();
-  const identity = await captureOperationIdentity(
-    run.id,
-    "captured-source",
-    1,
-  );
-  const bytes = new TextEncoder().encode(
-    '{"cards":[{"card_number":"OP01-004"}]}',
-  );
+  const identity = await captureOperationIdentity(run.id, "captured-source", 1);
+  const bytes = new TextEncoder().encode('{"cards":[{"card_number":"OP01-004"}]}');
   await env.EVIDENCE_OBJECTS.put(identity.objectKey, bytes, {
     onlyIf: { etagDoesNotMatch: "*" },
     httpMetadata: { contentType: "application/json" },
@@ -234,42 +226,19 @@ test("a captured request crosses a retry pause without another Official Source f
       'application/json'
     )`,
   )
-    .bind(
-      identity.attemptId,
-      run.id,
-      identity.snapshotId,
-      identity.objectKey,
-      now,
-      now,
-    )
+    .bind(identity.attemptId, run.id, identity.snapshotId, identity.objectKey, now, now)
     .run();
 
-  const started = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/resume`,
-    "POST",
-  );
+  const started = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(started.status).toBe(202);
   await started.body?.cancel();
-  await waitForEvidenceCondition(
-    run.id,
-    (current) => current.state === "paused",
-    15_000,
-  );
+  await waitForEvidenceCondition(run.id, (current) => current.state === "paused", 15_000);
 
-  const resumed = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/resume`,
-    "POST",
-  );
+  const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(resumed.status).toBe(202);
   await resumed.body?.cancel();
-  const completed = await waitForEvidenceCondition(
-    run.id,
-    (current) => current.state === "parsing",
-    15_000,
-  );
-  expect(completed.snapshots.map(({ id }) => id)).toContain(
-    identity.snapshotId,
-  );
+  const completed = await waitForEvidenceCondition(run.id, (current) => current.state === "parsing", 15_000);
+  expect(completed.snapshots.map(({ id }) => id)).toContain(identity.snapshotId);
 
   // The staged capture crossed the pause untouched: one successful attempt,
   // no transport call, and only the exhausted request opened generation 2.
@@ -279,20 +248,17 @@ test("a captured request crosses a retry pause without another Official Source f
       .map(({ attempt_number, outcome }) => ({ attempt_number, outcome })),
   ).toEqual([{ attempt_number: 1, outcome: "success" }]);
   expect(
-    completed.diagnostics
-      .filter(({ request_id }) => request_id === "exhausting-source")
-      .map(({ outcome }) => outcome),
-  ).toEqual([
-    "http_failure",
-    "http_failure",
-    "http_failure",
-    "http_failure",
-    "success",
-  ]);
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT request_id, state, retry_generation FROM source_requests
+    completed.diagnostics.filter(({ request_id }) => request_id === "exhausting-source").map(({ outcome }) => outcome),
+  ).toEqual(["http_failure", "http_failure", "http_failure", "http_failure", "success"]);
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT request_id, state, retry_generation FROM source_requests
      WHERE ingestion_run_id = ? ORDER BY request_id`,
-  ).bind(run.id).all().then(({ results }) => results)).toEqual([
+    )
+      .bind(run.id)
+      .all()
+      .then(({ results }) => results),
+  ).toEqual([
     {
       request_id: "captured-source",
       state: "observed",
@@ -307,26 +273,17 @@ test("a captured request crosses a retry pause without another Official Source f
 });
 
 test("network failure exhaustion pauses with the network classification", async () => {
-  const run = await createCollection(
-    "retry_pause_network_001",
-    "https://network-pause-official-source.invalid/cards",
-  );
+  const run = await createCollection("retry_pause_network_001", "https://network-pause-official-source.invalid/cards");
   const unreachableTransport = {
     fetch: async () => {
       throw new TypeError("synthetic connection reset");
     },
   } as unknown as Fetcher;
   const evidenceRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-  const request = (
-    await pendingEvidenceRequests(env.CATALOGUE_DB, run.id)
-  )[0];
+  const request = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
   if (request === undefined) throw new Error("missing evidence request");
   for (let attempt = 1; attempt <= 4; attempt += 1) {
-    const prepared = await prepareCaptureAttempt(
-      env.CATALOGUE_DB,
-      evidenceRun,
-      request,
-    );
+    const prepared = await prepareCaptureAttempt(env.CATALOGUE_DB, evidenceRun, request);
     if (prepared.kind !== "attempt") {
       throw new Error(`unexpected preparation result ${prepared.kind}`);
     }
@@ -356,9 +313,7 @@ test("network failure exhaustion pauses with the network classification", async 
       actions: ["resume", "terminate"],
     },
   });
-  expect(
-    paused.diagnostics.map((diagnostic) => diagnostic.outcome),
-  ).toEqual([
+  expect(paused.diagnostics.map((diagnostic) => diagnostic.outcome)).toEqual([
     "network_failure",
     "network_failure",
     "network_failure",
@@ -371,20 +326,11 @@ test("an empty Retry-After header is ignored rather than read as zero", async ()
     "retry_pause_empty_retry_after_001",
     "https://empty-retry-after-official-source.invalid/retry-after-empty",
   );
-  const response = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/resume`,
-    "POST",
-  );
+  const response = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(response.status).toBe(202);
   await response.body?.cancel();
-  const paused = await waitForEvidenceCondition(
-    run.id,
-    (current) => current.state === "paused",
-    20_000,
-  );
+  const paused = await waitForEvidenceCondition(run.id, (current) => current.state === "paused", 20_000);
   // An empty Retry-After carries no timing instruction: the audit records
   // no retry_after_ms and the retry waits on the exponential backoff.
-  expect(
-    paused.diagnostics.map((diagnostic) => diagnostic.retry_after_ms),
-  ).toEqual([null, null, null, null]);
+  expect(paused.diagnostics.map((diagnostic) => diagnostic.retry_after_ms)).toEqual([null, null, null, null]);
 });

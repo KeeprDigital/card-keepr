@@ -21,4 +21,4 @@ export {
   stripCuratedRevisionEffects,
   supersedeCuratedRevision,
   validateCuratedRevision,
-} from "../curated-revisions";
+} from "./curated-revisions";

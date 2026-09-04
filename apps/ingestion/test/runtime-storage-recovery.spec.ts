@@ -4,11 +4,9 @@ import {
   captureOperationIdentity,
   capturePreparedAttempt,
   prepareCaptureAttempt,
-} from "../../../src/catalogue/source-evidence-capture";
-import {
   pendingEvidenceRequests,
   requiredEvidenceRun,
-} from "../../../src/catalogue/source-evidence-repository";
+} from "../../../src/catalogue/source-evidence";
 import {
   administrationRequest,
   createCollection,
@@ -21,15 +19,8 @@ import {
 installRuntimeSuite();
 
 test("R2 recovery outages pause the run and resume completes the same capture", async () => {
-  const run = await createCollection(
-    "source_recovery_r2_outage_001",
-    "https://official-source.invalid/cards",
-  );
-  const identity = await captureOperationIdentity(
-    run.id,
-    "required-source",
-    1,
-  );
+  const run = await createCollection("source_recovery_r2_outage_001", "https://official-source.invalid/cards");
+  const identity = await captureOperationIdentity(run.id, "required-source", 1);
   const now = new Date().toISOString();
   await env.CATALOGUE_DB.prepare(
     `INSERT INTO source_capture_operations (
@@ -43,22 +34,11 @@ test("R2 recovery outages pause the run and resume completes the same capture", 
       'application/json'
     )`,
   )
-    .bind(
-      identity.attemptId,
-      run.id,
-      identity.snapshotId,
-      identity.objectKey,
-      now,
-      now,
-    )
+    .bind(identity.attemptId, run.id, identity.snapshotId, identity.objectKey, now, now)
     .run();
   const outageBucket = new Proxy(env.EVIDENCE_OBJECTS, {
     get(target, property) {
-      if (
-        property === "get" ||
-        property === "put" ||
-        property === "createMultipartUpload"
-      ) {
+      if (property === "get" || property === "put" || property === "createMultipartUpload") {
         return async () => {
           throw new Error("synthetic R2 outage");
         };
@@ -68,17 +48,11 @@ test("R2 recovery outages pause the run and resume completes the same capture", 
     },
   });
   const evidenceRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-  const request = (
-    await pendingEvidenceRequests(env.CATALOGUE_DB, run.id)
-  )[0];
+  const request = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
   if (request === undefined) throw new Error("missing evidence request");
 
   for (let attempt = 1; attempt <= 4; attempt += 1) {
-    const prepared = await prepareCaptureAttempt(
-      env.CATALOGUE_DB,
-      evidenceRun,
-      request,
-    );
+    const prepared = await prepareCaptureAttempt(env.CATALOGUE_DB, evidenceRun, request);
     if (prepared.kind !== "attempt") {
       throw new Error(`unexpected preparation result ${prepared.kind}`);
     }
@@ -96,21 +70,29 @@ test("R2 recovery outages pause the run and resume completes the same capture", 
   // Exhausting the bounded storage retries pauses the run with its own
   // reason instead of failing the request: transient R2 problems do not
   // destroy the collection attempt.
-  expect(await env.CATALOGUE_DB.prepare(
-    "SELECT state FROM ingestion_runs WHERE id = ?",
-  ).bind(run.id).first("state")).toBe("paused");
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT pause_reason, failure_classification, retry_generation
+  expect(
+    await env.CATALOGUE_DB.prepare("SELECT state FROM ingestion_runs WHERE id = ?").bind(run.id).first("state"),
+  ).toBe("paused");
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT pause_reason, failure_classification, retry_generation
      FROM ingestion_run_retry_pauses WHERE ingestion_run_id = ?`,
-  ).bind(run.id).first()).toMatchObject({
+    )
+      .bind(run.id)
+      .first(),
+  ).toMatchObject({
     pause_reason: "source_storage_retries_exhausted",
     failure_classification: "storage_failure",
     retry_generation: 1,
   });
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT state, failure_code FROM source_requests
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT state, failure_code FROM source_requests
      WHERE ingestion_run_id = ? AND request_id = 'required-source'`,
-  ).bind(run.id).first()).toMatchObject({
+    )
+      .bind(run.id)
+      .first(),
+  ).toMatchObject({
     state: "pending",
     failure_code: null,
   });
@@ -123,9 +105,7 @@ test("R2 recovery outages pause the run and resume completes the same capture", 
     failure_code: null,
   });
   expect(completed.snapshots).toHaveLength(1);
-  expect(
-    completed.diagnostics.map((diagnostic) => diagnostic.outcome),
-  ).toEqual([
+  expect(completed.diagnostics.map((diagnostic) => diagnostic.outcome)).toEqual([
     "storage_failure",
     "storage_failure",
     "storage_failure",
@@ -139,14 +119,8 @@ test("resume recovers the deterministic object after an upload-before-D1 restart
     "source_restart_boundary_001",
     "https://restart-official-source.invalid/must-not-refetch",
   );
-  const identity = await captureOperationIdentity(
-    run.id,
-    "required-source",
-    1,
-  );
-  const bytes = new TextEncoder().encode(
-    '{"cards":[{"card_number":"OP01-001"}]}',
-  );
+  const identity = await captureOperationIdentity(run.id, "required-source", 1);
+  const bytes = new TextEncoder().encode('{"cards":[{"card_number":"OP01-001"}]}');
   await env.EVIDENCE_OBJECTS.put(identity.objectKey, bytes, {
     onlyIf: { etagDoesNotMatch: "*" },
     httpMetadata: { contentType: "application/json" },
@@ -164,14 +138,7 @@ test("resume recovers the deterministic object after an upload-before-D1 restart
       'application/json'
     )`,
   )
-    .bind(
-      identity.attemptId,
-      run.id,
-      identity.snapshotId,
-      identity.objectKey,
-      now,
-      now,
-    )
+    .bind(identity.attemptId, run.id, identity.snapshotId, identity.objectKey, now, now)
     .run();
 
   const completed = await resumeCollection(run.id);
@@ -229,14 +196,10 @@ test("reparse retries recover one staged immutable observation set while new int
        SELECT RAISE(FAIL, 'synthetic_observation_d1_outage');
      END`,
   ).run();
-  const interrupted = await administrationRequest(
-    `/v1/source-snapshots/${snapshot.id}/observations`,
-    "POST",
-    {
-      adapter_version: "fixture-one-piece-json@3",
-      idempotency_key: "reparse_intent_001",
-    },
-  );
+  const interrupted = await administrationRequest(`/v1/source-snapshots/${snapshot.id}/observations`, "POST", {
+    adapter_version: "fixture-one-piece-json@3",
+    idempotency_key: "reparse_intent_001",
+  });
   expect(interrupted.status).toBe(500);
   const staged = await env.CATALOGUE_DB.prepare(
     `SELECT state, content_object_key FROM source_parse_operations
@@ -246,38 +209,21 @@ test("reparse retries recover one staged immutable observation set while new int
     .bind(snapshot.id, "fixture-one-piece-json@3", "reparse_intent_001")
     .first<{ state: string; content_object_key: string }>();
   expect(staged?.state).toBe("uploaded");
-  expect(
-    await env.EVIDENCE_OBJECTS.head(staged!.content_object_key),
-  ).not.toBeNull();
-  await env.CATALOGUE_DB.prepare(
-    "DROP TRIGGER fail_observation_set_insert",
-  ).run();
+  expect(await env.EVIDENCE_OBJECTS.head(staged!.content_object_key)).not.toBeNull();
+  await env.CATALOGUE_DB.prepare("DROP TRIGGER fail_observation_set_insert").run();
 
   const retriedResponses = await Promise.all([
-    administrationRequest(
-      `/v1/source-snapshots/${snapshot.id}/observations`,
-      "POST",
-      {
-        adapter_version: "fixture-one-piece-json@3",
-        idempotency_key: "reparse_intent_001",
-      },
-    ),
-    administrationRequest(
-      `/v1/source-snapshots/${snapshot.id}/observations`,
-      "POST",
-      {
-        adapter_version: "fixture-one-piece-json@3",
-        idempotency_key: "reparse_intent_001",
-      },
-    ),
+    administrationRequest(`/v1/source-snapshots/${snapshot.id}/observations`, "POST", {
+      adapter_version: "fixture-one-piece-json@3",
+      idempotency_key: "reparse_intent_001",
+    }),
+    administrationRequest(`/v1/source-snapshots/${snapshot.id}/observations`, "POST", {
+      adapter_version: "fixture-one-piece-json@3",
+      idempotency_key: "reparse_intent_001",
+    }),
   ]);
-  expect(retriedResponses.map((response) => response.status)).toEqual([
-    201,
-    201,
-  ]);
-  const [reparsed, replayed] = await Promise.all(
-    retriedResponses.map((response) => response.json<ObservationSet>()),
-  );
+  expect(retriedResponses.map((response) => response.status)).toEqual([201, 201]);
+  const [reparsed, replayed] = await Promise.all(retriedResponses.map((response) => response.json<ObservationSet>()));
   if (reparsed === undefined || replayed === undefined) {
     throw new Error("missing replayed Source Observation Set");
   }
@@ -290,25 +236,17 @@ test("reparse retries recover one staged immutable observation set while new int
   expect(reparsed.id).not.toBe(originalSet.id);
   expect(reparsed.object_key).not.toBe(originalSet.object_key);
 
-  const appendedResponse = await administrationRequest(
-    `/v1/source-snapshots/${snapshot.id}/observations`,
-    "POST",
-    {
-      adapter_version: "fixture-one-piece-json@3",
-      idempotency_key: "reparse_intent_002",
-    },
-  );
+  const appendedResponse = await administrationRequest(`/v1/source-snapshots/${snapshot.id}/observations`, "POST", {
+    adapter_version: "fixture-one-piece-json@3",
+    idempotency_key: "reparse_intent_002",
+  });
   expect(appendedResponse.status).toBe(201);
   const appended = await appendedResponse.json<ObservationSet>();
   expect(appended.id).not.toBe(reparsed.id);
 
   const shown = await showCollection(run.id);
   expect(shown.observation_sets).toHaveLength(3);
-  expect(shown.observation_sets).toEqual([
-    originalSet,
-    reparsed,
-    appended,
-  ]);
+  expect(shown.observation_sets).toEqual([originalSet, reparsed, appended]);
   const objects = await env.EVIDENCE_OBJECTS.list({
     prefix: "source-observations/",
   });
@@ -317,9 +255,5 @@ test("reparse retries recover one staged immutable observation set while new int
       .map((object) => object.key)
       .filter((key) => !objectsBeforeReparse.has(key))
       .sort(),
-  ).toEqual(
-    [reparsed, appended]
-      .map((set) => set.object_key)
-      .sort(),
-  );
+  ).toEqual([reparsed, appended].map((set) => set.object_key).sort());
 });

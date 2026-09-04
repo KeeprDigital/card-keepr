@@ -297,7 +297,7 @@ test("only the guarded CLI provider can select release mode", () => {
 
 test("owner preparation is durable before dispatch and post-migration failure is retained", () => {
   const route = readFileSync("apps/ingestion/src/index.ts", "utf8");
-  const domain = readFileSync("src/catalogue/production-release.ts", "utf8");
+  const domain = readFileSync("src/catalogue/ingestion/production-release.ts", "utf8");
   const script = readFileSync("scripts/production-release.mjs", "utf8");
   assert.match(route, /POST" && url\.pathname === "\/v1\/production-releases"/u);
   assert.match(domain, /prepare_production_release/u);

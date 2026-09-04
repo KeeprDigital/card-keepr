@@ -3,25 +3,13 @@ import { expect, test } from "vitest";
 import {
   parseCapturedRequest,
   prepareCaptureAttempt,
-} from "../../../src/catalogue/source-evidence-capture";
-import {
   finalizeEvidenceRun,
   pendingEvidenceRequests,
   requiredEvidenceRun,
-} from "../../../src/catalogue/source-evidence-repository";
-import {
-  officialSourceDiscoveryRequests,
-} from "../../../src/catalogue/product-release-source-adapters";
-import {
-  administrationRequest,
-  type CollectionDocument,
-  installRuntimeSuite,
-  showCollection,
-} from "./runtime-helpers";
-import {
-  fusionWorldRequestCapacity,
-  pauseRunAtCapacity,
-} from "./capacity-pause-helpers";
+} from "../../../src/catalogue/source-evidence";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
+import { administrationRequest, type CollectionDocument, installRuntimeSuite, showCollection } from "./runtime-helpers";
+import { fusionWorldRequestCapacity, pauseRunAtCapacity } from "./capacity-pause-helpers";
 
 installRuntimeSuite();
 
@@ -29,19 +17,19 @@ test("reaching request capacity pauses the Ingestion Run without failing retaine
   // The retained discovery derives an overflow batch of stage requests that
   // no longer fits: admission is rejected all-or-nothing and the Ingestion
   // Run pauses instead of converting retained work into failures.
-  const { runId, storedRun, root, snapshotId } = await pauseRunAtCapacity(
-    "request_capacity_pause_001",
-  );
+  const { runId, storedRun, root, snapshotId } = await pauseRunAtCapacity("request_capacity_pause_001");
 
   const pausedRun = await env.CATALOGUE_DB.prepare(
     `SELECT state, terminal_at, failure_code, progress_json
      FROM ingestion_runs WHERE id = ?`,
-  ).bind(runId).first<{
-    state: string;
-    terminal_at: string | null;
-    failure_code: string | null;
-    progress_json: string;
-  }>();
+  )
+    .bind(runId)
+    .first<{
+      state: string;
+      terminal_at: string | null;
+      failure_code: string | null;
+      progress_json: string;
+    }>();
   expect(pausedRun).toMatchObject({
     state: "paused",
     terminal_at: null,
@@ -54,26 +42,38 @@ test("reaching request capacity pauses the Ingestion Run without failing retaine
 
   // No request was failed, the parent stays captured with its retained
   // Source Snapshot, and no part of the overflow batch was admitted.
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM source_requests
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count FROM source_requests
      WHERE ingestion_run_id = ? AND state = 'failed'`,
-  ).bind(runId).first("count")).toBe(0);
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT state, source_snapshot_id FROM source_requests
+    )
+      .bind(runId)
+      .first("count"),
+  ).toBe(0);
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT state, source_snapshot_id FROM source_requests
      WHERE ingestion_run_id = ? AND request_id = ?`,
-  ).bind(runId, root.request_id).first()).toMatchObject({
+    )
+      .bind(runId, root.request_id)
+      .first(),
+  ).toMatchObject({
     state: "captured",
     source_snapshot_id: snapshotId,
   });
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM source_requests
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count FROM source_requests
      WHERE ingestion_run_id = ?`,
-  ).bind(runId).first("count")).toBe(fusionWorldRequestCapacity);
+    )
+      .bind(runId)
+      .first("count"),
+  ).toBe(fusionWorldRequestCapacity);
 
   // The pause facts are persisted for capacity extension and inspection.
-  const pause = await env.CATALOGUE_DB.prepare(
-    `SELECT * FROM ingestion_run_capacity_pauses WHERE ingestion_run_id = ?`,
-  ).bind(runId).first<Record<string, unknown>>();
+  const pause = await env.CATALOGUE_DB.prepare(`SELECT * FROM ingestion_run_capacity_pauses WHERE ingestion_run_id = ?`)
+    .bind(runId)
+    .first<Record<string, unknown>>();
   expect(pause).toMatchObject({
     pause_reason: "source_request_capacity_exhausted",
     source_lineage: "fusion-world-en",
@@ -88,56 +88,58 @@ test("reaching request capacity pauses the Ingestion Run without failing retaine
   expect(typeof pause?.paused_at).toBe("string");
 
   // The pause is a recorded lifecycle transition, not a terminal outcome.
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT from_state, to_state FROM ingestion_run_transitions
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT from_state, to_state FROM ingestion_run_transitions
      WHERE ingestion_run_id = ? ORDER BY sequence DESC LIMIT 1`,
-  ).bind(runId).first()).toMatchObject({
+    )
+      .bind(runId)
+      .first(),
+  ).toMatchObject({
     from_state: "collecting",
     to_state: "paused",
   });
 
   // The paused run retains the single active-run reservation, so another
   // Ingestion Run cannot start while it holds retained work.
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1`,
-  ).first("active_ingestion_run_id")).toBe(runId);
-  const competing = await administrationRequest(
-    "/v1/ingestion-runs/evidence",
-    "POST",
-    {
-      supported_game: "fusion-world",
-      source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@9",
-      idempotency_key: "request_capacity_pause_competitor_001",
-      requests: officialSourceDiscoveryRequests("fusion-world-en"),
-    },
-  );
+  expect(
+    await env.CATALOGUE_DB.prepare(`SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1`).first(
+      "active_ingestion_run_id",
+    ),
+  ).toBe(runId);
+  const competing = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
+    supported_game: "fusion-world",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fusion-world-en@9",
+    idempotency_key: "request_capacity_pause_competitor_001",
+    requests: officialSourceDiscoveryRequests("fusion-world-en"),
+  });
   expect(competing.status).toBe(409);
   expect(await competing.json()).toMatchObject({ code: "active_ingestion_run" });
 
   // The collection barrier cannot finalize a paused run into any other state.
   await finalizeEvidenceRun(env.CATALOGUE_DB, runId);
-  expect(await env.CATALOGUE_DB.prepare(
-    "SELECT state FROM ingestion_runs WHERE id = ?",
-  ).bind(runId).first("state")).toBe("paused");
+  expect(
+    await env.CATALOGUE_DB.prepare("SELECT state FROM ingestion_runs WHERE id = ?").bind(runId).first("state"),
+  ).toBe("paused");
 
   // Replaying the durable parse step is idempotent: still paused, still one
   // immutable pause record.
-  await expect(parseCapturedRequest(
-    env.CATALOGUE_DB,
-    env.EVIDENCE_OBJECTS,
-    storedRun,
-    root,
-    snapshotId,
-  )).resolves.toMatchObject({ kind: "done", failure_code: null });
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM ingestion_run_capacity_pauses
+  await expect(
+    parseCapturedRequest(env.CATALOGUE_DB, env.EVIDENCE_OBJECTS, storedRun, root, snapshotId),
+  ).resolves.toMatchObject({ kind: "done", failure_code: null });
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count FROM ingestion_run_capacity_pauses
      WHERE ingestion_run_id = ?`,
-  ).bind(runId).first("count")).toBe(1);
+    )
+      .bind(runId)
+      .first("count"),
+  ).toBe(1);
 
   // The authenticated evidence status document reports the pause and the
   // minimum capacity facts needed to choose a meaningful extension.
-  const document = await showCollection(runId) as CollectionDocument & {
+  const document = (await showCollection(runId)) as CollectionDocument & {
     pause?: Record<string, unknown>;
   };
   expect(document.state).toBe("paused");
@@ -171,18 +173,20 @@ test("a paused Ingestion Run fails closed on every advancing operation", async (
   expect(pausedRun.state).toBe("paused");
 
   // No further capture or parse work is admitted while paused.
-  const pending = (await pendingEvidenceRequests(env.CATALOGUE_DB, runId))
-    .find((row) => row.state === "pending");
+  const pending = (await pendingEvidenceRequests(env.CATALOGUE_DB, runId)).find((row) => row.state === "pending");
   if (pending === undefined) throw new Error("pending filler request absent");
-  await expect(prepareCaptureAttempt(
-    env.CATALOGUE_DB,
-    pausedRun,
-    pending,
-  )).resolves.toEqual({ kind: "done", failure_code: null });
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM source_capture_operations
+  await expect(prepareCaptureAttempt(env.CATALOGUE_DB, pausedRun, pending)).resolves.toEqual({
+    kind: "done",
+    failure_code: null,
+  });
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count FROM source_capture_operations
      WHERE ingestion_run_id = ? AND request_id = ?`,
-  ).bind(runId, pending.request_id).first("count")).toBe(0);
+    )
+      .bind(runId, pending.request_id)
+      .first("count"),
+  ).toBe(0);
 
   // Reconciliation, evidence retry, approval, candidate rejection, and the
   // generic retry interface all refuse a paused run. Collection resume is
@@ -219,22 +223,14 @@ test("a paused Ingestion Run fails closed on every advancing operation", async (
       },
       "run_not_awaiting_approval",
     ],
-    [
-      `/v1/ingestion-runs/${runId}/retry`,
-      { idempotency_key: "paused_gate_retry_001" },
-      "source_run_not_terminal",
-    ],
+    [`/v1/ingestion-runs/${runId}/retry`, { idempotency_key: "paused_gate_retry_001" }, "source_run_not_terminal"],
   ];
   for (const [pathname, body, code] of gated) {
     const response = await administrationRequest(pathname, "POST", body);
     const problem = await response.json<{ code?: string }>();
-    expect({ pathname, status: response.status, code: problem.code })
-      .toEqual({ pathname, status: 409, code });
+    expect({ pathname, status: response.status, code: problem.code }).toEqual({ pathname, status: 409, code });
   }
-  const candidate = await administrationRequest(
-    `/v1/ingestion-runs/${runId}/candidate`,
-    "GET",
-  );
+  const candidate = await administrationRequest(`/v1/ingestion-runs/${runId}/candidate`, "GET");
   expect(candidate.status).toBe(409);
   expect(await candidate.json()).toMatchObject({
     code: "candidate_not_approvable",
@@ -242,18 +238,26 @@ test("a paused Ingestion Run fails closed on every advancing operation", async (
 
   // None of the refused operations disturbed the paused run, its retained
   // requests, or the single active-run reservation.
-  expect(await env.CATALOGUE_DB.prepare(
-    "SELECT state, terminal_at, failure_code FROM ingestion_runs WHERE id = ?",
-  ).bind(runId).first()).toMatchObject({
+  expect(
+    await env.CATALOGUE_DB.prepare("SELECT state, terminal_at, failure_code FROM ingestion_runs WHERE id = ?")
+      .bind(runId)
+      .first(),
+  ).toMatchObject({
     state: "paused",
     terminal_at: null,
     failure_code: null,
   });
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM source_requests
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count FROM source_requests
      WHERE ingestion_run_id = ? AND state = 'failed'`,
-  ).bind(runId).first("count")).toBe(0);
-  expect(await env.CATALOGUE_DB.prepare(
-    "SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1",
-  ).first("active_ingestion_run_id")).toBe(runId);
+    )
+      .bind(runId)
+      .first("count"),
+  ).toBe(0);
+  expect(
+    await env.CATALOGUE_DB.prepare("SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1").first(
+      "active_ingestion_run_id",
+    ),
+  ).toBe(runId);
 }, 30_000);

@@ -1,7 +1,5 @@
 import { expect, test } from "vitest";
-import {
-  officialSourceDiscoveryRequests,
-} from "../../../src/catalogue/product-release-source-adapters";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import {
   installReconciliationSuite,
   testEnv,
@@ -21,17 +19,10 @@ import {
 installReconciliationSuite();
 
 test("a complete Product fixture publishes separated release and distribution records atomically", async () => {
-  const run = await collect(
-    "/reconciliation/product-release",
-    "product-release-complete-fixture",
-  );
+  const run = await collect("/reconciliation/product-release", "product-release-complete-fixture");
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
-  expect(
-    Array.isArray(reconciled.document.warnings)
-      ? reconciled.document.warnings
-      : [],
-  ).toContainEqual(
+  expect(Array.isArray(reconciled.document.warnings) ? reconciled.document.warnings : []).toContainEqual(
     expect.objectContaining({
       code: "product_relationship_unresolved",
       relationship_value: "ST-15 fuzzy label",
@@ -39,21 +30,15 @@ test("a complete Product fixture publishes separated release and distribution re
   );
   const published = await approve(reconciled.document);
   expect(published.response.status).toBe(200);
-  const revisionId = requiredString(
-    published.document,
-    "resulting_revision_id",
-  );
-  const [products, releases, contexts, relationships, printings] =
-    await Promise.all([
-      exportComponentRecords(revisionId, "products"),
-      exportComponentRecords(revisionId, "releases"),
-      exportComponentRecords(revisionId, "distribution-contexts"),
-      exportComponentRecords(revisionId, "relationships"),
-      exportComponentRecords(revisionId, "printings"),
-    ]);
-  const product = products.find(
-    (entry) => entry.official_code === "ST-15",
-  );
+  const revisionId = requiredString(published.document, "resulting_revision_id");
+  const [products, releases, contexts, relationships, printings] = await Promise.all([
+    exportComponentRecords(revisionId, "products"),
+    exportComponentRecords(revisionId, "releases"),
+    exportComponentRecords(revisionId, "distribution-contexts"),
+    exportComponentRecords(revisionId, "relationships"),
+    exportComponentRecords(revisionId, "printings"),
+  ]);
+  const product = products.find((entry) => entry.official_code === "ST-15");
   expect(product).toMatchObject({
     official_code: "ST-15",
     name: "Starter Deck RED Edward.Newgate",
@@ -65,11 +50,7 @@ test("a complete Product fixture publishes separated release and distribution re
   });
   if (product === undefined) throw new Error("ST-15 Product missing");
   const productId = requiredString(product, "id");
-  const release = releases.find(
-    (entry) =>
-      entry.product_id === productId &&
-      entry.region === "EN-OCEANIA",
-  );
+  const release = releases.find((entry) => entry.product_id === productId && entry.region === "EN-OCEANIA");
   expect(release).toMatchObject({
     product_id: productId,
     region: "EN-OCEANIA",
@@ -86,9 +67,7 @@ test("a complete Product fixture publishes separated release and distribution re
     ]),
   );
   const context = contexts.find(
-    (entry) =>
-      entry.product_id === productId &&
-      entry.label === "Championship 2026 Participation Pack",
+    (entry) => entry.product_id === productId && entry.label === "Championship 2026 Participation Pack",
   );
   expect(context).toMatchObject({
     kind: "tournament_pack",
@@ -97,18 +76,16 @@ test("a complete Product fixture publishes separated release and distribution re
   });
   if (context === undefined) throw new Error("Distribution Context missing");
   const contextId = requiredString(context, "id");
-  const productRelationship = relationships.find(
-    (relationship) => {
-      const to = relationship.to;
-      return (
-        to !== null &&
-        typeof to === "object" &&
-        !Array.isArray(to) &&
-        (to as Record<string, unknown>).type === "product" &&
-        (to as Record<string, unknown>).id === productId
-      );
-    },
-  );
+  const productRelationship = relationships.find((relationship) => {
+    const to = relationship.to;
+    return (
+      to !== null &&
+      typeof to === "object" &&
+      !Array.isArray(to) &&
+      (to as Record<string, unknown>).type === "product" &&
+      (to as Record<string, unknown>).id === productId
+    );
+  });
   expect(productRelationship).toEqual(
     expect.objectContaining({
       from: { type: "printing", id: expect.any(String) },
@@ -145,102 +122,71 @@ test("a complete Product fixture publishes separated release and distribution re
       product,
       release,
       context,
-      relationships: relationships.filter(
-        (relationship) => {
-          const relationshipFrom = relationship.from;
-          return (
-            relationshipFrom !== null &&
-            typeof relationshipFrom === "object" &&
-            !Array.isArray(relationshipFrom) &&
-            (relationshipFrom as Record<string, unknown>).type ===
-              "printing" &&
-            (relationshipFrom as Record<string, unknown>).id === printingId
-          );
-        },
-      ),
+      relationships: relationships.filter((relationship) => {
+        const relationshipFrom = relationship.from;
+        return (
+          relationshipFrom !== null &&
+          typeof relationshipFrom === "object" &&
+          !Array.isArray(relationshipFrom) &&
+          (relationshipFrom as Record<string, unknown>).type === "printing" &&
+          (relationshipFrom as Record<string, unknown>).id === printingId
+        );
+      }),
     }),
   ).not.toContain("starter-deck-card-list");
-  expect(
-    relationships.some(
-      (relationship) =>
-        relationship.relationship_value === "ST-15 fuzzy label",
-    ),
-  ).toBe(false);
+  expect(relationships.some((relationship) => relationship.relationship_value === "ST-15 fuzzy label")).toBe(false);
 });
 
 test("a Fusion Leader publishes immutable role-labelled Printing Images and export links", async () => {
-  const run = await collect(
-    "/reconciliation/fusion-leader-images",
-    `fusion-leader-images-${crypto.randomUUID()}`,
-    {
-      game: "fusion-world",
-      lineage: "fusion-world-en",
-      adapter: "fixture-fusion-world-json@2",
-    },
-  );
+  const run = await collect("/reconciliation/fusion-leader-images", `fusion-leader-images-${crypto.randomUUID()}`, {
+    game: "fusion-world",
+    lineage: "fusion-world-en",
+    adapter: "fixture-fusion-world-json@2",
+  });
   const candidate = await reconcile(run.id);
   expect(candidate.response.status).toBe(200);
-  const leaderPrintingId = requiredString(
-    requiredFirst(candidate.document, "printings"),
-    "id",
-  );
+  const leaderPrintingId = requiredString(requiredFirst(candidate.document, "printings"), "id");
   const published = await approve(candidate.document);
-  expect(
-    published.response.status,
-    JSON.stringify(published.document),
-  ).toBe(200);
-  const revisionId = requiredString(
-    published.document,
-    "resulting_revision_id",
+  expect(published.response.status, JSON.stringify(published.document)).toBe(200);
+  const revisionId = requiredString(published.document, "resulting_revision_id");
+  const images = (await exportComponentRecords(revisionId, "printing-images")).filter(
+    ({ printing_id }) => printing_id === leaderPrintingId,
   );
-  const images = (
-    await exportComponentRecords(revisionId, "printing-images")
-  ).filter(({ printing_id }) => printing_id === leaderPrintingId);
   expect(images).toEqual([
     expect.objectContaining({
       type: "printing_image",
       role: "back",
-      content_sha256:
-        "eed832d958fc4054fffb3027319dcd914448475c226ce55ae8053a442ed1b2cf",
+      content_sha256: "eed832d958fc4054fffb3027319dcd914448475c226ce55ae8053a442ed1b2cf",
       id: expect.stringMatching(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u),
     }),
     expect.objectContaining({
       type: "printing_image",
       role: "front",
-      content_sha256:
-        "46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
+      content_sha256: "46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
       id: expect.stringMatching(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u),
     }),
   ]);
   for (const image of images) {
-    const object = await testEnv.PRINTING_IMAGES.get(
-      `printing-images/${image.content_sha256}`,
-    );
+    const object = await testEnv.PRINTING_IMAGES.get(`printing-images/${image.content_sha256}`);
     expect(object?.size).toBeGreaterThan(0);
     expect(object?.checksums.sha256).toBeDefined();
   }
 });
 
 test("distinct official Release events in one region retain stable public identities", async () => {
-  const run = await collect(
-    "/reconciliation/product-release-multiple-events",
-    "product-release-multiple-events",
-  );
+  const run = await collect("/reconciliation/product-release-multiple-events", "product-release-multiple-events");
   const candidate = await reconcile(run.id);
   expect(candidate.response.status).toBe(200);
   const published = await approve(candidate.document);
   expect(published.response.status).toBe(200);
-  const revisionId = requiredString(
-    published.document,
-    "resulting_revision_id",
+  const revisionId = requiredString(published.document, "resulting_revision_id");
+  const product = (await exportComponentRecords(revisionId, "products")).find(
+    ({ official_code }) => official_code === "ST-15",
   );
-  const product = (
-    await exportComponentRecords(revisionId, "products")
-  ).find(({ official_code }) => official_code === "ST-15");
   if (product === undefined) throw new Error("ST-15 Product missing");
-  const releases = (
-    await exportComponentRecords(revisionId, "releases")
-  ).filter(({ product_id }) => product_id === product.id);
+  const releases = (await exportComponentRecords(revisionId, "releases")).filter(
+    ({ product_id }) => product_id === product.id,
+  );
   expect(releases).toEqual([
     expect.objectContaining({
       event_key: "oceania-announcement",
@@ -259,20 +205,14 @@ test("distinct official Release events in one region retain stable public identi
 });
 
 test("a disappeared Distribution Context with no remaining lineage is not current", async () => {
-  const firstRun = await collect(
-    "/reconciliation/product-release",
-    "distribution-context-first-observation",
-  );
+  const firstRun = await collect("/reconciliation/product-release", "distribution-context-first-observation");
   const firstCandidate = await reconcile(firstRun.id);
   const firstPublished = await approve(firstCandidate.document);
   expect(firstPublished.response.status).toBe(200);
-  const firstRevisionId = requiredString(
-    firstPublished.document,
-    "resulting_revision_id",
+  const firstRevisionId = requiredString(firstPublished.document, "resulting_revision_id");
+  const firstContext = (await exportComponentRecords(firstRevisionId, "distribution-contexts")).find(
+    ({ label }) => label === "Championship 2026 Participation Pack",
   );
-  const firstContext = (
-    await exportComponentRecords(firstRevisionId, "distribution-contexts")
-  ).find(({ label }) => label === "Championship 2026 Participation Pack");
   expect(firstContext?.id).toEqual(expect.any(String));
 
   const missingRun = await collect(
@@ -291,29 +231,20 @@ test("a disappeared Distribution Context with no remaining lineage is not curren
     current: 0,
     source_lineages_json: "[]",
   });
-  const missingRevisionId = requiredString(
-    published.document,
-    "resulting_revision_id",
-  );
-  expect(
-    await exportComponentRecords(missingRevisionId, "distribution-contexts"),
-  ).not.toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ id: firstContext?.id }),
-    ]),
+  const missingRevisionId = requiredString(published.document, "resulting_revision_id");
+  expect(await exportComponentRecords(missingRevisionId, "distribution-contexts")).not.toEqual(
+    expect.arrayContaining([expect.objectContaining({ id: firstContext?.id })]),
   );
 }, 30_000);
 
 test("registered Product detail evidence outranks its conflicting listing through publication", async () => {
-  const requests = officialSourceDiscoveryRequests("fusion-world-en").map(
-    (request) => ({
-      ...request,
-      headers: {
-        ...request.headers,
-        "user-agent": "card-keepr-product-authority",
-      },
-    }),
-  );
+  const requests = officialSourceDiscoveryRequests("fusion-world-en").map((request) => ({
+    ...request,
+    headers: {
+      ...request.headers,
+      "user-agent": "card-keepr-product-authority",
+    },
+  }));
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
@@ -323,20 +254,13 @@ test("registered Product detail evidence outranks its conflicting listing throug
   });
   expect(started.response.status).toBe(201);
   const runId = requiredString(started.document, "id");
-  expect(
-    (
-      await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})
-    ).response.status,
-  ).toBe(202);
+  expect((await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
   await waitForRunState(runId, "awaiting_approval", 20_000);
   const candidate = await get(`/v1/ingestion-runs/${runId}/candidate`);
   expect(candidate.response.status).toBe(200);
   const published = await approve(candidate.document);
   expect(published.response.status).toBe(200);
-  const revisionId = requiredString(
-    published.document,
-    "resulting_revision_id",
-  );
+  const revisionId = requiredString(published.document, "resulting_revision_id");
   const productDocument = await testEnv.CATALOGUE_DB.prepare(
     `SELECT document_json
      FROM revision_products
@@ -368,75 +292,49 @@ test("a registered code-less Product refresh preserves its established code", as
   // titles, so a code cannot disappear while the published name stays
   // identical; the digimon-en listing keeps publishing explicit
   // data-product-code attributes and exercises the code-preserving refresh.
-  const start = async (
-    state: "coded" | "codeless",
-  ) => {
-    const requests = officialSourceDiscoveryRequests("digimon-en").map(
-      (request) => ({
-        ...request,
-        headers: {
-          ...request.headers,
-          "user-agent": `card-keepr-product-identity-${state}`,
-        },
-      }),
-    );
+  const start = async (state: "coded" | "codeless") => {
+    const requests = officialSourceDiscoveryRequests("digimon-en").map((request) => ({
+      ...request,
+      headers: {
+        ...request.headers,
+        "user-agent": `card-keepr-product-identity-${state}`,
+      },
+    }));
     const started = await post("/v1/ingestion-runs/evidence", {
       supported_game: "digimon",
       source_lineage: "digimon-en",
       adapter_version: "digimon-en@7",
-      idempotency_key:
-        `registered-product-identity-${state}-${crypto.randomUUID()}`,
+      idempotency_key: `registered-product-identity-${state}-${crypto.randomUUID()}`,
       requests,
     });
     expect(started.response.status).toBe(201);
     const runId = requiredString(started.document, "id");
-    expect(
-      (
-        await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})
-      ).response.status,
-    ).toBe(202);
-    const runDocument = await waitForRunState(
-      runId,
-      "awaiting_approval",
-      20_000,
-    );
+    expect((await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
+    const runDocument = await waitForRunState(runId, "awaiting_approval", 20_000);
     return {
       candidate: await get(`/v1/ingestion-runs/${runId}/candidate`),
       runDocument,
     };
   };
 
-  const { candidate: firstCandidate } = await start(
-    "coded",
-  );
+  const { candidate: firstCandidate } = await start("coded");
   expect(firstCandidate.response.status).toBe(200);
   const firstPublication = await approve(firstCandidate.document);
   expect(firstPublication.response.status).toBe(200);
-  const firstRevision = requiredString(
-    firstPublication.document,
-    "resulting_revision_id",
+  const firstRevision = requiredString(firstPublication.document, "resulting_revision_id");
+  const firstProduct = (await exportComponentRecords(firstRevision, "products")).find(
+    ({ official_code }) => official_code === "FB-STABLE",
   );
-  const firstProduct = (
-    await exportComponentRecords(firstRevision, "products")
-  ).find(({ official_code }) => official_code === "FB-STABLE");
   expect(firstProduct).toMatchObject({
     id: expect.any(String),
     name: "Stable Product Identity",
   });
 
-  const { candidate: refreshCandidate } = await start(
-    "codeless",
-  );
+  const { candidate: refreshCandidate } = await start("codeless");
   expect(refreshCandidate.response.status).toBe(200);
   const refreshPublication = await approve(refreshCandidate.document);
-  expect(
-    refreshPublication.response.status,
-    JSON.stringify(refreshPublication.document),
-  ).toBe(200);
-  const refreshRevision = requiredString(
-    refreshPublication.document,
-    "resulting_revision_id",
-  );
+  expect(refreshPublication.response.status, JSON.stringify(refreshPublication.document)).toBe(200);
+  const refreshRevision = requiredString(refreshPublication.document, "resulting_revision_id");
   expect(
     await testEnv.CATALOGUE_DB.prepare(
       `SELECT json_extract(document_json, '$.data.official_code') AS official_code
@@ -448,9 +346,7 @@ test("a registered code-less Product refresh preserves its established code", as
       .first<{ official_code: string | null }>(),
   ).toEqual({ official_code: "FB-STABLE" });
   expect(
-    (await exportComponentRecords(refreshRevision, "products")).find(
-      ({ id }) => id === firstProduct?.id,
-    ),
+    (await exportComponentRecords(refreshRevision, "products")).find(({ id }) => id === firstProduct?.id),
   ).toMatchObject({
     official_code: "FB-STABLE",
     name: "Stable Product Identity",
@@ -458,15 +354,13 @@ test("a registered code-less Product refresh preserves its established code", as
 }, 45_000);
 
 test("a registered fuzzy Product link remains a review warning through publication", async () => {
-  const requests = officialSourceDiscoveryRequests("digimon-en").map(
-    (request) => ({
-      ...request,
-      headers: {
-        ...request.headers,
-        "user-agent": "card-keepr-product-fuzzy-warning",
-      },
-    }),
-  );
+  const requests = officialSourceDiscoveryRequests("digimon-en").map((request) => ({
+    ...request,
+    headers: {
+      ...request.headers,
+      "user-agent": "card-keepr-product-fuzzy-warning",
+    },
+  }));
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "digimon",
     source_lineage: "digimon-en",
@@ -476,17 +370,11 @@ test("a registered fuzzy Product link remains a review warning through publicati
   });
   expect(started.response.status).toBe(201);
   const runId = requiredString(started.document, "id");
-  expect(
-    (
-      await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})
-    ).response.status,
-  ).toBe(202);
+  expect((await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
   await waitForRunState(runId, "awaiting_approval", 20_000, 250);
   const candidate = await get(`/v1/ingestion-runs/${runId}/candidate`);
   expect(candidate.response.status).toBe(200);
-  expect(
-    (candidate.document.diff as { warnings?: unknown[] }).warnings,
-  ).toEqual(
+  expect((candidate.document.diff as { warnings?: unknown[] }).warnings).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
         code: "product_relationship_unresolved",
@@ -495,14 +383,8 @@ test("a registered fuzzy Product link remains a review warning through publicati
     ]),
   );
   const publication = await approve(candidate.document);
-  expect(
-    publication.response.status,
-    JSON.stringify(publication.document),
-  ).toBe(200);
-  const revisionId = requiredString(
-    publication.document,
-    "resulting_revision_id",
-  );
+  expect(publication.response.status, JSON.stringify(publication.document)).toBe(200);
+  const revisionId = requiredString(publication.document, "resulting_revision_id");
   expect(
     await testEnv.CATALOGUE_DB.prepare(
       `SELECT COUNT(*) AS count
@@ -514,8 +396,7 @@ test("a registered fuzzy Product link remains a review warning through publicati
   ).toEqual({ count: 0 });
   expect(
     (await exportComponentRecords(revisionId, "relationships")).some(
-      ({ relationship_value }) =>
-        relationship_value === "Possible Booster Product",
+      ({ relationship_value }) => relationship_value === "Possible Booster Product",
     ),
   ).toBe(false);
 }, 30_000);
@@ -536,9 +417,7 @@ test("same-authority Product conflicts fail closed before publication", async ()
     diagnostics: [
       expect.objectContaining({
         code: "retained_evidence_invalid",
-        detail: expect.stringContaining(
-          "Same-authority Product evidence conflicts at /data/name",
-        ),
+        detail: expect.stringContaining("Same-authority Product evidence conflicts at /data/name"),
       }),
     ],
   });

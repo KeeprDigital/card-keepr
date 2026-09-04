@@ -1,21 +1,12 @@
-import {
-  applyD1Migrations,
-  env,
-  type D1Migration,
-} from "cloudflare:test";
+import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { beforeEach, expect, test } from "vitest";
 import { apiPublicBase } from "./api-fixtures";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
-import {
-  catalogueCandidateContract,
-  type CatalogueCandidate,
-} from "../../../src/catalogue/catalogue-candidate";
-import {
-  productReleasePublicationStatements,
-} from "../../../src/catalogue/product-release-publication";
+import { catalogueCandidateContract, type CatalogueCandidate } from "../../../src/catalogue/shared";
+import { productReleasePublicationStatements } from "../../../src/catalogue/reconciliation";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 
@@ -55,24 +46,20 @@ beforeEach(async () => {
     media_type: "image/webp",
     width: 744,
     height: 1039,
-    content_sha256:
-      "46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
+    content_sha256: "46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
     links: {
       self: "/v1/printing-images/printing_image_st15_front",
-      content:
-        "/v1/printing-images/printing_image_st15_front/content",
+      content: "/v1/printing-images/printing_image_st15_front/content",
     },
   };
   const backPrintingImage = {
     ...printingImage,
     id: "printing_image_st15_back",
     role: "back",
-    content_sha256:
-      "eed832d958fc4054fffb3027319dcd914448475c226ce55ae8053a442ed1b2cf",
+    content_sha256: "eed832d958fc4054fffb3027319dcd914448475c226ce55ae8053a442ed1b2cf",
     links: {
       self: "/v1/printing-images/printing_image_st15_back",
-      content:
-        "/v1/printing-images/printing_image_st15_back/content",
+      content: "/v1/printing-images/printing_image_st15_back/content",
     },
   };
   const printing = {
@@ -315,9 +302,7 @@ test("authenticated Product reads preserve regional precision and announced stat
     withdrawn: false,
   });
 
-  const invalidProjection = await api(
-    "/v1/products/product_st15?include=source_buckets",
-  );
+  const invalidProjection = await api("/v1/products/product_st15?include=source_buckets");
   expect(invalidProjection.status).toBe(400);
   await expect(invalidProjection.json()).resolves.toMatchObject({
     code: "invalid_parameter",
@@ -347,9 +332,7 @@ test("authenticated Product reads preserve regional precision and announced stat
 
 test("Product search normalizes official codes and names without accepting repeated scalar filters", async () => {
   for (const query of ["ＳＴ－１５", "RED EDWARD.NEWGATE"]) {
-    const response = await api(
-      `/v1/products?q=${encodeURIComponent(query)}`,
-    );
+    const response = await api(`/v1/products?q=${encodeURIComponent(query)}`);
     expect(response.status).toBe(200);
     const document = await response.json();
     expectSchema("ProductCollection", document);
@@ -406,35 +389,28 @@ test("Product search normalizes compatibility-form official facts during publica
     ],
   };
   await testEnv.CATALOGUE_DB.batch(
-    productReleasePublicationStatements(
-      testEnv.CATALOGUE_DB,
-      candidate,
-      "catrev_products",
-      {
-        products: {
-          [productId]: {
-            first_revision_id: "catrev_products",
-            last_observed_revision_id: "catrev_products",
-            withdrawn: false,
-            withdrawal: null,
-          },
+    productReleasePublicationStatements(testEnv.CATALOGUE_DB, candidate, "catrev_products", {
+      products: {
+        [productId]: {
+          first_revision_id: "catrev_products",
+          last_observed_revision_id: "catrev_products",
+          withdrawn: false,
+          withdrawal: null,
         },
-        releases: {
-          [releaseId]: {
-            first_revision_id: "catrev_products",
-            last_observed_revision_id: "catrev_products",
-          },
-        },
-        relationships: {},
       },
-    ),
+      releases: {
+        [releaseId]: {
+          first_revision_id: "catrev_products",
+          last_observed_revision_id: "catrev_products",
+        },
+      },
+      relationships: {},
+    }),
   );
 
   try {
     for (const query of ["st-16", "starter deck green uta"]) {
-      const response = await api(
-        `/v1/products?q=${encodeURIComponent(query)}`,
-      );
+      const response = await api(`/v1/products?q=${encodeURIComponent(query)}`);
       expect(response.status).toBe(200);
       const document = await response.json();
       expectSchema("ProductCollection", document);
@@ -450,61 +426,42 @@ test("Product search normalizes compatibility-form official facts during publica
     }
   } finally {
     await testEnv.CATALOGUE_DB.batch([
-      testEnv.CATALOGUE_DB.prepare(
-        `DELETE FROM revision_products_fts WHERE product_id = ?`,
-      ).bind(productId),
+      testEnv.CATALOGUE_DB.prepare(`DELETE FROM revision_products_fts WHERE product_id = ?`).bind(productId),
       testEnv.CATALOGUE_DB.prepare(
         `DELETE FROM revision_products
          WHERE catalogue_revision_id = 'catrev_products'
            AND product_id = ?`,
       ).bind(productId),
-      testEnv.CATALOGUE_DB.prepare(
-        `DELETE FROM reconciled_releases WHERE id = ?`,
-      ).bind(releaseId),
-      testEnv.CATALOGUE_DB.prepare(
-        `DELETE FROM reconciled_products WHERE id = ?`,
-      ).bind(productId),
+      testEnv.CATALOGUE_DB.prepare(`DELETE FROM reconciled_releases WHERE id = ?`).bind(releaseId),
+      testEnv.CATALOGUE_DB.prepare(`DELETE FROM reconciled_products WHERE id = ?`).bind(productId),
     ]);
   }
 });
 
 test("authenticated Printing Image content is immutable, conditional, and range-capable", async () => {
-  const content = await api(
-    "/v1/printing-images/printing_image_st15_front/content",
-  );
+  const content = await api("/v1/printing-images/printing_image_st15_front/content");
   expect(content.status).toBe(200);
   expect(content.headers.get("content-type")).toBe("image/webp");
   expect(content.headers.get("content-length")).toBe("18");
   expect(content.headers.get("cache-control")).toContain("private");
   expect(content.headers.get("cache-control")).not.toContain("public");
   expect(content.headers.get("cache-control")).not.toContain("s-maxage");
-  expect(new TextDecoder().decode(await content.arrayBuffer())).toBe(
-    "fusion-front-image",
-  );
+  expect(new TextDecoder().decode(await content.arrayBuffer())).toBe("fusion-front-image");
 
-  const head = await api(
-    "/v1/printing-images/printing_image_st15_front/content",
-    {},
-    "HEAD",
-  );
+  const head = await api("/v1/printing-images/printing_image_st15_front/content", {}, "HEAD");
   expect(head.status).toBe(200);
   expect(head.headers.get("content-length")).toBe("18");
   expect(await head.text()).toBe("");
 
   const headRequestHeaders: Record<string, string>[] = [
     {
-      "if-none-match":
-        "\"46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773\"",
+      "if-none-match": '"46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773"',
     },
     { range: "bytes=7-11" },
     { range: "bytes=99-100" },
   ];
   for (const headers of headRequestHeaders) {
-    const metadata = await api(
-      "/v1/printing-images/printing_image_st15_front/content",
-      headers,
-      "HEAD",
-    );
+    const metadata = await api("/v1/printing-images/printing_image_st15_front/content", headers, "HEAD");
     expect(metadata.status).toBe(200);
     expect(metadata.headers.get("content-type")).toBe("image/webp");
     expect(metadata.headers.get("content-length")).toBe("18");
@@ -512,40 +469,24 @@ test("authenticated Printing Image content is immutable, conditional, and range-
     expect(await metadata.text()).toBe("");
   }
 
-  const partial = await api(
-    "/v1/printing-images/printing_image_st15_front/content",
-    { range: "bytes=7-11" },
-  );
+  const partial = await api("/v1/printing-images/printing_image_st15_front/content", { range: "bytes=7-11" });
   expect(partial.status).toBe(206);
   expect(partial.headers.get("content-range")).toBe("bytes 7-11/18");
   expect(new TextDecoder().decode(await partial.arrayBuffer())).toBe("front");
 
-  const notModified = await api(
-    "/v1/printing-images/printing_image_st15_front/content",
-    {
-      "if-none-match":
-        "\"46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773\"",
-    },
-  );
+  const notModified = await api("/v1/printing-images/printing_image_st15_front/content", {
+    "if-none-match": '"46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773"',
+  });
   expect(notModified.status).toBe(304);
 
-  const back = await api(
-    "/v1/printing-images/printing_image_st15_back/content",
-  );
+  const back = await api("/v1/printing-images/printing_image_st15_back/content");
   expect(back.status).toBe(200);
-  expect(new TextDecoder().decode(await back.arrayBuffer())).toBe(
-    "fusion-back-image",
-  );
+  expect(new TextDecoder().decode(await back.arrayBuffer())).toBe("fusion-back-image");
 
-  const unsatisfiable = await api(
-    "/v1/printing-images/printing_image_st15_front/content",
-    { range: "bytes=99-100" },
-  );
+  const unsatisfiable = await api("/v1/printing-images/printing_image_st15_front/content", { range: "bytes=99-100" });
   expect(unsatisfiable.status).toBe(416);
   expect(unsatisfiable.headers.get("content-range")).toBe("bytes */18");
-  expect(unsatisfiable.headers.get("content-type") ?? "").toMatch(
-    /^application\/problem\+json/u,
-  );
+  expect(unsatisfiable.headers.get("content-type") ?? "").toMatch(/^application\/problem\+json/u);
   const rangeProblem = await unsatisfiable.json();
   expectSchema("Problem", rangeProblem);
   expect(rangeProblem).toMatchObject({
@@ -562,19 +503,17 @@ test("Printing Image content rejects unknown identities before private content i
   expectSchema("Problem", unknownProblem);
   expect(unknownProblem).toMatchObject({ code: "not_found" });
 
-  const unauthorized = await api(
-    "/v1/printing-images/printing_image_st15_front/content",
-    { authorization: "Bearer invalid-api-key" },
-  );
+  const unauthorized = await api("/v1/printing-images/printing_image_st15_front/content", {
+    authorization: "Bearer invalid-api-key",
+  });
   expect(unauthorized.status).toBe(401);
   const authenticationProblem = await unauthorized.json();
   expectSchema("Problem", authenticationProblem);
   expect(authenticationProblem).toMatchObject({ code: "invalid_api_key" });
 
-  const invalidOrigin = await api(
-    "/v1/printing-images/printing_image_st15_front/content",
-    { origin: "https://catalogue.example.invalid" },
-  );
+  const invalidOrigin = await api("/v1/printing-images/printing_image_st15_front/content", {
+    origin: "https://catalogue.example.invalid",
+  });
   expect(invalidOrigin.status).toBe(403);
   const originProblem = await invalidOrigin.json();
   expectSchema("Problem", originProblem);
@@ -591,9 +530,7 @@ test("Product conditional reads return 304 for matching revision ETags", async (
     expect(conditional.status).toBe(304);
     expect(await conditional.text()).toBe("");
     expect(conditional.headers.get("etag")).toBe(etag);
-    expect(conditional.headers.get("x-catalogue-revision")).toBe(
-      "catrev_products",
-    );
+    expect(conditional.headers.get("x-catalogue-revision")).toBe("catrev_products");
   }
 });
 
@@ -605,21 +542,14 @@ test("Printing detail conditional reads bind exact response bytes to one revisio
   expect(etag).toMatch(/^".+"$/);
   const firstBytes = await first.text();
 
-  for (const validator of [
-    etag!,
-    `W/${etag!}`,
-    `"unrelated", W/${etag!}`,
-    "*",
-  ]) {
+  for (const validator of [etag!, `W/${etag!}`, `"unrelated", W/${etag!}`, "*"]) {
     const conditional = await api(path, {
       "if-none-match": validator,
     });
     expect(conditional.status).toBe(304);
     expect(await conditional.text()).toBe("");
     expect(conditional.headers.get("etag")).toBe(etag);
-    expect(conditional.headers.get("x-catalogue-revision")).toBe(
-      "catrev_products",
-    );
+    expect(conditional.headers.get("x-catalogue-revision")).toBe("catrev_products");
   }
 
   await testEnv.CATALOGUE_DB.batch([
@@ -695,9 +625,7 @@ test("Printing detail conditional reads bind exact response bytes to one revisio
     });
     expect(changed.status).toBe(200);
     expect(changed.headers.get("etag")).not.toBe(etag);
-    expect(changed.headers.get("x-catalogue-revision")).toBe(
-      "catrev_products_next",
-    );
+    expect(changed.headers.get("x-catalogue-revision")).toBe("catrev_products_next");
     expect(await changed.text()).not.toBe(firstBytes);
   } finally {
     await testEnv.CATALOGUE_DB.prepare(
@@ -722,26 +650,36 @@ test("Printing detail validates and binds optional evidence representations", as
     `UPDATE revision_printings SET document_json = ?
      WHERE catalogue_revision_id = 'catrev_products'
        AND printing_id = 'printing_st15_event'`,
-  ).bind(JSON.stringify({
-    data,
-    included: [{
-      type: "source_observation",
-      id: "srcobs_printing_detail",
-      captured_at: "2026-01-01T00:00:00.000Z",
-      source: "one-piece-en",
-    }],
-    provenance: {
-      "/data/rarity": ["srcobs_printing_detail"],
-    },
-    disagreements: [{
-      path: "/data/printed_rules_text",
-      status: "unresolved",
-      candidates: [{
-        value: "Earlier text",
-        observation_id: "srcobs_printing_detail",
-      }],
-    }],
-  })).run();
+  )
+    .bind(
+      JSON.stringify({
+        data,
+        included: [
+          {
+            type: "source_observation",
+            id: "srcobs_printing_detail",
+            captured_at: "2026-01-01T00:00:00.000Z",
+            source: "one-piece-en",
+          },
+        ],
+        provenance: {
+          "/data/rarity": ["srcobs_printing_detail"],
+        },
+        disagreements: [
+          {
+            path: "/data/printed_rules_text",
+            status: "unresolved",
+            candidates: [
+              {
+                value: "Earlier text",
+                observation_id: "srcobs_printing_detail",
+              },
+            ],
+          },
+        ],
+      }),
+    )
+    .run();
 
   for (const invalid of [
     `${path}?include=unknown`,
@@ -759,12 +697,8 @@ test("Printing detail validates and binds optional evidence representations", as
   const base = await api(path);
   const evidence = await api(`${path}?include=evidence`);
   const disagreements = await api(`${path}?include=disagreements`);
-  const combined = await api(
-    `${path}?include=disagreements,evidence`,
-  );
-  const reordered = await api(
-    `${path}?include=evidence,disagreements`,
-  );
+  const combined = await api(`${path}?include=disagreements,evidence`);
+  const reordered = await api(`${path}?include=evidence,disagreements`);
   expect(base.status).toBe(200);
   expect(evidence.status).toBe(200);
   expect(disagreements.status).toBe(200);
@@ -778,18 +712,16 @@ test("Printing detail validates and binds optional evidence representations", as
     },
   });
   await expect(disagreements.json()).resolves.toMatchObject({
-    disagreements: [{
-      path: "/data/printed_rules_text",
-      status: "unresolved",
-    }],
+    disagreements: [
+      {
+        path: "/data/printed_rules_text",
+        status: "unresolved",
+      },
+    ],
   });
-  expect(combined.headers.get("etag")).toBe(
-    reordered.headers.get("etag"),
-  );
+  expect(combined.headers.get("etag")).toBe(reordered.headers.get("etag"));
   expect(await combined.text()).toBe(await reordered.text());
-  expect(base.headers.get("etag")).not.toBe(
-    evidence.headers.get("etag"),
-  );
+  expect(base.headers.get("etag")).not.toBe(evidence.headers.get("etag"));
   const conditional = await api(`${path}?include=evidence`, {
     "if-none-match": evidence.headers.get("etag")!,
   });
@@ -798,7 +730,9 @@ test("Printing detail validates and binds optional evidence representations", as
     `UPDATE revision_printings SET document_json = ?
      WHERE catalogue_revision_id = 'catrev_products'
        AND printing_id = 'printing_st15_event'`,
-  ).bind(stored!.document_json).run();
+  )
+    .bind(stored!.document_json)
+    .run();
 });
 
 test("Product query and include parameters reject invalid public representations", async () => {
@@ -809,9 +743,7 @@ test("Product query and include parameters reject invalid public representations
   ] as const) {
     const response = await api(path);
     expect(response.status).toBe(400);
-    expect(response.headers.get("content-type")).toContain(
-      "application/problem+json",
-    );
+    expect(response.headers.get("content-type")).toContain("application/problem+json");
     await expect(response.json()).resolves.toEqual({
       type: "https://card-keepr.invalid/problems/invalid_parameter",
       title: "Invalid Product request",
@@ -826,10 +758,7 @@ test("Product query and include parameters reject invalid public representations
 
 test("equal Product representation ETags identify byte-identical responses", async () => {
   for (const [firstPath, secondPath] of [
-    [
-      "/v1/products?game=one-piece&q=st-15",
-      "/v1/products?q=st-15&game=one-piece",
-    ],
+    ["/v1/products?game=one-piece&q=st-15", "/v1/products?q=st-15&game=one-piece"],
     [
       "/v1/products/product_st15?include=evidence,disagreements",
       "/v1/products/product_st15?include=disagreements,evidence",
@@ -892,16 +821,12 @@ test("Catalogue status exposes independently checked areas and freshness-sensiti
     "if-none-match": firstEtag!,
   });
   expect(changed.status).toBe(200);
-  expect(changed.headers.get("x-catalogue-revision")).toBe(
-    "catrev_products",
-  );
+  expect(changed.headers.get("x-catalogue-revision")).toBe("catrev_products");
   expect(changed.headers.get("etag")).not.toBe(firstEtag);
   const changedDocument = await changed.json<{
     data: { last_successful_checks: { checked_at: string }[] };
   }>();
-  expect(
-    changedDocument.data.last_successful_checks.at(-1)?.checked_at,
-  ).toBe("2026-01-02T02:00:00.000Z");
+  expect(changedDocument.data.last_successful_checks.at(-1)?.checked_at).toBe("2026-01-02T02:00:00.000Z");
 
   const unchanged = await api("/v1/catalogue", {
     "if-none-match": changed.headers.get("etag")!,
@@ -909,11 +834,7 @@ test("Catalogue status exposes independently checked areas and freshness-sensiti
   expect(unchanged.status).toBe(304);
   expect(await unchanged.text()).toBe("");
 
-  for (const value of [
-    `W/${changed.headers.get("etag")!}`,
-    `"unrelated", W/${changed.headers.get("etag")!}`,
-    "*",
-  ]) {
+  for (const value of [`W/${changed.headers.get("etag")!}`, `"unrelated", W/${changed.headers.get("etag")!}`, "*"]) {
     const conditional = await api("/v1/catalogue", {
       "if-none-match": value,
     });
@@ -996,9 +917,7 @@ test("Product detail returns revision-pinned immutable provenance and disagreeme
     .run();
 
   try {
-    const response = await api(
-      "/v1/products/product_unresolved?include=evidence,disagreements",
-    );
+    const response = await api("/v1/products/product_unresolved?include=evidence,disagreements");
     expect(response.status).toBe(200);
     const document = await response.json();
     expectSchema("ProductDocument", document);
@@ -1123,7 +1042,7 @@ test("Product evidence projects Curated Revisions onto exact Product and nested 
         "d".repeat(64),
         JSON.stringify({ catalogue_revision_id: "catrev_products" }),
         createdAt,
-      )
+      ),
     ),
     testEnv.CATALOGUE_DB.prepare(
       `UPDATE revision_products SET document_json = ?
@@ -1141,9 +1060,7 @@ test("Product evidence projects Curated Revisions onto exact Product and nested 
     expect(base.status).toBe(200);
     await expect(base.json()).resolves.not.toHaveProperty("included");
 
-    const response = await api(
-      "/v1/products/product_st15?include=evidence",
-    );
+    const response = await api("/v1/products/product_st15?include=evidence");
     expect(response.status).toBe(200);
     const document = await response.json();
     expectSchema("ProductDocument", document);
@@ -1174,7 +1091,9 @@ test("Product evidence projects Curated Revisions onto exact Product and nested 
       `UPDATE revision_products SET document_json = ?
        WHERE catalogue_revision_id = 'catrev_products'
          AND product_id = 'product_st15'`,
-    ).bind(stored!.document_json).run();
+    )
+      .bind(stored!.document_json)
+      .run();
   }
 });
 
@@ -1225,9 +1144,7 @@ test("an explicitly unknown Release region is readable and schema-valid", async 
     const detail = await api("/v1/products/product_unknown_region");
     expect(detail.status).toBe(200);
     expectSchema("ProductDocument", await detail.json());
-    const filtered = await api(
-      "/v1/products?game=digimon&release_region=unknown",
-    );
+    const filtered = await api("/v1/products?game=digimon&release_region=unknown");
     expect(filtered.status).toBe(200);
     expectSchema("ProductCollection", await filtered.json());
   } finally {
@@ -1280,9 +1197,7 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
     )
     .run();
 
-  const firstResponse = await api(
-    "/v1/products?game=one-piece&release_region=EN-OCEANIA&limit=1",
-  );
+  const firstResponse = await api("/v1/products?game=one-piece&release_region=EN-OCEANIA&limit=1");
   expect(firstResponse.status).toBe(200);
   const first = await firstResponse.json<{
     data: { id: string }[];
@@ -1400,12 +1315,14 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     game: "one-piece",
     official_code: "ST-US",
     name: "US Product",
-    releases: [{
-      id: "release_us",
-      region: "EN-US",
-      date: { precision: "day", value: "2026-01-01" },
-      status: "released",
-    }],
+    releases: [
+      {
+        id: "release_us",
+        region: "EN-US",
+        date: { precision: "day", value: "2026-01-01" },
+        status: "released",
+      },
+    ],
     lifecycle: secondPrinting.lifecycle,
     links: { self: "/v1/products/product_us" },
   };
@@ -1419,11 +1336,7 @@ test("Printing collection binds every normalized filter to one card-ordered revi
       `INSERT INTO revision_printings (
          catalogue_revision_id, printing_id, card_id, document_json
        ) VALUES ('catrev_products', ?, ?, ?)`,
-    ).bind(
-      secondPrinting.id,
-      secondPrinting.card_id,
-      JSON.stringify(secondPrinting),
-    ),
+    ).bind(secondPrinting.id, secondPrinting.card_id, JSON.stringify(secondPrinting)),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_products (
          catalogue_revision_id, product_id, supported_game, official_code,
@@ -1432,12 +1345,14 @@ test("Printing collection binds every normalized filter to one card-ordered revi
          'catrev_products', 'product_us', 'one-piece', 'ST-US',
          'US Product', 'st-us us product', '["EN-US"]', ?
        )`,
-    ).bind(JSON.stringify({
-      data: usProduct,
-      included: [],
-      provenance: {},
-      disagreements: [],
-    })),
+    ).bind(
+      JSON.stringify({
+        data: usProduct,
+        included: [],
+        provenance: {},
+        disagreements: [],
+      }),
+    ),
     ...[
       ["relationship_st15", "printing_st15_event", "product_st15"],
       ["relationship_us", "printing_zzz_us", "product_us"],
@@ -1446,29 +1361,30 @@ test("Printing collection binds every normalized filter to one card-ordered revi
         `INSERT INTO revision_product_relationships (
            catalogue_revision_id, relationship_id, document_json
          ) VALUES ('catrev_products', ?, ?)`,
-      ).bind(id, JSON.stringify({
-        type: "relationship",
+      ).bind(
         id,
-        kind: "printing-product",
-        from: { type: "printing", id: printingId },
-        to: { type: "product", id: productId },
-        evidence_category: "explicit",
-        source_lineage: "one-piece-en",
-        source_observation_ids: ["srcobs_printing_filter"],
-        relationship_value: productId,
-        lifecycle: {
-          first_revision_id: "catrev_products",
-          last_observed_revision_id: "catrev_products",
-          current: true,
-          last_missing_revision_id: null,
-        },
-      })),
+        JSON.stringify({
+          type: "relationship",
+          id,
+          kind: "printing-product",
+          from: { type: "printing", id: printingId },
+          to: { type: "product", id: productId },
+          evidence_category: "explicit",
+          source_lineage: "one-piece-en",
+          source_observation_ids: ["srcobs_printing_filter"],
+          relationship_value: productId,
+          lifecycle: {
+            first_revision_id: "catrev_products",
+            last_observed_revision_id: "catrev_products",
+            current: true,
+            last_missing_revision_id: null,
+          },
+        }),
+      ),
     ),
   ]);
 
-  const firstResponse = await api(
-    "/v1/printings?product_id=product_st15&release_region=EN-OCEANIA&limit=1",
-  );
+  const firstResponse = await api("/v1/printings?product_id=product_st15&release_region=EN-OCEANIA&limit=1");
   expect(firstResponse.status).toBe(200);
   const first = await firstResponse.json<{
     data: { id: string }[];
@@ -1476,14 +1392,10 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     meta: { catalogue_revision_id: string };
   }>();
   expectSchema("PrintingCollection", first);
-  expect(first.data.map(({ id }) => id)).toEqual([
-    "printing_st15_event",
-  ]);
+  expect(first.data.map(({ id }) => id)).toEqual(["printing_st15_event"]);
   expect(first.meta.catalogue_revision_id).toBe("catrev_products");
 
-  const mismatched = await api(
-    "/v1/printings?product_id=product_st15&release_region=EN-US",
-  );
+  const mismatched = await api("/v1/printings?product_id=product_st15&release_region=EN-US");
   expect(mismatched.status).toBe(200);
   await expect(mismatched.json()).resolves.toMatchObject({ data: [] });
 
@@ -1496,10 +1408,7 @@ test("Printing collection binds every normalized filter to one card-ordered revi
       "card_id=card_st15_event&game=one-piece&rarity=leader&product_id=product_st15&release_region=EN-OCEANIA",
       ["printing_st15_event"],
     ],
-    [
-      "card_id=card_st15_event&game=one-piece&rarity=rare&product_id=product_st15&release_region=EN-OCEANIA",
-      [],
-    ],
+    ["card_id=card_st15_event&game=one-piece&rarity=rare&product_id=product_st15&release_region=EN-OCEANIA", []],
   ] as const) {
     const filtered = await api(`/v1/printings?${query}`);
     expect(filtered.status).toBe(200);
@@ -1508,25 +1417,19 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     });
   }
 
-  const firstPage = await api(
-    "/v1/printings?game=one-piece&limit=1",
-  );
+  const firstPage = await api("/v1/printings?game=one-piece&limit=1");
   const firstPageBody = await firstPage.json<{
     data: { id: string; card_id: string }[];
     page: { next_cursor: string };
   }>();
-  expect(firstPageBody.data).toMatchObject([
-    { id: "printing_zzz_us", card_id: "card_aaa_us" },
-  ]);
+  expect(firstPageBody.data).toMatchObject([{ id: "printing_zzz_us", card_id: "card_aaa_us" }]);
   const cursor = firstPageBody.page.next_cursor;
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE catalogue_state
      SET current_revision_id = 'catrev_spine_000'
      WHERE singleton = 1`,
   ).run();
-  const retained = await api(
-    `/v1/printings?game=one-piece&limit=1&after=${encodeURIComponent(cursor)}`,
-  );
+  const retained = await api(`/v1/printings?game=one-piece&limit=1&after=${encodeURIComponent(cursor)}`);
   expect(retained.status).toBe(200);
   await expect(retained.json()).resolves.toMatchObject({
     data: [{ id: "printing_st15_event", card_id: "card_st15_event" }],
@@ -1537,9 +1440,7 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     `UPDATE catalogue_query_revisions SET state = 'archived'
      WHERE catalogue_revision_id = 'catrev_products'`,
   ).run();
-  const unavailable = await api(
-    `/v1/printings?game=one-piece&limit=1&after=${encodeURIComponent(cursor)}`,
-  );
+  const unavailable = await api(`/v1/printings?game=one-piece&limit=1&after=${encodeURIComponent(cursor)}`);
   expect(unavailable.status).toBe(409);
   await expect(unavailable.json()).resolves.toMatchObject({
     code: "cursor_revision_unavailable",
@@ -1566,9 +1467,11 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     });
   }
   const invalidCursor = await api(
-    `/v1/printings?limit=1&after=${encodeURIComponent(encodeCursor({
-      route: "/v1/products",
-    }))}`,
+    `/v1/printings?limit=1&after=${encodeURIComponent(
+      encodeCursor({
+        route: "/v1/products",
+      }),
+    )}`,
   );
   expect(invalidCursor.status).toBe(400);
   await expect(invalidCursor.json()).resolves.toMatchObject({
@@ -1580,20 +1483,14 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     ...decoded,
     filters: { ...filters, rarity: "leader" },
   });
-  const forged = await api(
-    `/v1/printings?game=one-piece&limit=1&after=${encodeURIComponent(forgedFilter)}`,
-  );
+  const forged = await api(`/v1/printings?game=one-piece&limit=1&after=${encodeURIComponent(forgedFilter)}`);
   expect(forged.status).toBe(400);
   await expect(forged.json()).resolves.toMatchObject({
     code: "invalid_cursor",
   });
 
-  const canonical = await api(
-    "/v1/printings?game=one-piece&rarity=leader&card_id=card_st15_event",
-  );
-  const reordered = await api(
-    "/v1/printings?card_id=card_st15_event&rarity=leader&game=one-piece",
-  );
+  const canonical = await api("/v1/printings?game=one-piece&rarity=leader&card_id=card_st15_event");
+  const reordered = await api("/v1/printings?card_id=card_st15_event&rarity=leader&game=one-piece");
   expect(canonical.headers.get("etag")).toBe(reordered.headers.get("etag"));
   expect(await canonical.text()).toBe(await reordered.text());
   await testEnv.CATALOGUE_DB.prepare(
@@ -1603,11 +1500,7 @@ test("Printing collection binds every normalized filter to one card-ordered revi
   ).run();
 });
 
-function api(
-  path: string,
-  headers: Record<string, string> = {},
-  method = "GET",
-): Promise<Response> {
+function api(path: string, headers: Record<string, string> = {}, method = "GET"): Promise<Response> {
   return exports.default.fetch(
     new Request(`https://card-keepr.invalid${path}`, {
       method,
@@ -1622,18 +1515,12 @@ function api(
 
 function decodeCursor(value: string): Record<string, unknown> {
   const base64 = value.replaceAll("-", "+").replaceAll("_", "/");
-  const padded = base64.padEnd(
-    base64.length + ((4 - (base64.length % 4)) % 4),
-    "=",
-  );
+  const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
   return JSON.parse(atob(padded)) as Record<string, unknown>;
 }
 
 function encodeCursor(value: unknown): string {
-  return btoa(JSON.stringify(value))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/u, "");
+  return btoa(JSON.stringify(value)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
 }
 
 function expectSchema(definition: string, value: unknown): void {

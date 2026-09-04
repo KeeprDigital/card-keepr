@@ -1,8 +1,6 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import {
-  officialSourceDiscoveryRequests,
-} from "../../src/catalogue/product-release-source-adapters.ts";
+import { officialSourceDiscoveryRequests } from "../../src/catalogue/adapters/product-release-source-adapters.ts";
 import {
   adapterReconciliationAreas,
   assertAdapterBinding,
@@ -10,7 +8,7 @@ import {
   requiredActiveSourceAdapter,
   requiredSourceAdapter,
   sourceAdapterRegistrations,
-} from "../../src/catalogue/source-adapters.ts";
+} from "../../src/catalogue/adapters/source-adapters.ts";
 import syntheticOfficialSource, {
   officialBandaiNavigationHeader,
   officialDiscoveryDefinitions,
@@ -33,19 +31,20 @@ test("the live Digimon adapter normalizes exact standalone Official Errata", () 
   const payload = officialRawSurfacePayload("/digimon-en/errata");
   payload.declared_record_count = 1;
   payload.partition.total = 1;
-  payload.entries = [{
-    card_number: "BT99-001",
-    published_on: "2026-07-01",
-    effective_from: "2026-07-01",
-    observed_printed_rules_text: "Printed effect before correction.",
-    corrected_rules_text: "Corrected official effect.",
-    official_wording:
-      'Replace "Printed effect before correction." with "Corrected official effect."',
-    applies_to_parallel_printings: true,
-    source_fragment: "#BT99-001",
-    display_name: "BT99-001 Erratum",
-    image_url: "https://world.digimoncard.com/images/cardlist/card/BT99-001.png",
-  }];
+  payload.entries = [
+    {
+      card_number: "BT99-001",
+      published_on: "2026-07-01",
+      effective_from: "2026-07-01",
+      observed_printed_rules_text: "Printed effect before correction.",
+      corrected_rules_text: "Corrected official effect.",
+      official_wording: 'Replace "Printed effect before correction." with "Corrected official effect."',
+      applies_to_parallel_printings: true,
+      source_fragment: "#BT99-001",
+      display_name: "BT99-001 Erratum",
+      image_url: "https://world.digimoncard.com/images/cardlist/card/BT99-001.png",
+    },
+  ];
   const observations = adapter.parseBytes(
     Buffer.from(`<html>${officialPublisherPayloadScript("digimon-en", "errata", payload)}</html>`),
     {
@@ -56,47 +55,47 @@ test("the live Digimon adapter normalizes exact standalone Official Errata", () 
   );
   assert.deepEqual(
     observations.filter(({ kind }) => kind === "official_erratum"),
-    [{
-      kind: "official_erratum",
-      game: "digimon",
-      target: {
-        type: "card",
-        official_identity: { kind: "card_number", value: "BT99-001" },
+    [
+      {
+        kind: "official_erratum",
+        game: "digimon",
+        target: {
+          type: "card",
+          official_identity: { kind: "card_number", value: "BT99-001" },
+        },
+        published_on: "2026-07-01",
+        effective_from: "2026-07-01",
+        observed_printed_rules_text: "Printed effect before correction.",
+        corrected_rules_text: "Corrected official effect.",
+        official_wording: 'Replace "Printed effect before correction." with "Corrected official effect."',
+        applies_to_parallel_printings: true,
+        source: {
+          fragment: "#BT99-001",
+          display_name: "BT99-001 Erratum",
+          image_url: "https://world.digimoncard.com/images/cardlist/card/BT99-001.png",
+        },
+        completeness: {
+          structurally_complete: true,
+          required_surfaces_complete: true,
+          partitions_complete: true,
+          declared_record_count: 1,
+          parsed_record_count: 1,
+        },
       },
-      published_on: "2026-07-01",
-      effective_from: "2026-07-01",
-      observed_printed_rules_text: "Printed effect before correction.",
-      corrected_rules_text: "Corrected official effect.",
-      official_wording:
-        'Replace "Printed effect before correction." with "Corrected official effect."',
-      applies_to_parallel_printings: true,
-      source: {
-        fragment: "#BT99-001",
-        display_name: "BT99-001 Erratum",
-        image_url: "https://world.digimoncard.com/images/cardlist/card/BT99-001.png",
-      },
-      completeness: {
-        structurally_complete: true,
-        required_surfaces_complete: true,
-        partitions_complete: true,
-        declared_record_count: 1,
-        parsed_record_count: 1,
-      },
-    }],
+    ],
   );
 
   payload.entries[0].future_target_scope = "Only alternate-art printings";
   assert.throws(
-    () => adapter.parseBytes(
-      Buffer.from(
-        `<html>${officialPublisherPayloadScript("digimon-en", "errata", payload)}</html>`,
+    () =>
+      adapter.parseBytes(
+        Buffer.from(`<html>${officialPublisherPayloadScript("digimon-en", "errata", payload)}</html>`),
+        {
+          mediaType: "text/html",
+          url: adapter.requestUrlForSurface("errata"),
+          requestId: "digimon-en:errata",
+        },
       ),
-      {
-        mediaType: "text/html",
-        url: adapter.requestUrlForSurface("errata"),
-        requestId: "digimon-en:errata",
-      },
-    ),
     /Digimon Official Erratum.*unknown field future_target_scope/iu,
   );
 });
@@ -106,23 +105,23 @@ test("the live Digimon adapter preserves a standalone Official Erratum that expl
   const payload = officialRawSurfacePayload("/digimon-en/errata");
   payload.declared_record_count = 1;
   payload.partition.total = 1;
-  payload.entries = [{
-    card_number: "BT99-001",
-    published_on: "2026-07-01",
-    effective_from: "2026-07-01",
-    observed_printed_rules_text: "Printed effect before removal.",
-    corrected_rules_text: null,
-    official_wording: "Remove the printed effect from this Card.",
-    applies_to_parallel_printings: true,
-    source_fragment: "#BT99-001",
-    display_name: "BT99-001 Erratum",
-    image_url: "https://world.digimoncard.com/images/cardlist/card/BT99-001.png",
-  }];
+  payload.entries = [
+    {
+      card_number: "BT99-001",
+      published_on: "2026-07-01",
+      effective_from: "2026-07-01",
+      observed_printed_rules_text: "Printed effect before removal.",
+      corrected_rules_text: null,
+      official_wording: "Remove the printed effect from this Card.",
+      applies_to_parallel_printings: true,
+      source_fragment: "#BT99-001",
+      display_name: "BT99-001 Erratum",
+      image_url: "https://world.digimoncard.com/images/cardlist/card/BT99-001.png",
+    },
+  ];
 
   const observations = adapter.parseBytes(
-    Buffer.from(
-      `<html>${officialPublisherPayloadScript("digimon-en", "errata", payload)}</html>`,
-    ),
+    Buffer.from(`<html>${officialPublisherPayloadScript("digimon-en", "errata", payload)}</html>`),
     {
       mediaType: "text/html",
       url: adapter.requestUrlForSurface("errata"),
@@ -130,20 +129,24 @@ test("the live Digimon adapter preserves a standalone Official Erratum that expl
     },
   );
   assert.deepEqual(
-    observations.filter(({ kind }) => kind === "official_erratum")
+    observations
+      .filter(({ kind }) => kind === "official_erratum")
       .map(({ corrected_rules_text }) => corrected_rules_text),
     [null],
   );
 });
 
 test("the synthetic Digimon Worker isolates sequential and concurrent request scenarios", async () => {
-  const rootUrl =
-    "https://world.digimoncard.com/cards/index.php?search=true";
+  const rootUrl = "https://world.digimoncard.com/cards/index.php?search=true";
   const errataUrl = "https://world.digimoncard.com/rule/errata_card/";
   const responseText = async (url, userAgent) =>
-    await (await syntheticOfficialSource.fetch(new Request(url, {
-      headers: { "user-agent": userAgent },
-    }))).text();
+    await (
+      await syntheticOfficialSource.fetch(
+        new Request(url, {
+          headers: { "user-agent": userAgent },
+        }),
+      )
+    ).text();
 
   await responseText(
     rootUrl,
@@ -160,10 +163,7 @@ test("the synthetic Digimon Worker isolates sequential and concurrent request sc
   );
 
   const [complete, absent] = await Promise.all([
-    responseText(
-      errataUrl,
-      "card-keepr-acceptance-digimon/complete; request-role=surface; request-surface=errata",
-    ),
+    responseText(errataUrl, "card-keepr-acceptance-digimon/complete; request-role=surface; request-surface=errata"),
     responseText(
       errataUrl,
       "card-keepr-acceptance-digimon/complete-no-errata; request-role=surface; request-surface=errata",
@@ -175,16 +175,15 @@ test("the synthetic Digimon Worker isolates sequential and concurrent request sc
 
 test("retained live Digimon policy bytes retain the complete current affected list", () => {
   const adapter = requiredSourceAdapter("digimon-en@7");
-  const rules = retainedLegalityRules(
-    adapter,
-    "restrictions-current",
-    "digimon-en-policy",
-  );
+  const rules = retainedLegalityRules(adapter, "restrictions-current", "digimon-en-policy");
   assert.equal(rules.length, 55);
-  assert.deepEqual(rules.slice(0, 2).map((rule) => rule.card_numbers), [
-    ["EX2-007", "EX7-064"],
-    ["BT20-037", "BT17-035", "EX8-037"],
-  ]);
+  assert.deepEqual(
+    rules.slice(0, 2).map((rule) => rule.card_numbers),
+    [
+      ["EX2-007", "EX7-064"],
+      ["BT20-037", "BT17-035", "EX8-037"],
+    ],
+  );
   assert.deepEqual(
     rules.slice(2, 5).map((rule) => rule.card_numbers[0]),
     ["BT5-109", "BT2-090", "EX5-065"],
@@ -193,11 +192,14 @@ test("retained live Digimon policy bytes retain the complete current affected li
     rules.slice(-3).map((rule) => rule.card_numbers[0]),
     ["BT6-100", "EX1-068", "BT7-072"],
   );
-  assert.ok(rules.every((rule) =>
-    rule.effective_from === null &&
-    rule.unresolved_scope.dimensions.join(",") === "effective_interval" &&
-    rule.effect.type === "unresolved"
-  ));
+  assert.ok(
+    rules.every(
+      (rule) =>
+        rule.effective_from === null &&
+        rule.unresolved_scope.dimensions.join(",") === "effective_interval" &&
+        rule.effect.type === "unresolved",
+    ),
+  );
 });
 
 test("Digimon explicit surfaces deterministically disambiguate shared Product, Release, and policy URLs", async () => {
@@ -205,50 +207,40 @@ test("Digimon explicit surfaces deterministically disambiguate shared Product, R
   const cases = [
     ["products", "https://world.digimoncard.com/products/"],
     ["releases", "https://world.digimoncard.com/products/"],
-    [
-      "restrictions-current",
-      "https://world.digimoncard.com/rule/restriction_card/",
-    ],
-    [
-      "restrictions-history",
-      "https://world.digimoncard.com/rule/restriction_card/?view=history",
-    ],
+    ["restrictions-current", "https://world.digimoncard.com/rule/restriction_card/"],
+    ["restrictions-history", "https://world.digimoncard.com/rule/restriction_card/?view=history"],
   ];
   const captured = new Map();
   for (const [surface, url] of [...cases, ...cases.toReversed()]) {
-    const response = await syntheticOfficialSource.fetch(new Request(url, {
-      headers: {
-        "user-agent":
-          `card-keepr-digimon-routing; request-role=surface; request-surface=${surface}`,
-      },
-    }));
+    const response = await syntheticOfficialSource.fetch(
+      new Request(url, {
+        headers: {
+          "user-agent": `card-keepr-digimon-routing; request-role=surface; request-surface=${surface}`,
+        },
+      }),
+    );
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (captured.has(surface)) {
       assert.deepEqual(bytes, captured.get(surface), surface);
     } else {
       captured.set(surface, bytes);
     }
-    assert.doesNotThrow(() => adapter.parseBytes(bytes, {
-      mediaType: response.headers.get("content-type"),
-      url,
-      requestId: `digimon-en:${surface}`,
-    }), surface);
+    assert.doesNotThrow(
+      () =>
+        adapter.parseBytes(bytes, {
+          mediaType: response.headers.get("content-type"),
+          url,
+          requestId: `digimon-en:${surface}`,
+        }),
+      surface,
+    );
   }
-  assert.notDeepEqual(
-    captured.get("products"),
-    captured.get("releases"),
-  );
-  assert.notDeepEqual(
-    captured.get("restrictions-current"),
-    captured.get("restrictions-history"),
-  );
+  assert.notDeepEqual(captured.get("products"), captured.get("releases"));
+  assert.notDeepEqual(captured.get("restrictions-current"), captured.get("restrictions-history"));
 });
 
 test("real Digimon and Gundam details close every known profile field and reject malformed numerics", () => {
-  const byLineage = (lineage) =>
-    registeredProductionAdapters().find(
-      ({ sourceLineage }) => sourceLineage === lineage,
-    );
+  const byLineage = (lineage) => registeredProductionAdapters().find(({ sourceLineage }) => sourceLineage === lineage);
   const digimon = byLineage("digimon-en");
   const digimonHtml = `
     <h1>Linked Test Digimon</h1>
@@ -282,10 +274,7 @@ test("real Digimon and Gundam details close every known profile field and reject
     url: "https://world.digimoncard.com/cards/detail.php?card=BT99-002",
     requestId: `digimon-en:detail:${"e".repeat(64)}`,
   };
-  const digimonObservation = digimon.parseBytes(
-    new TextEncoder().encode(digimonHtml),
-    digimonContext,
-  )[0];
+  const digimonObservation = digimon.parseBytes(new TextEncoder().encode(digimonHtml), digimonContext)[0];
   assert.deepEqual(digimonObservation.card.game_data.attributes, {
     card_type: "digimon",
     colours: ["red", "blue"],
@@ -296,13 +285,15 @@ test("real Digimon and Gundam details close every known profile field and reject
     form: "Mega",
     attribute: "Vaccine",
     traits: ["Test Type"],
-    digivolution_requirements: [{
-      index: 1,
-      from_level: 5,
-      colours: ["blue"],
-      cost: 4,
-      raw_condition: "Blue Lv.5: 4",
-    }],
+    digivolution_requirements: [
+      {
+        index: 1,
+        from_level: 5,
+        colours: ["blue"],
+        cost: 4,
+        raw_condition: "Blue Lv.5: 4",
+      },
+    ],
     text_sections: [
       { kind: "effect", text: "Main effect" },
       { kind: "inherited_effect", text: "Inherited effect" },
@@ -320,16 +311,11 @@ test("real Digimon and Gundam details close every known profile field and reject
     dual_cost: 7,
     link_dp: 3000,
   });
-  assert.deepEqual(
-    digimonObservation.printing.game_data.attributes,
-    { alternative_art: true },
-  );
+  assert.deepEqual(digimonObservation.printing.game_data.attributes, { alternative_art: true });
   assert.throws(
     () =>
       digimon.parseBytes(
-        new TextEncoder().encode(
-          digimonHtml.replace("<dd>12,000</dd>", "<dd>12,00</dd>"),
-        ),
+        new TextEncoder().encode(digimonHtml.replace("<dd>12,000</dd>", "<dd>12,00</dd>")),
         digimonContext,
       ),
     /numeric token/iu,
@@ -354,38 +340,29 @@ test("real Digimon and Gundam details close every known profile field and reject
       <dl><dt>Link</dt><dd>-</dd></dl>
       <dl><dt>Source Title</dt><dd>Test Series</dd></dl>
     `;
-  const gundamDetailUrl =
-    "https://www.gundam-gcg.com/asia-en/cards/detail.php?detailSearch=GD99-001";
-  const gundamObservation = gundam.parseBytes(
-    new TextEncoder().encode(gundamHtml),
-    {
-      mediaType: "text/html",
-      url: gundamDetailUrl,
-      requestId: `gundam-en-asia:detail:${"e".repeat(64)}`,
-    },
-  )[0];
+  const gundamDetailUrl = "https://www.gundam-gcg.com/asia-en/cards/detail.php?detailSearch=GD99-001";
+  const gundamObservation = gundam.parseBytes(new TextEncoder().encode(gundamHtml), {
+    mediaType: "text/html",
+    url: gundamDetailUrl,
+    requestId: `gundam-en-asia:detail:${"e".repeat(64)}`,
+  })[0];
   assert.equal(gundamObservation.card.game_data.attributes.cost, 1000);
   assert.deepEqual(gundamObservation.card.game_data.attributes.colours, []);
   assert.equal(gundamObservation.card.game_data.attributes.block_icon, "03");
   assert.equal(gundamObservation.card.game_data.attributes.ap, 4000);
   assert.equal(gundamObservation.card.game_data.attributes.hp, 5000);
-  assert.deepEqual(
-    gundamObservation.printing.game_data.attributes,
-    { alternate_art: false },
-  );
+  assert.deepEqual(gundamObservation.printing.game_data.attributes, { alternate_art: false });
   assert.deepEqual(gundamObservation.printing.rarity, {
     raw: "R★",
     normalized: "rare",
   });
   assert.throws(
-    () => gundam.parseBytes(
-      new TextEncoder().encode(gundamHtml.replace("R★", "Experimental Rare")),
-      {
+    () =>
+      gundam.parseBytes(new TextEncoder().encode(gundamHtml.replace("R★", "Experimental Rare")), {
         mediaType: "text/html",
         url: gundamDetailUrl,
         requestId: `gundam-en-asia:detail:${"e".repeat(64)}`,
-      },
-    ),
+      }),
     /Gundam rarity.*Experimental Rare/iu,
   );
 });
@@ -395,25 +372,22 @@ test("the restructured Digimon card search derives one listing per publisher cat
   const url = adapter.requestUrlForSurface("card-list");
   const request = officialSourceDiscoveryRequests("digimon-en")[0];
   assert.equal(request.url, url);
-  const { fixture, observations } = retainedRestructuredParse(
-    adapter,
-    "digimon-en-restructured-card-search",
-    { url, requestId: "digimon-en:card-list" },
-  );
+  const { fixture, observations } = retainedRestructuredParse(adapter, "digimon-en-restructured-card-search", {
+    url,
+    requestId: "digimon-en:card-list",
+  });
   assert.equal(fixture.metadata.source_url, url);
   assert.equal(observations.length, 1);
 
-  const listings = retainedRestructuredRequests(
-    adapter,
-    "digimon-en-restructured-card-search",
-    { url, requestId: "digimon-en:card-list" },
-  ).filter(({ role }) => role === "listing");
+  const listings = retainedRestructuredRequests(adapter, "digimon-en-restructured-card-search", {
+    url,
+    requestId: "digimon-en:card-list",
+  }).filter(({ role }) => role === "listing");
   assert.equal(listings.length, 70);
   assert.ok(
     listings.every(({ url: listingUrl }) => {
       const params = new URL(listingUrl).searchParams;
-      return params.get("search") === "true" &&
-        (params.get("category") ?? "").length > 0;
+      return params.get("search") === "true" && (params.get("category") ?? "").length > 0;
     }),
     "every derived Digimon listing must pin one publisher category",
   );
@@ -423,31 +397,18 @@ test("the restructured Digimon complete leaf retains vanilla Cards without Effec
   const adapter = requiredSourceAdapter("digimon-en@7");
   const leafUrl =
     "https://world.digimoncard.com/cards/index.php?search=true&category=522001&cardcategory=Digimon&color=Blue";
-  const { fixture, observations } = retainedRestructuredParse(
-    adapter,
-    "digimon-en-card-list-bt01-leaf",
-    {
-      url: leafUrl,
-      requestId: `digimon-en:listing:${restructuredStageDigest}`,
-    },
-  );
+  const { fixture, observations } = retainedRestructuredParse(adapter, "digimon-en-card-list-bt01-leaf", {
+    url: leafUrl,
+    requestId: `digimon-en:listing:${restructuredStageDigest}`,
+  });
   assert.equal(fixture.metadata.source_url, leafUrl);
   assert.equal(observations.length, 24);
-  assert.equal(
-    new Set(observations.map(
-      ({ identity_evidence }) => identity_evidence.locator,
-    )).size,
-    24,
-  );
+  assert.equal(new Set(observations.map(({ identity_evidence }) => identity_evidence.locator)).size, 24);
   assert.ok(
-    observations.some(
-      ({ identity_evidence }) => identity_evidence.locator === "BT1-044_P1",
-    ),
+    observations.some(({ identity_evidence }) => identity_evidence.locator === "BT1-044_P1"),
     "alternate art keeps its own full locator",
   );
-  const vanilla = observations.filter(
-    ({ card }) => card.effective_rules_text === null,
-  );
+  const vanilla = observations.filter(({ card }) => card.effective_rules_text === null);
   assert.equal(vanilla.length, 8);
   assert.equal(vanilla[0].card.official_identity.value, "BT1-027");
   assert.equal(vanilla[0].card.game_data.attributes.card_type, "digimon");
@@ -471,15 +432,11 @@ function activeDigimonLeaf(slug, leafUrl) {
 }
 
 function digimonQaEntries(observation) {
-  return observation.source_sidecar.raw.official_surfaces[0].document
-    .card_qa ?? [];
+  return observation.source_sidecar.raw.official_surfaces[0].document.card_qa ?? [];
 }
 
 test("active Digimon leaves retain Q&A answers that nest Related Cards", () => {
-  const observations = activeDigimonLeaf(
-    "digimon-en-card-list-related-qa-leaf",
-    digimonRelatedQaLeafUrl,
-  );
+  const observations = activeDigimonLeaf("digimon-en-card-list-related-qa-leaf", digimonRelatedQaLeafUrl);
   assert.equal(observations.length, 5);
   assert.deepEqual(
     observations.map(({ identity_evidence }) => identity_evidence.locator),
@@ -493,7 +450,7 @@ test("active Digimon leaves retain Q&A answers that nest Related Cards", () => {
     observations.flatMap((observation) =>
       digimonQaEntries(observation)
         .filter(({ related_cards }) => related_cards.length > 0)
-        .map(({ number, related_cards }) => [number, related_cards])
+        .map(({ number, related_cards }) => [number, related_cards]),
     ),
     [
       ["Q1606", ["BT9-109"]],
@@ -503,9 +460,7 @@ test("active Digimon leaves retain Q&A answers that nest Related Cards", () => {
   );
   assert.ok(
     observations.every((observation) =>
-      digimonQaEntries(observation).every(({ related_cards }) =>
-        Array.isArray(related_cards)
-      )
+      digimonQaEntries(observation).every(({ related_cards }) => Array.isArray(related_cards)),
     ),
     "every retained answer must publish an explicit Related Cards array",
   );
@@ -570,16 +525,12 @@ test("active Digimon leaves model unconstrained and bonus-token printed vocabula
   // The publisher pads these related-card links with a trailing ideographic
   // space, which may not leak into the retained card numbers.
   assert.deepEqual(
-    promo.flatMap((observation) =>
-      digimonQaEntries(observation).flatMap(({ related_cards }) =>
-        related_cards
-      )
-    ),
+    promo.flatMap((observation) => digimonQaEntries(observation).flatMap(({ related_cards }) => related_cards)),
     ["BT5-109", "BT3-109"],
   );
   assert.deepEqual(
-    promo.find(({ identity_evidence }) => identity_evidence.locator === "P-119")
-      .card.game_data.attributes.digivolution_requirements,
+    promo.find(({ identity_evidence }) => identity_evidence.locator === "P-119").card.game_data.attributes
+      .digivolution_requirements,
     [
       {
         index: 1,
@@ -594,14 +545,10 @@ test("active Digimon leaves model unconstrained and bonus-token printed vocabula
 
 test("restructured Digimon rules discovery pins its restriction and errata publications", () => {
   const adapter = requiredSourceAdapter("digimon-en@7");
-  const { observations } = retainedRestructuredParse(
-    adapter,
-    "digimon-en-rules-hub",
-    {
-      url: "https://world.digimoncard.com/rule/",
-      requestId: `digimon-en:listing:rules:${restructuredStageDigest}`,
-    },
-  );
+  const { observations } = retainedRestructuredParse(adapter, "digimon-en-rules-hub", {
+    url: "https://world.digimoncard.com/rule/",
+    requestId: `digimon-en:listing:rules:${restructuredStageDigest}`,
+  });
   assert.deepEqual(stageRecordSummaries(observations), [
     {
       id: "digimon-en:restrictions-current",
@@ -622,27 +569,25 @@ test("restructured Digimon rules discovery pins its restriction and errata publi
 });
 
 test("retained live Digimon product pages map region-scoped and code-less releases", () => {
-  const themeBooster = retainedProductDetail(
-    "digimon-en",
-    "digimon-en-product-theme-booster",
-  );
-  assert.deepEqual(themeBooster.catalogue.products, [{
-    reference: { kind: "official_code", value: "EX-01" },
-    official_code: "EX-01",
-    name: "DIGIMON CARD GAME THEME BOOSTER CLASSIC COLLECTION [EX-01]",
-    releases: [{
-      event_key: "product-release:EX-01",
-      // "Europe/Oceania: December 10, 2021 (*Asmodee UK/Blackfire Stores: …)"
-      region: "EN-OCEANIA",
-      date: { precision: "day", value: "2021-12-10" },
-      status: null,
-    }],
-  }]);
+  const themeBooster = retainedProductDetail("digimon-en", "digimon-en-product-theme-booster");
+  assert.deepEqual(themeBooster.catalogue.products, [
+    {
+      reference: { kind: "official_code", value: "EX-01" },
+      official_code: "EX-01",
+      name: "DIGIMON CARD GAME THEME BOOSTER CLASSIC COLLECTION [EX-01]",
+      releases: [
+        {
+          event_key: "product-release:EX-01",
+          // "Europe/Oceania: December 10, 2021 (*Asmodee UK/Blackfire Stores: …)"
+          region: "EN-OCEANIA",
+          date: { precision: "day", value: "2021-12-10" },
+          status: null,
+        },
+      ],
+    },
+  ]);
 
-  const giftBox = retainedProductDetail(
-    "digimon-en",
-    "digimon-en-product-gift-box",
-  );
+  const giftBox = retainedProductDetail("digimon-en", "digimon-en-product-gift-box");
   const [gift] = giftBox.catalogue.products;
   assert.equal(gift.official_code, null);
   assert.equal(gift.name, "DIGIMON CARD GAME GIFT BOX");
@@ -652,19 +597,20 @@ test("retained live Digimon product pages map region-scoped and code-less releas
     value: "2021-12-10",
   });
 
-  const starterDeck = retainedProductDetail(
-    "digimon-en",
-    "digimon-en-product-starter-deck",
-  );
-  assert.deepEqual(starterDeck.catalogue.products, [{
-    reference: { kind: "official_code", value: "ST-24" },
-    official_code: "ST-24",
-    name: "DIGIMON CARD GAME DIGIMON DATA SQUAD [ST-24]",
-    releases: [{
-      event_key: "product-release:ST-24",
-      region: "unknown",
-      date: { precision: "day", value: "2026-05-15" },
-      status: null,
-    }],
-  }]);
+  const starterDeck = retainedProductDetail("digimon-en", "digimon-en-product-starter-deck");
+  assert.deepEqual(starterDeck.catalogue.products, [
+    {
+      reference: { kind: "official_code", value: "ST-24" },
+      official_code: "ST-24",
+      name: "DIGIMON CARD GAME DIGIMON DATA SQUAD [ST-24]",
+      releases: [
+        {
+          event_key: "product-release:ST-24",
+          region: "unknown",
+          date: { precision: "day", value: "2026-05-15" },
+          status: null,
+        },
+      ],
+    },
+  ]);
 });

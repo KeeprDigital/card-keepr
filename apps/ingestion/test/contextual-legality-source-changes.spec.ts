@@ -1,11 +1,7 @@
 import { exports } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import {
-  canonicalJson,
-  sha256,
-  utf8,
-} from "../../../src/catalogue/serialization";
-import { requiredSourceAdapter } from "../../../src/catalogue/source-adapters";
+import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
+import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 import {
   approve,
@@ -23,8 +19,7 @@ import {
 installContextualLegalitySuite();
 
 test("same-URL legality observations with byte-identical source representations deduplicate", async () => {
-  const sourceUrl =
-    "https://official-source.invalid/reconciliation/contextual-legality-byte-identity";
+  const sourceUrl = "https://official-source.invalid/reconciliation/contextual-legality-byte-identity";
   const started = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
     supported_game: "gundam",
     source_lineage: "gundam-en-asia",
@@ -38,10 +33,7 @@ test("same-URL legality observations with byte-identical source representations 
     })),
   });
   const runId = requiredString(started, "id");
-  expect((await request(
-    `/v1/ingestion-runs/${runId}/collection/resume`,
-    {},
-  )).response.status).toBe(202);
+  expect((await request(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
   await waitForState(runId, "parsing");
 
   const shown = await request(`/v1/ingestion-runs/${runId}`);
@@ -52,8 +44,7 @@ test("same-URL legality observations with byte-identical source representations 
   expect(new Set(snapshots.map(({ content }) => content.digest)).size).toBe(1);
 
   const reconciled = await reconcile(runId);
-  expect(reconciled.response.status, JSON.stringify(reconciled.document))
-    .toBe(200);
+  expect(reconciled.response.status, JSON.stringify(reconciled.document)).toBe(200);
   const rejected = await request(`/v1/ingestion-runs/${runId}/rejection`, {
     candidate_digest: requiredString(reconciled.document, "candidate_digest"),
     idempotency_key: "reject-byte-identical-control",
@@ -62,8 +53,7 @@ test("same-URL legality observations with byte-identical source representations 
 }, 90_000);
 
 test("same-URL legality observations with byte-distinct source representations fail closed", async () => {
-  const sourceUrl =
-    "https://official-source.invalid/reconciliation/contextual-legality-byte-identity";
+  const sourceUrl = "https://official-source.invalid/reconciliation/contextual-legality-byte-identity";
   const started = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
     supported_game: "gundam",
     source_lineage: "gundam-en-asia",
@@ -85,10 +75,7 @@ test("same-URL legality observations with byte-distinct source representations f
     ],
   });
   const runId = requiredString(started, "id");
-  expect((await request(
-    `/v1/ingestion-runs/${runId}/collection/resume`,
-    {},
-  )).response.status).toBe(202);
+  expect((await request(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
   await waitForState(runId, "parsing");
 
   const shown = await request(`/v1/ingestion-runs/${runId}`);
@@ -98,14 +85,17 @@ test("same-URL legality observations with byte-distinct source representations f
   }>;
   expect(snapshots).toHaveLength(2);
   expect(new Set(snapshots.map(({ content }) => content.digest)).size).toBe(2);
-  const retainedBodies = await Promise.all(snapshots.map(async ({ id }) => {
-    const response = await exports.default.fetch(new Request(
-      `https://card-keepr.invalid/v1/source-snapshots/${id}/content`,
-      { headers: { authorization: "Bearer vitest-administration-key" } },
-    ));
-    expect(response.status).toBe(200);
-    return response.text();
-  }));
+  const retainedBodies = await Promise.all(
+    snapshots.map(async ({ id }) => {
+      const response = await exports.default.fetch(
+        new Request(`https://card-keepr.invalid/v1/source-snapshots/${id}/content`, {
+          headers: { authorization: "Bearer vitest-administration-key" },
+        }),
+      );
+      expect(response.status).toBe(200);
+      return response.text();
+    }),
+  );
   expect(retainedBodies[0]).not.toBe(retainedBodies[1]);
 
   const blocked = await reconcile(runId);
@@ -119,8 +109,7 @@ test.each([
 ])(
   "same-URL legality publications fail closed for %s when retained bytes differ",
   async (_caseName, scenario) => {
-    const sourceUrl =
-      `https://official-source.invalid/reconciliation/${scenario}`;
+    const sourceUrl = `https://official-source.invalid/reconciliation/${scenario}`;
     const started = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
       supported_game: "gundam",
       source_lineage: "gundam-en-asia",
@@ -142,10 +131,7 @@ test.each([
       ],
     });
     const runId = requiredString(started, "id");
-    expect((await request(
-      `/v1/ingestion-runs/${runId}/collection/resume`,
-      {},
-    )).response.status).toBe(202);
+    expect((await request(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
     await waitForState(runId, "parsing");
 
     const shown = await request(`/v1/ingestion-runs/${runId}`);
@@ -164,9 +150,7 @@ test.each([
       expect(rejected.response.status).toBe(200);
     }
     expect(blocked.response.status).toBe(409);
-    expect(JSON.stringify(blocked.document)).toMatch(
-      /conflict|publication|representation/iu,
-    );
+    expect(JSON.stringify(blocked.document)).toMatch(/conflict|publication|representation/iu);
   },
   90_000,
 );
@@ -178,56 +162,57 @@ test.each([
   ["digimon-normalized-envelope@1", "digimon", "digimon-en"],
   ["gundam-asia-normalized-envelope@1", "gundam", "gundam-en-asia"],
   ["gundam-us-normalized-envelope@1", "gundam", "gundam-en-us"],
-])(
-  "production planning rejects unavailable adapter identity %s before capture",
-  async (adapter, game, lineage) => {
-    const idempotencyKey = `reject-unavailable-${adapter}`;
-    const blocked = await request("/v1/ingestion-runs/evidence", {
-      supported_game: game,
-      source_lineage: lineage,
-      adapter_version: adapter,
-      idempotency_key: idempotencyKey,
-      requests: [
-        {
-          id: "discovery",
-          method: "GET",
-          url: "https://official-source.invalid/normalized-envelope",
-          headers: { accept: "application/json" },
-        },
-      ],
-    });
-    expect(blocked.response.status).toBe(422);
-    expect(blocked.document).toMatchObject({
-      code: "adapter_not_supported",
-    });
-    const retained = await testEnv.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count FROM ingestion_runs
+])("production planning rejects unavailable adapter identity %s before capture", async (adapter, game, lineage) => {
+  const idempotencyKey = `reject-unavailable-${adapter}`;
+  const blocked = await request("/v1/ingestion-runs/evidence", {
+    supported_game: game,
+    source_lineage: lineage,
+    adapter_version: adapter,
+    idempotency_key: idempotencyKey,
+    requests: [
+      {
+        id: "discovery",
+        method: "GET",
+        url: "https://official-source.invalid/normalized-envelope",
+        headers: { accept: "application/json" },
+      },
+    ],
+  });
+  expect(blocked.response.status).toBe(422);
+  expect(blocked.document).toMatchObject({
+    code: "adapter_not_supported",
+  });
+  const retained = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM ingestion_runs
        WHERE idempotency_key = ?`,
-    ).bind(idempotencyKey).first<{ count: number }>();
-    expect(retained?.count).toBe(0);
-  },
-);
+  )
+    .bind(idempotencyKey)
+    .first<{ count: number }>();
+  expect(retained?.count).toBe(0);
+});
 
 test("authenticated reparse rejects a normalized fixture envelope through an unavailable production adapter", async () => {
   const runId = "run_unavailable_adapter_raw_boundary";
   const snapshotId = "srcsnap_unavailable_adapter_raw_boundary";
   const objectKey = `source-snapshots/${snapshotId}.bin`;
-  const bytes = utf8(JSON.stringify({
-    cards: [
-      {
-        card: {
-          game: "one-piece",
-          official_identity: { kind: "card_number", value: "OP99-999" },
+  const bytes = utf8(
+    JSON.stringify({
+      cards: [
+        {
+          card: {
+            game: "one-piece",
+            official_identity: { kind: "card_number", value: "OP99-999" },
+          },
         },
-      },
-    ],
-    legality_rules: [
-      {
-        id: "normalized-effect-that-production-must-not-accept",
-        effect: { type: "ban" },
-      },
-    ],
-  }));
+      ],
+      legality_rules: [
+        {
+          id: "normalized-effect-that-production-must-not-accept",
+          effect: { type: "ban" },
+        },
+      ],
+    }),
+  );
   const digest = await sha256(bytes);
   const plan = JSON.stringify({
     requests: [
@@ -291,29 +276,21 @@ test("authenticated reparse rejects a normalized fixture envelope through an una
          '2026-08-01T00:00:01.000Z', 200, '{}', 'application/json', ?, ?, ?,
          'one-piece-en', 'one-piece', 'one-piece@1',
          'fixture-one-piece-json@3', NULL)`,
-    ).bind(
-      snapshotId,
-      runId,
-      "5".repeat(64),
-      digest,
-      bytes.byteLength,
-      objectKey,
-    ),
+    ).bind(snapshotId, runId, "5".repeat(64), digest, bytes.byteLength, objectKey),
   ]);
 
-  const blocked = await request(
-    `/v1/source-snapshots/${snapshotId}/observations`,
-    {
-      adapter_version: "one-piece-normalized-envelope@1",
-      idempotency_key: "unavailable-adapter-raw-boundary-reparse",
-    },
-  );
+  const blocked = await request(`/v1/source-snapshots/${snapshotId}/observations`, {
+    adapter_version: "one-piece-normalized-envelope@1",
+    idempotency_key: "unavailable-adapter-raw-boundary-reparse",
+  });
   expect(blocked.response.status).toBe(422);
   expect(blocked.document).toMatchObject({ code: "adapter_not_supported" });
   const retained = await testEnv.CATALOGUE_DB.prepare(
     `SELECT COUNT(*) AS count FROM source_parse_operations
      WHERE source_snapshot_id = ?`,
-  ).bind(snapshotId).first<{ count: number }>();
+  )
+    .bind(snapshotId)
+    .first<{ count: number }>();
   expect(retained?.count).toBe(0);
 });
 
@@ -326,8 +303,7 @@ test.each([
     scriptPrefix: "one-piece-card-game",
     entry: {
       notice_no: "OP-CONDITIONAL-WORKER",
-      published_text:
-        "If your Leader is red, OP30-001 is eligible for Standard play.",
+      published_text: "If your Leader is red, OP30-001 is eligible for Standard play.",
       territory: "EN-OCEANIA",
       format_name: "standard",
       event_class: null,
@@ -345,8 +321,7 @@ test.each([
     scriptPrefix: "fusion-world-card-game",
     entry: {
       rule_ref: "FW-CONDITIONAL-WORKER",
-      notice:
-        "If your Leader is red, FB30-001 is eligible for Standard play.",
+      notice: "If your Leader is red, FB30-001 is eligible for Standard play.",
       market: "EN-OCEANIA",
       play_format: "standard",
       tier: null,
@@ -374,17 +349,17 @@ test.each([
       status_code: "eligible",
     },
   },
-  ...([
-    ["gundam-en-asia@7", "gundam-en-asia", "EN-ASIA"],
-    ["gundam-en-us@7", "gundam-en-us", "EN-US"],
-  ] as const).map(([adapterVersion, lineage, region]) => ({
+  ...(
+    [
+      ["gundam-en-asia@7", "gundam-en-asia", "EN-ASIA"],
+      ["gundam-en-us@7", "gundam-en-us", "EN-US"],
+    ] as const
+  ).map(([adapterVersion, lineage, region]) => ({
     adapterVersion,
     lineage,
     game: "gundam",
     surface: "legality",
-    scriptPrefix: lineage === "gundam-en-asia"
-      ? "gundam-card-game-asia"
-      : "gundam-card-game-us",
+    scriptPrefix: lineage === "gundam-en-asia" ? "gundam-card-game-asia" : "gundam-card-game-us",
     entry: {
       news_id: `${lineage}-conditional-worker`,
       text: "If your Leader is red, GD30-001 is eligible for Standard play.",
@@ -403,12 +378,8 @@ test.each([
     const adapter = requiredSourceAdapter(adapterVersion);
     const requestUrl = adapter.requestUrlForSurface!(surface);
     const payload = {
-      publication: lineage.startsWith("gundam-")
-        ? "gundam-legality"
-        : `${lineage.replace(/-en$/u, "")}-${surface}`,
-      ...(lineage.startsWith("gundam-")
-        ? { locale: lineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US" }
-        : {}),
+      publication: lineage.startsWith("gundam-") ? "gundam-legality" : `${lineage.replace(/-en$/u, "")}-${surface}`,
+      ...(lineage.startsWith("gundam-") ? { locale: lineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US" } : {}),
       revision: "2026-07",
       declared_record_count: 1,
       partition: { page: 1, pages: 1, total: 1, has_next: false },
@@ -424,13 +395,15 @@ test.each([
     const objectKey = `source-snapshots/${snapshotId}.bin`;
     const fingerprint = digest;
     const plan = JSON.stringify({
-      requests: [{
-        id: "conditional-worker",
-        method: "GET",
-        url: requestUrl,
-        headers: { accept: "text/html" },
-        representation_fingerprint: fingerprint,
-      }],
+      requests: [
+        {
+          id: "conditional-worker",
+          method: "GET",
+          url: requestUrl,
+          headers: { accept: "text/html" },
+          representation_fingerprint: fingerprint,
+        },
+      ],
     });
     await testEnv.EVIDENCE_OBJECTS.put(objectKey, bytes);
     await testEnv.CATALOGUE_DB.batch([
@@ -455,13 +428,7 @@ test.each([
            request_headers_json, representation_fingerprint, state,
            source_snapshot_id
          ) VALUES (?, 'conditional-worker', 0, 'GET', ?, ?, ?, 'observed', ?)`,
-      ).bind(
-        runId,
-        requestUrl,
-        JSON.stringify({ accept: "text/html" }),
-        fingerprint,
-        snapshotId,
-      ),
+      ).bind(runId, requestUrl, JSON.stringify({ accept: "text/html" }), fingerprint, snapshotId),
       testEnv.CATALOGUE_DB.prepare(
         `INSERT INTO source_fetch_attempts (
            id, ingestion_run_id, request_id, attempt_number,
@@ -500,13 +467,10 @@ test.each([
       ),
     ]);
 
-    const blocked = await request(
-      `/v1/source-snapshots/${snapshotId}/observations`,
-      {
-        adapter_version: adapterVersion,
-        idempotency_key: `conditional-worker-reparse-${lineage}`,
-      },
-    );
+    const blocked = await request(`/v1/source-snapshots/${snapshotId}/observations`, {
+      adapter_version: adapterVersion,
+      idempotency_key: `conditional-worker-reparse-${lineage}`,
+    });
     expect(blocked.response.status).toBe(422);
     expect(blocked.document).toMatchObject({ code: "source_parse_failed" });
   },
@@ -522,8 +486,7 @@ test("an unfetched nested image URL cannot enter through an unregistered product
       {
         id: "discovery",
         method: "GET",
-        url:
-          "https://www.gundam-gcg.com/asia-en/reconciliation/contextual-legality-unfetched-image",
+        url: "https://www.gundam-gcg.com/asia-en/reconciliation/contextual-legality-unfetched-image",
         headers: { accept: "application/json" },
       },
     ],
@@ -544,8 +507,7 @@ test("a nested Fusion World image candidate cannot enter through an unregistered
       {
         id: "discovery",
         method: "GET",
-        url:
-          "https://www.dbs-cardgame.com/fw/en/reconciliation/contextual-legality-secondary-foreign-image",
+        url: "https://www.dbs-cardgame.com/fw/en/reconciliation/contextual-legality-secondary-foreign-image",
         headers: { accept: "application/json" },
       },
     ],
@@ -556,13 +518,7 @@ test("a nested Fusion World image candidate cannot enter through an unregistered
   });
 });
 
-test.each([
-  "copy-count",
-  "companion-card",
-  "membership-value",
-  "rotation-block",
-  "release-date",
-])(
+test.each(["copy-count", "companion-card", "membership-value", "rotation-block", "release-date"])(
   "invented JSON cannot claim official wording agrees with a structured %s operand",
   async (operand) => {
     const blocked = await request("/v1/ingestion-runs/evidence", {
@@ -574,8 +530,7 @@ test.each([
         {
           id: "discovery",
           method: "GET",
-          url:
-            `https://www.gundam-gcg.com/asia-en/reconciliation/contextual-legality-${operand}-operand-mismatch`,
+          url: `https://www.gundam-gcg.com/asia-en/reconciliation/contextual-legality-${operand}-operand-mismatch`,
           headers: { accept: "application/json" },
         },
       ],
@@ -592,23 +547,15 @@ test("an Official Source field change requires exact reaffirmation before a fres
     "https://official-source.invalid/reconciliation/contextual-legality-domain",
     "curated-field-source-baseline",
   );
-  const baselineCard = (
-    baseline.reconciled.cards as Array<Record<string, unknown>>
-  ).find((card) =>
-    (card.official_identity as Record<string, unknown>).value === "GD30-001"
+  const baselineCard = (baseline.reconciled.cards as Array<Record<string, unknown>>).find(
+    (card) => (card.official_identity as Record<string, unknown>).value === "GD30-001",
   );
   if (baselineCard === undefined) {
     throw new Error("The baseline GD30-001 Card is absent");
   }
-  const published = await approve(
-    baseline.reconciled,
-    "publish-curated-field-source-baseline",
-  );
+  const published = await approve(baseline.reconciled, "publish-curated-field-source-baseline");
   expect(published.response.status).toBe(200);
-  const currentRevisionId = requiredString(
-    published.document,
-    "resulting_revision_id",
-  );
+  const currentRevisionId = requiredString(published.document, "resulting_revision_id");
   const proposal = {
     game: "gundam",
     target: {
@@ -622,15 +569,15 @@ test("an Official Source field change requires exact reaffirmation before a fres
       value: "Owner-reviewed Card Name",
     },
     rationale: "The retained publication needs an owner-reviewed clarification.",
-    evidence: [{
-      kind: "owner_reference",
-      uri: "https://owner.example/review/gundam-card-name",
-      content_digest: "a".repeat(64),
-    }],
+    evidence: [
+      {
+        kind: "owner_reference",
+        uri: "https://owner.example/review/gundam-card-name",
+        content_digest: "a".repeat(64),
+      },
+    ],
     effective_interval: { from: null, to: null },
-    reviewed_source_digest: await sha256(utf8(canonicalJson(
-      requiredString(baselineCard, "name"),
-    ))),
+    reviewed_source_digest: await sha256(utf8(canonicalJson(requiredString(baselineCard, "name")))),
     supersedes_revision_id: null,
   };
   const authored = await request("/admin/v1/curated-revisions", {
@@ -641,10 +588,7 @@ test("an Official Source field change requires exact reaffirmation before a fres
     idempotency_key: "author-curated-field-source-baseline",
   });
   expect(authored.response.status).toBe(201);
-  const curatedRevisionId = requiredString(
-    authored.document,
-    "curated_revision_id",
-  );
+  const curatedRevisionId = requiredString(authored.document, "curated_revision_id");
   const contentDigest = requiredString(authored.document, "content_digest");
 
   const changed = await collectFixtureLegality(
@@ -655,15 +599,15 @@ test("an Official Source field change requires exact reaffirmation before a fres
   expect(changed.reconciled).toMatchObject({
     state: "failed",
     publishable: false,
-    diagnostics: [expect.objectContaining({
-      code: "curated_revision_reconfirmation_required",
-      curated_revision_id: curatedRevisionId,
-    })],
+    diagnostics: [
+      expect.objectContaining({
+        code: "curated_revision_reconfirmation_required",
+        curated_revision_id: curatedRevisionId,
+      }),
+    ],
   });
 
-  const shown = await request(
-    `/admin/v1/curated-revisions/${curatedRevisionId}`,
-  );
+  const shown = await request(`/admin/v1/curated-revisions/${curatedRevisionId}`);
   expect(shown.response.status).toBe(200);
   const revision = shown.document.revision as Record<string, unknown>;
   const conflict = revision.pending_conflict as Record<string, unknown>;
@@ -673,51 +617,48 @@ test("an Official Source field change requires exact reaffirmation before a fres
     pending_conflict: {
       run_id: changed.runId,
       previous_source_digest: proposal.reviewed_source_digest,
-      observed_source_digest: await sha256(utf8(canonicalJson(
-        "Changed Official Source Card Name",
-      ))),
+      observed_source_digest: await sha256(utf8(canonicalJson("Changed Official Source Card Name"))),
     },
   });
-  expect(requiredString(conflict, "digest")).toBe(await sha256(utf8(
-    canonicalJson({
-      conflict_id: requiredString(conflict, "id"),
-      run_id: changed.runId,
-      revision_id: curatedRevisionId,
-      previous_source_digest: proposal.reviewed_source_digest,
-      observed_source_digest: requiredString(
-        conflict,
-        "observed_source_digest",
+  expect(requiredString(conflict, "digest")).toBe(
+    await sha256(
+      utf8(
+        canonicalJson({
+          conflict_id: requiredString(conflict, "id"),
+          run_id: changed.runId,
+          revision_id: curatedRevisionId,
+          previous_source_digest: proposal.reviewed_source_digest,
+          observed_source_digest: requiredString(conflict, "observed_source_digest"),
+        }),
       ),
-    }),
-  )));
-  expect(shown.document.events).toEqual(expect.arrayContaining([
-    expect.objectContaining({ type: "authored", event_version: 1 }),
-    expect.objectContaining({
-      type: "source_change_detected",
-      event_version: 2,
-    }),
-  ]));
-
-  const blocked = await request(
-    `/v1/ingestion-runs/${changed.runId}/collection/retry`,
-    { idempotency_key: "retry-curated-field-before-reaffirmation" },
+    ),
   );
+  expect(shown.document.events).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ type: "authored", event_version: 1 }),
+      expect.objectContaining({
+        type: "source_change_detected",
+        event_version: 2,
+      }),
+    ]),
+  );
+
+  const blocked = await request(`/v1/ingestion-runs/${changed.runId}/collection/retry`, {
+    idempotency_key: "retry-curated-field-before-reaffirmation",
+  });
   expect(blocked.response.status).toBe(409);
   expect(blocked.document).toMatchObject({
     code: "curated_revision_reconfirmation_required",
   });
 
-  const reaffirmed = await request(
-    `/admin/v1/curated-revisions/${curatedRevisionId}/reaffirm`,
-    {
-      environment: "production",
-      expected_current_revision_id: currentRevisionId,
-      expected_event_version: 2,
-      conflict_digest: requiredString(conflict, "digest"),
-      rationale: "The assertion remains necessary after reviewing the new publication.",
-      idempotency_key: "reaffirm-curated-field-source-change",
-    },
-  );
+  const reaffirmed = await request(`/admin/v1/curated-revisions/${curatedRevisionId}/reaffirm`, {
+    environment: "production",
+    expected_current_revision_id: currentRevisionId,
+    expected_event_version: 2,
+    conflict_digest: requiredString(conflict, "digest"),
+    rationale: "The assertion remains necessary after reviewing the new publication.",
+    idempotency_key: "reaffirm-curated-field-source-change",
+  });
   expect(reaffirmed.response.status).toBe(200);
   expect(reaffirmed.document).toMatchObject({
     curated_revision_id: curatedRevisionId,
@@ -726,44 +667,41 @@ test("an Official Source field change requires exact reaffirmation before a fres
     event_version: 3,
   });
 
-  const fresh = await request(
-    `/v1/ingestion-runs/${changed.runId}/collection/retry`,
-    { idempotency_key: "retry-curated-field-after-reaffirmation" },
-  );
+  const fresh = await request(`/v1/ingestion-runs/${changed.runId}/collection/retry`, {
+    idempotency_key: "retry-curated-field-after-reaffirmation",
+  });
   expect(fresh.response.status).toBe(201);
   expect(fresh.document).toMatchObject({
     state: "collecting",
     linked_run_id: changed.runId,
   });
   const freshRunId = requiredString(fresh.document, "id");
-  const resumed = await request(
-    `/v1/ingestion-runs/${freshRunId}/collection/resume`,
-    {},
-  );
+  const resumed = await request(`/v1/ingestion-runs/${freshRunId}/collection/resume`, {});
   expect(resumed.response.status).toBe(202);
   await waitForState(freshRunId, "parsing");
   const candidate = await reconcile(freshRunId);
   expect(candidate.response.status).toBe(200);
-  const reaffirmedCard = (
-    candidate.document.cards as Array<Record<string, unknown>>
-  ).find((card) =>
-    (card.official_identity as Record<string, unknown>).value === "GD30-001"
+  const reaffirmedCard = (candidate.document.cards as Array<Record<string, unknown>>).find(
+    (card) => (card.official_identity as Record<string, unknown>).value === "GD30-001",
   );
   expect(reaffirmedCard).toMatchObject({
     name: proposal.assertion.value,
-    curated_provenance: [expect.objectContaining({
-      curated_revision_id: curatedRevisionId,
-      content_digest: contentDigest,
-      reviewed_source_value: "Changed Official Source Card Name",
-    })],
+    curated_provenance: [
+      expect.objectContaining({
+        curated_revision_id: curatedRevisionId,
+        content_digest: contentDigest,
+        reviewed_source_value: "Changed Official Source Card Name",
+      }),
+    ],
   });
-  expect((await request(
-    `/v1/ingestion-runs/${freshRunId}/rejection`,
-    {
-      candidate_digest: requiredString(candidate.document, "candidate_digest"),
-      idempotency_key: "reject-curated-field-after-reaffirmation",
-    },
-  )).response.status).toBe(200);
+  expect(
+    (
+      await request(`/v1/ingestion-runs/${freshRunId}/rejection`, {
+        candidate_digest: requiredString(candidate.document, "candidate_digest"),
+        idempotency_key: "reject-curated-field-after-reaffirmation",
+      })
+    ).response.status,
+  ).toBe(200);
 }, 45_000);
 
 test("an Official Source relationship change recovers through supersession and retirement", async () => {
@@ -771,18 +709,12 @@ test("an Official Source relationship change recovers through supersession and r
     "https://official-source.invalid/reconciliation/product-typed-relationships",
     "curated-relationship-source-baseline",
   );
-  const published = await approve(
-    baseline.reconciled,
-    "publish-curated-relationship-source-baseline",
-  );
+  const published = await approve(baseline.reconciled, "publish-curated-relationship-source-baseline");
   expect(published.response.status).toBe(200);
-  const currentRevisionId = requiredString(
-    published.document,
-    "resulting_revision_id",
+  const currentRevisionId = requiredString(published.document, "resulting_revision_id");
+  const relationship = (await exportedComponentRecords(currentRevisionId, "relationships")).find(
+    (entry) => entry.kind === "product-card",
   );
-  const relationship = (
-    await exportedComponentRecords(currentRevisionId, "relationships")
-  ).find((entry) => entry.kind === "product-card");
   if (relationship === undefined) {
     throw new Error("The baseline product-card relationship is absent");
   }
@@ -797,11 +729,13 @@ test("an Official Source relationship change recovers through supersession and r
     target,
     assertion: { kind: "relationship", presence: "absent" },
     rationale: "The owner reviewed this derived relationship as absent.",
-    evidence: [{
-      kind: "owner_reference",
-      uri: "https://owner.example/review/product-card-relationship",
-      content_digest: "b".repeat(64),
-    }],
+    evidence: [
+      {
+        kind: "owner_reference",
+        uri: "https://owner.example/review/product-card-relationship",
+        content_digest: "b".repeat(64),
+      },
+    ],
     effective_interval: { from: null, to: null },
     reviewed_source_digest: await sha256(utf8(canonicalJson("present"))),
     supersedes_revision_id: null,
@@ -814,10 +748,7 @@ test("an Official Source relationship change recovers through supersession and r
     idempotency_key: "author-curated-relationship-source-baseline",
   });
   expect(authored.response.status).toBe(201);
-  const priorRevisionId = requiredString(
-    authored.document,
-    "curated_revision_id",
-  );
+  const priorRevisionId = requiredString(authored.document, "curated_revision_id");
 
   const changed = await collectFixtureOnePiece(
     "https://official-source.invalid/reconciliation/product-typed-relationships-changed",
@@ -827,14 +758,14 @@ test("an Official Source relationship change recovers through supersession and r
   expect(changed.reconciled).toMatchObject({
     state: "failed",
     publishable: false,
-    diagnostics: [expect.objectContaining({
-      code: "curated_revision_reconfirmation_required",
-      curated_revision_id: priorRevisionId,
-    })],
+    diagnostics: [
+      expect.objectContaining({
+        code: "curated_revision_reconfirmation_required",
+        curated_revision_id: priorRevisionId,
+      }),
+    ],
   });
-  const priorShown = await request(
-    `/admin/v1/curated-revisions/${priorRevisionId}`,
-  );
+  const priorShown = await request(`/admin/v1/curated-revisions/${priorRevisionId}`);
   const prior = priorShown.document.revision as Record<string, unknown>;
   const conflict = prior.pending_conflict as Record<string, unknown>;
   expect(prior).toMatchObject({
@@ -851,29 +782,23 @@ test("an Official Source relationship change recovers through supersession and r
     ...proposal,
     assertion: { kind: "relationship", presence: "present" },
     rationale: "The owner reviewed the missing relationship and requires it.",
-    reviewed_source_digest: requiredString(
-      conflict,
-      "observed_source_digest",
-    ),
+    reviewed_source_digest: requiredString(conflict, "observed_source_digest"),
     supersedes_revision_id: priorRevisionId,
   };
   const invalidReplacement = {
     ...replacementProposal,
     reviewed_source_digest: "f".repeat(64),
   };
-  const invalidReviewedSource = await request(
-    `/admin/v1/curated-revisions/${priorRevisionId}/supersede`,
-    {
-      environment: "production",
-      expected_current_revision_id: currentRevisionId,
-      expected_event_version: 2,
-      conflict_digest: requiredString(conflict, "digest"),
-      proposal: invalidReplacement,
-      proposal_digest: await sha256(utf8(canonicalJson(invalidReplacement))),
-      rationale: "Replace the exception after reviewing the changed source.",
-      idempotency_key: "reject-invalid-relationship-reviewed-source",
-    },
-  );
+  const invalidReviewedSource = await request(`/admin/v1/curated-revisions/${priorRevisionId}/supersede`, {
+    environment: "production",
+    expected_current_revision_id: currentRevisionId,
+    expected_event_version: 2,
+    conflict_digest: requiredString(conflict, "digest"),
+    proposal: invalidReplacement,
+    proposal_digest: await sha256(utf8(canonicalJson(invalidReplacement))),
+    rationale: "Replace the exception after reviewing the changed source.",
+    idempotency_key: "reject-invalid-relationship-reviewed-source",
+  });
   expect(invalidReviewedSource.response.status).toBe(409);
   expect(invalidReviewedSource.document).toMatchObject({
     code: "curated_revision_reviewed_source_mismatch",
@@ -889,119 +814,86 @@ test("an Official Source relationship change recovers through supersession and r
     rationale: "Replace the exception after reviewing the changed source.",
     idempotency_key: "supersede-curated-relationship-source-change",
   };
-  const superseded = await request(
-    `/admin/v1/curated-revisions/${priorRevisionId}/supersede`,
-    supersedeInput,
-  );
+  const superseded = await request(`/admin/v1/curated-revisions/${priorRevisionId}/supersede`, supersedeInput);
   expect(superseded.response.status).toBe(201);
-  const supersedeReplay = await request(
-    `/admin/v1/curated-revisions/${priorRevisionId}/supersede`,
-    supersedeInput,
-  );
+  const supersedeReplay = await request(`/admin/v1/curated-revisions/${priorRevisionId}/supersede`, supersedeInput);
   expect(supersedeReplay.response.status).toBe(200);
   expect(supersedeReplay.document).toEqual(superseded.document);
-  const changedSupersedeReuse = await request(
-    `/admin/v1/curated-revisions/${priorRevisionId}/supersede`,
-    {
-      ...supersedeInput,
-      rationale: "A changed request must not reuse the accepted key.",
-      idempotency_key: "supersede-curated-relationship-source-change",
-    },
-  );
+  const changedSupersedeReuse = await request(`/admin/v1/curated-revisions/${priorRevisionId}/supersede`, {
+    ...supersedeInput,
+    rationale: "A changed request must not reuse the accepted key.",
+    idempotency_key: "supersede-curated-relationship-source-change",
+  });
   expect(changedSupersedeReuse.response.status).toBe(409);
   expect(changedSupersedeReuse.document).toMatchObject({
     code: "idempotency_conflict",
   });
-  const replacementRevisionId = requiredString(
-    superseded.document,
-    "curated_revision_id",
-  );
+  const replacementRevisionId = requiredString(superseded.document, "curated_revision_id");
   expect(superseded.document).toMatchObject({
     status: "active",
     event_version: 1,
     code: "curated_revision_superseded",
   });
-  const supersededPrior = await request(
-    `/admin/v1/curated-revisions/${priorRevisionId}`,
-  );
+  const supersededPrior = await request(`/admin/v1/curated-revisions/${priorRevisionId}`);
   expect(supersededPrior.document.revision).toMatchObject({
     status: "superseded",
     event_version: 3,
   });
 
-  const afterSupersession = await request(
-    `/v1/ingestion-runs/${changed.runId}/collection/retry`,
-    { idempotency_key: "retry-relationship-after-supersession" },
-  );
+  const afterSupersession = await request(`/v1/ingestion-runs/${changed.runId}/collection/retry`, {
+    idempotency_key: "retry-relationship-after-supersession",
+  });
   expect(afterSupersession.response.status).toBe(201);
   expect(afterSupersession.document).toMatchObject({
     state: "collecting",
     linked_run_id: changed.runId,
   });
   const supersessionRunId = requiredString(afterSupersession.document, "id");
-  expect((await request(
-    `/v1/ingestion-runs/${supersessionRunId}/collection/resume`,
-    {},
-  )).response.status).toBe(202);
+  expect((await request(`/v1/ingestion-runs/${supersessionRunId}/collection/resume`, {})).response.status).toBe(202);
   await waitForState(supersessionRunId, "parsing");
   const supersessionCandidate = await reconcile(supersessionRunId);
   expect(supersessionCandidate.response.status).toBe(200);
-  const inspectedSupersession = await request(
-    `/v1/ingestion-runs/${supersessionRunId}/candidate`,
-  );
+  const inspectedSupersession = await request(`/v1/ingestion-runs/${supersessionRunId}/candidate`);
   expect(inspectedSupersession.document).toMatchObject({
     curated_revision_ids: [replacementRevisionId],
     diff: {
-      curated_effects: [expect.objectContaining({
-        revision_id: replacementRevisionId,
-        target: expect.any(String),
-        assertion: replacementProposal.assertion,
-        evidence_category: "curated",
-      })],
+      curated_effects: [
+        expect.objectContaining({
+          revision_id: replacementRevisionId,
+          target: expect.any(String),
+          assertion: replacementProposal.assertion,
+          evidence_category: "curated",
+        }),
+      ],
     },
   });
-  const rejected = await request(
-    `/v1/ingestion-runs/${supersessionRunId}/rejection`,
-    {
-      candidate_digest: requiredString(
-        supersessionCandidate.document,
-        "candidate_digest",
-      ),
-      idempotency_key: "reject-relationship-after-supersession",
-    },
-  );
+  const rejected = await request(`/v1/ingestion-runs/${supersessionRunId}/rejection`, {
+    candidate_digest: requiredString(supersessionCandidate.document, "candidate_digest"),
+    idempotency_key: "reject-relationship-after-supersession",
+  });
   expect(rejected.response.status).toBe(200);
 
-  const replacementBeforeRetirement = await request(
-    `/admin/v1/curated-revisions/${replacementRevisionId}`,
-  );
+  const replacementBeforeRetirement = await request(`/admin/v1/curated-revisions/${replacementRevisionId}`);
   expect(replacementBeforeRetirement.response.status).toBe(200);
-  const immutableReplacement = replacementBeforeRetirement.document
-    .revision as Record<string, unknown>;
+  const immutableReplacement = replacementBeforeRetirement.document.revision as Record<string, unknown>;
 
-  const retired = await request(
-    `/admin/v1/curated-revisions/${replacementRevisionId}/retire`,
-    {
-      environment: "production",
-      expected_current_revision_id: currentRevisionId,
-      expected_event_version: 1,
-      conflict_digest: null,
-      rationale: "The changed Official Source no longer needs an exception.",
-      idempotency_key: "retire-curated-relationship-replacement",
-    },
-  );
+  const retired = await request(`/admin/v1/curated-revisions/${replacementRevisionId}/retire`, {
+    environment: "production",
+    expected_current_revision_id: currentRevisionId,
+    expected_event_version: 1,
+    conflict_digest: null,
+    rationale: "The changed Official Source no longer needs an exception.",
+    idempotency_key: "retire-curated-relationship-replacement",
+  });
   expect(retired.response.status).toBe(200);
   expect(retired.document).toMatchObject({
     curated_revision_id: replacementRevisionId,
     status: "retired",
     event_version: 2,
   });
-  const replacementAfterRetirement = await request(
-    `/admin/v1/curated-revisions/${replacementRevisionId}`,
-  );
+  const replacementAfterRetirement = await request(`/admin/v1/curated-revisions/${replacementRevisionId}`);
   expect(replacementAfterRetirement.response.status).toBe(200);
-  const retiredReplacement = replacementAfterRetirement.document
-    .revision as Record<string, unknown>;
+  const retiredReplacement = replacementAfterRetirement.document.revision as Record<string, unknown>;
   expect({
     id: retiredReplacement.id,
     content: retiredReplacement.content,
@@ -1026,35 +918,26 @@ test("an Official Source relationship change recovers through supersession and r
     ],
   });
 
-  const afterRetirement = await request(
-    `/v1/ingestion-runs/${changed.runId}/collection/retry`,
-    { idempotency_key: "retry-relationship-after-retirement" },
-  );
+  const afterRetirement = await request(`/v1/ingestion-runs/${changed.runId}/collection/retry`, {
+    idempotency_key: "retry-relationship-after-retirement",
+  });
   expect(afterRetirement.response.status).toBe(201);
   const retirementRunId = requiredString(afterRetirement.document, "id");
-  expect((await request(
-    `/v1/ingestion-runs/${retirementRunId}/collection/resume`,
-    {},
-  )).response.status).toBe(202);
+  expect((await request(`/v1/ingestion-runs/${retirementRunId}/collection/resume`, {})).response.status).toBe(202);
   await waitForState(retirementRunId, "parsing");
   const retirementCandidate = await reconcile(retirementRunId);
   expect(retirementCandidate.response.status).toBe(200);
-  const inspectedRetirement = await request(
-    `/v1/ingestion-runs/${retirementRunId}/candidate`,
-  );
+  const inspectedRetirement = await request(`/v1/ingestion-runs/${retirementRunId}/candidate`);
   expect(inspectedRetirement.document).toMatchObject({
     curated_revision_ids: [],
     diff: { curated_effects: [] },
   });
-  expect((await request(
-    `/v1/ingestion-runs/${retirementRunId}/rejection`,
-    {
-      candidate_digest: requiredString(
-        retirementCandidate.document,
-        "candidate_digest",
-      ),
-      idempotency_key: "reject-relationship-after-retirement",
-    },
-  )).response.status).toBe(200);
+  expect(
+    (
+      await request(`/v1/ingestion-runs/${retirementRunId}/rejection`, {
+        candidate_digest: requiredString(retirementCandidate.document, "candidate_digest"),
+        idempotency_key: "reject-relationship-after-retirement",
+      })
+    ).response.status,
+  ).toBe(200);
 }, 60_000);
-

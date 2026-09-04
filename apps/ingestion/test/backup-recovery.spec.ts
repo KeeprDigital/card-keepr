@@ -1,8 +1,4 @@
-import {
-  applyD1Migrations,
-  env,
-  type D1Migration,
-} from "cloudflare:test";
+import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
 import {
@@ -12,11 +8,9 @@ import {
   type D1BackupProvider,
   type RestoredCatalogueVerification,
   verifyRestoredCatalogue,
-} from "../../../src/catalogue/backup-recovery";
-import {
   startOrObserveCatalogueBackupWorkflow,
   type CatalogueBackupWorkflowParams,
-} from "../../../src/catalogue/backup-workflow";
+} from "../../../src/catalogue/backup-recovery";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 
@@ -31,23 +25,14 @@ const completeRestoredVerification = (): RestoredCatalogueVerification => ({
   api: true,
 });
 
-const freshRestoreTarget: D1BackupProvider["prepareRestoreTarget"] =
-  async (input) => ({
-    databaseId:
-      `${input.configuredDatabaseId}:${input.attemptId}:${input.generation}`,
-  });
+const freshRestoreTarget: D1BackupProvider["prepareRestoreTarget"] = async (input) => ({
+  databaseId: `${input.configuredDatabaseId}:${input.attemptId}:${input.generation}`,
+});
 
 beforeEach(async () => {
-  await applyD1Migrations(
-    testEnv.CATALOGUE_DB,
-    testEnv.TEST_MIGRATIONS,
-  );
-  await testEnv.CATALOGUE_DB.prepare(
-    "DELETE FROM catalogue_backup_retention",
-  ).run();
-  await testEnv.CATALOGUE_DB.prepare(
-    "DELETE FROM catalogue_backup_attempts",
-  ).run();
+  await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
+  await testEnv.CATALOGUE_DB.prepare("DELETE FROM catalogue_backup_retention").run();
+  await testEnv.CATALOGUE_DB.prepare("DELETE FROM catalogue_backup_attempts").run();
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE operation_state
      SET recovery_health = 'healthy', active_ingestion_run_id = NULL
@@ -56,31 +41,33 @@ beforeEach(async () => {
 });
 
 test("restored verification executes the real D1 schema and rejects an empty or partial catalogue", async () => {
-  await expect(verifyRestoredCatalogue(testEnv.CATALOGUE_DB, {
-    expectedRevisionId: "catrev_spine_000",
-    expectedSchemaMigrationLevel: 16,
-    expected: {
-      cards: 0,
-      printings: 0,
-      products: 0,
-      legality_rules: 0,
-      api_documents: 0,
-      search_terms: 0,
-      search_chunks: 0,
-      provenance: 0,
-      audit_rows: 0,
-      representative_card_id: null,
-      representative_printing_id: null,
-      representative_product_id: null,
-      representative_legality_rule_id: null,
-      representative_product_digest: null,
-      representative_legality_rule_digest: null,
-      representative_search_text: null,
-      representative_curated_revision_id: null,
-      representative_curated_revision_digest: null,
-      publication_ingestion_run_id: null,
-    },
-  })).rejects.toThrow("Restored D1 verification failed.");
+  await expect(
+    verifyRestoredCatalogue(testEnv.CATALOGUE_DB, {
+      expectedRevisionId: "catrev_spine_000",
+      expectedSchemaMigrationLevel: 16,
+      expected: {
+        cards: 0,
+        printings: 0,
+        products: 0,
+        legality_rules: 0,
+        api_documents: 0,
+        search_terms: 0,
+        search_chunks: 0,
+        provenance: 0,
+        audit_rows: 0,
+        representative_card_id: null,
+        representative_printing_id: null,
+        representative_product_id: null,
+        representative_legality_rule_id: null,
+        representative_product_digest: null,
+        representative_legality_rule_digest: null,
+        representative_search_text: null,
+        representative_curated_revision_id: null,
+        representative_curated_revision_digest: null,
+        publication_ingestion_run_id: null,
+      },
+    }),
+  ).rejects.toThrow("Restored D1 verification failed.");
 });
 
 test("the Cloudflare provider recreates the disposable D1 for each restore generation", async () => {
@@ -100,12 +87,8 @@ test("the Cloudflare provider recreates the disposable D1 for each restore gener
     previousDatabaseId: first.databaseId,
     generation: 2,
   });
-  expect(first.databaseId).toMatch(
-    /^00000000-0000-4000-8000-[0-9]{12}$/u,
-  );
-  expect(second.databaseId).toMatch(
-    /^00000000-0000-4000-8000-[0-9]{12}$/u,
-  );
+  expect(first.databaseId).toMatch(/^00000000-0000-4000-8000-[0-9]{12}$/u);
+  expect(second.databaseId).toMatch(/^00000000-0000-4000-8000-[0-9]{12}$/u);
   expect(second.databaseId).not.toBe(first.databaseId);
 });
 
@@ -115,11 +98,8 @@ test("the production backup boundary exports and verifies the exact restored rev
     "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
   ).first<{ migration_level: number }>();
   if (schemaState === null) throw new Error("Catalogue schema state is unavailable.");
-  const sqlBytes = new TextEncoder().encode(
-    "-- exact D1 SQL export without derived FTS virtual tables\n",
-  );
-  const firstRestoreDatabaseId =
-    `${testEnv.DISPOSABLE_D1_DATABASE_ID}:backup-production-boundary:1`;
+  const sqlBytes = new TextEncoder().encode("-- exact D1 SQL export without derived FTS virtual tables\n");
+  const firstRestoreDatabaseId = `${testEnv.DISPOSABLE_D1_DATABASE_ID}:backup-production-boundary:1`;
   const provider: D1BackupProvider = {
     async exportSql(input) {
       events.push(`export:${input.databaseId}`);
@@ -140,17 +120,14 @@ test("the production backup boundary exports and verifies the exact restored rev
     prepareRestoreTarget: freshRestoreTarget,
     async restoreSql(input) {
       events.push(`restore:${input.databaseId}`);
-      expect(new Uint8Array(await new Response(input.body).arrayBuffer()))
-        .toEqual(sqlBytes);
+      expect(new Uint8Array(await new Response(input.body).arrayBuffer())).toEqual(sqlBytes);
       expect(input.size).toBe(sqlBytes.byteLength);
     },
     async reconstructAndVerify(input) {
       events.push(`verify:${input.databaseId}`);
       expect(input.expectedRevisionId).toBe("catrev_spine_000");
       expect(input.ownerToken).toMatch(/^backup:/);
-      expect(input.expectedSchemaMigrationLevel).toBe(
-        schemaState.migration_level,
-      );
+      expect(input.expectedSchemaMigrationLevel).toBe(schemaState.migration_level);
       return completeRestoredVerification();
     },
   };
@@ -176,8 +153,7 @@ test("the production backup boundary exports and verifies the exact restored rev
     catalogue_revision_id: "catrev_spine_000",
     verified: true,
     d1_bookmark: "bookmark-backup-1",
-    content_sha256:
-      "85b8329ea262e672d4abc5352f8f1c504196ea0dfdc13c268575e5ba6ac2ec87",
+    content_sha256: "85b8329ea262e672d4abc5352f8f1c504196ea0dfdc13c268575e5ba6ac2ec87",
     manifest_key: expect.stringMatching(/\/manifest\.json$/),
     manifest_sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
     linked_attempt_id: null,
@@ -206,21 +182,23 @@ test("the production backup boundary exports and verifies the exact restored rev
   );
   expect(replay).toEqual(document);
   expect(events).toHaveLength(3);
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    {
-      expectedCurrentRevisionId: "catrev_changed_999",
-      idempotencyKey: "backup-production-boundary",
-      observedAt: "2026-08-05T02:02:00.000Z",
-      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
-      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
-      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
-      exportToken: "export-token",
-      verificationToken: "verification-token",
-    },
-    provider,
-  )).rejects.toMatchObject({
+  await expect(
+    createVerifiedCatalogueBackup(
+      testEnv.CATALOGUE_DB,
+      testEnv.BACKUPS,
+      {
+        expectedCurrentRevisionId: "catrev_changed_999",
+        idempotencyKey: "backup-production-boundary",
+        observedAt: "2026-08-05T02:02:00.000Z",
+        cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+        catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+        disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+        exportToken: "export-token",
+        verificationToken: "verification-token",
+      },
+      provider,
+    ),
+  ).rejects.toMatchObject({
     status: 409,
     code: "idempotency_key_reused",
   });
@@ -231,8 +209,7 @@ test("the production backup boundary exports and verifies the exact restored rev
     contract: "card-keepr-catalogue-backup-manifest@1",
     attempt_id: "backup-production-boundary",
     catalogue_revision_id: "catrev_spine_000",
-    content_sha256:
-      "85b8329ea262e672d4abc5352f8f1c504196ea0dfdc13c268575e5ba6ac2ec87",
+    content_sha256: "85b8329ea262e672d4abc5352f8f1c504196ea0dfdc13c268575e5ba6ac2ec87",
     d1_bookmark: "bookmark-backup-1",
     export_bytes: sqlBytes.byteLength,
     exported_at: "2026-08-05T02:00:00.000Z",
@@ -267,17 +244,19 @@ test("the production backup boundary exports and verifies the exact restored rev
       verified_at: "2026-08-05T02:00:00.000Z",
     },
   });
-  await expect(testEnv.CATALOGUE_DB.prepare(
-    `SELECT state, owner_token, lease_expires_at
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      `SELECT state, owner_token, lease_expires_at
      FROM card_search_fts_state WHERE singleton = 1`,
-  ).first()).resolves.toEqual({
+    ).first(),
+  ).resolves.toEqual({
     state: "ready",
     owner_token: null,
     lease_expires_at: null,
   });
-  await expect(testEnv.CATALOGUE_DB.prepare(
-    "SELECT recovery_health FROM operation_state WHERE singleton = 1",
-  ).first()).resolves.toEqual({ recovery_health: "healthy" });
+  await expect(
+    testEnv.CATALOGUE_DB.prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1").first(),
+  ).resolves.toEqual({ recovery_health: "healthy" });
 
   await createVerifiedCatalogueBackup(
     testEnv.CATALOGUE_DB,
@@ -294,13 +273,9 @@ test("the production backup boundary exports and verifies the exact restored rev
     },
     provider,
   );
-  const secondRestoreDatabaseId =
-    `${testEnv.DISPOSABLE_D1_DATABASE_ID}:backup-production-boundary-newest:1`;
+  const secondRestoreDatabaseId = `${testEnv.DISPOSABLE_D1_DATABASE_ID}:backup-production-boundary-newest:1`;
   expect(secondRestoreDatabaseId).not.toBe(firstRestoreDatabaseId);
-  expect(events.slice(-2)).toEqual([
-    `restore:${secondRestoreDatabaseId}`,
-    `verify:${secondRestoreDatabaseId}`,
-  ]);
+  expect(events.slice(-2)).toEqual([`restore:${secondRestoreDatabaseId}`, `verify:${secondRestoreDatabaseId}`]);
   const datedReplay = await createVerifiedCatalogueBackup(
     testEnv.CATALOGUE_DB,
     testEnv.BACKUPS,
@@ -346,55 +321,58 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
     },
   };
 
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    {
-      expectedCurrentRevisionId: "catrev_spine_000",
-      idempotencyKey: "backup-production-failure",
-      observedAt: "2026-08-05T03:00:00.000Z",
-      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
-      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
-      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
-      exportToken: "export-token",
-      verificationToken: "verification-token",
-    },
-    provider,
-  )).rejects.toThrow("synthetic export outage");
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    {
-      expectedCurrentRevisionId: "catrev_spine_000",
-      idempotencyKey: "backup-production-failure",
-      observedAt: "2026-08-05T03:01:00.000Z",
-      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
-      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
-      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
-      exportToken: "export-token",
-      verificationToken: "verification-token",
-    },
-    provider,
-  )).rejects.toMatchObject({ status: 409, code: "backup_failed" });
+  await expect(
+    createVerifiedCatalogueBackup(
+      testEnv.CATALOGUE_DB,
+      testEnv.BACKUPS,
+      {
+        expectedCurrentRevisionId: "catrev_spine_000",
+        idempotencyKey: "backup-production-failure",
+        observedAt: "2026-08-05T03:00:00.000Z",
+        cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+        catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+        disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+        exportToken: "export-token",
+        verificationToken: "verification-token",
+      },
+      provider,
+    ),
+  ).rejects.toThrow("synthetic export outage");
+  await expect(
+    createVerifiedCatalogueBackup(
+      testEnv.CATALOGUE_DB,
+      testEnv.BACKUPS,
+      {
+        expectedCurrentRevisionId: "catrev_spine_000",
+        idempotencyKey: "backup-production-failure",
+        observedAt: "2026-08-05T03:01:00.000Z",
+        cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+        catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+        disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+        exportToken: "export-token",
+        verificationToken: "verification-token",
+      },
+      provider,
+    ),
+  ).rejects.toMatchObject({ status: 409, code: "backup_failed" });
   expect(exportAttempts).toBe(1);
-  await expect(testEnv.CATALOGUE_DB.prepare(
-    `SELECT state, failure_code FROM catalogue_backup_attempts
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      `SELECT state, failure_code FROM catalogue_backup_attempts
      WHERE idempotency_key = 'backup-production-failure'`,
-  ).first()).resolves.toEqual({
+    ).first(),
+  ).resolves.toEqual({
     state: "failed",
     failure_code: "backup_failed",
   });
-  await expect(testEnv.CATALOGUE_DB.prepare(
-    "SELECT state FROM card_search_fts_state WHERE singleton = 1",
-  ).first()).resolves.toEqual({ state: "ready" });
-  await expect(testEnv.CATALOGUE_DB.prepare(
-    "SELECT recovery_health FROM operation_state WHERE singleton = 1",
-  ).first()).resolves.toEqual({ recovery_health: "degraded" });
+  await expect(
+    testEnv.CATALOGUE_DB.prepare("SELECT state FROM card_search_fts_state WHERE singleton = 1").first(),
+  ).resolves.toEqual({ state: "ready" });
+  await expect(
+    testEnv.CATALOGUE_DB.prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1").first(),
+  ).resolves.toEqual({ recovery_health: "degraded" });
 
-  const failedStatus = await catalogueBackupAttemptStatus(
-    testEnv.CATALOGUE_DB,
-    "backup-production-failure",
-  );
+  const failedStatus = await catalogueBackupAttemptStatus(testEnv.CATALOGUE_DB, "backup-production-failure");
   expect(failedStatus).toMatchObject({
     contract: "card-keepr-catalogue-backup-status@1",
     state: "failed",
@@ -404,93 +382,102 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
       failed_attempt_digest: expect.stringMatching(/^[a-f0-9]{64}$/),
     },
   });
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    {
-      expectedCurrentRevisionId: "catrev_spine_000",
-      idempotencyKey: "backup-production-unlinked-after-failure",
-      observedAt: "2026-08-05T03:05:00.000Z",
-      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
-      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
-      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
-      exportToken: "export-token",
-      verificationToken: "verification-token",
-    },
-    provider,
-  )).rejects.toMatchObject({
+  await expect(
+    createVerifiedCatalogueBackup(
+      testEnv.CATALOGUE_DB,
+      testEnv.BACKUPS,
+      {
+        expectedCurrentRevisionId: "catrev_spine_000",
+        idempotencyKey: "backup-production-unlinked-after-failure",
+        observedAt: "2026-08-05T03:05:00.000Z",
+        cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+        catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+        disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+        exportToken: "export-token",
+        verificationToken: "verification-token",
+      },
+      provider,
+    ),
+  ).rejects.toMatchObject({
     status: 409,
     code: "backup_retry_required",
   });
-  await expect(testEnv.CATALOGUE_DB.prepare(
-    `SELECT 1 AS present FROM catalogue_backup_attempts
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      `SELECT 1 AS present FROM catalogue_backup_attempts
      WHERE idempotency_key = 'backup-production-unlinked-after-failure'`,
-  ).first()).resolves.toBeNull();
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    {
-      expectedCurrentRevisionId: "catrev_spine_000",
-      idempotencyKey: "backup-production-newer-failure",
-      observedAt: "2026-08-05T03:06:00.000Z",
-      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
-      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
-      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
-      exportToken: "export-token",
-      verificationToken: "verification-token",
-      failedAttemptId: "backup-production-failure",
-      failedAttemptDigest: String(failedStatus.attempt_digest),
-    },
-    provider,
-  )).rejects.toThrow("synthetic export outage");
-  const newerFailedStatus = await catalogueBackupAttemptStatus(
-    testEnv.CATALOGUE_DB,
-    "backup-production-newer-failure",
-  );
-  await expect(testEnv.CATALOGUE_DB.prepare(
-    "SELECT recovery_health FROM operation_state WHERE singleton = 1",
-  ).first()).resolves.toEqual({ recovery_health: "degraded" });
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    {
-      expectedCurrentRevisionId: "catrev_spine_000",
-      idempotencyKey: "backup-production-superseded-retry",
-      observedAt: "2026-08-05T03:07:00.000Z",
-      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
-      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
-      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
-      exportToken: "export-token",
-      verificationToken: "verification-token",
-      failedAttemptId: "backup-production-failure",
-      failedAttemptDigest: String(failedStatus.attempt_digest),
-    },
-    provider,
-  )).rejects.toMatchObject({
+    ).first(),
+  ).resolves.toBeNull();
+  await expect(
+    createVerifiedCatalogueBackup(
+      testEnv.CATALOGUE_DB,
+      testEnv.BACKUPS,
+      {
+        expectedCurrentRevisionId: "catrev_spine_000",
+        idempotencyKey: "backup-production-newer-failure",
+        observedAt: "2026-08-05T03:06:00.000Z",
+        cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+        catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+        disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+        exportToken: "export-token",
+        verificationToken: "verification-token",
+        failedAttemptId: "backup-production-failure",
+        failedAttemptDigest: String(failedStatus.attempt_digest),
+      },
+      provider,
+    ),
+  ).rejects.toThrow("synthetic export outage");
+  const newerFailedStatus = await catalogueBackupAttemptStatus(testEnv.CATALOGUE_DB, "backup-production-newer-failure");
+  await expect(
+    testEnv.CATALOGUE_DB.prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1").first(),
+  ).resolves.toEqual({ recovery_health: "degraded" });
+  await expect(
+    createVerifiedCatalogueBackup(
+      testEnv.CATALOGUE_DB,
+      testEnv.BACKUPS,
+      {
+        expectedCurrentRevisionId: "catrev_spine_000",
+        idempotencyKey: "backup-production-superseded-retry",
+        observedAt: "2026-08-05T03:07:00.000Z",
+        cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+        catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+        disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+        exportToken: "export-token",
+        verificationToken: "verification-token",
+        failedAttemptId: "backup-production-failure",
+        failedAttemptDigest: String(failedStatus.attempt_digest),
+      },
+      provider,
+    ),
+  ).rejects.toMatchObject({
     status: 409,
     code: "backup_retry_source_superseded",
   });
-  await expect(testEnv.CATALOGUE_DB.prepare(
-    `SELECT 1 AS present FROM catalogue_backup_attempts
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      `SELECT 1 AS present FROM catalogue_backup_attempts
      WHERE idempotency_key = 'backup-production-superseded-retry'`,
-  ).first()).resolves.toBeNull();
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    {
-      expectedCurrentRevisionId: "catrev_spine_000",
-      idempotencyKey: "backup-production-wrong-retry",
-      observedAt: "2026-08-05T03:08:00.000Z",
-      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
-      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
-      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
-      exportToken: "export-token",
-      verificationToken: "verification-token",
-      failedAttemptId: "backup-production-newer-failure",
-      failedAttemptDigest: "0".repeat(64),
-    },
-    provider,
-  )).rejects.toMatchObject({
+    ).first(),
+  ).resolves.toBeNull();
+  await expect(
+    createVerifiedCatalogueBackup(
+      testEnv.CATALOGUE_DB,
+      testEnv.BACKUPS,
+      {
+        expectedCurrentRevisionId: "catrev_spine_000",
+        idempotencyKey: "backup-production-wrong-retry",
+        observedAt: "2026-08-05T03:08:00.000Z",
+        cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+        catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+        disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+        exportToken: "export-token",
+        verificationToken: "verification-token",
+        failedAttemptId: "backup-production-newer-failure",
+        failedAttemptDigest: "0".repeat(64),
+      },
+      provider,
+    ),
+  ).rejects.toMatchObject({
     status: 409,
     code: "backup_digest_mismatch",
   });
@@ -518,25 +505,27 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
   });
   expect(retry.object_key).not.toContain("backup-production-failure.sql");
   expect(exportAttempts).toBe(3);
-  await expect(testEnv.CATALOGUE_DB.prepare(
-    "SELECT recovery_health FROM operation_state WHERE singleton = 1",
-  ).first()).resolves.toEqual({ recovery_health: "healthy" });
+  await expect(
+    testEnv.CATALOGUE_DB.prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1").first(),
+  ).resolves.toEqual({ recovery_health: "healthy" });
 
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    {
-      expectedCurrentRevisionId: "catrev_spine_000",
-      idempotencyKey: "backup-periodic-after-recovery",
-      observedAt: "2026-08-05T03:12:00.000Z",
-      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
-      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
-      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
-      exportToken: "export-token",
-      verificationToken: "verification-token",
-    },
-    provider,
-  )).resolves.toMatchObject({
+  await expect(
+    createVerifiedCatalogueBackup(
+      testEnv.CATALOGUE_DB,
+      testEnv.BACKUPS,
+      {
+        expectedCurrentRevisionId: "catrev_spine_000",
+        idempotencyKey: "backup-periodic-after-recovery",
+        observedAt: "2026-08-05T03:12:00.000Z",
+        cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+        catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+        disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+        exportToken: "export-token",
+        verificationToken: "verification-token",
+      },
+      provider,
+    ),
+  ).resolves.toMatchObject({
     linked_attempt_id: null,
     verified: true,
   });
@@ -572,24 +561,26 @@ test("recovery stays degraded unless every restored catalogue contract passes", 
     },
   } as unknown as D1BackupProvider;
 
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    {
-      expectedCurrentRevisionId: "catrev_spine_000",
-      idempotencyKey: "backup-incomplete-verification",
-      observedAt: "2026-08-05T03:20:00.000Z",
-      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
-      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
-      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
-      exportToken: "export-token",
-      verificationToken: "verification-token",
-    },
-    provider,
-  )).rejects.toThrow(/restored.*verification/iu);
-  await expect(testEnv.CATALOGUE_DB.prepare(
-    "SELECT recovery_health FROM operation_state WHERE singleton = 1",
-  ).first()).resolves.toEqual({ recovery_health: "degraded" });
+  await expect(
+    createVerifiedCatalogueBackup(
+      testEnv.CATALOGUE_DB,
+      testEnv.BACKUPS,
+      {
+        expectedCurrentRevisionId: "catrev_spine_000",
+        idempotencyKey: "backup-incomplete-verification",
+        observedAt: "2026-08-05T03:20:00.000Z",
+        cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+        catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+        disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+        exportToken: "export-token",
+        verificationToken: "verification-token",
+      },
+      provider,
+    ),
+  ).rejects.toThrow(/restored.*verification/iu);
+  await expect(
+    testEnv.CATALOGUE_DB.prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1").first(),
+  ).resolves.toEqual({ recovery_health: "degraded" });
 });
 
 test("the Workflow can resume the same owner after an interrupted active attempt", async () => {
@@ -624,20 +615,12 @@ test("the Workflow can resume the same owner after an interrupted active attempt
     exportToken: "export-token",
     verificationToken: "verification-token",
   } as const;
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    input,
-    provider,
-    { terminalFailure: false },
-  )).rejects.toThrow("interrupted export");
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    input,
-    provider,
-    { terminalFailure: false },
-  )).resolves.toMatchObject({
+  await expect(
+    createVerifiedCatalogueBackup(testEnv.CATALOGUE_DB, testEnv.BACKUPS, input, provider, { terminalFailure: false }),
+  ).rejects.toThrow("interrupted export");
+  await expect(
+    createVerifiedCatalogueBackup(testEnv.CATALOGUE_DB, testEnv.BACKUPS, input, provider, { terminalFailure: false }),
+  ).resolves.toMatchObject({
     verified: true,
     d1_bookmark: "bookmark-resumed",
   });
@@ -660,9 +643,7 @@ test("a lost import response recreates and journals a fresh disposable target be
     },
     async prepareRestoreTarget(input) {
       const databaseId = `disposable-${input.attemptId}-${input.generation}`;
-      expect(input.previousDatabaseId).toBe(
-        input.generation === 1 ? null : preparedTargets.at(-1),
-      );
+      expect(input.previousDatabaseId).toBe(input.generation === 1 ? null : preparedTargets.at(-1));
       preparedTargets.push(databaseId);
       return { databaseId };
     },
@@ -693,30 +674,26 @@ test("a lost import response recreates and journals a fresh disposable target be
     verificationToken: "verification-token",
   } as const;
 
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    input,
-    provider,
-    { terminalFailure: false },
-  )).rejects.toThrow("synthetic lost import response");
-  await expect(testEnv.CATALOGUE_DB.prepare(
-    `SELECT state, disposable_database_id, restore_generation, restore_phase
+  await expect(
+    createVerifiedCatalogueBackup(testEnv.CATALOGUE_DB, testEnv.BACKUPS, input, provider, { terminalFailure: false }),
+  ).rejects.toThrow("synthetic lost import response");
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      `SELECT state, disposable_database_id, restore_generation, restore_phase
      FROM catalogue_backup_attempts WHERE idempotency_key = ?`,
-  ).bind(input.idempotencyKey).first()).resolves.toEqual({
+    )
+      .bind(input.idempotencyKey)
+      .first(),
+  ).resolves.toEqual({
     state: "restoring_verification",
     disposable_database_id: preparedTargets[0],
     restore_generation: 1,
     restore_phase: "importing",
   });
 
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    input,
-    provider,
-    { terminalFailure: false },
-  )).resolves.toMatchObject({ verified: true });
+  await expect(
+    createVerifiedCatalogueBackup(testEnv.CATALOGUE_DB, testEnv.BACKUPS, input, provider, { terminalFailure: false }),
+  ).resolves.toMatchObject({ verified: true });
   expect(preparedTargets).toEqual([
     "disposable-backup-lost-import-response-1",
     "disposable-backup-lost-import-response-2",
@@ -761,23 +738,13 @@ test("an exact retained export resumes after the R2 put and D1 transition respon
      WHEN OLD.state = 'exporting' AND NEW.state = 'restoring_verification'
      BEGIN SELECT RAISE(ABORT, 'synthetic_lost_export_transition'); END`,
   ).run();
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    input,
-    provider,
-    { terminalFailure: false },
-  )).rejects.toThrow();
-  await testEnv.CATALOGUE_DB.prepare(
-    "DROP TRIGGER synthetic_lost_export_transition",
-  ).run();
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    input,
-    provider,
-    { terminalFailure: false },
-  )).resolves.toMatchObject({
+  await expect(
+    createVerifiedCatalogueBackup(testEnv.CATALOGUE_DB, testEnv.BACKUPS, input, provider, { terminalFailure: false }),
+  ).rejects.toThrow();
+  await testEnv.CATALOGUE_DB.prepare("DROP TRIGGER synthetic_lost_export_transition").run();
+  await expect(
+    createVerifiedCatalogueBackup(testEnv.CATALOGUE_DB, testEnv.BACKUPS, input, provider, { terminalFailure: false }),
+  ).resolves.toMatchObject({
     verified: true,
     d1_bookmark: "bookmark-ambiguous-transition",
   });
@@ -838,19 +805,22 @@ test("the authenticated status route exposes the exact pending publication attem
      ) VALUES (?, ?, ?, ?, 'pending', ?, ?, (
        SELECT ingestion_run_id FROM catalogue_revisions WHERE id = ?
      ))`,
-  ).bind(
-    "backup-production-route",
-    '{"expected_current_revision_id":"catrev_spine_000"}',
-    `backup:${"a".repeat(64)}`,
-    "catrev_spine_000",
-    "d1-backups/catrev_spine_000/pending/catalogue.sql",
-    "2026-08-05T04:00:00.000Z",
-    "catrev_spine_000",
-  ).run();
-  const statusResponse = await exports.default.fetch(new Request(
-    "https://card-keepr.invalid/v1/backups/backup-production-route",
-    { headers: { authorization: "Bearer vitest-administration-key" } },
-  ));
+  )
+    .bind(
+      "backup-production-route",
+      '{"expected_current_revision_id":"catrev_spine_000"}',
+      `backup:${"a".repeat(64)}`,
+      "catrev_spine_000",
+      "d1-backups/catrev_spine_000/pending/catalogue.sql",
+      "2026-08-05T04:00:00.000Z",
+      "catrev_spine_000",
+    )
+    .run();
+  const statusResponse = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/backups/backup-production-route", {
+      headers: { authorization: "Bearer vitest-administration-key" },
+    }),
+  );
   expect(statusResponse.status).toBe(200);
   await expect(statusResponse.json()).resolves.toMatchObject({
     contract: "card-keepr-catalogue-backup-status@1",
@@ -867,33 +837,33 @@ test("the authenticated status route exposes the exact pending publication attem
       },
     },
   });
-  const revisionResponse = await exports.default.fetch(new Request(
-    "https://card-keepr.invalid/v1/catalogue-revisions/catrev_spine_000/backups",
-    { headers: { authorization: "Bearer vitest-administration-key" } },
-  ));
+  const revisionResponse = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/catalogue-revisions/catrev_spine_000/backups", {
+      headers: { authorization: "Bearer vitest-administration-key" },
+    }),
+  );
   expect(revisionResponse.status).toBe(200);
-  const revisionBackups = await revisionResponse.json() as {
+  const revisionBackups = (await revisionResponse.json()) as {
     attempts: Record<string, unknown>[];
   } & Record<string, unknown>;
   expect(revisionBackups).toMatchObject({
     contract: "card-keepr-catalogue-revision-backups@1",
     catalogue_revision_id: "catrev_spine_000",
   });
-  expect(revisionBackups.attempts.find((attempt) =>
-    attempt.idempotency_key === "backup-production-route"
-  )).toMatchObject({
-      idempotency_key: "backup-production-route",
-      state: "pending",
-      resume: {
-        body: { idempotency_key: "backup-production-route" },
-      },
-    });
+  expect(
+    revisionBackups.attempts.find((attempt) => attempt.idempotency_key === "backup-production-route"),
+  ).toMatchObject({
+    idempotency_key: "backup-production-route",
+    state: "pending",
+    resume: {
+      body: { idempotency_key: "backup-production-route" },
+    },
+  });
 });
 
 test("the backup route reports stale revision as a stable conflict", async () => {
-  const response = await exports.default.fetch(new Request(
-    "https://card-keepr.invalid/v1/backups",
-    {
+  const response = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/backups", {
       method: "POST",
       headers: {
         authorization: "Bearer vitest-administration-key",
@@ -904,8 +874,8 @@ test("the backup route reports stale revision as a stable conflict", async () =>
         expected_current_revision_id: "catrev_stale_999",
         idempotency_key: "backup-production-stale",
       }),
-    },
-  ));
+    }),
+  );
   expect(response.status).toBe(409);
   await expect(response.json()).resolves.toMatchObject({
     code: "current_revision_mismatch",
@@ -925,33 +895,29 @@ test("backup retry rejects source state, revision, and digest before Workflow cr
          state, object_key, started_at, failure_code, failure_detail,
          completed_at, linked_attempt_id
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      id,
-      JSON.stringify({ expected_current_revision_id: revisionId }),
-      `backup:${id.padEnd(64, "0").slice(0, 64)}`,
-      revisionId,
-      state,
-      `d1-backups/${revisionId}/${id}/catalogue.sql`,
-      "2026-08-05T06:00:00.000Z",
-      state === "failed" ? "backup_failed" : null,
-      state === "failed" ? "synthetic failure" : null,
-      state === "failed" ? "2026-08-05T06:01:00.000Z" : null,
-      linkedAttemptId,
-    ).run();
+    )
+      .bind(
+        id,
+        JSON.stringify({ expected_current_revision_id: revisionId }),
+        `backup:${id.padEnd(64, "0").slice(0, 64)}`,
+        revisionId,
+        state,
+        `d1-backups/${revisionId}/${id}/catalogue.sql`,
+        "2026-08-05T06:00:00.000Z",
+        state === "failed" ? "backup_failed" : null,
+        state === "failed" ? "synthetic failure" : null,
+        state === "failed" ? "2026-08-05T06:01:00.000Z" : null,
+        linkedAttemptId,
+      )
+      .run();
   };
   await insertAttempt("backup-source-pending", "pending", "catrev_spine_000");
   await insertAttempt("backup-source-old", "failed", "catrev_old_000");
   await insertAttempt("backup-source-current", "failed", "catrev_spine_000");
-  await insertAttempt(
-    "backup-source-current-child",
-    "failed",
-    "catrev_spine_000",
-    "backup-source-current",
-  );
+  await insertAttempt("backup-source-current-child", "failed", "catrev_spine_000", "backup-source-current");
 
-  const unlinked = await exports.default.fetch(new Request(
-    "https://card-keepr.invalid/v1/backups",
-    {
+  const unlinked = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/backups", {
       method: "POST",
       headers: {
         authorization: "Bearer vitest-administration-key",
@@ -961,27 +927,29 @@ test("backup retry rejects source state, revision, and digest before Workflow cr
         expected_current_revision_id: "catrev_spine_000",
         idempotency_key: "backup-unlinked-route",
       }),
-    },
-  ));
+    }),
+  );
   expect(unlinked.status).toBe(409);
   await expect(unlinked.json()).resolves.toMatchObject({
     code: "backup_retry_required",
   });
 
   const retry = (failedAttemptId: string, failedAttemptDigest: string) =>
-    exports.default.fetch(new Request("https://card-keepr.invalid/v1/backups", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer vitest-administration-key",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        expected_current_revision_id: "catrev_spine_000",
-        idempotency_key: `retry-${failedAttemptId}`,
-        failed_attempt_id: failedAttemptId,
-        failed_attempt_digest: failedAttemptDigest,
+    exports.default.fetch(
+      new Request("https://card-keepr.invalid/v1/backups", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer vitest-administration-key",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          expected_current_revision_id: "catrev_spine_000",
+          idempotency_key: `retry-${failedAttemptId}`,
+          failed_attempt_id: failedAttemptId,
+          failed_attempt_digest: failedAttemptDigest,
+        }),
       }),
-    }));
+    );
   const notFailed = await retry("backup-source-pending", "0".repeat(64));
   expect(notFailed.status).toBe(409);
   await expect(notFailed.json()).resolves.toMatchObject({
@@ -992,14 +960,8 @@ test("backup retry rejects source state, revision, and digest before Workflow cr
   await expect(oldRevision.json()).resolves.toMatchObject({
     code: "backup_not_current_revision",
   });
-  const parentStatus = await catalogueBackupAttemptStatus(
-    testEnv.CATALOGUE_DB,
-    "backup-source-current",
-  );
-  const superseded = await retry(
-    "backup-source-current",
-    String(parentStatus.attempt_digest),
-  );
+  const parentStatus = await catalogueBackupAttemptStatus(testEnv.CATALOGUE_DB, "backup-source-current");
+  const superseded = await retry("backup-source-current", String(parentStatus.attempt_digest));
   expect(superseded.status).toBe(409);
   await expect(superseded.json()).resolves.toMatchObject({
     code: "backup_retry_source_superseded",

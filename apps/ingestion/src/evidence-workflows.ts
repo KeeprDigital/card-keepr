@@ -2,24 +2,22 @@ import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloud
 import {
   sourceHostPacingIntervalMilliseconds,
   sourceHostPacingMode,
-} from "../../../src/catalogue/source-evidence-capture";
-import { collectSourceRequestBatch, collectionBatchSize } from "../../../src/catalogue/source-evidence-batch";
-import {
+  collectSourceRequestBatch,
+  collectionBatchSize,
   type EvidenceHostWorkflowParams,
   type EvidenceParentWorkflowParams,
-} from "../../../src/catalogue/source-evidence-model";
-import {
   failActiveEvidenceRequestsForWorkflowExhaustion,
   finalizeEvidenceRun,
   pendingEvidenceRequestPage,
   recordWorkflowIds,
   requiredEvidenceRun,
   type EvidenceRequestRow,
-} from "../../../src/catalogue/source-evidence-repository";
-import { reconcileRetainedCardPrintingEvidence } from "../../../src/catalogue/card-printing-reconciliation";
-import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/serialization";
-import { collectionBarrierSleepDuration, isWorkflowInstanceNotFound } from "../../../src/catalogue/collection-recovery";
-import { requiredSourceAdapter } from "../../../src/catalogue/source-adapters";
+  collectionBarrierSleepDuration,
+  isWorkflowInstanceNotFound,
+} from "../../../src/catalogue/source-evidence";
+import { reconcileRetainedCardPrintingEvidence } from "../../../src/catalogue/reconciliation";
+import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
+import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import { durableReconciliationResult } from "./reconciliation-workflow";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 

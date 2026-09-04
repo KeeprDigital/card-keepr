@@ -4,7 +4,7 @@ import {
   appendDiscoveredEvidenceRequests,
   pendingEvidenceRequests,
   requiredEvidenceRun,
-} from "../../../src/catalogue/source-evidence-repository";
+} from "../../../src/catalogue/source-evidence";
 import {
   administrationRequest,
   type CollectionDocument,
@@ -36,9 +36,7 @@ test("a single-lineage graph larger than 5,000 requests completes collection thr
     source_lineage: "fusion-world-en",
     adapter_version: "fixture-fusion-world-json-large@1",
     idempotency_key: "collection_completion_stress_001",
-    requests: [
-      { id: "root", url: "https://official-source.invalid/cards" },
-    ],
+    requests: [{ id: "root", url: "https://official-source.invalid/cards" }],
   });
   expect(created.status).toBe(201);
   const run = await created.json<CollectionDocument>();
@@ -85,44 +83,33 @@ test("a single-lineage graph larger than 5,000 requests completes collection thr
       role: "detail" as const,
       url: `https://graph-${host}-official-source.invalid/sequence/${String(index + 1).padStart(4, "0")}`,
       headers: { accept: "application/json" },
-    }))
+    })),
   );
-  await appendDiscoveredEvidenceRequests(
-    env.CATALOGUE_DB,
-    storedRun,
-    root,
-    discovered,
-  );
+  await appendDiscoveredEvidenceRequests(env.CATALOGUE_DB, storedRun, root, discovered);
   const totalRequests = 1 + retainedObservedCount + discovered.length;
   expect(totalRequests).toBeGreaterThan(5_000);
-  expect(await env.CATALOGUE_DB.prepare(
-    "SELECT COUNT(*) AS count FROM source_requests WHERE ingestion_run_id = ?",
-  ).bind(run.id).first("count")).toBe(totalRequests);
+  expect(
+    await env.CATALOGUE_DB.prepare("SELECT COUNT(*) AS count FROM source_requests WHERE ingestion_run_id = ?")
+      .bind(run.id)
+      .first("count"),
+  ).toBe(totalRequests);
 
-  const resumed = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/resume`,
-    "POST",
-  );
+  const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(resumed.status).toBe(202);
   await resumed.body?.cancel();
   let completed: CollectionDocument | undefined;
   try {
-    completed = await waitForEvidenceCondition(
-      run.id,
-      (current) => current.state !== "collecting",
-      420_000,
-    );
+    completed = await waitForEvidenceCondition(run.id, (current) => current.state !== "collecting", 420_000);
   } finally {
     const current = await showCollection(run.id);
     if (current.state === "collecting") {
       if (current.workflow.parent_id !== null) {
-        await (await env.EVIDENCE_INGESTION_WORKFLOW.get(
-          current.workflow.parent_id,
-        )).terminate().catch(() => undefined);
+        await (await env.EVIDENCE_INGESTION_WORKFLOW.get(current.workflow.parent_id))
+          .terminate()
+          .catch(() => undefined);
       }
       for (const childId of current.workflow.child_ids) {
-        await (await env.EVIDENCE_HOST_WORKFLOW.get(childId)).terminate()
-          .catch(() => undefined);
+        await (await env.EVIDENCE_HOST_WORKFLOW.get(childId)).terminate().catch(() => undefined);
       }
     }
   }
@@ -147,28 +134,38 @@ test("a single-lineage graph larger than 5,000 requests completes collection thr
     failed_attempt_count: 0,
     snapshots_truncated: true,
   });
-  expect(collection.capacity).toEqual([{
-    source_lineage: "fusion-world-en",
-    adapter_version: "fixture-fusion-world-json-large@1",
-    capacity_generation: 1,
-    request_capacity: 15_000,
-    used_capacity: totalRequests,
-    remaining_capacity: 15_000 - totalRequests,
-    required_capacity: null,
-    overflow_request_count: null,
-  }]);
+  expect(collection.capacity).toEqual([
+    {
+      source_lineage: "fusion-world-en",
+      adapter_version: "fixture-fusion-world-json-large@1",
+      capacity_generation: 1,
+      request_capacity: 15_000,
+      used_capacity: totalRequests,
+      remaining_capacity: 15_000 - totalRequests,
+      required_capacity: null,
+      overflow_request_count: null,
+    },
+  ]);
   // Each live host collected through its own bounded shard, and the bounded
   // detail lists stayed bounded while the aggregate counts stayed exact.
   const childIds = completed?.workflow.child_ids ?? [];
   expect(childIds.length).toBeGreaterThanOrEqual(1 + liveHosts.length);
   expect(completed?.snapshots).toHaveLength(200);
   expect(completed?.diagnostics).toHaveLength(200);
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM ingestion_run_capacity_pauses
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count FROM ingestion_run_capacity_pauses
      WHERE ingestion_run_id = ?`,
-  ).bind(run.id).first("count")).toBe(0);
-  expect(await env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM ingestion_run_retry_pauses
+    )
+      .bind(run.id)
+      .first("count"),
+  ).toBe(0);
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count FROM ingestion_run_retry_pauses
      WHERE ingestion_run_id = ?`,
-  ).bind(run.id).first("count")).toBe(0);
+    )
+      .bind(run.id)
+      .first("count"),
+  ).toBe(0);
 }, 480_000);
