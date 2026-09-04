@@ -1,5 +1,12 @@
-import { replayByDigest } from "../shared";
-import { AdministrationProblem, canonicalJson, sha256Text } from "../shared";
+import {
+  assertIngestionRunTransition,
+  type IngestionRunState,
+  replayByDigest,
+  AdministrationProblem,
+  canonicalJson,
+  sha256Text,
+} from "../shared";
+
 import { failReconciliationWorkflow, retainedReconciliationResult } from "./reconciliation-candidate-store";
 import { assertIdentifier } from "../source-evidence";
 
@@ -59,7 +66,7 @@ export async function startOrObserveReconciliationWorkflow(
     .bind(input.ingestion_run_id)
     .first<{
       id: string;
-      state: string;
+      state: IngestionRunState;
       expected_current_revision_id: string;
       current_revision_id: string;
       active_ingestion_run_id: string | null;
@@ -78,13 +85,21 @@ export async function startOrObserveReconciliationWorkflow(
       "The expected current Catalogue Revision is stale.",
     );
   }
-  if (run.state !== "parsing" || run.active_ingestion_run_id !== input.ingestion_run_id) {
+  if (run.active_ingestion_run_id !== input.ingestion_run_id) {
     throw new AdministrationProblem(
       409,
       "run_not_active",
       "Only the active parsing Ingestion Run can start reconciliation.",
     );
   }
+  assertIngestionRunTransition(run.state, "reconciling", {
+    invalid: () =>
+      new AdministrationProblem(
+        409,
+        "run_not_active",
+        "Only the active parsing Ingestion Run can start reconciliation.",
+      ),
+  });
   if (run.recovery_health !== "healthy") {
     throw new AdministrationProblem(
       409,

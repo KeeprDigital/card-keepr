@@ -1,4 +1,4 @@
-const terminalRunStates = new Set(["published", "rejected", "expired", "failed"]);
+import { isTerminalIngestionRunState } from "./ingestion-run-state";
 
 export function operationalDiagnostics(run: Record<string, unknown>): Record<string, unknown> {
   const runId = safeReference(run.id);
@@ -9,7 +9,7 @@ export function operationalDiagnostics(run: Record<string, unknown>): Record<str
   const approvalHistory = Array.isArray(run.approval_history) ? run.approval_history : [];
   const evidenceBacked = Array.isArray(run.evidence_plans) && run.evidence_plans.length > 0;
   const failure = terminalFailure(run, state, evidenceBacked);
-  const retryAvailable = state !== null && terminalRunStates.has(state);
+  const retryAvailable = state !== null && isTerminalIngestionRunState(state);
   const adapterVersions = retainedAdapterVersions(run);
   const diagnosisSequence: Array<Record<string, string>> = [
     { code: "check_status", method: "GET", path: "/v1/status" },

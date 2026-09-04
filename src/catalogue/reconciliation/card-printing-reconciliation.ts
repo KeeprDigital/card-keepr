@@ -1,4 +1,6 @@
 import {
+  assertIngestionRunTransition,
+  type IngestionRunState,
   AdministrationProblem,
   catalogueCandidateContract,
   type CatalogueCandidate,
@@ -13,6 +15,7 @@ import {
   byteBoundedJsonArrays,
   retainedPayload,
 } from "../shared";
+
 import { retainedReconciliationObservation } from "./reconciliation-evidence";
 import {
   cardIdFor,
@@ -62,7 +65,7 @@ import { reconcileDigimonCardAuthority, type DigimonCardAuthority } from "./digi
 
 type ActiveRunRow = {
   id: string;
-  state: string;
+  state: IngestionRunState;
   selected_games_json: string;
   expected_current_revision_id: string;
   active_ingestion_run_id: string | null;
@@ -1867,13 +1870,21 @@ async function requiredActiveParsingRun(database: D1Database, runId: string): Pr
     )
     .bind(runId)
     .first<ActiveRunRow>();
-  if (row === null || row.state !== "parsing" || row.active_ingestion_run_id !== runId) {
+  if (row === null || row.active_ingestion_run_id !== runId) {
     throw new AdministrationProblem(
       409,
       "run_not_active",
       "Only the active parsing Ingestion Run can reconcile retained evidence.",
     );
   }
+  assertIngestionRunTransition(row.state, "reconciling", {
+    invalid: () =>
+      new AdministrationProblem(
+        409,
+        "run_not_active",
+        "Only the active parsing Ingestion Run can reconcile retained evidence.",
+      ),
+  });
   if (row.recovery_health !== "healthy") {
     throw new AdministrationProblem(
       409,

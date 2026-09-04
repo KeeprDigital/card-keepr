@@ -1,7 +1,5 @@
 import { AdministrationProblem, decodeDocument, type SupportedGame } from "../shared";
 
-export const terminalRunStates = new Set(["published", "rejected", "expired", "failed"]);
-
 export function publicationWriterToken(revisionId: string): string {
   return `writer:${revisionId}`;
 }

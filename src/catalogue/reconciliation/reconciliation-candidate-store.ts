@@ -1,9 +1,5 @@
 import {
-  type ReconciliationTerminalResultRow,
-  terminalResultInsertion,
-  terminalResultStatement,
-} from "./reconciliation-repository";
-import {
+  ingestionRunTransitionSql,
   type CatalogueCandidate,
   canonicalJson,
   byteBoundedJsonArrays,
@@ -12,6 +8,12 @@ import {
   payloadChunkStatements,
   retainedPayload,
 } from "../shared";
+import {
+  type ReconciliationTerminalResultRow,
+  terminalResultInsertion,
+  terminalResultStatement,
+} from "./reconciliation-repository";
+
 import type {
   Memberships,
   PrintingCompatibility,
@@ -109,7 +111,7 @@ export async function persistReviewableCandidate(
          SET state = 'reconciling',
              progress_json =
                '{"completed_stages":["planning","collecting","parsing"],"current_stage":"reconciling"}'
-         WHERE id = ? AND state = 'parsing'`,
+         WHERE id = ? AND ${ingestionRunTransitionSql("parsing", "reconciling")}`,
       )
       .bind(input.runId),
     ...candidatePlanInsertionStatements(database, input.runId, input.plans, canonicalJson(input.warnings)),
@@ -125,7 +127,7 @@ export async function persistReviewableCandidate(
              warnings_json = ?,
              progress_json =
                '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"awaiting_approval"}'
-         WHERE id = ? AND state = 'reconciling'`,
+         WHERE id = ? AND ${ingestionRunTransitionSql("reconciling", "awaiting_approval")}`,
       )
       .bind(
         chunkedPayloadMarker("candidate"),
@@ -200,7 +202,7 @@ export async function persistBlockedCandidate(
          SET state = 'reconciling',
              progress_json =
                '{"completed_stages":["planning","collecting","parsing"],"current_stage":"reconciling"}'
-         WHERE id = ? AND state = 'parsing'`,
+         WHERE id = ? AND ${ingestionRunTransitionSql("parsing", "reconciling")}`,
       )
       .bind(input.runId),
     ...candidatePlanInsertionStatements(database, input.runId, input.plans, canonicalJson(input.diagnostics)),
@@ -219,7 +221,7 @@ export async function persistBlockedCandidate(
              warnings_json = ?,
              progress_json =
                '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}'
-         WHERE id = ? AND state = 'reconciling'`,
+         WHERE id = ? AND ${ingestionRunTransitionSql("reconciling", "failed")}`,
       )
       .bind(
         chunkedPayloadMarker("candidate"),
@@ -278,7 +280,7 @@ export async function failReconciliation(
          SET state = 'reconciling',
              progress_json =
                '{"completed_stages":["planning","collecting","parsing"],"current_stage":"reconciling"}'
-         WHERE id = ? AND state = 'parsing'`,
+         WHERE id = ? AND ${ingestionRunTransitionSql("parsing", "reconciling")}`,
       )
       .bind(runId),
     database
@@ -289,7 +291,7 @@ export async function failReconciliation(
              warnings_json = ?,
              progress_json =
                '{"completed_stages":["planning","collecting","parsing"],"current_stage":"failed"}'
-         WHERE id = ? AND state = 'reconciling'`,
+         WHERE id = ? AND ${ingestionRunTransitionSql("reconciling", "failed")}`,
       )
       .bind(observedAt, canonicalJson(runDiagnostics), runId),
     database
@@ -327,7 +329,7 @@ export async function failReconciliationWorkflow(
              warnings_json = ?,
              progress_json =
                '{"completed_stages":["planning","collecting","parsing"],"current_stage":"failed"}'
-         WHERE id = ? AND state IN ('parsing', 'reconciling')`,
+         WHERE id = ? AND ${ingestionRunTransitionSql(["parsing", "reconciling"], "failed")}`,
       )
       .bind(observedAt, failureCode, canonicalJson([diagnostic]), runId),
     database

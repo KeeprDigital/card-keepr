@@ -1,4 +1,4 @@
-import { activeRunStages as stages } from "./ingestion-run-stages.ts";
+import { activeRunStages as stages, ingestionRunStates as states } from "./ingestion-run-state.ts";
 
 // Persisted document shapes. Semantic relationships remain with their domain codec.
 // Validators are compiled ahead of time: Workers cannot compile Ajv schemas with eval.
@@ -14,7 +14,6 @@ const object = (properties, required = Object.keys(properties), additionalProper
   additionalProperties,
 });
 const selectedGames = array({ enum: ["one-piece", "fusion-world", "digimon", "gundam"] }, { minItems: 1 });
-const states = [...stages, "paused", "published", "rejected", "expired", "failed"];
 const approval = object({
   action: { const: "approved" },
   approved_at: string,

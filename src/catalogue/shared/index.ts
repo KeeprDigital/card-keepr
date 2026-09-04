@@ -99,4 +99,17 @@ export {
 
 export { decodeDocument, type DocumentSchema } from "./document-decoder";
 
-export { activeRunStages } from "./ingestion-run-stages";
+export {
+  activeRunStages,
+  IngestionRunState,
+  ingestionRunStates,
+  ingestionRunTransitions,
+  ingestionRunTransitionSources,
+  ingestionRunTransitionSql,
+  ingestionRunTerminatedFailureCode,
+  isIngestionRunState,
+  isTerminalIngestionRunState,
+  canTransitionIngestionRun,
+  assertIngestionRunTransition,
+  type IngestionRunTransitionFacts,
+} from "./ingestion-run-state";

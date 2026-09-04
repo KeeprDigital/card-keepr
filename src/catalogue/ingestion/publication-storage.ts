@@ -1,12 +1,13 @@
-import type { BuiltCatalogueExport, ExportObject } from "../export";
-import { cardSearchChunks, cardSearchTerms, cardSearchText } from "../read";
 import {
+  ingestionRunTransitionSql,
   AdministrationProblem,
   type CatalogueCandidate,
   canonicalJson,
   catalogueRevisionIdentity,
   sha256,
 } from "../shared";
+import type { BuiltCatalogueExport, ExportObject } from "../export";
+import { cardSearchChunks, cardSearchTerms, cardSearchText } from "../read";
 
 import { progressFor } from "./run-document-codec";
 import { publicationCleanupNotBefore, requiredRun } from "./run-storage";
@@ -46,7 +47,7 @@ export async function reservePublication(
           publication_reconcile_after = ?,
           publication_manifest_digest = ?,
           publication_writer_token = ?
-      WHERE id = ? AND state = 'awaiting_approval'
+      WHERE id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "publishing")}
       RETURNING id`,
     )
     .bind(
