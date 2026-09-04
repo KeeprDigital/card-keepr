@@ -6,6 +6,7 @@ import {
   repairableCatalogueRevisionTarget,
 } from "./catalogue-revision-retention";
 import { AdministrationProblem } from "./ingestion";
+import { replayByDigest } from "./idempotent-identities";
 import { canonicalJson } from "./serialization";
 import { assertIdentifier } from "./source-evidence-model";
 
@@ -37,12 +38,12 @@ export async function runGuardedCardSearchRepair(
   );
   assertIdentifier(input.idempotency_key, "idempotency_key");
   const requestJson = canonicalJson(input);
-  const replay = await searchRepairRequest(
+  const replay = await searchRepairReplay(
     database,
     input.idempotency_key,
+    requestJson,
   );
   if (replay !== null) {
-    assertExactRepairReplay(replay, requestJson);
     if (replay.result_json !== null) {
       const result = parseRepairResult(replay.result_json);
       if (result.complete) return result;
@@ -103,14 +104,14 @@ export async function runGuardedCardSearchRepair(
         requestJson,
       )
       .run();
-    const stored = await searchRepairRequest(
+    const stored = await searchRepairReplay(
       database,
       input.idempotency_key,
+      requestJson,
     );
     if (stored === null) {
       throw new Error("The Card search repair request was not retained.");
     }
-    assertExactRepairReplay(stored, requestJson);
     if (stored.result_json !== null) {
       const result = parseRepairResult(stored.result_json);
       if (result.complete) return result;
@@ -267,17 +268,20 @@ async function searchRepairRequest(
     .first<SearchRepairRequestRow>();
 }
 
-function assertExactRepairReplay(
-  stored: SearchRepairRequestRow,
+// The retained fingerprint is the canonical request itself rather than a
+// digest of it, so the comparison is exact-JSON equality.
+function searchRepairReplay(
+  database: D1Database,
+  idempotencyKey: string,
   requestJson: string,
-): void {
-  if (stored.request_json !== requestJson) {
-    throw new AdministrationProblem(
-      409,
-      "idempotency_conflict",
+): Promise<SearchRepairRequestRow | null> {
+  return replayByDigest({
+    lookup: () => searchRepairRequest(database, idempotencyKey),
+    retainedDigest: (retained) => retained.request_json,
+    requestDigest: requestJson,
+    conflictDetail:
       "The search repair idempotency key is already bound to another request.",
-    );
-  }
+  });
 }
 
 function parseRepairResult(json: string): CardSearchRepairResult {

@@ -1,6 +1,35 @@
+import { AdministrationProblem } from "./administration-problem.ts";
 import { sha256 } from "./serialization";
 
 const encoder = new TextEncoder();
+
+/**
+ * Replay-by-digest: the row retained under an idempotency key answers a
+ * repeat of the same request and rejects a different request under that key
+ * with the 409 `idempotency_conflict` problem. The caller supplies the table
+ * read and the retained fingerprint (a digest of the canonical request, or
+ * the canonical request itself); this helper owns the comparison and the
+ * conflict problem. Resolves null when nothing is retained under the key.
+ */
+export async function replayByDigest<Retained>(
+  input: Readonly<{
+    lookup: () => Promise<Retained | null>;
+    retainedDigest: (retained: Retained) => string;
+    requestDigest: string;
+    conflictDetail: string;
+  }>,
+): Promise<Retained | null> {
+  const retained = await input.lookup();
+  if (retained === null) return null;
+  if (input.retainedDigest(retained) !== input.requestDigest) {
+    throw new AdministrationProblem(
+      409,
+      "idempotency_conflict",
+      input.conflictDetail,
+    );
+  }
+  return retained;
+}
 
 /**
  * Stable opaque identity for the single operation owned by an evidence
