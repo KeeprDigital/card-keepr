@@ -1,4 +1,4 @@
-import { canonicalJson, compareUtf8, sha256Text } from "./shared";
+import { canonicalJson, compareUtf8, sha256Text } from "../shared";
 
 const PLAN_TTL_MS = 15 * 60 * 1_000;
 const EXECUTION_LEASE_MS = 5 * 60 * 1_000;

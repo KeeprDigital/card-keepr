@@ -5,7 +5,7 @@ import {
   verifyComponentExportRecord,
   verifyExportManifest,
   verifyExportRecord,
-} from "../../src/catalogue/export-validation.ts";
+} from "../../src/catalogue/export/export-validation.ts";
 
 const goldenInput = new TextEncoder().encode('{"id":"golden"}\n');
 const goldenHex = "1f8b08000000000002ffab56ca4c51b2524acfcf4949cd53aae50200cc28fff510000000";

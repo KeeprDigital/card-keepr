@@ -55,7 +55,7 @@ import {
   confirmCatalogueExportDeletion,
   prepareCatalogueExportDeletion,
   retryCatalogueExportDeletion,
-} from "../../../src/catalogue/catalogue-export-deletion";
+} from "../../../src/catalogue/export";
 import { withOperationalRequestLog } from "../../../src/http/operational-log";
 import {
   absoluteDocumentLinks,

@@ -14,7 +14,7 @@ import {
   maximumExportComponentBytes,
   maximumExportRecordBytes,
   deterministicGzipStream,
-} from "./shared";
+} from "../shared";
 import {
   type NormalizedLifecycle,
   type LocatorEvidenceCollection,
@@ -22,9 +22,9 @@ import {
   typedPrintingProjections,
   erratumTargetLifecycleKey,
   exportErratum,
-} from "./reconciliation";
+} from "../reconciliation";
 import { verifyComponentExportRecord, verifyExportManifest } from "./export-validation";
-import { legalityRuleExportRecords, legalityRuleRelationshipRecords } from "./legality";
+import { legalityRuleExportRecords, legalityRuleRelationshipRecords } from "../legality";
 
 const componentDefinitions = [
   ["supported-games", "SupportedGameRecord", "id:utf8", 5],

@@ -1,7 +1,11 @@
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import manifestSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json" with { type: "json" };
-import recordSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json" with { type: "json" };
+import manifestSchema from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json" with {
+  type: "json",
+};
+import recordSchema from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json" with {
+  type: "json",
+};
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
@@ -36,15 +40,10 @@ export function verifyExportRecord(record: unknown): void {
   assertValid(validateRecord, record, "record");
 }
 
-export function verifyComponentExportRecord(
-  recordSchemaUri: string,
-  record: unknown,
-): void {
+export function verifyComponentExportRecord(recordSchemaUri: string, record: unknown): void {
   const validate = componentValidators.get(recordSchemaUri);
   if (validate === undefined) {
-    throw new Error(
-      `Catalogue Export component advertises an unresolved record_schema ${recordSchemaUri}.`,
-    );
+    throw new Error(`Catalogue Export component advertises an unresolved record_schema ${recordSchemaUri}.`);
   }
   assertHostIndependent(record, "component record");
   assertValid(validate, record, "component record");
@@ -53,9 +52,7 @@ export function verifyComponentExportRecord(
 function requiredValidator(uri: string): ValidateFunction {
   const validate = ajv.getSchema(uri);
   if (validate === undefined) {
-    throw new Error(
-      `Catalogue Export component advertises an unresolved record_schema ${uri}.`,
-    );
+    throw new Error(`Catalogue Export component advertises an unresolved record_schema ${uri}.`);
   }
   return validate;
 }
@@ -69,9 +66,7 @@ const apiLinkPattern = /^(https?:\/\/[^/?#]+)?(\/[^?#]*)?\/v1\//u;
 function assertHostIndependent(value: unknown, artifact: string): void {
   const link = firstApiLink(value);
   if (link !== undefined) {
-    throw new Error(
-      `Catalogue Export ${artifact} embeds an API link: ${link}`,
-    );
+    throw new Error(`Catalogue Export ${artifact} embeds an API link: ${link}`);
   }
 }
 
@@ -95,14 +90,8 @@ function firstApiLink(value: unknown): string | undefined {
   return undefined;
 }
 
-function assertValid(
-  validate: ValidateFunction,
-  value: unknown,
-  artifact: string,
-): void {
+function assertValid(validate: ValidateFunction, value: unknown, artifact: string): void {
   if (!validate(value)) {
-    throw new Error(
-      `Catalogue Export ${artifact} failed schema verification: ${ajv.errorsText(validate.errors)}`,
-    );
+    throw new Error(`Catalogue Export ${artifact} failed schema verification: ${ajv.errorsText(validate.errors)}`);
   }
 }
