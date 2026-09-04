@@ -49,3 +49,5 @@ export {
   sourceFreshnessStorageScope,
   type SourceFreshnessStorageRow,
 } from "./source-freshness";
+
+export { catalogueRoutes } from "./routes";

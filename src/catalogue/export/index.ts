@@ -23,3 +23,5 @@ export {
   type ConfirmCatalogueExportDeletion,
   type PrepareCatalogueExportDeletion,
 } from "./catalogue-export-deletion";
+
+export { exportRoutes } from "./routes";

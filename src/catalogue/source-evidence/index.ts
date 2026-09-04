@@ -93,4 +93,7 @@ export {
   type WorkflowPauseReason,
 } from "./collection-recovery";
 
+export { pauseEvidenceCollection, resumeEvidenceRun, terminateEvidenceCollection } from "./evidence-administration";
+
+export { sourceEvidenceRoutes, evidenceInspectionOptions } from "./routes";
 export type { IngestionEvidenceRow } from "./ingestion-run-repository";
