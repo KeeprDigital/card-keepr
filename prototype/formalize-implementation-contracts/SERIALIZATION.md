@@ -34,6 +34,28 @@ identifier. Replaying the same accepted operation therefore retains the same
 identities and bytes, while reuse of the key for a different request remains a
 conflict.
 
+## Host independence
+
+A Catalogue Export is an immutable, digest-verified package for offline use,
+so nothing in it records the host or mount the API happens to be served from.
+The manifest and its records reference API resources by stable identifier and
+never by link: a manifest component is addressed by its `name`, and a
+printing-image record by its `id`. The validator rejects a manifest or record
+that embeds an API link, absolute or root-relative, before schema verification.
+
+A consumer that wants the live bytes behind an identifier applies these route
+templates to its own configured API base (`PUBLIC_BASE_URL`, which carries
+the mount path, for example `https://card.keepr.digital/api`):
+
+| Identifier | Route template |
+| --- | --- |
+| Manifest component `name` | `{PUBLIC_BASE_URL}/v1/catalogue-exports/{revision}/components/{name}` |
+| Printing-image record `id` | `{PUBLIC_BASE_URL}/v1/printing-images/{id}/content` |
+
+`{revision}` is the manifest's `catalogue_revision.id`. Moving the API to
+another host or mount changes the consumer's base URL and nothing in any
+retained package; `manifest_sha256` and every component digest keep verifying.
+
 ## Records and component order
 
 Each component contains exactly one JSON object per line, validated against the
