@@ -25,12 +25,12 @@ async function validate(arguments_, environment, json) {
   const proposalFile = options.values["--proposal"];
   const expected = options.values["--expected-current-revision"];
   if (options.error !== null || proposalFile === undefined || expected === undefined) return usage(json);
-  const proposal = await readProposal(proposalFile, json);
-  if (proposal.error !== null) return proposal.error;
+  const proposalRead = await readProposal(proposalFile, json);
+  if (proposalRead.error !== null) return proposalRead.error;
   const secret = requiredAdministrationSecret(options, json);
   if (typeof secret === "number") return secret;
   return request(environment, json, "/admin/v1/curated-revisions/validate", "POST", {
-    proposal: proposal.value,
+    proposal: proposalRead.value,
     catalogue_revision_id: expected,
   }, secret);
 }
@@ -67,11 +67,11 @@ async function create(arguments_, environment, json) {
   const expected = options.values["--expected-current-revision"];
   const idempotencyKey = options.values["--idempotency-key"];
   if (options.error !== null || proposalFile === undefined || digest === undefined || expected === undefined || idempotencyKey === undefined || !options.flags.has("--yes")) return usage(json);
-  const proposal = await readProposal(proposalFile, json);
-  if (proposal.error !== null) return proposal.error;
+  const proposalRead = await readProposal(proposalFile, json);
+  if (proposalRead.error !== null) return proposalRead.error;
   const context = await mutationContext("create", options, environment, json, {
-    affected_supported_game: proposal.value.game,
-    target: proposal.value.target,
+    affected_supported_game: proposalRead.value.game,
+    target: proposalRead.value.target,
     content_digest: digest,
     idempotency_key: idempotencyKey,
   });
@@ -79,7 +79,7 @@ async function create(arguments_, environment, json) {
   return request(environment, json, "/admin/v1/curated-revisions", "POST", {
     environment: "production",
     expected_current_revision_id: expected,
-    proposal: proposal.value,
+    proposal: proposalRead.value,
     proposal_digest: digest,
     idempotency_key: idempotencyKey,
   }, context.administrationKey);
@@ -104,11 +104,11 @@ async function lifecycle(operation, arguments_, environment, json) {
       !Number.isSafeInteger(eventVersion) || eventVersion < 1 ||
       (operation === "reaffirm" && options.values["--conflict-digest"] === undefined) ||
       !options.flags.has("--yes")) return usage(json);
-  let proposal;
+  let proposalRead;
   if (operation === "supersede") {
     if (options.values["--proposal"] === undefined || options.values["--proposal-digest"] === undefined) return usage(json);
-    proposal = await readProposal(options.values["--proposal"], json);
-    if (proposal.error !== null) return proposal.error;
+    proposalRead = await readProposal(options.values["--proposal"], json);
+    if (proposalRead.error !== null) return proposalRead.error;
   }
   const context = await mutationContext(operation, options, environment, json, {
     curated_revision_id: revisionId,
@@ -117,8 +117,8 @@ async function lifecycle(operation, arguments_, environment, json) {
     idempotency_key: idempotencyKey,
     ...(operation === "supersede"
       ? {
-          replacement_supported_game: proposal.value.game,
-          replacement_target: proposal.value.target,
+          replacement_supported_game: proposalRead.value.game,
+          replacement_target: proposalRead.value.target,
           replacement_content_digest: options.values["--proposal-digest"],
         }
       : {}),
@@ -137,7 +137,7 @@ async function lifecycle(operation, arguments_, environment, json) {
       rationale,
       idempotency_key: idempotencyKey,
       ...(operation === "supersede"
-        ? { proposal: proposal.value, proposal_digest: options.values["--proposal-digest"] }
+        ? { proposal: proposalRead.value, proposal_digest: options.values["--proposal-digest"] }
         : {}),
     },
     context.administrationKey,
@@ -252,6 +252,10 @@ function requiredAdministrationSecret(options, json) {
     : writeCliFailure(json, { code: "secret_input_error", detail: secret.error }, 2);
 }
 
+// Reads the Curated Revision Proposal (the `proposal` request field and
+// `--proposal` option are its short form) from a file or stdin. Returns a
+// read result, not the proposal itself: `{ error: null, value }` on success
+// or `{ error: exitCode, value: null }` after writing the CLI failure.
 async function readProposal(path, json) {
   try {
     const text = path === "-" ? await stdinText() : await readFile(path, "utf8");
