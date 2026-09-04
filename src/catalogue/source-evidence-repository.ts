@@ -42,6 +42,7 @@ import {
   boundedEvidenceDetail,
   collectionInspection,
   type PacingConfiguration,
+  sourceRequestHostnameSql,
 } from "./collection-inspection";
 import type {
   CurrentPause,
@@ -1260,8 +1261,8 @@ export function workflowAttemptStatements(
 // Exhausting the bounded replacement identities of one hostname shard fails
 // only that shard's active requests: other hosts' healthy shards keep
 // collecting, and the completeness gate still fails the run at the barrier.
-// The URL prefix match is exact on the '://hostname/' boundary (evidence
-// requests are plain https URLs without ports).
+// The host is extracted from the normalized request URL and compared for
+// equality (evidence requests are plain https URLs without ports).
 export async function failActiveEvidenceRequestsForWorkflowExhaustion(
   database: D1Database,
   runId: string,
@@ -1277,7 +1278,7 @@ export async function failActiveEvidenceRequestsForWorkflowExhaustion(
        SET state = 'failed', failure_code = 'source_workflow_retries_exhausted'
        WHERE ingestion_run_id = ? AND state IN ('pending', 'captured')
          AND sequence_number BETWEEN ? AND ?
-         AND url LIKE '%://' || ? || '/%'`,
+         AND ${sourceRequestHostnameSql("url")} = ?`,
     )
     .bind(
       runId,
@@ -1698,11 +1699,12 @@ export async function collectionProgressFacts(
       .bind(runId)
       .first<Record<string, string | null>>(),
     // Pacing deadlines are keyed by hostname rather than run, so the scan
-    // keeps only hosts this run still has open requests against. The URL
-    // prefix match is exact on the '://hostname/' boundary (evidence
-    // requests are plain https URLs without ports), and any residual
-    // over-approximation is bounded by the pacing interval cap plus jitter —
-    // it can only delay a stall verdict briefly, never manufacture one.
+    // keeps only hosts this run still has open requests against. The host is
+    // extracted from the normalized request URL and compared for equality
+    // (evidence requests are plain https URLs without ports), and any
+    // residual over-approximation is bounded by the pacing interval cap plus
+    // jitter — it can only delay a stall verdict briefly, never manufacture
+    // one.
     database
       .prepare(
         `SELECT MAX(pacing.next_request_not_before) AS pacing_deadline_at
@@ -1711,7 +1713,7 @@ export async function collectionProgressFacts(
            SELECT 1 FROM source_requests AS requests
            WHERE requests.ingestion_run_id = ?
              AND requests.state IN ('pending', 'captured')
-             AND requests.url LIKE '%://' || pacing.hostname || '/%'
+             AND ${sourceRequestHostnameSql("requests.url")} = pacing.hostname
          )`,
       )
       .bind(runId)

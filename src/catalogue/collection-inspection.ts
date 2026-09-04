@@ -77,9 +77,16 @@ const successfulOutcomes = "('success', 'cache_revalidated')";
 // The hostname of a plain https evidence URL, extracted in SQL: everything
 // between '://' and the first '/' of the path (evidence requests are
 // normalized URLs without ports, and always carry a path).
-const hostnameSql =
-  `substr(substr(url, instr(url, '://') + 3), 1,
-          instr(substr(url, instr(url, '://') + 3), '/') - 1)`;
+// Exported so every query that keys Source Requests by host derives the
+// hostname the same way, rather than building a LIKE pattern from source data
+// (workerd caps LIKE patterns at 50 characters, which a long hostname
+// exceeds).
+export function sourceRequestHostnameSql(urlColumn: string): string {
+  const authority = `substr(${urlColumn}, instr(${urlColumn}, '://') + 3)`;
+  return `substr(${authority}, 1, instr(${authority}, '/') - 1)`;
+}
+
+const hostnameSql = sourceRequestHostnameSql("url");
 
 export async function collectionInspection(
   database: D1Database,

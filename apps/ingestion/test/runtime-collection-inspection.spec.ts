@@ -372,3 +372,48 @@ test("request counts group listing, detail, product-detail, image, and surface r
     remaining_capacity: 4_989,
   }]);
 });
+
+// workerd's D1 caps LIKE patterns at 50 characters, so a progress query that
+// builds its pattern from the hostname threw for any Official Source
+// hostname over 45 characters and inspection returned 500 (#168). The
+// hostname here is 64 characters and stays live in the host pacing table
+// with an open request, which is exactly the row the progress query scans.
+test("collection inspection succeeds for a 64-character Official Source hostname", async () => {
+  const hostname = `${
+    "inspection-long-hostname".padEnd(40, "x")
+  }-official-source.invalid`;
+  expect(hostname).toHaveLength(64);
+  const run = await createCollection(
+    "collection_inspection_long_hostname_001",
+    `https://${hostname}/unavailable`,
+  );
+  const started = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    "POST",
+  );
+  expect(started.status).toBe(202);
+  await started.body?.cancel();
+  const paused = await waitForEvidenceCondition(
+    run.id,
+    (current) => current.state === "paused",
+    12_000,
+  ) as unknown as Record<string, unknown> & { collection: CollectionInspection };
+  const collection = paused.collection;
+  expect(collection).toMatchObject({
+    state: "paused",
+    pause_reason: "source_transport_retries_exhausted",
+  });
+  expect(collection.last_progress_at).toMatch(/^\d{4}-\d{2}-\d{2}T/u);
+  expect(collection.progress.current_request).toMatchObject({
+    request_id: "required-source",
+    hostname,
+    state: "pending",
+  });
+  expect(collection.pacing.hosts).toEqual([{
+    hostname,
+    pending_request_count: 1,
+    captured_request_count: 0,
+    next_request_not_before: expect.any(String),
+    waiting_ms: expect.any(Number),
+  }]);
+});
