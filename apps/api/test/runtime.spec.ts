@@ -2784,7 +2784,7 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
   });
   const productionQuery = cardCollectionPageQuery(
     "catrev_fts_search",
-    { q: "quartz", game: null, cardNumber: null, limit: 50 },
+    { q: "quartz", game: null, cardNumber: null, productId: null, rarity: null, attributes: {}, limit: 50 },
     null,
   );
   const plan = await testEnv.CATALOGUE_DB.prepare(`EXPLAIN QUERY PLAN ${productionQuery.sql}`)
@@ -2807,6 +2807,9 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
       q: "quartz",
       game: "one-piece",
       cardNumber: "OP29-702",
+      productId: null,
+      rarity: null,
+      attributes: {},
       limit: 7,
     },
     {
@@ -3315,7 +3318,15 @@ function encodeTestCardCursor(input: {
       revision_id: input.revisionId,
       route: input.route,
       order: input.order,
-      filters: { q: input.q, game: null, cardNumber: null, limit: input.limit },
+      filters: {
+        q: input.q,
+        game: null,
+        cardNumber: null,
+        productId: null,
+        rarity: null,
+        attributes: {},
+        limit: input.limit,
+      },
       after: {
         game: input.after.game,
         identity_kind: input.after.identityKind,
