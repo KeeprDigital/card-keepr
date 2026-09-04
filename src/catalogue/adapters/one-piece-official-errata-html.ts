@@ -1,4 +1,4 @@
-import { AdministrationProblem } from "./shared";
+import { AdministrationProblem } from "../shared";
 
 export type OnePieceOfficialErratumObservation = Readonly<{
   kind: "official_erratum";

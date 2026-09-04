@@ -19,7 +19,7 @@ import {
 import { reconcileRetainedCardPrintingEvidence } from "../../../src/catalogue/card-printing-reconciliation";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
 import { collectionBarrierSleepDuration, isWorkflowInstanceNotFound } from "../../../src/catalogue/collection-recovery";
-import { requiredSourceAdapter } from "../../../src/catalogue/source-adapters";
+import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import { durableReconciliationResult } from "./reconciliation-workflow";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 

@@ -1,4 +1,4 @@
-import { isIsoCalendarDate } from "./shared";
+import { isIsoCalendarDate } from "../shared";
 import { openPredicateUnresolvedReason } from "./official-legality-source-adapters.ts";
 
 type LiveLegalityGame = "one-piece" | "fusion-world" | "digimon" | "gundam";

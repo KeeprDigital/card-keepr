@@ -15,7 +15,7 @@ import {
 import type { ReconciledCardRow, ReconciledPrintingRow } from "./reconciliation-repository";
 import { productReleaseLifecyclePlan, type ProductRelationshipLifecycle } from "./product-release-publication";
 import { applicableRulesTextErrata, erratumTargetLifecycleKey } from "./errata-rules-text";
-import { requiredSourceAdapter } from "./source-adapters";
+import { requiredSourceAdapter } from "./adapters";
 import { curatedPublicationStatements } from "./curated-revisions";
 import type { NormalizedLifecycle } from "./publication-lifecycle-types";
 // The published lifecycle shape lives in the leaf module

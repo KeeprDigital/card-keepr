@@ -1,4 +1,4 @@
-import { isIsoCalendarDate } from "./shared";
+import { isIsoCalendarDate } from "../shared";
 import { requiredOfficialSourceScope } from "./official-source-scope.ts";
 
 type OfficialLegalityGame = "one-piece" | "fusion-world" | "digimon" | "gundam";

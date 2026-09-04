@@ -10,7 +10,7 @@ import {
   sourceFieldWarning,
   type ProfileWarning,
 } from "./shared";
-import { parsedOfficialArtworkIdentity } from "./official-artwork-identity.ts";
+import { parsedOfficialArtworkIdentity } from "./adapters";
 import { parseRulesTextErrata, type ParsedRulesTextErratum } from "./errata-rules-text";
 
 export type PrintingCompatibility = Readonly<{

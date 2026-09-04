@@ -22,7 +22,7 @@ import {
   type EvidenceHostWorkflowParams,
   type EvidenceParentWorkflowParams,
 } from "./source-evidence-model";
-import { globalEmergencySourceRequestCeiling, type SourceAdapterRegistration } from "./source-adapters";
+import { globalEmergencySourceRequestCeiling, type SourceAdapterRegistration } from "./adapters";
 import { curatedRevisionSetForRun, curatedRevisionPinStatementsForNewRun } from "./curated-revisions";
 import {
   classifyCollectionProgress,

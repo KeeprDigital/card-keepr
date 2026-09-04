@@ -7,7 +7,7 @@ import {
 } from "../../../src/catalogue/source-evidence-repository";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
-import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import {
   administrationRequest,
   type CollectionDocument,

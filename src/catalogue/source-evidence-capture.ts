@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { AdministrationProblem, canonicalJson, sha256, utf8 } from "./shared";
-import { requiredSourceAdapter } from "./source-adapters";
+import { requiredSourceAdapter } from "./adapters";
 import {
   completeOfficialCollectionRequestsFromDiscovery,
   defaultSourceHostPacingIntervalMilliseconds,

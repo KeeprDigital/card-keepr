@@ -6,7 +6,7 @@ import {
   pendingEvidenceRequests,
   requiredEvidenceRun,
 } from "../../../src/catalogue/source-evidence-repository";
-import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
 import { fusionWorldProductionCollectionRequests } from "./production-collection-request-goldens";
 import {

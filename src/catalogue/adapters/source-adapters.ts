@@ -1,4 +1,4 @@
-import { AdministrationProblem } from "./shared";
+import { AdministrationProblem } from "../shared";
 import { officialRawAdapterContracts } from "./product-release-source-adapters.ts";
 import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.ts";
 import { requiredOfficialSourceScope } from "./official-source-scope.ts";

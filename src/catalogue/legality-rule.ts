@@ -33,7 +33,7 @@ export {
   type LegalityEvaluation,
   type LegalityRuleEffect,
 } from "./legality-effect-policy";
-import { registeredLegalitySourceScope } from "./source-adapters";
+import { registeredLegalitySourceScope } from "./adapters";
 export {
   legalityRulesForCandidate,
   normalizedLegalityRuleLifecycle,

@@ -1,5 +1,5 @@
 import { AdministrationProblem, canonicalJson, sha256, utf8 } from "./shared";
-import { assertAdapterBinding, assertAdapterRequestSurface, requiredSourceAdapter } from "./source-adapters";
+import { assertAdapterBinding, assertAdapterRequestSurface, requiredSourceAdapter } from "./adapters";
 import { publicObservationSet, type ObservationSetRow, type SnapshotRow } from "./source-evidence-repository";
 
 type ParseOperationRow = {

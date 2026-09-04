@@ -1,8 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { expect, test, vi } from "vitest";
-import {
-  officialSourceDiscoveryRequests,
-} from "../../../src/catalogue/product-release-source-adapters";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import {
   productionSourceFixtureMarker,
   productionSourceFixtureRole,
@@ -32,17 +30,13 @@ test("evidence run diagnostics retain safe adapter, workflow, coverage, and retr
   vi.spyOn(console, "info").mockImplementation((value) => {
     records.push(String(value));
   });
-  const response = await administrationRequest(
-    "/v1/ingestion-runs/evidence",
-    "POST",
-    {
-      supported_game: "one-piece",
-      source_lineage: "one-piece-en",
-      adapter_version: "one-piece-en@6",
-      idempotency_key: "diagnostic-evidence-run",
-      requests: officialSourceDiscoveryRequests("one-piece-en"),
-    },
-  );
+  const response = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "one-piece-en@6",
+    idempotency_key: "diagnostic-evidence-run",
+    requests: officialSourceDiscoveryRequests("one-piece-en"),
+  });
   expect(response.status).toBe(201);
   const run = await response.json<Record<string, unknown>>();
   const requestLog = JSON.parse(records.at(-1) ?? "null") as {
@@ -83,28 +77,23 @@ test("terminal evidence diagnostics expose collection retry guidance without a s
   vi.spyOn(console, "info").mockImplementation((value) => {
     records.push(String(value));
   });
-  const created = await administrationRequest(
-    "/v1/ingestion-runs/evidence",
-    "POST",
-    {
-      supported_game: "one-piece",
-      source_lineage: "one-piece-en",
-      adapter_version: "one-piece-en@6",
-      idempotency_key: "terminal-evidence-diagnostics",
-      requests: officialSourceDiscoveryRequests("one-piece-en"),
-    },
-  );
+  const created = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "one-piece-en@6",
+    idempotency_key: "terminal-evidence-diagnostics",
+    requests: officialSourceDiscoveryRequests("one-piece-en"),
+  });
   const run = await created.json<{ id: string }>();
   await env.CATALOGUE_DB.prepare(
     `UPDATE ingestion_runs
      SET state = 'failed', terminal_at = ?,
          failure_code = 'source_request_retries_exhausted'
      WHERE id = ?`,
-  ).bind("2026-08-05T00:00:00.000Z", run.id).run();
-  const shown = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}`,
-    "GET",
-  );
+  )
+    .bind("2026-08-05T00:00:00.000Z", run.id)
+    .run();
+  const shown = await administrationRequest(`/v1/ingestion-runs/${run.id}`, "GET");
   expect(shown.status).toBe(200);
   const document = await shown.json<Record<string, unknown>>();
   expect(document).toMatchObject({
@@ -130,53 +119,41 @@ test("terminal evidence diagnostics expose collection retry guidance without a s
       ],
     },
   });
-  expect(JSON.stringify(document.operational_diagnostics)).not.toContain(
-    `/v1/ingestion-runs/${run.id}/candidate`,
-  );
-  await env.CATALOGUE_DB.prepare(
-    "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
-  ).run();
-  const retried = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/retry`,
-    "POST",
-    { idempotency_key: "terminal-evidence-diagnostics-retry" },
-  );
+  expect(JSON.stringify(document.operational_diagnostics)).not.toContain(`/v1/ingestion-runs/${run.id}/candidate`);
+  await env.CATALOGUE_DB.prepare("UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1").run();
+  const retried = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/retry`, "POST", {
+    idempotency_key: "terminal-evidence-diagnostics-retry",
+  });
   expect(retried.status).toBe(201);
   const retryDocument = await retried.json<Record<string, unknown>>();
-  const retryLog = records.map((record) => JSON.parse(record)).reverse().find(
-    (record: { request?: { route?: string; id?: string } }) =>
-      record.request?.route ===
-      "/v1/ingestion-runs/:ref/collection/retry",
-  );
+  const retryLog = records
+    .map((record) => JSON.parse(record))
+    .reverse()
+    .find(
+      (record: { request?: { route?: string; id?: string } }) =>
+        record.request?.route === "/v1/ingestion-runs/:ref/collection/retry",
+    );
   expect(retryDocument).toMatchObject({
     linked_run_id: run.id,
     operational_diagnostics: {
       references: { request_id: retryLog.request.id },
     },
   });
-  expect(JSON.stringify(retryDocument.operational_diagnostics)).not.toContain(
-    "terminal-evidence-diagnostics-retry",
-  );
+  expect(JSON.stringify(retryDocument.operational_diagnostics)).not.toContain("terminal-evidence-diagnostics-retry");
 });
 
 test("published evidence diagnostics explicitly advertise no retry route", async () => {
-  const created = await administrationRequest(
-    "/v1/ingestion-runs/evidence",
-    "POST",
-    {
-      supported_game: "one-piece",
-      source_lineage: "one-piece-en",
-      adapter_version: "one-piece-en@6",
-      idempotency_key: "published-evidence-diagnostics",
-      requests: officialSourceDiscoveryRequests("one-piece-en"),
-    },
-  );
+  const created = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "one-piece-en@6",
+    idempotency_key: "published-evidence-diagnostics",
+    requests: officialSourceDiscoveryRequests("one-piece-en"),
+  });
   const source = await created.json<{ id: string }>();
   const run = { id: "run_published_evidence_diagnostics" };
   await env.CATALOGUE_DB.batch([
-    env.CATALOGUE_DB.prepare(
-      "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
-    ),
+    env.CATALOGUE_DB.prepare("UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1"),
     env.CATALOGUE_DB.prepare(
       `INSERT INTO ingestion_runs (
          id, state, selected_games_json, started_at,
@@ -204,10 +181,7 @@ test("published evidence diagnostics explicitly advertise no retry route", async
        FROM ingestion_evidence_plans WHERE ingestion_run_id = ?`,
     ).bind(run.id, source.id),
   ]);
-  const shown = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}`,
-    "GET",
-  );
+  const shown = await administrationRequest(`/v1/ingestion-runs/${run.id}`, "GET");
   expect(shown.status).toBe(200);
   const document = await shown.json<Record<string, unknown>>();
   expect(document).toMatchObject({
@@ -229,37 +203,34 @@ test("production source fixture selection is invariant under retries and reorder
     accept: "text/html",
     "user-agent": "card-keepr-official-source/1; request-role=surface",
   });
-  expect([
-    surfaceHeaders,
-    discoveryHeaders,
-    discoveryHeaders,
-    surfaceHeaders,
-  ].map(productionSourceFixtureRole)).toEqual([
-    "surface",
-    "retained-discovery",
-    "retained-discovery",
-    "surface",
-  ]);
-  expect(productionSourceFixtureMarker(new Headers({
-    "user-agent":
-      "card-keepr-representable-legality-v3; request-role=listing",
-  }))).toBe("card-keepr-representable-legality-v3");
+  expect([surfaceHeaders, discoveryHeaders, discoveryHeaders, surfaceHeaders].map(productionSourceFixtureRole)).toEqual(
+    ["surface", "retained-discovery", "retained-discovery", "surface"],
+  );
+  expect(
+    productionSourceFixtureMarker(
+      new Headers({
+        "user-agent": "card-keepr-representable-legality-v3; request-role=listing",
+      }),
+    ),
+  ).toBe("card-keepr-representable-legality-v3");
   const products = new Headers({
-    "user-agent":
-      "card-keepr-products-v3; request-role=surface; request-surface=products",
+    "user-agent": "card-keepr-products-v3; request-role=surface; request-surface=products",
   });
   const releases = new Headers({
-    "user-agent":
-      "card-keepr-products-v3; request-role=surface; request-surface=releases",
+    "user-agent": "card-keepr-products-v3; request-role=surface; request-surface=releases",
   });
-  expect([releases, products, releases, products].map(
-    productionSourceFixtureSurface,
-  )).toEqual(["releases", "products", "releases", "products"]);
-  expect(productionSourceFixtureMarker(products)).toBe(
-    "card-keepr-products-v3",
-  );
-  expect(productionSourceFixtureMarker(new Headers({
-    "user-agent":
-      "card-keepr-representable-legality-v3; request-role=surface",
-  }))).toBe("card-keepr-representable-legality-v3");
+  expect([releases, products, releases, products].map(productionSourceFixtureSurface)).toEqual([
+    "releases",
+    "products",
+    "releases",
+    "products",
+  ]);
+  expect(productionSourceFixtureMarker(products)).toBe("card-keepr-products-v3");
+  expect(
+    productionSourceFixtureMarker(
+      new Headers({
+        "user-agent": "card-keepr-representable-legality-v3; request-role=surface",
+      }),
+    ),
+  ).toBe("card-keepr-representable-legality-v3");
 });

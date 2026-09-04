@@ -7,7 +7,7 @@ import {
 import { canonicalJson, sha256Text, isIsoCalendarDate, maximumLegalityStatusRules } from "./shared";
 import { ifNoneMatchMatches } from "../http/conditional-request";
 import { publicUrl, type PublicBase } from "../http/public-base";
-import { requiredLegalityRegionsForGame } from "./official-source-scope.ts";
+import { requiredLegalityRegionsForGame } from "./adapters";
 import {
   parseStoredCatalogueCard,
   parseStoredLegalityRule,

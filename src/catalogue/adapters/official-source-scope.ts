@@ -1,4 +1,4 @@
-import type { LegalityRegion, SupportedGame } from "./shared";
+import type { LegalityRegion, SupportedGame } from "../shared";
 
 export type OfficialSourceScope = Readonly<{
   sourceLineage: string;

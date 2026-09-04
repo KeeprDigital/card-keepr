@@ -1,6 +1,6 @@
 import { canonicalJson, sha256, type SupportedGame } from "./shared";
 import { parseReconciliationObservation } from "./reconciliation-model";
-import { adapterReconciliationAreas, requiredSourceAdapter } from "./source-adapters";
+import { adapterReconciliationAreas, requiredSourceAdapter, parsedOfficialArtworkIdentity } from "./adapters";
 import { evidencePlanForRequest } from "./source-evidence-repository";
 import {
   parseEvidencePlans,
@@ -8,7 +8,6 @@ import {
   toleratesRequestFailure,
   type EvidencePlanRequest,
 } from "./source-evidence-model";
-import { parsedOfficialArtworkIdentity } from "./official-artwork-identity.ts";
 import {
   parseRetainedLegalityRules,
   regionForLineage,

@@ -7,7 +7,7 @@ import {
   requiredOfficialSourceContract,
   requiredSourceAdapter,
   type SourceAdapterRegistration,
-} from "./source-adapters";
+} from "./adapters";
 
 // The polite steady-state interval between requests to one Official Source
 // hostname when no deployment override is configured.

@@ -1,59 +1,49 @@
 import { expect, test } from "vitest";
-import { requiredSourceAdapter } from "../../src/catalogue/source-adapters";
+import { requiredSourceAdapter } from "../../src/catalogue/adapters";
 
 const productDetailRequestId = `gundam-en-asia:product_detail:${"a".repeat(64)}`;
 const cardDetailRequestId = `fusion-world-en:detail:${"b".repeat(64)}`;
 
-async function parseGundamProductDetail(
-  html: string,
-  url: string,
-): Promise<unknown> {
+async function parseGundamProductDetail(html: string, url: string): Promise<unknown> {
   const adapter = requiredSourceAdapter("gundam-en-asia@7");
-  const observations = await adapter.parseBytes!(
-    new TextEncoder().encode(html),
-    {
-      mediaType: "text/html; charset=utf-8",
-      url,
-      requestId: productDetailRequestId,
-    },
-  );
+  const observations = await adapter.parseBytes!(new TextEncoder().encode(html), {
+    mediaType: "text/html; charset=utf-8",
+    url,
+    requestId: productDetailRequestId,
+  });
   expect(observations).toHaveLength(1);
   return observations[0];
 }
 
-async function parseFusionWorldCardDetail(
-  html: string,
-  locator: string,
-): Promise<Record<string, unknown>> {
+async function parseFusionWorldCardDetail(html: string, locator: string): Promise<Record<string, unknown>> {
   const adapter = requiredSourceAdapter("fusion-world-en@9");
-  const observations = await adapter.parseBytes!(
-    new TextEncoder().encode(html),
-    {
-      mediaType: "text/html; charset=utf-8",
-      url:
-        `https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=${locator}`,
-      requestId: cardDetailRequestId,
-    },
-  );
+  const observations = await adapter.parseBytes!(new TextEncoder().encode(html), {
+    mediaType: "text/html; charset=utf-8",
+    url: `https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=${locator}`,
+    requestId: cardDetailRequestId,
+  });
   expect(observations).toHaveLength(1);
   return observations[0] as Record<string, unknown>;
 }
 
-function fusionWorldCardDetailHtml(
-  { locator, name, cardType, rarity }: {
-    locator: string;
-    name: string;
-    cardType: string;
-    rarity: string | null;
-  },
-): string {
+function fusionWorldCardDetailHtml({
+  locator,
+  name,
+  cardType,
+  rarity,
+}: {
+  locator: string;
+  name: string;
+  cardType: string;
+  rarity: string | null;
+}): string {
   const cell = (label: string, value: string) =>
     `<div class="cardDataCell"><h6>${label}</h6><div class="data">${value}</div></div>`;
   return `<html><body><main class="mainCol">
     <article class="article cardDetailPageCol"><div class="cardDetailPageContent">
       <div class="cardNoCol"><div class="cardNo">${locator}</div>${
-    rarity === null ? "" : `<div class="rarity">${rarity}</div>`
-  }</div>
+        rarity === null ? "" : `<div class="rarity">${rarity}</div>`
+      }</div>
       <div class="nameCol"><h1 class="cardName">${name}</h1></div>
       <div class="cardCol"><div class="cardImage">
         <img src="../../images/cards/card/en/${locator}.webp" alt="${locator}">
@@ -121,9 +111,7 @@ test("a live Energy Marker card detail that publishes a rarity fails closed", as
       }),
       "E-148",
     ),
-  ).rejects.toThrow(
-    /Fusion World Energy Marker detail must not publish a rarity\./u,
-  );
+  ).rejects.toThrow(/Fusion World Energy Marker detail must not publish a rarity\./u);
 });
 
 test("a live product detail without its exact publisher title suffix fails closed", async () => {
@@ -150,12 +138,14 @@ test("a live accessory product detail is retained as explicit non-card evidence"
   expect(observation).toMatchObject({
     product_release_catalogue: {
       products: [],
-      distribution_contexts: [{
-        key: "non-card:accessory:official card case set 02",
-        kind: "other",
-        label: "accessory",
-        evidence_category: "explicit",
-      }],
+      distribution_contexts: [
+        {
+          key: "non-card:accessory:official card case set 02",
+          kind: "other",
+          label: "accessory",
+          evidence_category: "explicit",
+        },
+      ],
     },
   });
 });

@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import { requiredSourceAdapter } from "../../../src/catalogue/source-adapters";
+import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import {
   appendDiscoveredEvidenceRequests,
   pendingEvidenceRequestPage,

@@ -1,7 +1,7 @@
 import { exports } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
-import { requiredSourceAdapter } from "../../../src/catalogue/source-adapters";
+import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 import {
   approve,

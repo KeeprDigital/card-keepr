@@ -11,25 +11,15 @@ export function officialArtworkFingerprint(
   roles: readonly string[],
   artworkId: string | null,
 ): string {
-  const identity = normalizedOfficialArtworkIdentity(
-    officialCardIdentity,
-    roles,
-    artworkId,
-  );
+  const identity = normalizedOfficialArtworkIdentity(officialCardIdentity, roles, artworkId);
   return `${prefix}${JSON.stringify(identity)}`;
 }
 
-export function parsedOfficialArtworkIdentity(
-  fingerprint: string,
-): OfficialArtworkIdentity | null {
+export function parsedOfficialArtworkIdentity(fingerprint: string): OfficialArtworkIdentity | null {
   if (!fingerprint.startsWith(prefix)) return null;
   try {
     const value: unknown = JSON.parse(fingerprint.slice(prefix.length));
-    if (
-      !isRecord(value) ||
-      Object.keys(value).sort().join(",") !==
-        "artwork_id,official_card_identity,roles"
-    ) {
+    if (!isRecord(value) || Object.keys(value).sort().join(",") !== "artwork_id,official_card_identity,roles") {
       return null;
     }
     const { official_card_identity, roles, artwork_id } = value;
@@ -53,16 +43,9 @@ function normalizedOfficialArtworkIdentity(
   artworkId: string | null,
 ): OfficialArtworkIdentity {
   const card = officialCardIdentity.normalize("NFC").trim().toUpperCase();
-  const normalizedArtworkId =
-    artworkId?.normalize("NFC").trim().toLocaleLowerCase() ?? null;
-  const stableRoles = [...new Set(
-    roles.map((role) => role.normalize("NFC").trim().toLocaleLowerCase()),
-  )].sort();
-  if (
-    card.length === 0 ||
-    stableRoles.length === 0 ||
-    stableRoles.some((role) => role.length === 0)
-  ) {
+  const normalizedArtworkId = artworkId?.normalize("NFC").trim().toLocaleLowerCase() ?? null;
+  const stableRoles = [...new Set(roles.map((role) => role.normalize("NFC").trim().toLocaleLowerCase()))].sort();
+  if (card.length === 0 || stableRoles.length === 0 || stableRoles.some((role) => role.length === 0)) {
     throw new Error("Official Printing has no stable semantic artwork identity.");
   }
   return {
@@ -81,6 +64,5 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 function isNonEmptyStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.length > 0 &&
-    value.every(isNonEmptyString);
+  return Array.isArray(value) && value.length > 0 && value.every(isNonEmptyString);
 }

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { canonicalJson, sha256 } from "../../../src/catalogue/shared";
-import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import {
   installReconciliationSuite,
   testEnv,

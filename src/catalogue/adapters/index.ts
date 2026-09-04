@@ -18,16 +18,16 @@ export {
   type ListingReconciliationTraits,
   type OfficialSourceContract,
   type SourceAdapterRegistration,
-} from "../source-adapters";
+} from "./source-adapters";
 export {
   requiredLegalityRegionsForGame,
   requiredOfficialSourceScope,
   type OfficialSourceScope,
-} from "../official-source-scope";
-export { officialSourceDiscoveryRequests } from "../product-release-source-adapters";
+} from "./official-source-scope";
+export { officialSourceDiscoveryRequests } from "./product-release-source-adapters";
 export {
   parsedOfficialArtworkIdentity,
   type OfficialArtworkIdentity,
-} from "../official-artwork-identity";
-export { parseOnePieceOfficialErrataHtml } from "../one-piece-official-errata-html";
-export { officialLegalityRulesObservation } from "../official-legality-source-adapters";
+} from "./official-artwork-identity";
+export { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html";
+export { officialLegalityRulesObservation } from "./official-legality-source-adapters";
