@@ -1,3 +1,4 @@
+import { releaseActiveRunLockStatement } from "../../../src/catalogue/ingestion/run-lifecycle-repository";
 import { catalogueStore, atomicRepositoryStatement, runStartGuardStatement } from "../../../src/catalogue/shared";
 import {
   insertAuthoredCuratedRevisionStatement,
@@ -2347,11 +2348,7 @@ test("the Worker lifecycle endpoints fail closed on every mutation guard", async
     ingestionQueries
       .setIngestionRunsStateTerminalAtForFieldAbsenceDistinctFromNullRetirementRestoresExactAbsence(env.CATALOGUE_DB)
       .bind(now, activeRunId),
-    ingestionQueries
-      .setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewalWithundefined(
-        env.CATALOGUE_DB,
-      )
-      .bind(activeRunId),
+    releaseActiveRunLockStatement(catalogueStore(env.CATALOGUE_DB), activeRunId),
   ]);
 
   const replacement = {
