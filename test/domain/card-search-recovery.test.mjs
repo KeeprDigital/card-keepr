@@ -1,15 +1,18 @@
-import * as cardSearchQueries from "./query-helpers/card-search.ts";
-import * as publishedCatalogueQueries from "./query-helpers/published-catalogue.ts";
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "vitest";
+import { d1Adapter } from "../../acceptance/helpers/query-helpers/sqlite-d1-adapter.mjs";
 import {
   prepareCardSearchForD1ExportStatements,
   reconstructCardSearchAfterD1RestoreStatements,
 } from "../../src/catalogue/backup-recovery/card-search-recovery-statements.ts";
+import { publishCardSearchChunksStatement } from "../../src/catalogue/ingestion/publication-commit-repository.ts";
+import { catalogueStore } from "../../src/catalogue/shared/catalogue-store-repository.ts";
+import * as cardSearchQueries from "./query-helpers/card-search.ts";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 
@@ -20,9 +23,7 @@ test("D1 backup export restores the reconstructible Card FTS index", async () =>
   try {
     await applyMigrations(source);
     source.exec("PRAGMA foreign_keys = OFF");
-    cardSearchQueries
-      .insertRevisionCardSearchChunks(source)
-      .run("catrev_backup_restore", "card_backup_restore", "backup quartz");
+    await publishSearchChunk(source, "card_backup_restore", "backup quartz");
     assert.equal(matchedRevision(source), "catrev_backup_restore");
 
     const migratedDefinition = cardSearchSchema(source);
@@ -44,8 +45,12 @@ test("D1 backup export restores the reconstructible Card FTS index", async () =>
     assert.equal(cardSearchQueries.readCardSearchFtsStateState(restored).get().state, "ready");
     assert.equal(matchedRevision(restored), "catrev_backup_restore");
     assert.deepEqual(cardSearchSchema(restored), migratedDefinition);
-    cardSearchQueries.setRevisionCardSearchChunksSearchText(restored).run();
-    assert.equal(matchedRevision(restored, "restored trigger quartz"), "catrev_backup_restore");
+    // This index-only fixture omits parent query documents on both databases.
+    // A new chunk exercises the production write path after reconstruction.
+    restored.exec("PRAGMA foreign_keys = OFF");
+    await publishSearchChunk(restored, "card_after_restore", "restored repository quartz");
+    assert.equal(matchedRevision(restored, "restored repository quartz"), "catrev_backup_restore");
+    assert.equal(cardSearchQueries.countRevisionCardSearchChunksCount(restored).get().count, 2);
   } finally {
     restored?.close();
     source.close();
@@ -87,4 +92,12 @@ function cardSearchSchema(database) {
       name,
       sql: sql.replaceAll(/\s+/gu, " ").trim(),
     }));
+}
+
+async function publishSearchChunk(database, cardId, searchText) {
+  // Vitest imports the factory and store through one Vite module graph.
+  await publishCardSearchChunksStatement(catalogueStore(d1Adapter(database)), {
+    revisionId: "catrev_backup_restore",
+    chunksJson: JSON.stringify([{ card_id: cardId, field_ordinal: 1, chunk_ordinal: 0, search_text: searchText }]),
+  }).run();
 }
