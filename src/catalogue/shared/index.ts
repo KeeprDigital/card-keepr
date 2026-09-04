@@ -36,6 +36,7 @@ export {
   type UnresolvedLegalityScopeDimension,
 } from "./catalogue-candidate-types";
 export {
+  atomicRepositoryStatement,
   type CatalogueStore,
   catalogueEnvironment,
   catalogueStore,
