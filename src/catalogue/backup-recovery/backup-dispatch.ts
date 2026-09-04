@@ -1,5 +1,7 @@
 import { canonicalJson, sha256Text } from "../shared";
 import {
+  type BackupDispatchRow,
+  type OutstandingBackupDispatchRow,
   backupDispatchStatusStatement,
   backupWorkflowRequestStatement,
   outstandingBackupDispatchesStatement,
@@ -31,15 +33,7 @@ export async function publicationBackupDispatchStatements(
 }
 
 export async function backupDispatchStatus(database: D1Database, key: string): Promise<Record<string, unknown> | null> {
-  const row = await backupDispatchStatusStatement(database, key).first<{
-    state: string;
-    attempt_count: number;
-    failure_detail: string | null;
-    updated_at: string;
-    idempotency_key: string;
-    request_json: string;
-    workflow_instance_id: string;
-  }>();
+  const row = await backupDispatchStatusStatement(database, key).first<BackupDispatchRow>();
   if (row === null) return null;
   return {
     state: row.state,
@@ -61,7 +55,7 @@ export async function backupDispatchStatus(database: D1Database, key: string): P
 }
 
 export async function outstandingBackupDispatches(database: D1Database): Promise<Record<string, unknown>[]> {
-  const rows = await outstandingBackupDispatchesStatement(database).all<{ idempotency_key: string }>();
+  const rows = await outstandingBackupDispatchesStatement(database).all<OutstandingBackupDispatchRow>();
   const statuses = await Promise.all(
     rows.results.map(async ({ idempotency_key }) => ({
       idempotency_key,

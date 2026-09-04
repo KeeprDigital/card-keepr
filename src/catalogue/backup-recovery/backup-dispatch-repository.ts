@@ -1,3 +1,15 @@
+export type BackupDispatchRow = {
+  state: string;
+  attempt_count: number;
+  failure_detail: string | null;
+  updated_at: string;
+  idempotency_key: string;
+  request_json: string;
+  workflow_instance_id: string;
+};
+
+export type OutstandingBackupDispatchRow = Pick<BackupDispatchRow, "idempotency_key">;
+
 export function pendingBackupDispatchStatement(database: D1Database, key: string, at: string): D1PreparedStatement {
   return database
     .prepare(`INSERT OR IGNORE INTO catalogue_backup_dispatch (idempotency_key, state, updated_at)
