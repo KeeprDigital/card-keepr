@@ -155,7 +155,7 @@ re-exports on `legality-rule.ts`, `legality-effect-policy.ts`,
   Source parsers and scope registration, so they belong to `adapters`, not
   `legality`.
 
-## Aggregate repositories (#103 expand)
+## Aggregate repositories (#103 expand, #104 migrate)
 
 The repository functions introduced by #103 prepare and bind SQL; their callers
 still execute reads and writes and compose atomic batches. Query row types live
@@ -175,8 +175,13 @@ this expansion.
 | Backup Attempt | `backup-recovery/backup-repository.ts` | Attempt evidence reader and Restore Phase transition |
 | Catalogue Export | `export/export-repository.ts` | Export reader and deletion plan insertion |
 
-These are cluster-internal seams. Existing cluster entrypoints stay unchanged,
-and inline SQL outside the adopted paths remains for the later migration.
+These are cluster-internal seams. #104 moves the remaining SQL into named
+repository factories, including published read queries, retained evidence,
+reconciliation publication, Workflow progress, and the Card/Printing query
+projections. Existing cluster entrypoints stay unchanged. Domain callers own
+execution and batch composition; the repositories prepare statements and bind
+closed, typed inputs. Dynamic table choices are selected inside the repository.
+The raw D1 argument is retained until the #105 port contraction.
 Lifecycle capability detection stays in the Ingestion Run caller; the repository
 receives that decision explicitly. Curated lifecycle batches retain statement
 ordering, event-version predicates, and append-only audit/idempotency writes.
