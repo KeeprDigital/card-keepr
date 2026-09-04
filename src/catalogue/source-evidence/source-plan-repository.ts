@@ -1,4 +1,4 @@
-import { atomicRepositoryStatement, type CatalogueStore, repositoryStatements } from "../shared";
+import { atomicRepositoryStatement, byteBoundedJsonArrays, type CatalogueStore, repositoryStatements } from "../shared";
 
 export type SourceRequestInsert = Readonly<{
   runId: string;
@@ -31,6 +31,34 @@ export function sourceRequestInsertionStatement(
         input.representationFingerprint,
       ),
     after: [sourceRequestPlanGuardStatement(database, input.runId, JSON.stringify([input.requestId]))],
+  });
+}
+
+/** Bulk writers retain one insert and one plan guard per byte-bounded group. */
+export function bulkSourceRequestInsertionStatements(
+  database: CatalogueStore,
+  runId: string,
+  requests: readonly Omit<SourceRequestInsert, "runId">[],
+): D1PreparedStatement[] {
+  if (requests.length === 0) return [];
+  return byteBoundedJsonArrays(requests).map((requestsJson) => {
+    const requestIds = (JSON.parse(requestsJson) as Omit<SourceRequestInsert, "runId">[]).map(
+      ({ requestId }) => requestId,
+    );
+    return atomicRepositoryStatement(database, {
+      statement: repositoryStatements(database)
+        .prepare(`INSERT INTO source_requests (
+          ingestion_run_id, request_id, sequence_number, method, url,
+          request_headers_json, representation_fingerprint, state,
+          source_snapshot_id, failure_code
+        ) SELECT ?, json_extract(request.value, '$.requestId'),
+          json_extract(request.value, '$.sequenceNumber'), json_extract(request.value, '$.method'),
+          json_extract(request.value, '$.url'), json_extract(request.value, '$.requestHeadersJson'),
+          json_extract(request.value, '$.representationFingerprint'), 'pending', NULL, NULL
+        FROM json_each(?) AS request`)
+        .bind(runId, requestsJson),
+      after: [sourceRequestPlanGuardStatement(database, runId, JSON.stringify(requestIds))],
+    });
   });
 }
 

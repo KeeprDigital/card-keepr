@@ -1,6 +1,6 @@
 import { runTransitionGuardStatement, administrationOutcomeGuardStatement } from "../shared";
 import {
-  sourceRequestInsertionStatement,
+  bulkSourceRequestInsertionStatements,
   sourceRequestPlanGuardStatement,
   officialCollectionPlanInsertionStatement,
   evidencePlanInsertionStatement,
@@ -348,19 +348,20 @@ function requestStatements(
   runId: string,
   plans: readonly EvidencePlan[],
 ): D1PreparedStatement[] {
-  return plans
-    .flatMap(({ requests }) => requests)
-    .map((sourceRequest, sequenceNumber) =>
-      sourceRequestInsertionStatement(database, {
-        runId,
+  return bulkSourceRequestInsertionStatements(
+    database,
+    runId,
+    plans
+      .flatMap(({ requests }) => requests)
+      .map((sourceRequest, sequenceNumber) => ({
         requestId: sourceRequest.id,
         sequenceNumber,
         method: sourceRequest.method,
         url: sourceRequest.url,
         requestHeadersJson: canonicalJson(sourceRequest.headers),
         representationFingerprint: sourceRequest.representation_fingerprint,
-      }),
-    );
+      })),
+  );
 }
 
 export function evidencePlanForRequest(
@@ -898,16 +899,17 @@ export async function persistOfficialSourceCollectionPlan(
         contentDigest,
         createdAt: new Date().toISOString(),
       }),
-      ...discoveredRequests.map((request, index) =>
-        sourceRequestInsertionStatement(database, {
-          runId,
+      ...bulkSourceRequestInsertionStatements(
+        database,
+        runId,
+        discoveredRequests.map((request, index) => ({
           requestId: request.id,
           sequenceNumber: plans.flatMap((plan) => plan.requests).length + planIndex * 10000 + index,
           method: "GET",
           url: request.url,
           requestHeadersJson: canonicalJson(request.headers),
           representationFingerprint: request.representation_fingerprint,
-        }),
+        })),
       ),
     ]);
   } catch (error) {
