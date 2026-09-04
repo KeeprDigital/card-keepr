@@ -16,7 +16,7 @@ export function setCurrentCatalogueRevision(database) {
 
 export function replacementOperationState(database) {
   return database.prepare(
-    "SELECT active_ingestion_run_id,active_release_id AS active_production_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1",
+    "SELECT active_ingestion_run_id,active_production_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1",
   );
 }
 
@@ -32,23 +32,13 @@ export function release47State(database) {
   return database.prepare("SELECT state FROM production_releases WHERE id='release-47'");
 }
 
-export function release47TransitionCount(database) {
-  return database.prepare("SELECT COUNT(*) AS count FROM production_release_transitions WHERE release_id='release-47'");
-}
-
-export function insertBlockedIngestionRun(database) {
-  return database.prepare(
-    "INSERT INTO ingestion_runs (id,state,selected_games_json,started_at,expected_current_revision_id,idempotency_key,candidate_json) VALUES ('blocked-ingestion','planning','[]','2026-08-05T00:03:00.000Z','catrev_spine_000','blocked-ingestion','{}')",
-  );
-}
-
 export function recoveryHealth(database) {
   return database.prepare("SELECT recovery_health FROM operation_state WHERE singleton=1");
 }
 
 export function replacementLeaseAndRecoveryState(database) {
   return database.prepare(
-    "SELECT active_release_id AS active_production_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1",
+    "SELECT active_production_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1",
   );
 }
 
@@ -80,7 +70,7 @@ export function release47FailureState(database) {
 
 export function activeOperationIdentities(database) {
   return database.prepare(
-    "SELECT active_ingestion_run_id,active_release_id AS active_production_release_id FROM operation_state WHERE singleton=1",
+    "SELECT active_ingestion_run_id,active_production_release_id FROM operation_state WHERE singleton=1",
   );
 }
 
@@ -88,52 +78,18 @@ export function countBootstrapFenceRuns(database) {
   return database.prepare("SELECT COUNT(*) AS count FROM ingestion_runs WHERE id LIKE 'release-bootstrap|%'");
 }
 
-export function setLegacyReleaseLease(database) {
-  return database.prepare(`UPDATE operation_state
-     SET active_release_id = ?, active_release_expires_at = ?
-     WHERE singleton = 1`);
+export function activeReleaseIdentity(database) {
+  return database.prepare("SELECT active_production_release_id FROM operation_state");
 }
 
-export function bothReleaseLeaseColumns(database) {
-  return database.prepare(`SELECT active_release_id, active_release_expires_at,
-              active_production_release_id,
-              active_production_release_expires_at
-       FROM operation_state WHERE singleton = 1`);
-}
-
-export function setProductionReleaseLease(database) {
-  return database.prepare(`UPDATE operation_state
-     SET active_production_release_id = ?,
-         active_production_release_expires_at = ?
-     WHERE singleton = 1`);
-}
-
-export function legacyReleaseLease(database) {
-  return database.prepare(`SELECT active_release_id, active_release_expires_at
-       FROM operation_state WHERE singleton = 1`);
-}
-
-export function productionReleaseLease(database) {
-  return database.prepare(`SELECT active_production_release_id,
-              active_production_release_expires_at
-       FROM operation_state WHERE singleton = 1`);
-}
-
-export function activeLegacyReleaseIdentity(database) {
-  return database.prepare("SELECT active_release_id FROM operation_state");
-}
-
-export function activeLegacyOperationIdentities(database) {
-  return database.prepare("SELECT active_ingestion_run_id,active_release_id FROM operation_state WHERE singleton=1");
-}
 
 export function countIngestionRuns(database) {
   return database.prepare("SELECT COUNT(*) AS count FROM ingestion_runs");
 }
 
-export function legacyOperationLease(database) {
+export function operationLease(database) {
   return database.prepare(
-    "SELECT active_ingestion_run_id,active_release_id,active_release_expires_at FROM operation_state WHERE singleton=1",
+    "SELECT active_ingestion_run_id,active_production_release_id,active_production_release_expires_at FROM operation_state WHERE singleton=1",
   );
 }
 
@@ -206,7 +162,7 @@ export function advanceReleaseToMigrating(database) {
 
 export function reserveReplacementRecoveryLease(database) {
   return database.prepare(
-    "UPDATE operation_state SET active_ingestion_run_id=NULL,active_release_id=?,active_release_expires_at='2026-08-05T01:00:00.000Z',recovery_health='blocked',active_recovery_id=?,recovery_restore_guard='blocked' WHERE singleton=1",
+    "UPDATE operation_state SET active_ingestion_run_id=NULL,active_production_release_id=?,active_production_release_expires_at='2026-08-05T01:00:00.000Z',recovery_health='blocked',active_recovery_id=?,recovery_restore_guard='blocked' WHERE singleton=1",
   );
 }
 
@@ -256,4 +212,22 @@ export function insertHandoffRecovery(database) {
      verification_idempotency_key,verification_request_digest,acceptance_idempotency_key,
      acceptance_request_digest,started_at,restored_at,verified_at,accepted_at,failure_code,failure_detail,failed_at)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+}
+
+// Test the release boundary against the schema that follows the audit/alias
+// removal. Production migration ownership remains in migrations/0011.
+export function removeReleaseAuditAndLegacyLease(database) {
+  const triggers = database.prepare(`SELECT name FROM sqlite_schema WHERE type='trigger'
+    AND (sql LIKE '%active_release_%' OR name IN (
+      'record_initial_ingestion_state','record_ingestion_transition',
+      'production_release_requested_audit','production_release_state_audit',
+      'production_release_transition_is_legal','production_release_no_rollback_after_migration',
+      'production_release_lease_shape_guard_v2'
+    ))`).all();
+  for (const { name } of triggers) database.exec(`DROP TRIGGER "${name.replaceAll('"', '""')}"`);
+  database.exec("DROP TABLE IF EXISTS ingestion_run_transitions; DROP TABLE IF EXISTS production_release_transitions");
+  const columns = database.prepare("PRAGMA table_info(operation_state)").all();
+  for (const name of ["active_release_id", "active_release_expires_at"]) {
+    if (columns.some((column) => column.name === name)) database.exec(`ALTER TABLE operation_state DROP COLUMN ${name}`);
+  }
 }

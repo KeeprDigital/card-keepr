@@ -37,7 +37,7 @@ test("workflow validator accepts only the exact durably prepared plan", async (t
   assert.match(preflight, /catalogue_backup_attempts/u);
   assert.match(claim, /production_release_bootstrap/u);
   assert.match(materialize, /'requested'[\s\S]*state='preflight'[\s\S]*state='migrating'/u);
-  assert.match(materialize, /transition_rows/u);
+  assert.match(materialize, /request_json=.*idempotency_key=.*prepare_production_release/u);
   assert.match(migrationStarted, /production_release_migration_started/u);
 
   const database = liveGateDatabase(environment);
@@ -153,8 +153,9 @@ test("replacement release state is rehydrated into a distinct blocked database b
   );
   assert.equal(productionReleaseQueries.countVerifiedBackups(replacement).get().count, 2);
   assert.equal(productionReleaseQueries.release47State(replacement).get().state, "migrating");
-  assert.equal(productionReleaseQueries.release47TransitionCount(replacement).get().count, 3);
-  assert.throws(() => productionReleaseQueries.insertBlockedIngestionRun(replacement).run(), /recovery_in_progress/u);
+
+  // The run-start repository owns recovery admission; its trigger-disabled
+  // runtime tests prove the blocked health/restore states reject new runs.
   assert.equal(productionReleaseQueries.release47State(original).get().state, "migrating");
   assert.equal(productionReleaseQueries.recoveryHealth(original).get().recovery_health, "blocked");
 
@@ -241,49 +242,6 @@ test("a durable pre-command marker conservatively terminalizes partial migration
   assert.equal(productionReleaseQueries.countBootstrapFenceRuns(database).get().count, 0);
 });
 
-test("both Production Release lease vocabularies stay in step", async (t) => {
-  const database = await realDatabase();
-  t.after(() => database.close());
-  const legacyExpiry = "2026-08-05T01:00:00.000Z";
-  productionReleaseQueries.setLegacyReleaseLease(database).run("release-legacy", legacyExpiry);
-  assert.deepEqual(
-    { ...productionReleaseQueries.bothReleaseLeaseColumns(database).get() },
-    {
-      active_release_id: "release-legacy",
-      active_release_expires_at: legacyExpiry,
-      active_production_release_id: "release-legacy",
-      active_production_release_expires_at: legacyExpiry,
-    },
-  );
-  const productionExpiry = "2026-08-05T02:00:00.000Z";
-  productionReleaseQueries.setProductionReleaseLease(database).run("release-production", productionExpiry);
-  assert.deepEqual(
-    { ...productionReleaseQueries.legacyReleaseLease(database).get() },
-    {
-      active_release_id: "release-production",
-      active_release_expires_at: productionExpiry,
-    },
-  );
-
-  const oldWorkerExpiry = "2026-08-05T03:00:00.000Z";
-  productionReleaseQueries.setLegacyReleaseLease(database).run("release-old-worker", oldWorkerExpiry);
-  assert.deepEqual(
-    { ...productionReleaseQueries.productionReleaseLease(database).get() },
-    {
-      active_production_release_id: "release-old-worker",
-      active_production_release_expires_at: oldWorkerExpiry,
-    },
-  );
-  assert.throws(
-    () =>
-      database.exec(
-        `UPDATE operation_state
-       SET active_production_release_id = NULL
-       WHERE singleton = 1`,
-      ),
-    /production_release_lease_invalid/u,
-  );
-});
 
 test("zero-row phase transitions are observable and cannot release the fence", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "keepr-release-zero-row-"));
@@ -293,7 +251,7 @@ test("zero-row phase transitions are observable and cannot release the fence", a
   const database = new DatabaseSync(":memory:");
   database.exec(`
     CREATE TABLE production_releases (id TEXT PRIMARY KEY,state TEXT,api_version_id TEXT,ingestion_version_id TEXT,binding_observation_json TEXT,smoke_evidence_json TEXT,terminal_at TEXT);
-    CREATE TABLE operation_state (singleton INTEGER PRIMARY KEY,active_release_id TEXT,active_release_expires_at TEXT);
+    CREATE TABLE operation_state (singleton INTEGER PRIMARY KEY,active_production_release_id TEXT,active_production_release_expires_at TEXT);
     INSERT INTO operation_state VALUES (1,'release-47','2099-01-01T00:00:00.000Z');
   `);
   const deploying = statements(await readFile(join(directory, "deploying.sql"), "utf8"));
@@ -310,7 +268,7 @@ test("zero-row phase transitions are observable and cannot release the fence", a
   const fenceResult = database.prepare(smoke[3]).get();
   assert.equal(fenceResult.changed_rows, 0);
   assert.equal(fenceResult.fence_released, 0);
-  assert.equal(productionReleaseQueries.activeLegacyReleaseIdentity(database).get().active_release_id, "release-47");
+  assert.equal(productionReleaseQueries.activeReleaseIdentity(database).get().active_production_release_id, "release-47");
 });
 
 test("a Bootstrap Mode dispatch relaxes only the data-dependent gates and keeps every durable write in the idempotency ledger", async (t) => {
@@ -354,8 +312,8 @@ test("a Bootstrap Mode dispatch relaxes only the data-dependent gates and keeps 
   );
   assert.equal(lastRow(database, await readFile(join(directory, "materialize.sql"), "utf8")).transferred, 1);
   assert.deepEqual(
-    { ...productionReleaseQueries.activeLegacyOperationIdentities(database).get() },
-    { active_ingestion_run_id: null, active_release_id: "release-0" },
+    { ...productionReleaseQueries.activeOperationIdentities(database).get() },
+    { active_ingestion_run_id: null, active_production_release_id: "release-0" },
   );
   assert.equal(productionReleaseQueries.countIngestionRuns(database).get().count, 0);
   const deploying = lastRow(database, await readFile(join(directory, "deploying.sql"), "utf8"));
@@ -380,8 +338,8 @@ test("a Bootstrap Mode dispatch relaxes only the data-dependent gates and keeps 
   assert.deepEqual(smokeRows.at(-2), { changed_rows: 1, transitioned: 1 });
   assert.deepEqual(smokeRows.at(-1), { changed_rows: 1, fence_released: 1 });
   assert.deepEqual(
-    { ...productionReleaseQueries.legacyOperationLease(database).get() },
-    { active_ingestion_run_id: null, active_release_id: null, active_release_expires_at: null },
+    { ...productionReleaseQueries.operationLease(database).get() },
+    { active_ingestion_run_id: null, active_production_release_id: null, active_production_release_expires_at: null },
   );
   assert.equal(productionReleaseQueries.countProductionReleases(database).get().count, 0);
   assert.deepEqual(
@@ -734,7 +692,7 @@ function liveGateDatabase(environment) {
   db.exec(`
     CREATE TABLE administration_idempotency (idempotency_key TEXT PRIMARY KEY,operation TEXT,request_json TEXT,response_json TEXT,http_status INTEGER,outcome TEXT,created_at TEXT);
     CREATE TABLE catalogue_state (singleton INTEGER PRIMARY KEY,current_revision_id TEXT);
-    CREATE TABLE operation_state (singleton INTEGER PRIMARY KEY,active_ingestion_run_id TEXT,active_release_id TEXT,active_release_expires_at TEXT,recovery_health TEXT,active_recovery_id TEXT);
+    CREATE TABLE operation_state (singleton INTEGER PRIMARY KEY,active_ingestion_run_id TEXT,active_production_release_id TEXT,active_production_release_expires_at TEXT,recovery_health TEXT,active_recovery_id TEXT);
     CREATE TABLE catalogue_schema_state (singleton INTEGER PRIMARY KEY,migration_level INTEGER);
     CREATE TABLE catalogue_backup_attempts (idempotency_key TEXT PRIMARY KEY,catalogue_revision_id TEXT,state TEXT,d1_bookmark TEXT,manifest_sha256 TEXT);
     CREATE TABLE catalogue_revisions (id TEXT PRIMARY KEY,expected_previous_revision_id TEXT);
@@ -742,7 +700,6 @@ function liveGateDatabase(environment) {
     CREATE TABLE catalogue_recovery_operations (id TEXT PRIMARY KEY,state TEXT,method TEXT,target_revision_id TEXT,target_digest TEXT,restored_database_id TEXT,retained_database_id TEXT,verification_json TEXT);
     CREATE TABLE catalogue_query_revisions (catalogue_revision_id TEXT PRIMARY KEY,state TEXT);
     CREATE TABLE ingestion_runs (id TEXT PRIMARY KEY,state TEXT,selected_games_json TEXT,started_at TEXT,expected_current_revision_id TEXT,idempotency_key TEXT,candidate_json TEXT);
-    CREATE TABLE ingestion_run_transitions (ingestion_run_id TEXT);
     INSERT INTO catalogue_state VALUES (1,'catrev-current');
     INSERT INTO operation_state VALUES (1,NULL,NULL,NULL,'healthy',NULL);
     INSERT INTO catalogue_schema_state VALUES (1,${currentSchemaMigrationLevel});
@@ -771,6 +728,7 @@ async function realDatabase() {
   for (const migration of (await readdir("migrations")).sort()) {
     database.exec(await readFile(join("migrations", migration), "utf8"));
   }
+  productionReleaseQueries.removeReleaseAuditAndLegacyLease(database);
   return database;
 }
 
