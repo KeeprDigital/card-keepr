@@ -1,3 +1,4 @@
+import { inspectWorkflowInstance } from "../../../src/catalogue/shared";
 import { authenticateBearer } from "../../../src/http/authentication";
 import { ingestionRoutes } from "../../../src/catalogue/ingestion";
 import { sourceEvidenceRoutes } from "../../../src/catalogue/source-evidence";
@@ -67,6 +68,7 @@ async function handleIngestionRequest(
           CATALOGUE_EXPORTS: env.CATALOGUE_EXPORTS,
           BACKUPS: env.BACKUPS,
         },
+        inspectWorkflow: inspectWorkflowInstance,
         workflows: {
           EVIDENCE_INGESTION_WORKFLOW: env.EVIDENCE_INGESTION_WORKFLOW,
           EVIDENCE_HOST_WORKFLOW: env.EVIDENCE_HOST_WORKFLOW,
