@@ -91,7 +91,7 @@ type Diagnostic = {
     | "retained_evidence_invalid";
   source_observation_id: string | null;
   locator: string | null;
-  candidate_printing_ids: string[];
+  matched_printing_ids: string[];
   detail: string;
 };
 
@@ -119,7 +119,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         code: "retained_evidence_invalid",
         source_observation_id: null,
         locator: null,
-        candidate_printing_ids: [],
+        matched_printing_ids: [],
         detail:
           error instanceof Error
             ? error.message
@@ -155,7 +155,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     string,
     Set<"gundam-en-asia" | "gundam-en-us">
   >();
-  const candidateGundamPrintingProvenance = new Map<
+  const localGundamPrintingProvenance = new Map<
     string,
     Set<"gundam-en-asia" | "gundam-en-us">
   >();
@@ -239,7 +239,7 @@ export async function reconcileRetainedCardPrintingEvidence(
 
   for (const observation of retained.observations) {
     if (observation.kind !== "card_printing") continue;
-    const proposedCard = observation.candidateWithoutIdentities.card;
+    const proposedCard = observation.observedCardAndPrinting.card;
     if (proposedCard === null) {
       sourceWarnings.push(...observation.sourceWarnings);
       continue;
@@ -249,7 +249,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         code: "retained_evidence_invalid",
         source_observation_id: observation.sourceObservationId,
         locator: observation.locator,
-        candidate_printing_ids: [],
+        matched_printing_ids: [],
         detail:
           "The retained Card Supported Game conflicts with its provenance envelope.",
       });
@@ -409,7 +409,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         code: "canonical_card_conflict",
         source_observation_id: observation.sourceObservationId,
         locator: observation.locator,
-        candidate_printing_ids: [],
+        matched_printing_ids: [],
         detail:
           publishedConflict ??
           digimonAuthorityConflict ??
@@ -422,7 +422,7 @@ export async function reconcileRetainedCardPrintingEvidence(
 
     let compatibility: PrintingCompatibility | null = null;
     let printingId: string | null = null;
-    const proposedPrinting = observation.candidateWithoutIdentities.printing;
+    const proposedPrinting = observation.observedCardAndPrinting.printing;
     if (proposedPrinting !== null) {
       compatibility = compatibilityFor(
         cardId,
@@ -455,17 +455,17 @@ export async function reconcileRetainedCardPrintingEvidence(
       const matchIds = new Set(databaseMatches.map((match) => match.id));
       const localMatch = localCompatibility.get(compatibilityKey);
       if (localMatch !== undefined) matchIds.add(localMatch);
-      for (const [candidateId, candidateCompatibility] of
+      for (const [matchId, matchCompatibility] of
         localPrintingCompatibility) {
-        if (isCompatible(candidateCompatibility, compatibility)) {
-          matchIds.add(candidateId);
+        if (isCompatible(matchCompatibility, compatibility)) {
+          matchIds.add(matchId);
         }
       }
-      const crossLocaleCandidates = observation.supportedGame === "gundam"
-        ? [...matchIds].filter((candidateId) => {
+      const crossLocaleMatches = observation.supportedGame === "gundam"
+        ? [...matchIds].filter((matchId) => {
             const observedLineages = new Set([
-              ...(historicalGundamPrintingProvenance.get(candidateId) ?? []),
-              ...(candidateGundamPrintingProvenance.get(candidateId) ?? []),
+              ...(historicalGundamPrintingProvenance.get(matchId) ?? []),
+              ...(localGundamPrintingProvenance.get(matchId) ?? []),
             ]);
             return observedLineages.size > 0 &&
               !observedLineages.has(observation.sourceLineage as
@@ -473,26 +473,26 @@ export async function reconcileRetainedCardPrintingEvidence(
                 | "gundam-en-us");
           })
         : [];
-      const corroboratedCrossLocaleCandidates = crossLocaleCandidates.filter(
-        (candidateId) => {
+      const corroboratedCrossLocaleMatches = crossLocaleMatches.filter(
+        (matchId) => {
           const knownProducts = new Set([
-            ...(publishedGundamProducts.get(candidateId) ?? []),
-            ...(localGundamProducts.get(candidateId) ?? []),
+            ...(publishedGundamProducts.get(matchId) ?? []),
+            ...(localGundamProducts.get(matchId) ?? []),
           ]);
           return observation.memberships.products.some((product) =>
             knownProducts.has(product)
           );
         },
       );
-      const uncorroboratedCrossLocaleCandidates = crossLocaleCandidates.filter(
-        (candidateId) =>
-          !corroboratedCrossLocaleCandidates.includes(candidateId),
+      const uncorroboratedCrossLocaleMatches = crossLocaleMatches.filter(
+        (matchId) =>
+          !corroboratedCrossLocaleMatches.includes(matchId),
       );
-      uncorroboratedCrossLocaleCandidates.forEach((candidateId) =>
-        matchIds.delete(candidateId)
+      uncorroboratedCrossLocaleMatches.forEach((matchId) =>
+        matchIds.delete(matchId)
       );
       const missingProductCorroboration =
-        uncorroboratedCrossLocaleCandidates.length > 0 &&
+        uncorroboratedCrossLocaleMatches.length > 0 &&
         matchIds.size === 0;
       const locatedConflict =
         (located !== null && !isCompatible(located, compatibility)) ||
@@ -504,19 +504,19 @@ export async function reconcileRetainedCardPrintingEvidence(
           code: "printing_match_contradictory",
           source_observation_id: observation.sourceObservationId,
           locator,
-          candidate_printing_ids: [locatedId],
+          matched_printing_ids: [locatedId],
           detail:
             "The retained locator contradicts the Card, Source Lineage, artwork, printed rules, rarity, or treatment of its existing Printing.",
         });
         printingId = locatedId;
       } else if (missingProductCorroboration) {
-        printingId = [...uncorroboratedCrossLocaleCandidates].sort()[0]!;
+        printingId = [...uncorroboratedCrossLocaleMatches].sort()[0]!;
         diagnostics.push({
           code: "printing_match_insufficient_evidence",
           source_observation_id: observation.sourceObservationId,
           locator,
-          candidate_printing_ids:
-            [...uncorroboratedCrossLocaleCandidates].sort(),
+          matched_printing_ids:
+            [...uncorroboratedCrossLocaleMatches].sort(),
           detail:
             "Cross-locale Gundam Printing evidence requires a corroborating Product membership before two locale observations can merge.",
         });
@@ -531,7 +531,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           code: "printing_match_insufficient_evidence",
           source_observation_id: observation.sourceObservationId,
           locator,
-          candidate_printing_ids: [...matchIds].sort(),
+          matched_printing_ids: [...matchIds].sort(),
           detail:
             "A new Printing locator without an explicit Official Source artwork identity cannot be matched to an existing compatible Printing.",
         });
@@ -540,7 +540,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           code: "printing_match_ambiguous",
           source_observation_id: observation.sourceObservationId,
           locator,
-          candidate_printing_ids: [...matchIds].sort(),
+          matched_printing_ids: [...matchIds].sort(),
           detail:
             "The retained evidence has more than one exactly compatible Printing.",
         });
@@ -558,7 +558,7 @@ export async function reconcileRetainedCardPrintingEvidence(
             code: "printing_match_contradictory",
             source_observation_id: observation.sourceObservationId,
             locator,
-            candidate_printing_ids: appearanceMatches.map(({ id }) => id),
+            matched_printing_ids: appearanceMatches.map(({ id }) => id),
             detail:
               "The claimed novel appearance already exists with materially incompatible rules, rarity, lineage, or treatment evidence.",
           });
@@ -571,7 +571,7 @@ export async function reconcileRetainedCardPrintingEvidence(
             code: "printing_match_insufficient_evidence",
             source_observation_id: observation.sourceObservationId,
             locator,
-            candidate_printing_ids: [],
+            matched_printing_ids: [],
             detail:
               "A zero-match requires structurally complete retained adapter evidence and complete official Printing Image proof of a demonstrably novel appearance.",
           });
@@ -585,7 +585,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         observation.sourceLineage === "gundam-en-us"
       ) {
         addGundamLineage(
-          candidateGundamPrintingProvenance,
+          localGundamPrintingProvenance,
           printingId,
           observation.sourceLineage,
         );
@@ -610,7 +610,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           "gundam-en-asia",
         ) ===
             true ||
-          candidateGundamPrintingProvenance.get(printingId)?.has(
+          localGundamPrintingProvenance.get(printingId)?.has(
             "gundam-en-asia",
           ) === true);
       let acceptedPrinting = proposedPrinting;
@@ -639,7 +639,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           code: "printing_match_contradictory",
           source_observation_id: observation.sourceObservationId,
           locator,
-          candidate_printing_ids: [printingId],
+          matched_printing_ids: [printingId],
           detail:
             publishedPrintingConflict ??
             "Retained observations disagree on canonical Printing facts and no deterministic authority rule resolves them.",
@@ -656,7 +656,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         const id =
           `printing_image_${printingId.slice("printing_".length)}_` +
           `${image.role}_${image.content_sha256.slice(0, 12)}`;
-        const candidateImage: CataloguePrintingImage = {
+        const observedImage: CataloguePrintingImage = {
           id,
           printing_id: printingId,
           object_key: `printing-images/${image.content_sha256}`,
@@ -665,13 +665,13 @@ export async function reconcileRetainedCardPrintingEvidence(
         const existingImage = printingImages.get(id);
         if (
           existingImage !== undefined &&
-          !printingImageEvidenceEquivalent(existingImage, candidateImage)
+          !printingImageEvidenceEquivalent(existingImage, observedImage)
         ) {
           diagnostics.push({
             code: "retained_evidence_invalid",
             source_observation_id: observation.sourceObservationId,
             locator,
-            candidate_printing_ids: [printingId],
+            matched_printing_ids: [printingId],
             detail:
               "A Printing Image identity maps to conflicting immutable bytes or metadata.",
           });
@@ -679,15 +679,15 @@ export async function reconcileRetainedCardPrintingEvidence(
           printingImages.set(
             id,
             existingImage === undefined
-              ? candidateImage
+              ? observedImage
               : {
                   ...existingImage,
                   source_url:
                     existingImage.source_url.localeCompare(
-                      candidateImage.source_url,
+                      observedImage.source_url,
                     ) <= 0
                       ? existingImage.source_url
-                      : candidateImage.source_url,
+                      : observedImage.source_url,
                 },
           );
         }
@@ -697,7 +697,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         code: "printing_match_insufficient_evidence",
         source_observation_id: observation.sourceObservationId,
         locator: null,
-        candidate_printing_ids: [],
+        matched_printing_ids: [],
         detail:
           "The Card-only retained observation is not structurally complete.",
       });
@@ -747,7 +747,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         code: "retained_evidence_invalid",
         source_observation_id: observation.sourceObservationId,
         locator: observation.locator,
-        candidate_printing_ids:
+        matched_printing_ids:
           printingId === null ? [] : [printingId],
         detail:
           error instanceof ErratumRulesTextError
@@ -768,7 +768,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         code: "retained_evidence_invalid",
         source_observation_id: observation.sourceObservationId,
         locator: observation.sourceFragment,
-        candidate_printing_ids: [],
+        matched_printing_ids: [],
         detail:
           "A non-parallel Official Erratum must target exactly one Printing.",
       });
@@ -789,7 +789,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         code: "retained_evidence_invalid",
         source_observation_id: observation.sourceObservationId,
         locator: observation.sourceFragment,
-        candidate_printing_ids: [],
+        matched_printing_ids: [],
         detail:
           matchingCards.length === 0
             ? "Official Erratum evidence does not resolve one Card in the expected published Catalogue Revision."
@@ -808,10 +808,10 @@ export async function reconcileRetainedCardPrintingEvidence(
       );
       const publishedPrintings = [
         ...new Map(
-          located.flatMap((candidate) => {
+          located.flatMap((locatedPrinting) => {
             const published = priorCandidate?.printings.find(
               (printing) =>
-                printing.id === candidate.id &&
+                printing.id === locatedPrinting.id &&
                 printing.card_id === card.id,
             );
             return published === undefined
@@ -825,7 +825,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           code: "retained_evidence_invalid",
           source_observation_id: observation.sourceObservationId,
           locator: observation.target.locator,
-          candidate_printing_ids:
+          matched_printing_ids:
             publishedPrintings.map((printing) => printing.id).sort(),
           detail:
             "Official Erratum evidence does not resolve exactly one Printing of the Card in the expected published Catalogue Revision.",
@@ -877,7 +877,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         code: "retained_evidence_invalid",
         source_observation_id: observation.sourceObservationId,
         locator: observation.sourceFragment,
-        candidate_printing_ids: [],
+        matched_printing_ids: [],
         detail:
           error instanceof Error
             ? error.message
@@ -979,7 +979,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       code: "retained_evidence_invalid",
       source_observation_id: null,
       locator: null,
-      candidate_printing_ids: [],
+      matched_printing_ids: [],
       detail:
         error instanceof Error
           ? error.message
@@ -1022,7 +1022,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         code: "retained_evidence_invalid",
         source_observation_id: null,
         locator: null,
-        candidate_printing_ids: [],
+        matched_printing_ids: [],
         detail:
           error instanceof Error
             ? error.message
@@ -1032,7 +1032,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
   const cardSurfaceObservations = cardPrintingObservations.filter(
     (observation) =>
-      observation.candidateWithoutIdentities.card !== null,
+      observation.observedCardAndPrinting.card !== null,
   );
   const productSurfaceObservations = cardPrintingObservations.filter(
     (observation) => observation.productReleaseValue !== undefined,
@@ -1066,7 +1066,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           source_observation_id:
             conflictPlans[0]?.sourceObservationId ?? null,
           locator: conflictPlans[0]?.locator ?? null,
-          candidate_printing_ids: conflictPlans.flatMap((plan) =>
+          matched_printing_ids: conflictPlans.flatMap((plan) =>
             plan.printingId === null ? [] : [plan.printingId],
           ),
           detail:
@@ -2023,7 +2023,7 @@ async function publishedWithdrawalConflictDiagnostics(
           code: "withdrawal_evidence_conflict",
           source_observation_id: plan.sourceObservationId,
           locator: null,
-          candidate_printing_ids:
+          matched_printing_ids:
             target.entityType === "printing" ? [target.entityId] : [],
           detail:
             "The explicit withdrawal assertion conflicts with the published withdrawal history for this identity.",
@@ -2084,7 +2084,7 @@ function withdrawalConflictDiagnostics(
       code: "withdrawal_evidence_conflict" as const,
       source_observation_id: [...assertion.observationIds].sort()[0] ?? null,
       locator: null,
-      candidate_printing_ids: target.startsWith("printing:")
+      matched_printing_ids: target.startsWith("printing:")
         ? [target.slice("printing:".length)]
         : [],
       detail:

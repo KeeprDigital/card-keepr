@@ -782,7 +782,7 @@ test("an Official Source relationship change recovers through supersession and r
   );
   const relationship = (
     await exportedComponentRecords(currentRevisionId, "relationships")
-  ).find((candidate) => candidate.kind === "product-card");
+  ).find((entry) => entry.kind === "product-card");
   if (relationship === undefined) {
     throw new Error("The baseline product-card relationship is absent");
   }

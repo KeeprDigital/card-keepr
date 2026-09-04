@@ -1464,7 +1464,7 @@ async function findReusableSnapshot(
   request: EvidenceRequestRow,
 ): Promise<SnapshotRow | null> {
   const evidencePlan = evidencePlanForRequest(run, request.request_id);
-  const candidates = await database
+  const priorSnapshots = await database
     .prepare(
       `SELECT * FROM source_snapshots
        WHERE source_lineage = ? AND request_url = ?
@@ -1483,8 +1483,8 @@ async function findReusableSnapshot(
     )
     .all<SnapshotRow>();
   return (
-    candidates.results.find((candidate) => {
-      const vary: unknown = JSON.parse(candidate.response_vary_json);
+    priorSnapshots.results.find((snapshot) => {
+      const vary: unknown = JSON.parse(snapshot.response_vary_json);
       return (
         Array.isArray(vary) &&
         !vary.includes("*") &&

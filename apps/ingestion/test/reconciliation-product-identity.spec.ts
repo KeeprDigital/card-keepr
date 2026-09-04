@@ -37,17 +37,17 @@ test("accepted typed Product relationships persist without code/name namespace c
     exportComponentRecords(revisionId, "cards"),
   ]);
   const coded = products.find(
-    (candidate) => candidate.official_code === "CODE-X",
+    (entry) => entry.official_code === "CODE-X",
   );
   const named = products.find(
-    (candidate) =>
-      candidate.official_code === null && candidate.name === "CODE-X",
+    (entry) =>
+      entry.official_code === null && entry.name === "CODE-X",
   );
   expect(coded?.id).toEqual(expect.any(String));
   expect(named?.id).toEqual(expect.any(String));
   expect(coded?.id).not.toBe(named?.id);
   const context = contexts.find(
-    (candidate) => candidate.label === "Typed relationship context",
+    (entry) => entry.label === "Typed relationship context",
   );
   expect(context).toMatchObject({ product_id: coded?.id });
   expect(relationships).toEqual(
@@ -85,8 +85,8 @@ test("accepted typed Product relationships persist without code/name namespace c
   );
   expect(
     cards.some(
-      (candidate) =>
-        candidate.id ===
+      (entry) =>
+        entry.id ===
         (productCard?.to as Record<string, unknown> | undefined)?.id,
     ),
   ).toBe(true);
@@ -117,7 +117,7 @@ test("standalone Product lifecycle survives rename, disappearance, and explicit 
   );
   const secondProduct = (
     await exportComponentRecords(secondRevision, "products")
-  ).find((candidate) => candidate.official_code === "ST-STANDALONE");
+  ).find((entry) => entry.official_code === "ST-STANDALONE");
   expect(secondProduct).toMatchObject({
     name: "Renamed Standalone Product",
     lifecycle: {
@@ -154,7 +154,7 @@ test("standalone Product lifecycle survives rename, disappearance, and explicit 
   );
   const carried = (
     await exportComponentRecords(missingRevision, "products")
-  ).find((candidate) => candidate.id === secondProduct?.id);
+  ).find((entry) => entry.id === secondProduct?.id);
   expect(carried).toMatchObject({
     lifecycle: {
       first_revision_id: firstRevision,
@@ -174,7 +174,7 @@ test("standalone Product lifecycle survives rename, disappearance, and explicit 
   );
   const withdrawn = (
     await exportComponentRecords(withdrawnRevision, "products")
-  ).find((candidate) => candidate.id === secondProduct?.id);
+  ).find((entry) => entry.id === secondProduct?.id);
   expect(withdrawn).toMatchObject({
     lifecycle: {
       first_revision_id: firstRevision,
