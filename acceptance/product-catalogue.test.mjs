@@ -20,9 +20,7 @@ import {
 const root = resolve(import.meta.dirname, "..");
 
 test("the CLI publishes separated Product catalogue data consumed through authenticated HTTP", async (t) => {
-  const directory = await mkdtemp(
-    join(tmpdir(), "card-keepr-product-boundary-"),
-  );
+  const directory = await mkdtemp(join(tmpdir(), "card-keepr-product-boundary-"));
   const statePath = join(directory, "shared-state");
   const administrationKey = randomUUID();
   const apiKey = randomUUID();
@@ -33,18 +31,14 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   const multiPlanPath = join(directory, "multi-source-plan.json");
   const carryPlanPath = join(directory, "carry-source-plan.json");
   await Promise.all([
-    writeFile(
-      ingestionEnv,
-      `ADMINISTRATION_KEY=${administrationKey}\nADMINISTRATION_CLOCK_MODE=request\n`,
-      { mode: 0o600 },
-    ),
+    writeFile(ingestionEnv, `ADMINISTRATION_KEY=${administrationKey}\nADMINISTRATION_CLOCK_MODE=request\n`, {
+      mode: 0o600,
+    }),
     writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
     writeFile(
       initialPlanPath,
       JSON.stringify({
-        plans: [
-          officialPlan("digimon", "digimon-en", "digimon-en@7"),
-        ],
+        plans: [officialPlan("digimon", "digimon-en", "digimon-en@7")],
       }),
       { mode: 0o600 },
     ),
@@ -53,26 +47,10 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       JSON.stringify({
         plans: [
           officialPlan("digimon", "digimon-en", "digimon-en@7"),
-          officialPlan(
-            "one-piece",
-            "one-piece-en",
-            "one-piece-en@6",
-          ),
-          officialPlan(
-            "fusion-world",
-            "fusion-world-en",
-            "fusion-world-en@9",
-          ),
-          officialPlan(
-            "gundam",
-            "gundam-en-asia",
-            "gundam-en-asia@7",
-          ),
-          officialPlan(
-            "gundam",
-            "gundam-en-us",
-            "gundam-en-us@7",
-          ),
+          officialPlan("one-piece", "one-piece-en", "one-piece-en@6"),
+          officialPlan("fusion-world", "fusion-world-en", "fusion-world-en@9"),
+          officialPlan("gundam", "gundam-en-asia", "gundam-en-asia@7"),
+          officialPlan("gundam", "gundam-en-us", "gundam-en-us@7"),
         ],
       }),
       { mode: 0o600 },
@@ -81,29 +59,19 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       carryPlanPath,
       JSON.stringify({
         plans: [
-          officialPlan(
-            "one-piece",
-            "one-piece-en",
-            "one-piece-en@6",
-            {
-              accept: "text/html",
-              "user-agent": "card-keepr-acceptance-product/codeless",
-            },
-          ),
+          officialPlan("one-piece", "one-piece-en", "one-piece-en@6", {
+            accept: "text/html",
+            "user-agent": "card-keepr-acceptance-product/codeless",
+          }),
         ],
       }),
       { mode: 0o600 },
     ),
   ]);
   await applyMigrations(statePath);
-  const config = JSON.parse(
-    await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"),
-  );
+  const config = JSON.parse(await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
   delete config.$schema;
-  config.main = resolve(
-    root,
-    "acceptance/fixtures/catalogue-publication-ingestion-harness.ts",
-  );
+  config.main = resolve(root, "acceptance/fixtures/catalogue-publication-ingestion-harness.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
   config.ratelimits[0].simple.limit = 300;
   config.services = [
@@ -136,39 +104,15 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     KEEPR_ADMINISTRATION_KEY: administrationKey,
   };
   const collected = await runCli(
-    [
-      "source",
-      "collect",
-      "--plan-file",
-      initialPlanPath,
-      "--idempotency-key",
-      "acceptance-product-collect",
-      "--json",
-    ],
+    ["source", "collect", "--plan-file", initialPlanPath, "--idempotency-key", "acceptance-product-collect", "--json"],
     cliEnvironment,
   );
-  assert.equal(
-    collected.code,
-    0,
-    `${collected.stdout}\n${collected.stderr}\n${ingestion.getOutput()}`,
-  );
+  assert.equal(collected.code, 0, `${collected.stdout}\n${collected.stderr}\n${ingestion.getOutput()}`);
   const collectedRun = JSON.parse(collected.stdout);
-  const resumed = await runCli(
-    ["source", "resume", "--run-id", collectedRun.id, "--json"],
-    cliEnvironment,
-  );
+  const resumed = await runCli(["source", "resume", "--run-id", collectedRun.id, "--json"], cliEnvironment);
   assert.equal(resumed.code, 0, resumed.stderr);
-  await waitForRunState(
-    collectedRun.id,
-    "awaiting_approval",
-    cliEnvironment,
-    ingestion,
-    statePath,
-  );
-  const inspected = await runCli(
-    ["candidate", "inspect", "--run-id", collectedRun.id, "--json"],
-    cliEnvironment,
-  );
+  await waitForRunState(collectedRun.id, "awaiting_approval", cliEnvironment, ingestion, statePath);
+  const inspected = await runCli(["candidate", "inspect", "--run-id", collectedRun.id, "--json"], cliEnvironment);
   assert.equal(inspected.code, 0, inspected.stderr);
   const inspection = JSON.parse(inspected.stdout);
   assert.equal(inspection.run_id, collectedRun.id);
@@ -186,8 +130,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     inspection.diff.warnings.some(
       ({ code, path, raw_value }) =>
         code === "unknown_source_field" &&
-        path ===
-          "source_sidecar.raw.products[0].vendor_metadata.merchandising.channel_code" &&
+        path === "source_sidecar.raw.products[0].vendor_metadata.merchandising.channel_code" &&
         raw_value === "official-web",
     ),
   );
@@ -209,121 +152,66 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     ],
     cliEnvironment,
   );
-  assert.equal(
-    approved.code,
-    0,
-    `${approved.stdout}\n${approved.stderr}\n${ingestion.getOutput()}`,
-  );
+  assert.equal(approved.code, 0, `${approved.stdout}\n${approved.stderr}\n${ingestion.getOutput()}`);
   const published = JSON.parse(approved.stdout);
   let revisionId = published.resulting_revision_id;
   assert.match(revisionId, /^catrev_/u);
 
   const multiCollected = await runCli(
-    [
-      "source",
-      "collect",
-      "--plan-file",
-      multiPlanPath,
-      "--idempotency-key",
-      "acceptance-product-multi-plan",
-      "--json",
-    ],
+    ["source", "collect", "--plan-file", multiPlanPath, "--idempotency-key", "acceptance-product-multi-plan", "--json"],
     cliEnvironment,
   );
-  assert.equal(
-    multiCollected.code,
-    0,
-    `${multiCollected.stdout}\n${multiCollected.stderr}\n${ingestion.getOutput()}`,
-  );
+  assert.equal(multiCollected.code, 0, `${multiCollected.stdout}\n${multiCollected.stderr}\n${ingestion.getOutput()}`);
   const multiRun = JSON.parse(multiCollected.stdout);
-  const multiShownResult = await runCli(
-    ["source", "show", "--run-id", multiRun.id, "--json"],
-    cliEnvironment,
-  );
+  const multiShownResult = await runCli(["source", "show", "--run-id", multiRun.id, "--json"], cliEnvironment);
   assert.equal(multiShownResult.code, 0, multiShownResult.stderr);
   const multiShown = JSON.parse(multiShownResult.stdout);
   assert.deepEqual(
-    multiShown.evidence_plans.map(
-      ({ supported_game, source_lineage, adapter_version, requests }) => ({
-        supported_game,
-        source_lineage,
-        adapter_version,
-        request_ids: requests.map(({ id }) => id),
-      }),
-    ),
+    multiShown.evidence_plans.map(({ supported_game, source_lineage, adapter_version, requests }) => ({
+      supported_game,
+      source_lineage,
+      adapter_version,
+      request_ids: requests.map(({ id }) => id),
+    })),
     [
       {
         supported_game: "digimon",
         source_lineage: "digimon-en",
         adapter_version: "digimon-en@7",
-        request_ids: officialPlan(
-          "digimon",
-          "digimon-en",
-          "digimon-en@7",
-        ).requests.map(({ id }) => id),
+        request_ids: officialPlan("digimon", "digimon-en", "digimon-en@7").requests.map(({ id }) => id),
       },
       {
         supported_game: "one-piece",
         source_lineage: "one-piece-en",
         adapter_version: "one-piece-en@6",
-        request_ids: officialPlan(
-          "one-piece",
-          "one-piece-en",
-          "one-piece-en@6",
-        ).requests.map(({ id }) => id),
+        request_ids: officialPlan("one-piece", "one-piece-en", "one-piece-en@6").requests.map(({ id }) => id),
       },
       {
         supported_game: "fusion-world",
         source_lineage: "fusion-world-en",
         adapter_version: "fusion-world-en@9",
-        request_ids: officialPlan(
-          "fusion-world",
-          "fusion-world-en",
-          "fusion-world-en@9",
-        ).requests.map(({ id }) => id),
+        request_ids: officialPlan("fusion-world", "fusion-world-en", "fusion-world-en@9").requests.map(({ id }) => id),
       },
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-asia",
         adapter_version: "gundam-en-asia@7",
-        request_ids: officialPlan(
-          "gundam",
-          "gundam-en-asia",
-          "gundam-en-asia@7",
-        ).requests.map(({ id }) => id),
+        request_ids: officialPlan("gundam", "gundam-en-asia", "gundam-en-asia@7").requests.map(({ id }) => id),
       },
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-us",
         adapter_version: "gundam-en-us@7",
-        request_ids: officialPlan(
-          "gundam",
-          "gundam-en-us",
-          "gundam-en-us@7",
-        ).requests.map(({ id }) => id),
+        request_ids: officialPlan("gundam", "gundam-en-us", "gundam-en-us@7").requests.map(({ id }) => id),
       },
     ],
   );
-  for (const scalar of [
-    "supported_game",
-    "game_profile_version",
-    "source_lineage",
-    "adapter_version",
-  ]) {
+  for (const scalar of ["supported_game", "game_profile_version", "source_lineage", "adapter_version"]) {
     assert.equal(Object.hasOwn(multiShown, scalar), false);
   }
-  const multiResumed = await runCli(
-    ["source", "resume", "--run-id", multiRun.id, "--json"],
-    cliEnvironment,
-  );
+  const multiResumed = await runCli(["source", "resume", "--run-id", multiRun.id, "--json"], cliEnvironment);
   assert.equal(multiResumed.code, 0, multiResumed.stderr);
-  await waitForRunState(
-    multiRun.id,
-    "awaiting_approval",
-    cliEnvironment,
-    ingestion,
-    statePath,
-  );
+  await waitForRunState(multiRun.id, "awaiting_approval", cliEnvironment, ingestion, statePath);
   const multiInspectionResult = await runCli(
     ["candidate", "inspect", "--run-id", multiRun.id, "--json"],
     cliEnvironment,
@@ -331,8 +219,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   assert.equal(
     multiInspectionResult.code,
     0,
-    `${multiInspectionResult.stdout}\n${multiInspectionResult.stderr}\n` +
-      ingestion.getOutput(),
+    `${multiInspectionResult.stdout}\n${multiInspectionResult.stderr}\n` + ingestion.getOutput(),
   );
   const multiInspection = JSON.parse(multiInspectionResult.stdout);
   assert.equal(multiInspection.expected_current_revision_id, revisionId);
@@ -353,11 +240,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     ],
     cliEnvironment,
   );
-  assert.equal(
-    multiApproved.code,
-    0,
-    `${multiApproved.stdout}\n${multiApproved.stderr}\n${ingestion.getOutput()}`,
-  );
+  assert.equal(multiApproved.code, 0, `${multiApproved.stdout}\n${multiApproved.stderr}\n${ingestion.getOutput()}`);
   const multiPublished = JSON.parse(multiApproved.stdout);
   assert.notEqual(multiPublished.resulting_revision_id, revisionId);
   const allFiveRevisionId = multiPublished.resulting_revision_id;
@@ -377,22 +260,8 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   );
   assert.equal(carryCollected.code, 0, carryCollected.stderr);
   const carryRun = JSON.parse(carryCollected.stdout);
-  assert.equal(
-    (
-      await runCli(
-        ["source", "resume", "--run-id", carryRun.id, "--json"],
-        cliEnvironment,
-      )
-    ).code,
-    0,
-  );
-  await waitForRunState(
-    carryRun.id,
-    "awaiting_approval",
-    cliEnvironment,
-    ingestion,
-    statePath,
-  );
+  assert.equal((await runCli(["source", "resume", "--run-id", carryRun.id, "--json"], cliEnvironment)).code, 0);
+  await waitForRunState(carryRun.id, "awaiting_approval", cliEnvironment, ingestion, statePath);
   const carryInspectionResult = await runCli(
     ["candidate", "inspect", "--run-id", carryRun.id, "--json"],
     cliEnvironment,
@@ -416,12 +285,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     ],
     cliEnvironment,
   );
-  assert.equal(
-    carryApproved.code,
-    0,
-    `${carryApproved.stdout}\n${carryApproved.stderr}\n` +
-      ingestion.getOutput(),
-  );
+  assert.equal(carryApproved.code, 0, `${carryApproved.stdout}\n${carryApproved.stderr}\n` + ingestion.getOutput());
   revisionId = JSON.parse(carryApproved.stdout).resulting_revision_id;
   await stopWorker(ingestion);
 
@@ -436,8 +300,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   const catalogueResponse = await fetch(`${api.url}/v1/catalogue`, { headers });
   assert.equal(catalogueResponse.status, 200);
   const catalogueDocument = await catalogueResponse.json();
-  const successfulChecks =
-    catalogueDocument.data.last_successful_checks;
+  const successfulChecks = catalogueDocument.data.last_successful_checks;
   assert.deepEqual(
     successfulChecks.map(({ game, area }) => `${game}:${area}`),
     [
@@ -461,40 +324,18 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       "one-piece:products-and-releases",
     ],
   );
-  assert.ok(
-    successfulChecks.every(({ checked_at }) =>
-      Number.isFinite(Date.parse(checked_at))
-    ),
-  );
-  const publishedProducts = await exportRecords(
-    api.port,
-    apiKey,
-    revisionId,
-    "products",
-  );
-  const productOnly = publishedProducts.find(
-    ({ official_code }) => official_code === "BT-PRODUCT-ONLY",
-  );
-  const cardBearing = publishedProducts.find(
-    ({ official_code }) => official_code === "BT-CARD-BEARING",
-  );
+  assert.ok(successfulChecks.every(({ checked_at }) => Number.isFinite(Date.parse(checked_at))));
+  const publishedProducts = await exportRecords(api.port, apiKey, revisionId, "products");
+  const productOnly = publishedProducts.find(({ official_code }) => official_code === "BT-PRODUCT-ONLY");
+  const cardBearing = publishedProducts.find(({ official_code }) => official_code === "BT-CARD-BEARING");
   assert.ok(productOnly);
   assert.ok(cardBearing);
   const productId = productOnly.id;
-  const productResponse = await fetch(
-    `${api.url}/v1/products/${productId}?include=evidence`,
-    { headers },
-  );
+  const productResponse = await fetch(`${api.url}/v1/products/${productId}?include=evidence`, { headers });
   assert.equal(productResponse.status, 200);
   const productDocument = await productResponse.json();
   const apiSchema = JSON.parse(
-    await readFile(
-      resolve(
-        root,
-        "prototype/formalize-implementation-contracts/schemas/api.schema.json",
-      ),
-      "utf8",
-    ),
+    await readFile(resolve(root, "prototype/formalize-implementation-contracts/schemas/api.schema.json"), "utf8"),
   );
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
@@ -502,39 +343,21 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     ...apiSchema,
     $ref: "#/$defs/ProductDocument",
   });
-  assert.equal(
-    validateProduct(productDocument),
-    true,
-    ajv.errorsText(validateProduct.errors),
-  );
+  assert.equal(validateProduct(productDocument), true, ajv.errorsText(validateProduct.errors));
   assert.equal(productDocument.data.releases[0].region, "unknown");
   assert.equal(productDocument.data.releases[0].status, "announced");
-  assert.equal(
-    productDocument.data.lifecycle.last_observed_revision_id,
-    allFiveRevisionId,
-  );
-  assert.match(
-    productDocument.provenance["/data/official_code"][0],
-    /^srcobs_/u,
-  );
-  const printingResponse = await fetch(
-    `${api.url}/v1/printings/${printingId}`,
-    { headers },
-  );
+  assert.equal(productDocument.data.lifecycle.last_observed_revision_id, allFiveRevisionId);
+  assert.match(productDocument.provenance["/data/official_code"][0], /^srcobs_/u);
+  const printingResponse = await fetch(`${api.url}/v1/printings/${printingId}`, { headers });
   assert.equal(printingResponse.status, 200);
   const printingDocument = await printingResponse.json();
-  assert.equal(
-    printingDocument.data.lifecycle.last_observed_revision_id,
-    allFiveRevisionId,
-  );
+  assert.equal(printingDocument.data.lifecycle.last_observed_revision_id, allFiveRevisionId);
   assert.equal(printingDocument.data.products.length, 1);
   assert.deepEqual(
     {
       id: printingDocument.data.products[0].id,
-      evidence_category:
-        printingDocument.data.products[0].evidence_category,
-      source_lineage:
-        printingDocument.data.products[0].source_lineage,
+      evidence_category: printingDocument.data.products[0].evidence_category,
+      source_lineage: printingDocument.data.products[0].source_lineage,
     },
     {
       id: cardBearing.id,
@@ -542,24 +365,15 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       source_lineage: "digimon-en",
     },
   );
-  assert.equal(
-    printingDocument.data.products[0].source_observation_ids.length,
-    1,
-  );
-  assert.match(
-    printingDocument.data.products[0].source_observation_ids[0],
-    /^srcobs_/u,
-  );
+  assert.equal(printingDocument.data.products[0].source_observation_ids.length, 1);
+  assert.match(printingDocument.data.products[0].source_observation_ids[0], /^srcobs_/u);
   assert.equal(printingDocument.data.distribution_contexts.length, 1);
   assert.deepEqual(
     {
       kind: printingDocument.data.distribution_contexts[0].kind,
-      product_id:
-        printingDocument.data.distribution_contexts[0].product_id,
-      evidence_category:
-        printingDocument.data.distribution_contexts[0].evidence_category,
-      source_lineage:
-        printingDocument.data.distribution_contexts[0].source_lineage,
+      product_id: printingDocument.data.distribution_contexts[0].product_id,
+      evidence_category: printingDocument.data.distribution_contexts[0].evidence_category,
+      source_lineage: printingDocument.data.distribution_contexts[0].source_lineage,
     },
     {
       kind: "tournament_pack",
@@ -568,31 +382,16 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       source_lineage: "digimon-en",
     },
   );
-  assert.equal(
-    printingDocument.data.distribution_contexts[0]
-      .source_observation_ids.length,
-    1,
-  );
+  assert.equal(printingDocument.data.distribution_contexts[0].source_observation_ids.length, 1);
 
-  const [products, releases, contexts, relationships, cards, printings] =
-    await Promise.all(
-    [
-      "products",
-      "releases",
-      "distribution-contexts",
-      "relationships",
-      "cards",
-      "printings",
-    ].map((component) =>
+  const [products, releases, contexts, relationships, cards, printings] = await Promise.all(
+    ["products", "releases", "distribution-contexts", "relationships", "cards", "printings"].map((component) =>
       exportRecords(api.port, apiKey, revisionId, component),
     ),
   );
   const exportSchema = JSON.parse(
     await readFile(
-      resolve(
-        root,
-        "prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json",
-      ),
+      resolve(root, "prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json"),
       "utf8",
     ),
   );
@@ -601,47 +400,23 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     $ref: "#/$defs/PrintingRecord",
   });
   for (const printing of printings) {
-    assert.equal(
-      validatePrintingExport(printing),
-      true,
-      ajv.errorsText(validatePrintingExport.errors),
-    );
+    assert.equal(validatePrintingExport(printing), true, ajv.errorsText(validatePrintingExport.errors));
   }
   assert.equal(
-    cards.find(
-      ({ official_identity }) =>
-        official_identity?.value === "BT99-001",
-    ).lifecycle.last_observed_revision_id,
+    cards.find(({ official_identity }) => official_identity?.value === "BT99-001").lifecycle.last_observed_revision_id,
     allFiveRevisionId,
   );
-  assert.equal(
-    printings.find(({ id }) => id === printingId)
-      .lifecycle.last_observed_revision_id,
-    allFiveRevisionId,
-  );
-  const currentOnePiece = products.find(
-    ({ official_code }) => official_code === "OP-RAW-01",
-  );
-  assert.ok(
-    currentOnePiece,
-    JSON.stringify(
-      products.map(({ name, official_code }) => ({ name, official_code })),
-    ),
-  );
-  assert.equal(
-    currentOnePiece.lifecycle.last_observed_revision_id,
-    revisionId,
-  );
+  assert.equal(printings.find(({ id }) => id === printingId).lifecycle.last_observed_revision_id, allFiveRevisionId);
+  const currentOnePiece = products.find(({ official_code }) => official_code === "OP-RAW-01");
+  assert.ok(currentOnePiece, JSON.stringify(products.map(({ name, official_code }) => ({ name, official_code }))));
+  assert.equal(currentOnePiece.lifecycle.last_observed_revision_id, revisionId);
   const establishedOnePiece = currentOnePiece;
-  const establishedOnePieceResponse = await fetch(
-    `${api.url}/v1/products/${establishedOnePiece.id}?include=evidence`,
-    { headers },
-  );
+  const establishedOnePieceResponse = await fetch(`${api.url}/v1/products/${establishedOnePiece.id}?include=evidence`, {
+    headers,
+  });
   assert.equal(establishedOnePieceResponse.status, 200);
-  const establishedOnePieceDocument =
-    await establishedOnePieceResponse.json();
-  const establishedCodeProvenance =
-    establishedOnePieceDocument.provenance["/data/official_code"];
+  const establishedOnePieceDocument = await establishedOnePieceResponse.json();
+  const establishedCodeProvenance = establishedOnePieceDocument.provenance["/data/official_code"];
   assert.ok(establishedCodeProvenance.length > 0);
   assert.equal(products.length, 5);
   assert.equal(releases.length, 5);
@@ -651,9 +426,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   // product listing links: the restructured adapters fetch it and retain it as
   // explicit non-card evidence instead of dropping it by URL vocabulary.
   assert.equal(contexts.length, 5, JSON.stringify(contexts));
-  const accessoryContexts = contexts.filter(
-    ({ label }) => label === "accessory",
-  );
+  const accessoryContexts = contexts.filter(({ label }) => label === "accessory");
   assert.deepEqual(
     accessoryContexts.map(({ game, kind, label, product_id }) => ({
       game,
@@ -661,12 +434,14 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       label,
       product_id,
     })),
-    [{
-      game: "gundam",
-      kind: "other",
-      label: "accessory",
-      product_id: null,
-    }],
+    [
+      {
+        game: "gundam",
+        kind: "other",
+        label: "accessory",
+        product_id: null,
+      },
+    ],
     JSON.stringify(contexts),
   );
   assert.equal(
@@ -676,96 +451,93 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   );
   assert.ok(products.some(({ id }) => id === productId));
   assert.ok(products.every(({ releases: value }) => value === undefined));
-  assert.ok(
-    releases.some(
-      (release) =>
-        release.product_id === productId &&
-        release.region === "unknown",
-    ),
-  );
+  assert.ok(releases.some((release) => release.product_id === productId && release.region === "unknown"));
   assert.ok(contexts.some((context) => context.product_id === productId));
   // One Card per lineage, plus the Fusion World Energy Marker that publishes
   // without a rarity.
   assert.equal(cards.length, 6);
   assert.ok(
     relationships.some(
-      ({ kind, evidence_category }) =>
-        kind === "distribution-context-product" &&
-        evidence_category === "explicit",
+      ({ kind, evidence_category }) => kind === "distribution-context-product" && evidence_category === "explicit",
     ),
   );
-  for (const projection of [
-    ...printingDocument.data.products,
-    ...printingDocument.data.distribution_contexts,
-  ]) {
+  for (const projection of [...printingDocument.data.products, ...printingDocument.data.distribution_contexts]) {
     assert.ok(
       relationships.some(
         (relationship) =>
           relationship.from.id === printingId &&
           relationship.to.id === projection.id &&
-          relationship.evidence_category ===
-            projection.evidence_category &&
+          relationship.evidence_category === projection.evidence_category &&
           relationship.source_lineage === projection.source_lineage &&
-          JSON.stringify(relationship.source_observation_ids) ===
-            JSON.stringify(projection.source_observation_ids),
+          JSON.stringify(relationship.source_observation_ids) === JSON.stringify(projection.source_observation_ids),
       ),
     );
   }
-  for (const code of [
-    "OP-RAW-01",
-    "FB-RAW-01",
-    "GD-RAW-01",
-  ]) {
+  for (const code of ["OP-RAW-01", "FB-RAW-01", "GD-RAW-01"]) {
     assert.ok(products.some(({ official_code }) => official_code === code));
   }
-  const onePieceCard = cards.find(
-    ({ official_identity }) => official_identity?.value === "OP99-001",
-  );
+  const onePieceCard = cards.find(({ official_identity }) => official_identity?.value === "OP99-001");
   assert.ok(onePieceCard);
-  const onePiecePrinting = printings.find(
-    ({ card_id }) => card_id === onePieceCard.id,
-  );
+  const onePiecePrinting = printings.find(({ card_id }) => card_id === onePieceCard.id);
   assert.ok(onePiecePrinting);
+  // Public filtering consumes the actual publication's Printing and profile
+  // projections, including carried-forward Cards from every Supported Game.
+  const validateCardQuery = ajv.getSchema(`${apiSchema.$id}#/$defs/CardCollectionQuery`);
+  const validateCardCollection = ajv.getSchema(`${apiSchema.$id}#/$defs/CardCollection`);
+  for (const [game, identity, attribute] of [
+    ["one-piece", "OP99-001", "cost"],
+    ["digimon", "BT99-001", "level"],
+    ["gundam", "GD99-001", "level"],
+    ["fusion-world", "FB99-001", "cost"],
+  ]) {
+    const expected = cards.find((card) => card.game === game && card.official_identity.value === identity);
+    assert.ok(expected, `${game} published Card is missing`);
+    const query = {
+      game,
+      card_number: identity,
+      [`attribute.${attribute}`]: String(expected.game_data.attributes[attribute]),
+      "attribute.colours": expected.game_data.attributes.colours[0],
+      ...(game === "one-piece"
+        ? { product_id: establishedOnePiece.id, rarity: onePiecePrinting.rarity.normalized }
+        : {}),
+    };
+    assert.equal(validateCardQuery(query), true, ajv.errorsText(validateCardQuery.errors));
+    const filteredResponse = await fetch(`${api.url}/v1/cards?${new URLSearchParams(query)}`, { headers });
+    assert.equal(filteredResponse.status, 200, await filteredResponse.clone().text());
+    const filtered = await filteredResponse.json();
+    assert.equal(validateCardCollection(filtered), true, ajv.errorsText(validateCardCollection.errors));
+    assert.deepEqual(
+      filtered.data.map(({ id }) => id),
+      [expected.id],
+    );
+    assert.equal(filtered.meta.catalogue_revision_id, revisionId);
+  }
+  assert.equal(validateCardQuery({ "attribute.cost": "3" }), false);
+  const invalidAttribute = await fetch(`${api.url}/v1/cards?game=one-piece&attribute.level=3`, { headers });
+  assert.equal(invalidAttribute.status, 400);
+  assert.equal((await invalidAttribute.json()).code, "invalid_parameter");
   assert.deepEqual(onePiecePrinting.source_lineages, ["one-piece-en"]);
   assert.ok(
     onePiecePrinting.locator_evidence.current.some(
-      ({ locator, source_lineage }) =>
-        locator === "/cards/OP99-001" &&
-        source_lineage === "one-piece-en",
+      ({ locator, source_lineage }) => locator === "/cards/OP99-001" && source_lineage === "one-piece-en",
     ),
   );
-  const gundam = products.find(
-    ({ official_code }) => official_code === "GD-RAW-01",
-  );
+  const gundam = products.find(({ official_code }) => official_code === "GD-RAW-01");
   assert.ok(gundam);
-  const gundamCard = cards.find(
-    ({ official_identity }) => official_identity?.value === "GD99-001",
-  );
-  assert.deepEqual(gundamCard.source_lineages, [
-    "gundam-en-asia",
-    "gundam-en-us",
-  ]);
-  const gundamPrinting = printings.find(
-    ({ card_id }) => card_id === gundamCard.id,
-  );
-  assert.deepEqual(gundamPrinting.source_lineages, [
-    "gundam-en-asia",
-    "gundam-en-us",
-  ]);
-  const gundamPrintingResponse = await fetch(
-    `${api.url}/v1/printings/${gundamPrinting.id}?include=evidence`,
-    { headers },
-  );
+  const gundamCard = cards.find(({ official_identity }) => official_identity?.value === "GD99-001");
+  assert.deepEqual(gundamCard.source_lineages, ["gundam-en-asia", "gundam-en-us"]);
+  const gundamPrinting = printings.find(({ card_id }) => card_id === gundamCard.id);
+  assert.deepEqual(gundamPrinting.source_lineages, ["gundam-en-asia", "gundam-en-us"]);
+  const gundamPrintingResponse = await fetch(`${api.url}/v1/printings/${gundamPrinting.id}?include=evidence`, {
+    headers,
+  });
   assert.equal(gundamPrintingResponse.status, 200);
   const gundamPrintingDocument = await gundamPrintingResponse.json();
-  assert.deepEqual(gundamPrintingDocument.data.source_lineages, [
+  assert.deepEqual(gundamPrintingDocument.data.source_lineages, ["gundam-en-asia", "gundam-en-us"]);
+  assert.deepEqual(gundamPrintingDocument.included.map(({ source }) => source).sort(), [
     "gundam-en-asia",
     "gundam-en-us",
   ]);
-  assert.deepEqual(
-    gundamPrintingDocument.included.map(({ source }) => source).sort(),
-    ["gundam-en-asia", "gundam-en-us"],
-  );
   assert.deepEqual(
     releases
       .filter(({ product_id }) => product_id === gundam.id)
@@ -776,10 +548,8 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   assert.ok(
     relationships.some(
       ({ kind, from, to }) =>
-        kind === "product-card" &&
-        from.id === cardBearing.id &&
-        cards.some(({ id }) => id === to.id),
-      ),
+        kind === "product-card" && from.id === cardBearing.id && cards.some(({ id }) => id === to.id),
+    ),
   );
 
   await stopWorker(api);
@@ -791,11 +561,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     statePath,
   });
   t.after(() => stopWorker(provenanceIngestion));
-  await waitForHealth(
-    `${provenanceIngestion.url}/health`,
-    administrationKey,
-    provenanceIngestion,
-  );
+  await waitForHealth(`${provenanceIngestion.url}/health`, administrationKey, provenanceIngestion);
   const provenanceCollected = await runCli(
     [
       "source",
@@ -810,31 +576,13 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   );
   assert.equal(provenanceCollected.code, 0, provenanceCollected.stderr);
   const provenanceRun = JSON.parse(provenanceCollected.stdout);
-  assert.equal(
-    (
-      await runCli(
-        ["source", "resume", "--run-id", provenanceRun.id, "--json"],
-        cliEnvironment,
-      )
-    ).code,
-    0,
-  );
-  await waitForRunState(
-    provenanceRun.id,
-    "awaiting_approval",
-    cliEnvironment,
-    provenanceIngestion,
-    statePath,
-  );
+  assert.equal((await runCli(["source", "resume", "--run-id", provenanceRun.id, "--json"], cliEnvironment)).code, 0);
+  await waitForRunState(provenanceRun.id, "awaiting_approval", cliEnvironment, provenanceIngestion, statePath);
   const provenanceInspectionResult = await runCli(
     ["candidate", "inspect", "--run-id", provenanceRun.id, "--json"],
     cliEnvironment,
   );
-  assert.equal(
-    provenanceInspectionResult.code,
-    0,
-    provenanceInspectionResult.stderr,
-  );
+  assert.equal(provenanceInspectionResult.code, 0, provenanceInspectionResult.stderr);
   const provenanceInspection = JSON.parse(provenanceInspectionResult.stdout);
   const provenanceApproved = await runCli(
     [
@@ -856,11 +604,9 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   assert.equal(
     provenanceApproved.code,
     0,
-    `${provenanceApproved.stdout}\n${provenanceApproved.stderr}\n` +
-      provenanceIngestion.getOutput(),
+    `${provenanceApproved.stdout}\n${provenanceApproved.stderr}\n` + provenanceIngestion.getOutput(),
   );
-  const codeLessRevisionId =
-    JSON.parse(provenanceApproved.stdout).resulting_revision_id;
+  const codeLessRevisionId = JSON.parse(provenanceApproved.stdout).resulting_revision_id;
   await stopWorker(provenanceIngestion);
 
   const provenanceApi = await startWorker({
@@ -872,15 +618,8 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   });
   t.after(() => stopWorker(provenanceApi));
   await waitForHealth(`${provenanceApi.url}/health`, apiKey, provenanceApi);
-  const codeLessProducts = await exportRecords(
-    provenanceApi.port,
-    apiKey,
-    codeLessRevisionId,
-    "products",
-  );
-  const codeLessOnePiece = codeLessProducts.find(
-    ({ official_code }) => official_code === "OP-RAW-01",
-  );
+  const codeLessProducts = await exportRecords(provenanceApi.port, apiKey, codeLessRevisionId, "products");
+  const codeLessOnePiece = codeLessProducts.find(({ official_code }) => official_code === "OP-RAW-01");
   assert.equal(
     codeLessOnePiece.id,
     establishedOnePiece.id,
@@ -906,21 +645,13 @@ test("the CLI publishes separated Product catalogue data consumed through authen
 
 // A run that never reaches its expected state is diagnosed against the
 // persisted collection tables, which record why each request stalled.
-async function waitForRunState(
-  runId,
-  expectedState,
-  environment,
-  worker,
-  statePath,
-) {
+async function waitForRunState(runId, expectedState, environment, worker, statePath) {
   try {
     return await awaitRunState(runId, expectedState, environment, worker, {
       deadlineMs: 40_000,
     });
   } catch (error) {
-    error.message += `\npersisted: ${JSON.stringify(
-      await persistedRunDiagnostics(statePath, runId),
-    )}`;
+    error.message += `\npersisted: ${JSON.stringify(await persistedRunDiagnostics(statePath, runId))}`;
     throw error;
   }
 }
@@ -932,13 +663,11 @@ async function persistedRunDiagnostics(statePath, runId) {
     let database;
     try {
       database = new DatabaseSync(path, { readOnly: true });
-      const hasRequests = database.prepare(
-        "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'source_requests'",
-      ).get();
+      const hasRequests = database
+        .prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'source_requests'")
+        .get();
       if (hasRequests === undefined) continue;
-      const hasRun = database.prepare(
-        "SELECT 1 FROM source_requests WHERE ingestion_run_id = ? LIMIT 1",
-      ).get(runId);
+      const hasRun = database.prepare("SELECT 1 FROM source_requests WHERE ingestion_run_id = ? LIMIT 1").get(runId);
       if (hasRun === undefined) continue;
       const all = (sql) => database.prepare(sql).all(runId);
       return {
@@ -996,23 +725,19 @@ async function persistedRunDiagnostics(statePath, runId) {
 
 async function sqliteFilesUnder(path) {
   const entries = await readdir(path, { withFileTypes: true });
-  const nested = await Promise.all(entries.map((entry) => {
-    const child = join(path, entry.name);
-    return entry.isDirectory()
-      ? sqliteFilesUnder(child)
-      : entry.name.endsWith(".sqlite")
-        ? [child]
-        : [];
-  }));
+  const nested = await Promise.all(
+    entries.map((entry) => {
+      const child = join(path, entry.name);
+      return entry.isDirectory() ? sqliteFilesUnder(child) : entry.name.endsWith(".sqlite") ? [child] : [];
+    }),
+  );
   return nested.flat();
 }
 
 const officialDiscoveryUrls = {
   "one-piece-en": "https://en.onepiece-cardgame.com/cardlist/?series=569116",
-  "fusion-world-en":
-    "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
-  "digimon-en":
-    "https://world.digimoncard.com/cards/index.php?search=true",
+  "fusion-world-en": "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
+  "digimon-en": "https://world.digimoncard.com/cards/index.php?search=true",
   "gundam-en-asia": "https://www.gundam-gcg.com/asia-en/cards/index.php",
   "gundam-en-us": "https://www.gundam-gcg.com/en/cards/index.php",
 };
@@ -1032,10 +757,12 @@ function officialPlan(
     supported_game: game,
     source_lineage: lineage,
     adapter_version: adapter,
-    requests: [{
-      id: `${lineage}:discovery`,
-      url: officialDiscoveryUrls[lineage],
-      headers,
-    }],
+    requests: [
+      {
+        id: `${lineage}:discovery`,
+        url: officialDiscoveryUrls[lineage],
+        headers,
+      },
+    ],
   };
 }
