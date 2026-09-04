@@ -1,6 +1,6 @@
 import { exports } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import { cardAttributeProjectionStatement } from "../../../src/catalogue/ingestion/card-attribute-materialization";
+import { cardAttributeProjectionStatement } from "../../../src/catalogue/ingestion/card-attribute-repository";
 import { printingQueryProjectionStatements } from "../../../src/catalogue/ingestion/printing-query-materialization";
 import { apiCard, apiHeaders, installApiSuite, seedApiRevision, testEnv } from "./api-fixtures";
 

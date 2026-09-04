@@ -1,7 +1,7 @@
 import {
   persistReconciliationPayloadChunkStatement,
   retainedReconciliationPayloadChunksStatement,
-} from "./../shared/reconciliation-payload-repository";
+} from "./reconciliation-payload-repository";
 import { canonicalJson } from "./serialization";
 
 const maximumChunkBytes = 524_288;

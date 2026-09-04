@@ -1,7 +1,7 @@
 import {
   publishLegalityRuleFactsStatement,
   publishRevisionLegalityRulesStatement,
-} from "./../legality/legality-publication-repository";
+} from "./legality-publication-repository";
 import { byteBoundedJsonArrays, type CatalogueCandidate, canonicalJson } from "../shared";
 import { legalityRuleCardIds } from "./legality-rule";
 import { normalizedLegalityRuleLifecycle } from "./legality-rule-lifecycle";

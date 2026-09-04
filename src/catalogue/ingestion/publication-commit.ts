@@ -1,25 +1,3 @@
-import {
-  recordNoChangeResultStatement,
-  approveNoChangeRunStatement,
-  publishNoChangeRunStatement,
-  publishCardDocumentsStatement,
-  publishCardQueryDocumentsStatement,
-  publishCardSearchTermsStatement,
-  publishCardSearchChunksStatement,
-  publishPrintingDocumentsStatement,
-  publishReconciledPrintingImagesStatement,
-  publishRevisionPrintingImagesStatement,
-  registerCatalogueRevisionStatement,
-  registerAvailableQueryRevisionStatement,
-  archiveOldQueryRevisionsStatement,
-  deleteArchivedCardQueryDocumentsStatement,
-  registerVerifiedCatalogueExportStatement,
-  advanceCatalogueRevisionStatement,
-  publishApprovedRunStatement,
-  createPublicationBackupStatement,
-  degradeRecoveryAfterPublicationStatement,
-} from "./publication-commit-repository";
-import { byteBoundedJsonArrays, type CatalogueCandidate, guardedAtomicBatch, type SupportedGame } from "../shared";
 import { publicationBackupReservation } from "../backup-recovery";
 import { type BuiltCatalogueExport, distributionContextExportId } from "../export";
 import { legalityPublicationStatements } from "../legality";
@@ -31,9 +9,31 @@ import {
   reconciliationPublication,
   typedPrintingProjections,
 } from "../reconciliation";
+import { byteBoundedJsonArrays, type CatalogueCandidate, guardedAtomicBatch, type SupportedGame } from "../shared";
 import { idempotencyCompletionStatements, replayAfterConflict } from "./administration-idempotency";
-import { cardAttributeProjectionStatement } from "./card-attribute-materialization";
+import { cardAttributeProjectionStatement } from "./card-attribute-repository";
 import { printingQueryProjectionStatements } from "./printing-query-materialization";
+import {
+  advanceCatalogueRevisionStatement,
+  approveNoChangeRunStatement,
+  archiveOldQueryRevisionsStatement,
+  createPublicationBackupStatement,
+  degradeRecoveryAfterPublicationStatement,
+  deleteArchivedCardQueryDocumentsStatement,
+  publishApprovedRunStatement,
+  publishCardDocumentsStatement,
+  publishCardQueryDocumentsStatement,
+  publishCardSearchChunksStatement,
+  publishCardSearchTermsStatement,
+  publishNoChangeRunStatement,
+  publishPrintingDocumentsStatement,
+  publishReconciledPrintingImagesStatement,
+  publishRevisionPrintingImagesStatement,
+  recordNoChangeResultStatement,
+  registerAvailableQueryRevisionStatement,
+  registerCatalogueRevisionStatement,
+  registerVerifiedCatalogueExportStatement,
+} from "./publication-commit-repository";
 import { requiredCandidateCatalogueDigest } from "./publication-storage";
 import { progressFor, publicRun } from "./run-document-codec";
 import { freshnessStatementsForRun } from "./run-freshness";
