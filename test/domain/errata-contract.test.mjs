@@ -1,3 +1,5 @@
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue.ts";
+import * as reconciliationQueries from "./query-helpers/reconciliation.ts";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -7,12 +9,7 @@ import { test } from "vitest";
 const root = resolve(import.meta.dirname, "../..");
 
 test("Official Errata evidence has an explicit normative contract", async () => {
-  const schema = JSON.parse(
-    await readFile(
-      resolve(root, "docs/contracts/official-errata.schema.json"),
-      "utf8",
-    ),
-  );
+  const schema = JSON.parse(await readFile(resolve(root, "docs/contracts/official-errata.schema.json"), "utf8"));
   assert.deepEqual(schema.required, [
     "authority",
     "field",
@@ -27,22 +24,13 @@ test("Official Errata evidence has an explicit normative contract", async () => 
   assert.deepEqual(schema.properties.corrected_value.type, ["string", "null"]);
   const exportSchema = JSON.parse(
     await readFile(
-      resolve(
-        root,
-        "prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json",
-      ),
+      resolve(root, "prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json"),
       "utf8",
     ),
   );
-  assert.deepEqual(
-    exportSchema.$defs.ErratumRecord.properties.corrected_value.type,
-    ["string", "null"],
-  );
+  assert.deepEqual(exportSchema.$defs.ErratumRecord.properties.corrected_value.type, ["string", "null"]);
 
-  const contract = await readFile(
-    resolve(root, "docs/contracts/official-errata.md"),
-    "utf8",
-  );
+  const contract = await readFile(resolve(root, "docs/contracts/official-errata.md"), "utf8");
   for (const term of [
     "Official Source",
     "Card",
@@ -55,17 +43,11 @@ test("Official Errata evidence has an explicit normative contract", async () => 
   ]) {
     assert.match(contract, new RegExp(term));
   }
-  assert.match(
-    contract,
-    /https:\/\/en\.onepiece-cardgame\.com\/rules\/errata_card\//,
-  );
+  assert.match(contract, /https:\/\/en\.onepiece-cardgame\.com\/rules\/errata_card\//);
 });
 
 test("the baseline enforces the reconciliation workflow and Errata constraints", async () => {
-  const baseline = await readFile(
-    resolve(root, "migrations", "0001_baseline.sql"),
-    "utf8",
-  );
+  const baseline = await readFile(resolve(root, "migrations", "0001_baseline.sql"), "utf8");
   const database = new DatabaseSync(":memory:");
   try {
     database.exec(baseline);
@@ -99,57 +81,38 @@ test("the baseline enforces the reconciliation workflow and Errata constraints",
     `);
     // Card query documents are built by the resumable application repair,
     // never by a trigger on revision_cards.
-    assert.equal(
-      database.prepare(
-        "SELECT COUNT(*) AS count FROM revision_card_query_documents",
-      ).get().count,
-      0,
-    );
+    assert.equal(publishedCatalogueQueries.countRevisionCardQueryDocumentsCount(database).get().count, 0);
 
-    database.prepare(
-      `INSERT INTO reconciliation_workflow_requests (
-         idempotency_key, ingestion_run_id, expected_current_revision_id,
-         request_json, workflow_params_json, workflow_instance_id, observed_at
-       ) VALUES (?, ?, ?, '{}', '{}', ?, ?)`,
-    ).run(
-      "workflow-valid",
-      "run_schema",
-      "catrev_bootstrap_not_yet_published",
-      "workflow-schema",
-      "2026-07-31T00:02:00.000Z",
-    );
+    reconciliationQueries
+      .insertReconciliationWorkflowRequests(database)
+      .run(
+        "workflow-valid",
+        "run_schema",
+        "catrev_bootstrap_not_yet_published",
+        "workflow-schema",
+        "2026-07-31T00:02:00.000Z",
+      );
     assert.throws(
       () =>
-        database.prepare(
-          `INSERT INTO reconciliation_workflow_requests (
-             idempotency_key, ingestion_run_id, expected_current_revision_id,
-             request_json, workflow_params_json, workflow_instance_id,
-             observed_at
-           ) VALUES (?, ?, ?, '{}', '{}', ?, ?)`,
-        ).run(
-          "workflow-missing-run",
-          "run_missing",
-          "catrev_spine_000",
-          "workflow-missing-run",
-          "2026-07-31T00:02:00.000Z",
-        ),
+        reconciliationQueries
+          .insertReconciliationWorkflowRequests(database)
+          .run(
+            "workflow-missing-run",
+            "run_missing",
+            "catrev_spine_000",
+            "workflow-missing-run",
+            "2026-07-31T00:02:00.000Z",
+          ),
       /FOREIGN KEY constraint failed/,
     );
 
     assert.throws(
-      () =>
-        database.prepare(
-          `INSERT INTO reconciliation_terminal_results (
-             ingestion_run_id, result_json
-           ) VALUES (?, ?)`,
-        ).run("run_schema", "not-json"),
+      () => reconciliationQueries.insertReconciliationTerminalResults(database).run("run_schema", "not-json"),
       /CHECK constraint failed/,
     );
-    database.prepare(
-      `INSERT INTO reconciliation_terminal_results (
-         ingestion_run_id, result_json
-       ) VALUES (?, '{}')`,
-    ).run("run_schema");
+    reconciliationQueries
+      .insertReconciliationTerminalResultsForBaselineEnforcesReconciliationWorkflowErrataConstraints(database)
+      .run("run_schema");
     assert.throws(
       () =>
         database.exec(
@@ -186,55 +149,19 @@ test("the baseline enforces the reconciliation workflow and Errata constraints",
         'catrev_schema', 'catrev_schema'
       );
     `);
-    const insertErratum = database.prepare(
-      `INSERT INTO reconciled_errata (
-         id, game, target_type, target_id, effective_from,
-         official_wording, corrected_value_json, first_revision_id,
-         last_observed_revision_id
-       ) VALUES (?, ?, ?, ?, NULL, 'Official correction', ?,
-                 'catrev_schema', 'catrev_schema')`,
-    );
+    const insertErratum = reconciliationQueries.insertReconciledErrata(database);
     assert.throws(
-      () =>
-        insertErratum.run(
-          "erratum_card_wrong_game",
-          "gundam",
-          "card",
-          "card_one_piece",
-          '"Corrected"',
-        ),
+      () => insertErratum.run("erratum_card_wrong_game", "gundam", "card", "card_one_piece", '"Corrected"'),
       /reconciled_erratum_target_invalid/,
     );
     assert.throws(
-      () =>
-        insertErratum.run(
-          "erratum_printing_wrong_game",
-          "gundam",
-          "printing",
-          "printing_one_piece",
-          '"Corrected"',
-        ),
+      () => insertErratum.run("erratum_printing_wrong_game", "gundam", "printing", "printing_one_piece", '"Corrected"'),
       /reconciled_erratum_target_invalid/,
     );
-    insertErratum.run(
-      "erratum_card_valid",
-      "one-piece",
-      "card",
-      "card_one_piece",
-      '"Corrected"',
-    );
-    insertErratum.run(
-      "erratum_printing_valid",
-      "one-piece",
-      "printing",
-      "printing_one_piece",
-      '"Corrected"',
-    );
-    assert.deepEqual(database.prepare("PRAGMA foreign_key_check").all(), []);
-    assert.equal(
-      database.prepare("PRAGMA integrity_check").get().integrity_check,
-      "ok",
-    );
+    insertErratum.run("erratum_card_valid", "one-piece", "card", "card_one_piece", '"Corrected"');
+    insertErratum.run("erratum_printing_valid", "one-piece", "printing", "printing_one_piece", '"Corrected"');
+    assert.deepEqual(publishedCatalogueQueries.inspectForeignKeyCheck(database).all(), []);
+    assert.equal(publishedCatalogueQueries.inspectIntegrityCheck(database).get().integrity_check, "ok");
   } finally {
     database.close();
   }
@@ -242,35 +169,15 @@ test("the baseline enforces the reconciliation workflow and Errata constraints",
 
 test("the Card collection contract normatively exposes projection unavailability as 503", async () => {
   const [openapi, apiSchema] = await Promise.all([
-    readFile(
-      resolve(
-        root,
-        "prototype/formalize-implementation-contracts/openapi.json",
-      ),
-      "utf8",
-    ).then(JSON.parse),
-    readFile(
-      resolve(
-        root,
-        "prototype/formalize-implementation-contracts/schemas/api.schema.json",
-      ),
-      "utf8",
-    ).then(JSON.parse),
+    readFile(resolve(root, "prototype/formalize-implementation-contracts/openapi.json"), "utf8").then(JSON.parse),
+    readFile(resolve(root, "prototype/formalize-implementation-contracts/schemas/api.schema.json"), "utf8").then(
+      JSON.parse,
+    ),
   ]);
+  assert.equal(openapi.paths["/cards"].get.responses["503"].$ref, "#/components/responses/CatalogueQueryUnavailable");
   assert.equal(
-    openapi.paths["/cards"].get.responses["503"].$ref,
-    "#/components/responses/CatalogueQueryUnavailable",
-  );
-  assert.equal(
-    openapi.components.responses.CatalogueQueryUnavailable.content[
-      "application/problem+json"
-    ].schema.$ref,
+    openapi.components.responses.CatalogueQueryUnavailable.content["application/problem+json"].schema.$ref,
     "./schemas/api.schema.json#/$defs/Problem",
   );
-  assert.equal(
-    apiSchema.$defs.Problem.properties.code.enum.includes(
-      "catalogue_query_unavailable",
-    ),
-    true,
-  );
+  assert.equal(apiSchema.$defs.Problem.properties.code.enum.includes("catalogue_query_unavailable"), true);
 });
