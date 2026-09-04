@@ -1,5 +1,10 @@
 import {
-  ingestionRunTransitionSql,
+  reservePublicationWriterStatement,
+  publicationWriterAuthorityStatement,
+  recordLatePublicationObjectStatement,
+  publicationRegistrationStateStatement,
+} from "./publication-storage-repository";
+import {
   AdministrationProblem,
   type CatalogueCandidate,
   canonicalJson,
@@ -34,35 +39,18 @@ export async function reservePublication(
   startedAt: string,
 ): Promise<void> {
   const reconcileAfter = new Date(Date.parse(startedAt) + publicationLeaseMilliseconds).toISOString();
-  const reserved = await database
-    .prepare(
-      `UPDATE ingestion_runs
-      SET state = 'publishing',
-          approval_json = ?,
-          approval_idempotency_key = ?,
-          approval_history_json = ?,
-          progress_json = ?,
-          publication_revision_id = ?,
-          publication_started_at = ?,
-          publication_reconcile_after = ?,
-          publication_manifest_digest = ?,
-          publication_writer_token = ?
-      WHERE id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "publishing")}
-      RETURNING id`,
-    )
-    .bind(
-      JSON.stringify(approval),
-      idempotencyKey,
-      JSON.stringify([approval]),
-      JSON.stringify(progressFor("publishing")),
-      revisionId,
-      startedAt,
-      reconcileAfter,
-      manifestDigest,
-      writerToken,
-      runId,
-    )
-    .first<{ id: string }>();
+  const reserved = await reservePublicationWriterStatement(database, {
+    approvalJson: JSON.stringify(approval),
+    idempotencyKey: idempotencyKey,
+    approvalHistoryJson: JSON.stringify([approval]),
+    progressJson: JSON.stringify(progressFor("publishing")),
+    revisionId: revisionId,
+    startedAt: startedAt,
+    reconcileAfter: reconcileAfter,
+    manifestDigest: manifestDigest,
+    writerToken: writerToken,
+    runId: runId,
+  }).first<{ id: string }>();
   if (reserved === null) {
     throw new AdministrationProblem(
       409,
@@ -274,20 +262,12 @@ async function assertPublicationWriterActive(
   bucket?: R2Bucket,
   lateObjectKey?: string,
 ): Promise<void> {
-  const reservation = await database
-    .prepare(
-      `SELECT id
-      FROM ingestion_runs
-      WHERE id = ?
-        AND (
-          state = 'publishing'
-          OR (? = 1 AND state = 'published')
-        )
-        AND publication_revision_id = ?
-        AND publication_writer_token = ?`,
-    )
-    .bind(runId, bucket === undefined ? 0 : 1, revisionId, writerToken)
-    .first<{ id: string }>();
+  const reservation = await publicationWriterAuthorityStatement(database, {
+    runId: runId,
+    includePublished: bucket === undefined ? 0 : 1,
+    revisionId: revisionId,
+    writerToken: writerToken,
+  }).first<{ id: string }>();
   if (reservation === null) {
     if (bucket !== undefined && lateObjectKey !== undefined) {
       await compensateLatePublicationWrite(database, bucket, runId, lateObjectKey);
@@ -313,55 +293,12 @@ async function compensateLatePublicationWrite(
     throw new Error("The late publication write could not be attached to terminal cleanup.");
   }
   const failureAt = run.terminal_at;
-  await database
-    .prepare(
-      `INSERT INTO ingestion_publication_cleanup (
-        ingestion_run_id,
-        state,
-        object_keys_json,
-        attempts,
-        failure_code,
-        last_attempt_at,
-        completed_at,
-        not_before,
-        idempotency_key,
-        request_json,
-        claim_token,
-        claim_version,
-        claim_expires_at
-      ) VALUES (
-        ?, 'failed', json_array(?), 1,
-        'late_publication_write', ?, NULL, ?,
-        NULL, NULL, NULL, 1, NULL
-      )
-      ON CONFLICT (ingestion_run_id) DO UPDATE SET
-        state = 'failed',
-        object_keys_json = (
-          SELECT json_group_array(object_key)
-          FROM (
-            SELECT value AS object_key
-            FROM json_each(
-              ingestion_publication_cleanup.object_keys_json
-            )
-            UNION
-            SELECT excluded_key.object_key
-            FROM (SELECT ? AS object_key) AS excluded_key
-            ORDER BY object_key
-          )
-        ),
-        attempts = MAX(ingestion_publication_cleanup.attempts, 1),
-        failure_code = 'late_publication_write',
-        last_attempt_at = ?,
-        completed_at = NULL,
-        idempotency_key = NULL,
-        request_json = NULL,
-        claim_token = NULL,
-        claim_version =
-          ingestion_publication_cleanup.claim_version + 1,
-        claim_expires_at = NULL`,
-    )
-    .bind(runId, objectKey, failureAt, publicationCleanupNotBefore(run, failureAt), objectKey, failureAt)
-    .run();
+  await recordLatePublicationObjectStatement(database, {
+    runId: runId,
+    objectKey: objectKey,
+    failedAt: failureAt,
+    notBefore: publicationCleanupNotBefore(run, failureAt),
+  }).run();
 }
 
 export async function reservedPublicationOwnsUnpublishedPrefix(database: D1Database, run: RunRow): Promise<boolean> {
@@ -379,27 +316,14 @@ export async function reservedPublicationOwnsUnpublishedPrefix(database: D1Datab
     expectedCurrentRevisionId: run.expected_current_revision_id,
   });
   if (run.publication_revision_id !== expectedRevisionId) return false;
-  const registered = await database
-    .prepare(
-      `SELECT
-       EXISTS(
-         SELECT 1 FROM catalogue_revisions WHERE id = ?
-       ) AS revision_registered,
-       EXISTS(
-         SELECT 1 FROM catalogue_exports
-         WHERE catalogue_revision_id = ?
-       ) AS export_registered,
-       EXISTS(
-         SELECT 1 FROM ingestion_runs
-         WHERE id <> ? AND publication_revision_id = ?
-       ) AS other_run_reserved`,
-    )
-    .bind(expectedRevisionId, expectedRevisionId, run.id, expectedRevisionId)
-    .first<{
-      revision_registered: number;
-      export_registered: number;
-      other_run_reserved: number;
-    }>();
+  const registered = await publicationRegistrationStateStatement(database, {
+    revisionId: expectedRevisionId,
+    runId: run.id,
+  }).first<{
+    revision_registered: number;
+    export_registered: number;
+    other_run_reserved: number;
+  }>();
   return (
     registered?.revision_registered === 0 && registered.export_registered === 0 && registered.other_run_reserved === 0
   );

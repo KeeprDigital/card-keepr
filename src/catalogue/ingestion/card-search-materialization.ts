@@ -1,3 +1,20 @@
+import {
+  revisionWithoutSearchProjectionStatement,
+  createPendingSearchProjectionStatement,
+  nextCardToRepairStatement,
+  completeSearchProjectionStatement,
+  createCardQuerySummaryStatement,
+  beginCardRepairStatement,
+  cardRepairSourceDocumentStatement,
+  appendRepairedCardSearchTextStatement,
+  advanceCardSearchOffsetStatement,
+  insertRepairedCardSearchTermStatement,
+  insertRepairedCardSearchChunkStatement,
+  advanceCardSearchTermOffsetStatement,
+  completeCardSearchRepairStatement,
+  pendingSearchProjectionStatement,
+  searchRepairProgressStatement,
+} from "./card-search-repair-repository";
 import { cardSearchChunks, cardSearchTerms, cardSearchText } from "../read";
 
 type SearchableCard = {
@@ -92,123 +109,28 @@ async function repairCardSearchMaterializationStep(
   const targetRevisionId = options.targetRevisionId;
   const revision = await pendingRevision(database, targetRevisionId);
   if (revision === null) {
-    const missing = await database
-      .prepare(
-        `SELECT revision.id AS catalogue_revision_id
-       FROM catalogue_revisions AS revision
-       WHERE NOT EXISTS (
-           SELECT 1 FROM catalogue_query_revisions AS query
-           WHERE query.catalogue_revision_id = revision.id
-         )
-         AND (? IS NULL OR revision.id = ?)
-       ORDER BY revision.id
-       LIMIT 1`,
-      )
-      .bind(targetRevisionId ?? null, targetRevisionId ?? null)
-      .first<{ catalogue_revision_id: string }>();
+    const missing = await revisionWithoutSearchProjectionStatement(database, targetRevisionId ?? null).first<{
+      catalogue_revision_id: string;
+    }>();
     if (missing === null) {
       return repairResult(database, 0, 0, targetRevisionId);
     }
-    await database
-      .prepare(
-        `INSERT INTO catalogue_query_revisions (
-         catalogue_revision_id, state, repaired_through_card_id,
-         repair_card_id, repair_search_offset, repair_term_offset
-       ) VALUES (?, 'pending', NULL, NULL, 0, 0)
-       ON CONFLICT(catalogue_revision_id) DO NOTHING`,
-      )
-      .bind(missing.catalogue_revision_id)
-      .run();
+    await createPendingSearchProjectionStatement(database, missing.catalogue_revision_id).run();
     return repairResult(database, 0, boundBytes(missing.catalogue_revision_id), targetRevisionId);
   }
 
   if (revision.repair_card_id === null) {
-    const next = await database
-      .prepare(
-        `SELECT card_id
-       FROM revision_cards
-       WHERE catalogue_revision_id = ?
-         AND (? IS NULL OR card_id > ?)
-       ORDER BY card_id
-       LIMIT 1`,
-      )
-      .bind(revision.catalogue_revision_id, revision.repaired_through_card_id, revision.repaired_through_card_id)
-      .first<{ card_id: string }>();
+    const next = await nextCardToRepairStatement(database, {
+      revisionId: revision.catalogue_revision_id,
+      afterCardId: revision.repaired_through_card_id,
+    }).first<{ card_id: string }>();
     if (next === null) {
-      await database
-        .prepare(
-          `UPDATE catalogue_query_revisions
-         SET state = 'available',
-             repaired_through_card_id = NULL,
-             repair_card_id = NULL,
-             repair_search_offset = 0,
-             repair_term_offset = 0
-         WHERE catalogue_revision_id = ? AND state = 'pending'`,
-        )
-        .bind(revision.catalogue_revision_id)
-        .run();
+      await completeSearchProjectionStatement(database, revision.catalogue_revision_id).run();
       return repairResult(database, 0, boundBytes(revision.catalogue_revision_id), targetRevisionId);
     }
     const claimed = await database.batch([
-      database
-        .prepare(
-          `INSERT OR IGNORE INTO revision_card_query_documents (
-           catalogue_revision_id, card_id, summary_json, search_text
-         )
-         SELECT catalogue_revision_id, card_id,
-                json_object(
-                  'type', COALESCE(
-                    json_extract(document_json, '$.data.type'),
-                    json_extract(document_json, '$.type')
-                  ),
-                  'id', COALESCE(
-                    json_extract(document_json, '$.data.id'),
-                    json_extract(document_json, '$.id')
-                  ),
-                  'game', COALESCE(
-                    json_extract(document_json, '$.data.game'),
-                    json_extract(document_json, '$.game')
-                  ),
-                  'official_identity',
-                    COALESCE(
-                      json_extract(
-                        document_json, '$.data.official_identity'
-                      ),
-                      json_extract(document_json, '$.official_identity')
-                    ),
-                  'name', COALESCE(
-                    json_extract(document_json, '$.data.name'),
-                    json_extract(document_json, '$.name')
-                  ),
-                  'game_data', COALESCE(
-                    json_extract(document_json, '$.data.game_data'),
-                    json_extract(document_json, '$.game_data')
-                  ),
-                  'lifecycle', COALESCE(
-                    json_extract(document_json, '$.data.lifecycle'),
-                    json_extract(document_json, '$.lifecycle')
-                  ),
-                  'links', COALESCE(
-                    json_extract(document_json, '$.data.links'),
-                    json_extract(document_json, '$.links')
-                  )
-                ),
-                ''
-         FROM revision_cards
-         WHERE catalogue_revision_id = ? AND card_id = ?`,
-        )
-        .bind(revision.catalogue_revision_id, next.card_id),
-      database
-        .prepare(
-          `UPDATE catalogue_query_revisions
-         SET repair_card_id = ?,
-             repair_search_offset = 0,
-             repair_term_offset = 0
-         WHERE catalogue_revision_id = ?
-           AND state = 'pending'
-           AND repair_card_id IS NULL`,
-        )
-        .bind(next.card_id, revision.catalogue_revision_id),
+      createCardQuerySummaryStatement(database, { revisionId: revision.catalogue_revision_id, cardId: next.card_id }),
+      beginCardRepairStatement(database, { cardId: next.card_id, revisionId: revision.catalogue_revision_id }),
     ]);
     assertCasBatch(claimed, [0, 1]);
     return repairResult(
@@ -222,14 +144,10 @@ async function repairCardSearchMaterializationStep(
     );
   }
 
-  const row = await database
-    .prepare(
-      `SELECT document_json
-     FROM revision_cards
-     WHERE catalogue_revision_id = ? AND card_id = ?`,
-    )
-    .bind(revision.catalogue_revision_id, revision.repair_card_id)
-    .first<RevisionCardRow>();
+  const row = await cardRepairSourceDocumentStatement(database, {
+    revisionId: revision.catalogue_revision_id,
+    cardId: revision.repair_card_id,
+  }).first<RevisionCardRow>();
   if (row === null) {
     throw new Error("The Card search repair source Card is unavailable.");
   }
@@ -247,39 +165,18 @@ async function repairCardSearchMaterializationStep(
       throw new Error("The Card search repair parameter bound was exceeded.");
     }
     const appended = await database.batch([
-      database
-        .prepare(
-          `UPDATE revision_card_query_documents
-         SET search_text = search_text || ?
-         WHERE catalogue_revision_id = ? AND card_id = ?
-           AND length(CAST(search_text AS BLOB)) = ?`,
-        )
-        .bind(chunk, revision.catalogue_revision_id, revision.repair_card_id, revision.repair_search_offset),
-      database
-        .prepare(
-          `UPDATE catalogue_query_revisions
-         SET repair_search_offset = ?
-         WHERE catalogue_revision_id = ?
-           AND state = 'pending'
-           AND repair_card_id = ?
-           AND repair_search_offset = ?
-           AND EXISTS (
-             SELECT 1
-             FROM revision_card_query_documents AS document
-             WHERE document.catalogue_revision_id =
-                     catalogue_query_revisions.catalogue_revision_id
-               AND document.card_id =
-                     catalogue_query_revisions.repair_card_id
-               AND length(CAST(document.search_text AS BLOB)) = ?
-           )`,
-        )
-        .bind(
-          nextOffset,
-          revision.catalogue_revision_id,
-          revision.repair_card_id,
-          revision.repair_search_offset,
-          nextOffset,
-        ),
+      appendRepairedCardSearchTextStatement(database, {
+        chunk: chunk,
+        revisionId: revision.catalogue_revision_id,
+        cardId: revision.repair_card_id,
+        expectedOffset: revision.repair_search_offset,
+      }),
+      advanceCardSearchOffsetStatement(database, {
+        nextOffset: nextOffset,
+        revisionId: revision.catalogue_revision_id,
+        cardId: revision.repair_card_id,
+        expectedOffset: revision.repair_search_offset,
+      }),
     ]);
     assertCasPair(appended);
     return repairResult(database, 0, measured, targetRevisionId);
@@ -310,45 +207,27 @@ async function repairCardSearchMaterializationStep(
         throw new Error("The Card search repair parameter bound was exceeded.");
       }
       return entry.kind === "term"
-        ? database
-            .prepare(
-              `INSERT OR IGNORE INTO revision_card_search_terms (
-             catalogue_revision_id, card_id, term, sort_game,
-             sort_identity_kind, sort_identity_value, sort_id
-           )
-           SELECT catalogue_revision_id, card_id, ?,
-                  sort_game, sort_identity_kind, sort_identity_value, sort_id
-           FROM revision_card_query_documents
-           WHERE catalogue_revision_id = ? AND card_id = ?`,
-            )
-            .bind(entry.term, revision.catalogue_revision_id, revision.repair_card_id)
-        : database
-            .prepare(
-              `INSERT OR IGNORE INTO revision_card_search_chunks (
-             catalogue_revision_id, card_id, field_ordinal,
-             chunk_ordinal, search_text
-           ) VALUES (?, ?, ?, ?, ?)`,
-            )
-            .bind(
-              revision.catalogue_revision_id,
-              revision.repair_card_id,
-              entry.chunk.field,
-              entry.chunk.ordinal,
-              entry.chunk.text,
-            );
+        ? insertRepairedCardSearchTermStatement(database, {
+            term: entry.term,
+            revisionId: revision.catalogue_revision_id,
+            cardId: revision.repair_card_id,
+          })
+        : insertRepairedCardSearchChunkStatement(database, {
+            revisionId: revision.catalogue_revision_id,
+            cardId: revision.repair_card_id,
+            fieldOrdinal: entry.chunk.field,
+            chunkOrdinal: entry.chunk.ordinal,
+            searchText: entry.chunk.text,
+          });
     });
     const nextOffset = revision.repair_term_offset + selectedEntries.length;
     statements.push(
-      database
-        .prepare(
-          `UPDATE catalogue_query_revisions
-         SET repair_term_offset = ?
-         WHERE catalogue_revision_id = ?
-           AND state = 'pending'
-           AND repair_card_id = ?
-           AND repair_term_offset = ?`,
-        )
-        .bind(nextOffset, revision.catalogue_revision_id, revision.repair_card_id, revision.repair_term_offset),
+      advanceCardSearchTermOffsetStatement(database, {
+        nextOffset: nextOffset,
+        revisionId: revision.catalogue_revision_id,
+        cardId: revision.repair_card_id,
+        expectedOffset: revision.repair_term_offset,
+      }),
     );
     const inserted = await database.batch(statements);
     const offsetResult = inserted.at(-1);
@@ -372,21 +251,12 @@ async function repairCardSearchMaterializationStep(
     );
   }
 
-  const completedCard = await database
-    .prepare(
-      `UPDATE catalogue_query_revisions
-     SET repaired_through_card_id = repair_card_id,
-         repair_card_id = NULL,
-         repair_search_offset = 0,
-         repair_term_offset = 0
-     WHERE catalogue_revision_id = ?
-       AND state = 'pending'
-       AND repair_card_id = ?
-       AND repair_search_offset = ?
-       AND repair_term_offset = ?`,
-    )
-    .bind(revision.catalogue_revision_id, revision.repair_card_id, searchBytes.byteLength, entries.length)
-    .run();
+  const completedCard = await completeCardSearchRepairStatement(database, {
+    revisionId: revision.catalogue_revision_id,
+    cardId: revision.repair_card_id,
+    expectedSearchBytes: searchBytes.byteLength,
+    expectedTermCount: entries.length,
+  }).run();
   if (completedCard.meta.changes !== 0 && completedCard.meta.changes !== 1) {
     throw new Error("The Card search repair completion CAS is invalid.");
   }
@@ -409,18 +279,7 @@ function searchableCard(documentJson: string): SearchableCard {
 }
 
 async function pendingRevision(database: D1Database, targetRevisionId?: string): Promise<PendingRevision | null> {
-  return database
-    .prepare(
-      `SELECT catalogue_revision_id, repaired_through_card_id,
-            repair_card_id, repair_search_offset, repair_term_offset
-     FROM catalogue_query_revisions
-     WHERE state = 'pending'
-       AND (? IS NULL OR catalogue_revision_id = ?)
-     ORDER BY catalogue_revision_id
-     LIMIT 1`,
-    )
-    .bind(targetRevisionId ?? null, targetRevisionId ?? null)
-    .first<PendingRevision>();
+  return pendingSearchProjectionStatement(database, targetRevisionId ?? null).first<PendingRevision>();
 }
 
 async function repairResult(
@@ -429,29 +288,11 @@ async function repairResult(
   maximumBoundParameterBytes: number,
   targetRevisionId?: string,
 ): Promise<CardSearchRepairResult> {
-  const counts = await database
-    .prepare(
-      `SELECT
-       sum(CASE WHEN state = 'pending' THEN 1 ELSE 0 END) AS pending,
-       sum(CASE WHEN state = 'available' THEN 1 ELSE 0 END) AS available,
-       EXISTS (
-         SELECT 1
-         FROM catalogue_revisions AS revision
-         WHERE NOT EXISTS (
-             SELECT 1 FROM catalogue_query_revisions AS query
-             WHERE query.catalogue_revision_id = revision.id
-           )
-           AND (? IS NULL OR revision.id = ?)
-       ) AS missing
-     FROM catalogue_query_revisions
-     WHERE (? IS NULL OR catalogue_revision_id = ?)`,
-    )
-    .bind(targetRevisionId ?? null, targetRevisionId ?? null, targetRevisionId ?? null, targetRevisionId ?? null)
-    .first<{
-      pending: number | null;
-      available: number | null;
-      missing: number;
-    }>();
+  const counts = await searchRepairProgressStatement(database, targetRevisionId ?? null).first<{
+    pending: number | null;
+    available: number | null;
+    missing: number;
+  }>();
   return {
     contract: "card-keepr-card-search-repair@1",
     complete: (counts?.pending ?? 0) === 0 && (counts?.missing ?? 0) === 0,

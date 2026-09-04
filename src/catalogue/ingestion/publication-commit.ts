@@ -1,10 +1,25 @@
 import {
-  ingestionRunTransitionSql,
-  byteBoundedJsonArrays,
-  type CatalogueCandidate,
-  guardedAtomicBatch,
-  type SupportedGame,
-} from "../shared";
+  recordNoChangeResultStatement,
+  approveNoChangeRunStatement,
+  publishNoChangeRunStatement,
+  publishCardDocumentsStatement,
+  publishCardQueryDocumentsStatement,
+  publishCardSearchTermsStatement,
+  publishCardSearchChunksStatement,
+  publishPrintingDocumentsStatement,
+  publishReconciledPrintingImagesStatement,
+  publishRevisionPrintingImagesStatement,
+  registerCatalogueRevisionStatement,
+  registerAvailableQueryRevisionStatement,
+  archiveOldQueryRevisionsStatement,
+  deleteArchivedCardQueryDocumentsStatement,
+  registerVerifiedCatalogueExportStatement,
+  advanceCatalogueRevisionStatement,
+  publishApprovedRunStatement,
+  createPublicationBackupStatement,
+  degradeRecoveryAfterPublicationStatement,
+} from "./publication-commit-repository";
+import { byteBoundedJsonArrays, type CatalogueCandidate, guardedAtomicBatch, type SupportedGame } from "../shared";
 import { publicationBackupReservation } from "../backup-recovery";
 import { type BuiltCatalogueExport, distributionContextExportId } from "../export";
 import { legalityPublicationStatements } from "../legality";
@@ -57,47 +72,28 @@ export async function publishNoChange(
   );
   try {
     await database.batch([
-      database
-        .prepare(
-          `INSERT INTO ingestion_no_change_results (
-            ingestion_run_id,
-            catalogue_revision_id,
-            candidate_digest,
-            checked_at
-          ) VALUES (?, ?, ?, ?)`,
-        )
-        .bind(run.id, request.expected_current_revision_id, request.candidate_digest, now),
-      database
-        .prepare(
-          `UPDATE ingestion_runs
-          SET state = 'publishing',
-              approval_json = ?,
-              approval_idempotency_key = ?,
-              approval_history_json = ?,
-              progress_json = ?
-          WHERE id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "publishing")}`,
-        )
-        .bind(
-          JSON.stringify(approval),
-          request.idempotency_key,
-          JSON.stringify([approval]),
-          JSON.stringify(progressFor("publishing")),
-          run.id,
-        ),
+      recordNoChangeResultStatement(database, {
+        runId: run.id,
+        revisionId: request.expected_current_revision_id,
+        candidateDigest: request.candidate_digest,
+        checkedAt: now,
+      }),
+      approveNoChangeRunStatement(database, {
+        approvalJson: JSON.stringify(approval),
+        idempotencyKey: request.idempotency_key,
+        approvalHistoryJson: JSON.stringify([approval]),
+        progressJson: JSON.stringify(progressFor("publishing")),
+        runId: run.id,
+      }),
       ...(reconciliation?.statements ?? []),
       ...runFreshnessStatements,
-      database
-        .prepare(
-          `UPDATE ingestion_runs
-          SET state = 'published',
-              terminal_at = ?,
-              progress_json = ?,
-              publication_outcome = 'no_change',
-              resulting_revision_id = ?,
-              freshness_checked_at = ?
-          WHERE id = ? AND ${ingestionRunTransitionSql("publishing", "published")}`,
-        )
-        .bind(now, JSON.stringify(progressFor("published")), request.expected_current_revision_id, now, run.id),
+      publishNoChangeRunStatement(database, {
+        terminalAt: now,
+        progressJson: JSON.stringify(progressFor("published")),
+        revisionId: request.expected_current_revision_id,
+        checkedAt: now,
+        runId: run.id,
+      }),
       releaseRunLockStatement(database, run.id),
       ...idempotencyCompletionStatements(database, {
         key: request.idempotency_key,
@@ -378,37 +374,14 @@ export async function commitVerifiedPublication(
       card_id: card.id,
       document_json: JSON.stringify(document),
     })),
-  ).map((chunk) =>
-    database
-      .prepare(
-        `INSERT INTO revision_cards (
-           catalogue_revision_id, card_id, document_json
-         )
-         SELECT ?, json_extract(value, '$.card_id'),
-                json_extract(value, '$.document_json')
-         FROM json_each(?)`,
-      )
-      .bind(revisionId, chunk),
-  );
+  ).map((chunk) => publishCardDocumentsStatement(database, { revisionId: revisionId, documentsJson: chunk }));
   const revisionCardQueryStatements = byteBoundedJsonArrays(
     cardDocuments.map(({ card, summary, searchText }) => ({
       card_id: card.id,
       summary_json: JSON.stringify(summary),
       search_text: searchText,
     })),
-  ).map((chunk) =>
-    database
-      .prepare(
-        `INSERT INTO revision_card_query_documents (
-           catalogue_revision_id, card_id, summary_json, search_text
-         )
-         SELECT ?, json_extract(value, '$.card_id'),
-                json_extract(value, '$.summary_json'),
-                json_extract(value, '$.search_text')
-         FROM json_each(?)`,
-      )
-      .bind(revisionId, chunk),
-  );
+  ).map((chunk) => publishCardQueryDocumentsStatement(database, { revisionId: revisionId, documentsJson: chunk }));
   const revisionCardSearchStatements = byteBoundedJsonArrays(
     cardDocuments.flatMap(({ card, searchText }) =>
       cardSearchTerms(searchText).map((term) => ({
@@ -416,24 +389,7 @@ export async function commitVerifiedPublication(
         term,
       })),
     ),
-  ).map((chunk) =>
-    database
-      .prepare(
-        `INSERT INTO revision_card_search_terms (
-           catalogue_revision_id, card_id, term, sort_game,
-           sort_identity_kind, sort_identity_value, sort_id
-         )
-         SELECT query.catalogue_revision_id, query.card_id,
-                json_extract(term.value, '$.term'),
-                query.sort_game, query.sort_identity_kind,
-                query.sort_identity_value, query.sort_id
-         FROM json_each(?) AS term
-         JOIN revision_card_query_documents AS query
-           ON query.catalogue_revision_id = ?
-          AND query.card_id = json_extract(term.value, '$.card_id')`,
-      )
-      .bind(chunk, revisionId),
-  );
+  ).map((chunk) => publishCardSearchTermsStatement(database, { termsJson: chunk, revisionId: revisionId }));
   const revisionCardSearchChunkStatements = byteBoundedJsonArrays(
     cardDocuments.flatMap(({ card, searchText }) =>
       cardSearchChunks(searchText).map((chunk) => ({
@@ -443,40 +399,14 @@ export async function commitVerifiedPublication(
         search_text: chunk.text,
       })),
     ),
-  ).map((chunk) =>
-    database
-      .prepare(
-        `INSERT INTO revision_card_search_chunks (
-           catalogue_revision_id, card_id, field_ordinal,
-           chunk_ordinal, search_text
-         )
-         SELECT ?, json_extract(value, '$.card_id'),
-                json_extract(value, '$.field_ordinal'),
-                json_extract(value, '$.chunk_ordinal'),
-                json_extract(value, '$.search_text')
-         FROM json_each(?)`,
-      )
-      .bind(revisionId, chunk),
-  );
+  ).map((chunk) => publishCardSearchChunksStatement(database, { revisionId: revisionId, chunksJson: chunk }));
   const revisionPrintingStatements = byteBoundedJsonArrays(
     printingDocuments.map(({ printing, document }) => ({
       printing_id: printing.id,
       card_id: printing.card_id,
       document_json: JSON.stringify(document),
     })),
-  ).map((chunk) =>
-    database
-      .prepare(
-        `INSERT INTO revision_printings (
-           catalogue_revision_id, printing_id, card_id, document_json
-         )
-         SELECT ?, json_extract(value, '$.printing_id'),
-                json_extract(value, '$.card_id'),
-                json_extract(value, '$.document_json')
-         FROM json_each(?)`,
-      )
-      .bind(revisionId, chunk),
-  );
+  ).map((chunk) => publishPrintingDocumentsStatement(database, { revisionId: revisionId, documentsJson: chunk }));
   const printingImageStatements = byteBoundedJsonArrays(
     (input.candidate.printing_images ?? []).map((image) => ({
       id: image.id,
@@ -489,37 +419,7 @@ export async function commitVerifiedPublication(
       content_byte_length: image.content_byte_length,
       object_key: image.object_key,
     })),
-  ).map((chunk) =>
-    database
-      .prepare(
-        `INSERT INTO reconciled_printing_images (
-           id, printing_id, role, media_type, width, height,
-           content_sha256, content_byte_length, object_key
-         )
-         SELECT
-           json_extract(value, '$.id'),
-           json_extract(value, '$.printing_id'),
-           json_extract(value, '$.role'),
-           json_extract(value, '$.media_type'),
-           json_extract(value, '$.width'),
-           json_extract(value, '$.height'),
-           json_extract(value, '$.content_sha256'),
-           json_extract(value, '$.content_byte_length'),
-           json_extract(value, '$.object_key')
-         FROM json_each(?)
-         WHERE true
-         ON CONFLICT(id) DO UPDATE SET
-           printing_id = excluded.printing_id,
-           role = excluded.role,
-           media_type = excluded.media_type,
-           width = excluded.width,
-           height = excluded.height,
-           content_sha256 = excluded.content_sha256,
-           content_byte_length = excluded.content_byte_length,
-           object_key = excluded.object_key`,
-      )
-      .bind(chunk),
-  );
+  ).map((chunk) => publishReconciledPrintingImagesStatement(database, chunk));
   // The projection carries the content facts the api serves, so the read
   // cluster never joins reconciled_printing_images, the reconciliation
   // cluster's identity table (issue #98).
@@ -532,89 +432,25 @@ export async function commitVerifiedPublication(
       content_byte_length: image.content_byte_length,
       object_key: image.object_key,
     })),
-  ).map((chunk) =>
-    database
-      .prepare(
-        `INSERT INTO revision_printing_images (
-           catalogue_revision_id, image_id, printing_id,
-           media_type, content_sha256, content_byte_length, object_key
-         )
-         SELECT ?,
-           json_extract(value, '$.image_id'),
-           json_extract(value, '$.printing_id'),
-           json_extract(value, '$.media_type'),
-           json_extract(value, '$.content_sha256'),
-           json_extract(value, '$.content_byte_length'),
-           json_extract(value, '$.object_key')
-         FROM json_each(?)`,
-      )
-      .bind(revisionId, chunk),
-  );
+  ).map((chunk) => publishRevisionPrintingImagesStatement(database, { revisionId: revisionId, imagesJson: chunk }));
   const commitStatements = [
-    database
-      .prepare(
-        `INSERT INTO catalogue_revisions (
-          id,
-          ingestion_run_id,
-          published_at,
-          content_digest,
-          expected_previous_revision_id,
-          approved_candidate_digest
-        ) VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        revisionId,
-        input.run.id,
-        publishedAt,
-        requiredCandidateCatalogueDigest(input.run),
-        input.run.expected_current_revision_id,
-        input.run.candidate_digest,
-      ),
+    registerCatalogueRevisionStatement(database, {
+      revisionId: revisionId,
+      runId: input.run.id,
+      publishedAt: publishedAt,
+      contentDigest: requiredCandidateCatalogueDigest(input.run),
+      expectedRevisionId: input.run.expected_current_revision_id,
+      candidateDigest: input.run.candidate_digest,
+    }),
     ...(input.reconciliation?.statements ?? []),
     ...legalityPublicationStatements(database, input.candidate, revisionId),
     ...revisionCardStatements,
     ...revisionCardQueryStatements,
     ...revisionCardSearchChunkStatements,
     ...revisionCardSearchStatements,
-    database
-      .prepare(
-        `INSERT INTO catalogue_query_revisions (
-           catalogue_revision_id, state, repaired_through_card_id
-         ) VALUES (?, 'available', NULL)`,
-      )
-      .bind(revisionId),
-    database
-      .prepare(
-        `WITH RECURSIVE retained(catalogue_revision_id, depth) AS (
-         SELECT ?, 0
-         UNION ALL
-         SELECT revision.expected_previous_revision_id, retained.depth + 1
-         FROM retained
-         JOIN catalogue_revisions AS revision
-           ON revision.id = retained.catalogue_revision_id
-         WHERE retained.depth < 2
-           AND revision.expected_previous_revision_id IS NOT NULL
-       )
-       UPDATE catalogue_query_revisions
-       SET state = 'archived',
-           repaired_through_card_id = NULL,
-           repair_card_id = NULL,
-           repair_search_offset = 0,
-           repair_term_offset = 0
-       WHERE catalogue_revision_id NOT IN (
-         SELECT catalogue_revision_id
-         FROM retained
-       )`,
-      )
-      .bind(revisionId),
-    database.prepare(
-      `DELETE FROM revision_card_query_documents
-       WHERE catalogue_revision_id IN (
-         SELECT catalogue_revision_id
-         FROM catalogue_query_revisions
-         WHERE state = 'archived'
-       )`,
-    ),
+    registerAvailableQueryRevisionStatement(database, revisionId),
+    archiveOldQueryRevisionsStatement(database, revisionId),
+    deleteArchivedCardQueryDocumentsStatement(database),
     ...revisionPrintingStatements,
     ...printingImageStatements,
     ...revisionPrintingImageStatements,
@@ -629,67 +465,34 @@ export async function commitVerifiedPublication(
         normalized_rarity: printing.rarity.normalized,
       })),
     ),
-    database
-      .prepare(
-        `INSERT INTO catalogue_exports (
-          catalogue_revision_id,
-          manifest_key,
-          manifest_digest,
-          verified
-        ) VALUES (?, ?, ?, 1)`,
-      )
-      .bind(revisionId, input.catalogueExport.manifestKey, manifestDigest),
-    database
-      .prepare(
-        `UPDATE catalogue_state
-        SET current_revision_id = ?, published_at = ?
-        WHERE singleton = 1
-          AND current_revision_id = ?`,
-      )
-      .bind(revisionId, publishedAt, input.run.expected_current_revision_id),
+    registerVerifiedCatalogueExportStatement(database, {
+      revisionId: revisionId,
+      manifestKey: input.catalogueExport.manifestKey,
+      manifestDigest: manifestDigest,
+    }),
+    advanceCatalogueRevisionStatement(database, {
+      revisionId: revisionId,
+      publishedAt: publishedAt,
+      expectedRevisionId: input.run.expected_current_revision_id,
+    }),
     ...runFreshnessStatements,
-    database
-      .prepare(
-        `UPDATE ingestion_runs
-        SET state = 'published',
-            published_revision_id = ?,
-            export_manifest_digest = ?,
-            terminal_at = ?,
-            progress_json = ?,
-            publication_outcome = 'revision',
-            resulting_revision_id = ?,
-            freshness_checked_at = ?
-        WHERE id = ? AND ${ingestionRunTransitionSql("publishing", "published")}`,
-      )
-      .bind(
-        revisionId,
-        manifestDigest,
-        input.completedAt,
-        JSON.stringify(progressFor("published")),
-        revisionId,
-        input.completedAt,
-        input.run.id,
-      ),
-    database
-      .prepare(
-        `INSERT INTO catalogue_backup_attempts (
-         idempotency_key, request_json, owner_token, catalogue_revision_id,
-         state, object_key, started_at, publication_ingestion_run_id
-       ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
-      )
-      .bind(
-        publicationBackup.idempotencyKey,
-        publicationBackup.requestJson,
-        publicationBackup.ownerToken,
-        revisionId,
-        publicationBackup.objectKey,
-        input.completedAt,
-        input.run.id,
-      ),
-    database.prepare(
-      `UPDATE operation_state SET recovery_health = 'degraded'
-       WHERE singleton = 1 AND recovery_health = 'healthy'`,
-    ),
+    publishApprovedRunStatement(database, {
+      revisionId: revisionId,
+      manifestDigest: manifestDigest,
+      completedAt: input.completedAt,
+      progressJson: JSON.stringify(progressFor("published")),
+      runId: input.run.id,
+    }),
+    createPublicationBackupStatement(database, {
+      idempotencyKey: publicationBackup.idempotencyKey,
+      requestJson: publicationBackup.requestJson,
+      ownerToken: publicationBackup.ownerToken,
+      revisionId: revisionId,
+      objectKey: publicationBackup.objectKey,
+      startedAt: input.completedAt,
+      runId: input.run.id,
+    }),
+    degradeRecoveryAfterPublicationStatement(database),
     releaseRunLockStatement(database, input.run.id),
     ...idempotencyCompletionStatements(database, {
       key: idempotencyKey,
