@@ -2,8 +2,8 @@ import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloud
 import {
   createVerifiedCatalogueBackup,
   failActiveCatalogueBackupAttempt,
+  type CatalogueBackupWorkflowParams,
 } from "../../../src/catalogue/backup-recovery";
-import type { CatalogueBackupWorkflowParams } from "../../../src/catalogue/backup-workflow";
 import { canonicalJson } from "../../../src/catalogue/shared";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 

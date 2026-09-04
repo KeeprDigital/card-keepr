@@ -1,12 +1,11 @@
-import { AdministrationProblem, canonicalJson, sha256Text, StreamingSha256 } from "./shared";
+import { AdministrationProblem, canonicalJson, sha256Text, StreamingSha256 } from "../shared";
 import {
   prepareCardSearchForD1ExportStatements,
   reconstructCardSearchAfterD1RestoreStatements,
 } from "./card-search-recovery-statements.ts";
 import { withCardSearchPreparedForD1Export } from "./card-search-recovery";
-import { cardCollectionPageQuery } from "./card-collection-read";
-import { storedProductApiProjection } from "./product-release-read";
-import { parseStoredLegalityRule } from "./legality";
+import { cardCollectionPageQuery, storedProductApiProjection } from "../read/index";
+import { parseStoredLegalityRule } from "../legality";
 
 export type D1BackupProvider = Readonly<{
   exportSql(

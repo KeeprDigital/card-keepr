@@ -12,7 +12,7 @@ import ingestionWorker, {
 } from "../../apps/ingestion/src/index";
 import type {
   CatalogueBackupWorkflowParams,
-} from "../../src/catalogue/backup-workflow";
+} from "../../src/catalogue/backup-recovery";
 import {
   onePieceOfficialErrataHtml,
   onePieceOfficialErrataShapeDriftHtml,

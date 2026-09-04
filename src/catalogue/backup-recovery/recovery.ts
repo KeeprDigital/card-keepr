@@ -1,4 +1,4 @@
-import { AdministrationProblem, canonicalJson, sha256Text } from "./shared";
+import { AdministrationProblem, canonicalJson, sha256Text } from "../shared";
 import {
   cloudflareD1BackupProvider,
   type CatalogueVerificationEvidence,

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
-import { type CatalogueBackupWorkflowParams } from "../../../src/catalogue/backup-workflow";
+import { type CatalogueBackupWorkflowParams } from "../../../src/catalogue/backup-recovery";
 import { currentCatalogueStatus } from "../../../src/catalogue/read";
 import {
   installReconciliationSuite,

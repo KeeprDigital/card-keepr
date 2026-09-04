@@ -14,11 +14,11 @@ export {
   type D1BackupProvider,
   type PublicationBackupReservation,
   type RestoredCatalogueVerification,
-} from "../backup-recovery";
+} from "./backup-recovery";
 export {
   startOrObserveCatalogueBackupWorkflow,
   type CatalogueBackupWorkflowParams,
-} from "../backup-workflow";
+} from "./backup-workflow";
 export {
   acceptCatalogueRecovery,
   beginCatalogueRecovery,
@@ -30,14 +30,14 @@ export {
   type BeginCatalogueRecoveryInput,
   type D1RecoveryProvider,
   type VerifyCatalogueRecoveryInput,
-} from "../recovery";
+} from "./recovery";
 export {
   prepareCardSearchForD1Export,
   reconstructCardSearchAfterD1Restore,
   withCardSearchPreparedForD1Export,
   type CardSearchExportLease,
-} from "../card-search-recovery";
+} from "./card-search-recovery";
 export {
   prepareCardSearchForD1ExportStatements,
   reconstructCardSearchAfterD1RestoreStatements,
-} from "../card-search-recovery-statements";
+} from "./card-search-recovery-statements";

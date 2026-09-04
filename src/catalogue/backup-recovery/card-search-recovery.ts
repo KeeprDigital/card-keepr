@@ -10,13 +10,11 @@ import {
 // after restore and before recovery verification. Both batches finish
 // atomically; the readiness row keeps Card reads closed between them.
 
-export async function prepareCardSearchForD1Export(
-  database: D1Database,
-  lease: CardSearchExportLease,
-): Promise<void> {
+export async function prepareCardSearchForD1Export(database: D1Database, lease: CardSearchExportLease): Promise<void> {
   validateLease(lease);
-  const acquired = await database.prepare(
-    `UPDATE card_search_fts_state
+  const acquired = await database
+    .prepare(
+      `UPDATE card_search_fts_state
      SET state = 'reconstructing', owner_token = ?, lease_expires_at = ?
      WHERE singleton = 1
        AND (
@@ -24,12 +22,9 @@ export async function prepareCardSearchForD1Export(
          OR (state = 'reconstructing' AND owner_token = ?)
          OR (state = 'reconstructing' AND lease_expires_at <= ?)
        )`,
-  ).bind(
-    lease.ownerToken,
-    lease.leaseExpiresAt,
-    lease.ownerToken,
-    lease.observedAt,
-  ).run();
+    )
+    .bind(lease.ownerToken, lease.leaseExpiresAt, lease.ownerToken, lease.observedAt)
+    .run();
   if (acquired.meta.changes !== 1) {
     throw new Error("Card search FTS export lease is unavailable.");
   }
@@ -50,42 +45,38 @@ export async function withCardSearchPreparedForD1Export<T>(
   try {
     return await exportDatabase();
   } finally {
-    await reconstructCardSearchAfterD1Restore(
-      database,
-      lease.ownerToken,
-    );
+    await reconstructCardSearchAfterD1Restore(database, lease.ownerToken);
   }
 }
 
-export async function reconstructCardSearchAfterD1Restore(
-  database: D1Database,
-  ownerToken: string,
-): Promise<void> {
+export async function reconstructCardSearchAfterD1Restore(database: D1Database, ownerToken: string): Promise<void> {
   try {
     await database.batch([
-      database.prepare(
-        `SELECT CASE WHEN EXISTS (
+      database
+        .prepare(
+          `SELECT CASE WHEN EXISTS (
            SELECT 1 FROM card_search_fts_state
            WHERE singleton = 1
              AND state = 'reconstructing'
              AND owner_token = ?
          ) THEN 1 ELSE json_extract('invalid', '$') END`,
-      ).bind(ownerToken),
-      ...reconstructCardSearchAfterD1RestoreStatements.map((sql) =>
-        database.prepare(sql)
-      ),
-      database.prepare(
-        `UPDATE card_search_fts_state
+        )
+        .bind(ownerToken),
+      ...reconstructCardSearchAfterD1RestoreStatements.map((sql) => database.prepare(sql)),
+      database
+        .prepare(
+          `UPDATE card_search_fts_state
          SET state = 'ready', owner_token = NULL, lease_expires_at = NULL
          WHERE singleton = 1
            AND state = 'reconstructing'
            AND owner_token = ?`,
-      ).bind(ownerToken),
+        )
+        .bind(ownerToken),
     ]);
   } catch (error) {
-    const owner = await database.prepare(
-      "SELECT owner_token FROM card_search_fts_state WHERE singleton = 1",
-    ).first<{ owner_token: string | null }>();
+    const owner = await database
+      .prepare("SELECT owner_token FROM card_search_fts_state WHERE singleton = 1")
+      .first<{ owner_token: string | null }>();
     if (owner?.owner_token !== ownerToken) {
       throw new Error("Card search FTS export lease owner changed.");
     }
@@ -99,22 +90,19 @@ export type CardSearchExportLease = Readonly<{
   leaseExpiresAt: string;
 }>;
 
-function executeBatch(
-  database: D1Database,
-  statements: readonly string[],
-): Promise<D1Result[]> {
+function executeBatch(database: D1Database, statements: readonly string[]): Promise<D1Result[]> {
   return database.batch(statements.map((sql) => database.prepare(sql)));
 }
 
-async function releaseLease(
-  database: D1Database,
-  ownerToken: string,
-): Promise<void> {
-  await database.prepare(
-    `UPDATE card_search_fts_state
+async function releaseLease(database: D1Database, ownerToken: string): Promise<void> {
+  await database
+    .prepare(
+      `UPDATE card_search_fts_state
      SET state = 'ready', owner_token = NULL, lease_expires_at = NULL
      WHERE singleton = 1 AND owner_token = ?`,
-  ).bind(ownerToken).run();
+    )
+    .bind(ownerToken)
+    .run();
 }
 
 function validateLease(lease: CardSearchExportLease): void {

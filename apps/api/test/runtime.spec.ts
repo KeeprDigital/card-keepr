@@ -10,7 +10,7 @@ import {
   prepareCardSearchForD1Export,
   reconstructCardSearchAfterD1Restore,
   withCardSearchPreparedForD1Export,
-} from "../../../src/catalogue/card-search-recovery";
+} from "../../../src/catalogue/backup-recovery";
 import exportManifestSchemaV5 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json";
 import exportRecordSchemaV5 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json";
 import { deterministicGzip, canonicalJson, sha256, sha256Text, utf8 } from "../../../src/catalogue/shared";

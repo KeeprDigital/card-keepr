@@ -1,4 +1,4 @@
-import { AdministrationProblem, canonicalJson, sha256Text } from "./shared";
+import { AdministrationProblem, canonicalJson, sha256Text } from "../shared";
 import { failActiveCatalogueBackupAttempt, validateCatalogueBackupRetryEvidence } from "./backup-recovery";
 
 export type CatalogueBackupWorkflowParams = Readonly<{

@@ -26,19 +26,17 @@ import {
 } from "../../../src/catalogue/source-evidence";
 import { showReconciledPrinting, startOrObserveReconciliationWorkflow } from "../../../src/catalogue/reconciliation";
 import { runGuardedCardSearchRepair } from "../../../src/catalogue/card-search-repair-administration";
-import { startOrObserveCatalogueBackupWorkflow } from "../../../src/catalogue/backup-workflow";
 import {
+  startOrObserveCatalogueBackupWorkflow,
   catalogueBackupAttemptStatus,
   catalogueRevisionBackupStatus,
   publicationBackupReservation,
-} from "../../../src/catalogue/backup-recovery";
-import {
   acceptCatalogueRecovery,
   beginCatalogueRecovery,
   enforceRecoveryRestoreGuard,
   inspectCatalogueRecovery,
   verifyCatalogueRecovery,
-} from "../../../src/catalogue/recovery";
+} from "../../../src/catalogue/backup-recovery";
 import { pauseEvidenceCollection, resumeEvidenceRun, terminateEvidenceCollection } from "./evidence-administration";
 import {
   createCuratedRevision,
