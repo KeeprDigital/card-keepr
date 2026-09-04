@@ -114,7 +114,12 @@ export {
   type IngestionRunTransitionFacts,
 } from "./ingestion-run-state";
 
-export { workflowDriver, isWorkflowInstanceNotFound, type WorkflowStatus } from "./workflow-driver";
+export {
+  workflowDriver,
+  inspectWorkflowInstance,
+  isWorkflowInstanceNotFound,
+  type WorkflowStatus,
+} from "./workflow-driver";
 
 export { workflowSteps, workflowStepName, advancesCollectionProgress, type WorkflowKind } from "./workflow-steps";
 

@@ -6,10 +6,18 @@ export function isWorkflowInstanceNotFound(error: unknown): boolean {
   return error instanceof Error && /not[._ ]?found/iu.test(`${error.name} ${error.message}`);
 }
 
+/** Read-only inspection also serves readiness probes with no dispatch capability. */
+export async function inspectWorkflowInstance<Status extends { status: string }>(
+  binding: { get(id: string): Promise<{ status(): Promise<Status> }> },
+  id: string,
+): Promise<Status> {
+  return (await binding.get(id)).status();
+}
+
 /** The only boundary to the Workflow control plane. Deterministic IDs fence concurrent dispatch. */
 export function workflowDriver<Params>(binding: Workflow<Params>) {
   async function inspect(id: string): Promise<WorkflowStatus> {
-    return (await binding.get(id)).status();
+    return inspectWorkflowInstance(binding, id);
   }
   async function ensure(
     id: string,
