@@ -171,3 +171,57 @@ agent, no redirect following):
   links, and no DON!! content: the `one-piece-en@6` don-rules contract
   retains it as exact coverage evidence with a structurally complete empty
   Legality Rule observation and makes no comprehensive DON!! Printing claim.
+
+## Weekly recapture and digest drift
+
+`.github/workflows/official-source-recapture.yml` runs every Tuesday at
+04:23 UTC and through `workflow_dispatch`. It uses the 60 JSON capture
+records in this directory as its manifest, fetches each distinct `source_url`
+once, sequentially with a one-second interval, and follows no redirects.
+It verifies the stored bytes against `body_sha256` before fetching, then
+compares the live full response size/digest and the retained range digest.
+A change outside a retained range still fails the full-body comparison.
+The standalone HTML fragments are focused, normalized parser examples with
+no full-response digest/offset metadata; they are not claimed as recapturable
+HTTP goldens. Their source pages remain covered by the JSON captures where
+available, and parser tests continue to exercise the fragments directly.
+
+The command keeps checked-in goldens unchanged:
+
+```sh
+node scripts/recapture-official-bytes.mjs /tmp/official-source-recapture
+```
+
+A failed run uploads the new capture records and `report.json` for 14 days,
+then opens or updates one `bug` issue with the run link. The report names
+`drift`, `invalid_golden`, or `fetch_failed` separately. Review live changes,
+update the appropriate retained captures deliberately, and run their adapter
+and runtime tests before closing the issue. Dynamic publisher markup can
+change byte digests without changing domain meaning; that still requires
+review rather than silently accepting a new golden. Local tests use fake
+HTTP responses and never recapture live sites automatically.
+
+A quiet schedule is not evidence of success. GitHub can disable scheduled
+workflows in public repositories after 60 days without repository activity;
+schedules also run only from the default branch and may be delayed. Check
+monthly and after a long quiet period:
+
+```sh
+gh workflow view official-source-recapture.yml --repo KeeprDigital/card-keepr
+gh run list --workflow official-source-recapture.yml --limit 3 --repo KeeprDigital/card-keepr
+```
+
+The workflow must be active and its newest scheduled run no older than one
+week. Re-enable a disabled workflow and manually run it once:
+
+```sh
+gh workflow enable official-source-recapture.yml --repo KeeprDigital/card-keepr
+gh workflow run official-source-recapture.yml --repo KeeprDigital/card-keepr
+```
+
+See [GitHub's schedule rules](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
+and [disable/enable guidance](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
+
+Use a fresh output directory for each manual recapture. The tool rejects a direct
+or symlink alias of the golden directory and creates each capture/report
+exclusively, so existing output files or symlinks cannot overwrite retained bytes.

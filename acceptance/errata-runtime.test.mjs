@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 import test from "node:test";
 import {
-  ADMINISTRATION_POLL_INTERVAL_MS,
+  administrationPollInterval,
   runCli,
   startWorker,
   stopWorker,
@@ -755,7 +755,7 @@ async function reconcileAndWait(runId, expectedRevision, idempotencyKey, environ
     );
     const workflow = JSON.parse(result.stdout);
     if (workflow.status === "complete") return workflow.output;
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, ADMINISTRATION_POLL_INTERVAL_MS));
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, administrationPollInterval(runtime)));
   }
   throw new Error(`Reconciliation Workflow did not complete for ${runId}`);
 }

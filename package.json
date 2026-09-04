@@ -37,7 +37,9 @@
     "prototype:lifecycle-evidence-export-deletion": "node prototype/formalize-implementation-contracts/cli.mjs",
     "prototype:curated-revisions": "node prototype/curated-revision-administration/cli.mjs",
     "documents:generate": "node scripts/document-validators.mjs",
-    "documents:check": "node scripts/document-validators.mjs --check"
+    "documents:check": "node scripts/document-validators.mjs --check",
+    "test:acceptance:smoke": "node scripts/acceptance-tier.mjs smoke",
+    "test:acceptance:runtime": "node scripts/acceptance-tier.mjs runtime"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",
@@ -48,7 +50,9 @@
     "ajv-formats": "^3.0.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",
-    "wrangler": "^4.114.0"
+    "wrangler": "^4.114.0",
+    "esbuild": "0.28.1",
+    "miniflare": "4.20260722.0"
   },
   "dependencies": {
     "entities": "8.0.0",
