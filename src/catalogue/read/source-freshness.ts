@@ -1,5 +1,5 @@
-import { type CatalogueSourceCheck, type SupportedGame, type LegalityRegion, compareUtf8 } from "./shared";
-import { registeredLegalitySourceScope } from "./adapters";
+import { type CatalogueSourceCheck, type SupportedGame, type LegalityRegion, compareUtf8 } from "../shared";
+import { registeredLegalitySourceScope } from "../adapters";
 
 export type SourceFreshnessStorageRow = {
   game: string;

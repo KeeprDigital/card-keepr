@@ -4,8 +4,7 @@ import addFormats from "ajv-formats";
 import { expect, test, vi } from "vitest";
 import apiWorker from "../src/index";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
-import { cardSearchQuery, cardSearchTerms, cardSearchText } from "../../../src/catalogue/card-search";
-import { cardCollectionPageQuery } from "../../../src/catalogue/card-collection-read";
+import { cardSearchQuery, cardSearchTerms, cardSearchText, cardCollectionPageQuery } from "../../../src/catalogue/read";
 import {
   prepareCardSearchForD1Export,
   reconstructCardSearchAfterD1Restore,

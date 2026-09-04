@@ -1,8 +1,8 @@
-import { parseCatalogueRevisionId, parsePublicationInstant } from "../http/catalogue";
-import { ifNoneMatch } from "../http/conditional";
-import { absoluteDocumentLinks, publicUrl, type PublicBase } from "../http/public-base";
-import { problemResponse } from "../http/problem";
-import { canonicalJson, sha256Text } from "./shared";
+import { parseCatalogueRevisionId, parsePublicationInstant } from "../../http/catalogue";
+import { ifNoneMatch } from "../../http/conditional";
+import { absoluteDocumentLinks, publicUrl, type PublicBase } from "../../http/public-base";
+import { problemResponse } from "../../http/problem";
+import { canonicalJson, sha256Text } from "../shared";
 import { canonicalDetailSelf, detailIncludeProjection, detailRepresentationKey } from "./detail-representation";
 import { sourceFreshnessFromStorage, type SourceFreshnessStorageRow } from "./source-freshness";
 

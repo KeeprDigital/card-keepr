@@ -1,10 +1,6 @@
 import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
-import {
-  cardSearchChunks,
-  cardSearchFtsQuery,
-  cardSearchText,
-} from "../../../src/catalogue/card-search";
+import { cardSearchChunks, cardSearchFtsQuery, cardSearchText } from "../../../src/catalogue/read";
 import { releaseSmokeSearchQuery } from "../../../src/catalogue/ingestion";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
@@ -30,9 +26,7 @@ test("Production Release search fixtures come from realistic revision-pinned Car
   const document = JSON.stringify({ data });
   const summary = JSON.stringify(data);
   const searchDocument = cardSearchText(data);
-  await testEnv.CATALOGUE_DB.prepare(
-    "DROP TRIGGER guard_catalogue_publication",
-  ).run();
+  await testEnv.CATALOGUE_DB.prepare("DROP TRIGGER guard_catalogue_publication").run();
   await testEnv.CATALOGUE_DB.batch([
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO ingestion_runs (id,state,selected_games_json,started_at,
@@ -51,11 +45,11 @@ test("Production Release search fixtures come from realistic revision-pinned Car
      content_digest,expected_previous_revision_id,approved_candidate_digest)
      VALUES (?,'run_release_fixture','2026-08-05T00:00:00.000Z',?,
      'catrev_spine_000',?)`,
-  ).bind(revision, "b".repeat(64), "a".repeat(64)).run();
+  )
+    .bind(revision, "b".repeat(64), "a".repeat(64))
+    .run();
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      "INSERT INTO revision_cards VALUES (?,?,?)",
-    ).bind(revision, cardId, document),
+    testEnv.CATALOGUE_DB.prepare("INSERT INTO revision_cards VALUES (?,?,?)").bind(revision, cardId, document),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_card_query_documents
        (catalogue_revision_id,card_id,summary_json,search_text)
@@ -67,7 +61,9 @@ test("Production Release search fixtures come from realistic revision-pinned Car
       `INSERT INTO revision_card_search_chunks
        (catalogue_revision_id,card_id,field_ordinal,chunk_ordinal,search_text)
        VALUES (?,?,?,?,?)`,
-    ).bind(revision, cardId, chunk.field, chunk.ordinal, chunk.text).run();
+    )
+      .bind(revision, cardId, chunk.field, chunk.ordinal, chunk.text)
+      .run();
   }
 
   const query = releaseSmokeSearchQuery(document);
@@ -79,6 +75,8 @@ test("Production Release search fixtures come from realistic revision-pinned Car
     `SELECT card_id FROM revision_card_search_fts
      WHERE revision_card_search_fts MATCH ?
        AND catalogue_revision_id=? AND instr(search_text,?)>0`,
-  ).bind(fts, revision, query).first<{ card_id: string }>();
+  )
+    .bind(fts, revision, query)
+    .first<{ card_id: string }>();
   expect(indexed?.card_id).toBe(cardId);
 });

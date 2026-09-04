@@ -6,7 +6,7 @@ import {
   sourceFreshnessFromStorage,
   sourceFreshnessKey,
   type SourceFreshnessStorageRow,
-} from "../../../src/catalogue/source-freshness";
+} from "../../../src/catalogue/read";
 import {
   reconcileRetainedCardPrintingEvidence,
   parseReconciliationObservation,

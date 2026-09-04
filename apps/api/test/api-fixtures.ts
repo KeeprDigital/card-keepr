@@ -1,14 +1,6 @@
-import {
-  applyD1Migrations,
-  env,
-  type D1Migration,
-} from "cloudflare:test";
+import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { beforeEach } from "vitest";
-import {
-  cardSearchChunks,
-  cardSearchTerms,
-  cardSearchText,
-} from "../../../src/catalogue/card-search";
+import { cardSearchChunks, cardSearchTerms, cardSearchText } from "../../../src/catalogue/read";
 
 export const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -20,10 +12,7 @@ export const apiPublicBase = "http://127.0.0.1:8787";
 
 export function installApiSuite(): void {
   beforeEach(async () => {
-    await applyD1Migrations(
-      testEnv.CATALOGUE_DB,
-      testEnv.TEST_MIGRATIONS,
-    );
+    await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
     await testEnv.CATALOGUE_DB.prepare(
       `UPDATE operation_state SET active_ingestion_run_id = NULL
        WHERE singleton = 1`,
@@ -144,13 +133,7 @@ export async function seedApiRevision(input: {
        expected_previous_revision_id, approved_candidate_digest
      ) VALUES (?, ?, '2026-07-20T00:00:00.000Z', ?, ?, ?)`,
   )
-    .bind(
-      input.revisionId,
-      input.runId,
-      digest,
-      previousRevisionId,
-      digest,
-    )
+    .bind(input.revisionId, input.runId, digest, previousRevisionId, digest)
     .run();
   await testEnv.CATALOGUE_DB.batch([
     ...input.cards.flatMap((card) => [
@@ -158,11 +141,7 @@ export async function seedApiRevision(input: {
         `INSERT INTO revision_cards (
            catalogue_revision_id, card_id, document_json
          ) VALUES (?, ?, ?)`,
-      ).bind(
-        input.revisionId,
-        card.id,
-        JSON.stringify(publishedCardEnvelope(card)),
-      ),
+      ).bind(input.revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
       ...cardSearchStatements(input.revisionId, card),
     ]),
     testEnv.CATALOGUE_DB.prepare(
@@ -193,36 +172,20 @@ export async function seedApiRevision(input: {
   ]);
 }
 
-export function cardSearchStatements(
-  revisionId: string,
-  card: ApiCardFixture,
-): D1PreparedStatement[] {
+export function cardSearchStatements(revisionId: string, card: ApiCardFixture): D1PreparedStatement[] {
   return [
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_card_query_documents (
          catalogue_revision_id, card_id, summary_json, search_text
        ) VALUES (?, ?, ?, ?)`,
-    ).bind(
-      revisionId,
-      card.id,
-      JSON.stringify(apiCardSummary(card)),
-      apiCardSearchText(card),
-    ),
+    ).bind(revisionId, card.id, JSON.stringify(apiCardSummary(card)), apiCardSearchText(card)),
     ...cardSearchTerms(apiCardSearchText(card)).map((term) =>
       testEnv.CATALOGUE_DB.prepare(
         `INSERT INTO revision_card_search_terms (
            catalogue_revision_id, card_id, term, sort_game,
            sort_identity_kind, sort_identity_value, sort_id
          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(
-        revisionId,
-        card.id,
-        term,
-        card.game,
-        card.official_identity.kind,
-        card.official_identity.value,
-        card.id,
-      )
+      ).bind(revisionId, card.id, term, card.game, card.official_identity.kind, card.official_identity.value, card.id),
     ),
     ...cardSearchChunks(apiCardSearchText(card)).map((chunk) =>
       testEnv.CATALOGUE_DB.prepare(
@@ -230,13 +193,7 @@ export function cardSearchStatements(
            catalogue_revision_id, card_id, field_ordinal,
            chunk_ordinal, search_text
          ) VALUES (?, ?, ?, ?, ?)`,
-      ).bind(
-        revisionId,
-        card.id,
-        chunk.field,
-        chunk.ordinal,
-        chunk.text,
-      )
+      ).bind(revisionId, card.id, chunk.field, chunk.ordinal, chunk.text),
     ),
   ];
 }
@@ -257,13 +214,15 @@ export function legalitySourceStatements(input: {
   const fingerprint = "1".repeat(64);
   const requestUrl = `https://official-source.invalid/${input.key}`;
   const requestPlan = JSON.stringify({
-    requests: [{
-      id: requestId,
-      method: "GET",
-      url: requestUrl,
-      headers: {},
-      representation_fingerprint: fingerprint,
-    }],
+    requests: [
+      {
+        id: requestId,
+        method: "GET",
+        url: requestUrl,
+        headers: {},
+        representation_fingerprint: fingerprint,
+      },
+    ],
   });
   return [
     testEnv.CATALOGUE_DB.prepare(
@@ -272,27 +231,14 @@ export function legalitySourceStatements(input: {
         game_profile_version, adapter_version, request_plan_json,
         plan_origin
       ) VALUES (?, ?, ?, ?, ?, ?, 'synthetic_fixture')`,
-    ).bind(
-      input.runId,
-      input.lineage,
-      input.game,
-      input.profile,
-      input.adapter,
-      requestPlan,
-    ),
+    ).bind(input.runId, input.lineage, input.game, input.profile, input.adapter, requestPlan),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO source_requests (
         ingestion_run_id, request_id, sequence_number, method, url,
         request_headers_json, representation_fingerprint, state,
         source_snapshot_id
       ) VALUES (?, ?, 0, 'GET', ?, '{}', ?, 'observed', ?)`,
-    ).bind(
-      input.runId,
-      requestId,
-      requestUrl,
-      fingerprint,
-      input.snapshotId,
-    ),
+    ).bind(input.runId, requestId, requestUrl, fingerprint, input.snapshotId),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO source_fetch_attempts (
         id, ingestion_run_id, request_id, attempt_number,
@@ -384,8 +330,7 @@ function apiCardSearchText(card: ApiCardFixture): string {
     official_identity: card.official_identity,
     name: card.name,
     effective_rules_text:
-      typeof card.effective_rules_text === "string" ||
-      card.effective_rules_text === null
+      typeof card.effective_rules_text === "string" || card.effective_rules_text === null
         ? card.effective_rules_text
         : null,
   });
@@ -403,11 +348,7 @@ export function canonicalLegalityRuleStatements(
     effective_from: string | null;
     effective_until: string | null;
     unresolved_scope?: {
-      dimensions: readonly (
-        | "effective_interval"
-        | "event_tier"
-        | "target_scope"
-      )[];
+      dimensions: readonly ("effective_interval" | "event_tier" | "target_scope")[];
     } | null;
     card_ids: readonly string[];
     official_wording: string;
@@ -498,16 +439,12 @@ export function revisionLegalityRuleStatements(
   });
 }
 
-function canonicalLegalityCardIds(
-  rule: Parameters<typeof canonicalLegalityRuleStatements>[1][number],
-): string[] {
+function canonicalLegalityCardIds(rule: Parameters<typeof canonicalLegalityRuleStatements>[1][number]): string[] {
   const effect = rule.effect as { type?: unknown; with_card_ids?: unknown };
-  const companionIds = effect.type === "prohibited_combination" &&
-      Array.isArray(effect.with_card_ids)
-    ? effect.with_card_ids.filter((value): value is string =>
-      typeof value === "string"
-    )
-    : [];
+  const companionIds =
+    effect.type === "prohibited_combination" && Array.isArray(effect.with_card_ids)
+      ? effect.with_card_ids.filter((value): value is string => typeof value === "string")
+      : [];
   return [...new Set([...rule.card_ids, ...companionIds])].sort();
 }
 

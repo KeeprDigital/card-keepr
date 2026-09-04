@@ -4,7 +4,7 @@ import {
   sha256Text,
   isIsoCalendarDate,
   maximumLegalityStatusRules,
-} from "./shared";
+} from "../shared";
 import {
   evaluateLegalityRuleEffect,
   legalityRuleCardIds,
@@ -13,10 +13,10 @@ import {
   parseStoredLegalityRule,
   type StoredLegalityStatusCard,
   type StoredLegalityStatusRule,
-} from "./legality";
-import { ifNoneMatchMatches } from "../http/conditional-request";
-import { publicUrl, type PublicBase } from "../http/public-base";
-import { requiredLegalityRegionsForGame } from "./adapters";
+} from "../legality";
+import { ifNoneMatchMatches } from "../../http/conditional-request";
+import { publicUrl, type PublicBase } from "../../http/public-base";
+import { requiredLegalityRegionsForGame } from "../adapters";
 
 type ContextRow = {
   current_revision_id: string;

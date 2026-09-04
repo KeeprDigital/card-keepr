@@ -33,7 +33,11 @@ import {
   sourceFreshnessKey,
   sourceFreshnessStorageScope,
   type SourceFreshnessStorageRow,
-} from "./source-freshness";
+  cardSearchChunks,
+  cardSearchFtsQuery,
+  cardSearchTerms,
+  cardSearchText,
+} from "./read";
 import {
   reconciliationPublication,
   type PublicationEvidenceResource,
@@ -43,7 +47,6 @@ import {
   typedPrintingProjections,
 } from "./reconciliation";
 import { inspectCatalogueCandidate } from "./candidate-inspection";
-import { cardSearchChunks, cardSearchFtsQuery, cardSearchTerms, cardSearchText } from "./card-search";
 import { repairableCatalogueRevisionWindow } from "./catalogue-revision-retention";
 import { adapterReconciliationAreas, requiredSourceAdapter } from "./adapters";
 import { legalityPublicationStatements } from "./legality";

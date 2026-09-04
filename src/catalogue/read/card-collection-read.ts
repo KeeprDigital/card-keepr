@@ -1,10 +1,6 @@
-import { ifNoneMatchMatches } from "../http/conditional-request";
-import { problemResponse } from "../http/problem";
-import {
-  absoluteDocumentLinks,
-  publicUrl,
-  type PublicBase,
-} from "../http/public-base";
+import { ifNoneMatchMatches } from "../../http/conditional-request";
+import { problemResponse } from "../../http/problem";
+import { absoluteDocumentLinks, publicUrl, type PublicBase } from "../../http/public-base";
 import { cardSearchFtsQuery, cardSearchQuery } from "./card-search";
 
 type CardRow = {
@@ -37,8 +33,7 @@ type CardCursor = {
   };
 };
 
-const cardCollectionOrder =
-  "game,official_identity.kind,official_identity.value,id" as const;
+const cardCollectionOrder = "game,official_identity.kind,official_identity.value,id" as const;
 
 type CollectionFilters = {
   q: string | null;
@@ -70,14 +65,9 @@ export async function cardCollectionResponse(
     return invalidCursor(requestId);
   }
   const current = await currentRevision(database);
-  const revision = await availableRevision(
-    database,
-    cursor?.revision_id ?? current.id,
-  );
+  const revision = await availableRevision(database, cursor?.revision_id ?? current.id);
   if (revision === null) {
-    return cursor === null
-      ? catalogueQueryUnavailable(requestId)
-      : cursorUnavailable(requestId, base);
+    return cursor === null ? catalogueQueryUnavailable(requestId) : cursorUnavailable(requestId, base);
   }
 
   const etag = `"cards:${revision.id}:${await digestFilters(url.search)}"`;
@@ -90,12 +80,7 @@ export async function cardCollectionResponse(
     return new Response(null, { status: 304, headers });
   }
 
-  const queried = await queryCardPage(
-    database,
-    revision.id,
-    filters,
-    cursor?.after ?? null,
-  );
+  const queried = await queryCardPage(database, revision.id, filters, cursor?.after ?? null);
   const pageRows = [...queried.rows];
   let truncated = false;
   while (true) {
@@ -114,9 +99,7 @@ export async function cardCollectionResponse(
           })
         : null;
     const serialized = JSON.stringify({
-      data: pageRows.map((row) =>
-        absoluteDocumentLinks(JSON.parse(row.summary_json), base)
-      ),
+      data: pageRows.map((row) => absoluteDocumentLinks(JSON.parse(row.summary_json), base)),
       meta: {
         catalogue_revision_id: revision.id,
         published_at: revision.publishedAt,
@@ -149,19 +132,11 @@ async function queryCardPage(
   const rows: CardRow[] = [];
   let dataBytes = 2;
   let position = after;
-  const singleFtsRead = filters.q !== null &&
-    cardSearchFtsQuery(filters.q, revisionId) !== null;
+  const singleFtsRead = filters.q !== null && cardSearchFtsQuery(filters.q, revisionId) !== null;
   while (rows.length < filters.limit + 1) {
     const remaining = filters.limit + 1 - rows.length;
-    const rowLimit = singleFtsRead
-      ? remaining
-      : Math.min(maximumRowsPerDatabaseRead, remaining);
-    const query = cardCollectionPageQuery(
-      revisionId,
-      filters,
-      position,
-      rowLimit,
-    );
+    const rowLimit = singleFtsRead ? remaining : Math.min(maximumRowsPerDatabaseRead, remaining);
+    const query = cardCollectionPageQuery(revisionId, filters, position, rowLimit);
     const result = await database
       .prepare(query.sql)
       .bind(...query.bindings)
@@ -170,13 +145,8 @@ async function queryCardPage(
       return { rows, hasMore: false };
     }
     for (const row of result.results) {
-      const rowBytes = encoder.encode(row.summary_json).byteLength +
-        (rows.length === 0 ? 0 : 1);
-      if (
-        rows.length > 0 &&
-        dataBytes + rowBytes >
-          maximumCollectionResponseBytes - collectionEnvelopeAllowanceBytes
-      ) {
+      const rowBytes = encoder.encode(row.summary_json).byteLength + (rows.length === 0 ? 0 : 1);
+      if (rows.length > 0 && dataBytes + rowBytes > maximumCollectionResponseBytes - collectionEnvelopeAllowanceBytes) {
         return { rows, hasMore: true };
       }
       rows.push(row);
@@ -203,20 +173,11 @@ export function cardCollectionPageQuery(
   if (filters.q !== null && search === null) {
     throw new Error("The validated Card search query is unavailable.");
   }
-  const ftsQuery = search === null
-    ? null
-    : cardSearchFtsQuery(search.text, revisionId);
+  const ftsQuery = search === null ? null : cardSearchFtsQuery(search.text, revisionId);
   const ftsSearch = search !== null && ftsQuery !== null;
   const shortSearch = search !== null && ftsQuery === null;
   if (ftsSearch) {
-    return ftsCardCollectionPageQuery(
-      revisionId,
-      filters,
-      search.text,
-      ftsQuery,
-      after,
-      rowLimit,
-    );
+    return ftsCardCollectionPageQuery(revisionId, filters, search.text, ftsQuery, after, rowLimit);
   }
   const orderTable = shortSearch ? "search" : "cards";
   const conditions = ["cards.catalogue_revision_id = ?"];
@@ -226,10 +187,7 @@ export function cardCollectionPageQuery(
     bindings.push(filters.game);
   }
   if (filters.cardNumber !== null) {
-    conditions.push(
-      "cards.sort_identity_kind = 'card_number'",
-      "cards.sort_identity_value = ?",
-    );
+    conditions.push("cards.sort_identity_kind = 'card_number'", "cards.sort_identity_value = ?");
     bindings.push(filters.cardNumber);
   }
   if (shortSearch) {
@@ -251,32 +209,26 @@ export function cardCollectionPageQuery(
         ${orderTable}.sort_identity_value, ${orderTable}.sort_id)
        > (?, ?, ?, ?)`,
     );
-    bindings.push(
-      after.game,
-      after.identity_kind,
-      after.identity_value,
-      after.id,
-    );
+    bindings.push(after.game, after.identity_kind, after.identity_value, after.id);
   }
   bindings.push(rowLimit);
   return {
-    sql:
-      `SELECT cards.summary_json,
+    sql: `SELECT cards.summary_json,
               ${orderTable}.sort_game,
               ${orderTable}.sort_identity_kind,
               ${orderTable}.sort_identity_value,
               ${orderTable}.sort_id
        FROM ${
-        shortSearch
-          ? `revision_card_search_terms AS search
+         shortSearch
+           ? `revision_card_search_terms AS search
              INDEXED BY revision_card_search_by_term
              JOIN revision_card_query_documents AS cards
                ON cards.catalogue_revision_id =
                     search.catalogue_revision_id
               AND cards.card_id = search.card_id`
-          : `revision_card_query_documents AS cards
+           : `revision_card_query_documents AS cards
              INDEXED BY revision_card_query_documents_by_order`
-       }
+}
        WHERE ${conditions.join("\nAND ")}
        ORDER BY ${orderTable}.sort_game,
                 ${orderTable}.sort_identity_kind,
@@ -301,21 +253,13 @@ function ftsCardCollectionPageQuery(
     "instr(search.search_text, ?) > 0",
     "filtered.catalogue_revision_id = ?",
   ];
-  const bindings: (string | number)[] = [
-    ftsQuery,
-    revisionId,
-    searchText,
-    revisionId,
-  ];
+  const bindings: (string | number)[] = [ftsQuery, revisionId, searchText, revisionId];
   if (filters.game !== null) {
     conditions.push("filtered.sort_game = ?");
     bindings.push(filters.game);
   }
   if (filters.cardNumber !== null) {
-    conditions.push(
-      "filtered.sort_identity_kind = 'card_number'",
-      "filtered.sort_identity_value = ?",
-    );
+    conditions.push("filtered.sort_identity_kind = 'card_number'", "filtered.sort_identity_value = ?");
     bindings.push(filters.cardNumber);
   }
   if (after !== null) {
@@ -324,17 +268,11 @@ function ftsCardCollectionPageQuery(
         filtered.sort_identity_value, filtered.sort_id)
        > (?, ?, ?, ?)`,
     );
-    bindings.push(
-      after.game,
-      after.identity_kind,
-      after.identity_value,
-      after.id,
-    );
+    bindings.push(after.game, after.identity_kind, after.identity_value, after.id);
   }
   bindings.push(rowLimit);
   return {
-    sql:
-      `WITH search_matches AS MATERIALIZED (
+    sql: `WITH search_matches AS MATERIALIZED (
          SELECT filtered.summary_json,
                 filtered.sort_game,
                 filtered.sort_identity_kind,
@@ -361,78 +299,35 @@ function ftsCardCollectionPageQuery(
   };
 }
 
-function parseFilters(
-  url: URL,
-  requestId: string,
-): CollectionFilters | Response {
+function parseFilters(url: URL, requestId: string): CollectionFilters | Response {
   const requestedLimit = url.searchParams.get("limit");
-  const limit =
-    requestedLimit === null ? 50 : Number.parseInt(requestedLimit, 10);
-  if (
-    !Number.isInteger(limit) ||
-    limit < 1 ||
-    limit > 100 ||
-    String(limit) !== (requestedLimit ?? "50")
-  ) {
-    return invalidParameter(
-      requestId,
-      "limit",
-      "limit must be an integer from 1 to 100.",
-    );
+  const limit = requestedLimit === null ? 50 : Number.parseInt(requestedLimit, 10);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100 || String(limit) !== (requestedLimit ?? "50")) {
+    return invalidParameter(requestId, "limit", "limit must be an integer from 1 to 100.");
   }
   const rawQuery = url.searchParams.get("q");
   if (rawQuery !== null && rawQuery.length === 0) {
-    return invalidParameter(
-      requestId,
-      "q",
-      "q must contain at least one character.",
-    );
+    return invalidParameter(requestId, "q", "q must contain at least one character.");
   }
   if (rawQuery !== null && [...rawQuery].length > 500) {
-    return invalidParameter(
-      requestId,
-      "q",
-      "q must contain at most 500 characters.",
-    );
+    return invalidParameter(requestId, "q", "q must contain at most 500 characters.");
   }
   const q = cardSearchQuery(rawQuery)?.text ?? null;
   if (rawQuery !== null && q === null) {
-    return invalidParameter(
-      requestId,
-      "q",
-      "q must contain at least one character.",
-    );
+    return invalidParameter(requestId, "q", "q must contain at least one character.");
   }
   const rawGame = url.searchParams.get("game");
   const game = normalizedFilter(rawGame);
   if (rawGame !== null && game === null) {
-    return invalidParameter(
-      requestId,
-      "game",
-      "game must contain at least one character.",
-    );
+    return invalidParameter(requestId, "game", "game must contain at least one character.");
   }
-  if (
-    game !== null &&
-    game !== "one-piece" &&
-    game !== "fusion-world" &&
-    game !== "digimon" &&
-    game !== "gundam"
-  ) {
-    return invalidParameter(
-      requestId,
-      "game",
-      "game is not a Supported Game.",
-    );
+  if (game !== null && game !== "one-piece" && game !== "fusion-world" && game !== "digimon" && game !== "gundam") {
+    return invalidParameter(requestId, "game", "game is not a Supported Game.");
   }
   const rawCardNumber = url.searchParams.get("card_number");
   const cardNumber = normalizedFilter(rawCardNumber);
   if (rawCardNumber !== null && cardNumber === null) {
-    return invalidParameter(
-      requestId,
-      "card_number",
-      "card_number must contain at least one character.",
-    );
+    return invalidParameter(requestId, "card_number", "card_number must contain at least one character.");
   }
   return {
     q,
@@ -473,9 +368,7 @@ async function availableRevision(database: D1Database, id: string) {
     )
     .bind(id)
     .first<{ id: string; published_at: string }>();
-  return revision === null
-    ? null
-    : { id: revision.id, publishedAt: revision.published_at };
+  return revision === null ? null : { id: revision.id, publishedAt: revision.published_at };
 }
 
 function rowCursor(row: CardRow): CardCursor["after"] {
@@ -494,22 +387,13 @@ function normalizedFilter(value: string | null): string | null {
 }
 
 function encodeCursor(cursor: CardCursor): string {
-  return btoa(
-    String.fromCharCode(
-      ...new TextEncoder().encode(JSON.stringify(cursor)),
-    ),
-  );
+  return btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(cursor))));
 }
 
-function parseCursor(
-  encoded: string | null,
-): CardCursor | "invalid" | null {
+function parseCursor(encoded: string | null): CardCursor | "invalid" | null {
   if (encoded === null) return null;
   try {
-    const bytes = Uint8Array.from(
-      atob(encoded),
-      (character) => character.charCodeAt(0),
-    );
+    const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
     const value = JSON.parse(
       new TextDecoder("utf-8", {
         fatal: true,
@@ -526,8 +410,7 @@ function parseCursor(
       typeof value.limit !== "number" ||
       (value.q !== null && typeof value.q !== "string") ||
       (value.game !== null && typeof value.game !== "string") ||
-      (value.card_number !== null &&
-        typeof value.card_number !== "string") ||
+      (value.card_number !== null && typeof value.card_number !== "string") ||
       after === null ||
       typeof after !== "object" ||
       typeof after.game !== "string" ||
@@ -548,20 +431,11 @@ function parseCursor(
 }
 
 async function digestFilters(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(value),
-  );
-  return Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function invalidParameter(
-  requestId: string,
-  name: string,
-  reason: string,
-): Response {
+function invalidParameter(requestId: string, name: string, reason: string): Response {
   return problemResponse({
     requestId,
     status: 400,
@@ -599,7 +473,6 @@ function catalogueQueryUnavailable(requestId: string): Response {
     status: 503,
     code: "catalogue_query_unavailable",
     title: "Catalogue query unavailable",
-    detail:
-      "The current Catalogue Revision is not yet available through the Card query projection.",
+    detail: "The current Catalogue Revision is not yet available through the Card query projection.",
   });
 }

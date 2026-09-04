@@ -1,24 +1,10 @@
-import { ifNoneMatch } from "../http/conditional";
-import {
-  absoluteDocumentLinks,
-  publicUrl,
-  type PublicBase,
-} from "../http/public-base";
+import { ifNoneMatch } from "../../http/conditional";
+import { absoluteDocumentLinks, publicUrl, type PublicBase } from "../../http/public-base";
 
 const printingRoute = "/v1/printings";
 const printingOrder = "card-id,printing-id";
-const supportedGames = new Set([
-  "one-piece",
-  "fusion-world",
-  "digimon",
-  "gundam",
-]);
-const releaseRegions = new Set([
-  "EN-OCEANIA",
-  "EN-ASIA",
-  "EN-US",
-  "unknown",
-]);
+const supportedGames = new Set(["one-piece", "fusion-world", "digimon", "gundam"]);
+const releaseRegions = new Set(["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"]);
 
 type PrintingCursor = {
   route: typeof printingRoute;
@@ -38,10 +24,7 @@ type PrintingCursor = {
 export class PrintingCollectionReadProblem extends Error {
   constructor(
     readonly status: 400 | 409,
-    readonly code:
-      | "invalid_parameter"
-      | "invalid_cursor"
-      | "cursor_revision_unavailable",
+    readonly code: "invalid_parameter" | "invalid_cursor" | "cursor_revision_unavailable",
     message: string,
     readonly invalidParameter: Readonly<{
       name: string;
@@ -76,10 +59,7 @@ export async function currentPrintingsResponse(
     throw invalidParameter("game", "Printing Supported Game is invalid.");
   }
   if (releaseRegion !== null && !releaseRegions.has(releaseRegion)) {
-    throw invalidParameter(
-      "release_region",
-      "Printing Release region is invalid.",
-    );
+    throw invalidParameter("release_region", "Printing Release region is invalid.");
   }
   const filters = {
     card_id: cardId,
@@ -222,9 +202,7 @@ export async function currentPrintingsResponse(
     card_id: row.card_id,
     document: printingData(JSON.parse(row.document_json) as unknown),
   }));
-  const data = selected
-    .slice(0, limit)
-    .map(({ document }) => absoluteDocumentLinks(document, base));
+  const data = selected.slice(0, limit).map(({ document }) => absoluteDocumentLinks(document, base));
   const next =
     selected.length > limit
       ? encodeCursor({
@@ -302,20 +280,13 @@ function optionalSingle(url: URL, name: string): string | null {
 function normalizedRarity(value: string | null): string | null {
   if (value === null) return null;
   const normalized = value.normalize("NFC").trim().toLocaleLowerCase();
-  if (
-    normalized.length < 1 ||
-    normalized.length > 100 ||
-    !/^[a-z0-9_-]+$/u.test(normalized)
-  ) {
+  if (normalized.length < 1 || normalized.length > 100 || !/^[a-z0-9_-]+$/u.test(normalized)) {
     throw invalidParameter("rarity", "Printing rarity filter is invalid.");
   }
   return normalized;
 }
 
-function parseCursor(
-  value: string | null,
-  filters: PrintingCursor["filters"],
-): PrintingCursor | null {
+function parseCursor(value: string | null, filters: PrintingCursor["filters"]): PrintingCursor | null {
   if (value === null) return null;
   try {
     const parsed = JSON.parse(decodeBase64Url(value)) as Partial<PrintingCursor>;
@@ -332,11 +303,7 @@ function parseCursor(
     }
     return parsed as PrintingCursor;
   } catch {
-    throw new PrintingCollectionReadProblem(
-      400,
-      "invalid_cursor",
-      "Printing cursor is invalid.",
-    );
+    throw new PrintingCollectionReadProblem(400, "invalid_cursor", "Printing cursor is invalid.");
   }
 }
 
@@ -344,23 +311,13 @@ function encodeCursor(value: PrintingCursor): string {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary)
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/u, "");
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
 }
 
 function decodeBase64Url(value: string): string {
   const base64 = value.replaceAll("-", "+").replaceAll("_", "/");
-  const padded = base64.padEnd(
-    base64.length + ((4 - (base64.length % 4)) % 4),
-    "=",
-  );
-  return new TextDecoder().decode(
-    Uint8Array.from(atob(padded), (character) =>
-      character.charCodeAt(0),
-    ),
-  );
+  const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+  return new TextDecoder().decode(Uint8Array.from(atob(padded), (character) => character.charCodeAt(0)));
 }
 
 function canonicalSelf(
@@ -389,16 +346,8 @@ function canonicalSelf(
   return serialized.length === 0 ? pathname : `${pathname}?${serialized}`;
 }
 
-function invalidParameter(
-  name: string,
-  message: string,
-): PrintingCollectionReadProblem {
-  return new PrintingCollectionReadProblem(
-    400,
-    "invalid_parameter",
-    message,
-    { name, reason: message },
-  );
+function invalidParameter(name: string, message: string): PrintingCollectionReadProblem {
+  return new PrintingCollectionReadProblem(400, "invalid_parameter", message, { name, reason: message });
 }
 
 function quotedEtag(value: string): string {

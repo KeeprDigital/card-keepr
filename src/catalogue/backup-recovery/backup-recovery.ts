@@ -4,7 +4,7 @@ import {
   reconstructCardSearchAfterD1RestoreStatements,
 } from "./card-search-recovery-statements.ts";
 import { withCardSearchPreparedForD1Export } from "./card-search-recovery";
-import { cardCollectionPageQuery, storedProductApiProjection } from "../read/index";
+import { cardCollectionPageQuery, storedProductApiProjection } from "../read";
 import { parseStoredLegalityRule } from "../legality";
 
 export type D1BackupProvider = Readonly<{

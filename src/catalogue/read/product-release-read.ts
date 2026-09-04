@@ -1,14 +1,6 @@
-import { ifNoneMatch } from "../http/conditional";
-import {
-  absoluteDocumentLinks,
-  publicUrl,
-  type PublicBase,
-} from "../http/public-base";
-import {
-  canonicalDetailSelf,
-  detailIncludeProjection,
-  detailRepresentationKey,
-} from "./detail-representation";
+import { ifNoneMatch } from "../../http/conditional";
+import { absoluteDocumentLinks, publicUrl, type PublicBase } from "../../http/public-base";
+import { canonicalDetailSelf, detailIncludeProjection, detailRepresentationKey } from "./detail-representation";
 
 type ProductRow = {
   document_json: string;
@@ -35,16 +27,12 @@ type ProductEnvelope = {
 };
 
 const productRoute = "/v1/products";
-const productOrder =
-  "supported-game,official-code-null-last,name-null-last,id";
+const productOrder = "supported-game,official-code-null-last,name-null-last,id";
 
 export class ProductReadProblem extends Error {
   constructor(
     readonly status: 400 | 409,
-    readonly code:
-      | "invalid_parameter"
-      | "invalid_cursor"
-      | "cursor_revision_unavailable",
+    readonly code: "invalid_parameter" | "invalid_cursor" | "cursor_revision_unavailable",
     message: string,
     readonly invalidParameter: Readonly<{
       name: string;
@@ -77,34 +65,22 @@ export async function currentProductResponse(
   const include = detailIncludeProjection(
     url,
     () =>
-      new ProductReadProblem(
-        400,
-        "invalid_parameter",
-        "Product include projection is invalid.",
-        {
-          name: "include",
-          reason: "Product include projection is invalid.",
-        },
-      ),
+      new ProductReadProblem(400, "invalid_parameter", "Product include projection is invalid.", {
+        name: "include",
+        reason: "Product include projection is invalid.",
+      }),
   );
   const envelope = productEnvelope(row.document_json);
-  const etag = quotedEtag(
-    `product:${productId}:${row.current_revision_id}:` +
-      detailRepresentationKey(include),
-  );
+  const etag = quotedEtag(`product:${productId}:${row.current_revision_id}:` + detailRepresentationKey(include));
   if (ifNoneMatch(request, etag)) {
     return notModified(etag, row.current_revision_id);
   }
-  const evidenceSidecar = include.has("evidence")
-    ? await productEvidenceProjection(database, envelope)
-    : {};
+  const evidenceSidecar = include.has("evidence") ? await productEvidenceProjection(database, envelope) : {};
   return Response.json(
     {
       data: absoluteDocumentLinks(envelope.data, base),
       ...evidenceSidecar,
-      ...(include.has("disagreements")
-        ? { disagreements: envelope.disagreements }
-        : {}),
+      ...(include.has("disagreements") ? { disagreements: envelope.disagreements } : {}),
       meta: {
         catalogue_revision_id: row.current_revision_id,
         published_at: row.published_at,
@@ -131,9 +107,7 @@ async function productEvidenceProjection(
       provenance: envelope.provenance,
     };
   }
-  const revisionIds = [
-    ...new Set(references.map(({ revisionId }) => revisionId)),
-  ];
+  const revisionIds = [...new Set(references.map(({ revisionId }) => revisionId))];
   const rows = await database
     .prepare(
       `SELECT id, created_at, author
@@ -144,18 +118,12 @@ async function productEvidenceProjection(
     .all<{ id: string; created_at: string; author: string }>();
   const rowsById = new Map(rows.results.map((row) => [row.id, row]));
   if (rowsById.size !== revisionIds.length) {
-    throw new Error(
-      "A revision-pinned Product references unavailable Curated Revision evidence.",
-    );
+    throw new Error("A revision-pinned Product references unavailable Curated Revision evidence.");
   }
   const provenance = structuredClone(envelope.provenance);
   for (const { path } of references) {
     provenance[path] = [
-      ...new Set(
-        references
-          .filter((reference) => reference.path === path)
-          .map(({ revisionId }) => revisionId),
-      ),
+      ...new Set(references.filter((reference) => reference.path === path).map(({ revisionId }) => revisionId)),
     ];
   }
   return {
@@ -175,18 +143,11 @@ async function productEvidenceProjection(
   };
 }
 
-function curatedRevisionReferences(
-  data: ProductEnvelope["data"],
-): { path: string; revisionId: string }[] {
+function curatedRevisionReferences(data: ProductEnvelope["data"]): { path: string; revisionId: string }[] {
   return [
     ...curatedFieldReferences(data, "/data", "product", data.id),
     ...data.releases.flatMap((release, index) =>
-      curatedFieldReferences(
-        release,
-        `/data/releases/${index}`,
-        "release",
-        release.id,
-      )
+      curatedFieldReferences(release, `/data/releases/${index}`, "release", release.id),
     ),
   ];
 }
@@ -222,10 +183,12 @@ function curatedFieldReferences(
     ) {
       throw new Error("A revision-pinned Product has invalid curated provenance.");
     }
-    return [{
-      path: `${responsePath}${field.path}`,
-      revisionId: provenance.curated_revision_id,
-    }];
+    return [
+      {
+        path: `${responsePath}${field.path}`,
+        revisionId: provenance.curated_revision_id,
+      },
+    ];
   });
 }
 
@@ -342,12 +305,8 @@ export async function currentProductsResponse(
       limit + 1,
     )
     .all<{ document_json: string }>();
-  const selected = rows.results.map(
-    ({ document_json }) => storedProductApiProjection(document_json),
-  );
-  const data = selected
-    .slice(0, limit)
-    .map((product) => absoluteDocumentLinks(product, base));
+  const selected = rows.results.map(({ document_json }) => storedProductApiProjection(document_json));
+  const data = selected.slice(0, limit).map((product) => absoluteDocumentLinks(product, base));
   const next =
     selected.length > limit
       ? encodeCursor({
@@ -388,18 +347,12 @@ export async function currentProductsResponse(
 function ftsQuery(value: string): string {
   const tokens = value.match(/[\p{L}\p{N}]+/gu) ?? [];
   if (tokens.length === 0) {
-    throw new ProductReadProblem(
-      400,
-      "invalid_parameter",
-      "Product search query has no searchable terms.",
-      {
-        name: "q",
-        reason: "Product search query has no searchable terms.",
-      },
-    );
+    throw new ProductReadProblem(400, "invalid_parameter", "Product search query has no searchable terms.", {
+      name: "q",
+      reason: "Product search query has no searchable terms.",
+    });
   }
-  return tokens.map((token) => `"${token.replaceAll("\"", "\"\"")}"*`)
-    .join(" AND ");
+  return tokens.map((token) => `"${token.replaceAll('"', '""')}"*`).join(" AND ");
 }
 
 function productEnvelope(documentJson: string): ProductEnvelope {
@@ -409,16 +362,13 @@ function productEnvelope(documentJson: string): ProductEnvelope {
   }
   const value = parsed as Record<string, unknown>;
   const data =
-    value.data !== null &&
-    typeof value.data === "object" &&
-    !Array.isArray(value.data)
+    value.data !== null && typeof value.data === "object" && !Array.isArray(value.data)
       ? (value.data as ProductEnvelope["data"])
       : (value as ProductEnvelope["data"]);
   if (
     typeof data.id !== "string" ||
     typeof data.game !== "string" ||
-    (data.official_code !== null &&
-      typeof data.official_code !== "string") ||
+    (data.official_code !== null && typeof data.official_code !== "string") ||
     (data.name !== null && typeof data.name !== "string") ||
     !Array.isArray(data.releases)
   ) {
@@ -428,20 +378,14 @@ function productEnvelope(documentJson: string): ProductEnvelope {
     data,
     included: Array.isArray(value.included) ? value.included : [],
     provenance:
-      value.provenance !== null &&
-      typeof value.provenance === "object" &&
-      !Array.isArray(value.provenance)
+      value.provenance !== null && typeof value.provenance === "object" && !Array.isArray(value.provenance)
         ? (value.provenance as Record<string, string[]>)
         : {},
-    disagreements: Array.isArray(value.disagreements)
-      ? value.disagreements
-      : [],
+    disagreements: Array.isArray(value.disagreements) ? value.disagreements : [],
   };
 }
 
-export function storedProductApiProjection(
-  documentJson: string,
-): StoredProductApiProjection {
+export function storedProductApiProjection(documentJson: string): StoredProductApiProjection {
   return productEnvelope(documentJson).data;
 }
 
@@ -449,22 +393,12 @@ function parseQuery(url: URL): string | null {
   const values = url.searchParams.getAll("q");
   if (values.length === 0) return null;
   const raw = values[0]!;
-  const q = raw
-    .normalize("NFKC")
-    .trim()
-    .toLocaleLowerCase("en");
-  if (
-    values.length !== 1 ||
-    [...raw].length > 500 ||
-    q.length < 1 ||
-    [...q].length > 500
-  ) {
-    throw new ProductReadProblem(
-      400,
-      "invalid_parameter",
-      "Product search query is invalid.",
-      { name: "q", reason: "Product search query is invalid." },
-    );
+  const q = raw.normalize("NFKC").trim().toLocaleLowerCase("en");
+  if (values.length !== 1 || [...raw].length > 500 || q.length < 1 || [...q].length > 500) {
+    throw new ProductReadProblem(400, "invalid_parameter", "Product search query is invalid.", {
+      name: "q",
+      reason: "Product search query is invalid.",
+    });
   }
   return q;
 }
@@ -473,29 +407,23 @@ function singleParameter(url: URL, name: string): string | null {
   const values = url.searchParams.getAll(name);
   if (values.length === 0) return null;
   if (values.length !== 1) {
-    throw new ProductReadProblem(
-      400,
-      "invalid_parameter",
-      `Product ${name} parameter is repeated.`,
-      {
-        name,
-        reason: `Product ${name} parameter is repeated.`,
-      },
-    );
+    throw new ProductReadProblem(400, "invalid_parameter", `Product ${name} parameter is repeated.`, {
+      name,
+      reason: `Product ${name} parameter is repeated.`,
+    });
   }
   return values[0]!;
 }
 
 function canonicalProductSelf(
   url: URL,
-  representation:
-    {
-      q: string | null;
-      game: string | null;
-      region: string | null;
-      limit: number;
-      after: string | null;
-    },
+  representation: {
+    q: string | null;
+    game: string | null;
+    region: string | null;
+    limit: number;
+    after: string | null;
+  },
 ): string {
   const query = new URLSearchParams();
   if (representation.q !== null) query.set("q", representation.q);
@@ -510,50 +438,33 @@ function canonicalProductSelf(
     query.set("after", representation.after);
   }
   const serialized = query.toString();
-  return serialized.length === 0
-    ? url.pathname
-    : `${url.pathname}?${serialized}`;
+  return serialized.length === 0 ? url.pathname : `${url.pathname}?${serialized}`;
 }
 
 function parseLimit(value: string | null): number {
   if (value === null) return 50;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
-    throw new ProductReadProblem(
-      400,
-      "invalid_parameter",
-      "Product page limit is invalid.",
-      { name: "limit", reason: "Product page limit is invalid." },
-    );
+    throw new ProductReadProblem(400, "invalid_parameter", "Product page limit is invalid.", {
+      name: "limit",
+      reason: "Product page limit is invalid.",
+    });
   }
   return parsed;
 }
 
 function assertFilter(game: string | null, region: string | null): void {
-  if (
-    game !== null &&
-    !["one-piece", "fusion-world", "digimon", "gundam"].includes(game)
-  ) {
-    throw new ProductReadProblem(
-      400,
-      "invalid_parameter",
-      "Product game is invalid.",
-      { name: "game", reason: "Product game is invalid." },
-    );
+  if (game !== null && !["one-piece", "fusion-world", "digimon", "gundam"].includes(game)) {
+    throw new ProductReadProblem(400, "invalid_parameter", "Product game is invalid.", {
+      name: "game",
+      reason: "Product game is invalid.",
+    });
   }
-  if (
-    region !== null &&
-    !["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"].includes(region)
-  ) {
-    throw new ProductReadProblem(
-      400,
-      "invalid_parameter",
-      "Product Release region is invalid.",
-      {
-        name: "release_region",
-        reason: "Product Release region is invalid.",
-      },
-    );
+  if (region !== null && !["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"].includes(region)) {
+    throw new ProductReadProblem(400, "invalid_parameter", "Product Release region is invalid.", {
+      name: "release_region",
+      reason: "Product Release region is invalid.",
+    });
   }
 }
 
@@ -576,16 +487,9 @@ function parseCursor(
   };
   try {
     const base64 = value.replaceAll("-", "+").replaceAll("_", "/");
-    const padded = base64.padEnd(
-      base64.length + ((4 - (base64.length % 4)) % 4),
-      "=",
-    );
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
     cursor = JSON.parse(
-      new TextDecoder().decode(
-        Uint8Array.from(atob(padded), (character) =>
-          character.charCodeAt(0),
-        ),
-      ),
+      new TextDecoder().decode(Uint8Array.from(atob(padded), (character) => character.charCodeAt(0))),
     ) as typeof cursor;
   } catch {
     throw invalidCursor();
@@ -603,37 +507,25 @@ function parseCursor(
 }
 
 function invalidCursor(): ProductReadProblem {
-  return new ProductReadProblem(
-    400,
-    "invalid_cursor",
-    "Product cursor is invalid.",
-  );
+  return new ProductReadProblem(400, "invalid_cursor", "Product cursor is invalid.");
 }
 
 function encodeCursor(value: unknown): string {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary)
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/u, "");
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
 }
 
 function validOrderValue(value: unknown): value is ProductOrderValue {
-  if (
-    value === null ||
-    typeof value !== "object" ||
-    Array.isArray(value)
-  ) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
   const product = value as Record<string, unknown>;
   return (
     typeof product.id === "string" &&
     typeof product.game === "string" &&
-    (product.official_code === null ||
-      typeof product.official_code === "string") &&
+    (product.official_code === null || typeof product.official_code === "string") &&
     (product.name === null || typeof product.name === "string")
   );
 }
