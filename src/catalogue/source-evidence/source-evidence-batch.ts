@@ -1,14 +1,19 @@
 import {
   advanceHostPacing,
+  type CaptureTransportResult,
   capturePreparedAttempt,
   completeUploadedCapture,
   hostPacingDelay,
   parseCapturedRequest,
   prepareCaptureAttempt,
-  type CaptureTransportResult,
   type SourceHostPacingMode,
 } from "./source-evidence-capture";
-import { requiredEvidenceRun, type EvidenceRequestRow } from "./source-evidence-repository";
+import type { CollectionWorkflowAttempt } from "./source-evidence-model";
+import {
+  type EvidenceRequestRow,
+  isCurrentCollectionWorkflowAttempt,
+  requiredEvidenceRun,
+} from "./source-evidence-repository";
 
 // Durable-step layout for one hostname shard of an Ingestion Run's
 // collection (issue #138).
@@ -68,6 +73,7 @@ export type SourceRequestBatchInput = Readonly<{
   evidenceObjects: R2Bucket;
   officialSourceTransport: Fetcher;
   runId: string;
+  workflowAttempt?: CollectionWorkflowAttempt;
   hostname: string;
   pacingMode: SourceHostPacingMode;
   pacingIntervalMilliseconds: number;
@@ -116,7 +122,7 @@ export async function collectSourceRequestBatch(input: SourceRequestBatchInput):
         break;
       }
       const run = await requiredEvidenceRun(input.database, input.runId);
-      if (run.state !== "collecting") {
+      if (run.state !== "collecting" || !(await ownsCollectionAttempt(input))) {
         halt = { kind: "run_not_collecting" };
         break;
       }
@@ -139,6 +145,15 @@ export async function collectSourceRequestBatch(input: SourceRequestBatchInput):
       }
       const pacingDelay = await hostPacingDelay(input.database, input.hostname, input.pacingMode);
       if (pacingDelay > 0) await wait(pacingDelay);
+      // A pacing wait can span pause and resume; never reuse its earlier
+      // state/identity observation to admit the next Official Source fetch.
+      if (
+        !(await ownsCollectionAttempt(input)) ||
+        (await requiredEvidenceRun(input.database, input.runId)).state !== "collecting"
+      ) {
+        halt = { kind: "run_not_collecting" };
+        break;
+      }
       const result = await capturePreparedAttempt(
         input.database,
         input.evidenceObjects,
@@ -146,6 +161,7 @@ export async function collectSourceRequestBatch(input: SourceRequestBatchInput):
         run,
         request,
         prepared,
+        input.workflowAttempt,
       );
       if (result.request_made) {
         // Persisted before anything else so a replay after a crash here
@@ -187,6 +203,7 @@ async function persistCapturedRequest(
   request: EvidenceRequestRow,
   fetched: Extract<CaptureTransportResult, { kind: "uploaded" | "captured" }>,
 ): Promise<void> {
+  if (!(await ownsCollectionAttempt(input))) return;
   let result: CaptureTransportResult = fetched;
   if (result.kind === "uploaded") {
     result = await completeUploadedCapture(
@@ -196,7 +213,7 @@ async function persistCapturedRequest(
       result.attempt_id,
     );
   }
-  if (result.kind === "captured") {
+  if (result.kind === "captured" && (await ownsCollectionAttempt(input))) {
     await parseCapturedRequest(
       input.database,
       input.evidenceObjects,
@@ -211,4 +228,16 @@ function defaultWait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, milliseconds);
   });
+}
+
+async function ownsCollectionAttempt(input: SourceRequestBatchInput): Promise<boolean> {
+  return (
+    input.workflowAttempt === undefined ||
+    isCurrentCollectionWorkflowAttempt(
+      input.database,
+      input.runId,
+      input.workflowAttempt.parentId,
+      input.workflowAttempt.instanceId,
+    )
+  );
 }

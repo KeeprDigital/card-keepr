@@ -1,4 +1,12 @@
-import { route, type RouteContext } from "../../http/routes";
+import {
+  assertOnlyFields,
+  readAdministrationBody,
+  requiredEvidencePlans,
+  requiredSourceRequests,
+  requiredString,
+} from "../../http/administration";
+import { type RouteContext, route } from "../../http/routes";
+import { pauseEvidenceCollection, resumeEvidenceRun, terminateEvidenceCollection } from "./evidence-administration";
 import {
   extendRunRequestCapacity,
   reparseSourceSnapshot,
@@ -10,14 +18,6 @@ import {
 } from "./source-evidence";
 import { sourceHostPacingIntervalMilliseconds, sourceHostPacingMode } from "./source-evidence-capture";
 import type { EvidenceInspectionOptions } from "./source-evidence-repository";
-import { pauseEvidenceCollection, resumeEvidenceRun, terminateEvidenceCollection } from "./evidence-administration";
-import {
-  readAdministrationBody,
-  requiredString,
-  requiredEvidencePlans,
-  requiredSourceRequests,
-  assertOnlyFields,
-} from "../../http/administration";
 
 type Environment = {
   CATALOGUE_DB: D1Database;
@@ -57,9 +57,17 @@ export const sourceEvidenceRoutes = [
     );
   }),
   route<Context>("POST", "/v1/ingestion-runs/:run/collection/resume", async ({ env }, params) => {
-    return Response.json(await resumeEvidenceRun(env.CATALOGUE_DB, env.EVIDENCE_INGESTION_WORKFLOW, params.run!), {
-      status: 202,
-    });
+    return Response.json(
+      await resumeEvidenceRun(
+        env.CATALOGUE_DB,
+        env.EVIDENCE_INGESTION_WORKFLOW,
+        params.run!,
+        env.EVIDENCE_HOST_WORKFLOW,
+      ),
+      {
+        status: 202,
+      },
+    );
   }),
   route<Context>("POST", "/v1/ingestion-runs/:run/collection/pause", async ({ request, env }, params) => {
     const body = await readAdministrationBody(request);

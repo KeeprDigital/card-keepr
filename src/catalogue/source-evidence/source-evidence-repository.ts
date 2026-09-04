@@ -1014,6 +1014,31 @@ export async function pendingEvidenceRequestPage(
   return result.results;
 }
 
+/** A Workflow can act only while its parent and its own scope still own the run. */
+export async function isCurrentCollectionWorkflowAttempt(
+  database: D1Database,
+  runId: string,
+  parentWorkflowId: string,
+  instanceId: string,
+): Promise<boolean> {
+  const current = await database
+    .prepare(`
+    SELECT 1 AS current FROM ingestion_evidence_plans AS plan
+    JOIN ingestion_workflow_attempts AS attempt ON attempt.ingestion_run_id = plan.ingestion_run_id
+    WHERE plan.ingestion_run_id = ?1 AND plan.parent_workflow_id = ?2
+      AND attempt.workflow_instance_id = ?3
+      AND NOT EXISTS (
+        SELECT 1 FROM ingestion_workflow_attempts AS later
+        WHERE later.ingestion_run_id = attempt.ingestion_run_id
+          AND later.workflow_kind = attempt.workflow_kind
+          AND later.base_workflow_id = attempt.base_workflow_id
+          AND later.attempt_number > attempt.attempt_number
+      )`)
+    .bind(runId, parentWorkflowId, instanceId)
+    .first<{ current: number }>();
+  return current !== null;
+}
+
 export async function recordWorkflowIds(
   database: D1Database,
   runId: string,
@@ -1029,7 +1054,7 @@ export async function recordWorkflowIds(
            AND (parent_workflow_id IS NULL OR parent_workflow_id = ?)`,
       )
       .bind(parentWorkflowId, canonicalJson(childWorkflowIds), runId, parentWorkflowId),
-    ...workflowAttemptStatements(database, runId, [parentWorkflowId, ...childWorkflowIds]),
+    ...workflowAttemptStatements(database, runId, [parentWorkflowId, ...childWorkflowIds], parentWorkflowId),
   ]);
 }
 
@@ -1041,6 +1066,7 @@ export function workflowAttemptStatements(
   database: D1Database,
   runId: string,
   workflowInstanceIds: readonly string[],
+  expectedParentId: string | null = null,
 ): D1PreparedStatement[] {
   const createdAt = new Date().toISOString();
   return workflowInstanceIds.map((instanceId) => {
@@ -1050,7 +1076,11 @@ export function workflowAttemptStatements(
         `INSERT OR IGNORE INTO ingestion_workflow_attempts (
            ingestion_run_id, workflow_kind, base_workflow_id,
            attempt_number, workflow_instance_id, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?)`,
+         ) SELECT ?1, ?2, ?3, ?4, ?5, ?6
+         WHERE ?7 IS NULL OR EXISTS (
+           SELECT 1 FROM ingestion_evidence_plans
+           WHERE ingestion_run_id = ?1 AND parent_workflow_id = ?7
+         )`,
       )
       .bind(
         runId,
@@ -1059,6 +1089,7 @@ export function workflowAttemptStatements(
         record.attempt_number,
         record.workflow_instance_id,
         createdAt,
+        expectedParentId,
       );
   });
 }
