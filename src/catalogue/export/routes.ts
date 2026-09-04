@@ -10,7 +10,7 @@ import {
   requiredString,
   assertOnlyFields,
   catalogueExportDeletionResultStatus,
-} from "../shared";
+} from "../../http/administration";
 
 type Environment = {
   CATALOGUE_DB: D1Database;
@@ -66,24 +66,28 @@ export const exportRoutes = [
       status: catalogueExportDeletionResultStatus(document),
     });
   }),
-  route<Context>("POST", "/v1/catalogue-export-deletions/:ref1/retry", async ({ request, env, observedAt }, params) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, ["object_set_digest", "idempotency_key"]);
-    const document = await retryCatalogueExportDeletion(
-      env.CATALOGUE_DB,
-      env.CATALOGUE_EXPORTS,
-      params.ref1!,
-      {
-        object_set_digest: requiredString(body, "object_set_digest"),
-        idempotency_key: requiredString(body, "idempotency_key"),
-      },
-      observedAt,
-    );
-    return Response.json(document, {
-      status: catalogueExportDeletionResultStatus(document),
-    });
-  }),
-  route<Context>("GET", "/v1/catalogue-export-deletions/:ref1", async ({ env }, params) => {
-    return Response.json(await catalogueExportDeletionStatus(env.CATALOGUE_DB, params.ref1!));
+  route<Context>(
+    "POST",
+    "/v1/catalogue-export-deletions/:deletion/retry",
+    async ({ request, env, observedAt }, params) => {
+      const body = await readAdministrationBody(request);
+      assertOnlyFields(body, ["object_set_digest", "idempotency_key"]);
+      const document = await retryCatalogueExportDeletion(
+        env.CATALOGUE_DB,
+        env.CATALOGUE_EXPORTS,
+        params.deletion!,
+        {
+          object_set_digest: requiredString(body, "object_set_digest"),
+          idempotency_key: requiredString(body, "idempotency_key"),
+        },
+        observedAt,
+      );
+      return Response.json(document, {
+        status: catalogueExportDeletionResultStatus(document),
+      });
+    },
+  ),
+  route<Context>("GET", "/v1/catalogue-export-deletions/:deletion", async ({ env }, params) => {
+    return Response.json(await catalogueExportDeletionStatus(env.CATALOGUE_DB, params.deletion!));
   }),
 ];

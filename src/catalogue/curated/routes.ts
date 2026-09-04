@@ -1,5 +1,6 @@
 import { route, type RouteContext } from "../../http/routes";
-import { AdministrationProblem, readAdministrationBody, requiredString, assertOnlyFields } from "../shared";
+import { AdministrationProblem } from "../shared";
+import { readAdministrationBody, requiredString, assertOnlyFields } from "../../http/administration";
 import {
   createCuratedRevision,
   listCuratedRevisions,
@@ -52,9 +53,9 @@ export const curatedRoutes = [
   ...["reaffirm", "supersede", "retire"].map((operation) =>
     route<Context>(
       "POST",
-      `/admin/v1/curated-revisions/:ref1/${operation}`,
+      `/admin/v1/curated-revisions/:revision/${operation}`,
       async ({ request, env, observedAt }, params) => {
-        const revisionId = params.ref1!;
+        const revisionId = params.revision!;
         const body = await readAdministrationBody(request);
         const result =
           operation === "reaffirm"
@@ -68,7 +69,7 @@ export const curatedRoutes = [
       },
     ),
   ),
-  route<Context>("GET", "/admin/v1/curated-revisions/:ref1", async ({ env }, params) => {
-    return Response.json(await showCuratedRevision(env.CATALOGUE_DB, params.ref1!));
+  route<Context>("GET", "/admin/v1/curated-revisions/:revision", async ({ env }, params) => {
+    return Response.json(await showCuratedRevision(env.CATALOGUE_DB, params.revision!));
   }),
 ];

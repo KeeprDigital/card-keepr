@@ -1,7 +1,7 @@
 import { route, type RouteContext } from "../../http/routes";
 import { showReconciledPrinting } from "./card-printing-reconciliation";
 import { startOrObserveReconciliationWorkflow } from "./reconciliation-workflow";
-import { readAdministrationBody, requiredString, assertOnlyFields } from "../shared";
+import { readAdministrationBody, requiredString, assertOnlyFields } from "../../http/administration";
 
 type Environment = {
   CATALOGUE_DB: D1Database;
@@ -10,14 +10,14 @@ type Environment = {
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const reconciliationRoutes = [
-  route<Context>("POST", "/v1/ingestion-runs/:ref1/reconciliation", async ({ request, env, observedAt }, params) => {
+  route<Context>("POST", "/v1/ingestion-runs/:run/reconciliation", async ({ request, env, observedAt }, params) => {
     const body = await readAdministrationBody(request);
     assertOnlyFields(body, ["expected_current_revision_id", "idempotency_key"]);
     const result = await startOrObserveReconciliationWorkflow(
       env.CATALOGUE_DB,
       env.RECONCILIATION_WORKFLOW,
       {
-        ingestion_run_id: params.ref1!,
+        ingestion_run_id: params.run!,
         expected_current_revision_id: requiredString(body, "expected_current_revision_id"),
         idempotency_key: requiredString(body, "idempotency_key"),
       },
@@ -27,7 +27,7 @@ export const reconciliationRoutes = [
       status: result.created && result.document.status !== "complete" ? 202 : 200,
     });
   }),
-  route<Context>("GET", "/v1/reconciliation/printings/:ref1", async ({ env }, params) => {
-    return Response.json(await showReconciledPrinting(env.CATALOGUE_DB, params.ref1!));
+  route<Context>("GET", "/v1/reconciliation/printings/:printing", async ({ env }, params) => {
+    return Response.json(await showReconciledPrinting(env.CATALOGUE_DB, params.printing!));
   }),
 ];

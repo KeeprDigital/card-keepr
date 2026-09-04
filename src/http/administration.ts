@@ -1,18 +1,17 @@
-import { AdministrationProblem } from "./administration-problem";
-import { readBoundedJsonObject } from "../../http/bounded-json";
+import { readBoundedJsonObject } from "./bounded-json";
 
 export async function readAdministrationBody(request: Request): Promise<Record<string, unknown>> {
   return readBoundedJsonObject(
     request,
     16_384,
-    (status, code, detail) => new AdministrationProblem(status, code, detail),
+    (status, code, detail) => new AdministrationRequestProblem(status, code, detail),
   );
 }
 
 export function requiredString(body: Record<string, unknown>, field: string): string {
   const value = body[field];
   if (typeof value !== "string" || value.length === 0) {
-    throw new AdministrationProblem(422, "invalid_parameter", `${field} must be a non-empty string.`);
+    throw new AdministrationRequestProblem(422, "invalid_parameter", `${field} must be a non-empty string.`);
   }
   return value;
 }
@@ -20,7 +19,7 @@ export function requiredString(body: Record<string, unknown>, field: string): st
 export function requiredStringArray(body: Record<string, unknown>, field: string): readonly string[] {
   const value = body[field];
   if (!Array.isArray(value) || value.length === 0 || value.some((item) => typeof item !== "string")) {
-    throw new AdministrationProblem(422, "invalid_parameter", `${field} must be a non-empty array of strings.`);
+    throw new AdministrationRequestProblem(422, "invalid_parameter", `${field} must be a non-empty array of strings.`);
   }
   return value;
 }
@@ -36,11 +35,11 @@ export function requiredEvidencePlans(
 }[] {
   const value = body[field];
   if (!Array.isArray(value)) {
-    throw new AdministrationProblem(422, "invalid_parameter", `${field} must be an array.`);
+    throw new AdministrationRequestProblem(422, "invalid_parameter", `${field} must be an array.`);
   }
   return value.map((item, index) => {
     if (item === null || typeof item !== "object" || Array.isArray(item)) {
-      throw new AdministrationProblem(422, "invalid_parameter", `${field}[${index}] must be an object.`);
+      throw new AdministrationRequestProblem(422, "invalid_parameter", `${field}[${index}] must be an object.`);
     }
     const plan = item as Record<string, unknown>;
     assertOnlyFields(plan, ["supported_game", "source_lineage", "adapter_version", "requests"]);
@@ -64,11 +63,11 @@ export function requiredSourceRequests(
 }[] {
   const value = body[field];
   if (!Array.isArray(value)) {
-    throw new AdministrationProblem(422, "invalid_parameter", `${field} must be an array.`);
+    throw new AdministrationRequestProblem(422, "invalid_parameter", `${field} must be an array.`);
   }
   return value.map((item, index) => {
     if (item === null || typeof item !== "object" || Array.isArray(item)) {
-      throw new AdministrationProblem(422, "invalid_parameter", `${field}[${index}] must be an object.`);
+      throw new AdministrationRequestProblem(422, "invalid_parameter", `${field}[${index}] must be an object.`);
     }
     const sourceRequest = item as Record<string, unknown>;
     assertOnlyFields(sourceRequest, ["id", "url", "method", "headers"]);
@@ -81,7 +80,7 @@ export function requiredSourceRequests(
         Array.isArray(headersValue) ||
         Object.values(headersValue).some((header) => typeof header !== "string")
       ) {
-        throw new AdministrationProblem(
+        throw new AdministrationRequestProblem(
           422,
           "invalid_parameter",
           `${field}[${index}].headers must contain only string values.`,
@@ -101,7 +100,7 @@ export function requiredSourceRequests(
 export function assertOnlyFields(body: Record<string, unknown>, allowedFields: readonly string[]): void {
   const unexpected = Object.keys(body).find((field) => !allowedFields.includes(field));
   if (unexpected !== undefined) {
-    throw new AdministrationProblem(
+    throw new AdministrationRequestProblem(
       422,
       "invalid_parameter",
       `${unexpected} is not accepted for this administration operation.`,
@@ -117,4 +116,16 @@ export function administrationResultStatus(result: Record<string, unknown>, comp
 
 export function catalogueExportDeletionResultStatus(result: Record<string, unknown>): number {
   return result.contract === "card-keepr-catalogue-export-deletion@1" && result.state === "deleting" ? 202 : 200;
+}
+
+// Request validation crosses the worker boundary through the problem shape.
+// It does not depend on catalogue administration error classes.
+class AdministrationRequestProblem extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    readonly detail: string,
+  ) {
+    super(detail);
+  }
 }

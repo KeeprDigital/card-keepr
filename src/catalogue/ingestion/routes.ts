@@ -13,7 +13,12 @@ import { runGuardedCardSearchRepair } from "./card-search-repair-administration"
 import { showEvidenceRun, evidenceInspectionOptions } from "../source-evidence";
 import { startOrObserveCatalogueBackupWorkflow, publicationBackupReservation } from "../backup-recovery";
 import { absoluteDocumentLinks } from "../../http/public-base";
-import { readAdministrationBody, requiredString, assertOnlyFields, administrationResultStatus } from "../shared";
+import {
+  readAdministrationBody,
+  requiredString,
+  assertOnlyFields,
+  administrationResultStatus,
+} from "../../http/administration";
 
 type Environment = Parameters<typeof evidenceInspectionOptions>[0] & {
   ADMINISTRATION_CLOCK_MODE: string;
@@ -54,19 +59,19 @@ export const ingestionRoutes = [
       await administrationStatus(env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, observedAt, productionTarget(env)),
     );
   }),
-  route<Context>("GET", "/v1/ingestion-runs/:ref1/candidate", async ({ env, observedAt }, params) => {
-    return Response.json(await inspectCandidate(env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, params.ref1!, observedAt));
+  route<Context>("GET", "/v1/ingestion-runs/:run/candidate", async ({ env, observedAt }, params) => {
+    return Response.json(await inspectCandidate(env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, params.run!, observedAt));
   }),
   route<Context>(
     "POST",
-    "/v1/ingestion-runs/:ref1/approval",
+    "/v1/ingestion-runs/:run/approval",
     async ({ request, env, requestId, base, context, observedAt }, params) => {
       const body = await readAdministrationBody(request);
       assertOnlyFields(body, ["candidate_digest", "expected_current_revision_id", "idempotency_key"]);
       const result = await approveRun(
         env.CATALOGUE_DB,
         env.CATALOGUE_EXPORTS,
-        params.ref1!,
+        params.run!,
         {
           candidate_digest: requiredString(body, "candidate_digest"),
           expected_current_revision_id: requiredString(body, "expected_current_revision_id"),
@@ -120,13 +125,13 @@ export const ingestionRoutes = [
       });
     },
   ),
-  route<Context>("POST", "/v1/ingestion-runs/:ref1/rejection", async ({ request, env, base, observedAt }, params) => {
+  route<Context>("POST", "/v1/ingestion-runs/:run/rejection", async ({ request, env, base, observedAt }, params) => {
     const body = await readAdministrationBody(request);
     assertOnlyFields(body, ["candidate_digest", "idempotency_key"]);
     const result = await rejectRun(
       env.CATALOGUE_DB,
       env.CATALOGUE_EXPORTS,
-      params.ref1!,
+      params.run!,
       {
         candidate_digest: requiredString(body, "candidate_digest"),
         idempotency_key: requiredString(body, "idempotency_key"),
@@ -139,14 +144,14 @@ export const ingestionRoutes = [
   }),
   route<Context>(
     "POST",
-    "/v1/ingestion-runs/:ref1/retry",
+    "/v1/ingestion-runs/:run/retry",
     async ({ request, env, requestId, base, observedAt }, params) => {
       const body = await readAdministrationBody(request);
       assertOnlyFields(body, ["idempotency_key"]);
       const result = await retryRun(
         env.CATALOGUE_DB,
         env.CATALOGUE_EXPORTS,
-        params.ref1!,
+        params.run!,
         {
           idempotency_key: requiredString(body, "idempotency_key"),
           operational_request_id: requestId,
@@ -160,14 +165,14 @@ export const ingestionRoutes = [
   ),
   route<Context>(
     "POST",
-    "/v1/ingestion-runs/:ref1/publication-cleanup",
+    "/v1/ingestion-runs/:run/publication-cleanup",
     async ({ request, env, base, observedAt }, params) => {
       const body = await readAdministrationBody(request);
       assertOnlyFields(body, ["idempotency_key"]);
       const result = await retryPublicationCleanup(
         env.CATALOGUE_DB,
         env.CATALOGUE_EXPORTS,
-        params.ref1!,
+        params.run!,
         {
           idempotency_key: requiredString(body, "idempotency_key"),
         },
@@ -178,8 +183,8 @@ export const ingestionRoutes = [
       });
     },
   ),
-  route<Context>("GET", "/v1/ingestion-runs/:ref1", async ({ env, observedAt }, params) => {
-    const runId = params.ref1!;
+  route<Context>("GET", "/v1/ingestion-runs/:run", async ({ env, observedAt }, params) => {
+    const runId = params.run!;
     if (await hasEvidencePlan(env.CATALOGUE_DB, runId)) {
       return Response.json(await showEvidenceRun(env.CATALOGUE_DB, runId, evidenceInspectionOptions(env)));
     }
