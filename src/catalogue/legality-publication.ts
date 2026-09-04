@@ -1,10 +1,5 @@
-import type { CatalogueCandidate } from "./catalogue-candidate";
-import { byteBoundedJsonArrays } from "./reconciliation-payload";
-import { canonicalJson } from "./serialization";
-import {
-  legalityRuleCardIds,
-  normalizedLegalityRuleLifecycle,
-} from "./legality-rule";
+import { type CatalogueCandidate, byteBoundedJsonArrays, canonicalJson } from "./shared";
+import { legalityRuleCardIds, normalizedLegalityRuleLifecycle } from "./legality-rule";
 
 export function legalityPublicationStatements(
   database: D1Database,
@@ -32,9 +27,7 @@ export function legalityPublicationStatements(
       source_observation_set_id: rule.source_observation_set_id,
       source_observation_id: rule.source_observation_id,
       source_observation_pointer: rule.source_observation_pointer,
-      source_field_pointers_json: canonicalJson(
-        rule.source_field_pointers,
-      ),
+      source_field_pointers_json: canonicalJson(rule.source_field_pointers),
       first_revision_id: lifecycle.first_revision_id,
       last_observed_revision_id: lifecycle.last_observed_revision_id,
       current: lifecycle.current ? 1 : 0,

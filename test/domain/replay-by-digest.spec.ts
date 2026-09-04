@@ -1,6 +1,5 @@
 import { expect, test } from "vitest";
-import { AdministrationProblem } from "../../src/catalogue/administration-problem.ts";
-import { replayByDigest } from "../../src/catalogue/idempotent-identities";
+import { AdministrationProblem, replayByDigest } from "../../src/catalogue/shared";
 
 type Retained = { request_digest: string; response_json: string };
 

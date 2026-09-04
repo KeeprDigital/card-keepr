@@ -1,6 +1,6 @@
 import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
-import { canonicalJson, sha256Text } from "../../../src/catalogue/serialization";
+import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 import { injectFixturePublication } from "./fixture-plan-injection";
 import { administrationRequest } from "./runtime-helpers";
 
@@ -16,7 +16,7 @@ beforeEach(async () => {
 test("Bootstrap Mode is reported and accepted only while the catalogue is provably empty, and switches off once a revision is published", async () => {
   const fresh = await administrationRequest("/v1/status", "GET");
   expect(fresh.status).toBe(200);
-  const freshDocument = await fresh.json() as { release_preflight: Record<string, unknown> };
+  const freshDocument = (await fresh.json()) as { release_preflight: Record<string, unknown> };
   expect(freshDocument.release_preflight).toMatchObject({
     bootstrap: true,
     recovery_bookmark: null,
@@ -38,7 +38,10 @@ test("Bootstrap Mode is reported and accepted only while the catalogue is provab
 
   const populated = await administrationRequest("/v1/status", "GET");
   expect(populated.status).toBe(200);
-  const populatedDocument = await populated.json() as { release_preflight: Record<string, unknown>; safe_state: Record<string, unknown> };
+  const populatedDocument = (await populated.json()) as {
+    release_preflight: Record<string, unknown>;
+    safe_state: Record<string, unknown>;
+  };
   expect(populatedDocument.safe_state.current_revision_id).toBe(published);
   expect(populatedDocument.release_preflight.bootstrap).toBe(false);
 
@@ -48,7 +51,7 @@ test("Bootstrap Mode is reported and accepted only while the catalogue is provab
 });
 
 test("a Bootstrap Mode Production Release names the Spine Revision", async () => {
-  const plan = { ...await bootstrapPlan("bootstrap-wrong"), expected_current_revision_id: "catrev_other" };
+  const plan = { ...(await bootstrapPlan("bootstrap-wrong")), expected_current_revision_id: "catrev_other" };
   const prepared = await administrationRequest("/v1/production-releases", "POST", plan);
   expect(prepared.status).toBe(422);
   await expect(prepared.json()).resolves.toMatchObject({ code: "invalid_production_release_request" });
@@ -62,7 +65,12 @@ async function bootstrapPlan(releaseId: string): Promise<Record<string, unknown>
       { name: "card-keepr-catalogue", id: testEnv.CATALOGUE_D1_DATABASE_ID },
       { name: "card-keepr-disposable-verification", id: testEnv.DISPOSABLE_D1_DATABASE_ID },
     ],
-    r2_buckets: ["card-keepr-evidence", "card-keepr-printing-images", "card-keepr-catalogue-exports", "card-keepr-backups"],
+    r2_buckets: [
+      "card-keepr-evidence",
+      "card-keepr-printing-images",
+      "card-keepr-catalogue-exports",
+      "card-keepr-backups",
+    ],
   };
   return {
     release_id: releaseId,
@@ -103,7 +111,7 @@ async function publishFixtureRevision(): Promise<string> {
     expected_current_revision_id: started.expected_current_revision_id,
     idempotency_key: "bootstrap-first-catalogue-approval",
   });
-  const document = await approved.json() as { state: string; resulting_revision_id: string };
+  const document = (await approved.json()) as { state: string; resulting_revision_id: string };
   expect(document.state).toBe("published");
   return document.resulting_revision_id;
 }

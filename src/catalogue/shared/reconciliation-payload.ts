@@ -2,8 +2,7 @@ import { canonicalJson } from "./serialization";
 
 const maximumChunkBytes = 524_288;
 const maximumAtomicBatchStatements = 900;
-const marker = (kind: "candidate" | "digest") =>
-  canonicalJson({ chunked_reconciliation_payload: kind });
+const marker = (kind: "candidate" | "digest") => canonicalJson({ chunked_reconciliation_payload: kind });
 
 export function chunkedPayloadMarker(kind: "candidate" | "digest"): string {
   return marker(kind);
@@ -45,19 +44,13 @@ export async function retainedPayload(
   if (chunks.results.length === 0) {
     throw new Error(`Chunked reconciliation ${kind} payload is unavailable.`);
   }
-  if (
-    chunks.results.some(
-      ({ chunk_index: chunkIndex }, index) => chunkIndex !== index,
-    )
-  ) {
+  if (chunks.results.some(({ chunk_index: chunkIndex }, index) => chunkIndex !== index)) {
     throw new Error(`Chunked reconciliation ${kind} payload is incomplete.`);
   }
   return chunks.results.map(({ content }) => content).join("");
 }
 
-export function byteBoundedJsonArrays<T>(
-  values: readonly T[],
-): string[] {
+export function byteBoundedJsonArrays<T>(values: readonly T[]): string[] {
   const chunks: string[] = [];
   const encoder = new TextEncoder();
   let current: string[] = [];
@@ -69,10 +62,7 @@ export function byteBoundedJsonArrays<T>(
       throw new Error("One reconciliation persistence record exceeds 512 KiB.");
     }
     const additionalBytes = encodedBytes + (current.length === 0 ? 0 : 1);
-    if (
-      current.length > 0 &&
-      currentBytes + additionalBytes > maximumChunkBytes
-    ) {
+    if (current.length > 0 && currentBytes + additionalBytes > maximumChunkBytes) {
       chunks.push(`[${current.join(",")}]`);
       current = [];
       currentBytes = 2;
@@ -86,13 +76,9 @@ export function byteBoundedJsonArrays<T>(
   return chunks;
 }
 
-export function guardedAtomicBatch(
-  statements: readonly D1PreparedStatement[],
-): D1PreparedStatement[] {
+export function guardedAtomicBatch(statements: readonly D1PreparedStatement[]): D1PreparedStatement[] {
   if (statements.length > maximumAtomicBatchStatements) {
-    throw new Error(
-      "A reconciliation atomic batch exceeds its 900-statement D1 budget.",
-    );
+    throw new Error("A reconciliation atomic batch exceeds its 900-statement D1 budget.");
   }
   return [...statements];
 }
@@ -105,9 +91,7 @@ function byteChunks(value: string): string[] {
     let high = Math.min(value.length - offset, maximumChunkBytes);
     while (low < high) {
       const middle = Math.ceil((low + high) / 2);
-      const bytes = new TextEncoder().encode(
-        value.slice(offset, offset + middle),
-      ).byteLength;
+      const bytes = new TextEncoder().encode(value.slice(offset, offset + middle)).byteLength;
       if (bytes <= maximumChunkBytes) low = middle;
       else high = middle - 1;
     }

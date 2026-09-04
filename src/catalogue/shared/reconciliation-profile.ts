@@ -35,19 +35,7 @@ type ProfileContract = Readonly<{
   validateCard: (value: Record<string, unknown>) => void;
 }>;
 
-const colours = array(
-  enumeration([
-    "red",
-    "green",
-    "blue",
-    "purple",
-    "black",
-    "yellow",
-    "white",
-    "colourless",
-  ]),
-  true,
-);
+const colours = array(enumeration(["red", "green", "blue", "purple", "black", "yellow", "white", "colourless"]), true);
 const strings = array(string(), true);
 const nullableInteger = integer(true);
 const nullableText = string(true);
@@ -88,13 +76,7 @@ const profileContracts: Readonly<Record<string, ProfileContract>> = {
         "trigger_text",
       ],
       {
-        card_type: enumeration([
-          "leader",
-          "character",
-          "event",
-          "stage",
-          "don",
-        ]),
+        card_type: enumeration(["leader", "character", "event", "stage", "don"]),
         colours,
         cost: nullableInteger,
         life: nullableInteger,
@@ -108,25 +90,14 @@ const profileContracts: Readonly<Record<string, ProfileContract>> = {
       },
     ),
     printing: object([], {
-      illustration_types: array(
-        enumeration(["comic", "animation", "original", "other"]),
-        true,
-      ),
+      illustration_types: array(enumeration(["comic", "animation", "original", "other"]), true),
     }),
     validateCard(value) {
-      if (
-        value.card_type === "leader" &&
-        !isNonNegativeInteger(value.life)
-      ) {
+      if (value.card_type === "leader" && !isNonNegativeInteger(value.life)) {
         throw new Error("A One Piece Leader requires non-negative life.");
       }
-      if (
-        ["character", "event", "stage"].includes(String(value.card_type)) &&
-        !isNonNegativeInteger(value.cost)
-      ) {
-        throw new Error(
-          "A One Piece Character, Event, or Stage requires non-negative cost.",
-        );
+      if (["character", "event", "stage"].includes(String(value.card_type)) && !isNonNegativeInteger(value.cost)) {
+        throw new Error("A One Piece Character, Event, or Stage requires non-negative cost.");
       }
       if (
         value.card_type === "don" &&
@@ -143,68 +114,42 @@ const profileContracts: Readonly<Record<string, ProfileContract>> = {
   },
   "fusion-world@1": {
     game: "fusion-world",
-    card: object(
-      [
-        "card_type",
-        "colours",
-        "cost",
-        "specified_cost",
-        "power",
-        "combo_power",
-        "traits",
-        "skills",
-      ],
-      {
-        card_type: enumeration([
-          "leader",
-          "battle",
-          "extra",
-          "energy_marker",
-        ]),
-        colours,
-        cost: nullableInteger,
-        specified_cost: array(
-          object(["colour", "count"], {
-            colour: enumeration(["red", "blue", "green", "yellow", "black"]),
-            count: integer(false, 1),
-          }),
-        ),
-        power: nullableInteger,
-        combo_power: nullableInteger,
-        traits: strings,
-        skills: array(typedText),
-        leader_faces: array(
-          object(["role", "name", "traits", "skills"], {
-            role: enumeration(["front", "back"]),
-            name: string(false, 1),
-            power: nullableInteger,
-            traits: strings,
-            skills: string(),
-          }),
-          false,
-          2,
-          2,
-        ),
-      },
-    ),
+    card: object(["card_type", "colours", "cost", "specified_cost", "power", "combo_power", "traits", "skills"], {
+      card_type: enumeration(["leader", "battle", "extra", "energy_marker"]),
+      colours,
+      cost: nullableInteger,
+      specified_cost: array(
+        object(["colour", "count"], {
+          colour: enumeration(["red", "blue", "green", "yellow", "black"]),
+          count: integer(false, 1),
+        }),
+      ),
+      power: nullableInteger,
+      combo_power: nullableInteger,
+      traits: strings,
+      skills: array(typedText),
+      leader_faces: array(
+        object(["role", "name", "traits", "skills"], {
+          role: enumeration(["front", "back"]),
+          name: string(false, 1),
+          power: nullableInteger,
+          traits: strings,
+          skills: string(),
+        }),
+        false,
+        2,
+        2,
+      ),
+    }),
     printing: object([], {}),
     validateCard(value) {
       if (value.card_type !== "leader") return;
       if (!Array.isArray(value.leader_faces)) {
         throw new Error("A Fusion World Leader requires two canonical faces.");
       }
-      const roles = value.leader_faces.map((face) =>
-        isRecord(face) ? face.role : null,
-      );
-      if (
-        roles.length !== 2 ||
-        new Set(roles).size !== 2 ||
-        !roles.includes("front") ||
-        !roles.includes("back")
-      ) {
-        throw new Error(
-          "A Fusion World Leader requires one front and one back face.",
-        );
+      const roles = value.leader_faces.map((face) => (isRecord(face) ? face.role : null));
+      if (roles.length !== 2 || new Set(roles).size !== 2 || !roles.includes("front") || !roles.includes("back")) {
+        throw new Error("A Fusion World Leader requires one front and one back face.");
       }
     },
   },
@@ -225,13 +170,7 @@ const profileContracts: Readonly<Record<string, ProfileContract>> = {
         "text_sections",
       ],
       {
-        card_type: enumeration([
-          "digi_egg",
-          "digimon",
-          "tamer",
-          "option",
-          "digimon_option",
-        ]),
+        card_type: enumeration(["digi_egg", "digimon", "tamer", "option", "digimon_option"]),
         colours,
         level: nullableInteger,
         play_cost: nullableInteger,
@@ -329,37 +268,23 @@ export function exportedGameProfileSchema(profile: string) {
   };
 }
 
-export function validateMembershipPredicate(
-  profile: string,
-  attribute: string,
-  includesAny: readonly string[],
-): void {
+export function validateMembershipPredicate(profile: string, attribute: string, includesAny: readonly string[]): void {
   const schema = requiredProfileContract(profile).card.properties[attribute];
   if (schema === undefined) {
-    throw new Error(
-      `Legality Rule membership attribute ${attribute} is not defined by ${profile}.`,
-    );
+    throw new Error(`Legality Rule membership attribute ${attribute} is not defined by ${profile}.`);
   }
   const vocabulary = membershipVocabulary(schema);
   if (vocabulary === undefined) {
-    throw new Error(
-      `Legality Rule membership attribute ${attribute} cannot be represented by ${profile}.`,
-    );
+    throw new Error(`Legality Rule membership attribute ${attribute} cannot be represented by ${profile}.`);
   }
   if (vocabulary === null) return;
-  const invalid = includesAny.find(
-    (value) => !vocabulary.includes(value),
-  );
+  const invalid = includesAny.find((value) => !vocabulary.includes(value));
   if (invalid !== undefined) {
-    throw new Error(
-      `Legality Rule membership value ${invalid} is not defined for ${profile} attribute ${attribute}.`,
-    );
+    throw new Error(`Legality Rule membership value ${invalid} is not defined for ${profile} attribute ${attribute}.`);
   }
 }
 
-function membershipVocabulary(
-  schema: Schema,
-): readonly string[] | null | undefined {
+function membershipVocabulary(schema: Schema): readonly string[] | null | undefined {
   if (schema.kind === "string") return null;
   if (schema.kind === "enum") return schema.values;
   if (schema.kind === "array") {
@@ -372,9 +297,7 @@ function exportedSchema(schema: Schema): Record<string, unknown> {
   if (schema.kind === "string") {
     return {
       type: schema.nullable ? ["string", "null"] : "string",
-      ...(schema.minimumLength === undefined
-        ? {}
-        : { minLength: schema.minimumLength }),
+      ...(schema.minimumLength === undefined ? {} : { minLength: schema.minimumLength }),
     };
   }
   if (schema.kind === "integer") {
@@ -390,12 +313,8 @@ function exportedSchema(schema: Schema): Record<string, unknown> {
       type: "array",
       items: exportedSchema(schema.items),
       ...(schema.unique ? { uniqueItems: true } : {}),
-      ...(schema.minimumItems === undefined
-        ? {}
-        : { minItems: schema.minimumItems }),
-      ...(schema.maximumItems === undefined
-        ? {}
-        : { maxItems: schema.maximumItems }),
+      ...(schema.minimumItems === undefined ? {} : { minItems: schema.minimumItems }),
+      ...(schema.maximumItems === undefined ? {} : { maxItems: schema.maximumItems }),
     };
   }
   return {
@@ -403,10 +322,7 @@ function exportedSchema(schema: Schema): Record<string, unknown> {
     additionalProperties: false,
     required: schema.required,
     properties: Object.fromEntries(
-      Object.entries(schema.properties).map(([field, child]) => [
-        field,
-        exportedSchema(child),
-      ]),
+      Object.entries(schema.properties).map(([field, child]) => [field, exportedSchema(child)]),
     ),
   };
 }
@@ -420,14 +336,7 @@ export function canonicalProfileAttributes(
 ): Record<string, unknown> {
   const contract = requiredProfileContract(profile);
   const schema = entity === "card" ? contract.card : contract.printing;
-  const canonical = sanitize(
-    raw,
-    schema,
-    entity,
-    sourceObservationId,
-    profile,
-    warnings,
-  );
+  const canonical = sanitize(raw, schema, entity, sourceObservationId, profile, warnings);
   if (!isRecord(canonical)) {
     throw new Error(`Retained ${profile} ${entity} evidence is invalid.`);
   }
@@ -445,20 +354,14 @@ function sanitize(
 ): unknown {
   if (schema.kind === "string") {
     if (value === null && schema.nullable) return null;
-    if (
-      typeof value !== "string" ||
-      value.length < (schema.minimumLength ?? 0)
-    ) {
+    if (typeof value !== "string" || value.length < (schema.minimumLength ?? 0)) {
       throw invalid(path);
     }
     return value;
   }
   if (schema.kind === "integer") {
     if (value === null && schema.nullable) return null;
-    if (
-      !Number.isInteger(value) ||
-      Number(value) < (schema.minimum ?? 0)
-    ) {
+    if (!Number.isInteger(value) || Number(value) < (schema.minimum ?? 0)) {
       throw invalid(path);
     }
     return value;
@@ -471,12 +374,7 @@ function sanitize(
     if (typeof value === "string" && schema.values.includes(value)) {
       return value;
     }
-    warnings.push(sourceVocabularyWarning(
-      sourceObservationId,
-      profile,
-      path,
-      value,
-    ));
+    warnings.push(sourceVocabularyWarning(sourceObservationId, profile, path, value));
     return undefined;
   }
   if (schema.kind === "array") {
@@ -493,11 +391,7 @@ function sanitize(
       return canonical === undefined ? [] : [canonical];
     });
     const canonical = schema.unique
-      ? [
-          ...new Map(
-            result.map((item) => [canonicalJson(item), item]),
-          ).values(),
-        ].sort((left, right) =>
+      ? [...new Map(result.map((item) => [canonicalJson(item), item])).values()].sort((left, right) =>
           canonicalJson(left).localeCompare(canonicalJson(right)),
         )
       : result;
@@ -515,29 +409,15 @@ function sanitize(
     const child = schema.properties[field];
     const childPath = `${path}.${field}`;
     if (child === undefined) {
-      warnings.push(sourceFieldWarning(
-        sourceObservationId,
-        profile,
-        childPath,
-        raw,
-      ));
+      warnings.push(sourceFieldWarning(sourceObservationId, profile, childPath, raw));
       continue;
     }
-    const canonical = sanitize(
-      raw,
-      child,
-      childPath,
-      sourceObservationId,
-      profile,
-      warnings,
-    );
+    const canonical = sanitize(raw, child, childPath, sourceObservationId, profile, warnings);
     if (canonical !== undefined) result[field] = canonical;
   }
   const missing = schema.required.filter((field) => !(field in result));
   if (missing.length > 0) {
-    throw new Error(
-      `Retained ${profile} evidence at ${path} is incomplete: ${missing.join(", ")}.`,
-    );
+    throw new Error(`Retained ${profile} evidence at ${path} is incomplete: ${missing.join(", ")}.`);
   }
   return result;
 }
@@ -558,23 +438,15 @@ function array(
   return { kind: "array", items, unique, minimumItems, maximumItems };
 }
 
-function string(
-  nullable = false,
-  minimumLength = 0,
-): Extract<Schema, { kind: "string" }> {
+function string(nullable = false, minimumLength = 0): Extract<Schema, { kind: "string" }> {
   return { kind: "string", nullable, minimumLength };
 }
 
-function integer(
-  nullable = false,
-  minimum = 0,
-): Extract<Schema, { kind: "integer" }> {
+function integer(nullable = false, minimum = 0): Extract<Schema, { kind: "integer" }> {
   return { kind: "integer", nullable, minimum };
 }
 
-function enumeration(
-  values: readonly string[],
-): Extract<Schema, { kind: "enum" }> {
+function enumeration(values: readonly string[]): Extract<Schema, { kind: "enum" }> {
   return { kind: "enum", values };
 }
 

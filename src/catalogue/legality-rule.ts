@@ -1,13 +1,18 @@
-import type {
-  CatalogueCard,
-  LegalityRegion,
-  LegalityRule,
-  LegalityRuleEffect,
-  LegalityRuleSourceFieldPointers,
-  SupportedGame,
-  UnresolvedLegalityScope,
-  UnresolvedLegalityScopeDimension,
-} from "./catalogue-candidate-types";
+import {
+  type CatalogueCard,
+  type LegalityRegion,
+  type LegalityRule,
+  type LegalityRuleEffect,
+  type LegalityRuleSourceFieldPointers,
+  type SupportedGame,
+  type UnresolvedLegalityScope,
+  type UnresolvedLegalityScopeDimension,
+  validateMembershipPredicate,
+  canonicalJson,
+  compareUtf8,
+  sha256Text,
+  isIsoCalendarDate,
+} from "./shared";
 // The Legality Rule shapes live in the leaf module `catalogue-candidate-types`;
 // they stay importable from here.
 export type {
@@ -16,14 +21,7 @@ export type {
   LegalityRuleSourceFieldPointers,
   UnresolvedLegalityScope,
   UnresolvedLegalityScopeDimension,
-} from "./catalogue-candidate-types";
-import { validateMembershipPredicate } from "./reconciliation-profile";
-import {
-  canonicalJson,
-  compareUtf8,
-  sha256Text,
-} from "./serialization";
-import { isIsoCalendarDate } from "./calendar-date.ts";
+} from "./shared";
 import {
   parseLegalityRuleEffect,
   parseStoredLegalityRuleEffect,
@@ -49,16 +47,11 @@ export {
  * future) Cards are also in scope. Contextual status treats such a rule as an
  * explicit uncertainty for every Card of its game, region, and format.
  */
-export function unresolvedTargetScope(
-  scope: UnresolvedLegalityScope | null,
-): boolean {
+export function unresolvedTargetScope(scope: UnresolvedLegalityScope | null): boolean {
   return scope !== null && scope.dimensions.includes("target_scope");
 }
 
-export type RetainedLegalityRule = Omit<
-  LegalityRule,
-  "id" | "card_ids" | "effect"
-> & {
+export type RetainedLegalityRule = Omit<LegalityRule, "id" | "card_ids" | "effect"> & {
   card_numbers: readonly string[];
   effect: RetainedLegalityRuleEffect;
 };
@@ -80,9 +73,7 @@ export function parseRetainedLegalityRules(
   if (!Array.isArray(value.legality_rules)) {
     throw new Error("Legality Rules must be an array.");
   }
-  return value.legality_rules.map((item, index) =>
-    parseRule(item, provenance, index),
-  );
+  return value.legality_rules.map((item, index) => parseRule(item, provenance, index));
 }
 
 export async function resolveLegalityRuleCards(
@@ -90,37 +81,24 @@ export async function resolveLegalityRuleCards(
   cards: readonly CatalogueCard[],
 ): Promise<LegalityRule[]> {
   const cardsByOfficialIdentity = new Map(
-    cards.map((card) =>
-      [`${card.game}:${card.official_identity.value}`, card.id] as const
-    ),
+    cards.map((card) => [`${card.game}:${card.official_identity.value}`, card.id] as const),
   );
   const identities = new Set<string>();
   const resolved: LegalityRule[] = [];
   for (const rule of rules) {
-    const id = await canonicalLegalityRuleId(
-      rule.source_lineage,
-      rule.official_id,
-    );
+    const id = await canonicalLegalityRuleId(rule.source_lineage, rule.official_id);
     if (identities.has(id)) {
       throw new Error(`Duplicate Legality Rule identity ${id}.`);
     }
     identities.add(id);
     if (rule.effect.type === "membership") {
-      validateMembershipPredicate(
-        `${rule.game}@1`,
-        rule.effect.attribute,
-        rule.effect.includes_any,
-      );
+      validateMembershipPredicate(`${rule.game}@1`, rule.effect.attribute, rule.effect.includes_any);
     }
     const cardIds = canonicalCardIds(
-      rule.card_numbers.map((number) =>
-        requiredCardId(cardsByOfficialIdentity, rule.game, number)
-      ),
+      rule.card_numbers.map((number) => requiredCardId(cardsByOfficialIdentity, rule.game, number)),
     );
     if (rule.unresolved_scope !== null && cardIds.length === 0) {
-      throw new Error(
-        `Legality Rule ${rule.official_id} with unresolved scope must identify at least one Card.`,
-      );
+      throw new Error(`Legality Rule ${rule.official_id} with unresolved scope must identify at least one Card.`);
     }
     const effect =
       rule.effect.type === "prohibited_combination"
@@ -128,9 +106,7 @@ export async function resolveLegalityRuleCards(
             rule,
             cardIds,
             canonicalCardIds(
-              rule.effect.with_card_numbers.map((number) =>
-                requiredCardId(cardsByOfficialIdentity, rule.game, number)
-              ),
+              rule.effect.with_card_numbers.map((number) => requiredCardId(cardsByOfficialIdentity, rule.game, number)),
             ),
           )
         : rule.effect;
@@ -147,15 +123,10 @@ export async function resolveLegalityRuleCards(
   return resolved;
 }
 
-export function assertCanonicalLegalityRule(
-  rule: LegalityRule,
-  cards: readonly CatalogueCard[],
-): void {
+export function assertCanonicalLegalityRule(rule: LegalityRule, cards: readonly CatalogueCard[]): void {
   const authority = registeredLegalitySourceScope(rule.source_lineage);
   if (rule.game !== authority.game || rule.region !== authority.region) {
-    throw new Error(
-      "Legality Rule game or region conflicts with its separate source lineage.",
-    );
+    throw new Error("Legality Rule game or region conflicts with its separate source lineage.");
   }
   requiredOpaqueId(rule.id, "legality rule id");
   requiredOpaqueId(rule.official_id, "official legality rule id");
@@ -163,17 +134,12 @@ export function assertCanonicalLegalityRule(
   if (rule.event_tier !== null) {
     requiredString(rule.event_tier, "legality rule event tier");
   }
-  const effectiveFrom = rule.effective_from === null
-    ? null
-    : requiredDate(rule.effective_from, "legality rule effective_from");
-  const effectiveUntil = rule.effective_until === null
-    ? null
-    : requiredDate(rule.effective_until, "legality rule effective_until");
-  if (effectiveFrom !== null && effectiveUntil !== null &&
-    effectiveUntil <= effectiveFrom) {
-    throw new Error(
-      "A Legality Rule effective interval must end after it starts.",
-    );
+  const effectiveFrom =
+    rule.effective_from === null ? null : requiredDate(rule.effective_from, "legality rule effective_from");
+  const effectiveUntil =
+    rule.effective_until === null ? null : requiredDate(rule.effective_until, "legality rule effective_until");
+  if (effectiveFrom !== null && effectiveUntil !== null && effectiveUntil <= effectiveFrom) {
+    throw new Error("A Legality Rule effective interval must end after it starts.");
   }
   const unresolvedScope = parsedUnresolvedScope(rule.unresolved_scope);
   const effect = parseStoredLegalityRuleEffect(rule.effect);
@@ -183,15 +149,12 @@ export function assertCanonicalLegalityRule(
       (unresolvedScope.dimensions.includes("effective_interval")
         ? effectiveFrom !== null || effectiveUntil !== null
         : effectiveFrom === null) ||
-      (unresolvedScope.dimensions.includes("event_tier") &&
-        rule.event_tier !== null))
+      (unresolvedScope.dimensions.includes("event_tier") && rule.event_tier !== null))
   ) {
     throw new Error("Legality Rule unresolved scope conflicts with its exact context.");
   }
   if (effectiveFrom === null && unresolvedScope === null) {
-    throw new Error(
-      "Legality Rule without an effective interval requires explicit unresolved scope.",
-    );
+    throw new Error("Legality Rule without an effective interval requires explicit unresolved scope.");
   }
   const cardIds = requiredStrings(rule.card_ids, "legality rule Card ids", true);
   if (canonicalJson(cardIds) !== canonicalJson(rule.card_ids)) {
@@ -200,17 +163,11 @@ export function assertCanonicalLegalityRule(
   const cardsById = new Map(cards.map((card) => [card.id, card.game] as const));
   for (const cardId of legalityRuleCardIds(rule)) {
     if (cardsById.get(cardId) !== rule.game) {
-      throw new Error(
-        `Legality Rule references Card ${cardId} outside its Supported Game.`,
-      );
+      throw new Error(`Legality Rule references Card ${cardId} outside its Supported Game.`);
     }
   }
   if (effect.type === "membership") {
-    validateMembershipPredicate(
-      `${rule.game}@1`,
-      effect.attribute,
-      effect.includes_any,
-    );
+    validateMembershipPredicate(`${rule.game}@1`, effect.attribute, effect.includes_any);
   }
   if (effect.type === "prohibited_combination") {
     if (rule.card_ids.length === 0 || effect.with_card_ids.length === 0) {
@@ -220,25 +177,14 @@ export function assertCanonicalLegalityRule(
     }
     const direct = new Set(rule.card_ids);
     if (effect.with_card_ids.some((cardId) => direct.has(cardId))) {
-      throw new Error(
-        `Legality Rule ${rule.official_id} overlaps prohibited-combination operands.`,
-      );
+      throw new Error(`Legality Rule ${rule.official_id} overlaps prohibited-combination operands.`);
     }
   }
   requiredString(rule.official_wording, "legality rule official wording");
   requiredOpaqueId(rule.source_snapshot_id, "legality rule Source Snapshot id");
-  requiredOpaqueId(
-    rule.source_observation_set_id,
-    "legality rule Source Observation Set id",
-  );
-  requiredOpaqueId(
-    rule.source_observation_id,
-    "legality rule Source Observation id",
-  );
-  requiredString(
-    rule.source_observation_pointer,
-    "legality rule Source Observation pointer",
-  );
+  requiredOpaqueId(rule.source_observation_set_id, "legality rule Source Observation Set id");
+  requiredOpaqueId(rule.source_observation_id, "legality rule Source Observation id");
+  requiredString(rule.source_observation_pointer, "legality rule Source Observation pointer");
 }
 
 function canonicalCardIds(cardIds: readonly string[]): string[] {
@@ -256,9 +202,7 @@ function resolvedProhibitedCombination(
     );
   }
   const directCardIds = new Set(cardIds);
-  const overlappingCardId = withCardIds.find((cardId) =>
-    directCardIds.has(cardId)
-  );
+  const overlappingCardId = withCardIds.find((cardId) => directCardIds.has(cardId));
   if (overlappingCardId !== undefined) {
     throw new Error(
       `Legality Rule ${rule.official_id} assigns Card ${overlappingCardId} to both direct and prohibited-combination operands.`,
@@ -270,10 +214,7 @@ function resolvedProhibitedCombination(
   };
 }
 
-export async function canonicalLegalityRuleId(
-  sourceLineage: string,
-  officialId: string,
-): Promise<string> {
+export async function canonicalLegalityRuleId(sourceLineage: string, officialId: string): Promise<string> {
   return `legality_rule_${await sha256Text(
     canonicalJson({
       official_id: officialId,
@@ -282,16 +223,9 @@ export async function canonicalLegalityRuleId(
   )}`;
 }
 
-export function legalityRuleCardIds(
-  rule: Pick<LegalityRule, "card_ids" | "effect">,
-): string[] {
+export function legalityRuleCardIds(rule: Pick<LegalityRule, "card_ids" | "effect">): string[] {
   return [
-    ...new Set([
-      ...rule.card_ids,
-      ...(rule.effect.type === "prohibited_combination"
-        ? rule.effect.with_card_ids
-        : []),
-    ]),
+    ...new Set([...rule.card_ids, ...(rule.effect.type === "prohibited_combination" ? rule.effect.with_card_ids : [])]),
   ].sort(compareUtf8);
 }
 
@@ -334,41 +268,21 @@ function parseRule(
   }
   const region = requiredRegion(record.region);
   if (region !== regionForLineage(provenance.sourceLineage)) {
-    throw new Error(
-      "Legality Rule region conflicts with its separate source lineage.",
-    );
+    throw new Error("Legality Rule region conflicts with its separate source lineage.");
   }
   const effect = parseLegalityRuleEffect(record.effect);
-  const effectiveFrom = record.effective_from === null
-    ? null
-    : requiredDate(
-      record.effective_from,
-      "legality rule effective_from",
-    );
+  const effectiveFrom =
+    record.effective_from === null ? null : requiredDate(record.effective_from, "legality rule effective_from");
   if (!("effective_until" in record)) {
-    throw new Error(
-      "Legality Rule effective_until must be explicitly retained as a date or null.",
-    );
+    throw new Error("Legality Rule effective_until must be explicitly retained as a date or null.");
   }
   if (!("event_tier" in record)) {
-    throw new Error(
-      "Legality Rule event_tier must be explicitly retained as a value or null.",
-    );
+    throw new Error("Legality Rule event_tier must be explicitly retained as a value or null.");
   }
   const effectiveUntil =
-    record.effective_until === null
-      ? null
-      : requiredDate(
-          record.effective_until,
-          "legality rule effective_until",
-        );
-  if (
-    effectiveFrom !== null && effectiveUntil !== null &&
-    effectiveUntil <= effectiveFrom
-  ) {
-    throw new Error(
-      "A Legality Rule effective interval must end after it starts.",
-    );
+    record.effective_until === null ? null : requiredDate(record.effective_until, "legality rule effective_until");
+  if (effectiveFrom !== null && effectiveUntil !== null && effectiveUntil <= effectiveFrom) {
+    throw new Error("A Legality Rule effective interval must end after it starts.");
   }
   const unresolvedScope = parsedUnresolvedScope(record.unresolved_scope);
   if (
@@ -377,42 +291,25 @@ function parseRule(
       (unresolvedScope.dimensions.includes("effective_interval")
         ? effectiveFrom !== null || effectiveUntil !== null
         : effectiveFrom === null) ||
-      (unresolvedScope.dimensions.includes("event_tier") &&
-        record.event_tier !== null))
+      (unresolvedScope.dimensions.includes("event_tier") && record.event_tier !== null))
   ) {
     throw new Error("Legality Rule unresolved scope conflicts with its exact context.");
   }
   if (effectiveFrom === null && unresolvedScope === null) {
-    throw new Error(
-      "Legality Rule without an effective interval requires explicit unresolved scope.",
-    );
+    throw new Error("Legality Rule without an effective interval requires explicit unresolved scope.");
   }
-  const sourceObservationPointer =
-    `${provenance.sourceValuePointer}/legality_rules/${index}`;
+  const sourceObservationPointer = `${provenance.sourceValuePointer}/legality_rules/${index}`;
   return {
-    official_id: requiredOpaqueId(
-      record.id,
-      "official legality rule id",
-    ),
+    official_id: requiredOpaqueId(record.id, "official legality rule id"),
     game: provenance.game,
     region,
     format: requiredString(record.format, "legality rule format"),
-    event_tier:
-      record.event_tier === null
-        ? null
-        : requiredString(record.event_tier, "legality rule event tier"),
+    event_tier: record.event_tier === null ? null : requiredString(record.event_tier, "legality rule event tier"),
     effective_from: effectiveFrom,
     effective_until: effectiveUntil,
     unresolved_scope: unresolvedScope,
-    card_numbers: requiredCardNumbers(
-      record.card_numbers,
-      "legality rule card_numbers",
-      true,
-    ),
-    official_wording: requiredString(
-      record.official_wording,
-      "legality rule official wording",
-    ),
+    card_numbers: requiredCardNumbers(record.card_numbers, "legality rule card_numbers", true),
+    official_wording: requiredString(record.official_wording, "legality rule official wording"),
     effect,
     source_lineage: provenance.sourceLineage,
     source_snapshot_id: provenance.sourceSnapshotId,
@@ -441,36 +338,25 @@ function parsedUnresolvedScope(value: unknown): UnresolvedLegalityScope | null {
     throw new Error("Legality Rule unresolved_scope dimensions must be an array.");
   }
   const dimensions = scope.dimensions.map((dimension) => {
-    if (
-      dimension !== "effective_interval" &&
-      dimension !== "event_tier" &&
-      dimension !== "target_scope"
-    ) {
+    if (dimension !== "effective_interval" && dimension !== "event_tier" && dimension !== "target_scope") {
       throw new Error("Legality Rule unresolved_scope dimension is unsupported.");
     }
     return dimension;
   });
   if (
-    dimensions.length === 0 || new Set(dimensions).size !== dimensions.length ||
+    dimensions.length === 0 ||
+    new Set(dimensions).size !== dimensions.length ||
     dimensions.join(",") !== [...dimensions].sort().join(",")
   ) {
-    throw new Error(
-      "Legality Rule unresolved_scope dimensions must be non-empty, unique, and canonical.",
-    );
+    throw new Error("Legality Rule unresolved_scope dimensions must be non-empty, unique, and canonical.");
   }
   return { dimensions };
 }
 
-function requiredCardId(
-  cards: ReadonlyMap<string, string>,
-  game: SupportedGame,
-  number: string,
-): string {
+function requiredCardId(cards: ReadonlyMap<string, string>, game: SupportedGame, number: string): string {
   const cardId = cards.get(`${game}:${number.toUpperCase()}`);
   if (cardId === undefined) {
-    throw new Error(
-      `Legality Rule references Card Number ${number} outside the selected candidate.`,
-    );
+    throw new Error(`Legality Rule references Card Number ${number} outside the selected candidate.`);
   }
   return cardId;
 }
@@ -494,34 +380,15 @@ function requiredDate(value: unknown, name: string): string {
   return text;
 }
 
-function requiredCardNumbers(
-  value: unknown,
-  name: string,
-  allowEmpty: boolean,
-): string[] {
-  return [
-    ...new Set(
-      requiredStrings(value, name, allowEmpty).map((item) =>
-        item.toUpperCase(),
-      ),
-    ),
-  ].sort(compareUtf8);
+function requiredCardNumbers(value: unknown, name: string, allowEmpty: boolean): string[] {
+  return [...new Set(requiredStrings(value, name, allowEmpty).map((item) => item.toUpperCase()))].sort(compareUtf8);
 }
 
-function requiredStrings(
-  value: unknown,
-  name: string,
-  allowEmpty: boolean,
-): string[] {
+function requiredStrings(value: unknown, name: string, allowEmpty: boolean): string[] {
   if (
     !Array.isArray(value) ||
     (!allowEmpty && value.length === 0) ||
-    value.some(
-      (item) =>
-        typeof item !== "string" ||
-        item.length === 0 ||
-        item !== item.trim(),
-    )
+    value.some((item) => typeof item !== "string" || item.length === 0 || item !== item.trim())
   ) {
     throw new Error(`${name} must be an array of non-empty strings.`);
   }
@@ -537,36 +404,22 @@ function requiredOpaqueId(value: unknown, name: string): string {
 }
 
 function requiredString(value: unknown, name: string): string {
-  if (
-    typeof value !== "string" ||
-    value.length === 0 ||
-    value !== value.trim()
-  ) {
+  if (typeof value !== "string" || value.length === 0 || value !== value.trim()) {
     throw new Error(`${name} must be a non-empty string.`);
   }
   return value;
 }
 
-function requiredRecord(
-  value: unknown,
-  name: string,
-): Record<string, unknown> {
+function requiredRecord(value: unknown, name: string): Record<string, unknown> {
   if (!isRecord(value)) throw new Error(`${name} must be an object.`);
   return value;
 }
 
-function assertOnlyFields(
-  value: Record<string, unknown>,
-  allowed: readonly string[],
-): void {
+function assertOnlyFields(value: Record<string, unknown>, allowed: readonly string[]): void {
   const allowedFields = new Set(allowed);
-  const unexpected = Object.keys(value).find(
-    (field) => !allowedFields.has(field),
-  );
+  const unexpected = Object.keys(value).find((field) => !allowedFields.has(field));
   if (unexpected !== undefined) {
-    throw new Error(
-      `Legality Rule field ${unexpected} cannot be represented by the installed adapter.`,
-    );
+    throw new Error(`Legality Rule field ${unexpected} cannot be represented by the installed adapter.`);
   }
 }
 

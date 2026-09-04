@@ -1,11 +1,7 @@
-import { isIsoCalendarDate } from "./calendar-date.ts";
+import { isIsoCalendarDate } from "./shared";
 import { requiredOfficialSourceScope } from "./official-source-scope.ts";
 
-type OfficialLegalityGame =
-  | "one-piece"
-  | "fusion-world"
-  | "digimon"
-  | "gundam";
+type OfficialLegalityGame = "one-piece" | "fusion-world" | "digimon" | "gundam";
 
 type FieldMap = Readonly<{
   id: string;
@@ -106,47 +102,82 @@ const fieldsByGame: Readonly<Record<OfficialLegalityGame, FieldMap>> = {
   },
 };
 
-const htmlLabelsByGame: Readonly<
-  Record<OfficialLegalityGame, Readonly<Record<string, keyof FieldMap>>>
-> = {
+const htmlLabelsByGame: Readonly<Record<OfficialLegalityGame, Readonly<Record<string, keyof FieldMap>>>> = {
   "one-piece": {
-    "Notice No": "id", "Published Text": "wording", Territory: "region",
-    "Format Name": "format", "Event Class": "tier", "Start Date": "effectiveFrom",
-    "End Date": "effectiveUntil", "Card Numbers": "cards",
+    "Notice No": "id",
+    "Published Text": "wording",
+    Territory: "region",
+    "Format Name": "format",
+    "Event Class": "tier",
+    "Start Date": "effectiveFrom",
+    "End Date": "effectiveUntil",
+    "Card Numbers": "cards",
     "Unresolved Scope": "unresolvedScope",
-    "Restriction Code": "directive", "Maximum Copies": "maximumCopies",
-    "Related Cards": "companionCards", "Membership Attribute": "membershipAttribute",
-    "Membership Values": "membershipValues", "Eligible Blocks": "eligibleBlocks",
-    "Legal From": "legalFrom", "Unresolved Reason": "unresolvedReason",
+    "Restriction Code": "directive",
+    "Maximum Copies": "maximumCopies",
+    "Related Cards": "companionCards",
+    "Membership Attribute": "membershipAttribute",
+    "Membership Values": "membershipValues",
+    "Eligible Blocks": "eligibleBlocks",
+    "Legal From": "legalFrom",
+    "Unresolved Reason": "unresolvedReason",
   },
   "fusion-world": {
-    "Rule Ref": "id", Notice: "wording", Market: "region",
-    "Play Format": "format", Tier: "tier", "Active On": "effectiveFrom",
-    "Expires On": "effectiveUntil", Cards: "cards", Directive: "directive",
+    "Rule Ref": "id",
+    Notice: "wording",
+    Market: "region",
+    "Play Format": "format",
+    Tier: "tier",
+    "Active On": "effectiveFrom",
+    "Expires On": "effectiveUntil",
+    Cards: "cards",
+    Directive: "directive",
     "Unresolved Scope": "unresolvedScope",
-    Cap: "maximumCopies", "Paired Cards": "companionCards",
-    "Filter Field": "membershipAttribute", "Filter Values": "membershipValues",
-    Blocks: "eligibleBlocks", "Tournament Legal Date": "legalFrom",
+    Cap: "maximumCopies",
+    "Paired Cards": "companionCards",
+    "Filter Field": "membershipAttribute",
+    "Filter Values": "membershipValues",
+    Blocks: "eligibleBlocks",
+    "Tournament Legal Date": "legalFrom",
     Ambiguity: "unresolvedReason",
   },
   digimon: {
-    "Restriction ID": "id", Body: "wording", "Language Scope": "region",
-    Ruleset: "format", "Tournament Level": "tier", "Applies From": "effectiveFrom",
-    "Applies Until": "effectiveUntil", "Card IDs": "cards", "Status Code": "directive",
+    "Restriction ID": "id",
+    Body: "wording",
+    "Language Scope": "region",
+    Ruleset: "format",
+    "Tournament Level": "tier",
+    "Applies From": "effectiveFrom",
+    "Applies Until": "effectiveUntil",
+    "Card IDs": "cards",
+    "Status Code": "directive",
     "Unresolved Scope": "unresolvedScope",
-    "Deck Limit": "maximumCopies", "Prohibited With": "companionCards",
-    "Membership Field": "membershipAttribute", "Membership Terms": "membershipValues",
-    "Permitted Blocks": "eligibleBlocks", "Sale Eligible On": "legalFrom",
+    "Deck Limit": "maximumCopies",
+    "Prohibited With": "companionCards",
+    "Membership Field": "membershipAttribute",
+    "Membership Terms": "membershipValues",
+    "Permitted Blocks": "eligibleBlocks",
+    "Sale Eligible On": "legalFrom",
     Clarification: "unresolvedReason",
   },
   gundam: {
-    "News ID": "id", Text: "wording", Region: "region", Format: "format",
-    "Event Tier": "tier", "Effective Date": "effectiveFrom", "End Date": "effectiveUntil",
+    "News ID": "id",
+    Text: "wording",
+    Region: "region",
+    Format: "format",
+    "Event Tier": "tier",
+    "Effective Date": "effectiveFrom",
+    "End Date": "effectiveUntil",
     "Unresolved Scope": "unresolvedScope",
-    "Card Numbers": "cards", Ruling: "directive", "Copy Limit": "maximumCopies",
-    "Companion Cards": "companionCards", Attribute: "membershipAttribute",
-    Values: "membershipValues", "Legal Blocks": "eligibleBlocks",
-    "Legal From": "legalFrom", Reason: "unresolvedReason",
+    "Card Numbers": "cards",
+    Ruling: "directive",
+    "Copy Limit": "maximumCopies",
+    "Companion Cards": "companionCards",
+    Attribute: "membershipAttribute",
+    Values: "membershipValues",
+    "Legal Blocks": "eligibleBlocks",
+    "Legal From": "legalFrom",
+    Reason: "unresolvedReason",
   },
 };
 
@@ -172,13 +203,7 @@ export function officialLegalityRulesObservation(
   rawDocument: Record<string, unknown>,
   options: OfficialLegalityParseOptions = {},
 ): Record<string, unknown> {
-  return officialLegalityObservation(
-    game,
-    sourceLineage,
-    rawDocument,
-    false,
-    options,
-  );
+  return officialLegalityObservation(game, sourceLineage, rawDocument, false, options);
 }
 
 export function officialLiveLegalityRulesObservation(
@@ -187,13 +212,7 @@ export function officialLiveLegalityRulesObservation(
   rawDocument: Record<string, unknown>,
   options: OfficialLegalityParseOptions = {},
 ): Record<string, unknown> {
-  return officialLegalityObservation(
-    game,
-    sourceLineage,
-    rawDocument,
-    true,
-    options,
-  );
+  return officialLegalityObservation(game, sourceLineage, rawDocument, true, options);
 }
 
 function officialLegalityObservation(
@@ -203,16 +222,11 @@ function officialLegalityObservation(
   allowKnownPolicyWithUnresolvedInterval: boolean,
   options: OfficialLegalityParseOptions = {},
 ): Record<string, unknown> {
-  const entries = requiredArray(
-    rawDocument.entries,
-    "Official Source Legality entries",
-  );
-  const declaredRecordCount = rawDocument.declared_record_count === undefined
-    ? entries.length
-    : requiredNonNegativeInteger(
-      rawDocument.declared_record_count,
-      "Official Source Legality declared record count",
-    );
+  const entries = requiredArray(rawDocument.entries, "Official Source Legality entries");
+  const declaredRecordCount =
+    rawDocument.declared_record_count === undefined
+      ? entries.length
+      : requiredNonNegativeInteger(rawDocument.declared_record_count, "Official Source Legality declared record count");
   if (declaredRecordCount !== entries.length) {
     throw new Error(
       `Official Source Legality declares ${declaredRecordCount} records but exactly ${entries.length} were parsed.`,
@@ -228,7 +242,7 @@ function officialLegalityObservation(
         requiredRecord(entry, `Official Source Legality entry ${index}`),
         allowKnownPolicyWithUnresolvedInterval,
         options,
-      )
+      ),
     ),
     completeness: {
       structurally_complete: true,
@@ -248,12 +262,8 @@ export function officialLegalityRulesHtmlObservation(
   options: OfficialLegalityParseOptions = {},
 ): Record<string, unknown> | null {
   const declaredRecordCount = publisherDeclaredRecordCount(html);
-  const articles = [...html.matchAll(
-    /<article\b([^>]*)>([\s\S]*?)<\/article>/giu,
-  )].filter((match) =>
-    /(?:^|\s)restriction-card(?:\s|$)/u.test(
-      htmlAttribute(match[1]!, "class") ?? "",
-    )
+  const articles = [...html.matchAll(/<article\b([^>]*)>([\s\S]*?)<\/article>/giu)].filter((match) =>
+    /(?:^|\s)restriction-card(?:\s|$)/u.test(htmlAttribute(match[1]!, "class") ?? ""),
   );
   if (articles.length === 0) {
     return declaredRecordCount === 0
@@ -261,57 +271,53 @@ export function officialLegalityRulesHtmlObservation(
       : null;
   }
   if (declaredRecordCount === null) {
-    throw new Error(
-      "Official Legality HTML has no exact publisher-declared record total.",
-    );
+    throw new Error("Official Legality HTML has no exact publisher-declared record total.");
   }
 
   const fields = fieldsByGame[game];
   const labels = htmlLabelsByGame[game];
   const entries = articles.map((article, articleIndex) => {
-    const pairs = [...article[2]!.matchAll(
-      /<dt\b[^>]*>([\s\S]*?)<\/dt>\s*<dd\b[^>]*>([\s\S]*?)<\/dd>/giu,
-    )];
+    const pairs = [...article[2]!.matchAll(/<dt\b[^>]*>([\s\S]*?)<\/dt>\s*<dd\b[^>]*>([\s\S]*?)<\/dd>/giu)];
     if (pairs.length === 0) {
-      throw new Error(
-        `Official Legality HTML entry ${articleIndex} has no exact label/value fields.`,
-      );
+      throw new Error(`Official Legality HTML entry ${articleIndex} has no exact label/value fields.`);
     }
     const entry: Record<string, unknown> = {};
     for (const pair of pairs) {
       const label = htmlText(pair[1]!);
       const field = labels[label];
       if (field === undefined) {
-        throw new Error(
-          `Official Legality HTML label ${label} is not recognized by this Source Adapter Version.`,
-        );
+        throw new Error(`Official Legality HTML label ${label} is not recognized by this Source Adapter Version.`);
       }
       const rawField = fields[field];
       if (rawField in entry) {
         throw new Error(`Official Legality HTML label ${label} is duplicated.`);
       }
       const value = htmlText(pair[2]!);
-      entry[rawField] = field === "unresolvedScope"
-        ? value === "-" ? null : { dimensions: value.split(",").map((item) => item.trim()) }
-        : field === "cards" ||
-          field === "companionCards" || field === "membershipValues" ||
-          field === "eligibleBlocks"
-        ? value === "-" ? [] : value.split(",").map((item) => item.trim())
-        : field === "maximumCopies"
-          ? Number(value)
-          : field === "tier" || field === "effectiveFrom" ||
-              field === "effectiveUntil"
-            ? value === "-" ? null : value
-            : value;
+      entry[rawField] =
+        field === "unresolvedScope"
+          ? value === "-"
+            ? null
+            : { dimensions: value.split(",").map((item) => item.trim()) }
+          : field === "cards" ||
+              field === "companionCards" ||
+              field === "membershipValues" ||
+              field === "eligibleBlocks"
+            ? value === "-"
+              ? []
+              : value.split(",").map((item) => item.trim())
+            : field === "maximumCopies"
+              ? Number(value)
+              : field === "tier" || field === "effectiveFrom" || field === "effectiveUntil"
+                ? value === "-"
+                  ? null
+                  : value
+                : value;
     }
-    const residual = pairs.reduce(
-      (content, pair) => content.replace(pair[0]!, ""),
-      article[2]!,
-    ).replace(/<\/?dl\b[^>]*>/giu, "");
+    const residual = pairs
+      .reduce((content, pair) => content.replace(pair[0]!, ""), article[2]!)
+      .replace(/<\/?dl\b[^>]*>/giu, "");
     if (htmlText(residual).length > 0) {
-      throw new Error(
-        `Official Legality HTML entry ${articleIndex} contains residual semantic content.`,
-      );
+      throw new Error(`Official Legality HTML entry ${articleIndex} contains residual semantic content.`);
     }
     return entry;
   });
@@ -324,22 +330,18 @@ export function officialLegalityRulesHtmlObservation(
 }
 
 function publisherDeclaredRecordCount(html: string): number | null {
-  const declarations = [...html.matchAll(
-    />\s*(\d+)\s+(?:records?|results?|items?)\s*</giu,
-  )].map((match) => Number.parseInt(match[1]!, 10));
+  const declarations = [...html.matchAll(/>\s*(\d+)\s+(?:records?|results?|items?)\s*</giu)].map((match) =>
+    Number.parseInt(match[1]!, 10),
+  );
   if (declarations.length === 0) return null;
   if (declarations.length !== 1 || !Number.isSafeInteger(declarations[0])) {
-    throw new Error(
-      "Official Legality HTML must contain one exact publisher-declared record total.",
-    );
+    throw new Error("Official Legality HTML must contain one exact publisher-declared record total.");
   }
   return declarations[0]!;
 }
 
 function htmlAttribute(attributes: string, name: string): string | null {
-  return attributes.match(
-    new RegExp(`\\b${name}=["']([^"']*)["']`, "iu"),
-  )?.[1] ?? null;
+  return attributes.match(new RegExp(`\\b${name}=["']([^"']*)["']`, "iu"))?.[1] ?? null;
 }
 
 function htmlText(value: string): string {
@@ -349,9 +351,8 @@ function htmlText(value: string): string {
       "\n",
     )
     .replace(/<[^>]+>/gu, "")
-    .replace(
-      /&(#\d+|#x[0-9a-f]+|[a-z][a-z0-9]+);/giu,
-      (entity, reference: string) => decodedHtmlEntity(entity, reference),
+    .replace(/&(#\d+|#x[0-9a-f]+|[a-z][a-z0-9]+);/giu, (entity, reference: string) =>
+      decodedHtmlEntity(entity, reference),
     )
     .replace(/[ \t]*\n[ \t]*/gu, "\n")
     .replace(/\n{2,}/gu, "\n")
@@ -396,9 +397,7 @@ function decodedHtmlEntity(entity: string, reference: string): string {
   }
   const decoded = namedHtmlEntities[reference.toLowerCase()];
   if (decoded === undefined) {
-    throw new Error(
-      `Official Legality HTML entity ${entity} is not recognized by this Source Adapter Version.`,
-    );
+    throw new Error(`Official Legality HTML entity ${entity} is not recognized by this Source Adapter Version.`);
   }
   return decoded;
 }
@@ -412,26 +411,16 @@ function exactLegalityRule(
   options: OfficialLegalityParseOptions = {},
 ): Record<string, unknown> {
   const allowedFields = new Set(Object.values(fields));
-  const unknownField = Object.keys(entry).find((field) =>
-    !allowedFields.has(field)
-  );
+  const unknownField = Object.keys(entry).find((field) => !allowedFields.has(field));
   if (unknownField !== undefined) {
-    throw new Error(
-      `Official Legality entry contains unknown field ${unknownField}.`,
-    );
+    throw new Error(`Official Legality entry contains unknown field ${unknownField}.`);
   }
-  const wording = requiredText(
-    entry[fields.wording],
-    "Official Legality wording",
+  const wording = requiredText(entry[fields.wording], "Official Legality wording");
+  const directive = requiredText(entry[fields.directive], "Official Legality directive");
+  const region = canonicalLegalityRegion(
+    requiredText(entry[fields.region], "Official Legality region"),
+    "structured region",
   );
-  const directive = requiredText(
-    entry[fields.directive],
-    "Official Legality directive",
-  );
-  const region = canonicalLegalityRegion(requiredText(
-    entry[fields.region],
-    "Official Legality region",
-  ), "structured region");
   assertWordingRegion(wording, region);
   assertDirectiveSpecificOperands(entry, fields, directive);
   const effect = exactEffect(
@@ -444,48 +433,28 @@ function exactLegalityRule(
     options.allowRestrictionLift === true,
   );
   if (region !== regionForLineage(sourceLineage)) {
-    throw new Error(
-      "Official Legality region conflicts with its Source Lineage.",
-    );
+    throw new Error("Official Legality region conflicts with its Source Lineage.");
   }
-  const effectiveFrom = nullableDate(
-    entry[fields.effectiveFrom],
-    "Official Legality effective date",
-  );
-  const effectiveUntil = nullableDate(
-    entry[fields.effectiveUntil],
-    "Official Legality end date",
-  );
+  const effectiveFrom = nullableDate(entry[fields.effectiveFrom], "Official Legality effective date");
+  const effectiveUntil = nullableDate(entry[fields.effectiveUntil], "Official Legality end date");
   const unresolvedScope = exactUnresolvedScope(
     entry[fields.unresolvedScope],
     options.allowUnresolvedTargetScope === true,
   );
-  const eventTier = nullableText(
-    entry[fields.tier],
-    "Official Legality event tier",
-  );
-  const cardNumbers = requiredTextArray(
-    entry[fields.cards],
-    "Official Legality Card numbers",
-    true,
-  );
-  const format = requiredText(
-    entry[fields.format],
-    "Official Legality format",
-  );
+  const eventTier = nullableText(entry[fields.tier], "Official Legality event tier");
+  const cardNumbers = requiredTextArray(entry[fields.cards], "Official Legality Card numbers", true);
+  const format = requiredText(entry[fields.format], "Official Legality format");
   if (
     (effectiveFrom === null &&
-      (unresolvedScope === null ||
-        !unresolvedScope.dimensions.includes("effective_interval"))) ||
-    (effectiveFrom !== null && effectiveUntil !== null &&
-      effectiveUntil <= effectiveFrom) ||
+      (unresolvedScope === null || !unresolvedScope.dimensions.includes("effective_interval"))) ||
+    (effectiveFrom !== null && effectiveUntil !== null && effectiveUntil <= effectiveFrom) ||
     (unresolvedScope !== null &&
-      (effect.type !== "unresolved" || cardNumbers.length === 0 ||
+      (effect.type !== "unresolved" ||
+        cardNumbers.length === 0 ||
         (unresolvedScope.dimensions.includes("effective_interval")
           ? effectiveFrom !== null || effectiveUntil !== null
           : effectiveFrom === null) ||
-        (unresolvedScope.dimensions.includes("event_tier") &&
-          eventTier !== null) ||
+        (unresolvedScope.dimensions.includes("event_tier") && eventTier !== null) ||
         // The target_scope dimension is valid only for the exactly
         // recognized open-predicate policy wording; free-form wording
         // cannot silently claim an open scope.
@@ -535,7 +504,8 @@ function exactUnresolvedScope(
   }
   const dimensions = scope.dimensions.map((dimension) => {
     if (
-      dimension !== "effective_interval" && dimension !== "event_tier" &&
+      dimension !== "effective_interval" &&
+      dimension !== "event_tier" &&
       (dimension !== "target_scope" || !allowTargetScope)
     ) {
       throw new Error("Official Legality unresolved scope dimension is invalid.");
@@ -543,7 +513,8 @@ function exactUnresolvedScope(
     return dimension as "effective_interval" | "event_tier" | "target_scope";
   });
   if (
-    dimensions.length === 0 || new Set(dimensions).size !== dimensions.length ||
+    dimensions.length === 0 ||
+    new Set(dimensions).size !== dimensions.length ||
     dimensions.join(",") !== [...dimensions].sort().join(",")
   ) {
     throw new Error("Official Legality unresolved scope dimensions are invalid.");
@@ -567,11 +538,7 @@ function exactEffect(
         restrictionLiftPolicyPattern.test(wording) &&
         isExactRestrictionLiftPolicy(
           wording,
-          requiredTextArray(
-            entry[fields.cards],
-            "Official Legality Card numbers",
-            false,
-          ),
+          requiredTextArray(entry[fields.cards], "Official Legality Card numbers", false),
         )
       ) {
         // The exactly recognized publisher lift: the named Card returns to
@@ -585,16 +552,8 @@ function exactEffect(
         rotationSemantics,
         releaseTimingSemantics,
       ]);
-      assertWording(
-        directive,
-        wording,
-        /\b(?:eligible|legal)\b|\bmay be used\b/iu,
-      );
-      assertNoContradiction(
-        directive,
-        wording,
-        /\bbanned?\b|may not be included/iu,
-      );
+      assertWording(directive, wording, /\b(?:eligible|legal)\b|\bmay be used\b/iu);
+      assertNoContradiction(directive, wording, /\bbanned?\b|may not be included/iu);
       assertNoNegatedLegalityPredicate(directive, wording);
       assertDirectiveWordingGrammar(directive, wording);
       return { type: "eligible" };
@@ -607,11 +566,7 @@ function exactEffect(
         rotationSemantics,
         releaseTimingSemantics,
       ]);
-      assertWording(
-        directive,
-        wording,
-        /\b(?:banned?|not legal)\b|(?:may not|cannot) be included/iu,
-      );
+      assertWording(directive, wording, /\b(?:banned?|not legal)\b|(?:may not|cannot) be included/iu);
       assertNoContradiction(
         directive,
         wording,
@@ -620,27 +575,23 @@ function exactEffect(
       assertDirectiveWordingGrammar(directive, wording);
       return { type: "ban" };
     case "copy_limit":
-    case "limited":
-      {
-        assertNoAdditionalStructuredSemantics("copy limit", wording, [
-          banSemantics,
-          combinationSemantics,
-          membershipSemantics,
-          rotationSemantics,
-          releaseTimingSemantics,
-          /\b(?:eligible|legal|permitted)\b/iu,
-        ]);
-        const maximumCopies = requiredPositiveInteger(
-          entry[fields.maximumCopies],
-          "Official Legality copy limit",
-        );
-        assertExactCopyLimitWording(wording, maximumCopies);
-        assertDirectiveWordingGrammar(directive, wording);
-        return {
-          type: "copy_limit",
-          maximum_copies: maximumCopies,
-        };
-      }
+    case "limited": {
+      assertNoAdditionalStructuredSemantics("copy limit", wording, [
+        banSemantics,
+        combinationSemantics,
+        membershipSemantics,
+        rotationSemantics,
+        releaseTimingSemantics,
+        /\b(?:eligible|legal|permitted)\b/iu,
+      ]);
+      const maximumCopies = requiredPositiveInteger(entry[fields.maximumCopies], "Official Legality copy limit");
+      assertExactCopyLimitWording(wording, maximumCopies);
+      assertDirectiveWordingGrammar(directive, wording);
+      return {
+        type: "copy_limit",
+        maximum_copies: maximumCopies,
+      };
+    }
     case "combination":
     case "prohibited_combination": {
       assertNoAdditionalStructuredSemantics("prohibited combination", wording, [
@@ -651,11 +602,7 @@ function exactEffect(
         releaseTimingSemantics,
         /\b(?:eligible|legal|permitted)\b/iu,
       ]);
-      const directCards = requiredTextArray(
-        entry[fields.cards],
-        "Official Legality Card numbers",
-        false,
-      );
+      const directCards = requiredTextArray(entry[fields.cards], "Official Legality Card numbers", false);
       const companionCards = requiredTextArray(
         entry[fields.companionCards],
         "Official Legality companion Cards",
@@ -671,11 +618,7 @@ function exactEffect(
         wording,
         /\b(?:may|can)\s+be\s+(?:used|included|played)\s+together\b|\bcombination\s+is\s+(?:allowed|legal|permitted)\b/iu,
       );
-      assertWordingOperands(
-        "prohibited combination",
-        wording,
-        [...directCards, ...companionCards],
-      );
+      assertWordingOperands("prohibited combination", wording, [...directCards, ...companionCards]);
       assertDirectiveWordingGrammar(directive, wording);
       return {
         type: "prohibited_combination",
@@ -690,20 +633,9 @@ function exactEffect(
         rotationSemantics,
         releaseTimingSemantics,
       ]);
-      const attribute = requiredText(
-        entry[fields.membershipAttribute],
-        "Official Legality membership attribute",
-      );
-      const values = requiredTextArray(
-        entry[fields.membershipValues],
-        "Official Legality membership values",
-        false,
-      );
-      assertWording(
-        directive,
-        wording,
-        /\b(?:membership|traits?|attributes?)\b/iu,
-      );
+      const attribute = requiredText(entry[fields.membershipAttribute], "Official Legality membership attribute");
+      const values = requiredTextArray(entry[fields.membershipValues], "Official Legality membership values", false);
+      assertWording(directive, wording, /\b(?:membership|traits?|attributes?)\b/iu);
       assertNoContradiction(
         directive,
         wording,
@@ -731,11 +663,7 @@ function exactEffect(
         membershipSemantics,
         releaseTimingSemantics,
       ]);
-      const blocks = requiredTextArray(
-        entry[fields.eligibleBlocks],
-        "Official Legality rotation blocks",
-        false,
-      );
+      const blocks = requiredTextArray(entry[fields.eligibleBlocks], "Official Legality rotation blocks", false);
       assertWording(directive, wording, /\b(?:rotation|block)\b/iu);
       assertNoContradiction(
         directive,
@@ -743,11 +671,7 @@ function exactEffect(
         /\b(?:not\s+(?:eligible|legal|permitted)|ineligible|illegal|excluded)\b/iu,
       );
       assertNoNegatedLegalityPredicate(directive, wording);
-      assertWording(
-        directive,
-        wording,
-        /\b(?:eligible|legal|permitted)\b/iu,
-      );
+      assertWording(directive, wording, /\b(?:eligible|legal|permitted)\b/iu);
       assertWordingOperands(directive, wording, blocks);
       assertDirectiveWordingGrammar(directive, wording);
       return {
@@ -764,10 +688,7 @@ function exactEffect(
         membershipSemantics,
         rotationSemantics,
       ]);
-      const legalFrom = requiredDate(
-        entry[fields.legalFrom],
-        "Official Legality tournament date",
-      );
+      const legalFrom = requiredDate(entry[fields.legalFrom], "Official Legality tournament date");
       assertNoContradiction(
         "release timing",
         wording,
@@ -787,19 +708,9 @@ function exactEffect(
       };
     }
     case "unresolved": {
-      const reason = requiredText(
-        entry[fields.unresolvedReason],
-        "Official Legality unresolved reason",
-      );
-      const cardNumbers = requiredTextArray(
-        entry[fields.cards],
-        "Official Legality Card numbers",
-        false,
-      );
-      if (
-        allowKnownPolicyWithUnresolvedInterval &&
-        isExactPolicyWithUnresolvedInterval(wording, reason, cardNumbers)
-      ) {
+      const reason = requiredText(entry[fields.unresolvedReason], "Official Legality unresolved reason");
+      const cardNumbers = requiredTextArray(entry[fields.cards], "Official Legality Card numbers", false);
+      if (allowKnownPolicyWithUnresolvedInterval && isExactPolicyWithUnresolvedInterval(wording, reason, cardNumbers)) {
         return { type: "unresolved", reason };
       }
       if (
@@ -831,9 +742,7 @@ function exactEffect(
       };
     }
     default:
-      throw new Error(
-        `Official Legality directive ${directive} is not representable by this Source Adapter Version.`,
-      );
+      throw new Error(`Official Legality directive ${directive} is not representable by this Source Adapter Version.`);
   }
 }
 
@@ -857,36 +766,24 @@ const openPredicatePolicyPattern =
 const restrictionLiftPolicyPattern =
   /^Card Removed from the Restricted List\n[A-Z]{1,6}\d{0,4}-\d{1,4} [^\n]+\nTherefore, its Restricted status will be lifted\.$/u;
 
-function isExactRestrictionLiftPolicy(
-  wording: string,
-  cardNumbers: readonly string[],
-): boolean {
+function isExactRestrictionLiftPolicy(wording: string, cardNumbers: readonly string[]): boolean {
   if (!restrictionLiftPolicyPattern.test(wording)) return false;
   const wordingCards = wordingCardNumbers(wording);
-  return wordingCards.length === 1 &&
-    cardNumbers.length === 1 &&
-    wordingCards[0] === cardNumbers[0];
+  return wordingCards.length === 1 && cardNumbers.length === 1 && wordingCards[0] === cardNumbers[0];
 }
 
-function isExactPolicyWithUnresolvedTargetScope(
-  wording: string,
-  cardNumbers: readonly string[],
-): boolean {
+function isExactPolicyWithUnresolvedTargetScope(wording: string, cardNumbers: readonly string[]): boolean {
   if (!openPredicatePolicyPattern.test(wording)) return false;
   const wordingCards = wordingCardNumbers(wording);
-  return wordingCards.length > 0 &&
+  return (
+    wordingCards.length > 0 &&
     wordingCards.length === cardNumbers.length &&
-    wordingCards.every((card, index) => card === cardNumbers[index]);
+    wordingCards.every((card, index) => card === cardNumbers[index])
+  );
 }
 
-function isExactPolicyWithUnresolvedInterval(
-  wording: string,
-  reason: string,
-  cardNumbers: readonly string[],
-): boolean {
-  if (
-    reason !== `Effective interval for ${cardNumbers.join(", ")} is not stated.`
-  ) {
+function isExactPolicyWithUnresolvedInterval(wording: string, reason: string, cardNumbers: readonly string[]): boolean {
+  if (reason !== `Effective interval for ${cardNumbers.join(", ")} is not stated.`) {
     return false;
   }
   const recognizedPolicy = [
@@ -902,14 +799,10 @@ function isExactPolicyWithUnresolvedInterval(
   ].some((pattern) => pattern.test(wording));
   if (!recognizedPolicy) return false;
   const wordingCards = wordingCardNumbers(wording);
-  return wordingCards.length === cardNumbers.length &&
-    wordingCards.every((card, index) => card === cardNumbers[index]);
+  return wordingCards.length === cardNumbers.length && wordingCards.every((card, index) => card === cardNumbers[index]);
 }
 
-function assertDirectiveWordingGrammar(
-  directive: string,
-  wording: string,
-): void {
+function assertDirectiveWordingGrammar(directive: string, wording: string): void {
   if (/^(?:If|When|Unless|Except|During|In|Starting|From|Before|After)\b/iu.test(wording)) {
     throw new Error(
       "Official Legality wording contains a conditional, qualifier, or scope prefix this Source Adapter Version cannot represent.",
@@ -929,24 +822,51 @@ const wordingCardOperandList = String.raw`${wordingCardOperand}(?:(?:,\s*|\s+(?:
 
 const directiveWordingGrammars: Readonly<Record<string, readonly RegExp[]>> = {
   eligible: [
-    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:is|are)\s+(?:eligible|legal)(?:\s+for\s+(?:Standard (?:tournament )?play|Standard events in the (?:EN-(?:US|ASIA|OCEANIA)|North America|United States|U\.S\.|USA|Asia|South East Asia|Southeast Asia|Oceania|Australia(?:\/New Zealand)?|New Zealand) region|this event|rotation))?(?:\s+under\s+the\s+published\s+(?:Championship|Regional|Local)(?:-only)?\s+rule)?(?:\s+'as printed'\s+–\s+publisher–confirmed\s+&#39;literal&#39;)?\.(?:\nPublisher notice:\nEffective immediately\.)?$`, "iu"),
+    new RegExp(
+      String.raw`^${wordingCardOperandList}\s+(?:is|are)\s+(?:eligible|legal)(?:\s+for\s+(?:Standard (?:tournament )?play|Standard events in the (?:EN-(?:US|ASIA|OCEANIA)|North America|United States|U\.S\.|USA|Asia|South East Asia|Southeast Asia|Oceania|Australia(?:\/New Zealand)?|New Zealand) region|this event|rotation))?(?:\s+under\s+the\s+published\s+(?:Championship|Regional|Local)(?:-only)?\s+rule)?(?:\s+'as printed'\s+–\s+publisher–confirmed\s+&#39;literal&#39;)?\.(?:\nPublisher notice:\nEffective immediately\.)?$`,
+      "iu",
+    ),
     /^Cards satisfying the published [^\n.!?]+ eligibility rules may be used\.$/iu,
   ],
   ban: [
-    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:is|are|was|were)\s+banned(?:\s+from\s+(?:standard\s+)?(?:tournament\s+)?decks)?\.$`, "iu"),
+    new RegExp(
+      String.raw`^${wordingCardOperandList}\s+(?:is|are|was|were)\s+banned(?:\s+from\s+(?:standard\s+)?(?:tournament\s+)?decks)?\.$`,
+      "iu",
+    ),
     new RegExp(String.raw`^${wordingCardOperandList}\s+may not be included(?:\s+in\s+(?:a|the|same)\s+deck)?\.$`, "iu"),
-    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:was|were)\s+(?:banned\s+and\s+)?(?:may not be included|not legal)\s+before\s+[^\n.!?]+\.$`, "iu"),
-    new RegExp(String.raw`^The following card\(s\) cannot be included in any deck\.\n${wordingCardOperand}\s+[^\n]+$`, "iu"),
+    new RegExp(
+      String.raw`^${wordingCardOperandList}\s+(?:was|were)\s+(?:banned\s+and\s+)?(?:may not be included|not legal)\s+before\s+[^\n.!?]+\.$`,
+      "iu",
+    ),
+    new RegExp(
+      String.raw`^The following card\(s\) cannot be included in any deck\.\n${wordingCardOperand}\s+[^\n]+$`,
+      "iu",
+    ),
   ],
   copy_limit: [
-    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:is|are)\s+limited\s+to\s+\d+\s+cop(?:y|ies)(?:\s+in\s+(?:standard\s+)?decks)?\.$`, "iu"),
-    new RegExp(String.raw`^(?:For (?:Championship|Regional|Local) events,\s+)?decks may contain (?:no more than\s+)?(?:only\s+)?(?:\d+|one|two|three|four)\s+cop(?:y|ies) of ${wordingCardOperandList}\.$`, "iu"),
+    new RegExp(
+      String.raw`^${wordingCardOperandList}\s+(?:is|are)\s+limited\s+to\s+\d+\s+cop(?:y|ies)(?:\s+in\s+(?:standard\s+)?decks)?\.$`,
+      "iu",
+    ),
+    new RegExp(
+      String.raw`^(?:For (?:Championship|Regional|Local) events,\s+)?decks may contain (?:no more than\s+)?(?:only\s+)?(?:\d+|one|two|three|four)\s+cop(?:y|ies) of ${wordingCardOperandList}\.$`,
+      "iu",
+    ),
   ],
   prohibited_combination: [
-    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:may|must)\s+not\s+be\s+(?:used|included|played)(?:\s+together)?\s+in\s+the\s+same\s+deck\.$`, "iu"),
-    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:may|must)\s+not\s+be\s+(?:used|included|played)\s+together(?:\s+in\s+the\s+same\s+deck)?\.$`, "iu"),
+    new RegExp(
+      String.raw`^${wordingCardOperandList}\s+(?:may|must)\s+not\s+be\s+(?:used|included|played)(?:\s+together)?\s+in\s+the\s+same\s+deck\.$`,
+      "iu",
+    ),
+    new RegExp(
+      String.raw`^${wordingCardOperandList}\s+(?:may|must)\s+not\s+be\s+(?:used|included|played)\s+together(?:\s+in\s+the\s+same\s+deck)?\.$`,
+      "iu",
+    ),
     new RegExp(String.raw`^${wordingCardOperandList}\s+(?:is|are)\s+a\s+prohibited\s+combination\.$`, "iu"),
-    new RegExp(String.raw`^Card A and Card B cannot be included in the same deck\.\n${wordingCardOperand}\s+[^\n]+\n${wordingCardOperand}\s+[^\n]+$`, "iu"),
+    new RegExp(
+      String.raw`^Card A and Card B cannot be included in the same deck\.\n${wordingCardOperand}\s+[^\n]+\n${wordingCardOperand}\s+[^\n]+$`,
+      "iu",
+    ),
   ],
   membership: [
     /^(?:Only\s+)?cards\s+(?:whose\s+|with\s+)[^\n.!?]+\b(?:includes?|with|has|have)\b[^\n.!?]+\b(?:is|are)\s+eligible(?:\s+for\s+this\s+event)?\.$/iu,
@@ -956,8 +876,14 @@ const directiveWordingGrammars: Readonly<Record<string, readonly RegExp[]>> = {
     /^Blocks? [^\n.!?]+ (?:is|are) eligible for rotation\.$/iu,
   ],
   release_timing: [
-    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:becomes?|is|will be)\s+(?:standard\s+|tournament\s+)*legal(?:\s+for\s+(?:standard\s+)?tournament\s+play)?\s+on\s+(?:\d{4}-\d{2}-\d{2}|\d{1,2}\s+[\p{L}]+\s+\d{4})\.$`, "iu"),
-    new RegExp(String.raw`^${wordingCardOperandList}\s+legal\s+for\s+tournament\s+play\s+on\s+(?:\d{4}-\d{2}-\d{2}|\d{1,2}\s+[\p{L}]+\s+\d{4})\.$`, "iu"),
+    new RegExp(
+      String.raw`^${wordingCardOperandList}\s+(?:becomes?|is|will be)\s+(?:standard\s+|tournament\s+)*legal(?:\s+for\s+(?:standard\s+)?tournament\s+play)?\s+on\s+(?:\d{4}-\d{2}-\d{2}|\d{1,2}\s+[\p{L}]+\s+\d{4})\.$`,
+      "iu",
+    ),
+    new RegExp(
+      String.raw`^${wordingCardOperandList}\s+legal\s+for\s+tournament\s+play\s+on\s+(?:\d{4}-\d{2}-\d{2}|\d{1,2}\s+[\p{L}]+\s+\d{4})\.$`,
+      "iu",
+    ),
   ],
   unresolved: [
     /^[^\n.!?]+\b(?:is|are|remains?)\s+(?:unresolved|unclear|unknown)\.$/iu,
@@ -983,22 +909,16 @@ function assertExactWordingSemantics(input: ExactWordingInput): void {
   assertWordingRegion(input.wording, input.region);
 
   const wordingFormat = input.wording.match(/\b(standard|unlimited)\b/iu)?.[1];
-  if (
-    wordingFormat !== undefined &&
-    wordingFormat.toLowerCase() !== input.format.toLowerCase()
-  ) {
+  if (wordingFormat !== undefined && wordingFormat.toLowerCase() !== input.format.toLowerCase()) {
     throw new Error("Official Legality wording format conflicts with its structured format.");
   }
 
-  const explicitTier = input.wording.match(
-    /^(?:For|At)\s+([^,\n.!?]+?)\s+events\b/iu,
-  )?.[1] ?? input.wording.match(
-    /\bunder the published (Championship|Regional|Local)(?:-only)? rule\b/iu,
-  )?.[1];
+  const explicitTier =
+    input.wording.match(/^(?:For|At)\s+([^,\n.!?]+?)\s+events\b/iu)?.[1] ??
+    input.wording.match(/\bunder the published (Championship|Regional|Local)(?:-only)? rule\b/iu)?.[1];
   if (
     (explicitTier !== undefined &&
-      normalizeWordingOperand(explicitTier) !==
-        normalizeWordingOperand(input.eventTier ?? "")) ||
+      normalizeWordingOperand(explicitTier) !== normalizeWordingOperand(input.eventTier ?? "")) ||
     (/\bthis event\b/iu.test(input.wording) && input.eventTier === null)
   ) {
     throw new Error("Official Legality wording event tier conflicts with its structured scope.");
@@ -1013,11 +933,7 @@ function assertExactWordingSemantics(input: ExactWordingInput): void {
       "Official Legality companion Cards",
       false,
     );
-    assertSameWordingOperands(
-      "target and companion Cards",
-      wordingCards,
-      [...input.cardNumbers, ...companionCards],
-    );
+    assertSameWordingOperands("target and companion Cards", wordingCards, [...input.cardNumbers, ...companionCards]);
   } else {
     assertSameWordingOperands("target Cards", wordingCards, input.cardNumbers);
   }
@@ -1029,9 +945,7 @@ function assertExactWordingSemantics(input: ExactWordingInput): void {
   } else if (directive === "release_timing") {
     const wordingDate = wordingReleaseCalendarDate(input.wording);
     if (wordingDate !== input.effect.legal_from) {
-      throw new Error(
-        "Official Legality wording release date conflicts with its structured effect.",
-      );
+      throw new Error("Official Legality wording release date conflicts with its structured effect.");
     }
   } else if (directive === "unresolved") {
     assertExactUnresolvedWording(
@@ -1045,22 +959,16 @@ function assertExactWordingSemantics(input: ExactWordingInput): void {
 }
 
 function assertWordingRegion(wording: string, structuredRegion: string): void {
-  const explicitQualifier = wording.match(
-    /\bin the ([^\n.!?]+?) region\b/iu,
-  )?.[1];
+  const explicitQualifier = wording.match(/\bin the ([^\n.!?]+?) region\b/iu)?.[1];
   if (
     explicitQualifier !== undefined &&
-    canonicalLegalityRegion(explicitQualifier, "wording region") !==
-      structuredRegion
+    canonicalLegalityRegion(explicitQualifier, "wording region") !== structuredRegion
   ) {
     throw new Error("Official Legality wording region conflicts with its structured region.");
   }
   const wordingRegions = [
-    ...[...wording.matchAll(/\bEN-[A-Z]+\b/giu)]
-      .map(([region]) => canonicalLegalityRegion(region, "wording region")),
-    ...regionPhrases.flatMap(({ pattern, region }) =>
-      pattern.test(wording) ? [region] : []
-    ),
+    ...[...wording.matchAll(/\bEN-[A-Z]+\b/giu)].map(([region]) => canonicalLegalityRegion(region, "wording region")),
+    ...regionPhrases.flatMap(({ pattern, region }) => (pattern.test(wording) ? [region] : [])),
   ];
   if (wordingRegions.some((region) => region !== structuredRegion.toUpperCase())) {
     throw new Error("Official Legality wording region conflicts with its structured region.");
@@ -1117,39 +1025,23 @@ const regionPhrases: ReadonlyArray<{
 ];
 
 function wordingCardNumbers(wording: string): string[] {
-  const identifiers = wording.match(
-    /(?<![\p{L}\p{N}])(?:[A-Z]{1,6}(?:\d{1,4})?-\d{1,4}|DON!!)(?![\p{L}\p{N}])/giu,
-  ) ?? [];
+  const identifiers =
+    wording.match(/(?<![\p{L}\p{N}])(?:[A-Z]{1,6}(?:\d{1,4})?-\d{1,4}|DON!!)(?![\p{L}\p{N}])/giu) ?? [];
   return identifiers.map((identifier) => identifier.toUpperCase());
 }
 
-function assertSameWordingOperands(
-  name: string,
-  wording: readonly string[],
-  structured: readonly string[],
-): void {
-  const normalizedWording = [...wording]
-    .map(normalizeWordingOperand)
-    .sort();
-  const normalizedStructured = [...structured]
-    .map(normalizeWordingOperand)
-    .sort();
+function assertSameWordingOperands(name: string, wording: readonly string[], structured: readonly string[]): void {
+  const normalizedWording = [...wording].map(normalizeWordingOperand).sort();
+  const normalizedStructured = [...structured].map(normalizeWordingOperand).sort();
   if (
     normalizedWording.length !== normalizedStructured.length ||
-    normalizedWording.some((value, index) =>
-      value !== normalizedStructured[index]
-    )
+    normalizedWording.some((value, index) => value !== normalizedStructured[index])
   ) {
-    throw new Error(
-      `Official Legality wording ${name} conflict with its structured operands.`,
-    );
+    throw new Error(`Official Legality wording ${name} conflict with its structured operands.`);
   }
 }
 
-function assertExactMembershipWording(
-  wording: string,
-  effect: Record<string, unknown>,
-): void {
+function assertExactMembershipWording(wording: string, effect: Record<string, unknown>): void {
   const whose = wording.match(
     /^Only cards whose\s+([^\n.!?]+?)\s+includes?\s+([^\n.!?]+?)\s+are eligible(?:\s+for\s+this\s+event)?\.$/iu,
   );
@@ -1157,50 +1049,35 @@ function assertExactMembershipWording(
     /^Cards with (?:the )?([^\n.!?]+?)\s+([^\s\n.!?]+)\s+are eligible(?:\s+for\s+this\s+event|\s+under\s+this\s+membership\s+rule)?\.$/iu,
   );
   const wordingAttribute = whose?.[1] ?? withAttribute?.[2];
-  const wordingValues = whose === null
-    ? withAttribute === null ? [] : [withAttribute[1]!]
-    : whose[2]!.split(/\s*(?:,|\band\b|\bor\b)\s*/iu);
+  const wordingValues =
+    whose === null
+      ? withAttribute === null
+        ? []
+        : [withAttribute[1]!]
+      : whose[2]!.split(/\s*(?:,|\band\b|\bor\b)\s*/iu);
   if (
     wordingAttribute === undefined ||
     normalizeAttribute(wordingAttribute) !==
-      normalizeAttribute(requiredText(
-        effect.attribute,
-        "Official Legality membership attribute",
-      ))
+      normalizeAttribute(requiredText(effect.attribute, "Official Legality membership attribute"))
   ) {
-    throw new Error(
-      "Official Legality wording membership attribute conflicts with its structured effect.",
-    );
+    throw new Error("Official Legality wording membership attribute conflicts with its structured effect.");
   }
   assertSameWordingOperands(
     "membership values",
     wordingValues,
-    requiredTextArray(
-      effect.includes_any,
-      "Official Legality membership values",
-      false,
-    ),
+    requiredTextArray(effect.includes_any, "Official Legality membership values", false),
   );
 }
 
-function assertExactRotationWording(
-  wording: string,
-  effect: Record<string, unknown>,
-): void {
+function assertExactRotationWording(wording: string, effect: Record<string, unknown>): void {
   const stated = wording.match(
     /^(?:Only cards bearing Block|Blocks?)\s+([^\n.!?]+?)\s+(?:is|are) eligible(?:\s+(?:for|after)\s+rotation)?\.$/iu,
   )?.[1];
-  const blocks = stated === undefined
-    ? []
-    : stated.split(/\s*(?:,|\band\b|\bor\b)\s*/iu);
+  const blocks = stated === undefined ? [] : stated.split(/\s*(?:,|\band\b|\bor\b)\s*/iu);
   assertSameWordingOperands(
     "rotation blocks",
     blocks,
-    requiredTextArray(
-      effect.eligible_blocks,
-      "Official Legality rotation blocks",
-      false,
-    ),
+    requiredTextArray(effect.eligible_blocks, "Official Legality rotation blocks", false),
   );
 }
 
@@ -1211,10 +1088,7 @@ function assertExactUnresolvedWording(
   allowKnownPolicyWithUnresolvedInterval: boolean,
   allowUnresolvedTargetScope = false,
 ): void {
-  const reason = requiredText(
-    effect.reason,
-    "Official Legality unresolved reason",
-  );
+  const reason = requiredText(effect.reason, "Official Legality unresolved reason");
   if (
     allowUnresolvedTargetScope &&
     reason === openPredicateUnresolvedReason &&
@@ -1225,32 +1099,22 @@ function assertExactUnresolvedWording(
   const expressed = wording.match(
     /^(?:The official notice does not identify whether\s+)?([^\n.!?]+?)(?:\s+(?:is|are|remains?)\s+(?:unresolved|unclear|unknown)|\s+(?:cannot be determined|is not stated|awaiting (?:publisher )?clarification))\.$/iu,
   )?.[1];
-  if (
-    allowKnownPolicyWithUnresolvedInterval &&
-    isExactPolicyWithUnresolvedInterval(wording, reason, cardNumbers)
-  ) {
+  if (allowKnownPolicyWithUnresolvedInterval && isExactPolicyWithUnresolvedInterval(wording, reason, cardNumbers)) {
     return;
   }
-  if (
-    expressed === undefined ||
-    normalizeWordingOperand(expressed) !== normalizeWordingOperand(reason)
-  ) {
-    throw new Error(
-      "Official Legality wording unresolved reason conflicts with its structured effect.",
-    );
+  if (expressed === undefined || normalizeWordingOperand(expressed) !== normalizeWordingOperand(reason)) {
+    throw new Error("Official Legality wording unresolved reason conflicts with its structured effect.");
   }
 }
 
 function wordingReleaseCalendarDate(wording: string): string | undefined {
   const datePattern = "(?:\\d{4}-\\d{2}-\\d{2}|\\d{1,2}\\s+[\\p{L}]+\\s+\\d{4})";
-  const operative = wording.match(new RegExp(
-    `\\blegal(?:\\s+for\\s+(?:standard\\s+)?tournament\\s+play)?\\s+on\\s+(${datePattern})\\.$`,
-    "iu",
-  ))?.[1];
-  const allDates = [...wording.matchAll(new RegExp(
-    `(?<![\\p{L}\\p{N}])(${datePattern})(?![\\p{L}\\p{N}])`,
-    "giu",
-  ))].map((match) => match[1]!);
+  const operative = wording.match(
+    new RegExp(`\\blegal(?:\\s+for\\s+(?:standard\\s+)?tournament\\s+play)?\\s+on\\s+(${datePattern})\\.$`, "iu"),
+  )?.[1];
+  const allDates = [
+    ...wording.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])(${datePattern})(?![\\p{L}\\p{N}])`, "giu")),
+  ].map((match) => match[1]!);
   if (operative === undefined || allDates.length !== 1) return undefined;
   return normalizedWordingCalendarDate(operative);
 }
@@ -1259,18 +1123,28 @@ function normalizedWordingCalendarDate(value: string): string | undefined {
   if (/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
     return isIsoCalendarDate(value) ? value : undefined;
   }
-  const human = value.match(
-    /^(\d{1,2})\s+([\p{L}]+)\s+(\d{4})$/iu,
-  );
+  const human = value.match(/^(\d{1,2})\s+([\p{L}]+)\s+(\d{4})$/iu);
   if (human === null) return undefined;
-  const month = [
-    "january", "february", "march", "april", "may", "june",
-    "july", "august", "september", "october", "november", "december",
-  ].indexOf(human[2]!.toLowerCase()) + 1;
+  const month =
+    [
+      "january",
+      "february",
+      "march",
+      "april",
+      "may",
+      "june",
+      "july",
+      "august",
+      "september",
+      "october",
+      "november",
+      "december",
+    ].indexOf(human[2]!.toLowerCase()) + 1;
   if (month === 0) return undefined;
-  const date = `${human[3]}-${String(month).padStart(2, "0")}-${
-    String(Number.parseInt(human[1]!, 10)).padStart(2, "0")
-  }`;
+  const date = `${human[3]}-${String(month).padStart(2, "0")}-${String(Number.parseInt(human[1]!, 10)).padStart(
+    2,
+    "0",
+  )}`;
   return isIsoCalendarDate(date) ? date : undefined;
 }
 
@@ -1283,11 +1157,15 @@ function normalizeWordingOperand(value: string): string {
 }
 
 function normalizedDirective(directive: string): string {
-  return directive === "banned" ? "ban"
-    : directive === "limited" ? "copy_limit"
-    : directive === "combination" ? "prohibited_combination"
-    : directive === "release" ? "release_timing"
-    : directive;
+  return directive === "banned"
+    ? "ban"
+    : directive === "limited"
+      ? "copy_limit"
+      : directive === "combination"
+        ? "prohibited_combination"
+        : directive === "release"
+          ? "release_timing"
+          : directive;
 }
 
 const operandFieldNames = [
@@ -1300,38 +1178,33 @@ const operandFieldNames = [
   "unresolvedReason",
 ] as const;
 
-function assertDirectiveSpecificOperands(
-  entry: Record<string, unknown>,
-  fields: FieldMap,
-  directive: string,
-): void {
+function assertDirectiveSpecificOperands(entry: Record<string, unknown>, fields: FieldMap, directive: string): void {
   const normalized = normalizedDirective(directive);
   const owned = new Set<keyof FieldMap>(
-    normalized === "copy_limit" ? ["maximumCopies"]
-      : normalized === "prohibited_combination" ? ["companionCards"]
-      : normalized === "membership"
-        ? ["membershipAttribute", "membershipValues"]
-      : normalized === "rotation" ? ["eligibleBlocks"]
-      : normalized === "release_timing" ? ["legalFrom"]
-      : normalized === "unresolved" ? ["unresolvedReason"]
-      : [],
+    normalized === "copy_limit"
+      ? ["maximumCopies"]
+      : normalized === "prohibited_combination"
+        ? ["companionCards"]
+        : normalized === "membership"
+          ? ["membershipAttribute", "membershipValues"]
+          : normalized === "rotation"
+            ? ["eligibleBlocks"]
+            : normalized === "release_timing"
+              ? ["legalFrom"]
+              : normalized === "unresolved"
+                ? ["unresolvedReason"]
+                : [],
   );
   for (const fieldName of operandFieldNames) {
     const value = entry[fields[fieldName]];
-    const meaningful =
-      value !== undefined &&
-      value !== null &&
-      (!Array.isArray(value) || value.length > 0);
+    const meaningful = value !== undefined && value !== null && (!Array.isArray(value) || value.length > 0);
     if (meaningful && !owned.has(fieldName)) {
-      throw new Error(
-        `Official Legality directive ${directive} contains foreign operand ${fields[fieldName]}.`,
-      );
+      throw new Error(`Official Legality directive ${directive} contains foreign operand ${fields[fieldName]}.`);
     }
   }
 }
 
-const banSemantics =
-  /\b(?:banned?|not\s+(?:currently\s+|tournament\s+)*legal)\b|may not be included/iu;
+const banSemantics = /\b(?:banned?|not\s+(?:currently\s+|tournament\s+)*legal)\b|may not be included/iu;
 const copyLimitSemantics =
   /\b(?:limit(?:ed)?\s+(?:of|to)|maximum(?:\s+of)?|up\s+to)\s+(?:a\s+maximum\s+of\s+)?\d+\s+cop(?:y|ies)\b/iu;
 const combinationSemantics =
@@ -1342,32 +1215,17 @@ const rotationSemantics = /\b(?:rotation|blocks?)\b/iu;
 const releaseTimingSemantics =
   /\b(?:becomes?|is|will be)\s+(?:standard\s+|tournament\s+)*legal\b[\s\S]*\b\d{4}-\d{2}-\d{2}\b|\blegal\s+for\s+tournament\b[\s\S]*\b\d{4}-\d{2}-\d{2}\b/iu;
 
-function assertNoAdditionalStructuredSemantics(
-  directive: string,
-  wording: string,
-  patterns: readonly RegExp[],
-): void {
+function assertNoAdditionalStructuredSemantics(directive: string, wording: string, patterns: readonly RegExp[]): void {
   if (patterns.some((pattern) => pattern.test(wording))) {
-    throw new Error(
-      `Official Legality directive ${directive} contains additional structured semantics.`,
-    );
+    throw new Error(`Official Legality directive ${directive} contains additional structured semantics.`);
   }
 }
 
-function assertWordingOperands(
-  directive: string,
-  wording: string,
-  operands: readonly string[],
-): void {
+function assertWordingOperands(directive: string, wording: string, operands: readonly string[]): void {
   for (const operand of operands) {
-    const pattern = new RegExp(
-      `(?<![\\p{L}\\p{N}])${escapeRegExp(operand)}(?![\\p{L}\\p{N}])`,
-      "iu",
-    );
+    const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(operand)}(?![\\p{L}\\p{N}])`, "iu");
     if (!pattern.test(wording)) {
-      throw new Error(
-        `Official Legality wording does not exactly support ${directive} operand ${operand}.`,
-      );
+      throw new Error(`Official Legality wording does not exactly support ${directive} operand ${operand}.`);
     }
   }
 }
@@ -1376,65 +1234,38 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
-function assertExactCopyLimitWording(
-  wording: string,
-  maximumCopies: number,
-): void {
-  const statedCopyCounts = [...wording.matchAll(
-    /\b(\d+|one|two|three|four)\s+cop(?:y|ies)\b/giu,
-  )].map((match) => wordingNumber(match[1]!));
-  const exactNumber = `(?:${maximumCopies}|${[
-    "zero", "one", "two", "three", "four",
-  ][maximumCopies] ?? "(?!x)x"})`;
+function assertExactCopyLimitWording(wording: string, maximumCopies: number): void {
+  const statedCopyCounts = [...wording.matchAll(/\b(\d+|one|two|three|four)\s+cop(?:y|ies)\b/giu)].map((match) =>
+    wordingNumber(match[1]!),
+  );
+  const exactNumber = `(?:${maximumCopies}|${["zero", "one", "two", "three", "four"][maximumCopies] ?? "(?!x)x"})`;
   const statesExactLimit = new RegExp(
     `\\b(?:limit(?:ed)?\\s+(?:of|to)|maximum(?:\\s+of)?|up\\s+to|no\\s+more\\s+than|only|decks\\s+may\\s+contain(?:\\s+no\\s+more\\s+than|\\s+only)?)\\s+(?:a\\s+maximum\\s+of\\s+)?${exactNumber}\\s+cop(?:y|ies)\\b`,
     "iu",
   ).test(wording);
-  if (
-    !statesExactLimit ||
-    statedCopyCounts.length === 0 ||
-    statedCopyCounts.some((count) => count !== maximumCopies)
-  ) {
-    throw new Error(
-      `Official Legality wording does not exactly support copy limit ${maximumCopies}.`,
-    );
+  if (!statesExactLimit || statedCopyCounts.length === 0 || statedCopyCounts.some((count) => count !== maximumCopies)) {
+    throw new Error(`Official Legality wording does not exactly support copy limit ${maximumCopies}.`);
   }
 }
 
 function wordingNumber(value: string): number {
-  const word = ["zero", "one", "two", "three", "four"]
-    .indexOf(value.toLowerCase());
+  const word = ["zero", "one", "two", "three", "four"].indexOf(value.toLowerCase());
   return word < 0 ? Number.parseInt(value, 10) : word;
 }
 
-function assertWording(
-  directive: string,
-  wording: string,
-  pattern: RegExp,
-): void {
+function assertWording(directive: string, wording: string, pattern: RegExp): void {
   if (!pattern.test(wording)) {
-    throw new Error(
-      `Official Legality wording does not exactly support directive ${directive}.`,
-    );
+    throw new Error(`Official Legality wording does not exactly support directive ${directive}.`);
   }
 }
 
-function assertNoContradiction(
-  directive: string,
-  wording: string,
-  pattern: RegExp,
-): void {
+function assertNoContradiction(directive: string, wording: string, pattern: RegExp): void {
   if (pattern.test(wording)) {
-    throw new Error(
-      `Official Legality wording contradicts directive ${directive}.`,
-    );
+    throw new Error(`Official Legality wording contradicts directive ${directive}.`);
   }
 }
 
-function assertNoNegatedLegalityPredicate(
-  directive: string,
-  wording: string,
-): void {
+function assertNoNegatedLegalityPredicate(directive: string, wording: string): void {
   assertNoContradiction(
     directive,
     wording,
@@ -1446,10 +1277,7 @@ function regionForLineage(sourceLineage: string): string {
   return requiredOfficialSourceScope(sourceLineage).legalityRegion;
 }
 
-function requiredRecord(
-  value: unknown,
-  name: string,
-): Record<string, unknown> {
+function requiredRecord(value: unknown, name: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${name} must be an object.`);
   }
@@ -1462,11 +1290,7 @@ function requiredArray(value: unknown, name: string): unknown[] {
 }
 
 function requiredText(value: unknown, name: string): string {
-  if (
-    typeof value !== "string" ||
-    value.length === 0 ||
-    value !== value.trim()
-  ) {
+  if (typeof value !== "string" || value.length === 0 || value !== value.trim()) {
     throw new Error(`${name} must be non-empty text.`);
   }
   return value;
@@ -1476,14 +1300,8 @@ function nullableText(value: unknown, name: string): string | null {
   return value === null ? null : requiredText(value, name);
 }
 
-function requiredTextArray(
-  value: unknown,
-  name: string,
-  emptyAllowed: boolean,
-): string[] {
-  const values = requiredArray(value, name).map((item) =>
-    requiredText(item, name)
-  );
+function requiredTextArray(value: unknown, name: string, emptyAllowed: boolean): string[] {
+  const values = requiredArray(value, name).map((item) => requiredText(item, name));
   if (!emptyAllowed && values.length === 0) {
     throw new Error(`${name} must not be empty.`);
   }

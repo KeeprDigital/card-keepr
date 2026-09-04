@@ -1,7 +1,5 @@
-import { AdministrationProblem } from "./administration-problem.ts";
-import {
-  officialRawAdapterContracts,
-} from "./product-release-source-adapters.ts";
+import { AdministrationProblem } from "./shared";
+import { officialRawAdapterContracts } from "./product-release-source-adapters.ts";
 import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.ts";
 import { requiredOfficialSourceScope } from "./official-source-scope.ts";
 import type { ListingReconciliationTraits } from "./source-adapter-registration-types.ts";
@@ -36,9 +34,7 @@ export type SourceAdapterRegistration = Readonly<{
   reconciliationAreas?: readonly ("catalogue" | "errata")[];
   inheritDiscoveryRequestHeaders?: boolean;
   listingReconciliation?: ListingReconciliationTraits;
-  parse?: (
-    document: unknown,
-  ) => readonly unknown[] | Promise<readonly unknown[]>;
+  parse?: (document: unknown) => readonly unknown[] | Promise<readonly unknown[]>;
   parseBytes?: (
     bytes: Uint8Array,
     context: { mediaType: string | null; url: string; requestId?: string },
@@ -86,13 +82,8 @@ const declaredSourceRequestCapacities: ReadonlyMap<string, number> = new Map([
 ]);
 
 function sourceRequestCapacity(adapterVersion: string): number {
-  const capacity = declaredSourceRequestCapacities.get(adapterVersion) ??
-    historicalSourceRequestCapacity;
-  if (
-    !Number.isSafeInteger(capacity) ||
-    capacity < 1 ||
-    capacity >= globalEmergencySourceRequestCeiling
-  ) {
+  const capacity = declaredSourceRequestCapacities.get(adapterVersion) ?? historicalSourceRequestCapacity;
+  if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity >= globalEmergencySourceRequestCeiling) {
     throw new Error(
       `Source Adapter Version ${adapterVersion} declares a request capacity outside the global emergency ceiling.`,
     );
@@ -101,83 +92,64 @@ function sourceRequestCapacity(adapterVersion: string): number {
 }
 
 const parseLegalitySourceDocument = (document: unknown): readonly unknown[] => {
-  if (
-    typeof document === "object" &&
-    document !== null &&
-    !Array.isArray(document)
-  ) {
+  if (typeof document === "object" && document !== null && !Array.isArray(document)) {
     const record = document as {
       cards?: unknown;
       product_surfaces?: unknown;
       legality_rules?: unknown;
       legality_completeness?: unknown;
     };
-    if (
-      Array.isArray(record.cards) ||
-      Array.isArray(record.product_surfaces)
-    ) {
+    if (Array.isArray(record.cards) || Array.isArray(record.product_surfaces)) {
       return [
         ...(Array.isArray(record.cards) ? record.cards : []),
-        ...(Array.isArray(record.product_surfaces)
-          ? record.product_surfaces
-          : []),
+        ...(Array.isArray(record.product_surfaces) ? record.product_surfaces : []),
         ...(record.legality_rules === undefined
           ? []
-          : [{
-              observation_type: "legality_rules",
-              legality_rules: record.legality_rules,
-              completeness: record.legality_completeness,
-            }]),
+          : [
+              {
+                observation_type: "legality_rules",
+                legality_rules: record.legality_rules,
+                completeness: record.legality_completeness,
+              },
+            ]),
       ];
     }
   }
   return [document];
 };
 
-export function requiredOfficialSourceContract(
-  adapter: SourceAdapterRegistration,
-): OfficialSourceContract {
-  if (
-    adapter.reconciliationCapability !== "catalogue" ||
-    adapter.officialSourceContract === undefined
-  ) {
-    throw new Error(
-      `Adapter ${adapter.adapterVersion} has no complete Official Source contract.`,
-    );
+export function requiredOfficialSourceContract(adapter: SourceAdapterRegistration): OfficialSourceContract {
+  if (adapter.reconciliationCapability !== "catalogue" || adapter.officialSourceContract === undefined) {
+    throw new Error(`Adapter ${adapter.adapterVersion} has no complete Official Source contract.`);
   }
   return adapter.officialSourceContract;
 }
 
-export function assertOfficialSourceUrl(
-  value: string,
-  contract: OfficialSourceContract,
-): URL {
+export function assertOfficialSourceUrl(value: string, contract: OfficialSourceContract): URL {
   const url = new URL(value);
   if (
     url.origin !== contract.origin ||
-    !contract.documentPathnamePrefixes.some((prefix) =>
-      url.pathname.startsWith(prefix)
-    ) ||
+    !contract.documentPathnamePrefixes.some((prefix) => url.pathname.startsWith(prefix)) ||
     url.username !== "" ||
     url.password !== "" ||
     url.hash !== ""
   ) {
-    throw new Error(
-      `Official Source URL is outside the exact path authority registered for ${contract.origin}.`,
-    );
+    throw new Error(`Official Source URL is outside the exact path authority registered for ${contract.origin}.`);
   }
   return url;
 }
 
 // The registration facts every production raw-catalogue version shares.
-function productionCatalogueRegistration(adapter: Readonly<{
-  adapterVersion: string;
-  sourceLineage: string;
-  supportedGame: string;
-  parserContract: string;
-  reconciliationAreas: readonly ("catalogue" | "errata")[];
-  inheritDiscoveryRequestHeaders: boolean;
-}>) {
+function productionCatalogueRegistration(
+  adapter: Readonly<{
+    adapterVersion: string;
+    sourceLineage: string;
+    supportedGame: string;
+    parserContract: string;
+    reconciliationAreas: readonly ("catalogue" | "errata")[];
+    inheritDiscoveryRequestHeaders: boolean;
+  }>,
+) {
   return {
     adapterVersion: adapter.adapterVersion,
     sourceLineage: adapter.sourceLineage,
@@ -193,167 +165,153 @@ function productionCatalogueRegistration(adapter: Readonly<{
   };
 }
 
-export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
-  Object.freeze(
-    [
-      {
-        adapterVersion: "one-piece-official-errata-html@1",
-        sourceLineage: "one-piece-en",
-        supportedGame: "one-piece",
-        gameProfileVersion: "one-piece@1",
-        parserContract: "one-piece-official-errata-html@1",
-        maximumSnapshotBytes: 1024 * 1024,
-        origin: "production" as const,
-        requestSurface: {
-          kind: "exact-url" as const,
-          url: "https://en.onepiece-cardgame.com/rules/errata_card/",
-        },
-        requiredSurfaces: ["errata"],
-        requestUrlForSurface: (surface: string) => {
-          if (surface !== "errata") {
-            throw new Error("Official Errata surface identity is invalid.");
-          }
-          return "https://en.onepiece-cardgame.com/rules/errata_card/";
-        },
-        reconciliationCapability: "errata" as const,
-        parseBytes: (bytes: Uint8Array) => {
-          const document = new TextDecoder(
-            "utf-8",
-            { fatal: true, ignoreBOM: false },
-          ).decode(bytes);
-          return parseOnePieceOfficialErrataHtml(document);
-        },
-      },
-      ...officialRawAdapterContracts.map((adapter) => ({
-        ...productionCatalogueRegistration(adapter),
-        listingReconciliation: adapter.listingReconciliation,
-        parseBytes: adapter.parseBytes,
-        discoverRequests: adapter.discoverRequests,
-        requiredSurfaces: adapter.requiredSurfaces,
-        requestUrlForDiscovery: adapter.requestUrlForDiscovery,
-        requestUrlForSurface: adapter.requestUrlForSurface,
-        officialSourceContract: {
-          supportedGame: adapter.supportedGame,
-          partition: adapter.partition,
-          origin: adapter.sourceOrigin,
-          documentPathnamePrefixes: adapter.documentPathnamePrefixes,
-          imagePathnamePrefixes: adapter.imagePathnamePrefixes,
-          requiredSurfaces: adapter.requiredSurfaces,
-        },
-      })),
-      {
-        adapterVersion: "fixture-one-piece-official-errata-json@1",
-        sourceLineage: "one-piece-en",
-        supportedGame: "one-piece",
-        gameProfileVersion: "one-piece@1",
-        parserContract: "synthetic-official-errata-fixture@1",
-        maximumSnapshotBytes: 16 * 1024 * 1024,
-        origin: "synthetic_fixture" as const,
-        requestSurface: { kind: "synthetic-fixture" as const },
-        reconciliationCapability: "errata" as const,
-        parse: parseLegalitySourceDocument,
-      },
-      // Before Go-Live (ADR 0008) each Source Lineage keeps one synthetic
-      // fixture adapter; the -capped and -large fixtures are distinct
-      // behaviours (byte cap, request capacity), not versions. Every fixture
-      // shares the legality-aware parser contract.
-      ...[
-        {
-          adapterVersion: "fixture-one-piece-json@3",
-          sourceLineage: "one-piece-en",
-          supportedGame: "one-piece",
-          gameProfileVersion: "one-piece@1",
-          parserContract: "synthetic-fixture-card-document-with-legality@2",
-        },
-        {
-          adapterVersion: "fixture-one-piece-json-capped@1",
-          sourceLineage: "one-piece-en",
-          supportedGame: "one-piece",
-          gameProfileVersion: "one-piece@1",
-          parserContract: "synthetic-fixture-card-document-with-legality@2",
-          maximumSnapshotBytes: 1024 * 1024,
-        },
-        {
-          adapterVersion: "fixture-fusion-world-json@2",
-          sourceLineage: "fusion-world-en",
-          supportedGame: "fusion-world",
-          gameProfileVersion: "fusion-world@1",
-          parserContract: "synthetic-fixture-card-document-with-legality@2",
-        },
-        {
-          adapterVersion: "fixture-fusion-world-json-large@1",
-          sourceLineage: "fusion-world-en",
-          supportedGame: "fusion-world",
-          gameProfileVersion: "fusion-world@1",
-          parserContract: "synthetic-fixture-card-document-with-legality@2",
-        },
-        {
-          adapterVersion: "fixture-digimon-json@2",
-          sourceLineage: "digimon-en",
-          supportedGame: "digimon",
-          gameProfileVersion: "digimon@1",
-          parserContract: "synthetic-fixture-card-document-with-legality@2",
-        },
-        {
-          adapterVersion: "fixture-gundam-en-asia-json@2",
-          sourceLineage: "gundam-en-asia",
-          supportedGame: "gundam",
-          gameProfileVersion: "gundam@1",
-          parserContract: "synthetic-fixture-card-document-with-legality@2",
-        },
-        {
-          adapterVersion: "fixture-gundam-en-us-json@2",
-          sourceLineage: "gundam-en-us",
-          supportedGame: "gundam",
-          gameProfileVersion: "gundam@1",
-          parserContract: "synthetic-fixture-card-document-with-legality@2",
-        },
-      ].map((adapter) => ({
-        ...adapter,
-        maximumSnapshotBytes:
-          adapter.maximumSnapshotBytes ?? 16 * 1024 * 1024,
-        origin: "synthetic_fixture" as const,
-        requestSurface: { kind: "synthetic-fixture" as const },
-        reconciliationCapability: "catalogue" as const,
-        parse: parseLegalitySourceDocument,
-      })),
-    ].map((adapter) => Object.freeze({
-      ...adapter,
-      legalityRegion:
-        requiredOfficialSourceScope(adapter.sourceLineage).legalityRegion,
-      requestCapacity: sourceRequestCapacity(adapter.adapterVersion),
-    })),
-  );
-
-const activeOfficialRawAdapterVersions = new Set(
+export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistration[] = Object.freeze(
   [
-    ...new Map(
-      officialRawAdapterContracts.map((adapter) => [
-        adapter.sourceLineage,
-        adapter.adapterVersion,
-      ]),
-    ).values(),
-  ],
+    {
+      adapterVersion: "one-piece-official-errata-html@1",
+      sourceLineage: "one-piece-en",
+      supportedGame: "one-piece",
+      gameProfileVersion: "one-piece@1",
+      parserContract: "one-piece-official-errata-html@1",
+      maximumSnapshotBytes: 1024 * 1024,
+      origin: "production" as const,
+      requestSurface: {
+        kind: "exact-url" as const,
+        url: "https://en.onepiece-cardgame.com/rules/errata_card/",
+      },
+      requiredSurfaces: ["errata"],
+      requestUrlForSurface: (surface: string) => {
+        if (surface !== "errata") {
+          throw new Error("Official Errata surface identity is invalid.");
+        }
+        return "https://en.onepiece-cardgame.com/rules/errata_card/";
+      },
+      reconciliationCapability: "errata" as const,
+      parseBytes: (bytes: Uint8Array) => {
+        const document = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
+        return parseOnePieceOfficialErrataHtml(document);
+      },
+    },
+    ...officialRawAdapterContracts.map((adapter) => ({
+      ...productionCatalogueRegistration(adapter),
+      listingReconciliation: adapter.listingReconciliation,
+      parseBytes: adapter.parseBytes,
+      discoverRequests: adapter.discoverRequests,
+      requiredSurfaces: adapter.requiredSurfaces,
+      requestUrlForDiscovery: adapter.requestUrlForDiscovery,
+      requestUrlForSurface: adapter.requestUrlForSurface,
+      officialSourceContract: {
+        supportedGame: adapter.supportedGame,
+        partition: adapter.partition,
+        origin: adapter.sourceOrigin,
+        documentPathnamePrefixes: adapter.documentPathnamePrefixes,
+        imagePathnamePrefixes: adapter.imagePathnamePrefixes,
+        requiredSurfaces: adapter.requiredSurfaces,
+      },
+    })),
+    {
+      adapterVersion: "fixture-one-piece-official-errata-json@1",
+      sourceLineage: "one-piece-en",
+      supportedGame: "one-piece",
+      gameProfileVersion: "one-piece@1",
+      parserContract: "synthetic-official-errata-fixture@1",
+      maximumSnapshotBytes: 16 * 1024 * 1024,
+      origin: "synthetic_fixture" as const,
+      requestSurface: { kind: "synthetic-fixture" as const },
+      reconciliationCapability: "errata" as const,
+      parse: parseLegalitySourceDocument,
+    },
+    // Before Go-Live (ADR 0008) each Source Lineage keeps one synthetic
+    // fixture adapter; the -capped and -large fixtures are distinct
+    // behaviours (byte cap, request capacity), not versions. Every fixture
+    // shares the legality-aware parser contract.
+    ...[
+      {
+        adapterVersion: "fixture-one-piece-json@3",
+        sourceLineage: "one-piece-en",
+        supportedGame: "one-piece",
+        gameProfileVersion: "one-piece@1",
+        parserContract: "synthetic-fixture-card-document-with-legality@2",
+      },
+      {
+        adapterVersion: "fixture-one-piece-json-capped@1",
+        sourceLineage: "one-piece-en",
+        supportedGame: "one-piece",
+        gameProfileVersion: "one-piece@1",
+        parserContract: "synthetic-fixture-card-document-with-legality@2",
+        maximumSnapshotBytes: 1024 * 1024,
+      },
+      {
+        adapterVersion: "fixture-fusion-world-json@2",
+        sourceLineage: "fusion-world-en",
+        supportedGame: "fusion-world",
+        gameProfileVersion: "fusion-world@1",
+        parserContract: "synthetic-fixture-card-document-with-legality@2",
+      },
+      {
+        adapterVersion: "fixture-fusion-world-json-large@1",
+        sourceLineage: "fusion-world-en",
+        supportedGame: "fusion-world",
+        gameProfileVersion: "fusion-world@1",
+        parserContract: "synthetic-fixture-card-document-with-legality@2",
+      },
+      {
+        adapterVersion: "fixture-digimon-json@2",
+        sourceLineage: "digimon-en",
+        supportedGame: "digimon",
+        gameProfileVersion: "digimon@1",
+        parserContract: "synthetic-fixture-card-document-with-legality@2",
+      },
+      {
+        adapterVersion: "fixture-gundam-en-asia-json@2",
+        sourceLineage: "gundam-en-asia",
+        supportedGame: "gundam",
+        gameProfileVersion: "gundam@1",
+        parserContract: "synthetic-fixture-card-document-with-legality@2",
+      },
+      {
+        adapterVersion: "fixture-gundam-en-us-json@2",
+        sourceLineage: "gundam-en-us",
+        supportedGame: "gundam",
+        gameProfileVersion: "gundam@1",
+        parserContract: "synthetic-fixture-card-document-with-legality@2",
+      },
+    ].map((adapter) => ({
+      ...adapter,
+      maximumSnapshotBytes: adapter.maximumSnapshotBytes ?? 16 * 1024 * 1024,
+      origin: "synthetic_fixture" as const,
+      requestSurface: { kind: "synthetic-fixture" as const },
+      reconciliationCapability: "catalogue" as const,
+      parse: parseLegalitySourceDocument,
+    })),
+  ].map((adapter) =>
+    Object.freeze({
+      ...adapter,
+      legalityRegion: requiredOfficialSourceScope(adapter.sourceLineage).legalityRegion,
+      requestCapacity: sourceRequestCapacity(adapter.adapterVersion),
+    }),
+  ),
 );
+
+const activeOfficialRawAdapterVersions = new Set([
+  ...new Map(officialRawAdapterContracts.map((adapter) => [adapter.sourceLineage, adapter.adapterVersion])).values(),
+]);
 
 // Registrations that may start new collection: everything installed except
 // any superseded (predecessor) raw contract. Before Go-Live (ADR 0008) no
 // predecessor is registered, so this equals the installed set.
-export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
-  Object.freeze(
-    installedSourceAdapterRegistrations.filter((adapter) =>
+export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] = Object.freeze(
+  installedSourceAdapterRegistrations.filter(
+    (adapter) =>
       adapter.origin !== "production" ||
       adapter.reconciliationCapability !== "catalogue" ||
       typeof adapter.parseBytes !== "function" ||
-      activeOfficialRawAdapterVersions.has(adapter.adapterVersion)
-    ),
-  );
+      activeOfficialRawAdapterVersions.has(adapter.adapterVersion),
+  ),
+);
 
 const installedAdapters = new Map<string, SourceAdapterRegistration>(
-  installedSourceAdapterRegistrations.map((adapter) => [
-    adapter.adapterVersion,
-    adapter,
-  ]),
+  installedSourceAdapterRegistrations.map((adapter) => [adapter.adapterVersion, adapter]),
 );
 
 const activeAdapters = new Map<string, SourceAdapterRegistration>(
@@ -362,9 +320,7 @@ const activeAdapters = new Map<string, SourceAdapterRegistration>(
     .map((adapter) => [adapter.adapterVersion, adapter]),
 );
 
-export function requiredSourceAdapter(
-  adapterVersion: string,
-): SourceAdapterRegistration {
+export function requiredSourceAdapter(adapterVersion: string): SourceAdapterRegistration {
   const adapter = installedAdapters.get(adapterVersion);
   if (adapter === undefined) {
     throw new AdministrationProblem(
@@ -376,20 +332,14 @@ export function requiredSourceAdapter(
   return adapter;
 }
 
-export function adapterReconciliationAreas(
-  adapter: SourceAdapterRegistration,
-): readonly ("catalogue" | "errata")[] {
+export function adapterReconciliationAreas(adapter: SourceAdapterRegistration): readonly ("catalogue" | "errata")[] {
   if (adapter.reconciliationAreas !== undefined) {
     return adapter.reconciliationAreas;
   }
-  return adapter.reconciliationCapability === "unavailable"
-    ? []
-    : [adapter.reconciliationCapability];
+  return adapter.reconciliationCapability === "unavailable" ? [] : [adapter.reconciliationCapability];
 }
 
-export function requiredActiveSourceAdapter(
-  adapterVersion: string,
-): SourceAdapterRegistration {
+export function requiredActiveSourceAdapter(adapterVersion: string): SourceAdapterRegistration {
   const adapter = activeAdapters.get(adapterVersion);
   if (adapter === undefined) {
     throw new AdministrationProblem(
@@ -401,9 +351,7 @@ export function requiredActiveSourceAdapter(
   return adapter;
 }
 
-export function registeredLegalitySourceScope(
-  sourceLineage: string,
-): {
+export function registeredLegalitySourceScope(sourceLineage: string): {
   game: "one-piece" | "fusion-world" | "digimon" | "gundam";
   region: "EN-OCEANIA" | "EN-ASIA" | "EN-US";
 } {
@@ -413,24 +361,15 @@ export function registeredLegalitySourceScope(
   const first = registrations[0];
   if (
     first === undefined ||
-    !["one-piece", "fusion-world", "digimon", "gundam"].includes(
-      first.supportedGame,
-    ) ||
-    registrations.some((adapter) =>
-      adapter.supportedGame !== first.supportedGame ||
-      adapter.legalityRegion !== first.legalityRegion
+    !["one-piece", "fusion-world", "digimon", "gundam"].includes(first.supportedGame) ||
+    registrations.some(
+      (adapter) => adapter.supportedGame !== first.supportedGame || adapter.legalityRegion !== first.legalityRegion,
     )
   ) {
-    throw new Error(
-      "Legality Source Lineage has no consistent registered ownership.",
-    );
+    throw new Error("Legality Source Lineage has no consistent registered ownership.");
   }
   return {
-    game: first.supportedGame as
-      | "one-piece"
-      | "fusion-world"
-      | "digimon"
-      | "gundam",
+    game: first.supportedGame as "one-piece" | "fusion-world" | "digimon" | "gundam",
     region: first.legalityRegion,
   };
 }
@@ -446,8 +385,7 @@ export function assertAdapterBinding(
   if (
     adapter.sourceLineage !== input.sourceLineage ||
     adapter.supportedGame !== input.supportedGame ||
-    (input.gameProfileVersion !== undefined &&
-      adapter.gameProfileVersion !== input.gameProfileVersion)
+    (input.gameProfileVersion !== undefined && adapter.gameProfileVersion !== input.gameProfileVersion)
   ) {
     throw new AdministrationProblem(
       422,
@@ -457,10 +395,7 @@ export function assertAdapterBinding(
   }
 }
 
-export function assertAdapterRequestSurface(
-  adapter: SourceAdapterRegistration,
-  url: URL,
-): void {
+export function assertAdapterRequestSurface(adapter: SourceAdapterRegistration, url: URL): void {
   const surface = adapter.requestSurface;
   if (surface.kind !== "exact-url" || url.href === surface.url) return;
   throw new AdministrationProblem(

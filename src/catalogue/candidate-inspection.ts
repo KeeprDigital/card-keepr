@@ -1,5 +1,4 @@
-import type { CatalogueCandidate } from "./catalogue-candidate";
-import { canonicalJson } from "./serialization";
+import { type CatalogueCandidate, canonicalJson } from "./shared";
 
 export async function inspectCatalogueCandidate(
   database: D1Database,
@@ -96,40 +95,28 @@ export async function inspectCatalogueCandidate(
   const cardsBefore = documentMap(priorCards.results);
   const printingsBefore = documentMap(priorPrintings.results);
   const legalityRulesBefore = documentMap(priorLegalityRules.results);
-  const observedCardIds = new Set(
-    plans.results.map((plan) => plan.card_id),
-  );
+  const observedCardIds = new Set(plans.results.map((plan) => plan.card_id));
   const observedPrintingIds = new Set(
-    plans.results.flatMap((plan) =>
-      plan.printing_id === null ? [] : [plan.printing_id],
-    ),
+    plans.results.flatMap((plan) => (plan.printing_id === null ? [] : [plan.printing_id])),
   );
   const selectedLineages = new Set([
     ...(evidenceLineages.results.length > 0
       ? evidenceLineages.results.map(({ source_lineage }) => source_lineage)
-      : context === null ? [] : [context.source_lineage]),
+      : context === null
+        ? []
+        : [context.source_lineage]),
     ...plans.results.map((plan) => plan.source_lineage),
   ]);
-  const printingEvidence = groupedLineages(
-    printingLineages.results,
-    "printing_id",
-  );
+  const printingEvidence = groupedLineages(printingLineages.results, "printing_id");
   const cardEvidence = groupedLineages(cardLineages.results, "card_id");
   const cards = {
-    added: input.candidate.cards
-      .filter((card) => !cardsBefore.has(card.id))
-      .map((card) => card.id),
-    changed: input.candidate.cards
-      .filter((card) => changed(cardsBefore, card))
-      .map((card) => card.id),
+    added: input.candidate.cards.filter((card) => !cardsBefore.has(card.id)).map((card) => card.id),
+    changed: input.candidate.cards.filter((card) => changed(cardsBefore, card)).map((card) => card.id),
     missing_observations: input.candidate.cards
       .filter(
         (card) =>
           cardsBefore.has(card.id) &&
-          intersects(
-            cardEvidence.get(card.id) ?? new Set(),
-            selectedLineages,
-          ) &&
+          intersects(cardEvidence.get(card.id) ?? new Set(), selectedLineages) &&
           !observedCardIds.has(card.id),
       )
       .map((card) => card.id),
@@ -141,18 +128,13 @@ export async function inspectCatalogueCandidate(
     changed: input.candidate.printings
       .filter((printing) => changed(printingsBefore, printing))
       .map((printing) => printing.id),
-    identity_matches: [...observedPrintingIds]
-      .filter((id) => printingsBefore.has(id))
-      .sort(),
+    identity_matches: [...observedPrintingIds].filter((id) => printingsBefore.has(id)).sort(),
     missing_observations: input.candidate.printings
       .filter((printing) => {
-          return (
-            printingsBefore.has(printing.id) &&
-            intersects(
-              printingEvidence.get(printing.id) ?? new Set(),
-              selectedLineages,
-            ) &&
-            !observedPrintingIds.has(printing.id)
+        return (
+          printingsBefore.has(printing.id) &&
+          intersects(printingEvidence.get(printing.id) ?? new Set(), selectedLineages) &&
+          !observedPrintingIds.has(printing.id)
         );
       })
       .map((printing) => printing.id),
@@ -164,9 +146,7 @@ export async function inspectCatalogueCandidate(
       .map((rule) => rule.id)
       .sort(),
     changed: candidateLegalityRules
-      .filter((rule) =>
-        changedLegalityRule(legalityRulesBefore, rule)
-      )
+      .filter((rule) => changedLegalityRule(legalityRulesBefore, rule))
       .map((rule) => rule.id)
       .sort(),
     lifecycle: {
@@ -187,8 +167,7 @@ export async function inspectCatalogueCandidate(
       legality_rules_added: legalityRules.added.length,
       legality_rules_changed: legalityRules.changed.length,
       legality_rules_current: legalityRules.lifecycle.current.length,
-      legality_rules_non_current:
-        legalityRules.lifecycle.non_current.length,
+      legality_rules_non_current: legalityRules.lifecycle.non_current.length,
       warnings: warnings.length,
     },
     cards,
@@ -212,18 +191,11 @@ function groupedLineages<T extends "printing_id" | "card_id">(
   return grouped;
 }
 
-function intersects(
-  left: ReadonlySet<string>,
-  right: ReadonlySet<string>,
-): boolean {
+function intersects(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
   return [...left].some((value) => right.has(value));
 }
 
-async function candidateWarnings(
-  database: D1Database,
-  runId: string,
-  fallback: readonly Record<string, unknown>[],
-) {
+async function candidateWarnings(database: D1Database, runId: string, fallback: readonly Record<string, unknown>[]) {
   const reconciled = await database
     .prepare(
       `SELECT warnings_json
@@ -239,15 +211,8 @@ async function candidateWarnings(
   return Array.isArray(parsed) ? parsed.filter(isRecord) : fallback;
 }
 
-function documentMap(
-  entries: readonly { id: string; document_json: string }[],
-): Map<string, Record<string, unknown>> {
-  return new Map(
-    entries.map((entry) => [
-      entry.id,
-      revisionDocumentData(entry.document_json),
-    ]),
-  );
+function documentMap(entries: readonly { id: string; document_json: string }[]): Map<string, Record<string, unknown>> {
+  return new Map(entries.map((entry) => [entry.id, revisionDocumentData(entry.document_json)]));
 }
 
 function revisionDocumentData(documentJson: string): Record<string, unknown> {
@@ -258,17 +223,12 @@ function revisionDocumentData(documentJson: string): Record<string, unknown> {
   return isRecord(parsed.data) ? parsed.data : parsed;
 }
 
-function changed(
-  prior: ReadonlyMap<string, Record<string, unknown>>,
-  candidate: Record<string, unknown>,
-): boolean {
+function changed(prior: ReadonlyMap<string, Record<string, unknown>>, candidate: Record<string, unknown>): boolean {
   const document = prior.get(String(candidate.id));
   return (
     document !== undefined &&
     Object.entries(candidate).some(
-      ([key, value]) =>
-        key !== "curated_provenance" &&
-        canonicalJson(document[key]) !== canonicalJson(value),
+      ([key, value]) => key !== "curated_provenance" && canonicalJson(document[key]) !== canonicalJson(value),
     )
   );
 }
@@ -278,14 +238,13 @@ function changedLegalityRule(
   candidate: Record<string, unknown>,
 ): boolean {
   const document = prior.get(String(candidate.id));
-  return document !== undefined &&
-    canonicalJson(legalityInspectionDocument(document)) !==
-      canonicalJson(legalityInspectionDocument(candidate));
+  return (
+    document !== undefined &&
+    canonicalJson(legalityInspectionDocument(document)) !== canonicalJson(legalityInspectionDocument(candidate))
+  );
 }
 
-function legalityInspectionDocument(
-  rule: Record<string, unknown>,
-): Record<string, unknown> {
+function legalityInspectionDocument(rule: Record<string, unknown>): Record<string, unknown> {
   const {
     source_lineage: _sourceLineage,
     source_snapshot_id: _sourceSnapshotId,

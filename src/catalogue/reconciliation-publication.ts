@@ -1,37 +1,20 @@
-import type { CatalogueCandidate } from "./catalogue-candidate";
-import {
-  reconciliationCandidatePlans,
-  type CandidatePlanRow,
-} from "./reconciliation-candidate-store";
+import { type CatalogueCandidate, byteBoundedJsonArrays, retainedPayload, canonicalJson } from "./shared";
+import { reconciliationCandidatePlans, type CandidatePlanRow } from "./reconciliation-candidate-store";
 import {
   aggregateRelationshipEvidence,
   membershipEntries,
   type RelationshipEvidence,
   type RelationshipEvidenceRow,
 } from "./reconciliation-relationships";
-import type {
-  Memberships,
-  PrintingCompatibility,
-  ProvenancedWithdrawal,
+import {
+  type Memberships,
+  type PrintingCompatibility,
+  type ProvenancedWithdrawal,
+  isCompatible,
 } from "./reconciliation-model";
-import { isCompatible } from "./reconciliation-model";
-import type {
-  ReconciledCardRow,
-  ReconciledPrintingRow,
-} from "./reconciliation-repository";
-import {
-  byteBoundedJsonArrays,
-  retainedPayload,
-} from "./reconciliation-payload";
-import { canonicalJson } from "./serialization";
-import {
-  productReleaseLifecyclePlan,
-  type ProductRelationshipLifecycle,
-} from "./product-release-publication";
-import {
-  applicableRulesTextErrata,
-  erratumTargetLifecycleKey,
-} from "./errata-rules-text";
+import type { ReconciledCardRow, ReconciledPrintingRow } from "./reconciliation-repository";
+import { productReleaseLifecyclePlan, type ProductRelationshipLifecycle } from "./product-release-publication";
+import { applicableRulesTextErrata, erratumTargetLifecycleKey } from "./errata-rules-text";
 import { requiredSourceAdapter } from "./source-adapters";
 import { curatedPublicationStatements } from "./curated-revisions";
 import type { NormalizedLifecycle } from "./publication-lifecycle-types";
@@ -67,18 +50,12 @@ export type ReconciliationPublicationPlan = {
       last_observed_revision_id: string;
     }
   >;
-  productRelationshipLifecycles: Record<
-    string,
-    ProductRelationshipLifecycle
-  >;
+  productRelationshipLifecycles: Record<string, ProductRelationshipLifecycle>;
   erratumTargetLifecycles: Record<string, NormalizedLifecycle>;
   relationshipEvidence: Record<string, RelationshipEvidence[]>;
   locatorEvidence: Record<string, LocatorEvidenceCollection>;
   cardEvidence: Record<string, PublicationEvidenceResource[]>;
-  cardEffectiveRulesEvidence: Record<
-    string,
-    PublicationEvidenceResource[]
-  >;
+  cardEffectiveRulesEvidence: Record<string, PublicationEvidenceResource[]>;
   printingEvidence: Record<string, PublicationEvidenceResource[]>;
   statements: D1PreparedStatement[];
 };
@@ -108,10 +85,7 @@ export async function reconciliationPublication(
   revisionOrder = revisionId,
 ): Promise<ReconciliationPublicationPlan | null> {
   const plans = await reconciliationCandidatePlans(database, runId);
-  const currentEvidenceByObservation = await publicationEvidenceResources(
-    database,
-    plans,
-  );
+  const currentEvidenceByObservation = await publicationEvidenceResources(database, plans);
   const context = await database
     .prepare(
       `SELECT context.source_lineage, plan.adapter_version,
@@ -141,33 +115,22 @@ export async function reconciliationPublication(
     .all<{ source_lineage: string; adapter_version: string }>();
   const observedSourceLineages =
     evidencePartitions.results.length > 0
-      ? [...new Set(
-          evidencePartitions.results.map(({ source_lineage }) => source_lineage),
-        )]
+      ? [...new Set(evidencePartitions.results.map(({ source_lineage }) => source_lineage))]
       : [context.source_lineage];
-  const candidate = JSON.parse(
-    await requiredRunCandidate(database, runId),
-  ) as CatalogueCandidate;
+  const candidate = JSON.parse(await requiredRunCandidate(database, runId)) as CatalogueCandidate;
   const erratumObservationIds = [
     ...new Set(
       (candidate.errata ?? []).flatMap((erratum) =>
-        erratum.provenance.map(
-          ({ source_observation_id }) => source_observation_id,
-        )
+        erratum.provenance.map(({ source_observation_id }) => source_observation_id),
       ),
     ),
   ].sort();
-  const evidenceByObservation = await publicationEvidenceResourcesByIds(
-    database,
-    erratumObservationIds,
-  );
+  const evidenceByObservation = await publicationEvidenceResourcesByIds(database, erratumObservationIds);
   for (const [id, evidence] of currentEvidenceByObservation) {
     evidenceByObservation.set(id, evidence);
   }
   const cards = new Map(candidate.cards.map((card) => [card.id, card]));
-  const printings = new Map(
-    candidate.printings.map((printing) => [printing.id, printing]),
-  );
+  const printings = new Map(candidate.printings.map((printing) => [printing.id, printing]));
   const cardPlans = groupedPlans(
     plans.filter((plan) => plan.observation_kind === "card_printing"),
     (plan) => plan.card_id,
@@ -177,31 +140,15 @@ export async function reconciliationPublication(
     (plan) => plan.card_id,
   );
   const printingPlans = groupedPlans(
-    plans.filter(
-      (plan) =>
-        plan.observation_kind === "card_printing" &&
-        plan.printing_id !== null,
-    ),
+    plans.filter((plan) => plan.observation_kind === "card_printing" && plan.printing_id !== null),
     (plan) => plan.printing_id!,
   );
-  const [existingCards, existingPrintings, existingMemberships, existingLocators] =
-    await Promise.all([
-      rowsById<ReconciledCardRow>(
-        database,
-        "reconciled_cards",
-        [...cardPlans.keys()],
-      ),
-      rowsById<ReconciledPrintingRow>(
-        database,
-        "reconciled_printings",
-        [...printingPlans.keys()],
-      ),
-      relationshipRowsByPrinting(
-        database,
-        [...printingPlans.keys()],
-      ),
-      locatorRowsByPrinting(database, [...printingPlans.keys()]),
-    ]);
+  const [existingCards, existingPrintings, existingMemberships, existingLocators] = await Promise.all([
+    rowsById<ReconciledCardRow>(database, "reconciled_cards", [...cardPlans.keys()]),
+    rowsById<ReconciledPrintingRow>(database, "reconciled_printings", [...printingPlans.keys()]),
+    relationshipRowsByPrinting(database, [...printingPlans.keys()]),
+    locatorRowsByPrinting(database, [...printingPlans.keys()]),
+  ]);
   const publicationRows: PublicationRows = {
     cards: [],
     cardDeactivations: [],
@@ -228,17 +175,11 @@ export async function reconciliationPublication(
   };
 
   for (const [cardId, grouped] of cardEvidencePlans) {
-    const evidence = grouped.map((plan) =>
-      evidenceByObservation.get(plan.source_observation_id)!
-    );
+    const evidence = grouped.map((plan) => evidenceByObservation.get(plan.source_observation_id)!);
     result.cardEvidence[cardId] = evidence;
   }
   for (const card of candidate.cards) {
-    const applicableErrata = applicableRulesTextErrata(
-      card,
-      candidate.errata ?? [],
-      context.observed_at,
-    );
+    const applicableErrata = applicableRulesTextErrata(card, candidate.errata ?? [], context.observed_at);
     if (applicableErrata.length === 0) {
       const currentCardEvidence = result.cardEvidence[card.id];
       if (currentCardEvidence !== undefined) {
@@ -249,9 +190,7 @@ export async function reconciliationPublication(
     const observationIds = [
       ...new Set(
         applicableErrata.flatMap((erratum) =>
-          erratum.provenance.map(
-            ({ source_observation_id }) => source_observation_id,
-          )
+          erratum.provenance.map(({ source_observation_id }) => source_observation_id),
         ),
       ),
     ].sort();
@@ -269,15 +208,8 @@ export async function reconciliationPublication(
     if (card === undefined) throw new Error("The reconciliation Card plan changed.");
     const existing = existingCards.get(cardId) ?? null;
     const withdrawal = mergedWithdrawal(grouped, "card");
-    const withdraw =
-      withdrawal?.entity === "card" ||
-      withdrawal?.entity === "card_and_printing";
-    const withdrawalLifecycle = resolvedWithdrawalLifecycle(
-      existing,
-      withdraw,
-      withdrawal,
-      revisionId,
-    );
+    const withdraw = withdrawal?.entity === "card" || withdrawal?.entity === "card_and_printing";
+    const withdrawalLifecycle = resolvedWithdrawalLifecycle(existing, withdraw, withdrawal, revisionId);
     result.cardLifecycles[cardId] = normalizedLifecycle(
       existing?.first_revision_id ?? revisionId,
       revisionId,
@@ -285,12 +217,8 @@ export async function reconciliationPublication(
       withdrawalLifecycle.revisionId,
       withdrawalLifecycle.evidenceJson,
     );
-    publicationRows.cards.push(
-      cardPersistenceRow(grouped[0]!, card, revisionId, existing, withdrawal),
-    );
-    for (const sourceLineage of new Set(
-      grouped.map((plan) => plan.source_lineage),
-    )) {
+    publicationRows.cards.push(cardPersistenceRow(grouped[0]!, card, revisionId, existing, withdrawal));
+    for (const sourceLineage of new Set(grouped.map((plan) => plan.source_lineage))) {
       publicationRows.cardDeactivations.push({
         card_id: card.id,
         source_lineage: sourceLineage,
@@ -299,9 +227,7 @@ export async function reconciliationPublication(
     publicationRows.cardObservations.push(
       ...grouped.map((plan) => {
         if (plan.source_card_facts_json === null) {
-          throw new Error(
-            "The source-observed Card facts are unavailable.",
-          );
+          throw new Error("The source-observed Card facts are unavailable.");
         }
         return {
           card_id: card.id,
@@ -319,38 +245,24 @@ export async function reconciliationPublication(
       throw new Error("The reconciliation Printing plan changed.");
     }
     const first = grouped[0]!;
-    result.printingEvidence[printingId] = grouped.map((plan) =>
-      evidenceByObservation.get(plan.source_observation_id)!
-    );
+    result.printingEvidence[printingId] = grouped.map((plan) => evidenceByObservation.get(plan.source_observation_id)!);
     if (first.compatibility_json === null) {
       throw new Error("The reconciliation Printing compatibility disappeared.");
     }
-    const compatibility = JSON.parse(
-      first.compatibility_json,
-    ) as PrintingCompatibility;
+    const compatibility = JSON.parse(first.compatibility_json) as PrintingCompatibility;
     if (
       grouped.some(
         (plan) =>
           plan.compatibility_json === null ||
-          !isCompatible(
-            JSON.parse(plan.compatibility_json) as PrintingCompatibility,
-            compatibility,
-          ),
+          !isCompatible(JSON.parse(plan.compatibility_json) as PrintingCompatibility, compatibility),
       )
     ) {
       throw new Error("One Printing has incompatible publication plans.");
     }
     const withdrawal = mergedWithdrawal(grouped, "printing");
-    const withdraw =
-      withdrawal?.entity === "printing" ||
-      withdrawal?.entity === "card_and_printing";
+    const withdraw = withdrawal?.entity === "printing" || withdrawal?.entity === "card_and_printing";
     const existing = existingPrintings.get(printingId) ?? null;
-    const withdrawalLifecycle = resolvedWithdrawalLifecycle(
-      existing,
-      withdraw,
-      withdrawal,
-      revisionId,
-    );
+    const withdrawalLifecycle = resolvedWithdrawalLifecycle(existing, withdraw, withdrawal, revisionId);
     result.printingLifecycles[printingId] = normalizedLifecycle(
       existing?.first_revision_id ?? revisionId,
       revisionId,
@@ -358,30 +270,19 @@ export async function reconciliationPublication(
       withdrawalLifecycle.revisionId,
       withdrawalLifecycle.evidenceJson,
     );
-    result.relationshipEvidence[printingId] =
-      nextRelationshipEvidence(
-        existingMemberships.get(printingId) ?? [],
-        grouped,
-        revisionId,
-        revisionOrder,
-      );
+    result.relationshipEvidence[printingId] = nextRelationshipEvidence(
+      existingMemberships.get(printingId) ?? [],
+      grouped,
+      revisionId,
+      revisionOrder,
+    );
     result.locatorEvidence[printingId] = nextLocatorEvidence(
       existingLocators.get(printingId) ?? [],
       grouped,
       revisionId,
     );
-    publicationRows.printings.push(
-      printingPersistenceRow(
-        first,
-        compatibility,
-        revisionId,
-        existing,
-        withdrawal,
-      ),
-    );
-    for (const sourceLineage of new Set(
-      grouped.map((plan) => plan.source_lineage),
-    )) {
+    publicationRows.printings.push(printingPersistenceRow(first, compatibility, revisionId, existing, withdrawal));
+    for (const sourceLineage of new Set(grouped.map((plan) => plan.source_lineage))) {
       publicationRows.locatorDeactivations.push({
         printing_id: printingId,
         source_lineage: sourceLineage,
@@ -402,9 +303,7 @@ export async function reconciliationPublication(
         variant_key: plan.variant_key,
       });
       publicationRows.memberships.push(
-        ...membershipEntries(
-          JSON.parse(plan.memberships_json) as Memberships,
-        ).map((membership) => ({
+        ...membershipEntries(JSON.parse(plan.memberships_json) as Memberships).map((membership) => ({
           printing_id: printingId,
           source_lineage: plan.source_lineage,
           source_observation_id: plan.source_observation_id,
@@ -422,38 +321,28 @@ export async function reconciliationPublication(
     publicationRows,
     observedSourceLineages,
     evidencePartitions.results.length > 0
-      ? evidencePartitions.results.every(({ adapter_version }) =>
-          requiredSourceAdapter(adapter_version).reconciliationCapability ===
-            "catalogue"
+      ? evidencePartitions.results.every(
+          ({ adapter_version }) => requiredSourceAdapter(adapter_version).reconciliationCapability === "catalogue",
         )
-      : requiredSourceAdapter(context.adapter_version)
-          .reconciliationCapability === "catalogue",
+      : requiredSourceAdapter(context.adapter_version).reconciliationCapability === "catalogue",
     revisionId,
   );
-  const productReleaseLifecycles = await productReleaseLifecyclePlan(
+  const productReleaseLifecycles = await productReleaseLifecyclePlan(database, candidate, revisionId);
+  const inferredProductLifecycles = await aggregateInferredProductLifecycles(
     database,
     candidate,
+    result.relationshipEvidence,
     revisionId,
+    revisionOrder,
   );
-  const inferredProductLifecycles =
-    await aggregateInferredProductLifecycles(
-      database,
-      candidate,
-      result.relationshipEvidence,
-      revisionId,
-      revisionOrder,
-    );
   result.productLifecycles = {
     ...inferredProductLifecycles,
     ...productReleaseLifecycles.products,
   };
   result.releaseLifecycles = productReleaseLifecycles.releases;
-  result.productRelationshipLifecycles =
-    productReleaseLifecycles.relationships;
+  result.productRelationshipLifecycles = productReleaseLifecycles.relationships;
   const observedProvenance = new Set(
-    plans.map((plan) =>
-      provenanceKey(plan.source_lineage, plan.source_observation_id),
-    ),
+    plans.map((plan) => provenanceKey(plan.source_lineage, plan.source_observation_id)),
   );
   result.erratumTargetLifecycles = await erratumTargetLifecycles(
     database,
@@ -462,19 +351,9 @@ export async function reconciliationPublication(
     revisionId,
   );
   result.statements.push(
-    ...publicationStatements(
-      database,
-      publicationRows,
-      plans,
-      revisionId,
-    ),
-    ...errataPublicationStatements(
-      database,
-      candidate.errata ?? [],
-      observedProvenance,
-      revisionId,
-    ),
-    ...await curatedPublicationStatements(database, runId, revisionId),
+    ...publicationStatements(database, publicationRows, plans, revisionId),
+    ...errataPublicationStatements(database, candidate.errata ?? [], observedProvenance, revisionId),
+    ...(await curatedPublicationStatements(database, runId, revisionId)),
   );
   return result;
 }
@@ -497,12 +376,7 @@ async function publicationEvidenceResources(
     )
     .bind(plans[0]!.ingestion_run_id)
     .all<PublicationEvidenceResource>();
-  const resources = new Map(
-    rows.results.map((row) => [
-      row.id,
-      { ...row, type: "source_observation" as const },
-    ]),
-  );
+  const resources = new Map(rows.results.map((row) => [row.id, { ...row, type: "source_observation" as const }]));
   for (const plan of plans) {
     if (!resources.has(plan.source_observation_id)) {
       throw new Error("Publication Source Observation evidence disappeared.");
@@ -516,11 +390,7 @@ async function publicationEvidenceResourcesByIds(
   observationIds: readonly string[],
 ): Promise<Map<string, PublicationEvidenceResource>> {
   const resources = new Map<string, PublicationEvidenceResource>();
-  for (
-    const idsJson of observationIds.length === 0
-      ? []
-      : byteBoundedJsonArrays(observationIds)
-  ) {
+  for (const idsJson of observationIds.length === 0 ? [] : byteBoundedJsonArrays(observationIds)) {
     const rows = await database
       .prepare(
         `SELECT candidate.source_observation_id AS id,
@@ -542,10 +412,7 @@ async function publicationEvidenceResourcesByIds(
         type: "source_observation" as const,
       };
       const existing = resources.get(row.id);
-      if (
-        existing !== undefined &&
-        canonicalJson(existing) !== canonicalJson(resource)
-      ) {
+      if (existing !== undefined && canonicalJson(existing) !== canonicalJson(resource)) {
         throw new Error("Immutable publication evidence changed.");
       }
       resources.set(row.id, resource);
@@ -565,20 +432,13 @@ function errataPublicationStatements(
   observedProvenance: ReadonlySet<string>,
   revisionId: string,
 ): D1PreparedStatement[] {
-  const statements = (
-    values: readonly Record<string, unknown>[],
-    prepare: (payload: string) => D1PreparedStatement,
-  ) => byteBoundedJsonArrays(values).map(prepare);
+  const statements = (values: readonly Record<string, unknown>[], prepare: (payload: string) => D1PreparedStatement) =>
+    byteBoundedJsonArrays(values).map(prepare);
   const observedErrata = errata
     .map((erratum) => ({
       erratum,
       provenance: erratum.provenance.filter((provenance) =>
-        observedProvenance.has(
-          provenanceKey(
-            provenance.source_lineage,
-            provenance.source_observation_id,
-          ),
-        ),
+        observedProvenance.has(provenanceKey(provenance.source_lineage, provenance.source_observation_id)),
       ),
     }))
     .filter(({ provenance }) => provenance.length > 0);
@@ -591,13 +451,12 @@ function errataPublicationStatements(
     official_wording: erratum.official_wording,
     corrected_value_json: canonicalJson(erratum.corrected_value),
   }));
-  const provenanceRows = observedErrata.flatMap(
-    ({ erratum, provenance }) =>
-      provenance.map((item) => ({
-        erratum_id: erratum.id,
-        source_lineage: item.source_lineage,
-        source_observation_id: item.source_observation_id,
-      })),
+  const provenanceRows = observedErrata.flatMap(({ erratum, provenance }) =>
+    provenance.map((item) => ({
+      erratum_id: erratum.id,
+      source_lineage: item.source_lineage,
+      source_observation_id: item.source_observation_id,
+    })),
   );
   const revisionRows = errata.map((erratum) => ({
     erratum_id: erratum.id,
@@ -670,9 +529,7 @@ async function erratumTargetLifecycles(
     first_order: string;
     last_order: string;
   }[] = [];
-  for (
-    const idChunk of ids.length === 0 ? [] : byteBoundedJsonArrays(ids)
-  ) {
+  for (const idChunk of ids.length === 0 ? [] : byteBoundedJsonArrays(ids)) {
     const rows = await database
       .prepare(
         `SELECT provenance.erratum_id,
@@ -704,66 +561,37 @@ async function erratumTargetLifecycles(
   }
   const result: Record<string, NormalizedLifecycle> = {};
   for (const erratum of errata) {
-    const lineages = new Set(
-      erratum.provenance.map((item) => item.source_lineage),
-    );
+    const lineages = new Set(erratum.provenance.map((item) => item.source_lineage));
     for (const sourceLineage of lineages) {
-      const prior = existing.filter(
-        (row) =>
-          row.erratum_id === erratum.id &&
-          row.source_lineage === sourceLineage,
-      );
+      const prior = existing.filter((row) => row.erratum_id === erratum.id && row.source_lineage === sourceLineage);
       const first = [...prior].sort((left, right) =>
-        canonicalJson([
-          left.first_order,
-          left.first_revision_id,
-        ]).localeCompare(
-          canonicalJson([
-            right.first_order,
-            right.first_revision_id,
-          ]),
+        canonicalJson([left.first_order, left.first_revision_id]).localeCompare(
+          canonicalJson([right.first_order, right.first_revision_id]),
         ),
       )[0];
       const last = [...prior].sort((left, right) =>
-        canonicalJson([
-          right.last_order,
-          right.last_observed_revision_id,
-        ]).localeCompare(
-          canonicalJson([
-            left.last_order,
-            left.last_observed_revision_id,
-          ]),
+        canonicalJson([right.last_order, right.last_observed_revision_id]).localeCompare(
+          canonicalJson([left.last_order, left.last_observed_revision_id]),
         ),
       )[0];
       const observed = erratum.provenance.some(
         (item) =>
           item.source_lineage === sourceLineage &&
-          observedProvenance.has(
-            provenanceKey(
-              item.source_lineage,
-              item.source_observation_id,
-            ),
-          ),
+          observedProvenance.has(provenanceKey(item.source_lineage, item.source_observation_id)),
       );
-      result[erratumTargetLifecycleKey(erratum.id, sourceLineage)] =
-        normalizedLifecycle(
-          first?.first_revision_id ?? revisionId,
-          observed
-            ? revisionId
-            : (last?.last_observed_revision_id ?? revisionId),
-          false,
-          null,
-          null,
-        );
+      result[erratumTargetLifecycleKey(erratum.id, sourceLineage)] = normalizedLifecycle(
+        first?.first_revision_id ?? revisionId,
+        observed ? revisionId : (last?.last_observed_revision_id ?? revisionId),
+        false,
+        null,
+        null,
+      );
     }
   }
   return result;
 }
 
-function provenanceKey(
-  sourceLineage: string,
-  sourceObservationId: string,
-): string {
+function provenanceKey(sourceLineage: string, sourceObservationId: string): string {
   return canonicalJson([sourceLineage, sourceObservationId]);
 }
 
@@ -775,10 +603,7 @@ async function aggregateInferredProductLifecycles(
   revisionOrder: string,
 ): Promise<Record<string, NormalizedLifecycle>> {
   const cards = new Map(candidate.cards.map((card) => [card.id, card]));
-  const grouped = new Map<
-    string,
-    { firstRevisionId: string; lastObservedRevisionId: string }[]
-  >();
+  const grouped = new Map<string, { firstRevisionId: string; lastObservedRevisionId: string }[]>();
   for (const printing of candidate.printings) {
     const game = cards.get(printing.card_id)?.game;
     if (game === undefined) continue;
@@ -791,10 +616,7 @@ async function aggregateInferredProductLifecycles(
             product.name === relationship.relationship_value),
       );
       if (declared === true) continue;
-      const key = inferredProductLifecycleKey(
-        game,
-        relationship.relationship_value,
-      );
+      const key = inferredProductLifecycleKey(game, relationship.relationship_value);
       grouped.set(key, [
         ...(grouped.get(key) ?? []),
         {
@@ -807,30 +629,21 @@ async function aggregateInferredProductLifecycles(
   const revisionIds = [
     ...new Set(
       [...grouped.values()].flatMap((values) =>
-        values.flatMap((value) => [
-          value.firstRevisionId,
-          value.lastObservedRevisionId,
-        ]),
+        values.flatMap((value) => [value.firstRevisionId, value.lastObservedRevisionId]),
       ),
     ),
   ];
-  const revisionOrders = new Map<string, string>([
-    [revisionId, revisionOrder],
-  ]);
+  const revisionOrders = new Map<string, string>([[revisionId, revisionOrder]]);
   await Promise.all(
     revisionIds
       .filter((id) => id !== revisionId)
       .map(async (id) => {
         const row = await database
-          .prepare(
-            "SELECT published_at FROM catalogue_revisions WHERE id = ?",
-          )
+          .prepare("SELECT published_at FROM catalogue_revisions WHERE id = ?")
           .bind(id)
           .first<{ published_at: string }>();
         if (row === null) {
-          throw new Error(
-            "An inferred Product lifecycle revision is unavailable.",
-          );
+          throw new Error("An inferred Product lifecycle revision is unavailable.");
         }
         revisionOrders.set(id, row.published_at);
       }),
@@ -840,24 +653,17 @@ async function aggregateInferredProductLifecycles(
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, values]) => {
         const first = [...values].sort((left, right) =>
-          revisionOrderKey(
-            revisionOrders,
-            left.firstRevisionId,
-          ).localeCompare(
+          revisionOrderKey(revisionOrders, left.firstRevisionId).localeCompare(
             revisionOrderKey(revisionOrders, right.firstRevisionId),
           ),
         )[0]!;
-        const last = [...values].sort((left, right) =>
-          revisionOrderKey(
-            revisionOrders,
-            left.lastObservedRevisionId,
-          ).localeCompare(
-            revisionOrderKey(
-              revisionOrders,
-              right.lastObservedRevisionId,
+        const last = [...values]
+          .sort((left, right) =>
+            revisionOrderKey(revisionOrders, left.lastObservedRevisionId).localeCompare(
+              revisionOrderKey(revisionOrders, right.lastObservedRevisionId),
             ),
-          ),
-        ).at(-1)!;
+          )
+          .at(-1)!;
         return [
           key,
           {
@@ -870,17 +676,11 @@ async function aggregateInferredProductLifecycles(
   );
 }
 
-function revisionOrderKey(
-  orders: ReadonlyMap<string, string>,
-  revisionId: string,
-): string {
+function revisionOrderKey(orders: ReadonlyMap<string, string>, revisionId: string): string {
   return canonicalJson([orders.get(revisionId) ?? "", revisionId]);
 }
 
-function inferredProductLifecycleKey(
-  game: string,
-  officialCode: string,
-): string {
+function inferredProductLifecycleKey(game: string, officialCode: string): string {
   return canonicalJson([game, officialCode]);
 }
 
@@ -895,9 +695,7 @@ async function retainCarriedLifecycles(
   revisionId: string,
 ): Promise<void> {
   const run = await database
-    .prepare(
-      "SELECT expected_current_revision_id FROM ingestion_runs WHERE id = ?",
-    )
+    .prepare("SELECT expected_current_revision_id FROM ingestion_runs WHERE id = ?")
     .bind(runId)
     .first<{ expected_current_revision_id: string }>();
   if (run === null) {
@@ -922,26 +720,15 @@ async function retainCarriedLifecycles(
       .all<{ id: string; document_json: string }>(),
   ]);
   const candidateCardIds = new Set(candidate.cards.map((card) => card.id));
-  const candidatePrintingIds = new Set(
-    candidate.printings.map((printing) => printing.id),
-  );
+  const candidatePrintingIds = new Set(candidate.printings.map((printing) => printing.id));
   for (const row of cards.results) {
     if (!candidateCardIds.has(row.id)) continue;
     const carriedEvidence = documentPublicationEvidence(row.document_json);
     if (result.cardEvidence[row.id] === undefined) {
-      const effectiveRulesEvidence = documentFieldEvidence(
-        row.document_json,
-        "/data/effective_rules_text",
-      );
-      const effectiveRulesIds = new Set(
-        effectiveRulesEvidence.map(({ id }) => id),
-      );
-      const generalEvidence = carriedEvidence.filter(
-        ({ id }) => !effectiveRulesIds.has(id),
-      );
-      result.cardEvidence[row.id] = generalEvidence.length === 0
-        ? carriedEvidence
-        : generalEvidence;
+      const effectiveRulesEvidence = documentFieldEvidence(row.document_json, "/data/effective_rules_text");
+      const effectiveRulesIds = new Set(effectiveRulesEvidence.map(({ id }) => id));
+      const generalEvidence = carriedEvidence.filter(({ id }) => !effectiveRulesIds.has(id));
+      result.cardEvidence[row.id] = generalEvidence.length === 0 ? carriedEvidence : generalEvidence;
     }
     if (result.cardEffectiveRulesEvidence[row.id] === undefined) {
       result.cardEffectiveRulesEvidence[row.id] = documentFieldEvidence(
@@ -950,9 +737,7 @@ async function retainCarriedLifecycles(
       );
     }
     if (result.cardLifecycles[row.id] === undefined) {
-      result.cardLifecycles[row.id] = documentLifecycle(
-        row.document_json,
-      );
+      result.cardLifecycles[row.id] = documentLifecycle(row.document_json);
       if (inferCanonicalDisappearance) {
         publicationRows.cardDeactivations.push(
           ...observedSourceLineages.map((sourceLineage) => ({
@@ -964,38 +749,23 @@ async function retainCarriedLifecycles(
     }
   }
   for (const row of printings.results) {
-    if (
-      candidatePrintingIds.has(row.id) &&
-      result.printingEvidence[row.id] === undefined
-    ) {
-      result.printingEvidence[row.id] = documentPublicationEvidence(
-        row.document_json,
-      );
+    if (candidatePrintingIds.has(row.id) && result.printingEvidence[row.id] === undefined) {
+      result.printingEvidence[row.id] = documentPublicationEvidence(row.document_json);
     }
-    const omittedPrinting =
-      candidatePrintingIds.has(row.id) &&
-      result.printingLifecycles[row.id] === undefined;
+    const omittedPrinting = candidatePrintingIds.has(row.id) && result.printingLifecycles[row.id] === undefined;
     if (omittedPrinting) {
-      result.printingLifecycles[row.id] = documentLifecycle(
-        row.document_json,
-      );
+      result.printingLifecycles[row.id] = documentLifecycle(row.document_json);
     }
-    if (
-      candidatePrintingIds.has(row.id) &&
-      result.relationshipEvidence[row.id] === undefined
-    ) {
+    if (candidatePrintingIds.has(row.id) && result.relationshipEvidence[row.id] === undefined) {
       const carried = documentRelationshipEvidence(row.document_json);
       if (!inferCanonicalDisappearance) {
         result.relationshipEvidence[row.id] = carried;
       } else {
         const omittedLineageWasCurrent = carried.some(
-          (relationship) =>
-            observedSourceLineages.includes(relationship.source_lineage) &&
-            relationship.current,
+          (relationship) => observedSourceLineages.includes(relationship.source_lineage) && relationship.current,
         );
         result.relationshipEvidence[row.id] = carried.map((relationship) =>
-          observedSourceLineages.includes(relationship.source_lineage) &&
-            relationship.current
+          observedSourceLineages.includes(relationship.source_lineage) && relationship.current
             ? {
                 ...relationship,
                 current: false,
@@ -1021,25 +791,16 @@ async function retainCarriedLifecycles(
         })),
       );
     }
-    if (
-      candidatePrintingIds.has(row.id) &&
-      result.locatorEvidence[row.id] === undefined
-    ) {
+    if (candidatePrintingIds.has(row.id) && result.locatorEvidence[row.id] === undefined) {
       const carried = documentLocatorEvidence(row.document_json);
       result.locatorEvidence[row.id] = !inferCanonicalDisappearance
         ? carried
         : {
-            current: carried.current.filter(
-              (locator) =>
-                !observedSourceLineages.includes(locator.source_lineage),
-            ),
+            current: carried.current.filter((locator) => !observedSourceLineages.includes(locator.source_lineage)),
             historical: [
               ...carried.historical,
               ...carried.current
-                .filter(
-                  (locator) =>
-                    observedSourceLineages.includes(locator.source_lineage),
-                )
+                .filter((locator) => observedSourceLineages.includes(locator.source_lineage))
                 .map((locator) => ({
                   ...locator,
                   current: false as const,
@@ -1068,15 +829,11 @@ function documentLifecycle(documentJson: string): NormalizedLifecycle {
     first_revision_id: lifecycle.first_revision_id,
     last_observed_revision_id: lifecycle.last_observed_revision_id,
     withdrawn: lifecycle.withdrawn,
-    ...(lifecycle.withdrawal === undefined
-      ? {}
-      : { withdrawal: lifecycle.withdrawal }),
+    ...(lifecycle.withdrawal === undefined ? {} : { withdrawal: lifecycle.withdrawal }),
   };
 }
 
-function documentPublicationEvidence(
-  documentJson: string,
-): PublicationEvidenceResource[] {
+function documentPublicationEvidence(documentJson: string): PublicationEvidenceResource[] {
   const parsed: unknown = JSON.parse(documentJson);
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("A carried revision document is invalid.");
@@ -1103,46 +860,33 @@ function documentPublicationEvidence(
     ) {
       throw new Error("Carried publication evidence is invalid.");
     }
-    return [{
-      type: "source_observation",
-      id: evidence.id,
-      captured_at: evidence.captured_at,
-      source: evidence.source,
-    }];
+    return [
+      {
+        type: "source_observation",
+        id: evidence.id,
+        captured_at: evidence.captured_at,
+        source: evidence.source,
+      },
+    ];
   });
 }
 
-function documentFieldEvidence(
-  documentJson: string,
-  pointer: string,
-): PublicationEvidenceResource[] {
+function documentFieldEvidence(documentJson: string, pointer: string): PublicationEvidenceResource[] {
   const parsed: unknown = JSON.parse(documentJson);
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("A carried revision document is invalid.");
   }
   const provenance = (parsed as { provenance?: unknown }).provenance;
   if (provenance === undefined) return [];
-  if (
-    provenance === null ||
-    typeof provenance !== "object" ||
-    Array.isArray(provenance)
-  ) {
+  if (provenance === null || typeof provenance !== "object" || Array.isArray(provenance)) {
     throw new Error("Carried publication provenance is invalid.");
   }
   const observationIds = (provenance as Record<string, unknown>)[pointer];
   if (observationIds === undefined) return [];
-  if (
-    !Array.isArray(observationIds) ||
-    observationIds.some((id) => typeof id !== "string")
-  ) {
+  if (!Array.isArray(observationIds) || observationIds.some((id) => typeof id !== "string")) {
     throw new Error("Carried publication provenance is invalid.");
   }
-  const evidenceById = new Map(
-    documentPublicationEvidence(documentJson).map((evidence) => [
-      evidence.id,
-      evidence,
-    ]),
-  );
+  const evidenceById = new Map(documentPublicationEvidence(documentJson).map((evidence) => [evidence.id, evidence]));
   return observationIds.map((id) => {
     const evidence = evidenceById.get(id as string);
     if (evidence === undefined) {
@@ -1152,20 +896,14 @@ function documentFieldEvidence(
   });
 }
 
-function documentRelationshipEvidence(
-  documentJson: string,
-): RelationshipEvidence[] {
+function documentRelationshipEvidence(documentJson: string): RelationshipEvidence[] {
   const document = revisionDocumentData(documentJson) as {
     relationship_evidence?: RelationshipEvidence[];
   };
-  return Array.isArray(document.relationship_evidence)
-    ? document.relationship_evidence
-    : [];
+  return Array.isArray(document.relationship_evidence) ? document.relationship_evidence : [];
 }
 
-function documentLocatorEvidence(
-  documentJson: string,
-): LocatorEvidenceCollection {
+function documentLocatorEvidence(documentJson: string): LocatorEvidenceCollection {
   const document = revisionDocumentData(documentJson) as {
     locator_evidence?: LocatorEvidenceCollection;
   };
@@ -1174,19 +912,11 @@ function documentLocatorEvidence(
 
 function revisionDocumentData(documentJson: string): Record<string, unknown> {
   const parsed: unknown = JSON.parse(documentJson);
-  if (
-    parsed === null ||
-    typeof parsed !== "object" ||
-    Array.isArray(parsed)
-  ) {
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("A carried revision document is invalid.");
   }
   const document = parsed as Record<string, unknown>;
-  if (
-    document.data !== null &&
-    typeof document.data === "object" &&
-    !Array.isArray(document.data)
-  ) {
+  if (document.data !== null && typeof document.data === "object" && !Array.isArray(document.data)) {
     return document.data as Record<string, unknown>;
   }
   return document;
@@ -1199,15 +929,8 @@ function cardPersistenceRow(
   existing: ReconciledCardRow | null,
   withdrawal: ProvenancedWithdrawal | null,
 ): Record<string, unknown> {
-  const withdraw =
-    withdrawal?.entity === "card" ||
-    withdrawal?.entity === "card_and_printing";
-  const lifecycle = resolvedWithdrawalLifecycle(
-    existing,
-    withdraw,
-    withdrawal,
-    revisionId,
-  );
+  const withdraw = withdrawal?.entity === "card" || withdrawal?.entity === "card_and_printing";
+  const lifecycle = resolvedWithdrawalLifecycle(existing, withdraw, withdrawal, revisionId);
   return {
     id: plan.card_id,
     supported_game: card.game,
@@ -1228,15 +951,8 @@ function printingPersistenceRow(
   existing: ReconciledPrintingRow | null,
   withdrawal: ProvenancedWithdrawal | null,
 ): Record<string, unknown> {
-  const withdraw =
-    withdrawal?.entity === "printing" ||
-    withdrawal?.entity === "card_and_printing";
-  const lifecycle = resolvedWithdrawalLifecycle(
-    existing,
-    withdraw,
-    withdrawal,
-    revisionId,
-  );
+  const withdraw = withdrawal?.entity === "printing" || withdrawal?.entity === "card_and_printing";
+  const lifecycle = resolvedWithdrawalLifecycle(existing, withdraw, withdrawal, revisionId);
   return {
     id: plan.printing_id,
     card_id: compatibility.card_id,
@@ -1346,17 +1062,12 @@ function publicationStatements(
 ): D1PreparedStatement[] {
   const withdrawals = plans.flatMap((plan) => {
     if (plan.withdrawal_json === null) return [];
-    const withdrawal = JSON.parse(
-      plan.withdrawal_json,
-    ) as ProvenancedWithdrawal;
+    const withdrawal = JSON.parse(plan.withdrawal_json) as ProvenancedWithdrawal;
     const targets = [
-      ...(withdrawal.entity === "card" ||
-      withdrawal.entity === "card_and_printing"
+      ...(withdrawal.entity === "card" || withdrawal.entity === "card_and_printing"
         ? [{ entity_type: "card", entity_id: plan.card_id }]
         : []),
-      ...(plan.printing_id !== null &&
-      (withdrawal.entity === "printing" ||
-        withdrawal.entity === "card_and_printing")
+      ...(plan.printing_id !== null && (withdrawal.entity === "printing" || withdrawal.entity === "card_and_printing")
         ? [{ entity_type: "printing", entity_id: plan.printing_id }]
         : []),
     ];
@@ -1372,20 +1083,16 @@ function publicationStatements(
       evidence_json: canonicalJson(withdrawal.evidence),
     }));
   });
-  const unique = (
-    values: readonly Record<string, unknown>[],
-  ): Record<string, unknown>[] => [
+  const unique = (values: readonly Record<string, unknown>[]): Record<string, unknown>[] => [
     ...new Map(values.map((value) => [canonicalJson(value), value])).values(),
   ];
-  const statements = (
-    values: readonly Record<string, unknown>[],
-    prepare: (payload: string) => D1PreparedStatement,
-  ) => byteBoundedJsonArrays(values).map(prepare);
+  const statements = (values: readonly Record<string, unknown>[], prepare: (payload: string) => D1PreparedStatement) =>
+    byteBoundedJsonArrays(values).map(prepare);
   return [
     ...statements(withdrawals, (payload) =>
       database
-      .prepare(
-        `INSERT INTO reconciled_withdrawal_assertions (
+        .prepare(
+          `INSERT INTO reconciled_withdrawal_assertions (
            entity_type, entity_id, source_lineage, source_snapshot_id,
            source_observation_set_id, source_observation_id, assertion,
            state, effective_at, evidence_json,
@@ -1404,13 +1111,13 @@ function publicationStatements(
          FROM json_each(?) WHERE true
          ON CONFLICT (entity_type, entity_id, source_observation_id)
          DO NOTHING`,
-      )
-      .bind(revisionId, payload),
+        )
+        .bind(revisionId, payload),
     ),
     ...statements(rows.cards, (payload) =>
       database
-      .prepare(
-        `INSERT INTO reconciled_cards (
+        .prepare(
+          `INSERT INTO reconciled_cards (
            id, supported_game, official_identity_kind,
            official_identity_value, first_revision_id,
            last_observed_revision_id, withdrawn, withdrawal_revision_id,
@@ -1438,8 +1145,8 @@ function publicationStatements(
              WHEN reconciled_cards.withdrawn = 0 AND excluded.withdrawn = 1
              THEN excluded.withdrawal_evidence_json
              ELSE reconciled_cards.withdrawal_evidence_json END`,
-      )
-      .bind(revisionId, payload),
+        )
+        .bind(revisionId, payload),
     ),
     ...setDeactivationStatements(
       database,
@@ -1450,8 +1157,8 @@ function publicationStatements(
     ),
     ...statements(rows.cardObservations, (payload) =>
       database
-      .prepare(
-        `INSERT INTO reconciled_card_observations (
+        .prepare(
+          `INSERT INTO reconciled_card_observations (
            card_id, source_lineage, source_observation_id,
            catalogue_revision_id, canonical_facts_json, current,
            last_missing_revision_id
@@ -1461,13 +1168,13 @@ function publicationStatements(
                 json_extract(value, '$.source_observation_id'), ?,
                 json_extract(value, '$.canonical_facts_json'), 1, NULL
          FROM json_each(?)`,
-      )
-      .bind(revisionId, payload),
+        )
+        .bind(revisionId, payload),
     ),
     ...statements(rows.printings, (payload) =>
       database
-      .prepare(
-        `INSERT INTO reconciled_printings (
+        .prepare(
+          `INSERT INTO reconciled_printings (
            id, card_id, source_lineage, artwork_fingerprint,
            printed_fields_digest, rarity_normalized, treatment,
            first_revision_id, last_observed_revision_id, withdrawn,
@@ -1501,8 +1208,8 @@ function publicationStatements(
                   AND excluded.withdrawn = 1
              THEN excluded.withdrawal_evidence_json
              ELSE reconciled_printings.withdrawal_evidence_json END`,
-      )
-      .bind(revisionId, payload),
+        )
+        .bind(revisionId, payload),
     ),
     ...setDeactivationStatements(
       database,
@@ -1513,8 +1220,8 @@ function publicationStatements(
     ),
     ...statements(rows.locators, (payload) =>
       database
-      .prepare(
-        `INSERT INTO reconciled_printing_locators (
+        .prepare(
+          `INSERT INTO reconciled_printing_locators (
            printing_id, source_lineage, locator, variant_key,
            variant_identity,
            first_revision_id, last_observed_revision_id, current,
@@ -1529,8 +1236,8 @@ function publicationStatements(
          ON CONFLICT (source_lineage, locator, variant_identity) DO UPDATE SET
            last_observed_revision_id = excluded.last_observed_revision_id,
            current = 1, last_missing_revision_id = NULL`,
-      )
-      .bind(revisionId, revisionId, payload),
+        )
+        .bind(revisionId, revisionId, payload),
     ),
     ...setDeactivationStatements(
       database,
@@ -1541,8 +1248,8 @@ function publicationStatements(
     ),
     ...statements(rows.memberships, (payload) =>
       database
-      .prepare(
-        `INSERT INTO reconciled_printing_memberships (
+        .prepare(
+          `INSERT INTO reconciled_printing_memberships (
            printing_id, source_lineage, source_observation_id,
            relationship_kind, relationship_value, first_revision_id,
            last_observed_revision_id, current, last_missing_revision_id
@@ -1559,18 +1266,15 @@ function publicationStatements(
          ) DO UPDATE SET
            last_observed_revision_id = excluded.last_observed_revision_id,
            current = 1, last_missing_revision_id = NULL`,
-      )
-      .bind(revisionId, revisionId, payload),
+        )
+        .bind(revisionId, revisionId, payload),
     ),
   ];
 }
 
 function setDeactivationStatements(
   database: D1Database,
-  table:
-    | "reconciled_card_observations"
-    | "reconciled_printing_locators"
-    | "reconciled_printing_memberships",
+  table: "reconciled_card_observations" | "reconciled_printing_locators" | "reconciled_printing_memberships",
   idColumn: "card_id" | "printing_id",
   rows: readonly Record<string, unknown>[],
   revisionId: string,
@@ -1646,27 +1350,18 @@ function nextLocatorEvidence(
   const byBinding = new Map<string, LocatorEvidence>();
   for (const row of existing) {
     const current = row.current === 1;
-    byBinding.set(
-      canonicalJson([row.source_lineage, row.locator, row.variant_key]),
-      {
-        ...row,
-        current: current && !observedLineages.has(row.source_lineage),
-        last_missing_revision_id:
-          current && observedLineages.has(row.source_lineage)
-            ? revisionId
-            : row.last_missing_revision_id,
-      },
-    );
+    byBinding.set(canonicalJson([row.source_lineage, row.locator, row.variant_key]), {
+      ...row,
+      current: current && !observedLineages.has(row.source_lineage),
+      last_missing_revision_id:
+        current && observedLineages.has(row.source_lineage) ? revisionId : row.last_missing_revision_id,
+    });
   }
   for (const plan of plans) {
     if (plan.locator === null) {
       throw new Error("The reconciliation Printing locator disappeared.");
     }
-    const key = canonicalJson([
-      plan.source_lineage,
-      plan.locator,
-      plan.variant_key,
-    ]);
+    const key = canonicalJson([plan.source_lineage, plan.locator, plan.variant_key]);
     const previous = byBinding.get(key);
     byBinding.set(key, {
       source_lineage: plan.source_lineage,
@@ -1685,10 +1380,7 @@ function nextLocatorEvidence(
   };
 }
 
-function locatorEvidenceOrder(
-  left: LocatorEvidence,
-  right: LocatorEvidence,
-): number {
+function locatorEvidenceOrder(left: LocatorEvidence, right: LocatorEvidence): number {
   return (
     left.source_lineage.localeCompare(right.source_lineage) ||
     left.locator.localeCompare(right.locator) ||
@@ -1712,13 +1404,9 @@ function resolvedWithdrawalLifecycle(
   const newTransition = withdraw && existing?.withdrawn !== 1;
   return {
     newTransition,
-    revisionId: newTransition
-      ? revisionId
-      : existing?.withdrawal_revision_id ?? null,
+    revisionId: newTransition ? revisionId : (existing?.withdrawal_revision_id ?? null),
     evidenceJson:
-      newTransition && withdrawal !== null
-        ? canonicalJson(withdrawal)
-        : existing?.withdrawal_evidence_json ?? null,
+      newTransition && withdrawal !== null ? canonicalJson(withdrawal) : (existing?.withdrawal_evidence_json ?? null),
   };
 }
 
@@ -1742,15 +1430,8 @@ function mergedWithdrawal(
 ): ProvenancedWithdrawal | null {
   const withdrawals = plans
     .filter((plan) => plan.withdrawal_json !== null)
-    .map(
-      (plan) =>
-        JSON.parse(plan.withdrawal_json!) as ProvenancedWithdrawal,
-    )
-    .filter(
-      (withdrawal) =>
-        withdrawal.entity === entity ||
-        withdrawal.entity === "card_and_printing",
-    );
+    .map((plan) => JSON.parse(plan.withdrawal_json!) as ProvenancedWithdrawal)
+    .filter((withdrawal) => withdrawal.entity === entity || withdrawal.entity === "card_and_printing");
   const unique = new Map<string, ProvenancedWithdrawal>();
   for (const withdrawal of [...withdrawals].sort((left, right) =>
     canonicalJson(left).localeCompare(canonicalJson(right)),
@@ -1785,27 +1466,17 @@ function normalizedLifecycle(
       : {
           withdrawal: {
             revision_id: withdrawalRevisionId,
-            evidence: JSON.parse(
-              withdrawalEvidenceJson,
-            ) as Record<string, unknown>,
+            evidence: JSON.parse(withdrawalEvidenceJson) as Record<string, unknown>,
           },
         }),
   };
 }
 
-async function requiredRunCandidate(
-  database: D1Database,
-  runId: string,
-): Promise<string> {
+async function requiredRunCandidate(database: D1Database, runId: string): Promise<string> {
   const row = await database
     .prepare("SELECT candidate_json FROM ingestion_runs WHERE id = ?")
     .bind(runId)
     .first<{ candidate_json: string }>();
   if (row === null) throw new Error("Reconciled candidate is unavailable.");
-  return retainedPayload(
-    database,
-    runId,
-    "candidate",
-    row.candidate_json,
-  );
+  return retainedPayload(database, runId, "candidate", row.candidate_json);
 }

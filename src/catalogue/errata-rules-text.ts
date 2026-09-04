@@ -1,12 +1,7 @@
-import type {
-  CatalogueCard,
-  CatalogueErratum,
-  SupportedGame,
-} from "./catalogue-candidate-types";
-import { canonicalJson, sha256Text } from "./serialization";
+import { type CatalogueCard, type CatalogueErratum, type SupportedGame, canonicalJson, sha256Text } from "./shared";
 // The Erratum shape lives in the leaf module `catalogue-candidate-types`; it
 // stays importable from here.
-export type { CatalogueErratum } from "./catalogue-candidate-types";
+export type { CatalogueErratum } from "./shared";
 
 export type ParsedRulesTextErratum = Readonly<{
   targetType: "card" | "printing";
@@ -15,27 +10,16 @@ export type ParsedRulesTextErratum = Readonly<{
   correctedValue: string | null;
 }>;
 
-export function parseRulesTextErrata(
-  value: unknown,
-): readonly ParsedRulesTextErratum[] {
+export function parseRulesTextErrata(value: unknown): readonly ParsedRulesTextErratum[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) {
-    throw new ErratumRulesTextError(
-      "Errata evidence must be an array.",
-    );
+    throw new ErratumRulesTextError("Errata evidence must be an array.");
   }
   return value.map((item) => {
     const erratum = requiredRecord(item, "Erratum");
     const undeclaredFields = Object.keys(erratum).filter(
       (field) =>
-        ![
-          "authority",
-          "field",
-          "target_type",
-          "effective_from",
-          "official_wording",
-          "corrected_value",
-        ].includes(field),
+        !["authority", "field", "target_type", "effective_from", "official_wording", "corrected_value"].includes(field),
     );
     if (undeclaredFields.length > 0) {
       throw new ErratumRulesTextError(
@@ -43,39 +27,21 @@ export function parseRulesTextErrata(
       );
     }
     if (erratum.authority !== "official_errata") {
-      throw new ErratumRulesTextError(
-        "Rules Text changes require the field-specific official Errata authority.",
-      );
+      throw new ErratumRulesTextError("Rules Text changes require the field-specific official Errata authority.");
     }
     if (erratum.field !== "effective_rules_text") {
-      throw new ErratumRulesTextError(
-        "An Erratum must name the exact Effective Rules Text field it corrects.",
-      );
+      throw new ErratumRulesTextError("An Erratum must name the exact Effective Rules Text field it corrects.");
     }
-    if (
-      erratum.target_type !== "card" &&
-      erratum.target_type !== "printing"
-    ) {
-      throw new ErratumRulesTextError(
-        "An Erratum target must be the accepted Card or its narrower Printing.",
-      );
+    if (erratum.target_type !== "card" && erratum.target_type !== "printing") {
+      throw new ErratumRulesTextError("An Erratum target must be the accepted Card or its narrower Printing.");
     }
-    const effectiveFrom = nullableDate(
-      erratum.effective_from,
-      "Erratum effective_from",
-    );
-    const officialWording = requiredString(
-      erratum.official_wording,
-      "Erratum official_wording",
-    );
+    const effectiveFrom = nullableDate(erratum.effective_from, "Erratum effective_from");
+    const officialWording = requiredString(erratum.official_wording, "Erratum official_wording");
     if (
       erratum.corrected_value !== null &&
-      (typeof erratum.corrected_value !== "string" ||
-        erratum.corrected_value.length === 0)
+      (typeof erratum.corrected_value !== "string" || erratum.corrected_value.length === 0)
     ) {
-      throw new ErratumRulesTextError(
-        "New Erratum wording cannot be represented without invented precision.",
-      );
+      throw new ErratumRulesTextError("New Erratum wording cannot be represented without invented precision.");
     }
     return {
       targetType: erratum.target_type,
@@ -97,14 +63,9 @@ export async function identifyRulesTextErrata(input: {
   return Promise.all(
     input.errata.map(async (erratum) => {
       if (erratum.targetType === "printing" && input.printingId === null) {
-        throw new ErratumRulesTextError(
-          "A Printing-scoped Erratum requires an accepted Printing target.",
-        );
+        throw new ErratumRulesTextError("A Printing-scoped Erratum requires an accepted Printing target.");
       }
-      const targetId =
-        erratum.targetType === "card"
-          ? input.cardId
-          : input.printingId!;
+      const targetId = erratum.targetType === "card" ? input.cardId : input.printingId!;
       const semantics = {
         game: input.game,
         target_type: erratum.targetType,
@@ -134,35 +95,17 @@ export function mergeCatalogueErrata(
   const merged = new Map<string, CatalogueErratum>();
   for (const erratum of [...carried, ...observed]) {
     const existing = merged.get(erratum.id);
-    if (
-      existing !== undefined &&
-      canonicalErratum(existing) !== canonicalErratum(erratum)
-    ) {
-      throw new ErratumRulesTextError(
-        "An immutable Erratum identity was observed with changed wording.",
-      );
+    if (existing !== undefined && canonicalErratum(existing) !== canonicalErratum(erratum)) {
+      throw new ErratumRulesTextError("An immutable Erratum identity was observed with changed wording.");
     }
     merged.set(erratum.id, {
       ...erratum,
-      provenance: uniqueProvenance([
-        ...(existing?.provenance ?? []),
-        ...erratum.provenance,
-      ]),
+      provenance: uniqueProvenance([...(existing?.provenance ?? []), ...erratum.provenance]),
     });
   }
   return [...merged.values()].sort((left, right) =>
-    canonicalJson([
-      left.effective_from ?? "",
-      left.target_type,
-      left.target_id,
-      left.id,
-    ]).localeCompare(
-      canonicalJson([
-        right.effective_from ?? "",
-        right.target_type,
-        right.target_id,
-        right.id,
-      ]),
+    canonicalJson([left.effective_from ?? "", left.target_type, left.target_id, left.id]).localeCompare(
+      canonicalJson([right.effective_from ?? "", right.target_type, right.target_id, right.id]),
     ),
   );
 }
@@ -173,9 +116,7 @@ export function deriveEffectiveRulesText(
   observedAt: string,
 ): string | null {
   const latest = applicableRulesTextErrata(card, errata, observedAt).at(-1);
-  return latest === undefined
-    ? card.effective_rules_text
-    : latest.corrected_value;
+  return latest === undefined ? card.effective_rules_text : latest.corrected_value;
 }
 
 export function applicableRulesTextErrata(
@@ -189,8 +130,7 @@ export function applicableRulesTextErrata(
         erratum.game === card.game &&
         erratum.target_type === "card" &&
         erratum.target_id === card.id &&
-        (erratum.effective_from === null ||
-          erratum.effective_from <= observedAt.slice(0, 10)),
+        (erratum.effective_from === null || erratum.effective_from <= observedAt.slice(0, 10)),
     )
     .sort((left, right) =>
       canonicalJson([left.effective_from ?? "", left.id]).localeCompare(
@@ -201,9 +141,7 @@ export function applicableRulesTextErrata(
   if (latest === undefined) return applicable;
   const competingValues = new Set(
     applicable
-      .filter(
-        (erratum) => erratum.effective_from === latest.effective_from,
-      )
+      .filter((erratum) => erratum.effective_from === latest.effective_from)
       .map((erratum) => canonicalJson(erratum.corrected_value)),
   );
   if (competingValues.size > 1) {
@@ -231,19 +169,13 @@ export function canonicalErratum(erratum: CatalogueErratum): string {
   return canonicalJson(exportErratum(erratum));
 }
 
-export function erratumTargetLifecycleKey(
-  erratumId: string,
-  sourceLineage: string,
-): string {
+export function erratumTargetLifecycleKey(erratumId: string, sourceLineage: string): string {
   return canonicalJson([erratumId, sourceLineage]);
 }
 
 export class ErratumRulesTextError extends Error {}
 
-function requiredRecord(
-  value: unknown,
-  field: string,
-): Record<string, unknown> {
+function requiredRecord(value: unknown, field: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new ErratumRulesTextError(`${field} must be an object.`);
   }
@@ -259,10 +191,7 @@ function requiredString(value: unknown, field: string): string {
 
 function nullableDate(value: unknown, field: string): string | null {
   if (value === null) return null;
-  const instant =
-    typeof value === "string"
-      ? new Date(`${value}T00:00:00.000Z`)
-      : null;
+  const instant = typeof value === "string" ? new Date(`${value}T00:00:00.000Z`) : null;
   if (
     typeof value !== "string" ||
     !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
@@ -270,35 +199,19 @@ function nullableDate(value: unknown, field: string): string | null {
     Number.isNaN(instant.valueOf()) ||
     instant.toISOString().slice(0, 10) !== value
   ) {
-    throw new ErratumRulesTextError(
-      `${field} must be a calendar date or null.`,
-    );
+    throw new ErratumRulesTextError(`${field} must be a calendar date or null.`);
   }
   return value;
 }
 
-function uniqueProvenance(
-  provenance: CatalogueErratum["provenance"],
-): CatalogueErratum["provenance"] {
+function uniqueProvenance(provenance: CatalogueErratum["provenance"]): CatalogueErratum["provenance"] {
   return [
     ...new Map(
-      provenance.map((item) => [
-        canonicalJson([
-          item.source_lineage,
-          item.source_observation_id,
-        ]),
-        item,
-      ]),
+      provenance.map((item) => [canonicalJson([item.source_lineage, item.source_observation_id]), item]),
     ).values(),
   ].sort((left, right) =>
-    canonicalJson([
-      left.source_lineage,
-      left.source_observation_id,
-    ]).localeCompare(
-      canonicalJson([
-        right.source_lineage,
-        right.source_observation_id,
-      ]),
+    canonicalJson([left.source_lineage, left.source_observation_id]).localeCompare(
+      canonicalJson([right.source_lineage, right.source_observation_id]),
     ),
   );
 }

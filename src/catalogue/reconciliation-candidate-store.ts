@@ -1,18 +1,18 @@
-import type { CatalogueCandidate } from "./catalogue-candidate";
+import {
+  type CatalogueCandidate,
+  canonicalJson,
+  byteBoundedJsonArrays,
+  chunkedPayloadMarker,
+  guardedAtomicBatch,
+  payloadChunkStatements,
+  retainedPayload,
+} from "./shared";
 import type {
   Memberships,
   PrintingCompatibility,
   ProvenancedWithdrawal,
   ReconciliationWarning,
 } from "./reconciliation-model";
-import { canonicalJson } from "./serialization";
-import {
-  byteBoundedJsonArrays,
-  chunkedPayloadMarker,
-  guardedAtomicBatch,
-  payloadChunkStatements,
-  retainedPayload,
-} from "./reconciliation-payload";
 
 type EvidencePartitionInput = {
   sequenceNumber: number;
@@ -75,9 +75,7 @@ export async function persistReviewableCandidate(
     observedAt: string;
   },
 ): Promise<void> {
-  const approvalDeadline = new Date(
-    Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000,
-  ).toISOString();
+  const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
   const runWarnings = input.warnings.map((warning) => ({
     code: String(warning.code),
     detail: String(warning.detail),
@@ -98,18 +96,8 @@ export async function persistReviewableCandidate(
         chunkedPayloadMarker("digest"),
       ),
     ...evidencePartitionStatements(database, input.runId, input.partitions),
-    ...payloadChunkStatements(
-      database,
-      input.runId,
-      "candidate",
-      canonicalJson(input.candidate),
-    ),
-    ...payloadChunkStatements(
-      database,
-      input.runId,
-      "digest",
-      input.digestPayloadJson,
-    ),
+    ...payloadChunkStatements(database, input.runId, "candidate", canonicalJson(input.candidate)),
+    ...payloadChunkStatements(database, input.runId, "digest", input.digestPayloadJson),
     database
       .prepare(
         `UPDATE ingestion_runs
@@ -119,12 +107,7 @@ export async function persistReviewableCandidate(
          WHERE id = ? AND state = 'parsing'`,
       )
       .bind(input.runId),
-    ...candidatePlanInsertionStatements(
-      database,
-      input.runId,
-      input.plans,
-      canonicalJson(input.warnings),
-    ),
+    ...candidatePlanInsertionStatements(database, input.runId, input.plans, canonicalJson(input.warnings)),
     database
       .prepare(
         `UPDATE ingestion_runs
@@ -185,9 +168,7 @@ export async function persistBlockedCandidate(
     atomicStatements?: readonly D1PreparedStatement[];
   },
 ): Promise<void> {
-  const approvalDeadline = new Date(
-    Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000,
-  ).toISOString();
+  const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
   const runDiagnostics = input.diagnostics.map(publicRunDiagnostic);
   const failureCode = input.failureCode ?? "printing_reconciliation_blocked";
   const statements = [
@@ -206,18 +187,8 @@ export async function persistBlockedCandidate(
         chunkedPayloadMarker("digest"),
       ),
     ...evidencePartitionStatements(database, input.runId, input.partitions),
-    ...payloadChunkStatements(
-      database,
-      input.runId,
-      "candidate",
-      canonicalJson(input.candidate),
-    ),
-    ...payloadChunkStatements(
-      database,
-      input.runId,
-      "digest",
-      input.digestPayloadJson,
-    ),
+    ...payloadChunkStatements(database, input.runId, "candidate", canonicalJson(input.candidate)),
+    ...payloadChunkStatements(database, input.runId, "digest", input.digestPayloadJson),
     database
       .prepare(
         `UPDATE ingestion_runs
@@ -227,12 +198,7 @@ export async function persistBlockedCandidate(
          WHERE id = ? AND state = 'parsing'`,
       )
       .bind(input.runId),
-    ...candidatePlanInsertionStatements(
-      database,
-      input.runId,
-      input.plans,
-      canonicalJson(input.diagnostics),
-    ),
+    ...candidatePlanInsertionStatements(database, input.runId, input.plans, canonicalJson(input.diagnostics)),
     ...(input.atomicStatements ?? []),
     database
       .prepare(
@@ -272,9 +238,7 @@ export async function persistBlockedCandidate(
   await database.batch(guardedAtomicBatch(statements));
 }
 
-function publicRunDiagnostic(
-  diagnostic: Record<string, unknown>,
-): Record<string, unknown> {
+function publicRunDiagnostic(diagnostic: Record<string, unknown>): Record<string, unknown> {
   const base = {
     code: String(diagnostic.code),
     detail: String(diagnostic.detail),
@@ -340,9 +304,7 @@ export async function failReconciliationWorkflow(
   observedAt: string,
   detail: string,
 ): Promise<Record<string, unknown>> {
-  const failureCode = detail.includes(
-      "curated_revision_reconfirmation_required",
-    )
+  const failureCode = detail.includes("curated_revision_reconfirmation_required")
     ? "curated_revision_reconfirmation_required"
     : "reconciliation_workflow_failed";
   const diagnostic = {
@@ -412,16 +374,15 @@ function candidatePlanInsertionStatements(
     printing_id: plan.printingId,
     locator: plan.locator,
     variant_key: plan.variantKey,
-    compatibility_json:
-      plan.compatibility === null ? null : canonicalJson(plan.compatibility),
+    compatibility_json: plan.compatibility === null ? null : canonicalJson(plan.compatibility),
     memberships_json: canonicalJson(plan.memberships),
-    withdrawal_json:
-      plan.withdrawal === null ? null : canonicalJson(plan.withdrawal),
+    withdrawal_json: plan.withdrawal === null ? null : canonicalJson(plan.withdrawal),
     source_card_facts_json: plan.sourceCardFactsJson,
   }));
   return byteBoundedJsonArrays(rows).map((chunk) =>
-    database.prepare(
-      `INSERT INTO reconciliation_candidates (
+    database
+      .prepare(
+        `INSERT INTO reconciliation_candidates (
          ingestion_run_id, source_observation_set_id, source_snapshot_id,
          source_observation_id, card_id, printing_id, source_lineage,
          locator, variant_key, compatibility_json, memberships_json,
@@ -444,12 +405,8 @@ function candidatePlanInsertionStatements(
               '{"reconciliation_context":"shared"}',
               json_extract(planned.value, '$.observation_kind')
        FROM json_each(?) AS planned`,
-    )
-    .bind(
-      runId,
-      warningsJson,
-      chunk,
-    ),
+      )
+      .bind(runId, warningsJson, chunk),
   );
 }
 
@@ -490,10 +447,7 @@ function evidencePartitionStatements(
   );
 }
 
-export async function reconciliationCandidatePlans(
-  database: D1Database,
-  runId: string,
-): Promise<CandidatePlanRow[]> {
+export async function reconciliationCandidatePlans(database: D1Database, runId: string): Promise<CandidatePlanRow[]> {
   const rows = await database
     .prepare(
       `SELECT *
@@ -507,10 +461,7 @@ export async function reconciliationCandidatePlans(
   return rows.results;
 }
 
-export async function digestBoundCandidatePayload(
-  database: D1Database,
-  runId: string,
-): Promise<string | null> {
+export async function digestBoundCandidatePayload(database: D1Database, runId: string): Promise<string | null> {
   const row = await database
     .prepare(
       `SELECT digest_payload_json
@@ -519,9 +470,7 @@ export async function digestBoundCandidatePayload(
     )
     .bind(runId)
     .first<{ digest_payload_json: string }>();
-  return row === null
-    ? null
-    : retainedPayload(database, runId, "digest", row.digest_payload_json);
+  return row === null ? null : retainedPayload(database, runId, "digest", row.digest_payload_json);
 }
 
 export async function retainedReconciliationResult(
@@ -551,24 +500,12 @@ export async function retainedReconciliationResult(
     throw new Error("The retained reconciliation result is unavailable.");
   }
   const candidate = JSON.parse(
-    await retainedPayload(
-      database,
-      runId,
-      "candidate",
-      row.candidate_json,
-    ),
+    await retainedPayload(database, runId, "candidate", row.candidate_json),
   ) as CatalogueCandidate;
-  const digestPayload = JSON.parse(
-    await retainedPayload(
-      database,
-      runId,
-      "digest",
-      row.digest_payload_json,
-    ),
-  ) as { reconciliation_response?: unknown };
-  const response = reconciliationResponseMetadata(
-    digestPayload.reconciliation_response,
-  );
+  const digestPayload = JSON.parse(await retainedPayload(database, runId, "digest", row.digest_payload_json)) as {
+    reconciliation_response?: unknown;
+  };
+  const response = reconciliationResponseMetadata(digestPayload.reconciliation_response);
   const cardIds = new Set(response.observed_card_ids);
   const printingIds = new Set(response.observed_printing_ids);
   const productIds = new Set(response.observed_product_ids);
@@ -581,12 +518,8 @@ export async function retainedReconciliationResult(
     expected_current_revision_id: row.expected_current_revision_id,
     source_observation_set_id: response.source_observation_set_id,
     cards: candidate.cards.filter(({ id }) => cardIds.has(id)),
-    printings: candidate.printings.filter(({ id }) =>
-      printingIds.has(id)
-    ),
-    products: (candidate.products ?? []).filter(({ id }) =>
-      productIds.has(id)
-    ),
+    printings: candidate.printings.filter(({ id }) => printingIds.has(id)),
+    products: (candidate.products ?? []).filter(({ id }) => productIds.has(id)),
     errata: candidate.errata ?? [],
     legality_rules: candidate.legality_rules ?? [],
     diagnostics: response.diagnostics,
@@ -627,10 +560,7 @@ function terminalResultInsertion(
     .bind(runId, canonicalJson(result));
 }
 
-async function requiredTerminalResult(
-  database: D1Database,
-  runId: string,
-): Promise<Record<string, unknown>> {
+async function requiredTerminalResult(database: D1Database, runId: string): Promise<Record<string, unknown>> {
   const result = await terminalResult(database, runId);
   if (result === null) {
     throw new Error("The terminal reconciliation result is unavailable.");
@@ -638,10 +568,7 @@ async function requiredTerminalResult(
   return result;
 }
 
-async function terminalResult(
-  database: D1Database,
-  runId: string,
-): Promise<Record<string, unknown> | null> {
+async function terminalResult(database: D1Database, runId: string): Promise<Record<string, unknown> | null> {
   const row = await database
     .prepare(
       `SELECT result_json
@@ -680,11 +607,7 @@ function reconciliationResponseMetadata(value: unknown): {
   diagnostics: Record<string, unknown>[];
   warnings: Record<string, unknown>[];
 } {
-  if (
-    value === null ||
-    typeof value !== "object" ||
-    Array.isArray(value)
-  ) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("The retained reconciliation response is invalid.");
   }
   const response = value as Record<string, unknown>;
@@ -704,18 +627,11 @@ function reconciliationResponseMetadata(value: unknown): {
 }
 
 function stringArray(value: unknown): value is string[] {
-  return Array.isArray(value) &&
-    value.every((item) => typeof item === "string");
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
-function recordArray(
-  value: unknown,
-): value is Record<string, unknown>[] {
-  return Array.isArray(value) &&
-    value.every(
-      (item) =>
-        item !== null &&
-        typeof item === "object" &&
-        !Array.isArray(item),
-    );
+function recordArray(value: unknown): value is Record<string, unknown>[] {
+  return (
+    Array.isArray(value) && value.every((item) => item !== null && typeof item === "object" && !Array.isArray(item))
+  );
 }

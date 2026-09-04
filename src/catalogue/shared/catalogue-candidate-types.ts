@@ -8,14 +8,9 @@
 // `product-release-catalogue`, `legality-effect-policy`) re-export them.
 import type { CuratedProvenanceBearing } from "./curated-provenance";
 
-export const catalogueCandidateContract =
-  "card-keepr-catalogue-candidate@1" as const;
+export const catalogueCandidateContract = "card-keepr-catalogue-candidate@1" as const;
 
-export type SupportedGame =
-  | "one-piece"
-  | "fusion-world"
-  | "digimon"
-  | "gundam";
+export type SupportedGame = "one-piece" | "fusion-world" | "digimon" | "gundam";
 
 export type CatalogueCandidate = {
   contract: typeof catalogueCandidateContract;
@@ -37,10 +32,7 @@ export type CatalogueCandidate = {
 export type CatalogueSourceCheck =
   | {
       game: SupportedGame;
-      area:
-        | "cards-and-printings"
-        | "products-and-releases"
-        | "errata";
+      area: "cards-and-printings" | "products-and-releases" | "errata";
       checked_at: string;
     }
   | {
@@ -66,11 +58,7 @@ export type CatalogueCard = CuratedProvenanceBearing & {
   name: string;
   effective_rules_text: string | null;
   game_data: {
-    profile:
-      | "one-piece@1"
-      | "fusion-world@1"
-      | "digimon@1"
-      | "gundam@1";
+    profile: "one-piece@1" | "fusion-world@1" | "digimon@1" | "gundam@1";
     attributes: Record<string, unknown>;
   };
 };
@@ -84,11 +72,7 @@ export type CataloguePrinting = CuratedProvenanceBearing & {
   };
   printed_rules_text: string | null;
   game_data: {
-    profile:
-      | "one-piece@1"
-      | "fusion-world@1"
-      | "digimon@1"
-      | "gundam@1";
+    profile: "one-piece@1" | "fusion-world@1" | "digimon@1" | "gundam@1";
     attributes: Record<string, unknown>;
   } | null;
 };
@@ -123,10 +107,7 @@ export type LegalityRuleSourceFieldPointers = {
   effect: string;
 };
 
-export type UnresolvedLegalityScopeDimension =
-  | "effective_interval"
-  | "event_tier"
-  | "target_scope";
+export type UnresolvedLegalityScopeDimension = "effective_interval" | "event_tier" | "target_scope";
 
 export type UnresolvedLegalityScope = Readonly<{
   dimensions: readonly UnresolvedLegalityScopeDimension[];
@@ -169,31 +150,27 @@ export type LegalityRule = CuratedProvenanceBearing & {
 
 // Errata.
 
-export type CatalogueErratum = Readonly<CuratedProvenanceBearing & {
-  id: string;
-  game: SupportedGame;
-  target_type: "card" | "printing";
-  target_id: string;
-  effective_from: string | null;
-  official_wording: string;
-  corrected_value: string | null;
-  provenance: readonly Readonly<{
-    source_lineage: string;
-    source_observation_id: string;
-  }>[];
-}>;
+export type CatalogueErratum = Readonly<
+  CuratedProvenanceBearing & {
+    id: string;
+    game: SupportedGame;
+    target_type: "card" | "printing";
+    target_id: string;
+    effective_from: string | null;
+    official_wording: string;
+    corrected_value: string | null;
+    provenance: readonly Readonly<{
+      source_lineage: string;
+      source_observation_id: string;
+    }>[];
+  }
+>;
 
 // Products, releases, distribution contexts, and product relationships.
 
 export type EvidenceCategory = "explicit" | "derived" | "curated";
 export type ReleaseStatus = "announced" | "released";
-export type ReleasePrecision =
-  | "day"
-  | "month"
-  | "quarter"
-  | "season"
-  | "year"
-  | "unknown";
+export type ReleasePrecision = "day" | "month" | "quarter" | "season" | "year" | "unknown";
 
 export type ProductReference = {
   kind: "official_code" | "name";
@@ -269,12 +246,7 @@ export type CatalogueDistributionContext = CuratedProvenanceBearing & {
   id: string;
   game: SupportedGame;
   key: string;
-  kind:
-    | "product"
-    | "tournament_pack"
-    | "winner_prize"
-    | "promotion"
-    | "other";
+  kind: "product" | "tournament_pack" | "winner_prize" | "promotion" | "other";
   label: string;
   product_id: string | null;
   evidence_category: EvidenceCategory;
@@ -290,11 +262,7 @@ export type ProductEntityReference = {
 export type ProductRelationship = CuratedProvenanceBearing & {
   id: string;
   game: SupportedGame;
-  kind:
-    | "printing-product"
-    | "printing-distribution-context"
-    | "distribution-context-product"
-    | "product-card";
+  kind: "printing-product" | "printing-distribution-context" | "distribution-context-product" | "product-card";
   from: ProductEntityReference;
   to: ProductEntityReference;
   evidence_category: EvidenceCategory;

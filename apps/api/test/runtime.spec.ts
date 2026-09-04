@@ -4,11 +4,7 @@ import addFormats from "ajv-formats";
 import { expect, test, vi } from "vitest";
 import apiWorker from "../src/index";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
-import {
-  cardSearchQuery,
-  cardSearchTerms,
-  cardSearchText,
-} from "../../../src/catalogue/card-search";
+import { cardSearchQuery, cardSearchTerms, cardSearchText } from "../../../src/catalogue/card-search";
 import { cardCollectionPageQuery } from "../../../src/catalogue/card-collection-read";
 import {
   prepareCardSearchForD1Export,
@@ -17,13 +13,7 @@ import {
 } from "../../../src/catalogue/card-search-recovery";
 import exportManifestSchemaV5 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json";
 import exportRecordSchemaV5 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json";
-import { deterministicGzip } from "../../../src/catalogue/export-compression";
-import {
-  canonicalJson,
-  sha256,
-  sha256Text,
-  utf8,
-} from "../../../src/catalogue/serialization";
+import { deterministicGzip, canonicalJson, sha256, sha256Text, utf8 } from "../../../src/catalogue/shared";
 import {
   apiCard,
   apiHeaders,
@@ -230,11 +220,11 @@ test("a supplied cursor for an unavailable current revision returns the cursor r
       id: "card_current_cursor_unavailable",
     },
   });
-  const response = await exports.default.fetch(new Request(
-    "https://card-keepr.invalid/v1/cards?q=unavailable&limit=1&after=" +
-      encodeURIComponent(cursor),
-    { headers: apiHeaders("203.0.113.104") },
-  ));
+  const response = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/cards?q=unavailable&limit=1&after=" + encodeURIComponent(cursor), {
+      headers: apiHeaders("203.0.113.104"),
+    }),
+  );
 
   expect(response.status).toBe(409);
   await expect(response.json()).resolves.toMatchObject({
@@ -266,11 +256,19 @@ test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact 
     source_lineage: "gundam-en-asia",
     source_observation_ids: ["srcobs_retained_export"],
     source_observation_pointer: sourcePointer,
-    source_field_pointers: Object.fromEntries([
-      "official_wording", "effective_from", "effective_until",
-      "unresolved_scope", "region", "format", "event_tier",
-      "card_numbers", "effect",
-    ].map((field) => [field, `${sourcePointer}/${field}`])),
+    source_field_pointers: Object.fromEntries(
+      [
+        "official_wording",
+        "effective_from",
+        "effective_until",
+        "unresolved_scope",
+        "region",
+        "format",
+        "event_tier",
+        "card_numbers",
+        "effect",
+      ].map((field) => [field, `${sourcePointer}/${field}`]),
+    ),
     lifecycle: {
       first_revision_id: revisionId,
       last_observed_revision_id: revisionId,
@@ -282,12 +280,7 @@ test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact 
   const compressedLegalityBytes = deterministicGzip(legalityBytes);
   const emptyBytes = new Uint8Array();
   const compressedEmptyBytes = deterministicGzip(emptyBytes);
-  const [
-    legalityDigest,
-    compressedLegalityDigest,
-    emptyDigest,
-    compressedEmptyDigest,
-  ] = await Promise.all([
+  const [legalityDigest, compressedLegalityDigest, emptyDigest, compressedEmptyDigest] = await Promise.all([
     sha256(legalityBytes),
     sha256(compressedLegalityBytes),
     sha256(emptyBytes),
@@ -306,29 +299,21 @@ test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact 
     ["legality-rules", "LegalityRuleRecord", "id:utf8"],
     ["relationships", "RelationshipRecord", "id:utf8"],
   ] as const;
-  const components = componentDefinitions.map(
-    ([name, schemaDefinition, order]) => {
-      const containsLegality = name === "legality-rules";
-      return {
-        name,
-        media_type: "application/x-ndjson",
-        compression: "gzip",
-        record_schema:
-          "https://card-keepr.invalid/schemas/" +
-          `catalogue-export-record@5#/$defs/${schemaDefinition}`,
-        order,
-        records: containsLegality ? 1 : 0,
-        uncompressed_bytes: containsLegality ? legalityBytes.byteLength : 0,
-        content_sha256: containsLegality ? legalityDigest : emptyDigest,
-        compressed_bytes: containsLegality
-          ? compressedLegalityBytes.byteLength
-          : compressedEmptyBytes.byteLength,
-        compressed_sha256: containsLegality
-          ? compressedLegalityDigest
-          : compressedEmptyDigest,
-      };
-    },
-  );
+  const components = componentDefinitions.map(([name, schemaDefinition, order]) => {
+    const containsLegality = name === "legality-rules";
+    return {
+      name,
+      media_type: "application/x-ndjson",
+      compression: "gzip",
+      record_schema: "https://card-keepr.invalid/schemas/" + `catalogue-export-record@5#/$defs/${schemaDefinition}`,
+      order,
+      records: containsLegality ? 1 : 0,
+      uncompressed_bytes: containsLegality ? legalityBytes.byteLength : 0,
+      content_sha256: containsLegality ? legalityDigest : emptyDigest,
+      compressed_bytes: containsLegality ? compressedLegalityBytes.byteLength : compressedEmptyBytes.byteLength,
+      compressed_sha256: containsLegality ? compressedLegalityDigest : compressedEmptyDigest,
+    };
+  });
   const manifestWithPlaceholder = {
     format: "card-keepr-catalogue-export-manifest@5",
     serialization_profile: "card-keepr-ndjson-gzip@1",
@@ -352,32 +337,24 @@ test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact 
     components,
     manifest_sha256: "0".repeat(64),
   };
-  const manifestDigest = await sha256Text(
-    `${canonicalJson(manifestWithPlaceholder)}\n`,
-  );
+  const manifestDigest = await sha256Text(`${canonicalJson(manifestWithPlaceholder)}\n`);
   const manifest = {
     ...manifestWithPlaceholder,
     manifest_sha256: manifestDigest,
   };
   const manifestBytes = utf8(`${canonicalJson(manifest)}\n`);
   const manifestKey = `catalogue-exports/${revisionId}/manifest.json`;
-  const componentKey =
-    `catalogue-exports/${revisionId}/components/` +
-    `${compressedLegalityDigest}.ndjson.gz`;
+  const componentKey = `catalogue-exports/${revisionId}/components/` + `${compressedLegalityDigest}.ndjson.gz`;
 
   await testEnv.CATALOGUE_EXPORTS.put(manifestKey, manifestBytes, {
     httpMetadata: { contentType: "application/json" },
   });
-  await testEnv.CATALOGUE_EXPORTS.put(
-    componentKey,
-    compressedLegalityBytes,
-    {
-      httpMetadata: {
-        contentType: "application/x-ndjson",
-        contentEncoding: "gzip",
-      },
+  await testEnv.CATALOGUE_EXPORTS.put(componentKey, compressedLegalityBytes, {
+    httpMetadata: {
+      contentType: "application/x-ndjson",
+      contentEncoding: "gzip",
     },
-  );
+  });
   await testEnv.CATALOGUE_DB.batch([
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO ingestion_runs (
@@ -428,12 +405,8 @@ test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact 
       },
     });
   const manifestPath = `/v1/catalogue-exports/${revisionId}`;
-  const firstManifestResponse = await exports.default.fetch(
-    authenticatedRequest(manifestPath),
-  );
-  const secondManifestResponse = await exports.default.fetch(
-    authenticatedRequest(manifestPath),
-  );
+  const firstManifestResponse = await exports.default.fetch(authenticatedRequest(manifestPath));
+  const secondManifestResponse = await exports.default.fetch(authenticatedRequest(manifestPath));
   expect(firstManifestResponse.status).toBe(200);
   expect(secondManifestResponse.status).toBe(200);
   const firstManifestDocument = await firstManifestResponse.json<{
@@ -448,105 +421,68 @@ test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact 
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
   const validateManifest = ajv.compile(exportManifestSchemaV5);
-  expect(
-    validateManifest(firstManifestDocument.data),
-    JSON.stringify(validateManifest.errors),
-  ).toBe(true);
+  expect(validateManifest(firstManifestDocument.data), JSON.stringify(validateManifest.errors)).toBe(true);
   ajv.addSchema(exportRecordSchemaV5);
-  const validateLegalityRule = ajv.getSchema(
-    `${exportRecordSchemaV5.$id}#/$defs/LegalityRuleRecord`,
-  );
+  const validateLegalityRule = ajv.getSchema(`${exportRecordSchemaV5.$id}#/$defs/LegalityRuleRecord`);
   expect(validateLegalityRule).toBeDefined();
-  expect(
-    validateLegalityRule!(legalityRule),
-    JSON.stringify(validateLegalityRule!.errors),
-  ).toBe(true);
+  expect(validateLegalityRule!(legalityRule), JSON.stringify(validateLegalityRule!.errors)).toBe(true);
 
   const componentPath = `${manifestPath}/components/legality-rules`;
-  const firstComponentResponse = await exports.default.fetch(
-    authenticatedRequest(componentPath),
-  );
-  const secondComponentResponse = await exports.default.fetch(
-    authenticatedRequest(componentPath),
-  );
+  const firstComponentResponse = await exports.default.fetch(authenticatedRequest(componentPath));
+  const secondComponentResponse = await exports.default.fetch(authenticatedRequest(componentPath));
   expect(firstComponentResponse.status).toBe(200);
   expect(secondComponentResponse.status).toBe(200);
-  const firstComponentBytes = new Uint8Array(
-    await firstComponentResponse.arrayBuffer(),
-  );
-  const secondComponentBytes = new Uint8Array(
-    await secondComponentResponse.arrayBuffer(),
-  );
+  const firstComponentBytes = new Uint8Array(await firstComponentResponse.arrayBuffer());
+  const secondComponentBytes = new Uint8Array(await secondComponentResponse.arrayBuffer());
   expect(firstComponentBytes).toEqual(compressedLegalityBytes);
   expect(secondComponentBytes).toEqual(compressedLegalityBytes);
-  const decompressed = new Response(firstComponentBytes).body!.pipeThrough(
-    new DecompressionStream("gzip"),
-  );
-  await expect(new Response(decompressed).text()).resolves.toBe(
-    `${canonicalJson(legalityRule)}\n`,
-  );
+  const decompressed = new Response(firstComponentBytes).body!.pipeThrough(new DecompressionStream("gzip"));
+  await expect(new Response(decompressed).text()).resolves.toBe(`${canonicalJson(legalityRule)}\n`);
 
   const componentEtag = `"${compressedLegalityDigest}"`;
-  const headResponse = await exports.default.fetch(new Request(
-    `https://card-keepr.invalid${componentPath}`,
-    {
+  const headResponse = await exports.default.fetch(
+    new Request(`https://card-keepr.invalid${componentPath}`, {
       method: "HEAD",
       headers: {
         ...apiHeaders("203.0.113.32"),
         range: "bytes=0-9",
       },
-    },
-  ));
+    }),
+  );
   expect(headResponse.status).toBe(200);
   expect(await headResponse.text()).toBe("");
-  expect(headResponse.headers.get("content-length")).toBe(
-    String(compressedLegalityBytes.byteLength),
-  );
-  expect(headResponse.headers.get("content-disposition")).toBe(
-    'attachment; filename="legality-rules.ndjson.gz"',
-  );
+  expect(headResponse.headers.get("content-length")).toBe(String(compressedLegalityBytes.byteLength));
+  expect(headResponse.headers.get("content-disposition")).toBe('attachment; filename="legality-rules.ndjson.gz"');
   expect(headResponse.headers.get("accept-ranges")).toBe("bytes");
   expect(headResponse.headers.get("etag")).toBe(componentEtag);
-  expect(headResponse.headers.get("cache-control")).toBe(
-    "private, max-age=31536000, immutable",
-  );
+  expect(headResponse.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
 
-  const notModified = await exports.default.fetch(new Request(
-    `https://card-keepr.invalid${componentPath}`,
-    {
+  const notModified = await exports.default.fetch(
+    new Request(`https://card-keepr.invalid${componentPath}`, {
       headers: {
         ...apiHeaders("203.0.113.33"),
         "if-none-match": componentEtag,
       },
-    },
-  ));
+    }),
+  );
   expect(notModified.status).toBe(304);
   expect(await notModified.text()).toBe("");
 
-  const partial = await exports.default.fetch(new Request(
-    `https://card-keepr.invalid${componentPath}`,
-    {
+  const partial = await exports.default.fetch(
+    new Request(`https://card-keepr.invalid${componentPath}`, {
       headers: {
         ...apiHeaders("203.0.113.34"),
         range: "bytes=3-11",
       },
-    },
-  ));
+    }),
+  );
   expect(partial.status).toBe(206);
-  expect(new Uint8Array(await partial.arrayBuffer())).toEqual(
-    compressedLegalityBytes.slice(3, 12),
-  );
-  expect(partial.headers.get("content-range")).toBe(
-    `bytes 3-11/${compressedLegalityBytes.byteLength}`,
-  );
+  expect(new Uint8Array(await partial.arrayBuffer())).toEqual(compressedLegalityBytes.slice(3, 12));
+  expect(partial.headers.get("content-range")).toBe(`bytes 3-11/${compressedLegalityBytes.byteLength}`);
   expect(partial.headers.get("content-length")).toBe("9");
   expect(partial.headers.get("etag")).toBe(componentEtag);
 
-  await testEnv.CATALOGUE_EXPORTS.put(
-    componentKey,
-    compressedLegalityBytes,
-    { sha256: compressedLegalityDigest },
-  );
+  await testEnv.CATALOGUE_EXPORTS.put(componentKey, compressedLegalityBytes, { sha256: compressedLegalityDigest });
   const replacedBodyBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
     async get(...arguments_) {
       const object = await testEnv.CATALOGUE_EXPORTS.get(...arguments_);
@@ -569,70 +505,55 @@ test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact 
   expect(raced.status).toBe(404);
   await expect(raced.json()).resolves.toMatchObject({ code: "not_found" });
 
-  const unsatisfiable = await exports.default.fetch(new Request(
-    `https://card-keepr.invalid${componentPath}`,
-    {
+  const unsatisfiable = await exports.default.fetch(
+    new Request(`https://card-keepr.invalid${componentPath}`, {
       headers: {
         ...apiHeaders("203.0.113.35"),
         range: `bytes=${compressedLegalityBytes.byteLength}-`,
       },
-    },
-  ));
-  expect(unsatisfiable.status).toBe(416);
-  expect(unsatisfiable.headers.get("content-range")).toBe(
-    `bytes */${compressedLegalityBytes.byteLength}`,
+    }),
   );
+  expect(unsatisfiable.status).toBe(416);
+  expect(unsatisfiable.headers.get("content-range")).toBe(`bytes */${compressedLegalityBytes.byteLength}`);
   await expect(unsatisfiable.json()).resolves.toMatchObject({
     code: "range_not_satisfiable",
   });
 
   await testEnv.CATALOGUE_EXPORTS.delete(componentKey);
-  const missing = await exports.default.fetch(new Request(
-    `https://card-keepr.invalid${componentPath}`,
-    {
+  const missing = await exports.default.fetch(
+    new Request(`https://card-keepr.invalid${componentPath}`, {
       headers: {
         ...apiHeaders("203.0.113.36"),
         "if-none-match": componentEtag,
       },
-    },
-  ));
-  expect(missing.status).toBe(404);
-  expect(missing.headers.get("content-type")).toContain(
-    "application/problem+json",
+    }),
   );
+  expect(missing.status).toBe(404);
+  expect(missing.headers.get("content-type")).toContain("application/problem+json");
   const missingProblem = await missing.json();
   expect(missingProblem).toMatchObject({ code: "not_found" });
   const problemAjv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(problemAjv);
   problemAjv.addSchema(apiSchema);
-  const validateProblem = problemAjv.getSchema(
-    `${apiSchema.$id}#/$defs/Problem`,
-  )!;
-  expect(
-    validateProblem(missingProblem),
-    JSON.stringify(validateProblem.errors),
-  ).toBe(true);
+  const validateProblem = problemAjv.getSchema(`${apiSchema.$id}#/$defs/Problem`)!;
+  expect(validateProblem(missingProblem), JSON.stringify(validateProblem.errors)).toBe(true);
 
   const tamperedBytes = compressedLegalityBytes.slice();
   const tamperedIndex = tamperedBytes.length - 1;
   tamperedBytes[tamperedIndex] = tamperedBytes[tamperedIndex]! ^ 0xff;
   await testEnv.CATALOGUE_EXPORTS.put(componentKey, tamperedBytes);
-  const tampered = await exports.default.fetch(new Request(
-    `https://card-keepr.invalid${componentPath}`,
-    {
+  const tampered = await exports.default.fetch(
+    new Request(`https://card-keepr.invalid${componentPath}`, {
       headers: {
         ...apiHeaders("203.0.113.37"),
         "if-none-match": componentEtag,
       },
-    },
-  ));
+    }),
+  );
   expect(tampered.status).toBe(404);
   const tamperedProblem = await tampered.json();
   expect(tamperedProblem).toMatchObject({ code: "not_found" });
-  expect(
-    validateProblem(tamperedProblem),
-    JSON.stringify(validateProblem.errors),
-  ).toBe(true);
+  expect(validateProblem(tamperedProblem), JSON.stringify(validateProblem.errors)).toBe(true);
 
   await testEnv.CATALOGUE_EXPORTS.put(
     manifestKey,
@@ -641,9 +562,7 @@ test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact 
       supported_games: ["one-piece"],
     })}\n`,
   );
-  const changedManifest = await exports.default.fetch(
-    authenticatedRequest(manifestPath),
-  );
+  const changedManifest = await exports.default.fetch(authenticatedRequest(manifestPath));
   expect(changedManifest.status).toBe(500);
   await expect(changedManifest.json()).resolves.toMatchObject({
     code: "internal_error",
@@ -651,100 +570,71 @@ test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact 
 });
 
 test("Catalogue Export listing is ordered, bounded, and revision-pinned across pages", async () => {
-  await seedCatalogueExportSummary(
-    "catrev_export_list_oldest",
-    "run_export_list_oldest",
-    "2026-07-18T00:00:00.000Z",
-  );
-  await seedCatalogueExportSummary(
-    "catrev_export_list_middle",
-    "run_export_list_middle",
-    "2026-07-19T00:00:00.000Z",
-  );
+  await seedCatalogueExportSummary("catrev_export_list_oldest", "run_export_list_oldest", "2026-07-18T00:00:00.000Z");
+  await seedCatalogueExportSummary("catrev_export_list_middle", "run_export_list_middle", "2026-07-19T00:00:00.000Z");
 
-  const first = await exports.default.fetch(new Request(
-    "https://card-keepr.invalid/v1/catalogue-exports?limit=1",
-    { headers: apiHeaders("203.0.113.105") },
-  ));
+  const first = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/catalogue-exports?limit=1", { headers: apiHeaders("203.0.113.105") }),
+  );
   expect(first.status).toBe(200);
   const firstDocument = await first.json<{
     data: { catalogue_revision_id: string }[];
     page: { limit: number; next_cursor: string | null };
     meta: { catalogue_revision_id: string };
   }>();
-  expect(firstDocument.data.map(({ catalogue_revision_id }) =>
-    catalogue_revision_id)).toEqual(["catrev_export_list_middle"]);
+  expect(firstDocument.data.map(({ catalogue_revision_id }) => catalogue_revision_id)).toEqual([
+    "catrev_export_list_middle",
+  ]);
   expect(firstDocument.page).toEqual({
     limit: 1,
     next_cursor: expect.any(String),
   });
-  expect(firstDocument.meta.catalogue_revision_id).toBe(
-    "catrev_export_list_middle",
-  );
+  expect(firstDocument.meta.catalogue_revision_id).toBe("catrev_export_list_middle");
   const collectionAjv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(collectionAjv);
   collectionAjv.addSchema(apiSchema);
-  const validateCollection = collectionAjv.getSchema(
-    `${apiSchema.$id}#/$defs/CatalogueExportCollection`,
-  )!;
-  expect(
-    validateCollection(firstDocument),
-    JSON.stringify(validateCollection.errors),
-  ).toBe(true);
+  const validateCollection = collectionAjv.getSchema(`${apiSchema.$id}#/$defs/CatalogueExportCollection`)!;
+  expect(validateCollection(firstDocument), JSON.stringify(validateCollection.errors)).toBe(true);
 
-  await seedCatalogueExportSummary(
-    "catrev_export_list_newest",
-    "run_export_list_newest",
-    "2026-07-20T00:00:00.000Z",
+  await seedCatalogueExportSummary("catrev_export_list_newest", "run_export_list_newest", "2026-07-20T00:00:00.000Z");
+  const second = await exports.default.fetch(
+    new Request(
+      "https://card-keepr.invalid/v1/catalogue-exports?limit=1&after=" +
+        encodeURIComponent(firstDocument.page.next_cursor!),
+      { headers: apiHeaders("203.0.113.106") },
+    ),
   );
-  const second = await exports.default.fetch(new Request(
-    "https://card-keepr.invalid/v1/catalogue-exports?limit=1&after=" +
-      encodeURIComponent(firstDocument.page.next_cursor!),
-    { headers: apiHeaders("203.0.113.106") },
-  ));
   expect(second.status).toBe(200);
   const secondDocument = await second.json<{
     data: { catalogue_revision_id: string }[];
     page: { next_cursor: string | null };
     meta: { catalogue_revision_id: string };
   }>();
-  expect(secondDocument.data.map(({ catalogue_revision_id }) =>
-    catalogue_revision_id)).toEqual(["catrev_export_list_oldest"]);
+  expect(secondDocument.data.map(({ catalogue_revision_id }) => catalogue_revision_id)).toEqual([
+    "catrev_export_list_oldest",
+  ]);
   expect(secondDocument.page.next_cursor).toBeNull();
-  expect(secondDocument.meta.catalogue_revision_id).toBe(
-    "catrev_export_list_middle",
-  );
+  expect(secondDocument.meta.catalogue_revision_id).toBe("catrev_export_list_middle");
 });
 
 test("Catalogue Export JSON routes validate requests and support conditional reads", async () => {
-  await seedCatalogueExportSummary(
-    "catrev_export_http_old",
-    "run_export_http_old",
-    "2026-07-18T00:00:00.000Z",
-  );
-  await seedCatalogueExportSummary(
-    "catrev_export_http_current",
-    "run_export_http_current",
-    "2026-07-19T00:00:00.000Z",
-  );
+  await seedCatalogueExportSummary("catrev_export_http_old", "run_export_http_old", "2026-07-18T00:00:00.000Z");
+  await seedCatalogueExportSummary("catrev_export_http_current", "run_export_http_current", "2026-07-19T00:00:00.000Z");
   const request = (path: string, headers: Record<string, string> = {}) =>
-    exports.default.fetch(new Request(`https://card-keepr.invalid${path}`, {
-      headers: { ...apiHeaders("203.0.113.107"), ...headers },
-    }));
+    exports.default.fetch(
+      new Request(`https://card-keepr.invalid${path}`, {
+        headers: { ...apiHeaders("203.0.113.107"), ...headers },
+      }),
+    );
 
   const list = await request("/v1/catalogue-exports?limit=1");
   expect(list.status).toBe(200);
   const listEtag = list.headers.get("etag");
   expect(listEtag).toEqual(expect.any(String));
-  const listNotModified = await request(
-    "/v1/catalogue-exports?limit=1",
-    { "if-none-match": listEtag! },
-  );
+  const listNotModified = await request("/v1/catalogue-exports?limit=1", { "if-none-match": listEtag! });
   expect(listNotModified.status).toBe(304);
   expect(await listNotModified.text()).toBe("");
-  expect(listNotModified.headers.get("x-catalogue-revision")).toBe(
-    "catrev_export_http_current",
-  );
+  expect(listNotModified.headers.get("x-catalogue-revision")).toBe("catrev_export_http_current");
 
   const defaultList = await request("/v1/catalogue-exports");
   expect(defaultList.status).toBe(200);
@@ -752,10 +642,7 @@ test("Catalogue Export JSON routes validate requests and support conditional rea
   await expect(defaultList.json()).resolves.toMatchObject({
     links: { self: `${apiPublicBase}/v1/catalogue-exports` },
   });
-  const explicitDefault = await request(
-    "/v1/catalogue-exports?limit=50",
-    { "if-none-match": defaultListEtag! },
-  );
+  const explicitDefault = await request("/v1/catalogue-exports?limit=50", { "if-none-match": defaultListEtag! });
   expect(explicitDefault.status).toBe(200);
   expect(explicitDefault.headers.get("etag")).not.toBe(defaultListEtag);
   await expect(explicitDefault.json()).resolves.toMatchObject({
@@ -772,23 +659,16 @@ test("Catalogue Export JSON routes validate requests and support conditional rea
     ["limit=1&limit=1", "invalid_parameter"],
     ["unknown=value", "invalid_parameter"],
     ["after=not-a-cursor", "invalid_cursor"],
-    [
-      `limit=2&after=${encodeURIComponent(firstDocument.page.next_cursor)}`,
-      "invalid_cursor",
-    ],
+    [`limit=2&after=${encodeURIComponent(firstDocument.page.next_cursor)}`, "invalid_cursor"],
   ]) {
     const invalid = await request(`/v1/catalogue-exports?${query}`);
     expect(invalid.status, query).toBe(400);
     await expect(invalid.json(), query).resolves.toMatchObject({ code });
   }
-  const unavailableCursor = JSON.parse(Buffer.from(
-    firstDocument.page.next_cursor,
-    "base64url",
-  ).toString("utf8"));
+  const unavailableCursor = JSON.parse(Buffer.from(firstDocument.page.next_cursor, "base64url").toString("utf8"));
   unavailableCursor.revision_id = "catrev_export_cursor_unavailable";
   const unavailable = await request(
-    "/v1/catalogue-exports?limit=1&after=" +
-      Buffer.from(JSON.stringify(unavailableCursor)).toString("base64url"),
+    "/v1/catalogue-exports?limit=1&after=" + Buffer.from(JSON.stringify(unavailableCursor)).toString("base64url"),
   );
   expect(unavailable.status).toBe(409);
   await expect(unavailable.json()).resolves.toMatchObject({
@@ -796,8 +676,7 @@ test("Catalogue Export JSON routes validate requests and support conditional rea
     links: { collection: `${apiPublicBase}/v1/catalogue-exports` },
   });
 
-  const manifestPath =
-    "/v1/catalogue-exports/catrev_export_http_current";
+  const manifestPath = "/v1/catalogue-exports/catrev_export_http_current";
   const manifest = await request(manifestPath);
   expect(manifest.status).toBe(200);
   const manifestEtag = manifest.headers.get("etag");
@@ -809,21 +688,12 @@ test("Catalogue Export JSON routes validate requests and support conditional rea
 });
 
 test("Catalogue Export listing ETags change when a retained package disappears", async () => {
-  await seedCatalogueExportSummary(
-    "catrev_export_etag_old",
-    "run_export_etag_old",
-    "2026-07-18T00:00:00.000Z",
-  );
-  await seedCatalogueExportSummary(
-    "catrev_export_etag_current",
-    "run_export_etag_current",
-    "2026-07-19T00:00:00.000Z",
-  );
+  await seedCatalogueExportSummary("catrev_export_etag_old", "run_export_etag_old", "2026-07-18T00:00:00.000Z");
+  await seedCatalogueExportSummary("catrev_export_etag_current", "run_export_etag_current", "2026-07-19T00:00:00.000Z");
   const path = "/v1/catalogue-exports?limit=1";
-  const first = await exports.default.fetch(new Request(
-    `https://card-keepr.invalid${path}`,
-    { headers: apiHeaders("203.0.113.108") },
-  ));
+  const first = await exports.default.fetch(
+    new Request(`https://card-keepr.invalid${path}`, { headers: apiHeaders("203.0.113.108") }),
+  );
   expect(first.status).toBe(200);
   const firstEtag = first.headers.get("etag");
   expect(firstEtag).toEqual(expect.any(String));
@@ -831,18 +701,17 @@ test("Catalogue Export listing ETags change when a retained package disappears",
     page: { next_cursor: expect.any(String) },
   });
 
-  await testEnv.CATALOGUE_DB.prepare(
-    `DELETE FROM catalogue_exports WHERE catalogue_revision_id = ?`,
-  ).bind("catrev_export_etag_old").run();
-  const changed = await exports.default.fetch(new Request(
-    `https://card-keepr.invalid${path}`,
-    {
+  await testEnv.CATALOGUE_DB.prepare(`DELETE FROM catalogue_exports WHERE catalogue_revision_id = ?`)
+    .bind("catrev_export_etag_old")
+    .run();
+  const changed = await exports.default.fetch(
+    new Request(`https://card-keepr.invalid${path}`, {
       headers: {
         ...apiHeaders("203.0.113.109"),
         "if-none-match": firstEtag!,
       },
-    },
-  ));
+    }),
+  );
   expect(changed.status).toBe(200);
   expect(changed.headers.get("etag")).not.toBe(firstEtag);
   await expect(changed.json()).resolves.toMatchObject({
@@ -852,11 +721,7 @@ test("Catalogue Export listing ETags change when a retained package disappears",
 });
 
 test("a known deleting or deleted Catalogue Export is immediately 410 while an unknown revision remains 404", async () => {
-  await seedCatalogueExportSummary(
-    "catrev_export_deleted_old",
-    "run_export_deleted_old",
-    "2026-07-18T00:00:00.000Z",
-  );
+  await seedCatalogueExportSummary("catrev_export_deleted_old", "run_export_deleted_old", "2026-07-18T00:00:00.000Z");
   await seedCatalogueExportSummary(
     "catrev_export_deleted_current",
     "run_export_deleted_current",
@@ -891,13 +756,9 @@ test("a known deleting or deleted Catalogue Export is immediately 410 while an u
      ) VALUES (?, 'catrev_export_deleted_old', ?,
        'catrev_export_deleted_current', ?, '["cards"]', ?, '[]', ?,
        '2026-07-20T00:00:00.000Z', '2099-01-01T00:00:00.000Z')`,
-  ).bind(
-    planId,
-    oldExport.manifest_digest,
-    canonicalJson([oldExport.manifest_key]),
-    objectSetDigest,
-    planDigest,
-  ).run();
+  )
+    .bind(planId, oldExport.manifest_digest, canonicalJson([oldExport.manifest_key]), objectSetDigest, planDigest)
+    .run();
   await testEnv.CATALOGUE_DB.batch([
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO catalogue_export_deletions (
@@ -907,14 +768,7 @@ test("a known deleting or deleted Catalogue Export is immediately 410 while an u
        ) VALUES (?, ?, 'deleting', 'catrev_export_deleted_old', ?,
          'catrev_export_deleted_current', ?, ?, ?,
          '2026-07-20T00:01:00.000Z', NULL, NULL)`,
-    ).bind(
-      deletionId,
-      planId,
-      oldExport.manifest_digest,
-      objectSetDigest,
-      idempotencyKey,
-      requestJson,
-    ),
+    ).bind(deletionId, planId, oldExport.manifest_digest, objectSetDigest, idempotencyKey, requestJson),
     testEnv.CATALOGUE_DB.prepare(
       `UPDATE catalogue_exports
        SET maintenance_state = 'deleting', deletion_operation_id = ?
@@ -922,10 +776,8 @@ test("a known deleting or deleted Catalogue Export is immediately 410 while an u
     ).bind(deletionId),
   ]);
 
-  const request = (path: string) => exports.default.fetch(new Request(
-    `https://card-keepr.invalid${path}`,
-    { headers: apiHeaders("203.0.113.111") },
-  ));
+  const request = (path: string) =>
+    exports.default.fetch(new Request(`https://card-keepr.invalid${path}`, { headers: apiHeaders("203.0.113.111") }));
   for (const path of [
     "/v1/catalogue-exports/catrev_export_deleted_old",
     "/v1/catalogue-exports/catrev_export_deleted_old/components/cards",
@@ -937,32 +789,26 @@ test("a known deleting or deleted Catalogue Export is immediately 410 while an u
       code: "catalogue_export_deleted",
     });
   }
-  const neverKnownComponent = await request(
-    "/v1/catalogue-exports/catrev_export_deleted_old/components/never-known",
-  );
+  const neverKnownComponent = await request("/v1/catalogue-exports/catrev_export_deleted_old/components/never-known");
   expect(neverKnownComponent.status).toBe(404);
   await expect(neverKnownComponent.json()).resolves.toMatchObject({
     status: 404,
     code: "not_found",
   });
-  const unknown = await request(
-    "/v1/catalogue-exports/catrev_export_never_known",
-  );
+  const unknown = await request("/v1/catalogue-exports/catrev_export_never_known");
   expect(unknown.status).toBe(404);
   await expect(unknown.json()).resolves.toMatchObject({ code: "not_found" });
 
   const listed = await request("/v1/catalogue-exports");
   expect(listed.status).toBe(200);
   const document = await listed.json<{ data: { catalogue_revision_id: string }[] }>();
-  expect(document.data.map(({ catalogue_revision_id }) => catalogue_revision_id))
-    .not.toContain("catrev_export_deleted_old");
+  expect(document.data.map(({ catalogue_revision_id }) => catalogue_revision_id)).not.toContain(
+    "catrev_export_deleted_old",
+  );
 });
 
 test("Legality Status rejects a malformed Card identity before lookup", async () => {
-  for (const cardId of [
-    "card id with spaces",
-    `card_${"x".repeat(196)}`,
-  ]) {
+  for (const cardId of ["card id with spaces", `card_${"x".repeat(196)}`]) {
     const response = await exports.default.fetch(
       new Request(
         `https://card-keepr.invalid/v1/legality-status?card_id=${encodeURIComponent(cardId)}&on=2026-07-30&format=standard&region=EN-ASIA`,
@@ -977,10 +823,12 @@ test("Legality Status rejects a malformed Card identity before lookup", async ()
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       code: "invalid_parameter",
-      invalid_params: [{
-        name: "card_id",
-        reason: "card_id must be an opaque identity of at most 200 characters.",
-      }],
+      invalid_params: [
+        {
+          name: "card_id",
+          reason: "card_id must be an opaque identity of at most 200 characters.",
+        },
+      ],
     });
   }
 });
@@ -1017,17 +865,30 @@ test("Legality Status reports the exact invalid query parameter", async () => {
     ["card_id=card_any&on=2026-07-30", "format", "format is required."],
     ["card_id=card_any&on=2026-02-30&format=standard", "on", "on must be a valid ISO date."],
     ["card_id=card_any&on=2026-07-30&format=", "format", "format must be a non-empty string."],
-    ["card_id=card_any&on=2026-07-30&format=standard&event_tier=", "event_tier", "event_tier must be a non-empty string."],
-    ["card_id=card_any&on=2026-07-30&format=standard&region=OCEANIA", "region", "region must be EN-OCEANIA, EN-ASIA, or EN-US."],
+    [
+      "card_id=card_any&on=2026-07-30&format=standard&event_tier=",
+      "event_tier",
+      "event_tier must be a non-empty string.",
+    ],
+    [
+      "card_id=card_any&on=2026-07-30&format=standard&region=OCEANIA",
+      "region",
+      "region must be EN-OCEANIA, EN-ASIA, or EN-US.",
+    ],
     ["card_id=card_any&on=2026-07-30&format=standard&unexpected=true", "unexpected", "unexpected is not accepted."],
-    ["card_id=card_any&card_id=card_other&on=2026-07-30&format=standard", "card_id", "card_id must be supplied exactly once."],
+    [
+      "card_id=card_any&card_id=card_other&on=2026-07-30&format=standard",
+      "card_id",
+      "card_id must be supplied exactly once.",
+    ],
   ] as const;
   let address = 110;
   for (const [query, name, reason] of cases) {
-    const response = await exports.default.fetch(new Request(
-      `https://card-keepr.invalid/v1/legality-status?${query}`,
-      { headers: apiHeaders(`203.0.113.${address++}`) },
-    ));
+    const response = await exports.default.fetch(
+      new Request(`https://card-keepr.invalid/v1/legality-status?${query}`, {
+        headers: apiHeaders(`203.0.113.${address++}`),
+      }),
+    );
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       code: "invalid_parameter",
@@ -1037,24 +898,24 @@ test("Legality Status reports the exact invalid query parameter", async () => {
 });
 
 test("Legality Status reports an unnamed query key as a schema-valid Problem", async () => {
-  const response = await exports.default.fetch(new Request(
-    "https://card-keepr.invalid/v1/legality-status?=true",
-    { headers: apiHeaders("203.0.113.119") },
-  ));
+  const response = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/legality-status?=true", { headers: apiHeaders("203.0.113.119") }),
+  );
   expect(response.status).toBe(400);
   const problem = await response.json();
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
   ajv.addSchema(apiSchema);
   const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`)!;
-  expect(validateProblem(problem), JSON.stringify(validateProblem.errors))
-    .toBe(true);
+  expect(validateProblem(problem), JSON.stringify(validateProblem.errors)).toBe(true);
   expect(problem).toMatchObject({
     code: "invalid_parameter",
-    invalid_params: [{
-      name: "query",
-      reason: "query parameter names must be non-empty.",
-    }],
+    invalid_params: [
+      {
+        name: "query",
+        reason: "query parameter names must be non-empty.",
+      },
+    ],
   });
 });
 
@@ -1065,22 +926,26 @@ test("authenticated Legality Status reads only indexed Card and regional applica
   await seedApiRevision({
     revisionId,
     runId,
-    cards: [apiCard({
-      id: targetCardId,
-      cardNumber: "OP30-777",
-      name: "Applicability Target",
-    })],
+    cards: [
+      apiCard({
+        id: targetCardId,
+        cardNumber: "OP30-777",
+        name: "Applicability Target",
+      }),
+    ],
   });
-  await testEnv.CATALOGUE_DB.batch(legalitySourceStatements({
-    runId,
-    key: "api_legality_applicability",
-    game: "one-piece",
-    profile: "one-piece@1",
-    lineage: "one-piece-en",
-    adapter: "fixture-one-piece-json@3",
-    snapshotId: "srcsnap_api_legality_applicability",
-    observationSetId: "srcobsset_api_legality_applicability",
-  }));
+  await testEnv.CATALOGUE_DB.batch(
+    legalitySourceStatements({
+      runId,
+      key: "api_legality_applicability",
+      game: "one-piece",
+      profile: "one-piece@1",
+      lineage: "one-piece-en",
+      adapter: "fixture-one-piece-json@3",
+      snapshotId: "srcsnap_api_legality_applicability",
+      observationSetId: "srcobsset_api_legality_applicability",
+    }),
+  );
   const baseRule = {
     game: "one-piece",
     format: "standard",
@@ -1110,45 +975,40 @@ test("authenticated Legality Status reads only indexed Card and regional applica
     official_wording: `Unrelated Card rule ${index}.`,
     effect: { type: "eligible" },
   }));
-  const unrelatedRegionGlobals = Array.from(
-    { length: 256 },
-    (_, index) => ({
-      ...baseRule,
-      id: `legality_rule_api_applicability_region_${index}`,
-      official_id: `api-applicability-region-${index}`,
-      region: "EN-US",
-      card_ids: [],
-      official_wording: `Unrelated regional rule ${index}.`,
-      effect: { type: "eligible" },
-    }),
-  );
+  const unrelatedRegionGlobals = Array.from({ length: 256 }, (_, index) => ({
+    ...baseRule,
+    id: `legality_rule_api_applicability_region_${index}`,
+    official_id: `api-applicability-region-${index}`,
+    region: "EN-US",
+    card_ids: [],
+    official_wording: `Unrelated regional rule ${index}.`,
+    effect: { type: "eligible" },
+  }));
   const rules = [targetRule, ...unrelatedCardRules, ...unrelatedRegionGlobals];
   for (let offset = 0; offset < rules.length; offset += 64) {
-    await testEnv.CATALOGUE_DB.batch(
-      canonicalLegalityRuleStatements(revisionId, rules.slice(offset, offset + 64)),
-    );
+    await testEnv.CATALOGUE_DB.batch(canonicalLegalityRuleStatements(revisionId, rules.slice(offset, offset + 64)));
   }
   for (let offset = 0; offset < rules.length; offset += 64) {
-    await testEnv.CATALOGUE_DB.batch(
-      revisionLegalityRuleStatements(revisionId, rules.slice(offset, offset + 64)),
-    );
+    await testEnv.CATALOGUE_DB.batch(revisionLegalityRuleStatements(revisionId, rules.slice(offset, offset + 64)));
   }
-  await testEnv.CATALOGUE_DB.prepare(
-    "DROP TRIGGER revision_legality_rules_immutable_update",
-  ).run();
+  await testEnv.CATALOGUE_DB.prepare("DROP TRIGGER revision_legality_rules_immutable_update").run();
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE revision_legality_rules
      SET document_json = '{"attacker":"malformed"}'
      WHERE catalogue_revision_id = ?
        AND legality_rule_id <> ?`,
-  ).bind(revisionId, targetRule.id).run();
+  )
+    .bind(revisionId, targetRule.id)
+    .run();
 
-  const response = await exports.default.fetch(new Request(
-    "https://card-keepr.invalid/v1/legality-status" +
-      `?card_id=${targetCardId}` +
-      "&on=2026-07-30&format=standard&region=EN-OCEANIA",
-    { headers: apiHeaders("203.0.113.22") },
-  ));
+  const response = await exports.default.fetch(
+    new Request(
+      "https://card-keepr.invalid/v1/legality-status" +
+        `?card_id=${targetCardId}` +
+        "&on=2026-07-30&format=standard&region=EN-OCEANIA",
+      { headers: apiHeaders("203.0.113.22") },
+    ),
+  );
   await testEnv.CATALOGUE_DB.prepare(
     `CREATE TRIGGER revision_legality_rules_immutable_update
      BEFORE UPDATE ON revision_legality_rules
@@ -1158,12 +1018,14 @@ test("authenticated Legality Status reads only indexed Card and regional applica
   ).run();
   expect(response.status).toBe(200);
   await expect(response.json()).resolves.toMatchObject({
-    data: [{
-      card_id: targetCardId,
-      region: "EN-OCEANIA",
-      status: "not_legal",
-      rule_ids: [targetRule.id],
-    }],
+    data: [
+      {
+        card_id: targetCardId,
+        region: "EN-OCEANIA",
+        status: "not_legal",
+        rule_ids: [targetRule.id],
+      },
+    ],
   });
 });
 
@@ -1352,7 +1214,7 @@ test("authenticated Legality Status gives definitive exclusions precedence while
         `INSERT INTO revision_cards (
           catalogue_revision_id, card_id, document_json
         ) VALUES (?, ?, ?)`,
-      ).bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card)))
+      ).bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
     ),
     ...revisionLegalityRuleStatements(revisionId, rules),
     testEnv.CATALOGUE_DB.prepare(
@@ -1364,9 +1226,7 @@ test("authenticated Legality Status gives definitive exclusions precedence while
   const legalityAjv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(legalityAjv);
   legalityAjv.addSchema(apiSchema);
-  const validateLegalityStatus = legalityAjv.getSchema(
-    `${apiSchema.$id}#/$defs/LegalityStatusDocument`,
-  )!;
+  const validateLegalityStatus = legalityAjv.getSchema(`${apiSchema.$id}#/$defs/LegalityStatusDocument`)!;
 
   for (const [index, testCase] of cases.entries()) {
     const response = await exports.default.fetch(
@@ -1395,16 +1255,11 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     }>();
     expect(body).not.toHaveProperty("included");
     expect(body).not.toHaveProperty("provenance");
-    expect(
-      validateLegalityStatus(body),
-      JSON.stringify(validateLegalityStatus.errors),
-    ).toBe(true);
+    expect(validateLegalityStatus(body), JSON.stringify(validateLegalityStatus.errors)).toBe(true);
     expect(body.data[0]).toMatchObject({
       status: "not_legal",
       rule_ids: [`legality_rule_precedence_${index}_definitive`],
-      unresolved_scope_rule_ids: [
-        `legality_rule_precedence_${index}_unresolved`,
-      ],
+      unresolved_scope_rule_ids: [`legality_rule_precedence_${index}_unresolved`],
     });
     expect(body.data[0]!.derivation).toContain("evaluated not_legal");
     expect(body.data[0]!.derivation).toContain("evaluated indeterminate");
@@ -1424,10 +1279,7 @@ test("authenticated Legality Status gives definitive exclusions precedence while
       );
       expect(evidenceResponse.status).toBe(200);
       const evidenceBody = await evidenceResponse.json();
-      expect(
-        validateLegalityStatus(evidenceBody),
-        JSON.stringify(validateLegalityStatus.errors),
-      ).toBe(true);
+      expect(validateLegalityStatus(evidenceBody), JSON.stringify(validateLegalityStatus.errors)).toBe(true);
       expect(evidenceBody).toMatchObject({
         included: [
           {
@@ -1449,38 +1301,35 @@ test("authenticated Legality Status gives definitive exclusions precedence while
         "https://card-keepr.invalid/v1/legality-status" +
         `?card_id=${testCase.cardId}` +
         "&on=2026-07-30&format=standard&region=EN-ASIA";
-      const validators = [
-        etag!,
-        `W/${etag}`,
-        `"unrelated", W/${etag}`,
-        "*",
-      ];
+      const validators = [etag!, `W/${etag}`, `"unrelated", W/${etag}`, "*"];
       const conditional = await Promise.all(
         validators.map((validator, validatorIndex) =>
-          exports.default.fetch(new Request(url, {
-            headers: {
-              authorization: "Bearer vitest-api-key",
-              "cf-connecting-ip": `203.0.113.${80 + validatorIndex}`,
-              "if-none-match": validator,
-            },
-          }))
+          exports.default.fetch(
+            new Request(url, {
+              headers: {
+                authorization: "Bearer vitest-api-key",
+                "cf-connecting-ip": `203.0.113.${80 + validatorIndex}`,
+                "if-none-match": validator,
+              },
+            }),
+          ),
         ),
       );
-      expect(conditional.map(({ status }) => status)).toEqual([
-        304, 304, 304, 304,
-      ]);
+      expect(conditional.map(({ status }) => status)).toEqual([304, 304, 304, 304]);
       for (const matched of conditional) {
         expect(await matched.text()).toBe("");
         expect(matched.headers.get("etag")).toBe(etag);
         expect(matched.headers.get("x-catalogue-revision")).toBe(revisionId);
       }
-      const nonmatch = await exports.default.fetch(new Request(url, {
-        headers: {
-          authorization: "Bearer vitest-api-key",
-          "cf-connecting-ip": "203.0.113.84",
-          "if-none-match": '"unrelated"',
-        },
-      }));
+      const nonmatch = await exports.default.fetch(
+        new Request(url, {
+          headers: {
+            authorization: "Bearer vitest-api-key",
+            "cf-connecting-ip": "203.0.113.84",
+            "if-none-match": '"unrelated"',
+          },
+        }),
+      );
       expect(nonmatch.status).toBe(200);
       expect(nonmatch.headers.get("etag")).toBe(etag);
     }
@@ -1491,12 +1340,14 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     `?card_id=${cases[0].cardId}` +
     "&on=2026-07-30&format=standard&region=EN-ASIA";
   const expectInvalidStoredDocument = async () => {
-    const response = await exports.default.fetch(new Request(statusUrl, {
-      headers: {
-        authorization: "Bearer vitest-api-key",
-        "cf-connecting-ip": "203.0.113.99",
-      },
-    }));
+    const response = await exports.default.fetch(
+      new Request(statusUrl, {
+        headers: {
+          authorization: "Bearer vitest-api-key",
+          "cf-connecting-ip": "203.0.113.99",
+        },
+      }),
+    );
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toMatchObject({
       code: "internal_error",
@@ -1528,21 +1379,17 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     await testEnv.CATALOGUE_DB.prepare(
       `UPDATE revision_cards SET document_json = ?
        WHERE catalogue_revision_id = ? AND card_id = ?`,
-    ).bind(
-      JSON.stringify(publishedCardEnvelope(malformed)),
-      revisionId,
-      originalCard.id,
-    ).run();
+    )
+      .bind(JSON.stringify(publishedCardEnvelope(malformed)), revisionId, originalCard.id)
+      .run();
     await expectInvalidStoredDocument();
   }
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE revision_cards SET document_json = ?
      WHERE catalogue_revision_id = ? AND card_id = ?`,
-  ).bind(
-    JSON.stringify(publishedCardEnvelope(originalCard)),
-    revisionId,
-    originalCard.id,
-  ).run();
+  )
+    .bind(JSON.stringify(publishedCardEnvelope(originalCard)), revisionId, originalCard.id)
+    .run();
 
   const pointer = "/observations/0/value/legality_rules/0";
   const originalRule = {
@@ -1554,9 +1401,7 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     current: true,
     last_missing_revision_id: null,
   };
-  await testEnv.CATALOGUE_DB.prepare(
-    "DROP TRIGGER revision_legality_rules_immutable_update",
-  ).run();
+  await testEnv.CATALOGUE_DB.prepare("DROP TRIGGER revision_legality_rules_immutable_update").run();
   const malformedRules = [
     {
       ...originalRule,
@@ -1583,11 +1428,9 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     await testEnv.CATALOGUE_DB.prepare(
       `UPDATE revision_legality_rules SET document_json = ?
        WHERE catalogue_revision_id = ? AND legality_rule_id = ?`,
-    ).bind(
-      JSON.stringify(malformed),
-      revisionId,
-      originalRule.id,
-    ).run();
+    )
+      .bind(JSON.stringify(malformed), revisionId, originalRule.id)
+      .run();
     await expectInvalidStoredDocument();
   }
 });
@@ -1597,11 +1440,7 @@ test("an unresolved target-scope rule answers explicitly indeterminate for every
   const runId = "run_api_target_scope";
   const publishedAt = "2026-07-30T00:00:00.000Z";
   const digest = "e".repeat(64);
-  const cardIds = [
-    "card_scope_enumerated",
-    "card_scope_open",
-    "card_scope_banned",
-  ] as const;
+  const cardIds = ["card_scope_enumerated", "card_scope_open", "card_scope_banned"] as const;
   const cards = cardIds.map((cardId) => ({
     type: "card",
     id: cardId,
@@ -1658,12 +1497,10 @@ test("an unresolved target-scope rule answers explicitly indeterminate for every
         dimensions: ["effective_interval", "target_scope"] as const,
       },
       card_ids: ["card_scope_enumerated"],
-      official_wording:
-        "Every current and future card matching the published description is restricted.",
+      official_wording: "Every current and future card matching the published description is restricted.",
       effect: {
         type: "unresolved",
-        reason:
-          "The published description includes future printings; its complete matching-card scope is not stated.",
+        reason: "The published description includes future printings; its complete matching-card scope is not stated.",
       },
       ...provenance,
     },
@@ -1733,7 +1570,7 @@ test("an unresolved target-scope rule answers explicitly indeterminate for every
         `INSERT INTO revision_cards (
           catalogue_revision_id, card_id, document_json
         ) VALUES (?, ?, ?)`,
-      ).bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card)))
+      ).bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
     ),
     ...revisionLegalityRuleStatements(revisionId, rules),
     testEnv.CATALOGUE_DB.prepare(
@@ -1749,41 +1586,39 @@ test("an unresolved target-scope rule answers explicitly indeterminate for every
      FROM revision_legality_rule_applicability
      WHERE catalogue_revision_id = ? AND legality_rule_id = ?
      ORDER BY applicability_kind`,
-  ).bind(revisionId, "legality_rule_open_predicate").all();
+  )
+    .bind(revisionId, "legality_rule_open_predicate")
+    .all();
   expect(applicability.results).toEqual([
     { applicability_kind: "all_cards", card_id: "" },
     { applicability_kind: "card", card_id: "card_scope_enumerated" },
   ]);
 
   const status = async (cardId: string, query: string, ip: string) => {
-    const response = await exports.default.fetch(new Request(
-      "https://card-keepr.invalid/v1/legality-status" +
-        `?card_id=${cardId}&on=2026-07-30&${query}`,
-      {
+    const response = await exports.default.fetch(
+      new Request("https://card-keepr.invalid/v1/legality-status" + `?card_id=${cardId}&on=2026-07-30&${query}`, {
         headers: {
           authorization: "Bearer vitest-api-key",
           "cf-connecting-ip": ip,
         },
-      },
-    ));
+      }),
+    );
     expect(response.status).toBe(200);
-    return (await response.json<{
-      data: Array<{
-        status: string;
-        rule_ids: string[];
-        unresolved_scope_rule_ids: string[];
-        derivation: string;
-      }>;
-    }>()).data[0]!;
+    return (
+      await response.json<{
+        data: Array<{
+          status: string;
+          rule_ids: string[];
+          unresolved_scope_rule_ids: string[];
+          derivation: string;
+        }>;
+      }>()
+    ).data[0]!;
   };
 
   // A query for a Card outside the enumerated matches overlaps the open
   // predicate and answers explicitly indeterminate.
-  const open = await status(
-    "card_scope_open",
-    "format=standard&region=EN-ASIA",
-    "203.0.113.110",
-  );
+  const open = await status("card_scope_open", "format=standard&region=EN-ASIA", "203.0.113.110");
   expect(open).toMatchObject({
     status: "indeterminate",
     rule_ids: [],
@@ -1792,11 +1627,7 @@ test("an unresolved target-scope rule answers explicitly indeterminate for every
   expect(open.derivation).toContain("unresolved scope");
 
   // The enumerated Card answers the same explicit uncertainty.
-  const enumerated = await status(
-    "card_scope_enumerated",
-    "format=standard&region=EN-ASIA",
-    "203.0.113.111",
-  );
+  const enumerated = await status("card_scope_enumerated", "format=standard&region=EN-ASIA", "203.0.113.111");
   expect(enumerated).toMatchObject({
     status: "indeterminate",
     unresolved_scope_rule_ids: ["legality_rule_open_predicate"],
@@ -1804,11 +1635,7 @@ test("an unresolved target-scope rule answers explicitly indeterminate for every
 
   // A definitive exclusion still decides its Card while the uncertainty
   // remains in the audit.
-  const banned = await status(
-    "card_scope_banned",
-    "format=standard&region=EN-ASIA",
-    "203.0.113.112",
-  );
+  const banned = await status("card_scope_banned", "format=standard&region=EN-ASIA", "203.0.113.112");
   expect(banned).toMatchObject({
     status: "not_legal",
     rule_ids: ["legality_rule_scope_definitive_ban"],
@@ -1818,26 +1645,16 @@ test("an unresolved target-scope rule answers explicitly indeterminate for every
 
   // A non-overlapping context (different format) answers normally without
   // the target-scope rule.
-  const otherFormat = await status(
-    "card_scope_open",
-    "format=unlimited&region=EN-ASIA",
-    "203.0.113.113",
-  );
+  const otherFormat = await status("card_scope_open", "format=unlimited&region=EN-ASIA", "203.0.113.113");
   expect(otherFormat).toMatchObject({
     status: "indeterminate",
     rule_ids: [],
     unresolved_scope_rule_ids: [],
   });
-  expect(otherFormat.derivation).toContain(
-    "no effective published Legality Rule",
-  );
+  expect(otherFormat.derivation).toContain("no effective published Legality Rule");
 
   // The other lineage's region carries no such rule and answers normally.
-  const otherRegion = await status(
-    "card_scope_open",
-    "format=standard&region=EN-US",
-    "203.0.113.114",
-  );
+  const otherRegion = await status("card_scope_open", "format=standard&region=EN-US", "203.0.113.114");
   expect(otherRegion).toMatchObject({
     status: "indeterminate",
     rule_ids: [],
@@ -2019,7 +1836,7 @@ test("authenticated Legality Status targets the functional DON!! Card and audits
         `INSERT INTO revision_cards (
           catalogue_revision_id, card_id, document_json
         ) VALUES (?, ?, ?)`,
-      ).bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card)))
+      ).bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
     ),
     ...revisionLegalityRuleStatements(revisionId, rules),
     testEnv.CATALOGUE_DB.prepare(
@@ -2052,9 +1869,7 @@ test("authenticated Legality Status targets the functional DON!! Card and audits
       "legality_rule_api_don_unresolved",
     ],
   });
-  expect(body.data[0]!.derivation).toContain(
-    "legality_rule_api_don_unresolved (unresolved) evaluated indeterminate",
-  );
+  expect(body.data[0]!.derivation).toContain("legality_rule_api_don_unresolved (unresolved) evaluated indeterminate");
 });
 
 test("the public Printing response validates full Distribution Context objects", async () => {
@@ -2156,21 +1971,12 @@ test("the public Printing response validates full Distribution Context objects",
         '2026-01-01T00:00:00.000Z', ?,
         ?, ?
       )`,
-    ).bind(
-      "a".repeat(64),
-      previousRevisionId,
-      "a".repeat(64),
-    ),
+    ).bind("a".repeat(64), previousRevisionId, "a".repeat(64)),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_printings (
         catalogue_revision_id, printing_id, card_id, document_json
       ) VALUES (?, ?, ?, ?)`,
-    ).bind(
-      "catrev_api_context",
-      document.id,
-      document.card_id,
-      JSON.stringify(document),
-    ),
+    ).bind("catrev_api_context", document.id, document.card_id, JSON.stringify(document)),
     testEnv.CATALOGUE_DB.prepare(
       `UPDATE catalogue_state
        SET current_revision_id = 'catrev_api_context',
@@ -2179,15 +1985,12 @@ test("the public Printing response validates full Distribution Context objects",
     ),
   ]);
   const response = await exports.default.fetch(
-    new Request(
-      "https://card-keepr.invalid/v1/printings/printing_api_context",
-      {
-        headers: {
-          authorization: "Bearer vitest-api-key",
-          "cf-connecting-ip": "203.0.113.10",
-        },
+    new Request("https://card-keepr.invalid/v1/printings/printing_api_context", {
+      headers: {
+        authorization: "Bearer vitest-api-key",
+        "cf-connecting-ip": "203.0.113.10",
       },
-    ),
+    }),
   );
   expect(response.status).toBe(200);
   const body = await response.json();
@@ -2195,9 +1998,7 @@ test("the public Printing response validates full Distribution Context objects",
   addFormats(ajv);
   ajv.addSchema(exportManifestSchemaV5);
   ajv.addSchema(apiSchema);
-  const validate = ajv.getSchema(
-    `${apiSchema.$id}#/$defs/PrintingDocument`,
-  );
+  const validate = ajv.getSchema(`${apiSchema.$id}#/$defs/PrintingDocument`);
   expect(validate).toBeDefined();
   expect(validate!(body), JSON.stringify(validate!.errors)).toBe(true);
   expect(body).toMatchObject({
@@ -2257,8 +2058,7 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
         trigger_text: null,
       },
     },
-    effective_rules_text:
-      "[On Play] Draw 2 cards, then discard 1 card.",
+    effective_rules_text: "[On Play] Draw 2 cards, then discard 1 card.",
     printing_ids: ["printing_errata_read"],
     lifecycle,
     links: { self: "/v1/cards/card_errata_read" },
@@ -2324,20 +2124,12 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
         '2026-07-01T00:00:00.000Z', ?,
         ?, ?
       )`,
-    ).bind(
-      "b".repeat(64),
-      previousRevisionId,
-      "b".repeat(64),
-    ),
+    ).bind("b".repeat(64), previousRevisionId, "b".repeat(64)),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_cards (
         catalogue_revision_id, card_id, document_json
       ) VALUES (?, ?, ?)`,
-    ).bind(
-      "catrev_errata_read",
-      card.id,
-      JSON.stringify(card),
-    ),
+    ).bind("catrev_errata_read", card.id, JSON.stringify(card)),
     ...cardSearchStatements("catrev_errata_read", card),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO catalogue_query_revisions (
@@ -2348,12 +2140,7 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
       `INSERT INTO revision_printings (
         catalogue_revision_id, printing_id, card_id, document_json
       ) VALUES (?, ?, ?, ?)`,
-    ).bind(
-      "catrev_errata_read",
-      printing.id,
-      printing.card_id,
-      JSON.stringify(printing),
-    ),
+    ).bind("catrev_errata_read", printing.id, printing.card_id, JSON.stringify(printing)),
     testEnv.CATALOGUE_DB.prepare(
       `UPDATE catalogue_state
        SET current_revision_id = 'catrev_errata_read',
@@ -2372,26 +2159,15 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
         headers,
       }),
     ),
-    exports.default.fetch(
-      new Request(
-        "https://card-keepr.invalid/v1/printings/printing_errata_read",
-        { headers },
-      ),
-    ),
-    exports.default.fetch(
-      new Request(
-        "https://card-keepr.invalid/v1/cards?q=discard%201%20card",
-        { headers },
-      ),
-    ),
+    exports.default.fetch(new Request("https://card-keepr.invalid/v1/printings/printing_errata_read", { headers })),
+    exports.default.fetch(new Request("https://card-keepr.invalid/v1/cards?q=discard%201%20card", { headers })),
   ]);
   expect(cardResponse.status).toBe(200);
   expect(printingResponse.status).toBe(200);
   expect(searchResponse.status).toBe(200);
   await expect(cardResponse.json()).resolves.toMatchObject({
     data: {
-      effective_rules_text:
-        "[On Play] Draw 2 cards, then discard 1 card.",
+      effective_rules_text: "[On Play] Draw 2 cards, then discard 1 card.",
     },
   });
   await expect(printingResponse.json()).resolves.toMatchObject({
@@ -2424,32 +2200,20 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
     )
     .run();
   const conditionalResponses = await Promise.all(
-    [
-      etag!,
-      `W/${etag}`,
-      `"unrelated", W/${etag}`,
-      "*",
-    ].map((ifNoneMatch) =>
+    [etag!, `W/${etag}`, `"unrelated", W/${etag}`, "*"].map((ifNoneMatch) =>
       exports.default.fetch(
-        new Request(
-          "https://card-keepr.invalid/v1/cards?q=discard%201%20card",
-          {
-            headers: {
-              ...headers,
-              "if-none-match": ifNoneMatch,
-            },
+        new Request("https://card-keepr.invalid/v1/cards?q=discard%201%20card", {
+          headers: {
+            ...headers,
+            "if-none-match": ifNoneMatch,
           },
-        ),
+        }),
       ),
     ),
   );
-  expect(conditionalResponses.map((response) => response.status)).toEqual([
-    304, 304, 304, 304,
-  ]);
+  expect(conditionalResponses.map((response) => response.status)).toEqual([304, 304, 304, 304]);
   for (const response of conditionalResponses) {
-    expect(response.headers.get("x-catalogue-revision")).toBe(
-      "catrev_errata_read",
-    );
+    expect(response.headers.get("x-catalogue-revision")).toBe("catrev_errata_read");
   }
   await testEnv.CATALOGUE_DB.batch([
     testEnv.CATALOGUE_DB.prepare(
@@ -2497,10 +2261,7 @@ test("Card collection filtering and keyset pagination remain bounded in D1", asy
   });
 
   const response = await exports.default.fetch(
-    new Request(
-      "https://card-keepr.invalid/v1/cards?q=bounded&limit=1",
-      { headers: apiHeaders("203.0.113.30") },
-    ),
+    new Request("https://card-keepr.invalid/v1/cards?q=bounded&limit=1", { headers: apiHeaders("203.0.113.30") }),
   );
 
   expect(response.status).toBe(200);
@@ -2533,20 +2294,19 @@ test("authenticated Card collection rejects present empty game and card_number f
     ["card_number", " \t "],
   ] as const) {
     const response = await exports.default.fetch(
-      new Request(
-        `https://card-keepr.invalid/v1/cards?${name}=${
-          encodeURIComponent(value)
-        }`,
-        { headers: apiHeaders(`203.0.113.${sequence++}`) },
-      ),
+      new Request(`https://card-keepr.invalid/v1/cards?${name}=${encodeURIComponent(value)}`, {
+        headers: apiHeaders(`203.0.113.${sequence++}`),
+      }),
     );
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       code: "invalid_parameter",
-      invalid_params: [{
-        name,
-        reason: `${name} must contain at least one character.`,
-      }],
+      invalid_params: [
+        {
+          name,
+          reason: `${name} must contain at least one character.`,
+        },
+      ],
     });
   }
 });
@@ -2564,10 +2324,7 @@ test("Card search is canonically Unicode case-insensitive", async () => {
     ],
   });
   const response = await exports.default.fetch(
-    new Request(
-      "https://card-keepr.invalid/v1/cards?q=E%CC%81CLAIR%20lüffy",
-      { headers: apiHeaders("203.0.113.34") },
-    ),
+    new Request("https://card-keepr.invalid/v1/cards?q=E%CC%81CLAIR%20lüffy", { headers: apiHeaders("203.0.113.34") }),
   );
   expect(response.status).toBe(200);
   await expect(response.json()).resolves.toMatchObject({
@@ -2581,16 +2338,14 @@ test("Card search keeps a selective two-character relational fallback beside FTS
       id: `card_selectivity_${String(index).padStart(3, "0")}`,
       cardNumber: `OP31-${String(index).padStart(3, "0")}`,
       name: `Ordinary leader number ${index}`,
-      effectiveRulesText:
-        "Activate Main Once Per Turn: draw one card from your deck.",
-    })
+      effectiveRulesText: "Activate Main Once Per Turn: draw one card from your deck.",
+    }),
   );
   const selected = apiCard({
     id: "card_selectivity_quartz",
     cardNumber: "OP31-999",
     name: "Quartz Vanguard",
-    effectiveRulesText:
-      "Activate Main: reveal the quartz marker from your deck.",
+    effectiveRulesText: "Activate Main: reveal the quartz marker from your deck.",
   });
   await seedApiRevision({
     revisionId: "catrev_selective_trigrams",
@@ -2628,11 +2383,13 @@ test("Card search keeps a selective two-character relational fallback beside FTS
     data: [],
   });
 
-  const repeated = cardSearchTerms(cardSearchText({
-    official_identity: { value: "A" },
-    name: "A".repeat(50_000),
-    effective_rules_text: "A".repeat(50_000),
-  }));
+  const repeated = cardSearchTerms(
+    cardSearchText({
+      official_identity: { value: "A" },
+      name: "A".repeat(50_000),
+      effective_rules_text: "A".repeat(50_000),
+    }),
+  );
   expect(repeated).toEqual(["g1:a", "g2:aa"]);
 });
 
@@ -2645,46 +2402,24 @@ test("authenticated Card search validates raw q at 1 through 500 characters befo
       apiCard({
         id: "card_query_boundaries",
         cardNumber: "OP29-500",
-        name: [
-          token(1),
-          token(128),
-          token(129),
-          token(500),
-        ].join(" "),
+        name: [token(1), token(128), token(129), token(500)].join(" "),
       }),
     ],
   });
   let sequence = 40;
-  for (const query of [
-    token(1),
-    token(128),
-    token(129),
-    token(500),
-    "ﬀ".repeat(500),
-    "---",
-    '"quoted"',
-  ]) {
+  for (const query of [token(1), token(128), token(129), token(500), "ﬀ".repeat(500), "---", '"quoted"']) {
     const response = await exports.default.fetch(
-      new Request(
-        `https://card-keepr.invalid/v1/cards?q=${
-          encodeURIComponent(query)
-        }`,
-        { headers: apiHeaders(`203.0.113.${sequence++}`) },
-      ),
+      new Request(`https://card-keepr.invalid/v1/cards?q=${encodeURIComponent(query)}`, {
+        headers: apiHeaders(`203.0.113.${sequence++}`),
+      }),
     );
-    expect(response.status, `${query.length}: ${await response.clone().text()}`)
-      .toBe(200);
+    expect(response.status, `${query.length}: ${await response.clone().text()}`).toBe(200);
   }
-  for (const [query, reason] of [
-    [token(501), "q must contain at most 500 characters."],
-  ] as const) {
+  for (const [query, reason] of [[token(501), "q must contain at most 500 characters."]] as const) {
     const response = await exports.default.fetch(
-      new Request(
-        `https://card-keepr.invalid/v1/cards?q=${
-          encodeURIComponent(query)
-        }`,
-        { headers: apiHeaders(`203.0.113.${sequence++}`) },
-      ),
+      new Request(`https://card-keepr.invalid/v1/cards?q=${encodeURIComponent(query)}`, {
+        headers: apiHeaders(`203.0.113.${sequence++}`),
+      }),
     );
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
@@ -2699,10 +2434,8 @@ test("authenticated Card collection pages remain byte-bounded for large valid re
     apiCard({
       id: `card_large_page_${String(index).padStart(3, "0")}`,
       cardNumber: `OP29-${String(600 + index)}`,
-      name: `Large Card ${String(index).padStart(3, "0")} ${
-        "x".repeat(250_000)
-      }`,
-    })
+      name: `Large Card ${String(index).padStart(3, "0")} ${"x".repeat(250_000)}`,
+    }),
   );
   await seedApiRevision({
     revisionId: "catrev_large_page",
@@ -2803,15 +2536,15 @@ test("Card cursors reject route, ordering, and structural misuse", async () => {
   const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`)!;
 
   for (const [index, cursor] of cursors.entries()) {
-    const response = await exports.default.fetch(new Request(
-      "https://card-keepr.invalid/v1/cards?q=cursor%20binding&limit=1&after=" +
-        encodeURIComponent(cursor),
-      { headers: apiHeaders(`203.0.113.${90 + index}`) },
-    ));
+    const response = await exports.default.fetch(
+      new Request(
+        "https://card-keepr.invalid/v1/cards?q=cursor%20binding&limit=1&after=" + encodeURIComponent(cursor),
+        { headers: apiHeaders(`203.0.113.${90 + index}`) },
+      ),
+    );
     expect(response.status).toBe(400);
     const problem = await response.json();
-    expect(validateProblem(problem), JSON.stringify(validateProblem.errors))
-      .toBe(true);
+    expect(validateProblem(problem), JSON.stringify(validateProblem.errors)).toBe(true);
     expect(problem).toMatchObject({
       code: "invalid_cursor",
     });
@@ -2825,9 +2558,7 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
        AND name LIKE 'revision_card%'
        AND lower(sql) LIKE '%create virtual table%'`,
   ).all<{ name: string }>();
-  expect(virtualTables.results).toEqual([
-    { name: "revision_card_search_fts" },
-  ]);
+  expect(virtualTables.results).toEqual([{ name: "revision_card_search_fts" }]);
 
   await seedApiRevision({
     revisionId: "catrev_fts_search_old",
@@ -2857,16 +2588,16 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
     { q: "quartz", game: null, cardNumber: null, limit: 50 },
     null,
   );
-  const plan = await testEnv.CATALOGUE_DB.prepare(
-    `EXPLAIN QUERY PLAN ${productionQuery.sql}`,
-  ).bind(...productionQuery.bindings).all<{ detail: string }>();
+  const plan = await testEnv.CATALOGUE_DB.prepare(`EXPLAIN QUERY PLAN ${productionQuery.sql}`)
+    .bind(...productionQuery.bindings)
+    .all<{ detail: string }>();
   const planDetails = plan.results.map(({ detail }) => detail);
   expect(planDetails).toEqual([
     "MATERIALIZE search_matches",
     "SCAN search VIRTUAL TABLE INDEX 0:M6",
     "SEARCH filtered USING INDEX " +
-    "sqlite_autoindex_revision_card_query_documents_1 " +
-    "(catalogue_revision_id=? AND card_id=?)",
+      "sqlite_autoindex_revision_card_query_documents_1 " +
+      "(catalogue_revision_id=? AND card_id=?)",
     "USE TEMP B-TREE FOR GROUP BY",
     "USE TEMP B-TREE FOR ORDER BY",
     "SCAN search_matches",
@@ -2892,62 +2623,58 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
   );
   expect(materialization).toContain("filtered.sort_game = ?");
   expect(materialization).toContain("filtered.sort_identity_value = ?");
-  expect(materialization).toContain(
-    "(filtered.sort_game, filtered.sort_identity_kind,",
-  );
+  expect(materialization).toContain("(filtered.sort_game, filtered.sort_identity_kind,");
   expect(materialization).toContain("LIMIT ?");
-  const filteredPlan = await testEnv.CATALOGUE_DB.prepare(
-    `EXPLAIN QUERY PLAN ${filteredCursorQuery.sql}`,
-  ).bind(...filteredCursorQuery.bindings).all<{ detail: string }>();
+  const filteredPlan = await testEnv.CATALOGUE_DB.prepare(`EXPLAIN QUERY PLAN ${filteredCursorQuery.sql}`)
+    .bind(...filteredCursorQuery.bindings)
+    .all<{ detail: string }>();
   expect(filteredPlan.results.map(({ detail }) => detail)).toEqual([
     "MATERIALIZE search_matches",
     "SCAN search VIRTUAL TABLE INDEX 0:M6",
     "SEARCH filtered USING INDEX " +
-    "sqlite_autoindex_revision_card_query_documents_1 " +
-    "(catalogue_revision_id=? AND card_id=?)",
+      "sqlite_autoindex_revision_card_query_documents_1 " +
+      "(catalogue_revision_id=? AND card_id=?)",
     "USE TEMP B-TREE FOR GROUP BY",
     "USE TEMP B-TREE FOR ORDER BY",
     "SCAN search_matches",
   ]);
-  const filteredRows = await testEnv.CATALOGUE_DB.prepare(
-    filteredCursorQuery.sql,
-  ).bind(...filteredCursorQuery.bindings).all<{ summary_json: string }>();
-  expect(filteredRows.results.map(({ summary_json }) =>
-    JSON.parse(summary_json).id
-  )).toEqual(["card_fts_search"]);
+  const filteredRows = await testEnv.CATALOGUE_DB.prepare(filteredCursorQuery.sql)
+    .bind(...filteredCursorQuery.bindings)
+    .all<{ summary_json: string }>();
+  expect(filteredRows.results.map(({ summary_json }) => JSON.parse(summary_json).id)).toEqual(["card_fts_search"]);
   const matchedRevisions = await testEnv.CATALOGUE_DB.prepare(
     `SELECT DISTINCT catalogue_revision_id
      FROM revision_card_search_fts
      WHERE revision_card_search_fts MATCH ?
      ORDER BY catalogue_revision_id`,
-  ).bind(productionQuery.bindings[0]).all<{
-    catalogue_revision_id: string;
-  }>();
-  expect(matchedRevisions.results).toEqual([
-    { catalogue_revision_id: "catrev_fts_search" },
-  ]);
+  )
+    .bind(productionQuery.bindings[0])
+    .all<{
+      catalogue_revision_id: string;
+    }>();
+  expect(matchedRevisions.results).toEqual([{ catalogue_revision_id: "catrev_fts_search" }]);
   const redundantRelationalTerms = await testEnv.CATALOGUE_DB.prepare(
     `SELECT count(*) AS count
      FROM revision_card_search_terms
      WHERE catalogue_revision_id = ? AND term LIKE 'g3:%'`,
-  ).bind("catrev_fts_search").first<{ count: number }>();
+  )
+    .bind("catrev_fts_search")
+    .first<{ count: number }>();
   expect(redundantRelationalTerms?.count).toBe(0);
-  await testEnv.CATALOGUE_DB.prepare(
-    "DELETE FROM revision_card_search_terms WHERE catalogue_revision_id = ?",
-  ).bind("catrev_fts_search").run();
+  await testEnv.CATALOGUE_DB.prepare("DELETE FROM revision_card_search_terms WHERE catalogue_revision_id = ?")
+    .bind("catrev_fts_search")
+    .run();
 
-  const response = await exports.default.fetch(new Request(
-    "https://card-keepr.invalid/v1/cards?q=quartz",
-    { headers: apiHeaders("203.0.113.100") },
-  ));
+  const response = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/cards?q=quartz", { headers: apiHeaders("203.0.113.100") }),
+  );
   expect(response.status).toBe(200);
   await expect(response.json()).resolves.toMatchObject({
     data: [{ id: "card_fts_search" }],
   });
-  const quoted = await exports.default.fetch(new Request(
-    "https://card-keepr.invalid/v1/cards?q=%22quartz%22",
-    { headers: apiHeaders("203.0.113.103") },
-  ));
+  const quoted = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/cards?q=%22quartz%22", { headers: apiHeaders("203.0.113.103") }),
+  );
   expect(quoted.status).toBe(200);
   await expect(quoted.json()).resolves.toMatchObject({
     data: [{ id: "card_fts_search" }],
@@ -2972,7 +2699,9 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
      FROM revision_card_search_chunks
      WHERE catalogue_revision_id = ?
      ORDER BY card_id, field_ordinal, chunk_ordinal`,
-  ).bind("catrev_fts_restore").all();
+  )
+    .bind("catrev_fts_restore")
+    .all();
   expect(retainedChunks.results.length).toBeGreaterThan(0);
 
   await withCardSearchPreparedForD1Export(
@@ -2994,28 +2723,27 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
              AS virtual_tables,
            (SELECT count(*) FROM revision_card_search_chunks
             WHERE catalogue_revision_id = ?) AS retained_chunks`,
-      ).bind("catrev_fts_restore").first();
+      )
+        .bind("catrev_fts_restore")
+        .first();
       expect(exportBoundary).toEqual({
         state: "reconstructing",
         virtual_tables: 0,
         retained_chunks: retainedChunks.results.length,
       });
-      await expect(prepareCardSearchForD1Export(
-        testEnv.CATALOGUE_DB,
-        {
+      await expect(
+        prepareCardSearchForD1Export(testEnv.CATALOGUE_DB, {
           ownerToken: "backup-owner-concurrent",
           observedAt: "2026-08-05T00:01:00.000Z",
           leaseExpiresAt: "2026-08-05T00:16:00.000Z",
-        },
-      )).rejects.toThrow("Card search FTS export lease is unavailable.");
-      await expect(reconstructCardSearchAfterD1Restore(
-        testEnv.CATALOGUE_DB,
-        "backup-owner-concurrent",
-      )).rejects.toThrow("Card search FTS export lease owner changed.");
-      const unavailable = await exports.default.fetch(new Request(
-        "https://card-keepr.invalid/v1/cards?q=quartz",
-        { headers: apiHeaders("203.0.113.105") },
-      ));
+        }),
+      ).rejects.toThrow("Card search FTS export lease is unavailable.");
+      await expect(
+        reconstructCardSearchAfterD1Restore(testEnv.CATALOGUE_DB, "backup-owner-concurrent"),
+      ).rejects.toThrow("Card search FTS export lease owner changed.");
+      const unavailable = await exports.default.fetch(
+        new Request("https://card-keepr.invalid/v1/cards?q=quartz", { headers: apiHeaders("203.0.113.105") }),
+      );
       expect(unavailable.status).toBe(503);
     },
   );
@@ -3025,15 +2753,16 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
        (SELECT state FROM card_search_fts_state WHERE singleton = 1) AS state,
        (SELECT count(*) FROM revision_card_search_fts_rows
         WHERE catalogue_revision_id = ?) AS indexed_chunks`,
-  ).bind("catrev_fts_restore").first();
+  )
+    .bind("catrev_fts_restore")
+    .first();
   expect(reconstructed).toEqual({
     state: "ready",
     indexed_chunks: retainedChunks.results.length,
   });
-  const restored = await exports.default.fetch(new Request(
-    "https://card-keepr.invalid/v1/cards?q=quartz",
-    { headers: apiHeaders("203.0.113.106") },
-  ));
+  const restored = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/cards?q=quartz", { headers: apiHeaders("203.0.113.106") }),
+  );
   expect(restored.status).toBe(200);
   await expect(restored.json()).resolves.toMatchObject({
     data: [{ id: "card_fts_restore" }],
@@ -3042,37 +2771,41 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
     `UPDATE revision_card_search_chunks
      SET search_text = 'trigger-rebuilt-quartz'
      WHERE catalogue_revision_id = ? AND card_id = ? AND field_ordinal = 1`,
-  ).bind("catrev_fts_restore", "card_fts_restore").run();
-  const triggerMaintained = await exports.default.fetch(new Request(
-    "https://card-keepr.invalid/v1/cards?q=trigger-rebuilt-quartz",
-    { headers: apiHeaders("203.0.113.107") },
-  ));
+  )
+    .bind("catrev_fts_restore", "card_fts_restore")
+    .run();
+  const triggerMaintained = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/cards?q=trigger-rebuilt-quartz", {
+      headers: apiHeaders("203.0.113.107"),
+    }),
+  );
   expect(triggerMaintained.status).toBe(200);
   await expect(triggerMaintained.json()).resolves.toMatchObject({
     data: [{ id: "card_fts_restore" }],
   });
-  await expect(withCardSearchPreparedForD1Export(
-    testEnv.CATALOGUE_DB,
-    {
-      ownerToken: "backup-owner-failure",
-      observedAt: "2026-08-05T01:00:00.000Z",
-      leaseExpiresAt: "2026-08-05T01:15:00.000Z",
-    },
-    async () => {
-      throw new Error("simulated D1 export failure");
-    },
-  )).rejects.toThrow("simulated D1 export failure");
-  await expect(testEnv.CATALOGUE_DB.prepare(
-    "SELECT state FROM card_search_fts_state WHERE singleton = 1",
-  ).first()).resolves.toEqual({ state: "ready" });
+  await expect(
+    withCardSearchPreparedForD1Export(
+      testEnv.CATALOGUE_DB,
+      {
+        ownerToken: "backup-owner-failure",
+        observedAt: "2026-08-05T01:00:00.000Z",
+        leaseExpiresAt: "2026-08-05T01:15:00.000Z",
+      },
+      async () => {
+        throw new Error("simulated D1 export failure");
+      },
+    ),
+  ).rejects.toThrow("simulated D1 export failure");
+  await expect(
+    testEnv.CATALOGUE_DB.prepare("SELECT state FROM card_search_fts_state WHERE singleton = 1").first(),
+  ).resolves.toEqual({ state: "ready" });
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE card_search_fts_state
      SET state = 'reconstructing', owner_token = ?, lease_expires_at = ?
      WHERE singleton = 1 AND state = 'ready'`,
-  ).bind(
-    "backup-owner-abandoned",
-    "2026-08-05T02:00:00.000Z",
-  ).run();
+  )
+    .bind("backup-owner-abandoned", "2026-08-05T02:00:00.000Z")
+    .run();
   await withCardSearchPreparedForD1Export(
     testEnv.CATALOGUE_DB,
     {
@@ -3082,9 +2815,9 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
     },
     async () => undefined,
   );
-  await expect(testEnv.CATALOGUE_DB.prepare(
-    "SELECT state, owner_token FROM card_search_fts_state WHERE singleton = 1",
-  ).first()).resolves.toEqual({ state: "ready", owner_token: null });
+  await expect(
+    testEnv.CATALOGUE_DB.prepare("SELECT state, owner_token FROM card_search_fts_state WHERE singleton = 1").first(),
+  ).resolves.toEqual({ state: "ready", owner_token: null });
 }, 15_000);
 
 test("Card detail includes revision-pinned Printings, provenance, and disagreements", async () => {
@@ -3138,14 +2871,16 @@ test("Card detail includes revision-pinned Printings, provenance, and disagreeme
         provenance: {
           "/data/effective_rules_text": [evidence.id],
         },
-        disagreements: [{
-          path: "/data/effective_rules_text",
-          status: "unresolved",
-          candidates: [
-            { value: "Candidate A", observation_id: evidence.id },
-            { value: "Candidate B", observation_id: otherEvidence.id },
-          ],
-        }],
+        disagreements: [
+          {
+            path: "/data/effective_rules_text",
+            status: "unresolved",
+            candidates: [
+              { value: "Candidate A", observation_id: evidence.id },
+              { value: "Candidate B", observation_id: otherEvidence.id },
+            ],
+          },
+        ],
       }),
       "catrev_detail_projection",
       card.id,
@@ -3154,23 +2889,18 @@ test("Card detail includes revision-pinned Printings, provenance, and disagreeme
       `INSERT INTO revision_printings (
          catalogue_revision_id, printing_id, card_id, document_json
        ) VALUES (?, ?, ?, ?)`,
-    ).bind(
-      "catrev_detail_projection",
-      printing.id,
-      card.id,
-      JSON.stringify(printing),
-    ),
+    ).bind("catrev_detail_projection", printing.id, card.id, JSON.stringify(printing)),
   ]);
 
   const url =
-    "https://card-keepr.invalid/v1/cards/card_detail_projection" +
-    "?include=printings,evidence,disagreements";
-  const response = await exports.default.fetch(new Request(url, {
-    headers: apiHeaders("203.0.113.101"),
-  }));
+    "https://card-keepr.invalid/v1/cards/card_detail_projection" + "?include=printings,evidence,disagreements";
+  const response = await exports.default.fetch(
+    new Request(url, {
+      headers: apiHeaders("203.0.113.101"),
+    }),
+  );
   expect(response.status).toBe(200);
-  expect(response.headers.get("x-catalogue-revision"))
-    .toBe("catrev_detail_projection");
+  expect(response.headers.get("x-catalogue-revision")).toBe("catrev_detail_projection");
   const body = await response.json<Record<string, unknown>>();
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
@@ -3187,21 +2917,17 @@ test("Card detail includes revision-pinned Printings, provenance, and disagreeme
     provenance: {
       "/data/effective_rules_text": [evidence.id],
     },
-    disagreements: [{
-      path: "/data/effective_rules_text",
-      status: "unresolved",
-    }],
+    disagreements: [
+      {
+        path: "/data/effective_rules_text",
+        status: "unresolved",
+      },
+    ],
     meta: { catalogue_revision_id: "catrev_detail_projection" },
   });
-  expect(
-    (body.data as Record<string, unknown>).effective_rules_text,
-  ).toBeNull();
-  const includedIds = new Set(
-    (body.included as Array<{ id: string }>).map(({ id }) => id),
-  );
-  for (const [pointer, observationIds] of Object.entries(
-    body.provenance as Record<string, string[]>,
-  )) {
+  expect((body.data as Record<string, unknown>).effective_rules_text).toBeNull();
+  const includedIds = new Set((body.included as Array<{ id: string }>).map(({ id }) => id));
+  for (const [pointer, observationIds] of Object.entries(body.provenance as Record<string, string[]>)) {
     const pointedValue = jsonPointerValue(body, pointer);
     expect(pointedValue).toBeDefined();
     expect(observationIds.every((id) => includedIds.has(id))).toBe(true);
@@ -3216,15 +2942,16 @@ test("Card detail includes revision-pinned Printings, provenance, and disagreeme
 
   const etag = response.headers.get("etag");
   expect(etag).not.toBeNull();
-  const notModified = await exports.default.fetch(new Request(url, {
-    headers: {
-      ...apiHeaders("203.0.113.102"),
-      "if-none-match": etag!,
-    },
-  }));
+  const notModified = await exports.default.fetch(
+    new Request(url, {
+      headers: {
+        ...apiHeaders("203.0.113.102"),
+        "if-none-match": etag!,
+      },
+    }),
+  );
   expect(notModified.status).toBe(304);
-  expect(notModified.headers.get("x-catalogue-revision"))
-    .toBe("catrev_detail_projection");
+  expect(notModified.headers.get("x-catalogue-revision")).toBe("catrev_detail_projection");
 });
 
 test("Card cursors continue on an available pinned revision and conflict only after it is unavailable", async () => {
@@ -3245,28 +2972,21 @@ test("Card cursors continue on an available pinned revision and conflict only af
     ],
   });
   const firstPage = await exports.default.fetch(
-    new Request(
-      "https://card-keepr.invalid/v1/cards?q=cursor&limit=1",
-      { headers: apiHeaders("203.0.113.31") },
-    ),
+    new Request("https://card-keepr.invalid/v1/cards?q=cursor&limit=1", { headers: apiHeaders("203.0.113.31") }),
   );
   expect(firstPage.status).toBe(200);
-  expect(firstPage.headers.get("x-catalogue-revision"))
-    .toBe("catrev_cursor_old");
-  const firstPageDocument = await firstPage.json<Record<string, unknown> & {
-    page: { next_cursor: string };
-  }>();
+  expect(firstPage.headers.get("x-catalogue-revision")).toBe("catrev_cursor_old");
+  const firstPageDocument = await firstPage.json<
+    Record<string, unknown> & {
+      page: { next_cursor: string };
+    }
+  >();
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
   ajv.addSchema(apiSchema);
-  const validateCollection = ajv.getSchema(
-    `${apiSchema.$id}#/$defs/CardCollection`,
-  )!;
+  const validateCollection = ajv.getSchema(`${apiSchema.$id}#/$defs/CardCollection`)!;
   const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`)!;
-  expect(
-    validateCollection(firstPageDocument),
-    JSON.stringify(validateCollection.errors),
-  ).toBe(true);
+  expect(validateCollection(firstPageDocument), JSON.stringify(validateCollection.errors)).toBe(true);
   expect(firstPageDocument.page.next_cursor).toEqual(expect.any(String));
 
   await seedApiRevision({
@@ -3289,8 +3009,7 @@ test("Card cursors continue on an available pinned revision and conflict only af
     }),
   );
   expect(available.status).toBe(200);
-  expect(available.headers.get("x-catalogue-revision"))
-    .toBe("catrev_cursor_old");
+  expect(available.headers.get("x-catalogue-revision")).toBe("catrev_cursor_old");
   await expect(available.json()).resolves.toMatchObject({
     data: [{ id: "card_cursor_002" }],
     meta: { catalogue_revision_id: "catrev_cursor_old" },
@@ -3334,8 +3053,7 @@ test("Card cursors continue on an available pinned revision and conflict only af
   );
   expect(unavailable.status).toBe(409);
   const problem = await unavailable.json();
-  expect(validateProblem(problem), JSON.stringify(validateProblem.errors))
-    .toBe(true);
+  expect(validateProblem(problem), JSON.stringify(validateProblem.errors)).toBe(true);
   expect(problem).toMatchObject({
     code: "cursor_revision_unavailable",
     links: { collection: `${apiPublicBase}/v1/cards` },
@@ -3347,9 +3065,7 @@ test("the normative Printing schema excludes SourceBucket from canonical relatio
   addFormats(ajv);
   ajv.addSchema(exportManifestSchemaV5);
   ajv.addSchema(apiSchema);
-  const validate = ajv.getSchema(
-    `${apiSchema.$id}#/$defs/RelationshipEvidence`,
-  );
+  const validate = ajv.getSchema(`${apiSchema.$id}#/$defs/RelationshipEvidence`);
   expect(validate).toBeDefined();
   const relationship = {
     source_lineage: "one-piece-en",
@@ -3361,9 +3077,7 @@ test("the normative Printing schema excludes SourceBucket from canonical relatio
     current: true,
     last_missing_revision_id: null,
   };
-  expect(validate!(relationship), JSON.stringify(validate!.errors)).toBe(
-    true,
-  );
+  expect(validate!(relationship), JSON.stringify(validate!.errors)).toBe(true);
   expect(
     validate!({
       ...relationship,
@@ -3374,13 +3088,13 @@ test("the normative Printing schema excludes SourceBucket from canonical relatio
 });
 
 function jsonPointerValue(document: unknown, pointer: string): unknown {
-  return pointer.slice(1).split("/").reduce<unknown>(
-    (value, segment) =>
-      (value as Record<string, unknown>)[
-        segment.replaceAll("~1", "/").replaceAll("~0", "~")
-      ],
-    document,
-  );
+  return pointer
+    .slice(1)
+    .split("/")
+    .reduce<unknown>(
+      (value, segment) => (value as Record<string, unknown>)[segment.replaceAll("~1", "/").replaceAll("~0", "~")],
+      document,
+    );
 }
 
 function encodeTestCardCursor(input: {
@@ -3396,38 +3110,38 @@ function encodeTestCardCursor(input: {
     id: string;
   };
 }): string {
-  const bytes = new TextEncoder().encode(JSON.stringify({
-    contract: "card-keepr-card-cursor@1",
-    revision_id: input.revisionId,
-    route: input.route,
-    order: input.order,
-    q: input.q,
-    game: null,
-    card_number: null,
-    limit: input.limit,
-    after: {
-      game: input.after.game,
-      identity_kind: input.after.identityKind,
-      identity_value: input.after.identityValue,
-      id: input.after.id,
-    },
-  }));
+  const bytes = new TextEncoder().encode(
+    JSON.stringify({
+      contract: "card-keepr-card-cursor@1",
+      revision_id: input.revisionId,
+      route: input.route,
+      order: input.order,
+      q: input.q,
+      game: null,
+      card_number: null,
+      limit: input.limit,
+      after: {
+        game: input.after.game,
+        identity_kind: input.after.identityKind,
+        identity_value: input.after.identityValue,
+        id: input.after.id,
+      },
+    }),
+  );
   return btoa(String.fromCharCode(...bytes));
 }
 
-async function seedCatalogueExportSummary(
-  revisionId: string,
-  runId: string,
-  publishedAt: string,
-): Promise<void> {
+async function seedCatalogueExportSummary(revisionId: string, runId: string, publishedAt: string): Promise<void> {
   await seedApiRevision({ revisionId, runId, cards: [] });
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_revisions SET published_at = ? WHERE id = ?`,
-  ).bind(publishedAt, revisionId).run();
+  await testEnv.CATALOGUE_DB.prepare(`UPDATE catalogue_revisions SET published_at = ? WHERE id = ?`)
+    .bind(publishedAt, revisionId)
+    .run();
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE catalogue_state SET published_at = ?
      WHERE singleton = 1 AND current_revision_id = ?`,
-  ).bind(publishedAt, revisionId).run();
+  )
+    .bind(publishedAt, revisionId)
+    .run();
   const manifestWithPlaceholder = {
     export_schema_major: 5,
     catalogue_revision: {
@@ -3437,31 +3151,26 @@ async function seedCatalogueExportSummary(
     manifest_sha256: "0".repeat(64),
     components: [],
   };
-  const manifestDigest = await sha256Text(
-    `${canonicalJson(manifestWithPlaceholder)}\n`,
-  );
+  const manifestDigest = await sha256Text(`${canonicalJson(manifestWithPlaceholder)}\n`);
   const manifest = {
     ...manifestWithPlaceholder,
     manifest_sha256: manifestDigest,
   };
   const manifestKey = `catalogue-exports/${revisionId}/manifest.json`;
-  await testEnv.CATALOGUE_EXPORTS.put(
-    manifestKey,
-    `${canonicalJson(manifest)}\n`,
-  );
+  await testEnv.CATALOGUE_EXPORTS.put(manifestKey, `${canonicalJson(manifest)}\n`);
   await testEnv.CATALOGUE_DB.prepare(
     `INSERT INTO catalogue_exports (
        catalogue_revision_id, manifest_key, manifest_digest, verified
      ) VALUES (?, ?, ?, 1)`,
-  ).bind(revisionId, manifestKey, manifestDigest).run();
+  )
+    .bind(revisionId, manifestKey, manifestDigest)
+    .run();
 }
 
 function proxyR2Bucket(
   bucket: R2Bucket,
   overrides: {
-    get?: (
-      ...arguments_: Parameters<R2Bucket["get"]>
-    ) => ReturnType<R2Bucket["get"]>;
+    get?: (...arguments_: Parameters<R2Bucket["get"]>) => ReturnType<R2Bucket["get"]>;
   },
 ): R2Bucket {
   return new Proxy(bucket, {

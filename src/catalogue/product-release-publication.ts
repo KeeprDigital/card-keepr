@@ -1,6 +1,5 @@
-import type { CatalogueCandidate } from "./catalogue-candidate";
+import { type CatalogueCandidate, byteBoundedJsonArrays } from "./shared";
 import type { NormalizedLifecycle } from "./publication-lifecycle-types";
-import { byteBoundedJsonArrays } from "./reconciliation-payload";
 
 export type ProductRelationshipLifecycle = {
   first_revision_id: string;
@@ -60,39 +59,33 @@ export async function productReleaseLifecyclePlan(
   const products = candidate.products ?? [];
   const relationships = candidate.product_relationships ?? [];
   const releases = products.flatMap((product) => product.releases);
-  const [
-    existingProducts,
-    existingReleases,
-    existingRelationships,
-    inferredProductRows,
-  ] =
-    await Promise.all([
-      rowsById<ExistingProductRow>(
-        database,
-        `SELECT id, first_revision_id, last_observed_revision_id,
+  const [existingProducts, existingReleases, existingRelationships, inferredProductRows] = await Promise.all([
+    rowsById<ExistingProductRow>(
+      database,
+      `SELECT id, first_revision_id, last_observed_revision_id,
                 withdrawn, withdrawal_revision_id, withdrawal_evidence_json
          FROM reconciled_products
          WHERE id IN (SELECT value FROM json_each(?))`,
-        products.map(({ id }) => id),
-      ),
-      rowsById<ExistingReleaseRow>(
-        database,
-        `SELECT id, first_revision_id, last_observed_revision_id
+      products.map(({ id }) => id),
+    ),
+    rowsById<ExistingReleaseRow>(
+      database,
+      `SELECT id, first_revision_id, last_observed_revision_id
          FROM reconciled_releases
          WHERE id IN (SELECT value FROM json_each(?))`,
-        releases.map(({ id }) => id),
-      ),
-      rowsById<ExistingRelationshipRow>(
-        database,
-        `SELECT id, first_revision_id, last_observed_revision_id,
+      releases.map(({ id }) => id),
+    ),
+    rowsById<ExistingRelationshipRow>(
+      database,
+      `SELECT id, first_revision_id, last_observed_revision_id,
                 current, last_missing_revision_id
          FROM reconciled_product_relationships
          WHERE id IN (SELECT value FROM json_each(?))`,
-        relationships.map(({ id }) => id),
-      ),
-      database
-        .prepare(
-          `SELECT card.supported_game AS game,
+      relationships.map(({ id }) => id),
+    ),
+    database
+      .prepare(
+        `SELECT card.supported_game AS game,
                   membership.relationship_value AS official_code,
                   membership.first_revision_id,
                   membership.last_observed_revision_id,
@@ -112,16 +105,10 @@ export async function productReleaseLifecyclePlan(
            ORDER BY card.supported_game, membership.relationship_value,
                     first_revision.published_at,
                     membership.first_revision_id`,
-        )
-        .bind(
-          JSON.stringify(
-            products.flatMap(({ official_code }) =>
-              official_code === null ? [] : [official_code],
-            ),
-          ),
-        )
-        .all<InferredProductLifecycleRow>(),
-    ]);
+      )
+      .bind(JSON.stringify(products.flatMap(({ official_code }) => (official_code === null ? [] : [official_code]))))
+      .all<InferredProductLifecycleRow>(),
+  ]);
   const inferredProductLifecycles = new Map<
     string,
     {
@@ -133,50 +120,30 @@ export async function productReleaseLifecyclePlan(
   for (const row of inferredProductRows.results) {
     const key = JSON.stringify([row.game, row.official_code]);
     const existing = inferredProductLifecycles.get(key);
-    const lastOrder = JSON.stringify([
-      row.last_published_at,
-      row.last_observed_revision_id,
-    ]);
+    const lastOrder = JSON.stringify([row.last_published_at, row.last_observed_revision_id]);
     inferredProductLifecycles.set(key, {
-      first_revision_id:
-        existing?.first_revision_id ?? row.first_revision_id,
+      first_revision_id: existing?.first_revision_id ?? row.first_revision_id,
       last_observed_revision_id:
-        existing === undefined ||
-        lastOrder > existing.last_order
+        existing === undefined || lastOrder > existing.last_order
           ? row.last_observed_revision_id
           : existing.last_observed_revision_id,
-      last_order:
-        existing === undefined ||
-        lastOrder > existing.last_order
-          ? lastOrder
-          : existing.last_order,
+      last_order: existing === undefined || lastOrder > existing.last_order ? lastOrder : existing.last_order,
     });
   }
   const observedGames = new Set(candidate.product_observed_games ?? []);
-  const observedLineages = new Set(
-    candidate.product_observed_lineages ?? [],
-  );
+  const observedLineages = new Set(candidate.product_observed_lineages ?? []);
   const observedReleaseIds = new Set(
     products.flatMap((product) => {
       const sourceObservations = product.source_observations ?? [];
-      if (
-        sourceObservations.length === 0 ||
-        observedLineages.size === 0
-      ) {
-        return product.observed && observedGames.has(product.game)
-          ? product.releases.map(({ id }) => id)
-          : [];
+      if (sourceObservations.length === 0 || observedLineages.size === 0) {
+        return product.observed && observedGames.has(product.game) ? product.releases.map(({ id }) => id) : [];
       }
       const observedEventKeys = new Set(
         sourceObservations
           .filter(({ evidence }) => observedLineages.has(evidence.source))
-          .flatMap(({ releases: observed }) =>
-            observed.map(({ eventKey }) => eventKey),
-          ),
+          .flatMap(({ releases: observed }) => observed.map(({ eventKey }) => eventKey)),
       );
-      return product.releases
-        .filter(({ event_key }) => observedEventKeys.has(event_key))
-        .map(({ id }) => id);
+      return product.releases.filter(({ event_key }) => observedEventKeys.has(event_key)).map(({ id }) => id);
     }),
   );
   const observedProductIds = new Set(
@@ -186,11 +153,7 @@ export async function productReleaseLifecyclePlan(
       if (sourceObservations.length === 0) {
         return observedLineages.size === 0 ? [product.id] : [];
       }
-      return sourceObservations.some(({ evidence }) =>
-          observedLineages.has(evidence.source)
-        )
-        ? [product.id]
-        : [];
+      return sourceObservations.some(({ evidence }) => observedLineages.has(evidence.source)) ? [product.id] : [];
     }),
   );
   return {
@@ -200,43 +163,31 @@ export async function productReleaseLifecyclePlan(
         const inferred =
           product.official_code === null
             ? undefined
-            : inferredProductLifecycles.get(
-                JSON.stringify([product.game, product.official_code]),
-              );
+            : inferredProductLifecycles.get(JSON.stringify([product.game, product.official_code]));
         const withdrawal = product.withdrawal;
-        const withdrawn =
-          existing?.withdrawn === 1 || withdrawal !== null;
+        const withdrawn = existing?.withdrawn === 1 || withdrawal !== null;
         const withdrawalRevision =
           withdrawal === null
-            ? existing?.withdrawal_revision_id ?? null
-            : existing?.withdrawal_revision_id ?? revisionId;
+            ? (existing?.withdrawal_revision_id ?? null)
+            : (existing?.withdrawal_revision_id ?? revisionId);
         const withdrawalEvidence =
           withdrawal === null
-            ? existing?.withdrawal_evidence_json ?? null
-            : existing?.withdrawal_evidence_json ??
-              JSON.stringify(withdrawal.evidence);
+            ? (existing?.withdrawal_evidence_json ?? null)
+            : (existing?.withdrawal_evidence_json ?? JSON.stringify(withdrawal.evidence));
         return [
           product.id,
           {
-            first_revision_id:
-              existing?.first_revision_id ??
-              inferred?.first_revision_id ??
-              revisionId,
+            first_revision_id: existing?.first_revision_id ?? inferred?.first_revision_id ?? revisionId,
             last_observed_revision_id: observedProductIds.has(product.id)
               ? revisionId
-              : existing?.last_observed_revision_id ??
-                inferred?.last_observed_revision_id ??
-                revisionId,
+              : (existing?.last_observed_revision_id ?? inferred?.last_observed_revision_id ?? revisionId),
             withdrawn,
             withdrawal:
-              withdrawalRevision === null ||
-              withdrawalEvidence === null
+              withdrawalRevision === null || withdrawalEvidence === null
                 ? null
                 : {
                     revision_id: withdrawalRevision,
-                    evidence: JSON.parse(
-                      withdrawalEvidence,
-                    ) as Record<string, unknown>,
+                    evidence: JSON.parse(withdrawalEvidence) as Record<string, unknown>,
                   },
           },
         ];
@@ -248,11 +199,10 @@ export async function productReleaseLifecyclePlan(
         return [
           release.id,
           {
-            first_revision_id:
-              existing?.first_revision_id ?? revisionId,
+            first_revision_id: existing?.first_revision_id ?? revisionId,
             last_observed_revision_id: observedReleaseIds.has(release.id)
               ? revisionId
-              : existing?.last_observed_revision_id ?? revisionId,
+              : (existing?.last_observed_revision_id ?? revisionId),
           },
         ];
       }),
@@ -261,42 +211,36 @@ export async function productReleaseLifecyclePlan(
       relationships.map((relationship) => {
         const existing = existingRelationships.get(relationship.id);
         if (relationship.evidence_category === "curated") {
-          return [relationship.id, {
-            first_revision_id: revisionId,
-            last_observed_revision_id: revisionId,
-            current: relationship.observed,
-            last_missing_revision_id: relationship.observed ? null : revisionId,
-          }];
+          return [
+            relationship.id,
+            {
+              first_revision_id: revisionId,
+              last_observed_revision_id: revisionId,
+              current: relationship.observed,
+              last_missing_revision_id: relationship.observed ? null : revisionId,
+            },
+          ];
         }
         const lineageObserved =
           observedLineages.size === 0
             ? observedGames.has(relationship.game)
-            : relationship.source_lineage !== undefined &&
-              observedLineages.has(relationship.source_lineage);
-        const disappeared =
-          !relationship.observed &&
-          observedGames.has(relationship.game) &&
-          lineageObserved;
+            : relationship.source_lineage !== undefined && observedLineages.has(relationship.source_lineage);
+        const disappeared = !relationship.observed && observedGames.has(relationship.game) && lineageObserved;
         return [
           relationship.id,
           {
-            first_revision_id:
-              existing?.first_revision_id ?? revisionId,
+            first_revision_id: existing?.first_revision_id ?? revisionId,
             last_observed_revision_id:
               relationship.observed && lineageObserved
-              ? revisionId
-              : existing?.last_observed_revision_id ?? revisionId,
-            current: lineageObserved
-              ? relationship.observed
-              : disappeared
-                ? false
-                : existing?.current === 1,
+                ? revisionId
+                : (existing?.last_observed_revision_id ?? revisionId),
+            current: lineageObserved ? relationship.observed : disappeared ? false : existing?.current === 1,
             last_missing_revision_id:
               relationship.observed && lineageObserved
-              ? null
-              : disappeared
-                ? revisionId
-                : existing?.last_missing_revision_id ?? null,
+                ? null
+                : disappeared
+                  ? revisionId
+                  : (existing?.last_missing_revision_id ?? null),
           },
         ];
       }),
@@ -312,19 +256,15 @@ export function productReleasePublicationStatements(
 ): D1PreparedStatement[] {
   const products = candidate.products ?? [];
   const productDocuments = products.map((product) => {
-    const lifecycle =
-      lifecycles.products[product.id] ?? defaultLifecycle(revisionId);
+    const lifecycle = lifecycles.products[product.id] ?? defaultLifecycle(revisionId);
     const data = {
       type: "product",
       id: product.id,
       game: product.game,
       official_code: product.official_code,
       name: product.name,
-      releases: product.releases.map(
-        ({ product_id: _productId, ...release }) => release,
-      ),
-      ...("curated_provenance" in product &&
-          Array.isArray(product.curated_provenance)
+      releases: product.releases.map(({ product_id: _productId, ...release }) => release),
+      ...("curated_provenance" in product && Array.isArray(product.curated_provenance)
         ? { curated_provenance: product.curated_provenance }
         : {}),
       lifecycle,
@@ -341,36 +281,31 @@ export function productReleasePublicationStatements(
       },
     };
   });
-  const relationshipDocuments = (candidate.product_relationships ?? []).map(
-    (relationship) => {
-      const lifecycle =
-        lifecycles.relationships[relationship.id] ??
-        defaultRelationshipLifecycle(revisionId, relationship.observed);
-      return {
-        relationship,
+  const relationshipDocuments = (candidate.product_relationships ?? []).map((relationship) => {
+    const lifecycle =
+      lifecycles.relationships[relationship.id] ?? defaultRelationshipLifecycle(revisionId, relationship.observed);
+    return {
+      relationship,
+      lifecycle,
+      document: {
+        type: "relationship",
+        id: relationship.id,
+        kind: relationship.kind,
+        from: relationship.from,
+        to: relationship.to,
+        evidence_category: relationship.evidence_category,
+        ...(relationship.source_lineage === undefined ? {} : { source_lineage: relationship.source_lineage }),
+        ...(relationship.source_observation_ids.length === 0
+          ? {}
+          : { source_observation_ids: relationship.source_observation_ids }),
+        ...(relationship.curated_provenance === undefined
+          ? {}
+          : { curated_provenance: relationship.curated_provenance }),
+        relationship_value: relationship.relationship_value,
         lifecycle,
-        document: {
-          type: "relationship",
-          id: relationship.id,
-          kind: relationship.kind,
-          from: relationship.from,
-          to: relationship.to,
-          evidence_category: relationship.evidence_category,
-          ...(relationship.source_lineage === undefined
-            ? {}
-            : { source_lineage: relationship.source_lineage }),
-          ...(relationship.source_observation_ids.length === 0
-            ? {}
-            : { source_observation_ids: relationship.source_observation_ids }),
-          ...(relationship.curated_provenance === undefined
-            ? {}
-            : { curated_provenance: relationship.curated_provenance }),
-          relationship_value: relationship.relationship_value,
-          lifecycle,
-        },
-      };
-    },
-  );
+      },
+    };
+  });
   return [
     ...statements(
       database,
@@ -384,8 +319,7 @@ export function productReleasePublicationStatements(
         withdrawn: lifecycle.withdrawn ? 1 : 0,
         withdrawal_revision_id: lifecycle.withdrawal?.revision_id ?? null,
         withdrawal_evidence_json:
-          lifecycle.withdrawal === null ||
-          lifecycle.withdrawal === undefined
+          lifecycle.withdrawal === null || lifecycle.withdrawal === undefined
             ? null
             : JSON.stringify(lifecycle.withdrawal.evidence),
       })),
@@ -482,28 +416,26 @@ export function productReleasePublicationStatements(
     ),
     ...statements(
       database,
-      relationshipDocuments.filter(({ relationship }) =>
-        relationship.evidence_category !== "curated"
-      ).map(({ relationship, lifecycle, document }) => ({
-        id: relationship.id,
-        game: relationship.game,
-        kind: relationship.kind,
-        from_type: relationship.from.type,
-        from_id: relationship.from.id,
-        to_type: relationship.to.type,
-        to_id: relationship.to.id,
-        evidence_category: relationship.evidence_category,
-        source_lineage: relationship.source_lineage,
-        source_observation_ids_json: JSON.stringify(
-          relationship.source_observation_ids,
-        ),
-        relationship_value: relationship.relationship_value,
-        first_revision_id: lifecycle.first_revision_id,
-        last_observed_revision_id: lifecycle.last_observed_revision_id,
-        current: lifecycle.current ? 1 : 0,
-        last_missing_revision_id: lifecycle.last_missing_revision_id,
-        document_json: JSON.stringify(document),
-      })),
+      relationshipDocuments
+        .filter(({ relationship }) => relationship.evidence_category !== "curated")
+        .map(({ relationship, lifecycle, document }) => ({
+          id: relationship.id,
+          game: relationship.game,
+          kind: relationship.kind,
+          from_type: relationship.from.type,
+          from_id: relationship.from.id,
+          to_type: relationship.to.type,
+          to_id: relationship.to.id,
+          evidence_category: relationship.evidence_category,
+          source_lineage: relationship.source_lineage,
+          source_observation_ids_json: JSON.stringify(relationship.source_observation_ids),
+          relationship_value: relationship.relationship_value,
+          first_revision_id: lifecycle.first_revision_id,
+          last_observed_revision_id: lifecycle.last_observed_revision_id,
+          current: lifecycle.current ? 1 : 0,
+          last_missing_revision_id: lifecycle.last_missing_revision_id,
+          document_json: JSON.stringify(document),
+        })),
       `INSERT INTO reconciled_product_relationships (
          id, supported_game, relationship_kind, from_type, from_id,
          to_type, to_id, evidence_category, source_lineage,
@@ -545,13 +477,8 @@ export function productReleasePublicationStatements(
         supported_game: product.game,
         official_code: product.official_code,
         name: product.name,
-        search_text: productSearchText(
-          product.official_code,
-          product.name,
-        ),
-        release_regions_json: JSON.stringify(
-          product.releases.map(({ region }) => region),
-        ),
+        search_text: productSearchText(product.official_code, product.name),
+        release_regions_json: JSON.stringify(product.releases.map(({ region }) => region)),
         document_json: JSON.stringify(envelope),
       })),
       `INSERT INTO revision_products (
@@ -573,10 +500,7 @@ export function productReleasePublicationStatements(
       database,
       productDocuments.map(({ product }) => ({
         product_id: product.id,
-        search_text: productSearchText(
-          product.official_code,
-          product.name,
-        ),
+        search_text: productSearchText(product.official_code, product.name),
       })),
       `INSERT INTO revision_products_fts (
          catalogue_revision_id, product_id, search_text
@@ -603,10 +527,7 @@ export function productReleasePublicationStatements(
   ];
 }
 
-function productSearchText(
-  officialCode: string | null,
-  name: string | null,
-): string {
+function productSearchText(officialCode: string | null, name: string | null): string {
   return [officialCode, name]
     .filter((value): value is string => value !== null)
     .join("\n")
@@ -620,10 +541,7 @@ async function rowsById<T extends { id: string }>(
   ids: readonly string[],
 ): Promise<Map<string, T>> {
   if (ids.length === 0) return new Map();
-  const result = await database
-    .prepare(sql)
-    .bind(JSON.stringify(ids))
-    .all<T>();
+  const result = await database.prepare(sql).bind(JSON.stringify(ids)).all<T>();
   return new Map(result.results.map((row) => [row.id, row]));
 }
 
@@ -634,9 +552,7 @@ function statements(
   prefix?: string,
 ): D1PreparedStatement[] {
   return byteBoundedJsonArrays(rows).map((chunk) =>
-    prefix === undefined
-      ? database.prepare(sql).bind(chunk)
-      : database.prepare(sql).bind(prefix, chunk),
+    prefix === undefined ? database.prepare(sql).bind(chunk) : database.prepare(sql).bind(prefix, chunk),
   );
 }
 
@@ -649,10 +565,7 @@ function defaultLifecycle(revisionId: string): NormalizedLifecycle {
   };
 }
 
-function defaultRelationshipLifecycle(
-  revisionId: string,
-  current: boolean,
-): ProductRelationshipLifecycle {
+function defaultRelationshipLifecycle(revisionId: string, current: boolean): ProductRelationshipLifecycle {
   return {
     first_revision_id: revisionId,
     last_observed_revision_id: revisionId,

@@ -1,13 +1,5 @@
-import type {
-  CatalogueCard,
-  CataloguePrinting,
-} from "./catalogue-candidate";
-import {
-  compatibilityFields,
-  isGundamEnglishLineage,
-  type PrintingCompatibility,
-} from "./reconciliation-model";
-import { canonicalJson } from "./serialization";
+import { type CatalogueCard, type CataloguePrinting, canonicalJson } from "./shared";
+import { compatibilityFields, isGundamEnglishLineage, type PrintingCompatibility } from "./reconciliation-model";
 
 export type ReconciledCardRow = {
   id: string;
@@ -30,9 +22,7 @@ export type ReconciledPrintingRow = PrintingCompatibility & {
   withdrawal_evidence_json: string | null;
 };
 
-const compatibilityPredicate = compatibilityFields
-  .map((field) => `${field} IS ?`)
-  .join(" AND ");
+const compatibilityPredicate = compatibilityFields.map((field) => `${field} IS ?`).join(" AND ");
 
 export async function existingCard(
   database: D1Database,
@@ -57,9 +47,7 @@ export async function compatiblePrintings(
   database: D1Database,
   compatibility: PrintingCompatibility,
 ): Promise<ReconciledPrintingRow[]> {
-  const crossLocale = isGundamEnglishLineage(
-    compatibility.source_lineage,
-  );
+  const crossLocale = isGundamEnglishLineage(compatibility.source_lineage);
   const result = await database
     .prepare(
       crossLocale
@@ -102,11 +90,7 @@ export async function printingsWithAppearance(
          AND treatment IS ?
        ORDER BY id`,
     )
-    .bind(
-      compatibility.card_id,
-      compatibility.artwork_fingerprint,
-      compatibility.treatment,
-    )
+    .bind(compatibility.card_id, compatibility.artwork_fingerprint, compatibility.treatment)
     .all<ReconciledPrintingRow>();
   return rows.results;
 }
@@ -156,13 +140,13 @@ export async function printingsAtLocator(
   return rows.results;
 }
 
-export async function gundamPrintingLineages(
-  database: D1Database,
-): Promise<{
-  printing_id: string;
-  source_lineage: "gundam-en-asia" | "gundam-en-us";
-  current: number;
-}[]> {
+export async function gundamPrintingLineages(database: D1Database): Promise<
+  {
+    printing_id: string;
+    source_lineage: "gundam-en-asia" | "gundam-en-us";
+    current: number;
+  }[]
+> {
   const rows = await database
     .prepare(
       `SELECT printing_id, source_lineage, MAX(current) AS current
@@ -179,13 +163,13 @@ export async function gundamPrintingLineages(
   return rows.results;
 }
 
-export async function gundamCardLineages(
-  database: D1Database,
-): Promise<{
-  card_id: string;
-  source_lineage: "gundam-en-asia" | "gundam-en-us";
-  current: number;
-}[]> {
+export async function gundamCardLineages(database: D1Database): Promise<
+  {
+    card_id: string;
+    source_lineage: "gundam-en-asia" | "gundam-en-us";
+    current: number;
+  }[]
+> {
   const rows = await database
     .prepare(
       `SELECT card_id, source_lineage, MAX(current) AS current
@@ -202,12 +186,12 @@ export async function gundamCardLineages(
   return rows.results;
 }
 
-export async function gundamPrintingProductMemberships(
-  database: D1Database,
-): Promise<{
-  printing_id: string;
-  relationship_value: string;
-}[]> {
+export async function gundamPrintingProductMemberships(database: D1Database): Promise<
+  {
+    printing_id: string;
+    relationship_value: string;
+  }[]
+> {
   const rows = await database
     .prepare(
       `SELECT DISTINCT printing_id, relationship_value
@@ -265,22 +249,17 @@ export async function canonicalCardConflict(
     official_identity: current.official_identity,
     name: current.name,
     game_data: current.game_data,
-    ...(authority.effectiveRulesText
-      ? {}
-      : { effective_rules_text: current.effective_rules_text }),
+    ...(authority.effectiveRulesText ? {} : { effective_rules_text: current.effective_rules_text }),
   };
   const proposedCanonical = {
     game: proposed.game,
     official_identity: proposed.official_identity,
     name: proposed.name,
     game_data: proposed.game_data,
-    ...(authority.effectiveRulesText
-      ? {}
-      : { effective_rules_text: proposed.effective_rules_text }),
+    ...(authority.effectiveRulesText ? {} : { effective_rules_text: proposed.effective_rules_text }),
   };
   if (
-    canonicalJson(normalizedFormatting(currentCanonical)) ===
-    canonicalJson(normalizedFormatting(proposedCanonical))
+    canonicalJson(normalizedFormatting(currentCanonical)) === canonicalJson(normalizedFormatting(proposedCanonical))
   ) {
     return null;
   }
@@ -295,18 +274,14 @@ export async function canonicalCardConflict(
   if (authorities.results.length === 0) return null;
   if (
     sourceLineage === "gundam-en-us" &&
-    authorities.results.some(
-      ({ source_lineage }) => source_lineage === "gundam-en-asia",
-    )
+    authorities.results.some(({ source_lineage }) => source_lineage === "gundam-en-asia")
   ) {
     return substantiveFactsConflict(currentCanonical, proposedCanonical)
       ? "The retained Card facts conflict across Gundam English source lineages; EN-ASIA precedence cannot erase a substantive EN-US disagreement."
       : null;
   }
   return authorities.results.length > 0 &&
-    authorities.results.every(
-      (authority) => authority.source_lineage === sourceLineage,
-    )
+    authorities.results.every((authority) => authority.source_lineage === sourceLineage)
     ? null
     : "The retained Card facts conflict across authoritative source lineages and no deterministic authority rule resolves them.";
 }
@@ -330,9 +305,7 @@ export async function canonicalPrintingConflict(
     .bind(printingId)
     .first<{ document_json: string }>();
   if (row === null) return null;
-  const current = revisionDocumentData(
-    row.document_json,
-  ) as CataloguePrinting;
+  const current = revisionDocumentData(row.document_json) as CataloguePrinting;
   const currentCanonical: PrintingFacts = {
     rarity: current.rarity,
     printed_rules_text: current.printed_rules_text,
@@ -351,34 +324,23 @@ export async function canonicalPrintingConflict(
     .all<{ source_lineage: string }>();
   if (authorities.results.length === 0) return null;
   if (
-    (sourceLineage === "gundam-en-asia" ||
-      sourceLineage === "gundam-en-us") &&
+    (sourceLineage === "gundam-en-asia" || sourceLineage === "gundam-en-us") &&
     authorities.results.some(
       ({ source_lineage }) =>
-        (source_lineage === "gundam-en-asia" ||
-          source_lineage === "gundam-en-us") &&
-        source_lineage !== sourceLineage,
+        (source_lineage === "gundam-en-asia" || source_lineage === "gundam-en-us") && source_lineage !== sourceLineage,
     )
   ) {
     return substantiveFactsConflict(currentCanonical, proposed)
       ? "The retained Printing facts conflict across Gundam English source lineages; EN-ASIA precedence cannot erase a substantive EN-US disagreement."
       : null;
   }
-  return authorities.results.every(
-    (authority) => authority.source_lineage === sourceLineage,
-  )
+  return authorities.results.every((authority) => authority.source_lineage === sourceLineage)
     ? null
     : "The retained canonical Printing facts conflict across authoritative source lineages and no deterministic authority rule resolves them.";
 }
 
-export function printingFactsFormattingEquivalent(
-  left: PrintingFacts,
-  right: PrintingFacts,
-): boolean {
-  return (
-    canonicalJson(normalizedFormatting(left)) ===
-    canonicalJson(normalizedFormatting(right))
-  );
+export function printingFactsFormattingEquivalent(left: PrintingFacts, right: PrintingFacts): boolean {
+  return canonicalJson(normalizedFormatting(left)) === canonicalJson(normalizedFormatting(right));
 }
 
 function normalizedFormatting(value: unknown): unknown {
@@ -387,68 +349,40 @@ function normalizedFormatting(value: unknown): unknown {
   }
   if (Array.isArray(value)) return value.map(normalizedFormatting);
   if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, nested]) => [
-        key,
-        normalizedFormatting(nested),
-      ]),
-    );
+    return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, normalizedFormatting(nested)]));
   }
   return value;
 }
 
-function substantiveFactsConflict(
-  authoritative: unknown,
-  corroborating: unknown,
-): boolean {
-  if (
-    authoritative === null ||
-    authoritative === undefined ||
-    corroborating === null ||
-    corroborating === undefined
-  ) {
+function substantiveFactsConflict(authoritative: unknown, corroborating: unknown): boolean {
+  if (authoritative === null || authoritative === undefined || corroborating === null || corroborating === undefined) {
     return false;
   }
   if (Array.isArray(authoritative) || Array.isArray(corroborating)) {
-    return canonicalJson(normalizedFormatting(authoritative)) !==
-      canonicalJson(normalizedFormatting(corroborating));
+    return canonicalJson(normalizedFormatting(authoritative)) !== canonicalJson(normalizedFormatting(corroborating));
   }
-  if (
-    typeof authoritative === "object" &&
-    typeof corroborating === "object"
-  ) {
+  if (typeof authoritative === "object" && typeof corroborating === "object") {
     const left = authoritative as Record<string, unknown>;
     const right = corroborating as Record<string, unknown>;
-    return [...new Set([...Object.keys(left), ...Object.keys(right)])].some(
-      (field) => substantiveFactsConflict(left[field], right[field]),
+    return [...new Set([...Object.keys(left), ...Object.keys(right)])].some((field) =>
+      substantiveFactsConflict(left[field], right[field]),
     );
   }
-  return canonicalJson(normalizedFormatting(authoritative)) !==
-    canonicalJson(normalizedFormatting(corroborating));
+  return canonicalJson(normalizedFormatting(authoritative)) !== canonicalJson(normalizedFormatting(corroborating));
 }
 
 function revisionDocumentData(documentJson: string): Record<string, unknown> {
   const parsed: unknown = JSON.parse(documentJson);
-  if (
-    parsed === null ||
-    typeof parsed !== "object" ||
-    Array.isArray(parsed)
-  ) {
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("A published Catalogue document is invalid.");
   }
   const document = parsed as Record<string, unknown>;
-  if (
-    document.data !== null &&
-    typeof document.data === "object" &&
-    !Array.isArray(document.data)
-  ) {
+  if (document.data !== null && typeof document.data === "object" && !Array.isArray(document.data)) {
     return document.data as Record<string, unknown>;
   }
   return document;
 }
 
-function compatibilityValues(
-  compatibility: PrintingCompatibility,
-): (string | null)[] {
+function compatibilityValues(compatibility: PrintingCompatibility): (string | null)[] {
   return compatibilityFields.map((field) => compatibility[field]);
 }

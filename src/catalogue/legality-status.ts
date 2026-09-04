@@ -1,15 +1,13 @@
-import type { LegalityRegion } from "./legality-rule";
 import {
+  type LegalityRegion,
   evaluateLegalityRuleEffect,
   legalityRuleCardIds,
   unresolvedTargetScope,
 } from "./legality-rule";
-import { canonicalJson, sha256Text } from "./serialization";
+import { canonicalJson, sha256Text, isIsoCalendarDate, maximumLegalityStatusRules } from "./shared";
 import { ifNoneMatchMatches } from "../http/conditional-request";
 import { publicUrl, type PublicBase } from "../http/public-base";
-import { isIsoCalendarDate } from "./calendar-date.ts";
 import { requiredLegalityRegionsForGame } from "./official-source-scope.ts";
-import { maximumLegalityStatusRules } from "./export-limits";
 import {
   parseStoredCatalogueCard,
   parseStoredLegalityRule,
@@ -35,11 +33,7 @@ type SnapshotEvidenceRow = {
 export class LegalityStatusProblem extends Error {
   constructor(
     readonly status: 400 | 404 | 422 | 500,
-    readonly code:
-      | "invalid_parameter"
-      | "not_found"
-      | "invalid_legality_region"
-      | "internal_error",
+    readonly code: "invalid_parameter" | "not_found" | "invalid_legality_region" | "internal_error",
     message: string,
     readonly invalidParameter: {
       name: string;
@@ -75,14 +69,9 @@ export async function contextualLegalityStatusResponse(
       "The requested Card does not exist in the current Catalogue Revision.",
     );
   }
-  const card = parsedStoredDocument(() =>
-    parseStoredCatalogueCard(context.document_json)
-  );
+  const card = parsedStoredDocument(() => parseStoredCatalogueCard(context.document_json));
   const supportedRegions = requiredLegalityRegionsForGame(card.game);
-  if (
-    query.region !== null &&
-    !supportedRegions.includes(query.region)
-  ) {
+  if (query.region !== null && !supportedRegions.includes(query.region)) {
     throw new LegalityStatusProblem(
       422,
       "invalid_legality_region",
@@ -91,9 +80,7 @@ export async function contextualLegalityStatusResponse(
         : `${query.region} is not a Legality region for this Card's Supported Game.`,
     );
   }
-  const regions = query.region === null
-    ? supportedRegions
-    : [query.region];
+  const regions = query.region === null ? supportedRegions : [query.region];
   const rows = await database
     .prepare(
       `WITH applicable AS (
@@ -162,24 +149,14 @@ export async function contextualLegalityStatusResponse(
     )
     .all<RuleRow>();
   if (rows.results.length > maximumLegalityStatusRules) {
-    throw new LegalityStatusProblem(
-      500,
-      "internal_error",
-      "The request could not be completed.",
-    );
+    throw new LegalityStatusProblem(500, "internal_error", "The request could not be completed.");
   }
-  const rules = rows.results.map((row) =>
-    parsedStoredDocument(() => parseStoredLegalityRule(row.document_json))
-  );
-  const data = regions.map((region) =>
-    deriveRegionStatus(card, rules, query, region),
-  );
+  const rules = rows.results.map((row) => parsedStoredDocument(() => parseStoredLegalityRule(row.document_json)));
+  const data = regions.map((region) => deriveRegionStatus(card, rules, query, region));
   const self = publicUrl(base, `${url.pathname}${url.search}`);
   const document = {
     data,
-    ...(query.includeEvidence
-      ? await legalityEvidenceSidecar(database, rules, query, regions)
-      : {}),
+    ...(query.includeEvidence ? await legalityEvidenceSidecar(database, rules, query, regions) : {}),
     meta: {
       catalogue_revision_id: context.current_revision_id,
       published_at: context.published_at,
@@ -210,11 +187,7 @@ function parsedStoredDocument<T>(parse: () => T): T {
   try {
     return parse();
   } catch {
-    throw new LegalityStatusProblem(
-      500,
-      "internal_error",
-      "The request could not be completed.",
-    );
+    throw new LegalityStatusProblem(500, "internal_error", "The request could not be completed.");
   }
 }
 
@@ -231,16 +204,10 @@ function deriveRegionStatus(
 ) {
   const applicable = applicableRules(rules, query, region);
   const effective = applicable.filter((rule) => rule.unresolved_scope === null);
-  const unresolvedScope = applicable.filter(
-    (rule) => rule.unresolved_scope !== null,
-  );
+  const unresolvedScope = applicable.filter((rule) => rule.unresolved_scope !== null);
   const evaluations = applicable.map((rule) => ({
     rule,
-    outcome: evaluateLegalityRuleEffect(
-      rule.effect,
-      card.game_data.attributes,
-      query.on,
-    ),
+    outcome: evaluateLegalityRuleEffect(rule.effect, card.game_data.attributes, query.on),
   }));
   const status = deriveStatus(evaluations);
   return {
@@ -261,16 +228,18 @@ function applicableRules(
   query: { cardId: string },
   region: LegalityRegion,
 ): StoredLegalityStatusRule[] {
-  return rules.filter(
-    (rule) =>
-      rule.region === region &&
-      (legalityRuleCardIds(rule).length === 0 ||
-        legalityRuleCardIds(rule).includes(query.cardId) ||
-        // An unresolved target scope names an open publisher predicate whose
-        // membership beyond the enumerated Cards is unknown, so the rule is
-        // an explicit uncertainty for every Card in its context.
-        unresolvedTargetScope(rule.unresolved_scope)),
-  ).sort((left, right) => left.id.localeCompare(right.id));
+  return rules
+    .filter(
+      (rule) =>
+        rule.region === region &&
+        (legalityRuleCardIds(rule).length === 0 ||
+          legalityRuleCardIds(rule).includes(query.cardId) ||
+          // An unresolved target scope names an open publisher predicate whose
+          // membership beyond the enumerated Cards is unknown, so the rule is
+          // an explicit uncertainty for every Card in its context.
+          unresolvedTargetScope(rule.unresolved_scope)),
+    )
+    .sort((left, right) => left.id.localeCompare(right.id));
 }
 
 async function legalityEvidenceSidecar(
@@ -287,30 +256,33 @@ async function legalityEvidenceSidecar(
   }>;
   provenance: Record<string, string[]>;
 }> {
-  const applicableByRegion = regions.map((region) =>
-    applicableRules(rules, query, region)
-  );
+  const applicableByRegion = regions.map((region) => applicableRules(rules, query, region));
   const applicable = applicableByRegion.flat();
-  const snapshotIds = [...new Set(
-    applicable.map((rule) => rule.source_snapshot_id),
-  )].sort();
-  const snapshots = snapshotIds.length === 0
-    ? []
-    : (await database.prepare(
-      `SELECT id, retrieved_at
+  const snapshotIds = [...new Set(applicable.map((rule) => rule.source_snapshot_id))].sort();
+  const snapshots =
+    snapshotIds.length === 0
+      ? []
+      : (
+          await database
+            .prepare(
+              `SELECT id, retrieved_at
        FROM source_snapshots
        WHERE id IN (SELECT value FROM json_each(?))
        ORDER BY id`,
-    ).bind(JSON.stringify(snapshotIds)).all<SnapshotEvidenceRow>()).results;
-  const capturedAtBySnapshot = new Map(
-    snapshots.map((snapshot) => [snapshot.id, snapshot.retrieved_at]),
-  );
-  const evidenceById = new Map<string, {
-    type: "source_observation";
-    id: string;
-    captured_at: string;
-    source: string;
-  }>();
+            )
+            .bind(JSON.stringify(snapshotIds))
+            .all<SnapshotEvidenceRow>()
+        ).results;
+  const capturedAtBySnapshot = new Map(snapshots.map((snapshot) => [snapshot.id, snapshot.retrieved_at]));
+  const evidenceById = new Map<
+    string,
+    {
+      type: "source_observation";
+      id: string;
+      captured_at: string;
+      source: string;
+    }
+  >();
   for (const rule of applicable) {
     const capturedAt = capturedAtBySnapshot.get(rule.source_snapshot_id);
     if (capturedAt === undefined) {
@@ -325,9 +297,7 @@ async function legalityEvidenceSidecar(
   }
   const provenance: Record<string, string[]> = {};
   for (const [dataIndex, applicable] of applicableByRegion.entries()) {
-    const observationIds = [...new Set(
-      applicable.map((rule) => rule.source_observation_id),
-    )].sort();
+    const observationIds = [...new Set(applicable.map((rule) => rule.source_observation_id))].sort();
     if (observationIds.length > 0) {
       provenance[`/data/${dataIndex}/status`] = observationIds;
       provenance[`/data/${dataIndex}/derivation`] = observationIds;
@@ -335,20 +305,12 @@ async function legalityEvidenceSidecar(
     let definitiveIndex = 0;
     let unresolvedIndex = 0;
     for (const rule of applicable) {
-      const field = rule.unresolved_scope === null
-        ? "rule_ids"
-        : "unresolved_scope_rule_ids";
-      const fieldIndex = rule.unresolved_scope === null
-        ? definitiveIndex++
-        : unresolvedIndex++;
-      provenance[`/data/${dataIndex}/${field}/${fieldIndex}`] = [
-        rule.source_observation_id,
-      ];
+      const field = rule.unresolved_scope === null ? "rule_ids" : "unresolved_scope_rule_ids";
+      const fieldIndex = rule.unresolved_scope === null ? definitiveIndex++ : unresolvedIndex++;
+      provenance[`/data/${dataIndex}/${field}/${fieldIndex}`] = [rule.source_observation_id];
     }
   }
-  const included = [...evidenceById.values()].sort((left, right) =>
-    left.id.localeCompare(right.id)
-  );
+  const included = [...evidenceById.values()].sort((left, right) => left.id.localeCompare(right.id));
   return { included, provenance };
 }
 
@@ -357,16 +319,15 @@ function deriveStatus(
     outcome: "legal" | "restricted" | "not_legal" | "indeterminate";
   }[],
 ) {
-  const status =
-    evaluations.some(({ outcome }) => outcome === "not_legal")
-      ? "not_legal"
-      : evaluations.some(({ outcome }) => outcome === "indeterminate")
-        ? "indeterminate"
-        : evaluations.some(({ outcome }) => outcome === "restricted")
-          ? "restricted"
-          : evaluations.some(({ outcome }) => outcome === "legal")
-            ? "legal"
-            : "indeterminate";
+  const status = evaluations.some(({ outcome }) => outcome === "not_legal")
+    ? "not_legal"
+    : evaluations.some(({ outcome }) => outcome === "indeterminate")
+      ? "indeterminate"
+      : evaluations.some(({ outcome }) => outcome === "restricted")
+        ? "restricted"
+        : evaluations.some(({ outcome }) => outcome === "legal")
+          ? "legal"
+          : "indeterminate";
   return status;
 }
 
@@ -386,9 +347,7 @@ function derivation(
         `${rule.id} (${rule.effect.type}${rule.unresolved_scope === null ? "" : ", unresolved scope"}) evaluated ${outcome}: ${rule.official_wording}`,
     )
     .join(" ");
-  const unresolvedCount = evaluations.filter(
-    ({ rule }) => rule.unresolved_scope !== null,
-  ).length;
+  const unresolvedCount = evaluations.filter(({ rule }) => rule.unresolved_scope !== null).length;
   const effectiveCount = evaluations.length - unresolvedCount;
   return `Derived ${status} from ${effectiveCount} effective rule${effectiveCount === 1 ? "" : "s"} and ${unresolvedCount} contextual scope uncertaint${unresolvedCount === 1 ? "y" : "ies"}. ${audit}`;
 }
@@ -401,40 +360,21 @@ function parseQuery(url: URL): {
   region: LegalityRegion | null;
   includeEvidence: boolean;
 } {
-  const allowed = new Set([
-    "card_id",
-    "on",
-    "format",
-    "event_tier",
-    "region",
-    "include",
-  ]);
+  const allowed = new Set(["card_id", "on", "format", "event_tier", "region", "include"]);
   for (const key of url.searchParams.keys()) {
     if (!allowed.has(key)) {
       if (key.length === 0) {
-        throw invalidQueryParameter(
-          "query",
-          "query parameter names must be non-empty.",
-        );
+        throw invalidQueryParameter("query", "query parameter names must be non-empty.");
       }
       throw invalidQueryParameter(key, `${key} is not accepted.`);
     }
     if (url.searchParams.getAll(key).length !== 1) {
-      throw invalidQueryParameter(
-        key,
-        `${key} must be supplied exactly once.`,
-      );
+      throw invalidQueryParameter(key, `${key} must be supplied exactly once.`);
     }
   }
   const cardId = requiredParameter(url, "card_id");
-  if (
-    cardId.length > 200 ||
-    !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(cardId)
-  ) {
-    throw invalidQueryParameter(
-      "card_id",
-      "card_id must be an opaque identity of at most 200 characters.",
-    );
+  if (cardId.length > 200 || !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(cardId)) {
+    throw invalidQueryParameter("card_id", "card_id must be an opaque identity of at most 200 characters.");
   }
   const on = requiredParameter(url, "on");
   const format = requiredParameter(url, "format");
@@ -444,22 +384,11 @@ function parseQuery(url: URL): {
   const eventTier = optionalParameter(url, "event_tier");
   const include = optionalParameter(url, "include");
   if (include !== null && include !== "evidence") {
-    throw invalidQueryParameter(
-      "include",
-      "include must be exactly evidence when supplied.",
-    );
+    throw invalidQueryParameter("include", "include must be exactly evidence when supplied.");
   }
   const rawRegion = optionalParameter(url, "region");
-  if (
-    rawRegion !== null &&
-    rawRegion !== "EN-OCEANIA" &&
-    rawRegion !== "EN-ASIA" &&
-    rawRegion !== "EN-US"
-  ) {
-    throw invalidQueryParameter(
-      "region",
-      "region must be EN-OCEANIA, EN-ASIA, or EN-US.",
-    );
+  if (rawRegion !== null && rawRegion !== "EN-OCEANIA" && rawRegion !== "EN-ASIA" && rawRegion !== "EN-US") {
+    throw invalidQueryParameter("region", "region must be EN-OCEANIA, EN-ASIA, or EN-US.");
   }
   return {
     cardId,
@@ -483,22 +412,11 @@ function optionalParameter(url: URL, name: string): string | null {
   const value = url.searchParams.get(name);
   if (value === null) return null;
   if (value.length === 0 || value !== value.trim()) {
-    throw invalidQueryParameter(
-      name,
-      `${name} must be a non-empty string.`,
-    );
+    throw invalidQueryParameter(name, `${name} must be a non-empty string.`);
   }
   return value;
 }
 
-function invalidQueryParameter(
-  name: string,
-  reason: string,
-): LegalityStatusProblem {
-  return new LegalityStatusProblem(
-    400,
-    "invalid_parameter",
-    reason,
-    { name, reason },
-  );
+function invalidQueryParameter(name: string, reason: string): LegalityStatusProblem {
+  return new LegalityStatusProblem(400, "invalid_parameter", reason, { name, reason });
 }

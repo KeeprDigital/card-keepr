@@ -1,5 +1,4 @@
-import type { CatalogueCard } from "./catalogue-candidate";
-import { canonicalJson } from "./serialization";
+import { type CatalogueCard, canonicalJson } from "./shared";
 
 type CardFacts = Omit<CatalogueCard, "id">;
 
@@ -15,17 +14,14 @@ export function reconcileDigimonCardAuthority(
   authority: Readonly<{
     effectiveRulesText: "source_consensus" | "official_errata";
   }> = { effectiveRulesText: "source_consensus" },
-):
-  | Readonly<{ kind: "accepted"; authority: DigimonCardAuthority }>
-  | Readonly<{ kind: "conflict"; detail: string }> {
+): Readonly<{ kind: "accepted"; authority: DigimonCardAuthority }> | Readonly<{ kind: "conflict"; detail: string }> {
   if (
     canonicalJson(rulesRelevantFacts(current.card, authority)) !==
-      canonicalJson(rulesRelevantFacts(proposed, authority))
+    canonicalJson(rulesRelevantFacts(proposed, authority))
   ) {
     return {
       kind: "conflict",
-      detail:
-        "Retained Digimon Printings disagree on rules-relevant Card facts.",
+      detail: "Retained Digimon Printings disagree on rules-relevant Card facts.",
     };
   }
   if (current.hasBaseRecord && proposedIsBaseRecord) {
@@ -52,8 +48,7 @@ export function reconcileDigimonCardAuthority(
       }
     : {
         kind: "conflict",
-        detail:
-          "Digimon Printing records without a base record do not unanimously agree on the Card name.",
+        detail: "Digimon Printing records without a base record do not unanimously agree on the Card name.",
       };
 }
 
@@ -71,9 +66,7 @@ function rulesRelevantFacts(
     effective_rules_text: card.effective_rules_text,
     game_data: {
       profile: card.game_data.profile,
-      attributes: authority.effectiveRulesText === "official_errata"
-        ? nonTextAttributes
-        : attributes,
+      attributes: authority.effectiveRulesText === "official_errata" ? nonTextAttributes : attributes,
     },
   };
 }

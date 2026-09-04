@@ -1,4 +1,4 @@
-import { canonicalJson, sha256, utf8 } from "./serialization";
+import { canonicalJson, sha256, utf8, AdministrationProblem } from "./shared";
 import {
   assertAdapterRequestSurface,
   assertAdapterBinding,
@@ -8,18 +8,12 @@ import {
   requiredSourceAdapter,
   type SourceAdapterRegistration,
 } from "./source-adapters";
-import { AdministrationProblem } from "./ingestion";
 
 // The polite steady-state interval between requests to one Official Source
 // hostname when no deployment override is configured.
 export const defaultSourceHostPacingIntervalMilliseconds = 500;
 
-export type SourceRequestRole =
-  | "surface"
-  | "listing"
-  | "detail"
-  | "product_detail"
-  | "image";
+export type SourceRequestRole = "surface" | "listing" | "detail" | "product_detail" | "image";
 
 // Per-role transport policy. A missing listing, detail, product, or surface
 // response means missing catalogue facts, so exhausting those bounded
@@ -50,12 +44,8 @@ const printingImageTransportPolicy: SourceRequestTransportPolicy = {
   on_terminal_outcome: "fail_request",
 };
 
-export function transportPolicyForRole(
-  role: SourceRequestRole,
-): SourceRequestTransportPolicy {
-  return role === "image"
-    ? printingImageTransportPolicy
-    : catalogueFactTransportPolicy;
+export function transportPolicyForRole(role: SourceRequestRole): SourceRequestTransportPolicy {
+  return role === "image" ? printingImageTransportPolicy : catalogueFactTransportPolicy;
 }
 
 // The classes of Source Request failure capture records on a request. Every
@@ -69,9 +59,7 @@ export type SourceRequestFailureClass =
   | "revalidation_rejected"
   | "body_contract";
 
-const catalogueFactFailureCodes: Readonly<
-  Record<SourceRequestFailureClass, string>
-> = {
+const catalogueFactFailureCodes: Readonly<Record<SourceRequestFailureClass, string>> = {
   retries_exhausted: "source_request_retries_exhausted",
   not_found: "source_request_rejected",
   rejected: "source_request_rejected",
@@ -80,9 +68,7 @@ const catalogueFactFailureCodes: Readonly<
   body_contract: "source_request_retries_exhausted",
 };
 
-const printingImageFailureCodes: Readonly<
-  Record<SourceRequestFailureClass, string>
-> = {
+const printingImageFailureCodes: Readonly<Record<SourceRequestFailureClass, string>> = {
   retries_exhausted: "source_image_retries_exhausted",
   not_found: "source_image_not_found",
   rejected: "source_image_rejected",
@@ -93,20 +79,17 @@ const printingImageFailureCodes: Readonly<
 
 // The stable failure code of an image Source Request whose bounded
 // transport retries were exhausted under the fail-request policy.
-export const printingImageRetriesExhaustedFailureCode =
-  printingImageFailureCodes.retries_exhausted;
+export const printingImageRetriesExhaustedFailureCode = printingImageFailureCodes.retries_exhausted;
 
 // Every failure code a Printing Image request can carry without failing or
 // pausing its run, in a stable order for SQL `json_each` membership tests.
-export const toleratedPrintingImageFailureCodes: readonly string[] =
-  Object.freeze(Object.values(printingImageFailureCodes));
+export const toleratedPrintingImageFailureCodes: readonly string[] = Object.freeze(
+  Object.values(printingImageFailureCodes),
+);
 
 // The failure code one request records for a failure class under its role's
 // transport policy.
-export function requestFailureCode(
-  role: SourceRequestRole,
-  failureClass: SourceRequestFailureClass,
-): string {
+export function requestFailureCode(role: SourceRequestRole, failureClass: SourceRequestFailureClass): string {
   return transportPolicyForRole(role).on_terminal_outcome === "fail_request"
     ? printingImageFailureCodes[failureClass]
     : catalogueFactFailureCodes[failureClass];
@@ -125,19 +108,11 @@ export function terminalHttpFailureClass(
 // A failed Source Request that collection completion, reconciliation, and
 // publication tolerate: the run proceeds and the missing Printing Image is
 // recorded explicitly instead of failing the run.
-export function toleratesRequestFailure(
-  role: SourceRequestRole,
-  failureCode: string | null,
-): boolean {
-  return role === "image" && failureCode !== null &&
-    toleratedPrintingImageFailureCodes.includes(failureCode);
+export function toleratesRequestFailure(role: SourceRequestRole, failureCode: string | null): boolean {
+  return role === "image" && failureCode !== null && toleratedPrintingImageFailureCodes.includes(failureCode);
 }
 
-const allowedRequestHeaders = new Set([
-  "accept",
-  "accept-language",
-  "user-agent",
-]);
+const allowedRequestHeaders = new Set(["accept", "accept-language", "user-agent"]);
 const maximumOfficialSourceUrlBytes = 2_048;
 const maximumOfficialSourceHeadersBytes = 2_048;
 
@@ -216,9 +191,10 @@ export async function validateEvidencePlan(
   assertIdentifier(request.source_lineage, "source_lineage");
   assertIdentifier(request.adapter_version, "adapter_version");
   assertIdentifier(request.idempotency_key, "idempotency_key");
-  const adapter = planOrigin === "production"
-    ? requiredActiveSourceAdapter(request.adapter_version)
-    : requiredSourceAdapter(request.adapter_version);
+  const adapter =
+    planOrigin === "production"
+      ? requiredActiveSourceAdapter(request.adapter_version)
+      : requiredSourceAdapter(request.adapter_version);
   if (adapter.origin !== planOrigin) {
     throw new AdministrationProblem(
       422,
@@ -293,10 +269,7 @@ export async function validateEvidencePlan(
   if (adapter.requestUrlForDiscovery !== undefined) {
     const expectedIds = [`${adapter.sourceLineage}:discovery`];
     const actualIds = requests.map(({ id }) => id);
-    if (
-      actualIds.length !== expectedIds.length ||
-      expectedIds.some((id) => !requestIds.has(id))
-    ) {
+    if (actualIds.length !== expectedIds.length || expectedIds.some((id) => !requestIds.has(id))) {
       throw new AdministrationProblem(
         422,
         "incomplete_source_plan",
@@ -304,10 +277,7 @@ export async function validateEvidencePlan(
       );
     }
     for (const sourceRequest of requests) {
-      if (
-        new URL(sourceRequest.url).href !==
-          new URL(adapter.requestUrlForDiscovery()).href
-      ) {
+      if (new URL(sourceRequest.url).href !== new URL(adapter.requestUrlForDiscovery()).href) {
         throw new AdministrationProblem(
           422,
           "source_surface_binding_mismatch",
@@ -316,14 +286,9 @@ export async function validateEvidencePlan(
       }
     }
   } else if (adapter.requiredSurfaces !== undefined) {
-    const expectedIds = adapter.requiredSurfaces.map(
-      (surface) => `${adapter.sourceLineage}:${surface}`,
-    );
+    const expectedIds = adapter.requiredSurfaces.map((surface) => `${adapter.sourceLineage}:${surface}`);
     const actualIds = requests.map(({ id }) => id);
-    if (
-      actualIds.length !== expectedIds.length ||
-      expectedIds.some((id) => !requestIds.has(id))
-    ) {
+    if (actualIds.length !== expectedIds.length || expectedIds.some((id) => !requestIds.has(id))) {
       throw new AdministrationProblem(
         422,
         "incomplete_source_plan",
@@ -331,18 +296,11 @@ export async function validateEvidencePlan(
       );
     }
     if (adapter.requestUrlForSurface === undefined) {
-      throw new Error(
-        "A production adapter with required surfaces has no request-URL contract.",
-      );
+      throw new Error("A production adapter with required surfaces has no request-URL contract.");
     }
     for (const sourceRequest of requests) {
-      const surface = sourceRequest.id.slice(
-        `${adapter.sourceLineage}:`.length,
-      );
-      if (
-        new URL(sourceRequest.url).href !==
-          new URL(adapter.requestUrlForSurface(surface)).href
-      ) {
+      const surface = sourceRequest.id.slice(`${adapter.sourceLineage}:`.length);
+      if (new URL(sourceRequest.url).href !== new URL(adapter.requestUrlForSurface(surface)).href) {
         throw new AdministrationProblem(
           422,
           "source_surface_binding_mismatch",
@@ -387,17 +345,11 @@ export async function validateEvidencePlans(
   assertIdentifier(request.idempotency_key, "idempotency_key");
   const inputs = "plans" in request ? request.plans : [request];
   if (inputs.length < 1 || inputs.length > 20) {
-    throw new AdministrationProblem(
-      422,
-      "invalid_parameter",
-      "plans must contain between 1 and 20 Evidence Plans.",
-    );
+    throw new AdministrationProblem(422, "invalid_parameter", "plans must contain between 1 and 20 Evidence Plans.");
   }
   const plans: EvidencePlan[] = [];
   const requestIds = new Set<string>();
-  const reconciliationCapabilities = new Set<
-    SourceAdapterRegistration["reconciliationCapability"]
-  >();
+  const reconciliationCapabilities = new Set<SourceAdapterRegistration["reconciliationCapability"]>();
   for (const input of inputs) {
     const { adapter, plan } = await validateEvidencePlan(
       { ...input, idempotency_key: request.idempotency_key },
@@ -444,9 +396,7 @@ export async function officialCollectionRequestsFromDiscovery(
     adapter.requestUrlForSurface === undefined ||
     adapter.requiredSurfaces === undefined
   ) {
-    throw new Error(
-      "The Source Adapter has no complete Official Source discovery contract.",
-    );
+    throw new Error("The Source Adapter has no complete Official Source discovery contract.");
   }
   if (records.length !== adapter.requiredSurfaces.length) {
     throw new AdministrationProblem(
@@ -459,16 +409,13 @@ export async function officialCollectionRequestsFromDiscovery(
   for (const [index, surface] of adapter.requiredSurfaces.entries()) {
     const record = records[index];
     const expectedId = `${adapter.sourceLineage}:${surface}`;
-    const discoveredUrl = isRecord(record) && typeof record.url === "string"
-      ? assertOfficialSourceUrl(
-          record.url,
-          requiredOfficialSourceContract(adapter),
-        ).href
-      : null;
+    const discoveredUrl =
+      isRecord(record) && typeof record.url === "string"
+        ? assertOfficialSourceUrl(record.url, requiredOfficialSourceContract(adapter)).href
+        : null;
     if (
       !isRecord(record) ||
-      Object.keys(record).sort().join(",") !==
-        "discovered_from,headers,id,method,surface,url" ||
+      Object.keys(record).sort().join(",") !== "discovered_from,headers,id,method,surface,url" ||
       record.id !== expectedId ||
       record.surface !== surface ||
       record.method !== "GET" ||
@@ -476,8 +423,7 @@ export async function officialCollectionRequestsFromDiscovery(
       !isRecord(record.headers) ||
       canonicalJson(record.headers) !== canonicalJson({ accept: "text/html" }) ||
       !isRecord(record.discovered_from) ||
-      Object.keys(record.discovered_from).sort().join(",") !==
-        "kind,label,resolution,url" ||
+      Object.keys(record.discovered_from).sort().join(",") !== "kind,label,resolution,url" ||
       record.discovered_from.kind !== "publisher_navigation" ||
       typeof record.discovered_from.label !== "string" ||
       record.discovered_from.label.length === 0 ||
@@ -516,24 +462,19 @@ function officialCollectionRequestHeaders(
   surface: string,
   headers: Readonly<Record<string, string>>,
 ): Record<string, string> {
-  const baseUserAgent = (
-    headers["user-agent"] ?? "card-keepr-official-source/1"
-  );
-  const canonicalUserAgent = canonicalOfficialSourceUserAgent(baseUserAgent) ||
-    "card-keepr-official-source/1";
+  const baseUserAgent = headers["user-agent"] ?? "card-keepr-official-source/1";
+  const canonicalUserAgent = canonicalOfficialSourceUserAgent(baseUserAgent) || "card-keepr-official-source/1";
   return {
     ...headers,
-    "user-agent":
-      `${canonicalUserAgent}; request-role=surface; request-surface=${surface}`,
+    "user-agent": `${canonicalUserAgent}; request-role=surface; request-surface=${surface}`,
   };
 }
 
 function canonicalOfficialSourceUserAgent(value: string): string {
-  return value.split(";")
+  return value
+    .split(";")
     .map((token) => token.trim())
-    .filter((token) =>
-      token.length > 0 && !/^request-(?:role|surface)=/iu.test(token)
-    )
+    .filter((token) => token.length > 0 && !/^request-(?:role|surface)=/iu.test(token))
     .join("; ");
 }
 
@@ -547,9 +488,7 @@ export async function completeOfficialCollectionRequestsFromDiscovery(
   }
   const finalRecords: unknown[] = [];
   for (const surface of adapter.requiredSurfaces) {
-    const matches = records.filter(
-      (record) => isRecord(record) && record.surface === surface,
-    );
+    const matches = records.filter((record) => isRecord(record) && record.surface === surface);
     if (matches.length === 0) return null;
     if (matches.length !== 1) {
       throw new AdministrationProblem(
@@ -559,18 +498,15 @@ export async function completeOfficialCollectionRequestsFromDiscovery(
       );
     }
     const match = matches[0]!;
-    if (
-      isRecord(match) &&
-      isRecord(match.discovered_from) &&
-      match.discovered_from.kind === "retained_stage_request"
-    ) {
-      const seed = records.find((record) =>
-        isRecord(record) &&
-        typeof record.surface === "string" &&
-        record.surface.startsWith("@seed:") &&
-        record.url === match.url &&
-        isRecord(record.discovered_from) &&
-        record.discovered_from.kind === "publisher_navigation"
+    if (isRecord(match) && isRecord(match.discovered_from) && match.discovered_from.kind === "retained_stage_request") {
+      const seed = records.find(
+        (record) =>
+          isRecord(record) &&
+          typeof record.surface === "string" &&
+          record.surface.startsWith("@seed:") &&
+          record.url === match.url &&
+          isRecord(record.discovered_from) &&
+          record.discovered_from.kind === "publisher_navigation",
       );
       if (!isRecord(seed) || !isRecord(seed.discovered_from)) {
         throw new AdministrationProblem(
@@ -587,21 +523,12 @@ export async function completeOfficialCollectionRequestsFromDiscovery(
       finalRecords.push(match);
     }
   }
-  return officialCollectionRequestsFromDiscovery(
-    adapter,
-    finalRecords,
-    inheritedHeaders,
-  );
+  return officialCollectionRequestsFromDiscovery(adapter, finalRecords, inheritedHeaders);
 }
 
-function resolvedDiscoveryUrl(
-  discovery: Record<string, unknown>,
-): string | null {
+function resolvedDiscoveryUrl(discovery: Record<string, unknown>): string | null {
   try {
-    return new URL(
-      discovery.resolution as string,
-      discovery.url as string,
-    ).href;
+    return new URL(discovery.resolution as string, discovery.url as string).href;
   } catch {
     return null;
   }
@@ -656,9 +583,7 @@ export function parseEvidencePlans(json: string): EvidencePlan[] {
     !Array.isArray(value) &&
     Array.isArray((value as { plans?: unknown }).plans)
   ) {
-    const plans = (value as { plans: unknown[] }).plans.map((plan) =>
-      parseEvidencePlan(JSON.stringify(plan)),
-    );
+    const plans = (value as { plans: unknown[] }).plans.map((plan) => parseEvidencePlan(JSON.stringify(plan)));
     if (plans.length === 0) {
       throw new Error("Stored ingestion evidence plan is invalid");
     }
@@ -674,11 +599,7 @@ export function assertIdentifier(value: string, field: string): void {
     value.length > 200 ||
     !/^[A-Za-z0-9][A-Za-z0-9._:@-]*$/.test(value)
   ) {
-    throw new AdministrationProblem(
-      422,
-      "invalid_parameter",
-      `${field} is not a valid opaque identity.`,
-    );
+    throw new AdministrationProblem(422, "invalid_parameter", `${field} is not a valid opaque identity.`);
   }
 }
 
@@ -687,18 +608,9 @@ export function validOfficialSourceUrl(value: string): URL {
   try {
     url = new URL(value);
   } catch {
-    throw new AdministrationProblem(
-      422,
-      "invalid_parameter",
-      "Official Source request URL is invalid.",
-    );
+    throw new AdministrationProblem(422, "invalid_parameter", "Official Source request URL is invalid.");
   }
-  if (
-    url.protocol !== "https:" ||
-    url.username !== "" ||
-    url.password !== "" ||
-    url.hash !== ""
-  ) {
+  if (url.protocol !== "https:" || url.username !== "" || url.password !== "" || url.hash !== "") {
     throw new AdministrationProblem(
       422,
       "invalid_parameter",
@@ -710,21 +622,14 @@ export function validOfficialSourceUrl(value: string): URL {
 
 export function parseStringRecord(json: string): Record<string, string> {
   const value: unknown = JSON.parse(json);
-  if (
-    !isRecord(value) ||
-    Object.values(value).some((item) => typeof item !== "string")
-  ) {
+  if (!isRecord(value) || Object.values(value).some((item) => typeof item !== "string")) {
     throw new Error("Stored header metadata is invalid");
   }
   return value as Record<string, string>;
 }
 
 export function headersRecord(headers: Headers): Record<string, string> {
-  return Object.fromEntries(
-    [...headers.entries()].sort(([left], [right]) =>
-      left.localeCompare(right),
-    ),
-  );
+  return Object.fromEntries([...headers.entries()].sort(([left], [right]) => left.localeCompare(right)));
 }
 
 export function responseVary(headers: Headers): string[] {

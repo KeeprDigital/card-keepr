@@ -1,19 +1,13 @@
-import { isIsoCalendarDate } from "./calendar-date.ts";
-import { compareUtf8 } from "./serialization";
-import type { LegalityRuleEffect } from "./catalogue-candidate-types";
+import { isIsoCalendarDate, compareUtf8, type LegalityRuleEffect } from "./shared";
 // The Legality Rule effect shape lives in the leaf module
 // `catalogue-candidate-types`; it stays importable from here.
-export type { LegalityRuleEffect } from "./catalogue-candidate-types";
+export type { LegalityRuleEffect } from "./shared";
 
 export type ParsedLegalityRuleEffect =
   | Exclude<LegalityRuleEffect, { type: "prohibited_combination" }>
   | { type: "prohibited_combination"; with_card_numbers: readonly string[] };
 
-export type LegalityEvaluation =
-  | "legal"
-  | "restricted"
-  | "not_legal"
-  | "indeterminate";
+export type LegalityEvaluation = "legal" | "restricted" | "not_legal" | "indeterminate";
 
 export type LegalityExportKind =
   | "eligible"
@@ -36,10 +30,18 @@ type LegalityEffectStrategy = Readonly<{
 }>;
 
 const strategies = {
-  eligible: strategy("eligible", ["type"], () => ({ type: "eligible" }),
-    (effect) => effect.type === "eligible" ? "legal" : mismatch()),
-  ban: strategy("not_legal", ["type"], () => ({ type: "ban" }),
-    (effect) => effect.type === "ban" ? "not_legal" : mismatch()),
+  eligible: strategy(
+    "eligible",
+    ["type"],
+    () => ({ type: "eligible" }),
+    (effect) => (effect.type === "eligible" ? "legal" : mismatch()),
+  ),
+  ban: strategy(
+    "not_legal",
+    ["type"],
+    () => ({ type: "ban" }),
+    (effect) => (effect.type === "ban" ? "not_legal" : mismatch()),
+  ),
   copy_limit: strategy(
     "restricted",
     ["type", "maximum_copies"],
@@ -49,20 +51,16 @@ const strategies = {
       }
       return { type: "copy_limit", maximum_copies: Number(effect.maximum_copies) };
     },
-    (effect) => effect.type === "copy_limit" ? "restricted" : mismatch(),
+    (effect) => (effect.type === "copy_limit" ? "restricted" : mismatch()),
   ),
   prohibited_combination: strategy(
     "combination",
     ["type", "with_card_numbers"],
     (effect) => ({
       type: "prohibited_combination",
-      with_card_numbers: requiredStrings(
-        effect.with_card_numbers,
-        "prohibited combination card numbers",
-        false,
-      ),
+      with_card_numbers: requiredStrings(effect.with_card_numbers, "prohibited combination card numbers", false),
     }),
-    (effect) => effect.type === "prohibited_combination" ? "restricted" : mismatch(),
+    (effect) => (effect.type === "prohibited_combination" ? "restricted" : mismatch()),
   ),
   membership: strategy(
     "conditional",
@@ -77,10 +75,13 @@ const strategies = {
       const raw = attributes[effect.attribute];
       if (raw === null || raw === undefined) return "indeterminate";
       const values = Array.isArray(raw) ? raw : [raw];
-      return values.some((value) => typeof value === "string" &&
-        effect.includes_any.some((member) =>
-          member.toUpperCase() === value.toUpperCase()
-        )) ? "legal" : "not_legal";
+      return values.some(
+        (value) =>
+          typeof value === "string" &&
+          effect.includes_any.some((member) => member.toUpperCase() === value.toUpperCase()),
+      )
+        ? "legal"
+        : "not_legal";
     },
   ),
   rotation: strategy(
@@ -95,10 +96,13 @@ const strategies = {
       const raw = attributes.block_icons ?? attributes.block_icon;
       if (raw === null || raw === undefined) return "indeterminate";
       const blocks = Array.isArray(raw) ? raw : [raw];
-      return blocks.some((block) => typeof block === "string" &&
-        effect.eligible_blocks.some((eligible) =>
-          eligible.toUpperCase() === block.toUpperCase()
-        )) ? "legal" : "not_legal";
+      return blocks.some(
+        (block) =>
+          typeof block === "string" &&
+          effect.eligible_blocks.some((eligible) => eligible.toUpperCase() === block.toUpperCase()),
+      )
+        ? "legal"
+        : "not_legal";
     },
   ),
   release_timing: strategy(
@@ -109,9 +113,7 @@ const strategies = {
       legal_from: requiredDate(effect.legal_from, "release timing legal_from"),
     }),
     (effect, _attributes, on) =>
-      effect.type === "release_timing"
-        ? on >= effect.legal_from ? "legal" : "not_legal"
-        : mismatch(),
+      effect.type === "release_timing" ? (on >= effect.legal_from ? "legal" : "not_legal") : mismatch(),
   ),
   unresolved: strategy(
     "indeterminate",
@@ -120,7 +122,7 @@ const strategies = {
       type: "unresolved",
       reason: requiredString(effect.reason, "unresolved scope reason"),
     }),
-    (effect) => effect.type === "unresolved" ? "indeterminate" : mismatch(),
+    (effect) => (effect.type === "unresolved" ? "indeterminate" : mismatch()),
   ),
 } satisfies Record<LegalityRuleEffect["type"], LegalityEffectStrategy>;
 
@@ -143,26 +145,18 @@ function strategy(
 export function parseLegalityRuleEffect(value: unknown): ParsedLegalityRuleEffect {
   const effect = requiredRecord(value, "legality rule effect");
   if (typeof effect.type !== "string" || !(effect.type in strategies)) {
-    throw new Error(
-      "Legality Rule wording uses an effect the installed adapter cannot represent.",
-    );
+    throw new Error("Legality Rule wording uses an effect the installed adapter cannot represent.");
   }
   return strategies[effect.type as LegalityRuleEffect["type"]].parse(effect);
 }
 
-export function parseStoredLegalityRuleEffect(
-  value: unknown,
-): LegalityRuleEffect {
+export function parseStoredLegalityRuleEffect(value: unknown): LegalityRuleEffect {
   const effect = requiredRecord(value, "stored Legality Rule effect");
   if (effect.type === "prohibited_combination") {
     assertOnlyFields(effect, ["type", "with_card_ids"]);
     return {
       type: "prohibited_combination",
-      with_card_ids: requiredStrings(
-        effect.with_card_ids,
-        "stored prohibited combination Card ids",
-        false,
-      ),
+      with_card_ids: requiredStrings(effect.with_card_ids, "stored prohibited combination Card ids", false),
     };
   }
   const parsed = parseLegalityRuleEffect(effect);
@@ -184,9 +178,7 @@ export function evaluateLegalityRuleEffect(
   return strategies[effect.type].evaluate(effect, attributes, on);
 }
 
-export function canonicalLegalityRuleEffect(
-  effect: LegalityRuleEffect,
-): LegalityRuleEffect {
+export function canonicalLegalityRuleEffect(effect: LegalityRuleEffect): LegalityRuleEffect {
   switch (effect.type) {
     case "prohibited_combination":
       return {
@@ -226,8 +218,7 @@ function requiredStrings(value: unknown, name: string, emptyAllowed: boolean): s
 }
 
 function canonicalStringSet(values: readonly string[]): string[] {
-  return [...new Set(values.map((value) => value.normalize("NFC")))]
-    .sort(compareUtf8);
+  return [...new Set(values.map((value) => value.normalize("NFC")))].sort(compareUtf8);
 }
 
 function requiredString(value: unknown, name: string): string {

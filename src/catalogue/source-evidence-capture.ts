@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
-import { AdministrationProblem } from "./ingestion";
+import { AdministrationProblem, canonicalJson, sha256, utf8 } from "./shared";
 import { requiredSourceAdapter } from "./source-adapters";
-import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
   completeOfficialCollectionRequestsFromDiscovery,
   defaultSourceHostPacingIntervalMilliseconds,
@@ -32,11 +31,7 @@ import {
   type SnapshotRow,
 } from "./source-evidence-repository";
 const multipartPartBytes = 5 * 1024 * 1024;
-const representedRequestHeaders = new Set([
-  "accept",
-  "accept-language",
-  "user-agent",
-]);
+const representedRequestHeaders = new Set(["accept", "accept-language", "user-agent"]);
 
 type AttemptOutcome =
   | "success"
@@ -55,12 +50,7 @@ type CaptureOperationRow = {
   attempt_number: number;
   source_snapshot_id: string;
   content_object_key: string;
-  state:
-    | "planned"
-    | "response_received"
-    | "uploaded"
-    | "finalized"
-    | "failed";
+  state: "planned" | "response_received" | "uploaded" | "finalized" | "failed";
   requested_at: string;
   completed_at: string | null;
   request_headers_json: string | null;
@@ -134,32 +124,24 @@ export type SourceHostPacingMode = "production" | "immediate";
 // "production" (also the default when unset); test harnesses may opt in to
 // "immediate" so simulated fetches skip the per-request host pacing sleep.
 // Any other value fails closed.
-export function sourceHostPacingMode(
-  value: string | undefined,
-): SourceHostPacingMode {
+export function sourceHostPacingMode(value: string | undefined): SourceHostPacingMode {
   if (value === undefined || value === "production") return "production";
   if (value === "immediate") return "immediate";
-  throw new Error(
-    "SOURCE_HOST_PACING_MODE must be \"production\" or \"immediate\", got " +
-      `${JSON.stringify(value)}.`,
-  );
+  throw new Error('SOURCE_HOST_PACING_MODE must be "production" or "immediate", got ' + `${JSON.stringify(value)}.`);
 }
 
 export { defaultSourceHostPacingIntervalMilliseconds };
 
 // Transport-layer Retry-After and 429/5xx backoff remain the safety net if a
 // host rejects this cadence; the interval only sets the polite steady state.
-export function sourceHostPacingIntervalMilliseconds(
-  value: string | undefined,
-): number {
+export function sourceHostPacingIntervalMilliseconds(value: string | undefined): number {
   if (value === undefined) return defaultSourceHostPacingIntervalMilliseconds;
   if (/^(?:0|[1-9]\d*)$/u.test(value)) {
     const interval = Number.parseInt(value, 10);
     if (interval <= 60_000) return interval;
   }
   throw new Error(
-    "SOURCE_HOST_PACING_INTERVAL_MS must be an integer between 0 and 60000, " +
-      `got ${JSON.stringify(value)}.`,
+    "SOURCE_HOST_PACING_INTERVAL_MS must be an integer between 0 and 60000, " + `got ${JSON.stringify(value)}.`,
   );
 }
 
@@ -170,9 +152,7 @@ export async function hostPacingDelay(
 ): Promise<number> {
   if (mode === "immediate") return 0;
   const row = await database
-    .prepare(
-      "SELECT next_request_not_before FROM source_host_pacing WHERE hostname = ?",
-    )
+    .prepare("SELECT next_request_not_before FROM source_host_pacing WHERE hostname = ?")
     .bind(hostname)
     .first<{ next_request_not_before: string }>();
   if (row === null) return 0;
@@ -186,10 +166,7 @@ export async function advanceHostPacing(
   intervalMilliseconds: number = defaultSourceHostPacingIntervalMilliseconds,
 ): Promise<void> {
   const next = new Date(
-    Date.now() +
-      (mode === "immediate"
-        ? 0
-        : intervalMilliseconds + jitter(Math.floor(intervalMilliseconds / 4))),
+    Date.now() + (mode === "immediate" ? 0 : intervalMilliseconds + jitter(Math.floor(intervalMilliseconds / 4))),
   ).toISOString();
   await database
     .prepare(
@@ -219,11 +196,7 @@ export async function prepareCaptureAttempt(
   if (!admitsCollectionWork(run)) {
     return { kind: "done", failure_code: null };
   }
-  const request = await currentRequest(
-    database,
-    run.id,
-    sourceRequest.request_id,
-  );
+  const request = await currentRequest(database, run.id, sourceRequest.request_id);
   if (request.state === "observed") {
     return { kind: "done", failure_code: null };
   }
@@ -279,15 +252,11 @@ export async function prepareCaptureAttempt(
         http_status: number | null;
         attempt_number: number;
       }>();
-    const classification = recoverableExhaustionClassification(
-      previous?.outcome ?? null,
-    );
+    const classification = recoverableExhaustionClassification(previous?.outcome ?? null);
     if (previous === null || classification === null) {
       const failureCode = requestFailureCode(
         request.request_role,
-        previous?.outcome === "body_failure"
-          ? "body_contract"
-          : "retries_exhausted",
+        previous?.outcome === "body_failure" ? "body_contract" : "retries_exhausted",
       );
       await failRequest(database, request, failureCode);
       return { kind: "done", failure_code: failureCode };
@@ -303,11 +272,7 @@ export async function prepareCaptureAttempt(
     await database.batch(exhaustion.statements);
     return { kind: "done", failure_code: exhaustion.failure_code };
   }
-  const identity = await captureOperationIdentity(
-    run.id,
-    request.request_id,
-    attemptNumber,
-  );
+  const identity = await captureOperationIdentity(run.id, request.request_id, attemptNumber);
   const requestedAt = new Date().toISOString();
   await database
     .prepare(
@@ -341,10 +306,7 @@ export async function capturePreparedAttempt(
   if (!admitsCollectionWork(run)) {
     return { kind: "done", failure_code: null, request_made: false };
   }
-  let operation = await requiredCaptureOperation(
-    database,
-    prepared.attempt_id,
-  );
+  let operation = await requiredCaptureOperation(database, prepared.attempt_id);
   if (operation.state === "uploaded") {
     return {
       kind: "uploaded",
@@ -364,11 +326,7 @@ export async function capturePreparedAttempt(
   }
   if (operation.state === "response_received") {
     try {
-      const recovered = await recoverCompletedUpload(
-        database,
-        evidenceObjects,
-        operation,
-      );
+      const recovered = await recoverCompletedUpload(database, evidenceObjects, operation);
       if (recovered) {
         return {
           kind: "uploaded",
@@ -380,26 +338,16 @@ export async function capturePreparedAttempt(
         outcome: "storage_failure",
         completedAt: new Date().toISOString(),
         status: operation.http_status,
-        headers:
-          operation.response_headers_json === null
-            ? {}
-            : parseStringRecord(operation.response_headers_json),
-        diagnostic:
-          "The staged Source Snapshot object was unavailable during recovery.",
+        headers: operation.response_headers_json === null ? {} : parseStringRecord(operation.response_headers_json),
+        diagnostic: "The staged Source Snapshot object was unavailable during recovery.",
       });
     } catch (error) {
       return recordFailedTransportAttempt(database, run, sourceRequest, operation, {
         outcome: "storage_failure",
         completedAt: new Date().toISOString(),
         status: operation.http_status,
-        headers:
-          operation.response_headers_json === null
-            ? {}
-            : parseStringRecord(operation.response_headers_json),
-        diagnostic: errorMessage(
-          error,
-          "The staged Source Snapshot object could not be recovered.",
-        ),
+        headers: operation.response_headers_json === null ? {} : parseStringRecord(operation.response_headers_json),
+        diagnostic: errorMessage(error, "The staged Source Snapshot object could not be recovered."),
       });
     }
   }
@@ -415,11 +363,7 @@ export async function capturePreparedAttempt(
     operation = await requiredCaptureOperation(database, operation.attempt_id);
   }
 
-  const request = await currentRequest(
-    database,
-    run.id,
-    sourceRequest.request_id,
-  );
+  const request = await currentRequest(database, run.id, sourceRequest.request_id);
   const evidencePlan = evidencePlanForRequest(run, request.request_id);
   const configuredHeaders = parseStringRecord(request.request_headers_json);
   const reusable = await findReusableSnapshot(database, run, request);
@@ -429,22 +373,16 @@ export async function capturePreparedAttempt(
   };
   let response: Response | null = null;
   let networkError: string | null = null;
-  let fetchFailureOutcome: "network_failure" | "body_failure" =
-    "network_failure";
+  let fetchFailureOutcome: "network_failure" | "body_failure" = "network_failure";
   try {
     response = await officialSourceTransport.fetch(request.url, {
       method: "GET",
       headers: requestHeaders,
       redirect: "manual",
-      signal: AbortSignal.timeout(
-        transportPolicyForRole(request.request_role).timeout_ms,
-      ),
+      signal: AbortSignal.timeout(transportPolicyForRole(request.request_role).timeout_ms),
     });
   } catch (error) {
-    networkError = errorMessage(
-      error,
-      "Official Source network request failed.",
-    );
+    networkError = errorMessage(error, "Official Source network request failed.");
     if (/content-length|body|stream/i.test(networkError)) {
       fetchFailureOutcome = "body_failure";
     }
@@ -469,8 +407,7 @@ export async function capturePreparedAttempt(
         completedAt,
         status: response.status,
         headers: responseHeaders,
-        diagnostic:
-          "A 304 response did not match an immutable Source Snapshot validator and representation.",
+        diagnostic: "A 304 response did not match an immutable Source Snapshot validator and representation.",
         failureClass: "revalidation_rejected",
       });
     }
@@ -508,10 +445,7 @@ export async function capturePreparedAttempt(
 
   if (!response.ok) {
     const redirect = response.status >= 300 && response.status < 400;
-    const retryAfterMs = parseRetryAfter(
-      response.headers.get("retry-after"),
-      Date.parse(completedAt),
-    );
+    const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"), Date.parse(completedAt));
     if (response.body !== null) await response.body.cancel();
     return recordRejectedAttempt(database, run, request, operation, {
       outcome: redirect ? "redirect" : "http_failure",
@@ -524,9 +458,7 @@ export async function capturePreparedAttempt(
         : `Official Source returned HTTP ${response.status}.`,
       // A redirect is recorded, never followed, for every role: following
       // it would silently change the evidence origin of the retained bytes.
-      failureClass: redirect
-        ? "redirected"
-        : terminalHttpFailureClass(response.status),
+      failureClass: redirect ? "redirected" : terminalHttpFailureClass(response.status),
     });
   }
 
@@ -564,11 +496,7 @@ export async function capturePreparedAttempt(
              content_byte_length = ?
          WHERE attempt_id = ? AND state = 'response_received'`,
       )
-      .bind(
-        content.digest,
-        content.byteLength,
-        operation.attempt_id,
-      )
+      .bind(content.digest, content.byteLength, operation.attempt_id)
       .run();
     return {
       kind: "uploaded",
@@ -578,11 +506,7 @@ export async function capturePreparedAttempt(
   } catch (error) {
     let recoveryError: unknown = null;
     try {
-      const recovered = await recoverCompletedUpload(
-        database,
-        evidenceObjects,
-        operation,
-      );
+      const recovered = await recoverCompletedUpload(database, evidenceObjects, operation);
       if (recovered) {
         return {
           kind: "uploaded",
@@ -598,10 +522,7 @@ export async function capturePreparedAttempt(
         ? error
         : new CapturePersistenceError(
             "storage_failure",
-            errorMessage(
-              recoveryError ?? error,
-              "Evidence persistence failed.",
-            ),
+            errorMessage(recoveryError ?? error, "Evidence persistence failed."),
           );
     return recordFailedTransportAttempt(database, run, request, operation, {
       outcome: failure.outcome,
@@ -622,10 +543,7 @@ export async function completeUploadedCapture(
   if (!admitsCollectionWork(run)) {
     return { kind: "done", failure_code: null, request_made: false };
   }
-  const evidencePlan = evidencePlanForRequest(
-    run,
-    sourceRequest.request_id,
-  );
+  const evidencePlan = evidencePlanForRequest(run, sourceRequest.request_id);
   const operation = await requiredCaptureOperation(database, attemptId);
   if (operation.state === "finalized") {
     return {
@@ -646,10 +564,7 @@ export async function completeUploadedCapture(
   ) {
     throw new Error("Uploaded capture operation metadata is incomplete");
   }
-  const outcome: AttemptOutcome =
-    operation.reused_source_snapshot_id === null
-      ? "success"
-      : "cache_revalidated";
+  const outcome: AttemptOutcome = operation.reused_source_snapshot_id === null ? "success" : "cache_revalidated";
   const reusedSnapshot =
     operation.reused_source_snapshot_id === null
       ? null
@@ -657,14 +572,10 @@ export async function completeUploadedCapture(
           .prepare("SELECT * FROM source_snapshots WHERE id = ?")
           .bind(operation.reused_source_snapshot_id)
           .first<SnapshotRow>();
-  if (
-    operation.reused_source_snapshot_id !== null &&
-    reusedSnapshot === null
-  ) {
+  if (operation.reused_source_snapshot_id !== null && reusedSnapshot === null) {
     throw new Error("Revalidated Source Snapshot bytes are unavailable");
   }
-  const contentObjectKey =
-    reusedSnapshot?.content_object_key ?? operation.content_object_key;
+  const contentObjectKey = reusedSnapshot?.content_object_key ?? operation.content_object_key;
   await database.batch([
     attemptStatement(database, {
       id: operation.attempt_id,
@@ -719,11 +630,7 @@ export async function completeUploadedCapture(
          SET state = 'captured', source_snapshot_id = ?
          WHERE ingestion_run_id = ? AND request_id = ? AND state = 'pending'`,
       )
-      .bind(
-        operation.source_snapshot_id,
-        run.id,
-        sourceRequest.request_id,
-      ),
+      .bind(operation.source_snapshot_id, run.id, sourceRequest.request_id),
     database
       .prepare(
         `UPDATE source_capture_operations SET state = 'finalized'
@@ -748,21 +655,12 @@ export async function parseCapturedRequest(
   if (!admitsCollectionWork(run)) {
     return { kind: "done", failure_code: null, request_made: false };
   }
-  const evidencePlan = evidencePlanForRequest(
-    run,
-    sourceRequest.request_id,
-  );
+  const evidencePlan = evidencePlanForRequest(run, sourceRequest.request_id);
   try {
-    const observationSet = await parseSnapshot(
-      database,
-      evidenceObjects,
-      snapshotId,
-      evidencePlan.adapter_version,
-      {
-        intent: "collection",
-        idempotencyKey: `${run.id}:${sourceRequest.request_id}`,
-      },
-    );
+    const observationSet = await parseSnapshot(database, evidenceObjects, snapshotId, evidencePlan.adapter_version, {
+      intent: "collection",
+      idempotencyKey: `${run.id}:${sourceRequest.request_id}`,
+    });
     const adapter = requiredSourceAdapter(evidencePlan.adapter_version);
     const discovered = await discoverSnapshotRequests(
       database,
@@ -770,21 +668,12 @@ export async function parseCapturedRequest(
       snapshotId,
       evidencePlan.adapter_version,
     );
-    await appendDiscoveredEvidenceRequests(
-      database,
-      run,
-      sourceRequest,
-      discovered,
-    );
+    await appendDiscoveredEvidenceRequests(database, run, sourceRequest, discovered);
     if (
       run.plan_origin === "production" &&
       adapter.requestUrlForDiscovery !== undefined &&
-      (
-        sourceRequest.request_id === `${evidencePlan.source_lineage}:discovery` ||
-        /:listing:[a-z0-9]+(?:-[a-z0-9]+)*:[a-f0-9]{64}$/u.test(
-          sourceRequest.request_id,
-        )
-      )
+      (sourceRequest.request_id === `${evidencePlan.source_lineage}:discovery` ||
+        /:listing:[a-z0-9]+(?:-[a-z0-9]+)*:[a-f0-9]{64}$/u.test(sourceRequest.request_id))
     ) {
       const discovery = await retainedOfficialDiscoveryRunRecords(
         database,
@@ -798,12 +687,7 @@ export async function parseCapturedRequest(
         evidencePlan.requests[0]?.headers ?? {},
       );
       if (complete !== null) {
-        await persistOfficialSourceCollectionPlan(
-          database,
-          run.id,
-          discovery.discoveryObservationSetId,
-          complete,
-        );
+        await persistOfficialSourceCollectionPlan(database, run.id, discovery.discoveryObservationSetId, complete);
       } else {
         // A catalogue-complete adapter whose finished discovery derives an
         // empty Official Source Collection Plan must fail closed here with a
@@ -817,11 +701,7 @@ export async function parseCapturedRequest(
                AND request_id != ?
                AND state IN ('pending', 'captured')`,
           )
-          .bind(
-            run.id,
-            `${evidencePlan.source_lineage}:%`,
-            sourceRequest.request_id,
-          )
+          .bind(run.id, `${evidencePlan.source_lineage}:%`, sourceRequest.request_id)
           .first<{ count: number }>();
         if (outstanding === null || outstanding.count === 0) {
           throw new AdministrationProblem(
@@ -853,12 +733,7 @@ export async function parseCapturedRequest(
       // pending requests stay pending, and the run pauses non-terminally so
       // the owner can extend capacity and derive the rejected overflow batch
       // again from retained discovery evidence.
-      await pauseEvidenceRunForRequestCapacity(
-        database,
-        run.id,
-        sourceRequest.request_id,
-        error,
-      );
+      await pauseEvidenceRunForRequestCapacity(database, run.id, sourceRequest.request_id, error);
       return {
         kind: "done",
         failure_code: null,
@@ -874,9 +749,7 @@ export async function parseCapturedRequest(
   }
 }
 
-function publicPreparedAttempt(
-  operation: CaptureOperationRow,
-): Extract<PreparedCaptureAttempt, { kind: "attempt" }> {
+function publicPreparedAttempt(operation: CaptureOperationRow): Extract<PreparedCaptureAttempt, { kind: "attempt" }> {
   return {
     kind: "attempt",
     attempt_id: operation.attempt_id,
@@ -887,11 +760,7 @@ function publicPreparedAttempt(
   };
 }
 
-async function currentRequest(
-  database: D1Database,
-  runId: string,
-  requestId: string,
-): Promise<EvidenceRequestRow> {
+async function currentRequest(database: D1Database, runId: string, requestId: string): Promise<EvidenceRequestRow> {
   const request = await database
     .prepare(
       `SELECT * FROM source_requests
@@ -903,10 +772,7 @@ async function currentRequest(
   return request;
 }
 
-async function requiredCaptureOperation(
-  database: D1Database,
-  attemptId: string,
-): Promise<CaptureOperationRow> {
+async function requiredCaptureOperation(database: D1Database, attemptId: string): Promise<CaptureOperationRow> {
   const operation = await database
     .prepare("SELECT * FROM source_capture_operations WHERE attempt_id = ?")
     .bind(attemptId)
@@ -952,27 +818,20 @@ async function streamSnapshotToR2(
   const hash = createHash("sha256");
   const metadata = {
     httpMetadata: {
-      contentType:
-        response.headers.get("content-type") ?? "application/octet-stream",
+      contentType: response.headers.get("content-type") ?? "application/octet-stream",
       cacheControl: "private, max-age=31536000, immutable",
     },
   };
   const declared = response.headers.get("content-length");
-  const declaredByteLength = declared === null
-    ? null
-    : Number.parseInt(declared, 10);
+  const declaredByteLength = declared === null ? null : Number.parseInt(declared, 10);
   if (
     declaredByteLength !== null &&
-    (!/^\d+$/u.test(declared!) ||
-      !Number.isSafeInteger(declaredByteLength) || declaredByteLength < 0)
+    (!/^\d+$/u.test(declared!) || !Number.isSafeInteger(declaredByteLength) || declaredByteLength < 0)
   ) {
     if (response.body !== null) {
       await response.body.cancel().catch(() => undefined);
     }
-    throw new CapturePersistenceError(
-      "body_failure",
-      "Official Source returned an invalid Content-Length.",
-    );
+    throw new CapturePersistenceError("body_failure", "Official Source returned an invalid Content-Length.");
   }
   if (declaredByteLength !== null && declaredByteLength > maximumBytes) {
     if (response.body !== null) {
@@ -997,10 +856,7 @@ async function streamSnapshotToR2(
       });
       if (stored === null) throw new Error("object key already exists");
     } catch (error) {
-      throw new CapturePersistenceError(
-        "storage_failure",
-        errorMessage(error, "Evidence object write failed."),
-      );
+      throw new CapturePersistenceError("storage_failure", errorMessage(error, "Evidence object write failed."));
     }
     return { byteLength: 0, digest: hash.digest("hex") };
   }
@@ -1068,10 +924,7 @@ async function streamSnapshotToR2(
       try {
         read = await reader.read();
       } catch (error) {
-        throw new CapturePersistenceError(
-          "body_failure",
-          errorMessage(error, "Official Source body stream failed."),
-        );
+        throw new CapturePersistenceError("body_failure", errorMessage(error, "Official Source body stream failed."));
       }
       if (read.done) break;
       if (byteLength + read.value.byteLength > maximumBytes) {
@@ -1085,18 +938,13 @@ async function streamSnapshotToR2(
       byteLength += read.value.byteLength;
       let offset = 0;
       while (offset < read.value.byteLength) {
-        const copying = Math.min(
-          pending.byteLength - pendingLength,
-          read.value.byteLength - offset,
-        );
+        const copying = Math.min(pending.byteLength - pendingLength, read.value.byteLength - offset);
         pending.set(read.value.subarray(offset, offset + copying), pendingLength);
         pendingLength += copying;
         offset += copying;
         if (pendingLength === pending.byteLength) {
           try {
-            uploadedParts.push(
-              await multipart.uploadPart(uploadedParts.length + 1, pending),
-            );
+            uploadedParts.push(await multipart.uploadPart(uploadedParts.length + 1, pending));
           } catch (error) {
             throw new CapturePersistenceError(
               "storage_failure",
@@ -1110,12 +958,7 @@ async function streamSnapshotToR2(
     }
     if (pendingLength > 0 || uploadedParts.length === 0) {
       try {
-        uploadedParts.push(
-          await multipart.uploadPart(
-            uploadedParts.length + 1,
-            pending.subarray(0, pendingLength),
-          ),
-        );
+        uploadedParts.push(await multipart.uploadPart(uploadedParts.length + 1, pending.subarray(0, pendingLength)));
       } catch (error) {
         throw new CapturePersistenceError(
           "storage_failure",
@@ -1157,22 +1000,12 @@ async function recordFailedTransportAttempt(
   // failure under the role's transport policy) commits in the same atomic
   // batch that records the final failed attempt; a body-contract violation
   // stays terminal.
-  const classification =
-    failure.outcome === "body_failure" ? null : failure.outcome;
-  const bodyContractFailureCode = requestFailureCode(
-    request.request_role,
-    "body_contract",
-  );
-  const exhaustion = exhausted && classification !== null
-    ? recoverableExhaustion(
-      database,
-      run,
-      request,
-      operation.attempt_number,
-      classification,
-      failure.status,
-    )
-    : null;
+  const classification = failure.outcome === "body_failure" ? null : failure.outcome;
+  const bodyContractFailureCode = requestFailureCode(request.request_role, "body_contract");
+  const exhaustion =
+    exhausted && classification !== null
+      ? recoverableExhaustion(database, run, request, operation.attempt_number, classification, failure.status)
+      : null;
   await database.batch([
     attemptStatement(database, {
       id: operation.attempt_id,
@@ -1203,9 +1036,7 @@ async function recordFailedTransportAttempt(
         failure.diagnostic,
         operation.attempt_id,
       ),
-    ...(exhausted && classification === null
-      ? [failRequestStatement(database, request, bodyContractFailureCode)]
-      : []),
+    ...(exhausted && classification === null ? [failRequestStatement(database, request, bodyContractFailureCode)] : []),
     ...(exhaustion?.statements ?? []),
   ]);
   if (!exhausted) {
@@ -1217,9 +1048,7 @@ async function recordFailedTransportAttempt(
   }
   return {
     kind: "done",
-    failure_code: exhaustion === null
-      ? bodyContractFailureCode
-      : exhaustion.failure_code,
+    failure_code: exhaustion === null ? bodyContractFailureCode : exhaustion.failure_code,
     request_made: true,
   };
 }
@@ -1247,19 +1076,12 @@ async function recordRejectedAttempt(
   // Redirects, non-retryable statuses, and rejected revalidations are
   // terminal for the request under the code its role's policy assigns:
   // fatal for the run on a catalogue-fact role, a tolerated gap on an image.
-  const failureCode = rejection.failureClass === null
-    ? null
-    : requestFailureCode(request.request_role, rejection.failureClass);
-  const exhaustion = exhausted && failureCode === null
-    ? recoverableExhaustion(
-      database,
-      run,
-      request,
-      operation.attempt_number,
-      "http_failure",
-      rejection.status,
-    )
-    : null;
+  const failureCode =
+    rejection.failureClass === null ? null : requestFailureCode(request.request_role, rejection.failureClass);
+  const exhaustion =
+    exhausted && failureCode === null
+      ? recoverableExhaustion(database, run, request, operation.attempt_number, "http_failure", rejection.status)
+      : null;
   await database.batch([
     attemptStatement(database, {
       id: operation.attempt_id,
@@ -1288,9 +1110,7 @@ async function recordRejectedAttempt(
         rejection.diagnostic,
         operation.attempt_id,
       ),
-    ...(failureCode === null
-      ? []
-      : [failRequestStatement(database, request, failureCode)]),
+    ...(failureCode === null ? [] : [failRequestStatement(database, request, failureCode)]),
     ...(exhaustion?.statements ?? []),
   ]);
   if (failureCode !== null) {
@@ -1305,9 +1125,7 @@ async function recordRejectedAttempt(
   }
   return {
     kind: "wait",
-    wait_ms:
-      rejection.retryAfterMs ??
-      exponentialBackoff(operation.attempt_number),
+    wait_ms: rejection.retryAfterMs ?? exponentialBackoff(operation.attempt_number),
     request_made: true,
   };
 }
@@ -1316,10 +1134,7 @@ async function recordRejectedAttempt(
 // budget the caller waits and retries; at the budget the exhaustion outcome
 // (pause or terminal request failure) was committed atomically with that
 // failure record, so there is nothing further to record here.
-function retryOrFinish(
-  request: EvidenceRequestRow,
-  attemptNumber: number,
-): CaptureTransportResult {
+function retryOrFinish(request: EvidenceRequestRow, attemptNumber: number): CaptureTransportResult {
   return attemptNumber >= retryBudget(request)
     ? { kind: "done", failure_code: null, request_made: false }
     : {
@@ -1336,11 +1151,7 @@ function retryBudget(request: EvidenceRequestRow): number {
 function recoverableExhaustionClassification(
   outcome: string | null,
 ): RetryExhaustionFacts["failure_classification"] | null {
-  if (
-    outcome === "network_failure" ||
-    outcome === "http_failure" ||
-    outcome === "storage_failure"
-  ) {
+  if (outcome === "network_failure" || outcome === "http_failure" || outcome === "storage_failure") {
     return outcome;
   }
   return null;
@@ -1362,34 +1173,23 @@ function recoverableExhaustion(
   httpStatus: number | null,
 ): { statements: D1PreparedStatement[]; failure_code: string | null } {
   const policy = transportPolicyForRole(request.request_role);
-  if (
-    classification !== "storage_failure" &&
-    policy.on_transport_exhaustion === "fail_request"
-  ) {
-    const failureCode = requestFailureCode(
-      request.request_role,
-      "retries_exhausted",
-    );
+  if (classification !== "storage_failure" && policy.on_transport_exhaustion === "fail_request") {
+    const failureCode = requestFailureCode(request.request_role, "retries_exhausted");
     return {
       statements: [failRequestStatement(database, request, failureCode)],
       failure_code: failureCode,
     };
   }
   return {
-    statements: retryExhaustionPauseStatements(
-      database,
-      request.ingestion_run_id,
-      {
-        request_id: request.request_id,
-        source_lineage: evidencePlanForRequest(run, request.request_id)
-          .source_lineage,
-        hostname: new URL(request.url).hostname,
-        retry_generation: request.retry_generation,
-        attempt_count: attemptCount,
-        failure_classification: classification,
-        http_status: httpStatus,
-      },
-    ),
+    statements: retryExhaustionPauseStatements(database, request.ingestion_run_id, {
+      request_id: request.request_id,
+      source_lineage: evidencePlanForRequest(run, request.request_id).source_lineage,
+      hostname: new URL(request.url).hostname,
+      retry_generation: request.retry_generation,
+      attempt_count: attemptCount,
+      failure_classification: classification,
+      http_status: httpStatus,
+    }),
     failure_code: null,
   };
 }
@@ -1408,10 +1208,7 @@ type AttemptInput = {
   diagnostic: string | null;
 };
 
-function attemptStatement(
-  database: D1Database,
-  attempt: AttemptInput,
-): D1PreparedStatement {
+function attemptStatement(database: D1Database, attempt: AttemptInput): D1PreparedStatement {
   return database
     .prepare(
       `INSERT OR IGNORE INTO source_fetch_attempts (
@@ -1435,11 +1232,7 @@ function attemptStatement(
     );
 }
 
-async function failRequest(
-  database: D1Database,
-  request: EvidenceRequestRow,
-  failureCode: string,
-): Promise<void> {
+async function failRequest(database: D1Database, request: EvidenceRequestRow, failureCode: string): Promise<void> {
   await failRequestStatement(database, request, failureCode).run();
 }
 
@@ -1475,12 +1268,7 @@ async function findReusableSnapshot(
          )
        ORDER BY retrieved_at DESC, id DESC LIMIT 10`,
     )
-    .bind(
-      evidencePlan.source_lineage,
-      request.url,
-      evidencePlan.adapter_version,
-      request.representation_fingerprint,
-    )
+    .bind(evidencePlan.source_lineage, request.url, evidencePlan.adapter_version, request.representation_fingerprint)
     .all<SnapshotRow>();
   return (
     priorSnapshots.results.find((snapshot) => {
@@ -1488,10 +1276,7 @@ async function findReusableSnapshot(
       return (
         Array.isArray(vary) &&
         !vary.includes("*") &&
-        vary.every(
-          (name) =>
-            typeof name === "string" && representedRequestHeaders.has(name),
-        )
+        vary.every((name) => typeof name === "string" && representedRequestHeaders.has(name))
       );
     }) ?? null
   );
@@ -1506,10 +1291,7 @@ function revalidationHeaders(snapshot: SnapshotRow): Record<string, string> {
   return {};
 }
 
-function validatorAccepted(
-  response: Response,
-  snapshot: SnapshotRow,
-): boolean {
+function validatorAccepted(response: Response, snapshot: SnapshotRow): boolean {
   const prior = parseStringRecord(snapshot.response_headers_json);
   if (prior.etag !== undefined) {
     const returned = response.headers.get("etag");
@@ -1518,10 +1300,7 @@ function validatorAccepted(
   return prior["last-modified"] !== undefined;
 }
 
-function parseRetryAfter(
-  value: string | null,
-  observedAt: number,
-): number | null {
+function parseRetryAfter(value: string | null, observedAt: number): number | null {
   // An empty header carries no timing instruction; Number("") would
   // otherwise coerce it to an immediate zero-millisecond retry.
   if (value === null || value.trim() === "") return null;

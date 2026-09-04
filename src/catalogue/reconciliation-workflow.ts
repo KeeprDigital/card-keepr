@@ -1,9 +1,5 @@
-import { AdministrationProblem } from "./ingestion";
-import {
-  failReconciliationWorkflow,
-  retainedReconciliationResult,
-} from "./reconciliation-candidate-store";
-import { canonicalJson, sha256Text } from "./serialization";
+import { AdministrationProblem, canonicalJson, sha256Text } from "./shared";
+import { failReconciliationWorkflow, retainedReconciliationResult } from "./reconciliation-candidate-store";
 import { assertIdentifier } from "./source-evidence-model";
 
 export type ReconciliationWorkflowParams = Readonly<{
@@ -33,10 +29,7 @@ export async function startOrObserveReconciliationWorkflow(
   document: Record<string, unknown>;
 }> {
   assertIdentifier(input.ingestion_run_id, "ingestion_run_id");
-  assertIdentifier(
-    input.expected_current_revision_id,
-    "expected_current_revision_id",
-  );
+  assertIdentifier(input.expected_current_revision_id, "expected_current_revision_id");
   assertIdentifier(input.idempotency_key, "idempotency_key");
   const requestJson = canonicalJson({
     ingestion_run_id: input.ingestion_run_id,
@@ -72,16 +65,11 @@ export async function startOrObserveReconciliationWorkflow(
       recovery_health: string;
     }>();
   if (run === null) {
-    throw new AdministrationProblem(
-      404,
-      "ingestion_run_not_found",
-      "The requested Ingestion Run does not exist.",
-    );
+    throw new AdministrationProblem(404, "ingestion_run_not_found", "The requested Ingestion Run does not exist.");
   }
   if (
     run.current_revision_id !== input.expected_current_revision_id ||
-    run.expected_current_revision_id !==
-      input.expected_current_revision_id
+    run.expected_current_revision_id !== input.expected_current_revision_id
   ) {
     throw new AdministrationProblem(
       409,
@@ -89,10 +77,7 @@ export async function startOrObserveReconciliationWorkflow(
       "The expected current Catalogue Revision is stale.",
     );
   }
-  if (
-    run.state !== "parsing" ||
-    run.active_ingestion_run_id !== input.ingestion_run_id
-  ) {
+  if (run.state !== "parsing" || run.active_ingestion_run_id !== input.ingestion_run_id) {
     throw new AdministrationProblem(
       409,
       "run_not_active",
@@ -107,8 +92,7 @@ export async function startOrObserveReconciliationWorkflow(
     );
   }
 
-  const workflowInstanceId =
-    `reconcile-${(await sha256Text(requestJson)).slice(0, 64)}`;
+  const workflowInstanceId = `reconcile-${(await sha256Text(requestJson)).slice(0, 64)}`;
   const workflowParams: ReconciliationWorkflowParams = {
     ingestion_run_id: input.ingestion_run_id,
     expected_current_revision_id: input.expected_current_revision_id,
@@ -146,12 +130,7 @@ export async function startOrObserveReconciliationWorkflow(
   const created = insertion.meta.changes === 1;
   return {
     created,
-    document: await publicWorkflowRequest(
-      database,
-      workflow,
-      stored,
-      created,
-    ),
+    document: await publicWorkflowRequest(database, workflow, stored, created),
   };
 }
 
@@ -196,10 +175,7 @@ async function publicWorkflowRequest(
     }
     status = await instance.status();
   }
-  if (
-    status.status === "errored" ||
-    status.status === "terminated"
-  ) {
+  if (status.status === "errored" || status.status === "terminated") {
     return {
       contract: "card-keepr-reconciliation-workflow@1",
       ingestion_run_id: request.ingestion_run_id,
@@ -210,14 +186,11 @@ async function publicWorkflowRequest(
       output: await recoverTerminalWorkflow(
         database,
         request,
-        status.error?.message ??
-          `The reconciliation Workflow became ${status.status}.`,
+        status.error?.message ?? `The reconciliation Workflow became ${status.status}.`,
       ),
     };
   }
-  const output = status.status === "complete"
-    ? await workflowOutput(database, request, status.output)
-    : null;
+  const output = status.status === "complete" ? await workflowOutput(database, request, status.output) : null;
   return {
     contract: "card-keepr-reconciliation-workflow@1",
     ingestion_run_id: request.ingestion_run_id,
@@ -246,17 +219,9 @@ async function recoverTerminalWorkflow(
     throw new Error("The reconciliation Workflow run is unavailable.");
   }
   if (run.candidate_digest !== null) {
-    return retainedReconciliationResult(
-      database,
-      request.ingestion_run_id,
-    );
+    return retainedReconciliationResult(database, request.ingestion_run_id);
   }
-  return failReconciliationWorkflow(
-    database,
-    request.ingestion_run_id,
-    request.observed_at,
-    detail,
-  );
+  return failReconciliationWorkflow(database, request.ingestion_run_id, request.observed_at, detail);
 }
 
 async function workflowOutput(
@@ -279,53 +244,29 @@ async function workflowOutput(
   } catch {
     return recoverMalformedCompleteWorkflow(database, request);
   }
-  if (
-    reference === null ||
-    typeof reference !== "object" ||
-    Array.isArray(reference)
-  ) {
+  if (reference === null || typeof reference !== "object" || Array.isArray(reference)) {
     return recoverMalformedCompleteWorkflow(database, request);
   }
   const result = reference as Record<string, unknown>;
-  if (
-    result.contract !==
-      "card-keepr-reconciliation-workflow-result@1"
-  ) {
+  if (result.contract !== "card-keepr-reconciliation-workflow-result@1") {
     return recoverMalformedCompleteWorkflow(database, request);
   }
   if (result.run_id !== request.ingestion_run_id) {
     throw new Error("The reconciliation Workflow result is invalid.");
   }
-  if (
-    result.result !== null &&
-    typeof result.result === "object" &&
-    !Array.isArray(result.result)
-  ) {
-    const retained = await retainedReconciliationResult(
-      database,
-      request.ingestion_run_id,
-    );
-    if (
-      canonicalJson(retained) !==
-        canonicalJson(result.result as Record<string, unknown>)
-    ) {
-      throw new Error(
-        "The reconciliation Workflow result does not bind the retained reconciliation.",
-      );
+  if (result.result !== null && typeof result.result === "object" && !Array.isArray(result.result)) {
+    const retained = await retainedReconciliationResult(database, request.ingestion_run_id);
+    if (canonicalJson(retained) !== canonicalJson(result.result as Record<string, unknown>)) {
+      throw new Error("The reconciliation Workflow result does not bind the retained reconciliation.");
     }
     return retained;
   }
   if (typeof result.candidate_digest !== "string") {
     return recoverMalformedCompleteWorkflow(database, request);
   }
-  const retained = await retainedReconciliationResult(
-    database,
-    request.ingestion_run_id,
-  );
+  const retained = await retainedReconciliationResult(database, request.ingestion_run_id);
   if (retained.candidate_digest !== result.candidate_digest) {
-    throw new Error(
-      "The reconciliation Workflow result does not bind the retained candidate.",
-    );
+    throw new Error("The reconciliation Workflow result does not bind the retained candidate.");
   }
   return retained;
 }
@@ -334,11 +275,7 @@ function recoverMalformedCompleteWorkflow(
   database: D1Database,
   request: ReconciliationWorkflowRequestRow,
 ): Promise<Record<string, unknown>> {
-  return recoverTerminalWorkflow(
-    database,
-    request,
-    "The completed reconciliation Workflow output was unavailable.",
-  );
+  return recoverTerminalWorkflow(database, request, "The completed reconciliation Workflow output was unavailable.");
 }
 
 async function workflowRequest(
@@ -357,22 +294,15 @@ async function workflowRequest(
     .first<ReconciliationWorkflowRequestRow>();
 }
 
-function storedWorkflowParams(
-  request: ReconciliationWorkflowRequestRow,
-): ReconciliationWorkflowParams {
+function storedWorkflowParams(request: ReconciliationWorkflowRequestRow): ReconciliationWorkflowParams {
   const parsed: unknown = JSON.parse(request.workflow_params_json);
-  if (
-    parsed === null ||
-    typeof parsed !== "object" ||
-    Array.isArray(parsed)
-  ) {
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("The persisted reconciliation Workflow params are invalid.");
   }
   const params = parsed as Record<string, unknown>;
   if (
     params.ingestion_run_id !== request.ingestion_run_id ||
-    params.expected_current_revision_id !==
-      request.expected_current_revision_id ||
+    params.expected_current_revision_id !== request.expected_current_revision_id ||
     params.idempotency_key !== request.idempotency_key ||
     params.observed_at !== request.observed_at
   ) {
@@ -381,10 +311,7 @@ function storedWorkflowParams(
   return params as ReconciliationWorkflowParams;
 }
 
-function assertExactReplay(
-  stored: ReconciliationWorkflowRequestRow,
-  requestJson: string,
-): void {
+function assertExactReplay(stored: ReconciliationWorkflowRequestRow, requestJson: string): void {
   if (stored.request_json !== requestJson) {
     throw new AdministrationProblem(
       409,

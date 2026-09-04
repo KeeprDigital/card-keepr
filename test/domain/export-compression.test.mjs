@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import {
-  deterministicGzip,
-  deterministicGzipStream,
-} from "../../src/catalogue/export-compression.ts";
+import { deterministicGzip, deterministicGzipStream } from "../../src/catalogue/shared/export-compression.ts";
 import {
   verifyComponentExportRecord,
   verifyExportManifest,
@@ -11,8 +8,7 @@ import {
 } from "../../src/catalogue/export-validation.ts";
 
 const goldenInput = new TextEncoder().encode('{"id":"golden"}\n');
-const goldenHex =
-  "1f8b08000000000002ffab56ca4c51b2524acfcf4949cd53aae50200cc28fff510000000";
+const goldenHex = "1f8b08000000000002ffab56ca4c51b2524acfcf4949cd53aae50200cc28fff510000000";
 
 test("buffered and streaming export compression share exact golden bytes", async () => {
   const chunks = [goldenInput.slice(0, 3), goldenInput.slice(3, 11), goldenInput.slice(11)];
@@ -23,9 +19,7 @@ test("buffered and streaming export compression share exact golden bytes", async
       else controller.enqueue(chunk);
     },
   });
-  const streamed = new Uint8Array(
-    await new Response(deterministicGzipStream(stream)).arrayBuffer(),
-  );
+  const streamed = new Uint8Array(await new Response(deterministicGzipStream(stream)).arrayBuffer());
   assert.equal(Buffer.from(deterministicGzip(goldenInput)).toString("hex"), goldenHex);
   assert.equal(Buffer.from(streamed).toString("hex"), goldenHex);
 });
@@ -41,17 +35,17 @@ test("component export validation rejects a valid record from the wrong componen
   };
   assert.doesNotThrow(() => verifyExportRecord(supportedGame));
   assert.throws(
-    () => verifyComponentExportRecord(
-      "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/ProductRecord",
-      supportedGame,
-    ),
+    () =>
+      verifyComponentExportRecord(
+        "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/ProductRecord",
+        supportedGame,
+      ),
     /component record failed schema verification/u,
   );
 });
 
 test("Legality Rule component validation enforces effect and contextual scope invariants", () => {
-  const uri =
-    "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/LegalityRuleRecord";
+  const uri = "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/LegalityRuleRecord";
   const pointer = "/observations/0/value/legality_rules/0";
   const base = {
     type: "legality_rule",
@@ -71,11 +65,19 @@ test("Legality Rule component validation enforces effect and contextual scope in
     source_lineage: "fusion-world-en",
     source_observation_ids: ["srcobs_schema_contract"],
     source_observation_pointer: pointer,
-    source_field_pointers: Object.fromEntries([
-      "official_wording", "effective_from", "effective_until",
-      "unresolved_scope", "region", "format", "event_tier",
-      "card_numbers", "effect",
-    ].map((field) => [field, `${pointer}/${field}`])),
+    source_field_pointers: Object.fromEntries(
+      [
+        "official_wording",
+        "effective_from",
+        "effective_until",
+        "unresolved_scope",
+        "region",
+        "format",
+        "event_tier",
+        "card_numbers",
+        "effect",
+      ].map((field) => [field, `${pointer}/${field}`]),
+    ),
     lifecycle: {
       first_revision_id: "catrev_schema_contract",
       last_observed_revision_id: "catrev_schema_contract",
@@ -94,16 +96,25 @@ test("Legality Rule component validation enforces effect and contextual scope in
     [{ type: "unresolved", reason: "Publisher context is unclear." }, "indeterminate"],
   ];
   for (const [effect, kind] of effectKinds) {
-    assert.doesNotThrow(() => verifyComponentExportRecord(uri, {
-      ...base,
-      kind,
-      effect,
-    }), `${effect.type} / ${kind}`);
-    assert.throws(() => verifyComponentExportRecord(uri, {
-      ...base,
-      kind: kind === "eligible" ? "restricted" : "eligible",
-      effect,
-    }), /component record failed schema verification/u, `${effect.type} mismatch`);
+    assert.doesNotThrow(
+      () =>
+        verifyComponentExportRecord(uri, {
+          ...base,
+          kind,
+          effect,
+        }),
+      `${effect.type} / ${kind}`,
+    );
+    assert.throws(
+      () =>
+        verifyComponentExportRecord(uri, {
+          ...base,
+          kind: kind === "eligible" ? "restricted" : "eligible",
+          effect,
+        }),
+      /component record failed schema verification/u,
+      `${effect.type} mismatch`,
+    );
   }
 
   const invalid = [
@@ -157,15 +168,11 @@ test("Legality Rule component validation enforces effect and contextual scope in
     },
   ];
   for (const record of invalid) {
-    assert.throws(
-      () => verifyComponentExportRecord(uri, record),
-      /component record failed schema verification/u,
-    );
+    assert.throws(() => verifyComponentExportRecord(uri, record), /component record failed schema verification/u);
   }
 });
 
-const recordSchemaUri =
-  "https://card-keepr.invalid/schemas/catalogue-export-record@5";
+const recordSchemaUri = "https://card-keepr.invalid/schemas/catalogue-export-record@5";
 
 test("printing-image records reference the image by identifier and carry no URL", () => {
   const image = {
@@ -178,26 +185,14 @@ test("printing-image records reference the image by identifier and carry no URL"
     height: 838,
     content_sha256: "a".repeat(64),
   };
-  assert.doesNotThrow(() =>
-    verifyComponentExportRecord(
-      `${recordSchemaUri}#/$defs/PrintingImageRecord`,
-      image,
-    ),
-  );
+  assert.doesNotThrow(() => verifyComponentExportRecord(`${recordSchemaUri}#/$defs/PrintingImageRecord`, image));
   for (const [content_url, cause] of [
     ["/v1/printing-images/image_front/content", /embeds an API link/u],
-    [
-      "https://card.keepr.digital/api/v1/printing-images/image_front/content",
-      /embeds an API link/u,
-    ],
+    ["https://card.keepr.digital/api/v1/printing-images/image_front/content", /embeds an API link/u],
     ["image_front", /component record failed schema verification/u],
   ]) {
     assert.throws(
-      () =>
-        verifyComponentExportRecord(
-          `${recordSchemaUri}#/$defs/PrintingImageRecord`,
-          { ...image, content_url },
-        ),
+      () => verifyComponentExportRecord(`${recordSchemaUri}#/$defs/PrintingImageRecord`, { ...image, content_url }),
       cause,
     );
   }
@@ -242,13 +237,9 @@ test("manifest components reference their bytes by name and carry no URL", () =>
   };
   assert.doesNotThrow(() => verifyExportManifest(manifest));
   for (const [content_url, cause] of [
+    [(name) => `/v1/catalogue-exports/catrev_1/components/${name}`, /embeds an API link/u],
     [
-      (name) => `/v1/catalogue-exports/catrev_1/components/${name}`,
-      /embeds an API link/u,
-    ],
-    [
-      (name) =>
-        `https://card.keepr.digital/api/v1/catalogue-exports/catrev_1/components/${name}`,
+      (name) => `https://card.keepr.digital/api/v1/catalogue-exports/catrev_1/components/${name}`,
       /embeds an API link/u,
     ],
     [(name) => name, /manifest failed schema verification/u],
@@ -297,17 +288,9 @@ test("export validation rejects any record that embeds an API link", () => {
     },
   });
   const uri = `${recordSchemaUri}#/$defs/ProductRecord`;
-  assert.doesNotThrow(() =>
-    verifyComponentExportRecord(uri, product("https://example.org/owner-note")),
-  );
-  for (const link of [
-    "https://card.keepr.digital/api/v1/products/product_1",
-    "/v1/products/product_1",
-  ]) {
-    assert.throws(
-      () => verifyComponentExportRecord(uri, product(link)),
-      /embeds an API link/u,
-    );
+  assert.doesNotThrow(() => verifyComponentExportRecord(uri, product("https://example.org/owner-note")));
+  for (const link of ["https://card.keepr.digital/api/v1/products/product_1", "/v1/products/product_1"]) {
+    assert.throws(() => verifyComponentExportRecord(uri, product(link)), /embeds an API link/u);
     assert.throws(() => verifyExportRecord(product(link)), /embeds an API link/u);
   }
 });

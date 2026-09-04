@@ -1,16 +1,9 @@
 import { env } from "cloudflare:workers";
 import { expect } from "vitest";
-import {
-  parseCapturedRequest,
-} from "../../../src/catalogue/source-evidence-capture";
-import {
-  pendingEvidenceRequests,
-  requiredEvidenceRun,
-} from "../../../src/catalogue/source-evidence-repository";
-import {
-  officialSourceDiscoveryRequests,
-} from "../../../src/catalogue/product-release-source-adapters";
-import { sha256, utf8 } from "../../../src/catalogue/serialization";
+import { parseCapturedRequest } from "../../../src/catalogue/source-evidence-capture";
+import { pendingEvidenceRequests, requiredEvidenceRun } from "../../../src/catalogue/source-evidence-repository";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
+import { sha256, utf8 } from "../../../src/catalogue/shared";
 import retainedFusionWorldDiscovery from "../../../acceptance/fixtures/retained-official-source/fusion-world-en-restructured-card-search.json";
 import { administrationRequest } from "./runtime-helpers";
 
@@ -120,21 +113,14 @@ export async function fillLineageToCapacity(
 // Stage a fusion-world-en@9 run whose Source Lineage already holds exactly
 // its request capacity, then parse the retained captured discovery root so
 // the derived overflow batch is rejected and the run pauses.
-export async function pauseRunAtCapacity(
-  idempotencyKey: string,
-  fillerState: "pending" | "observed" = "pending",
-) {
-  const created = await administrationRequest(
-    "/v1/ingestion-runs/evidence",
-    "POST",
-    {
-      supported_game: "fusion-world",
-      source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@9",
-      idempotency_key: idempotencyKey,
-      requests: officialSourceDiscoveryRequests("fusion-world-en"),
-    },
-  );
+export async function pauseRunAtCapacity(idempotencyKey: string, fillerState: "pending" | "observed" = "pending") {
+  const created = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
+    supported_game: "fusion-world",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fusion-world-en@9",
+    idempotency_key: idempotencyKey,
+    requests: officialSourceDiscoveryRequests("fusion-world-en"),
+  });
   expect(created.status).toBe(201);
   const run = await created.json<{ id: string }>();
   const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
@@ -147,12 +133,8 @@ export async function pauseRunAtCapacity(
     root.url,
     Buffer.from(retainedFusionWorldDiscovery.body_base64, "base64"),
   );
-  await expect(parseCapturedRequest(
-    env.CATALOGUE_DB,
-    env.EVIDENCE_OBJECTS,
-    storedRun,
-    root,
-    snapshotId,
-  )).resolves.toMatchObject({ kind: "done", failure_code: null });
+  await expect(
+    parseCapturedRequest(env.CATALOGUE_DB, env.EVIDENCE_OBJECTS, storedRun, root, snapshotId),
+  ).resolves.toMatchObject({ kind: "done", failure_code: null });
   return { runId: run.id, storedRun, root, snapshotId };
 }

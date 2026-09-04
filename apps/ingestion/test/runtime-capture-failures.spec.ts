@@ -1,22 +1,17 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import {
-  captureOperationIdentity,
-  parseCapturedRequest,
-} from "../../../src/catalogue/source-evidence-capture";
+import { captureOperationIdentity, parseCapturedRequest } from "../../../src/catalogue/source-evidence-capture";
 import {
   globalEmergencySourceRequestCeiling,
   installedSourceAdapterRegistrations,
 } from "../../../src/catalogue/source-adapters";
-import {
-  officialSourceDiscoveryRequests,
-} from "../../../src/catalogue/product-release-source-adapters";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
 import {
   pendingEvidenceRequests,
   persistOfficialSourceCollectionPlan,
   requiredEvidenceRun,
 } from "../../../src/catalogue/source-evidence-repository";
-import { sha256, utf8 } from "../../../src/catalogue/serialization";
+import { sha256, utf8 } from "../../../src/catalogue/shared";
 import retainedFusionWorldDiscovery from "../../../acceptance/fixtures/retained-official-source/fusion-world-en-restructured-card-search.json";
 import {
   administrationRequest,
@@ -35,86 +30,70 @@ import {
 
 installRuntimeSuite();
 
-test(
-  "successful captures remain auditable when a later required response is rejected or exhausts its retries",
-  async () => {
-    // A redirect stays a terminal source-contract failure; exhausted
-    // retryable HTTP responses now pause the run non-terminally instead.
-    // Both outcomes retain the sibling capture's Source Snapshot and
-    // Source Observation Set for audit.
-    for (const scenario of [
-      {
-        key: "retained_after_rejected_001",
-        problemUrl:
-          "https://retained-redirect-official-source.invalid/redirect",
-        expected: {
-          state: "failed",
-          failure_code: "source_redirect_rejected",
-        },
+test("successful captures remain auditable when a later required response is rejected or exhausts its retries", async () => {
+  // A redirect stays a terminal source-contract failure; exhausted
+  // retryable HTTP responses now pause the run non-terminally instead.
+  // Both outcomes retain the sibling capture's Source Snapshot and
+  // Source Observation Set for audit.
+  for (const scenario of [
+    {
+      key: "retained_after_rejected_001",
+      problemUrl: "https://retained-redirect-official-source.invalid/redirect",
+      expected: {
+        state: "failed",
+        failure_code: "source_redirect_rejected",
       },
-      {
-        key: "retained_after_transport_pause_001",
-        problemUrl:
-          "https://retained-failure-official-source.invalid/unavailable",
-        expected: {
-          state: "paused",
-          failure_code: null,
-          pause: { reason: "source_transport_retries_exhausted" },
-        },
+    },
+    {
+      key: "retained_after_transport_pause_001",
+      problemUrl: "https://retained-failure-official-source.invalid/unavailable",
+      expected: {
+        state: "paused",
+        failure_code: null,
+        pause: { reason: "source_transport_retries_exhausted" },
       },
-    ]) {
-      const response = await fixtureEvidenceRequest(
+    },
+  ]) {
+    const response = await fixtureEvidenceRequest({
+      supported_game: "one-piece",
+      source_lineage: "one-piece-en",
+      adapter_version: "fixture-one-piece-json@3",
+      idempotency_key: scenario.key,
+      requests: [
         {
-          supported_game: "one-piece",
-          source_lineage: "one-piece-en",
-          adapter_version: "fixture-one-piece-json@3",
-          idempotency_key: scenario.key,
-          requests: [
-            {
-              id: "captured",
-              url: `https://${new URL(scenario.problemUrl).hostname}/cards`,
-            },
-            { id: "terminal", url: scenario.problemUrl },
-          ],
+          id: "captured",
+          url: `https://${new URL(scenario.problemUrl).hostname}/cards`,
         },
-      );
-      expect(response.status).toBe(201);
-      const run = await response.json<CollectionDocument>();
-      const accepted = await administrationRequest(
-        `/v1/ingestion-runs/${run.id}/collection/resume`,
-        "POST",
-      );
-      expect(accepted.status).toBe(202);
-      await accepted.body?.cancel();
-      const settled = await waitForEvidenceCondition(
-        run.id,
-        (current) => current.state === scenario.expected.state,
-        12_000,
-      );
-      expect(settled).toMatchObject(scenario.expected);
-      expect(settled.snapshots).toHaveLength(1);
-      expect(settled.observation_sets).toHaveLength(1);
+        { id: "terminal", url: scenario.problemUrl },
+      ],
+    });
+    expect(response.status).toBe(201);
+    const run = await response.json<CollectionDocument>();
+    const accepted = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
+    expect(accepted.status).toBe(202);
+    await accepted.body?.cancel();
+    const settled = await waitForEvidenceCondition(
+      run.id,
+      (current) => current.state === scenario.expected.state,
+      12_000,
+    );
+    expect(settled).toMatchObject(scenario.expected);
+    expect(settled.snapshots).toHaveLength(1);
+    expect(settled.observation_sets).toHaveLength(1);
 
-      const retained = await showCollection(run.id);
-      expect(retained.snapshots).toEqual(settled.snapshots);
-      expect(retained.observation_sets).toEqual(
-        settled.observation_sets,
-      );
-      await clearActiveRunForNextScenario();
-    }
-  },
-  24_000,
-);
+    const retained = await showCollection(run.id);
+    expect(retained.snapshots).toEqual(settled.snapshots);
+    expect(retained.observation_sets).toEqual(settled.observation_sets);
+    await clearActiveRunForNextScenario();
+  }
+}, 24_000);
 
 test("a successful response remains snapshotted when parsing terminally fails", async () => {
   const run = await createCollection(
     "source_collection_parse_failure_001",
     "https://parse-failure-official-source.invalid/invalid-json",
   );
-  const accepted = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/resume`,
-    "POST",
-  );
+  const accepted = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(accepted.status).toBe(202);
   await accepted.body?.cancel();
   const failed = await waitForEvidenceRun(run.id, "failed", 15_000);
@@ -152,9 +131,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
     "fixture-one-piece-json@3",
     { "accept-language": "fr" },
   );
-  const differentRepresentation = await resumeCollection(
-    differentRepresentationRun.id,
-  );
+  const differentRepresentation = await resumeCollection(differentRepresentationRun.id);
   expect(differentRepresentation.snapshots[0]).toMatchObject({
     http: { status: 200 },
     reused_source_snapshot_id: null,
@@ -206,10 +183,7 @@ test("Retry-After is audited without shortening the Official Source deadline", a
     "source_retry_after_long_001",
     "https://retry-after-official-source.invalid/retry-after-long",
   );
-  const accepted = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/resume`,
-    "POST",
-  );
+  const accepted = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(accepted.status).toBe(202);
   await accepted.body?.cancel();
   const waiting = await waitForEvidenceDiagnostic(run.id);
@@ -233,22 +207,18 @@ test("Retry-After is audited without shortening the Official Source deadline", a
 });
 
 test("adapter registrations stay constrained while mismatched production identities fail closed", async () => {
-  const mismatched = await administrationRequest(
-    "/v1/ingestion-runs/evidence",
-    "POST",
-    {
-      supported_game: "one-piece",
-      source_lineage: "unrelated-source",
-      adapter_version: "one-piece-en@6",
-      idempotency_key: "source_adapter_mismatch_001",
-      requests: [
-        {
-          id: "cards",
-          url: "https://official-source.invalid/cards",
-        },
-      ],
-    },
-  );
+  const mismatched = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
+    supported_game: "one-piece",
+    source_lineage: "unrelated-source",
+    adapter_version: "one-piece-en@6",
+    idempotency_key: "source_adapter_mismatch_001",
+    requests: [
+      {
+        id: "cards",
+        url: "https://official-source.invalid/cards",
+      },
+    ],
+  });
   expect(mismatched.status).toBe(422);
   await expect(mismatched.json()).resolves.toMatchObject({
     code: "adapter_binding_mismatch",
@@ -279,15 +249,11 @@ test("adapter registrations stay constrained while mismatched production identit
         adapter_origin: adapter.origin,
         request_capacity: adapter.requestCapacity,
       }))
-      .sort((left, right) =>
-        left.adapter_version.localeCompare(right.adapter_version),
-      ),
+      .sort((left, right) => left.adapter_version.localeCompare(right.adapter_version)),
   );
   for (const adapter of installedSourceAdapterRegistrations) {
     expect(adapter.requestCapacity).toBeGreaterThanOrEqual(1);
-    expect(adapter.requestCapacity).toBeLessThanOrEqual(
-      globalEmergencySourceRequestCeiling,
-    );
+    expect(adapter.requestCapacity).toBeLessThanOrEqual(globalEmergencySourceRequestCeiling);
     expect(Number.isSafeInteger(adapter.requestCapacity)).toBe(true);
   }
 });
@@ -295,36 +261,23 @@ test("adapter registrations stay constrained while mismatched production identit
 test("a production plan cannot replace its discovery root with a raw surface", async () => {
   const plan = exactOnePiecePlan("source_exact_plan_omission_001");
   plan.requests[0]!.id = "one-piece-en:card-list";
-  const response = await administrationRequest(
-    "/v1/ingestion-runs/evidence",
-    "POST",
-    plan,
-  );
+  const response = await administrationRequest("/v1/ingestion-runs/evidence", "POST", plan);
   expect(response.status).toBe(422);
   await expect(response.json()).resolves.toMatchObject({
     code: "incomplete_source_plan",
   });
 });
 
-test.each([
-  ["cap"],
-  ["pagination"],
-])(
+test.each([["cap"], ["pagination"]])(
   "raw discovery %s evidence fails closed after retaining the snapshot",
   async (failure) => {
     for (let repetition = 1; repetition <= 3; repetition += 1) {
-      const plan = exactOnePiecePlan(
-        `source_exact_${failure}_${String(repetition).padStart(3, "0")}`,
-      );
+      const plan = exactOnePiecePlan(`source_exact_${failure}_${String(repetition).padStart(3, "0")}`);
       plan.requests[0]!.headers = {
         ...plan.requests[0]!.headers,
         "user-agent": `card-keepr-runtime-parser/${failure}-${repetition}`,
       };
-      const created = await administrationRequest(
-        "/v1/ingestion-runs/evidence",
-        "POST",
-        plan,
-      );
+      const created = await administrationRequest("/v1/ingestion-runs/evidence", "POST", plan);
       expect(created.status).toBe(201);
       const run = await created.json<{ id: string }>();
       const terminal = await resumeCollection(run.id, 20_000);
@@ -334,11 +287,15 @@ test.each([
            FROM source_requests
            WHERE ingestion_run_id = ? AND failure_code IS NOT NULL
            ORDER BY sequence_number`,
-        ).bind(run.id).all();
-        throw new Error(JSON.stringify({
-          failure_code: terminal.failure_code,
-          source_failures: failures.results,
-        }));
+        )
+          .bind(run.id)
+          .all();
+        throw new Error(
+          JSON.stringify({
+            failure_code: terminal.failure_code,
+            source_failures: failures.results,
+          }),
+        );
       }
       expect(terminal).toMatchObject({
         state: "failed",
@@ -346,20 +303,22 @@ test.each([
       });
       expect(terminal.snapshots).toHaveLength(11);
       expect(terminal.observation_sets).toHaveLength(10);
-      expect(
-        terminal.snapshots.some((snapshot) =>
-          snapshot.request.url === plan.requests[0]!.url
-        ),
-      ).toBe(true);
-      await expect(env.CATALOGUE_DB.prepare(
-        `SELECT request_id, failure_code FROM source_requests
+      expect(terminal.snapshots.some((snapshot) => snapshot.request.url === plan.requests[0]!.url)).toBe(true);
+      await expect(
+        env.CATALOGUE_DB.prepare(
+          `SELECT request_id, failure_code FROM source_requests
          WHERE ingestion_run_id = ? AND state = 'failed'
          ORDER BY sequence_number`,
-      ).bind(run.id).all()).resolves.toMatchObject({
-        results: [{
-          request_id: "one-piece-en:card-list",
-          failure_code: "source_parse_failed",
-        }],
+        )
+          .bind(run.id)
+          .all(),
+      ).resolves.toMatchObject({
+        results: [
+          {
+            request_id: "one-piece-en:card-list",
+            failure_code: "source_parse_failed",
+          },
+        ],
       });
     }
   },
@@ -391,11 +350,7 @@ test.each([
       "body_failure",
     ]);
     for (let attempt = 1; attempt <= 4; attempt += 1) {
-      const identity = await captureOperationIdentity(
-        run.id,
-        "required-source",
-        attempt,
-      );
+      const identity = await captureOperationIdentity(run.id, "required-source", attempt);
       expect(await env.EVIDENCE_OBJECTS.head(identity.objectKey)).toBeNull();
     }
   },
@@ -407,10 +362,7 @@ test("body streaming failures are durable diagnostics with bounded retries", asy
     "source_body_failure_001",
     "https://body-failure-official-source.invalid/body-failure",
   );
-  const accepted = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/resume`,
-    "POST",
-  );
+  const accepted = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(accepted.status).toBe(202);
   await accepted.body?.cancel();
   const failed = await waitForEvidenceRun(run.id, "failed", 15_000);
@@ -485,17 +437,13 @@ async function retainProductionSnapshot(
 }
 
 test("production discovery that proves no collection surface fails its last discovery stage closed", async () => {
-  const created = await administrationRequest(
-    "/v1/ingestion-runs/evidence",
-    "POST",
-    {
-      supported_game: "fusion-world",
-      source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@9",
-      idempotency_key: "official_collection_plan_empty_001",
-      requests: officialSourceDiscoveryRequests("fusion-world-en"),
-    },
-  );
+  const created = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
+    supported_game: "fusion-world",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fusion-world-en@9",
+    idempotency_key: "official_collection_plan_empty_001",
+    requests: officialSourceDiscoveryRequests("fusion-world-en"),
+  });
   expect(created.status).toBe(201);
   const run = await created.json<{ id: string }>();
   const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
@@ -518,16 +466,16 @@ test("production discovery that proves no collection surface fails its last disc
   );
 
   const staged = await pendingEvidenceRequests(env.CATALOGUE_DB, run.id);
-  const cards = staged.find(({ request_id }) =>
-    request_id.startsWith("fusion-world-en:listing:cards:")
-  );
+  const cards = staged.find(({ request_id }) => request_id.startsWith("fusion-world-en:listing:cards:"));
   if (cards === undefined) throw new Error("cards discovery stage is absent");
   // Every other discovery stage completes without proving a collection
   // surface, leaving the cards stage as the run's last outstanding request.
   await env.CATALOGUE_DB.prepare(
     `UPDATE source_requests SET state = 'observed'
      WHERE ingestion_run_id = ? AND request_id != ?`,
-  ).bind(run.id, cards.request_id).run();
+  )
+    .bind(run.id, cards.request_id)
+    .run();
 
   const stageSnapshotId = await retainProductionSnapshot(
     run.id,
@@ -535,46 +483,48 @@ test("production discovery that proves no collection surface fails its last disc
     cards.url,
     utf8("<html><title>BANDAI DRAGON BALL CARD LIST</title><main>Cards</main></html>"),
   );
-  await expect(parseCapturedRequest(
-    env.CATALOGUE_DB,
-    env.EVIDENCE_OBJECTS,
-    storedRun,
-    cards,
-    stageSnapshotId,
-  )).resolves.toMatchObject({
+  await expect(
+    parseCapturedRequest(env.CATALOGUE_DB, env.EVIDENCE_OBJECTS, storedRun, cards, stageSnapshotId),
+  ).resolves.toMatchObject({
     kind: "done",
     failure_code: "official_collection_plan_empty",
   });
-  await expect(env.CATALOGUE_DB.prepare(
-    `SELECT request_id, state, failure_code FROM source_requests
+  await expect(
+    env.CATALOGUE_DB.prepare(
+      `SELECT request_id, state, failure_code FROM source_requests
      WHERE ingestion_run_id = ? AND failure_code IS NOT NULL`,
-  ).bind(run.id).all()).resolves.toMatchObject({
-    results: [{
-      request_id: cards.request_id,
-      state: "failed",
-      failure_code: "official_collection_plan_empty",
-    }],
+    )
+      .bind(run.id)
+      .all(),
+  ).resolves.toMatchObject({
+    results: [
+      {
+        request_id: cards.request_id,
+        state: "failed",
+        failure_code: "official_collection_plan_empty",
+      },
+    ],
   });
-  await expect(env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM official_source_collection_plans
+  await expect(
+    env.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count FROM official_source_collection_plans
      WHERE ingestion_run_id = ?`,
-  ).bind(run.id).first<{ count: number }>()).resolves.toMatchObject({
+    )
+      .bind(run.id)
+      .first<{ count: number }>(),
+  ).resolves.toMatchObject({
     count: 0,
   });
 });
 
 test("an Official Source Collection Plan beyond the adapter capacity is rejected without partial admission", async () => {
-  const created = await administrationRequest(
-    "/v1/ingestion-runs/evidence",
-    "POST",
-    {
-      supported_game: "fusion-world",
-      source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@9",
-      idempotency_key: "official_collection_plan_capacity_001",
-      requests: officialSourceDiscoveryRequests("fusion-world-en"),
-    },
-  );
+  const created = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
+    supported_game: "fusion-world",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fusion-world-en@9",
+    idempotency_key: "official_collection_plan_capacity_001",
+    requests: officialSourceDiscoveryRequests("fusion-world-en"),
+  });
   expect(created.status).toBe(201);
   const run = await created.json<{ id: string }>();
   const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
@@ -653,44 +603,52 @@ test("an Official Source Collection Plan beyond the adapter capacity is rejected
     ).bind(run.id),
   ]);
 
-  const collectionRequests = [{
-    id: "fusion-world-en:cards",
-    method: "GET" as const,
-    url: "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true",
-    headers: { accept: "text/html" },
-    representation_fingerprint: "f".repeat(64),
-    surface: "cards",
-  }];
-  await expect(persistOfficialSourceCollectionPlan(
-    env.CATALOGUE_DB,
-    run.id,
-    observationSetId,
-    collectionRequests,
-  )).rejects.toMatchObject({ code: "source_discovery_too_large" });
-  await expect(env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM official_source_collection_plans
+  const collectionRequests = [
+    {
+      id: "fusion-world-en:cards",
+      method: "GET" as const,
+      url: "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true",
+      headers: { accept: "text/html" },
+      representation_fingerprint: "f".repeat(64),
+      surface: "cards",
+    },
+  ];
+  await expect(
+    persistOfficialSourceCollectionPlan(env.CATALOGUE_DB, run.id, observationSetId, collectionRequests),
+  ).rejects.toMatchObject({ code: "source_discovery_too_large" });
+  await expect(
+    env.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count FROM official_source_collection_plans
      WHERE ingestion_run_id = ?`,
-  ).bind(run.id).first<{ count: number }>()).resolves.toMatchObject({
+    )
+      .bind(run.id)
+      .first<{ count: number }>(),
+  ).resolves.toMatchObject({
     count: 0,
   });
-  await expect(env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM source_requests
+  await expect(
+    env.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count FROM source_requests
      WHERE ingestion_run_id = ?`,
-  ).bind(run.id).first<{ count: number }>()).resolves.toMatchObject({
+    )
+      .bind(run.id)
+      .first<{ count: number }>(),
+  ).resolves.toMatchObject({
     count: 15_000,
   });
   // The rejection is deterministic: replaying the identical admission keeps
   // failing closed without partially inserting the plan or its requests.
-  await expect(persistOfficialSourceCollectionPlan(
-    env.CATALOGUE_DB,
-    run.id,
-    observationSetId,
-    collectionRequests,
-  )).rejects.toMatchObject({ code: "source_discovery_too_large" });
-  await expect(env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM source_requests
+  await expect(
+    persistOfficialSourceCollectionPlan(env.CATALOGUE_DB, run.id, observationSetId, collectionRequests),
+  ).rejects.toMatchObject({ code: "source_discovery_too_large" });
+  await expect(
+    env.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count FROM source_requests
      WHERE ingestion_run_id = ? AND request_id = 'fusion-world-en:cards'`,
-  ).bind(run.id).first<{ count: number }>()).resolves.toMatchObject({
+    )
+      .bind(run.id)
+      .first<{ count: number }>(),
+  ).resolves.toMatchObject({
     count: 0,
   });
 }, 30_000);

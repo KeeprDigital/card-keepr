@@ -1,7 +1,5 @@
-import { isIsoCalendarDate } from "./calendar-date.ts";
-import {
-  openPredicateUnresolvedReason,
-} from "./official-legality-source-adapters.ts";
+import { isIsoCalendarDate } from "./shared";
+import { openPredicateUnresolvedReason } from "./official-legality-source-adapters.ts";
 
 type LiveLegalityGame = "one-piece" | "fusion-world" | "digimon" | "gundam";
 
@@ -49,9 +47,10 @@ export function liveOfficialLegalityDocument(
     game === "one-piece" &&
     sourceLineage === "one-piece-en" &&
     surface === "block-policy" &&
-    new URL(requestUrl).href ===
-      "https://en.onepiece-cardgame.com/topics/013.php" &&
-    /<title>Introduction of the Block Number System − TOPICS｜ONE PIECE CARD GAME - Official Web Site<\/title>/u.test(html) &&
+    new URL(requestUrl).href === "https://en.onepiece-cardgame.com/topics/013.php" &&
+    /<title>Introduction of the Block Number System − TOPICS｜ONE PIECE CARD GAME - Official Web Site<\/title>/u.test(
+      html,
+    ) &&
     /Introduction of the Block Number System/u.test(html)
   ) {
     // The live Block Number publication introduces the numbering system
@@ -66,9 +65,10 @@ export function liveOfficialLegalityDocument(
     game === "fusion-world" &&
     sourceLineage === "fusion-world-en" &&
     (surface === "detail" || surface === "legality-current") &&
-    new URL(requestUrl).href ===
-      "https://www.dbs-cardgame.com/fw/en/news/01_305.html" &&
-    /<title>Banned\/Restricted Cards from March 2026 \| Dragon Ball Super Card Game Fusion World - Official Web Site<\/title>/u.test(html)
+    new URL(requestUrl).href === "https://www.dbs-cardgame.com/fw/en/news/01_305.html" &&
+    /<title>Banned\/Restricted Cards from March 2026 \| Dragon Ball Super Card Game Fusion World - Official Web Site<\/title>/u.test(
+      html,
+    )
   ) {
     return {
       surface: "legality-current",
@@ -80,9 +80,10 @@ export function liveOfficialLegalityDocument(
     sourceLineage === "fusion-world-en" &&
     (surface === "detail" || surface === "legality-history") &&
     options.fusionRestrictionLift === true &&
-    new URL(requestUrl).href ===
-      "https://www.dbs-cardgame.com/fw/en/news/01_399.html" &&
-    /<title>Announcement Regarding Cards That Will be Banned or Restricted from March 2026 \| Dragon Ball Super Card Game Fusion World - Official Web Site<\/title>/u.test(html)
+    new URL(requestUrl).href === "https://www.dbs-cardgame.com/fw/en/news/01_399.html" &&
+    /<title>Announcement Regarding Cards That Will be Banned or Restricted from March 2026 \| Dragon Ball Super Card Game Fusion World - Official Web Site<\/title>/u.test(
+      html,
+    )
   ) {
     return {
       surface: "legality-history",
@@ -93,8 +94,7 @@ export function liveOfficialLegalityDocument(
     game === "fusion-world" &&
     sourceLineage === "fusion-world-en" &&
     surface === "legality-history" &&
-    new URL(requestUrl).href ===
-      "https://www.dbs-cardgame.com/fw/en/news/01_399.html" &&
+    new URL(requestUrl).href === "https://www.dbs-cardgame.com/fw/en/news/01_399.html" &&
     fusionWorldPublisherDeclaresExactEmptyHistory(html)
   ) {
     return {
@@ -106,8 +106,7 @@ export function liveOfficialLegalityDocument(
     game === "digimon" &&
     sourceLineage === "digimon-en" &&
     (surface === "restrictions-current" || surface === "restrictions-history") &&
-    new URL(requestUrl).href ===
-      "https://world.digimoncard.com/rule/restriction_card/" &&
+    new URL(requestUrl).href === "https://world.digimoncard.com/rule/restriction_card/" &&
     /<title>Banned and Restricted Card Announcement \(Mar\. 16, 2026\) − RULE｜Digimon Card Game<\/title>/u.test(html)
   ) {
     return {
@@ -125,8 +124,7 @@ export function liveOfficialLegalityDocument(
   ) {
     const locale = sourceLineage === "gundam-en-asia" ? "asia-en" : "en";
     if (
-      new URL(requestUrl).href ===
-        `https://www.gundam-gcg.com/${locale}/news/01_279.html` &&
+      new URL(requestUrl).href === `https://www.gundam-gcg.com/${locale}/news/01_279.html` &&
       /<h3>Current List of Banned \/ Restricted Cards<\/h3>/u.test(html)
     ) {
       return {
@@ -141,9 +139,10 @@ export function liveOfficialLegalityDocument(
 function fusionWorldPublisherDeclaresExactEmptyHistory(html: string): boolean {
   const title = html.match(/<title>([^<]+)<\/title>/u)?.[1] ?? "";
   const main = html.match(/<main>([\s\S]*?)<\/main>/u)?.[1] ?? "";
-  return /\bBANDAI\b[\s\S]*\bRULE\b[\s\S]*\bRESTRICTION\b/iu.test(title) &&
-    /^\s*<p>0 records<\/p>\s*<article data-publication-empty="true">No published entries\.<\/article>\s*$/u
-      .test(main);
+  return (
+    /\bBANDAI\b[\s\S]*\bRULE\b[\s\S]*\bRESTRICTION\b/iu.test(title) &&
+    /^\s*<p>0 records<\/p>\s*<article data-publication-empty="true">No published entries\.<\/article>\s*$/u.test(main)
+  );
 }
 
 // The pinned Fusion World legality-history publication (verified live on
@@ -152,11 +151,11 @@ function fusionWorldPublisherDeclaresExactEmptyHistory(html: string): boolean {
 // a calendar date. The TCG rule parses as one effective-dated eligible rule;
 // the digital sentence is retained through the full-consumption check and
 // asserts no organized-play scope this catalogue models.
-function fusionWorldHistoryRestrictionLift(
-  html: string,
-): Record<string, unknown> {
+function fusionWorldHistoryRestrictionLift(html: string): Record<string, unknown> {
   if (
-    !/<time class="time" datetime="2026-03-09">March 09, 2026<\/time>\s*<span class="txt">Announcement Regarding Cards That Will be Banned or Restricted from March 2026<\/span>/u.test(html)
+    !/<time class="time" datetime="2026-03-09">March 09, 2026<\/time>\s*<span class="txt">Announcement Regarding Cards That Will be Banned or Restricted from March 2026<\/span>/u.test(
+      html,
+    )
   ) {
     throw new Error("Fusion World history policy identity is unavailable.");
   }
@@ -166,24 +165,17 @@ function fusionWorldHistoryRestrictionLift(
     "Fusion World history policy article",
   );
   assertNoUnconsumedPolicyConditions(article);
-  const changeDate = exactHumanDate(requiredCapture(
-    article,
-    /<p class="xxSmallTitle">TCG Ver\. Change Date<\/p>[\s\S]*?<p>([^<]+)<\/p>/u,
-    "Fusion World TCG change date",
-  ));
+  const changeDate = exactHumanDate(
+    requiredCapture(
+      article,
+      /<p class="xxSmallTitle">TCG Ver\. Change Date<\/p>[\s\S]*?<p>([^<]+)<\/p>/u,
+      "Fusion World TCG change date",
+    ),
+  );
   const liftPattern =
     /<h4>Card Removed from the Restricted List<\/h4>[\s\S]*?<h6>(([A-Z]{1,6}\d{0,4}-\d{1,4}) [^<]+)<\/h6>/u;
-  const liftedLabel = decodedText(requiredCapture(
-    article,
-    liftPattern,
-    "Fusion World lifted restriction",
-  ));
-  const liftedNumber = requiredCapture(
-    article,
-    liftPattern,
-    "Fusion World lifted restriction Card number",
-    2,
-  );
+  const liftedLabel = decodedText(requiredCapture(article, liftPattern, "Fusion World lifted restriction"));
+  const liftedNumber = requiredCapture(article, liftPattern, "Fusion World lifted restriction Card number", 2);
   const liftWording = "Therefore, its Restricted status will be lifted.";
   const visibleText = normalizedVisiblePolicyText(article);
   const expectedVisibleText = [
@@ -207,23 +199,22 @@ function fusionWorldHistoryRestrictionLift(
     "— DRAGON BALL SUPER CARD GAME FUSION WORLD Operations & Development Teams",
   ].join(" ");
   if (visibleText !== expectedVisibleText) {
-    throw new Error(
-      "Fusion World history policy contains unconsumed prose or structure.",
-    );
+    throw new Error("Fusion World history policy contains unconsumed prose or structure.");
   }
-  const entries = [{
-    market: "EN-OCEANIA",
-    play_format: "standard",
-    tier: null,
-    active_on: changeDate,
-    expires_on: null,
-    unresolved_scope: null,
-    directive: "eligible",
-    rule_ref: `01_399-${liftedNumber}`,
-    notice:
-      `Card Removed from the Restricted List\n${liftedLabel}\n${liftWording}`,
-    cards: [liftedNumber],
-  }];
+  const entries = [
+    {
+      market: "EN-OCEANIA",
+      play_format: "standard",
+      tier: null,
+      active_on: changeDate,
+      expires_on: null,
+      unresolved_scope: null,
+      directive: "eligible",
+      rule_ref: `01_399-${liftedNumber}`,
+      notice: `Card Removed from the Restricted List\n${liftedLabel}\n${liftWording}`,
+      cards: [liftedNumber],
+    },
+  ];
   return { entries, declared_record_count: entries.length };
 }
 
@@ -258,9 +249,7 @@ function gundamCurrentRestrictions(
   if (options.unresolvedTargetScope !== true) {
     // Frozen behavior for earlier adapter generations: the compound policy
     // has no representable form without the target_scope dimension.
-    throw new Error(
-      "Gundam compound prohibited-combination and copy-limit policy is not exactly representable.",
-    );
+    throw new Error("Gundam compound prohibited-combination and copy-limit policy is not exactly representable.");
   }
   return gundamExactCurrentRestrictions(sourceLineage, current);
 }
@@ -272,33 +261,28 @@ type GundamPolicyToken = {
 
 const gundamCardLabelPattern = /^([A-Z]{1,6}\d{0,4}-\d{1,4}) (.+)$/u;
 const gundamBanWording = "No copies of the card are permitted in the deck.";
-const gundamRestrictedWording =
-  "Only 2 copy of the card is permitted in the deck.";
+const gundamRestrictedWording = "Only 2 copy of the card is permitted in the deck.";
 const gundamPairWording = "Cards A and B cannot be used at the same time";
 const gundamOpenPredicateWording =
   'All combinations of cards that match the above description "a Unit card that is Lv.2 with cost 1, 2 AP, and 2 HP, and without effects" are included as banned pairs, and no more than four copies of one card matching this description can be used in a deck.';
 
 function gundamPolicyTokens(current: string): GundamPolicyToken[] {
-  return [...current.matchAll(
-    /<(h3|h4)\b[^>]*>([\s\S]*?)<\/\1>|<a\b([^>]*)>([\s\S]*?)<\/a>|<p\b[^>]*>([\s\S]*?)<\/p>/giu,
-  )].flatMap<GundamPolicyToken>((match) => {
+  return [
+    ...current.matchAll(/<(h3|h4)\b[^>]*>([\s\S]*?)<\/\1>|<a\b([^>]*)>([\s\S]*?)<\/a>|<p\b[^>]*>([\s\S]*?)<\/p>/giu),
+  ].flatMap<GundamPolicyToken>((match) => {
     if (match[1] !== undefined) {
-      return [{
-        kind: match[1].toLowerCase() === "h3" ? "heading3" : "heading4",
-        text: normalizedVisiblePolicyText(match[2]!),
-      }];
+      return [
+        {
+          kind: match[1].toLowerCase() === "h3" ? "heading3" : "heading4",
+          text: normalizedVisiblePolicyText(match[2]!),
+        },
+      ];
     }
     if (match[3] !== undefined) {
       const text = normalizedVisiblePolicyText(match[4]!);
       if (text.length === 0) return [];
-      if (
-        !/(?:^|\s)commonBtn(?:\s|$)/u.test(
-          match[3].match(/\bclass=["']([^"']*)["']/iu)?.[1] ?? "",
-        )
-      ) {
-        throw new Error(
-          "Gundam current policy contains an unrecognized visible link.",
-        );
+      if (!/(?:^|\s)commonBtn(?:\s|$)/u.test(match[3].match(/\bclass=["']([^"']*)["']/iu)?.[1] ?? "")) {
+        throw new Error("Gundam current policy contains an unrecognized visible link.");
       }
       return [{ kind: "navigation", text }];
     }
@@ -307,12 +291,8 @@ function gundamPolicyTokens(current: string): GundamPolicyToken[] {
   });
 }
 
-function gundamExactCardLabel(
-  token: GundamPolicyToken | undefined,
-): { number: string; label: string } {
-  const match = token?.kind === "paragraph"
-    ? token.text.match(gundamCardLabelPattern)
-    : null;
+function gundamExactCardLabel(token: GundamPolicyToken | undefined): { number: string; label: string } {
+  const match = token?.kind === "paragraph" ? token.text.match(gundamCardLabelPattern) : null;
   if (match === null || match === undefined) {
     throw new Error("Gundam current policy Card entry is not exactly labeled.");
   }
@@ -326,15 +306,12 @@ function gundamExactCurrentRestrictions(
   const tokens = gundamPolicyTokens(current);
   let position = 0;
   const next = (): GundamPolicyToken | undefined => tokens[position++];
-  const require = (
-    kind: GundamPolicyToken["kind"],
-    expected: string | RegExp,
-  ): string => {
+  const require = (kind: GundamPolicyToken["kind"], expected: string | RegExp): string => {
     const token = next();
-    const matches = token !== undefined && token.kind === kind &&
-      (typeof expected === "string"
-        ? token.text === expected
-        : expected.test(token.text));
+    const matches =
+      token !== undefined &&
+      token.kind === kind &&
+      (typeof expected === "string" ? token.text === expected : expected.test(token.text));
     if (!matches) {
       throw new Error("Gundam current policy structure is not exactly representable.");
     }
@@ -368,10 +345,7 @@ function gundamExactCurrentRestrictions(
     pairs.push({ left, right });
   }
   const predicateCards: Array<{ number: string; label: string }> = [];
-  while (
-    tokens[position]?.kind === "paragraph" &&
-    gundamCardLabelPattern.test(tokens[position]!.text)
-  ) {
+  while (tokens[position]?.kind === "paragraph" && gundamCardLabelPattern.test(tokens[position]!.text)) {
     predicateCards.push(gundamExactCardLabel(next()));
   }
   require("paragraph", gundamOpenPredicateWording);
@@ -386,15 +360,14 @@ function gundamExactCurrentRestrictions(
       restricted.number,
       ...pairs.flatMap(({ left, right }) => [left.number, right.number]),
       ...predicateCards.map(({ number }) => number),
-    ]).size !== 2 + 4 + 20
+    ]).size !==
+      2 + 4 + 20
   ) {
     throw new Error("Gundam current policy category totals changed.");
   }
   const expectedVisibleText = tokens.map(({ text }) => text).join(" ");
   if (normalizedVisiblePolicyText(current) !== expectedVisibleText) {
-    throw new Error(
-      "Gundam current policy contains unconsumed prose or structure.",
-    );
+    throw new Error("Gundam current policy contains unconsumed prose or structure.");
   }
   const region = sourceLineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US";
   const common = {
@@ -405,11 +378,7 @@ function gundamExactCurrentRestrictions(
     end_date: null,
     ruling: "unresolved",
   };
-  const intervalEntry = (
-    id: string,
-    wording: string,
-    cards: ReadonlyArray<{ number: string; label: string }>,
-  ) => {
+  const intervalEntry = (id: string, wording: string, cards: ReadonlyArray<{ number: string; label: string }>) => {
     const numbers = cards.map(({ number }) => number);
     return {
       ...common,
@@ -421,26 +390,15 @@ function gundamExactCurrentRestrictions(
     };
   };
   const entries = [
-    intervalEntry(`01_279-current-ban-${banned.number}`, gundamBanWording, [
-      banned,
-    ]),
-    intervalEntry(
-      `01_279-current-restricted-${restricted.number}`,
-      gundamRestrictedWording,
-      [restricted],
-    ),
+    intervalEntry(`01_279-current-ban-${banned.number}`, gundamBanWording, [banned]),
+    intervalEntry(`01_279-current-restricted-${restricted.number}`, gundamRestrictedWording, [restricted]),
     ...pairs.map(({ left, right }, index) =>
-      intervalEntry(`01_279-current-pair-${index + 1}`, gundamPairWording, [
-        left,
-        right,
-      ])
+      intervalEntry(`01_279-current-pair-${index + 1}`, gundamPairWording, [left, right]),
     ),
     {
       ...common,
       news_id: "01_279-current-open-predicate",
-      text: `${gundamOpenPredicateWording}\n${
-        predicateCards.map(({ label }) => label).join("\n")
-      }`,
+      text: `${gundamOpenPredicateWording}\n${predicateCards.map(({ label }) => label).join("\n")}`,
       card_numbers: predicateCards.map(({ number }) => number),
       unresolved_scope: {
         dimensions: ["effective_interval", "target_scope"],
@@ -483,14 +441,11 @@ function digimonCurrentRestrictions(html: string): Record<string, unknown> {
     throw new Error("Digimon current policy categories are incomplete.");
   }
   const pairArea = current.slice(pairStart, banStart);
-  const pairStarts = [...pairArea.matchAll(/<div class="noticeFrame noticeBase">/gu)]
-    .map((match) => match.index);
+  const pairStarts = [...pairArea.matchAll(/<div class="noticeFrame noticeBase">/gu)].map((match) => match.index);
   const pairGroups = pairStarts.map((position, index) =>
-    cardLinks(pairArea.slice(position, pairStarts[index + 1] ?? pairArea.length))
+    cardLinks(pairArea.slice(position, pairStarts[index + 1] ?? pairArea.length)),
   );
-  const bannedCards = digimonCardEntries(
-    current.slice(banStart, restrictedStart),
-  );
+  const bannedCards = digimonCardEntries(current.slice(banStart, restrictedStart));
   const restrictedCards = digimonCardEntries(current.slice(restrictedStart));
   if (
     pairGroups.length !== 2 ||
@@ -518,9 +473,7 @@ function digimonCurrentRestrictions(html: string): Record<string, unknown> {
     ...restrictedCards.map(({ label }) => label.replace(/\s+/gu, " ")),
   ].join(" ");
   if (visibleText !== expectedVisibleText) {
-    throw new Error(
-      "Digimon current policy contains unconsumed prose or structure.",
-    );
+    throw new Error("Digimon current policy contains unconsumed prose or structure.");
   }
   const common = {
     language_scope: "EN-OCEANIA",
@@ -531,11 +484,7 @@ function digimonCurrentRestrictions(html: string): Record<string, unknown> {
     unresolved_scope: { dimensions: ["effective_interval"] },
     status_code: "unresolved",
   };
-  const unresolvedEntry = (
-    id: string,
-    wording: string,
-    cards: Array<{ number: string; label: string }>,
-  ) => {
+  const unresolvedEntry = (id: string, wording: string, cards: Array<{ number: string; label: string }>) => {
     const numbers = cards.map(({ number }) => number);
     return {
       ...common,
@@ -546,25 +495,19 @@ function digimonCurrentRestrictions(html: string): Record<string, unknown> {
     };
   };
   const entries = [
-    ...pairGroups.map((cards, index) =>
-      unresolvedEntry(`current-pair-${index + 1}`, pairWording, cards)
-    ),
-    ...bannedCards.map((card) =>
-      unresolvedEntry(`current-ban-${card.number}`, banWording, [card])
-    ),
-    ...restrictedCards.map((card) =>
-      unresolvedEntry(`current-restricted-${card.number}`, restrictedWording, [card])
-    ),
+    ...pairGroups.map((cards, index) => unresolvedEntry(`current-pair-${index + 1}`, pairWording, cards)),
+    ...bannedCards.map((card) => unresolvedEntry(`current-ban-${card.number}`, banWording, [card])),
+    ...restrictedCards.map((card) => unresolvedEntry(`current-restricted-${card.number}`, restrictedWording, [card])),
   ];
   return { entries, declared_record_count: entries.length };
 }
 
-function digimonCardEntries(
-  html: string,
-): Array<{ number: string; label: string }> {
-  return [...html.matchAll(
-    /<a href="\/cardlist\/index\.php\?search=true&card_no=([A-Z]{1,6}\d{0,4}-\d{1,4})"><dd class="cardName"><span class="num">([^<]+)<\/span>([\s\S]*?)<\/dd><\/a>/gu,
-  )].map((match) => {
+function digimonCardEntries(html: string): Array<{ number: string; label: string }> {
+  return [
+    ...html.matchAll(
+      /<a href="\/cardlist\/index\.php\?search=true&card_no=([A-Z]{1,6}\d{0,4}-\d{1,4})"><dd class="cardName"><span class="num">([^<]+)<\/span>([\s\S]*?)<\/dd><\/a>/gu,
+    ),
+  ].map((match) => {
     if (match[1] !== match[2]) {
       throw new Error("Digimon policy Card URL and label identities conflict.");
     }
@@ -577,7 +520,9 @@ function digimonCardEntries(
 
 function fusionWorldCurrentRestrictions(html: string): Record<string, unknown> {
   if (
-    !/<time class="time" datetime="2026-03-13">March 13, 2026<\/time>\s*<span class="txt">Banned\/Restricted Cards from March 2026<\/span>/u.test(html)
+    !/<time class="time" datetime="2026-03-13">March 13, 2026<\/time>\s*<span class="txt">Banned\/Restricted Cards from March 2026<\/span>/u.test(
+      html,
+    )
   ) {
     throw new Error("Fusion World current policy identity is unavailable.");
   }
@@ -611,9 +556,7 @@ function fusionWorldCurrentRestrictions(html: string): Record<string, unknown> {
     ...restricted.cards.map(({ label }) => label),
   ].join(" ");
   if (visibleText !== expectedVisibleText) {
-    throw new Error(
-      "Fusion World current policy contains unconsumed prose or structure.",
-    );
+    throw new Error("Fusion World current policy contains unconsumed prose or structure.");
   }
   if (banned.cards.length !== 3 || restricted.cards.length !== 5) {
     throw new Error("Fusion World current policy category totals changed.");
@@ -627,20 +570,16 @@ function fusionWorldCurrentRestrictions(html: string): Record<string, unknown> {
     unresolved_scope: { dimensions: ["effective_interval"] },
     directive: "unresolved",
   };
-  const entries = [...banned.cards, ...restricted.cards].map(
-    ({ number, label }, index) => {
-      const policy = index < banned.cards.length
-        ? banned.wording
-        : restricted.wording;
-      return {
-        ...common,
-        rule_ref: `01_305-${number}`,
-        notice: `${policy}\n${label}`,
-        cards: [number],
-        ambiguity: `Effective interval for ${number} is not stated.`,
-      };
-    },
-  );
+  const entries = [...banned.cards, ...restricted.cards].map(({ number, label }, index) => {
+    const policy = index < banned.cards.length ? banned.wording : restricted.wording;
+    return {
+      ...common,
+      rule_ref: `01_305-${number}`,
+      notice: `${policy}\n${label}`,
+      cards: [number],
+      ambiguity: `Effective interval for ${number} is not stated.`,
+    };
+  });
   return { entries, declared_record_count: entries.length };
 }
 
@@ -650,9 +589,7 @@ function requiredPolicyCardSection(
   wording: string,
   nextHeading: string | null,
 ): { wording: string; cards: Array<{ number: string; label: string }> } {
-  const end = nextHeading === null
-    ? "[\\s\\S]*$"
-    : `[\\s\\S]*?<h4>${escapeRegExp(nextHeading)}</h4>`;
+  const end = nextHeading === null ? "[\\s\\S]*$" : `[\\s\\S]*?<h4>${escapeRegExp(nextHeading)}</h4>`;
   const section = requiredCapture(
     html,
     new RegExp(
@@ -661,9 +598,9 @@ function requiredPolicyCardSection(
     ),
     `Official ${heading} section`,
   );
-  const cards = [...section.matchAll(
-    /<p class="cms-card-subtitle" data-num="\d+">\s*([A-Z]{1,6}\d{0,4}-\d{1,4})\s+([^<]+)<\/p>/gu,
-  )].map((match) => ({
+  const cards = [
+    ...section.matchAll(/<p class="cms-card-subtitle" data-num="\d+">\s*([A-Z]{1,6}\d{0,4}-\d{1,4})\s+([^<]+)<\/p>/gu),
+  ].map((match) => ({
     number: match[1]!,
     label: `${match[1]} ${decodedText(match[2]!)}`,
   }));
@@ -671,19 +608,18 @@ function requiredPolicyCardSection(
 }
 
 function onePieceCurrentRestrictions(html: string): Record<string, unknown> {
-  const effectiveDate = exactHumanDate(requiredCapture(
-    html,
-    /<h3>Banned\/Restricted Cards effective from ([^<]+)<\/h3>/u,
-    "One Piece active restriction effective date",
-  ));
+  const effectiveDate = exactHumanDate(
+    requiredCapture(
+      html,
+      /<h3>Banned\/Restricted Cards effective from ([^<]+)<\/h3>/u,
+      "One Piece active restriction effective date",
+    ),
+  );
   const activeStart = html.indexOf("<h3>Cards with Active Restrictions</h3>");
   if (activeStart < 0) {
     throw new Error("One Piece active restriction section is unavailable.");
   }
-  const activeEnd = html.indexOf(
-    '<div class="row js-setGallery rel-base c-gallery"',
-    activeStart + 1,
-  );
+  const activeEnd = html.indexOf('<div class="row js-setGallery rel-base c-gallery"', activeStart + 1);
   if (activeEnd < 0) {
     throw new Error("One Piece active restriction section is incomplete.");
   }
@@ -718,13 +654,8 @@ function onePieceCurrentRestrictions(html: string): Record<string, unknown> {
     /<h4>Banned Pair Cards<\/h4>\s*<p>(Card A and Card B cannot be included in the same deck\.)<\/p>/u,
     "One Piece active banned-pair wording",
   );
-  const pairGroups = [...pairSection.matchAll(
-    /<ul>([\s\S]*?)<\/ul>/gu,
-  )].map((match) => cardLinks(match[1]!));
-  if (
-    pairGroups.length === 0 ||
-    pairGroups.some((cards) => cards.length !== 2)
-  ) {
+  const pairGroups = [...pairSection.matchAll(/<ul>([\s\S]*?)<\/ul>/gu)].map((match) => cardLinks(match[1]!));
+  if (pairGroups.length === 0 || pairGroups.some((cards) => cards.length !== 2)) {
     throw new Error("One Piece active banned pairs are incomplete.");
   }
   const visibleText = normalizedVisiblePolicyText(active);
@@ -737,14 +668,10 @@ function onePieceCurrentRestrictions(html: string): Record<string, unknown> {
     "There are currently no cards in this category.",
     "Banned Pair Cards",
     pairPolicy,
-    ...pairGroups.flatMap((cards) =>
-      cards.flatMap(({ label }) => ["・", label])
-    ),
+    ...pairGroups.flatMap((cards) => cards.flatMap(({ label }) => ["・", label])),
   ].join(" ");
   if (visibleText !== expectedVisibleText) {
-    throw new Error(
-      "One Piece current policy contains unconsumed prose or structure.",
-    );
+    throw new Error("One Piece current policy contains unconsumed prose or structure.");
   }
   const common = {
     territory: "EN-OCEANIA",
@@ -777,9 +704,11 @@ function onePieceCurrentRestrictions(html: string): Record<string, unknown> {
 }
 
 function cardLinks(html: string): Array<{ number: string; label: string }> {
-  return [...html.matchAll(
-    /<a\b[^>]*href="[^"]*(?:freewords|card_no|q)=([A-Z]{1,6}\d{0,4}-\d{1,4})[^"]*"[^>]*>([^<]+)<\/a>/gu,
-  )].map((match) => {
+  return [
+    ...html.matchAll(
+      /<a\b[^>]*href="[^"]*(?:freewords|card_no|q)=([A-Z]{1,6}\d{0,4}-\d{1,4})[^"]*"[^>]*>([^<]+)<\/a>/gu,
+    ),
+  ].map((match) => {
     const label = decodedText(match[2]!);
     if (!label.startsWith(`${match[1]} `)) {
       throw new Error("Official policy Card label conflicts with its URL identity.");
@@ -788,12 +717,7 @@ function cardLinks(html: string): Array<{ number: string; label: string }> {
   });
 }
 
-function requiredCapture(
-  value: string,
-  pattern: RegExp,
-  name: string,
-  group = 1,
-): string {
+function requiredCapture(value: string, pattern: RegExp, name: string, group = 1): string {
   const matches = [...value.matchAll(new RegExp(pattern.source, `${pattern.flags}g`))];
   if (matches.length !== 1 || matches[0]![group] === undefined) {
     throw new Error(`${name} does not match its exact publisher structure.`);
@@ -803,12 +727,23 @@ function requiredCapture(
 
 function exactHumanDate(value: string): string {
   const match = value.match(/^([A-Z][a-z]+) (\d{1,2}), (\d{4})$/u);
-  const month = match === null
-    ? 0
-    : [
-      "January", "February", "March", "April", "May", "June",
-      "July", "August", "September", "October", "November", "December",
-    ].indexOf(match[1]!) + 1;
+  const month =
+    match === null
+      ? 0
+      : [
+          "January",
+          "February",
+          "March",
+          "April",
+          "May",
+          "June",
+          "July",
+          "August",
+          "September",
+          "October",
+          "November",
+          "December",
+        ].indexOf(match[1]!) + 1;
   if (match === null || month === 0) {
     throw new Error("Official policy effective date is not an exact calendar date.");
   }
@@ -831,19 +766,13 @@ function decodedText(value: string): string {
 
 function assertNoUnconsumedPolicyConditions(html: string): void {
   const text = normalizedVisiblePolicyText(html);
-  if (
-    /\b(?:unless|except(?:\s+(?:if|when|where))?|provided\s+that|only\s+(?:if|when))\b/iu
-      .test(text)
-  ) {
-    throw new Error(
-      "Official policy retains an unconsumed condition that is not exactly representable.",
-    );
+  if (/\b(?:unless|except(?:\s+(?:if|when|where))?|provided\s+that|only\s+(?:if|when))\b/iu.test(text)) {
+    throw new Error("Official policy retains an unconsumed condition that is not exactly representable.");
   }
 }
 
 function normalizedVisiblePolicyText(html: string): string {
-  return decodedText(html.replace(/<[^>]+>/gu, " "))
-    .replace(/\s+/gu, " ");
+  return decodedText(html.replace(/<[^>]+>/gu, " ")).replace(/\s+/gu, " ");
 }
 
 function escapeRegExp(value: string): string {

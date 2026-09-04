@@ -22,15 +22,9 @@ function deterministicCompressor(): Deflate {
   return compressor;
 }
 
-function push(
-  compressor: Deflate,
-  chunk: Uint8Array,
-  final: boolean,
-): void {
+function push(compressor: Deflate, chunk: Uint8Array, final: boolean): void {
   if (!compressor.push(chunk, final) || compressor.err !== zOk) {
-    throw new Error(
-      compressor.msg || "The deterministic gzip compressor failed.",
-    );
+    throw new Error(compressor.msg || "The deterministic gzip compressor failed.");
   }
 }
 
@@ -40,9 +34,7 @@ export function deterministicGzip(value: Uint8Array): Uint8Array {
   return Uint8Array.from(compressor.result);
 }
 
-export function deterministicGzipStream(
-  source: ReadableStream<Uint8Array>,
-): ReadableStream<Uint8Array> {
+export function deterministicGzipStream(source: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
   const compressor = deterministicCompressor();
   return source.pipeThrough(
     new TransformStream<Uint8Array, Uint8Array>({

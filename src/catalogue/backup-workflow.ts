@@ -1,9 +1,5 @@
-import { AdministrationProblem } from "./administration-problem.ts";
-import {
-  failActiveCatalogueBackupAttempt,
-  validateCatalogueBackupRetryEvidence,
-} from "./backup-recovery";
-import { canonicalJson, sha256Text } from "./serialization";
+import { AdministrationProblem, canonicalJson, sha256Text } from "./shared";
+import { failActiveCatalogueBackupAttempt, validateCatalogueBackupRetryEvidence } from "./backup-recovery";
 
 export type CatalogueBackupWorkflowParams = Readonly<{
   expected_current_revision_id: string;
@@ -13,12 +9,13 @@ export type CatalogueBackupWorkflowParams = Readonly<{
   failed_attempt_digest?: string;
 }>;
 
-type BackupWorkflowRequest = CatalogueBackupWorkflowParams & Readonly<{
-  request_json: string;
-  workflow_params_json: string;
-  workflow_instance_id: string;
-  linked_attempt_id: string | null;
-}>;
+type BackupWorkflowRequest = CatalogueBackupWorkflowParams &
+  Readonly<{
+    request_json: string;
+    workflow_params_json: string;
+    workflow_instance_id: string;
+    linked_attempt_id: string | null;
+  }>;
 
 export async function startOrObserveCatalogueBackupWorkflow(
   database: D1Database,
@@ -29,8 +26,9 @@ export async function startOrObserveCatalogueBackupWorkflow(
   const requestJson = canonicalJson(input);
   let stored = await workflowRequest(database, input.idempotency_key);
   if (stored === null) {
-    const state = await database.prepare(
-      `SELECT catalogue.current_revision_id,
+    const state = await database
+      .prepare(
+        `SELECT catalogue.current_revision_id,
               operation.active_ingestion_run_id,
               operation.recovery_health,
               EXISTS (
@@ -41,12 +39,14 @@ export async function startOrObserveCatalogueBackupWorkflow(
        FROM catalogue_state AS catalogue
        JOIN operation_state AS operation ON operation.singleton = 1
        WHERE catalogue.singleton = 1`,
-    ).bind(input.idempotency_key).first<{
-      current_revision_id: string;
-      active_ingestion_run_id: string | null;
-      recovery_health: string;
-      publication_attempt: number;
-    }>();
+      )
+      .bind(input.idempotency_key)
+      .first<{
+        current_revision_id: string;
+        active_ingestion_run_id: string | null;
+        recovery_health: string;
+        publication_attempt: number;
+      }>();
     if (state?.current_revision_id !== input.expected_current_revision_id) {
       throw new AdministrationProblem(
         409,
@@ -54,21 +54,11 @@ export async function startOrObserveCatalogueBackupWorkflow(
         "The expected current Catalogue Revision is stale.",
       );
     }
-    if (
-      state.active_ingestion_run_id !== null && state.publication_attempt !== 1
-    ) {
-      throw new AdministrationProblem(
-        409,
-        "maintenance_not_idle",
-        "Catalogue backup requires idle ingestion.",
-      );
+    if (state.active_ingestion_run_id !== null && state.publication_attempt !== 1) {
+      throw new AdministrationProblem(409, "maintenance_not_idle", "Catalogue backup requires idle ingestion.");
     }
     if (state.recovery_health === "blocked") {
-      throw new AdministrationProblem(
-        409,
-        "backup_in_progress",
-        "Another Backup Attempt is already active.",
-      );
+      throw new AdministrationProblem(409, "backup_in_progress", "Another Backup Attempt is already active.");
     }
     const linkedAttemptId = await validateCatalogueBackupRetryEvidence(database, {
       expectedCurrentRevisionId: input.expected_current_revision_id,
@@ -80,41 +70,41 @@ export async function startOrObserveCatalogueBackupWorkflow(
       ...input,
       observed_at: observedAt,
     };
-    const workflowInstanceId =
-      `backup-${(await sha256Text(requestJson)).slice(0, 64)}`;
-    const inserted = await database.prepare(
-      `INSERT OR IGNORE INTO catalogue_backup_workflow_requests (
+    const workflowInstanceId = `backup-${(await sha256Text(requestJson)).slice(0, 64)}`;
+    const inserted = await database
+      .prepare(
+        `INSERT OR IGNORE INTO catalogue_backup_workflow_requests (
          idempotency_key, expected_current_revision_id, request_json,
          workflow_params_json, workflow_instance_id, observed_at,
          linked_attempt_id
        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      input.idempotency_key,
-      input.expected_current_revision_id,
-      requestJson,
-      canonicalJson(params),
-      workflowInstanceId,
-      observedAt,
-      linkedAttemptId,
-    ).run();
+      )
+      .bind(
+        input.idempotency_key,
+        input.expected_current_revision_id,
+        requestJson,
+        canonicalJson(params),
+        workflowInstanceId,
+        observedAt,
+        linkedAttemptId,
+      )
+      .run();
     stored = await workflowRequest(database, input.idempotency_key);
     if (stored === null && linkedAttemptId !== null) {
-      const winner = await database.prepare(
-        `SELECT idempotency_key FROM catalogue_backup_workflow_requests
+      const winner = await database
+        .prepare(
+          `SELECT idempotency_key FROM catalogue_backup_workflow_requests
          WHERE linked_attempt_id = ? LIMIT 1`,
-      ).bind(linkedAttemptId).first<{ idempotency_key: string }>();
+        )
+        .bind(linkedAttemptId)
+        .first<{ idempotency_key: string }>();
       if (winner !== null) throw backupRetrySourceSuperseded();
     }
     if (stored === null) throw new Error("Backup Workflow request was not retained.");
     assertExactReplay(stored, requestJson);
     return {
       created: inserted.meta.changes === 1,
-      document: await publicWorkflowDocument(
-        database,
-        workflow,
-        stored,
-        inserted.meta.changes === 1,
-      ),
+      document: await publicWorkflowDocument(database, workflow, stored, inserted.meta.changes === 1),
     };
   }
   assertExactReplay(stored, requestJson);
@@ -161,14 +151,8 @@ async function publicWorkflowDocument(
   let publicStatus = status.status;
   let output: ReturnType<typeof workflowOutput> | null = null;
   if (status.status === "errored" || status.status === "terminated") {
-    const detail = status.error?.message ??
-      `The backup Workflow became ${status.status}.`;
-    await failActiveCatalogueBackupAttempt(
-      database,
-      request.idempotency_key,
-      request.observed_at,
-      detail,
-    );
+    const detail = status.error?.message ?? `The backup Workflow became ${status.status}.`;
+    await failActiveCatalogueBackupAttempt(database, request.idempotency_key, request.observed_at, detail);
     publicStatus = "complete";
     output = {
       ok: false,
@@ -193,9 +177,7 @@ async function publicWorkflowDocument(
   };
 }
 
-function publicWorkflowOutput(
-  output: ReturnType<typeof workflowOutput> | null,
-): Record<string, unknown> | null {
+function publicWorkflowOutput(output: ReturnType<typeof workflowOutput> | null): Record<string, unknown> | null {
   if (output === null) return null;
   if (output.ok) return output.document;
   return {
@@ -208,31 +190,33 @@ function publicWorkflowOutput(
 function workflowOutput(
   value: unknown,
   request: BackupWorkflowRequest,
-): { ok: true; document: Record<string, unknown> } |
-  { ok: false; code: string; detail: string } {
+): { ok: true; document: Record<string, unknown> } | { ok: false; code: string; detail: string } {
   if (
-    value === null || typeof value !== "object" || Array.isArray(value) ||
-    !("result_json" in value) || typeof value.result_json !== "string"
-  ) throw new Error("The backup Workflow output is invalid.");
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    !("result_json" in value) ||
+    typeof value.result_json !== "string"
+  )
+    throw new Error("The backup Workflow output is invalid.");
   const result = JSON.parse(value.result_json) as Record<string, unknown>;
   if (
     result.contract !== "card-keepr-catalogue-backup-workflow-result@1" ||
     result.idempotency_key !== request.idempotency_key ||
     typeof result.ok !== "boolean"
-  ) throw new Error("The backup Workflow output is invalid.");
+  )
+    throw new Error("The backup Workflow output is invalid.");
   if (result.ok === true && isRecord(result.document)) {
     if (
       result.document.contract !== "card-keepr-catalogue-backup@1" ||
-      result.document.catalogue_revision_id !==
-        request.expected_current_revision_id ||
+      result.document.catalogue_revision_id !== request.expected_current_revision_id ||
       result.document.verified !== true
-    ) throw new Error("The backup Workflow output is invalid.");
+    )
+      throw new Error("The backup Workflow output is invalid.");
     return { ok: true, document: result.document };
   }
-  if (
-    result.ok === false && typeof result.code === "string" &&
-    typeof result.detail === "string"
-  ) return { ok: false, code: result.code, detail: result.detail };
+  if (result.ok === false && typeof result.code === "string" && typeof result.detail === "string")
+    return { ok: false, code: result.code, detail: result.detail };
   throw new Error("The backup Workflow output is invalid.");
 }
 
@@ -240,8 +224,9 @@ async function retainedBackupOutcome(
   database: D1Database,
   request: BackupWorkflowRequest,
 ): Promise<ReturnType<typeof workflowOutput>> {
-  const attempt = await database.prepare(
-    `SELECT attempt.state, attempt.catalogue_revision_id, attempt.object_key,
+  const attempt = await database
+    .prepare(
+      `SELECT attempt.state, attempt.catalogue_revision_id, attempt.object_key,
             attempt.d1_bookmark, attempt.failure_code, attempt.failure_detail,
             attempt.content_sha256, attempt.manifest_key,
             attempt.manifest_sha256, attempt.linked_attempt_id,
@@ -250,25 +235,30 @@ async function retainedBackupOutcome(
      LEFT JOIN catalogue_backup_retention AS retention
        ON retention.attempt_id = attempt.idempotency_key
      WHERE attempt.idempotency_key = ?`,
-  ).bind(request.idempotency_key).first<{
-    state: string;
-    catalogue_revision_id: string;
-    object_key: string;
-    d1_bookmark: string | null;
-    failure_code: string | null;
-    failure_detail: string | null;
-    content_sha256: string | null;
-    manifest_key: string | null;
-    manifest_sha256: string | null;
-    linked_attempt_id: string | null;
-    newest_success: number | null;
-    retain_until: string | null;
-  }>();
+    )
+    .bind(request.idempotency_key)
+    .first<{
+      state: string;
+      catalogue_revision_id: string;
+      object_key: string;
+      d1_bookmark: string | null;
+      failure_code: string | null;
+      failure_detail: string | null;
+      content_sha256: string | null;
+      manifest_key: string | null;
+      manifest_sha256: string | null;
+      linked_attempt_id: string | null;
+      newest_success: number | null;
+      retain_until: string | null;
+    }>();
   if (
-    attempt?.state === "verified" && attempt.d1_bookmark !== null &&
+    attempt?.state === "verified" &&
+    attempt.d1_bookmark !== null &&
     attempt.catalogue_revision_id === request.expected_current_revision_id &&
-    attempt.content_sha256 !== null && attempt.manifest_key !== null &&
-    attempt.manifest_sha256 !== null && attempt.newest_success !== null
+    attempt.content_sha256 !== null &&
+    attempt.manifest_key !== null &&
+    attempt.manifest_sha256 !== null &&
+    attempt.newest_success !== null
   ) {
     return {
       ok: true,
@@ -299,16 +289,16 @@ async function retainedBackupOutcome(
   throw new Error("The completed backup Workflow output is unavailable.");
 }
 
-async function workflowRequest(
-  database: D1Database,
-  idempotencyKey: string,
-): Promise<BackupWorkflowRequest | null> {
-  return database.prepare(
-    `SELECT idempotency_key, expected_current_revision_id, request_json,
+async function workflowRequest(database: D1Database, idempotencyKey: string): Promise<BackupWorkflowRequest | null> {
+  return database
+    .prepare(
+      `SELECT idempotency_key, expected_current_revision_id, request_json,
             workflow_params_json, workflow_instance_id, observed_at,
             linked_attempt_id
      FROM catalogue_backup_workflow_requests WHERE idempotency_key = ?`,
-  ).bind(idempotencyKey).first<BackupWorkflowRequest>();
+    )
+    .bind(idempotencyKey)
+    .first<BackupWorkflowRequest>();
 }
 
 function backupRetrySourceSuperseded(): AdministrationProblem {
@@ -325,7 +315,8 @@ function storedParams(request: BackupWorkflowRequest): CatalogueBackupWorkflowPa
     params.expected_current_revision_id !== request.expected_current_revision_id ||
     params.idempotency_key !== request.idempotency_key ||
     params.observed_at !== request.observed_at
-  ) throw new Error("The retained backup Workflow params are invalid.");
+  )
+    throw new Error("The retained backup Workflow params are invalid.");
   return params as CatalogueBackupWorkflowParams;
 }
 

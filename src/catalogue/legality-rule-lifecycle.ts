@@ -1,8 +1,4 @@
-import type {
-  CatalogueCandidate,
-  LegalityRule,
-} from "./catalogue-candidate-types";
-import { canonicalJson, compareUtf8 } from "./serialization";
+import { type CatalogueCandidate, type LegalityRule, canonicalJson, compareUtf8 } from "./shared";
 
 export type LegalityRuleLifecycle = {
   first_revision_id: string;
@@ -12,13 +8,7 @@ export type LegalityRuleLifecycle = {
 };
 
 export function normalizedLegalityRuleLifecycle(
-  rule: Pick<
-    LegalityRule,
-    | "first_revision_id"
-    | "last_observed_revision_id"
-    | "current"
-    | "last_missing_revision_id"
-  >,
+  rule: Pick<LegalityRule, "first_revision_id" | "last_observed_revision_id" | "current" | "last_missing_revision_id">,
   revisionId: string,
 ): LegalityRuleLifecycle {
   const current = rule.current ?? true;
@@ -27,8 +17,8 @@ export function normalizedLegalityRuleLifecycle(
     last_observed_revision_id: rule.last_observed_revision_id ?? revisionId,
     current,
     last_missing_revision_id: current
-      ? rule.last_missing_revision_id ?? null
-      : rule.last_missing_revision_id ?? revisionId,
+      ? (rule.last_missing_revision_id ?? null)
+      : (rule.last_missing_revision_id ?? revisionId),
   };
 }
 
@@ -39,19 +29,13 @@ export function legalityRulesForCandidate(
 ): LegalityRule[] {
   assertUniqueRuleIds(prior?.legality_rules ?? []);
   assertUniqueRuleIds(incoming);
-  const priorById = new Map(
-    (prior?.legality_rules ?? []).map((rule) => [rule.id, rule]),
-  );
+  const priorById = new Map((prior?.legality_rules ?? []).map((rule) => [rule.id, rule]));
   const observed = incoming.map((rule) => {
-    const {
-      last_observed_revision_id: _incomingLastObservedRevisionId,
-      ...freshRule
-    } = rule;
+    const { last_observed_revision_id: _incomingLastObservedRevisionId, ...freshRule } = rule;
     const priorRule = priorById.get(rule.id);
     if (
       priorRule !== undefined &&
-      canonicalJson(identityBoundSemantics(priorRule)) !==
-        canonicalJson(identityBoundSemantics(rule))
+      canonicalJson(identityBoundSemantics(priorRule)) !== canonicalJson(identityBoundSemantics(rule))
     ) {
       throw new Error(
         `Legality Rule official identity ${rule.official_id} has changed semantics; the Official Source must publish a new official identity.`,
@@ -60,9 +44,7 @@ export function legalityRulesForCandidate(
     const firstRevisionId = rule.first_revision_id ?? priorRule?.first_revision_id;
     return {
       ...freshRule,
-      ...(firstRevisionId === undefined
-        ? {}
-        : { first_revision_id: firstRevisionId }),
+      ...(firstRevisionId === undefined ? {} : { first_revision_id: firstRevisionId }),
       current: true,
       last_missing_revision_id: priorRule?.last_missing_revision_id ?? null,
     };

@@ -1,10 +1,5 @@
-import type {
-  CatalogueSourceCheck,
-  SupportedGame,
-} from "./catalogue-candidate";
-import type { LegalityRegion } from "./legality-rule";
+import { type CatalogueSourceCheck, type SupportedGame, type LegalityRegion, compareUtf8 } from "./shared";
 import { registeredLegalitySourceScope } from "./source-adapters";
-import { compareUtf8 } from "./serialization";
 
 export type SourceFreshnessStorageRow = {
   game: string;
@@ -14,17 +9,12 @@ export type SourceFreshnessStorageRow = {
   checked_at: string;
 };
 
-export function sourceFreshnessFromStorage(
-  row: SourceFreshnessStorageRow,
-): CatalogueSourceCheck {
+export function sourceFreshnessFromStorage(row: SourceFreshnessStorageRow): CatalogueSourceCheck {
   const game = supportedGame(row.game);
   if (row.area === "legality-rules") {
     const region = legalityRegion(row.region);
     const scope = registeredLegalitySourceScope(row.source_lineage);
-    if (
-      scope.region !== region ||
-      scope.game !== game
-    ) {
+    if (scope.region !== region || scope.game !== game) {
       throw new Error("Stored Legality freshness scope is inconsistent.");
     }
     return {
@@ -36,11 +26,7 @@ export function sourceFreshnessFromStorage(
     };
   }
   if (
-    ![
-      "cards-and-printings",
-      "products-and-releases",
-      "errata",
-    ].includes(row.area) ||
+    !["cards-and-printings", "products-and-releases", "errata"].includes(row.area) ||
     row.source_lineage !== "" ||
     row.region !== ""
   ) {
@@ -48,17 +34,15 @@ export function sourceFreshnessFromStorage(
   }
   return {
     game,
-    area: row.area as Exclude<
-      CatalogueSourceCheck["area"],
-      "legality-rules"
-    >,
+    area: row.area as Exclude<CatalogueSourceCheck["area"], "legality-rules">,
     checked_at: row.checked_at,
   };
 }
 
-export function sourceFreshnessStorageScope(
-  freshness: CatalogueSourceCheck,
-): { sourceLineage: string; region: string } {
+export function sourceFreshnessStorageScope(freshness: CatalogueSourceCheck): {
+  sourceLineage: string;
+  region: string;
+} {
   return freshness.area === "legality-rules"
     ? {
         sourceLineage: freshness.source_lineage,
@@ -67,28 +51,16 @@ export function sourceFreshnessStorageScope(
     : { sourceLineage: "", region: "" };
 }
 
-export function sourceFreshnessKey(
-  freshness: CatalogueSourceCheck,
-): string {
+export function sourceFreshnessKey(freshness: CatalogueSourceCheck): string {
   const scope = sourceFreshnessStorageScope(freshness);
-  return [
-    freshness.game,
-    freshness.area,
-    scope.sourceLineage,
-    scope.region,
-  ].join(":");
+  return [freshness.game, freshness.area, scope.sourceLineage, scope.region].join(":");
 }
 
-export function compareSourceFreshness(
-  left: CatalogueSourceCheck,
-  right: CatalogueSourceCheck,
-): number {
+export function compareSourceFreshness(left: CatalogueSourceCheck, right: CatalogueSourceCheck): number {
   return compareUtf8(sourceFreshnessKey(left), sourceFreshnessKey(right));
 }
 
-export function isCatalogueSourceCheck(
-  value: unknown,
-): value is CatalogueSourceCheck {
+export function isCatalogueSourceCheck(value: unknown): value is CatalogueSourceCheck {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
@@ -111,12 +83,8 @@ export function isCatalogueSourceCheck(
     sourceFreshnessFromStorage({
       game: check.game,
       area: check.area,
-      source_lineage: legality && typeof check.source_lineage === "string"
-        ? check.source_lineage
-        : "",
-      region: legality && typeof check.region === "string"
-        ? check.region
-        : "",
+      source_lineage: legality && typeof check.source_lineage === "string" ? check.source_lineage : "",
+      region: legality && typeof check.region === "string" ? check.region : "",
       checked_at: check.checked_at,
     });
     return true;
@@ -126,9 +94,7 @@ export function isCatalogueSourceCheck(
 }
 
 function supportedGame(value: string): SupportedGame {
-  if (
-    !["one-piece", "fusion-world", "digimon", "gundam"].includes(value)
-  ) {
+  if (!["one-piece", "fusion-world", "digimon", "gundam"].includes(value)) {
     throw new Error("Stored Source freshness has an unsupported game.");
   }
   return value as SupportedGame;

@@ -1,8 +1,7 @@
 import { expect, test } from "vitest";
-import type { CatalogueCandidate } from "../../src/catalogue/catalogue-candidate";
+import { type CatalogueCandidate, canonicalNdjson } from "../../src/catalogue/shared";
 import { legalityRuleExportRecords } from "../../src/catalogue/legality-export";
 import type { LegalityRuleEffect } from "../../src/catalogue/legality-rule";
-import { canonicalNdjson } from "../../src/catalogue/serialization";
 
 test("v3 Legality Rule export canonicalizes every set-valued effect operand", () => {
   const rule = {
@@ -78,13 +77,18 @@ test("v3 Legality Rule export canonicalizes every set-valued effect operand", ()
 
   for (const { left, right, field, expected } of cases) {
     const bytes = (effect: LegalityRuleEffect) =>
-      canonicalNdjson(legalityRuleExportRecords({
-        contract: "card-keepr-catalogue-candidate@1",
-        selected_games: ["fusion-world"],
-        cards: [],
-        printings: [],
-        legality_rules: [{ ...rule, effect }],
-      } satisfies CatalogueCandidate, "revision_deterministic_effect"));
+      canonicalNdjson(
+        legalityRuleExportRecords(
+          {
+            contract: "card-keepr-catalogue-candidate@1",
+            selected_games: ["fusion-world"],
+            cards: [],
+            printings: [],
+            legality_rules: [{ ...rule, effect }],
+          } satisfies CatalogueCandidate,
+          "revision_deterministic_effect",
+        ),
+      );
     const leftBytes = bytes(left);
     const rightBytes = bytes(right);
     expect(leftBytes, left.type).toEqual(rightBytes);

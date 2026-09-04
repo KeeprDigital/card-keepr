@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { CatalogueCard } from "../../src/catalogue/catalogue-candidate";
+import type { CatalogueCard } from "../../src/catalogue/shared";
 import { reconcileDigimonCardAuthority } from "../../src/catalogue/digimon-reconciliation";
 
 type CardFacts = Omit<CatalogueCard, "id">;
@@ -9,12 +9,11 @@ describe("Digimon Card authority", () => {
     const base = digimonCard("Printed effect before correction.");
     const correctedPrinting = digimonCard("Corrected official effect.");
 
-    expect(reconcileDigimonCardAuthority(
-      { card: base, hasBaseRecord: true },
-      correctedPrinting,
-      false,
-      { effectiveRulesText: "official_errata" },
-    )).toEqual({
+    expect(
+      reconcileDigimonCardAuthority({ card: base, hasBaseRecord: true }, correctedPrinting, false, {
+        effectiveRulesText: "official_errata",
+      }),
+    ).toEqual({
       kind: "accepted",
       authority: { card: base, hasBaseRecord: true },
     });

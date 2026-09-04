@@ -1,13 +1,6 @@
-import {
-  repairCardSearchMaterialization,
-  type CardSearchRepairResult,
-} from "./card-search-materialization";
-import {
-  repairableCatalogueRevisionTarget,
-} from "./catalogue-revision-retention";
-import { AdministrationProblem } from "./ingestion";
-import { replayByDigest } from "./idempotent-identities";
-import { canonicalJson } from "./serialization";
+import { repairCardSearchMaterialization, type CardSearchRepairResult } from "./card-search-materialization";
+import { repairableCatalogueRevisionTarget } from "./catalogue-revision-retention";
+import { AdministrationProblem, replayByDigest, canonicalJson } from "./shared";
 import { assertIdentifier } from "./source-evidence-model";
 
 type SearchRepairRequestRow = {
@@ -32,47 +25,26 @@ export async function runGuardedCardSearchRepair(
   observedAt = new Date().toISOString(),
 ): Promise<CardSearchRepairResult> {
   assertIdentifier(input.target_revision_id, "target_revision_id");
-  assertIdentifier(
-    input.expected_current_revision_id,
-    "expected_current_revision_id",
-  );
+  assertIdentifier(input.expected_current_revision_id, "expected_current_revision_id");
   assertIdentifier(input.idempotency_key, "idempotency_key");
   const requestJson = canonicalJson(input);
-  const replay = await searchRepairReplay(
-    database,
-    input.idempotency_key,
-    requestJson,
-  );
+  const replay = await searchRepairReplay(database, input.idempotency_key, requestJson);
   if (replay !== null) {
     if (replay.result_json !== null) {
       const result = parseRepairResult(replay.result_json);
       if (result.complete) return result;
     }
-    await assertRepairSourceBound(
-      database,
-      input.target_revision_id,
-    );
+    await assertRepairSourceBound(database, input.target_revision_id);
   } else {
-    const target = await repairableCatalogueRevisionTarget(
-      database,
-      input.target_revision_id,
-    );
-    if (
-      target === null ||
-      (
-        target.target_exists !== 1 &&
-        target.current_revision_id !== input.target_revision_id
-      )
-    ) {
+    const target = await repairableCatalogueRevisionTarget(database, input.target_revision_id);
+    if (target === null || (target.target_exists !== 1 && target.current_revision_id !== input.target_revision_id)) {
       throw new AdministrationProblem(
         404,
         "catalogue_revision_not_found",
         "The target Catalogue Revision does not exist.",
       );
     }
-    if (
-      target.current_revision_id !== input.expected_current_revision_id
-    ) {
+    if (target.current_revision_id !== input.expected_current_revision_id) {
       throw new AdministrationProblem(
         409,
         "current_revision_mismatch",
@@ -86,10 +58,7 @@ export async function runGuardedCardSearchRepair(
         "Card search repair is limited to the current Catalogue Revision and its two immediate predecessors.",
       );
     }
-    await assertRepairSourceBound(
-      database,
-      input.target_revision_id,
-    );
+    await assertRepairSourceBound(database, input.target_revision_id);
     await database
       .prepare(
         `INSERT OR IGNORE INTO catalogue_search_repair_requests (
@@ -97,18 +66,9 @@ export async function runGuardedCardSearchRepair(
            expected_current_revision_id, request_json, result_json
          ) VALUES (?, ?, ?, ?, NULL)`,
       )
-      .bind(
-        input.idempotency_key,
-        input.target_revision_id,
-        input.expected_current_revision_id,
-        requestJson,
-      )
+      .bind(input.idempotency_key, input.target_revision_id, input.expected_current_revision_id, requestJson)
       .run();
-    const stored = await searchRepairReplay(
-      database,
-      input.idempotency_key,
-      requestJson,
-    );
+    const stored = await searchRepairReplay(database, input.idempotency_key, requestJson);
     if (stored === null) {
       throw new Error("The Card search repair request was not retained.");
     }
@@ -119,9 +79,7 @@ export async function runGuardedCardSearchRepair(
   }
 
   const claimToken = crypto.randomUUID();
-  const claimExpiresAt = new Date(
-    Date.parse(observedAt) + 2 * 60 * 1_000,
-  ).toISOString();
+  const claimExpiresAt = new Date(Date.parse(observedAt) + 2 * 60 * 1_000).toISOString();
   const claim = await database
     .prepare(
       `UPDATE catalogue_search_repair_requests
@@ -143,18 +101,10 @@ export async function runGuardedCardSearchRepair(
                    catalogue_search_repair_requests.expected_current_revision_id
          )`,
     )
-    .bind(
-      claimToken,
-      claimExpiresAt,
-      input.idempotency_key,
-      observedAt,
-    )
+    .bind(claimToken, claimExpiresAt, input.idempotency_key, observedAt)
     .run();
   if (claim.meta.changes !== 1) {
-    const observed = await searchRepairRequest(
-      database,
-      input.idempotency_key,
-    );
+    const observed = await searchRepairRequest(database, input.idempotency_key);
     if (observed?.result_json !== null && observed !== null) {
       const result = parseRepairResult(observed.result_json);
       if (result.complete) return result;
@@ -166,10 +116,7 @@ export async function runGuardedCardSearchRepair(
          WHERE singleton = 1`,
       )
       .first<{ current_revision_id: string }>();
-    if (
-      current?.current_revision_id !==
-        input.expected_current_revision_id
-    ) {
+    if (current?.current_revision_id !== input.expected_current_revision_id) {
       throw new AdministrationProblem(
         409,
         "current_revision_mismatch",
@@ -218,20 +165,14 @@ export async function runGuardedCardSearchRepair(
   if (completedUpdate.meta.changes !== 1) {
     throw new Error("The Card search repair claim was lost.");
   }
-  const completed = await searchRepairRequest(
-    database,
-    input.idempotency_key,
-  );
+  const completed = await searchRepairRequest(database, input.idempotency_key);
   if (completed?.result_json === null || completed === null) {
     throw new Error("The Card search repair result was not retained.");
   }
   return parseRepairResult(completed.result_json);
 }
 
-async function assertRepairSourceBound(
-  database: D1Database,
-  targetRevisionId: string,
-): Promise<void> {
+async function assertRepairSourceBound(database: D1Database, targetRevisionId: string): Promise<void> {
   const oversized = await database
     .prepare(
       `SELECT card_id
@@ -279,8 +220,7 @@ function searchRepairReplay(
     lookup: () => searchRepairRequest(database, idempotencyKey),
     retainedDigest: (retained) => retained.request_json,
     requestDigest: requestJson,
-    conflictDetail:
-      "The search repair idempotency key is already bound to another request.",
+    conflictDetail: "The search repair idempotency key is already bound to another request.",
   });
 }
 

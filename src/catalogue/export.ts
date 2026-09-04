@@ -1,42 +1,29 @@
-import type {
-  CatalogueCandidate,
-  CatalogueSourceCheck,
-  SupportedGame,
-} from "./catalogue-candidate";
-import type {
-  NormalizedLifecycle,
-  LocatorEvidenceCollection,
-  RelationshipEvidence,
-} from "./reconciliation-publication";
-import { exportedGameProfileSchema } from "./reconciliation-profile";
 import {
-  verifyComponentExportRecord,
-  verifyExportManifest,
-} from "./export-validation";
-import {
+  type CatalogueCandidate,
+  type CatalogueSourceCheck,
+  type SupportedGame,
+  exportedGameProfileSchema,
   canonicalJson,
   compareUtf8,
   sha256,
   sha256Text,
   utf8,
-} from "./serialization";
-import { typedPrintingProjections } from "./product-release-projection";
-import {
-  erratumTargetLifecycleKey,
-  exportErratum,
-} from "./errata-rules-text";
-import {
-  legalityRuleExportRecords,
-  legalityRuleRelationshipRecords,
-} from "./legality-export";
-import {
   CatalogueExportLimitError,
   maximumCatalogueExportBytes,
   maximumCatalogueExportObjectBytes,
   maximumExportComponentBytes,
   maximumExportRecordBytes,
-} from "./export-limits";
-import { deterministicGzipStream } from "./export-compression";
+  deterministicGzipStream,
+} from "./shared";
+import type {
+  NormalizedLifecycle,
+  LocatorEvidenceCollection,
+  RelationshipEvidence,
+} from "./reconciliation-publication";
+import { verifyComponentExportRecord, verifyExportManifest } from "./export-validation";
+import { typedPrintingProjections } from "./product-release-projection";
+import { erratumTargetLifecycleKey, exportErratum } from "./errata-rules-text";
+import { legalityRuleExportRecords, legalityRuleRelationshipRecords } from "./legality-export";
 
 const componentDefinitions = [
   ["supported-games", "SupportedGameRecord", "id:utf8", 5],
@@ -125,51 +112,31 @@ export async function buildCatalogueExport(
     erratumTargets?: Readonly<Record<string, NormalizedLifecycle>>;
     relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
     locators?: Readonly<Record<string, LocatorEvidenceCollection>>;
-    cardEvidence?: Readonly<
-      Record<string, readonly { source: string }[]>
-    >;
-    printingEvidence?: Readonly<
-      Record<string, readonly { source: string }[]>
-    >;
+    cardEvidence?: Readonly<Record<string, readonly { source: string }[]>>;
+    printingEvidence?: Readonly<Record<string, readonly { source: string }[]>>;
   },
   sourceFreshness?: readonly SourceFreshness[],
 ): Promise<BuiltCatalogueExport> {
-  const recordFactories = await exportRecordFactories(
-    candidate,
-    catalogueRevisionId,
-    lifecycles,
-  );
+  const recordFactories = await exportRecordFactories(candidate, catalogueRevisionId, lifecycles);
   const components: ExportComponent[] = [];
   const objects: ExportObject[] = [];
   let totalUncompressedBytes = 0;
   let totalObjectBytes = 0;
 
-  for (const [
-    name,
-    schemaDefinition,
-    order,
-    recordSchemaMajor,
-  ] of componentDefinitions) {
+  for (const [name, schemaDefinition, order, recordSchemaMajor] of componentDefinitions) {
     const records = orderedExportRecords(recordFactories[name], order);
-    const recordSchema =
-      `https://card-keepr.invalid/schemas/catalogue-export-record@${recordSchemaMajor}#/$defs/${schemaDefinition}`;
+    const recordSchema = `https://card-keepr.invalid/schemas/catalogue-export-record@${recordSchemaMajor}#/$defs/${schemaDefinition}`;
     const analysis = await analyseComponent(records, recordSchema);
     if (analysis.uncompressedBytes > maximumExportComponentBytes) {
-      throw new CatalogueExportLimitError(
-        "One Catalogue Export component exceeds the 12 MiB byte budget.",
-      );
+      throw new CatalogueExportLimitError("One Catalogue Export component exceeds the 12 MiB byte budget.");
     }
     totalUncompressedBytes += analysis.uncompressedBytes;
     if (totalUncompressedBytes > maximumCatalogueExportBytes) {
-      throw new CatalogueExportLimitError(
-        "Catalogue Export exceeds the 24 MiB total byte budget.",
-      );
+      throw new CatalogueExportLimitError("Catalogue Export exceeds the 24 MiB total byte budget.");
     }
     totalObjectBytes += analysis.compressedBytes;
     if (totalObjectBytes > maximumCatalogueExportObjectBytes) {
-      throw new CatalogueExportLimitError(
-        "Catalogue Export exceeds the 25 MiB retained-object byte budget.",
-      );
+      throw new CatalogueExportLimitError("Catalogue Export exceeds the 25 MiB retained-object byte budget.");
     }
     const key = `catalogue-exports/${catalogueRevisionId}/components/${analysis.compressedSha256}.ndjson.gz`;
     components.push({
@@ -190,9 +157,7 @@ export async function buildCatalogueExport(
       sha256: analysis.compressedSha256,
       body: () =>
         fixedLengthBody(
-          deterministicGzipStream(
-            catalogueRecordStream(records(), recordSchema),
-          ),
+          deterministicGzipStream(catalogueRecordStream(records(), recordSchema)),
           analysis.compressedBytes,
         ),
       contentType: "application/x-ndjson",
@@ -214,42 +179,38 @@ export async function buildCatalogueExport(
     source_freshness:
       sourceFreshness === undefined
         ? candidate.selected_games.flatMap((game) => [
-            ...((candidate.card_observed_games ??
-              candidate.selected_games).includes(game)
-              ? [{
-                  game,
-                  area: "cards-and-printings" as const,
-                  checked_at: publishedAt,
-                }]
+            ...((candidate.card_observed_games ?? candidate.selected_games).includes(game)
+              ? [
+                  {
+                    game,
+                    area: "cards-and-printings" as const,
+                    checked_at: publishedAt,
+                  },
+                ]
               : []),
             ...(candidate.product_observed_games?.includes(game)
-              ? [{
-                  game,
-                  area: "products-and-releases" as const,
-                  checked_at: publishedAt,
-                }]
+              ? [
+                  {
+                    game,
+                    area: "products-and-releases" as const,
+                    checked_at: publishedAt,
+                  },
+                ]
               : []),
           ])
         : [...sourceFreshness],
     components,
     manifest_sha256: "0".repeat(64),
   };
-  const manifestDigest = await sha256Text(
-    `${canonicalJson(manifestWithPlaceholder)}\n`,
-  );
+  const manifestDigest = await sha256Text(`${canonicalJson(manifestWithPlaceholder)}\n`);
   const manifest: CatalogueExportManifest = {
     ...manifestWithPlaceholder,
     manifest_sha256: manifestDigest,
   };
   verifyExportManifest(manifest);
   const manifestBytes = utf8(`${canonicalJson(manifest)}\n`);
-  if (
-    totalObjectBytes + manifestBytes.byteLength >
-      maximumCatalogueExportObjectBytes
-  ) {
-    throw new CatalogueExportLimitError(
-      "Catalogue Export exceeds the 25 MiB retained-object byte budget.",
-    );
+  if (totalObjectBytes + manifestBytes.byteLength > maximumCatalogueExportObjectBytes) {
+    throw new CatalogueExportLimitError("Catalogue Export exceeds the 25 MiB retained-object byte budget.");
   }
   const manifestKey = `catalogue-exports/${catalogueRevisionId}/manifest.json`;
   const manifestObjectDigest = await sha256(manifestBytes);
@@ -257,8 +218,7 @@ export async function buildCatalogueExport(
     key: manifestKey,
     byteLength: manifestBytes.byteLength,
     sha256: manifestObjectDigest,
-    body: () =>
-      fixedLengthBody(byteStream(manifestBytes), manifestBytes.byteLength),
+    body: () => fixedLengthBody(byteStream(manifestBytes), manifestBytes.byteLength),
     contentType: "application/json",
   };
   const boundedObjects = [...objects, manifestObject];
@@ -273,15 +233,10 @@ export async function buildCatalogueExport(
 
 type ExportRecordFactory = () => Iterable<unknown>;
 
-function orderedExportRecords(
-  records: ExportRecordFactory,
-  order: "id:utf8" | "profile:utf8",
-): ExportRecordFactory {
+function orderedExportRecords(records: ExportRecordFactory, order: "id:utf8" | "profile:utf8"): ExportRecordFactory {
   const field = order === "id:utf8" ? "id" : "profile";
   return () =>
-    [...records()].sort((left, right) =>
-      compareUtf8(exportOrderValue(left, field), exportOrderValue(right, field))
-    );
+    [...records()].sort((left, right) => compareUtf8(exportOrderValue(left, field), exportOrderValue(right, field)));
 }
 
 function exportOrderValue(value: unknown, field: "id" | "profile"): string {
@@ -309,19 +264,12 @@ async function analyseComponent(
   const statistics = { records: 0 };
   const contentDigest = new crypto.DigestStream("SHA-256");
   const compressedDigest = new crypto.DigestStream("SHA-256");
-  const [content, compressionInput] = catalogueRecordStream(
-    records(),
-    recordSchema,
-    statistics,
-  ).tee();
+  const [content, compressionInput] = catalogueRecordStream(records(), recordSchema, statistics).tee();
   await Promise.all([
     content.pipeTo(contentDigest),
     deterministicGzipStream(compressionInput).pipeTo(compressedDigest),
   ]);
-  const [contentSha256, compressedSha256] = await Promise.all([
-    contentDigest.digest,
-    compressedDigest.digest,
-  ]);
+  const [contentSha256, compressedSha256] = await Promise.all([contentDigest.digest, compressedDigest.digest]);
   return {
     records: statistics.records,
     uncompressedBytes: Number(contentDigest.bytesWritten),
@@ -347,11 +295,7 @@ function catalogueRecordStream(
       verifyComponentExportRecord(recordSchema, next.value);
       const bytes = utf8(`${canonicalJson(next.value)}\n`);
       if (bytes.byteLength > maximumExportRecordBytes) {
-        controller.error(
-          new CatalogueExportLimitError(
-            "One Catalogue Export record exceeds 512 KiB.",
-          ),
-        );
+        controller.error(new CatalogueExportLimitError("One Catalogue Export record exceeds 512 KiB."));
         return;
       }
       if (statistics !== undefined) statistics.records += 1;
@@ -384,9 +328,7 @@ function fixedLengthBody(
 }
 
 function digestHex(digest: ArrayBuffer): string {
-  return [...new Uint8Array(digest)]
-    .map((value) => value.toString(16).padStart(2, "0"))
-    .join("");
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
 async function exportRecordFactories(
@@ -410,16 +352,10 @@ async function exportRecordFactories(
     erratumTargets?: Readonly<Record<string, NormalizedLifecycle>>;
     relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
     locators?: Readonly<Record<string, LocatorEvidenceCollection>>;
-    cardEvidence?: Readonly<
-      Record<string, readonly { source: string }[]>
-    >;
-    printingEvidence?: Readonly<
-      Record<string, readonly { source: string }[]>
-    >;
+    cardEvidence?: Readonly<Record<string, readonly { source: string }[]>>;
+    printingEvidence?: Readonly<Record<string, readonly { source: string }[]>>;
   },
-): Promise<
-  Record<(typeof componentDefinitions)[number][0], ExportRecordFactory>
-> {
+): Promise<Record<(typeof componentDefinitions)[number][0], ExportRecordFactory>> {
   const defaultLifecycle = {
     first_revision_id: revisionId,
     last_observed_revision_id: revisionId,
@@ -434,109 +370,81 @@ async function exportRecordFactories(
     })),
   );
   const canonicalRelationshipEvidence = relationshipEvidence.filter(
-    ({ relationship }) =>
-      relationship.relationship_kind !== "source_bucket",
+    ({ relationship }) => relationship.relationship_kind !== "source_bucket",
   );
   const identifiedRelationships = await Promise.all(
-    canonicalRelationshipEvidence.map(
-      async ({ printing, card, relationship }) => {
-        const declaredProduct =
-          relationship.relationship_kind === "product"
-            ? candidate.products?.find(
-                (product) =>
-                  product.game === card.game &&
-                  (product.official_code === relationship.relationship_value ||
-                    product.name === relationship.relationship_value),
-              )
-            : undefined;
-        const declaredContext =
-          relationship.relationship_kind === "distribution_context"
-            ? candidate.distribution_contexts?.find(
-                (context) =>
-                  context.game === card.game &&
-                  context.key === relationship.relationship_value,
-              )
-            : undefined;
-        const targetId =
-          relationship.relationship_kind === "product"
-            ? declaredProduct?.id ??
-              (await productExportId(card.game, relationship.relationship_value))
-            : declaredContext?.id ??
-              (await distributionContextExportId(
-                card.game,
-                relationship.source_lineage,
-                relationship.relationship_value,
-              ));
-        return {
-          printing,
-          card,
-          relationship,
-          targetId,
-          relationshipId: await relationshipExportId(
-            card.game,
-            printing.id,
-            relationship,
-            targetId,
-          ),
-        };
-      },
-    ),
+    canonicalRelationshipEvidence.map(async ({ printing, card, relationship }) => {
+      const declaredProduct =
+        relationship.relationship_kind === "product"
+          ? candidate.products?.find(
+              (product) =>
+                product.game === card.game &&
+                (product.official_code === relationship.relationship_value ||
+                  product.name === relationship.relationship_value),
+            )
+          : undefined;
+      const declaredContext =
+        relationship.relationship_kind === "distribution_context"
+          ? candidate.distribution_contexts?.find(
+              (context) => context.game === card.game && context.key === relationship.relationship_value,
+            )
+          : undefined;
+      const targetId =
+        relationship.relationship_kind === "product"
+          ? (declaredProduct?.id ?? (await productExportId(card.game, relationship.relationship_value)))
+          : (declaredContext?.id ??
+            (await distributionContextExportId(
+              card.game,
+              relationship.source_lineage,
+              relationship.relationship_value,
+            )));
+      return {
+        printing,
+        card,
+        relationship,
+        targetId,
+        relationshipId: await relationshipExportId(card.game, printing.id, relationship, targetId),
+      };
+    }),
   );
   const identifiedErratumRelationships = await Promise.all(
     (candidate.errata ?? []).flatMap((erratum) => {
       const observationsByLineage = new Map<string, string[]>();
       for (const provenance of erratum.provenance) {
-        const observationIds =
-          observationsByLineage.get(provenance.source_lineage) ?? [];
+        const observationIds = observationsByLineage.get(provenance.source_lineage) ?? [];
         observationIds.push(provenance.source_observation_id);
-        observationsByLineage.set(
-          provenance.source_lineage,
-          observationIds,
-        );
+        observationsByLineage.set(provenance.source_lineage, observationIds);
       }
-      return [...observationsByLineage].map(
-        async ([sourceLineage, sourceObservationIds]) => ({
-          erratum,
-          sourceLineage,
-          sourceObservationIds: sourceObservationIds.sort(),
-          relationshipId: `relationship_${await sha256Text(
-            canonicalJson({
-              kind: "erratum-target",
-              erratum_id: erratum.id,
-              target_type: erratum.target_type,
-              target_id: erratum.target_id,
-              source_lineage: sourceLineage,
-            }),
-          )}`,
-        }),
-      );
+      return [...observationsByLineage].map(async ([sourceLineage, sourceObservationIds]) => ({
+        erratum,
+        sourceLineage,
+        sourceObservationIds: sourceObservationIds.sort(),
+        relationshipId: `relationship_${await sha256Text(
+          canonicalJson({
+            kind: "erratum-target",
+            erratum_id: erratum.id,
+            target_type: erratum.target_type,
+            target_id: erratum.target_id,
+            source_lineage: sourceLineage,
+          }),
+        )}`,
+      }));
     }),
   );
-  const inferredProducts =
-    identifiedRelationships
-      .filter(
-        ({ relationship }) =>
-          relationship.relationship_kind === "product",
-      )
-      .map(({ card, relationship, targetId }) => ({
-        type: "product",
-        id: targetId,
-        game: card.game,
-        official_code: relationship.relationship_value,
-        name: relationship.relationship_value,
-        lifecycle:
-          lifecycles?.products?.[
-            inferredProductLifecycleKey(
-              card.game,
-              relationship.relationship_value,
-            )
-          ] ?? {
-            first_revision_id: relationship.first_revision_id,
-            last_observed_revision_id:
-              relationship.last_observed_revision_id,
-            withdrawn: false,
-          },
-      }));
+  const inferredProducts = identifiedRelationships
+    .filter(({ relationship }) => relationship.relationship_kind === "product")
+    .map(({ card, relationship, targetId }) => ({
+      type: "product",
+      id: targetId,
+      game: card.game,
+      official_code: relationship.relationship_value,
+      name: relationship.relationship_value,
+      lifecycle: lifecycles?.products?.[inferredProductLifecycleKey(card.game, relationship.relationship_value)] ?? {
+        first_revision_id: relationship.first_revision_id,
+        last_observed_revision_id: relationship.last_observed_revision_id,
+        withdrawn: false,
+      },
+    }));
   const products = uniqueById([
     ...inferredProducts,
     ...(candidate.products ?? []).map((product) => ({
@@ -546,25 +454,19 @@ async function exportRecordFactories(
       official_code: product.official_code,
       name: product.name,
       ...curatedProvenanceProjection(product),
-      lifecycle:
-        lifecycles?.products?.[product.id] ?? defaultLifecycle,
+      lifecycle: lifecycles?.products?.[product.id] ?? defaultLifecycle,
     })),
   ]);
-  const inferredDistributionContexts =
-    identifiedRelationships
-      .filter(
-        ({ relationship }) =>
-          relationship.relationship_kind === "distribution_context" &&
-          relationship.current,
-      )
-      .map(({ card, relationship, targetId }) => ({
-        type: "distribution_context",
-        id: targetId,
-        game: card.game,
-        kind: "other",
-        label: relationship.relationship_value,
-        product_id: null,
-      }));
+  const inferredDistributionContexts = identifiedRelationships
+    .filter(({ relationship }) => relationship.relationship_kind === "distribution_context" && relationship.current)
+    .map(({ card, relationship, targetId }) => ({
+      type: "distribution_context",
+      id: targetId,
+      game: card.game,
+      kind: "other",
+      label: relationship.relationship_value,
+      product_id: null,
+    }));
   const distributionContexts = uniqueById([
     ...inferredDistributionContexts,
     ...(candidate.distribution_contexts ?? [])
@@ -579,60 +481,52 @@ async function exportRecordFactories(
         ...curatedProvenanceProjection(context),
       })),
   ]);
-  const legalityRelationships = await legalityRuleRelationshipRecords(
-    candidate,
-    revisionId,
-  );
+  const legalityRelationships = await legalityRuleRelationshipRecords(candidate, revisionId);
   return {
-    "supported-games": () => candidate.selected_games.map((game) => ({
+    "supported-games": () =>
+      candidate.selected_games.map((game) => ({
         type: "supported_game",
         ...supportedGameExport(game),
       })),
-    "game-profiles": () => candidate.selected_games.map((game) => ({
+    "game-profiles": () =>
+      candidate.selected_games.map((game) => ({
         type: "game_profile",
         profile: `${game}@1`,
         game,
         schema: exportedGameProfileSchema(`${game}@1`),
       })),
-    cards: () => candidate.cards.map((card) => ({
-      type: "card",
-      ...card,
-      source_lineages: [
-        ...new Set(
-          lifecycles?.cardEvidence?.[card.id]?.map(({ source }) => source) ??
-            [],
-        ),
-      ].sort(),
-      lifecycle: lifecycles?.cards[card.id] ?? defaultLifecycle,
-    })),
-    printings: () => candidate.printings.map((printing) => {
-      const typed = typedPrintingProjections(
-        printing.id,
-        candidate.products ?? [],
-        candidate.distribution_contexts ?? [],
-        candidate.product_relationships ?? [],
-      );
-      return {
-        type: "printing",
-        ...printing,
-        source_lineages: [
-          ...new Set(
-            lifecycles?.printingEvidence?.[printing.id]?.map(
-              ({ source }) => source,
-            ) ?? [],
-          ),
-        ].sort(),
-        products: typed.products,
-        distribution_contexts: typed.distribution_contexts,
-        locator_evidence: lifecycles?.locators?.[printing.id] ?? {
-          current: [],
-          historical: [],
-        },
-        lifecycle: lifecycles?.printings[printing.id] ?? defaultLifecycle,
-      };
-    }),
-    "printing-images": () => (candidate.printing_images ?? []).map(
-      (image) => ({
+    cards: () =>
+      candidate.cards.map((card) => ({
+        type: "card",
+        ...card,
+        source_lineages: [...new Set(lifecycles?.cardEvidence?.[card.id]?.map(({ source }) => source) ?? [])].sort(),
+        lifecycle: lifecycles?.cards[card.id] ?? defaultLifecycle,
+      })),
+    printings: () =>
+      candidate.printings.map((printing) => {
+        const typed = typedPrintingProjections(
+          printing.id,
+          candidate.products ?? [],
+          candidate.distribution_contexts ?? [],
+          candidate.product_relationships ?? [],
+        );
+        return {
+          type: "printing",
+          ...printing,
+          source_lineages: [
+            ...new Set(lifecycles?.printingEvidence?.[printing.id]?.map(({ source }) => source) ?? []),
+          ].sort(),
+          products: typed.products,
+          distribution_contexts: typed.distribution_contexts,
+          locator_evidence: lifecycles?.locators?.[printing.id] ?? {
+            current: [],
+            historical: [],
+          },
+          lifecycle: lifecycles?.printings[printing.id] ?? defaultLifecycle,
+        };
+      }),
+    "printing-images": () =>
+      (candidate.printing_images ?? []).map((image) => ({
         type: "printing_image",
         id: image.id,
         printing_id: image.printing_id,
@@ -641,102 +535,84 @@ async function exportRecordFactories(
         width: image.width,
         height: image.height,
         content_sha256: image.content_sha256,
-      }),
-    ),
+      })),
     products: () => products,
-    releases: () => (candidate.products ?? [])
-      .flatMap((product) =>
-        product.releases.map((release) => ({
-          type: "release",
-          ...release,
-        })),
-      )
-      .sort((left, right) => compareUtf8(left.id, right.id)),
+    releases: () =>
+      (candidate.products ?? [])
+        .flatMap((product) =>
+          product.releases.map((release) => ({
+            type: "release",
+            ...release,
+          })),
+        )
+        .sort((left, right) => compareUtf8(left.id, right.id)),
     "distribution-contexts": () => distributionContexts,
-    errata: () => (candidate.errata ?? [])
-      .map((erratum) => ({
-        ...exportErratum(erratum),
-        ...curatedProvenanceProjection(erratum),
-      }))
-      .sort((left, right) => compareUtf8(left.id, right.id)),
+    errata: () =>
+      (candidate.errata ?? [])
+        .map((erratum) => ({
+          ...exportErratum(erratum),
+          ...curatedProvenanceProjection(erratum),
+        }))
+        .sort((left, right) => compareUtf8(left.id, right.id)),
     "legality-rules": () => legalityRuleExportRecords(candidate, revisionId),
-    relationships: () => uniqueById([
-      ...identifiedRelationships
-      .map(({ printing, relationship, relationshipId, targetId }) => ({
-        type: "relationship",
-        id: relationshipId,
-        kind:
-          relationship.relationship_kind === "product"
-            ? "printing-product"
-            : "printing-distribution-context",
-        from: { type: "printing", id: printing.id },
-        to: {
-          type:
-            relationship.relationship_kind === "product"
-              ? "product"
-              : "distribution_context",
-          id: targetId,
-        },
-        // Legacy memberships carry only a value; their typed target IDs are
-        // deterministically derived above rather than explicit source facts.
-        evidence_category: "derived" as const,
-        source_lineage: relationship.source_lineage,
-        source_observation_ids: relationship.source_observation_ids,
-        relationship_value: relationship.relationship_value,
-        lifecycle: {
-          first_revision_id: relationship.first_revision_id,
-          last_observed_revision_id:
-            relationship.last_observed_revision_id,
-          current: relationship.current,
-          last_missing_revision_id:
-            relationship.last_missing_revision_id,
-        },
-      }))
-      .filter(
-        (relationship) =>
-          !(candidate.product_relationships ?? []).some(
-            (declared) =>
-              declared.kind === relationship.kind &&
-              declared.source_lineage === relationship.source_lineage &&
-              canonicalJson(declared.from) ===
-                canonicalJson(relationship.from) &&
-              canonicalJson(declared.to) === canonicalJson(relationship.to),
+    relationships: () =>
+      uniqueById([
+        ...identifiedRelationships
+          .map(({ printing, relationship, relationshipId, targetId }) => ({
+            type: "relationship",
+            id: relationshipId,
+            kind: relationship.relationship_kind === "product" ? "printing-product" : "printing-distribution-context",
+            from: { type: "printing", id: printing.id },
+            to: {
+              type: relationship.relationship_kind === "product" ? "product" : "distribution_context",
+              id: targetId,
+            },
+            // Legacy memberships carry only a value; their typed target IDs are
+            // deterministically derived above rather than explicit source facts.
+            evidence_category: "derived" as const,
+            source_lineage: relationship.source_lineage,
+            source_observation_ids: relationship.source_observation_ids,
+            relationship_value: relationship.relationship_value,
+            lifecycle: {
+              first_revision_id: relationship.first_revision_id,
+              last_observed_revision_id: relationship.last_observed_revision_id,
+              current: relationship.current,
+              last_missing_revision_id: relationship.last_missing_revision_id,
+            },
+          }))
+          .filter(
+            (relationship) =>
+              !(candidate.product_relationships ?? []).some(
+                (declared) =>
+                  declared.kind === relationship.kind &&
+                  declared.source_lineage === relationship.source_lineage &&
+                  canonicalJson(declared.from) === canonicalJson(relationship.from) &&
+                  canonicalJson(declared.to) === canonicalJson(relationship.to),
+              ),
           ),
-      ),
-      ...(candidate.product_relationships ?? []).map((relationship) => ({
-        type: "relationship" as const,
-        id: relationship.id,
-        kind: relationship.kind,
-        from: relationship.from,
-        to: relationship.to,
-        evidence_category: relationship.evidence_category,
-        ...(relationship.source_lineage === undefined
-          ? {}
-          : { source_lineage: relationship.source_lineage }),
-        source_observation_ids: relationship.source_observation_ids,
-        ...(relationship.curated_provenance === undefined
-          ? {}
-          : { curated_provenance: relationship.curated_provenance }),
-        relationship_value: relationship.relationship_value,
-        lifecycle:
-          lifecycles?.productRelationships?.[relationship.id] ?? {
+        ...(candidate.product_relationships ?? []).map((relationship) => ({
+          type: "relationship" as const,
+          id: relationship.id,
+          kind: relationship.kind,
+          from: relationship.from,
+          to: relationship.to,
+          evidence_category: relationship.evidence_category,
+          ...(relationship.source_lineage === undefined ? {} : { source_lineage: relationship.source_lineage }),
+          source_observation_ids: relationship.source_observation_ids,
+          ...(relationship.curated_provenance === undefined
+            ? {}
+            : { curated_provenance: relationship.curated_provenance }),
+          relationship_value: relationship.relationship_value,
+          lifecycle: lifecycles?.productRelationships?.[relationship.id] ?? {
             first_revision_id: revisionId,
             last_observed_revision_id: revisionId,
             current: relationship.observed,
             last_missing_revision_id: null,
           },
-      })),
-      ...identifiedErratumRelationships.map(
-        ({
-          erratum,
-          relationshipId,
-          sourceLineage,
-          sourceObservationIds,
-        }) => {
+        })),
+        ...identifiedErratumRelationships.map(({ erratum, relationshipId, sourceLineage, sourceObservationIds }) => {
           const lifecycle =
-            lifecycles?.erratumTargets?.[
-              erratumTargetLifecycleKey(erratum.id, sourceLineage)
-            ] ?? defaultLifecycle;
+            lifecycles?.erratumTargets?.[erratumTargetLifecycleKey(erratum.id, sourceLineage)] ?? defaultLifecycle;
           return {
             type: "relationship",
             id: relationshipId,
@@ -752,36 +628,30 @@ async function exportRecordFactories(
             relationship_value: "effective_rules_text",
             lifecycle: {
               first_revision_id: lifecycle.first_revision_id,
-              last_observed_revision_id:
-                lifecycle.last_observed_revision_id,
+              last_observed_revision_id: lifecycle.last_observed_revision_id,
               current: true,
               last_missing_revision_id: null,
             },
           };
-        },
-      ),
-      ...legalityRelationships,
-    ]),
+        }),
+        ...legalityRelationships,
+      ]),
   };
 }
 
 function curatedProvenanceProjection(value: object): Record<string, unknown> {
-  return "curated_provenance" in value &&
-      Array.isArray(value.curated_provenance)
+  return "curated_provenance" in value && Array.isArray(value.curated_provenance)
     ? { curated_provenance: value.curated_provenance }
     : {};
 }
 
-function inferredProductLifecycleKey(
-  game: string,
-  officialCode: string,
-): string {
+function inferredProductLifecycleKey(game: string, officialCode: string): string {
   return canonicalJson([game, officialCode]);
 }
 
 function uniqueById<T extends { id: string }>(values: readonly T[]): T[] {
-  return [...new Map(values.map((value) => [value.id, value])).values()].sort(
-    (left, right) => compareUtf8(left.id, right.id),
+  return [...new Map(values.map((value) => [value.id, value])).values()].sort((left, right) =>
+    compareUtf8(left.id, right.id),
   );
 }
 
@@ -803,13 +673,8 @@ async function relationshipExportId(
   )}`;
 }
 
-async function productExportId(
-  game: SupportedGame,
-  officialCode: string,
-): Promise<string> {
-  return `product_${await sha256Text(
-    canonicalJson({ game, official_code: officialCode }),
-  )}`;
+async function productExportId(game: SupportedGame, officialCode: string): Promise<string> {
+  return `product_${await sha256Text(canonicalJson({ game, official_code: officialCode }))}`;
 }
 
 export async function distributionContextExportId(

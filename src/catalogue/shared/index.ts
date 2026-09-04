@@ -9,21 +9,21 @@ export {
   sha256,
   sha256Text,
   utf8,
-} from "../serialization";
+} from "./serialization";
 export {
   deterministicGzip,
   deterministicGzipStream,
-} from "../export-compression";
-export { isIsoCalendarDate } from "../calendar-date";
-export { StreamingSha256 } from "../streaming-sha256";
+} from "./export-compression";
+export { isIsoCalendarDate } from "./calendar-date";
+export { StreamingSha256 } from "./streaming-sha256";
 export {
   catalogueRevisionIdentity,
   evidenceRunIdentity,
   replayByDigest,
-} from "../idempotent-identities";
-export { AdministrationProblem } from "../administration-problem";
-export { operationalDiagnostics } from "../operational-diagnostics";
-export { SPINE_REVISION_ID } from "../spine-revision.mjs";
+} from "./idempotent-identities";
+export { AdministrationProblem } from "./administration-problem";
+export { operationalDiagnostics } from "./operational-diagnostics";
+export { SPINE_REVISION_ID } from "./spine-revision.mjs";
 
 // The Catalogue Candidate's shape (the leaf types from issue #90).
 export {
@@ -55,14 +55,14 @@ export {
   type SupportedGame,
   type UnresolvedLegalityScope,
   type UnresolvedLegalityScopeDimension,
-} from "../catalogue-candidate-types";
+} from "./catalogue-candidate-types";
 export type {
   CuratedEvidence,
   CuratedFieldTarget,
   CuratedProvenance,
   CuratedProvenanceBearing,
   CuratedRelationshipTarget,
-} from "../curated-provenance";
+} from "./curated-provenance";
 
 // Game Profile contract helpers, consumed by legality, curated, export,
 // and reconciliation alike.
@@ -75,7 +75,7 @@ export {
   sourceVocabularyWarning,
   validateMembershipPredicate,
   type ProfileWarning,
-} from "../reconciliation-profile";
+} from "./reconciliation-profile";
 
 // D1 payload chunking and the guarded atomic batch, consumed by every
 // cluster that writes publication statements.
@@ -85,7 +85,7 @@ export {
   guardedAtomicBatch,
   payloadChunkStatements,
   retainedPayload,
-} from "../reconciliation-payload";
+} from "./reconciliation-payload";
 
 export {
   CatalogueExportLimitError,
@@ -95,4 +95,4 @@ export {
   maximumExportRecordBytes,
   maximumLegalityRuleRelationships,
   maximumLegalityStatusRules,
-} from "../export-limits";
+} from "./export-limits";

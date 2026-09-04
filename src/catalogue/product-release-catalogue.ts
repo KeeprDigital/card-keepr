@@ -1,22 +1,23 @@
 import { createHash } from "node:crypto";
-import type {
-  CatalogueDistributionContext,
-  CatalogueProduct,
-  CatalogueRelease,
-  EvidenceCategory,
-  ProductAuthorityClass,
-  ProductDisagreement,
-  ProductEntityReference,
-  ProductEvidenceResource,
-  ProductReference,
-  ProductRelationship,
-  ProductSourceObservation,
-  ProductWithdrawal,
-  ReleasePrecision,
-  ReleaseStatus,
-  SupportedGame,
-} from "./catalogue-candidate-types";
-import { canonicalJson, sha256Text } from "./serialization";
+import {
+  type CatalogueDistributionContext,
+  type CatalogueProduct,
+  type CatalogueRelease,
+  type EvidenceCategory,
+  type ProductAuthorityClass,
+  type ProductDisagreement,
+  type ProductEntityReference,
+  type ProductEvidenceResource,
+  type ProductReference,
+  type ProductRelationship,
+  type ProductSourceObservation,
+  type ProductWithdrawal,
+  type ReleasePrecision,
+  type ReleaseStatus,
+  type SupportedGame,
+  canonicalJson,
+  sha256Text,
+} from "./shared";
 
 // The product-and-release shapes of a Catalogue Candidate live in the leaf
 // module `catalogue-candidate-types`; they stay importable from here.
@@ -35,7 +36,7 @@ export type {
   ProductWithdrawal,
   ReleasePrecision,
   ReleaseStatus,
-} from "./catalogue-candidate-types";
+} from "./shared";
 
 export type ProductReleaseEvidenceInput = {
   value: unknown;
@@ -79,109 +80,63 @@ export async function reconcileProductReleaseCatalogue(
     evidenceInputs.map((input) => parseProductReleaseObservation(input, game)),
   );
   const observations = await Promise.all(
-    parsedObservations.map((observation) =>
-      preservePublishedProductIdentity(
-        observation,
-        prior?.products ?? [],
-        game,
-      ),
-    ),
+    parsedObservations.map((observation) => preservePublishedProductIdentity(observation, prior?.products ?? [], game)),
   );
-  const observedSurface = evidenceInputs.some(
-    ({ value }) => value !== undefined,
-  );
-  const currentObservations = observations.flatMap(
-    ({ products }) => products,
-  );
-  const observedProductIds = new Set(
-    currentObservations.map((product) => product.id),
-  );
+  const observedSurface = evidenceInputs.some(({ value }) => value !== undefined);
+  const currentObservations = observations.flatMap(({ products }) => products);
+  const observedProductIds = new Set(currentObservations.map((product) => product.id));
   const checkedLineages = new Set(
     observedSurface
-      ? evidenceInputs
-          .filter(({ value }) => value !== undefined)
-          .map(({ sourceLineage }) => sourceLineage)
+      ? evidenceInputs.filter(({ value }) => value !== undefined).map(({ sourceLineage }) => sourceLineage)
       : [],
   );
   const priorObservations = (prior?.products ?? [])
     .filter((product) => product.game === game)
     .flatMap(sourceObservationsForProduct);
-  const preservedObservations = priorObservations.filter(
-    ({ evidence }) => !checkedLineages.has(evidence.source),
+  const preservedObservations = priorObservations.filter(({ evidence }) => !checkedLineages.has(evidence.source));
+  const resolvedProducts = resolveObservedProducts([...preservedObservations, ...currentObservations], game).map(
+    (product) => ({
+      ...product,
+      observed: observedProductIds.has(product.id),
+    }),
   );
-  const resolvedProducts = resolveObservedProducts(
-    [...preservedObservations, ...currentObservations],
-    game,
-  ).map((product) => ({
-    ...product,
-    observed: observedProductIds.has(product.id),
-  }));
-  const resolvedProductIds = new Set(
-    resolvedProducts.map((product) => product.id),
-  );
+  const resolvedProductIds = new Set(resolvedProducts.map((product) => product.id));
   const disappearedProducts = (prior?.products ?? []).filter(
     (product) =>
       observedSurface &&
       product.game === game &&
       !observedProductIds.has(product.id) &&
-      sourceObservationsForProduct(product).some(({ evidence }) =>
-        checkedLineages.has(evidence.source),
-      ),
+      sourceObservationsForProduct(product).some(({ evidence }) => checkedLineages.has(evidence.source)),
   );
   const products = uniqueById([
     ...(prior?.products ?? [])
-      .filter(
-        (product) =>
-          product.game !== game ||
-          !resolvedProductIds.has(product.id),
-      )
-      .map((product) =>
-        product.game === game
-          ? { ...product, observed: false }
-          : product,
-      ),
+      .filter((product) => product.game !== game || !resolvedProductIds.has(product.id))
+      .map((product) => (product.game === game ? { ...product, observed: false } : product)),
     ...resolvedProducts,
   ]);
-  const observedProducts = products.filter((product) =>
-    observedProductIds.has(product.id),
-  );
-  const observedContexts = aggregateContexts(
-    observations.flatMap(({ distributionContexts }) => distributionContexts),
-  );
-  const observedContextIds = new Set(
-    observedContexts.map((context) => context.id),
-  );
-  const preservedContexts = (prior?.distribution_contexts ?? []).flatMap(
-    (context) => {
-      if (context.game !== game || !observedSurface) return [context];
-      if (context.source_lineages === undefined) return [context];
-      const sourceLineages = (context.source_lineages ?? []).filter(
-        (lineage) => !checkedLineages.has(lineage),
-      );
-      return sourceLineages.length === 0
-        ? [{
+  const observedProducts = products.filter((product) => observedProductIds.has(product.id));
+  const observedContexts = aggregateContexts(observations.flatMap(({ distributionContexts }) => distributionContexts));
+  const observedContextIds = new Set(observedContexts.map((context) => context.id));
+  const preservedContexts = (prior?.distribution_contexts ?? []).flatMap((context) => {
+    if (context.game !== game || !observedSurface) return [context];
+    if (context.source_lineages === undefined) return [context];
+    const sourceLineages = (context.source_lineages ?? []).filter((lineage) => !checkedLineages.has(lineage));
+    return sourceLineages.length === 0
+      ? [
+          {
             ...context,
             observed: false,
             source_lineages: [],
-          }]
-        : [{ ...context, source_lineages: sourceLineages }];
-    },
-  );
-  const distributionContexts = aggregateContexts([
-    ...preservedContexts,
-    ...observedContexts,
-  ]).map((context) => ({
+          },
+        ]
+      : [{ ...context, source_lineages: sourceLineages }];
+  });
+  const distributionContexts = aggregateContexts([...preservedContexts, ...observedContexts]).map((context) => ({
     ...context,
-    observed:
-      observedContextIds.has(context.id) ||
-      (context.source_lineages?.length ?? 0) > 0,
+    observed: observedContextIds.has(context.id) || (context.source_lineages?.length ?? 0) > 0,
   }));
-  const observedRelationships = aggregateRelationships(
-    observations.flatMap(({ relationships }) => relationships),
-  );
-  const observedRelationshipIds = new Set(
-    observedRelationships.map((relationship) => relationship.id),
-  );
+  const observedRelationships = aggregateRelationships(observations.flatMap(({ relationships }) => relationships));
+  const observedRelationshipIds = new Set(observedRelationships.map((relationship) => relationship.id));
   const relationships = uniqueById([
     ...(prior?.product_relationships ?? [])
       .filter(
@@ -220,8 +175,7 @@ export async function reconcileProductReleaseCatalogue(
           .map(({ evidence }) => evidence.source)
           .filter((lineage) => checkedLineages.has(lineage))
           .sort(),
-        detail:
-          "The Product was not observed in this complete run; it remains historical and is not withdrawn.",
+        detail: "The Product was not observed in this complete run; it remains historical and is not withdrawn.",
       })),
     ],
   };
@@ -242,33 +196,19 @@ async function preservePublishedProductIdentity(
   >();
   const warnings: Record<string, unknown>[] = [];
   for (const product of observation.products) {
-    const gameProducts = priorProducts.filter(
-      (prior) => prior.game === game,
-    );
+    const gameProducts = priorProducts.filter((prior) => prior.game === game);
     const nameMatches = gameProducts.filter(
-      (prior) =>
-        normalizedProductName(prior.name) ===
-          normalizedProductName(product.name),
+      (prior) => normalizedProductName(prior.name) === normalizedProductName(product.name),
     );
     const sameLineageNameMatches = nameMatches.filter((prior) =>
-      sourceObservationsForProduct(prior).some(
-        ({ evidence }) => evidence.source === product.evidence.source,
-      )
+      sourceObservationsForProduct(prior).some(({ evidence }) => evidence.source === product.evidence.source),
     );
     const officialCodeMatches =
-      product.officialCode === null
-        ? []
-        : gameProducts.filter(
-            (prior) => prior.official_code === product.officialCode,
-          );
+      product.officialCode === null ? [] : gameProducts.filter((prior) => prior.official_code === product.officialCode);
     const priorMatches =
       officialCodeMatches.length > 0
         ? officialCodeMatches
-        : nameMatches.filter(
-            (prior) =>
-              (product.officialCode === null ||
-                prior.official_code === null),
-          );
+        : nameMatches.filter((prior) => product.officialCode === null || prior.official_code === null);
     const matchedIds = [...new Set(priorMatches.map(({ id }) => id))];
     if (matchedIds.length === 1) {
       const priorProduct = priorMatches.find(({ id }) => id === matchedIds[0])!;
@@ -276,20 +216,14 @@ async function preservePublishedProductIdentity(
         product.officialCode === null &&
         priorProduct.official_code !== null &&
         sameLineageNameMatches.some(({ id }) => id === priorProduct.id);
-      const carriedOfficialCode = preservesEstablishedCode
-        ? establishedOfficialCode(priorProduct)
-        : undefined;
+      const carriedOfficialCode = preservesEstablishedCode ? establishedOfficialCode(priorProduct) : undefined;
       if (preservesEstablishedCode && carriedOfficialCode === undefined) {
-        throw new Error(
-          "The established Product code has no retained authoritative provenance.",
-        );
+        throw new Error("The established Product code has no retained authoritative provenance.");
       }
       replacements.set(product.id, {
         id: priorProduct.id,
         reference: product.reference,
-        ...(carriedOfficialCode === undefined
-          ? {}
-          : { carriedOfficialCode }),
+        ...(carriedOfficialCode === undefined ? {} : { carriedOfficialCode }),
       });
     } else if (matchedIds.length > 1) {
       throw new Error(
@@ -317,38 +251,23 @@ async function preservePublishedProductIdentity(
             : { carriedOfficialCode: replacement.carriedOfficialCode }),
         };
   });
-  const distributionContexts = observation.distributionContexts.map(
-    (context) => ({
-      ...context,
-      product_id:
-        context.product_id === null
-          ? null
-          : replacements.get(context.product_id)?.id ?? context.product_id,
-    }),
-  );
+  const distributionContexts = observation.distributionContexts.map((context) => ({
+    ...context,
+    product_id: context.product_id === null ? null : (replacements.get(context.product_id)?.id ?? context.product_id),
+  }));
   const relationships = await Promise.all(
     observation.relationships.map(async (relationship) => {
       const from = {
         ...relationship.from,
-        id:
-          replacements.get(relationship.from.id)?.id ??
-          relationship.from.id,
+        id: replacements.get(relationship.from.id)?.id ?? relationship.from.id,
       };
       const to = {
         ...relationship.to,
-        id:
-          replacements.get(relationship.to.id)?.id ??
-          relationship.to.id,
+        id: replacements.get(relationship.to.id)?.id ?? relationship.to.id,
       };
       return {
         ...relationship,
-        id: await relationshipIdFor(
-          game,
-          relationship.kind,
-          from,
-          to,
-          relationship.source_lineage!,
-        ),
+        id: await relationshipIdFor(game, relationship.kind, from, to, relationship.source_lineage!),
         from,
         to,
       };
@@ -363,9 +282,7 @@ async function preservePublishedProductIdentity(
 }
 
 function normalizedProductName(value: string | null): string | null {
-  return value === null
-    ? null
-    : value.normalize("NFC").trim().toLocaleLowerCase();
+  return value === null ? null : value.normalize("NFC").trim().toLocaleLowerCase();
 }
 
 async function parseProductReleaseObservation(
@@ -386,12 +303,8 @@ async function parseProductReleaseObservation(
     id: input.sourceObservationId,
     captured_at: input.capturedAt,
     source: input.sourceLineage,
-    ...(input.sourceSurface === undefined
-      ? {}
-      : { surface: input.sourceSurface }),
-    ...(input.requestRole === undefined
-      ? {}
-      : { request_role: input.requestRole }),
+    ...(input.sourceSurface === undefined ? {} : { surface: input.sourceSurface }),
+    ...(input.requestRole === undefined ? {} : { request_role: input.requestRole }),
     authority_class: productAuthorityClass(input),
   };
   const products: ObservedProduct[] = [];
@@ -399,33 +312,25 @@ async function parseProductReleaseObservation(
   for (const raw of array(root.products, "product_release_catalogue.products")) {
     const product = record(raw, "Product");
     const reference = productReference(product.reference);
-    const officialCode = nullableText(
-      product.official_code,
-      "Product official_code",
-    );
+    const officialCode = nullableText(product.official_code, "Product official_code");
     const name = text(product.name, "Product name");
     assertReferenceFacts(reference, officialCode, name);
     const id = await productIdFor(game, reference);
-    const releases = array(product.releases, "Product releases").map(
-      (rawRelease) => {
-        const release = record(rawRelease, "Release");
-        const date = record(release.date, "Release date");
-        const precision = releasePrecision(date.precision);
-        const value = nullableText(date.value, "Release date value");
-        assertDatePrecision(precision, value);
-        const region = releaseRegion(release.region);
-        return {
-          eventKey:
-            release.event_key === undefined
-              ? region
-              : text(release.event_key, "Release event_key"),
-          region,
-          precision,
-          value,
-          status: releaseStatus(release.status),
-        };
-      },
-    );
+    const releases = array(product.releases, "Product releases").map((rawRelease) => {
+      const release = record(rawRelease, "Release");
+      const date = record(release.date, "Release date");
+      const precision = releasePrecision(date.precision);
+      const value = nullableText(date.value, "Release date value");
+      assertDatePrecision(precision, value);
+      const region = releaseRegion(release.region);
+      return {
+        eventKey: release.event_key === undefined ? region : text(release.event_key, "Release event_key"),
+        region,
+        precision,
+        value,
+        status: releaseStatus(release.status),
+      };
+    });
     const observed: ObservedProduct = {
       reference,
       id,
@@ -441,21 +346,13 @@ async function parseProductReleaseObservation(
 
   const distributionContexts: CatalogueDistributionContext[] = [];
   const contextsByKey = new Map<string, CatalogueDistributionContext>();
-  for (const raw of array(
-    root.distribution_contexts,
-    "product_release_catalogue.distribution_contexts",
-  )) {
+  for (const raw of array(root.distribution_contexts, "product_release_catalogue.distribution_contexts")) {
     const context = record(raw, "Distribution Context");
     const key = text(context.key, "Distribution Context key");
     const reference = optionalProductReference(context.product_reference);
-    const linkedProduct =
-      reference === null
-        ? null
-        : productsByReference.get(referenceKey(reference));
+    const linkedProduct = reference === null ? null : productsByReference.get(referenceKey(reference));
     if (reference !== null && linkedProduct === undefined) {
-      throw new Error(
-        "A Distribution Context references an unknown typed Product.",
-      );
+      throw new Error("A Distribution Context references an unknown typed Product.");
     }
     const parsed: CatalogueDistributionContext = {
       id: await distributionContextIdFor(game, key),
@@ -474,70 +371,43 @@ async function parseProductReleaseObservation(
 
   const relationships: ProductRelationship[] = [];
   const warnings: Record<string, unknown>[] = [];
-  for (const raw of array(
-    root.relationships,
-    "product_release_catalogue.relationships",
-  )) {
+  for (const raw of array(root.relationships, "product_release_catalogue.relationships")) {
     const relationship = record(raw, "Product relationship");
     const kind = relationshipKind(relationship.kind);
     const resolution = relationshipResolution(relationship.resolution);
     const reference =
-      kind === "printing-product" ||
-      kind === "distribution-context-product" ||
-      kind === "product-card"
+      kind === "printing-product" || kind === "distribution-context-product" || kind === "product-card"
         ? productReference(relationship.product_reference)
         : null;
     if (resolution === "warning") {
       warnings.push({
         code: "product_relationship_unresolved",
         relationship_kind: kind,
-        relationship_value:
-          reference?.value ??
-          optionalText(relationship.context_key) ??
-          "unresolved",
-        detail:
-          "An ambiguous or fuzzy Product relationship remains unresolved and was not made canonical.",
+        relationship_value: reference?.value ?? optionalText(relationship.context_key) ?? "unresolved",
+        detail: "An ambiguous or fuzzy Product relationship remains unresolved and was not made canonical.",
       });
       continue;
     }
     const category = evidenceCategory(relationship.evidence_category);
     if (resolution === "explicit" && category !== "explicit") {
-      throw new Error(
-        "An explicit resolution requires explicit evidence.",
-      );
+      throw new Error("An explicit resolution requires explicit evidence.");
     }
     if (resolution === "deterministic" && category !== "derived") {
-      throw new Error(
-        "A deterministic resolution requires derived evidence.",
-      );
+      throw new Error("A deterministic resolution requires derived evidence.");
     }
-    const product =
-      reference === null
-        ? null
-        : productsByReference.get(referenceKey(reference));
+    const product = reference === null ? null : productsByReference.get(referenceKey(reference));
     if (reference !== null && product === undefined) {
-      throw new Error(
-        "A canonical relationship references an unknown typed Product.",
-      );
+      throw new Error("A canonical relationship references an unknown typed Product.");
     }
     const contextKey =
-      kind === "printing-distribution-context" ||
-      kind === "distribution-context-product"
+      kind === "printing-distribution-context" || kind === "distribution-context-product"
         ? text(relationship.context_key, "relationship context_key")
         : null;
-    const context =
-      contextKey === null ? null : contextsByKey.get(contextKey);
+    const context = contextKey === null ? null : contextsByKey.get(contextKey);
     if (contextKey !== null && context === undefined) {
-      throw new Error(
-        "A canonical relationship references an unknown Distribution Context.",
-      );
+      throw new Error("A canonical relationship references an unknown Distribution Context.");
     }
-    const endpoints = relationshipEndpoints(
-      kind,
-      input,
-      product?.id ?? null,
-      context?.id ?? null,
-    );
+    const endpoints = relationshipEndpoints(kind, input, product?.id ?? null, context?.id ?? null);
     const relationshipValue =
       kind === "printing-distribution-context"
         ? contextKey!
@@ -545,13 +415,7 @@ async function parseProductReleaseObservation(
           ? input.currentCardId!
           : reference!.value;
     relationships.push({
-      id: await relationshipIdFor(
-        game,
-        kind,
-        endpoints.from,
-        endpoints.to,
-        input.sourceLineage,
-      ),
+      id: await relationshipIdFor(game, kind, endpoints.from, endpoints.to, input.sourceLineage),
       game,
       kind,
       ...endpoints,
@@ -575,58 +439,42 @@ function establishedOfficialCode(
   product: CatalogueProduct,
 ): ProductSourceObservation["carriedOfficialCode"] | undefined {
   if (product.official_code === null) return undefined;
-  const provenanceIds = new Set(
-    product.provenance["/data/official_code"] ?? [],
-  );
-  const evidence = product.included.filter(
-    (resource) => provenanceIds.has(resource.id),
-  );
+  const provenanceIds = new Set(product.provenance["/data/official_code"] ?? []);
+  const evidence = product.included.filter((resource) => provenanceIds.has(resource.id));
   if (evidence.length > 0 && evidence.length === provenanceIds.size) {
     return { value: product.official_code, evidence };
   }
   return undefined;
 }
 
-function resolveObservedProducts(
-  observations: readonly ObservedProduct[],
-  game: SupportedGame,
-): CatalogueProduct[] {
+function resolveObservedProducts(observations: readonly ObservedProduct[], game: SupportedGame): CatalogueProduct[] {
   const grouped = new Map<string, ObservedProduct[]>();
   for (const observation of observations) {
-    grouped.set(observation.id, [
-      ...(grouped.get(observation.id) ?? []),
-      observation,
-    ]);
+    grouped.set(observation.id, [...(grouped.get(observation.id) ?? []), observation]);
   }
   return [...grouped.values()]
     .map((values) => resolveProduct(values, game))
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 
-function resolveProduct(
-  observations: readonly ObservedProduct[],
-  game: SupportedGame,
-): CatalogueProduct {
+function resolveProduct(observations: readonly ObservedProduct[], game: SupportedGame): CatalogueProduct {
   const first = observations[0]!;
   const included = uniqueById(
     observations.flatMap(({ evidence, carriedOfficialCode }) => [
       evidence,
-      ...(carriedOfficialCode === undefined
-        ? []
-        : carriedOfficialCode.evidence),
+      ...(carriedOfficialCode === undefined ? [] : carriedOfficialCode.evidence),
     ]),
   );
   const provenance: Record<string, string[]> = {};
   const disagreements: ProductDisagreement[] = [];
   const officialCodeFacts = observations.flatMap((observation) =>
-    observation.officialCode === null &&
-      observation.carriedOfficialCode !== undefined
+    observation.officialCode === null && observation.carriedOfficialCode !== undefined
       ? observation.carriedOfficialCode.evidence.map((evidence) => ({
           ...observation,
           officialCode: observation.carriedOfficialCode!.value,
           evidence,
         }))
-      : [observation]
+      : [observation],
   );
   const officialCode = resolveFact(
     officialCodeFacts,
@@ -635,28 +483,12 @@ function resolveProduct(
     provenance,
     disagreements,
   );
-  const name = resolveFact(
-    observations,
-    (observation) => observation.name,
-    "/data/name",
-    provenance,
-    disagreements,
-  );
-  const releaseGroups = new Map<
-    string,
-    { release: ObservedProduct["releases"][number]; product: ObservedProduct }[]
-  >();
+  const name = resolveFact(observations, (observation) => observation.name, "/data/name", provenance, disagreements);
+  const releaseGroups = new Map<string, { release: ObservedProduct["releases"][number]; product: ObservedProduct }[]>();
   for (const product of observations) {
     for (const release of product.releases) {
-      const groupIdentity = canonicalJson([
-        product.evidence.source,
-        release.region,
-        release.eventKey,
-      ]);
-      releaseGroups.set(groupIdentity, [
-        ...(releaseGroups.get(groupIdentity) ?? []),
-        { release, product },
-      ]);
+      const groupIdentity = canonicalJson([product.evidence.source, release.region, release.eventKey]);
+      releaseGroups.set(groupIdentity, [...(releaseGroups.get(groupIdentity) ?? []), { release, product }]);
     }
   }
   const releases = [...releaseGroups]
@@ -704,28 +536,23 @@ function resolveProduct(
         status,
       };
     });
-  const withdrawal = [...observations]
-    .filter(
-      (observation): observation is ObservedProduct & {
-        withdrawal: ProductWithdrawal;
-      } => observation.withdrawal !== null,
-    )
-    .sort((left, right) =>
-      canonicalJson([
-        left.evidence.captured_at,
-        left.evidence.id,
-      ]).localeCompare(
-        canonicalJson([
-          right.evidence.captured_at,
-          right.evidence.id,
-        ]),
-      ),
-    )
-    .at(-1)?.withdrawal ?? null;
+  const withdrawal =
+    [...observations]
+      .filter(
+        (
+          observation,
+        ): observation is ObservedProduct & {
+          withdrawal: ProductWithdrawal;
+        } => observation.withdrawal !== null,
+      )
+      .sort((left, right) =>
+        canonicalJson([left.evidence.captured_at, left.evidence.id]).localeCompare(
+          canonicalJson([right.evidence.captured_at, right.evidence.id]),
+        ),
+      )
+      .at(-1)?.withdrawal ?? null;
   return {
-    reference: officialCode === null
-      ? first.reference
-      : { kind: "official_code", value: officialCode },
+    reference: officialCode === null ? first.reference : { kind: "official_code", value: officialCode },
     id: first.id,
     game,
     official_code: officialCode,
@@ -735,26 +562,16 @@ function resolveProduct(
     withdrawal,
     included,
     provenance,
-    disagreements: disagreements.sort((left, right) =>
-      left.path.localeCompare(right.path),
-    ),
+    disagreements: disagreements.sort((left, right) => left.path.localeCompare(right.path)),
     source_observations: [...observations].sort((left, right) =>
-      canonicalJson([
-        left.evidence.source,
-        left.evidence.id,
-      ]).localeCompare(
-        canonicalJson([
-          right.evidence.source,
-          right.evidence.id,
-        ]),
+      canonicalJson([left.evidence.source, left.evidence.id]).localeCompare(
+        canonicalJson([right.evidence.source, right.evidence.id]),
       ),
     ),
   };
 }
 
-function sourceObservationsForProduct(
-  product: CatalogueProduct,
-): ProductSourceObservation[] {
+function sourceObservationsForProduct(product: CatalogueProduct): ProductSourceObservation[] {
   if (product.source_observations !== undefined) {
     return product.source_observations;
   }
@@ -770,17 +587,12 @@ function sourceObservationsForProduct(
       value: release.date.value,
       status: release.status,
     })),
-    withdrawal:
-      product.withdrawal?.evidence.source_lineage === evidence.source
-        ? product.withdrawal
-        : null,
+    withdrawal: product.withdrawal?.evidence.source_lineage === evidence.source ? product.withdrawal : null,
     evidence,
   }));
 }
 
-function aggregateContexts(
-  contexts: readonly CatalogueDistributionContext[],
-): CatalogueDistributionContext[] {
+function aggregateContexts(contexts: readonly CatalogueDistributionContext[]): CatalogueDistributionContext[] {
   const grouped = new Map<string, CatalogueDistributionContext[]>();
   for (const context of contexts) {
     grouped.set(context.id, [...(grouped.get(context.id) ?? []), context]);
@@ -801,22 +613,15 @@ function aggregateContexts(
       );
       if (facts.size > 1) {
         throw new Error(
-          `Distribution Context facts conflict for ${values[0]!.id}; ` +
-            "retained evidence remains unresolved.",
+          `Distribution Context facts conflict for ${values[0]!.id}; ` + "retained evidence remains unresolved.",
         );
       }
       const authoritative = [...values].sort(
-        (left, right) =>
-          evidenceAuthority(left.evidence_category) -
-          evidenceAuthority(right.evidence_category),
+        (left, right) => evidenceAuthority(left.evidence_category) - evidenceAuthority(right.evidence_category),
       )[0]!;
       return {
         ...authoritative,
-        source_lineages: [
-          ...new Set(
-            values.flatMap(({ source_lineages }) => source_lineages ?? []),
-          ),
-        ].sort(),
+        source_lineages: [...new Set(values.flatMap(({ source_lineages }) => source_lineages ?? []))].sort(),
       };
     })
     .sort((left, right) => left.id.localeCompare(right.id));
@@ -837,64 +642,43 @@ function resolveFact<T extends { evidence: ProductEvidenceResource }, V>(
     value: value(observation),
     observation_id: observation.evidence.id,
   }));
-  const distinct = new Map(
-    observedValues.map((observedValue) => [canonicalJson(observedValue.value), observedValue]),
-  );
+  const distinct = new Map(observedValues.map((observedValue) => [canonicalJson(observedValue.value), observedValue]));
   if (distinct.size === 1) {
-    provenance[path] = [
-      ...new Set(observedValues.map(({ observation_id }) => observation_id)),
-    ].sort();
+    provenance[path] = [...new Set(observedValues.map(({ observation_id }) => observation_id))].sort();
     return observedValues[0]!.value;
   }
   const bestAuthority = Math.min(
-    ...observations.map(({ evidence }) =>
-      productAuthorityRank(evidence.authority_class ?? "unknown")
-    ),
+    ...observations.map(({ evidence }) => productAuthorityRank(evidence.authority_class ?? "unknown")),
   );
-  const authoritative = observations.filter(({ evidence }) =>
-    productAuthorityRank(evidence.authority_class ?? "unknown") ===
-      bestAuthority
+  const authoritative = observations.filter(
+    ({ evidence }) => productAuthorityRank(evidence.authority_class ?? "unknown") === bestAuthority,
   );
   const authoritativeValues = new Map(
-    authoritative.map((observation) => [
-      canonicalJson(value(observation)),
-      observation,
-    ]),
+    authoritative.map((observation) => [canonicalJson(value(observation)), observation]),
   );
   if (authoritativeValues.size > 1) {
-    throw new Error(
-      `Same-authority Product evidence conflicts at ${path}.`,
-    );
+    throw new Error(`Same-authority Product evidence conflicts at ${path}.`);
   }
   const selected = value(authoritative[0]!);
   provenance[path] = authoritative
-    .filter((observation) =>
-      canonicalJson(value(observation)) === canonicalJson(selected)
-    )
+    .filter((observation) => canonicalJson(value(observation)) === canonicalJson(selected))
     .map(({ evidence }) => evidence.id)
     .sort();
   disagreements.push({
     path,
     status: "resolved_by_authority",
-    candidates: [...distinct.values()].sort((left, right) =>
-      left.observation_id.localeCompare(right.observation_id),
-    ),
+    candidates: [...distinct.values()].sort((left, right) => left.observation_id.localeCompare(right.observation_id)),
   });
   return selected;
 }
 
-function productAuthorityClass(
-  input: ProductReleaseEvidenceInput,
-): ProductAuthorityClass {
+function productAuthorityClass(input: ProductReleaseEvidenceInput): ProductAuthorityClass {
   if (input.requestRole === "product_detail") return "product_detail";
   if (input.sourceSurface === "releases") return "release_schedule";
   if (input.sourceSurface === "products") return "product_listing";
   if (input.requestRole === "detail") return "card_detail";
   if (input.requestRole === "listing") return "card_listing";
-  if (
-    input.sourceSurface !== undefined &&
-    /(?:restriction|legality|errata|policy|rules)/u.test(input.sourceSurface)
-  ) {
+  if (input.sourceSurface !== undefined && /(?:restriction|legality|errata|policy|rules)/u.test(input.sourceSurface)) {
     return "policy";
   }
   return "unknown";
@@ -912,32 +696,22 @@ function productAuthorityRank(authority: ProductAuthorityClass): number {
   }[authority];
 }
 
-function aggregateRelationships(
-  relationships: readonly ProductRelationship[],
-): ProductRelationship[] {
+function aggregateRelationships(relationships: readonly ProductRelationship[]): ProductRelationship[] {
   const grouped = new Map<string, ProductRelationship[]>();
   for (const relationship of relationships) {
-    grouped.set(relationship.id, [
-      ...(grouped.get(relationship.id) ?? []),
-      relationship,
-    ]);
+    grouped.set(relationship.id, [...(grouped.get(relationship.id) ?? []), relationship]);
   }
   return [...grouped.values()]
     .map((values) => ({
       ...values[0]!,
       source_observation_ids: [
-        ...new Set(
-          values.flatMap(({ source_observation_ids }) => source_observation_ids),
-        ),
+        ...new Set(values.flatMap(({ source_observation_ids }) => source_observation_ids)),
       ].sort(),
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 
-export async function productIdFor(
-  game: SupportedGame,
-  reference: ProductReference,
-): Promise<string> {
+export async function productIdFor(game: SupportedGame, reference: ProductReference): Promise<string> {
   return `product_${await sha256Text(
     canonicalJson(
       reference.kind === "official_code"
@@ -947,27 +721,19 @@ export async function productIdFor(
   )}`;
 }
 
-export async function distributionContextIdFor(
-  game: SupportedGame,
-  key: string,
-): Promise<string> {
+export async function distributionContextIdFor(game: SupportedGame, key: string): Promise<string> {
   return `distribution_context_${await sha256Text(canonicalJson({ game, key }))}`;
 }
 
-function releaseIdFor(
-  productId: string,
-  eventIdentity: string,
-): string {
-  return `release_${
-    createHash("sha256")
-      .update(
-        canonicalJson({
-          product_id: productId,
-          event_identity: eventIdentity,
-        }),
-      )
-      .digest("hex")
-  }`;
+function releaseIdFor(productId: string, eventIdentity: string): string {
+  return `release_${createHash("sha256")
+    .update(
+      canonicalJson({
+        product_id: productId,
+        event_identity: eventIdentity,
+      }),
+    )
+    .digest("hex")}`;
 }
 
 async function relationshipIdFor(
@@ -977,9 +743,7 @@ async function relationshipIdFor(
   to: ProductEntityReference,
   sourceLineage: string,
 ): Promise<string> {
-  return `relationship_${await sha256Text(
-    canonicalJson({ game, kind, from, to, source_lineage: sourceLineage }),
-  )}`;
+  return `relationship_${await sha256Text(canonicalJson({ game, kind, from, to, source_lineage: sourceLineage }))}`;
 }
 
 function relationshipEndpoints(
@@ -990,9 +754,7 @@ function relationshipEndpoints(
 ): { from: ProductEntityReference; to: ProductEntityReference } {
   if (kind === "printing-product") {
     if (input.currentPrintingId === null || productId === null) {
-      throw new Error(
-        "A Printing-to-Product relationship requires both entities.",
-      );
+      throw new Error("A Printing-to-Product relationship requires both entities.");
     }
     return {
       from: { type: "printing", id: input.currentPrintingId },
@@ -1001,9 +763,7 @@ function relationshipEndpoints(
   }
   if (kind === "printing-distribution-context") {
     if (input.currentPrintingId === null || contextId === null) {
-      throw new Error(
-        "A Printing-to-Distribution-Context relationship requires both entities.",
-      );
+      throw new Error("A Printing-to-Distribution-Context relationship requires both entities.");
     }
     return {
       from: { type: "printing", id: input.currentPrintingId },
@@ -1012,9 +772,7 @@ function relationshipEndpoints(
   }
   if (kind === "distribution-context-product") {
     if (contextId === null || productId === null) {
-      throw new Error(
-        "A Distribution-Context-to-Product relationship requires both entities.",
-      );
+      throw new Error("A Distribution-Context-to-Product relationship requires both entities.");
     }
     return {
       from: { type: "distribution_context", id: contextId },
@@ -1022,9 +780,7 @@ function relationshipEndpoints(
     };
   }
   if (productId === null || input.currentCardId === null) {
-    throw new Error(
-      "A Product-to-Card relationship requires both entities.",
-    );
+    throw new Error("A Product-to-Card relationship requires both entities.");
   }
   return {
     from: { type: "product", id: productId },
@@ -1032,10 +788,7 @@ function relationshipEndpoints(
   };
 }
 
-function productWithdrawal(
-  value: unknown,
-  input: ProductReleaseEvidenceInput,
-): ProductWithdrawal | null {
+function productWithdrawal(value: unknown, input: ProductReleaseEvidenceInput): ProductWithdrawal | null {
   if (value === undefined || value === null) return null;
   const withdrawal = record(value, "Product withdrawal");
   if (withdrawal.state !== "withdrawn") {
@@ -1044,10 +797,7 @@ function productWithdrawal(
   return {
     evidence: {
       assertion: "withdrawn",
-      effective_at: text(
-        withdrawal.effective_at,
-        "Product withdrawal effective_at",
-      ),
+      effective_at: text(withdrawal.effective_at, "Product withdrawal effective_at"),
       evidence: text(withdrawal.evidence, "Product withdrawal evidence"),
       source_lineage: input.sourceLineage,
       source_snapshot_id: input.sourceSnapshotId,
@@ -1059,10 +809,7 @@ function productWithdrawal(
 
 function productReference(value: unknown): ProductReference {
   const reference = record(value, "Product reference");
-  if (
-    reference.kind !== "official_code" &&
-    reference.kind !== "name"
-  ) {
+  if (reference.kind !== "official_code" && reference.kind !== "name") {
     throw new Error("Product reference kind is invalid.");
   }
   return {
@@ -1079,24 +826,18 @@ function referenceKey(reference: ProductReference): string {
   return canonicalJson(reference);
 }
 
-function assertReferenceFacts(
-  reference: ProductReference,
-  officialCode: string | null,
-  name: string,
-): void {
+function assertReferenceFacts(reference: ProductReference, officialCode: string | null, name: string): void {
   if (
-    (reference.kind === "official_code" &&
-      officialCode !== reference.value) ||
-    (reference.kind === "name" &&
-      (officialCode !== null || name !== reference.value))
+    (reference.kind === "official_code" && officialCode !== reference.value) ||
+    (reference.kind === "name" && (officialCode !== null || name !== reference.value))
   ) {
     throw new Error("Product reference conflicts with Product facts.");
   }
 }
 
 function uniqueById<T extends { id: string }>(values: readonly T[]): T[] {
-  return [...new Map(values.map((value) => [value.id, value])).values()].sort(
-    (left, right) => left.id.localeCompare(right.id),
+  return [...new Map(values.map((value) => [value.id, value])).values()].sort((left, right) =>
+    left.id.localeCompare(right.id),
   );
 }
 
@@ -1120,9 +861,7 @@ function text(value: unknown, field: string): string {
 }
 
 function optionalText(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0
-    ? value.trim()
-    : null;
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
 function nullableText(value: unknown, field: string): string | null {
@@ -1131,12 +870,7 @@ function nullableText(value: unknown, field: string): string | null {
 }
 
 function releaseRegion(value: unknown): CatalogueRelease["region"] {
-  if (
-    value !== "EN-OCEANIA" &&
-    value !== "EN-ASIA" &&
-    value !== "EN-US" &&
-    value !== "unknown"
-  ) {
+  if (value !== "EN-OCEANIA" && value !== "EN-ASIA" && value !== "EN-US" && value !== "unknown") {
     throw new Error("Release region is invalid.");
   }
   return value;
@@ -1164,10 +898,7 @@ function releaseStatus(value: unknown): ReleaseStatus | null {
   return value;
 }
 
-function assertDatePrecision(
-  precision: ReleasePrecision,
-  value: string | null,
-): void {
+function assertDatePrecision(precision: ReleasePrecision, value: string | null): void {
   const patterns: Record<Exclude<ReleasePrecision, "unknown">, RegExp> = {
     day: /^\d{4}-\d{2}-\d{2}$/,
     month: /^\d{4}-\d{2}$/,
@@ -1177,12 +908,9 @@ function assertDatePrecision(
   };
   if (
     (precision === "unknown" && value !== null) ||
-    (precision !== "unknown" &&
-      (value === null || !patterns[precision].test(value)))
+    (precision !== "unknown" && (value === null || !patterns[precision].test(value)))
   ) {
-    throw new Error(
-      "Release date value does not match its published precision.",
-    );
+    throw new Error("Release date value does not match its published precision.");
   }
 }
 
@@ -1206,15 +934,9 @@ function evidenceCategory(value: unknown): EvidenceCategory {
   return value;
 }
 
-function relationshipResolution(
-  value: unknown,
-): "explicit" | "deterministic" | "warning" {
+function relationshipResolution(value: unknown): "explicit" | "deterministic" | "warning" {
   if (value === "explicit" || value === "deterministic") return value;
-  if (
-    value === "ambiguous" ||
-    value === "fuzzy" ||
-    value === "warning"
-  ) return "warning";
+  if (value === "ambiguous" || value === "fuzzy" || value === "warning") return "warning";
   throw new Error("Product relationship resolution is invalid.");
 }
 

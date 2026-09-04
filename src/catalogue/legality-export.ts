@@ -1,26 +1,17 @@
-import type { CatalogueCandidate } from "./catalogue-candidate";
 import {
-  legalityExportKind,
-  legalityRuleCardIds,
-  normalizedLegalityRuleLifecycle,
-} from "./legality-rule";
-import { canonicalLegalityRuleEffect } from "./legality-effect-policy";
-import {
+  type CatalogueCandidate,
   canonicalJson,
   sha256Text,
   utf8,
-} from "./serialization";
-import {
   CatalogueExportLimitError,
   maximumExportComponentBytes,
   maximumLegalityRuleRelationships,
   maximumLegalityStatusRules,
-} from "./export-limits";
+} from "./shared";
+import { legalityExportKind, legalityRuleCardIds, normalizedLegalityRuleLifecycle } from "./legality-rule";
+import { canonicalLegalityRuleEffect } from "./legality-effect-policy";
 
-export function legalityRuleExportRecords(
-  candidate: CatalogueCandidate,
-  revisionId: string,
-) {
+export function legalityRuleExportRecords(candidate: CatalogueCandidate, revisionId: string) {
   return (candidate.legality_rules ?? []).map((rule) => ({
     type: "legality_rule",
     id: rule.id,
@@ -40,18 +31,14 @@ export function legalityRuleExportRecords(
     source_observation_ids: [rule.source_observation_id],
     source_observation_pointer: rule.source_observation_pointer,
     source_field_pointers: rule.source_field_pointers,
-    ...("curated_provenance" in rule &&
-        Array.isArray(rule.curated_provenance)
+    ...("curated_provenance" in rule && Array.isArray(rule.curated_provenance)
       ? { curated_provenance: rule.curated_provenance }
       : {}),
     lifecycle: normalizedLegalityRuleLifecycle(rule, revisionId),
   }));
 }
 
-export async function legalityRuleRelationshipRecords(
-  candidate: CatalogueCandidate,
-  revisionId: string,
-) {
+export async function legalityRuleRelationshipRecords(candidate: CatalogueCandidate, revisionId: string) {
   const relationships = (candidate.legality_rules ?? []).map((rule) => ({
     rule,
     cardIds: legalityRuleCardIds(rule),
@@ -60,27 +47,17 @@ export async function legalityRuleRelationshipRecords(
   let estimatedBytes = 0;
   for (const { rule, cardIds } of relationships) {
     count += Math.max(1, cardIds.length);
-    if (
-      count > maximumLegalityRuleRelationships ||
-      count > maximumLegalityStatusRules
-    ) {
-      throw new CatalogueExportLimitError(
-        "Legality Rule applicability exceeds the 16,384-record publication budget.",
-      );
+    if (count > maximumLegalityRuleRelationships || count > maximumLegalityStatusRules) {
+      throw new CatalogueExportLimitError("Legality Rule applicability exceeds the 16,384-record publication budget.");
     }
     for (const cardId of cardIds) {
-      estimatedBytes += utf8(`${canonicalJson(
-        legalityRuleRelationshipRecord(
-          rule,
-          cardId,
-          revisionId,
-          `relationship_${"0".repeat(64)}`,
-        ),
-      )}\n`).byteLength;
+      estimatedBytes += utf8(
+        `${canonicalJson(
+          legalityRuleRelationshipRecord(rule, cardId, revisionId, `relationship_${"0".repeat(64)}`),
+        )}\n`,
+      ).byteLength;
       if (estimatedBytes > maximumExportComponentBytes) {
-        throw new CatalogueExportLimitError(
-          "Legality Rule relationships exceed the 12 MiB component byte budget.",
-        );
+        throw new CatalogueExportLimitError("Legality Rule relationships exceed the 12 MiB component byte budget.");
       }
     }
   }
@@ -95,9 +72,7 @@ export async function legalityRuleRelationshipRecords(
           card_id: cardId,
         }),
       )}`;
-      records.push(
-        legalityRuleRelationshipRecord(rule, cardId, revisionId, id),
-      );
+      records.push(legalityRuleRelationshipRecord(rule, cardId, revisionId, id));
     }
   }
   return records;

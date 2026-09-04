@@ -1,24 +1,17 @@
 import { createHash } from "node:crypto";
-import type {
-  CatalogueCard,
-  CataloguePrintingImage,
-  CataloguePrinting,
-  SupportedGame,
-} from "./catalogue-candidate";
-import { canonicalJson } from "./serialization";
 import {
+  type CatalogueCard,
+  type CataloguePrintingImage,
+  type CataloguePrinting,
+  type SupportedGame,
+  canonicalJson,
   canonicalProfileAttributes,
   requiredProfileContract,
   sourceFieldWarning,
   type ProfileWarning,
-} from "./reconciliation-profile";
-import {
-  parsedOfficialArtworkIdentity,
-} from "./official-artwork-identity.ts";
-import {
-  parseRulesTextErrata,
-  type ParsedRulesTextErratum,
-} from "./errata-rules-text";
+} from "./shared";
+import { parsedOfficialArtworkIdentity } from "./official-artwork-identity.ts";
+import { parseRulesTextErrata, type ParsedRulesTextErratum } from "./errata-rules-text";
 
 export type PrintingCompatibility = Readonly<{
   card_id: string;
@@ -61,10 +54,7 @@ export type ParsedCardPrintingObservation = Readonly<{
   treatment: string | null;
   demonstrablyNovel: boolean;
   noveltyProofComplete: boolean;
-  printingImages: readonly Omit<
-    CataloguePrintingImage,
-    "id" | "printing_id" | "object_key"
-  >[];
+  printingImages: readonly Omit<CataloguePrintingImage, "id" | "printing_id" | "object_key">[];
   memberships: Memberships;
   withdrawal: Withdrawal | null;
   productReleaseValue: unknown;
@@ -95,9 +85,7 @@ export type ParsedOfficialErratumObservation = Readonly<{
   sourceFragment: string;
 }>;
 
-export type ParsedReconciliationObservation =
-  | ParsedCardPrintingObservation
-  | ParsedOfficialErratumObservation;
+export type ParsedReconciliationObservation = ParsedCardPrintingObservation | ParsedOfficialErratumObservation;
 
 export type Withdrawal = Readonly<{
   entity: "card" | "printing" | "card_and_printing";
@@ -119,18 +107,8 @@ const rootFields = new Set([
   "errata",
   "legality_rules",
 ]);
-const cardFields = new Set([
-  "game",
-  "official_identity",
-  "name",
-  "effective_rules_text",
-  "game_data",
-]);
-const printingFields = new Set([
-  "rarity",
-  "printed_rules_text",
-  "game_data",
-]);
+const cardFields = new Set(["game", "official_identity", "name", "effective_rules_text", "game_data"]);
+const printingFields = new Set(["rarity", "printed_rules_text", "game_data"]);
 const gameDataFields = new Set(["profile", "attributes"]);
 const identityFields = new Set(["kind", "value"]);
 const rarityFields = new Set(["raw", "normalized"]);
@@ -143,11 +121,7 @@ const identityEvidenceFields = new Set([
   "demonstrably_novel",
   "novelty_basis",
 ]);
-const noveltyBasisFields = new Set([
-  "kind",
-  "source_url",
-  "artwork_fingerprint",
-]);
+const noveltyBasisFields = new Set(["kind", "source_url", "artwork_fingerprint"]);
 const appearanceFields = new Set(["images"]);
 const appearanceImageFields = new Set([
   "role",
@@ -166,17 +140,8 @@ const completenessFields = new Set([
   "declared_record_count",
   "parsed_record_count",
 ]);
-const membershipFields = new Set([
-  "products",
-  "distribution_contexts",
-  "source_buckets",
-]);
-const withdrawalFields = new Set([
-  "entity",
-  "state",
-  "effective_at",
-  "evidence",
-]);
+const membershipFields = new Set(["products", "distribution_contexts", "source_buckets"]);
+const withdrawalFields = new Set(["entity", "state", "effective_at", "evidence"]);
 
 export function parseReconciliationObservation(
   sourceObservationId: string,
@@ -188,33 +153,21 @@ export function parseReconciliationObservation(
   }
   if (record.card === undefined) {
     if (record.product_release_catalogue === undefined) {
-      throw new Error(
-        "A retained observation requires Card or Product catalogue evidence.",
-      );
+      throw new Error("A retained observation requires Card or Product catalogue evidence.");
     }
     const warnings: ReconciliationWarning[] = [];
     detectUnknownFields(
       sourceObservationId,
       "products-and-releases@1",
       record,
-      new Set([
-        "completeness",
-        "listing_identity_evidence",
-        "product_release_catalogue",
-        "source_sidecar",
-      ]),
+      new Set(["completeness", "listing_identity_evidence", "product_release_catalogue", "source_sidecar"]),
       "",
       warnings,
     );
     if (record.listing_identity_evidence !== undefined) {
-      const listingIdentity = requiredRecord(
-        record.listing_identity_evidence,
-        "listing_identity_evidence",
-      );
+      const listingIdentity = requiredRecord(record.listing_identity_evidence, "listing_identity_evidence");
       if (
-        Object.keys(listingIdentity).some(
-          (field) => field !== "locator" && field !== "canonical",
-        ) ||
+        Object.keys(listingIdentity).some((field) => field !== "locator" && field !== "canonical") ||
         typeof listingIdentity.locator !== "string" ||
         listingIdentity.locator.length === 0 ||
         typeof listingIdentity.canonical !== "string" ||
@@ -223,12 +176,7 @@ export function parseReconciliationObservation(
         throw new Error("listing_identity_evidence is invalid.");
       }
     }
-    inspectSourceSidecar(
-      sourceObservationId,
-      "products-and-releases@1",
-      record.source_sidecar,
-      warnings,
-    );
+    inspectSourceSidecar(sourceObservationId, "products-and-releases@1", record.source_sidecar, warnings);
     return {
       kind: "card_printing",
       sourceObservationId,
@@ -261,22 +209,8 @@ export function parseReconciliationObservation(
     throw new Error("Retained Card evidence has an unsupported profile binding.");
   }
   const warnings: ReconciliationWarning[] = [];
-  detectUnknownFields(
-    sourceObservationId,
-    profile,
-    record,
-    rootFields,
-    "",
-    warnings,
-  );
-  detectUnknownFields(
-    sourceObservationId,
-    profile,
-    gameData,
-    gameDataFields,
-    "card.game_data",
-    warnings,
-  );
+  detectUnknownFields(sourceObservationId, profile, record, rootFields, "", warnings);
+  detectUnknownFields(sourceObservationId, profile, gameData, gameDataFields, "card.game_data", warnings);
   detectUnknownFields(
     sourceObservationId,
     profile,
@@ -285,25 +219,10 @@ export function parseReconciliationObservation(
     "card.official_identity",
     warnings,
   );
-  inspectSharedObservationFields(
-    sourceObservationId,
-    profile,
-    record,
-    warnings,
-  );
+  inspectSharedObservationFields(sourceObservationId, profile, record, warnings);
   inspectSourceSidecar(sourceObservationId, profile, record.source_sidecar, warnings);
-  detectUnknownFields(
-    sourceObservationId,
-    profile,
-    rawCard,
-    cardFields,
-    "card",
-    warnings,
-  );
-  const rawCardAttributes = requiredRecord(
-    gameData.attributes,
-    "card.game_data.attributes",
-  );
+  detectUnknownFields(sourceObservationId, profile, rawCard, cardFields, "card", warnings);
+  const rawCardAttributes = requiredRecord(gameData.attributes, "card.game_data.attributes");
   const canonicalCardAttributes = canonicalProfileAttributes(
     sourceObservationId,
     profile,
@@ -316,35 +235,18 @@ export function parseReconciliationObservation(
     game: contract.game,
     official_identity: identity,
     name: requiredString(rawCard.name, "card.name"),
-    effective_rules_text: nullableString(
-      rawCard.effective_rules_text,
-      "card.effective_rules_text",
-    ),
+    effective_rules_text: nullableString(rawCard.effective_rules_text, "card.effective_rules_text"),
     game_data: {
       profile: profile as CatalogueCard["game_data"]["profile"],
       attributes: canonicalCardAttributes,
     },
   };
-  const don =
-    identity.kind === "functional_designation" &&
-    identity.value === "DON!!";
-  if (
-    don &&
-    (profile !== "one-piece@1" ||
-      canonicalCardAttributes.card_type !== "don")
-  ) {
-    throw new Error(
-      "The functional DON!! identity requires the one-piece@1 don Card shape.",
-    );
+  const don = identity.kind === "functional_designation" && identity.value === "DON!!";
+  if (don && (profile !== "one-piece@1" || canonicalCardAttributes.card_type !== "don")) {
+    throw new Error("The functional DON!! identity requires the one-piece@1 don Card shape.");
   }
-  if (
-    profile === "one-piece@1" &&
-    canonicalCardAttributes.card_type === "don" &&
-    !don
-  ) {
-    throw new Error(
-      "The One Piece card_type don requires functional DON!! identity.",
-    );
+  if (profile === "one-piece@1" && canonicalCardAttributes.card_type === "don" && !don) {
+    throw new Error("The One Piece card_type don requires functional DON!! identity.");
   }
   if (record.printing === undefined) {
     return {
@@ -369,42 +271,15 @@ export function parseReconciliationObservation(
   }
 
   const rawPrinting = requiredRecord(record.printing, "printing");
-  detectUnknownFields(
-    sourceObservationId,
-    profile,
-    rawPrinting,
-    printingFields,
-    "printing",
-    warnings,
-  );
+  detectUnknownFields(sourceObservationId, profile, rawPrinting, printingFields, "printing", warnings);
   const rarity = requiredRecord(rawPrinting.rarity, "printing.rarity");
-  const printingGameData = requiredRecord(
-    rawPrinting.game_data,
-    "printing.game_data",
-  );
+  const printingGameData = requiredRecord(rawPrinting.game_data, "printing.game_data");
   if (printingGameData.profile !== profile) {
     throw new Error("Card and Printing Game Profiles must agree.");
   }
-  detectUnknownFields(
-    sourceObservationId,
-    profile,
-    rarity,
-    rarityFields,
-    "printing.rarity",
-    warnings,
-  );
-  detectUnknownFields(
-    sourceObservationId,
-    profile,
-    printingGameData,
-    gameDataFields,
-    "printing.game_data",
-    warnings,
-  );
-  const rawPrintingAttributes = requiredRecord(
-    printingGameData.attributes,
-    "printing.game_data.attributes",
-  );
+  detectUnknownFields(sourceObservationId, profile, rarity, rarityFields, "printing.rarity", warnings);
+  detectUnknownFields(sourceObservationId, profile, printingGameData, gameDataFields, "printing.game_data", warnings);
+  const rawPrintingAttributes = requiredRecord(printingGameData.attributes, "printing.game_data.attributes");
   const canonicalPrintingAttributes = canonicalProfileAttributes(
     sourceObservationId,
     profile,
@@ -415,15 +290,9 @@ export function parseReconciliationObservation(
   const printing: Omit<CataloguePrinting, "id" | "card_id"> = {
     rarity: {
       raw: nullableString(rarity.raw, "printing.rarity.raw"),
-      normalized: nullableString(
-        rarity.normalized,
-        "printing.rarity.normalized",
-      ),
+      normalized: nullableString(rarity.normalized, "printing.rarity.normalized"),
     },
-    printed_rules_text: nullableString(
-      rawPrinting.printed_rules_text,
-      "printing.printed_rules_text",
-    ),
+    printed_rules_text: nullableString(rawPrinting.printed_rules_text, "printing.printed_rules_text"),
     game_data: {
       profile: profile as CataloguePrinting["game_data"] extends null
         ? never
@@ -431,25 +300,16 @@ export function parseReconciliationObservation(
       attributes: canonicalPrintingAttributes,
     },
   };
-  const identityEvidence = requiredRecord(
-    record.identity_evidence,
-    "identity_evidence",
-  );
-  const variantKey = nullableString(
-    identityEvidence.variant_key,
-    "identity_evidence.variant_key",
-  );
+  const identityEvidence = requiredRecord(record.identity_evidence, "identity_evidence");
+  const variantKey = nullableString(identityEvidence.variant_key, "identity_evidence.variant_key");
   if (profile === "gundam@1" && variantKey === null) {
-    throw new Error(
-      "Gundam Printing evidence requires an exact variant key or suffix.",
-    );
+    throw new Error("Gundam Printing evidence requires an exact variant key or suffix.");
   }
   const artworkFingerprint = requiredString(
     identityEvidence.artwork_fingerprint,
     "identity_evidence.artwork_fingerprint",
   );
-  const artworkIdentity =
-    parsedOfficialArtworkIdentity(artworkFingerprint);
+  const artworkIdentity = parsedOfficialArtworkIdentity(artworkFingerprint);
   const appearance = appearanceEvidence(
     record.appearance_evidence,
     artworkFingerprint,
@@ -460,30 +320,18 @@ export function parseReconciliationObservation(
     kind: "card_printing",
     sourceObservationId,
     observedCardAndPrinting: { card, printing },
-    locator: requiredString(
-      identityEvidence.locator,
-      "identity_evidence.locator",
-    ),
+    locator: requiredString(identityEvidence.locator, "identity_evidence.locator"),
     variantKey,
     artworkFingerprint,
     artworkIdentityExplicit:
-      !artworkFingerprint.startsWith("official-artwork:") ||
-      typeof artworkIdentity?.artwork_id === "string",
+      !artworkFingerprint.startsWith("official-artwork:") || typeof artworkIdentity?.artwork_id === "string",
     printedFieldsDigest: requiredString(
       identityEvidence.printed_fields_digest,
       "identity_evidence.printed_fields_digest",
     ),
-    treatment: nullableString(
-      identityEvidence.treatment,
-      "identity_evidence.treatment",
-    ),
+    treatment: nullableString(identityEvidence.treatment, "identity_evidence.treatment"),
     demonstrablyNovel: identityEvidence.demonstrably_novel === true,
-    noveltyProofComplete:
-      appearance.complete &&
-      validNoveltyBasis(
-        identityEvidence.novelty_basis,
-        artworkFingerprint,
-      ),
+    noveltyProofComplete: appearance.complete && validNoveltyBasis(identityEvidence.novelty_basis, artworkFingerprint),
     printingImages: appearance.images,
     memberships: parseMemberships(record.memberships),
     withdrawal: parseWithdrawal(record.withdrawal, true),
@@ -547,53 +395,36 @@ function parseOfficialErratumObservation(
   const game = record.game;
   const target = requiredRecord(record.target, "Official Erratum target");
   if (target.type !== "card" && target.type !== "printing") {
-    throw new Error(
-      "Official Erratum target type is invalid.",
-    );
+    throw new Error("Official Erratum target type is invalid.");
   }
   assertOnlyFields(
     target,
-    target.type === "card"
-      ? ["type", "official_identity"]
-      : ["type", "official_identity", "locator"],
+    target.type === "card" ? ["type", "official_identity"] : ["type", "official_identity", "locator"],
     "Official Erratum target",
   );
   const identity = parseOfficialIdentity(target.official_identity, game);
-  const targetLocator = target.type === "printing"
-    ? requiredString(target.locator, "Official Erratum target locator")
-    : null;
+  const targetLocator =
+    target.type === "printing" ? requiredString(target.locator, "Official Erratum target locator") : null;
   const source = requiredRecord(record.source, "Official Erratum source");
-  assertOnlyFields(
-    source,
-    ["fragment", "display_name", "image_url"],
-    "Official Erratum source",
-  );
+  assertOnlyFields(source, ["fragment", "display_name", "image_url"], "Official Erratum source");
   requiredString(source.display_name, "Official Erratum source display_name");
-  const imageUrl = requiredString(
-    source.image_url,
-    "Official Erratum source image_url",
-  );
-  const imageOrigin = game === "one-piece"
-    ? "https://en.onepiece-cardgame.com/images/"
-    : game === "fusion-world"
-      ? "https://www.dbs-cardgame.com/fw/images/"
-      : game === "digimon"
-        ? "https://world.digimoncard.com/"
-        : "https://www.gundam-gcg.com/gcg/bccard/";
+  const imageUrl = requiredString(source.image_url, "Official Erratum source image_url");
+  const imageOrigin =
+    game === "one-piece"
+      ? "https://en.onepiece-cardgame.com/images/"
+      : game === "fusion-world"
+        ? "https://www.dbs-cardgame.com/fw/images/"
+        : game === "digimon"
+          ? "https://world.digimoncard.com/"
+          : "https://www.gundam-gcg.com/gcg/bccard/";
   if (!imageUrl.startsWith(imageOrigin)) {
     throw new Error("Official Erratum image provenance is invalid.");
   }
-  const fragment = requiredString(
-    source.fragment,
-    "Official Erratum source fragment",
-  );
+  const fragment = requiredString(source.fragment, "Official Erratum source fragment");
   if (!/^#[A-Za-z][A-Za-z0-9_-]+$/.test(fragment)) {
     throw new Error("Official Erratum source fragment is invalid.");
   }
-  const completeness = requiredRecord(
-    record.completeness,
-    "Official Erratum completeness",
-  );
+  const completeness = requiredRecord(record.completeness, "Official Erratum completeness");
   assertOnlyFields(
     completeness,
     [
@@ -615,72 +446,52 @@ function parseOfficialErratumObservation(
     throw new Error("Official Erratum completeness proof is invalid.");
   }
   if (typeof record.applies_to_parallel_printings !== "boolean") {
-    throw new Error(
-      "Official Erratum parallel Printing applicability is invalid.",
-    );
+    throw new Error("Official Erratum parallel Printing applicability is invalid.");
   }
   return {
     kind: "official_erratum",
     sourceObservationId,
     game,
-    target: targetLocator === null
-      ? {
-          type: "card",
-          officialIdentity: identity,
-        }
-      : {
-          type: "printing",
-          officialIdentity: identity,
-          locator: targetLocator,
-        },
+    target:
+      targetLocator === null
+        ? {
+            type: "card",
+            officialIdentity: identity,
+          }
+        : {
+            type: "printing",
+            officialIdentity: identity,
+            locator: targetLocator,
+          },
     publishedOn: exactDate(record.published_on, "published_on"),
-    effectiveFrom:
-      record.effective_from === null
-        ? null
-        : exactDate(record.effective_from, "effective_from"),
+    effectiveFrom: record.effective_from === null ? null : exactDate(record.effective_from, "effective_from"),
     observedPrintedRulesText: requiredString(
       record.observed_printed_rules_text,
       "Official Erratum observed_printed_rules_text",
     ),
-    correctedRulesText: record.corrected_rules_text === null
-      ? null
-      : requiredString(
-          record.corrected_rules_text,
-          "Official Erratum corrected_rules_text",
-        ),
-    officialWording: requiredString(
-      record.official_wording,
-      "Official Erratum official_wording",
-    ),
+    correctedRulesText:
+      record.corrected_rules_text === null
+        ? null
+        : requiredString(record.corrected_rules_text, "Official Erratum corrected_rules_text"),
+    officialWording: requiredString(record.official_wording, "Official Erratum official_wording"),
     appliesToParallelPrintings: record.applies_to_parallel_printings,
     sourceFragment: fragment,
   };
 }
 
-function assertOnlyFields(
-  record: Record<string, unknown>,
-  expected: readonly string[],
-  name: string,
-): void {
+function assertOnlyFields(record: Record<string, unknown>, expected: readonly string[], name: string): void {
   const extra = Object.keys(record).filter((field) => !expected.includes(field));
   if (extra.length > 0) {
-    throw new Error(
-      `${name} contains undeclared fields: ${extra.sort().join(", ")}.`,
-    );
+    throw new Error(`${name} contains undeclared fields: ${extra.sort().join(", ")}.`);
   }
   const missing = expected.filter((field) => !(field in record));
   if (missing.length > 0) {
-    throw new Error(
-      `${name} is missing fields: ${missing.sort().join(", ")}.`,
-    );
+    throw new Error(`${name} is missing fields: ${missing.sort().join(", ")}.`);
   }
 }
 
 function exactDate(value: unknown, name: string): string {
-  if (
-    typeof value !== "string" ||
-    !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)
-  ) {
+  if (typeof value !== "string" || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)) {
     throw new Error(`Official Erratum ${name} is invalid.`);
   }
   const instant = new Date(`${value}T00:00:00.000Z`);
@@ -690,16 +501,9 @@ function exactDate(value: unknown, name: string): string {
   return value;
 }
 
-function parseOfficialIdentity(
-  value: unknown,
-  game: SupportedGame,
-): CatalogueCard["official_identity"] {
+function parseOfficialIdentity(value: unknown, game: SupportedGame): CatalogueCard["official_identity"] {
   const identity = requiredRecord(value, "card.official_identity");
-  if (
-    identity.kind === "functional_designation" &&
-    identity.value === "DON!!" &&
-    game === "one-piece"
-  ) {
+  if (identity.kind === "functional_designation" && identity.value === "DON!!" && game === "one-piece") {
     return { kind: "functional_designation", value: "DON!!" };
   }
   if (
@@ -730,37 +534,17 @@ function inspectSharedObservationFields(
   record: Record<string, unknown>,
   warnings: ReconciliationWarning[],
 ): void {
-  inspectOptionalRecord(
-    record.completeness,
-    completenessFields,
-    "completeness",
-  );
+  inspectOptionalRecord(record.completeness, completenessFields, "completeness");
   inspectOptionalRecord(record.memberships, membershipFields, "memberships");
   inspectOptionalRecord(record.withdrawal, withdrawalFields, "withdrawal");
-  const identity = inspectOptionalRecord(
-    record.identity_evidence,
-    identityEvidenceFields,
-    "identity_evidence",
-  );
+  const identity = inspectOptionalRecord(record.identity_evidence, identityEvidenceFields, "identity_evidence");
   if (identity !== null) {
-    inspectOptionalRecord(
-      identity.novelty_basis,
-      noveltyBasisFields,
-      "identity_evidence.novelty_basis",
-    );
+    inspectOptionalRecord(identity.novelty_basis, noveltyBasisFields, "identity_evidence.novelty_basis");
   }
-  const appearance = inspectOptionalRecord(
-    record.appearance_evidence,
-    appearanceFields,
-    "appearance_evidence",
-  );
+  const appearance = inspectOptionalRecord(record.appearance_evidence, appearanceFields, "appearance_evidence");
   if (appearance !== null && Array.isArray(appearance.images)) {
     for (const [index, image] of appearance.images.entries()) {
-      inspectOptionalRecord(
-        image,
-        appearanceImageFields,
-        `appearance_evidence.images[${index}]`,
-      );
+      inspectOptionalRecord(image, appearanceImageFields, `appearance_evidence.images[${index}]`);
     }
   }
 
@@ -771,14 +555,7 @@ function inspectSharedObservationFields(
   ): Record<string, unknown> | null {
     if (value === undefined || value === null) return null;
     if (!isRecord(value)) return null;
-    detectUnknownFields(
-      sourceObservationId,
-      profile,
-      value,
-      fields,
-      path,
-      warnings,
-    );
+    detectUnknownFields(sourceObservationId, profile, value, fields, path, warnings);
     return value;
   }
 }
@@ -790,20 +567,14 @@ function appearanceEvidence(
   cardAttributes: Record<string, unknown>,
 ): {
   complete: boolean;
-  images: Omit<
-    CataloguePrintingImage,
-    "id" | "printing_id" | "object_key"
-  >[];
+  images: Omit<CataloguePrintingImage, "id" | "printing_id" | "object_key">[];
 } {
   if (!isRecord(value) || !Array.isArray(value.images)) {
     return { complete: false, images: [] };
   }
   const declaredRoles = new Set<string>();
   const capturedRoles = new Set<string>();
-  const captured: Omit<
-    CataloguePrintingImage,
-    "id" | "printing_id" | "object_key"
-  >[] = [];
+  const captured: Omit<CataloguePrintingImage, "id" | "printing_id" | "object_key">[] = [];
   for (const item of value.images) {
     if (
       !isRecord(item) ||
@@ -849,21 +620,15 @@ function appearanceEvidence(
     }
   }
   const requiredRoles =
-    profile === "fusion-world@1" && cardAttributes.card_type === "leader"
-      ? ["front", "back"]
-      : ["front"];
-  const complete =
-    captured.length === value.images.length &&
-    requiredRoles.every((role) => capturedRoles.has(role));
+    profile === "fusion-world@1" && cardAttributes.card_type === "leader" ? ["front", "back"] : ["front"];
+  const complete = captured.length === value.images.length && requiredRoles.every((role) => capturedRoles.has(role));
   return { complete, images: captured };
 }
 
 function decodeBase64(value: string): Uint8Array {
   try {
     const binary = atob(value);
-    return Uint8Array.from(binary, (character) =>
-      character.charCodeAt(0)
-    );
+    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
   } catch {
     throw new Error("Printing Image captured bytes are not valid base64.");
   }
@@ -879,17 +644,10 @@ function validNoveltyBasis(value: unknown, artworkFingerprint: string): boolean 
   );
 }
 
-function parseWithdrawal(
-  value: unknown,
-  hasPrinting: boolean,
-): Withdrawal | null {
+function parseWithdrawal(value: unknown, hasPrinting: boolean): Withdrawal | null {
   if (value === undefined || value === null) return null;
   const record = requiredRecord(value, "withdrawal");
-  if (
-    record.entity !== "card" &&
-    record.entity !== "printing" &&
-    record.entity !== "card_and_printing"
-  ) {
+  if (record.entity !== "card" && record.entity !== "printing" && record.entity !== "card_and_printing") {
     throw new Error("withdrawal.entity is invalid.");
   }
   if (!hasPrinting && record.entity !== "card") {
@@ -898,10 +656,7 @@ function parseWithdrawal(
   if (record.state !== "withdrawn") {
     throw new Error("withdrawal.state is invalid.");
   }
-  const effectiveAt = requiredString(
-    record.effective_at,
-    "withdrawal.effective_at",
-  );
+  const effectiveAt = requiredString(record.effective_at, "withdrawal.effective_at");
   if (
     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(effectiveAt) ||
     new Date(effectiveAt).toISOString() !== effectiveAt
@@ -920,14 +675,8 @@ function parseMemberships(value: unknown): Memberships {
   const record = requiredRecord(value, "memberships");
   return {
     products: stringArray(record.products, "memberships.products"),
-    distribution_contexts: stringArray(
-      record.distribution_contexts,
-      "memberships.distribution_contexts",
-    ),
-    source_buckets: stringArray(
-      record.source_buckets,
-      "memberships.source_buckets",
-    ),
+    distribution_contexts: stringArray(record.distribution_contexts, "memberships.distribution_contexts"),
+    source_buckets: stringArray(record.source_buckets, "memberships.source_buckets"),
   };
 }
 
@@ -942,29 +691,17 @@ function detectUnknownFields(
   for (const [field, raw] of Object.entries(value)) {
     if (!accepted.has(field)) {
       warnings.push(
-        sourceFieldWarning(
-          sourceObservationId,
-          profile,
-          prefix === "" ? field : `${prefix}.${field}`,
-          raw,
-        ),
+        sourceFieldWarning(sourceObservationId, profile, prefix === "" ? field : `${prefix}.${field}`, raw),
       );
     }
   }
 }
 
-function sortedWarnings(
-  warnings: ReconciliationWarning[],
-): ReconciliationWarning[] {
-  return warnings.sort((left, right) =>
-    canonicalJson(left).localeCompare(canonicalJson(right)),
-  );
+function sortedWarnings(warnings: ReconciliationWarning[]): ReconciliationWarning[] {
+  return warnings.sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right)));
 }
 
-function requiredRecord(
-  value: unknown,
-  field: string,
-): Record<string, unknown> {
+function requiredRecord(value: unknown, field: string): Record<string, unknown> {
   if (!isRecord(value)) throw new Error(`${field} must be an object.`);
   return value;
 }

@@ -1,8 +1,4 @@
-import { canonicalJson, sha256Text } from "./serialization";
-import {
-  catalogueCandidateContract,
-  type CatalogueCandidate,
-} from "./catalogue-candidate";
+import { canonicalJson, sha256Text, catalogueCandidateContract, type CatalogueCandidate } from "./shared";
 
 export const firstCatalogueFixture = "first-catalogue";
 export const firstFixtureCardId = "card_01k_first_catalogue_0001";
@@ -13,19 +9,10 @@ export async function fixtureCandidate(
   selectedGames: readonly string[],
 ): Promise<{ candidate: CatalogueCandidate; digest: string }> {
   if (fixture !== firstCatalogueFixture) {
-    throw new FixtureInputError(
-      "fixture_not_found",
-      "The requested controlled ingestion fixture does not exist.",
-    );
+    throw new FixtureInputError("fixture_not_found", "The requested controlled ingestion fixture does not exist.");
   }
-  if (
-    selectedGames.length !== 1 ||
-    selectedGames[0] !== "one-piece"
-  ) {
-    throw new FixtureInputError(
-      "fixture_game_mismatch",
-      "The first-catalogue fixture must select exactly one-piece.",
-    );
+  if (selectedGames.length !== 1 || selectedGames[0] !== "one-piece") {
+    throw new FixtureInputError("fixture_game_mismatch", "The first-catalogue fixture must select exactly one-piece.");
   }
 
   const candidate: CatalogueCandidate = {
@@ -40,8 +27,7 @@ export async function fixtureCandidate(
           value: "OP01-001",
         },
         name: "Monkey.D.Luffy",
-        effective_rules_text:
-          "[DON!! x1] This Leader gains +1000 power during your turn.",
+        effective_rules_text: "[DON!! x1] This Leader gains +1000 power during your turn.",
         game_data: {
           profile: "one-piece@1",
           attributes: {
@@ -54,8 +40,7 @@ export async function fixtureCandidate(
             counter: null,
             traits: ["Straw Hat Crew"],
             block_icons: ["1"],
-            effect_text:
-              "[DON!! x1] This Leader gains +1000 power during your turn.",
+            effect_text: "[DON!! x1] This Leader gains +1000 power during your turn.",
             trigger_text: null,
           },
         },
@@ -69,8 +54,7 @@ export async function fixtureCandidate(
           normalized: "leader",
           raw: "L",
         },
-        printed_rules_text:
-          "[DON!! x1] This Leader gains +1000 power during your turn.",
+        printed_rules_text: "[DON!! x1] This Leader gains +1000 power during your turn.",
         game_data: {
           profile: "one-piece@1",
           attributes: {

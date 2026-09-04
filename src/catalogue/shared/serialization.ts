@@ -7,44 +7,25 @@ export function canonicalJson(value: unknown): string {
 
 function canonicalJsonAt(value: unknown, path: string): string {
   if (Array.isArray(value)) {
-    return `[${value
-      .map((item, index) => canonicalJsonAt(item, `${path}[${index}]`))
-      .join(",")}]`;
+    return `[${value.map((item, index) => canonicalJsonAt(item, `${path}[${index}]`)).join(",")}]`;
   }
   if (value !== null && typeof value === "object") {
     const record = value as Record<string, unknown>;
     const keys = Object.keys(record).sort(compareUtf8);
     return `{${keys
-      .map(
-        (key) =>
-          `${JSON.stringify(key.normalize("NFC"))}:${canonicalJsonAt(
-            record[key],
-            `${path}.${key}`,
-          )}`,
-      )
+      .map((key) => `${JSON.stringify(key.normalize("NFC"))}:${canonicalJsonAt(record[key], `${path}.${key}`)}`)
       .join(",")}}`;
   }
   if (typeof value === "string") {
     return JSON.stringify(value.normalize("NFC"));
   }
-  if (
-    typeof value === "number" &&
-    (!Number.isFinite(value) || !Number.isInteger(value))
-  ) {
-    throw new Error(
-      `Canonical catalogue JSON permits finite integers only at ${path}`,
-    );
+  if (typeof value === "number" && (!Number.isFinite(value) || !Number.isInteger(value))) {
+    throw new Error(`Canonical catalogue JSON permits finite integers only at ${path}`);
   }
-  if (
-    value === null ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
+  if (value === null || typeof value === "number" || typeof value === "boolean") {
     return JSON.stringify(value);
   }
-  throw new Error(
-    `Canonical catalogue JSON contains an unsupported value at ${path}`,
-  );
+  throw new Error(`Canonical catalogue JSON contains an unsupported value at ${path}`);
 }
 
 export function canonicalNdjson(records: readonly unknown[]): Uint8Array {
@@ -53,9 +34,7 @@ export function canonicalNdjson(records: readonly unknown[]): Uint8Array {
 
 export async function sha256(value: BufferSource): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", value);
-  return Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export function sha256Text(value: string): Promise<string> {

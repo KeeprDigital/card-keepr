@@ -1,15 +1,6 @@
-import { AdministrationProblem } from "./ingestion";
-import { canonicalJson, sha256, utf8 } from "./serialization";
-import {
-  assertAdapterBinding,
-  assertAdapterRequestSurface,
-  requiredSourceAdapter,
-} from "./source-adapters";
-import {
-  publicObservationSet,
-  type ObservationSetRow,
-  type SnapshotRow,
-} from "./source-evidence-repository";
+import { AdministrationProblem, canonicalJson, sha256, utf8 } from "./shared";
+import { assertAdapterBinding, assertAdapterRequestSurface, requiredSourceAdapter } from "./source-adapters";
+import { publicObservationSet, type ObservationSetRow, type SnapshotRow } from "./source-evidence-repository";
 
 type ParseOperationRow = {
   id: string;
@@ -43,11 +34,7 @@ export async function parseSnapshot(
     .bind(snapshotId)
     .first<SnapshotRow>();
   if (snapshot === null) {
-    throw new AdministrationProblem(
-      404,
-      "source_snapshot_not_found",
-      "The requested Source Snapshot does not exist.",
-    );
+    throw new AdministrationProblem(404, "source_snapshot_not_found", "The requested Source Snapshot does not exist.");
   }
   const adapter = requiredSourceAdapter(adapterVersion);
   if (adapter.adapterVersion !== snapshot.adapter_version) {
@@ -70,12 +57,7 @@ export async function parseSnapshot(
       "The Source Snapshot exceeds the adapter's bounded parse limit.",
     );
   }
-  const operation = await prepareParseOperation(
-    database,
-    snapshot.id,
-    adapter.adapterVersion,
-    parseIntent,
-  );
+  const operation = await prepareParseOperation(database, snapshot.id, adapter.adapterVersion, parseIntent);
   if (operation.state === "finalized") {
     return requiredObservationSet(database, operation.id);
   }
@@ -101,11 +83,7 @@ export async function parseSnapshot(
     } else {
       let document: unknown;
       try {
-        document = JSON.parse(
-          new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(
-            bytes,
-          ),
-        );
+        document = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes));
       } catch {
         throw new Error("The Source Snapshot is not valid UTF-8 JSON.");
       }
@@ -118,9 +96,7 @@ export async function parseSnapshot(
     throw new AdministrationProblem(
       422,
       "source_parse_failed",
-      error instanceof Error
-        ? error.message
-        : "The Official Source document does not satisfy its adapter contract.",
+      error instanceof Error ? error.message : "The Official Source document does not satisfy its adapter contract.",
     );
   }
   if (operation.state === "planned") {
@@ -150,12 +126,7 @@ export async function parseSnapshot(
     };
     const observationBytes = utf8(canonicalJson(observationDocument));
     const digest = await sha256(observationBytes);
-    await putImmutableBytes(
-      evidenceObjects,
-      operation.content_object_key,
-      observationBytes,
-      digest,
-    );
+    await putImmutableBytes(evidenceObjects, operation.content_object_key, observationBytes, digest);
     await database
       .prepare(
         `UPDATE source_parse_operations
@@ -163,12 +134,7 @@ export async function parseSnapshot(
              content_byte_length = ?, observation_count = ?
          WHERE id = ? AND state = 'planned'`,
       )
-      .bind(
-        digest,
-        observationBytes.byteLength,
-        observations.length,
-        operation.id,
-      )
+      .bind(digest, observationBytes.byteLength, observations.length, operation.id)
       .run();
   }
   return finalizeParseOperation(database, operation.id, snapshot);
@@ -179,12 +145,14 @@ export async function discoverSnapshotRequests(
   evidenceObjects: R2Bucket,
   snapshotId: string,
   adapterVersion: string,
-): Promise<readonly {
-  role: "listing" | "detail" | "product_detail" | "image";
-  discoveryKey?: string;
-  url: string;
-  headers: Record<string, string>;
-}[]> {
+): Promise<
+  readonly {
+    role: "listing" | "detail" | "product_detail" | "image";
+    discoveryKey?: string;
+    url: string;
+    headers: Record<string, string>;
+  }[]
+> {
   const snapshot = await database
     .prepare("SELECT * FROM source_snapshots WHERE id = ?")
     .bind(snapshotId)
@@ -217,16 +185,12 @@ export async function discoverSnapshotRequests(
     return discovered.map((request) => {
       if (
         !isRecord(inheritedHeaders) ||
-        (request.discoveryKey === undefined &&
-          adapter.inheritDiscoveryRequestHeaders !== true)
+        (request.discoveryKey === undefined && adapter.inheritDiscoveryRequestHeaders !== true)
       ) {
         return request;
       }
       const inherited = Object.fromEntries(
-        Object.entries(inheritedHeaders).filter(
-          (entry): entry is [string, string] =>
-          typeof entry[1] === "string",
-        ),
+        Object.entries(inheritedHeaders).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
       );
       const headers = { ...request.headers, ...inherited };
       if (request.headers.accept !== undefined) {
@@ -241,9 +205,7 @@ export async function discoverSnapshotRequests(
     throw new AdministrationProblem(
       422,
       "source_discovery_failed",
-      error instanceof Error
-        ? error.message
-        : "The Official Source request graph could not be discovered.",
+      error instanceof Error ? error.message : "The Official Source request graph could not be discovered.",
     );
   }
 }
@@ -252,9 +214,7 @@ function discoveredRequestHeaders(
   request: { role: "listing" | "detail" | "product_detail" | "image" },
   headers: Record<string, string>,
 ): Record<string, string> {
-  const baseUserAgent = (
-    headers["user-agent"] ?? "card-keepr-official-source/1"
-  ).replace(
+  const baseUserAgent = (headers["user-agent"] ?? "card-keepr-official-source/1").replace(
     /;\s*request-role=(?:surface|listing|detail|product_detail|image)(?=;|$)/gu,
     "",
   );
@@ -273,35 +233,23 @@ function observationEvidenceSummary(observations: readonly unknown[]) {
   });
   const declaredRecordCount = completeness.reduce(
     (total, item) =>
-      total +
-      (item !== null && Number.isInteger(item.declared_record_count)
-        ? Number(item.declared_record_count)
-        : 0),
+      total + (item !== null && Number.isInteger(item.declared_record_count) ? Number(item.declared_record_count) : 0),
     0,
   );
   const parsedRecordCount = completeness.reduce(
     (total, item) =>
-      total +
-      (item !== null && Number.isInteger(item.parsed_record_count)
-        ? Number(item.parsed_record_count)
-        : 0),
+      total + (item !== null && Number.isInteger(item.parsed_record_count) ? Number(item.parsed_record_count) : 0),
     0,
   );
   return {
     observation_count: observations.length,
     declared_record_count: declaredRecordCount,
     parsed_record_count: parsedRecordCount,
-    required_surfaces_complete: completeness.every(
-      (item) => item?.required_surfaces_complete === true,
-    ),
-    partitions_complete: completeness.every(
-      (item) => item?.partitions_complete === true,
-    ),
+    required_surfaces_complete: completeness.every((item) => item?.required_surfaces_complete === true),
+    partitions_complete: completeness.every((item) => item?.partitions_complete === true),
     structurally_complete:
       completeness.length === observations.length &&
-      completeness.every(
-        (item) => item?.structurally_complete === true,
-      ) &&
+      completeness.every((item) => item?.structurally_complete === true) &&
       declaredRecordCount === parsedRecordCount,
   };
 }
@@ -314,14 +262,9 @@ export async function retainedOfficialDiscoveryRecords(
   evidenceObjects: R2Bucket,
   observationSet: ObservationSetRow,
 ): Promise<unknown[]> {
-  const discoveries = await retainedOfficialDiscoverySurfaces(
-    evidenceObjects,
-    observationSet,
-  );
+  const discoveries = await retainedOfficialDiscoverySurfaces(evidenceObjects, observationSet);
   if (discoveries.length !== 1) {
-    throw new Error(
-      "Official Source discovery retained an invalid surface count.",
-    );
+    throw new Error("Official Source discovery retained an invalid surface count.");
   }
   return discoveries[0]!;
 }
@@ -330,22 +273,13 @@ async function retainedOfficialDiscoverySurfaces(
   evidenceObjects: R2Bucket,
   observationSet: ObservationSetRow,
 ): Promise<unknown[][]> {
-  const object = await evidenceObjects.get(
-    observationSet.content_object_key,
-  );
-  if (
-    object === null ||
-    object.size !== observationSet.content_byte_length
-  ) {
-    throw new Error(
-      "Official Source discovery observations are unavailable.",
-    );
+  const object = await evidenceObjects.get(observationSet.content_object_key);
+  if (object === null || object.size !== observationSet.content_byte_length) {
+    throw new Error("Official Source discovery observations are unavailable.");
   }
   const bytes = new Uint8Array(await object.arrayBuffer());
   if ((await sha256(bytes)) !== observationSet.content_digest) {
-    throw new Error(
-      "Official Source discovery observations failed digest verification.",
-    );
+    throw new Error("Official Source discovery observations failed digest verification.");
   }
   const document: unknown = JSON.parse(new TextDecoder().decode(bytes));
   if (!isRecord(document) || !Array.isArray(document.observations)) {
@@ -359,9 +293,7 @@ async function retainedOfficialDiscoverySurfaces(
       wrapped.value.surface === "discovery" &&
       Array.isArray(wrapped.value.records),
   );
-  return discoveries.map((discovery) =>
-    (discovery as { value: { records: unknown[] } }).value.records
-  );
+  return discoveries.map((discovery) => (discovery as { value: { records: unknown[] } }).value.records);
 }
 
 export async function retainedOfficialDiscoveryRunRecords(
@@ -373,30 +305,30 @@ export async function retainedOfficialDiscoveryRunRecords(
   discoveryObservationSetId: string;
   records: unknown[];
 }> {
-  const retained = await database.prepare(
-    `SELECT observation_set.*, snapshot.request_id
+  const retained = await database
+    .prepare(
+      `SELECT observation_set.*, snapshot.request_id
      FROM source_observation_sets AS observation_set
      JOIN source_snapshots AS snapshot
        ON snapshot.id = observation_set.source_snapshot_id
      WHERE snapshot.ingestion_run_id = ?
        AND snapshot.source_lineage = ?
      ORDER BY snapshot.retrieved_at, observation_set.id`,
-  ).bind(runId, sourceLineage).all<ObservationSetRow & {
-    request_id: string;
-  }>();
+    )
+    .bind(runId, sourceLineage)
+    .all<
+      ObservationSetRow & {
+        request_id: string;
+      }
+    >();
   const rootRequestId = `${sourceLineage}:discovery`;
-  const root = retained.results.find(
-    ({ request_id }) => request_id === rootRequestId,
-  );
+  const root = retained.results.find(({ request_id }) => request_id === rootRequestId);
   if (root === undefined) {
     throw new Error("Official Source discovery root observations are unavailable.");
   }
   const records: unknown[] = [];
   for (const observationSet of retained.results) {
-    const surfaces = await retainedOfficialDiscoverySurfaces(
-      evidenceObjects,
-      observationSet,
-    );
+    const surfaces = await retainedOfficialDiscoverySurfaces(evidenceObjects, observationSet);
     for (const surfaceRecords of surfaces) records.push(...surfaceRecords);
   }
   return {
@@ -510,10 +442,7 @@ async function finalizeParseOperation(
   return requiredObservationSet(database, operation.id);
 }
 
-async function requiredParseOperation(
-  database: D1Database,
-  id: string,
-): Promise<ParseOperationRow> {
+async function requiredParseOperation(database: D1Database, id: string): Promise<ParseOperationRow> {
   const operation = await database
     .prepare("SELECT * FROM source_parse_operations WHERE id = ?")
     .bind(id)
@@ -522,26 +451,16 @@ async function requiredParseOperation(
   return operation;
 }
 
-async function requiredObservationSet(
-  database: D1Database,
-  operationId: string,
-): Promise<ObservationSetRow> {
+async function requiredObservationSet(database: D1Database, operationId: string): Promise<ObservationSetRow> {
   const stored = await database
-    .prepare(
-      "SELECT * FROM source_observation_sets WHERE parse_operation_id = ?",
-    )
+    .prepare("SELECT * FROM source_observation_sets WHERE parse_operation_id = ?")
     .bind(operationId)
     .first<ObservationSetRow>();
   if (stored === null) throw new Error("Source Observation Set disappeared");
   return stored;
 }
 
-async function putImmutableBytes(
-  bucket: R2Bucket,
-  key: string,
-  bytes: Uint8Array,
-  digest: string,
-): Promise<void> {
+async function putImmutableBytes(bucket: R2Bucket, key: string, bytes: Uint8Array, digest: string): Promise<void> {
   const existing = await bucket.head(key);
   if (existing !== null) {
     assertMatchingObject(existing, bytes, digest);
@@ -561,15 +480,8 @@ async function putImmutableBytes(
   assertMatchingObject(concurrent, bytes, digest);
 }
 
-function assertMatchingObject(
-  object: R2Object,
-  bytes: Uint8Array,
-  digest: string,
-): void {
-  if (
-    object.size !== bytes.byteLength ||
-    object.customMetadata?.sha256 !== digest
-  ) {
+function assertMatchingObject(object: R2Object, bytes: Uint8Array, digest: string): void {
+  if (object.size !== bytes.byteLength || object.customMetadata?.sha256 !== digest) {
     throw new Error("Immutable evidence object key collision");
   }
 }

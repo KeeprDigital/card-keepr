@@ -1,18 +1,8 @@
-import {
-  WorkflowEntrypoint,
-  type WorkflowEvent,
-  type WorkflowStep,
-} from "cloudflare:workers";
-import {
-  reconcileRetainedCardPrintingEvidence,
-} from "../../../src/catalogue/card-printing-reconciliation";
-import {
-  failReconciliationWorkflow,
-} from "../../../src/catalogue/reconciliation-candidate-store";
-import type {
-  ReconciliationWorkflowParams,
-} from "../../../src/catalogue/reconciliation-workflow";
-import { canonicalJson } from "../../../src/catalogue/serialization";
+import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
+import { reconcileRetainedCardPrintingEvidence } from "../../../src/catalogue/card-printing-reconciliation";
+import { failReconciliationWorkflow } from "../../../src/catalogue/reconciliation-candidate-store";
+import type { ReconciliationWorkflowParams } from "../../../src/catalogue/reconciliation-workflow";
+import { canonicalJson } from "../../../src/catalogue/shared";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 
 const reconciliationStep = {
@@ -20,10 +10,7 @@ const reconciliationStep = {
   timeout: "10 minutes" as const,
 };
 
-export class ReconciliationWorkflow extends WorkflowEntrypoint<
-  Env,
-  ReconciliationWorkflowParams
-> {
+export class ReconciliationWorkflow extends WorkflowEntrypoint<Env, ReconciliationWorkflowParams> {
   override run(
     event: Readonly<WorkflowEvent<ReconciliationWorkflowParams>>,
     step: WorkflowStep,
@@ -37,71 +24,58 @@ export async function runReconciliationWorkflow(
   event: Readonly<WorkflowEvent<ReconciliationWorkflowParams>>,
   step: WorkflowStep,
 ): Promise<{ result_json: string }> {
-    ({ env, step } = observeOperationalWorkflow(step, event, env));
-    let reconciliationResultJson: string;
-    try {
-      reconciliationResultJson = await step.do(
-        "reconcile retained Card, Printing, and Erratum evidence",
-        reconciliationStep,
-        async () => {
-          const result = await reconcileRetainedCardPrintingEvidence(
-            env.CATALOGUE_DB,
-            env.EVIDENCE_OBJECTS,
-            event.payload.ingestion_run_id,
-            event.payload.observed_at,
-          );
-          return durableReconciliationResult(
-            event.payload.ingestion_run_id,
-            result,
-          );
-        },
-      );
-    } catch (error) {
-      reconciliationResultJson = await step.do(
-        "finalize exhausted reconciliation failure",
-        reconciliationStep,
-        async () => {
-          const result = await failReconciliationWorkflow(
-            env.CATALOGUE_DB,
-            event.payload.ingestion_run_id,
-            event.payload.observed_at,
-            error instanceof Error
-              ? error.message
-              : "The reconciliation Workflow exhausted its retries.",
-          );
-          return durableReconciliationResult(
-            event.payload.ingestion_run_id,
-            result,
-          );
-        },
-      );
-    }
-    return {
-      result_json: reconciliationResultJson,
-    };
+  ({ env, step } = observeOperationalWorkflow(step, event, env));
+  let reconciliationResultJson: string;
+  try {
+    reconciliationResultJson = await step.do(
+      "reconcile retained Card, Printing, and Erratum evidence",
+      reconciliationStep,
+      async () => {
+        const result = await reconcileRetainedCardPrintingEvidence(
+          env.CATALOGUE_DB,
+          env.EVIDENCE_OBJECTS,
+          event.payload.ingestion_run_id,
+          event.payload.observed_at,
+        );
+        return durableReconciliationResult(event.payload.ingestion_run_id, result);
+      },
+    );
+  } catch (error) {
+    reconciliationResultJson = await step.do(
+      "finalize exhausted reconciliation failure",
+      reconciliationStep,
+      async () => {
+        const result = await failReconciliationWorkflow(
+          env.CATALOGUE_DB,
+          event.payload.ingestion_run_id,
+          event.payload.observed_at,
+          error instanceof Error ? error.message : "The reconciliation Workflow exhausted its retries.",
+        );
+        return durableReconciliationResult(event.payload.ingestion_run_id, result);
+      },
+    );
+  }
+  return {
+    result_json: reconciliationResultJson,
+  };
 }
 
-export function durableReconciliationResult(
-  runId: string,
-  result: Record<string, unknown>,
-): string {
+export function durableReconciliationResult(runId: string, result: Record<string, unknown>): string {
   const reference = canonicalJson(
     typeof result.candidate_digest === "string"
       ? {
-        contract: "card-keepr-reconciliation-workflow-result@1",
-        run_id: runId,
-        candidate_digest: result.candidate_digest,
-      }
+          contract: "card-keepr-reconciliation-workflow-result@1",
+          run_id: runId,
+          candidate_digest: result.candidate_digest,
+        }
       : {
-        contract: "card-keepr-reconciliation-workflow-result@1",
-        run_id: runId,
-        result,
-      },
+          contract: "card-keepr-reconciliation-workflow-result@1",
+          run_id: runId,
+          result,
+        },
   );
   if (new TextEncoder().encode(reference).byteLength >= 524_288) {
-    throw new Error(
-      "The reconciliation Workflow result exceeds its 512 KiB bound.",
-    );
+    throw new Error("The reconciliation Workflow result exceeds its 512 KiB bound.");
   }
   return reference;
 }

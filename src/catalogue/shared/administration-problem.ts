@@ -3,12 +3,7 @@ export class AdministrationProblem extends Error {
   readonly code: string;
   readonly persistOutcome: boolean;
 
-  constructor(
-    status: number,
-    code: string,
-    message: string,
-    persistOutcome: boolean = true,
-  ) {
+  constructor(status: number, code: string, message: string, persistOutcome: boolean = true) {
     super(message);
     this.status = status;
     this.code = code;

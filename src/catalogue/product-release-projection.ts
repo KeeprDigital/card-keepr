@@ -4,7 +4,7 @@ import type {
   EvidenceCategory,
   ProductRelationship,
 } from "./product-release-catalogue";
-import type { CuratedProvenance } from "./curated-provenance";
+import type { CuratedProvenance } from "./shared";
 
 export type PrintingProductProjection = {
   id: string;
@@ -37,14 +37,12 @@ export function typedPrintingProjections(
   distribution_contexts: PrintingDistributionContextProjection[];
 } {
   const productsById = new Map(products.map((product) => [product.id, product]));
-  const contextsById = new Map(
-    contexts.map((context) => [context.id, context]),
+  const contextsById = new Map(contexts.map((context) => [context.id, context]));
+  const curatedAbsences = new Set(
+    relationships
+      .filter((relationship) => relationship.evidence_category === "curated" && !relationship.observed)
+      .map(relationshipTargetKey),
   );
-  const curatedAbsences = new Set(relationships
-    .filter((relationship) =>
-      relationship.evidence_category === "curated" && !relationship.observed
-    )
-    .map(relationshipTargetKey));
   const current = relationships.filter(
     (relationship) =>
       relationship.observed &&
@@ -53,55 +51,49 @@ export function typedPrintingProjections(
       relationship.from.id === printingId,
   );
   const productProjections = current.flatMap((relationship) => {
-    if (
-      relationship.kind !== "printing-product" ||
-      relationship.to.type !== "product"
-    ) {
+    if (relationship.kind !== "printing-product" || relationship.to.type !== "product") {
       return [];
     }
     const product = productsById.get(relationship.to.id);
     if (product === undefined) return [];
-    return [{
-      id: product.id,
-      official_code: product.official_code,
-      name: product.name,
-      evidence_category: relationship.evidence_category,
-      ...(relationship.source_lineage === undefined
-        ? {}
-        : { source_lineage: relationship.source_lineage }),
-      ...(relationship.source_observation_ids.length === 0
-        ? {}
-        : { source_observation_ids: [...relationship.source_observation_ids] }),
-      ...(relationship.curated_provenance === undefined
-        ? {}
-        : { curated_provenance: relationship.curated_provenance }),
-    }];
+    return [
+      {
+        id: product.id,
+        official_code: product.official_code,
+        name: product.name,
+        evidence_category: relationship.evidence_category,
+        ...(relationship.source_lineage === undefined ? {} : { source_lineage: relationship.source_lineage }),
+        ...(relationship.source_observation_ids.length === 0
+          ? {}
+          : { source_observation_ids: [...relationship.source_observation_ids] }),
+        ...(relationship.curated_provenance === undefined
+          ? {}
+          : { curated_provenance: relationship.curated_provenance }),
+      },
+    ];
   });
   const contextProjections = current.flatMap((relationship) => {
-    if (
-      relationship.kind !== "printing-distribution-context" ||
-      relationship.to.type !== "distribution_context"
-    ) {
+    if (relationship.kind !== "printing-distribution-context" || relationship.to.type !== "distribution_context") {
       return [];
     }
     const context = contextsById.get(relationship.to.id);
     if (context === undefined) return [];
-    return [{
-      id: context.id,
-      kind: context.kind,
-      label: context.label,
-      product_id: context.product_id,
-      evidence_category: relationship.evidence_category,
-      ...(relationship.source_lineage === undefined
-        ? {}
-        : { source_lineage: relationship.source_lineage }),
-      ...(relationship.source_observation_ids.length === 0
-        ? {}
-        : { source_observation_ids: [...relationship.source_observation_ids] }),
-      ...(relationship.curated_provenance === undefined
-        ? {}
-        : { curated_provenance: relationship.curated_provenance }),
-    }];
+    return [
+      {
+        id: context.id,
+        kind: context.kind,
+        label: context.label,
+        product_id: context.product_id,
+        evidence_category: relationship.evidence_category,
+        ...(relationship.source_lineage === undefined ? {} : { source_lineage: relationship.source_lineage }),
+        ...(relationship.source_observation_ids.length === 0
+          ? {}
+          : { source_observation_ids: [...relationship.source_observation_ids] }),
+        ...(relationship.curated_provenance === undefined
+          ? {}
+          : { curated_provenance: relationship.curated_provenance }),
+      },
+    ];
   });
   return {
     products: productProjections.sort(projectionOrder),
@@ -123,8 +115,5 @@ function projectionOrder(
   left: { id: string; source_lineage?: string },
   right: { id: string; source_lineage?: string },
 ): number {
-  return (
-    left.id.localeCompare(right.id) ||
-    (left.source_lineage ?? "").localeCompare(right.source_lineage ?? "")
-  );
+  return left.id.localeCompare(right.id) || (left.source_lineage ?? "").localeCompare(right.source_lineage ?? "");
 }
