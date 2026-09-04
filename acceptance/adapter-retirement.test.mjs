@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { adapterRetirementSql } from "../scripts/adapter-retirement-sql.mjs";
-import { seedEvidence } from "./helpers/query-helpers/adapter-isolation.mjs";
+import { productionRegistrations, seedEvidence } from "./helpers/query-helpers/adapter-isolation.mjs";
 
 test("retirement checks immutable event authority before treating a pinned run as terminal", async (t) => {
   const database = new DatabaseSync(":memory:");
@@ -12,7 +12,16 @@ test("retirement checks immutable event authority before treating a pinned run a
   await seedEvidence(database);
   const sql = await adapterRetirementSql(["one-piece-en@6"]);
   assert.equal(database.prepare(sql).all().length, 1);
-  assert.deepEqual(database.prepare(await adapterRetirementSql(["gundam-asia@1"])).all(), []);
+  const unused = productionRegistrations(database)
+    .all()
+    .find(({ adapter_version }) => adapter_version !== "one-piece-en@6");
+  assert.ok(unused);
+  assert.deepEqual(database.prepare(await adapterRetirementSql([unused.adapter_version])).all(), []);
+  assert.equal(
+    database.prepare(await adapterRetirementSql(["unknown-adapter@1"])).all().length,
+    1,
+    "an unknown identifier must not look safe to retire",
+  );
   database.exec("UPDATE ingestion_run_current SET state = 'failed'");
   assert.equal(database.prepare(sql).all().length, 1, "a corrupted terminal projection must still block");
   database.exec("DELETE FROM ingestion_run_current");

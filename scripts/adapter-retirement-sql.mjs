@@ -38,7 +38,13 @@ LEFT JOIN ingestion_run_current AS current USING (ingestion_run_id)
 WHERE current.ingestion_run_id IS NULL
   OR (${verifiedRunCurrentSql}) IS NOT 1
   OR current.state NOT IN ('published', 'rejected', 'expired', 'failed')
-ORDER BY pinned.ingestion_run_id, pinned.adapter_version;\n`;
+UNION ALL
+SELECT NULL AS ingestion_run_id, NULL AS state, retiring.adapter_version
+FROM retiring WHERE NOT EXISTS (
+  SELECT 1 FROM source_adapter_versions AS registered
+  WHERE registered.adapter_version = retiring.adapter_version
+)
+ORDER BY ingestion_run_id, adapter_version;\n`;
   } finally {
     await vite.close();
   }

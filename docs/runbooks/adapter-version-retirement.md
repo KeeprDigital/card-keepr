@@ -34,6 +34,7 @@ Generate the read-only query from the exact retiring identifiers. The generator
 reuses the production repository's immutable-event authority predicate, including
 the full current projection, latest event identity and birth selection. It treats
 missing or inconsistent authority as a blocker even if a mutable row says terminal.
+An unknown adapter identifier also produces a blocker instead of an empty result.
 
 ```sh
 node scripts/adapter-retirement-sql.mjs EXACT_ADAPTER_ID > retirement-check.sql
