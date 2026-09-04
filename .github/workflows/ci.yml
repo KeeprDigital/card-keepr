@@ -1,17 +1,22 @@
 name: ci
 
 # Pull requests build refs/pull/N/merge, the PR merged into main as of the
-# run, so a second run on the resulting push to main would test the same
-# tree. Main is therefore not run on push; use workflow_dispatch when needed.
+# run. That tree only matches the eventual merge when the PR was current with
+# main at run time, which parallel merges routinely violate, so main is also
+# run on push. The concurrency group below cancels a superseded main run, so
+# a burst of merges tests only the newest tree.
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# A push to a pull request supersedes the run in flight for it; a manual run
-# is keyed by its ref so it never cancels a pull request's run.
+# A push to a pull request supersedes the run in flight for it; a push to
+# main supersedes the main run in flight; a manual run is keyed by its ref so
+# it never cancels a pull request's run.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
