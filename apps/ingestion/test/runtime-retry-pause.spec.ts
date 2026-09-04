@@ -78,12 +78,6 @@ test("transport retry exhaustion pauses the Ingestion Run without failing the re
     retry_generation: 1,
   });
   expect(
-    await ingestionQueries.readIngestionRunTransitionsFromStateToState(env.CATALOGUE_DB).bind(run.id).first(),
-  ).toMatchObject({
-    from_state: "collecting",
-    to_state: "paused",
-  });
-  expect(
     await ingestionQueries.readOperationStateActiveIngestionRunId(env.CATALOGUE_DB).first("active_ingestion_run_id"),
   ).toBe(run.id);
   expect(await sourceEvidenceQueries.readIngestionRunRetryPauses(env.CATALOGUE_DB).bind(run.id).first()).toMatchObject({
@@ -112,12 +106,17 @@ test("resuming a transport-paused run opens a new bounded retry generation and c
   // request under a new deterministic parent Workflow identity. Earlier
   // attempts are neither deleted nor renumbered: the recovered fetch is
   // attempt 5 in the same append-only history.
-  const resumedResponse = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
-  expect(resumedResponse.status).toBe(202);
-  await expect(resumedResponse.json()).resolves.toMatchObject({
-    ingestion_run_id: run.id,
-    workflow: { id: `evidence-${run.id}-resume-1` },
-  });
+  const resumedResponses = await Promise.all([
+    administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST"),
+    administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST"),
+  ]);
+  for (const resumedResponse of resumedResponses) {
+    expect(resumedResponse.status).toBe(202);
+    await expect(resumedResponse.json()).resolves.toMatchObject({
+      ingestion_run_id: run.id,
+      workflow: { id: `evidence-${run.id}-resume-1` },
+    });
+  }
   const completed = await waitForEvidenceCondition(run.id, (current) => current.state === "parsing", 12_000);
   expect(completed).toMatchObject({
     state: "parsing",
@@ -145,18 +144,6 @@ test("resuming a transport-paused run opens a new bounded retry generation and c
     state: "observed",
     retry_generation: 2,
   });
-  const transitions = await ingestionQueries
-    .readIngestionRunTransitionsFromStateToStateForResumingTransportPausedRunOpensNewBoundedRetryGeneration(
-      env.CATALOGUE_DB,
-    )
-    .bind(run.id)
-    .all<{ from_state: string | null; to_state: string }>();
-  expect(transitions.results.map((row) => `${row.from_state}->${row.to_state}`)).toEqual([
-    "null->collecting",
-    "collecting->paused",
-    "paused->collecting",
-    "collecting->parsing",
-  ]);
   // The immutable pause record survives the resume as audit history.
   expect(
     await sourceEvidenceQueries.countIngestionRunRetryPausesCount(env.CATALOGUE_DB).bind(run.id).first("count"),

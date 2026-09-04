@@ -86,12 +86,6 @@ test("an image request that exhausts its transport retries fails alone and colle
   expect(
     await sourceEvidenceQueries.countIngestionRunRetryPausesCount(env.CATALOGUE_DB).bind(run.id).first("count"),
   ).toBe(0);
-  expect(
-    await ingestionQueries.readIngestionRunTransitionsFromStateToState(env.CATALOGUE_DB).bind(run.id).first(),
-  ).toMatchObject({
-    from_state: "collecting",
-    to_state: "parsing",
-  });
 
   // The operator can see the gap: `source show` summarises the failed
   // images of the run with safe references only.

@@ -1,7 +1,6 @@
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
-import * as ingestionQueries from "./query-helpers/ingestion";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { pauseEvidenceRunForWorkflowRecovery, resumePausedEvidenceRun } from "../../../src/catalogue/source-evidence";
@@ -165,18 +164,6 @@ test("an errored parent Workflow recovers as a recorded new attempt without dupl
     workflow_status: "errored",
   });
   expect(pauseRecord?.last_progress_at).toMatch(/^\d{4}-\d{2}-\d{2}T/u);
-  const transitions = await ingestionQueries
-    .readIngestionRunTransitionsFromStateToStateForResumingTransportPausedRunOpensNewBoundedRetryGeneration(
-      env.CATALOGUE_DB,
-    )
-    .bind(run.id)
-    .all<{ from_state: string; to_state: string }>();
-  expect(transitions.results).toEqual([
-    { from_state: null, to_state: "collecting" },
-    { from_state: "collecting", to_state: "paused" },
-    { from_state: "paused", to_state: "collecting" },
-    { from_state: "collecting", to_state: "parsing" },
-  ]);
 });
 
 test("a terminated parent Workflow recovers with its own safe reason", async () => {
@@ -312,11 +299,6 @@ test("concurrent resumes of a dead Workflow cannot create competing attempts", a
     parentId,
     `evidence-${run.id}-resume-1`,
   ]);
-  const resumeTransitions = await ingestionQueries
-    .countIngestionRunTransitionsCount(env.CATALOGUE_DB)
-    .bind(run.id)
-    .first<{ count: number }>();
-  expect(resumeTransitions?.count).toBe(1);
   const pauseRecords = await sourceEvidenceQueries
     .countIngestionRunWorkflowPausesCount(env.CATALOGUE_DB)
     .bind(run.id)

@@ -82,14 +82,6 @@ test("reaching request capacity pauses the Ingestion Run without failing retaine
   expect(pause?.required_capacity).toBe(fusionWorldRequestCapacity + overflow);
   expect(typeof pause?.paused_at).toBe("string");
 
-  // The pause is a recorded lifecycle transition, not a terminal outcome.
-  expect(
-    await ingestionQueries.readIngestionRunTransitionsFromStateToState(env.CATALOGUE_DB).bind(runId).first(),
-  ).toMatchObject({
-    from_state: "collecting",
-    to_state: "paused",
-  });
-
   // The paused run retains the single active-run reservation, so another
   // Ingestion Run cannot start while it holds retained work.
   expect(

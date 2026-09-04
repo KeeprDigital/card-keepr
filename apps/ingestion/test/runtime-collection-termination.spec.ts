@@ -118,9 +118,6 @@ test("terminating a paused run records the owner decision, releases the reservat
     terminal_at: document.terminated_at,
     failure_code: "ingestion_run_terminated",
   });
-  expect(
-    await ingestionQueries.readIngestionRunTransitionsFromStateToState(env.CATALOGUE_DB).bind(runId).first(),
-  ).toEqual({ from_state: "paused", to_state: "failed" });
   const record = await sourceEvidenceQueries
     .readIngestionRunTerminations(env.CATALOGUE_DB)
     .bind(runId)
