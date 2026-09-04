@@ -1,15 +1,23 @@
 import {
+  AdministrationProblem,
   assertIngestionRunTransition,
+  CatalogueExportLimitError,
   type IngestionRunState,
-  ingestionRunTransitionSql,
-  ingestionRunTransitionSources,
   ingestionRunStates,
   isTerminalIngestionRunState,
-  AdministrationProblem,
-  CatalogueExportLimitError,
 } from "../shared";
-
 import { progressFor } from "./run-document-codec";
+import {
+  currentCatalogueStateStatement,
+  currentOperationStateStatement,
+  expireOverdueRunsStatement,
+  failRunStatement,
+  publicationCleanupStatement,
+  releaseActiveRunLockStatement,
+  releaseTerminalRunLockStatement,
+  runByIdStatement,
+  transitionRunStatement,
+} from "./run-lifecycle-repository";
 import {
   type ApproveRunRequest,
   type CatalogueStateRow,
@@ -129,13 +137,7 @@ export function publicationCleanupNotBefore(run: RunRow, terminalAt: string): st
 }
 
 export async function currentCatalogueState(database: D1Database): Promise<CatalogueStateRow> {
-  const state = await database
-    .prepare(
-      `SELECT current_revision_id, published_at
-      FROM catalogue_state
-      WHERE singleton = 1`,
-    )
-    .first<CatalogueStateRow>();
+  const state = await currentCatalogueStateStatement(database).first<CatalogueStateRow>();
   if (state === null) {
     throw new Error("Catalogue state is unavailable");
   }
@@ -143,16 +145,7 @@ export async function currentCatalogueState(database: D1Database): Promise<Catal
 }
 
 export async function currentOperationState(database: D1Database): Promise<OperationStateRow> {
-  const state = await database
-    .prepare(
-      `SELECT active_ingestion_run_id,
-              active_release_id AS active_production_release_id,
-              active_release_expires_at AS active_production_release_expires_at,
-              active_recovery_id, recovery_health
-      FROM operation_state
-      WHERE singleton = 1`,
-    )
-    .first<OperationStateRow>();
+  const state = await currentOperationStateStatement(database).first<OperationStateRow>();
   if (state === null) {
     throw new Error("Operation state is unavailable");
   }
@@ -160,7 +153,7 @@ export async function currentOperationState(database: D1Database): Promise<Opera
 }
 
 export async function requiredRun(database: D1Database, runId: string): Promise<RunRow> {
-  const run = await database.prepare("SELECT * FROM ingestion_runs WHERE id = ?").bind(runId).first<RunRow>();
+  const run = await runByIdStatement(database, runId).first<RunRow>();
   if (run === null) {
     throw new AdministrationProblem(404, "ingestion_run_not_found", "The requested Ingestion Run does not exist.");
   }
@@ -168,14 +161,7 @@ export async function requiredRun(database: D1Database, runId: string): Promise<
 }
 
 export async function publicationCleanup(database: D1Database, runId: string): Promise<PublicationCleanupRow | null> {
-  return database
-    .prepare(
-      `SELECT *
-      FROM ingestion_publication_cleanup
-      WHERE ingestion_run_id = ?`,
-    )
-    .bind(runId)
-    .first<PublicationCleanupRow>();
+  return publicationCleanupStatement(database, runId).first<PublicationCleanupRow>();
 }
 
 export function transitionStatement(
@@ -184,83 +170,26 @@ export function transitionStatement(
   from: IngestionRunState,
   to: IngestionRunState,
 ): D1PreparedStatement {
-  return database
-    .prepare(
-      `UPDATE ingestion_runs
-      SET state = ?, progress_json = ?
-      WHERE id = ? AND ${ingestionRunTransitionSql(from, to)}`,
-    )
-    .bind(to, JSON.stringify(progressFor(to)), runId);
+  return transitionRunStatement(database, { runId, from, to, progressJson: JSON.stringify(progressFor(to)) });
 }
 
 export function releaseRunLockStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
-    .prepare(
-      `UPDATE operation_state
-      SET active_ingestion_run_id = NULL
-      WHERE singleton = 1 AND active_ingestion_run_id = ?`,
-    )
-    .bind(runId);
+  return releaseActiveRunLockStatement(database, runId);
 }
 
 export async function expireOverdueRuns(database: D1Database, observedAt: string): Promise<void> {
   await database.batch([
-    database
-      .prepare(
-        `UPDATE ingestion_runs
-        SET state = 'expired',
-            terminal_at = approval_deadline,
-            progress_json = json_set(
-              progress_json,
-              '$.current_stage',
-              'expired'
-            )
-        WHERE ${ingestionRunTransitionSql("awaiting_approval", "expired")}
-          AND approval_deadline IS NOT NULL
-          AND approval_deadline <= ?`,
-      )
-      .bind(observedAt),
-    database
-      .prepare(
-        `UPDATE operation_state
-      SET active_ingestion_run_id = NULL
-      WHERE singleton = 1
-        AND active_ingestion_run_id IS NOT NULL
-        AND (
-          active_ingestion_run_id IN (
-            SELECT id
-            FROM ingestion_runs
-            WHERE state = 'expired'
-          )
-          OR NOT EXISTS (
-            SELECT 1
-            FROM ingestion_runs
-            WHERE id = operation_state.active_ingestion_run_id
-              AND state IN (SELECT value FROM json_each(?))
-          )
-        )`,
-      )
-      .bind(JSON.stringify(ingestionRunStates.filter((state) => !isTerminalIngestionRunState(state)))),
+    expireOverdueRunsStatement(database, observedAt),
+    releaseTerminalRunLockStatement(
+      database,
+      JSON.stringify(ingestionRunStates.filter((state) => !isTerminalIngestionRunState(state))),
+    ),
   ]);
 }
 
 async function failRun(database: D1Database, runId: string, terminalAt: string, failureCode: string): Promise<void> {
   await database.batch([
-    database
-      .prepare(
-        `UPDATE ingestion_runs
-        SET state = 'failed',
-            terminal_at = ?,
-            failure_code = ?,
-            progress_json = json_set(
-              progress_json,
-              '$.current_stage',
-              'failed'
-            )
-        WHERE id = ?
-          AND ${ingestionRunTransitionSql(ingestionRunTransitionSources("failed"), "failed")}`,
-      )
-      .bind(terminalAt, failureCode, runId),
+    failRunStatement(database, { terminalAt: terminalAt, failureCode: failureCode, runId: runId }),
     releaseRunLockStatement(database, runId),
   ]);
 }

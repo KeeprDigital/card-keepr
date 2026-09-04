@@ -1,13 +1,13 @@
+import { AdministrationProblem, canonicalJson, sha256Text, workflowDriver } from "../shared";
 import { backupDispatchStatus, maximumBackupDispatchAttempts } from "./backup-dispatch";
 import {
   backupDispatchAttemptStatement,
   backupDispatchOutcomeStatement,
-  pendingBackupDispatchStatement,
   backupWorkflowRequestStatement,
+  pendingBackupDispatchStatement,
 } from "./backup-dispatch-repository";
-import { workflowDriver } from "../shared";
-import { AdministrationProblem, canonicalJson, sha256Text } from "../shared";
 import { failActiveCatalogueBackupAttempt, validateCatalogueBackupRetryEvidence } from "./backup-recovery";
+import * as workflowStatements from "./backup-workflow-repository";
 
 export type CatalogueBackupWorkflowParams = Readonly<{
   expected_current_revision_id: string;
@@ -34,21 +34,8 @@ export async function startOrObserveCatalogueBackupWorkflow(
   const requestJson = canonicalJson(input);
   let stored = await workflowRequest(database, input.idempotency_key);
   if (stored === null) {
-    const state = await database
-      .prepare(
-        `SELECT catalogue.current_revision_id,
-              operation.active_ingestion_run_id,
-              operation.recovery_health,
-              EXISTS (
-                SELECT 1 FROM catalogue_backup_attempts
-                WHERE idempotency_key = ?
-                  AND publication_ingestion_run_id IS NOT NULL
-              ) AS publication_attempt
-       FROM catalogue_state AS catalogue
-       JOIN operation_state AS operation ON operation.singleton = 1
-       WHERE catalogue.singleton = 1`,
-      )
-      .bind(input.idempotency_key)
+    const state = await workflowStatements
+      .backupWorkflowStartStateStatement(database, { idempotency_key: input.idempotency_key })
       .first<{
         current_revision_id: string;
         active_ingestion_run_id: string | null;
@@ -93,12 +80,8 @@ export async function startOrObserveCatalogueBackupWorkflow(
     ]);
     stored = await workflowRequest(database, input.idempotency_key);
     if (stored === null && linkedAttemptId !== null) {
-      const winner = await database
-        .prepare(
-          `SELECT idempotency_key FROM catalogue_backup_workflow_requests
-         WHERE linked_attempt_id = ? LIMIT 1`,
-        )
-        .bind(linkedAttemptId)
+      const winner = await workflowStatements
+        .linkedBackupWorkflowRequestStatement(database, { linkedAttemptId })
         .first<{ idempotency_key: string }>();
       if (winner !== null) throw backupRetrySourceSuperseded();
     }
@@ -230,19 +213,8 @@ async function retainedBackupOutcome(
   database: D1Database,
   request: BackupWorkflowRequest,
 ): Promise<ReturnType<typeof workflowOutput>> {
-  const attempt = await database
-    .prepare(
-      `SELECT attempt.state, attempt.catalogue_revision_id, attempt.object_key,
-            attempt.d1_bookmark, attempt.failure_code, attempt.failure_detail,
-            attempt.content_sha256, attempt.manifest_key,
-            attempt.manifest_sha256, attempt.linked_attempt_id,
-            retention.newest_success, retention.retain_until
-     FROM catalogue_backup_attempts AS attempt
-     LEFT JOIN catalogue_backup_retention AS retention
-       ON retention.attempt_id = attempt.idempotency_key
-     WHERE attempt.idempotency_key = ?`,
-    )
-    .bind(request.idempotency_key)
+  const attempt = await workflowStatements
+    .retainedBackupOutcomeStatement(database, { idempotency_key: request.idempotency_key })
     .first<{
       state: string;
       catalogue_revision_id: string;
@@ -296,15 +268,7 @@ async function retainedBackupOutcome(
 }
 
 async function workflowRequest(database: D1Database, idempotencyKey: string): Promise<BackupWorkflowRequest | null> {
-  return database
-    .prepare(
-      `SELECT idempotency_key, expected_current_revision_id, request_json,
-            workflow_params_json, workflow_instance_id, observed_at,
-            linked_attempt_id
-     FROM catalogue_backup_workflow_requests WHERE idempotency_key = ?`,
-    )
-    .bind(idempotencyKey)
-    .first<BackupWorkflowRequest>();
+  return workflowStatements.backupWorkflowRequestStatement(database, { idempotencyKey }).first<BackupWorkflowRequest>();
 }
 
 function backupRetrySourceSuperseded(): AdministrationProblem {

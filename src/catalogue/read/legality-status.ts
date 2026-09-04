@@ -1,3 +1,5 @@
+import type { ContextRow, RuleRow } from "./published-read-repository";
+import { legalityCardStatement, applicableLegalityRulesStatement } from "./published-read-repository";
 import { type PublicBase, publicUrl } from "../../http/public-base";
 import { requiredLegalityRegionsForGame } from "../adapters";
 import {
@@ -23,20 +25,6 @@ import {
   revisionHeaders,
 } from "./collection-endpoint";
 
-type ContextRow = {
-  current_revision_id: string;
-  published_at: string;
-  document_json: string;
-};
-
-type RuleRow = {
-  document_json: string;
-  // The Source Snapshot retrieval instant the publication projected for the
-  // rule's Source Observation (issue #98); NULL only on a row published
-  // before migration 0004 whose snapshot had already gone.
-  source_retrieved_at: string | null;
-};
-
 type StoredRule = {
   rule: StoredLegalityStatusRule;
   sourceRetrievedAt: string | null;
@@ -50,17 +38,10 @@ export async function contextualLegalityStatusResponse(
   const url = new URL(request.url);
   const query = parseQuery(url);
   const revision = await pinRevision(database, null, url.pathname, base, { projection: false });
-  const context = await database
-    .prepare(
-      `SELECT catalogue.id AS current_revision_id, catalogue.published_at,
-              card.document_json
-       FROM catalogue_revisions AS catalogue
-       JOIN revision_cards AS card
-         ON card.catalogue_revision_id = catalogue.id
-       WHERE card.card_id = ? AND catalogue.id = ?`,
-    )
-    .bind(query.cardId, revision.id)
-    .first<ContextRow>();
+  const context = await legalityCardStatement(database, {
+    cardId: query.cardId,
+    revisionId: revision.id,
+  }).first<ContextRow>();
   if (context === null) {
     throw new ReadProblem(404, "not_found", "The requested Card does not exist in the current Catalogue Revision.");
   }
@@ -77,72 +58,16 @@ export async function contextualLegalityStatusResponse(
   }
   const regions = query.region === null ? supportedRegions : [query.region];
   const page = await collectionPage<RuleRow>(
-    database
-      .prepare(
-        `WITH applicable AS (
-         SELECT legality_rule_id
-         FROM revision_legality_rule_applicability
-         WHERE catalogue_revision_id = ?
-           AND applicability_kind = 'card'
-           AND card_id = ?
-         -- UNION deduplicates a target-scope rule that applies through both
-         -- its enumerated Card row and its explicit all_cards row.
-         UNION
-         SELECT legality_rule_id
-         FROM revision_legality_rule_applicability
-         WHERE catalogue_revision_id = ?
-           AND applicability_kind = 'all_cards'
-           AND card_id = ''
-       )
-       SELECT rule.document_json, rule.source_retrieved_at
-       FROM applicable
-       JOIN revision_legality_rules AS rule
-         ON rule.catalogue_revision_id = ?
-        AND rule.legality_rule_id = applicable.legality_rule_id
-       WHERE rule.region IN (SELECT value FROM json_each(?))
-         AND rule.supported_game = ?
-         AND rule.format = ?
-         AND NOT (
-           json_type(rule.document_json, '$.current') = 'false'
-           AND json_type(rule.document_json, '$.first_revision_id') = 'text'
-           AND json_type(rule.document_json, '$.last_observed_revision_id') = 'text'
-           AND json_type(rule.document_json, '$.last_missing_revision_id') = 'text'
-         )
-         AND (
-           (
-             rule.effective_from <= ?
-             AND (rule.effective_until IS NULL OR ? < rule.effective_until)
-           )
-           OR EXISTS (
-             SELECT 1
-             FROM json_each(rule.unresolved_scope_json, '$.dimensions')
-             WHERE value = 'effective_interval'
-           )
-         )
-         AND (
-           rule.event_tier IS NULL OR rule.event_tier = ?
-           OR EXISTS (
-             SELECT 1
-             FROM json_each(rule.unresolved_scope_json, '$.dimensions')
-             WHERE value = 'event_tier'
-           )
-         )
-       ORDER BY rule.region, rule.legality_rule_id
-       LIMIT ?`,
-      )
-      .bind(
-        context.current_revision_id,
-        query.cardId,
-        context.current_revision_id,
-        context.current_revision_id,
-        JSON.stringify(regions),
-        card.game,
-        query.format,
-        query.on,
-        query.on,
-        query.eventTier,
-        maximumLegalityStatusRules + 1,
-      ),
+    applicableLegalityRulesStatement(database, {
+      revisionId: context.current_revision_id,
+      cardId: query.cardId,
+      regionsJson: JSON.stringify(regions),
+      game: card.game,
+      format: query.format,
+      onDate: query.on,
+      eventTier: query.eventTier,
+      rowLimit: maximumLegalityStatusRules + 1,
+    }),
     maximumLegalityStatusRules,
   );
   if (page.hasMore) {

@@ -1,3 +1,8 @@
+import {
+  nextPublicationToReconcileStatement,
+  candidateLegalityEvidenceStatement,
+  catalogueRevisionDigestStatement,
+} from "./publication-storage-repository";
 import { type BuiltCatalogueExport, buildCatalogueExport } from "../export";
 import { digestBoundCandidatePayload, reconciliationPublication } from "../reconciliation";
 import {
@@ -60,18 +65,7 @@ export async function reconcileAbandonedPublication(
   bucket: R2Bucket,
   observedAt: string,
 ): Promise<void> {
-  const run = await database
-    .prepare(
-      `SELECT *
-      FROM ingestion_runs
-      WHERE state = 'publishing'
-        AND publication_reconcile_after IS NOT NULL
-        AND publication_reconcile_after <= ?
-      ORDER BY publication_reconcile_after, id
-      LIMIT 1`,
-    )
-    .bind(observedAt)
-    .first<RunRow>();
+  const run = await nextPublicationToReconcileStatement(database, observedAt).first<RunRow>();
   if (run === null) return;
   if (!(await reservedPublicationOwnsUnpublishedPrefix(database, run))) {
     await failReservedPublication(
@@ -298,16 +292,7 @@ export async function candidateWithCanonicalLegalityProvenance(
   if (rules.length === 0) return candidate;
   const canonical = new Map<string, CanonicalLegalityProvenance>();
   for (const chunk of byteBoundedJsonArrays(rules.map((rule) => rule.id))) {
-    const rows = await database
-      .prepare(
-        `SELECT id, source_lineage, source_snapshot_id,
-              source_observation_set_id, source_observation_id,
-              source_observation_pointer, source_field_pointers_json
-       FROM legality_rules
-       WHERE id IN (SELECT value FROM json_each(?))`,
-      )
-      .bind(chunk)
-      .all<CanonicalLegalityProvenance>();
+    const rows = await candidateLegalityEvidenceStatement(database, chunk).all<CanonicalLegalityProvenance>();
     for (const row of rows.results) canonical.set(row.id, row);
   }
   return {
@@ -421,14 +406,9 @@ async function approveRunAttempt(
     candidate_digest: request.candidate_digest,
     expected_current_revision_id: request.expected_current_revision_id,
   };
-  const currentRevision = await database
-    .prepare(
-      `SELECT content_digest
-      FROM catalogue_revisions
-      WHERE id = ?`,
-    )
-    .bind(catalogueState.current_revision_id)
-    .first<{ content_digest: string }>();
+  const currentRevision = await catalogueRevisionDigestStatement(database, catalogueState.current_revision_id).first<{
+    content_digest: string;
+  }>();
   if (run.candidate_catalogue_digest !== null && currentRevision?.content_digest === run.candidate_catalogue_digest) {
     return publishNoChange(database, run, request, requestJson, approval, now, claimOwner, candidate);
   }

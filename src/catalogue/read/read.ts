@@ -1,3 +1,21 @@
+import type {
+  CatalogueStateRow,
+  RevisionDocumentRow,
+  PrintingDocumentRow,
+  PrintingImageRow,
+  ExportRow,
+} from "./published-read-repository";
+import {
+  exportCollectionStatement,
+  catalogueStatusStatement,
+  catalogueFreshnessStatement,
+  currentCardStatement,
+  cardPrintingsStatement,
+  currentPrintingStatement,
+  printingImageStatement,
+  pendingExportComponentDeletionStatement,
+  catalogueExportStatement,
+} from "./published-read-repository";
 import { parseCatalogueRevisionId, parsePublicationInstant } from "../../http/catalogue";
 import { ifNoneMatchMatches as ifNoneMatch } from "../../http/conditional-request";
 import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
@@ -18,40 +36,11 @@ import {
 import { canonicalDetailSelf, detailIncludeProjection, detailRepresentationKey } from "./detail-representation";
 import { type SourceFreshnessStorageRow, sourceFreshnessFromStorage } from "./source-freshness";
 
-type CatalogueStateRow = {
-  current_revision_id: string;
-  published_at: string;
-};
-
-type RevisionDocumentRow = CatalogueStateRow & {
-  document_json: string;
-};
-
 type DetailEnvelope = {
   data: unknown;
   included: unknown[];
   provenance: Record<string, string[]>;
   disagreements: unknown[];
-};
-
-type PrintingDocumentRow = {
-  document_json: string;
-};
-
-type PrintingImageRow = {
-  media_type: string;
-  content_sha256: string;
-  content_byte_length: number;
-  object_key: string;
-  current_revision_id: string;
-};
-
-type ExportRow = {
-  catalogue_revision_id: string;
-  published_at: string;
-  manifest_key: string;
-  manifest_digest: string;
-  maintenance_state: "available" | "deleting" | "deleted";
 };
 
 type ExportManifest = {
@@ -86,43 +75,13 @@ export async function catalogueExportsResponse(
   });
   const revisionId = revision.id;
   const page = await collectionPage<ExportRow>(
-    database
-      .prepare(
-        `WITH RECURSIVE pinned_revision(id) AS (
-         SELECT ?
-         UNION ALL
-         SELECT revision.expected_previous_revision_id
-         FROM catalogue_revisions AS revision
-         JOIN pinned_revision ON revision.id = pinned_revision.id
-       )
-       SELECT export.catalogue_revision_id, revision.published_at,
-              export.manifest_key, export.manifest_digest,
-              export.maintenance_state
-       FROM catalogue_exports AS export
-       JOIN catalogue_revisions AS revision
-         ON revision.id = export.catalogue_revision_id
-       JOIN pinned_revision AS pinned
-         ON pinned.id = export.catalogue_revision_id
-       WHERE export.verified = 1
-         AND export.maintenance_state = 'available'
-         AND (
-           ? IS NULL OR revision.published_at < ? OR (
-             revision.published_at = ? AND
-             export.catalogue_revision_id < ?
-           )
-         )
-       ORDER BY revision.published_at DESC,
-                export.catalogue_revision_id DESC
-       LIMIT ?`,
-      )
-      .bind(
-        revisionId,
-        cursor?.after.published_at ?? null,
-        cursor?.after.published_at ?? "",
-        cursor?.after.published_at ?? "",
-        cursor?.after.catalogue_revision_id ?? "",
-        limit + 1,
-      ),
+    exportCollectionStatement(database, {
+      revisionId: revisionId,
+      afterPublishedAt: cursor?.after.published_at ?? null,
+      afterPublishedValue: cursor?.after.published_at ?? "",
+      afterRevisionId: cursor?.after.catalogue_revision_id ?? "",
+      rowLimit: limit + 1,
+    }),
     limit,
   );
   const selected = page.rows;
@@ -241,16 +200,8 @@ function assertCatalogueExportCollectionParameters(url: URL): void {
 
 export async function currentCatalogueStatus(database: D1Database) {
   const [state, freshness] = await Promise.all([
-    database
-      .prepare("SELECT current_revision_id, published_at FROM catalogue_state WHERE singleton = 1")
-      .first<CatalogueStateRow>(),
-    database
-      .prepare(
-        `SELECT game, area, source_lineage, region, checked_at
-         FROM source_freshness
-         ORDER BY game, area, source_lineage, region`,
-      )
-      .all<SourceFreshnessStorageRow>(),
+    catalogueStatusStatement(database).first<CatalogueStateRow>(),
+    catalogueFreshnessStatement(database).all<SourceFreshnessStorageRow>(),
   ]);
   if (state === null) throw new Error("Catalogue state is unavailable");
   const lastSuccessfulChecks = freshness.results.map((row) => ({
@@ -276,19 +227,7 @@ export async function currentCardResponse(
   request: Request,
   base: PublicBase,
 ): Promise<Response | null> {
-  const row = await database
-    .prepare(
-      `SELECT
-        card.document_json,
-        catalogue.current_revision_id,
-        catalogue.published_at
-      FROM catalogue_state AS catalogue
-      JOIN revision_cards AS card
-        ON card.catalogue_revision_id = catalogue.current_revision_id
-      WHERE catalogue.singleton = 1 AND card.card_id = ?`,
-    )
-    .bind(cardId)
-    .first<RevisionDocumentRow>();
+  const row = await currentCardStatement(database, cardId).first<RevisionDocumentRow>();
   if (row === null) return null;
   const url = new URL(request.url);
   const include = detailIncludeProjection(
@@ -303,15 +242,10 @@ export async function currentCardResponse(
     return new Response(null, { status: 304, headers });
   }
   const printings = include.has("printings")
-    ? await database
-        .prepare(
-          `SELECT document_json
-           FROM revision_printings
-           WHERE catalogue_revision_id = ? AND card_id = ?
-           ORDER BY printing_id`,
-        )
-        .bind(row.current_revision_id, cardId)
-        .all<PrintingDocumentRow>()
+    ? await cardPrintingsStatement(database, {
+        revisionId: row.current_revision_id,
+        cardId: cardId,
+      }).all<PrintingDocumentRow>()
     : { results: [] as PrintingDocumentRow[] };
   return Response.json(
     {
@@ -344,19 +278,7 @@ export async function currentPrintingResponse(
   request: Request,
   base: PublicBase,
 ): Promise<Response | null> {
-  const row = await database
-    .prepare(
-      `SELECT
-        printing.document_json,
-        catalogue.current_revision_id,
-        catalogue.published_at
-      FROM catalogue_state AS catalogue
-      JOIN revision_printings AS printing
-        ON printing.catalogue_revision_id = catalogue.current_revision_id
-      WHERE catalogue.singleton = 1 AND printing.printing_id = ?`,
-    )
-    .bind(printingId)
-    .first<RevisionDocumentRow>();
+  const row = await currentPrintingStatement(database, printingId).first<RevisionDocumentRow>();
   if (row === null) return null;
   const url = new URL(request.url);
   const include = detailIncludeProjection(
@@ -395,27 +317,7 @@ export async function printingImageContentResponse(
   bucket: R2Bucket,
   imageId: string,
 ): Promise<Response | null> {
-  const row = await database
-    .prepare(
-      // The content facts come from the revision projection alone;
-      // reconciled_printing_images belongs to the reconciliation cluster
-      // and the api serves what the revision published (issue #98).
-      `SELECT
-         image.media_type,
-         image.content_sha256,
-         image.content_byte_length,
-         image.object_key,
-         catalogue.current_revision_id
-       FROM catalogue_state AS catalogue
-       JOIN revision_printing_images AS image
-         ON image.catalogue_revision_id = catalogue.current_revision_id
-       JOIN revision_printings AS printing
-         ON printing.catalogue_revision_id = catalogue.current_revision_id
-        AND printing.printing_id = image.printing_id
-       WHERE catalogue.singleton = 1 AND image.image_id = ?`,
-    )
-    .bind(imageId)
-    .first<PrintingImageRow>();
+  const row = await printingImageStatement(database, imageId).first<PrintingImageRow>();
   if (row === null) return null;
 
   const etag = `"${row.content_sha256}"`;
@@ -526,19 +428,10 @@ export async function catalogueExportComponentResponse(
   const exportRow = await findExport(database, revisionId);
   if (exportRow === null) return null;
   if (exportRow.maintenance_state !== "available") {
-    const knownComponent = await database
-      .prepare(
-        `SELECT 1 AS present
-       FROM catalogue_exports AS export
-       JOIN catalogue_export_deletions AS deletion
-         ON deletion.id = export.deletion_operation_id
-       JOIN catalogue_export_deletion_plans AS plan
-         ON plan.id = deletion.plan_id
-       JOIN json_each(plan.component_names_json) AS component
-       WHERE export.catalogue_revision_id = ? AND component.value = ?`,
-      )
-      .bind(revisionId, componentName)
-      .first();
+    const knownComponent = await pendingExportComponentDeletionStatement(database, {
+      revisionId: revisionId,
+      componentName: componentName,
+    }).first();
     if (knownComponent === null) return null;
     throw new ReadProblem(410, "catalogue_export_deleted", "This known Catalogue Export component has been deleted.");
   }
@@ -660,21 +553,7 @@ async function readableSha256(readable: ReadableStream<Uint8Array>): Promise<str
 }
 
 async function findExport(database: D1Database, revisionId: string): Promise<ExportRow | null> {
-  return database
-    .prepare(
-      `SELECT
-        export.catalogue_revision_id,
-        revision.published_at,
-        export.manifest_key,
-        export.manifest_digest,
-        export.maintenance_state
-      FROM catalogue_exports AS export
-      JOIN catalogue_revisions AS revision
-        ON revision.id = export.catalogue_revision_id
-      WHERE export.catalogue_revision_id = ? AND export.verified = 1`,
-    )
-    .bind(revisionId)
-    .first<ExportRow>();
+  return catalogueExportStatement(database, revisionId).first<ExportRow>();
 }
 
 async function loadVerifiedExportManifest(

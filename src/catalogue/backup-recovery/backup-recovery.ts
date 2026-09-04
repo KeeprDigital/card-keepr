@@ -1,17 +1,24 @@
+import { parseStoredLegalityRule } from "../legality";
+import { storedProductApiProjection } from "../read";
+import { AdministrationProblem, canonicalJson, StreamingSha256, sha256Text } from "../shared";
 import { backupDispatchStatus } from "./backup-dispatch";
+import * as backupStatements from "./backup-repository";
 import {
   type BackupAttemptEvidenceRow,
   backupAttemptEvidenceStatement,
   restorePhaseTransitionStatement,
 } from "./backup-repository";
-import { AdministrationProblem, canonicalJson, sha256Text, StreamingSha256 } from "../shared";
+import {
+  type CatalogueVerificationQuery,
+  catalogueVerificationQuery,
+  catalogueVerificationStatement,
+} from "./backup-verification-repository";
+import { withCardSearchPreparedForD1Export } from "./card-search-recovery";
+import { completedCardSearchReconstructionQuery } from "./card-search-recovery-repository";
 import {
   prepareCardSearchForD1ExportStatements,
   reconstructCardSearchAfterD1RestoreStatements,
 } from "./card-search-recovery-statements.ts";
-import { withCardSearchPreparedForD1Export } from "./card-search-recovery";
-import { cardCollectionPageQuery, storedProductApiProjection } from "../read";
-import { parseStoredLegalityRule } from "../legality";
 
 export type D1BackupProvider = Readonly<{
   exportSql(
@@ -159,12 +166,8 @@ export async function catalogueBackupAttemptStatus(
   if (attempt === null) {
     throw new AdministrationProblem(404, "backup_not_found", "Backup attempt not found.");
   }
-  const workflow = await database
-    .prepare(
-      `SELECT workflow_instance_id FROM catalogue_backup_workflow_requests
-     WHERE idempotency_key = ?`,
-    )
-    .bind(idempotencyKey)
+  const workflow = await backupStatements
+    .backupWorkflowIdentityStatement(database, { idempotencyKey })
     .first<{ workflow_instance_id: string }>();
   const digest = await backupAttemptDigest(attempt);
   return {
@@ -208,26 +211,14 @@ export async function catalogueRevisionBackupStatus(
   database: D1Database,
   catalogueRevisionId: string,
 ): Promise<Record<string, unknown>> {
-  const known = await database
-    .prepare(
-      `SELECT 1 AS present FROM catalogue_state
-     WHERE singleton = 1 AND current_revision_id = ?
-     UNION ALL
-     SELECT 1 AS present FROM catalogue_revisions WHERE id = ?
-     LIMIT 1`,
-    )
-    .bind(catalogueRevisionId, catalogueRevisionId)
+  const known = await backupStatements
+    .knownCatalogueRevisionStatement(database, { catalogueRevisionId })
     .first<{ present: number }>();
   if (known === null) {
     throw new AdministrationProblem(404, "catalogue_revision_not_found", "Catalogue Revision not found.");
   }
-  const rows = await database
-    .prepare(
-      `SELECT idempotency_key FROM catalogue_backup_attempts
-     WHERE catalogue_revision_id = ?
-     ORDER BY started_at DESC, idempotency_key DESC`,
-    )
-    .bind(catalogueRevisionId)
+  const rows = await backupStatements
+    .revisionBackupHistoryStatement(database, { catalogueRevisionId })
     .all<{ idempotency_key: string }>();
   return {
     contract: "card-keepr-catalogue-revision-backups@1",
@@ -264,27 +255,11 @@ export async function validateCatalogueBackupRetryEvidence(
     );
   }
   if (input.failedAttemptId === undefined) {
-    const retryRequired = await database
-      .prepare(
-        `SELECT 1 AS required
-       FROM catalogue_backup_attempts AS failed
-       WHERE failed.catalogue_revision_id = ?
-         AND failed.state = 'failed'
-         AND failed.idempotency_key <> ?
-         AND NOT EXISTS (
-           SELECT 1 FROM catalogue_backup_attempts AS recovered
-           WHERE recovered.catalogue_revision_id = failed.catalogue_revision_id
-             AND recovered.state = 'verified'
-             AND recovered.completed_at >= failed.completed_at
-         )
-         AND NOT EXISTS (
-           SELECT 1 FROM catalogue_backup_attempts AS reserved
-           WHERE reserved.idempotency_key = ?
-             AND reserved.publication_ingestion_run_id IS NOT NULL
-         )
-       LIMIT 1`,
-      )
-      .bind(input.expectedCurrentRevisionId, input.idempotencyKey, input.idempotencyKey)
+    const retryRequired = await backupStatements
+      .unrecoveredBackupFailureStatement(database, {
+        expectedCurrentRevisionId: input.expectedCurrentRevisionId,
+        idempotencyKey: input.idempotencyKey,
+      })
       .first<{ required: number }>();
     if (retryRequired !== null) {
       throw new AdministrationProblem(
@@ -299,8 +274,8 @@ export async function validateCatalogueBackupRetryEvidence(
   if (failed === null || failed.state !== "failed") {
     throw new AdministrationProblem(409, "source_backup_not_failed", "The source backup attempt is not failed.");
   }
-  const current = await database
-    .prepare("SELECT current_revision_id FROM catalogue_state WHERE singleton = 1")
+  const current = await backupStatements
+    .backupCurrentRevisionStatement(database)
     .first<{ current_revision_id: string }>();
   if (
     failed.catalogue_revision_id !== current?.current_revision_id ||
@@ -312,16 +287,8 @@ export async function validateCatalogueBackupRetryEvidence(
       "The source backup does not belong to the current Catalogue Revision.",
     );
   }
-  const child = await database
-    .prepare(
-      `SELECT idempotency_key FROM catalogue_backup_attempts
-     WHERE linked_attempt_id = ?
-     UNION ALL
-     SELECT idempotency_key FROM catalogue_backup_workflow_requests
-     WHERE linked_attempt_id = ?
-     LIMIT 1`,
-    )
-    .bind(failed.idempotency_key, failed.idempotency_key)
+  const child = await backupStatements
+    .backupRetryChildStatement(database, { idempotency_key: failed.idempotency_key })
     .first<{
       idempotency_key: string;
     }>();
@@ -374,38 +341,19 @@ export async function createVerifiedCatalogueBackup(
     failedAttemptId: input.failedAttemptId,
     failedAttemptDigest: input.failedAttemptDigest,
   });
-  await database
-    .prepare(
-      `INSERT OR IGNORE INTO catalogue_backup_attempts (
-       idempotency_key, request_json, owner_token, catalogue_revision_id,
-       state, object_key, started_at, linked_attempt_id
-     ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
-    )
-    .bind(
-      input.idempotencyKey,
+  await backupStatements
+    .insertPendingBackupStatement(database, {
+      idempotencyKey: input.idempotencyKey,
       requestJson,
       ownerToken,
-      input.expectedCurrentRevisionId,
+      expectedCurrentRevisionId: input.expectedCurrentRevisionId,
       objectKey,
-      input.observedAt,
+      observedAt: input.observedAt,
       linkedAttemptId,
-    )
+    })
     .run();
-  const attempt = await database
-    .prepare(
-      `SELECT request_json, state, catalogue_revision_id, object_key,
-            d1_bookmark, failure_code, failure_detail, manifest_key,
-            content_sha256, manifest_sha256, export_bytes,
-            schema_migration_level, linked_attempt_id,
-            publication_ingestion_run_id, disposable_database_id,
-            restore_generation, restore_phase, retention.newest_success,
-            retention.retain_until
-     FROM catalogue_backup_attempts AS attempt
-     LEFT JOIN catalogue_backup_retention AS retention
-       ON retention.attempt_id = attempt.idempotency_key
-     WHERE attempt.idempotency_key = ?`,
-    )
-    .bind(input.idempotencyKey)
+  const attempt = await backupStatements
+    .backupAttemptWithRetentionStatement(database, { idempotencyKey: input.idempotencyKey })
     .first<{
       request_json: string;
       state: string;
@@ -428,12 +376,8 @@ export async function createVerifiedCatalogueBackup(
       retain_until: string | null;
     }>();
   if (attempt === null && linkedAttemptId !== null) {
-    const winningChild = await database
-      .prepare(
-        `SELECT idempotency_key FROM catalogue_backup_attempts
-       WHERE linked_attempt_id = ? LIMIT 1`,
-      )
-      .bind(linkedAttemptId)
+    const winningChild = await backupStatements
+      .linkedBackupAttemptStatement(database, { linkedAttemptId })
       .first<{ idempotency_key: string }>();
     if (winningChild !== null) throw backupRetrySourceSuperseded();
   }
@@ -474,20 +418,11 @@ export async function createVerifiedCatalogueBackup(
     throw new AdministrationProblem(409, "backup_in_progress", "The retained backup attempt is already in progress.");
   }
   const publicationOwned = attempt.publication_ingestion_run_id !== null;
-  const state = await database
-    .prepare(
-      `SELECT catalogue.current_revision_id,
-            operation.active_ingestion_run_id,
-            operation.recovery_health
-     FROM catalogue_state AS catalogue
-     JOIN operation_state AS operation ON operation.singleton = 1
-     WHERE catalogue.singleton = 1`,
-    )
-    .first<{
-      current_revision_id: string;
-      active_ingestion_run_id: string | null;
-      recovery_health: string;
-    }>();
+  const state = await backupStatements.backupOperationStateStatement(database).first<{
+    current_revision_id: string;
+    active_ingestion_run_id: string | null;
+    recovery_health: string;
+  }>();
   if (state?.current_revision_id !== input.expectedCurrentRevisionId) {
     await failAttempt(
       database,
@@ -520,40 +455,13 @@ export async function createVerifiedCatalogueBackup(
   if (attemptState === "pending") {
     try {
       await database.batch([
-        database
-          .prepare(
-            `SELECT CASE WHEN EXISTS (
-             SELECT 1 FROM catalogue_backup_attempts AS attempt
-             JOIN operation_state AS operation ON operation.singleton = 1
-             WHERE attempt.idempotency_key = ? AND attempt.owner_token = ?
-               AND attempt.state = 'pending'
-               AND (? = 1 OR operation.active_ingestion_run_id IS NULL)
-               AND operation.recovery_health <> 'blocked'
-               AND NOT EXISTS (
-                 SELECT 1 FROM catalogue_backup_attempts AS active
-                 WHERE active.idempotency_key <> attempt.idempotency_key
-                   AND active.state IN (
-                     'exporting', 'restoring_verification', 'verifying'
-                   )
-               )
-           ) THEN 1 ELSE json_extract('invalid', '$') END`,
-          )
-          .bind(input.idempotencyKey, ownerToken, publicationOwned ? 1 : 0),
-        database
-          .prepare(
-            `UPDATE catalogue_backup_attempts SET state = 'exporting'
-           WHERE idempotency_key = ? AND owner_token = ? AND state = 'pending'`,
-          )
-          .bind(input.idempotencyKey, ownerToken),
-        database
-          .prepare(
-            `UPDATE operation_state
-           SET recovery_health = CASE WHEN ? = 1 THEN 'degraded' ELSE 'blocked' END
-           WHERE singleton = 1
-             AND (? = 1 OR active_ingestion_run_id IS NULL)
-             AND recovery_health <> 'blocked'`,
-          )
-          .bind(publicationOwned ? 1 : 0, publicationOwned ? 1 : 0),
+        backupStatements.guardPendingBackupStartStatement(database, {
+          idempotencyKey: input.idempotencyKey,
+          ownerToken,
+          publicationOwned: publicationOwned ? 1 : 0,
+        }),
+        backupStatements.startBackupExportStatement(database, { idempotencyKey: input.idempotencyKey, ownerToken }),
+        backupStatements.reserveBackupOperationStatement(database, { publicationOwned: publicationOwned ? 1 : 0 }),
       ]);
     } catch {
       throw new AdministrationProblem(
@@ -590,12 +498,7 @@ export async function createVerifiedCatalogueBackup(
         contentSha256 = retainedEvidence.sha256;
         exportBytes = retainedEvidence.size;
       } else {
-        await database
-          .prepare(
-            `UPDATE operation_state SET recovery_restore_guard = 'blocked'
-           WHERE singleton = 1 AND recovery_restore_guard = 'clear'`,
-          )
-          .run();
+        await backupStatements.blockBackupRestoreStatement(database).run();
         let exported;
         try {
           exported = await withCardSearchPreparedForD1Export(
@@ -609,13 +512,7 @@ export async function createVerifiedCatalogueBackup(
               }),
           );
         } finally {
-          await database
-            .prepare(
-              `UPDATE operation_state SET recovery_restore_guard = 'clear'
-             WHERE singleton = 1 AND recovery_restore_guard = 'blocked'
-               AND active_recovery_id IS NULL`,
-            )
-            .run();
+          await backupStatements.clearBackupRestoreStatement(database).run();
         }
         exportedBookmark = exported.bookmark;
         const sized = new FixedLengthStream(exported.size);
@@ -756,47 +653,21 @@ export async function createVerifiedCatalogueBackup(
     }
     try {
       await database.batch([
-        database
-          .prepare(
-            `SELECT CASE WHEN EXISTS (
-             SELECT 1 FROM catalogue_backup_attempts
-             WHERE idempotency_key = ? AND owner_token = ?
-               AND state = 'verifying'
-           ) THEN 1 ELSE json_extract('invalid', '$') END`,
-          )
-          .bind(input.idempotencyKey, ownerToken),
-        database
-          .prepare(
-            `UPDATE catalogue_backup_attempts
-           SET state = 'verified', d1_bookmark = ?, completed_at = ?,
-               manifest_key = ?, manifest_sha256 = ?,
-               restore_phase = 'verified'
-           WHERE idempotency_key = ? AND owner_token = ?
-             AND state = 'verifying'`,
-          )
-          .bind(bookmark, input.observedAt, manifestKey, manifestSha256, input.idempotencyKey, ownerToken),
-        database.prepare(
-          `UPDATE catalogue_backup_retention
-           SET newest_success = 0,
-               retain_until = (
-                 SELECT strftime('%Y-%m-%dT%H:%M:%fZ', completed_at, '+90 days')
-                 FROM catalogue_backup_attempts
-                 WHERE idempotency_key = catalogue_backup_retention.attempt_id
-               )
-           WHERE newest_success = 1`,
-        ),
-        database
-          .prepare(
-            `INSERT INTO catalogue_backup_retention (
-             attempt_id, newest_success, retain_until, policy
-           ) VALUES (?, 1, NULL, 'newest-indefinite-and-dated-90-days')`,
-          )
-          .bind(input.idempotencyKey),
-        database.prepare(
-          `UPDATE operation_state SET recovery_health = 'healthy'
-           WHERE singleton = 1
-             AND recovery_health IN ('blocked', 'degraded')`,
-        ),
+        backupStatements.guardBackupVerificationStatement(database, {
+          idempotencyKey: input.idempotencyKey,
+          ownerToken,
+        }),
+        backupStatements.completeBackupStatement(database, {
+          bookmark,
+          observedAt: input.observedAt,
+          manifestKey,
+          manifestSha256,
+          idempotencyKey: input.idempotencyKey,
+          ownerToken,
+        }),
+        backupStatements.datePreviousBackupRetentionStatement(database),
+        backupStatements.retainNewestBackupStatement(database, { idempotencyKey: input.idempotencyKey }),
+        backupStatements.restoreHealthyBackupStateStatement(database),
       ]);
     } catch {
       throw new AdministrationProblem(409, "backup_in_progress", "The backup attempt state changed concurrently.");
@@ -833,9 +704,8 @@ export async function verifyRestoredCatalogue(
     expected: CatalogueVerificationEvidence;
   }>,
 ): Promise<RestoredCatalogueVerification> {
-  return verifyRestoredCatalogueQueries(async (sql, params = []) => {
-    const statement = database.prepare(sql);
-    const result = await (params.length === 0 ? statement : statement.bind(...params)).all<Record<string, unknown>>();
+  return verifyRestoredCatalogueQueries(async (request) => {
+    const result = await catalogueVerificationStatement(database, request).all<Record<string, unknown>>();
     return result.results;
   }, input);
 }
@@ -856,10 +726,11 @@ async function captureCatalogueVerificationEvidenceWithDocuments(
     representativeDocuments: CatalogueRepresentativeDocuments;
   }>
 > {
-  const row = await database
-    .prepare(verificationEvidenceSql())
-    .bind(revisionId, "capture")
-    .first<CatalogueVerificationEvidence & CatalogueRepresentativeDocuments>();
+  const row = await catalogueVerificationStatement(database, {
+    kind: "evidence",
+    revisionId,
+    expectedJson: "capture",
+  }).first<CatalogueVerificationEvidence & CatalogueRepresentativeDocuments>();
   if (row === null) throw new Error("Catalogue verification evidence is unavailable.");
   const expected = {
     cards: row.cards,
@@ -893,7 +764,7 @@ async function captureCatalogueVerificationEvidenceWithDocuments(
   };
 }
 
-type VerificationQuery = (sql: string, params?: readonly unknown[]) => Promise<Record<string, unknown>[]>;
+type VerificationQuery = (request: CatalogueVerificationQuery) => Promise<Record<string, unknown>[]>;
 
 async function verifyRestoredCatalogueQueries(
   query: VerificationQuery,
@@ -904,24 +775,22 @@ async function verifyRestoredCatalogueQueries(
     expectedRepresentativeDocuments?: CatalogueRepresentativeDocuments;
   }>,
 ): Promise<RestoredCatalogueVerification> {
-  const [row] = await query(verificationEvidenceSql(), [
-    input.expectedRevisionId,
-    canonicalJson({
-      ...input.expected,
-      ...input.expectedRepresentativeDocuments,
-    }),
-  ]);
-  const [integrity] = await query("PRAGMA quick_check");
+  const [row] = await query({
+    kind: "evidence",
+    revisionId: input.expectedRevisionId,
+    expectedJson: canonicalJson({ ...input.expected, ...input.expectedRepresentativeDocuments }),
+  });
+  const [integrity] = await query({ kind: "integrity" });
   const expected = input.expected;
   const apiRows =
     expected.representative_search_text === null || expected.representative_card_id === null
       ? []
-      : await representativeCardApiRows(
-          query,
-          input.expectedRevisionId,
-          expected.representative_card_id,
-          expected.representative_search_text,
-        );
+      : await query({
+          kind: "representative-card",
+          revisionId: input.expectedRevisionId,
+          representativeCardId: expected.representative_card_id,
+          searchText: expected.representative_search_text,
+        });
   let representativeDocuments = false;
   try {
     representativeDocuments = await validRepresentativeDocuments(row, expected, input.expectedRepresentativeDocuments);
@@ -1045,7 +914,7 @@ async function representativeDigestMatches(
   key: "representative_product_digest" | "representative_legality_rule_digest",
   documentJson: string | null,
 ): Promise<boolean> {
-  if (!Object.prototype.hasOwnProperty.call(expected, key)) return true;
+  if (!Object.hasOwn(expected, key)) return true;
   const digest = expected[key];
   if (digest === null) return documentJson === null;
   return (
@@ -1058,134 +927,6 @@ async function representativeDigestMatches(
 
 async function representativeDocumentDigest(documentJson: string | null): Promise<string | null> {
   return documentJson === null ? null : sha256Text(documentJson);
-}
-
-async function representativeCardApiRows(
-  query: VerificationQuery,
-  revisionId: string,
-  representativeCardId: string,
-  searchText: string,
-): Promise<Record<string, unknown>[]> {
-  const page = cardCollectionPageQuery(
-    revisionId,
-    {
-      q: searchText,
-      game: null,
-      cardNumber: null,
-      productId: null,
-      rarity: null,
-      attributes: {},
-      limit: 100,
-    },
-    null,
-    100,
-  );
-  return query(
-    `WITH expected_card(value) AS (SELECT ?),
-          api_page AS (${page.sql})
-     SELECT api_page.* FROM api_page, expected_card
-     WHERE expected_card.value IS NOT NULL`,
-    [representativeCardId, ...page.bindings],
-  );
-}
-
-function verificationEvidenceSql(): string {
-  return `SELECT catalogue.current_revision_id,
-      schema_state.migration_level AS schema_migration_level,
-      search.state AS card_search_state,
-      (SELECT count(*) FROM sqlite_schema WHERE type = 'table'
-       AND name = 'revision_card_search_fts'
-       AND lower(sql) LIKE '%create virtual table%') AS card_search_fts_tables,
-      (SELECT count(*) FROM revision_card_search_chunks AS chunk
-       LEFT JOIN revision_card_search_fts_rows AS mapped USING (
-         catalogue_revision_id, card_id, field_ordinal, chunk_ordinal
-       ) WHERE chunk.catalogue_revision_id = catalogue.current_revision_id
-         AND mapped.fts_rowid IS NULL) AS missing_fts_rows,
-      (SELECT count(*) FROM revision_card_query_documents
-       WHERE catalogue_revision_id = catalogue.current_revision_id
-         AND json_valid(summary_json) = 0) AS invalid_api_documents,
-      (SELECT count(*) FROM catalogue_curated_provenance AS provenance
-       LEFT JOIN curated_revisions AS curated
-         ON curated.id = provenance.curated_revision_id
-       WHERE provenance.catalogue_revision_id = catalogue.current_revision_id
-         AND (
-           curated.id IS NULL
-           OR provenance.content_digest <> curated.content_digest
-           OR provenance.target_key <> curated.target_key
-           OR json_valid(provenance.provenance_json) = 0
-           OR json_extract(provenance.provenance_json, '$.author')
-                IS NOT curated.author
-           OR json_extract(provenance.provenance_json, '$.created_at')
-                IS NOT curated.created_at
-           OR json_type(provenance.provenance_json, '$.evidence') <> 'array'
-           OR json_extract(provenance.provenance_json, '$.evidence')
-                IS NOT json_extract(curated.proposal_json, '$.evidence')
-           OR json_extract(provenance.provenance_json, '$.rationale')
-                IS NOT json_extract(curated.proposal_json, '$.rationale')
-         )) AS invalid_curated_provenance,
-      (SELECT count(*) FROM catalogue_revisions AS revision
-       JOIN ingestion_runs AS run ON run.id = revision.ingestion_run_id
-       WHERE revision.id = catalogue.current_revision_id
-         AND json_valid(run.progress_json) = 0) AS invalid_audit_rows,
-      (SELECT count(*) FROM revision_cards
-       WHERE catalogue_revision_id = catalogue.current_revision_id) AS cards,
-      (SELECT count(*) FROM revision_printings
-       WHERE catalogue_revision_id = catalogue.current_revision_id) AS printings,
-      (SELECT count(*) FROM revision_products
-       WHERE catalogue_revision_id = catalogue.current_revision_id) AS products,
-      (SELECT count(*) FROM revision_legality_rules
-       WHERE catalogue_revision_id = catalogue.current_revision_id) AS legality_rules,
-      (SELECT count(*) FROM revision_card_query_documents
-       WHERE catalogue_revision_id = catalogue.current_revision_id) AS api_documents,
-      (SELECT count(*) FROM revision_card_search_terms
-       WHERE catalogue_revision_id = catalogue.current_revision_id) AS search_terms,
-      (SELECT count(*) FROM revision_card_search_chunks
-       WHERE catalogue_revision_id = catalogue.current_revision_id) AS search_chunks,
-      (SELECT count(*) FROM catalogue_curated_provenance
-       WHERE catalogue_revision_id = catalogue.current_revision_id)
-        AS provenance,
-      (SELECT count(*) FROM catalogue_revisions AS revision
-       JOIN ingestion_runs AS run ON run.id = revision.ingestion_run_id
-       WHERE revision.id = catalogue.current_revision_id) AS audit_rows,
-      (SELECT card_id FROM revision_card_query_documents
-       WHERE catalogue_revision_id = catalogue.current_revision_id
-       ORDER BY sort_game, sort_identity_kind, sort_identity_value, sort_id
-       LIMIT 1) AS representative_card_id,
-      (SELECT printing_id FROM revision_printings
-       WHERE catalogue_revision_id = catalogue.current_revision_id
-       ORDER BY printing_id LIMIT 1) AS representative_printing_id,
-      (SELECT product_id FROM revision_products
-       WHERE catalogue_revision_id = catalogue.current_revision_id
-       ORDER BY product_id LIMIT 1) AS representative_product_id,
-      (SELECT document_json FROM revision_products
-       WHERE catalogue_revision_id = catalogue.current_revision_id
-       ORDER BY product_id LIMIT 1) AS representative_product_document_json,
-      (SELECT legality_rule_id FROM revision_legality_rules
-       WHERE catalogue_revision_id = catalogue.current_revision_id
-       ORDER BY legality_rule_id LIMIT 1) AS representative_legality_rule_id,
-      (SELECT document_json FROM revision_legality_rules
-       WHERE catalogue_revision_id = catalogue.current_revision_id
-       ORDER BY legality_rule_id LIMIT 1)
-        AS representative_legality_rule_document_json,
-      (SELECT sort_identity_value FROM revision_card_query_documents
-       WHERE catalogue_revision_id = catalogue.current_revision_id
-       ORDER BY sort_game, sort_identity_kind, sort_identity_value, sort_id
-       LIMIT 1) AS representative_search_text,
-      (SELECT curated_revision_id FROM catalogue_curated_provenance
-       WHERE catalogue_revision_id = catalogue.current_revision_id
-       ORDER BY curated_revision_id LIMIT 1)
-        AS representative_curated_revision_id,
-      (SELECT content_digest FROM catalogue_curated_provenance
-       WHERE catalogue_revision_id = catalogue.current_revision_id
-       ORDER BY curated_revision_id LIMIT 1)
-        AS representative_curated_revision_digest,
-      (SELECT ingestion_run_id FROM catalogue_revisions
-       WHERE id = catalogue.current_revision_id) AS publication_ingestion_run_id
-    FROM catalogue_state AS catalogue
-    JOIN card_search_fts_state AS search ON search.singleton = 1
-    JOIN catalogue_schema_state AS schema_state ON schema_state.singleton = 1
-    WHERE catalogue.singleton = 1 AND catalogue.current_revision_id = ?
-      AND ? IS NOT NULL`;
 }
 
 export const cloudflareD1BackupProvider: D1BackupProvider = {
@@ -1293,15 +1034,10 @@ export const cloudflareD1BackupProvider: D1BackupProvider = {
     for (const sql of reconstructCardSearchAfterD1RestoreStatements) {
       await cloudflareD1Request(pathname, input.token, { sql });
     }
-    await cloudflareD1Request(pathname, input.token, {
-      sql: `UPDATE card_search_fts_state
-         SET state = 'ready', owner_token = NULL, lease_expires_at = NULL
-         WHERE singleton = 1 AND state = 'reconstructing'
-           AND owner_token = ?`,
-      params: [input.ownerToken],
-    });
+    await cloudflareD1Request(pathname, input.token, completedCardSearchReconstructionQuery(input.ownerToken));
     return verifyRestoredCatalogueQueries(
-      async (sql, params = []) => queryRows(await cloudflareD1Request(pathname, input.token, { sql, params })),
+      async (request) =>
+        queryRows(await cloudflareD1Request(pathname, input.token, catalogueVerificationQuery(request))),
       input,
     );
   },
@@ -1418,15 +1154,14 @@ async function persistPreparedRestoreTarget(
   previousGeneration: number,
   nextGeneration: number,
 ): Promise<void> {
-  const changed = await database
-    .prepare(
-      `UPDATE catalogue_backup_attempts
-     SET disposable_database_id = ?, restore_generation = ?,
-         restore_phase = 'prepared'
-     WHERE idempotency_key = ? AND owner_token = ?
-       AND state = 'restoring_verification' AND restore_generation = ?`,
-    )
-    .bind(disposableDatabaseId, nextGeneration, idempotencyKey, ownerToken, previousGeneration)
+  const changed = await backupStatements
+    .prepareBackupRestoreTargetStatement(database, {
+      disposableDatabaseId,
+      nextGeneration,
+      idempotencyKey,
+      ownerToken,
+      previousGeneration,
+    })
     .run();
   if (changed.meta.changes !== 1) {
     throw new AdministrationProblem(409, "backup_in_progress", "The disposable restore target changed concurrently.");
@@ -1451,14 +1186,8 @@ async function transitionRestoredAttempt(
   idempotencyKey: string,
   ownerToken: string,
 ): Promise<void> {
-  const changed = await database
-    .prepare(
-      `UPDATE catalogue_backup_attempts
-     SET state = 'verifying', restore_phase = 'imported'
-     WHERE idempotency_key = ? AND owner_token = ?
-       AND state = 'restoring_verification' AND restore_phase = 'importing'`,
-    )
-    .bind(idempotencyKey, ownerToken)
+  const changed = await backupStatements
+    .startBackupVerificationStatement(database, { idempotencyKey, ownerToken })
     .run();
   if (changed.meta.changes !== 1) {
     throw new AdministrationProblem(409, "backup_in_progress", "The restored backup attempt changed concurrently.");
@@ -1474,14 +1203,15 @@ async function transitionExportedAttempt(
   exportBytes: number,
   schemaMigrationLevel: number,
 ): Promise<void> {
-  const changed = await database
-    .prepare(
-      `UPDATE catalogue_backup_attempts
-     SET state = 'restoring_verification', d1_bookmark = ?,
-         content_sha256 = ?, export_bytes = ?, schema_migration_level = ?
-     WHERE idempotency_key = ? AND owner_token = ? AND state = 'exporting'`,
-    )
-    .bind(bookmark, contentSha256, exportBytes, schemaMigrationLevel, idempotencyKey, ownerToken)
+  const changed = await backupStatements
+    .completeBackupExportStatement(database, {
+      bookmark,
+      contentSha256,
+      exportBytes,
+      schemaMigrationLevel,
+      idempotencyKey,
+      ownerToken,
+    })
     .run();
   if (changed.meta.changes !== 1) {
     throw new AdministrationProblem(409, "backup_in_progress", "The backup attempt state changed concurrently.");
@@ -1496,26 +1226,8 @@ export async function failActiveCatalogueBackupAttempt(
 ): Promise<void> {
   const ownerToken = `backup:${await sha256(idempotencyKey)}`;
   await database.batch([
-    database
-      .prepare(
-        `UPDATE operation_state SET recovery_health = 'degraded'
-       WHERE singleton = 1 AND recovery_health = 'blocked'
-         AND EXISTS (
-           SELECT 1 FROM catalogue_backup_attempts
-           WHERE idempotency_key = ? AND owner_token = ?
-             AND state IN ('exporting', 'restoring_verification', 'verifying')
-         )`,
-      )
-      .bind(idempotencyKey, ownerToken),
-    database
-      .prepare(
-        `UPDATE catalogue_backup_attempts
-       SET state = 'failed', failure_code = 'backup_failed',
-           failure_detail = ?, completed_at = ?
-       WHERE idempotency_key = ? AND owner_token = ?
-         AND state NOT IN ('verified', 'failed')`,
-      )
-      .bind(detail, completedAt, idempotencyKey, ownerToken),
+    backupStatements.degradeActiveBackupStateStatement(database, { idempotencyKey, ownerToken }),
+    backupStatements.failOwnedActiveBackupStatement(database, { detail, completedAt, idempotencyKey, ownerToken }),
   ]);
 }
 
@@ -1527,14 +1239,8 @@ async function failAttempt(
   code: string,
   detail: string,
 ): Promise<void> {
-  await database
-    .prepare(
-      `UPDATE catalogue_backup_attempts
-     SET state = 'failed', failure_code = ?, failure_detail = ?, completed_at = ?
-     WHERE idempotency_key = ? AND owner_token = ?
-       AND state NOT IN ('verified', 'failed')`,
-    )
-    .bind(code, detail, completedAt, idempotencyKey, ownerToken)
+  await backupStatements
+    .failOwnedBackupStatement(database, { code, detail, completedAt, idempotencyKey, ownerToken })
     .run();
 }
 
@@ -1542,7 +1248,7 @@ function d1Path(accountId: string, databaseId: string, action: string): string {
   return `/accounts/${encodeURIComponent(accountId)}/d1/database/${encodeURIComponent(databaseId)}/${action}`;
 }
 
-function firstQueryRow(result: Record<string, unknown>): Record<string, unknown> {
+function _firstQueryRow(result: Record<string, unknown>): Record<string, unknown> {
   const rows = queryRows(result);
   if (rows.length !== 1) {
     throw new Error("Restored D1 verification response is invalid.");
@@ -1678,9 +1384,7 @@ async function sha256(value: string): Promise<string> {
 }
 
 async function currentSchemaMigrationLevel(database: D1Database): Promise<number> {
-  const row = await database
-    .prepare("SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1")
-    .first<{ migration_level: number }>();
+  const row = await backupStatements.backupSchemaMigrationLevelStatement(database).first<{ migration_level: number }>();
   if (!Number.isSafeInteger(row?.migration_level) || row!.migration_level <= 0) {
     throw new Error("The Catalogue schema migration level is unavailable.");
   }

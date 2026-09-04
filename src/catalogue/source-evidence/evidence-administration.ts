@@ -7,6 +7,7 @@ import {
   type SafeWorkflowStatus,
   safeWorkflowStatus,
 } from "./collection-recovery";
+import { bindInitialParentWorkflowStatement } from "./ingestion-run-repository";
 import type { EvidenceHostWorkflowParams, EvidenceParentWorkflowParams } from "./source-evidence-model";
 import {
   collectionProgressFacts,
@@ -77,13 +78,7 @@ export async function resumeEvidenceRun(
     // Bind dispatch intent before creation: an immediately executing parent
     // must already own its persisted identity when its first callback runs.
     // A lost create response can safely reacquire this same first attempt.
-    await database
-      .prepare(
-        `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
-         WHERE ingestion_run_id = ? AND parent_workflow_id IS NULL`,
-      )
-      .bind(workflowId, runId)
-      .run();
+    await bindInitialParentWorkflowStatement(database, { workflowId: workflowId, runId: runId }).run();
   }
   await database.batch(workflowAttemptStatements(database, runId, [workflowId]));
   let acquired = await acquireParentWorkflow(workflow, workflowId, runId);
@@ -92,10 +87,9 @@ export async function resumeEvidenceRun(
   // A freshly created instance is the new current attempt by construction;
   // classification only judges an attempt that already existed, from its
   // platform status and the persisted progress evidence.
-  const classification =
-    acquired !== null && acquired.created
-      ? { kind: "active" as const }
-      : classifyCollectionProgress(acquired?.status ?? "unavailable", progress);
+  const classification = acquired?.created
+    ? { kind: "active" as const }
+    : classifyCollectionProgress(acquired?.status ?? "unavailable", progress);
   if (classification.kind === "instance_paused" && acquired !== null) {
     // The Workflow instance's own paused status is a platform condition
     // distinct from a paused Ingestion Run: the same attempt resumes in
@@ -144,13 +138,10 @@ export async function pauseEvidenceCollection(
     // A first attempt that has not bound its identity yet is bound before
     // the pause, exactly as resume does, so the pause record names the
     // attempt it abandons and the fence has an identity to compare against.
-    await database
-      .prepare(
-        `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
-         WHERE ingestion_run_id = ? AND parent_workflow_id IS NULL`,
-      )
-      .bind(parentWorkflowAttemptId(runId, 1), runId)
-      .run();
+    await bindInitialParentWorkflowStatement(database, {
+      workflowId: parentWorkflowAttemptId(runId, 1),
+      runId: runId,
+    }).run();
     run = await requiredEvidenceRun(database, runId);
   }
   const workflowId = run.parent_workflow_id ?? parentWorkflowAttemptId(runId, 1);

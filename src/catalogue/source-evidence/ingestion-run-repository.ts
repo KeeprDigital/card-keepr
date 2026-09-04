@@ -131,3 +131,13 @@ export function evidenceRunByIdempotencyKeyStatement(database: D1Database, key: 
     )
     .bind(key);
 }
+
+export function bindInitialParentWorkflowStatement(
+  database: D1Database,
+  input: Readonly<{ workflowId: string; runId: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
+         WHERE ingestion_run_id = ? AND parent_workflow_id IS NULL`)
+    .bind(input.workflowId, input.runId);
+}

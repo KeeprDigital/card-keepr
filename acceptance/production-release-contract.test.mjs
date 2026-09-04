@@ -302,6 +302,7 @@ test("owner preparation is durable before dispatch and post-migration failure is
   const cluster = readFileSync("src/catalogue/ingestion/index.ts", "utf8");
   const routes = readFileSync("src/catalogue/ingestion/routes.ts", "utf8");
   const domain = readFileSync("src/catalogue/ingestion/production-release.ts", "utf8");
+  const repository = readFileSync("src/catalogue/ingestion/production-release-repository.ts", "utf8");
   const script = readFileSync("scripts/production-release.mjs", "utf8");
   // Resource routes now own the handler; the worker mounts their exported table.
   assert.match(
@@ -315,7 +316,8 @@ test("owner preparation is durable before dispatch and post-migration failure is
     /route<Context>\("POST", "\/v1\/production-releases",[\s\S]*?return Response\.json\(await prepareProductionRelease\(env\.CATALOGUE_DB, body, productionTarget\(env\), observedAt\), \{\s*status: 201,/u,
   );
   assert.match(domain, /prepare_production_release/u);
-  assert.match(domain, /administration_idempotency/u);
+  assert.match(domain, /recordPreparedProductionReleaseStatement/u);
+  assert.match(repository, /administration_idempotency/u);
   assert.match(script, /claim_production_release/u);
   assert.match(script, /INSERT OR IGNORE INTO production_releases[\s\S]*'failed'/u);
   assert.match(script, /roll_forward_required/u);

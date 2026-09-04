@@ -89,3 +89,14 @@ export function printingCollectionQuery(
     bindings,
   };
 }
+
+export function printingCollectionStatement(
+  database: D1Database,
+  revisionId: string,
+  filters: PrintingCollectionFilters,
+  after: { card_id: string; id: string } | null,
+  limit: number,
+): D1PreparedStatement {
+  const query = printingCollectionQuery(revisionId, filters, after, limit);
+  return database.prepare(query.sql).bind(...query.bindings);
+}

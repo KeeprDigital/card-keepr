@@ -1,3 +1,7 @@
+import {
+  persistReconciliationPayloadChunkStatement,
+  retainedReconciliationPayloadChunksStatement,
+} from "./reconciliation-payload-repository";
 import { canonicalJson } from "./serialization";
 
 const maximumChunkBytes = 524_288;
@@ -15,13 +19,7 @@ export function payloadChunkStatements(
   value: string,
 ): D1PreparedStatement[] {
   return byteChunks(value).map((content, index) =>
-    database
-      .prepare(
-        `INSERT INTO reconciliation_payload_chunks (
-           ingestion_run_id, payload_kind, chunk_index, content
-         ) VALUES (?, ?, ?, ?)`,
-      )
-      .bind(runId, kind, index, content),
+    persistReconciliationPayloadChunkStatement(database, { runId: runId, kind: kind, index: index, content: content }),
   );
 }
 
@@ -32,15 +30,10 @@ export async function retainedPayload(
   inline: string,
 ): Promise<string> {
   if (inline !== marker(kind)) return inline;
-  const chunks = await database
-    .prepare(
-      `SELECT chunk_index, content
-       FROM reconciliation_payload_chunks
-       WHERE ingestion_run_id = ? AND payload_kind = ?
-       ORDER BY chunk_index`,
-    )
-    .bind(runId, kind)
-    .all<{ chunk_index: number; content: string }>();
+  const chunks = await retainedReconciliationPayloadChunksStatement(database, { runId: runId, kind: kind }).all<{
+    chunk_index: number;
+    content: string;
+  }>();
   if (chunks.results.length === 0) {
     throw new Error(`Chunked reconciliation ${kind} payload is unavailable.`);
   }

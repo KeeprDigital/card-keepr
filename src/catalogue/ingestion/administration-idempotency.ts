@@ -1,4 +1,14 @@
-import { isTerminalIngestionRunState, AdministrationProblem, canonicalJson } from "../shared";
+import { AdministrationProblem, canonicalJson, isTerminalIngestionRunState } from "../shared";
+import {
+  acquireAdministrationClaimStatement,
+  administrationClaimStatement,
+  administrationOutcomeStatement,
+  completeAdministrationStatement,
+  legacyAdministrationRunStatement,
+  recordAdministrationProblemStatement,
+  releaseAdministrationClaimStatement,
+  takeOverAdministrationClaimStatement,
+} from "./administration-idempotency-repository";
 
 import { parseCandidate } from "./candidate-codec";
 import { firstCatalogueFixture } from "./fixture";
@@ -15,20 +25,7 @@ import {
 import { errorMessage, hasOnlyKeys, isExactStringTuple, isIsoInstant, isRecord, parseJson } from "./run-values";
 
 export async function administrationClaim(database: D1Database, key: string): Promise<IdempotencyClaimRow | null> {
-  return database
-    .prepare(
-      `SELECT
-        operation,
-        request_json,
-        claimed_at,
-        owner_token,
-        claim_version,
-        claim_expires_at
-      FROM administration_idempotency_claims
-      WHERE idempotency_key = ?`,
-    )
-    .bind(key)
-    .first<IdempotencyClaimRow>();
+  return administrationClaimStatement(database, key).first<IdempotencyClaimRow>();
 }
 
 export async function currentAdministrationClaimOwner(
@@ -57,24 +54,13 @@ export function administrationClaimDeleteStatement(
   },
   owner: IdempotencyClaimOwner | null,
 ): D1PreparedStatement {
-  return database
-    .prepare(
-      `DELETE FROM administration_idempotency_claims
-      WHERE idempotency_key = ?
-        AND operation = ?
-        AND request_json = ?
-        AND (? IS NULL OR owner_token = ?)
-        AND (? IS NULL OR claim_version = ?)`,
-    )
-    .bind(
-      context.key,
-      context.operation,
-      context.requestJson,
-      owner?.ownerToken ?? null,
-      owner?.ownerToken ?? null,
-      owner?.version ?? null,
-      owner?.version ?? null,
-    );
+  return releaseAdministrationClaimStatement(database, {
+    key: context.key,
+    operation: context.operation,
+    requestJson: context.requestJson,
+    ownerToken: owner?.ownerToken ?? null,
+    claimVersion: owner?.version ?? null,
+  });
 }
 
 export function idempotencyCompletionStatements(
@@ -90,30 +76,16 @@ export function idempotencyCompletionStatements(
   },
 ): D1PreparedStatement[] {
   return [
-    database
-      .prepare(
-        `INSERT INTO administration_idempotency (
-        idempotency_key,
-        operation,
-        request_json,
-        response_json,
-        http_status,
-        outcome,
-        created_at,
-        claim_owner_token,
-        claim_version
-      ) VALUES (?, ?, ?, ?, ?, 'success', ?, ?, ?)`,
-      )
-      .bind(
-        input.key,
-        input.operation,
-        input.requestJson,
-        canonicalJson(input.response),
-        input.status,
-        input.createdAt,
-        input.claimOwner?.ownerToken ?? null,
-        input.claimOwner?.version ?? null,
-      ),
+    completeAdministrationStatement(database, {
+      key: input.key,
+      operation: input.operation,
+      requestJson: input.requestJson,
+      responseJson: canonicalJson(input.response),
+      status: input.status,
+      createdAt: input.createdAt,
+      ownerToken: input.claimOwner?.ownerToken ?? null,
+      claimVersion: input.claimOwner?.version ?? null,
+    }),
     administrationClaimDeleteStatement(database, input, input.claimOwner ?? null),
   ];
 }
@@ -124,19 +96,7 @@ export async function replayAdministration(
   operation: string,
   requestJson: string,
 ): Promise<Record<string, unknown> | null> {
-  const prior = await database
-    .prepare(
-      `SELECT
-        operation,
-        request_json,
-        response_json,
-        http_status,
-        outcome
-      FROM administration_idempotency
-      WHERE idempotency_key = ?`,
-    )
-    .bind(key)
-    .first<IdempotencyRow>();
+  const prior = await administrationOutcomeStatement(database, key).first<IdempotencyRow>();
   if (prior === null) {
     return replayLegacyAdministration(database, key, operation, requestJson);
   }
@@ -270,33 +230,19 @@ export async function idempotentAdministration(
     }
     try {
       await database.batch([
-        database
-          .prepare(
-            `INSERT INTO administration_idempotency (
-              idempotency_key,
-              operation,
-              request_json,
-              response_json,
-              http_status,
-              outcome,
-              created_at,
-              claim_owner_token,
-              claim_version
-            ) VALUES (?, ?, ?, ?, ?, 'problem', ?, ?, ?)`,
-          )
-          .bind(
-            context.key,
-            context.operation,
-            context.requestJson,
-            canonicalJson({
-              code: error.code,
-              detail: error.message,
-            }),
-            error.status,
-            context.observedAt,
-            owner.ownerToken,
-            owner.version,
-          ),
+        recordAdministrationProblemStatement(database, {
+          key: context.key,
+          operation: context.operation,
+          requestJson: context.requestJson,
+          responseJson: canonicalJson({
+            code: error.code,
+            detail: error.message,
+          }),
+          status: error.status,
+          createdAt: context.observedAt,
+          ownerToken: owner.ownerToken,
+          claimVersion: owner.version,
+        }),
         administrationClaimDeleteStatement(database, context, owner),
       ]);
     } catch (persistError) {
@@ -350,22 +296,14 @@ async function claimAdministration(
   const ownerToken = `administration-claim:${crypto.randomUUID()}`;
   const expiresAt = new Date(Date.parse(context.observedAt) + publicationLeaseMilliseconds).toISOString();
   try {
-    const inserted = await database
-      .prepare(
-        `INSERT INTO administration_idempotency_claims (
-          idempotency_key,
-          operation,
-          request_json,
-          claimed_at,
-          owner_token,
-          claim_version,
-          claim_expires_at
-        ) VALUES (?, ?, ?, ?, ?, 1, ?)
-        RETURNING operation, request_json, claimed_at,
-          owner_token, claim_version, claim_expires_at`,
-      )
-      .bind(context.key, context.operation, context.requestJson, context.observedAt, ownerToken, expiresAt)
-      .first<IdempotencyClaimRow>();
+    const inserted = await acquireAdministrationClaimStatement(database, {
+      key: context.key,
+      operation: context.operation,
+      requestJson: context.requestJson,
+      claimedAt: context.observedAt,
+      ownerToken: ownerToken,
+      expiresAt: expiresAt,
+    }).first<IdempotencyClaimRow>();
     if (inserted === null) {
       throw new Error("The administration claim was not inserted.");
     }
@@ -409,34 +347,17 @@ async function claimAdministration(
       ) {
         return { claim: prior, owner: null };
       }
-      const takenOver = await database
-        .prepare(
-          `UPDATE administration_idempotency_claims
-          SET claimed_at = ?,
-              owner_token = ?,
-              claim_version = claim_version + 1,
-              claim_expires_at = ?
-          WHERE idempotency_key = ?
-            AND operation = ?
-            AND request_json = ?
-            AND owner_token = ?
-            AND claim_version = ?
-            AND claim_expires_at = ?
-          RETURNING operation, request_json, claimed_at,
-            owner_token, claim_version, claim_expires_at`,
-        )
-        .bind(
-          context.observedAt,
-          ownerToken,
-          expiresAt,
-          context.key,
-          context.operation,
-          context.requestJson,
-          prior.owner_token,
-          prior.claim_version,
-          prior.claim_expires_at,
-        )
-        .first<IdempotencyClaimRow>();
+      const takenOver = await takeOverAdministrationClaimStatement(database, {
+        claimedAt: context.observedAt,
+        ownerToken: ownerToken,
+        expiresAt: expiresAt,
+        key: context.key,
+        operation: context.operation,
+        requestJson: context.requestJson,
+        priorOwnerToken: prior.owner_token,
+        priorVersion: prior.claim_version,
+        priorExpiresAt: prior.claim_expires_at,
+      }).first<IdempotencyClaimRow>();
       if (takenOver === null) {
         const winner = await administrationClaim(database, context.key);
         if (winner === null) {
@@ -495,16 +416,7 @@ async function replayLegacyAdministration(
   operation: string,
   requestJson: string,
 ): Promise<Record<string, unknown> | null> {
-  const run = await database
-    .prepare(
-      `SELECT *
-      FROM ingestion_runs
-      WHERE idempotency_key = ?
-        OR approval_idempotency_key = ?
-      LIMIT 1`,
-    )
-    .bind(key, key)
-    .first<RunRow>();
+  const run = await legacyAdministrationRunStatement(database, key).first<RunRow>();
   if (run === null) return null;
 
   if (operation === "start_ingestion_run" && run.idempotency_key === key) {

@@ -1,4 +1,17 @@
-import { type CatalogueCandidate, byteBoundedJsonArrays } from "../shared";
+import type { CatalogueCandidate } from "../shared";
+import {
+  inferredProductLifecycleStatement,
+  productLifecycleRowsStatement,
+  productRelationshipLifecycleRowsStatement,
+  publishDistributionContextsStatements,
+  publishProductLifecyclesStatements,
+  publishProductRelationshipLifecyclesStatements,
+  publishProductSearchStatements,
+  publishReleaseLifecyclesStatements,
+  publishRevisionProductRelationshipsStatements,
+  publishRevisionProductsStatements,
+  releaseLifecycleRowsStatement,
+} from "./product-release-publication-repository";
 import type { NormalizedLifecycle } from "./publication-lifecycle-types";
 
 export type ProductRelationshipLifecycle = {
@@ -62,52 +75,23 @@ export async function productReleaseLifecyclePlan(
   const [existingProducts, existingReleases, existingRelationships, inferredProductRows] = await Promise.all([
     rowsById<ExistingProductRow>(
       database,
-      `SELECT id, first_revision_id, last_observed_revision_id,
-                withdrawn, withdrawal_revision_id, withdrawal_evidence_json
-         FROM reconciled_products
-         WHERE id IN (SELECT value FROM json_each(?))`,
+      productLifecycleRowsStatement,
       products.map(({ id }) => id),
     ),
     rowsById<ExistingReleaseRow>(
       database,
-      `SELECT id, first_revision_id, last_observed_revision_id
-         FROM reconciled_releases
-         WHERE id IN (SELECT value FROM json_each(?))`,
+      releaseLifecycleRowsStatement,
       releases.map(({ id }) => id),
     ),
     rowsById<ExistingRelationshipRow>(
       database,
-      `SELECT id, first_revision_id, last_observed_revision_id,
-                current, last_missing_revision_id
-         FROM reconciled_product_relationships
-         WHERE id IN (SELECT value FROM json_each(?))`,
+      productRelationshipLifecycleRowsStatement,
       relationships.map(({ id }) => id),
     ),
-    database
-      .prepare(
-        `SELECT card.supported_game AS game,
-                  membership.relationship_value AS official_code,
-                  membership.first_revision_id,
-                  membership.last_observed_revision_id,
-                  last_revision.published_at AS last_published_at
-           FROM reconciled_printing_memberships AS membership
-           JOIN reconciled_printings AS printing
-             ON printing.id = membership.printing_id
-           JOIN reconciled_cards AS card ON card.id = printing.card_id
-           JOIN catalogue_revisions AS first_revision
-             ON first_revision.id = membership.first_revision_id
-           JOIN catalogue_revisions AS last_revision
-             ON last_revision.id = membership.last_observed_revision_id
-           WHERE membership.relationship_kind = 'product'
-             AND membership.relationship_value IN (
-               SELECT value FROM json_each(?)
-             )
-           ORDER BY card.supported_game, membership.relationship_value,
-                    first_revision.published_at,
-                    membership.first_revision_id`,
-      )
-      .bind(JSON.stringify(products.flatMap(({ official_code }) => (official_code === null ? [] : [official_code]))))
-      .all<InferredProductLifecycleRow>(),
+    inferredProductLifecycleStatement(
+      database,
+      JSON.stringify(products.flatMap(({ official_code }) => (official_code === null ? [] : [official_code]))),
+    ).all<InferredProductLifecycleRow>(),
   ]);
   const inferredProductLifecycles = new Map<
     string,
@@ -307,7 +291,7 @@ export function productReleasePublicationStatements(
     };
   });
   return [
-    ...statements(
+    ...publishProductLifecyclesStatements(
       database,
       productDocuments.map(({ product, lifecycle }) => ({
         id: product.id,
@@ -323,30 +307,8 @@ export function productReleasePublicationStatements(
             ? null
             : JSON.stringify(lifecycle.withdrawal.evidence),
       })),
-      `INSERT INTO reconciled_products (
-         id, supported_game, official_code, name, first_revision_id,
-         last_observed_revision_id, withdrawn, withdrawal_revision_id,
-         withdrawal_evidence_json
-       )
-       SELECT json_extract(value, '$.id'),
-              json_extract(value, '$.game'),
-              json_extract(value, '$.official_code'),
-              json_extract(value, '$.name'),
-              json_extract(value, '$.first_revision_id'),
-              json_extract(value, '$.last_observed_revision_id'),
-              json_extract(value, '$.withdrawn'),
-              json_extract(value, '$.withdrawal_revision_id'),
-              json_extract(value, '$.withdrawal_evidence_json')
-       FROM json_each(?) WHERE true
-       ON CONFLICT (id) DO UPDATE SET
-         official_code = excluded.official_code,
-         name = excluded.name,
-         last_observed_revision_id = excluded.last_observed_revision_id,
-         withdrawn = excluded.withdrawn,
-         withdrawal_revision_id = excluded.withdrawal_revision_id,
-         withdrawal_evidence_json = excluded.withdrawal_evidence_json`,
     ),
-    ...statements(
+    ...publishReleaseLifecyclesStatements(
       database,
       products.flatMap((product) =>
         product.releases.map((release) => {
@@ -360,29 +322,8 @@ export function productReleasePublicationStatements(
           };
         }),
       ),
-      `INSERT INTO reconciled_releases (
-         id, product_id, event_key, region, date_precision, date_value,
-         release_status, first_revision_id, last_observed_revision_id
-       )
-       SELECT json_extract(value, '$.id'),
-              json_extract(value, '$.product_id'),
-              json_extract(value, '$.event_key'),
-              json_extract(value, '$.region'),
-              json_extract(value, '$.date.precision'),
-              json_extract(value, '$.date.value'),
-              json_extract(value, '$.status'),
-              json_extract(value, '$.first_revision_id'),
-              json_extract(value, '$.last_observed_revision_id')
-       FROM json_each(?) WHERE true
-       ON CONFLICT (id) DO UPDATE SET
-         event_key = excluded.event_key,
-         region = excluded.region,
-         date_precision = excluded.date_precision,
-         date_value = excluded.date_value,
-         release_status = excluded.release_status,
-         last_observed_revision_id = excluded.last_observed_revision_id`,
     ),
-    ...statements(
+    ...publishDistributionContextsStatements(
       database,
       (candidate.distribution_contexts ?? []).map((context) => {
         const { curated_provenance: provenance, ...facts } = context;
@@ -393,28 +334,8 @@ export function productReleasePublicationStatements(
           current: context.observed ? 1 : 0,
         };
       }),
-      `INSERT INTO reconciled_distribution_contexts (
-         id, supported_game, context_key, kind, label, product_id,
-         evidence_category, source_lineages_json, current
-       )
-       SELECT json_extract(value, '$.id'),
-              json_extract(value, '$.game'),
-              json_extract(value, '$.key'),
-              json_extract(value, '$.kind'),
-              json_extract(value, '$.label'),
-              json_extract(value, '$.product_id'),
-              json_extract(value, '$.evidence_category'),
-              json_extract(value, '$.source_lineages_json'),
-              json_extract(value, '$.current')
-       FROM json_each(?) WHERE true
-       ON CONFLICT (id) DO UPDATE SET
-         label = excluded.label, kind = excluded.kind,
-         product_id = excluded.product_id,
-         evidence_category = excluded.evidence_category,
-         source_lineages_json = excluded.source_lineages_json,
-         current = excluded.current`,
     ),
-    ...statements(
+    ...publishProductRelationshipLifecyclesStatements(
       database,
       relationshipDocuments
         .filter(({ relationship }) => relationship.evidence_category !== "curated")
@@ -436,41 +357,8 @@ export function productReleasePublicationStatements(
           last_missing_revision_id: lifecycle.last_missing_revision_id,
           document_json: JSON.stringify(document),
         })),
-      `INSERT INTO reconciled_product_relationships (
-         id, supported_game, relationship_kind, from_type, from_id,
-         to_type, to_id, evidence_category, source_lineage,
-         source_observation_ids_json, relationship_value,
-         first_revision_id, last_observed_revision_id, current,
-         last_missing_revision_id, document_json
-       )
-       SELECT json_extract(value, '$.id'),
-              json_extract(value, '$.game'),
-              json_extract(value, '$.kind'),
-              json_extract(value, '$.from_type'),
-              json_extract(value, '$.from_id'),
-              json_extract(value, '$.to_type'),
-              json_extract(value, '$.to_id'),
-              json_extract(value, '$.evidence_category'),
-              json_extract(value, '$.source_lineage'),
-              json_extract(value, '$.source_observation_ids_json'),
-              json_extract(value, '$.relationship_value'),
-              json_extract(value, '$.first_revision_id'),
-              json_extract(value, '$.last_observed_revision_id'),
-              json_extract(value, '$.current'),
-              json_extract(value, '$.last_missing_revision_id'),
-              json_extract(value, '$.document_json')
-       FROM json_each(?) WHERE true
-       ON CONFLICT (id) DO UPDATE SET
-         evidence_category = excluded.evidence_category,
-         source_observation_ids_json =
-           excluded.source_observation_ids_json,
-         last_observed_revision_id =
-           excluded.last_observed_revision_id,
-         current = excluded.current,
-         last_missing_revision_id = excluded.last_missing_revision_id,
-         document_json = excluded.document_json`,
     ),
-    ...statements(
+    ...publishRevisionProductsStatements(
       database,
       productDocuments.map(({ product, envelope }) => ({
         product_id: product.id,
@@ -481,47 +369,22 @@ export function productReleasePublicationStatements(
         release_regions_json: JSON.stringify(product.releases.map(({ region }) => region)),
         document_json: JSON.stringify(envelope),
       })),
-      `INSERT INTO revision_products (
-         catalogue_revision_id, product_id, supported_game,
-         official_code, name, search_text, release_regions_json,
-         document_json
-       )
-       SELECT ?, json_extract(value, '$.product_id'),
-              json_extract(value, '$.supported_game'),
-              json_extract(value, '$.official_code'),
-              json_extract(value, '$.name'),
-              json_extract(value, '$.search_text'),
-              json_extract(value, '$.release_regions_json'),
-              json_extract(value, '$.document_json')
-       FROM json_each(?)`,
       revisionId,
     ),
-    ...statements(
+    ...publishProductSearchStatements(
       database,
       productDocuments.map(({ product }) => ({
         product_id: product.id,
         search_text: productSearchText(product.official_code, product.name),
       })),
-      `INSERT INTO revision_products_fts (
-         catalogue_revision_id, product_id, search_text
-       )
-       SELECT ?, json_extract(value, '$.product_id'),
-              json_extract(value, '$.search_text')
-       FROM json_each(?)`,
       revisionId,
     ),
-    ...statements(
+    ...publishRevisionProductRelationshipsStatements(
       database,
       relationshipDocuments.map(({ relationship, document }) => ({
         relationship_id: relationship.id,
         document_json: JSON.stringify(document),
       })),
-      `INSERT INTO revision_product_relationships (
-         catalogue_revision_id, relationship_id, document_json
-       )
-       SELECT ?, json_extract(value, '$.relationship_id'),
-              json_extract(value, '$.document_json')
-       FROM json_each(?)`,
       revisionId,
     ),
   ];
@@ -537,23 +400,12 @@ function productSearchText(officialCode: string | null, name: string | null): st
 
 async function rowsById<T extends { id: string }>(
   database: D1Database,
-  sql: string,
+  statement: (database: D1Database, idsJson: string) => D1PreparedStatement,
   ids: readonly string[],
 ): Promise<Map<string, T>> {
   if (ids.length === 0) return new Map();
-  const result = await database.prepare(sql).bind(JSON.stringify(ids)).all<T>();
+  const result = await statement(database, JSON.stringify(ids)).all<T>();
   return new Map(result.results.map((row) => [row.id, row]));
-}
-
-function statements(
-  database: D1Database,
-  rows: readonly Record<string, unknown>[],
-  sql: string,
-  prefix?: string,
-): D1PreparedStatement[] {
-  return byteBoundedJsonArrays(rows).map((chunk) =>
-    prefix === undefined ? database.prepare(sql).bind(chunk) : database.prepare(sql).bind(prefix, chunk),
-  );
 }
 
 function defaultLifecycle(revisionId: string): NormalizedLifecycle {
