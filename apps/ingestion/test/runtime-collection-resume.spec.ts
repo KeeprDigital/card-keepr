@@ -114,7 +114,6 @@ test("a source run cannot start for a Curated Revision awaiting reconfirmation a
         linkedRunId: null,
         idempotencyKey: "source_curated_start_guard",
       },
-      true,
     ).run(),
   ).rejects.toThrow(/curated_revision_reconfirmation_required/);
   expect(await inspectRunCount(env.CATALOGUE_DB, runId).first("count")).toBe(0);
