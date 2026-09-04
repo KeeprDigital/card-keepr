@@ -1,13 +1,14 @@
-import { catalogueStore } from "../../../src/catalogue/shared";
-import * as ingestionQueries from "./query-helpers/ingestion";
-import * as curatedQueries from "./query-helpers/curated";
-import * as catalogueExportQueries from "./query-helpers/catalogue-export";
-import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
+import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { afterEach, beforeEach, expect } from "vitest";
-import { installWorkflowIsolation } from "./workflow-isolation";
-import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
+import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
+import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
+import * as catalogueExportQueries from "./query-helpers/catalogue-export";
+import * as curatedQueries from "./query-helpers/curated";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import { installWorkflowIsolation } from "./workflow-isolation";
 
 export const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -59,8 +60,7 @@ export async function collect(
   });
   expect(started.response.status).toBe(201);
   const id = requiredString(started.document, "id");
-  const resumed = await post(`/v1/ingestion-runs/${id}/collection/resume`, {});
-  expect(resumed.response.status).toBe(202);
+  await collectFixtureEvidence(testEnv.CATALOGUE_DB, testEnv.EVIDENCE_OBJECTS, testEnv.OFFICIAL_SOURCE_TRANSPORT, id);
   const document = await waitForRunState(id, "parsing", waitTimeoutMs);
   return { id, document };
 }
@@ -83,8 +83,7 @@ export async function collectRequests(
   });
   expect(started.response.status).toBe(201);
   const id = requiredString(started.document, "id");
-  const resumed = await post(`/v1/ingestion-runs/${id}/collection/resume`, {});
-  expect(resumed.response.status).toBe(202);
+  await collectFixtureEvidence(testEnv.CATALOGUE_DB, testEnv.EVIDENCE_OBJECTS, testEnv.OFFICIAL_SOURCE_TRANSPORT, id);
   return { id, document: await waitForRunState(id, "parsing") };
 }
 
@@ -110,8 +109,10 @@ export async function waitForRunState(
   pollIntervalMs = 25,
 ): Promise<Record<string, unknown>> {
   const deadline = Date.now() + timeoutMs;
+  let lastDocument: Record<string, unknown> | undefined;
   while (Date.now() < deadline) {
     const shown = await get(`/v1/ingestion-runs/${id}`);
+    lastDocument = shown.document;
     if (shown.document.state === expectedState) {
       return shown.document;
     }
@@ -120,7 +121,7 @@ export async function waitForRunState(
     }
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
-  throw new Error(`run ${id} did not reach ${expectedState}`);
+  throw new Error(`run ${id} did not reach ${expectedState}: ${JSON.stringify(lastDocument)}`);
 }
 
 export async function reconcile(runId: string, extraHeaders: Record<string, string> = {}, timeoutMs = 15_000) {

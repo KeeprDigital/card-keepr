@@ -1,42 +1,41 @@
-import { catalogueStore } from "../../../src/catalogue/shared";
-import * as reconciliationQueries from "./query-helpers/reconciliation";
-import * as ingestionQueries from "./query-helpers/ingestion";
-import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
-import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
-import * as catalogueExportQueries from "./query-helpers/catalogue-export";
-import { type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
+import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import { expect, test, vi } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import {
   compareSourceFreshness,
+  type SourceFreshnessStorageRow,
   sourceFreshnessFromStorage,
   sourceFreshnessKey,
-  type SourceFreshnessStorageRow,
 } from "../../../src/catalogue/read";
 import {
-  reconcileRetainedCardPrintingEvidence,
   parseReconciliationObservation,
+  type ReconciliationWorkflowParams,
+  reconcileRetainedCardPrintingEvidence,
   reconciliationPublication,
   startOrObserveReconciliationWorkflow,
-  type ReconciliationWorkflowParams,
 } from "../../../src/catalogue/reconciliation";
-import { type CatalogueCandidate, catalogueRevisionIdentity } from "../../../src/catalogue/shared";
+import { type CatalogueCandidate, catalogueRevisionIdentity, catalogueStore } from "../../../src/catalogue/shared";
+import ingestionWorker from "../src/index";
 import { runReconciliationWorkflow } from "../src/reconciliation-workflow";
+import * as catalogueExportQueries from "./query-helpers/catalogue-export";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as reconciliationQueries from "./query-helpers/reconciliation";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import {
-  installReconciliationSuite,
-  testEnv,
   approve,
   collect,
   collectRequests,
   exportComponentRecords,
   get,
+  installReconciliationSuite,
   post,
   reconcile,
   requiredFirst,
   requiredRecord,
   requiredString,
+  testEnv,
 } from "./reconciliation-helpers";
-import ingestionWorker from "../src/index";
 
 installReconciliationSuite();
 
@@ -1052,7 +1051,7 @@ test("parsed observation count warnings use the normative absolute threshold", a
     expect.objectContaining({
       code: "source_observation_count_changed",
       source_lineage: "one-piece-en",
-      request_id: "cards",
+      request_id: "one-piece-en:discovery",
       previous_count: 124,
       current_count: 149,
       absolute_delta: 25,

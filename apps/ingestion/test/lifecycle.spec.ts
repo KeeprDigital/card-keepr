@@ -1,30 +1,31 @@
-import { disableExportTransitionTriggers } from "./query-helpers/maintenance-guards";
-import {
-  crashAfterRetryTerminalDatabase,
-  countDeletionResponseQueriesDatabase,
-} from "./query-helpers/database-failures";
-import { catalogueStore } from "../../../src/catalogue/shared";
-import * as ingestionQueries from "./query-helpers/ingestion";
-import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
-import * as catalogueExportQueries from "./query-helpers/catalogue-export";
-import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
+import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { afterEach, beforeEach, expect, test } from "vitest";
-import ingestionWorker from "../src/index";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
-import { fixtureCandidate } from "../../../src/catalogue/ingestion";
-import {
-  AdministrationProblem,
-  catalogueRevisionIdentity,
-  canonicalJson,
-  sha256Text,
-} from "../../../src/catalogue/shared";
 import {
   approveRun as approveRunDirect,
   retryPublicationCleanup as retryPublicationCleanupDirect,
   showRun as showRunDirect,
 } from "../../../src/catalogue/ingestion/ingestion";
+import {
+  AdministrationProblem,
+  canonicalJson,
+  catalogueRevisionIdentity,
+  catalogueStore,
+  sha256Text,
+} from "../../../src/catalogue/shared";
+import { fixtureCandidate } from "../../../test/support/catalogue-fixture";
+import { fixturePublicationSourceId } from "../../../test/support/fixture-publication";
+import ingestionWorker from "../src/index";
 import { injectFixturePublication } from "./fixture-plan-injection";
+import * as catalogueExportQueries from "./query-helpers/catalogue-export";
+import {
+  countDeletionResponseQueriesDatabase,
+  crashAfterRetryTerminalDatabase,
+} from "./query-helpers/database-failures";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import { disableExportTransitionTriggers } from "./query-helpers/maintenance-guards";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -83,11 +84,12 @@ test("administration status excludes the unpublished bootstrap spine from the re
   });
 });
 
-test("the public run boundary reads and retries an immutable fixed-point legacy candidate", async () => {
+test("the public run boundary reads and retries an immutable retained candidate", async () => {
   const runId = "run_historical_fixed_point_candidate";
   const historicalCandidate = {
-    fixture: "first-catalogue",
+    contract: "card-keepr-catalogue-candidate@1",
     selected_games: ["one-piece"],
+    legality_rules: [],
     cards: [
       {
         id: "card_01k_first_catalogue_0001",
@@ -160,7 +162,7 @@ test("the public run boundary reads and retries an immutable fixed-point legacy 
   const original = persisted.results.find((row) => row.id === runId);
   const replacement = persisted.results.find((row) => row.id !== runId);
   expect(original?.candidate_json).toBe(immutableCandidateJson);
-  expect(JSON.parse(original!.candidate_json)).toHaveProperty("fixture", "first-catalogue");
+  expect(JSON.parse(original!.candidate_json)).toHaveProperty("contract", "card-keepr-catalogue-candidate@1");
   expect(JSON.parse(replacement!.candidate_json)).toHaveProperty("contract", "card-keepr-catalogue-candidate@1");
 });
 
@@ -379,11 +381,11 @@ test("identical concurrent approvals replay one original publication result", as
   });
 });
 
-test("an orphaned start claim returns stable progress before its lease and resumes by CAS after expiry", async () => {
+test("an orphaned retry claim returns stable progress before its lease and resumes by CAS after expiry", async () => {
   const claimedAt = "2026-07-29T04:00:00.000Z";
   const expiresAt = "2026-07-29T04:05:00.000Z";
   const key = "start-orphaned-claim";
-  const requestJson = `{"fixture":"first-catalogue","selected_games":["one-piece"]}`;
+  const requestJson = await fixtureRetryRequestJson(key);
   await ingestionQueries
     .insertAdministrationIdempotencyClaims(testEnv.CATALOGUE_DB)
     .bind(key, requestJson, claimedAt, "administration-claim:terminated-start", expiresAt)
@@ -394,16 +396,14 @@ test("an orphaned start claim returns stable progress before its lease and resum
   expect(pending.response.status).toBe(202);
   expect(pending.document).toMatchObject({
     contract: "card-keepr-administration-operation@1",
-    operation: "start_ingestion_run",
+    operation: "retry_ingestion_run",
     status: "in_progress",
     idempotency_key: key,
     claimed_at: claimedAt,
   });
   const pendingReplay = await startRun(key);
   expect(pendingReplay.document).toEqual(pending.document);
-  const changed = await administrationRequest("/v1/ingestion-runs", {
-    fixture: "first-catalogue",
-    selected_games: ["one-piece", "digimon"],
+  const changed = await administrationRequest("/v1/ingestion-runs/another-retained-source/retry", {
     idempotency_key: key,
   });
   expect(changed.response.status).toBe(409);
@@ -457,7 +457,7 @@ test("a partial persisted success cannot masquerade as an original run result", 
     .insertAdministrationIdempotency(testEnv.CATALOGUE_DB)
     .bind(
       "start-partial-success-replay",
-      `{"fixture":"first-catalogue","selected_games":["one-piece"]}`,
+      await fixtureRetryRequestJson("start-partial-success-replay"),
       JSON.stringify({
         id: "run_partial",
         state: "awaiting_approval",
@@ -476,7 +476,6 @@ test("a partial persisted success cannot masquerade as an original run result", 
 
 test("successful replay status, request correlation, and state legality are exact", async () => {
   const started = await startRun("start-replay-correlation-source");
-  const requestJson = `{"fixture":"first-catalogue","selected_games":["one-piece"]}`;
   const createdAt = "2026-07-29T00:00:00.000Z";
   const cases = [
     {
@@ -510,7 +509,13 @@ test("successful replay status, request correlation, and state legality are exac
       .insertAdministrationIdempotencyForSuccessfulReplayStatusRequestCorrelationStateLegalityAreExact(
         testEnv.CATALOGUE_DB,
       )
-      .bind(testCase.key, requestJson, JSON.stringify(testCase.response), testCase.status, createdAt)
+      .bind(
+        testCase.key,
+        await fixtureRetryRequestJson(testCase.key),
+        JSON.stringify(testCase.response),
+        testCase.status,
+        createdAt,
+      )
       .run();
     const replay = await startRun(testCase.key);
     expect(replay.response.status).toBe(500);
@@ -2464,4 +2469,14 @@ function pauseBeforeThirdDeletionBatchDatabase(database: D1Database): {
       release.resolve(undefined);
     },
   };
+}
+
+async function fixtureRetryRequestJson(key: string): Promise<string> {
+  return canonicalJson({
+    source_run_id: await fixturePublicationSourceId({
+      fixture: "first-catalogue",
+      selected_games: ["one-piece"],
+      idempotency_key: key,
+    }),
+  });
 }

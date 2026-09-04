@@ -697,10 +697,6 @@ function sourceSurfaceForRequest(
   requests: ReadonlyMap<string, PlannedRequestRow>,
   row: Pick<EvidenceRow, "adapter_version" | "plan_origin" | "source_lineage">,
 ): string | undefined {
-  const adapter = requiredSourceAdapter(row.adapter_version);
-  if (adapter.origin === "synthetic_fixture" && row.plan_origin === "synthetic_fixture") {
-    return undefined;
-  }
   let current = request;
   const visited = new Set<string>();
   while (current.request_role !== "surface") {
@@ -922,9 +918,6 @@ function assertClosedRequestGraph(
       throw new Error(`Source Request ${request.request_id} has incomplete declared/parsed count closure.`);
     }
     const adapter = requiredSourceAdapter(row.adapter_version);
-    if (adapter.origin === "synthetic_fixture" && row.plan_origin === "synthetic_fixture") {
-      return;
-    }
     if (adapter.origin !== "production" || row.plan_origin !== "production") {
       throw new Error(`Source Request ${request.request_id} has mismatched graph authority.`);
     }

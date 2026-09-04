@@ -84,8 +84,8 @@ test("dynamic discovery scopes each Source Adapter Version capacity to its ownin
   const storedRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), runId);
   const roots = await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), runId);
   for (const [lineage, root] of [
-    ["fusion-world-en", roots.find(({ request_id }) => request_id === "fusion-root")],
-    ["one-piece-en", roots.find(({ request_id }) => request_id === "one-piece-root")],
+    ["fusion-world-en", roots.find(({ request_id }) => request_id === "fusion-world-en:discovery")],
+    ["one-piece-en", roots.find(({ request_id }) => request_id === "one-piece-en:discovery")],
   ] as const) {
     if (root === undefined) throw new Error(`${lineage} root missing`);
     await expect(

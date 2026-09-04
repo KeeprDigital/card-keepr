@@ -1,3 +1,4 @@
+import { syntheticSourceAdapterMigrations } from "./helpers/synthetic-source-adapters.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -7,6 +8,8 @@ import { gunzipSync } from "node:zlib";
 import test from "node:test";
 import {
   administrationPollInterval,
+  administrationDocument,
+  waitForAdministrationDocument,
   runCli,
   startWorker,
   stopWorker,
@@ -31,6 +34,7 @@ test("the repository CLI rejects Official Errata authority outside the documente
     config: runtimeConfig,
     envFile: environmentFile,
     migrate: true,
+    testMigrations: await syntheticSourceAdapterMigrations(),
     statePath,
   });
   t.after(async () => {
@@ -125,6 +129,7 @@ test("Bandai Errata HTML shape drift fails closed through the CLI and Worker sea
     config: runtimeConfig,
     envFile: environmentFile,
     migrate: true,
+    testMigrations: await syntheticSourceAdapterMigrations(),
     statePath,
   });
   t.after(async () => {
@@ -190,6 +195,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     config: runtimeConfig,
     envFile: environmentFile,
     migrate: true,
+    testMigrations: await syntheticSourceAdapterMigrations(),
     statePath,
   });
   t.after(async () => {
@@ -712,11 +718,21 @@ async function representRetainedSnapshotAdapter(sourceSnapshotId, adapterVersion
 }
 
 async function resumeAndWait(runId, environment, runtime) {
-  const resumed = await runCli(["source", "resume", "--run-id", runId, "--json"], environment);
-  assert.equal(resumed.code, 0, resumed.stderr);
-  return waitForRunState(runId, "parsing", environment, runtime, {
-    deadlineMs: 20_000,
-  });
+  const path = `/v1/ingestion-runs/${encodeURIComponent(runId)}/evidence`;
+  const existing = await administrationDocument(path, environment);
+  if (existing?.state === "collecting") {
+    const resumed = await runCli(["source", "resume", "--run-id", runId, "--json"], environment);
+    assert.equal(resumed.code, 0, resumed.stderr);
+  }
+  return waitForAdministrationDocument(
+    path,
+    (document) =>
+      ["parsing", "awaiting_approval"].includes(document.state) ||
+      (document.state === "failed" ? `run ${runId} failed` : false),
+    environment,
+    runtime,
+    { deadlineMs: 20_000 },
+  );
 }
 
 async function reconcileAndWait(runId, expectedRevision, idempotencyKey, environment, runtime) {

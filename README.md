@@ -44,7 +44,7 @@ which creates the whole schema and its seed rows at schema level 1 (ADR
 level by one.
 `GET /v1/catalogue` reads the current Catalogue Revision pointer from D1. A new
 database starts at the schema-valid `catrev_spine_000` bootstrap pointer until
-the first controlled fixture is approved.
+the first Catalogue Candidate is approved.
 
 Each Worker serves two health routes under its mount (issue #144).
 
@@ -92,31 +92,12 @@ runtimes. Both are base URLs that include the mount path
 (`https://card.keepr.digital/api` and `https://card.keepr.digital/ingest`);
 the CLI appends route paths to them.
 
-The first controlled publication can be exercised without Official Source
-network access:
-
-```sh
-npm run keepr -- run start \
-  --fixture first-catalogue \
-  --games one-piece \
-  --idempotency-key ingestion_fixture_first_001 \
-  --json
-
-npm run keepr -- run show --run-id RUN_ID --json
-npm run keepr -- candidate inspect --run-id RUN_ID --json
-
-npm run keepr -- run approve \
-  --run-id RUN_ID \
-  --candidate-digest CANDIDATE_SHA256 \
-  --expected-current-revision CURRENT_REVISION_ID \
-  --idempotency-key approval_fixture_first_001 \
-  --yes \
-  --json
-```
-
-Approval fails closed unless the run identity, candidate digest, and current
-Catalogue Revision still match. Publication verifies the deterministic
-Catalogue Export before atomically advancing the D1 current-revision pointer.
+Catalogue Candidates come from retained Official Source evidence. Tests install
+synthetic Source Adapter Versions and seed controlled candidates through
+`test/support`; those capabilities are absent from the shipped Workers.
+Approval binds the run identity, candidate digest, and current Catalogue Revision.
+Publication verifies the deterministic Catalogue Export before atomically
+advancing the D1 current-revision pointer.
 
 An Ingestion Run persists its Official Source evidence plan before any network
 access, then starts its durable collection phase explicitly. Production JSON

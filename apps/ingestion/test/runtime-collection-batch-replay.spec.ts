@@ -1,3 +1,4 @@
+import { waitForCollectionCompletion } from "./runtime-helpers";
 import { failSnapshotCommitFor } from "./query-helpers/database-failures";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
@@ -12,7 +13,6 @@ import {
   installRuntimeSuite,
   showCollection,
   waitForEvidenceCondition,
-  waitForEvidenceRun,
   waitForWorkflowStatus,
 } from "./runtime-helpers";
 
@@ -91,6 +91,9 @@ test("a batch that fails midway replays without duplicating snapshots or attempt
   });
   expect(created.status).toBe(201);
   const run = await created.json<CollectionDocument>();
+  const requestIds = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id)).map(
+    (request) => request.request_id,
+  );
   const requests = await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id);
   expect(requests).toHaveLength(6);
   const batchInput = {
@@ -106,10 +109,10 @@ test("a batch that fails midway replays without duplicating snapshots or attempt
 
   // The third request's commit fails after its bytes reached R2: the batch
   // step rejects as a whole, exactly as a durable step would before replay.
-  await failSnapshotCommitFor(env.CATALOGUE_DB, "sequence-3").run();
+  await failSnapshotCommitFor(env.CATALOGUE_DB, requestIds[2]!).run();
   await expect(collectSourceRequestBatch(batchInput)).rejects.toThrowError(/synthetic_batch_commit_outage/u);
   const interrupted = await captureOperations(run.id);
-  const stagedThird = interrupted.find((operation) => operation.request_id === "sequence-3");
+  const stagedThird = interrupted.find((operation) => operation.request_id === requestIds[2]!);
   expect(stagedThird).toMatchObject({
     attempt_number: 1,
     state: "uploaded",
@@ -120,20 +123,20 @@ test("a batch that fails midway replays without duplicating snapshots or attempt
   // the third request, and every request holds at most one capture
   // operation and one attempt regardless of where the failure landed.
   const interruptedAttempts = await attemptFacts(run.id);
-  expect(interruptedAttempts.filter((attempt) => attempt.request_id === "sequence-3")).toEqual([]);
+  expect(interruptedAttempts.filter((attempt) => attempt.request_id === requestIds[2]!)).toEqual([]);
   for (const requestId of requests.map((request) => request.request_id)) {
     expect(interrupted.filter((operation) => operation.request_id === requestId).length).toBeLessThanOrEqual(1);
     expect(interruptedAttempts.filter((attempt) => attempt.request_id === requestId).length).toBeLessThanOrEqual(1);
   }
   expect(await requestStates(run.id)).toMatchObject({
-    "sequence-1": "observed",
-    "sequence-2": "observed",
-    "sequence-3": "pending",
+    [requestIds[0]!]: "observed",
+    [requestIds[1]!]: "observed",
+    [requestIds[2]!]: "pending",
   });
   expect(
     await sourceEvidenceQueries
       .countSourceSnapshotsCountForBatchThatFailsMidwayReplaysWithoutDuplicatingSnapshotsOr(env.CATALOGUE_DB)
-      .bind(run.id)
+      .bind(run.id, requestIds[2]!)
       .first("count"),
   ).toBe(0);
 
@@ -157,7 +160,7 @@ test("a batch that fails midway replays without duplicating snapshots or attempt
   );
   const replayed = await captureOperations(run.id);
   expect(replayed.map((operation) => operation.state)).toEqual(Array.from({ length: 6 }, () => "finalized"));
-  const finalThird = replayed.find((operation) => operation.request_id === "sequence-3");
+  const finalThird = replayed.find((operation) => operation.request_id === requestIds[2]!);
   expect(finalThird).toMatchObject({
     attempt_number: 1,
     completed_at: stagedThird?.completed_at,
@@ -165,7 +168,7 @@ test("a batch that fails midway replays without duplicating snapshots or attempt
   });
   const thirdSnapshot = await sourceEvidenceQueries
     .readSourceSnapshotsIdRetrievedAt(env.CATALOGUE_DB)
-    .bind(run.id)
+    .bind(run.id, requestIds[2]!)
     .all<{
       id: string;
       retrieved_at: string;
@@ -211,13 +214,16 @@ test("a Retry Pause inside a batch leaves later requests untouched and resumes w
   });
   expect(created.status).toBe(201);
   const run = await created.json<CollectionDocument>();
+  const requestIds = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id)).map(
+    (request) => request.request_id,
+  );
   const started = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(started.status).toBe(202);
   await started.body?.cancel();
   const paused = await waitForEvidenceCondition(run.id, (current) => current.state === "paused", 15_000);
   expect(paused.pause).toMatchObject({
     reason: "source_transport_retries_exhausted",
-    request_id: "sequence-3",
+    request_id: requestIds[2]!,
     hostname,
     retry_generation: 1,
     attempt_count: 4,
@@ -225,18 +231,18 @@ test("a Retry Pause inside a batch leaves later requests untouched and resumes w
   // Requests ahead of the exhausted one completed inside the batch; the
   // requests behind it were never attempted, and nothing failed.
   expect(await requestStates(run.id)).toEqual({
-    "sequence-1": "observed",
-    "sequence-2": "observed",
-    "sequence-3": "pending",
-    "sequence-4": "pending",
-    "sequence-5": "pending",
-    "sequence-6": "pending",
+    [requestIds[0]!]: "observed",
+    [requestIds[1]!]: "observed",
+    [requestIds[2]!]: "pending",
+    [requestIds[3]!]: "pending",
+    [requestIds[4]!]: "pending",
+    [requestIds[5]!]: "pending",
   });
   expect(await attemptFacts(run.id)).toEqual([
-    { request_id: "sequence-1", attempt_number: 1, outcome: "success" },
-    { request_id: "sequence-2", attempt_number: 1, outcome: "success" },
+    { request_id: requestIds[0]!, attempt_number: 1, outcome: "success" },
+    { request_id: requestIds[1]!, attempt_number: 1, outcome: "success" },
     ...[1, 2, 3, 4].map((attempt) => ({
-      request_id: "sequence-3",
+      request_id: requestIds[2]!,
       attempt_number: attempt,
       outcome: "http_failure",
     })),
@@ -248,21 +254,21 @@ test("a Retry Pause inside a batch leaves later requests untouched and resumes w
   const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(resumed.status).toBe(202);
   await resumed.body?.cancel();
-  const completed = await waitForEvidenceRun(run.id, "parsing", 20_000);
+  const completed = await waitForCollectionCompletion(run.id, 20_000);
   expect(completed.snapshots).toHaveLength(6);
   expect(completed.observation_sets).toHaveLength(6);
   expect(await attemptFacts(run.id)).toEqual([
-    { request_id: "sequence-1", attempt_number: 1, outcome: "success" },
-    { request_id: "sequence-2", attempt_number: 1, outcome: "success" },
+    { request_id: requestIds[0]!, attempt_number: 1, outcome: "success" },
+    { request_id: requestIds[1]!, attempt_number: 1, outcome: "success" },
     ...[1, 2, 3, 4].map((attempt) => ({
-      request_id: "sequence-3",
+      request_id: requestIds[2]!,
       attempt_number: attempt,
       outcome: "http_failure",
     })),
-    { request_id: "sequence-3", attempt_number: 5, outcome: "success" },
-    { request_id: "sequence-4", attempt_number: 1, outcome: "success" },
-    { request_id: "sequence-5", attempt_number: 1, outcome: "success" },
-    { request_id: "sequence-6", attempt_number: 1, outcome: "success" },
+    { request_id: requestIds[2]!, attempt_number: 5, outcome: "success" },
+    { request_id: requestIds[3]!, attempt_number: 1, outcome: "success" },
+    { request_id: requestIds[4]!, attempt_number: 1, outcome: "success" },
+    { request_id: requestIds[5]!, attempt_number: 1, outcome: "success" },
   ]);
   expect(
     await sourceEvidenceQueries
@@ -270,7 +276,7 @@ test("a Retry Pause inside a batch leaves later requests untouched and resumes w
       .bind(run.id)
       .all()
       .then(({ results }) => results),
-  ).toEqual([{ request_id: "sequence-3", retry_generation: 2 }]);
+  ).toEqual([{ request_id: requestIds[2]!, retry_generation: 2 }]);
 }, 40_000);
 
 test("a hostname Workflow whose batch step errors is superseded by an attempt that replays the batch without duplicate evidence", async () => {
@@ -284,7 +290,10 @@ test("a hostname Workflow whose batch step errors is superseded by an attempt th
   });
   expect(created.status).toBe(201);
   const run = await created.json<CollectionDocument>();
-  await failSnapshotCommitFor(env.CATALOGUE_DB, "sequence-3").run();
+  const requestIds = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id)).map(
+    (request) => request.request_id,
+  );
+  await failSnapshotCommitFor(env.CATALOGUE_DB, requestIds[2]!).run();
   const started = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(started.status).toBe(202);
   await started.body?.cancel();
@@ -304,20 +313,23 @@ test("a hostname Workflow whose batch step errors is superseded by an attempt th
   // replacement may record sequence-3 before this test reads the facts.
   const errored = await showCollection(run.id);
   expect(errored.state).toBe("collecting");
-  expect((await attemptFacts(run.id)).filter((attempt) => attempt.request_id === "sequence-3")).toEqual([]);
+  expect((await attemptFacts(run.id)).filter((attempt) => attempt.request_id === requestIds[2]!)).toEqual([]);
   await releaseSnapshotCommit();
 
   // The parent replaces the dead shard with a bounded new Workflow Attempt
   // identity that replays the batch from its retained operation state.
   const completed = await waitForEvidenceCondition(
     run.id,
-    (current) => current.state === "parsing" && current.snapshots.length === 6 && current.observation_sets.length === 6,
+    (current) =>
+      current.collection_completed_at !== null &&
+      current.snapshots.length === 6 &&
+      current.observation_sets.length === 6,
     30_000,
   );
   expect(completed.workflow.child_ids).toContain(`${childId}-attempt-0`);
   expect(await attemptFacts(run.id)).toEqual(
     Array.from({ length: 6 }, (_, index) => ({
-      request_id: `sequence-${index + 1}`,
+      request_id: requestIds[index]!,
       attempt_number: 1,
       outcome: "success",
     })),

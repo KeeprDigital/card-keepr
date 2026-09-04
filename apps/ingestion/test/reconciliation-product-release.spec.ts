@@ -1,9 +1,9 @@
-import { catalogueStore } from "../../../src/catalogue/shared";
-import * as reconciliationQueries from "./query-helpers/reconciliation";
-import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { expect, test } from "vitest";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import { currentPrintingsResponse } from "../../../src/catalogue/read";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as reconciliationQueries from "./query-helpers/reconciliation";
 import {
   approve,
   collect,
@@ -409,6 +409,7 @@ test("a registered fuzzy Product link remains a review warning through publicati
 test("same-authority Product conflicts fail closed before publication", async () => {
   const run = await collectRequests(
     [
+      { id: "discovery", scenario: "complete-empty-lineage" },
       { id: "product-a", scenario: "product-conflict-a" },
       { id: "product-b", scenario: "product-conflict-b" },
     ],

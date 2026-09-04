@@ -1,3 +1,4 @@
+import { waitForCollectionCompletion } from "./runtime-helpers";
 import { ingestionRunInsertStatement } from "../../../src/catalogue/source-evidence/ingestion-run-repository";
 import { insertAuthoredCuratedRevisionStatement } from "../../../src/catalogue/curated/curated-repository";
 import { removeCuratedGuards } from "./query-helpers/curated-guards";
@@ -7,13 +8,7 @@ import { expect, test } from "vitest";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { pauseEvidenceRunForWorkflowRecovery, resumePausedEvidenceRun } from "../../../src/catalogue/source-evidence";
 import { removeIngestionTransitionAudit } from "./query-helpers/collection-resume";
-import {
-  administrationRequest,
-  createCollection,
-  installRuntimeSuite,
-  showCollection,
-  waitForEvidenceRun,
-} from "./runtime-helpers";
+import { administrationRequest, createCollection, installRuntimeSuite, showCollection } from "./runtime-helpers";
 
 installRuntimeSuite();
 
@@ -38,7 +33,7 @@ test("collection progress and concurrent recovery remain inspectable without tra
       workflow: { id: `evidence-${run.id}-resume-1`, attempt_number: 2 },
     });
   }
-  const completed = await waitForEvidenceRun(run.id, "parsing");
+  const completed = await waitForCollectionCompletion(run.id);
   expect(completed.snapshots).toHaveLength(1);
   expect(completed.workflow.attempts.filter(({ kind }) => kind === "parent").map(({ id }) => id)).toEqual([
     `evidence-${run.id}`,

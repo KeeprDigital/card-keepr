@@ -1,19 +1,17 @@
-import { releaseTerminalRunEventLockStatement } from "../shared";
-import { expireRunEventsStatement } from "../shared";
-import {
-  runEventCommand,
-  runEventIdentitySql,
-  runEventStatement,
-  runCompletedStageCount,
-  createRunEventStatement,
-} from "../shared";
 import { curatedRunStartGuardStatement } from "../curated";
 import {
   type CatalogueStore,
+  createRunEventStatement,
+  expireRunEventsStatement,
   type IngestionRunState,
   ingestionRunTransitionSources,
   ingestionRunTransitionSql,
+  releaseTerminalRunEventLockStatement,
   repositoryStatements,
+  runCompletedStageCount,
+  runEventCommand,
+  runEventIdentitySql,
+  runEventStatement,
   runStartGuardStatement,
   runTransitionGuardStatement,
 } from "../shared";
@@ -107,7 +105,7 @@ export function rejectRunStatement(
   });
 }
 
-export function createFixtureRunStatement(
+export function createPreparedRunStatement(
   database: CatalogueStore,
   input: Readonly<{
     runId: string;
@@ -147,7 +145,7 @@ export function acquireRunLockStatement(database: CatalogueStore, runId: string)
     .bind(runId);
 }
 
-export function failFixtureRunStatement(
+export function failPreparedRunStatement(
   database: CatalogueStore,
   input: Readonly<{
     candidateDigest: string;
@@ -189,7 +187,7 @@ export function failFixtureRunStatement(
   });
 }
 
-export function completeFixtureRunStatement(
+export function completePreparedRunStatement(
   database: CatalogueStore,
   input: Readonly<{
     candidateDigest: string;
