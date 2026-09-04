@@ -1,13 +1,13 @@
-import * as sourceEvidenceQueries from "./query-helpers/source-evidence.ts";
-import * as publishedCatalogueQueries from "./query-helpers/published-catalogue.ts";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { test } from "vitest";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
+import { test } from "vitest";
 import { installedSourceAdapterRegistrations } from "../../src/catalogue/adapters/source-adapters.ts";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue.ts";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 
@@ -357,8 +357,7 @@ test("the Catalogue Export schema carries typed Product, Release, and Legality p
   }
 });
 
-test("the baseline registers exactly the installed adapter versions immutably", async () => {
-  const baseline = await readFile(resolve(root, "migrations", "0001_baseline.sql"), "utf8");
+test("the current schema registers exactly the installed adapter versions immutably", async () => {
   // The seed rows must equal installedSourceAdapterRegistrations in
   // src/catalogue/adapters/source-adapters.ts. Before Go-Live (ADR 0008) each Source
   // Lineage registers exactly one production raw version and a capacity
@@ -410,7 +409,9 @@ test("the baseline registers exactly the installed adapter versions immutably", 
   };
 
   const fresh = new DatabaseSync(":memory:");
-  fresh.exec(baseline);
+  for (const migration of (await readdir(resolve(root, "migrations"))).filter((file) => file.endsWith(".sql")).sort()) {
+    fresh.exec(await readFile(resolve(root, "migrations", migration), "utf8"));
+  }
   assertVersionSet(fresh);
   fresh.close();
 });

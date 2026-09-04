@@ -460,7 +460,7 @@ export function insertSourceParseOperationsForUnplannedRequestsFailAtD1WhileDupl
      FROM source_parse_operations
      WHERE source_snapshot_id = (
        SELECT source_snapshot_id FROM source_requests
-       WHERE ingestion_run_id = ? AND request_id = 'partition-a'
+       WHERE ingestion_run_id = ? AND request_id = 'one-piece-en:discovery'
      ) AND intent = 'collection'`);
 }
 
@@ -479,7 +479,7 @@ export function insertSourceObservationSetsForUnplannedRequestsFailAtD1WhileDupl
      FROM source_observation_sets
      WHERE source_snapshot_id = (
        SELECT source_snapshot_id FROM source_requests
-       WHERE ingestion_run_id = ? AND request_id = 'partition-a'
+       WHERE ingestion_run_id = ? AND request_id = 'one-piece-en:discovery'
      ) ORDER BY id LIMIT 1`);
 }
 
@@ -518,7 +518,7 @@ export function insertSourceSnapshotsForUnplannedRequestsFailAtD1WhileDuplicateU
      FROM source_snapshots
      WHERE id = (
        SELECT source_snapshot_id FROM source_requests
-       WHERE ingestion_run_id = ? AND request_id = 'partition-a'
+       WHERE ingestion_run_id = ? AND request_id = 'one-piece-en:discovery'
      )`);
 }
 
@@ -536,7 +536,7 @@ export function insertSourceParseOperationsForUnplannedRequestsFailAtD1WhileDupl
      FROM source_parse_operations
      WHERE source_snapshot_id = (
        SELECT source_snapshot_id FROM source_requests
-       WHERE ingestion_run_id = ? AND request_id = 'partition-a'
+       WHERE ingestion_run_id = ? AND request_id = 'one-piece-en:discovery'
      ) AND intent = 'collection'`);
 }
 
@@ -555,7 +555,7 @@ export function insertSourceObservationSetsForUnplannedRequestsFailAtD1WhileDupl
      FROM source_observation_sets
      WHERE source_snapshot_id = (
        SELECT source_snapshot_id FROM source_requests
-       WHERE ingestion_run_id = ? AND request_id = 'partition-a'
+       WHERE ingestion_run_id = ? AND request_id = 'one-piece-en:discovery'
      ) ORDER BY id LIMIT 1`);
 }
 
@@ -1628,4 +1628,10 @@ export function countSourceObservationSetsCountForRetainedEvidenceCounts(databas
        WHERE source_snapshot_id IN (
          SELECT id FROM source_snapshots WHERE ingestion_run_id = ?
        )`);
+}
+
+export function sourceRequestIdentitiesInSequence(database: D1Database, runId: string): D1PreparedStatement {
+  return database
+    .prepare("SELECT request_id, url FROM source_requests WHERE ingestion_run_id = ? ORDER BY sequence_number")
+    .bind(runId);
 }

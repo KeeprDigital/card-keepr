@@ -1,29 +1,15 @@
-import {
-  insertCheckedLegalityProjectionFixture,
-  disableLegalityPublicationTriggers,
-} from "./query-helpers/legality-guards";
-import { publishLegalityRuleFactsStatement } from "../../../src/catalogue/legality/legality-publication-repository";
-import {
-  dropSourceRequestPlanGuard,
-  dropCollectionPlanDiscoveryGuard,
-  dropEvidencePlanOriginGuard,
-  inspectEvidencePlanCount,
-  inspectSourceRequestIds,
-  inspectCollectionPlanCount,
-} from "./query-helpers/collection-resume";
-import {
-  sourceRequestInsertionStatement,
-  officialCollectionPlanInsertionStatement,
-  evidencePlanInsertionStatement,
-} from "../../../src/catalogue/source-evidence/source-plan-repository";
-import * as ingestionQueries from "./query-helpers/ingestion";
-import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
-import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
-import * as legalityQueries from "./query-helpers/legality";
 import { applyD1Migrations } from "cloudflare:test";
 import { expect, test } from "vitest";
+import fusionLivePolicyDetail from "../../../acceptance/fixtures/retained-official-source/fusion-world-en-policy-detail.json";
+import fusionLivePolicyRoot from "../../../acceptance/fixtures/retained-official-source/fusion-world-en-policy-live.json";
+import { publishLegalityRuleFactsStatement } from "../../../src/catalogue/legality/legality-publication-repository";
 import { catalogueStore, sha256 } from "../../../src/catalogue/shared";
-import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
+import {
+  evidencePlanInsertionStatement,
+  officialCollectionPlanInsertionStatement,
+  sourceRequestInsertionStatement,
+} from "../../../src/catalogue/source-evidence/source-plan-repository";
+import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import {
   approve,
   canonicalLegalityCardIdInvariantErrors,
@@ -43,8 +29,23 @@ import {
   testEnv,
   waitForState,
 } from "./contextual-legality-helpers";
-import fusionLivePolicyRoot from "../../../acceptance/fixtures/retained-official-source/fusion-world-en-policy-live.json";
-import fusionLivePolicyDetail from "../../../acceptance/fixtures/retained-official-source/fusion-world-en-policy-detail.json";
+import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
+import {
+  dropCollectionPlanDiscoveryGuard,
+  dropEvidencePlanOriginGuard,
+  dropSourceRequestPlanGuard,
+  inspectCollectionPlanCount,
+  inspectEvidencePlanCount,
+  inspectSourceRequestIds,
+} from "./query-helpers/collection-resume";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as legalityQueries from "./query-helpers/legality";
+import {
+  disableLegalityPublicationTriggers,
+  insertCheckedLegalityProjectionFixture,
+} from "./query-helpers/legality-guards";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 
 installContextualLegalitySuite();
 
@@ -639,7 +640,12 @@ test("legality freshness remains independent across partial regional refreshes",
       ],
     });
     const runId = requiredString(started, "id");
-    expect((await request(`/v1/ingestion-runs/${runId}/collection/resume`, {}, observedAt)).response.status).toBe(202);
+    await collectFixtureEvidence(
+      testEnv.CATALOGUE_DB,
+      testEnv.EVIDENCE_OBJECTS,
+      testEnv.OFFICIAL_SOURCE_TRANSPORT,
+      runId,
+    );
     await waitForState(runId, "parsing");
     const reconciled = await reconcile(runId, observedAt);
     expect(reconciled.response.status).toBe(200);
@@ -770,7 +776,12 @@ test("a versioned production adapter derives and exports an exact representable 
     ],
   });
   const seededRunId = requiredString(seeded, "id");
-  expect((await request(`/v1/ingestion-runs/${seededRunId}/collection/resume`, {})).response.status).toBe(202);
+  await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    testEnv.OFFICIAL_SOURCE_TRANSPORT,
+    seededRunId,
+  );
   await waitForState(seededRunId, "parsing");
   const seededCandidate = await reconcile(seededRunId);
   expect(seededCandidate.response.status).toBe(200);
@@ -1033,7 +1044,12 @@ test("the One Piece production release surface publishes release timing through 
     ],
   });
   const seededRunId = requiredString(seeded, "id");
-  expect((await request(`/v1/ingestion-runs/${seededRunId}/collection/resume`, {})).response.status).toBe(202);
+  await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    testEnv.OFFICIAL_SOURCE_TRANSPORT,
+    seededRunId,
+  );
   await waitForState(seededRunId, "parsing");
   const seededCandidate = await reconcile(seededRunId);
   expect(seededCandidate.response.status).toBe(200);
@@ -1107,7 +1123,7 @@ test("a repository Evidence Plan rejects an adapter origin mismatch without the 
       gameProfileVersion: "one-piece@1",
       adapterVersion: "fixture-one-piece-json@3",
       requestPlanJson: "{}",
-      planOrigin: "production",
+      planOrigin: "synthetic_fixture",
     }).run(),
   ).rejects.toThrow(/evidence_plan_origin_mismatch/);
   expect(await inspectEvidencePlanCount(testEnv.CATALOGUE_DB, runId).first("count")).toBe(0);
