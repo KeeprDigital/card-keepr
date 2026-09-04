@@ -12,10 +12,7 @@ import {
   showCollection,
   waitForEvidenceCondition,
 } from "./runtime-helpers";
-import {
-  fusionWorldRequestCapacity,
-  pauseRunAtCapacity,
-} from "./capacity-pause-helpers";
+import { fusionWorldRequestCapacity, pauseRunAtCapacity } from "./capacity-pause-helpers";
 
 installRuntimeSuite();
 
@@ -49,24 +46,23 @@ type CollectionInspection = {
 };
 
 test("a capacity-paused production-shaped run reports aggregated capacity, request, evidence, and pacing facts", async () => {
-  const { runId, root, snapshotId } = await pauseRunAtCapacity(
-    "collection_inspection_capacity_001",
-    "observed",
-  );
+  const { runId, root, snapshotId } = await pauseRunAtCapacity("collection_inspection_capacity_001", "observed");
   const pause = await env.CATALOGUE_DB.prepare(
     `SELECT paused_at, overflow_request_count, required_capacity
      FROM ingestion_run_capacity_pauses WHERE ingestion_run_id = ?`,
-  ).bind(runId).first<{
-    paused_at: string;
-    overflow_request_count: number;
-    required_capacity: number;
-  }>();
+  )
+    .bind(runId)
+    .first<{
+      paused_at: string;
+      overflow_request_count: number;
+      required_capacity: number;
+    }>();
   if (pause === null) throw new Error("capacity pause record is absent");
-  const snapshotBytes = await env.CATALOGUE_DB.prepare(
-    "SELECT content_byte_length FROM source_snapshots WHERE id = ?",
-  ).bind(snapshotId).first("content_byte_length");
+  const snapshotBytes = await env.CATALOGUE_DB.prepare("SELECT content_byte_length FROM source_snapshots WHERE id = ?")
+    .bind(snapshotId)
+    .first("content_byte_length");
 
-  const document = await showCollection(runId) as unknown as Record<string, unknown> & {
+  const document = (await showCollection(runId)) as unknown as Record<string, unknown> & {
     collection: CollectionInspection;
   };
   const collection = document.collection;
@@ -81,28 +77,32 @@ test("a capacity-paused production-shaped run reports aggregated capacity, reque
 
   // Capacity is reported per Source Lineage with the generation, the used
   // and remaining identities, and the capacity the rejected batch requires.
-  expect(collection.capacity).toEqual([{
-    source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@9",
-    capacity_generation: 1,
-    request_capacity: fusionWorldRequestCapacity,
-    used_capacity: fusionWorldRequestCapacity,
-    remaining_capacity: 0,
-    required_capacity: pause.required_capacity,
-    overflow_request_count: pause.overflow_request_count,
-  }]);
+  expect(collection.capacity).toEqual([
+    {
+      source_lineage: "fusion-world-en",
+      adapter_version: "fusion-world-en@9",
+      capacity_generation: 1,
+      request_capacity: fusionWorldRequestCapacity,
+      used_capacity: fusionWorldRequestCapacity,
+      remaining_capacity: 0,
+      required_capacity: pause.required_capacity,
+      overflow_request_count: pause.overflow_request_count,
+    },
+  ]);
 
   // Request counts group by lineage, role, and lifecycle state.
   expect(collection.requests).toEqual({
     total: fusionWorldRequestCapacity,
     by_state: { captured: 1, observed: fusionWorldRequestCapacity - 1 },
     by_role: { surface: 1, detail: fusionWorldRequestCapacity - 1 },
-    by_lineage: [{
-      source_lineage: "fusion-world-en",
-      total: fusionWorldRequestCapacity,
-      by_state: { captured: 1, observed: fusionWorldRequestCapacity - 1 },
-      by_role: { surface: 1, detail: fusionWorldRequestCapacity - 1 },
-    }],
+    by_lineage: [
+      {
+        source_lineage: "fusion-world-en",
+        total: fusionWorldRequestCapacity,
+        by_state: { captured: 1, observed: fusionWorldRequestCapacity - 1 },
+        by_role: { surface: 1, detail: fusionWorldRequestCapacity - 1 },
+      },
+    ],
   });
 
   // Evidence volume is counted, never materialized: snapshot count and
@@ -137,12 +137,14 @@ test("a capacity-paused production-shaped run reports aggregated capacity, reque
   expect(collection.pacing).toMatchObject({
     mode: "immediate",
     interval_ms: 500,
-    hosts: [{
-      hostname: "www.dbs-cardgame.com",
-      pending_request_count: 0,
-      captured_request_count: 1,
-      waiting_ms: 0,
-    }],
+    hosts: [
+      {
+        hostname: "www.dbs-cardgame.com",
+        pending_request_count: 0,
+        captured_request_count: 1,
+        waiting_ms: 0,
+      },
+    ],
   });
   expect(collection.estimate).toEqual({
     advisory: true,
@@ -166,17 +168,14 @@ test("a transport-paused run reports retry counts, the latest safe failure, and 
     "collection_inspection_retry_001",
     "https://inspection-official-source.invalid/unavailable",
   );
-  const started = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/resume`,
-    "POST",
-  );
+  const started = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(started.status).toBe(202);
   await started.body?.cancel();
-  const paused = await waitForEvidenceCondition(
+  const paused = (await waitForEvidenceCondition(
     run.id,
     (current) => current.state === "paused",
     12_000,
-  ) as unknown as Record<string, unknown> & { collection: CollectionInspection };
+  )) as unknown as Record<string, unknown> & { collection: CollectionInspection };
   const collection = paused.collection;
   expect(collection).toMatchObject({
     state: "paused",
@@ -186,23 +185,27 @@ test("a transport-paused run reports retry counts, the latest safe failure, and 
     total: 1,
     by_state: { pending: 1 },
     by_role: { surface: 1 },
-    by_lineage: [{
-      source_lineage: "one-piece-en",
-      total: 1,
-      by_state: { pending: 1 },
-      by_role: { surface: 1 },
-    }],
+    by_lineage: [
+      {
+        source_lineage: "one-piece-en",
+        total: 1,
+        by_state: { pending: 1 },
+        by_role: { surface: 1 },
+      },
+    ],
   });
-  expect(collection.capacity).toEqual([{
-    source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@3",
-    capacity_generation: 1,
-    request_capacity: 5_000,
-    used_capacity: 1,
-    remaining_capacity: 4_999,
-    required_capacity: null,
-    overflow_request_count: null,
-  }]);
+  expect(collection.capacity).toEqual([
+    {
+      source_lineage: "one-piece-en",
+      adapter_version: "fixture-one-piece-json@3",
+      capacity_generation: 1,
+      request_capacity: 5_000,
+      used_capacity: 1,
+      remaining_capacity: 4_999,
+      required_capacity: null,
+      overflow_request_count: null,
+    },
+  ]);
   expect(collection.evidence).toMatchObject({
     snapshot_count: 0,
     retained_byte_total: 0,
@@ -225,13 +228,15 @@ test("a transport-paused run reports retry counts, the latest safe failure, and 
     state: "pending",
     attempt_count: 4,
   });
-  expect(collection.pacing.hosts).toEqual([{
-    hostname: "inspection-official-source.invalid",
-    pending_request_count: 1,
-    captured_request_count: 0,
-    next_request_not_before: expect.any(String),
-    waiting_ms: expect.any(Number),
-  }]);
+  expect(collection.pacing.hosts).toEqual([
+    {
+      hostname: "inspection-official-source.invalid",
+      pending_request_count: 1,
+      captured_request_count: 0,
+      next_request_not_before: expect.any(String),
+      waiting_ms: expect.any(Number),
+    },
+  ]);
   expect(collection.estimate).toMatchObject({
     advisory: true,
     pending_request_count: 1,
@@ -247,25 +252,26 @@ test("a transport-paused run reports retry counts, the latest safe failure, and 
   expect(workflow.attempts.length).toBeGreaterThanOrEqual(2);
   for (const attempt of workflow.attempts) {
     expect([
-      "queued", "running", "paused", "errored", "terminated", "complete",
-      "waiting", "waiting_for_pause", "unknown", "unavailable",
+      "queued",
+      "running",
+      "paused",
+      "errored",
+      "terminated",
+      "complete",
+      "waiting",
+      "waiting_for_pause",
+      "unknown",
+      "unavailable",
     ]).toContain(attempt.status);
   }
-  expect(workflow.attempts.filter((attempt) => attempt.kind === "parent"))
-    .toHaveLength(1);
-  expect(workflow.attempts.filter((attempt) => attempt.current))
-    .toHaveLength(2);
-  expect(workflow.current_attempt?.status).toBe(
-    workflow.attempts.find((attempt) => attempt.kind === "parent")?.status,
-  );
+  expect(workflow.attempts.filter((attempt) => attempt.kind === "parent")).toHaveLength(1);
+  expect(workflow.attempts.filter((attempt) => attempt.current)).toHaveLength(2);
+  expect(workflow.current_attempt?.status).toBe(workflow.attempts.find((attempt) => attempt.kind === "parent")?.status);
   expect(paused.actions).toEqual(["resume", "terminate"]);
 });
 
 test("per-request detail is bounded while aggregate counts stay exact", async () => {
-  const { runId } = await pauseRunAtCapacity(
-    "collection_inspection_bounded_001",
-    "observed",
-  );
+  const { runId } = await pauseRunAtCapacity("collection_inspection_bounded_001", "observed");
   // Retain 250 synthetic failed attempts across filler requests so the
   // attempt history exceeds the detail bound.
   await env.CATALOGUE_DB.prepare(
@@ -284,8 +290,10 @@ test("per-request detail is bounded while aggregate counts stay exact", async ()
               printf('%02d', n % 60) || '.000Z',
             'http_failure', 503, '{}', NULL, NULL
      FROM filler`,
-  ).bind(runId).run();
-  const document = await showCollection(runId) as unknown as Record<string, unknown> & {
+  )
+    .bind(runId)
+    .run();
+  const document = (await showCollection(runId)) as unknown as Record<string, unknown> & {
     collection: CollectionInspection;
     diagnostics: Array<{ request_id: string; attempt_number: number }>;
   };
@@ -321,10 +329,7 @@ test("per-request detail is bounded while aggregate counts stay exact", async ()
 }, 60_000);
 
 test("request counts group listing, detail, product-detail, image, and surface roles per lineage", async () => {
-  const run = await createCollection(
-    "collection_inspection_roles_001",
-    "https://official-source.invalid/cards",
-  );
+  const run = await createCollection("collection_inspection_roles_001", "https://official-source.invalid/cards");
   const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
   const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
   if (root === undefined) throw new Error("pending root request missing");
@@ -340,37 +345,36 @@ test("request counts group listing, detail, product-detail, image, and surface r
     { role: "image" as const, url: "https://official-source.invalid/images/3.png" },
     { role: "image" as const, url: "https://official-source.invalid/images/4.png" },
   ].map((request) => ({ ...request, headers: { accept: "*/*" } }));
-  await appendDiscoveredEvidenceRequests(
-    env.CATALOGUE_DB,
-    storedRun,
-    root,
-    discovered,
-  );
-  const document = await showCollection(run.id) as unknown as {
+  await appendDiscoveredEvidenceRequests(env.CATALOGUE_DB, storedRun, root, discovered);
+  const document = (await showCollection(run.id)) as unknown as {
     collection: CollectionInspection;
   };
   expect(document.collection.requests).toEqual({
     total: 11,
     by_state: { pending: 11 },
     by_role: { surface: 1, listing: 2, detail: 3, product_detail: 1, image: 4 },
-    by_lineage: [{
-      source_lineage: "one-piece-en",
-      total: 11,
-      by_state: { pending: 11 },
-      by_role: {
-        surface: 1,
-        listing: 2,
-        detail: 3,
-        product_detail: 1,
-        image: 4,
+    by_lineage: [
+      {
+        source_lineage: "one-piece-en",
+        total: 11,
+        by_state: { pending: 11 },
+        by_role: {
+          surface: 1,
+          listing: 2,
+          detail: 3,
+          product_detail: 1,
+          image: 4,
+        },
       },
-    }],
+    ],
   });
-  expect(document.collection.capacity).toMatchObject([{
-    source_lineage: "one-piece-en",
-    used_capacity: 11,
-    remaining_capacity: 4_989,
-  }]);
+  expect(document.collection.capacity).toMatchObject([
+    {
+      source_lineage: "one-piece-en",
+      used_capacity: 11,
+      remaining_capacity: 4_989,
+    },
+  ]);
 });
 
 // workerd's D1 caps LIKE patterns at 50 characters, so a progress query that
@@ -379,25 +383,17 @@ test("request counts group listing, detail, product-detail, image, and surface r
 // hostname here is 64 characters and stays live in the host pacing table
 // with an open request, which is exactly the row the progress query scans.
 test("collection inspection succeeds for a 64-character Official Source hostname", async () => {
-  const hostname = `${
-    "inspection-long-hostname".padEnd(40, "x")
-  }-official-source.invalid`;
+  const hostname = `${"inspection-long-hostname".padEnd(40, "x")}-official-source.invalid`;
   expect(hostname).toHaveLength(64);
-  const run = await createCollection(
-    "collection_inspection_long_hostname_001",
-    `https://${hostname}/unavailable`,
-  );
-  const started = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/resume`,
-    "POST",
-  );
+  const run = await createCollection("collection_inspection_long_hostname_001", `https://${hostname}/unavailable`);
+  const started = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(started.status).toBe(202);
   await started.body?.cancel();
-  const paused = await waitForEvidenceCondition(
+  const paused = (await waitForEvidenceCondition(
     run.id,
     (current) => current.state === "paused",
     12_000,
-  ) as unknown as Record<string, unknown> & { collection: CollectionInspection };
+  )) as unknown as Record<string, unknown> & { collection: CollectionInspection };
   const collection = paused.collection;
   expect(collection).toMatchObject({
     state: "paused",
@@ -409,11 +405,13 @@ test("collection inspection succeeds for a 64-character Official Source hostname
     hostname,
     state: "pending",
   });
-  expect(collection.pacing.hosts).toEqual([{
-    hostname,
-    pending_request_count: 1,
-    captured_request_count: 0,
-    next_request_not_before: expect.any(String),
-    waiting_ms: expect.any(Number),
-  }]);
+  expect(collection.pacing.hosts).toEqual([
+    {
+      hostname,
+      pending_request_count: 1,
+      captured_request_count: 0,
+      next_request_not_before: expect.any(String),
+      waiting_ms: expect.any(Number),
+    },
+  ]);
 });

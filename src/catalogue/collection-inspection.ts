@@ -7,10 +7,7 @@
 // status document. Nothing here carries request headers, credentials,
 // response bodies, or unvetted provider text: identifiers, hostnames,
 // bounded counters, timestamps, and closed machine codes only.
-import {
-  toleratedPrintingImageFailureCodes,
-  type EvidencePlan,
-} from "./source-evidence-model";
+import { toleratedPrintingImageFailureCodes, type EvidencePlan } from "./source-evidence-model";
 import type {
   CurrentPause,
   ObservationSetRow,
@@ -93,15 +90,14 @@ export async function collectionInspection(
   input: CollectionInspectionInput,
 ): Promise<{ collection: Record<string, unknown>; counts: EvidenceCounts }> {
   const runId = input.run.id;
-  const [groups, counts, latestFailure, currentRequest, hosts, failedImages] =
-    await Promise.all([
-      // Dynamically discovered and collection-plan identities carry their
-      // Source Lineage as a prefix and group by it; every other identity is
-      // an initial Evidence Plan request that resolves through its plan, so
-      // it groups by its whole identity.
-      database
-        .prepare(
-          `SELECT
+  const [groups, counts, latestFailure, currentRequest, hosts, failedImages] = await Promise.all([
+    // Dynamically discovered and collection-plan identities carry their
+    // Source Lineage as a prefix and group by it; every other identity is
+    // an initial Evidence Plan request that resolves through its plan, so
+    // it groups by its whole identity.
+    database
+      .prepare(
+        `SELECT
              CASE WHEN instr(request_id, ':') > 0
                AND substr(request_id, 1, instr(request_id, ':') - 1)
                  IN (SELECT value FROM json_each(?2))
@@ -112,15 +108,12 @@ export async function collectionInspection(
            WHERE ingestion_run_id = ?1
            GROUP BY group_key, request_role, state
            ORDER BY group_key, request_role, state`,
-        )
-        .bind(
-          runId,
-          JSON.stringify(input.plans.map((plan) => plan.source_lineage)),
-        )
-        .all<RequestGroupRow>(),
-      database
-        .prepare(
-          `SELECT
+      )
+      .bind(runId, JSON.stringify(input.plans.map((plan) => plan.source_lineage)))
+      .all<RequestGroupRow>(),
+    database
+      .prepare(
+        `SELECT
              (SELECT COUNT(*) FROM source_snapshots
               WHERE ingestion_run_id = ?1) AS snapshot_count,
              (SELECT COALESCE(SUM(content_byte_length), 0)
@@ -140,12 +133,12 @@ export async function collectionInspection(
               WHERE ingestion_run_id = ?1
                 AND outcome NOT IN ${successfulOutcomes}
              ) AS failed_attempt_count`,
-        )
-        .bind(runId)
-        .first<EvidenceCounts>(),
-      database
-        .prepare(
-          `SELECT attempts.request_id, attempts.outcome, attempts.http_status,
+      )
+      .bind(runId)
+      .first<EvidenceCounts>(),
+    database
+      .prepare(
+        `SELECT attempts.request_id, attempts.outcome, attempts.http_status,
                   attempts.attempt_number, attempts.completed_at,
                   ${hostnameSql} AS hostname
            FROM source_fetch_attempts AS attempts
@@ -157,21 +150,21 @@ export async function collectionInspection(
            ORDER BY attempts.completed_at DESC, attempts.request_id DESC,
                     attempts.attempt_number DESC
            LIMIT 1`,
-        )
-        .bind(runId)
-        .first<{
-          request_id: string;
-          outcome: string;
-          http_status: number | null;
-          attempt_number: number;
-          completed_at: string;
-          hostname: string;
-        }>(),
-      // The request most recently worked on: the newest fetch attempt or
-      // capture operation, whichever is later.
-      database
-        .prepare(
-          `SELECT requests.request_id, requests.request_role, requests.state,
+      )
+      .bind(runId)
+      .first<{
+        request_id: string;
+        outcome: string;
+        http_status: number | null;
+        attempt_number: number;
+        completed_at: string;
+        hostname: string;
+      }>(),
+    // The request most recently worked on: the newest fetch attempt or
+    // capture operation, whichever is later.
+    database
+      .prepare(
+        `SELECT requests.request_id, requests.request_role, requests.state,
                   ${hostnameSql} AS hostname,
                   (SELECT COUNT(*) FROM source_fetch_attempts AS attempts
                    WHERE attempts.ingestion_run_id = requests.ingestion_run_id
@@ -191,19 +184,19 @@ export async function collectionInspection(
            JOIN source_requests AS requests
              ON requests.ingestion_run_id = ?1
             AND requests.request_id = newest.request_id`,
-        )
-        .bind(runId)
-        .first<{
-          request_id: string;
-          request_role: string;
-          state: string;
-          hostname: string;
-          attempt_count: number;
-          last_attempt_at: string;
-        }>(),
-      database
-        .prepare(
-          `SELECT open.hostname,
+      )
+      .bind(runId)
+      .first<{
+        request_id: string;
+        request_role: string;
+        state: string;
+        hostname: string;
+        attempt_count: number;
+        last_attempt_at: string;
+      }>(),
+    database
+      .prepare(
+        `SELECT open.hostname,
                   SUM(CASE WHEN open.state = 'pending' THEN 1 ELSE 0 END)
                     AS pending_request_count,
                   SUM(CASE WHEN open.state = 'captured' THEN 1 ELSE 0 END)
@@ -219,22 +212,22 @@ export async function collectionInspection(
              ON pacing.hostname = open.hostname
            GROUP BY open.hostname
            ORDER BY open.hostname`,
-        )
-        .bind(runId)
-        .all<{
-          hostname: string;
-          pending_request_count: number;
-          captured_request_count: number;
-          next_request_not_before: string | null;
-        }>(),
-      // Printing Images that failed under a tolerated code (exhausted
-      // transport retries, a missing or redirected file, a rejected
-      // revalidation, a body-contract violation): failures the run completed
-      // around. The list is bounded like every other per-request detail; the
-      // count is exact.
-      database
-        .prepare(
-          `SELECT requests.request_id, ${hostnameSql} AS hostname,
+      )
+      .bind(runId)
+      .all<{
+        hostname: string;
+        pending_request_count: number;
+        captured_request_count: number;
+        next_request_not_before: string | null;
+      }>(),
+    // Printing Images that failed under a tolerated code (exhausted
+    // transport retries, a missing or redirected file, a rejected
+    // revalidation, a body-contract violation): failures the run completed
+    // around. The list is bounded like every other per-request detail; the
+    // count is exact.
+    database
+      .prepare(
+        `SELECT requests.request_id, ${hostnameSql} AS hostname,
                   requests.failure_code,
                   (SELECT COUNT(*) FROM source_fetch_attempts AS attempts
                    WHERE attempts.ingestion_run_id = requests.ingestion_run_id
@@ -248,27 +241,23 @@ export async function collectionInspection(
              AND requests.failure_code IN (SELECT value FROM json_each(?2))
            ORDER BY requests.request_id
            LIMIT ?3`,
-        )
-        .bind(
-          runId,
-          JSON.stringify(toleratedPrintingImageFailureCodes),
-          inspectionDetailLimit,
-        )
-        .all<{
-          request_id: string;
-          hostname: string;
-          failure_code: string;
-          attempt_count: number;
-          total: number;
-        }>(),
-    ]);
+      )
+      .bind(runId, JSON.stringify(toleratedPrintingImageFailureCodes), inspectionDetailLimit)
+      .all<{
+        request_id: string;
+        hostname: string;
+        failure_code: string;
+        attempt_count: number;
+        total: number;
+      }>(),
+  ]);
   if (counts === null) throw new Error("Evidence counts are unavailable.");
   const failedImageCount = failedImages.results[0]?.total ?? 0;
   const requests = groupedRequests(groups.results, input.plans);
-  const capacityPause = input.run.state === "paused" &&
-      input.pause?.reason === "source_request_capacity_exhausted"
-    ? input.pause.document
-    : null;
+  const capacityPause =
+    input.run.state === "paused" && input.pause?.reason === "source_request_capacity_exhausted"
+      ? input.pause.document
+      : null;
   const capacity = input.plans
     .map((plan) => plan.source_lineage)
     .filter((lineage, index, all) => all.indexOf(lineage) === index)
@@ -277,40 +266,27 @@ export async function collectionInspection(
       if (policy === undefined) {
         throw new Error(`Source Lineage ${lineage} has no capacity policy.`);
       }
-      const used = requests.by_lineage.find(
-        (group) => group.source_lineage === lineage,
-      )?.total ?? 0;
-      const paused = capacityPause !== null &&
-        capacityPause.source_lineage === lineage;
+      const used = requests.by_lineage.find((group) => group.source_lineage === lineage)?.total ?? 0;
+      const paused = capacityPause !== null && capacityPause.source_lineage === lineage;
       return {
         source_lineage: lineage,
-        adapter_version: input.plans.find(
-          (plan) => plan.source_lineage === lineage,
-        )!.adapter_version,
+        adapter_version: input.plans.find((plan) => plan.source_lineage === lineage)!.adapter_version,
         capacity_generation: policy.capacity_generation,
         request_capacity: policy.request_capacity,
         used_capacity: used,
         remaining_capacity: Math.max(0, policy.request_capacity - used),
-        required_capacity: paused
-          ? numberOrNull(capacityPause.required_capacity)
-          : null,
-        overflow_request_count: paused
-          ? numberOrNull(capacityPause.overflow_request_count)
-          : null,
+        required_capacity: paused ? numberOrNull(capacityPause.required_capacity) : null,
+        overflow_request_count: paused ? numberOrNull(capacityPause.overflow_request_count) : null,
       };
     });
   const pacingHosts = hosts.results.map((host) => {
-    const deadline = host.next_request_not_before === null
-      ? null
-      : Date.parse(host.next_request_not_before);
+    const deadline = host.next_request_not_before === null ? null : Date.parse(host.next_request_not_before);
     return {
       hostname: host.hostname,
       pending_request_count: host.pending_request_count,
       captured_request_count: host.captured_request_count,
       next_request_not_before: host.next_request_not_before,
-      waiting_ms: deadline === null || Number.isNaN(deadline)
-        ? 0
-        : Math.max(0, deadline - input.nowMs),
+      waiting_ms: deadline === null || Number.isNaN(deadline) ? 0 : Math.max(0, deadline - input.nowMs),
     };
   });
   // Hosts collect in parallel and each host's requests are paced
@@ -318,22 +294,17 @@ export async function collectionInspection(
   // pending fetches at the configured interval, plus whatever pacing wait it
   // is already serving. Advisory only: it ignores transport time, retries,
   // parse work, and dynamic discovery that has not happened yet.
-  const minimumRemainingMs = input.pacing.mode === "immediate"
-    ? 0
-    : Math.max(
-      0,
-      ...pacingHosts.map((host) =>
-        host.waiting_ms + host.pending_request_count * input.pacing.interval_ms
-      ),
-    );
+  const minimumRemainingMs =
+    input.pacing.mode === "immediate"
+      ? 0
+      : Math.max(
+          0,
+          ...pacingHosts.map((host) => host.waiting_ms + host.pending_request_count * input.pacing.interval_ms),
+        );
   const collection: Record<string, unknown> = {
     state: input.run.state,
-    pause_reason: input.run.state === "paused"
-      ? input.pause?.reason ?? null
-      : null,
-    paused_at: input.run.state === "paused"
-      ? input.pause?.paused_at ?? null
-      : null,
+    pause_reason: input.run.state === "paused" ? (input.pause?.reason ?? null) : null,
+    paused_at: input.run.state === "paused" ? (input.pause?.paused_at ?? null) : null,
     started_at: input.run.started_at,
     last_progress_at: input.lastProgressAt,
     collection_completed_at: input.run.collection_completed_at,
@@ -343,18 +314,20 @@ export async function collectionInspection(
     requests,
     evidence: {
       ...counts,
-      latest_failure: latestFailure === null ? null : {
-        request_id: latestFailure.request_id,
-        hostname: latestFailure.hostname,
-        classification: latestFailure.outcome,
-        http_status: latestFailure.http_status,
-        attempt_number: latestFailure.attempt_number,
-        at: latestFailure.completed_at,
-      },
+      latest_failure:
+        latestFailure === null
+          ? null
+          : {
+              request_id: latestFailure.request_id,
+              hostname: latestFailure.hostname,
+              classification: latestFailure.outcome,
+              http_status: latestFailure.http_status,
+              attempt_number: latestFailure.attempt_number,
+              at: latestFailure.completed_at,
+            },
       detail_limit: inspectionDetailLimit,
       snapshots_truncated: counts.snapshot_count > inspectionDetailLimit,
-      observation_sets_truncated:
-        counts.observation_set_count > inspectionDetailLimit,
+      observation_sets_truncated: counts.observation_set_count > inspectionDetailLimit,
       diagnostics_truncated: counts.fetch_attempt_count > inspectionDetailLimit,
     },
     failed_images: {
@@ -369,14 +342,17 @@ export async function collectionInspection(
       })),
     },
     progress: {
-      current_request: currentRequest === null ? null : {
-        request_id: currentRequest.request_id,
-        hostname: currentRequest.hostname,
-        role: currentRequest.request_role,
-        state: currentRequest.state,
-        attempt_count: currentRequest.attempt_count,
-        last_attempt_at: currentRequest.last_attempt_at,
-      },
+      current_request:
+        currentRequest === null
+          ? null
+          : {
+              request_id: currentRequest.request_id,
+              hostname: currentRequest.hostname,
+              role: currentRequest.request_role,
+              state: currentRequest.state,
+              attempt_count: currentRequest.attempt_count,
+              last_attempt_at: currentRequest.last_attempt_at,
+            },
     },
     pacing: {
       mode: input.pacing.mode,
@@ -385,14 +361,8 @@ export async function collectionInspection(
     },
     estimate: {
       advisory: true,
-      pending_request_count: pacingHosts.reduce(
-        (total, host) => total + host.pending_request_count,
-        0,
-      ),
-      captured_request_count: pacingHosts.reduce(
-        (total, host) => total + host.captured_request_count,
-        0,
-      ),
+      pending_request_count: pacingHosts.reduce((total, host) => total + host.pending_request_count, 0),
+      captured_request_count: pacingHosts.reduce((total, host) => total + host.captured_request_count, 0),
       active_host_count: pacingHosts.length,
       minimum_remaining_ms: minimumRemainingMs,
     },
@@ -401,9 +371,7 @@ export async function collectionInspection(
 }
 
 function numberOrNull(value: unknown): number | null {
-  return typeof value === "number" && Number.isSafeInteger(value)
-    ? value
-    : null;
+  return typeof value === "number" && Number.isSafeInteger(value) ? value : null;
 }
 
 type RequestGrouping = {
@@ -421,20 +389,13 @@ type RequestGrouping = {
 // A group key is either a Source Lineage (the prefix of discovered and
 // collection-plan identities) or one initial Evidence Plan identity, which
 // resolves through the plan that declared it.
-function groupedRequests(
-  rows: readonly RequestGroupRow[],
-  plans: readonly EvidencePlan[],
-): RequestGrouping {
+function groupedRequests(rows: readonly RequestGroupRow[], plans: readonly EvidencePlan[]): RequestGrouping {
   const lineages = new Set(plans.map((plan) => plan.source_lineage));
   const lineageOfPlanRequest = new Map(
-    plans.flatMap((plan) =>
-      plan.requests.map(({ id }) => [id, plan.source_lineage] as const)
-    ),
+    plans.flatMap((plan) => plan.requests.map(({ id }) => [id, plan.source_lineage] as const)),
   );
   const lineageOf = (row: RequestGroupRow): string =>
-    lineages.has(row.group_key)
-      ? row.group_key
-      : lineageOfPlanRequest.get(row.group_key) ?? row.group_key;
+    lineages.has(row.group_key) ? row.group_key : (lineageOfPlanRequest.get(row.group_key) ?? row.group_key);
   const grouping: RequestGrouping = {
     total: 0,
     by_state: {},
@@ -452,12 +413,11 @@ function groupedRequests(
     for (const target of [grouping, group]) {
       target.total += row.count;
       target.by_state[row.state] = (target.by_state[row.state] ?? 0) + row.count;
-      target.by_role[row.request_role] =
-        (target.by_role[row.request_role] ?? 0) + row.count;
+      target.by_role[row.request_role] = (target.by_role[row.request_role] ?? 0) + row.count;
     }
   }
   grouping.by_lineage = [...byLineage.values()].sort((left, right) =>
-    left.source_lineage.localeCompare(right.source_lineage)
+    left.source_lineage.localeCompare(right.source_lineage),
   );
   return grouping;
 }
@@ -503,17 +463,14 @@ export async function boundedEvidenceDetail(
       .all<AttemptRow>(),
   ]);
   return {
-    snapshots: snapshots.results.sort((left, right) =>
-      left.retrieved_at.localeCompare(right.retrieved_at) ||
-      left.id.localeCompare(right.id)
+    snapshots: snapshots.results.sort(
+      (left, right) => left.retrieved_at.localeCompare(right.retrieved_at) || left.id.localeCompare(right.id),
     ),
-    observationSets: observations.results.sort((left, right) =>
-      left.parsed_at.localeCompare(right.parsed_at) ||
-      left.id.localeCompare(right.id)
+    observationSets: observations.results.sort(
+      (left, right) => left.parsed_at.localeCompare(right.parsed_at) || left.id.localeCompare(right.id),
     ),
-    attempts: attempts.results.sort((left, right) =>
-      left.request_id.localeCompare(right.request_id) ||
-      left.attempt_number - right.attempt_number
+    attempts: attempts.results.sort(
+      (left, right) => left.request_id.localeCompare(right.request_id) || left.attempt_number - right.attempt_number,
     ),
   };
 }
