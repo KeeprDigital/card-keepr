@@ -1,9 +1,13 @@
+import { curatedRunStartGuardStatement } from "../curated";
 import {
+  atomicRepositoryStatement,
   type CatalogueStore,
   type IngestionRunState,
   ingestionRunTransitionSources,
   ingestionRunTransitionSql,
   repositoryStatements,
+  runStartGuardStatement,
+  runTransitionGuardStatement,
 } from "../shared";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
@@ -15,8 +19,8 @@ export function currentCatalogueStateStatement(database: CatalogueStore): D1Prep
 
 export function currentOperationStateStatement(database: CatalogueStore): D1PreparedStatement {
   return repositoryStatements(database).prepare(`SELECT active_ingestion_run_id,
-              active_release_id AS active_production_release_id,
-              active_release_expires_at AS active_production_release_expires_at,
+              active_production_release_id,
+              active_production_release_expires_at,
               active_recovery_id, recovery_health
       FROM operation_state
       WHERE singleton = 1`);
@@ -87,7 +91,7 @@ export function failRunStatement(
   database: CatalogueStore,
   input: Readonly<{ terminalAt: string; failureCode: string; runId: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
         SET state = 'failed',
             terminal_at = ?,
@@ -100,6 +104,7 @@ export function failRunStatement(
         WHERE id = ?
           AND ${ingestionRunTransitionSql(ingestionRunTransitionSources("failed"), "failed")}`)
     .bind(input.terminalAt, input.failureCode, input.runId);
+  return atomicRepositoryStatement(database, { statement, before: [failActiveRunGuardStatement(database, input)] });
 }
 
 export function runEvidencePlanStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
@@ -112,7 +117,7 @@ export function rejectRunStatement(
   database: CatalogueStore,
   input: Readonly<{ terminalAt: string; progressJson: string; approvalHistoryJson: string; runId: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
           SET state = 'rejected',
               terminal_at = ?,
@@ -120,6 +125,10 @@ export function rejectRunStatement(
               approval_history_json = ?
           WHERE id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "rejected")}`)
     .bind(input.terminalAt, input.progressJson, input.approvalHistoryJson, input.runId);
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "awaiting_approval", to: "rejected" })],
+  });
 }
 
 export function createFixtureRunStatement(
@@ -137,7 +146,7 @@ export function createFixtureRunStatement(
     diagnosticsJson: string;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`INSERT INTO ingestion_runs (
             id,
             state,
@@ -181,6 +190,10 @@ export function createFixtureRunStatement(
       input.progressJson,
       input.diagnosticsJson,
     );
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [runStartGuardStatement(database), curatedRunStartGuardStatement(database, input.runId)],
+  });
 }
 
 export function acquireRunLockStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
@@ -205,7 +218,7 @@ export function failFixtureRunStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
            SET state = 'failed',
                candidate_digest = ?,
@@ -226,6 +239,10 @@ export function failFixtureRunStatement(
       input.progressJson,
       input.runId,
     );
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "planning", to: "failed" })],
+  });
 }
 
 export function completeFixtureRunStatement(
@@ -238,7 +255,7 @@ export function completeFixtureRunStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
           SET state = 'awaiting_approval',
               candidate_digest = ?,
@@ -255,6 +272,12 @@ export function completeFixtureRunStatement(
       input.progressJson,
       input.runId,
     );
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [
+      runTransitionGuardStatement(database, { runId: input.runId, from: "reconciling", to: "awaiting_approval" }),
+    ],
+  });
 }
 
 export function runHasEvidencePlanStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
@@ -267,9 +290,26 @@ export function transitionRunStatement(
   database: CatalogueStore,
   input: Readonly<{ runId: string; from: IngestionRunState; to: IngestionRunState; progressJson: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
       SET state = ?, progress_json = ?
       WHERE id = ? AND ${ingestionRunTransitionSql(input.from, input.to)}`)
     .bind(input.to, input.progressJson, input.runId);
+  return atomicRepositoryStatement(database, { statement, after: [runTransitionGuardStatement(database, input)] });
+}
+
+function failActiveRunGuardStatement(
+  database: CatalogueStore,
+  input: Readonly<{ runId: string; failureCode: string }>,
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(`SELECT CASE WHEN NOT EXISTS (
+    SELECT 1 FROM ingestion_runs AS run WHERE id = ?
+      AND ${ingestionRunTransitionSql(ingestionRunTransitionSources("failed"), "failed")}
+      AND NOT EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND active_ingestion_run_id = run.id)
+      AND NOT (run.state = 'publishing' AND ? IN (
+        'publication_abandoned', 'publication_precondition_failed', 'export_verification_failed'
+      ))
+  ) THEN 1 ELSE json_extract('{}', 'run_not_active') END`)
+    .bind(input.runId, input.failureCode);
 }

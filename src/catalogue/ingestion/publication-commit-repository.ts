@@ -1,11 +1,22 @@
-import { type CatalogueStore, ingestionRunTransitionSql, repositoryStatements } from "../shared";
+import {
+  atomicRepositoryStatement,
+  type CatalogueStore,
+  ingestionRunTransitionSql,
+  repositoryStatements,
+  runTransitionGuardStatement,
+} from "../shared";
+import {
+  cataloguePublicationGuardStatement,
+  noChangeResultGuardStatement,
+  projectedPrintingImagesGuardStatement,
+} from "./publication-guards-repository";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
 export function recordNoChangeResultStatement(
   database: CatalogueStore,
   input: Readonly<{ runId: string; revisionId: string; candidateDigest: string; checkedAt: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`INSERT INTO ingestion_no_change_results (
             ingestion_run_id,
             catalogue_revision_id,
@@ -13,6 +24,10 @@ export function recordNoChangeResultStatement(
             checked_at
           ) VALUES (?, ?, ?, ?)`)
     .bind(input.runId, input.revisionId, input.candidateDigest, input.checkedAt);
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [noChangeResultGuardStatement(database, input.runId)],
+  });
 }
 
 export function approveNoChangeRunStatement(
@@ -25,7 +40,7 @@ export function approveNoChangeRunStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
           SET state = 'publishing',
               approval_json = ?,
@@ -34,13 +49,17 @@ export function approveNoChangeRunStatement(
               progress_json = ?
           WHERE id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "publishing")}`)
     .bind(input.approvalJson, input.idempotencyKey, input.approvalHistoryJson, input.progressJson, input.runId);
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "awaiting_approval", to: "publishing" })],
+  });
 }
 
 export function publishNoChangeRunStatement(
   database: CatalogueStore,
   input: Readonly<{ terminalAt: string; progressJson: string; revisionId: string; checkedAt: string; runId: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
           SET state = 'published',
               terminal_at = ?,
@@ -50,6 +69,10 @@ export function publishNoChangeRunStatement(
               freshness_checked_at = ?
           WHERE id = ? AND ${ingestionRunTransitionSql("publishing", "published")}`)
     .bind(input.terminalAt, input.progressJson, input.revisionId, input.checkedAt, input.runId);
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "publishing", to: "published" })],
+  });
 }
 
 export function publishCardDocumentsStatement(
@@ -150,7 +173,7 @@ export function publishRevisionPrintingImagesStatement(
   database: CatalogueStore,
   input: Readonly<{ revisionId: string; imagesJson: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`INSERT INTO revision_printing_images (
            catalogue_revision_id, image_id, printing_id,
            media_type, content_sha256, content_byte_length, object_key
@@ -164,6 +187,10 @@ export function publishRevisionPrintingImagesStatement(
            json_extract(value, '$.object_key')
          FROM json_each(?)`)
     .bind(input.revisionId, input.imagesJson);
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [projectedPrintingImagesGuardStatement(database, input)],
+  });
 }
 
 export function registerCatalogueRevisionStatement(
@@ -177,7 +204,7 @@ export function registerCatalogueRevisionStatement(
     candidateDigest: string | null;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`INSERT INTO catalogue_revisions (
           id,
           ingestion_run_id,
@@ -194,6 +221,10 @@ export function registerCatalogueRevisionStatement(
       input.expectedRevisionId,
       input.candidateDigest,
     );
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [cataloguePublicationGuardStatement(database, input.revisionId)],
+  });
 }
 
 export function registerAvailableQueryRevisionStatement(
@@ -277,7 +308,7 @@ export function publishApprovedRunStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
         SET state = 'published',
             published_revision_id = ?,
@@ -297,6 +328,10 @@ export function publishApprovedRunStatement(
       input.completedAt,
       input.runId,
     );
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "publishing", to: "published" })],
+  });
 }
 
 export function createPublicationBackupStatement(

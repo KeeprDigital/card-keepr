@@ -1,4 +1,11 @@
-import { type CatalogueStore, ingestionRunTransitionSql, repositoryStatements } from "../shared";
+import {
+  administrationOutcomeGuardStatement,
+  atomicRepositoryStatement,
+  type CatalogueStore,
+  ingestionRunTransitionSql,
+  repositoryStatements,
+  runTransitionGuardStatement,
+} from "../shared";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
 export function retainedPublicationCleanupStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
@@ -100,7 +107,7 @@ export function failCandidatePublicationStatement(
   database: CatalogueStore,
   input: Readonly<{ terminalAt: string; failureCode: string; runId: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
         SET state = 'failed',
             terminal_at = ?,
@@ -112,6 +119,10 @@ export function failCandidatePublicationStatement(
             )
         WHERE id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "failed")}`)
     .bind(input.terminalAt, input.failureCode, input.runId);
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "awaiting_approval", to: "failed" })],
+  });
 }
 
 export function failPublicationEvidencePlanStatement(
@@ -137,7 +148,7 @@ export function recordApprovalFailureStatement(
     claimVersion: number | null;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`INSERT INTO administration_idempotency (
           idempotency_key,
           operation,
@@ -160,13 +171,17 @@ export function recordApprovalFailureStatement(
       input.ownerToken,
       input.claimVersion,
     );
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [administrationOutcomeGuardStatement(database, input.key)],
+  });
 }
 
 export function failReservedPublicationStatement(
   database: CatalogueStore,
   input: Readonly<{ terminalAt: string; failureCode: string; runId: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
         SET state = 'failed',
             terminal_at = ?,
@@ -178,6 +193,10 @@ export function failReservedPublicationStatement(
             )
         WHERE id = ? AND ${ingestionRunTransitionSql("publishing", "failed")}`)
     .bind(input.terminalAt, input.failureCode, input.runId);
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "publishing", to: "failed" })],
+  });
 }
 
 export function schedulePublicationCleanupStatement(
