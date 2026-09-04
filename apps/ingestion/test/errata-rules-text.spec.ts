@@ -50,8 +50,8 @@ describe("Errata rules-text lifecycle", () => {
     ];
     for (const malformed of malformedDocuments) {
       await expect(parseOnePieceOfficialErrataHtml(malformed)).rejects.toMatchObject({
-        status: 422,
-        code: "source_parse_failed",
+        name: "AdapterParseFailure",
+        category: "source-contract",
         message: "An Official Erratum contains unsupported semantic content.",
       });
     }
@@ -64,8 +64,8 @@ describe("Errata rules-text lifecycle", () => {
     );
 
     await expect(parseOnePieceOfficialErrataHtml(malformed)).rejects.toMatchObject({
-      status: 422,
-      code: "source_parse_failed",
+      name: "AdapterParseFailure",
+      category: "source-contract",
       message: "An Official Erratum contains unsupported semantic content.",
     });
   });
@@ -76,8 +76,8 @@ describe("Errata rules-text lifecycle", () => {
       .replace("</ul>\n                <dl>", "</ul></aside>\n                <dl>");
 
     await expect(parseOnePieceOfficialErrataHtml(malformed)).rejects.toMatchObject({
-      status: 422,
-      code: "source_parse_failed",
+      name: "AdapterParseFailure",
+      category: "source-contract",
       message: "An Official Erratum contains unsupported semantic content.",
     });
   });
@@ -105,8 +105,8 @@ describe("Errata rules-text lifecycle", () => {
     );
 
     await expect(parseOnePieceOfficialErrataHtml(malformed)).rejects.toMatchObject({
-      status: 422,
-      code: "source_parse_failed",
+      name: "AdapterParseFailure",
+      category: "source-contract",
     });
   });
 
@@ -117,8 +117,8 @@ describe("Errata rules-text lifecycle", () => {
     );
 
     await expect(parseOnePieceOfficialErrataHtml(malformed)).rejects.toMatchObject({
-      status: 422,
-      code: "source_parse_failed",
+      name: "AdapterParseFailure",
+      category: "source-contract",
       message: "An Official Erratum field must contain exactly one value container.",
     });
   });
@@ -141,8 +141,8 @@ describe("Errata rules-text lifecycle", () => {
 
     for (const malformed of malformedDocuments) {
       await expect(parseOnePieceOfficialErrataHtml(malformed)).rejects.toMatchObject({
-        status: 422,
-        code: "source_parse_failed",
+        name: "AdapterParseFailure",
+        category: "source-contract",
       });
     }
   });
