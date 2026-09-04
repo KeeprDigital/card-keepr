@@ -180,7 +180,7 @@ export function readReconciliationPayloadChunks(database: D1Database): D1Prepare
            FROM (
              SELECT content
              FROM reconciliation_payload_chunks
-             WHERE ingestion_run_id = ingestion_runs.id
+             WHERE ingestion_run_id = ingestion_run_read.id
                AND payload_kind = 'candidate'
              ORDER BY chunk_index
            )
@@ -188,7 +188,7 @@ export function readReconciliationPayloadChunks(database: D1Database): D1Prepare
          ELSE candidate_json
        END AS candidate_json,
        candidate_catalogue_digest
-     FROM ingestion_runs
+     FROM ingestion_run_read
      WHERE id = ?`);
 }
 
@@ -304,7 +304,7 @@ export function readReconciliationPayloadChunksCandidateDigest(database: D1Datab
                 ORDER BY chunk_index
               )
             ) AS digest_payload_json
-     FROM ingestion_runs AS candidate
+     FROM ingestion_run_read AS candidate
      WHERE candidate.id = ?
      LIMIT 1`);
 }
