@@ -34,13 +34,9 @@ export function readCardSearchFtsStateForCardSearchFTSReconstructibleAcrossD1Exp
   return database.prepare(`SELECT
        (SELECT state FROM card_search_fts_state WHERE singleton = 1) AS state,
        (SELECT count(*) FROM revision_card_search_fts_rows
-        WHERE catalogue_revision_id = ?) AS indexed_chunks`);
-}
-
-export function setRevisionCardSearchChunksSearchText(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE revision_card_search_chunks
-     SET search_text = 'trigger-rebuilt-quartz'
-     WHERE catalogue_revision_id = ? AND card_id = ? AND field_ordinal = 1`);
+        WHERE catalogue_revision_id = ?) AS indexed_chunks,
+       (SELECT count(*) FROM sqlite_schema WHERE type = 'trigger'
+         AND name LIKE 'revision_card_search_chunks_%_fts') AS maintenance_triggers`);
 }
 
 export function readCardSearchFtsStateState(database: D1Database): D1PreparedStatement {
@@ -96,4 +92,26 @@ export function readCardSearchFtsStateStateOwnerTokenForProductionBackupBoundary
 
 export function dropObsoleteCardSearchTerms(database: D1Database): D1PreparedStatement {
   return database.prepare("DROP TABLE IF EXISTS revision_card_search_terms");
+}
+
+export function indexFixtureCardSearchRows(database: D1Database): D1PreparedStatement {
+  return database.prepare(`INSERT OR IGNORE INTO revision_card_search_fts_rows (
+    catalogue_revision_id, card_id, field_ordinal, chunk_ordinal
+  ) SELECT catalogue_revision_id, card_id, field_ordinal, chunk_ordinal
+    FROM revision_card_search_chunks
+    WHERE catalogue_revision_id = ? AND card_id = ?`);
+}
+
+export function indexFixtureCardSearchContents(database: D1Database): D1PreparedStatement {
+  return database.prepare(`INSERT INTO revision_card_search_fts (
+    rowid, revision_token, catalogue_revision_id, card_id,
+    field_ordinal, chunk_ordinal, search_text
+  ) SELECT indexed.fts_rowid, '|' || chunk.catalogue_revision_id || '|',
+      chunk.catalogue_revision_id, chunk.card_id, chunk.field_ordinal,
+      chunk.chunk_ordinal, chunk.search_text
+    FROM revision_card_search_chunks AS chunk
+    JOIN revision_card_search_fts_rows AS indexed
+      USING (catalogue_revision_id, card_id, field_ordinal, chunk_ordinal)
+    WHERE chunk.catalogue_revision_id = ? AND chunk.card_id = ?
+      AND NOT EXISTS (SELECT 1 FROM revision_card_search_fts WHERE rowid = indexed.fts_rowid)`);
 }

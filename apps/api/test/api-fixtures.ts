@@ -147,6 +147,8 @@ export function cardSearchStatements(revisionId: string, card: ApiCardFixture): 
         .insertRevisionCardSearchChunks(testEnv.CATALOGUE_DB)
         .bind(revisionId, card.id, chunk.field, chunk.ordinal, chunk.text),
     ),
+    cardSearchQueries.indexFixtureCardSearchRows(testEnv.CATALOGUE_DB).bind(revisionId, card.id),
+    cardSearchQueries.indexFixtureCardSearchContents(testEnv.CATALOGUE_DB).bind(revisionId, card.id),
   ];
 }
 

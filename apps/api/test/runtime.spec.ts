@@ -1,3 +1,4 @@
+import { publishCardSearchChunksStatement } from "../../../src/catalogue/ingestion/publication-commit-repository";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { inspectCardCollectionQuery } from "../../ingestion/test/query-helpers/collection-query-plans";
 import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
@@ -2744,6 +2745,7 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
   expect(reconstructed).toEqual({
     state: "ready",
     indexed_chunks: retainedChunks.results.length,
+    maintenance_triggers: 0,
   });
   const restored = await exports.default.fetch(
     new Request("https://card-keepr.invalid/v1/cards?q=quartz", { headers: apiHeaders("203.0.113.106") }),
@@ -2752,17 +2754,19 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
   await expect(restored.json()).resolves.toMatchObject({
     data: [{ id: "card_fts_restore" }],
   });
-  await cardSearchQueries
-    .setRevisionCardSearchChunksSearchText(testEnv.CATALOGUE_DB)
-    .bind("catrev_fts_restore", "card_fts_restore")
-    .run();
-  const triggerMaintained = await exports.default.fetch(
-    new Request("https://card-keepr.invalid/v1/cards?q=trigger-rebuilt-quartz", {
+  await publishCardSearchChunksStatement(catalogueStore(testEnv.CATALOGUE_DB), {
+    revisionId: "catrev_fts_restore",
+    chunksJson: JSON.stringify([
+      { card_id: "card_fts_restore", field_ordinal: 1, chunk_ordinal: 1, search_text: "materialized-restored-quartz" },
+    ]),
+  }).run();
+  const materialized = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/cards?q=materialized-restored-quartz", {
       headers: apiHeaders("203.0.113.107"),
     }),
   );
-  expect(triggerMaintained.status).toBe(200);
-  await expect(triggerMaintained.json()).resolves.toMatchObject({
+  expect(materialized.status).toBe(200);
+  await expect(materialized.json()).resolves.toMatchObject({
     data: [{ id: "card_fts_restore" }],
   });
   await expect(
