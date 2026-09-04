@@ -371,15 +371,19 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<Env, EvidenceHostWo
     const pacingIntervalMilliseconds = sourceHostPacingIntervalMilliseconds(this.env.SOURCE_HOST_PACING_INTERVAL_MS);
     let stage = 0;
     for (;;) {
-      // A paused run keeps its pending and captured Source Requests, so this
-      // shard would otherwise reload them forever; the run-state gate lets
-      // the child Workflow finish while the retained work awaits the owner.
+      // Only a collecting run has work for this shard. A run that left its
+      // collection phase (a Workflow, Capacity, or Retry Pause, a Collection
+      // Termination, or a failure recorded by another shard) keeps its
+      // pending and captured Source Requests, so this shard would otherwise
+      // reload them forever without a sleep; the run-state gate lets the
+      // child Workflow finish while the retained work awaits the owner or
+      // stays as audit evidence.
       const runState = await step.do(
         `read run state stage ${stage}`,
         deterministicDatabaseStep,
         async () => (await requiredEvidenceRun(this.env.CATALOGUE_DB, runId)).state,
       );
-      if (runState === "paused") break;
+      if (runState !== "collecting") break;
       const requests = await loadPendingShardRequests(
         step,
         this.env.CATALOGUE_DB,
@@ -423,6 +427,10 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<Env, EvidenceHostWo
           }
         }
       }
+      // A batch halted by the run leaving its collection phase must not
+      // reload the untouched requests into another stage: the next stage's
+      // run-state gate would stop it anyway, but only after more steps.
+      if (halted) break;
       const localPending = await loadPendingShardRequests(
         step,
         this.env.CATALOGUE_DB,

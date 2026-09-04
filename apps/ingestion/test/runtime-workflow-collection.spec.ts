@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
   appendDiscoveredEvidenceRequests,
+  pauseEvidenceRunForWorkflowRecovery,
   pendingEvidenceRequests,
   requiredEvidenceRun,
 } from "../../../src/catalogue/source-evidence-repository";
@@ -629,6 +630,77 @@ test("the parent Workflow fails deterministically at the persisted child-attempt
     workflow: { child_ids: exhaustedIds },
   });
   expect(terminal.workflow.child_ids).toHaveLength(4);
+});
+
+test("a hostname Workflow that wakes to a terminated run finishes without reloading its pending request", async () => {
+  // Issue #163: the hostname shard's stage loop only stopped for a paused
+  // run. A run that left its collection phase any other way (termination,
+  // a failure recorded by another shard) with a request still pending kept
+  // the shard reloading that request through four durable steps per stage
+  // with no sleep, hammering D1 and the Workflow engine until its runtime
+  // was torn down. The retained request is audit evidence, not work.
+  const run = await createCollection("source_child_terminated_run_001", "https://official-source.invalid/cards");
+  const parentId = `evidence-${run.id}`;
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
+     WHERE ingestion_run_id = ?`,
+  )
+    .bind(parentId, run.id)
+    .run();
+  await pauseEvidenceRunForWorkflowRecovery(env.CATALOGUE_DB, run.id, {
+    workflow_instance_id: parentId,
+    pause_reason: "source_workflow_unavailable",
+    workflow_status: "unavailable",
+    last_progress_at: null,
+  });
+  const terminated = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/termination`, "POST", {
+    idempotency_key: "source_child_terminated_run_terminate_001",
+  });
+  expect(terminated.status).toBe(200);
+  await expect(terminated.json()).resolves.toMatchObject({
+    state: "failed",
+    failure_code: "ingestion_run_terminated",
+  });
+
+  // The shard identity the parent would have minted for the pending
+  // request; termination could not terminate it because it was never
+  // recorded, exactly as when a parent dies before its record step.
+  const childId = `evidence-host-${await sha256(
+    utf8(
+      canonicalJson({
+        ingestion_run_id: run.id,
+        hostname: "official-source.invalid",
+        minimum_sequence_number: 0,
+        maximum_sequence_number: 199,
+      }),
+    ),
+  )}`;
+  await env.EVIDENCE_HOST_WORKFLOW.create({
+    id: childId,
+    params: {
+      ingestion_run_id: run.id,
+      hostname: "official-source.invalid",
+      minimum_sequence_number: 0,
+      maximum_sequence_number: 199,
+    },
+  });
+  await waitForWorkflowStatus(
+    childId,
+    async () => (await env.EVIDENCE_HOST_WORKFLOW.get(childId)).status(),
+    "complete",
+    10_000,
+  );
+  const requests = await env.CATALOGUE_DB.prepare(`SELECT state FROM source_requests WHERE ingestion_run_id = ?`)
+    .bind(run.id)
+    .all<{ state: string }>();
+  expect(requests.results).toEqual([{ state: "pending" }]);
+  const captures = await env.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM source_fetch_attempts
+     WHERE ingestion_run_id = ?`,
+  )
+    .bind(run.id)
+    .first<{ count: number }>();
+  expect(captures?.count).toBe(0);
 });
 
 test("a completed host shard durably releases the next same-host shard", async () => {
