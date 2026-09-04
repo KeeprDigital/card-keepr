@@ -1046,9 +1046,6 @@ export async function reconcileRetainedCardPrintingEvidence(
     const candidateDigest = await sha256Text(digestPayloadJson);
     await persistBlockedCandidate(database, {
       runId,
-      observationSetId: retained.observationSetId,
-      sourceSnapshotId: retained.sourceSnapshotId,
-      sourceLineage: retained.sourceLineage,
       partitions: retained.partitions,
       plans,
       diagnostics: stableDiagnostics,
@@ -1102,9 +1099,6 @@ export async function reconcileRetainedCardPrintingEvidence(
     const candidateDigest = await sha256Text(digestPayloadJson);
     await persistBlockedCandidate(database, {
       runId,
-      observationSetId: retained.observationSetId,
-      sourceSnapshotId: retained.sourceSnapshotId,
-      sourceLineage: retained.sourceLineage,
       partitions: retained.partitions,
       plans,
       diagnostics,
@@ -1150,9 +1144,6 @@ export async function reconcileRetainedCardPrintingEvidence(
   const candidateDigest = await sha256Text(digestPayloadJson);
   await persistReviewableCandidate(database, {
     runId,
-    observationSetId: retained.observationSetId,
-    sourceSnapshotId: retained.sourceSnapshotId,
-    sourceLineage: retained.sourceLineage,
     partitions: retained.partitions,
     plans,
     warnings,

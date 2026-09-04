@@ -27,6 +27,8 @@ import {
   printingLocatorLifecycleStatement,
   printingRelationshipLifecycleStatement,
   publicationContextStatement,
+  type PublicationContextRow,
+  type PublicationLineageRow,
   publicationEntityLifecyclesStatement,
   publicationEvidenceByIdsStatement,
   publicationEvidenceStatement,
@@ -112,20 +114,12 @@ export async function reconciliationPublication(
 ): Promise<ReconciliationPublicationPlan | null> {
   const plans = await reconciliationCandidatePlans(database, runId);
   const currentEvidenceByObservation = await publicationEvidenceResources(database, plans);
-  const context = await publicationContextStatement(database, runId).first<{
-    source_lineage: string;
-    adapter_version: string;
-    observed_at: string;
-  }>();
+  const context = await publicationContextStatement(database, runId).first<PublicationContextRow>();
   if (context === null) return null;
-  const evidencePartitions = await publicationLineagesStatement(database, runId).all<{
-    source_lineage: string;
-    adapter_version: string;
-  }>();
-  const observedSourceLineages =
-    evidencePartitions.results.length > 0
-      ? [...new Set(evidencePartitions.results.map(({ source_lineage }) => source_lineage))]
-      : [context.source_lineage];
+  const evidencePartitions = await publicationLineagesStatement(database, runId).all<PublicationLineageRow>();
+  if (evidencePartitions.results.length === 0)
+    throw new Error("The Reconciliation Context has no evidence partitions.");
+  const observedSourceLineages = [...new Set(evidencePartitions.results.map(({ source_lineage }) => source_lineage))];
   const candidate = JSON.parse(await requiredRunCandidate(database, runId)) as CatalogueCandidate;
   const erratumObservationIds = [
     ...new Set(
@@ -329,11 +323,9 @@ export async function reconciliationPublication(
     result,
     publicationRows,
     observedSourceLineages,
-    evidencePartitions.results.length > 0
-      ? evidencePartitions.results.every(
-          ({ adapter_version }) => requiredSourceAdapter(adapter_version).reconciliationCapability === "catalogue",
-        )
-      : requiredSourceAdapter(context.adapter_version).reconciliationCapability === "catalogue",
+    evidencePartitions.results.every(
+      ({ adapter_version }) => requiredSourceAdapter(adapter_version).reconciliationCapability === "catalogue",
+    ),
     revisionId,
   );
   const productReleaseLifecycles = await productReleaseLifecyclePlan(database, candidate, revisionId);

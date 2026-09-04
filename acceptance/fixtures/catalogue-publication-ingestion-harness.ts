@@ -1,3 +1,4 @@
+import { restoreFixturePublicationHealthStatement } from "../helpers/query-helpers/runtime-fixtures";
 import {
   WorkflowEntrypoint,
   type WorkflowEvent,
@@ -48,10 +49,7 @@ export default {
       ) &&
       response.status === 200
     ) {
-      await env.CATALOGUE_DB.prepare(
-        `UPDATE operation_state SET recovery_health = 'healthy'
-         WHERE singleton = 1 AND recovery_health = 'degraded'`,
-      ).run();
+      await restoreFixturePublicationHealthStatement(env.CATALOGUE_DB).run();
     }
     return response;
   },

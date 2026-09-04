@@ -194,7 +194,7 @@ test("deterministic gzip profile matches independent full-byte edge-case goldens
   }
 }, 45_000);
 
-test("heterogeneous empty plans report each lineage independently regardless of plan order", async () => {
+test("heterogeneous empty plans inspect and publish every lineage independently of plan order", async () => {
   const seededRun = await collect("/reconciliation/profile-fusion-world", "mixed-plan-empty-lineage-seed", {
     game: "fusion-world",
     lineage: "fusion-world-en",
@@ -205,7 +205,7 @@ test("heterogeneous empty plans report each lineage independently regardless of 
   const printingId = requiredString(requiredFirst(seeded.document, "printings"), "id");
   expect((await approve(seeded.document)).response.status).toBe(200);
 
-  const inspectOrder = async (lineages: readonly ("one-piece" | "fusion-world")[], suffix: string) => {
+  const inspectOrder = async (lineages: readonly ("one-piece" | "fusion-world")[], suffix: string, publish = false) => {
     const started = await postFixtureEvidence({
       idempotency_key: `mixed-plan-empty-lineage-${suffix}`,
       plans: lineages.map((game) => ({
@@ -241,19 +241,37 @@ test("heterogeneous empty plans report each lineage independently regardless of 
         }
       ).printings.missing_observations,
     };
-    expect(
-      (
-        await post(`/v1/ingestion-runs/${runId}/rejection`, {
-          candidate_digest: requiredString(candidate.document, "candidate_digest"),
-          idempotency_key: `reject-mixed-plan-empty-lineage-${suffix}`,
-        })
-      ).response.status,
-    ).toBe(200);
+    if (publish) {
+      const published = await approve(candidate.document);
+      expect(published.response.status).toBe(200);
+      const revisionId = requiredString(published.document, "resulting_revision_id");
+      const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
+      expect(lifecycle.document).toMatchObject({
+        locators: {
+          current: [],
+          historical: [
+            expect.objectContaining({
+              source_lineage: "fusion-world-en",
+              current: false,
+              last_missing_revision_id: revisionId,
+            }),
+          ],
+        },
+      });
+    } else
+      expect(
+        (
+          await post(`/v1/ingestion-runs/${runId}/rejection`, {
+            candidate_digest: requiredString(candidate.document, "candidate_digest"),
+            idempotency_key: `reject-mixed-plan-empty-lineage-${suffix}`,
+          })
+        ).response.status,
+      ).toBe(200);
     return result;
   };
 
-  const forward = await inspectOrder(["one-piece", "fusion-world"], "forward");
   const reversed = await inspectOrder(["fusion-world", "one-piece"], "reversed");
+  const forward = await inspectOrder(["one-piece", "fusion-world"], "forward", true);
   expect(forward).toEqual(reversed);
   expect(forward.cards).toContain(cardId);
   expect(forward.printings).toContain(printingId);

@@ -166,3 +166,10 @@ export function retainedWorkflowPauses(database) {
 export function retainedTerminations(database) {
   return database.prepare("SELECT * FROM ingestion_run_terminations ORDER BY ingestion_run_id");
 }
+
+export function reconciliationContextColumns(database) {
+  return database.prepare("PRAGMA table_info(reconciliation_contexts)");
+}
+export function reconciliationContextCount(database) {
+  return database.prepare("SELECT count(*) AS count FROM reconciliation_contexts");
+}
