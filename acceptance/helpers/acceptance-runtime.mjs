@@ -80,8 +80,10 @@ const D1_STATE = join("v3", "d1");
 const TEMPLATE_ROOT = join(tmpdir(), "card-keepr-migrated");
 const TEMPLATE_WAIT_MS = 120_000;
 
-export async function applyMigrations(statePath, config) {
-  if (!wranglerSmoke) return (await import("./inprocess-runtime.mjs")).applyInprocessMigrations(statePath, config);
+export async function applyMigrations(statePath, config, testMigrations = []) {
+  if (wranglerSmoke && testMigrations.length) throw new Error("Wrangler smoke must use only shipped migrations.");
+  if (!wranglerSmoke)
+    return (await import("./inprocess-runtime.mjs")).applyInprocessMigrations(statePath, config, testMigrations);
   const resolvedConfig = config ?? "apps/ingestion/wrangler.jsonc";
   if (existsSync(join(statePath, D1_STATE))) {
     await runMigrations(statePath, resolvedConfig);
@@ -178,13 +180,14 @@ export async function startWorker({
   envFile,
   inspectorPort,
   migrate = false,
+  testMigrations = [],
   pacingMode = "immediate",
   port,
   registryPath,
   statePath,
   vars = {},
 }) {
-  if (migrate) await applyMigrations(statePath, config);
+  if (migrate) await applyMigrations(statePath, config, testMigrations);
   if (!wranglerSmoke)
     return (await import("./inprocess-runtime.mjs")).startInprocessWorker({
       config,

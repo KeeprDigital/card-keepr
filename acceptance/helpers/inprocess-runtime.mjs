@@ -237,7 +237,7 @@ export function executeInprocessSql(statePath, file, config) {
   });
 }
 
-export function applyInprocessMigrations(statePath, config) {
+export function applyInprocessMigrations(statePath, config, testMigrations = []) {
   return withDatabase(statePath, config, async (database, prepared) => {
     const binding = prepared.raw.d1_databases.find((entry) => entry.binding === "CATALOGUE_DB");
     const directory = resolve(dirname(prepared.path), binding.migrations_dir ?? "migrations");
@@ -249,6 +249,13 @@ export function applyInprocessMigrations(statePath, config) {
       await database.batch([
         ...statements.map((statement) => database.prepare(statement)),
         recordMigration(database, name),
+      ]);
+    }
+    for (const migration of testMigrations) {
+      if (applied.has(migration.name)) continue;
+      await database.batch([
+        ...migration.queries.map((statement) => database.prepare(statement)),
+        recordMigration(database, migration.name),
       ]);
     }
   });
