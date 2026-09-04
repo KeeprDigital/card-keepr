@@ -85,9 +85,9 @@ export async function publishNoChange(
         checkedAt: now,
       }),
       approveNoChangeRunStatement(database, {
+        occurredAt: now,
         approvalJson: JSON.stringify(approval),
         idempotencyKey: request.idempotency_key,
-        approvalHistoryJson: JSON.stringify([approval]),
         progressJson: JSON.stringify(progressFor("publishing")),
         runId: run.id,
       }),

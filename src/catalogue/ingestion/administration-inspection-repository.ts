@@ -9,7 +9,7 @@ export function administrationSourceFreshnessStatement(database: CatalogueStore)
 }
 
 export function recentIngestionRunsStatement(database: CatalogueStore): D1PreparedStatement {
-  return repositoryStatements(database).prepare(`SELECT * FROM ingestion_runs
+  return repositoryStatements(database).prepare(`SELECT * FROM ingestion_run_read
           ORDER BY started_at DESC, id DESC
           LIMIT 20`);
 }

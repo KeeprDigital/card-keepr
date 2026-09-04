@@ -1,6 +1,13 @@
+import { expireRunEventsStatement } from "../shared";
+import {
+  runEventCommand,
+  runEventIdentitySql,
+  runEventStatement,
+  runCompletedStageCount,
+  createRunEventStatement,
+} from "../shared";
 import { curatedRunStartGuardStatement } from "../curated";
 import {
-  atomicRepositoryStatement,
   type CatalogueStore,
   type IngestionRunState,
   ingestionRunTransitionSources,
@@ -27,7 +34,7 @@ export function currentOperationStateStatement(database: CatalogueStore): D1Prep
 }
 
 export function runByIdStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
-  return repositoryStatements(database).prepare("SELECT * FROM ingestion_runs WHERE id = ?").bind(runId);
+  return repositoryStatements(database).prepare("SELECT * FROM ingestion_run_read WHERE id = ?").bind(runId);
 }
 
 export function publicationCleanupStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
@@ -47,19 +54,7 @@ export function releaseActiveRunLockStatement(database: CatalogueStore, runId: s
 }
 
 export function expireOverdueRunsStatement(database: CatalogueStore, observedAt: string): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-        SET state = 'expired',
-            terminal_at = approval_deadline,
-            progress_json = json_set(
-              progress_json,
-              '$.current_stage',
-              'expired'
-            )
-        WHERE ${ingestionRunTransitionSql("awaiting_approval", "expired")}
-          AND approval_deadline IS NOT NULL
-          AND approval_deadline <= ?`)
-    .bind(observedAt);
+  return expireRunEventsStatement(database, observedAt);
 }
 
 export function releaseTerminalRunLockStatement(
@@ -73,14 +68,14 @@ export function releaseTerminalRunLockStatement(
         AND active_ingestion_run_id IS NOT NULL
         AND (
           active_ingestion_run_id IN (
-            SELECT id
-            FROM ingestion_runs
+            SELECT ingestion_run_id
+            FROM ingestion_run_current
             WHERE state = 'expired'
           )
           OR NOT EXISTS (
             SELECT 1
-            FROM ingestion_runs
-            WHERE id = operation_state.active_ingestion_run_id
+            FROM ingestion_run_current
+            WHERE ingestion_run_id = operation_state.active_ingestion_run_id
               AND state IN (SELECT value FROM json_each(?))
           )
         )`)
@@ -91,20 +86,16 @@ export function failRunStatement(
   database: CatalogueStore,
   input: Readonly<{ terminalAt: string; failureCode: string; runId: string }>,
 ): D1PreparedStatement {
+  const event = runEventCommand("failed", { runId: input.runId, occurredAt: input.terminalAt });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-        SET state = 'failed',
+    .prepare(`UPDATE ingestion_run_current
+        SET ${runEventIdentitySql}, state = 'failed',
             terminal_at = ?,
-            failure_code = ?,
-            progress_json = json_set(
-              progress_json,
-              '$.current_stage',
-              'failed'
-            )
-        WHERE id = ?
+            failure_code = ?
+        WHERE ingestion_run_id = ?
           AND ${ingestionRunTransitionSql(ingestionRunTransitionSources("failed"), "failed")}`)
-    .bind(input.terminalAt, input.failureCode, input.runId);
-  return atomicRepositoryStatement(database, { statement, before: [failActiveRunGuardStatement(database, input)] });
+    .bind(event.eventId, input.terminalAt, input.failureCode, input.runId);
+  return runEventStatement(database, { event, statement, before: [failActiveRunGuardStatement(database, input)] });
 }
 
 export function runEvidencePlanStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
@@ -115,19 +106,21 @@ export function runEvidencePlanStatement(database: CatalogueStore, runId: string
 
 export function rejectRunStatement(
   database: CatalogueStore,
-  input: Readonly<{ terminalAt: string; progressJson: string; approvalHistoryJson: string; runId: string }>,
+  input: Readonly<{ terminalAt: string; progressJson: string; decisionJson: string; runId: string }>,
 ): D1PreparedStatement {
+  const event = runEventCommand("rejected", { runId: input.runId, occurredAt: input.terminalAt });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-          SET state = 'rejected',
+    .prepare(`UPDATE ingestion_run_current
+          SET ${runEventIdentitySql}, state = 'rejected',
               terminal_at = ?,
-              progress_json = ?,
-              approval_history_json = ?
-          WHERE id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "rejected")}`)
-    .bind(input.terminalAt, input.progressJson, input.approvalHistoryJson, input.runId);
-  return atomicRepositoryStatement(database, {
+              completed_stage_count = ?
+          WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "rejected")}`)
+    .bind(event.eventId, input.terminalAt, runCompletedStageCount(input.progressJson), input.runId);
+  return runEventStatement(database, {
+    event,
     statement,
-    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "awaiting_approval", to: "rejected" })],
+    decisionJson: input.decisionJson,
+    guards: [runTransitionGuardStatement(database, { runId: input.runId, from: "awaiting_approval", to: "rejected" })],
   });
 }
 
@@ -146,53 +139,18 @@ export function createFixtureRunStatement(
     diagnosticsJson: string;
   }>,
 ): D1PreparedStatement {
-  const statement = repositoryStatements(database)
-    .prepare(`INSERT INTO ingestion_runs (
-            id,
-            state,
-            selected_games_json,
-            started_at,
-            expected_current_revision_id,
-            linked_run_id,
-            idempotency_key,
-            operational_request_id,
-            candidate_digest,
-            candidate_catalogue_digest,
-            candidate_created_at,
-            approval_deadline,
-            approval_json,
-            published_revision_id,
-            export_manifest_digest,
-            terminal_at,
-            candidate_json,
-            approval_idempotency_key,
-            failure_code,
-            progress_json,
-            warnings_json,
-            approval_history_json,
-            publication_outcome,
-            resulting_revision_id,
-            freshness_checked_at
-          ) VALUES (
-            ?, 'planning', ?, ?, ?, ?, ?, ?,
-            NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, NULL,
-            NULL, ?, ?, '[]', NULL, NULL, NULL
-          )`)
-    .bind(
-      input.runId,
-      input.selectedGamesJson,
-      input.startedAt,
-      input.expectedRevisionId,
-      input.linkedRunId,
-      input.idempotencyKey,
-      input.operationalRequestId,
-      input.candidateJson,
-      input.progressJson,
-      input.diagnosticsJson,
-    );
-  return atomicRepositoryStatement(database, {
-    statement,
-    after: [runStartGuardStatement(database), curatedRunStartGuardStatement(database, input.runId)],
+  return createRunEventStatement(database, {
+    runId: input.runId,
+    selectedGamesJson: input.selectedGamesJson,
+    startedAt: input.startedAt,
+    expectedRevisionId: input.expectedRevisionId,
+    linkedRunId: input.linkedRunId,
+    idempotencyKey: input.idempotencyKey,
+    operationalRequestId: input.operationalRequestId,
+    state: "planning",
+    candidateJson: input.candidateJson,
+    diagnosticsJson: input.diagnosticsJson,
+    guards: [runStartGuardStatement(database), curatedRunStartGuardStatement(database, input.runId)],
   });
 }
 
@@ -218,30 +176,33 @@ export function failFixtureRunStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
+  const event = runEventCommand("candidate_blocked", { runId: input.runId, occurredAt: input.terminalAt });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-           SET state = 'failed',
+    .prepare(`UPDATE ingestion_run_current
+           SET ${runEventIdentitySql}, state = 'failed',
                candidate_digest = ?,
                candidate_catalogue_digest = ?,
                candidate_created_at = ?,
                approval_deadline = ?,
                terminal_at = ?,
                failure_code = ?,
-               progress_json = ?
-           WHERE id = ? AND ${ingestionRunTransitionSql("planning", "failed")}`)
+               completed_stage_count = ?
+           WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("planning", "failed")}`)
     .bind(
+      event.eventId,
       input.candidateDigest,
       input.candidateDigest,
       input.candidateCreatedAt,
       input.approvalDeadline,
       input.terminalAt,
       input.failureCode,
-      input.progressJson,
+      runCompletedStageCount(input.progressJson),
       input.runId,
     );
-  return atomicRepositoryStatement(database, {
+  return runEventStatement(database, {
+    event,
     statement,
-    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "planning", to: "failed" })],
+    guards: [runTransitionGuardStatement(database, { runId: input.runId, from: "planning", to: "failed" })],
   });
 }
 
@@ -255,26 +216,29 @@ export function completeFixtureRunStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
+  const event = runEventCommand("candidate_prepared", { runId: input.runId, occurredAt: input.candidateCreatedAt });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-          SET state = 'awaiting_approval',
+    .prepare(`UPDATE ingestion_run_current
+          SET ${runEventIdentitySql}, state = 'awaiting_approval',
               candidate_digest = ?,
               candidate_catalogue_digest = ?,
               candidate_created_at = ?,
               approval_deadline = ?,
-              progress_json = ?
-          WHERE id = ? AND ${ingestionRunTransitionSql("reconciling", "awaiting_approval")}`)
+              completed_stage_count = ?
+          WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("reconciling", "awaiting_approval")}`)
     .bind(
+      event.eventId,
       input.candidateDigest,
       input.candidateDigest,
       input.candidateCreatedAt,
       input.approvalDeadline,
-      input.progressJson,
+      runCompletedStageCount(input.progressJson),
       input.runId,
     );
-  return atomicRepositoryStatement(database, {
+  return runEventStatement(database, {
+    event,
     statement,
-    after: [
+    guards: [
       runTransitionGuardStatement(database, { runId: input.runId, from: "reconciling", to: "awaiting_approval" }),
     ],
   });
@@ -290,12 +254,13 @@ export function transitionRunStatement(
   database: CatalogueStore,
   input: Readonly<{ runId: string; from: IngestionRunState; to: IngestionRunState; progressJson: string }>,
 ): D1PreparedStatement {
+  const event = runEventCommand("stage_changed", { runId: input.runId });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-      SET state = ?, progress_json = ?
-      WHERE id = ? AND ${ingestionRunTransitionSql(input.from, input.to)}`)
-    .bind(input.to, input.progressJson, input.runId);
-  return atomicRepositoryStatement(database, { statement, after: [runTransitionGuardStatement(database, input)] });
+    .prepare(`UPDATE ingestion_run_current
+      SET ${runEventIdentitySql}, state = ?, completed_stage_count = ?
+      WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql(input.from, input.to)}`)
+    .bind(event.eventId, input.to, runCompletedStageCount(input.progressJson), input.runId);
+  return runEventStatement(database, { event, statement, guards: [runTransitionGuardStatement(database, input)] });
 }
 
 function failActiveRunGuardStatement(
@@ -304,9 +269,9 @@ function failActiveRunGuardStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN NOT EXISTS (
-    SELECT 1 FROM ingestion_runs AS run WHERE id = ?
+    SELECT 1 FROM ingestion_run_current AS run WHERE ingestion_run_id = ?
       AND ${ingestionRunTransitionSql(ingestionRunTransitionSources("failed"), "failed")}
-      AND NOT EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND active_ingestion_run_id = run.id)
+      AND NOT EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND active_ingestion_run_id = run.ingestion_run_id)
       AND NOT (run.state = 'publishing' AND ? IN (
         'publication_abandoned', 'publication_precondition_failed', 'export_verification_failed'
       ))

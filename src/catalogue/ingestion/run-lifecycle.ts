@@ -255,7 +255,7 @@ async function rejectRunAttempt(
       rejectRunStatement(database, {
         terminalAt: now,
         progressJson: JSON.stringify(rejectedProgress),
-        approvalHistoryJson: JSON.stringify([decision]),
+        decisionJson: JSON.stringify(decision),
         runId: run.id,
       }),
       releaseRunLockStatement(database, run.id),

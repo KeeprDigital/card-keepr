@@ -1,3 +1,4 @@
+import { runEventCommand, runEventIdentitySql, runEventStatement, runCompletedStageCount } from "../shared";
 import {
   atomicRepositoryStatement,
   type CatalogueStore,
@@ -40,23 +41,36 @@ export function approveNoChangeRunStatement(
   input: Readonly<{
     approvalJson: string;
     idempotencyKey: string;
-    approvalHistoryJson: string;
     progressJson: string;
     runId: string;
+    occurredAt?: string;
   }>,
 ): D1PreparedStatement {
+  const event = runEventCommand("approval_reserved", { runId: input.runId, occurredAt: input.occurredAt });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-          SET state = 'publishing',
-              approval_json = ?,
-              approval_idempotency_key = ?,
-              approval_history_json = ?,
-              progress_json = ?
-          WHERE id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "publishing")}`)
-    .bind(input.approvalJson, input.idempotencyKey, input.approvalHistoryJson, input.progressJson, input.runId);
-  return atomicRepositoryStatement(database, {
+    .prepare(`UPDATE ingestion_run_current
+          SET ${runEventIdentitySql}, state = 'publishing',
+              approved_at = json_extract(?, '$.approved_at'),
+              approved_candidate_digest = json_extract(?, '$.candidate_digest'),
+              approved_expected_revision_id = json_extract(?, '$.expected_current_revision_id'),
+              completed_stage_count = ?
+          WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "publishing")}`)
+    .bind(
+      event.eventId,
+      input.approvalJson,
+      input.approvalJson,
+      input.approvalJson,
+      runCompletedStageCount(input.progressJson),
+      input.runId,
+    );
+  return runEventStatement(database, {
+    event,
     statement,
-    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "awaiting_approval", to: "publishing" })],
+    approvalIdempotencyKey: input.idempotencyKey,
+    decisionJson: input.approvalJson,
+    guards: [
+      runTransitionGuardStatement(database, { runId: input.runId, from: "awaiting_approval", to: "publishing" }),
+    ],
   });
 }
 
@@ -64,19 +78,28 @@ export function publishNoChangeRunStatement(
   database: CatalogueStore,
   input: Readonly<{ terminalAt: string; progressJson: string; revisionId: string; checkedAt: string; runId: string }>,
 ): D1PreparedStatement {
+  const event = runEventCommand("published", { runId: input.runId, occurredAt: input.terminalAt });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-          SET state = 'published',
+    .prepare(`UPDATE ingestion_run_current
+          SET ${runEventIdentitySql}, state = 'published',
               terminal_at = ?,
-              progress_json = ?,
+              completed_stage_count = ?,
               publication_outcome = 'no_change',
               resulting_revision_id = ?,
               freshness_checked_at = ?
-          WHERE id = ? AND ${ingestionRunTransitionSql("publishing", "published")}`)
-    .bind(input.terminalAt, input.progressJson, input.revisionId, input.checkedAt, input.runId);
-  return atomicRepositoryStatement(database, {
+          WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("publishing", "published")}`)
+    .bind(
+      event.eventId,
+      input.terminalAt,
+      runCompletedStageCount(input.progressJson),
+      input.revisionId,
+      input.checkedAt,
+      input.runId,
+    );
+  return runEventStatement(database, {
+    event,
     statement,
-    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "publishing", to: "published" })],
+    guards: [runTransitionGuardStatement(database, { runId: input.runId, from: "publishing", to: "published" })],
   });
 }
 
@@ -322,29 +345,32 @@ export function publishApprovedRunStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
+  const event = runEventCommand("published", { runId: input.runId, occurredAt: input.completedAt });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-        SET state = 'published',
+    .prepare(`UPDATE ingestion_run_current
+        SET ${runEventIdentitySql}, state = 'published',
             published_revision_id = ?,
             export_manifest_digest = ?,
             terminal_at = ?,
-            progress_json = ?,
+            completed_stage_count = ?,
             publication_outcome = 'revision',
             resulting_revision_id = ?,
             freshness_checked_at = ?
-        WHERE id = ? AND ${ingestionRunTransitionSql("publishing", "published")}`)
+        WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("publishing", "published")}`)
     .bind(
+      event.eventId,
       input.revisionId,
       input.manifestDigest,
       input.completedAt,
-      input.progressJson,
+      runCompletedStageCount(input.progressJson),
       input.revisionId,
       input.completedAt,
       input.runId,
     );
-  return atomicRepositoryStatement(database, {
+  return runEventStatement(database, {
+    event,
     statement,
-    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "publishing", to: "published" })],
+    guards: [runTransitionGuardStatement(database, { runId: input.runId, from: "publishing", to: "published" })],
   });
 }
 

@@ -1,3 +1,4 @@
+import { runEventCommand, runEventIdentitySql, runEventStatement } from "../shared";
 import {
   administrationOutcomeGuardStatement,
   atomicRepositoryStatement,
@@ -107,21 +108,18 @@ export function failCandidatePublicationStatement(
   database: CatalogueStore,
   input: Readonly<{ terminalAt: string; failureCode: string; runId: string }>,
 ): D1PreparedStatement {
+  const event = runEventCommand("failed", { runId: input.runId, occurredAt: input.terminalAt });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-        SET state = 'failed',
+    .prepare(`UPDATE ingestion_run_current
+        SET ${runEventIdentitySql}, state = 'failed',
             terminal_at = ?,
-            failure_code = ?,
-            progress_json = json_set(
-              progress_json,
-              '$.current_stage',
-              'failed'
-            )
-        WHERE id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "failed")}`)
-    .bind(input.terminalAt, input.failureCode, input.runId);
-  return atomicRepositoryStatement(database, {
+            failure_code = ?
+        WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "failed")}`)
+    .bind(event.eventId, input.terminalAt, input.failureCode, input.runId);
+  return runEventStatement(database, {
+    event,
     statement,
-    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "awaiting_approval", to: "failed" })],
+    guards: [runTransitionGuardStatement(database, { runId: input.runId, from: "awaiting_approval", to: "failed" })],
   });
 }
 
@@ -181,21 +179,18 @@ export function failReservedPublicationStatement(
   database: CatalogueStore,
   input: Readonly<{ terminalAt: string; failureCode: string; runId: string }>,
 ): D1PreparedStatement {
+  const event = runEventCommand("failed", { runId: input.runId, occurredAt: input.terminalAt });
   const statement = repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
-        SET state = 'failed',
+    .prepare(`UPDATE ingestion_run_current
+        SET ${runEventIdentitySql}, state = 'failed',
             terminal_at = ?,
-            failure_code = ?,
-            progress_json = json_set(
-              progress_json,
-              '$.current_stage',
-              'failed'
-            )
-        WHERE id = ? AND ${ingestionRunTransitionSql("publishing", "failed")}`)
-    .bind(input.terminalAt, input.failureCode, input.runId);
-  return atomicRepositoryStatement(database, {
+            failure_code = ?
+        WHERE ingestion_run_id = ? AND ${ingestionRunTransitionSql("publishing", "failed")}`)
+    .bind(event.eventId, input.terminalAt, input.failureCode, input.runId);
+  return runEventStatement(database, {
+    event,
     statement,
-    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "publishing", to: "failed" })],
+    guards: [runTransitionGuardStatement(database, { runId: input.runId, from: "publishing", to: "failed" })],
   });
 }
 

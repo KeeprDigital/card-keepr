@@ -218,7 +218,7 @@ export function takeOverAdministrationClaimStatement(
 export function legacyAdministrationRunStatement(database: CatalogueStore, key: string): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT *
-      FROM ingestion_runs
+      FROM ingestion_run_read
       WHERE idempotency_key = ?
         OR approval_idempotency_key = ?
       LIMIT 1`)

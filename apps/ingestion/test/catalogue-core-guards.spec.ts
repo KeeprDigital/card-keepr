@@ -17,7 +17,7 @@ import {
   createFixtureRunStatement,
   transitionRunStatement,
 } from "../../../src/catalogue/ingestion/run-lifecycle-repository";
-import { atomicRepositoryStatement, catalogueStore, runTransitionGuardStatement } from "../../../src/catalogue/shared";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import {
   coreGuardPublicationTime,
   coreGuardRun,
@@ -112,7 +112,6 @@ test("an approval with absent digest fields fails closed without schema guards",
       runId: "run_bad_approval",
       approvalJson: "{}",
       idempotencyKey: "bad_approval",
-      approvalHistoryJson: "[]",
       progressJson: "{}",
     }).run(),
   ).rejects.toThrow("approval_guard_failed");
@@ -124,10 +123,7 @@ test("a retained termination still requires the exact non-NULL failure code afte
   await seedCoreGuardRun(testEnv.CATALOGUE_DB, "run_null_termination", "paused");
   await retainCoreTermination(testEnv.CATALOGUE_DB, "run_null_termination");
   const terminate = (failureCode: string | null) =>
-    atomicRepositoryStatement(database, {
-      statement: terminateCoreRunWithFailureCode(database, "run_null_termination", failureCode),
-      after: [runTransitionGuardStatement(database, { runId: "run_null_termination", from: "paused", to: "failed" })],
-    });
+    terminateCoreRunWithFailureCode(database, "run_null_termination", failureCode);
   await expect(terminate(null).run()).rejects.toThrow("illegal_ingestion_transition");
   expect(await coreGuardRun(database, "run_null_termination").first("state")).toBe("paused");
   await terminate("ingestion_run_terminated").run();
