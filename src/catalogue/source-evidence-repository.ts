@@ -13,15 +13,9 @@ import {
   type StartEvidenceRunRequest,
   validateEvidencePlans,
 } from "./source-evidence-model";
-import {
-  globalEmergencySourceRequestCeiling,
-  type SourceAdapterRegistration,
-} from "./source-adapters";
+import { globalEmergencySourceRequestCeiling, type SourceAdapterRegistration } from "./source-adapters";
 import { evidenceRunIdentity, replayByDigest } from "./idempotent-identities";
-import {
-  curatedRevisionSetForRun,
-  curatedRevisionPinStatementsForNewRun,
-} from "./curated-revisions";
+import { curatedRevisionSetForRun, curatedRevisionPinStatementsForNewRun } from "./curated-revisions";
 import { operationalDiagnostics } from "./operational-diagnostics";
 import {
   classifyCollectionProgress,
@@ -34,14 +28,12 @@ import {
   type RecordedWorkflowPauseReason,
   type SafeWorkflowStatus,
 } from "./collection-recovery";
-import type {
-  EvidenceHostWorkflowParams,
-  EvidenceParentWorkflowParams,
-} from "./source-evidence-model";
+import type { EvidenceHostWorkflowParams, EvidenceParentWorkflowParams } from "./source-evidence-model";
 import {
   boundedEvidenceDetail,
   collectionInspection,
   type PacingConfiguration,
+  sourceRequestHostnameSql,
 } from "./collection-inspection";
 import type {
   CurrentPause,
@@ -100,12 +92,7 @@ export type EvidenceRequestRow = {
   source_snapshot_id: string | null;
   failure_code: string | null;
   retry_generation: number;
-  request_role:
-    | "surface"
-    | "listing"
-    | "detail"
-    | "product_detail"
-    | "image";
+  request_role: "surface" | "listing" | "detail" | "product_detail" | "image";
   discovered_from_request_id: string | null;
 };
 
@@ -123,13 +110,8 @@ export async function startEvidenceRun(
 ): Promise<Record<string, unknown>> {
   const plans = await validateEvidencePlans(request, planOrigin);
   const firstPlan = plans[0]!;
-  const planJson = canonicalJson(
-    plans.length === 1 ? firstPlan : { plans },
-  );
-  const replay = await evidenceRunByIdempotencyKey(
-    database,
-    request.idempotency_key,
-  );
+  const planJson = canonicalJson(plans.length === 1 ? firstPlan : { plans });
+  const replay = await evidenceRunByIdempotencyKey(database, request.idempotency_key);
   if (replay !== null) {
     if (!sameEvidencePlanIntent(replay.request_plan_json, planJson)) {
       throw new AdministrationProblem(
@@ -156,9 +138,7 @@ export async function startEvidenceRun(
   const statements: D1PreparedStatement[] = [
     await ingestionRunInsert(database, {
       runId,
-      supportedGames: [
-        ...new Set(plans.map(({ supported_game }) => supported_game)),
-      ].sort(),
+      supportedGames: [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
       startedAt,
       linkedRunId: null,
       idempotencyKey: request.idempotency_key,
@@ -201,14 +181,8 @@ export async function startEvidenceRun(
   try {
     await database.batch(statements);
   } catch (error) {
-    const concurrent = await evidenceRunByIdempotencyKey(
-      database,
-      request.idempotency_key,
-    );
-    if (
-      concurrent !== null &&
-      sameEvidencePlanIntent(concurrent.request_plan_json, planJson)
-    ) {
+    const concurrent = await evidenceRunByIdempotencyKey(database, request.idempotency_key);
+    if (concurrent !== null && sameEvidencePlanIntent(concurrent.request_plan_json, planJson)) {
       return showEvidenceRun(database, concurrent.id);
     }
     await throwIfRecoveryBlocked(database);
@@ -217,13 +191,13 @@ export async function startEvidenceRun(
       throw activeRunProblem();
     }
     if (errorMessage(error).includes("curated_revision_reconfirmation_required")) {
-      throw new AdministrationProblem(409, "curated_revision_reconfirmation_required", "A Curated Revision for a selected Supported Game requires reconfirmation.");
+      throw new AdministrationProblem(
+        409,
+        "curated_revision_reconfirmation_required",
+        "A Curated Revision for a selected Supported Game requires reconfirmation.",
+      );
     }
-    if (
-      errorMessage(error).includes(
-        "credential_execution_in_progress",
-      )
-    ) {
+    if (errorMessage(error).includes("credential_execution_in_progress")) {
       throw new AdministrationProblem(
         409,
         "credential_execution_in_progress",
@@ -242,10 +216,7 @@ export async function startEvidenceRun(
   return showEvidenceRun(database, runId);
 }
 
-function sameEvidencePlanIntent(
-  retainedJson: string,
-  requestedJson: string,
-): boolean {
+function sameEvidencePlanIntent(retainedJson: string, requestedJson: string): boolean {
   return retainedJson === requestedJson;
 }
 
@@ -278,9 +249,7 @@ export async function retryEvidenceRun(
   const plans = parseEvidencePlans(source.request_plan_json);
   const firstPlan = plans[0]!;
   const operation = await database
-    .prepare(
-      "SELECT recovery_health FROM operation_state WHERE singleton = 1",
-    )
+    .prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1")
     .first<{ recovery_health: string }>();
   if (operation === null) throw new Error("Operation state is unavailable.");
   assertRecoveryAvailable(operation.recovery_health);
@@ -290,9 +259,7 @@ export async function retryEvidenceRun(
     await database.batch([
       await ingestionRunInsert(database, {
         runId,
-        supportedGames: [
-          ...new Set(plans.map(({ supported_game }) => supported_game)),
-        ].sort(),
+        supportedGames: [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
         startedAt,
         linkedRunId: source.id,
         idempotencyKey,
@@ -339,13 +306,13 @@ export async function retryEvidenceRun(
       throw activeRunProblem();
     }
     if (errorMessage(error).includes("curated_revision_reconfirmation_required")) {
-      throw new AdministrationProblem(409, "curated_revision_reconfirmation_required", "A Curated Revision for a selected Supported Game requires reconfirmation.");
+      throw new AdministrationProblem(
+        409,
+        "curated_revision_reconfirmation_required",
+        "A Curated Revision for a selected Supported Game requires reconfirmation.",
+      );
     }
-    if (
-      errorMessage(error).includes(
-        "credential_execution_in_progress",
-      )
-    ) {
+    if (errorMessage(error).includes("credential_execution_in_progress")) {
       throw new AdministrationProblem(
         409,
         "credential_execution_in_progress",
@@ -376,9 +343,7 @@ function assertRecoveryAvailable(recoveryHealth: string): void {
 
 async function throwIfRecoveryBlocked(database: D1Database): Promise<void> {
   const operation = await database
-    .prepare(
-      "SELECT recovery_health FROM operation_state WHERE singleton = 1",
-    )
+    .prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1")
     .first<{ recovery_health: string }>();
   if (operation === null) throw new Error("Operation state is unavailable.");
   assertRecoveryAvailable(operation.recovery_health);
@@ -399,18 +364,10 @@ async function throwIfAnotherRunActive(database: D1Database): Promise<void> {
 }
 
 function activeRunProblem(): AdministrationProblem {
-  return new AdministrationProblem(
-    409,
-    "active_ingestion_run",
-    "Another Ingestion Run is already active.",
-  );
+  return new AdministrationProblem(409, "active_ingestion_run", "Another Ingestion Run is already active.");
 }
 
-function requestStatements(
-  database: D1Database,
-  runId: string,
-  plans: readonly EvidencePlan[],
-): D1PreparedStatement[] {
+function requestStatements(database: D1Database, runId: string, plans: readonly EvidencePlan[]): D1PreparedStatement[] {
   return plans
     .flatMap(({ requests }) => requests)
     .map((sourceRequest, sequenceNumber) =>
@@ -443,15 +400,11 @@ export function evidencePlanForRequest(
   );
   if (matches.length === 0) {
     const lineage = requestId.split(":", 1)[0]!;
-    const dynamicMatches = parseEvidencePlans(run.request_plan_json).filter(
-      (plan) => plan.source_lineage === lineage,
-    );
+    const dynamicMatches = parseEvidencePlans(run.request_plan_json).filter((plan) => plan.source_lineage === lineage);
     if (dynamicMatches.length === 1) return dynamicMatches[0]!;
   }
   if (matches.length !== 1) {
-    throw new Error(
-      `Source Request ${requestId} does not have exactly one Evidence Plan.`,
-    );
+    throw new Error(`Source Request ${requestId} does not have exactly one Evidence Plan.`);
   }
   return matches[0]!;
 }
@@ -461,10 +414,7 @@ export function evidencePlanForRequest(
 // Source Request identities across initial, dynamically discovered, and
 // collection-plan roles. The registered column is clamped by the global
 // emergency ceiling so no database row can authorize unbounded discovery.
-async function adapterRequestCapacity(
-  database: D1Database,
-  adapterVersion: string,
-): Promise<number> {
+async function adapterRequestCapacity(database: D1Database, adapterVersion: string): Promise<number> {
   const registered = await database
     .prepare(
       `SELECT request_capacity FROM source_adapter_versions
@@ -472,19 +422,10 @@ async function adapterRequestCapacity(
     )
     .bind(adapterVersion)
     .first<{ request_capacity: number }>();
-  if (
-    registered === null ||
-    !Number.isSafeInteger(registered.request_capacity) ||
-    registered.request_capacity < 1
-  ) {
-    throw new Error(
-      `Source Adapter Version ${adapterVersion} has no registered request capacity.`,
-    );
+  if (registered === null || !Number.isSafeInteger(registered.request_capacity) || registered.request_capacity < 1) {
+    throw new Error(`Source Adapter Version ${adapterVersion} has no registered request capacity.`);
   }
-  return Math.min(
-    registered.request_capacity,
-    globalEmergencySourceRequestCeiling,
-  );
+  return Math.min(registered.request_capacity, globalEmergencySourceRequestCeiling);
 }
 
 // Capacity admission rejections carry the facts a request-capacity pause
@@ -535,10 +476,7 @@ export async function runRequestCapacityPolicy(
     .first<{ capacity_generation: number; request_capacity: number }>();
   if (extension !== null) {
     return {
-      request_capacity: Math.min(
-        extension.request_capacity,
-        globalEmergencySourceRequestCeiling,
-      ),
+      request_capacity: Math.min(extension.request_capacity, globalEmergencySourceRequestCeiling),
       capacity_generation: extension.capacity_generation,
     };
   }
@@ -575,19 +513,9 @@ function recountedRequestCapacityProblem(
     // only; report the whole proposed batch as overflow above the full
     // capacity so the persisted pause facts still satisfy their invariants.
     const proposed = JSON.parse(proposedRequestIds) as unknown[];
-    return requestCapacityProblem(
-      sourceLineage,
-      policy,
-      policy.request_capacity,
-      Math.max(1, proposed.length),
-    );
+    return requestCapacityProblem(sourceLineage, policy, policy.request_capacity, Math.max(1, proposed.length));
   }
-  return requestCapacityProblem(
-    sourceLineage,
-    policy,
-    recounted.admitted - recounted.overflow,
-    recounted.overflow,
-  );
+  return requestCapacityProblem(sourceLineage, policy, recounted.admitted - recounted.overflow, recounted.overflow);
 }
 
 // Unique Source Request identities the Source Lineage would hold if the
@@ -618,19 +546,19 @@ export async function appendDiscoveredEvidenceRequests(
   discovered: readonly DiscoveredEvidenceRequest[],
 ): Promise<readonly EvidenceRequestRow[]> {
   const plan = evidencePlanForRequest(run, parent.request_id);
-  const normalizedById = new Map<string, {
-    id: string;
-    url: string;
-    headers_json: string;
-    representation_fingerprint: string;
-    role: DiscoveredEvidenceRequest["role"];
-    sequence_floor: number;
-  }>();
+  const normalizedById = new Map<
+    string,
+    {
+      id: string;
+      url: string;
+      headers_json: string;
+      representation_fingerprint: string;
+      role: DiscoveredEvidenceRequest["role"];
+      sequence_floor: number;
+    }
+  >();
   for (const request of discovered) {
-    if (
-      request.discoveryKey !== undefined &&
-      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(request.discoveryKey)
-    ) {
+    if (request.discoveryKey !== undefined && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(request.discoveryKey)) {
       throw new AdministrationProblem(
         422,
         "source_discovery_failed",
@@ -652,27 +580,22 @@ export async function appendDiscoveredEvidenceRequests(
         }),
       ),
     );
-    const requestId = request.discoveryKey === undefined
-      ? `${plan.source_lineage}:${request.role}:${digest}`
-      : `${plan.source_lineage}:${request.role}:${request.discoveryKey}:${digest}`;
+    const requestId =
+      request.discoveryKey === undefined
+        ? `${plan.source_lineage}:${request.role}:${digest}`
+        : `${plan.source_lineage}:${request.role}:${request.discoveryKey}:${digest}`;
     normalizedById.set(requestId, {
       id: requestId,
       url,
       headers_json: headersJson,
-      representation_fingerprint: await sha256(
-        utf8(canonicalJson({ method: "GET", url, headers: request.headers })),
-      ),
+      representation_fingerprint: await sha256(utf8(canonicalJson({ method: "GET", url, headers: request.headers }))),
       role: request.role,
       sequence_floor: request.discoveryKey === undefined ? 0 : 1_000_000,
     });
   }
   const normalized = [...normalizedById.values()];
   const proposedRequestIds = JSON.stringify(normalized.map(({ id }) => id));
-  const capacityPolicy = await runRequestCapacityPolicy(
-    database,
-    run.id,
-    plan.adapter_version,
-  );
+  const capacityPolicy = await runRequestCapacityPolicy(database, run.id, plan.adapter_version);
   const requestCapacity = capacityPolicy.request_capacity;
   const planRequestIds = JSON.stringify(plan.requests.map(({ id }) => id));
   const lineageRequestPattern = `${plan.source_lineage}:%`;
@@ -688,28 +611,21 @@ export async function appendDiscoveredEvidenceRequests(
     )
     .bind(run.id, lineageRequestPattern, planRequestIds)
     .first<{ count: number }>();
-  const existing = normalized.length === 0
-    ? { count: 0 }
-    : await database
-      .prepare(
-        `SELECT COUNT(*) AS count FROM source_requests
+  const existing =
+    normalized.length === 0
+      ? { count: 0 }
+      : await database
+          .prepare(
+            `SELECT COUNT(*) AS count FROM source_requests
          WHERE ingestion_run_id = ?
            AND request_id IN (SELECT value FROM json_each(?))`,
-      )
-      .bind(run.id, proposedRequestIds)
-      .first<{ count: number }>();
+          )
+          .bind(run.id, proposedRequestIds)
+          .first<{ count: number }>();
   const usedCapacity = count?.count ?? 0;
   const overflowRequestCount = normalized.length - (existing?.count ?? 0);
-  if (
-    count === null || existing === null ||
-    usedCapacity + overflowRequestCount > requestCapacity
-  ) {
-    throw requestCapacityProblem(
-      plan.source_lineage,
-      capacityPolicy,
-      usedCapacity,
-      overflowRequestCount,
-    );
+  if (count === null || existing === null || usedCapacity + overflowRequestCount > requestCapacity) {
+    throw requestCapacityProblem(plan.source_lineage, capacityPolicy, usedCapacity, overflowRequestCount);
   }
   if (normalized.length === 0) return [];
   const chunks = chunked(normalized, 100);
@@ -721,22 +637,19 @@ export async function appendDiscoveredEvidenceRequests(
     // deliberately selects json('source_discovery_too_large') — invalid JSON
     // — to abort the whole batch; the catch below maps that opaque SQLite
     // error back to the admission problem.
-    database.prepare(
-      `SELECT CASE WHEN ${admittedLineageCountSql} > ?5
+    database
+      .prepare(
+        `SELECT CASE WHEN ${admittedLineageCountSql} > ?5
          THEN json('source_discovery_too_large') ELSE 1 END`,
-    ).bind(
-      run.id,
-      lineageRequestPattern,
-      planRequestIds,
-      proposedRequestIds,
-      requestCapacity,
-    ),
+      )
+      .bind(run.id, lineageRequestPattern, planRequestIds, proposedRequestIds, requestCapacity),
   ];
   for (const chunk of chunks) {
     const json = JSON.stringify(chunk);
     statements.push(
-      database.prepare(
-        `SELECT CASE WHEN EXISTS (
+      database
+        .prepare(
+          `SELECT CASE WHEN EXISTS (
            SELECT 1
            FROM json_each(?) AS proposed
            JOIN source_discovery_request_plans AS retained
@@ -751,7 +664,8 @@ export async function appendDiscoveredEvidenceRequests(
               OR retained.request_role <>
                    json_extract(proposed.value, '$.role')
          ) THEN json('source_discovery_identity_collision') ELSE 1 END`,
-      ).bind(json, run.id),
+        )
+        .bind(json, run.id),
       database
         .prepare(
           `INSERT OR IGNORE INTO source_discovery_request_plans (
@@ -774,12 +688,7 @@ export async function appendDiscoveredEvidenceRequests(
              FROM source_requests WHERE ingestion_run_id = ?
            ) AS base`,
         )
-        .bind(
-          run.id,
-          parent.request_id,
-          json,
-          run.id,
-        ),
+        .bind(run.id, parent.request_id, json, run.id),
       database
         .prepare(
           `INSERT OR IGNORE INTO source_requests (
@@ -816,18 +725,19 @@ export async function appendDiscoveredEvidenceRequests(
   }
   const retainedResults = await database.batch<EvidenceRequestRow>(
     chunks.map((chunk) =>
-      database.prepare(
-        `SELECT * FROM source_requests
+      database
+        .prepare(
+          `SELECT * FROM source_requests
          WHERE ingestion_run_id = ?
            AND request_id IN (
              SELECT json_extract(value, '$.id') FROM json_each(?)
            )`,
-      ).bind(run.id, JSON.stringify(chunk))
+        )
+        .bind(run.id, JSON.stringify(chunk)),
     ),
   );
   const retainedById = new Map(
-    retainedResults.flatMap(({ results }) => results)
-      .map((row) => [row.request_id, row] as const),
+    retainedResults.flatMap(({ results }) => results).map((row) => [row.request_id, row] as const),
   );
   const inserted: EvidenceRequestRow[] = [];
   for (const expected of normalized) {
@@ -837,13 +747,10 @@ export async function appendDiscoveredEvidenceRequests(
       retained === undefined ||
       retained.url !== expected.url ||
       retained.request_headers_json !== expected.headers_json ||
-      retained.representation_fingerprint !==
-        expected.representation_fingerprint ||
+      retained.representation_fingerprint !== expected.representation_fingerprint ||
       retained.request_role !== expected.role
     ) {
-      throw new Error(
-        "Discovered Source Request identity collided with different immutable evidence.",
-      );
+      throw new Error("Discovered Source Request identity collided with different immutable evidence.");
     }
     inserted.push(retained);
   }
@@ -876,16 +783,9 @@ async function mappedDiscoveryAdmissionError(
     proposedRequestIds,
   );
   if (recounted === null || recounted.admitted > capacityPolicy.request_capacity) {
-    return recountedRequestCapacityProblem(
-      sourceLineage,
-      capacityPolicy,
-      recounted,
-      proposedRequestIds,
-    );
+    return recountedRequestCapacityProblem(sourceLineage, capacityPolicy, recounted, proposedRequestIds);
   }
-  return new Error(
-    "Discovered Source Request identity collided with different immutable evidence.",
-  );
+  return new Error("Discovered Source Request identity collided with different immutable evidence.");
 }
 
 // The unique Source Request identities the Source Lineage would hold if the
@@ -936,39 +836,30 @@ export async function persistOfficialSourceCollectionPlan(
   discoveredRequests: readonly OfficialSourceCollectionRequest[],
 ): Promise<void> {
   const run = await requiredEvidenceRun(database, runId);
-  const owner = await database.prepare(
-    `SELECT snapshot.source_lineage
+  const owner = await database
+    .prepare(
+      `SELECT snapshot.source_lineage
      FROM source_observation_sets AS observation_set
      JOIN source_snapshots AS snapshot
        ON snapshot.id = observation_set.source_snapshot_id
      WHERE observation_set.id = ? AND snapshot.ingestion_run_id = ?`,
-  ).bind(discoveryObservationSetId, runId)
+    )
+    .bind(discoveryObservationSetId, runId)
     .first<{ source_lineage: string }>();
   if (owner === null) {
-    throw new Error(
-      "The discovery observation is not owned by this Ingestion Run.",
-    );
+    throw new Error("The discovery observation is not owned by this Ingestion Run.");
   }
   const plans = parseEvidencePlans(run.request_plan_json);
-  const planIndex = plans.findIndex(
-    (plan) => plan.source_lineage === owner.source_lineage,
-  );
+  const planIndex = plans.findIndex((plan) => plan.source_lineage === owner.source_lineage);
   const discoveryPlan = plans[planIndex];
   if (discoveryPlan === undefined) {
-    throw new Error(
-      "The discovery observation has no owning immutable Evidence Plan.",
-    );
+    throw new Error("The discovery observation has no owning immutable Evidence Plan.");
   }
   if (
     discoveryPlan.requests.length !== 1 ||
-    ![
-      "discovery",
-      `${discoveryPlan.source_lineage}:discovery`,
-    ].includes(discoveryPlan.requests[0]!.id)
+    !["discovery", `${discoveryPlan.source_lineage}:discovery`].includes(discoveryPlan.requests[0]!.id)
   ) {
-    throw new Error(
-      "Complete Official Source planning lost its discovery seed.",
-    );
+    throw new Error("Complete Official Source planning lost its discovery seed.");
   }
   const collectionPlan: OfficialSourceCollectionPlan = {
     contract: "card-keepr-official-source-collection-plan@1",
@@ -993,29 +884,16 @@ export async function persistOfficialSourceCollectionPlan(
       content_digest: string;
     }>();
   if (retained !== null) {
-    if (
-      retained.collection_plan_json !== collectionPlanJson ||
-      retained.content_digest !== contentDigest
-    ) {
-      throw new Error(
-        "Live Official Source discovery changed after immutable collection planning.",
-      );
+    if (retained.collection_plan_json !== collectionPlanJson || retained.content_digest !== contentDigest) {
+      throw new Error("Live Official Source discovery changed after immutable collection planning.");
     }
     return;
   }
-  const capacityPolicy = await runRequestCapacityPolicy(
-    database,
-    runId,
-    discoveryPlan.adapter_version,
-  );
+  const capacityPolicy = await runRequestCapacityPolicy(database, runId, discoveryPlan.adapter_version);
   const requestCapacity = capacityPolicy.request_capacity;
   const lineageRequestPattern = `${discoveryPlan.source_lineage}:%`;
-  const planRequestIds = JSON.stringify(
-    discoveryPlan.requests.map(({ id }) => id),
-  );
-  const collectionRequestIds = JSON.stringify(
-    discoveredRequests.map(({ id }) => id),
-  );
+  const planRequestIds = JSON.stringify(discoveryPlan.requests.map(({ id }) => id));
+  const collectionRequestIds = JSON.stringify(discoveredRequests.map(({ id }) => id));
   const admitted = await admittedLineageCapacityFacts(
     database,
     runId,
@@ -1024,12 +902,7 @@ export async function persistOfficialSourceCollectionPlan(
     collectionRequestIds,
   );
   if (admitted === null || admitted.admitted > requestCapacity) {
-    throw recountedRequestCapacityProblem(
-      discoveryPlan.source_lineage,
-      capacityPolicy,
-      admitted,
-      collectionRequestIds,
-    );
+    throw recountedRequestCapacityProblem(discoveryPlan.source_lineage, capacityPolicy, admitted, collectionRequestIds);
   }
   try {
     await database.batch([
@@ -1041,13 +914,7 @@ export async function persistOfficialSourceCollectionPlan(
           `SELECT CASE WHEN ${admittedLineageCountSql} > ?5
              THEN json('source_discovery_too_large') ELSE 1 END`,
         )
-        .bind(
-          runId,
-          lineageRequestPattern,
-          planRequestIds,
-          collectionRequestIds,
-          requestCapacity,
-        ),
+        .bind(runId, lineageRequestPattern, planRequestIds, collectionRequestIds, requestCapacity),
       database
         .prepare(
           `INSERT INTO official_source_collection_plans (
@@ -1077,8 +944,7 @@ export async function persistOfficialSourceCollectionPlan(
           .bind(
             runId,
             request.id,
-            plans.flatMap((plan) => plan.requests).length +
-              planIndex * 10000 + index,
+            plans.flatMap((plan) => plan.requests).length + planIndex * 10000 + index,
             request.url,
             canonicalJson(request.headers),
             request.representation_fingerprint,
@@ -1108,10 +974,7 @@ export async function persistOfficialSourceCollectionPlan(
   }
 }
 
-export async function requiredEvidenceRun(
-  database: D1Database,
-  runId: string,
-): Promise<IngestionEvidenceRow> {
+export async function requiredEvidenceRun(database: D1Database, runId: string): Promise<IngestionEvidenceRow> {
   assertIdentifier(runId, "run_id");
   const row = await database
     .prepare(
@@ -1138,10 +1001,7 @@ export async function requiredEvidenceRun(
   return row;
 }
 
-async function evidenceRunByIdempotencyKey(
-  database: D1Database,
-  key: string,
-): Promise<IngestionEvidenceRow | null> {
+async function evidenceRunByIdempotencyKey(database: D1Database, key: string): Promise<IngestionEvidenceRow | null> {
   return database
     .prepare(
       `SELECT runs.*, plans.source_lineage, plans.supported_game,
@@ -1214,16 +1074,8 @@ export async function recordWorkflowIds(
          WHERE ingestion_run_id = ?
            AND (parent_workflow_id IS NULL OR parent_workflow_id = ?)`,
       )
-      .bind(
-        parentWorkflowId,
-        canonicalJson(childWorkflowIds),
-        runId,
-        parentWorkflowId,
-      ),
-    ...workflowAttemptStatements(database, runId, [
-      parentWorkflowId,
-      ...childWorkflowIds,
-    ]),
+      .bind(parentWorkflowId, canonicalJson(childWorkflowIds), runId, parentWorkflowId),
+    ...workflowAttemptStatements(database, runId, [parentWorkflowId, ...childWorkflowIds]),
   ]);
 }
 
@@ -1260,8 +1112,8 @@ export function workflowAttemptStatements(
 // Exhausting the bounded replacement identities of one hostname shard fails
 // only that shard's active requests: other hosts' healthy shards keep
 // collecting, and the completeness gate still fails the run at the barrier.
-// The URL prefix match is exact on the '://hostname/' boundary (evidence
-// requests are plain https URLs without ports).
+// The host is extracted from the normalized request URL and compared for
+// equality (evidence requests are plain https URLs without ports).
 export async function failActiveEvidenceRequestsForWorkflowExhaustion(
   database: D1Database,
   runId: string,
@@ -1277,14 +1129,9 @@ export async function failActiveEvidenceRequestsForWorkflowExhaustion(
        SET state = 'failed', failure_code = 'source_workflow_retries_exhausted'
        WHERE ingestion_run_id = ? AND state IN ('pending', 'captured')
          AND sequence_number BETWEEN ? AND ?
-         AND url LIKE '%://' || ? || '/%'`,
+         AND ${sourceRequestHostnameSql("url")} = ?`,
     )
-    .bind(
-      runId,
-      shard.minimumSequenceNumber,
-      shard.maximumSequenceNumber,
-      shard.hostname,
-    )
+    .bind(runId, shard.minimumSequenceNumber, shard.maximumSequenceNumber, shard.hostname)
     .run();
 }
 
@@ -1360,10 +1207,7 @@ export type RetryExhaustionFacts = {
   hostname: string;
   retry_generation: number;
   attempt_count: number;
-  failure_classification:
-    | "network_failure"
-    | "http_failure"
-    | "storage_failure";
+  failure_classification: "network_failure" | "http_failure" | "storage_failure";
   http_status: number | null;
 };
 
@@ -1380,9 +1224,10 @@ export function retryExhaustionPauseStatements(
   runId: string,
   facts: RetryExhaustionFacts,
 ): D1PreparedStatement[] {
-  const pauseReason = facts.failure_classification === "storage_failure"
-    ? "source_storage_retries_exhausted"
-    : "source_transport_retries_exhausted";
+  const pauseReason =
+    facts.failure_classification === "storage_failure"
+      ? "source_storage_retries_exhausted"
+      : "source_transport_retries_exhausted";
   return [
     database
       .prepare(
@@ -1451,9 +1296,7 @@ export async function pauseEvidenceRunForWorkflowRecovery(
   runId: string,
   facts: WorkflowRecoveryFacts,
 ): Promise<void> {
-  await database.batch(
-    workflowPauseStatements(database, runId, facts, new Date().toISOString()),
-  );
+  await database.batch(workflowPauseStatements(database, runId, facts, new Date().toISOString()));
 }
 
 // The two guarded statements every Workflow Pause applies atomically.
@@ -1544,11 +1387,7 @@ export async function pauseEvidenceRunOnOwnerRequest(
     ingestion_run_id: runId,
     idempotency_key: request.idempotency_key,
   });
-  const replayed = await collectionPauseReplay(
-    database,
-    request.idempotency_key,
-    requestJson,
-  );
+  const replayed = await collectionPauseReplay(database, request.idempotency_key, requestJson);
   if (replayed !== null) return { document: replayed, applied: false };
   const run = await requiredEvidenceRun(database, runId);
   if (run.state !== "collecting") throw ingestionRunNotCollectingForPause();
@@ -1612,11 +1451,7 @@ export async function pauseEvidenceRunOnOwnerRequest(
   } catch {
     // A raced key or fence; the retained state below reports the outcome.
   }
-  const recorded = await collectionPauseReplay(
-    database,
-    request.idempotency_key,
-    requestJson,
-  );
+  const recorded = await collectionPauseReplay(database, request.idempotency_key, requestJson);
   if (recorded !== null) return { document: recorded, applied };
   const current = await requiredEvidenceRun(database, runId);
   if (current.state !== "collecting") throw ingestionRunNotCollectingForPause();
@@ -1648,10 +1483,7 @@ async function collectionPauseReplay(
     .bind(idempotencyKey)
     .first<{ operation: string; request_json: string; response_json: string }>();
   if (retained === null) return null;
-  if (
-    retained.operation !== collectionPauseOperation ||
-    retained.request_json !== requestJson
-  ) {
+  if (retained.operation !== collectionPauseOperation || retained.request_json !== requestJson) {
     throw new AdministrationProblem(
       409,
       "idempotency_conflict",
@@ -1669,10 +1501,7 @@ export type { CollectionProgressFacts } from "./collection-recovery";
 // never log arrival time — plus the persisted wait deadlines that must not
 // be misread as silence (the host pacing table's next-request deadline and
 // the newest scheduled Retry-After deadline).
-export async function collectionProgressFacts(
-  database: D1Database,
-  runId: string,
-): Promise<CollectionProgressFacts> {
+export async function collectionProgressFacts(database: D1Database, runId: string): Promise<CollectionProgressFacts> {
   const [progress, pacing, retry] = await Promise.all([
     database
       .prepare(
@@ -1698,11 +1527,12 @@ export async function collectionProgressFacts(
       .bind(runId)
       .first<Record<string, string | null>>(),
     // Pacing deadlines are keyed by hostname rather than run, so the scan
-    // keeps only hosts this run still has open requests against. The URL
-    // prefix match is exact on the '://hostname/' boundary (evidence
-    // requests are plain https URLs without ports), and any residual
-    // over-approximation is bounded by the pacing interval cap plus jitter —
-    // it can only delay a stall verdict briefly, never manufacture one.
+    // keeps only hosts this run still has open requests against. The host is
+    // extracted from the normalized request URL and compared for equality
+    // (evidence requests are plain https URLs without ports), and any
+    // residual over-approximation is bounded by the pacing interval cap plus
+    // jitter — it can only delay a stall verdict briefly, never manufacture
+    // one.
     database
       .prepare(
         `SELECT MAX(pacing.next_request_not_before) AS pacing_deadline_at
@@ -1711,7 +1541,7 @@ export async function collectionProgressFacts(
            SELECT 1 FROM source_requests AS requests
            WHERE requests.ingestion_run_id = ?
              AND requests.state IN ('pending', 'captured')
-             AND requests.url LIKE '%://' || pacing.hostname || '/%'
+             AND ${sourceRequestHostnameSql("requests.url")} = pacing.hostname
          )`,
       )
       .bind(runId)
@@ -1735,9 +1565,8 @@ export async function collectionProgressFacts(
   return {
     last_progress_at: progressTimes.at(-1) ?? null,
     pacing_deadline_at: pacing?.pacing_deadline_at ?? null,
-    retry_deadline_at: retry?.retry_deadline_ms == null
-      ? null
-      : new Date(Math.round(retry.retry_deadline_ms)).toISOString(),
+    retry_deadline_at:
+      retry?.retry_deadline_ms == null ? null : new Date(Math.round(retry.retry_deadline_ms)).toISOString(),
   };
 }
 
@@ -1748,10 +1577,7 @@ export async function collectionProgressFacts(
 // no-op once the run collects again, and the identity is derived from the
 // count of recorded paused -> collecting transitions, so a replay reassigns
 // the same value.
-export async function resumePausedEvidenceRun(
-  database: D1Database,
-  runId: string,
-): Promise<void> {
+export async function resumePausedEvidenceRun(database: D1Database, runId: string): Promise<void> {
   const resumed = await database
     .prepare(
       `SELECT COUNT(*) AS count FROM ingestion_run_transitions
@@ -1850,17 +1676,9 @@ export type CapacityExtensionRequest = Readonly<{
   idempotency_key: string;
 }>;
 
-function requiredCapacityInteger(
-  value: unknown,
-  code: string,
-  field: string,
-): number {
+function requiredCapacityInteger(value: unknown, code: string, field: string): number {
   if (!Number.isSafeInteger(value) || (value as number) < 1) {
-    throw new AdministrationProblem(
-      422,
-      code,
-      `${field} must be a positive integer.`,
-    );
+    throw new AdministrationProblem(422, code, `${field} must be a positive integer.`);
   }
   return value as number;
 }
@@ -1894,30 +1712,22 @@ export async function extendRunRequestCapacity(
     "request_capacity",
   );
   const run = await requiredEvidenceRun(database, runId);
-  const requestDigest = await sha256(utf8(canonicalJson({
-    ingestion_run_id: runId,
-    expected_request_capacity: expectedRequestCapacity,
-    expected_capacity_generation: expectedCapacityGeneration,
-    request_capacity: requestedCapacity,
-    idempotency_key: request.idempotency_key,
-  })));
-  const replayed = await capacityExtensionReplay(
-    database,
-    request.idempotency_key,
-    requestDigest,
+  const requestDigest = await sha256(
+    utf8(
+      canonicalJson({
+        ingestion_run_id: runId,
+        expected_request_capacity: expectedRequestCapacity,
+        expected_capacity_generation: expectedCapacityGeneration,
+        request_capacity: requestedCapacity,
+        idempotency_key: request.idempotency_key,
+      }),
+    ),
   );
+  const replayed = await capacityExtensionReplay(database, request.idempotency_key, requestDigest);
   if (replayed !== null) return replayed;
   if (run.state !== "paused") throw ingestionRunNotPausedProblem();
-  const policy = await runRequestCapacityPolicy(
-    database,
-    runId,
-    run.adapter_version,
-  );
-  assertExpectedCapacityPolicy(
-    policy,
-    expectedRequestCapacity,
-    expectedCapacityGeneration,
-  );
+  const policy = await runRequestCapacityPolicy(database, runId, run.adapter_version);
+  assertExpectedCapacityPolicy(policy, expectedRequestCapacity, expectedCapacityGeneration);
   if (requestedCapacity < policy.request_capacity) {
     throw new AdministrationProblem(
       422,
@@ -1987,11 +1797,7 @@ export async function extendRunRequestCapacity(
   // The guarded insert lost a race: a replay of this exact request, another
   // extension advancing the generation, or a resumed run. Re-reading the
   // retained state reports the precise conflict.
-  const raced = await capacityExtensionReplay(
-    database,
-    request.idempotency_key,
-    requestDigest,
-  );
+  const raced = await capacityExtensionReplay(database, request.idempotency_key, requestDigest);
   if (raced !== null) return raced;
   const current = await requiredEvidenceRun(database, runId);
   if (current.state !== "paused") throw ingestionRunNotPausedProblem();
@@ -2074,10 +1880,7 @@ export const ingestionRunTerminatedFailureCode = "ingestion_run_terminated";
 // resumed as-is (re-admission simply pauses it again if nothing changed),
 // extended, or terminated; every other pause resumes or terminates; a
 // terminal evidence run can only be retried as a new linked run.
-export function collectionActions(
-  state: string,
-  pauseReason: string | null,
-): string[] {
+export function collectionActions(state: string, pauseReason: string | null): string[] {
   if (state === "paused") {
     return pauseReason === "source_request_capacity_exhausted"
       ? ["resume", "extend_capacity", "terminate"]
@@ -2132,10 +1935,7 @@ type WorkflowPauseRow = {
 // closed shape: correlation identifiers, bounded counters, and machine codes
 // only, so the owner-facing status surface stays free of request headers,
 // payloads, and credentials.
-export async function currentPause(
-  database: D1Database,
-  runId: string,
-): Promise<CurrentPause | null> {
+export async function currentPause(database: D1Database, runId: string): Promise<CurrentPause | null> {
   const [capacity, retry, workflow] = await Promise.all([
     database
       .prepare(
@@ -2162,25 +1962,22 @@ export async function currentPause(
       .bind(runId)
       .first<WorkflowPauseRow>(),
   ]);
-  const retryNewest = retry !== null &&
-    (capacity === null || retry.paused_at >= capacity.paused_at);
-  const requestPause: CurrentPause | null = retryNewest && retry !== null
-    ? {
-      reason: retry.pause_reason,
-      paused_at: retry.paused_at,
-      document: retryPauseDocument(retry),
-    }
-    : capacity === null
-      ? null
-      : {
-        reason: capacity.pause_reason,
-        paused_at: capacity.paused_at,
-        document: capacityPauseDocument(capacity),
-      };
-  if (
-    workflow !== null &&
-    (requestPause === null || workflow.paused_at >= requestPause.paused_at)
-  ) {
+  const retryNewest = retry !== null && (capacity === null || retry.paused_at >= capacity.paused_at);
+  const requestPause: CurrentPause | null =
+    retryNewest && retry !== null
+      ? {
+          reason: retry.pause_reason,
+          paused_at: retry.paused_at,
+          document: retryPauseDocument(retry),
+        }
+      : capacity === null
+        ? null
+        : {
+            reason: capacity.pause_reason,
+            paused_at: capacity.paused_at,
+            document: capacityPauseDocument(capacity),
+          };
+  if (workflow !== null && (requestPause === null || workflow.paused_at >= requestPause.paused_at)) {
     return {
       reason: workflow.pause_reason,
       paused_at: workflow.paused_at,
@@ -2215,15 +2012,15 @@ export async function terminateEvidenceRun(
 ): Promise<Record<string, unknown>> {
   assertIdentifier(request.idempotency_key, "idempotency_key");
   const run = await requiredEvidenceRun(database, runId);
-  const requestDigest = await sha256(utf8(canonicalJson({
-    ingestion_run_id: runId,
-    idempotency_key: request.idempotency_key,
-  })));
-  const replayed = await terminationReplay(
-    database,
-    request.idempotency_key,
-    requestDigest,
+  const requestDigest = await sha256(
+    utf8(
+      canonicalJson({
+        ingestion_run_id: runId,
+        idempotency_key: request.idempotency_key,
+      }),
+    ),
   );
+  const replayed = await terminationReplay(database, request.idempotency_key, requestDigest);
   if (replayed !== null) return replayed;
   if (run.state !== "paused") throw ingestionRunNotPausedForTermination();
   const pause = await currentPause(database, runId);
@@ -2275,12 +2072,7 @@ export async function terminateEvidenceRun(
                WHERE ingestion_run_id = ?1 AND idempotency_key = ?4
              )`,
         )
-        .bind(
-          runId,
-          terminatedAt,
-          ingestionRunTerminatedFailureCode,
-          request.idempotency_key,
-        ),
+        .bind(runId, terminatedAt, ingestionRunTerminatedFailureCode, request.idempotency_key),
       database
         .prepare(
           `UPDATE ingestion_evidence_plans SET failure_code = ?2
@@ -2300,11 +2092,7 @@ export async function terminateEvidenceRun(
   // The guarded batch lost a race: a replay of this exact request, a resume,
   // an extension, or another termination. Re-reading the retained state
   // reports the precise conflict.
-  const raced = await terminationReplay(
-    database,
-    request.idempotency_key,
-    requestDigest,
-  );
+  const raced = await terminationReplay(database, request.idempotency_key, requestDigest);
   if (raced !== null) return raced;
   const current = await requiredEvidenceRun(database, runId);
   if (current.state !== "paused") throw ingestionRunNotPausedForTermination();
@@ -2316,11 +2104,7 @@ export async function terminateEvidenceRun(
 }
 
 function ingestionRunNotPausedForTermination(): AdministrationProblem {
-  return new AdministrationProblem(
-    409,
-    "ingestion_run_not_paused",
-    "Only a paused Ingestion Run can be terminated.",
-  );
+  return new AdministrationProblem(409, "ingestion_run_not_paused", "Only a paused Ingestion Run can be terminated.");
 }
 
 async function terminationReplay(
@@ -2329,18 +2113,18 @@ async function terminationReplay(
   requestDigest: string,
 ): Promise<Record<string, unknown> | null> {
   const retained = await replayByDigest({
-    lookup: () => database
-      .prepare(
-        `SELECT request_digest, response_json
+    lookup: () =>
+      database
+        .prepare(
+          `SELECT request_digest, response_json
          FROM ingestion_run_terminations
          WHERE idempotency_key = ?`,
-      )
-      .bind(idempotencyKey)
-      .first<Pick<TerminationRow, "request_digest" | "response_json">>(),
+        )
+        .bind(idempotencyKey)
+        .first<Pick<TerminationRow, "request_digest" | "response_json">>(),
     retainedDigest: (row) => row.request_digest,
     requestDigest,
-    conflictDetail:
-      "The idempotency key was already used for a different termination.",
+    conflictDetail: "The idempotency key was already used for a different termination.",
   });
   if (retained === null) return null;
   return JSON.parse(retained.response_json) as Record<string, unknown>;
@@ -2350,10 +2134,7 @@ async function terminationReplay(
 // whether the run holds it no longer. Guarded on the terminal owner decision
 // so it can never release a live run, and idempotent so a replayed
 // termination re-runs it harmlessly.
-export async function releaseTerminatedEvidenceRun(
-  database: D1Database,
-  runId: string,
-): Promise<boolean> {
+export async function releaseTerminatedEvidenceRun(database: D1Database, runId: string): Promise<boolean> {
   await database
     .prepare(
       `UPDATE operation_state SET active_ingestion_run_id = NULL
@@ -2366,9 +2147,7 @@ export async function releaseTerminatedEvidenceRun(
     .bind(runId, ingestionRunTerminatedFailureCode)
     .run();
   const operation = await database
-    .prepare(
-      "SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1",
-    )
+    .prepare("SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1")
     .first<{ active_ingestion_run_id: string | null }>();
   return operation !== null && operation.active_ingestion_run_id !== runId;
 }
@@ -2386,12 +2165,14 @@ export async function terminationDocument(
     )
     .bind(runId)
     .first<Pick<TerminationRow, "pause_reason" | "paused_at" | "terminated_at">>();
-  return row === null ? null : {
-    reason: ingestionRunTerminatedFailureCode,
-    pause_reason: row.pause_reason,
-    paused_at: row.paused_at,
-    terminated_at: row.terminated_at,
-  };
+  return row === null
+    ? null
+    : {
+        reason: ingestionRunTerminatedFailureCode,
+        pause_reason: row.pause_reason,
+        paused_at: row.paused_at,
+        terminated_at: row.terminated_at,
+      };
 }
 
 // The Workflow instance identities termination must fence: the current
@@ -2414,18 +2195,13 @@ export async function currentCollectionWorkflowIds(
   };
 }
 
-export async function finalizeEvidenceRun(
-  database: D1Database,
-  runId: string,
-): Promise<void> {
+export async function finalizeEvidenceRun(database: D1Database, runId: string): Promise<void> {
   // A Printing Image that failed under one of its tolerated codes (exhausted
   // transport retries, or a terminal outcome such as a missing or redirected
   // file) is recorded on its own request, reported by inspection, and
   // carried into reconciliation as an explicit gap, but it never fails the
   // run. Every other failed request is missing catalogue facts.
-  const toleratedImageCodes = JSON.stringify(
-    toleratedPrintingImageFailureCodes,
-  );
+  const toleratedImageCodes = JSON.stringify(toleratedPrintingImageFailureCodes);
   const counts = await database
     .prepare(
       `SELECT
@@ -2565,24 +2341,16 @@ export async function showEvidenceRun(
   // A paused run reports exactly one pause, its current one; a terminated
   // run reports the owner decision instead. Both carry the exact owner
   // actions the lifecycle admits for the run's state and pause reason.
-  const actions = collectionActions(
-    run.state,
-    run.state === "paused" ? pause?.reason ?? null : null,
-  );
+  const actions = collectionActions(run.state, run.state === "paused" ? (pause?.reason ?? null) : null);
   const lifecycleBlocks: Record<string, unknown> = {
-    ...(run.state === "paused" && pause !== null
-      ? { pause: { ...pause.document, actions } }
-      : {}),
+    ...(run.state === "paused" && pause !== null ? { pause: { ...pause.document, actions } } : {}),
     ...(termination === null ? {} : { termination }),
     actions,
   };
   const capacityPolicies = new Map<string, RunCapacityPolicy>();
   for (const plan of evidencePlans) {
     if (capacityPolicies.has(plan.source_lineage)) continue;
-    capacityPolicies.set(
-      plan.source_lineage,
-      await runRequestCapacityPolicy(database, runId, plan.adapter_version),
-    );
+    capacityPolicies.set(plan.source_lineage, await runRequestCapacityPolicy(database, runId, plan.adapter_version));
   }
   const inspection = await collectionInspection(database, {
     run,
@@ -2622,10 +2390,12 @@ export async function showEvidenceRun(
     collection_completed_at: run.collection_completed_at,
     failure_code: run.failure_code,
     ...lifecycleBlocks,
-    ...(curatedSet === null ? {} : {
-      curated_revision_ids: curatedSet.revision_ids,
-      curated_revision_set_digest: curatedSet.set_digest,
-    }),
+    ...(curatedSet === null
+      ? {}
+      : {
+          curated_revision_ids: curatedSet.revision_ids,
+          curated_revision_set_digest: curatedSet.set_digest,
+        }),
     collection: inspection.collection,
     workflow: await collectionWorkflowDocument(
       run,
@@ -2684,9 +2454,7 @@ function retryPauseDocument(row: RetryPauseRow): Record<string, unknown> {
   };
 }
 
-function workflowPauseDocument(
-  row: WorkflowPauseRow,
-): Record<string, unknown> {
+function workflowPauseDocument(row: WorkflowPauseRow): Record<string, unknown> {
   return {
     reason: row.pause_reason,
     paused_at: row.paused_at,
@@ -2704,10 +2472,7 @@ type WorkflowAttemptRow = {
   created_at: string;
 };
 
-async function workflowAttemptRows(
-  database: D1Database,
-  runId: string,
-): Promise<WorkflowAttemptRow[]> {
+async function workflowAttemptRows(database: D1Database, runId: string): Promise<WorkflowAttemptRow[]> {
   const rows = await database
     .prepare(
       `SELECT workflow_kind, base_workflow_id, attempt_number,
@@ -2734,12 +2499,8 @@ function resolvedWorkflowAttempts(
   attempts: WorkflowAttemptRow[];
   isCurrent: (attempt: WorkflowAttemptRow) => boolean;
 } {
-  const childIds: string[] = run.child_workflow_ids_json === null
-    ? []
-    : JSON.parse(run.child_workflow_ids_json);
-  const recorded = new Map(
-    attemptRows.map((row) => [row.workflow_instance_id, row]),
-  );
+  const childIds: string[] = run.child_workflow_ids_json === null ? [] : JSON.parse(run.child_workflow_ids_json);
+  const recorded = new Map(attemptRows.map((row) => [row.workflow_instance_id, row]));
   for (const legacyId of [run.parent_workflow_id, ...childIds]) {
     if (legacyId === null || recorded.has(legacyId)) continue;
     const record = workflowAttemptRecord(run.id, legacyId);
@@ -2759,25 +2520,21 @@ function resolvedWorkflowAttempts(
       created_at: "",
     });
   }
-  const attempts = [...recorded.values()].sort((left, right) =>
-    left.workflow_kind.localeCompare(right.workflow_kind) ||
-    left.base_workflow_id.localeCompare(right.base_workflow_id) ||
-    left.attempt_number - right.attempt_number
+  const attempts = [...recorded.values()].sort(
+    (left, right) =>
+      left.workflow_kind.localeCompare(right.workflow_kind) ||
+      left.base_workflow_id.localeCompare(right.base_workflow_id) ||
+      left.attempt_number - right.attempt_number,
   );
   const currentAttemptNumbers = new Map<string, number>();
   for (const attempt of attempts) {
     const scope = `${attempt.workflow_kind} ${attempt.base_workflow_id}`;
-    currentAttemptNumbers.set(
-      scope,
-      Math.max(currentAttemptNumbers.get(scope) ?? 0, attempt.attempt_number),
-    );
+    currentAttemptNumbers.set(scope, Math.max(currentAttemptNumbers.get(scope) ?? 0, attempt.attempt_number));
   }
   return {
     attempts,
     isCurrent: (attempt) =>
-      currentAttemptNumbers.get(
-        `${attempt.workflow_kind} ${attempt.base_workflow_id}`,
-      ) === attempt.attempt_number,
+      currentAttemptNumbers.get(`${attempt.workflow_kind} ${attempt.base_workflow_id}`) === attempt.attempt_number,
   };
 }
 
@@ -2793,54 +2550,49 @@ async function collectionWorkflowDocument(
   parentWorkflow?: Workflow<EvidenceParentWorkflowParams>,
   hostWorkflow?: Workflow<EvidenceHostWorkflowParams>,
 ): Promise<Record<string, unknown>> {
-  const childIds: string[] = run.child_workflow_ids_json === null
-    ? []
-    : JSON.parse(run.child_workflow_ids_json);
+  const childIds: string[] = run.child_workflow_ids_json === null ? [] : JSON.parse(run.child_workflow_ids_json);
   const { attempts, isCurrent } = resolvedWorkflowAttempts(run, attemptRows);
-  const currentParent = attempts
-    .filter((attempt) => attempt.workflow_kind === "parent")
-    .filter(isCurrent)
-    .at(-1) ?? null;
+  const currentParent =
+    attempts
+      .filter((attempt) => attempt.workflow_kind === "parent")
+      .filter(isCurrent)
+      .at(-1) ?? null;
   // Every recorded attempt, active or historical, reports its platform
   // status mapped onto the closed safe vocabulary; a binding that is not
   // supplied leaves the status unknown (null) rather than guessing.
   const statuses = new Map<string, SafeWorkflowStatus | null>(
-    await Promise.all(attempts.map(async (attempt) => {
-      const binding = attempt.workflow_kind === "parent"
-        ? parentWorkflow
-        : hostWorkflow;
-      if (binding === undefined) {
-        return [attempt.workflow_instance_id, null] as const;
-      }
-      try {
-        const instance = await binding.get(attempt.workflow_instance_id);
-        return [
-          attempt.workflow_instance_id,
-          safeWorkflowStatus((await instance.status()).status),
-        ] as const;
-      } catch {
-        return [attempt.workflow_instance_id, "unavailable"] as const;
-      }
-    })),
+    await Promise.all(
+      attempts.map(async (attempt) => {
+        const binding = attempt.workflow_kind === "parent" ? parentWorkflow : hostWorkflow;
+        if (binding === undefined) {
+          return [attempt.workflow_instance_id, null] as const;
+        }
+        try {
+          const instance = await binding.get(attempt.workflow_instance_id);
+          return [attempt.workflow_instance_id, safeWorkflowStatus((await instance.status()).status)] as const;
+        } catch {
+          return [attempt.workflow_instance_id, "unavailable"] as const;
+        }
+      }),
+    ),
   );
-  const status: SafeWorkflowStatus | null = currentParent === null
-    ? null
-    : statuses.get(currentParent.workflow_instance_id) ?? null;
-  const classification = status === null || run.state !== "collecting"
-    ? null
-    : classifyCollectionProgress(status, progress);
+  const status: SafeWorkflowStatus | null =
+    currentParent === null ? null : (statuses.get(currentParent.workflow_instance_id) ?? null);
+  const classification =
+    status === null || run.state !== "collecting" ? null : classifyCollectionProgress(status, progress);
   return {
     parent_id: run.parent_workflow_id,
     child_ids: childIds,
     last_progress_at: progress.last_progress_at,
-    current_attempt: currentParent === null ? null : {
-      id: currentParent.workflow_instance_id,
-      attempt_number: currentParent.attempt_number,
-      created_at: currentParent.created_at === ""
+    current_attempt:
+      currentParent === null
         ? null
-        : currentParent.created_at,
-      status,
-    },
+        : {
+            id: currentParent.workflow_instance_id,
+            attempt_number: currentParent.attempt_number,
+            created_at: currentParent.created_at === "" ? null : currentParent.created_at,
+            status,
+          },
     attempts: attempts.map((attempt) => ({
       id: attempt.workflow_instance_id,
       kind: attempt.workflow_kind,
@@ -2850,17 +2602,15 @@ async function collectionWorkflowDocument(
       status: statuses.get(attempt.workflow_instance_id) ?? null,
     })),
     ...(status === null ? {} : { status }),
-    ...(classification === null ? {} : {
-      classification: classification.kind === "recover"
-        ? classification.reason
-        : classification.kind,
-    }),
+    ...(classification === null
+      ? {}
+      : {
+          classification: classification.kind === "recover" ? classification.reason : classification.kind,
+        }),
   };
 }
 
-function capacityPauseDocument(
-  row: CapacityPauseRow,
-): Record<string, unknown> {
+function capacityPauseDocument(row: CapacityPauseRow): Record<string, unknown> {
   return {
     reason: row.pause_reason,
     paused_at: row.paused_at,
@@ -2907,9 +2657,7 @@ export function publicSnapshot(row: SnapshotRow): Record<string, unknown> {
   };
 }
 
-export function publicObservationSet(
-  row: ObservationSetRow,
-): Record<string, unknown> {
+export function publicObservationSet(row: ObservationSetRow): Record<string, unknown> {
   return {
     id: row.id,
     source_snapshot_id: row.source_snapshot_id,
@@ -2994,8 +2742,6 @@ async function ingestionRunInsert(
 }
 
 async function supportsLifecycleV2(database: D1Database): Promise<boolean> {
-  const columns = await database
-    .prepare("PRAGMA table_info(ingestion_runs)")
-    .all<{ name: string }>();
+  const columns = await database.prepare("PRAGMA table_info(ingestion_runs)").all<{ name: string }>();
   return columns.results.some((column) => column.name === "progress_json");
 }
