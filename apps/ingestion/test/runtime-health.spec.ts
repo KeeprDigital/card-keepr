@@ -1,5 +1,6 @@
 import { env } from "cloudflare:test";
 import { expect, test, vi } from "vitest";
+import { inspectWorkflowInstance } from "../../../src/catalogue/shared";
 import { checkWorkflows, probeTimeoutMilliseconds } from "../../../src/http/health-checks";
 import ingestionWorker from "../src/index";
 import { installRuntimeSuite } from "./runtime-helpers";
@@ -300,9 +301,12 @@ test("readiness accepts absent Workflow probes without creating an instance", as
 test("readiness bounds a Workflow status probe that never answers", async () => {
   vi.useFakeTimers();
   try {
-    const check = checkWorkflows({
-      EVIDENCE_HOST_WORKFLOW: { get: async () => ({ status: () => new Promise(() => {}) }) },
-    });
+    const check = checkWorkflows(
+      {
+        EVIDENCE_HOST_WORKFLOW: { get: async () => ({ status: () => new Promise(() => {}) }) },
+      },
+      inspectWorkflowInstance,
+    );
     await vi.advanceTimersByTimeAsync(probeTimeoutMilliseconds);
     await expect(check).resolves.toEqual({
       status: "fail",
