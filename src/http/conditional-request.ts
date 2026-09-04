@@ -1,7 +1,4 @@
-export function ifNoneMatchMatches(
-  request: Request,
-  currentEtag: string,
-): boolean {
+export function ifNoneMatchMatches(request: Request, currentEtag: string): boolean {
   const header = request.headers.get("if-none-match");
   if (header === null) return false;
   const currentOpaqueTag = weakOpaqueTag(currentEtag);
@@ -9,10 +6,7 @@ export function ifNoneMatchMatches(
     throw new Error("The current ETag is invalid.");
   }
   const entityTags = parseEntityTagList(header);
-  return (
-    entityTags === "*" ||
-    entityTags?.some((entityTag) => entityTag === currentOpaqueTag) === true
-  );
+  return entityTags === "*" || entityTags?.some((entityTag) => entityTag === currentOpaqueTag) === true;
 }
 
 function parseEntityTagList(value: string): "*" | string[] | null {
@@ -21,6 +15,7 @@ function parseEntityTagList(value: string): "*" | string[] | null {
   while (offset < value.length) {
     while (value[offset] === " " || value[offset] === "\t") offset += 1;
     if (value[offset] === "*") {
+      if (tags.length > 0) return null;
       offset += 1;
       while (value[offset] === " " || value[offset] === "\t") offset += 1;
       return offset === value.length ? "*" : null;
@@ -32,11 +27,7 @@ function parseEntityTagList(value: string): "*" | string[] | null {
     offset += 1;
     while (offset < value.length && value[offset] !== '"') {
       const code = value.charCodeAt(offset);
-      if (
-        code === 0x21 ||
-        (code >= 0x23 && code <= 0x7e) ||
-        code >= 0x80
-      ) {
+      if (code === 0x21 || (code >= 0x23 && code <= 0x7e) || code >= 0x80) {
         offset += 1;
         continue;
       }

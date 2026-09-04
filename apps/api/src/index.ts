@@ -1,14 +1,13 @@
-import { authenticateBearer } from "../../../src/http/authentication";
 import { catalogueRoutes } from "../../../src/catalogue/read";
+import { authenticateBearer } from "../../../src/http/authentication";
 import { allowedPreflightResponse, hasAllowedOrigin, withCorsHeaders } from "../../../src/http/cors";
 import { isLivenessRequest, livenessRequest, readinessResponse } from "../../../src/http/health";
-import { problemResponse } from "../../../src/http/problem";
-import { rateLimitFailure } from "../../../src/http/rate-limit";
-import { apiCapabilities } from "../../../src/runtime-capabilities.mjs";
 import { withOperationalRequestLog } from "../../../src/http/operational-log";
-import { mountedRequest, publicBase, routePath, type PublicBase } from "../../../src/http/public-base";
-
-import { routeTable, routeSegments } from "../../../src/http/routes";
+import { problemResponse } from "../../../src/http/problem";
+import { mountedRequest, type PublicBase, publicBase, routePath } from "../../../src/http/public-base";
+import { rateLimitFailure } from "../../../src/http/rate-limit";
+import { routeSegments, routeTable } from "../../../src/http/routes";
+import { apiCapabilities } from "../../../src/runtime-capabilities.mjs";
 import { apiProblemResponse } from "./problem";
 
 const routes = [...catalogueRoutes];
@@ -92,7 +91,7 @@ async function handleApiRequest(request: Request, env: Env, requestId: string, b
       }),
     );
   } catch (error) {
-    return withCorsHeaders(request, apiProblemResponse(error, request, requestId, base));
+    return withCorsHeaders(request, apiProblemResponse(error, requestId));
   }
 }
 

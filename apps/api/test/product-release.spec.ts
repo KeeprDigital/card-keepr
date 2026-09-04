@@ -1,12 +1,12 @@
-import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
+import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { beforeEach, expect, test } from "vitest";
-import { apiPublicBase } from "./api-fixtures";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
-import { catalogueCandidateContract, type CatalogueCandidate } from "../../../src/catalogue/shared";
 import { productReleasePublicationStatements } from "../../../src/catalogue/reconciliation";
+import { type CatalogueCandidate, catalogueCandidateContract } from "../../../src/catalogue/shared";
+import { apiPublicBase } from "./api-fixtures";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 
@@ -740,7 +740,7 @@ test("Printing detail validates and binds optional evidence representations", as
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       code: "invalid_parameter",
-      title: "Invalid Printing request",
+      title: "Invalid parameter",
     });
   }
 
@@ -796,7 +796,7 @@ test("Product query and include parameters reject invalid public representations
     expect(response.headers.get("content-type")).toContain("application/problem+json");
     await expect(response.json()).resolves.toEqual({
       type: "https://card-keepr.invalid/problems/invalid_parameter",
-      title: "Invalid Product request",
+      title: "Invalid parameter",
       status: 400,
       code: "invalid_parameter",
       detail: expect.any(String),
@@ -1562,6 +1562,9 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     code: "invalid_cursor",
   });
 
+  await testEnv.CATALOGUE_DB.prepare(
+    "UPDATE catalogue_state SET current_revision_id = 'catrev_products' WHERE singleton = 1",
+  ).run();
   const canonical = await api("/v1/printings?game=one-piece&rarity=leader&card_id=card_st15_event");
   const reordered = await api("/v1/printings?card_id=card_st15_event&rarity=leader&game=one-piece");
   expect(canonical.headers.get("etag")).toBe(reordered.headers.get("etag"));
