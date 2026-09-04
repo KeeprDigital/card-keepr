@@ -8,6 +8,7 @@ import {
   runCli,
   startWorker,
   stopWorker,
+  waitForAdministrationDocument,
   waitForResponse,
   waitForRunState,
 } from "./helpers/acceptance-runtime.mjs";
@@ -19,22 +20,10 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
   const administrationKey = crypto.randomUUID();
   const ingestionEnv = join(directory, "ingestion.env");
   const ingestionConfig = join(directory, "ingestion.wrangler.json");
-  await writeFile(
-    ingestionEnv,
-    `ADMINISTRATION_KEY=${administrationKey}\n`,
-    { mode: 0o600 },
-  );
-  const config = JSON.parse(
-    readFileSync(
-      resolve(root, "apps/ingestion/wrangler.jsonc"),
-      "utf8",
-    ),
-  );
+  await writeFile(ingestionEnv, `ADMINISTRATION_KEY=${administrationKey}\n`, { mode: 0o600 });
+  const config = JSON.parse(readFileSync(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
   delete config.$schema;
-  config.main = resolve(
-    root,
-    "acceptance/fixtures/contextual-legality-ingestion-harness.ts",
-  );
+  config.main = resolve(root, "acceptance/fixtures/retained-evidence-ingestion-harness.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
   config.ratelimits[0].simple.limit = 300;
   config.services = [
@@ -60,17 +49,10 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
     await rm(directory, { recursive: true, force: true });
   });
   await Promise.all([
-    waitForResponse(
-      `${source.url}/success`,
-      source,
-      "synthetic Official Source",
-    ),
-    waitForResponse(
-      `${ingestion.url}/health`,
-      ingestion,
-      "ingestion Worker",
-      { authorization: `Bearer ${administrationKey}` },
-    ),
+    waitForResponse(`${source.url}/success`, source, "synthetic Official Source"),
+    waitForResponse(`${ingestion.url}/health`, ingestion, "ingestion Worker", {
+      authorization: `Bearer ${administrationKey}`,
+    }),
   ]);
 
   const cliEnvironment = {
@@ -90,9 +72,7 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
   assert.equal(rejected.observation_sets.length, 0);
   assert.equal(rejected.diagnostics.length, 1);
   assert.equal(
-    rejected.diagnostics.find(
-      ({ request_id }) => request_id === "one-piece-en:discovery",
-    )?.outcome,
+    rejected.diagnostics.find(({ request_id }) => request_id === "one-piece-en:discovery")?.outcome,
     "redirect",
   );
 
@@ -111,20 +91,11 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
   assert.equal(abandoned.pause.reason, "source_transport_retries_exhausted");
   assert.deepEqual(abandoned.actions, ["resume", "terminate"]);
   assert.equal(abandoned.collection.state, "paused");
-  assert.equal(
-    abandoned.collection.pause_reason,
-    "source_transport_retries_exhausted",
-  );
+  assert.equal(abandoned.collection.pause_reason, "source_transport_retries_exhausted");
   assert.equal(abandoned.collection.evidence.fetch_attempt_count, 4);
   assert.equal(abandoned.collection.evidence.retry_attempt_count, 3);
-  assert.equal(
-    abandoned.collection.evidence.latest_failure.classification,
-    "http_failure",
-  );
-  assert.equal(
-    abandoned.collection.progress.current_request.request_id,
-    "one-piece-en:discovery",
-  );
+  assert.equal(abandoned.collection.evidence.latest_failure.classification, "http_failure");
+  assert.equal(abandoned.collection.progress.current_request.request_id, "one-piece-en:discovery");
   assert.equal(abandoned.collection.estimate.advisory, true);
   const terminated = await runCli(
     [
@@ -140,16 +111,10 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
   );
   assert.equal(terminated.code, 0, terminated.stderr);
   const terminationDocument = JSON.parse(terminated.stdout);
-  assert.equal(
-    terminationDocument.contract,
-    "card-keepr-collection-termination@1",
-  );
+  assert.equal(terminationDocument.contract, "card-keepr-collection-termination@1");
   assert.equal(terminationDocument.ingestion_run_id, abandoned.id);
   assert.equal(terminationDocument.failure_code, "ingestion_run_terminated");
-  assert.equal(
-    terminationDocument.pause_reason,
-    "source_transport_retries_exhausted",
-  );
+  assert.equal(terminationDocument.pause_reason, "source_transport_retries_exhausted");
   assert.equal(terminationDocument.active_run_released, true);
   const replayed = await runCli(
     [
@@ -165,35 +130,20 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
   );
   assert.equal(replayed.code, 0, replayed.stderr);
   assert.deepEqual(JSON.parse(replayed.stdout), terminationDocument);
-  const shownTerminated = await runCli(
-    ["source", "show", "--run-id", abandoned.id, "--json"],
-    cliEnvironment,
-  );
+  const shownTerminated = await runCli(["source", "show", "--run-id", abandoned.id, "--json"], cliEnvironment);
   assert.equal(shownTerminated.code, 0, shownTerminated.stderr);
   const terminatedRun = JSON.parse(shownTerminated.stdout);
   assert.equal(terminatedRun.state, "failed");
   assert.equal(terminatedRun.failure_code, "ingestion_run_terminated");
   assert.equal(terminatedRun.termination.reason, "ingestion_run_terminated");
-  assert.equal(
-    terminatedRun.termination.pause_reason,
-    "source_transport_retries_exhausted",
-  );
+  assert.equal(terminatedRun.termination.pause_reason, "source_transport_retries_exhausted");
   assert.deepEqual(terminatedRun.actions, ["retry"]);
   assert.equal(terminatedRun.pause, undefined);
   assert.equal(terminatedRun.diagnostics.length, 4);
-  const resumeRefused = await runCli(
-    ["source", "resume", "--run-id", abandoned.id, "--json"],
-    cliEnvironment,
-  );
+  const resumeRefused = await runCli(["source", "resume", "--run-id", abandoned.id, "--json"], cliEnvironment);
   assert.equal(resumeRefused.code, 7);
-  assert.equal(
-    JSON.parse(resumeRefused.stdout).code,
-    "ingestion_run_not_collecting",
-  );
-  const terminatedHuman = await runCli(
-    ["source", "show", "--run-id", abandoned.id],
-    cliEnvironment,
-  );
+  assert.equal(JSON.parse(resumeRefused.stdout).code, "ingestion_run_not_collecting");
+  const terminatedHuman = await runCli(["source", "show", "--run-id", abandoned.id], cliEnvironment);
   assert.equal(terminatedHuman.code, 0, terminatedHuman.stderr);
   assert.match(terminatedHuman.stdout, /Terminated: ingestion_run_terminated/);
   assert.match(terminatedHuman.stdout, /Available actions: retry/);
@@ -227,24 +177,23 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
     assert.equal(diagnostic.http_status, 503);
   }
 
-  const resumedAfterPause = await runCli(
-    ["source", "resume", "--run-id", paused.id, "--json"],
-    cliEnvironment,
-  );
+  const resumedAfterPause = await runCli(["source", "resume", "--run-id", paused.id, "--json"], cliEnvironment);
   assert.equal(resumedAfterPause.code, 0, resumedAfterPause.stderr);
-  const successful = await waitForRunState(
-    paused.id,
-    "awaiting_approval",
+  const successful = await waitForAdministrationDocument(
+    `/v1/ingestion-runs/${encodeURIComponent(paused.id)}/evidence`,
+    (document) =>
+      (document.state === "awaiting_approval" && document.workflow.status === "complete") ||
+      (document.state === "failed" ? `run ${paused.id} failed before completing collection` : false),
     cliEnvironment,
     ingestion,
-    { deadlineMs: 30_000 },
+    { deadlineMs: 30_000, description: "retained evidence and parent Workflow completion" },
   );
+  assert.equal(successful.state, "awaiting_approval");
+  assert.equal(successful.workflow.status, "complete");
   assert.equal(successful.failure_code, null);
   assert.equal(successful.id, paused.id);
   // The recovered fetch is attempt 5 of the same append-only history.
-  const discoveryAttempts = successful.diagnostics.filter(
-    ({ request_id }) => request_id === "one-piece-en:discovery",
-  );
+  const discoveryAttempts = successful.diagnostics.filter(({ request_id }) => request_id === "one-piece-en:discovery");
   assert.deepEqual(
     discoveryAttempts.map(({ attempt_number, outcome }) => ({
       attempt_number,
@@ -275,22 +224,13 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
       "https://en.onepiece-cardgame.com/images/OP99-001.png",
     ],
   );
-  assert.equal(
-    successful.observation_sets.length,
-    successful.snapshots.length,
-  );
+  assert.equal(successful.observation_sets.length, successful.snapshots.length);
   // Every snapshot has its successful attempt, plus the four retained 503
   // diagnostics from the paused generation.
-  assert.equal(
-    successful.diagnostics.length,
-    successful.snapshots.length + 4,
-  );
+  assert.equal(successful.diagnostics.length, successful.snapshots.length + 4);
   assert.match(successful.snapshots[0].content.digest, /^[a-f0-9]{64}$/);
 
-  const retained = await runCli(
-    ["source", "show", "--run-id", successful.id, "--json"],
-    cliEnvironment,
-  );
+  const retained = await runCli(["source", "show", "--run-id", successful.id, "--json"], cliEnvironment);
   assert.equal(retained.code, 0, retained.stderr);
   assert.deepEqual(JSON.parse(retained.stdout), successful);
 });
@@ -307,39 +247,29 @@ async function collectResumeAndShow(
   const requests = exactOnePieceRequests();
   if (transportOutcome !== null) {
     requests[0].headers = {
-      "user-agent":
-        `card-keepr-acceptance-transport/${transportOutcome}`,
+      "user-agent": `card-keepr-acceptance-transport/${transportOutcome}`,
     };
   }
   await writeFile(
     planFile,
     JSON.stringify({
-      plans: [{
-        supported_game: "one-piece",
-        source_lineage: "one-piece-en",
-        adapter_version: "one-piece-en@6",
-        requests,
-      }],
+      plans: [
+        {
+          supported_game: "one-piece",
+          source_lineage: "one-piece-en",
+          adapter_version: "one-piece-en@6",
+          requests,
+        },
+      ],
     }),
   );
   const collected = await runCli(
-    [
-      "source",
-      "collect",
-      "--plan-file",
-      planFile,
-      "--idempotency-key",
-      idempotencyKey,
-      "--json",
-    ],
+    ["source", "collect", "--plan-file", planFile, "--idempotency-key", idempotencyKey, "--json"],
     environment,
   );
   assert.equal(collected.code, 0, collected.stderr);
   const run = JSON.parse(collected.stdout);
-  const resumed = await runCli(
-    ["source", "resume", "--run-id", run.id, "--json"],
-    environment,
-  );
+  const resumed = await runCli(["source", "resume", "--run-id", run.id, "--json"], environment);
   assert.equal(resumed.code, 0, resumed.stderr);
 
   return waitForRunState(run.id, expectedState, environment, ingestion, {
@@ -348,8 +278,10 @@ async function collectResumeAndShow(
 }
 
 function exactOnePieceRequests() {
-  return [{
-    id: "one-piece-en:discovery",
-    url: "https://en.onepiece-cardgame.com/cardlist/?series=569116",
-  }];
+  return [
+    {
+      id: "one-piece-en:discovery",
+      url: "https://en.onepiece-cardgame.com/cardlist/?series=569116",
+    },
+  ];
 }
