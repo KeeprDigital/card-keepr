@@ -14,7 +14,7 @@ and Problem-to-exit mapping. Release provider adapters use the same transport fo
 Cloudflare and GitHub responses. Config reads use `lib/config.mjs` with a JSONC
 parser, and descriptor secrets use `lib/secret-input.mjs`.
 
-Normal administration JSON responses remain unchanged. The CLI requests the
+Administration routes continue returning ordinary JSON documents by default. The CLI requests the
 `application/vnd.card-keepr.cli+json` representation, whose envelope supplies the
 original document, human text and completion exit code. Target resolution uses
 read-only parameters on the existing status route. Production Release previews
@@ -33,19 +33,22 @@ configuration and observed resources before activation.
 ## Size record for #111
 
 Baseline: `7b5f959c`. Counts include every `.mjs` file recursively under `cli/`,
-including all new library modules. No client implementation is excluded because
-it moved into `cli/lib`. The unchanged shared runtime-capability declaration is
-outside both counts. Server-only presentation and validation modules are bundled
-into the Worker and are not imported by the CLI.
+including all new library modules. The small shared diagnostic-display module
+outside `cli/` is also counted below. No client implementation is excluded
+because it moved. The unchanged shared runtime-capability declaration is outside
+both counts. The full server-only presentation and target-validation modules are
+bundled into the Worker and are not imported by the CLI.
 
 | Scope | Before | After |
 | --- | ---: | ---: |
-| CLI entry point, physical lines | 2,723 | 960 |
-| All CLI modules, physical lines | 3,848 | 1,733 |
-| All CLI modules under the same Biome formatter | 3,337 | 1,733 |
+| CLI entry point, physical lines | 2,723 | 947 |
+| Modules under `cli/`, physical lines | 3,848 | 1,720 |
+| Shared diagnostic-display dependency, physical lines | 0 | 14 |
+| Total client modules, physical lines | 3,848 | 1,734 |
+| Total client modules under the same Biome formatter | 3,337 | 1,734 |
 
-The physical module total fell 55.0%; applying the same formatter to both trees
-shows a 48.1% structural reduction, so formatting savings are explicit. The
+The physical module total fell 54.9%; applying the same formatter to both trees
+shows a 48.0% structural reduction, so formatting savings are explicit. The
 entry point retains a closed command table and I/O orchestration. Release
 scripts retain pre-worker SQL and independent provider attestation; their
 transport is shared rather than hidden behind a second request implementation.

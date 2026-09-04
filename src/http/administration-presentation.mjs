@@ -1,3 +1,4 @@
+import { safeDiagnosticCount, safeDiagnosticReference, safeMachineCode } from "./diagnostic-display.mjs";
 /** Human administration output is derived by the Worker from its public document. */
 export function administrationPresentation(document, status = 200) {
   const incomplete =
@@ -643,16 +644,6 @@ function appendOperationalDiagnostics(lines, value) {
   );
 }
 
-function safeDiagnosticReference(value) {
-  return typeof value === "string" && value.length <= 512 && /^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/u.test(value)
-    ? value
-    : null;
-}
-
-function safeMachineCode(value) {
-  return typeof value === "string" && /^[a-z][a-z0-9_]{0,127}$/u.test(value) ? value : null;
-}
-
 function safeDiagnosticPath(value) {
   return typeof value === "string" && value.length <= 1024 && /^\/v1\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/u.test(value)
     ? value
@@ -661,8 +652,4 @@ function safeDiagnosticPath(value) {
 
 function safeDiagnosticMethod(value) {
   return value === "GET" || value === "POST" ? value : null;
-}
-
-function safeDiagnosticCount(value) {
-  return Number.isSafeInteger(value) && value >= 0 ? value : "unknown";
 }

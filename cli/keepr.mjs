@@ -2,6 +2,7 @@
 
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { safeDiagnosticCount, safeDiagnosticReference, safeMachineCode } from "../src/http/diagnostic-display.mjs";
 import { apiCapabilities, ingestionCapabilities } from "../src/runtime-capabilities.mjs";
 import { runCatalogueCommand } from "./catalogue.mjs";
 import { parseOptions, runtimeUrl, writeCliFailure as writeFailure } from "./command-support.mjs";
@@ -943,18 +944,4 @@ function sameStrings(actual, expected) {
     actual.length === expected.length &&
     actual.every((value, index) => value === expected[index])
   );
-}
-
-function safeDiagnosticReference(value) {
-  return typeof value === "string" && value.length <= 512 && /^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/u.test(value)
-    ? value
-    : null;
-}
-
-function safeMachineCode(value) {
-  return typeof value === "string" && /^[a-z][a-z0-9_]{0,127}$/u.test(value) ? value : null;
-}
-
-function safeDiagnosticCount(value) {
-  return Number.isSafeInteger(value) && value >= 0 ? value : "unknown";
 }
