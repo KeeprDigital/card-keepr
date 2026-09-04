@@ -43,6 +43,21 @@ import {
   collectionInspection,
   type PacingConfiguration,
 } from "./collection-inspection";
+import type {
+  CurrentPause,
+  ObservationSetRow,
+  RunCapacityPolicy,
+  SnapshotRow,
+} from "./source-evidence-repository-types";
+// The row and policy shapes the collection inspection reads live in the
+// leaf module `source-evidence-repository-types`; they stay importable from
+// here.
+export type {
+  CurrentPause,
+  ObservationSetRow,
+  RunCapacityPolicy,
+  SnapshotRow,
+} from "./source-evidence-repository-types";
 
 export type IngestionEvidenceRow = {
   id: string;
@@ -99,44 +114,6 @@ export type DiscoveredEvidenceRequest = {
   discoveryKey?: string;
   url: string;
   headers: Record<string, string>;
-};
-
-export type SnapshotRow = {
-  id: string;
-  ingestion_run_id: string;
-  request_id: string;
-  fetch_attempt_id: string;
-  request_method: string;
-  request_url: string;
-  request_headers_json: string;
-  representation_fingerprint: string;
-  response_vary_json: string;
-  retrieved_at: string;
-  http_status: number;
-  response_headers_json: string;
-  media_type: string | null;
-  content_digest: string;
-  content_byte_length: number;
-  content_object_key: string;
-  source_lineage: string;
-  supported_game: string;
-  game_profile_version: string;
-  adapter_version: string;
-  reused_source_snapshot_id: string | null;
-};
-
-export type ObservationSetRow = {
-  id: string;
-  source_snapshot_id: string;
-  source_lineage: string;
-  supported_game: string;
-  game_profile_version: string;
-  adapter_version: string;
-  parsed_at: string;
-  content_digest: string;
-  content_byte_length: number;
-  content_object_key: string;
-  observation_count: number;
 };
 
 export async function startEvidenceRun(
@@ -541,15 +518,6 @@ export class RequestCapacityProblem extends AdministrationProblem {
 // extension supersedes it with a larger absolute capacity at the next
 // generation.
 export const initialRequestCapacityGeneration = 1;
-
-// The effective capacity policy of one Ingestion Run: the newest capacity
-// extension when the owner has extended it, otherwise the Source Adapter
-// Version's registered capacity. Both remain constrained by the global
-// emergency ceiling.
-export type RunCapacityPolicy = Readonly<{
-  request_capacity: number;
-  capacity_generation: number;
-}>;
 
 export async function runRequestCapacityPolicy(
   database: D1Database,
@@ -2153,12 +2121,6 @@ type WorkflowPauseRow = {
   workflow_status: string;
   last_progress_at: string | null;
 };
-
-export type CurrentPause = Readonly<{
-  reason: string;
-  paused_at: string;
-  document: Record<string, unknown>;
-}>;
 
 // The current pause of a run: the newest record across the capacity,
 // retry-exhaustion, and Workflow pause tables (a retry pause wins an equal

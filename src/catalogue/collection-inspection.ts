@@ -16,7 +16,7 @@ import type {
   ObservationSetRow,
   RunCapacityPolicy,
   SnapshotRow,
-} from "./source-evidence-repository";
+} from "./source-evidence-repository-types";
 
 export const inspectionDetailLimit = 200;
 

@@ -1,127 +1,41 @@
 import { createHash } from "node:crypto";
-import type { SupportedGame } from "./catalogue-candidate";
-import type { CuratedProvenanceBearing } from "./curated-provenance";
+import type {
+  CatalogueDistributionContext,
+  CatalogueProduct,
+  CatalogueRelease,
+  EvidenceCategory,
+  ProductAuthorityClass,
+  ProductDisagreement,
+  ProductEntityReference,
+  ProductEvidenceResource,
+  ProductReference,
+  ProductRelationship,
+  ProductSourceObservation,
+  ProductWithdrawal,
+  ReleasePrecision,
+  ReleaseStatus,
+  SupportedGame,
+} from "./catalogue-candidate-types";
 import { canonicalJson, sha256Text } from "./serialization";
 
-export type EvidenceCategory = "explicit" | "derived" | "curated";
-export type ReleaseStatus = "announced" | "released";
-export type ReleasePrecision =
-  | "day"
-  | "month"
-  | "quarter"
-  | "season"
-  | "year"
-  | "unknown";
-
-export type ProductReference = {
-  kind: "official_code" | "name";
-  value: string;
-};
-
-export type ProductEvidenceResource = {
-  type: "source_observation";
-  id: string;
-  captured_at: string;
-  source: string;
-  surface?: string;
-  request_role?: "surface" | "listing" | "detail" | "product_detail" | "image";
-  authority_class?: ProductAuthorityClass;
-};
-
-export type ProductAuthorityClass =
-  | "product_detail"
-  | "release_schedule"
-  | "product_listing"
-  | "card_detail"
-  | "card_listing"
-  | "policy"
-  | "unknown";
-
-export type ProductDisagreement = {
-  path: string;
-  status: "unresolved" | "resolved_by_authority";
-  candidates: { value: unknown; observation_id: string }[];
-};
-
-export type ProductWithdrawal = {
-  revision_id?: string;
-  evidence: {
-    assertion: "withdrawn";
-    effective_at: string;
-    evidence: string;
-    source_lineage: string;
-    source_snapshot_id: string;
-    source_observation_set_id: string;
-    source_observation_id: string;
-  };
-};
-
-export type CatalogueProduct = CuratedProvenanceBearing & {
-  reference: ProductReference;
-  id: string;
-  game: SupportedGame;
-  official_code: string | null;
-  name: string | null;
-  releases: CatalogueRelease[];
-  observed: boolean;
-  withdrawal: ProductWithdrawal | null;
-  included: ProductEvidenceResource[];
-  provenance: Record<string, string[]>;
-  disagreements: ProductDisagreement[];
-  source_observations?: ProductSourceObservation[];
-};
-
-export type CatalogueRelease = CuratedProvenanceBearing & {
-  id: string;
-  event_key: string;
-  product_id: string;
-  region: "EN-OCEANIA" | "EN-ASIA" | "EN-US" | "unknown";
-  date: {
-    precision: ReleasePrecision | null;
-    value: string | null;
-  };
-  status: ReleaseStatus | null;
-};
-
-export type CatalogueDistributionContext = CuratedProvenanceBearing & {
-  id: string;
-  game: SupportedGame;
-  key: string;
-  kind:
-    | "product"
-    | "tournament_pack"
-    | "winner_prize"
-    | "promotion"
-    | "other";
-  label: string;
-  product_id: string | null;
-  evidence_category: EvidenceCategory;
-  observed: boolean;
-  source_lineages?: string[];
-};
-
-export type ProductEntityReference = {
-  type: "printing" | "product" | "distribution_context" | "card";
-  id: string;
-};
-
-export type ProductRelationship = CuratedProvenanceBearing & {
-  id: string;
-  game: SupportedGame;
-  kind:
-    | "printing-product"
-    | "printing-distribution-context"
-    | "distribution-context-product"
-    | "product-card";
-  from: ProductEntityReference;
-  to: ProductEntityReference;
-  evidence_category: EvidenceCategory;
-  resolution: "canonical";
-  source_lineage?: string;
-  source_observation_ids: string[];
-  relationship_value: string;
-  observed: boolean;
-};
+// The product-and-release shapes of a Catalogue Candidate live in the leaf
+// module `catalogue-candidate-types`; they stay importable from here.
+export type {
+  CatalogueDistributionContext,
+  CatalogueProduct,
+  CatalogueRelease,
+  EvidenceCategory,
+  ProductAuthorityClass,
+  ProductDisagreement,
+  ProductEntityReference,
+  ProductEvidenceResource,
+  ProductReference,
+  ProductRelationship,
+  ProductSourceObservation,
+  ProductWithdrawal,
+  ReleasePrecision,
+  ReleaseStatus,
+} from "./catalogue-candidate-types";
 
 export type ProductReleaseEvidenceInput = {
   value: unknown;
@@ -134,26 +48,6 @@ export type ProductReleaseEvidenceInput = {
   capturedAt: string;
   currentCardId: string | null;
   currentPrintingId: string | null;
-};
-
-export type ProductSourceObservation = {
-  reference: ProductReference;
-  id: string;
-  officialCode: string | null;
-  name: string;
-  releases: {
-    eventKey: string;
-    region: CatalogueRelease["region"];
-    precision: ReleasePrecision;
-    value: string | null;
-    status: ReleaseStatus | null;
-  }[];
-  withdrawal: ProductWithdrawal | null;
-  evidence: ProductEvidenceResource;
-  carriedOfficialCode?: {
-    value: string;
-    evidence: ProductEvidenceResource[];
-  };
 };
 
 type ObservedProduct = ProductSourceObservation;
