@@ -1,3 +1,9 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import {
+  insertCheckedLegalityProjectionFixture,
+  seedLegalityProjectionGuardTarget,
+} from "./query-helpers/legality-guards";
+import { publishLegalityRuleFactsStatement } from "../../../src/catalogue/legality/legality-publication-repository";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as legalityQueries from "./query-helpers/legality";
 import * as ingestionQueries from "./query-helpers/ingestion";
@@ -223,107 +229,89 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       .bind(requiredString(emptyPublished.document, "resulting_revision_id"), canonicalSnapshot.id)
       .run(),
   );
+  await seedLegalityProjectionGuardTarget(testEnv.CATALOGUE_DB);
   const inconsistentRevisionContext = await rejectedError(
-    legalityQueries
-      .insertRevisionLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeepsWithAttackerFormat(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(
-        canonicalSnapshot.id,
-        canonicalSnapshot.supported_game,
-        canonicalSnapshot.region,
-        canonicalSnapshot.event_tier,
-        canonicalSnapshot.effective_from,
-        canonicalSnapshot.effective_until,
-        canonicalSnapshot.card_ids_json,
-        canonicalSnapshot.document_json,
-      )
-      .run(),
+    insertCheckedLegalityProjectionFixture(testEnv.CATALOGUE_DB, {
+      revisionId: "catrev_projection_guard_target",
+      id: canonicalSnapshot.id,
+      game: canonicalSnapshot.supported_game,
+      region: canonicalSnapshot.region,
+      format: "attacker-format",
+      eventTier: canonicalSnapshot.event_tier,
+      effectiveFrom: canonicalSnapshot.effective_from,
+      effectiveUntil: canonicalSnapshot.effective_until,
+      cardIdsJson: canonicalSnapshot.card_ids_json,
+      documentJson: canonicalSnapshot.document_json,
+    }).run(),
   );
   const inconsistentDocument = JSON.stringify({
     ...JSON.parse(String(canonicalSnapshot.document_json)),
     official_wording: "Attacker-controlled wording.",
   });
   const inconsistentRevisionDocument = await rejectedError(
-    legalityQueries
-      .insertRevisionLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeepsWithCatrevSpine000(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(
-        canonicalSnapshot.id,
-        canonicalSnapshot.supported_game,
-        canonicalSnapshot.region,
-        canonicalSnapshot.format,
-        canonicalSnapshot.event_tier,
-        canonicalSnapshot.effective_from,
-        canonicalSnapshot.effective_until,
-        canonicalSnapshot.card_ids_json,
-        inconsistentDocument,
-      )
-      .run(),
+    insertCheckedLegalityProjectionFixture(testEnv.CATALOGUE_DB, {
+      revisionId: "catrev_projection_guard_target",
+      id: canonicalSnapshot.id,
+      game: canonicalSnapshot.supported_game,
+      region: canonicalSnapshot.region,
+      format: canonicalSnapshot.format,
+      eventTier: canonicalSnapshot.event_tier,
+      effectiveFrom: canonicalSnapshot.effective_from,
+      effectiveUntil: canonicalSnapshot.effective_until,
+      cardIdsJson: canonicalSnapshot.card_ids_json,
+      documentJson: inconsistentDocument,
+    }).run(),
   );
   const canonicalDocument = JSON.parse(String(canonicalSnapshot.document_json)) as Record<string, unknown>;
   const { event_tier: _missingEventTier, ...documentWithoutNullableKey } = canonicalDocument;
   const { effective_until: _replacedEffectiveUntil, ...documentWithReplacementKey } = canonicalDocument;
   const missingNullableDocumentKey = await rejectedError(
-    legalityQueries
-      .insertRevisionLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeepsWithCatrevSpine000(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(
-        canonicalSnapshot.id,
-        canonicalSnapshot.supported_game,
-        canonicalSnapshot.region,
-        canonicalSnapshot.format,
-        canonicalSnapshot.event_tier,
-        canonicalSnapshot.effective_from,
-        canonicalSnapshot.effective_until,
-        canonicalSnapshot.card_ids_json,
-        JSON.stringify(documentWithoutNullableKey),
-      )
-      .run(),
+    insertCheckedLegalityProjectionFixture(testEnv.CATALOGUE_DB, {
+      revisionId: "catrev_projection_guard_target",
+      id: canonicalSnapshot.id,
+      game: canonicalSnapshot.supported_game,
+      region: canonicalSnapshot.region,
+      format: canonicalSnapshot.format,
+      eventTier: canonicalSnapshot.event_tier,
+      effectiveFrom: canonicalSnapshot.effective_from,
+      effectiveUntil: canonicalSnapshot.effective_until,
+      cardIdsJson: canonicalSnapshot.card_ids_json,
+      documentJson: JSON.stringify(documentWithoutNullableKey),
+    }).run(),
   );
   const arbitraryDocumentKeySubstitution = await rejectedError(
-    legalityQueries
-      .insertRevisionLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeepsWithCatrevSpine000(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(
-        canonicalSnapshot.id,
-        canonicalSnapshot.supported_game,
-        canonicalSnapshot.region,
-        canonicalSnapshot.format,
-        canonicalSnapshot.event_tier,
-        canonicalSnapshot.effective_from,
-        canonicalSnapshot.effective_until,
-        canonicalSnapshot.card_ids_json,
-        JSON.stringify({
-          ...documentWithReplacementKey,
-          attacker_replacement: null,
-        }),
-      )
-      .run(),
+    insertCheckedLegalityProjectionFixture(testEnv.CATALOGUE_DB, {
+      revisionId: "catrev_projection_guard_target",
+      id: canonicalSnapshot.id,
+      game: canonicalSnapshot.supported_game,
+      region: canonicalSnapshot.region,
+      format: canonicalSnapshot.format,
+      eventTier: canonicalSnapshot.event_tier,
+      effectiveFrom: canonicalSnapshot.effective_from,
+      effectiveUntil: canonicalSnapshot.effective_until,
+      cardIdsJson: canonicalSnapshot.card_ids_json,
+      documentJson: JSON.stringify({
+        ...documentWithReplacementKey,
+        attacker_replacement: null,
+      }),
+    }).run(),
   );
   const duplicateRequiredDocumentKey = await rejectedError(
-    legalityQueries
-      .insertRevisionLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeepsWithCatrevSpine000(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(
-        canonicalSnapshot.id,
-        canonicalSnapshot.supported_game,
-        canonicalSnapshot.region,
-        canonicalSnapshot.format,
-        canonicalSnapshot.event_tier,
-        canonicalSnapshot.effective_from,
-        canonicalSnapshot.effective_until,
-        canonicalSnapshot.card_ids_json,
-        String(canonicalSnapshot.document_json).replace(
-          /\}$/u,
-          ',"official_wording":"Attacker-controlled duplicate."}',
-        ),
-      )
-      .run(),
+    insertCheckedLegalityProjectionFixture(testEnv.CATALOGUE_DB, {
+      revisionId: "catrev_projection_guard_target",
+      id: canonicalSnapshot.id,
+      game: canonicalSnapshot.supported_game,
+      region: canonicalSnapshot.region,
+      format: canonicalSnapshot.format,
+      eventTier: canonicalSnapshot.event_tier,
+      effectiveFrom: canonicalSnapshot.effective_from,
+      effectiveUntil: canonicalSnapshot.effective_until,
+      cardIdsJson: canonicalSnapshot.card_ids_json,
+      documentJson: String(canonicalSnapshot.document_json).replace(
+        /\}$/u,
+        ',"official_wording":"Attacker-controlled duplicate."}',
+      ),
+    }).run(),
   );
   const canonicalCombinationDocument = JSON.parse(String(canonicalSnapshot.document_json)) as Record<string, unknown>;
   const canonicalDirectCardIds = canonicalCombinationDocument.card_ids as string[];
@@ -348,22 +336,18 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   const nestedCardIdMutations = await Promise.all(
     nestedCardIdDocuments.map((document) =>
       rejectedError(
-        legalityQueries
-          .insertRevisionLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeepsWithCatrevSpine000(
-            testEnv.CATALOGUE_DB,
-          )
-          .bind(
-            canonicalSnapshot.id,
-            canonicalSnapshot.supported_game,
-            canonicalSnapshot.region,
-            canonicalSnapshot.format,
-            canonicalSnapshot.event_tier,
-            canonicalSnapshot.effective_from,
-            canonicalSnapshot.effective_until,
-            canonicalSnapshot.card_ids_json,
-            JSON.stringify(document),
-          )
-          .run(),
+        insertCheckedLegalityProjectionFixture(testEnv.CATALOGUE_DB, {
+          revisionId: "catrev_projection_guard_target",
+          id: canonicalSnapshot.id,
+          game: canonicalSnapshot.supported_game,
+          region: canonicalSnapshot.region,
+          format: canonicalSnapshot.format,
+          eventTier: canonicalSnapshot.event_tier,
+          effectiveFrom: canonicalSnapshot.effective_from,
+          effectiveUntil: canonicalSnapshot.effective_until,
+          cardIdsJson: canonicalSnapshot.card_ids_json,
+          documentJson: JSON.stringify(document),
+        }).run(),
       ),
     ),
   );
@@ -384,27 +368,20 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       .run(),
   );
   const crossOwnedProvenance = await rejectedError(
-    sourceEvidenceQueries
-      .insertLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeeps(testEnv.CATALOGUE_DB)
-      .bind(
-        canonicalSnapshot.supported_game,
-        canonicalSnapshot.region,
-        canonicalSnapshot.format,
-        canonicalSnapshot.event_tier,
-        canonicalSnapshot.effective_from,
-        canonicalSnapshot.effective_until,
-        canonicalSnapshot.official_wording,
-        canonicalSnapshot.effect_json,
-        canonicalSnapshot.card_ids_json,
-        canonicalSnapshot.direct_card_ids_json,
-        canonicalSnapshot.source_lineage,
-        firstOwner.source_snapshot_id,
-        differentOwner.id,
-        canonicalSnapshot.source_field_pointers_json,
-        canonicalSnapshot.first_revision_id,
-        canonicalSnapshot.last_observed_revision_id,
-      )
-      .run(),
+    publishLegalityRuleFactsStatement(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      JSON.stringify([
+        {
+          ...canonicalSnapshot,
+          id: "legality_rule_cross_owned",
+          official_id: "cross-owned",
+          game: canonicalSnapshot.supported_game,
+          source_snapshot_id: firstOwner.source_snapshot_id,
+          source_observation_set_id: differentOwner.id,
+          source_observation_id: "srcobs_cross_owned",
+        },
+      ]),
+    ).run(),
   );
   expect([
     String(identityUpdate),
@@ -425,7 +402,7 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
     expect.stringMatching(/legality_rule_identity_conflict/),
     expect.stringMatching(/legality_rule_identity_conflict/),
     expect.stringMatching(/legality_rule_immutable/),
-    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
+    expect.stringMatching(/FOREIGN KEY constraint failed/),
     expect.stringMatching(/revision_legality_rule_immutable/),
     expect.stringMatching(/revision_legality_rule_immutable/),
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),

@@ -1,3 +1,5 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { publishLegalityRuleFactsStatement } from "../../../src/catalogue/legality/legality-publication-repository";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as legalityQueries from "./query-helpers/legality";
@@ -379,31 +381,37 @@ export async function canonicalLegalityCardIdInvariantErrors(
   return Promise.all(
     malformed.map((variant, index) =>
       rejectedError(
-        sourceEvidenceQueries
-          .insertLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(database)
-          .bind(
-            `legality_rule_${prefix}_malformed_${index}`,
-            `${prefix}-malformed-${index}`,
-            canonical.supported_game ?? canonical.game,
-            canonical.region,
-            canonical.format,
-            canonical.event_tier,
-            canonical.effective_from,
-            canonical.effective_until,
-            canonical.official_wording,
-            JSON.stringify(variant.effect),
-            JSON.stringify(variant.union),
-            JSON.stringify(variant.direct),
-            canonical.source_lineage,
-            canonical.source_snapshot_id,
-            canonical.source_observation_set_id,
-            `srcobs_${prefix}_malformed_${index}`,
-            `/observations/0/value/legality_rules/${index + 20}`,
-            canonical.source_field_pointers_json ?? JSON.stringify(canonical.source_field_pointers),
-            canonical.first_revision_id,
-            canonical.last_observed_revision_id,
-          )
-          .run(),
+        publishLegalityRuleFactsStatement(
+          catalogueStore(database),
+          JSON.stringify([
+            {
+              id: `legality_rule_${prefix}_malformed_${index}`,
+              official_id: `${prefix}-malformed-${index}`,
+              game: canonical.supported_game ?? canonical.game,
+              region: canonical.region,
+              format: canonical.format,
+              event_tier: canonical.event_tier,
+              effective_from: canonical.effective_from,
+              effective_until: canonical.effective_until,
+              official_wording: canonical.official_wording,
+              effect_json: JSON.stringify(variant.effect),
+              card_ids_json: JSON.stringify(variant.union),
+              direct_card_ids_json: JSON.stringify(variant.direct),
+              source_lineage: canonical.source_lineage,
+              source_snapshot_id: canonical.source_snapshot_id,
+              source_observation_set_id: canonical.source_observation_set_id,
+              source_observation_id: `srcobs_${prefix}_malformed_${index}`,
+              source_observation_pointer: `/observations/0/value/legality_rules/${index + 20}`,
+              source_field_pointers_json:
+                canonical.source_field_pointers_json ?? JSON.stringify(canonical.source_field_pointers),
+              first_revision_id: canonical.first_revision_id,
+              last_observed_revision_id: canonical.last_observed_revision_id,
+              unresolved_scope_json: "null",
+              current: 1,
+              last_missing_revision_id: null,
+            },
+          ]),
+        ).run(),
       ),
     ),
   );
@@ -449,31 +457,37 @@ export async function canonicalLegalityEffectInvariantErrors(
           : [];
       const allCardIds = [...variant.direct, ...companion].sort();
       return rejectedError(
-        sourceEvidenceQueries
-          .insertLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(database)
-          .bind(
-            `legality_rule_${prefix}_malformed_effect_${index}`,
-            `${prefix}-malformed-effect-${index}`,
-            canonical.supported_game ?? canonical.game,
-            canonical.region,
-            canonical.format,
-            canonical.event_tier,
-            canonical.effective_from,
-            canonical.effective_until,
-            canonical.official_wording,
-            JSON.stringify(variant.effect),
-            JSON.stringify(allCardIds),
-            JSON.stringify(variant.direct),
-            canonical.source_lineage,
-            canonical.source_snapshot_id,
-            canonical.source_observation_set_id,
-            `srcobs_${prefix}_malformed_effect_${index}`,
-            `/observations/0/value/legality_rules/${index + 40}`,
-            canonical.source_field_pointers_json ?? JSON.stringify(canonical.source_field_pointers),
-            canonical.first_revision_id,
-            canonical.last_observed_revision_id,
-          )
-          .run(),
+        publishLegalityRuleFactsStatement(
+          catalogueStore(database),
+          JSON.stringify([
+            {
+              id: `legality_rule_${prefix}_malformed_effect_${index}`,
+              official_id: `${prefix}-malformed-effect-${index}`,
+              game: canonical.supported_game ?? canonical.game,
+              region: canonical.region,
+              format: canonical.format,
+              event_tier: canonical.event_tier,
+              effective_from: canonical.effective_from,
+              effective_until: canonical.effective_until,
+              official_wording: canonical.official_wording,
+              effect_json: JSON.stringify(variant.effect),
+              card_ids_json: JSON.stringify(allCardIds),
+              direct_card_ids_json: JSON.stringify(variant.direct),
+              source_lineage: canonical.source_lineage,
+              source_snapshot_id: canonical.source_snapshot_id,
+              source_observation_set_id: canonical.source_observation_set_id,
+              source_observation_id: `srcobs_${prefix}_malformed_effect_${index}`,
+              source_observation_pointer: `/observations/0/value/legality_rules/${index + 40}`,
+              source_field_pointers_json:
+                canonical.source_field_pointers_json ?? JSON.stringify(canonical.source_field_pointers),
+              first_revision_id: canonical.first_revision_id,
+              last_observed_revision_id: canonical.last_observed_revision_id,
+              unresolved_scope_json: "null",
+              current: 1,
+              last_missing_revision_id: null,
+            },
+          ]),
+        ).run(),
       );
     }),
   );
@@ -541,32 +555,37 @@ export async function canonicalLegalityScopeInvariantErrors(
   return Promise.all(
     variants.map((variant, index) =>
       rejectedError(
-        sourceEvidenceQueries
-          .insertLegalityRules(database)
-          .bind(
-            `legality_rule_${prefix}_malformed_scope_${index}`,
-            `${prefix}-malformed-scope-${index}`,
-            canonical.supported_game ?? canonical.game,
-            canonical.region,
-            canonical.format,
-            variant.eventTier,
-            variant.effectiveFrom,
-            variant.effectiveUntil,
-            JSON.stringify(variant.scope),
-            canonical.official_wording,
-            JSON.stringify(variant.effect),
-            JSON.stringify(variant.direct),
-            JSON.stringify(variant.direct),
-            canonical.source_lineage,
-            canonical.source_snapshot_id,
-            canonical.source_observation_set_id,
-            `srcobs_${prefix}_malformed_scope_${index}`,
-            `/observations/0/value/legality_rules/${index + 60}`,
-            canonical.source_field_pointers_json ?? JSON.stringify(canonical.source_field_pointers),
-            canonical.first_revision_id,
-            canonical.last_observed_revision_id,
-          )
-          .run(),
+        publishLegalityRuleFactsStatement(
+          catalogueStore(database),
+          JSON.stringify([
+            {
+              id: `legality_rule_${prefix}_malformed_scope_${index}`,
+              official_id: `${prefix}-malformed-scope-${index}`,
+              game: canonical.supported_game ?? canonical.game,
+              region: canonical.region,
+              format: canonical.format,
+              event_tier: variant.eventTier,
+              effective_from: variant.effectiveFrom,
+              effective_until: variant.effectiveUntil,
+              unresolved_scope_json: JSON.stringify(variant.scope),
+              official_wording: canonical.official_wording,
+              effect_json: JSON.stringify(variant.effect),
+              card_ids_json: JSON.stringify(variant.direct),
+              direct_card_ids_json: JSON.stringify(variant.direct),
+              source_lineage: canonical.source_lineage,
+              source_snapshot_id: canonical.source_snapshot_id,
+              source_observation_set_id: canonical.source_observation_set_id,
+              source_observation_id: `srcobs_${prefix}_malformed_scope_${index}`,
+              source_observation_pointer: `/observations/0/value/legality_rules/${index + 60}`,
+              source_field_pointers_json:
+                canonical.source_field_pointers_json ?? JSON.stringify(canonical.source_field_pointers),
+              first_revision_id: canonical.first_revision_id,
+              last_observed_revision_id: canonical.last_observed_revision_id,
+              current: 1,
+              last_missing_revision_id: null,
+            },
+          ]),
+        ).run(),
       ),
     ),
   );

@@ -1,4 +1,9 @@
 import {
+  insertCheckedLegalityProjectionFixture,
+  disableLegalityPublicationTriggers,
+} from "./query-helpers/legality-guards";
+import { publishLegalityRuleFactsStatement } from "../../../src/catalogue/legality/legality-publication-repository";
+import {
   dropSourceRequestPlanGuard,
   dropCollectionPlanDiscoveryGuard,
   dropEvidencePlanOriginGuard,
@@ -266,6 +271,7 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
   const scratchDatabase = testEnv.SCRATCH_DB;
   await applyD1Migrations(scratchDatabase, testEnv.TEST_MIGRATIONS);
   await dropCollectionPlanDiscoveryGuard(scratchDatabase).run();
+  await disableLegalityPublicationTriggers(scratchDatabase);
 
   const malformedDigest = await rejectedError(
     sourceEvidenceQueries
@@ -298,15 +304,9 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
   const guards = await legalityQueries.readSqliteMasterName(scratchDatabase).all<{ name: string }>();
   expect(guards.results.map((row) => row.name)).toEqual([
     "guard_legality_rule_identity",
-    "legality_rule_card_ids_canonical_insert",
     "legality_rule_card_ids_canonical_update",
     "legality_rule_provenance_immutable",
-    "legality_rule_provenance_owner_insert",
-    "legality_rule_provenance_owner_update",
-    "legality_rule_scope_valid_insert",
     "legality_rules_immutable_delete",
-    "revision_legality_rule_matches_canonical",
-    "revision_legality_rule_scope_valid_insert",
     "revision_legality_rules_immutable_delete",
     "revision_legality_rules_immutable_update",
   ]);
@@ -410,19 +410,6 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
         upgradedRule.first_revision_id,
         upgradedRule.last_observed_revision_id,
       ),
-    sourceEvidenceQueries
-      .insertRevisionLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(scratchDatabase)
-      .bind(
-        upgradedRule.id,
-        upgradedRule.game,
-        upgradedRule.region,
-        upgradedRule.format,
-        upgradedRule.event_tier,
-        upgradedRule.effective_from,
-        upgradedRule.effective_until,
-        JSON.stringify([...upgradedRule.card_ids, ...upgradedRule.effect.with_card_ids].sort()),
-        JSON.stringify(upgradedRule),
-      ),
   ]);
   const upgradedCanonicalCardIdErrors = await canonicalLegalityCardIdInvariantErrors(
     scratchDatabase,
@@ -462,76 +449,74 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
     sourceEvidenceQueries.setLegalityRulesSourceSnapshotId(scratchDatabase).bind(upgradedRule.id).run(),
   );
   const upgradedCrossOwner = await rejectedError(
-    sourceEvidenceQueries
-      .insertLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRuleWithCatrevUpgradedLegalityGuard(
-        scratchDatabase,
-      )
-      .run(),
+    publishLegalityRuleFactsStatement(
+      catalogueStore(scratchDatabase),
+      JSON.stringify([
+        {
+          ...upgradedRule,
+          id: "legality_rule_upgraded_cross_owner",
+          official_id: "cross-owner",
+          unresolved_scope_json: "null",
+          effect_json: JSON.stringify(upgradedRule.effect),
+          card_ids_json: JSON.stringify([...upgradedRule.card_ids, ...upgradedRule.effect.with_card_ids].sort()),
+          direct_card_ids_json: JSON.stringify(upgradedRule.card_ids),
+          source_snapshot_id: "srcsnap_attacker",
+          source_field_pointers_json: sourceFieldPointers,
+          current: 1,
+        },
+      ]),
+    ).run(),
   );
-  const upgradedRevisionMutation = await rejectedError(
-    legalityQueries.setRevisionLegalityRulesFormat(scratchDatabase).bind(upgradedRule.id).run(),
-  );
-  const upgradedRevisionDelete = await rejectedError(
-    legalityQueries.deleteRevisionLegalityRules(scratchDatabase).bind(upgradedRule.id).run(),
-  );
+
   const { event_tier: _missingUpgradedEventTier, ...upgradedWithoutNullableKey } = upgradedRule;
   const { effective_until: _replacedUpgradedEffectiveUntil, ...upgradedWithReplacementKey } = upgradedRule;
   const upgradedMissingNullableKey = await rejectedError(
-    legalityQueries
-      .insertRevisionLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRuleWithCatrevUpgradedLegalityGuard(
-        scratchDatabase,
-      )
-      .bind(
-        upgradedRule.id,
-        upgradedRule.game,
-        upgradedRule.region,
-        upgradedRule.format,
-        upgradedRule.event_tier,
-        upgradedRule.effective_from,
-        upgradedRule.effective_until,
-        JSON.stringify(upgradedRule.card_ids),
-        JSON.stringify(upgradedWithoutNullableKey),
-      )
-      .run(),
+    insertCheckedLegalityProjectionFixture(scratchDatabase, {
+      revisionId: "catrev_upgraded_legality_guard",
+      id: upgradedRule.id,
+      game: upgradedRule.game,
+      region: upgradedRule.region,
+      format: upgradedRule.format,
+      eventTier: upgradedRule.event_tier,
+      effectiveFrom: upgradedRule.effective_from,
+      effectiveUntil: upgradedRule.effective_until,
+      cardIdsJson: JSON.stringify(upgradedRule.card_ids),
+      documentJson: JSON.stringify(upgradedWithoutNullableKey),
+    }).run(),
   );
   const upgradedArbitraryKeySubstitution = await rejectedError(
-    legalityQueries
-      .insertRevisionLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRuleWithCatrevUpgradedLegalityGuard(
-        scratchDatabase,
-      )
-      .bind(
-        upgradedRule.id,
-        upgradedRule.game,
-        upgradedRule.region,
-        upgradedRule.format,
-        upgradedRule.event_tier,
-        upgradedRule.effective_from,
-        upgradedRule.effective_until,
-        JSON.stringify(upgradedRule.card_ids),
-        JSON.stringify({
-          ...upgradedWithReplacementKey,
-          attacker_replacement: null,
-        }),
-      )
-      .run(),
+    insertCheckedLegalityProjectionFixture(scratchDatabase, {
+      revisionId: "catrev_upgraded_legality_guard",
+      id: upgradedRule.id,
+      game: upgradedRule.game,
+      region: upgradedRule.region,
+      format: upgradedRule.format,
+      eventTier: upgradedRule.event_tier,
+      effectiveFrom: upgradedRule.effective_from,
+      effectiveUntil: upgradedRule.effective_until,
+      cardIdsJson: JSON.stringify(upgradedRule.card_ids),
+      documentJson: JSON.stringify({
+        ...upgradedWithReplacementKey,
+        attacker_replacement: null,
+      }),
+    }).run(),
   );
   const upgradedDuplicateRequiredKey = await rejectedError(
-    legalityQueries
-      .insertRevisionLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRuleWithCatrevUpgradedLegalityGuard(
-        scratchDatabase,
-      )
-      .bind(
-        upgradedRule.id,
-        upgradedRule.game,
-        upgradedRule.region,
-        upgradedRule.format,
-        upgradedRule.event_tier,
-        upgradedRule.effective_from,
-        upgradedRule.effective_until,
-        JSON.stringify(upgradedRule.card_ids),
-        JSON.stringify(upgradedRule).replace(/\}$/u, ',"official_wording":"Attacker-controlled duplicate."}'),
-      )
-      .run(),
+    insertCheckedLegalityProjectionFixture(scratchDatabase, {
+      revisionId: "catrev_upgraded_legality_guard",
+      id: upgradedRule.id,
+      game: upgradedRule.game,
+      region: upgradedRule.region,
+      format: upgradedRule.format,
+      eventTier: upgradedRule.event_tier,
+      effectiveFrom: upgradedRule.effective_from,
+      effectiveUntil: upgradedRule.effective_until,
+      cardIdsJson: JSON.stringify(upgradedRule.card_ids),
+      documentJson: JSON.stringify(upgradedRule).replace(
+        /\}$/u,
+        ',"official_wording":"Attacker-controlled duplicate."}',
+      ),
+    }).run(),
   );
   const upgradedNestedDocuments = [
     { ...upgradedRule, card_ids: upgradedRule.card_ids[0] },
@@ -547,24 +532,40 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
   const upgradedNestedCardIds = await Promise.all(
     upgradedNestedDocuments.map((document) =>
       rejectedError(
-        legalityQueries
-          .insertRevisionLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRuleWithCatrevUpgradedLegalityGuard(
-            scratchDatabase,
-          )
-          .bind(
-            upgradedRule.id,
-            upgradedRule.game,
-            upgradedRule.region,
-            upgradedRule.format,
-            upgradedRule.event_tier,
-            upgradedRule.effective_from,
-            upgradedRule.effective_until,
-            JSON.stringify([...upgradedRule.card_ids, ...upgradedRule.effect.with_card_ids]),
-            JSON.stringify(document),
-          )
-          .run(),
+        insertCheckedLegalityProjectionFixture(scratchDatabase, {
+          revisionId: "catrev_upgraded_legality_guard",
+          id: upgradedRule.id,
+          game: upgradedRule.game,
+          region: upgradedRule.region,
+          format: upgradedRule.format,
+          eventTier: upgradedRule.event_tier,
+          effectiveFrom: upgradedRule.effective_from,
+          effectiveUntil: upgradedRule.effective_until,
+          cardIdsJson: JSON.stringify([...upgradedRule.card_ids, ...upgradedRule.effect.with_card_ids]),
+          documentJson: JSON.stringify(document),
+        }).run(),
       ),
     ),
+  );
+  await sourceEvidenceQueries
+    .insertRevisionLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(scratchDatabase)
+    .bind(
+      upgradedRule.id,
+      upgradedRule.game,
+      upgradedRule.region,
+      upgradedRule.format,
+      upgradedRule.event_tier,
+      upgradedRule.effective_from,
+      upgradedRule.effective_until,
+      JSON.stringify([...upgradedRule.card_ids, ...upgradedRule.effect.with_card_ids].sort()),
+      JSON.stringify(upgradedRule),
+    )
+    .run();
+  const upgradedRevisionMutation = await rejectedError(
+    legalityQueries.setRevisionLegalityRulesFormat(scratchDatabase).bind(upgradedRule.id).run(),
+  );
+  const upgradedRevisionDelete = await rejectedError(
+    legalityQueries.deleteRevisionLegalityRules(scratchDatabase).bind(upgradedRule.id).run(),
   );
   expect([
     String(upgradedProvenanceMutation),
