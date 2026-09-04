@@ -1,4 +1,6 @@
+import type { CatalogueObservation } from "./adapter-observations";
 import { AdapterParseFailure } from "./adapter-parse-failure";
+
 const colourOrder = ["red", "green", "blue", "purple", "black", "yellow", "white", "colourless"];
 
 const cardTypes = new Map([
@@ -86,7 +88,7 @@ export function normalizeOnePieceCardPage(value: Readonly<Record<string, unknown
   };
 }
 
-export function onePieceDonCardObservation(value: unknown): Record<string, unknown> {
+export function onePieceDonCardObservation(value: unknown): CatalogueObservation {
   const card = requiredRecord(value, "One Piece DON!! rules Card evidence");
   const fields = ["functional_designation", "name", "Category", "Effect"];
   const undeclared = Object.keys(card).filter((field) => !fields.includes(field));

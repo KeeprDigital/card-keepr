@@ -1,17 +1,32 @@
-import { adapterUrl } from "./adapter-parse-failure";
-import { officialSourceAuthorities } from "./official-source-authority";
-import { AdapterParseFailure } from "./adapter-parse-failure";
-import { officialArtworkFingerprint } from "./official-artwork-identity";
 import type { RawAdapterDefinition } from "./adapter-contract";
-import { officialUrl } from "./official-source-authority";
 import {
-  type NormalizedSurfaceBody,
+  attachRawSurfaceEvidenceV1,
+  cardObservation,
+  colourValues,
+  completeObservation,
+  decodeHtmlText,
+  fusionWorldFullLocatorFromUrl,
+  fusionWorldLocatorIdentity,
+  htmlText,
+  integerOrNull,
+  liveOfficialProductCode,
+  liveOfficialReleaseDateText,
+  nonCardProductClassificationV2,
+  productEventKey,
+  productMapKey,
+  productOnlyObservation,
+  requiredHtmlMatch,
+  stageRecord,
+  textValues,
+} from "./adapter-html";
+import {
   canonicalDetail,
-  normalizePartitionEntries,
+  type NormalizedSurfaceBody,
   normalizedDiscovery,
   normalizedPartitions,
   normalizedPolicy,
   normalizedSurfaceBody,
+  normalizePartitionEntries,
   nullableText,
   productReleaseNormalizers,
   requiredArray,
@@ -20,19 +35,13 @@ import {
   stableValue,
   uniqueTextValues,
 } from "./adapter-normalization";
-import {
-  attachRawSurfaceEvidenceV1,
-  cardObservation,
-  colourValues,
-  decodeHtmlText,
-  fusionWorldFullLocatorFromUrl,
-  fusionWorldLocatorIdentity,
-  htmlText,
-  integerOrNull,
-  requiredHtmlMatch,
-  textValues,
-} from "./adapter-html";
+import type { CatalogueObservation, OfficialErratumObservation } from "./adapter-observations";
+import { AdapterParseFailure, adapterUrl } from "./adapter-parse-failure";
+import { parseProductDetail } from "./adapter-product-html";
 import { createBandaiAdapter } from "./bandai-adapter-runtime";
+import { officialArtworkFingerprint } from "./official-artwork-identity";
+import { officialSourceAuthorities, officialUrl } from "./official-source-authority";
+import { normalizedOfficialReleaseDate } from "./official-source-release-normalization";
 
 const productRelease = productReleaseNormalizers({
   gameLabel: "Fusion World",
@@ -86,7 +95,26 @@ const definition: RawAdapterDefinition = {
 export const fusionWorldAdapter = createBandaiAdapter(
   definition,
   (_lineage, surface, raw) => normalizeFusionWorldSurface(surface, raw, true),
-  { cardDetail: parseFusionWorldCardDetailV6 },
+  {
+    productDetail: (html, lineage, url) =>
+      parseProductDetail(
+        html,
+        {
+          titleSuffix: /\s*[|｜]\s*Dragon Ball Super Card Game Fusion World - Official Web Site$/u,
+          seasonPrecisionReleases: true,
+        },
+        lineage,
+        url,
+      ),
+    structuredObservations: (surface, document) =>
+      surface === "errata" ? fusionWorldOfficialErrataObservations(document) : [],
+    productIndex: parseFusionWorldLiveProductIndex,
+    validateProductCoverage: requireFusionWorldLiveProductStatusCoverage,
+    policyDiscovery: fusionPolicyDiscovery,
+    surfaceUrl: (surface, url) =>
+      (surface !== "legality-current" && surface !== "legality-history") || exactFusionPolicySurfaceUrl(surface, url),
+    cardDetail: parseFusionWorldCardDetailV6,
+  },
 );
 
 function normalizeFusionWorldSurface(
@@ -285,11 +313,7 @@ function validateFusionWorldDetailIdentity(card: Record<string, unknown>): void 
   }
 }
 
-function parseFusionWorldCardDetailV6(
-  html: string,
-  sourceLineage: string,
-  requestUrl: string,
-): Record<string, unknown> {
+function parseFusionWorldCardDetailV6(html: string, sourceLineage: string, requestUrl: string): CatalogueObservation {
   // The live detail pages (verified 2026-08-12 on SB01-039, FB01-046,
   // FS10-01 and its _p1 variant, the FB06 variant reprints, and FP-088)
   // annotate errata'd Skills and Special Traits labels with a face-scoped
@@ -306,7 +330,7 @@ function parseFusionWorldCardDetailByContract(
   requestUrl: string,
   optionalEnergyMarkerRarity: boolean,
   errataAnnotatedLabels = false,
-): Record<string, unknown> {
+): CatalogueObservation {
   const request = adapterUrl(requestUrl);
   const requestedLocator = fusionWorldFullLocatorFromUrl(request, true);
   if (requestedLocator === null) {
@@ -679,4 +703,288 @@ function fusionWorldDetailImages(
     throw new AdapterParseFailure("Fusion World Leader requires explicit front and back face images.");
   }
   return faces;
+}
+
+function fusionWorldOfficialErrataObservations(document: Record<string, unknown>): OfficialErratumObservation[] {
+  const entries = requiredArray(document.entries, "Fusion World Errata entries");
+  return entries.map((value) => {
+    const entry = requiredRecord(value, "Fusion World Erratum");
+    const allowed = new Set([
+      "entry_id",
+      "card_number",
+      "published_on",
+      "effective_from",
+      "before",
+      "after",
+      "notice",
+      "image_url",
+    ]);
+    const unexpected = Object.keys(entry).find((field) => !allowed.has(field));
+    if (unexpected !== undefined) {
+      throw new AdapterParseFailure(`Fusion World Erratum contains unknown field ${unexpected}.`);
+    }
+    const entryId = requiredText(entry.entry_id, "Fusion World Erratum identity");
+    const cardNumber = requiredText(entry.card_number, "Fusion World Erratum Card Number");
+    const publishedOn = requiredText(entry.published_on, "Fusion World Erratum published date");
+    const effectiveFrom =
+      entry.effective_from === null ? null : requiredText(entry.effective_from, "Fusion World Erratum effective date");
+    const before = requiredText(entry.before, "Fusion World Erratum Before text");
+    const after = requiredText(entry.after, "Fusion World Erratum After text");
+    const notice = requiredText(entry.notice, "Fusion World Erratum notice");
+    const imageUrl = requiredText(entry.image_url, "Fusion World Erratum image URL");
+    const image = adapterUrl(imageUrl);
+    if (!officialUrl("fusion-world-en", image, "image")) {
+      throw new AdapterParseFailure("Fusion World Erratum image provenance is invalid.");
+    }
+    return {
+      kind: "official_erratum",
+      game: "fusion-world",
+      target: {
+        type: "card",
+        official_identity: { kind: "card_number", value: cardNumber },
+      },
+      published_on: publishedOn,
+      effective_from: effectiveFrom,
+      observed_printed_rules_text: before,
+      corrected_rules_text: after,
+      official_wording: `Before: ${before}\nAfter: ${after}\nNote: ${notice}`,
+      applies_to_parallel_printings: true,
+      source: {
+        fragment: `#${entryId}`,
+        display_name: cardNumber,
+        image_url: image.href,
+      },
+      completeness: completeObservation(1, 1),
+    };
+  });
+}
+
+function requireFusionWorldLiveProductStatusCoverage(html: string): void {
+  const sections = [...html.matchAll(/<section class="contentsColInner ([a-z-]+)Col" id="([a-z-]+)">/gu)].map(
+    (match) => ({ classId: match[1]!, id: match[2]! }),
+  );
+  const anchors = [...html.matchAll(/<li class="ankerListItem"><a href="#([a-z-]+)">([^<]+)<\/a><\/li>/gu)].map(
+    (match) => ({ id: match[1]!, label: decodeHtmlText(match[2]!) }),
+  );
+  const missing = fusionLiveProductSections
+    .filter(
+      (expected) =>
+        sections.filter(({ classId, id }) => classId === expected.id && id === expected.id).length !== 1 ||
+        anchors.filter(({ id, label }) => id === expected.id && label === expected.heading).length !== 1 ||
+        !html.includes(`<section class="contentsColInner ${expected.id}Col" id="${expected.id}">`),
+    )
+    .map(({ id }) => id);
+  const expectedIds = new Set<string>(fusionLiveProductSections.map(({ id }) => id));
+  const unexpected = [
+    ...sections.flatMap(({ classId, id }) => (expectedIds.has(id) && classId === id ? [] : [id])),
+    ...anchors.flatMap(({ id }) => (expectedIds.has(id) ? [] : [id])),
+  ];
+  if (missing.length > 0 || unexpected.length > 0) {
+    throw new AdapterParseFailure(
+      `Fusion World Product status sections are incomplete; missing: ${
+        missing.join(", ") || "none"
+      }; unexpected: ${[...new Set(unexpected)].join(", ") || "none"}.`,
+    );
+  }
+}
+
+function parseFusionWorldLiveProductIndex(
+  html: string,
+  sourceLineage: string,
+  requestUrl: string,
+): CatalogueObservation[] {
+  type LiveProductEntry =
+    | {
+        product: { code: string | null; title: string };
+        status: "released" | "announced";
+        date: { precision: string; value: string | null };
+      }
+    | {
+        non_card_context: {
+          key: string;
+          kind: "other";
+          label: string;
+          evidence_category: "explicit";
+        };
+      };
+  const entries: LiveProductEntry[] = [];
+  for (const expected of fusionLiveProductSections) {
+    // The products-surface coverage check is the fail-closed wall proving
+    // both status sections; the index reads whichever sections the parsed
+    // surface publishes.
+    const section = html.match(
+      new RegExp(`<section class="contentsColInner ${expected.id}Col" id="${expected.id}">([\\s\\S]*?)</section>`, "u"),
+    )?.[1];
+    if (section === undefined) continue;
+    for (const item of section.matchAll(/<li class="prpductListItem cardCol">([\s\S]*?)<\/li>/gu)) {
+      const body = item[1]!;
+      const href = requiredHtmlMatch(
+        body,
+        /<a href="([^"]+)" class="cardLink">/u,
+        "Fusion World Product listing link",
+      )[1]!;
+      const resolved = adapterUrl(decodeHtmlText(href), requestUrl);
+      if (resolved.protocol !== "https:" || !officialUrl(sourceLineage, resolved, "document")) {
+        throw new AdapterParseFailure("Fusion World Product listing link is outside registered authority.");
+      }
+      const title = htmlText(
+        requiredHtmlMatch(body, /<h3 class="cardText">([\s\S]*?)<\/h3>/u, "Fusion World Product listing title")[1]!,
+      );
+      if (title.length === 0) {
+        throw new AdapterParseFailure("Fusion World Product listing entry is missing its title.");
+      }
+      const info = [
+        ...body.matchAll(/<dt class="cardInfoTit">([\s\S]*?)<\/dt>\s*<dd class="cardInfoTxt">([\s\S]*?)<\/dd>/gu),
+      ].map((match) => ({
+        label: htmlText(match[1]!),
+        value: htmlText(match[2]!),
+      }));
+      const unknownLabel = info.find(({ label }) => label !== "RELEASE" && label !== "MSRP");
+      const release = info.filter(({ label }) => label === "RELEASE");
+      if (unknownLabel !== undefined || release.length !== 1) {
+        throw new AdapterParseFailure("Fusion World Product listing entry publishes an unmodelled field.");
+      }
+      const nonCardClassification = nonCardProductClassificationV2(`${resolved.pathname} ${title}`);
+      if (nonCardClassification !== null) {
+        entries.push({
+          non_card_context: {
+            key: `non-card:${nonCardClassification}:${title.normalize("NFC").trim().toLocaleLowerCase()}`,
+            kind: "other",
+            label: nonCardClassification,
+            evidence_category: "explicit",
+          },
+        });
+        continue;
+      }
+      const date = normalizedOfficialReleaseDate(liveOfficialReleaseDateText(release[0]!.value), { seasons: true });
+      entries.push({
+        product: { code: liveOfficialProductCode(title), title },
+        status: expected.status,
+        date,
+      });
+    }
+  }
+  return [
+    ...new Map(
+      entries.map((entry) => [
+        "product" in entry ? `product:${productMapKey(entry.product)}` : `context:${entry.non_card_context.key}`,
+        entry,
+      ]),
+    ).values(),
+  ].map((entry) => {
+    if ("non_card_context" in entry) {
+      return {
+        completeness: completeObservation(),
+        product_release_catalogue: {
+          products: [],
+          distribution_contexts: [entry.non_card_context],
+          relationships: [],
+        },
+      };
+    }
+    const releases = new Map<string, Record<string, unknown>[]>();
+    releases.set(productMapKey(entry.product), [
+      {
+        event_key: productEventKey("product-release", entry.product),
+        region: "unknown",
+        precision: entry.date.precision,
+        date: entry.date.value,
+        status: entry.status,
+      },
+    ]);
+    return productOnlyObservation(
+      entry.product,
+      releases,
+      { revision: "captured-by-policy-surface", entries: [] },
+      { revision: "captured-by-policy-surface", entries: [] },
+    );
+  });
+}
+
+function exactFusionPolicyStageRecords(html: string, requestUrl: string): Array<ReturnType<typeof stageRecord>> | null {
+  const retainedCurrent = html.match(
+    /<a class="commonBtn" target="" href="([^"]+)">Banned\/Restricted Cards from Effective March 2026<\/a>/u,
+  );
+  const syntheticCurrent = html.match(/<a href="([^"]+)">Current banned and limited cards<\/a>/u);
+  const historyMarker = '<p class="xxSmallTitle">Application history of banned/restricted cards</p>';
+  const historyStart = html.indexOf(historyMarker);
+  const retainedHistory =
+    historyStart < 0
+      ? null
+      : html
+          .slice(historyStart + historyMarker.length)
+          .match(/<a class="commonBtn" target="" href="([^"]+)">(Effective March 2026)<\/a>/u);
+  const syntheticHistory = html.match(/<a href="([^"]+)">(Previous restriction history)<\/a>/u);
+  const current = retainedCurrent ?? syntheticCurrent;
+  const history = retainedHistory ?? syntheticHistory;
+  if (current === null && history === null) return null;
+  if (current === null) {
+    throw new AdapterParseFailure("Fusion World current policy discovery is incomplete.");
+  }
+  if (history === null) {
+    throw new AdapterParseFailure("Fusion World policy history discovery is incomplete.");
+  }
+  return (
+    [
+      ["legality-current", current[1]!, "banned/restricted cards from effective march 2026"],
+      ["legality-history", history[1]!, history[2]!.toLocaleLowerCase()],
+    ] as const
+  ).map(([surface, resolution, label]) => {
+    const url = adapterUrl(resolution, requestUrl);
+    if (!exactFusionPolicySurfaceUrl(surface, url)) {
+      throw new AdapterParseFailure("Fusion World policy discovery does not match its exact retained publication URL.");
+    }
+    return stageRecord("fusion-world-en", surface, url.href, {
+      kind: "publisher_navigation",
+      label,
+      url: requestUrl,
+      resolution,
+    });
+  });
+}
+
+// The live Fusion World Product listing (verified byte-identically on
+// 2026-08-12 against the retained hub capture): the AVAILABLE NOW and
+// COMING SOON statuses publish as anchored sections with exact anchor-list
+// tabs instead of the status-attributed markup the retired generations
+// modelled.
+const fusionLiveProductSections = [
+  { id: "available", heading: "AVAILABLE NOW", status: "released" },
+  { id: "comingsoon", heading: "COMING SOON", status: "announced" },
+] as const;
+
+function fusionPolicyDiscovery(html: string, url: string) {
+  const records = exactFusionPolicyStageRecords(html, url);
+  if (records === null) return null;
+  return {
+    records,
+    consumesLink: (label: string, resolved: URL): boolean => {
+      if (
+        !/histor|previous|past|effective|restriction|banned|limited|official rules/iu.test(
+          `${label} ${resolved.pathname} ${resolved.search}`,
+        )
+      )
+        return false;
+      const retainedArchive = new Map([
+        ["effective december 2025", "https://www.dbs-cardgame.com/fw/en/news/01_332.html"],
+        ["effective july 2025", "https://www.dbs-cardgame.com/fw/en/news/01_239.html"],
+        ["effective july 2024", "https://www.dbs-cardgame.com/fw/en/news/01_65.html"],
+      ]);
+      const exactRequired = records.some(({ url }) => url === resolved.href);
+      if (exactRequired || retainedArchive.get(label.toLocaleLowerCase()) === resolved.href) {
+        return true;
+      }
+      throw new AdapterParseFailure("Fusion World policy discovery contains an unrecognized sibling publication.");
+    },
+  };
+}
+
+function exactFusionPolicySurfaceUrl(surface: string, url: URL): boolean {
+  const exact =
+    surface === "legality-current"
+      ? ["https://www.dbs-cardgame.com/fw/en/news/01_305.html"]
+      : surface === "legality-history"
+        ? ["https://www.dbs-cardgame.com/fw/en/news/01_399.html"]
+        : [];
+  return exact.includes(url.href);
 }

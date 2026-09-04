@@ -1,10 +1,10 @@
-import { AdministrationProblem, canonicalJson, sha256, utf8 } from "../shared";
 import {
   AdapterParseFailure,
   assertAdapterBinding,
   assertAdapterRequestSurface,
   requiredSourceAdapter,
 } from "../adapters";
+import { AdministrationProblem, canonicalJson, sha256, utf8 } from "../shared";
 import { publicObservationSet } from "./source-evidence-repository";
 import type { ObservationSetRow, SnapshotRow } from "./source-evidence-repository-types";
 
@@ -99,7 +99,7 @@ export async function parseSnapshot(
       observations = await adapter.parse(document);
     }
   } catch (error) {
-    if (!(error instanceof AdapterParseFailure)) throw error;
+    if (!(error instanceof AdapterParseFailure) || error.category !== "source-contract") throw error;
     throw new AdministrationProblem(
       422,
       "source_parse_failed",
@@ -209,7 +209,7 @@ export async function discoverSnapshotRequests(
       };
     });
   } catch (error) {
-    if (!(error instanceof AdapterParseFailure)) throw error;
+    if (!(error instanceof AdapterParseFailure) || error.category !== "source-contract") throw error;
     throw new AdministrationProblem(
       422,
       "source_discovery_failed",

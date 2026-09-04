@@ -1,49 +1,37 @@
-import { adapterUrl } from "./adapter-parse-failure";
-import { AdapterParseFailure, withAdapterParseFailure } from "./adapter-parse-failure";
+import { parse as parseHtml } from "parse5";
+import type {
+  DiscoveryFormat,
+  LiveContractFlags,
+  OfficialRawAdapterContract,
+  ProductSourceGame,
+  RawAdapterDefinition,
+} from "./adapter-contract";
 import {
-  type ParsedBandaiSurface,
   attachRawSurfaceEvidenceV1,
   cardObservation,
-  catalogue,
   colourValues,
   completeObservation,
   decodeHtmlText,
   digimonTextSections,
   digivolutionRequirements,
-  exactOnePieceSourceDate,
   firstLabelValue,
   fusionWorldFullLocatorFromUrl,
   fusionWorldLocatorIdentity,
-  gundamOfficialErrataObservations,
   htmlAttribute,
   htmlLabelPairs,
   htmlText,
   integerOrNull,
   isPlainRecord,
   looseHtmlAttribute,
+  nonCardProductClassification,
+  type ParsedBandaiSurface,
   productLinksFromHtml,
   productMapKey,
-  productReference,
-  requiredHtmlMatch,
+  productOnlyObservation,
   sourceSidecar,
+  stageRecord,
   textValues,
 } from "./adapter-html";
-import {
-  officialReleaseDateNeedsSchemaReview,
-  officialReleaseStatusNeedsSchemaReview,
-  normalizedOfficialReleaseDate,
-  normalizedOfficialReleaseStatus,
-} from "./official-source-release-normalization.ts";
-import { officialArtworkFingerprint } from "./official-artwork-identity.ts";
-import {
-  officialLiveLegalityRulesObservation,
-  officialLegalityRulesHtmlObservation,
-  officialLegalityRulesObservation,
-} from "./official-legality-source-adapters.ts";
-import { liveOfficialLegalityDocument } from "./official-legality-live-html.ts";
-import { onePieceDonCardObservation, onePieceRecordingMemberships } from "./one-piece-source-adapter.ts";
-import { parse as parseHtml } from "parse5";
-
 import {
   type NormalizedSurfaceBody,
   normalizedGundamRarity,
@@ -56,19 +44,49 @@ import {
   stableValue,
   uniqueTextValues,
 } from "./adapter-normalization";
-import type {
-  ProductSourceGame,
-  DiscoveryFormat,
-  OfficialRawAdapterContract,
-  LiveContractFlags,
-  RawAdapterDefinition,
-} from "./adapter-contract";
+import type { CatalogueObservation, OfficialSourceObservation } from "./adapter-observations";
+import { AdapterParseFailure, adapterUrl, withAdapterParseFailure } from "./adapter-parse-failure";
+import { parseBandaiProductIndex } from "./adapter-product-html";
+import { officialArtworkFingerprint } from "./official-artwork-identity.ts";
+import { liveOfficialLegalityDocument } from "./official-legality-live-html.ts";
+import {
+  officialLegalityRulesHtmlObservation,
+  officialLegalityRulesObservation,
+  officialLiveLegalityRulesObservation,
+} from "./official-legality-source-adapters.ts";
 import { officialUrl } from "./official-source-authority";
+import { onePieceRecordingMemberships } from "./one-piece-source-adapter.ts";
 
-export type GameHtmlParsers = {
-  cardDetail?: (html: string, sourceLineage: string, requestUrl: string) => Record<string, unknown>;
-  errataArticle?: (html: string, sourceLineage: string, requestUrl: string) => readonly Record<string, unknown>[];
-  popupCardList?: (html: string, requestUrl: string) => Record<string, unknown>[];
+export type GameParsers = {
+  surfaceUrl?: (surface: string, url: URL) => boolean;
+  packageOptions?: (html: string) => string[];
+  productDetail: (html: string, sourceLineage: string, url: string) => CatalogueObservation;
+  structuredObservations: (
+    surface: string,
+    document: Record<string, unknown>,
+    sourceLineage: string,
+  ) => readonly OfficialSourceObservation[];
+  unmappedFields?: (surface: string, document: Record<string, unknown>) => readonly { path: string; value: unknown }[];
+  rulesHub?: (
+    html: string,
+    sourceLineage: string,
+    surface: string,
+    url: string,
+  ) => readonly OfficialSourceObservation[];
+  packagesRoot?: (html: string, sourceLineage: string, surface: string, url: string) => CatalogueObservation;
+  productIndex?: (html: string, sourceLineage: string, url: string) => CatalogueObservation[];
+  validateProductCoverage?: (html: string) => void;
+  policyDiscovery?: (
+    html: string,
+    url: string,
+  ) => {
+    records: Array<ReturnType<typeof stageRecord>>;
+    consumesLink: (label: string, url: URL) => boolean;
+  } | null;
+
+  cardDetail?: (html: string, sourceLineage: string, requestUrl: string) => CatalogueObservation;
+  errataArticle?: (html: string, sourceLineage: string, requestUrl: string) => readonly OfficialSourceObservation[];
+  popupCardList?: (html: string, requestUrl: string) => CatalogueObservation[];
   inlineCardList?: (html: string, requestUrl: string) => ParsedBandaiSurface;
 };
 
@@ -81,7 +99,7 @@ export type SurfaceNormalizer = (
 export function createBandaiAdapter(
   definition: RawAdapterDefinition,
   normalizeSurface: SurfaceNormalizer,
-  htmlParsers: GameHtmlParsers,
+  gameParsers: GameParsers,
 ): OfficialRawAdapterContract {
   const version = definition.version;
   const requiredSurfaces = Object.freeze([...definition.requiredSurfaces]);
@@ -94,7 +112,7 @@ export function createBandaiAdapter(
     urls,
     version,
     normalizeSurface,
-    htmlParsers,
+    gameParsers,
   );
   const discover = bandaiRequestDiscovery(
     definition.format,
@@ -104,6 +122,7 @@ export function createBandaiAdapter(
     version.expandedOnePieceCatalogue,
     version.catalogueComplete,
     version.completeDigimonCatalogue,
+    gameParsers,
   );
   return Object.freeze({
     adapterVersion: version.adapterVersion,
@@ -123,10 +142,7 @@ export function createBandaiAdapter(
       exactSurfaceUrl(definition.sourceLineage, requiredSurfaces, urls, surface),
     requestUrlForDiscovery: () =>
       exactSurfaceUrl(definition.sourceLineage, requiredSurfaces, urls, requiredSurfaces[0]!),
-    parse: (context, bytes) =>
-      withAdapterParseFailure(() =>
-        parse(bytes, context).map((value) => requiredRecord(value, "Official Source observation")),
-      ),
+    parse: (context, bytes) => withAdapterParseFailure(() => parse(bytes, context)),
     discoverRequests: (bytes, context) => withAdapterParseFailure(() => discover(bytes, context)),
   });
 }
@@ -141,6 +157,7 @@ function bandaiRequestDiscovery(
   expandedOnePieceCatalogue = false,
   catalogueComplete = false,
   completeDigimonCatalogue = false,
+  gameParsers: GameParsers,
 ): OfficialRawAdapterContract["discoverRequests"] {
   return (bytes, context) => {
     if (context.requestId?.includes(":image:")) return [];
@@ -162,7 +179,7 @@ function bandaiRequestDiscovery(
     }
     const discoveryHtml = stripKnownPublisherNavigation(html, sourceLineage, context.url);
     const initialSurface =
-      dynamicRole === null ? surfaceFromContext(context, sourceLineage, requiredSurfaces, urls) : null;
+      dynamicRole === null ? surfaceFromContext(context, sourceLineage, requiredSurfaces, urls, gameParsers) : null;
     const current = adapterUrl(context.url);
     const completeGundamCatalogue = catalogueComplete && format === "gundam";
     const gundamLiveListing =
@@ -183,6 +200,7 @@ function bandaiRequestDiscovery(
         current,
         expandedOnePieceCatalogue,
         catalogueComplete,
+        gameParsers,
       ).map((url) => ({
         role: "listing" as const,
         url,
@@ -260,6 +278,7 @@ function bandaiRequestDiscovery(
           current,
           expandedOnePieceCatalogue,
           catalogueComplete,
+          gameParsers,
         ).map((url) => ({
           role: "listing" as const,
           url,
@@ -362,6 +381,7 @@ function discoveredPartitionRequests(
   current: URL,
   expandedOnePieceCatalogue = false,
   catalogueComplete = false,
+  gameParsers: GameParsers,
 ): string[] {
   if (format === "fusion-world") {
     // The live Fusion World card search partitions by publisher category
@@ -379,7 +399,7 @@ function discoveredPartitionRequests(
       });
   }
   if (catalogueComplete && format === "gundam" && !current.searchParams.has("package")) {
-    const packageOptions = gundamPublisherPackageOptions(html);
+    const packageOptions = gameParsers.packageOptions!(html);
     if (packageOptions.length > 0) {
       return packageOptions.map((packageValue) => {
         const target = adapterUrl(current);
@@ -653,20 +673,6 @@ function gundamCompleteListingLeaf(url: URL): boolean {
   );
 }
 
-function gundamPublisherPackageOptions(html: string): string[] {
-  return [
-    ...new Set(
-      [...html.matchAll(/<a\b([^>]*)>/giu)].flatMap((match) => {
-        const attributes = match[1]!;
-        const classes = htmlAttribute(attributes, "class")?.split(/\s+/u) ?? [];
-        if (!classes.includes("js-selectBtn-package")) return [];
-        const value = htmlAttribute(attributes, "data-val")?.trim();
-        return value === undefined || value.length === 0 ? [] : [value];
-      }),
-    ),
-  ];
-}
-
 function parseCompleteGundamLiveListing(
   html: string,
   requestUrl: URL,
@@ -883,10 +889,6 @@ function gundamErrataListingUrl(url: URL, sourceLineage?: string): boolean {
   );
 }
 
-function nonCardProductClassification(value: string): "accessory" | null {
-  return /(?:accessor|sleeve|storage|binder|playmat)/iu.test(value) ? "accessory" : null;
-}
-
 function officialHostname(sourceLineage: string, hostname: string): boolean {
   const expected =
     sourceLineage === "one-piece-en"
@@ -923,8 +925,11 @@ function bandaiSnapshotDecoder(
   urls: Readonly<Record<string, string>>,
   profile: LiveContractFlags,
   normalizeSurface: SurfaceNormalizer,
-  htmlParsers: GameHtmlParsers,
-): (bytes: Uint8Array, context: { mediaType: string | null; url: string; requestId?: string }) => readonly unknown[] {
+  gameParsers: GameParsers,
+): (
+  bytes: Uint8Array,
+  context: { mediaType: string | null; url: string; requestId?: string },
+) => readonly OfficialSourceObservation[] {
   return (bytes, context) => {
     const dynamicRole = dynamicRequestRole(context.requestId);
     const mediaType = context.mediaType?.split(";", 1)[0]?.trim().toLowerCase();
@@ -980,6 +985,7 @@ function bandaiSnapshotDecoder(
         discoveryKey,
         requiredSurfaces,
         profile.unresolvedLegalityScopes === true,
+        gameParsers,
       );
       return [
         {
@@ -997,7 +1003,7 @@ function bandaiSnapshotDecoder(
         },
       ];
     }
-    const surface = dynamicRole ?? surfaceFromContext(context, sourceLineage, requiredSurfaces, urls);
+    const surface = dynamicRole ?? surfaceFromContext(context, sourceLineage, requiredSurfaces, urls, gameParsers);
     const structuredSurface = dynamicStructuredSurface(
       dynamicRole,
       surface,
@@ -1045,9 +1051,9 @@ function bandaiSnapshotDecoder(
         true,
         profile.expandedOnePieceCatalogue === true,
         profile.catalogueComplete === true,
-        profile.completeDigimonCatalogue === true,
         profile.unresolvedLegalityScopes === true,
         normalizeSurface,
+        gameParsers,
       );
       if (isLegalityRuleSurface(game, surface)) {
         assertStructuredAndVisibleLegalityMatch(
@@ -1110,14 +1116,14 @@ function bandaiSnapshotDecoder(
         format === "gundam" &&
         gundamErrataArticleUrl(adapterUrl(context.url), sourceLineage)
       ) {
-        return htmlParsers.errataArticle!(html, sourceLineage, context.url);
+        return gameParsers.errataArticle!(html, sourceLineage, context.url);
       }
       if (profile.catalogueComplete === true && format === "gundam") {
-        return [htmlParsers.cardDetail!(html, sourceLineage, context.url)];
+        return [gameParsers.cardDetail!(html, sourceLineage, context.url)];
       }
       return [
         profile.catalogueComplete === true && format === "fusion-world"
-          ? htmlParsers.cardDetail!(html, sourceLineage, context.url)
+          ? gameParsers.cardDetail!(html, sourceLineage, context.url)
           : parseBandaiCardDetailV2(
               html,
               format,
@@ -1128,11 +1134,7 @@ function bandaiSnapshotDecoder(
       ];
     }
     if (dynamicRole === "product_detail") {
-      return [
-        profile.liveShapes === true
-          ? parseBandaiProductDetailV4(html, format, sourceLineage, context.url)
-          : parseBandaiProductDetailV3(html, format, sourceLineage, context.url),
-      ];
+      return [gameParsers.productDetail(html, sourceLineage, context.url)];
     }
     if (profile.expandedOnePieceCatalogue === true && surface === "don-rules") {
       if (profile.unresolvedLegalityScopes === true && dynamicRole === null) {
@@ -1141,7 +1143,7 @@ function bandaiSnapshotDecoder(
         // exact coverage evidence with a structurally complete empty
         // Legality Rule observation; no comprehensive DON!! Printing claim
         // is made, and absence never proves zero Printings.
-        return parseOnePieceDonRulesHubCoverageV1(html, sourceLineage, surface, context.url);
+        return gameParsers.rulesHub!(html, sourceLineage, surface, context.url);
       }
       throw new AdapterParseFailure("One Piece DON!! Card facts require explicit snapshot evidence.");
     }
@@ -1158,7 +1160,7 @@ function bandaiSnapshotDecoder(
       (isCompleteDigimonLeafUrl(context.url) || digimonPopupRecordCount(html) > 0)
     ) {
       assertCompleteDigimonLeafUrl(context.url);
-      return htmlParsers.popupCardList!(html, context.url);
+      return gameParsers.popupCardList!(html, context.url);
     }
     const completeGundamListing =
       profile.catalogueComplete === true && format === "gundam" && structuredSurface === requiredSurfaces[0]
@@ -1177,13 +1179,13 @@ function bandaiSnapshotDecoder(
       if (adapterUrl(context.url).searchParams.has("package")) {
         throw new AdapterParseFailure("Official Source Gundam package leaf did not render its card listing.");
       }
-      return [parseRestructuredGundamPackagesRoot(html, sourceLineage, surface, context.url)];
+      return [gameParsers.packagesRoot!(html, sourceLineage, surface, context.url)];
     }
     const parsed =
       completeGundamListing !== null
         ? completeGundamListingCoverage(completeGundamListing, sourceLineage, surface, context.url)
         : format === "one-piece" && (surface === "card-list" || isOnePieceRecordingLeaf)
-          ? htmlParsers.inlineCardList!(html, context.url)
+          ? gameParsers.inlineCardList!(html, context.url)
           : parseBandaiSurfaceCoverageV2(
               html,
               format,
@@ -1198,6 +1200,7 @@ function bandaiSnapshotDecoder(
               isLegalityPolicySurface(surface),
               profile.catalogueComplete === true,
               profile.liveShapes === true,
+              gameParsers,
             );
     const liveLegalityDocument = liveLegality?.document ?? null;
     const legalityObservation = isLegalityRuleSurface(game, surface)
@@ -1757,6 +1760,7 @@ function bandaiDiscoveryStageRecords(
   discoveryKey: string,
   requiredSurfaces: readonly string[],
   unresolvedLegalityScopes = false,
+  gameParsers: GameParsers,
 ): Array<{
   id: string;
   surface: string;
@@ -1797,11 +1801,9 @@ function bandaiDiscoveryStageRecords(
     }
   }
   const stageHtml = stripKnownPublisherNavigation(html, sourceLineage, current.href, "header-only");
-  const fusionPolicyRecords =
-    sourceLineage === "fusion-world-en" && discoveryKey === "rules"
-      ? exactFusionPolicyStageRecords(stageHtml, current.href)
-      : null;
-  for (const record of fusionPolicyRecords ?? []) {
+  const policyDiscovery =
+    discoveryKey === "rules" ? (gameParsers.policyDiscovery?.(stageHtml, current.href) ?? null) : null;
+  for (const record of policyDiscovery?.records ?? []) {
     records.set(record.surface, record);
   }
   for (const match of stageHtml.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/giu)) {
@@ -1816,25 +1818,7 @@ function bandaiDiscoveryStageRecords(
     }
     resolved.hash = "";
     if (!officialUrl(sourceLineage, resolved, "document")) continue;
-    if (
-      sourceLineage === "fusion-world-en" &&
-      discoveryKey === "rules" &&
-      fusionPolicyRecords !== null &&
-      /histor|previous|past|effective|restriction|banned|limited|official rules/iu.test(
-        `${label} ${resolved.pathname} ${resolved.search}`,
-      )
-    ) {
-      const retainedArchive = new Map([
-        ["effective december 2025", "https://www.dbs-cardgame.com/fw/en/news/01_332.html"],
-        ["effective july 2025", "https://www.dbs-cardgame.com/fw/en/news/01_239.html"],
-        ["effective july 2024", "https://www.dbs-cardgame.com/fw/en/news/01_65.html"],
-      ]);
-      const exactRequired = fusionPolicyRecords.some(({ url }) => url === resolved.href);
-      if (exactRequired || retainedArchive.get(label.toLocaleLowerCase()) === resolved.href) {
-        continue;
-      }
-      throw new AdapterParseFailure("Fusion World policy discovery contains an unrecognized sibling publication.");
-    }
+    if (policyDiscovery?.consumesLink(label, resolved)) continue;
     // Each promised surface is pinned to the exact URL its seed resolution
     // names; label heuristics never create records.
     const surfaces = Object.entries(seed.resolutions)
@@ -1842,7 +1826,7 @@ function bandaiDiscoveryStageRecords(
       .map(([surface]) => surface);
     for (const surface of surfaces) {
       if (!requiredSurfaces.includes(surface)) continue;
-      if (fusionPolicyRecords !== null && (surface === "legality-current" || surface === "legality-history")) {
+      if (policyDiscovery?.records.some((record) => record.surface === surface)) {
         continue;
       }
       if (records.has(surface)) {
@@ -1880,48 +1864,6 @@ function bandaiDiscoveryStageRecords(
   );
 }
 
-function exactFusionPolicyStageRecords(html: string, requestUrl: string): Array<ReturnType<typeof stageRecord>> | null {
-  const retainedCurrent = html.match(
-    /<a class="commonBtn" target="" href="([^"]+)">Banned\/Restricted Cards from Effective March 2026<\/a>/u,
-  );
-  const syntheticCurrent = html.match(/<a href="([^"]+)">Current banned and limited cards<\/a>/u);
-  const historyMarker = '<p class="xxSmallTitle">Application history of banned/restricted cards</p>';
-  const historyStart = html.indexOf(historyMarker);
-  const retainedHistory =
-    historyStart < 0
-      ? null
-      : html
-          .slice(historyStart + historyMarker.length)
-          .match(/<a class="commonBtn" target="" href="([^"]+)">(Effective March 2026)<\/a>/u);
-  const syntheticHistory = html.match(/<a href="([^"]+)">(Previous restriction history)<\/a>/u);
-  const current = retainedCurrent ?? syntheticCurrent;
-  const history = retainedHistory ?? syntheticHistory;
-  if (current === null && history === null) return null;
-  if (current === null) {
-    throw new AdapterParseFailure("Fusion World current policy discovery is incomplete.");
-  }
-  if (history === null) {
-    throw new AdapterParseFailure("Fusion World policy history discovery is incomplete.");
-  }
-  return (
-    [
-      ["legality-current", current[1]!, "banned/restricted cards from effective march 2026"],
-      ["legality-history", history[1]!, history[2]!.toLocaleLowerCase()],
-    ] as const
-  ).map(([surface, resolution, label]) => {
-    const url = adapterUrl(resolution, requestUrl);
-    if (!exactFusionPolicySurfaceUrl(surface, url)) {
-      throw new AdapterParseFailure("Fusion World policy discovery does not match its exact retained publication URL.");
-    }
-    return stageRecord("fusion-world-en", surface, url.href, {
-      kind: "publisher_navigation",
-      label,
-      url: requestUrl,
-      resolution,
-    });
-  });
-}
-
 function assertDiscoveryStageSurface(html: string, discoveryKey: string, surface: string): void {
   const title = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu);
   const signal = title === null ? "" : htmlText(title[1]!);
@@ -1936,27 +1878,6 @@ function assertDiscoveryStageSurface(html: string, discoveryKey: string, surface
   if (!expected.test(signal)) {
     throw new AdapterParseFailure(`Official Source ${surface} stage did not prove its publisher page identity.`);
   }
-}
-
-function stageRecord(
-  sourceLineage: string,
-  surface: string,
-  url: string,
-  discoveredFrom: {
-    kind: "publisher_navigation" | "retained_stage_request";
-    label: string;
-    url: string;
-    resolution: string;
-  },
-) {
-  return {
-    id: `${sourceLineage}:${surface}`,
-    surface,
-    method: "GET" as const,
-    url,
-    headers: { accept: "text/html" as const },
-    discovered_from: discoveredFrom,
-  };
 }
 
 // The navigation seeds every live discovery root proves, with each promised
@@ -2315,11 +2236,15 @@ function surfaceFromContext(
   sourceLineage: string,
   requiredSurfaces: readonly string[],
   urls: Readonly<Record<string, string>>,
+  gameParsers: GameParsers,
 ): string {
   const prefix = `${sourceLineage}:`;
   if (context.requestId?.startsWith(prefix)) {
     const surface = context.requestId.slice(prefix.length);
-    if (requiredSurfaces.includes(surface) && exactSurfaceDocumentUrl(sourceLineage, surface, context.url)) {
+    if (
+      requiredSurfaces.includes(surface) &&
+      exactSurfaceDocumentUrl(sourceLineage, surface, context.url, gameParsers)
+    ) {
       return surface;
     }
     throw new AdapterParseFailure(`Official Source Request identity does not match the ${sourceLineage} URL contract.`);
@@ -2333,23 +2258,15 @@ function surfaceFromContext(
   return matches[0]!;
 }
 
-function exactSurfaceDocumentUrl(sourceLineage: string, surface: string, requestUrl: string): boolean {
+function exactSurfaceDocumentUrl(
+  sourceLineage: string,
+  surface: string,
+  requestUrl: string,
+  gameParsers: GameParsers,
+): boolean {
   const url = adapterUrl(requestUrl);
   if (!officialUrl(sourceLineage, url, "document")) return false;
-  if (sourceLineage === "fusion-world-en" && (surface === "legality-current" || surface === "legality-history")) {
-    return exactFusionPolicySurfaceUrl(surface, url);
-  }
-  return true;
-}
-
-function exactFusionPolicySurfaceUrl(surface: string, url: URL): boolean {
-  const exact =
-    surface === "legality-current"
-      ? ["https://www.dbs-cardgame.com/fw/en/news/01_305.html"]
-      : surface === "legality-history"
-        ? ["https://www.dbs-cardgame.com/fw/en/news/01_399.html"]
-        : [];
-  return exact.includes(url.href);
+  return gameParsers.surfaceUrl?.(surface, url) ?? true;
 }
 
 function decodeUtf8(bytes: Uint8Array, surface: string): string {
@@ -2369,7 +2286,7 @@ function parseBandaiCardDetailV2(
   sourceLineage: string,
   requestUrl: string,
   preserveGundamVocabulary = false,
-): Record<string, unknown> {
+): CatalogueObservation {
   return parseBandaiCardDetailFrozenV1(html, format, sourceLineage, requestUrl, "path-v2", preserveGundamVocabulary);
 }
 
@@ -2380,7 +2297,7 @@ function parseBandaiCardDetailFrozenV1(
   requestUrl: string,
   imageAuthority: "hostname-v1" | "path-v2",
   preserveGundamVocabulary = false,
-): Record<string, unknown> {
+): CatalogueObservation {
   const pairs = htmlLabelPairs(html);
   const field = (names: readonly string[]): string | null => firstLabelValue(pairs, names);
   const pageText = htmlText(html);
@@ -2770,211 +2687,6 @@ function explicitFusionLeaderFaces(
   return faces.sort((left, right) => (left.role === "front" ? 0 : 1) - (right.role === "front" ? 0 : 1));
 }
 
-function parseBandaiProductDetailV4(
-  html: string,
-  format: DiscoveryFormat,
-  sourceLineage: string,
-  requestUrl: string,
-): Record<string, unknown> {
-  // The live Fusion World product pages (verified 2026-08-12 on
-  // products/01_477.html) publish season-precision Releases such as
-  // "Winter, 2026"; the V3 vocabulary the other lineages keep fails closed
-  // on them.
-  return parseBandaiProductDetailByContract(html, format, sourceLineage, requestUrl, true);
-}
-
-function parseBandaiProductDetailV3(
-  html: string,
-  format: DiscoveryFormat,
-  sourceLineage: string,
-  requestUrl: string,
-): Record<string, unknown> {
-  return parseBandaiProductDetailByContract(html, format, sourceLineage, requestUrl, false);
-}
-
-function parseBandaiProductDetailByContract(
-  html: string,
-  format: DiscoveryFormat,
-  sourceLineage: string,
-  requestUrl: string,
-  seasonPrecisionReleases: boolean,
-): Record<string, unknown> {
-  const pairs = htmlLabelPairs(html);
-  const field = (...names: string[]): string | null => firstLabelValue(pairs, names);
-  const title = liveOfficialProductTitle(html, format, sourceLineage);
-  const nonCardClassification = nonCardProductClassificationV2(`${requestUrl} ${title}`);
-  const rawDocument = {
-    document_title: title,
-    ...Object.fromEntries(pairs.map(({ label, value }) => [label, value])),
-  };
-  if (nonCardClassification !== null) {
-    return attachRawSurfaceEvidenceV1(
-      {
-        completeness: completeObservation(),
-        product_release_catalogue: {
-          products: [],
-          distribution_contexts: [
-            {
-              key: `non-card:${nonCardClassification}:${title.normalize("NFC").trim().toLocaleLowerCase()}`,
-              kind: "other",
-              label: nonCardClassification,
-              evidence_category: "explicit",
-            },
-          ],
-          relationships: [],
-        },
-      },
-      sourceLineage,
-      "product-detail",
-      rawDocument,
-      true,
-      ["document_title", "Product Code"],
-    );
-  }
-  const code = liveOfficialProductCode(title);
-  const product = { code, title };
-  const releaseDateText = field("Release Date", "Available Date", "On Sale") ?? liveInlineOfficialReleaseDate(html);
-  const releaseStatus = field("Status");
-  const releases = new Map<string, Record<string, unknown>[]>();
-  if (releaseDateText !== null) {
-    const releaseEvidence = liveOfficialReleaseDateEvidence(releaseDateText);
-    const date = normalizedOfficialReleaseDate(releaseEvidence.date, {
-      seasons: seasonPrecisionReleases,
-    });
-    releases.set(productMapKey(product), [
-      {
-        event_key: productEventKey("product-release", product),
-        region:
-          releaseEvidence.region ?? normalizedOfficialRegion(field("Region", "Market", "Territory"), sourceLineage),
-        precision: date.precision,
-        date: date.value,
-        status: normalizedOfficialReleaseStatus(releaseStatus),
-      },
-    ]);
-  }
-  const observation = productOnlyObservation(
-    product,
-    releases,
-    { revision: "captured-by-policy-surface", entries: [] },
-    { revision: "captured-by-policy-surface", entries: [] },
-  );
-  return attachRawSurfaceEvidenceV1(observation, sourceLineage, "product-detail", rawDocument, true, [
-    "document_title",
-    "Product Code",
-    ...(officialReleaseDateNeedsSchemaReview(releaseDateText) ? [] : ["Release Date", "Available Date", "On Sale"]),
-    "Region",
-    "Market",
-    "Territory",
-    ...(officialReleaseStatusNeedsSchemaReview(releaseStatus) ? [] : ["Status"]),
-  ]);
-}
-
-function liveOfficialProductTitle(html: string, format: DiscoveryFormat, sourceLineage: string): string {
-  // The live product pages publish their identity through the document
-  // title with an exact per-publisher suffix; the leading <h1> is the site
-  // logo on every current page.
-  const rawTitle = htmlText(html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1] ?? "");
-  const suffix =
-    format === "one-piece"
-      ? /\s*(?:[−–-]\s*PRODUCTS)?\s*[|｜]\s*ONE PIECE CARD GAME - Official Web Site$/u
-      : format === "digimon"
-        ? /\s*(?:[−–-]\s*PRODUCTS)?\s*[|｜]\s*Digimon Card Game$/u
-        : format === "fusion-world"
-          ? /\s*[|｜]\s*Dragon Ball Super Card Game Fusion World - Official Web Site$/u
-          : /\s*[|｜]\s*GUNDAM CARD GAME Official Website$/u;
-  if (!suffix.test(rawTitle)) {
-    throw new AdapterParseFailure(`${sourceLineage} Product detail is missing its official title.`);
-  }
-  const title = rawTitle.replace(suffix, "").trim();
-  if (title.length === 0) {
-    throw new AdapterParseFailure(`${sourceLineage} Product detail is missing its official title.`);
-  }
-  if (format === "gundam") {
-    const headings = [...html.matchAll(/<h2 class="(?:mvColTitle|titleColInnerHead)">([\s\S]*?)<\/h2>/gu)].map(
-      (match) => htmlText(match[1]!),
-    );
-    if (headings.length !== 1 || headings[0] !== title) {
-      throw new AdapterParseFailure(`${sourceLineage} Product detail heading does not match its official title.`);
-    }
-  }
-  return title;
-}
-
-function liveOfficialProductCode(title: string): string | null {
-  return title.match(/\[([A-Z0-9][A-Z0-9-]{0,15})\]$/u)?.[1] ?? null;
-}
-
-function liveInlineOfficialReleaseDate(html: string): string | null {
-  const match = html.match(/Release Date:\s*([^<]+)</iu);
-  if (match === null) return null;
-  const value = htmlText(match[1]!);
-  return value.length === 0 ? null : value;
-}
-
-function liveOfficialReleaseDateEvidence(value: string): {
-  date: string;
-  region: "EN-OCEANIA" | null;
-} {
-  // The live Digimon product pages publish region-scoped release rows such
-  // as "Europe/Oceania: December 10, 2021 (*Asmodee UK/Blackfire Stores:
-  // January 21, 2021)"; store-level parentheticals are annotations, not
-  // publisher release events.
-  let normalized = value
-    .normalize("NFC")
-    .replace(/\(\*[^)]*\)/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
-  let region: "EN-OCEANIA" | null = null;
-  const scoped = normalized.match(/^Europe\/Oceania:\s*(.*)$/iu);
-  if (scoped !== null) {
-    region = "EN-OCEANIA";
-    normalized = scoped[1]!.trim();
-  }
-  return { date: liveOfficialReleaseDateText(normalized), region };
-}
-
-function liveOfficialReleaseDateText(value: string): string {
-  const normalized = value.normalize("NFC").trim();
-  // Live publisher shorthand: "2027.1.30", "September 25,2026", and
-  // "December, 10 2021".
-  const dotted = normalized.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/u);
-  if (dotted !== null) {
-    return `${dotted[1]}-${dotted[2]!.padStart(2, "0")}-${dotted[3]!.padStart(2, "0")}`;
-  }
-  return normalized
-    .replace(/^([A-Za-z]+ \d{1,2}),(\d{4})$/u, "$1, $2")
-    .replace(/^([A-Za-z]+),\s*(\d{1,2})\s+(\d{4})$/u, "$1 $2, $3");
-}
-
-function nonCardProductClassificationV2(value: string): "accessory" | null {
-  // The 2026-08 live listings publish deck cases alongside the previously
-  // modelled accessory vocabulary.
-  return nonCardProductClassification(value) !== null || /(?:card cases?|deck[ _-]?cases?)/iu.test(value)
-    ? "accessory"
-    : null;
-}
-
-function normalizedOfficialRegion(
-  value: string | null,
-  sourceLineage: string,
-): "EN-OCEANIA" | "EN-ASIA" | "EN-US" | "unknown" {
-  const normalized = value?.normalize("NFC").trim().toLocaleLowerCase() ?? "";
-  if (/^(?:en[- ]?us|us|usa|united states|north america)$/u.test(normalized)) {
-    return "EN-US";
-  }
-  if (/^(?:en[- ]?asia|asia|south east asia|southeast asia)$/u.test(normalized)) {
-    return "EN-ASIA";
-  }
-  if (/^(?:en[- ]?oceania|oceania|australia|australia\/new zealand)$/u.test(normalized)) {
-    return "EN-OCEANIA";
-  }
-  if (normalized.length === 0) {
-    if (sourceLineage === "gundam-en-us") return "EN-US";
-    if (sourceLineage === "gundam-en-asia") return "EN-ASIA";
-  }
-  return "unknown";
-}
-
 function allLabelValues(pairs: readonly { label: string; value: string }[], names: readonly string[]): string[] {
   return pairs
     .filter(({ label }) => names.some((name) => label.localeCompare(name, undefined, { sensitivity: "accent" }) === 0))
@@ -2991,6 +2703,7 @@ function parseBandaiSurfaceCoverageV2(
   acceptPublisherDeclaredEmpty: boolean,
   catalogueComplete = false,
   liveShapes = false,
+  gameParsers: GameParsers,
 ): ParsedBandaiSurface {
   return parseBandaiSurfaceCoverageByContract(
     html,
@@ -3001,128 +2714,7 @@ function parseBandaiSurfaceCoverageV2(
     acceptPublisherDeclaredEmpty,
     catalogueComplete,
     liveShapes,
-  );
-}
-
-function parseRestructuredGundamPackagesRoot(
-  html: string,
-  sourceLineage: string,
-  surface: string,
-  requestUrl: string,
-): Record<string, unknown> {
-  const errorSections = [
-    ...html.matchAll(/<section\b[^>]*\bclass=["'][^"']*\berrorCol\b[^"']*["'][^>]*>([\s\S]*?)<\/section>/giu),
-  ];
-  if (errorSections.length !== 1) {
-    throw new AdapterParseFailure("Official Source Gundam card search root did not retain its empty search state.");
-  }
-  const errorTitle = htmlText(
-    requiredHtmlMatch(
-      errorSections[0]![1]!,
-      /<h4\b[^>]*\bclass=["'][^"']*\berrorTit\b[^"']*["'][^>]*>([\s\S]*?)<\/h4>/iu,
-      "Official Source Gundam card search empty state",
-    )[1]!,
-  );
-  if (errorTitle !== "Please specify your search criteria.") {
-    throw new AdapterParseFailure("Official Source Gundam card search root empty state is unrecognized.");
-  }
-  const packageOptions = gundamPublisherPackageOptions(html);
-  if (packageOptions.length === 0) {
-    throw new AdapterParseFailure("Official Source Gundam card search root enumerates no packages.");
-  }
-  return attachRawSurfaceEvidenceV1(
-    {
-      completeness: completeObservation(packageOptions.length, packageOptions.length),
-      product_release_catalogue: {
-        products: [],
-        distribution_contexts: [],
-        relationships: [],
-      },
-    },
-    sourceLineage,
-    surface,
-    {
-      source_lineage: sourceLineage,
-      surface,
-      url: requestUrl,
-      empty_search_state: errorTitle,
-      package_options: [...packageOptions].sort(),
-    },
-    true,
-    ["source_lineage", "surface", "url", "empty_search_state", "package_options"],
-  );
-}
-
-/**
- * Issue #58: the live One Piece /rules/ hub publishes rule PDFs and links
- * to the separately captured restriction, block-policy, and errata
- * publications, but no DON!! Card facts. The don-rules surface retains the
- * hub as exact coverage evidence: the page identity and its pinned policy
- * links are verified, every navigation link is retained explicitly, and a
- * structurally complete empty Legality Rule observation records that the
- * surface publishes zero rules. No comprehensive DON!! Printing claim is
- * made; if the hub starts publishing DON!! content the parse fails closed.
- */
-function parseOnePieceDonRulesHubCoverageV1(
-  html: string,
-  sourceLineage: string,
-  surface: string,
-  requestUrl: string,
-): Record<string, unknown>[] {
-  const title = htmlText(html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1] ?? "");
-  if (title !== "RULES｜ONE PIECE CARD GAME - Official Web Site") {
-    throw new AdapterParseFailure("One Piece rules hub identity is unavailable.");
-  }
-  const visibleText = htmlText(
-    html.replace(/<script\b[\s\S]*?<\/script>/giu, " ").replace(/<style\b[\s\S]*?<\/style>/giu, " "),
-  );
-  if (/DON!!/u.test(visibleText) || /(?<![\p{L}\p{N}])DON(?![\p{L}\p{N}])/u.test(visibleText)) {
-    throw new AdapterParseFailure(
-      "One Piece rules hub publishes DON!! content this Source Adapter Version cannot represent.",
-    );
-  }
-  const navigationLinks = [...html.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/giu)].flatMap(
-    (match) => {
-      const label = htmlText(match[2]!);
-      if (label.length === 0) return [];
-      let resolved: string;
-      try {
-        resolved = adapterUrl(decodeHtmlText(match[1]!), requestUrl).href;
-      } catch {
-        throw new AdapterParseFailure("One Piece rules hub navigation link is invalid.");
-      }
-      return [{ label, url: resolved }];
-    },
-  );
-  for (const [pinnedSurface, pinnedUrl] of [
-    ["restrictions", "https://en.onepiece-cardgame.com/news/restriction.html"],
-    ["block-policy", "https://en.onepiece-cardgame.com/topics/013.php"],
-    ["errata", "https://en.onepiece-cardgame.com/rules/errata_card/"],
-  ] as const) {
-    if (!navigationLinks.some(({ url }) => url === pinnedUrl)) {
-      throw new AdapterParseFailure(`One Piece rules hub no longer links its pinned ${pinnedSurface} publication.`);
-    }
-  }
-  const retainedDocument = {
-    source_lineage: sourceLineage,
-    surface,
-    url: requestUrl,
-    document_title: title,
-    navigation_links: navigationLinks,
-  };
-  const consumedFields = ["source_lineage", "surface", "url", "document_title", "navigation_links"];
-  return [
-    {
-      completeness: completeObservation(navigationLinks.length, navigationLinks.length),
-      product_release_catalogue: {
-        products: [],
-        distribution_contexts: [],
-        relationships: [],
-      },
-    },
-    officialLegalityRulesObservation("one-piece", sourceLineage, { entries: [], declared_record_count: 0 }),
-  ].map((observation, index) =>
-    attachRawSurfaceEvidenceV1(observation, sourceLineage, surface, retainedDocument, index === 0, consumedFields),
+    gameParsers,
   );
 }
 
@@ -3190,6 +2782,7 @@ function parseBandaiSurfaceCoverageByContract(
   acceptPublisherDeclaredEmpty: boolean,
   catalogueComplete: boolean,
   liveShapes = false,
+  gameParsers: GameParsers,
 ): ParsedBandaiSurface {
   const text = htmlText(html);
   const restructuredFusionLeafSurface =
@@ -3212,7 +2805,7 @@ function parseBandaiSurfaceCoverageByContract(
   if (
     surface === "listing" &&
     /(?:too many search results|more than 1,?000|results? (?:were )?capped)/iu.test(text) &&
-    discoveredPartitionRequests(format, html, adapterUrl(url), false, catalogueComplete).length === 0
+    discoveredPartitionRequests(format, html, adapterUrl(url), false, catalogueComplete, gameParsers).length === 0
   ) {
     throw new AdapterParseFailure("Official Source leaf partition still displays its result-cap signal.");
   }
@@ -3291,7 +2884,7 @@ function parseBandaiSurfaceCoverageByContract(
   const fusionLiveProductSurface =
     liveShapes && catalogueComplete && format === "fusion-world" && (surface === "products" || surface === "releases");
   if (catalogueComplete && format === "fusion-world" && surface === "products") {
-    requireFusionWorldLiveProductStatusCoverage(html);
+    gameParsers.validateProductCoverage!(html);
   }
   const labelPairs = htmlLabelPairs(html);
   const parsedPublicationCount = completeFusionListingLeaf
@@ -3303,7 +2896,7 @@ function parseBandaiSurfaceCoverageByContract(
         : discoveredOptions.length;
   const declaredPublicationCount = Number.parseInt(declaredCount ?? String(parsedPublicationCount), 10);
   const productIndexObservations = fusionLiveProductSurface
-    ? parseFusionWorldLiveProductIndex(html, sourceLineage, url)
+    ? gameParsers.productIndex!(html, sourceLineage, url)
     : surface === "products" || surface === "releases"
       ? parseBandaiProductIndex(html, url)
       : [];
@@ -3359,280 +2952,6 @@ function parseBandaiSurfaceCoverageByContract(
   };
 }
 
-// The live Fusion World Product listing (verified byte-identically on
-// 2026-08-12 against the retained hub capture): the AVAILABLE NOW and
-// COMING SOON statuses publish as anchored sections with exact anchor-list
-// tabs instead of the status-attributed markup the retired generations
-// modelled.
-const fusionLiveProductSections = [
-  { id: "available", heading: "AVAILABLE NOW", status: "released" },
-  { id: "comingsoon", heading: "COMING SOON", status: "announced" },
-] as const;
-
-function requireFusionWorldLiveProductStatusCoverage(html: string): void {
-  const sections = [...html.matchAll(/<section class="contentsColInner ([a-z-]+)Col" id="([a-z-]+)">/gu)].map(
-    (match) => ({ classId: match[1]!, id: match[2]! }),
-  );
-  const anchors = [...html.matchAll(/<li class="ankerListItem"><a href="#([a-z-]+)">([^<]+)<\/a><\/li>/gu)].map(
-    (match) => ({ id: match[1]!, label: decodeHtmlText(match[2]!) }),
-  );
-  const missing = fusionLiveProductSections
-    .filter(
-      (expected) =>
-        sections.filter(({ classId, id }) => classId === expected.id && id === expected.id).length !== 1 ||
-        anchors.filter(({ id, label }) => id === expected.id && label === expected.heading).length !== 1 ||
-        !html.includes(`<section class="contentsColInner ${expected.id}Col" id="${expected.id}">`),
-    )
-    .map(({ id }) => id);
-  const expectedIds = new Set<string>(fusionLiveProductSections.map(({ id }) => id));
-  const unexpected = [
-    ...sections.flatMap(({ classId, id }) => (expectedIds.has(id) && classId === id ? [] : [id])),
-    ...anchors.flatMap(({ id }) => (expectedIds.has(id) ? [] : [id])),
-  ];
-  if (missing.length > 0 || unexpected.length > 0) {
-    throw new AdapterParseFailure(
-      `Fusion World Product status sections are incomplete; missing: ${
-        missing.join(", ") || "none"
-      }; unexpected: ${[...new Set(unexpected)].join(", ") || "none"}.`,
-    );
-  }
-}
-
-function parseFusionWorldLiveProductIndex(
-  html: string,
-  sourceLineage: string,
-  requestUrl: string,
-): Record<string, unknown>[] {
-  type LiveProductEntry =
-    | {
-        product: { code: string | null; title: string };
-        status: "released" | "announced";
-        date: { precision: string; value: string | null };
-      }
-    | {
-        non_card_context: {
-          key: string;
-          kind: "other";
-          label: string;
-          evidence_category: "explicit";
-        };
-      };
-  const entries: LiveProductEntry[] = [];
-  for (const expected of fusionLiveProductSections) {
-    // The products-surface coverage check is the fail-closed wall proving
-    // both status sections; the index reads whichever sections the parsed
-    // surface publishes.
-    const section = html.match(
-      new RegExp(`<section class="contentsColInner ${expected.id}Col" id="${expected.id}">([\\s\\S]*?)</section>`, "u"),
-    )?.[1];
-    if (section === undefined) continue;
-    for (const item of section.matchAll(/<li class="prpductListItem cardCol">([\s\S]*?)<\/li>/gu)) {
-      const body = item[1]!;
-      const href = requiredHtmlMatch(
-        body,
-        /<a href="([^"]+)" class="cardLink">/u,
-        "Fusion World Product listing link",
-      )[1]!;
-      const resolved = adapterUrl(decodeHtmlText(href), requestUrl);
-      if (resolved.protocol !== "https:" || !officialUrl(sourceLineage, resolved, "document")) {
-        throw new AdapterParseFailure("Fusion World Product listing link is outside registered authority.");
-      }
-      const title = htmlText(
-        requiredHtmlMatch(body, /<h3 class="cardText">([\s\S]*?)<\/h3>/u, "Fusion World Product listing title")[1]!,
-      );
-      if (title.length === 0) {
-        throw new AdapterParseFailure("Fusion World Product listing entry is missing its title.");
-      }
-      const info = [
-        ...body.matchAll(/<dt class="cardInfoTit">([\s\S]*?)<\/dt>\s*<dd class="cardInfoTxt">([\s\S]*?)<\/dd>/gu),
-      ].map((match) => ({
-        label: htmlText(match[1]!),
-        value: htmlText(match[2]!),
-      }));
-      const unknownLabel = info.find(({ label }) => label !== "RELEASE" && label !== "MSRP");
-      const release = info.filter(({ label }) => label === "RELEASE");
-      if (unknownLabel !== undefined || release.length !== 1) {
-        throw new AdapterParseFailure("Fusion World Product listing entry publishes an unmodelled field.");
-      }
-      const nonCardClassification = nonCardProductClassificationV2(`${resolved.pathname} ${title}`);
-      if (nonCardClassification !== null) {
-        entries.push({
-          non_card_context: {
-            key: `non-card:${nonCardClassification}:${title.normalize("NFC").trim().toLocaleLowerCase()}`,
-            kind: "other",
-            label: nonCardClassification,
-            evidence_category: "explicit",
-          },
-        });
-        continue;
-      }
-      const date = normalizedOfficialReleaseDate(liveOfficialReleaseDateText(release[0]!.value), { seasons: true });
-      entries.push({
-        product: { code: liveOfficialProductCode(title), title },
-        status: expected.status,
-        date,
-      });
-    }
-  }
-  return [
-    ...new Map(
-      entries.map((entry) => [
-        "product" in entry ? `product:${productMapKey(entry.product)}` : `context:${entry.non_card_context.key}`,
-        entry,
-      ]),
-    ).values(),
-  ].map((entry) => {
-    if ("non_card_context" in entry) {
-      return {
-        completeness: completeObservation(),
-        product_release_catalogue: {
-          products: [],
-          distribution_contexts: [entry.non_card_context],
-          relationships: [],
-        },
-      };
-    }
-    const releases = new Map<string, Record<string, unknown>[]>();
-    releases.set(productMapKey(entry.product), [
-      {
-        event_key: productEventKey("product-release", entry.product),
-        region: "unknown",
-        precision: entry.date.precision,
-        date: entry.date.value,
-        status: entry.status,
-      },
-    ]);
-    return productOnlyObservation(
-      entry.product,
-      releases,
-      { revision: "captured-by-policy-surface", entries: [] },
-      { revision: "captured-by-policy-surface", entries: [] },
-    );
-  });
-}
-
-function parseBandaiProductIndex(html: string, requestUrl: string): Record<string, unknown>[] {
-  type ProductIndexEntry =
-    | {
-        product: {
-          code: string | null;
-          title: string;
-          distribution: {
-            code: string;
-            kind: string;
-            label: string;
-          };
-        };
-        announced: boolean;
-      }
-    | {
-        non_card_context: {
-          key: string;
-          kind: string;
-          label: string;
-          evidence_category: "explicit";
-        };
-      };
-  const containers = [...html.matchAll(/<(article|li|tr)\b([^>]*)>([\s\S]*?)<\/\1>/giu)].map((match) => ({
-    attributes: match[2]!,
-    body: match[3]!,
-  }));
-  if (containers.length === 0) {
-    containers.push(
-      ...[...html.matchAll(/<a\b[^>]*\bhref=["'][^"']+["'][^>]*>[\s\S]*?<\/a>/giu)].map((match) => ({
-        attributes: "",
-        body: match[0]!,
-      })),
-    );
-  }
-  const entries = containers.flatMap<ProductIndexEntry>(({ attributes, body }) => {
-    const link = body.match(/<a\b([^>]*\bhref=["'][^"']+["'][^>]*)>([\s\S]*?)<\/a>/iu);
-    if (link === null) return [];
-    const href = htmlAttribute(link[1]!, "href");
-    if (href === null || !/\/products?\//iu.test(href)) return [];
-    const title = htmlText(link[2]!);
-    const resolved = adapterUrl(decodeHtmlText(href), requestUrl);
-    const code =
-      htmlAttribute(link[1]!, "data-product-code")?.normalize("NFC").trim() ??
-      firstLabelValue(htmlLabelPairs(body), ["Product Code"]);
-    if (title.length === 0) return [];
-    const classificationText = `${attributes} ${body} ${resolved.pathname}`;
-    const nonCardClassification = nonCardProductClassification(classificationText);
-    const nonCard = nonCardClassification !== null;
-    const cardBearing = /(?:booster|starter|deck|card|set)/iu.test(classificationText);
-    const classification = nonCard
-      ? { kind: "other", label: nonCardClassification }
-      : cardBearing
-        ? { kind: "product", label: "booster" }
-        : { kind: "other", label: "other" };
-    if (nonCard || !cardBearing) {
-      return [
-        {
-          non_card_context: {
-            key: `non-card:${classification.label}:${(code ?? title).normalize("NFC").trim().toLocaleLowerCase()}`,
-            ...classification,
-            evidence_category: "explicit",
-          },
-        },
-      ];
-    }
-    const product = {
-      code: code === null || code.length === 0 ? null : code,
-      title,
-    };
-    return [
-      {
-        product: {
-          ...product,
-          distribution: {
-            code: `product-classification:${classification.label}:${productMapKey(product)}`,
-            ...classification,
-          },
-        },
-        announced: /(?:coming soon|upcoming|announced)/iu.test(htmlText(body)),
-      },
-    ];
-  });
-  return [
-    ...new Map(
-      entries.map((entry) => [
-        "product" in entry ? `product:${productMapKey(entry.product)}` : `context:${entry.non_card_context.key}`,
-        entry,
-      ]),
-    ).values(),
-  ].map((entry) => {
-    if ("non_card_context" in entry) {
-      return {
-        completeness: completeObservation(),
-        product_release_catalogue: {
-          products: [],
-          distribution_contexts: [entry.non_card_context],
-          relationships: [],
-        },
-      };
-    }
-    const { product, announced } = entry;
-    const releases = new Map<string, Record<string, unknown>[]>();
-    if (announced) {
-      releases.set(productMapKey(product), [
-        {
-          event_key: productEventKey("product-index-announcement", product),
-          region: "unknown",
-          precision: "unknown",
-          date: null,
-          status: "announced",
-        },
-      ]);
-    }
-    return productOnlyObservation(
-      product,
-      releases,
-      { revision: "captured-by-policy-surface", entries: [] },
-      { revision: "captured-by-policy-surface", entries: [] },
-    );
-  });
-}
-
 function officialBoolean(value: string | null, field: string): boolean {
   if (value === null) return false;
   const normalized = value.normalize("NFC").trim().toLocaleLowerCase();
@@ -3658,34 +2977,6 @@ function specifiedCosts(value: string | null): { colour: string; count: number }
   });
 }
 
-function onePieceUnmappedOptionalFields(
-  surface: string,
-  raw: Record<string, unknown>,
-): { path: string; value: unknown }[] {
-  if (surface !== "card-list" || !Array.isArray(raw.card_pages)) return [];
-  return raw.card_pages.flatMap((value, cardIndex) => {
-    if (!isPlainRecord(value) || !isPlainRecord(value.printing)) return [];
-    const printingAttributes = isPlainRecord(value.printing.attributes) ? value.printing.attributes : {};
-    const illustrationWarnings = Array.isArray(printingAttributes.illustration_types)
-      ? printingAttributes.illustration_types.flatMap((illustration, illustrationIndex) =>
-          typeof illustration === "string" &&
-          ["comic", "animation", "original", "other"].includes(illustration.toLocaleLowerCase())
-            ? []
-            : [
-                {
-                  path:
-                    "source_sidecar.raw.official_surfaces[0].document." +
-                    `card_pages[${cardIndex}].printing.attributes.` +
-                    `illustration_types[${illustrationIndex}]`,
-                  value: illustration,
-                },
-              ],
-        )
-      : [];
-    return illustrationWarnings;
-  });
-}
-
 function normalizedSurfaceObservationsV2(
   format: DiscoveryFormat,
   game: ProductSourceGame,
@@ -3695,20 +2986,13 @@ function normalizedSurfaceObservationsV2(
   legalityAware: boolean,
   expandedOnePieceCatalogue = false,
   catalogueComplete = false,
-  completeDigimonCatalogue = false,
   unresolvedLegalityScopes = false,
   normalizeSurface: SurfaceNormalizer,
-): readonly unknown[] {
-  const normalized = normalizeLineageSurface(
-    format,
-    sourceLineage,
-    surface,
-    rawDocument,
-    expandedOnePieceCatalogue,
-    normalizeSurface,
-  );
+  gameParsers: GameParsers,
+): OfficialSourceObservation[] {
+  const normalized = normalizeLineageSurface(sourceLineage, surface, rawDocument, normalizeSurface, gameParsers);
   const document = normalized.document;
-  let observations: readonly unknown[];
+  let observations: readonly OfficialSourceObservation[];
   if (isDiscoverySurface(surface)) {
     observations = parseRawDiscoverySurfaceV2(document, format, game, expandedOnePieceCatalogue, catalogueComplete);
   } else if (surface === "products") {
@@ -3724,31 +3008,10 @@ function normalizedSurfaceObservationsV2(
           ]
         : []),
     ];
-  } else if (expandedOnePieceCatalogue && game === "one-piece" && surface === "errata") {
-    observations = [
-      rawCoverageObservationV2(document, surface),
-      ...onePieceOfficialErrataObservations(document.entries),
-    ];
   } else {
     observations = [
       rawCoverageObservationV2(document, surface),
-      ...(expandedOnePieceCatalogue &&
-      game === "one-piece" &&
-      surface === "don-rules" &&
-      // The issue-58 contract accepts coverage without DON!! payload
-      // evidence; a retained don_card fact is still normalized exactly.
-      (!unresolvedLegalityScopes || document.don_card !== undefined)
-        ? [onePieceDonCardObservation(document.don_card)]
-        : []),
-      ...(catalogueComplete && format === "fusion-world" && surface === "errata"
-        ? fusionWorldOfficialErrataObservations(document)
-        : []),
-      ...(catalogueComplete && format === "gundam" && surface === "errata"
-        ? gundamOfficialErrataObservations(document, sourceLineage)
-        : []),
-      ...(completeDigimonCatalogue && game === "digimon" && surface === "errata"
-        ? parseDigimonOfficialErrata(document)
-        : []),
+      ...gameParsers.structuredObservations(surface, document, sourceLineage),
       ...(legalityAware && isLegalityPolicySurface(surface)
         ? [
             officialLegalityRulesObservation(game, sourceLineage, document, {
@@ -3759,8 +3022,8 @@ function normalizedSurfaceObservationsV2(
     ];
   }
   return observations.map((observation, index) => {
-    const record = requiredRecord(observation, `Official Source ${surface} observation`);
-    return record.kind === "official_erratum"
+    const record = observation;
+    return "kind" in record && record.kind === "official_erratum"
       ? record
       : attachRawSurfaceEvidenceV1(
           record,
@@ -3774,212 +3037,6 @@ function normalizedSurfaceObservationsV2(
   });
 }
 
-function onePieceOfficialErrataObservations(value: unknown): unknown[] {
-  const fields = [
-    "notice_id",
-    "card_number",
-    "card_name",
-    "published_on",
-    "effective_from",
-    "before_text",
-    "after_text",
-    "note",
-    "applies_to_parallel_printings",
-    "image_url",
-  ];
-  return requiredArray(value, "One Piece Errata entries").map((item) => {
-    const entry = requiredRecord(item, "One Piece Erratum");
-    const undeclared = Object.keys(entry).filter((field) => !fields.includes(field));
-    const missing = fields.filter((field) => !Object.hasOwn(entry, field));
-    if (undeclared.length > 0 || missing.length > 0) {
-      throw new AdapterParseFailure(
-        `One Piece Erratum has undeclared or missing fields: ${[...undeclared, ...missing].sort().join(", ")}.`,
-      );
-    }
-    const noticeId = requiredText(entry.notice_id, "One Piece Erratum notice id");
-    if (!/^[A-Za-z][A-Za-z0-9_-]+$/u.test(noticeId)) {
-      throw new AdapterParseFailure("One Piece Erratum notice id is invalid.");
-    }
-    const cardNumber = requiredText(entry.card_number, "One Piece Erratum Card number");
-    if (!/^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/u.test(cardNumber)) {
-      throw new AdapterParseFailure("One Piece Erratum Card number is invalid.");
-    }
-    const cardName = requiredText(entry.card_name, "One Piece Erratum Card name");
-    const publishedOn = exactOnePieceSourceDate(entry.published_on, "One Piece Erratum published_on");
-    const effectiveFrom =
-      entry.effective_from === null
-        ? null
-        : exactOnePieceSourceDate(entry.effective_from, "One Piece Erratum effective_from");
-    const before = requiredText(entry.before_text, "One Piece Erratum Before text");
-    const after = requiredText(entry.after_text, "One Piece Erratum After text");
-    const note = nullableText(entry.note, "One Piece Erratum Note");
-    if (typeof entry.applies_to_parallel_printings !== "boolean") {
-      throw new AdapterParseFailure("One Piece Erratum parallel Printing applicability is invalid.");
-    }
-    const imageUrl = requiredText(entry.image_url, "One Piece Erratum image URL");
-    let parsedImageUrl: URL;
-    try {
-      parsedImageUrl = adapterUrl(imageUrl);
-    } catch {
-      throw new AdapterParseFailure("One Piece Erratum image URL is invalid.");
-    }
-    if (!officialUrl("one-piece-en", parsedImageUrl, "image")) {
-      throw new AdapterParseFailure("One Piece Erratum image URL is invalid.");
-    }
-    const target = entry.applies_to_parallel_printings
-      ? {
-          type: "card" as const,
-          official_identity: { kind: "card_number", value: cardNumber },
-        }
-      : {
-          type: "printing" as const,
-          official_identity: { kind: "card_number", value: cardNumber },
-          locator: imageUrl,
-        };
-    return {
-      kind: "official_erratum",
-      game: "one-piece",
-      target,
-      published_on: publishedOn,
-      effective_from: effectiveFrom,
-      observed_printed_rules_text: before,
-      corrected_rules_text: after,
-      official_wording: [...(note === null ? [] : [`Note: ${note}`]), `Before: ${before}`, `After: ${after}`].join(
-        "\n",
-      ),
-      applies_to_parallel_printings: entry.applies_to_parallel_printings,
-      source: {
-        fragment: `#${noticeId}`,
-        display_name: `${cardNumber} ${cardName}`,
-        image_url: imageUrl,
-      },
-      completeness: {
-        structurally_complete: true,
-        required_surfaces_complete: true,
-        partitions_complete: true,
-        declared_record_count: 1,
-        parsed_record_count: 1,
-      },
-    };
-  });
-}
-
-function fusionWorldOfficialErrataObservations(document: Record<string, unknown>): readonly Record<string, unknown>[] {
-  const entries = requiredArray(document.entries, "Fusion World Errata entries");
-  return entries.map((value) => {
-    const entry = requiredRecord(value, "Fusion World Erratum");
-    const allowed = new Set([
-      "entry_id",
-      "card_number",
-      "published_on",
-      "effective_from",
-      "before",
-      "after",
-      "notice",
-      "image_url",
-    ]);
-    const unexpected = Object.keys(entry).find((field) => !allowed.has(field));
-    if (unexpected !== undefined) {
-      throw new AdapterParseFailure(`Fusion World Erratum contains unknown field ${unexpected}.`);
-    }
-    const entryId = requiredText(entry.entry_id, "Fusion World Erratum identity");
-    const cardNumber = requiredText(entry.card_number, "Fusion World Erratum Card Number");
-    const publishedOn = requiredText(entry.published_on, "Fusion World Erratum published date");
-    const effectiveFrom =
-      entry.effective_from === null ? null : requiredText(entry.effective_from, "Fusion World Erratum effective date");
-    const before = requiredText(entry.before, "Fusion World Erratum Before text");
-    const after = requiredText(entry.after, "Fusion World Erratum After text");
-    const notice = requiredText(entry.notice, "Fusion World Erratum notice");
-    const imageUrl = requiredText(entry.image_url, "Fusion World Erratum image URL");
-    const image = adapterUrl(imageUrl);
-    if (!officialUrl("fusion-world-en", image, "image")) {
-      throw new AdapterParseFailure("Fusion World Erratum image provenance is invalid.");
-    }
-    return {
-      kind: "official_erratum",
-      game: "fusion-world",
-      target: {
-        type: "card",
-        official_identity: { kind: "card_number", value: cardNumber },
-      },
-      published_on: publishedOn,
-      effective_from: effectiveFrom,
-      observed_printed_rules_text: before,
-      corrected_rules_text: after,
-      official_wording: `Before: ${before}\nAfter: ${after}\nNote: ${notice}`,
-      applies_to_parallel_printings: true,
-      source: {
-        fragment: `#${entryId}`,
-        display_name: cardNumber,
-        image_url: image.href,
-      },
-      completeness: completeObservation(1, 1),
-    };
-  });
-}
-
-function parseDigimonOfficialErrata(document: Record<string, unknown>): Record<string, unknown>[] {
-  const entries = requiredArray(document.entries, "Digimon Official Errata entries");
-  return entries.map((value) => {
-    const entry = requiredRecord(value, "Digimon Official Erratum");
-    const allowedFields = new Set([
-      "card_number",
-      "published_on",
-      "effective_from",
-      "observed_printed_rules_text",
-      "corrected_rules_text",
-      "official_wording",
-      "applies_to_parallel_printings",
-      "source_fragment",
-      "display_name",
-      "image_url",
-    ]);
-    const unknownField = Object.keys(entry).find((field) => !allowedFields.has(field));
-    if (unknownField !== undefined) {
-      throw new AdapterParseFailure(`Digimon Official Erratum contains unknown field ${unknownField}.`);
-    }
-    if (typeof entry.applies_to_parallel_printings !== "boolean") {
-      throw new AdapterParseFailure("Digimon Official Erratum applies-to-parallel-printings flag is invalid.");
-    }
-    return {
-      kind: "official_erratum",
-      game: "digimon",
-      target: {
-        type: "card",
-        official_identity: {
-          kind: "card_number",
-          value: requiredText(entry.card_number, "Digimon Erratum Card Number"),
-        },
-      },
-      published_on: requiredText(entry.published_on, "Digimon Erratum published date"),
-      effective_from:
-        entry.effective_from === null ? null : requiredText(entry.effective_from, "Digimon Erratum effective date"),
-      observed_printed_rules_text: requiredText(
-        entry.observed_printed_rules_text,
-        "Digimon Erratum observed Printed Rules Text",
-      ),
-      corrected_rules_text:
-        entry.corrected_rules_text === null
-          ? null
-          : requiredText(entry.corrected_rules_text, "Digimon Erratum corrected Rules Text"),
-      official_wording: requiredText(entry.official_wording, "Digimon Erratum official wording"),
-      applies_to_parallel_printings: entry.applies_to_parallel_printings,
-      source: {
-        fragment: requiredText(entry.source_fragment, "Digimon Erratum source fragment"),
-        display_name: requiredText(entry.display_name, "Digimon Erratum display name"),
-        image_url: requiredText(entry.image_url, "Digimon Erratum image URL"),
-      },
-      completeness: {
-        structurally_complete: true,
-        required_surfaces_complete: true,
-        partitions_complete: true,
-        declared_record_count: 1,
-        parsed_record_count: 1,
-      },
-    };
-  });
-}
-
 function isLegalityPolicySurface(surface: string): boolean {
   return /(?:legality|restriction|block-policy|don-rules)/u.test(surface);
 }
@@ -3989,12 +3046,11 @@ function isLegalityRuleSurface(game: ProductSourceGame, surface: string): boolea
 }
 
 function normalizeLineageSurface(
-  format: DiscoveryFormat,
   sourceLineage: string,
   surface: string,
   raw: Record<string, unknown>,
-  expandedOnePieceCatalogue = false,
   normalizeSurface: SurfaceNormalizer,
+  gameParsers: GameParsers,
 ): {
   document: Record<string, unknown>;
   consumedFields: readonly string[];
@@ -4009,8 +3065,7 @@ function normalizeLineageSurface(
       ...normalized.value,
     },
     consumedFields: normalized.consumedFields,
-    unmappedOptionalFields:
-      expandedOnePieceCatalogue && format === "one-piece" ? onePieceUnmappedOptionalFields(surface, raw) : [],
+    unmappedOptionalFields: gameParsers.unmappedFields?.(surface, raw) ?? [],
   };
 }
 
@@ -4018,7 +3073,7 @@ function parseRawDiscoverySurfaceFrozenV1(
   surface: Record<string, unknown>,
   format: DiscoveryFormat,
   game: ProductSourceGame,
-): readonly unknown[] {
+): CatalogueObservation[] {
   return parseRawDiscoverySurfaceByContract(surface, format, game, false);
 }
 
@@ -4026,7 +3081,7 @@ function parseRawDiscoverySurfaceCompleteOnePieceV3(
   surface: Record<string, unknown>,
   format: DiscoveryFormat,
   game: ProductSourceGame,
-): readonly unknown[] {
+): CatalogueObservation[] {
   return parseRawDiscoverySurfaceByContract(surface, format, game, true);
 }
 
@@ -4035,7 +3090,7 @@ function parseRawDiscoverySurfaceByContract(
   format: DiscoveryFormat,
   game: ProductSourceGame,
   expandedOnePieceCatalogue: boolean,
-): readonly unknown[] {
+): CatalogueObservation[] {
   const sourceBuckets = uniqueTextValues(surface.source_buckets, "Official Source discovery buckets");
   if (sourceBuckets.length === 0) {
     throw new AdapterParseFailure("Official Source discovery buckets are incomplete.");
@@ -4084,7 +3139,7 @@ function parseRawDiscoverySurfaceByContract(
     ),
     ...nonCardProducts.map((product) => nonCardProductObservation(product, productNonCardClassification(product)!)),
   ].map((observation) => {
-    const record = requiredRecord(observation, "Official discovery observation");
+    const record = observation;
     const memberships =
       record.memberships === undefined
         ? {
@@ -4092,7 +3147,7 @@ function parseRawDiscoverySurfaceByContract(
             distribution_contexts: [],
             source_buckets: [],
           }
-        : requiredRecord(record.memberships, "Official discovery memberships");
+        : record.memberships;
     const identityEvidence = isPlainRecord(record.identity_evidence) ? record.identity_evidence : null;
     const locator = typeof identityEvidence?.locator === "string" ? identityEvidence.locator : null;
     const recordingSourceBuckets = locator === null ? null : (recordingMemberships?.get(locator) ?? null);
@@ -4106,7 +3161,7 @@ function parseRawDiscoverySurfaceByContract(
   });
 }
 
-function parseRawProductsSurfaceFrozenV1(surface: Record<string, unknown>): readonly unknown[] {
+function parseRawProductsSurfaceFrozenV1(surface: Record<string, unknown>): CatalogueObservation[] {
   const products = completePartitionEntriesFrozenV1(surface.partitions).map((value) =>
     requiredRecord(value, "Official Source Product"),
   );
@@ -4123,7 +3178,7 @@ function parseRawProductsSurfaceFrozenV1(surface: Record<string, unknown>): read
   });
 }
 
-function parseRawReleasesSurfaceFrozenV1(surface: Record<string, unknown>): readonly unknown[] {
+function parseRawReleasesSurfaceFrozenV1(surface: Record<string, unknown>): CatalogueObservation[] {
   const entries = completePartitionEntriesFrozenV1(surface.partitions).map((value) =>
     requiredRecord(value, "Official Source Release entry"),
   );
@@ -4165,7 +3220,7 @@ function parseRawDiscoverySurfaceV2(
   game: ProductSourceGame,
   expandedOnePieceCatalogue = false,
   catalogueComplete = false,
-): readonly unknown[] {
+): CatalogueObservation[] {
   if (expandedOnePieceCatalogue && format === "one-piece") {
     return parseRawDiscoverySurfaceCompleteOnePieceV3(surface, format, game);
   }
@@ -4212,19 +3267,19 @@ function parseRawDiscoverySurfaceV2(
   return parseRawDiscoverySurfaceFrozenV1(surface, format, game);
 }
 
-function parseRawProductsSurfaceV2(surface: Record<string, unknown>): readonly unknown[] {
+function parseRawProductsSurfaceV2(surface: Record<string, unknown>): CatalogueObservation[] {
   return parseRawProductsSurfaceFrozenV1(surface);
 }
 
-function parseRawReleasesSurfaceV2(surface: Record<string, unknown>): readonly unknown[] {
+function parseRawReleasesSurfaceV2(surface: Record<string, unknown>): CatalogueObservation[] {
   return parseRawReleasesSurfaceFrozenV1(surface);
 }
 
-function rawCoverageObservationV2(surface: Record<string, unknown>, name: string): Record<string, unknown> {
+function rawCoverageObservationV2(surface: Record<string, unknown>, name: string): CatalogueObservation {
   return rawCoverageObservationFrozenV1(surface, name);
 }
 
-function rawCoverageObservationFrozenV1(surface: Record<string, unknown>, name: string): Record<string, unknown> {
+function rawCoverageObservationFrozenV1(surface: Record<string, unknown>, name: string): CatalogueObservation {
   requiredText(surface.revision, `Official Source ${name} revision`);
   requiredArray(surface.entries, `Official Source ${name} entries`);
   return {
@@ -4435,7 +3490,7 @@ function parseOfficialDiscoveryFrozenV1(
   document: unknown,
   keys: (typeof surfaceKeys)[DiscoveryFormat],
   game: ProductSourceGame,
-): readonly unknown[] {
+): CatalogueObservation[] {
   const root = requiredRecord(document, "Official discovery document");
   const listing = requiredRecord(root[keys.listing], `Official ${keys.listing}`);
   const details = requiredArray(root[keys.details], `Official ${keys.details}`).map((value) =>
@@ -4490,7 +3545,7 @@ function parseOfficialDiscoveryFrozenV1(
   }
 
   const observedProductReferences = new Set<string>();
-  const observations = details.map((detail) => {
+  const observations: CatalogueObservation[] = details.map((detail) => {
     const productCodes = requiredTextArray(detail.product_codes, "Official Card Product codes");
     const productReferences = [
       ...productCodes,
@@ -4523,48 +3578,6 @@ function parseOfficialDiscoveryFrozenV1(
   return observations;
 }
 
-function productOnlyObservation(
-  product: Record<string, unknown>,
-  releasesByCode: Map<string, Record<string, unknown>[]>,
-  legality: Record<string, unknown>,
-  errata: Record<string, unknown>,
-): Record<string, unknown> {
-  const distribution =
-    product.distribution === undefined ? null : requiredRecord(product.distribution, "Official Product Distribution");
-  const contextKey = distribution === null ? null : requiredText(distribution.code, "Official Distribution code");
-  return {
-    completeness: completeObservation(),
-    product_release_catalogue: {
-      ...catalogue([product], releasesByCode),
-      distribution_contexts:
-        distribution === null
-          ? []
-          : [
-              {
-                key: contextKey,
-                kind: distribution.kind,
-                label: distribution.label,
-                product_reference: productReference(product),
-                evidence_category: "explicit",
-              },
-            ],
-      relationships:
-        distribution === null
-          ? []
-          : [
-              {
-                kind: "distribution-context-product",
-                context_key: contextKey,
-                product_reference: productReference(product),
-                evidence_category: "explicit",
-                resolution: "explicit",
-              },
-            ],
-    },
-    source_sidecar: sourceSidecar(null, [product], legality, errata),
-  };
-}
-
 function productNonCardClassification(product: Record<string, unknown>): "accessory" | null {
   return nonCardProductClassification(
     JSON.stringify({
@@ -4579,7 +3592,7 @@ function productNonCardClassification(product: Record<string, unknown>): "access
 function nonCardProductObservation(
   product: Record<string, unknown>,
   classification: "accessory",
-): Record<string, unknown> {
+): CatalogueObservation {
   const policy = {
     revision: "captured-by-required-policy-surfaces",
     entries: [],
@@ -4607,21 +3620,6 @@ function requiredSurface(value: unknown, name: string) {
   requiredText(surface.revision, `Official ${name} revision`);
   requiredArray(surface.entries, `Official ${name} entries`);
   return surface;
-}
-
-function productEventKey(prefix: string, product: Record<string, unknown>): string {
-  const reference = productReference(product);
-  if (reference.kind === "official_code") {
-    return `${prefix}:${reference.value}`;
-  }
-  const bytes = new TextEncoder().encode(reference.value.normalize("NFC").trim());
-  const readablePrefix = [...bytes.slice(0, 64)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  let hash = 0xcbf29ce484222325n;
-  for (const byte of bytes) {
-    hash ^= BigInt(byte);
-    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
-  }
-  return `${prefix}:name-${readablePrefix}-${hash.toString(16).padStart(16, "0")}`;
 }
 
 function uniqueRequiredText(values: Record<string, unknown>[], field: string, name: string): string[] {

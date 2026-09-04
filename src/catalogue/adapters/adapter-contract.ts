@@ -3,7 +3,7 @@ export type ProductSourceGame = "one-piece" | "fusion-world" | "digimon" | "gund
 
 export type DiscoveryFormat = "one-piece" | "fusion-world" | "digimon" | "gundam";
 
-export type OfficialSourceObservation = Readonly<Record<string, unknown>>;
+import type { OfficialSourceObservation } from "./adapter-observations";
 export type OfficialSourceSurface = { mediaType: string | null; url: string; requestId?: string };
 
 export type OfficialRawAdapterContract = {

@@ -1,3 +1,4 @@
+import type { OfficialProduct, OfficialRelease } from "./adapter-observations";
 import { AdapterParseFailure } from "./adapter-parse-failure";
 import { officialArtworkFingerprint } from "./official-artwork-identity";
 export function gundamPublisherNullableText(value: unknown): unknown {
@@ -291,7 +292,7 @@ export function canonicalProduct(
   product: Record<string, unknown>,
   codeField: string,
   nameField: string,
-): Record<string, unknown> {
+): OfficialProduct {
   return {
     code: optionalOfficialCode(product[codeField], "Official Product code"),
     title: requiredText(product[nameField], "Official Product name"),
@@ -324,7 +325,7 @@ export function canonicalReleaseEntry(
 export function canonicalRelease(
   release: Record<string, unknown>,
   fields: { code: string; event: string },
-): Record<string, unknown> {
+): OfficialRelease {
   return {
     code: optionalOfficialCode(release[fields.code], "Official Release Product code"),
     event_key: requiredText(release[fields.event], "Official Release identity"),

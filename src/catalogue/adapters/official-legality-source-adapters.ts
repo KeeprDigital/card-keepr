@@ -1,5 +1,6 @@
-import { AdapterParseFailure } from "./adapter-parse-failure";
 import { isIsoCalendarDate } from "../shared";
+import type { LegalityRulesObservation } from "./adapter-observations";
+import { AdapterParseFailure } from "./adapter-parse-failure";
 import { requiredOfficialSourceScope } from "./official-source-scope.ts";
 
 type OfficialLegalityGame = "one-piece" | "fusion-world" | "digimon" | "gundam";
@@ -203,7 +204,7 @@ export function officialLegalityRulesObservation(
   sourceLineage: string,
   rawDocument: Record<string, unknown>,
   options: OfficialLegalityParseOptions = {},
-): Record<string, unknown> {
+): LegalityRulesObservation {
   return officialLegalityObservation(game, sourceLineage, rawDocument, false, options);
 }
 
@@ -212,7 +213,7 @@ export function officialLiveLegalityRulesObservation(
   sourceLineage: string,
   rawDocument: Record<string, unknown>,
   options: OfficialLegalityParseOptions = {},
-): Record<string, unknown> {
+): LegalityRulesObservation {
   return officialLegalityObservation(game, sourceLineage, rawDocument, true, options);
 }
 
@@ -222,7 +223,7 @@ function officialLegalityObservation(
   rawDocument: Record<string, unknown>,
   allowKnownPolicyWithUnresolvedInterval: boolean,
   options: OfficialLegalityParseOptions = {},
-): Record<string, unknown> {
+): LegalityRulesObservation {
   const entries = requiredArray(rawDocument.entries, "Official Source Legality entries");
   const declaredRecordCount =
     rawDocument.declared_record_count === undefined
@@ -261,7 +262,7 @@ export function officialLegalityRulesHtmlObservation(
   sourceLineage: string,
   html: string,
   options: OfficialLegalityParseOptions = {},
-): Record<string, unknown> | null {
+): LegalityRulesObservation | null {
   const declaredRecordCount = publisherDeclaredRecordCount(html);
   const articles = [...html.matchAll(/<article\b([^>]*)>([\s\S]*?)<\/article>/giu)].filter((match) =>
     /(?:^|\s)restriction-card(?:\s|$)/u.test(htmlAttribute(match[1]!, "class") ?? ""),

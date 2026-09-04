@@ -4,10 +4,14 @@ Each Supported Game has one adapter module: `one-piece-adapter.ts`,
 `fusion-world-adapter.ts`, `digimon-adapter.ts`, and `gundam-adapter.ts`.
 Gundam applies the same parser to its two locale contracts. A game module
 owns its active registration, field table, structured-surface normalization,
-and inline Card or Card detail HTML parser. Its exported adapter exposes
+inline Card or Card detail HTML parser, Erratum grammar, and game-specific
+Product and policy parsing. Its exported adapter exposes
 `parse(surface, bytes)` and request discovery alongside registration facts.
 `surface` binds the request URL, request identity, and retained media type;
-parsing returns typed observation records and performs no I/O.
+parsing returns the `OfficialSourceObservation` union and performs no I/O.
+The existing wire shapes distinguish Catalogue, Official Erratum, Legality Rule,
+and surface-evidence observations; canonical builders check those shapes without
+adding new fields to retained output.
 
 `source-adapters.ts` adapts that interface to the existing registered
 `parseBytes(bytes, context)` interface and retains the synthetic fixture
@@ -19,17 +23,21 @@ Shared mechanisms stay below the game modules:
 - `adapter-normalization.ts` maps Products and Releases using each game's
   field table, validates canonical fields, and closes partition coverage.
 - `adapter-html.ts` provides shared HTML extraction and observation assembly.
+- `adapter-product-html.ts` parses common Product HTML using the game's
+  title field configuration, heading validator, and Release precision.
 - `bandai-adapter-runtime.ts` applies request/surface routing, discovery,
-  product and policy grammar, completeness checks, and evidence attachment.
-  It receives each game's normalization and Card parsing functions.
+  completeness checks, and evidence attachment. It receives each game's
+  normalization, Card, Product, Erratum, and policy parsing functions.
 - `official-source-authority.ts` is the common exact URL authority used by
   both registration and parsing; it is not a second adapter registry.
 
-`AdapterParseFailure` identifies a source-contract failure. The class covers
-explicit grammar failures, invalid source URLs, and native decoding failures;
-messages remain unchanged. Ingestion translates that class into the existing
-`source_parse_failed`/`source_discovery_failed` problems. Unexpected programming
-errors propagate instead of being mistaken for publisher drift.
+`AdapterParseFailure` distinguishes `source-contract` failures from
+`configuration` failures. Source-contract failures cover explicit grammar
+failures, invalid source URLs, and native decoding failures; messages remain
+unchanged. Ingestion translates only that category into the existing
+`source_parse_failed`/`source_discovery_failed` problems. Registration capacity,
+contract, and ownership invariants use the configuration category and propagate,
+along with unexpected programming errors.
 
 ## Retained-byte equivalence
 

@@ -1,23 +1,4 @@
-import { adapterUrl } from "./adapter-parse-failure";
-import { officialSourceAuthorities } from "./official-source-authority";
-import { AdapterParseFailure } from "./adapter-parse-failure";
-
 import type { RawAdapterDefinition } from "./adapter-contract";
-import { officialUrl } from "./official-source-authority";
-import {
-  type NormalizedSurfaceBody,
-  canonicalDetail,
-  normalizePartitionEntries,
-  normalizedDiscovery,
-  normalizedPartitions,
-  normalizedPolicy,
-  normalizedSurfaceBody,
-  productReleaseNormalizers,
-  requiredArray,
-  requiredRecord,
-  requiredText,
-  uniqueTextValues,
-} from "./adapter-normalization";
 import {
   attachRawSurfaceEvidenceV1,
   cardObservation,
@@ -32,7 +13,25 @@ import {
   integerOrNull,
   textValues,
 } from "./adapter-html";
+import {
+  canonicalDetail,
+  type NormalizedSurfaceBody,
+  normalizedDiscovery,
+  normalizedPartitions,
+  normalizedPolicy,
+  normalizedSurfaceBody,
+  normalizePartitionEntries,
+  productReleaseNormalizers,
+  requiredArray,
+  requiredRecord,
+  requiredText,
+  uniqueTextValues,
+} from "./adapter-normalization";
+import type { CatalogueObservation, OfficialErratumObservation } from "./adapter-observations";
+import { AdapterParseFailure, adapterUrl } from "./adapter-parse-failure";
+import { parseProductDetail } from "./adapter-product-html";
 import { createBandaiAdapter } from "./bandai-adapter-runtime";
+import { officialSourceAuthorities, officialUrl } from "./official-source-authority";
 
 const productRelease = productReleaseNormalizers({
   gameLabel: "Digimon",
@@ -77,7 +76,17 @@ const definition: RawAdapterDefinition = {
 export const digimonAdapter = createBandaiAdapter(
   definition,
   (_lineage, surface, raw) => normalizeDigimonSurface(surface, raw, true),
-  { popupCardList: parseDigimonCardListPopupHtmlV6 },
+  {
+    productDetail: (html, lineage, url) =>
+      parseProductDetail(
+        html,
+        { titleSuffix: /\s*(?:[−–-]\s*PRODUCTS)?\s*[|｜]\s*Digimon Card Game$/u, seasonPrecisionReleases: false },
+        lineage,
+        url,
+      ),
+    structuredObservations: (surface, document) => (surface === "errata" ? parseDigimonOfficialErrata(document) : []),
+    popupCardList: parseDigimonCardListPopupHtmlV6,
+  },
 );
 
 function normalizeDigimonSurface(
@@ -179,7 +188,7 @@ function normalizeDigimonDetails(value: unknown, completeCatalogue = false): unk
   });
 }
 
-function parseDigimonCardListPopupHtmlV6(html: string, requestUrl: string): Record<string, unknown>[] {
+function parseDigimonCardListPopupHtmlV6(html: string, requestUrl: string): CatalogueObservation[] {
   // The live Q&A answers may nest a related-cards list inside the answer
   // container (verified 2026-08-12 on the P-, LM-, and AD-01 leaves); the
   // nested list is retained as explicit related-card evidence.
@@ -215,7 +224,7 @@ function parseDigimonCardListPopupHtmlByContract(
   declaredRecordCount: number,
   optionalEffect = false,
   nestedRelatedQa = false,
-): Record<string, unknown>[] {
+): CatalogueObservation[] {
   const leafPublisherCardType = requiredText(
     adapterUrl(requestUrl).searchParams.get("cardcategory"),
     "Official Digimon leaf cardcategory",
@@ -693,4 +702,66 @@ function digimonOptionalClassText(html: string, tag: string, className: string):
     throw new AdapterParseFailure(`Official Digimon Card Q&A duplicates ${className}.`);
   }
   return matches[0] === undefined ? null : htmlText(matches[0]![1]!);
+}
+
+function parseDigimonOfficialErrata(document: Record<string, unknown>): OfficialErratumObservation[] {
+  const entries = requiredArray(document.entries, "Digimon Official Errata entries");
+  return entries.map((value) => {
+    const entry = requiredRecord(value, "Digimon Official Erratum");
+    const allowedFields = new Set([
+      "card_number",
+      "published_on",
+      "effective_from",
+      "observed_printed_rules_text",
+      "corrected_rules_text",
+      "official_wording",
+      "applies_to_parallel_printings",
+      "source_fragment",
+      "display_name",
+      "image_url",
+    ]);
+    const unknownField = Object.keys(entry).find((field) => !allowedFields.has(field));
+    if (unknownField !== undefined) {
+      throw new AdapterParseFailure(`Digimon Official Erratum contains unknown field ${unknownField}.`);
+    }
+    if (typeof entry.applies_to_parallel_printings !== "boolean") {
+      throw new AdapterParseFailure("Digimon Official Erratum applies-to-parallel-printings flag is invalid.");
+    }
+    return {
+      kind: "official_erratum",
+      game: "digimon",
+      target: {
+        type: "card",
+        official_identity: {
+          kind: "card_number",
+          value: requiredText(entry.card_number, "Digimon Erratum Card Number"),
+        },
+      },
+      published_on: requiredText(entry.published_on, "Digimon Erratum published date"),
+      effective_from:
+        entry.effective_from === null ? null : requiredText(entry.effective_from, "Digimon Erratum effective date"),
+      observed_printed_rules_text: requiredText(
+        entry.observed_printed_rules_text,
+        "Digimon Erratum observed Printed Rules Text",
+      ),
+      corrected_rules_text:
+        entry.corrected_rules_text === null
+          ? null
+          : requiredText(entry.corrected_rules_text, "Digimon Erratum corrected Rules Text"),
+      official_wording: requiredText(entry.official_wording, "Digimon Erratum official wording"),
+      applies_to_parallel_printings: entry.applies_to_parallel_printings,
+      source: {
+        fragment: requiredText(entry.source_fragment, "Digimon Erratum source fragment"),
+        display_name: requiredText(entry.display_name, "Digimon Erratum display name"),
+        image_url: requiredText(entry.image_url, "Digimon Erratum image URL"),
+      },
+      completeness: {
+        structurally_complete: true,
+        required_surfaces_complete: true,
+        partitions_complete: true,
+        declared_record_count: 1,
+        parsed_record_count: 1,
+      },
+    };
+  });
 }

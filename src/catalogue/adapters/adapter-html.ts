@@ -1,10 +1,8 @@
-import { adapterUrl } from "./adapter-parse-failure";
-import { AdapterParseFailure } from "./adapter-parse-failure";
-
-import { partitionMappedOfficialLeaves } from "./official-source-field-coverage";
 import type { ProductSourceGame } from "./adapter-contract";
-import { officialUrl } from "./official-source-authority";
 import { nullableText, requiredArray, requiredRecord, requiredText } from "./adapter-normalization";
+import type { CardObservation, CatalogueObservation, OfficialSourceObservation } from "./adapter-observations";
+import { AdapterParseFailure, adapterUrl } from "./adapter-parse-failure";
+import { partitionMappedOfficialLeaves } from "./official-source-field-coverage";
 export function fusionWorldFullLocatorFromUrl(url: URL, exactLiveQuery: boolean): string | null {
   const entries = [...url.searchParams.entries()];
   const identities = entries.filter(([key]) => /^(?:card(?:[_-]?(?:id|no|number))?|detailSearch|popup)$/iu.test(key));
@@ -38,7 +36,7 @@ export function htmlAttribute(attributes: string, name: string): string | null {
 }
 
 export type ParsedBandaiSurface = {
-  observations: readonly Record<string, unknown>[];
+  observations: readonly OfficialSourceObservation[];
   retainedDocument: Record<string, unknown>;
   consumedFields: readonly string[];
 };
@@ -204,7 +202,7 @@ export function colourValues(value: string | null): string[] {
   return [
     ...new Set(
       value
-        .split(/[\/,]/u)
+        .split(/[/,]/u)
         .map((item) => item.normalize("NFC").trim().toLocaleLowerCase())
         .filter(Boolean),
     ),
@@ -261,79 +259,6 @@ export function digivolutionRequirements(values: readonly string[]): {
   });
 }
 
-export function gundamOfficialErrataObservations(
-  document: Record<string, unknown>,
-  sourceLineage: string,
-): readonly Record<string, unknown>[] {
-  const entries = requiredArray(document.entries, "Gundam Errata entries");
-  return entries.map((value) => {
-    const entry = requiredRecord(value, "Gundam Erratum");
-    const allowed = new Set([
-      "entry_id",
-      "card_number",
-      "published_on",
-      "effective_from",
-      "before",
-      "after",
-      "notice",
-      "applies_to_parallel_printings",
-      "image_url",
-    ]);
-    const unknown = Object.keys(entry).find((field) => !allowed.has(field));
-    if (unknown !== undefined) {
-      throw new AdapterParseFailure(`Gundam Erratum contains unknown field ${unknown}.`);
-    }
-    for (const field of allowed) {
-      if (!Object.hasOwn(entry, field)) {
-        throw new AdapterParseFailure(`Gundam Erratum is missing field ${field}.`);
-      }
-    }
-    const entryId = requiredText(entry.entry_id, "Gundam Erratum identity");
-    if (!/^[A-Za-z0-9][A-Za-z0-9_-]+$/u.test(entryId)) {
-      throw new AdapterParseFailure("Gundam Erratum identity is invalid.");
-    }
-    const cardNumber = requiredText(entry.card_number, "Gundam Erratum Card Number");
-    if (!/^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/u.test(cardNumber)) {
-      throw new AdapterParseFailure(`Gundam Erratum Card Number ${cardNumber} is invalid.`);
-    }
-    const publishedOn = exactOnePieceSourceDate(entry.published_on, "Gundam Erratum published date");
-    const effectiveFrom =
-      entry.effective_from === null
-        ? null
-        : exactOnePieceSourceDate(entry.effective_from, "Gundam Erratum effective date");
-    const before = requiredText(entry.before, "Gundam Erratum Before text");
-    const after = requiredText(entry.after, "Gundam Erratum After text");
-    const notice = requiredText(entry.notice, "Gundam Erratum notice");
-    if (typeof entry.applies_to_parallel_printings !== "boolean") {
-      throw new AdapterParseFailure("Gundam Erratum parallel Printing applicability is invalid.");
-    }
-    const imageUrl = adapterUrl(requiredText(entry.image_url, "Gundam Erratum image URL"));
-    if (!officialUrl(sourceLineage, imageUrl, "image")) {
-      throw new AdapterParseFailure("Gundam Erratum image provenance is invalid.");
-    }
-    return {
-      kind: "official_erratum",
-      game: "gundam",
-      target: {
-        type: "card",
-        official_identity: { kind: "card_number", value: cardNumber },
-      },
-      published_on: publishedOn,
-      effective_from: effectiveFrom,
-      observed_printed_rules_text: before,
-      corrected_rules_text: after,
-      official_wording: `Before: ${before}\nAfter: ${after}\nNote: ${notice}`,
-      applies_to_parallel_printings: entry.applies_to_parallel_printings,
-      source: {
-        fragment: `#${entryId}`,
-        display_name: cardNumber,
-        image_url: imageUrl.href,
-      },
-      completeness: completeObservation(1, 1),
-    };
-  });
-}
-
 export function exactOnePieceSourceDate(value: unknown, name: string): string {
   const date = requiredText(value, name);
   if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/u.test(date)) {
@@ -346,15 +271,15 @@ export function exactOnePieceSourceDate(value: unknown, name: string): string {
   return date;
 }
 
-export function attachRawSurfaceEvidenceV1(
-  observation: unknown,
+export function attachRawSurfaceEvidenceV1<T extends OfficialSourceObservation>(
+  observation: T,
   sourceLineage: string,
   surface: string,
   document: Record<string, unknown>,
   retainDocument: boolean,
   mappedRootFields: readonly string[],
   explicitUnmappedFields: readonly { path: string; value: unknown }[] = [],
-): Record<string, unknown> {
+): T {
   const record = requiredRecord(observation, `Official Source ${surface} observation`);
   const existing = record.source_sidecar === undefined ? {} : requiredRecord(record.source_sidecar, "Source sidecar");
   const raw = existing.raw === undefined ? {} : requiredRecord(existing.raw, "Source sidecar raw fields");
@@ -367,7 +292,7 @@ export function attachRawSurfaceEvidenceV1(
     : [];
   const explicitlyUnmappedPaths = new Set(explicitUnmappedFields.map(({ path }) => path));
   return {
-    ...record,
+    ...observation,
     source_sidecar: {
       ...existing,
       raw: {
@@ -410,7 +335,7 @@ export function cardObservation(
   legality: Record<string, unknown>,
   errata: Record<string, unknown>,
   game: ProductSourceGame,
-): Record<string, unknown> {
+): CardObservation {
   const distribution = requiredRecord(detail.distribution, "Official Distribution");
   const distributionCode = requiredText(distribution.code, "Official Distribution code");
   const sourceBucket = distribution.kind === "source_bucket";
@@ -696,4 +621,111 @@ export function productReferenceKey(reference: { kind: "official_code" | "name";
 
 export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function stageRecord(
+  sourceLineage: string,
+  surface: string,
+  url: string,
+  discoveredFrom: {
+    kind: "publisher_navigation" | "retained_stage_request";
+    label: string;
+    url: string;
+    resolution: string;
+  },
+) {
+  return {
+    id: `${sourceLineage}:${surface}`,
+    surface,
+    method: "GET" as const,
+    url,
+    headers: { accept: "text/html" as const },
+    discovered_from: discoveredFrom,
+  };
+}
+
+export function productOnlyObservation(
+  product: Record<string, unknown>,
+  releasesByCode: Map<string, Record<string, unknown>[]>,
+  legality: Record<string, unknown>,
+  errata: Record<string, unknown>,
+): CatalogueObservation {
+  const distribution =
+    product.distribution === undefined ? null : requiredRecord(product.distribution, "Official Product Distribution");
+  const contextKey = distribution === null ? null : requiredText(distribution.code, "Official Distribution code");
+  return {
+    completeness: completeObservation(),
+    product_release_catalogue: {
+      ...catalogue([product], releasesByCode),
+      distribution_contexts:
+        distribution === null
+          ? []
+          : [
+              {
+                key: contextKey,
+                kind: distribution.kind,
+                label: distribution.label,
+                product_reference: productReference(product),
+                evidence_category: "explicit",
+              },
+            ],
+      relationships:
+        distribution === null
+          ? []
+          : [
+              {
+                kind: "distribution-context-product",
+                context_key: contextKey,
+                product_reference: productReference(product),
+                evidence_category: "explicit",
+                resolution: "explicit",
+              },
+            ],
+    },
+    source_sidecar: sourceSidecar(null, [product], legality, errata),
+  };
+}
+
+export function liveOfficialProductCode(title: string): string | null {
+  return title.match(/\[([A-Z0-9][A-Z0-9-]{0,15})\]$/u)?.[1] ?? null;
+}
+
+export function liveOfficialReleaseDateText(value: string): string {
+  const normalized = value.normalize("NFC").trim();
+  // Live publisher shorthand: "2027.1.30", "September 25,2026", and
+  // "December, 10 2021".
+  const dotted = normalized.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/u);
+  if (dotted !== null) {
+    return `${dotted[1]}-${dotted[2]!.padStart(2, "0")}-${dotted[3]!.padStart(2, "0")}`;
+  }
+  return normalized
+    .replace(/^([A-Za-z]+ \d{1,2}),(\d{4})$/u, "$1, $2")
+    .replace(/^([A-Za-z]+),\s*(\d{1,2})\s+(\d{4})$/u, "$1 $2, $3");
+}
+
+export function nonCardProductClassificationV2(value: string): "accessory" | null {
+  // The 2026-08 live listings publish deck cases alongside the previously
+  // modelled accessory vocabulary.
+  return nonCardProductClassification(value) !== null || /(?:card cases?|deck[ _-]?cases?)/iu.test(value)
+    ? "accessory"
+    : null;
+}
+
+export function nonCardProductClassification(value: string): "accessory" | null {
+  return /(?:accessor|sleeve|storage|binder|playmat)/iu.test(value) ? "accessory" : null;
+}
+
+export function productEventKey(prefix: string, product: Record<string, unknown>): string {
+  const reference = productReference(product);
+  if (reference.kind === "official_code") {
+    return `${prefix}:${reference.value}`;
+  }
+  const bytes = new TextEncoder().encode(reference.value.normalize("NFC").trim());
+  const readablePrefix = [...bytes.slice(0, 64)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  let hash = 0xcbf29ce484222325n;
+  for (const byte of bytes) {
+    hash ^= BigInt(byte);
+    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
+  }
+  return `${prefix}:name-${readablePrefix}-${hash.toString(16).padStart(16, "0")}`;
 }

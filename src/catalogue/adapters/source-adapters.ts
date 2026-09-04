@@ -1,9 +1,8 @@
-import { adapterUrl } from "./adapter-parse-failure";
-import { AdapterParseFailure } from "./adapter-parse-failure";
 import { AdministrationProblem } from "../shared";
-import { officialRawAdapterContracts } from "./product-release-source-adapters.ts";
-import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.ts";
+import { AdapterParseFailure, adapterUrl } from "./adapter-parse-failure";
 import { requiredOfficialSourceScope } from "./official-source-scope.ts";
+import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.ts";
+import { officialRawAdapterContracts } from "./product-release-source-adapters.ts";
 import type { ListingReconciliationTraits } from "./source-adapter-registration-types.ts";
 
 export type OfficialSourceContract = Readonly<{
@@ -85,6 +84,7 @@ function sourceRequestCapacity(adapterVersion: string): number {
   if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity >= globalEmergencySourceRequestCeiling) {
     throw new AdapterParseFailure(
       `Source Adapter Version ${adapterVersion} declares a request capacity outside the global emergency ceiling.`,
+      { category: "configuration" },
     );
   }
   return capacity;
@@ -119,7 +119,9 @@ const parseLegalitySourceDocument = (document: unknown): readonly unknown[] => {
 
 export function requiredOfficialSourceContract(adapter: SourceAdapterRegistration): OfficialSourceContract {
   if (adapter.reconciliationCapability !== "catalogue" || adapter.officialSourceContract === undefined) {
-    throw new AdapterParseFailure(`Adapter ${adapter.adapterVersion} has no complete Official Source contract.`);
+    throw new AdapterParseFailure(`Adapter ${adapter.adapterVersion} has no complete Official Source contract.`, {
+      category: "configuration",
+    });
   }
   return adapter.officialSourceContract;
 }
@@ -376,7 +378,9 @@ export function registeredLegalitySourceScope(sourceLineage: string): {
       (adapter) => adapter.supportedGame !== first.supportedGame || adapter.legalityRegion !== first.legalityRegion,
     )
   ) {
-    throw new AdapterParseFailure("Legality Source Lineage has no consistent registered ownership.");
+    throw new AdapterParseFailure("Legality Source Lineage has no consistent registered ownership.", {
+      category: "configuration",
+    });
   }
   return {
     game: first.supportedGame as "one-piece" | "fusion-world" | "digimon" | "gundam",

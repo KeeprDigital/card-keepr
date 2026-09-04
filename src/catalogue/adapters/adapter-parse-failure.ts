@@ -1,6 +1,12 @@
-/** Retained Official Source bytes or fields do not satisfy the adapter contract. */
+/** Identifies source-contract failures separately from invalid adapter configuration. */
 export class AdapterParseFailure extends Error {
   override readonly name = "AdapterParseFailure";
+  readonly category: "source-contract" | "configuration";
+
+  constructor(message: string, options?: ErrorOptions & { category?: "source-contract" | "configuration" }) {
+    super(message, options);
+    this.category = options?.category ?? "source-contract";
+  }
 }
 
 /** Keep native decoding failures in the same class without swallowing programming errors. */

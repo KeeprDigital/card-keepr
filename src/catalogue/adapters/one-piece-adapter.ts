@@ -1,36 +1,47 @@
-import { adapterUrl } from "./adapter-parse-failure";
-import { officialSourceAuthorities } from "./official-source-authority";
-import { AdapterParseFailure } from "./adapter-parse-failure";
-import { officialArtworkFingerprint } from "./official-artwork-identity";
-import { normalizeOnePieceCardPage, normalizedOnePieceRarity } from "./one-piece-source-adapter";
 import type { RawAdapterDefinition } from "./adapter-contract";
 import {
-  type NormalizedSurfaceBody,
+  attachRawSurfaceEvidenceV1,
+  cardObservation,
+  completeObservation,
+  decodeHtmlText,
+  exactOnePieceSourceDate,
+  firstLabelValue,
+  htmlAttribute,
+  htmlLabelPairs,
+  htmlText,
+  integerOrNull,
+  isPlainRecord,
+  type ParsedBandaiSurface,
+  requiredHtmlMatch,
+  textValues,
+} from "./adapter-html";
+import {
   canonicalDetail,
-  normalizePartitionEntries,
+  type NormalizedSurfaceBody,
   normalizedDiscovery,
   normalizedPartitions,
   normalizedPolicy,
   normalizedSurfaceBody,
+  normalizePartitionEntries,
+  nullableText,
   productReleaseNormalizers,
   requiredArray,
   requiredRecord,
   requiredText,
   stableValue,
 } from "./adapter-normalization";
-import {
-  type ParsedBandaiSurface,
-  cardObservation,
-  decodeHtmlText,
-  firstLabelValue,
-  htmlAttribute,
-  htmlLabelPairs,
-  htmlText,
-  integerOrNull,
-  requiredHtmlMatch,
-  textValues,
-} from "./adapter-html";
+import type { OfficialErratumObservation, OfficialSourceObservation } from "./adapter-observations";
+import { AdapterParseFailure, adapterUrl } from "./adapter-parse-failure";
+import { parseProductDetail } from "./adapter-product-html";
 import { createBandaiAdapter } from "./bandai-adapter-runtime";
+import { officialArtworkFingerprint } from "./official-artwork-identity";
+import { officialLegalityRulesObservation } from "./official-legality-source-adapters";
+import { officialSourceAuthorities, officialUrl } from "./official-source-authority";
+import {
+  normalizedOnePieceRarity,
+  normalizeOnePieceCardPage,
+  onePieceDonCardObservation,
+} from "./one-piece-source-adapter";
 
 const productRelease = productReleaseNormalizers({
   gameLabel: "One Piece",
@@ -81,7 +92,27 @@ const definition: RawAdapterDefinition = {
 export const onePieceAdapter = createBandaiAdapter(
   definition,
   (_lineage, surface, raw) => normalizeOnePieceSurface(surface, raw, true, true),
-  { inlineCardList: (html, url) => parseOnePieceBandaiCardListV1(html, url, true) },
+  {
+    productDetail: (html, lineage, url) =>
+      parseProductDetail(
+        html,
+        {
+          titleSuffix: /\s*(?:[−–-]\s*PRODUCTS)?\s*[|｜]\s*ONE PIECE CARD GAME - Official Web Site$/u,
+          seasonPrecisionReleases: false,
+        },
+        lineage,
+        url,
+      ),
+    structuredObservations: (surface, document) =>
+      surface === "errata"
+        ? onePieceOfficialErrataObservations(document.entries)
+        : surface === "don-rules" && document.don_card !== undefined
+          ? [onePieceDonCardObservation(document.don_card)]
+          : [],
+    unmappedFields: onePieceUnmappedOptionalFields,
+    rulesHub: parseOnePieceDonRulesHubCoverageV1,
+    inlineCardList: (html, url) => parseOnePieceBandaiCardListV1(html, url, true),
+  },
 );
 
 function normalizeOnePieceSurface(
@@ -430,7 +461,7 @@ function parseOnePieceBandaiCardListV1(
       : {
           ...observation,
           memberships: {
-            ...requiredRecord(observation.memberships, "One Piece Recording memberships"),
+            ...observation.memberships,
             source_buckets: [`recording:${recording}`],
           },
         };
@@ -529,4 +560,195 @@ function requiredNullableText(value: string | null, name: string): string | null
   if (value === null) return null;
   if (value.length === 0) throw new AdapterParseFailure(`${name} is invalid.`);
   return value;
+}
+
+function onePieceOfficialErrataObservations(value: unknown): OfficialErratumObservation[] {
+  const fields = [
+    "notice_id",
+    "card_number",
+    "card_name",
+    "published_on",
+    "effective_from",
+    "before_text",
+    "after_text",
+    "note",
+    "applies_to_parallel_printings",
+    "image_url",
+  ];
+  return requiredArray(value, "One Piece Errata entries").map((item) => {
+    const entry = requiredRecord(item, "One Piece Erratum");
+    const undeclared = Object.keys(entry).filter((field) => !fields.includes(field));
+    const missing = fields.filter((field) => !Object.hasOwn(entry, field));
+    if (undeclared.length > 0 || missing.length > 0) {
+      throw new AdapterParseFailure(
+        `One Piece Erratum has undeclared or missing fields: ${[...undeclared, ...missing].sort().join(", ")}.`,
+      );
+    }
+    const noticeId = requiredText(entry.notice_id, "One Piece Erratum notice id");
+    if (!/^[A-Za-z][A-Za-z0-9_-]+$/u.test(noticeId)) {
+      throw new AdapterParseFailure("One Piece Erratum notice id is invalid.");
+    }
+    const cardNumber = requiredText(entry.card_number, "One Piece Erratum Card number");
+    if (!/^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/u.test(cardNumber)) {
+      throw new AdapterParseFailure("One Piece Erratum Card number is invalid.");
+    }
+    const cardName = requiredText(entry.card_name, "One Piece Erratum Card name");
+    const publishedOn = exactOnePieceSourceDate(entry.published_on, "One Piece Erratum published_on");
+    const effectiveFrom =
+      entry.effective_from === null
+        ? null
+        : exactOnePieceSourceDate(entry.effective_from, "One Piece Erratum effective_from");
+    const before = requiredText(entry.before_text, "One Piece Erratum Before text");
+    const after = requiredText(entry.after_text, "One Piece Erratum After text");
+    const note = nullableText(entry.note, "One Piece Erratum Note");
+    if (typeof entry.applies_to_parallel_printings !== "boolean") {
+      throw new AdapterParseFailure("One Piece Erratum parallel Printing applicability is invalid.");
+    }
+    const imageUrl = requiredText(entry.image_url, "One Piece Erratum image URL");
+    let parsedImageUrl: URL;
+    try {
+      parsedImageUrl = adapterUrl(imageUrl);
+    } catch {
+      throw new AdapterParseFailure("One Piece Erratum image URL is invalid.");
+    }
+    if (!officialUrl("one-piece-en", parsedImageUrl, "image")) {
+      throw new AdapterParseFailure("One Piece Erratum image URL is invalid.");
+    }
+    const target: OfficialErratumObservation["target"] = entry.applies_to_parallel_printings
+      ? {
+          type: "card" as const,
+          official_identity: { kind: "card_number", value: cardNumber },
+        }
+      : {
+          type: "printing" as const,
+          official_identity: { kind: "card_number", value: cardNumber },
+          locator: imageUrl,
+        };
+    return {
+      kind: "official_erratum",
+      game: "one-piece",
+      target,
+      published_on: publishedOn,
+      effective_from: effectiveFrom,
+      observed_printed_rules_text: before,
+      corrected_rules_text: after,
+      official_wording: [...(note === null ? [] : [`Note: ${note}`]), `Before: ${before}`, `After: ${after}`].join(
+        "\n",
+      ),
+      applies_to_parallel_printings: entry.applies_to_parallel_printings,
+      source: {
+        fragment: `#${noticeId}`,
+        display_name: `${cardNumber} ${cardName}`,
+        image_url: imageUrl,
+      },
+      completeness: {
+        structurally_complete: true,
+        required_surfaces_complete: true,
+        partitions_complete: true,
+        declared_record_count: 1,
+        parsed_record_count: 1,
+      },
+    };
+  });
+}
+
+/**
+ * Issue #58: the live One Piece /rules/ hub publishes rule PDFs and links
+ * to the separately captured restriction, block-policy, and errata
+ * publications, but no DON!! Card facts. The don-rules surface retains the
+ * hub as exact coverage evidence: the page identity and its pinned policy
+ * links are verified, every navigation link is retained explicitly, and a
+ * structurally complete empty Legality Rule observation records that the
+ * surface publishes zero rules. No comprehensive DON!! Printing claim is
+ * made; if the hub starts publishing DON!! content the parse fails closed.
+ */
+function parseOnePieceDonRulesHubCoverageV1(
+  html: string,
+  sourceLineage: string,
+  surface: string,
+  requestUrl: string,
+): OfficialSourceObservation[] {
+  const title = htmlText(html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1] ?? "");
+  if (title !== "RULES｜ONE PIECE CARD GAME - Official Web Site") {
+    throw new AdapterParseFailure("One Piece rules hub identity is unavailable.");
+  }
+  const visibleText = htmlText(
+    html.replace(/<script\b[\s\S]*?<\/script>/giu, " ").replace(/<style\b[\s\S]*?<\/style>/giu, " "),
+  );
+  if (/DON!!/u.test(visibleText) || /(?<![\p{L}\p{N}])DON(?![\p{L}\p{N}])/u.test(visibleText)) {
+    throw new AdapterParseFailure(
+      "One Piece rules hub publishes DON!! content this Source Adapter Version cannot represent.",
+    );
+  }
+  const navigationLinks = [...html.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/giu)].flatMap(
+    (match) => {
+      const label = htmlText(match[2]!);
+      if (label.length === 0) return [];
+      let resolved: string;
+      try {
+        resolved = adapterUrl(decodeHtmlText(match[1]!), requestUrl).href;
+      } catch {
+        throw new AdapterParseFailure("One Piece rules hub navigation link is invalid.");
+      }
+      return [{ label, url: resolved }];
+    },
+  );
+  for (const [pinnedSurface, pinnedUrl] of [
+    ["restrictions", "https://en.onepiece-cardgame.com/news/restriction.html"],
+    ["block-policy", "https://en.onepiece-cardgame.com/topics/013.php"],
+    ["errata", "https://en.onepiece-cardgame.com/rules/errata_card/"],
+  ] as const) {
+    if (!navigationLinks.some(({ url }) => url === pinnedUrl)) {
+      throw new AdapterParseFailure(`One Piece rules hub no longer links its pinned ${pinnedSurface} publication.`);
+    }
+  }
+  const retainedDocument = {
+    source_lineage: sourceLineage,
+    surface,
+    url: requestUrl,
+    document_title: title,
+    navigation_links: navigationLinks,
+  };
+  const consumedFields = ["source_lineage", "surface", "url", "document_title", "navigation_links"];
+  return [
+    {
+      completeness: completeObservation(navigationLinks.length, navigationLinks.length),
+      product_release_catalogue: {
+        products: [],
+        distribution_contexts: [],
+        relationships: [],
+      },
+    },
+    officialLegalityRulesObservation("one-piece", sourceLineage, { entries: [], declared_record_count: 0 }),
+  ].map((observation, index) =>
+    attachRawSurfaceEvidenceV1(observation, sourceLineage, surface, retainedDocument, index === 0, consumedFields),
+  );
+}
+
+function onePieceUnmappedOptionalFields(
+  surface: string,
+  raw: Record<string, unknown>,
+): { path: string; value: unknown }[] {
+  if (surface !== "card-list" || !Array.isArray(raw.card_pages)) return [];
+  return raw.card_pages.flatMap((value, cardIndex) => {
+    if (!isPlainRecord(value) || !isPlainRecord(value.printing)) return [];
+    const printingAttributes = isPlainRecord(value.printing.attributes) ? value.printing.attributes : {};
+    const illustrationWarnings = Array.isArray(printingAttributes.illustration_types)
+      ? printingAttributes.illustration_types.flatMap((illustration, illustrationIndex) =>
+          typeof illustration === "string" &&
+          ["comic", "animation", "original", "other"].includes(illustration.toLocaleLowerCase())
+            ? []
+            : [
+                {
+                  path:
+                    "source_sidecar.raw.official_surfaces[0].document." +
+                    `card_pages[${cardIndex}].printing.attributes.` +
+                    `illustration_types[${illustrationIndex}]`,
+                  value: illustration,
+                },
+              ],
+        )
+      : [];
+    return illustrationWarnings;
+  });
 }
