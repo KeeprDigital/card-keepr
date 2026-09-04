@@ -1,13 +1,8 @@
-import {
-  cloudflareTest,
-  readD1Migrations,
-} from "@cloudflare/vitest-pool-workers";
+import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { resolve } from "node:path";
 import { configDefaults, defineConfig } from "vitest/config";
 
-const migrations = await readD1Migrations(
-  resolve(import.meta.dirname, "../../migrations"),
-);
+const migrations = await readD1Migrations(resolve(import.meta.dirname, "../../migrations"));
 // KEEPR_TEST_SUITE=stress selects the *.stress.spec.ts latency-budget suite
 // run by the scheduled / manually dispatched stress workflow.
 const stressSuite = process.env.KEEPR_TEST_SUITE === "stress";
@@ -15,6 +10,7 @@ const stressSuite = process.env.KEEPR_TEST_SUITE === "stress";
 export default defineConfig({
   plugins: [
     cloudflareTest({
+      main: resolve(import.meta.dirname, "../../test/support/api-worker.ts"),
       wrangler: {
         configPath: resolve(import.meta.dirname, "wrangler.jsonc"),
       },
@@ -31,12 +27,8 @@ export default defineConfig({
     }),
   ],
   test: {
-    include: stressSuite
-      ? ["apps/api/test/**/*.stress.spec.ts"]
-      : ["apps/api/test/**/*.spec.ts"],
-    exclude: stressSuite
-      ? [...configDefaults.exclude]
-      : [...configDefaults.exclude, "**/*.stress.spec.ts"],
+    include: stressSuite ? ["apps/api/test/**/*.stress.spec.ts"] : ["apps/api/test/**/*.spec.ts"],
+    exclude: stressSuite ? [...configDefaults.exclude] : [...configDefaults.exclude, "**/*.stress.spec.ts"],
     hookTimeout: 30_000,
   },
 });

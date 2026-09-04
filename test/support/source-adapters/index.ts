@@ -1,0 +1,122 @@
+import {
+  registerSourceAdapters,
+  type SourceAdapterRegistration,
+} from "../../../src/catalogue/adapters/source-adapters";
+import { requiredOfficialSourceScope } from "../../../src/catalogue/adapters/official-source-scope";
+
+const parseLegalitySourceDocument = (document: unknown): readonly unknown[] => {
+  if (typeof document === "object" && document !== null && !Array.isArray(document)) {
+    const record = document as {
+      cards?: unknown;
+      product_surfaces?: unknown;
+      legality_rules?: unknown;
+      legality_completeness?: unknown;
+    };
+    if (Array.isArray(record.cards) || Array.isArray(record.product_surfaces)) {
+      return [
+        ...(Array.isArray(record.cards) ? record.cards : []),
+        ...(Array.isArray(record.product_surfaces) ? record.product_surfaces : []),
+        ...(record.legality_rules === undefined
+          ? []
+          : [
+              {
+                observation_type: "legality_rules",
+                legality_rules: record.legality_rules,
+                completeness: record.legality_completeness,
+              },
+            ]),
+      ];
+    }
+  }
+  return [document];
+};
+
+export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[] = Object.freeze(
+  [
+    {
+      adapterVersion: "fixture-one-piece-official-errata-json@1",
+      sourceLineage: "one-piece-en",
+      supportedGame: "one-piece",
+      gameProfileVersion: "one-piece@1",
+      parserContract: "synthetic-official-errata-fixture@1",
+      maximumSnapshotBytes: 16 * 1024 * 1024,
+      origin: "synthetic_fixture" as const,
+      requestSurface: { kind: "synthetic-fixture" as const },
+      reconciliationCapability: "errata" as const,
+      parse: parseLegalitySourceDocument,
+    },
+    // Before Go-Live (ADR 0008) each Source Lineage keeps one synthetic
+    // fixture adapter; the -capped and -large fixtures are distinct
+    // behaviours (byte cap, request capacity), not versions. Every fixture
+    // shares the legality-aware parser contract.
+    ...[
+      {
+        adapterVersion: "fixture-one-piece-json@3",
+        sourceLineage: "one-piece-en",
+        supportedGame: "one-piece",
+        gameProfileVersion: "one-piece@1",
+        parserContract: "synthetic-fixture-card-document-with-legality@2",
+      },
+      {
+        adapterVersion: "fixture-one-piece-json-capped@1",
+        sourceLineage: "one-piece-en",
+        supportedGame: "one-piece",
+        gameProfileVersion: "one-piece@1",
+        parserContract: "synthetic-fixture-card-document-with-legality@2",
+        maximumSnapshotBytes: 1024 * 1024,
+      },
+      {
+        adapterVersion: "fixture-fusion-world-json@2",
+        sourceLineage: "fusion-world-en",
+        supportedGame: "fusion-world",
+        gameProfileVersion: "fusion-world@1",
+        parserContract: "synthetic-fixture-card-document-with-legality@2",
+      },
+      {
+        adapterVersion: "fixture-fusion-world-json-large@1",
+        sourceLineage: "fusion-world-en",
+        supportedGame: "fusion-world",
+        gameProfileVersion: "fusion-world@1",
+        parserContract: "synthetic-fixture-card-document-with-legality@2",
+      },
+      {
+        adapterVersion: "fixture-digimon-json@2",
+        sourceLineage: "digimon-en",
+        supportedGame: "digimon",
+        gameProfileVersion: "digimon@1",
+        parserContract: "synthetic-fixture-card-document-with-legality@2",
+      },
+      {
+        adapterVersion: "fixture-gundam-en-asia-json@2",
+        sourceLineage: "gundam-en-asia",
+        supportedGame: "gundam",
+        gameProfileVersion: "gundam@1",
+        parserContract: "synthetic-fixture-card-document-with-legality@2",
+      },
+      {
+        adapterVersion: "fixture-gundam-en-us-json@2",
+        sourceLineage: "gundam-en-us",
+        supportedGame: "gundam",
+        gameProfileVersion: "gundam@1",
+        parserContract: "synthetic-fixture-card-document-with-legality@2",
+      },
+    ].map((adapter) => ({
+      ...adapter,
+      maximumSnapshotBytes: adapter.maximumSnapshotBytes ?? 16 * 1024 * 1024,
+      origin: "synthetic_fixture" as const,
+      requestSurface: { kind: "synthetic-fixture" as const },
+      reconciliationCapability: "catalogue" as const,
+      parse: parseLegalitySourceDocument,
+    })),
+  ].map((adapter) =>
+    Object.freeze({
+      ...adapter,
+      legalityRegion: requiredOfficialSourceScope(adapter.sourceLineage).legalityRegion,
+      requestCapacity: adapter.adapterVersion === "fixture-fusion-world-json-large@1" ? 15_000 : 5_000,
+    }),
+  ),
+);
+
+export function registerSyntheticSourceAdapters(): void {
+  registerSourceAdapters(syntheticAdapterRegistrations);
+}
