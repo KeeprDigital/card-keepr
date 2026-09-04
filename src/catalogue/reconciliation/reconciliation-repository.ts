@@ -386,3 +386,29 @@ function revisionDocumentData(documentJson: string): Record<string, unknown> {
 function compatibilityValues(compatibility: PrintingCompatibility): (string | null)[] {
   return compatibilityFields.map((field) => compatibility[field]);
 }
+
+export type ReconciliationTerminalResultRow = { result_json: string };
+
+export function terminalResultInsertion(
+  database: D1Database,
+  runId: string,
+  result: Record<string, unknown>,
+): D1PreparedStatement {
+  return database
+    .prepare(
+      `INSERT OR IGNORE INTO reconciliation_terminal_results (
+         ingestion_run_id, result_json
+       ) VALUES (?, ?)`,
+    )
+    .bind(runId, canonicalJson(result));
+}
+
+export function terminalResultStatement(database: D1Database, runId: string): D1PreparedStatement {
+  return database
+    .prepare(
+      `SELECT result_json
+       FROM reconciliation_terminal_results
+       WHERE ingestion_run_id = ?`,
+    )
+    .bind(runId);
+}
