@@ -102,7 +102,9 @@ test("replacement release state is rehydrated into a distinct blocked database b
   const failedReplacement = await realDatabase();
   const competingReplacement = await realDatabase();
   t.after(() =>
-    [original, replacement, failedReplacement, competingReplacement].forEach((database) => { database.close(); }),
+    [original, replacement, failedReplacement, competingReplacement].forEach((database) => {
+      database.close();
+    }),
   );
   for (const database of [original, replacement, failedReplacement, competingReplacement]) {
     productionReleaseQueries.setCurrentCatalogueRevision(database).run(environment.EXPECTED_CURRENT_REVISION);
@@ -248,7 +250,6 @@ test("a durable pre-command marker conservatively terminalizes partial migration
   assert.equal(productionReleaseQueries.countBootstrapFenceRuns(database).get().count, 0);
 });
 
-
 test("zero-row phase transitions are observable and cannot release the fence", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "keepr-release-zero-row-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -274,7 +275,10 @@ test("zero-row phase transitions are observable and cannot release the fence", a
   const fenceResult = database.prepare(smoke[3]).get();
   assert.equal(fenceResult.changed_rows, 0);
   assert.equal(fenceResult.fence_released, 0);
-  assert.equal(productionReleaseQueries.activeReleaseIdentity(database).get().active_production_release_id, "release-47");
+  assert.equal(
+    productionReleaseQueries.activeReleaseIdentity(database).get().active_production_release_id,
+    "release-47",
+  );
 });
 
 test("a Bootstrap Mode dispatch relaxes only the data-dependent gates and keeps every durable write in the idempotency ledger", async (t) => {

@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-import { productionReleaseTransitionSql, productionReleaseLeaseAssignmentsSql, productionReleaseOutcomeTimestampSql } from "./production-release-state.mjs";
+import {
+  productionReleaseTransitionSql,
+  productionReleaseLeaseAssignmentsSql,
+  productionReleaseOutcomeTimestampSql,
+} from "./production-release-state.mjs";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { SPINE_REVISION_ID } from "../src/catalogue/shared/spine-revision.mjs";
@@ -124,7 +128,9 @@ export async function validateDispatchAndWriteSql(environment, directory) {
     { mode: 0o600 },
   );
   const activeFence =
-    replacement === null ? `active_ingestion_run_id=${q(fenceRun)}` : `active_production_release_id=${q(plan.release_id)}`;
+    replacement === null
+      ? `active_ingestion_run_id=${q(fenceRun)}`
+      : `active_production_release_id=${q(plan.release_id)}`;
   await writeFile(
     `${directory}/migration-started.sql`,
     `INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(migrationKey)},'production_release_migration_started',request_json,${q(stableJson({ release_id: plan.release_id, migration_started: true, dispatch_digest: environment.DISPATCH_DIGEST }))},201,'success',${productionReleaseOutcomeTimestampSql(migrationKey)} FROM administration_idempotency WHERE idempotency_key=${q(claimKey)} AND operation='claim_production_release' AND EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND ${activeFence}); SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(migrationKey)} AND operation='production_release_migration_started') THEN 1 ELSE 0 END AS migration_started;\n`,
@@ -175,7 +181,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   } else {
     await writeFile(
       `${directory}/deploying.sql`,
-      `${productionReleaseTransitionSql(plan.release_id, "deploying", {apiVersionId: `release-${plan.release_id}-api`, ingestionVersionId: `release-${plan.release_id}-ingestion`})} SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM production_releases WHERE id=${q(plan.release_id)} AND state='deploying' AND api_version_id=${q(`release-${plan.release_id}-api`)} AND ingestion_version_id=${q(`release-${plan.release_id}-ingestion`)}) THEN 1 ELSE 0 END AS transitioned;\n`,
+      `${productionReleaseTransitionSql(plan.release_id, "deploying", { apiVersionId: `release-${plan.release_id}-api`, ingestionVersionId: `release-${plan.release_id}-ingestion` })} SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM production_releases WHERE id=${q(plan.release_id)} AND state='deploying' AND api_version_id=${q(`release-${plan.release_id}-api`)} AND ingestion_version_id=${q(`release-${plan.release_id}-ingestion`)}) THEN 1 ELSE 0 END AS transitioned;\n`,
       { mode: 0o600 },
     );
   }
@@ -183,7 +189,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   if (!bootstrap)
     await writeFile(
       `${directory}/failed.sql`,
-      `${failedInsert} SELECT changes() AS inserted_rows; ${productionReleaseTransitionSql(plan.release_id, "failed", {rollForwardRequired: true}, `${migrationMarked} AND ${failureRecorded}`)} SELECT changes() AS transitioned_rows, CASE WHEN ${migrationMarked} AND ${failureRecorded} AND EXISTS (SELECT 1 FROM production_releases WHERE id=${q(plan.release_id)} AND state='failed' AND roll_forward_required=1 AND failure_code='production_release_failed') THEN 1 ELSE 0 END AS failed;\n`,
+      `${failedInsert} SELECT changes() AS inserted_rows; ${productionReleaseTransitionSql(plan.release_id, "failed", { rollForwardRequired: true }, `${migrationMarked} AND ${failureRecorded}`)} SELECT changes() AS transitioned_rows, CASE WHEN ${migrationMarked} AND ${failureRecorded} AND EXISTS (SELECT 1 FROM production_releases WHERE id=${q(plan.release_id)} AND state='failed' AND roll_forward_required=1 AND failure_code='production_release_failed') THEN 1 ELSE 0 END AS failed;\n`,
       { mode: 0o600 },
     );
   const cleanupAllowed = `(${failureRecorded} OR NOT ${migrationMarked})`;
@@ -261,8 +267,8 @@ export async function writeEvidenceSql(kind, releaseId, evidence, output, enviro
   }
   const sql =
     kind === "binding"
-      ? `${productionReleaseTransitionSql(id, "smoke_testing", {evidenceJson: serialized})} SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM production_releases WHERE id=${sqlQuote(id)} AND state='smoke_testing' AND binding_observation_json=${sqlQuote(serialized)}) THEN 1 ELSE 0 END AS transitioned;`
-      : `${productionReleaseTransitionSql(id, "succeeded", {evidenceJson: serialized})} SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM production_releases WHERE id=${sqlQuote(id)} AND state='succeeded' AND smoke_evidence_json=${sqlQuote(serialized)}) THEN 1 ELSE 0 END AS transitioned; UPDATE operation_state SET ${productionReleaseLeaseAssignmentsSql(null, null)} WHERE singleton=1 AND active_production_release_id=${sqlQuote(id)} AND EXISTS (SELECT 1 FROM production_releases WHERE id=${sqlQuote(id)} AND state='succeeded' AND smoke_evidence_json=${sqlQuote(serialized)}); SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND active_production_release_id IS NULL) THEN 1 ELSE 0 END AS fence_released;`;
+      ? `${productionReleaseTransitionSql(id, "smoke_testing", { evidenceJson: serialized })} SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM production_releases WHERE id=${sqlQuote(id)} AND state='smoke_testing' AND binding_observation_json=${sqlQuote(serialized)}) THEN 1 ELSE 0 END AS transitioned;`
+      : `${productionReleaseTransitionSql(id, "succeeded", { evidenceJson: serialized })} SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM production_releases WHERE id=${sqlQuote(id)} AND state='succeeded' AND smoke_evidence_json=${sqlQuote(serialized)}) THEN 1 ELSE 0 END AS transitioned; UPDATE operation_state SET ${productionReleaseLeaseAssignmentsSql(null, null)} WHERE singleton=1 AND active_production_release_id=${sqlQuote(id)} AND EXISTS (SELECT 1 FROM production_releases WHERE id=${sqlQuote(id)} AND state='succeeded' AND smoke_evidence_json=${sqlQuote(serialized)}); SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND active_production_release_id IS NULL) THEN 1 ELSE 0 END AS fence_released;`;
   await writeFile(output, `${sql}\n`, { mode: 0o600 });
 }
 

@@ -3002,7 +3002,10 @@ test("Card cursors continue on an available pinned revision and conflict only af
     .insertCatalogueExportsForCardCursorsContinueOnAvailablePinnedRevisionConflictOnly(testEnv.CATALOGUE_DB)
     .bind("e".repeat(64))
     .run();
-  await publishedCatalogueQueries.deleteRevisionCardQueryDocuments(testEnv.CATALOGUE_DB).run();
+  await testEnv.CATALOGUE_DB.batch([
+    publishedCatalogueQueries.archiveFixtureQueryRevision(testEnv.CATALOGUE_DB, "catrev_cursor_old"),
+    publishedCatalogueQueries.deleteRevisionCardQueryDocuments(testEnv.CATALOGUE_DB),
+  ]);
   await expect(catalogueExportQueries.readCatalogueRevisions(testEnv.CATALOGUE_DB).first()).resolves.toMatchObject({
     revision_retained: 1,
     export_retained: 1,

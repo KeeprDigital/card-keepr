@@ -82,7 +82,6 @@ export function activeReleaseIdentity(database) {
   return database.prepare("SELECT active_production_release_id FROM operation_state");
 }
 
-
 export function countIngestionRuns(database) {
   return database.prepare("SELECT COUNT(*) AS count FROM ingestion_runs");
 }
@@ -217,18 +216,21 @@ export function insertHandoffRecovery(database) {
 // Test the release boundary against the schema that follows the audit/alias
 // removal. Production migration ownership remains in migrations/0011.
 export function removeReleaseAuditAndLegacyLease(database) {
-  const triggers = database.prepare(`SELECT name FROM sqlite_schema WHERE type='trigger'
+  const triggers = database
+    .prepare(`SELECT name FROM sqlite_schema WHERE type='trigger'
     AND (sql LIKE '%active_release_%' OR name IN (
       'record_initial_ingestion_state','record_ingestion_transition',
       'production_release_requested_audit','production_release_state_audit',
       'production_release_transition_is_legal','production_release_no_rollback_after_migration',
       'production_release_lease_shape_guard_v2'
-    ))`).all();
+    ))`)
+    .all();
   for (const { name } of triggers) database.exec(`DROP TRIGGER "${name.replaceAll('"', '""')}"`);
   database.exec("DROP TABLE IF EXISTS ingestion_run_transitions; DROP TABLE IF EXISTS production_release_transitions");
   const columns = database.prepare("PRAGMA table_info(operation_state)").all();
   for (const name of ["active_release_id", "active_release_expires_at"]) {
-    if (columns.some((column) => column.name === name)) database.exec(`ALTER TABLE operation_state DROP COLUMN ${name}`);
+    if (columns.some((column) => column.name === name))
+      database.exec(`ALTER TABLE operation_state DROP COLUMN ${name}`);
   }
 }
 
