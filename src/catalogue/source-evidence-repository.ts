@@ -23,7 +23,7 @@ import {
   type EvidenceParentWorkflowParams,
 } from "./source-evidence-model";
 import { globalEmergencySourceRequestCeiling, type SourceAdapterRegistration } from "./adapters";
-import { curatedRevisionSetForRun, curatedRevisionPinStatementsForNewRun } from "./curated-revisions";
+import { curatedRevisionSetForRun, curatedRevisionPinStatementsForNewRun } from "./curated";
 import {
   classifyCollectionProgress,
   ownerRequestedPauseReason,

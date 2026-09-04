@@ -14,7 +14,7 @@ import {
   showCuratedRevision,
   stripCuratedRevisionEffects,
   supersedeCuratedRevision,
-} from "../../../src/catalogue/curated-revisions";
+} from "../../../src/catalogue/curated";
 
 declare global {
   interface __BaseEnv_Env {

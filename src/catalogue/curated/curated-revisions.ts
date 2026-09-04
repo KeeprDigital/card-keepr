@@ -14,10 +14,10 @@ import {
   canonicalProfileAttributes,
   exportedGameProfileSchema,
   type LegalityRule,
-} from "./shared";
+} from "../shared";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { assertCanonicalLegalityRule } from "./legality";
+import { assertCanonicalLegalityRule } from "../legality";
 
 const games = new Set(["one-piece", "fusion-world", "digimon", "gundam"]);
 const fieldEntityTypes = new Set([

@@ -48,7 +48,7 @@ import {
   showCuratedRevision,
   supersedeCuratedRevision,
   validateCuratedRevision,
-} from "../../../src/catalogue/curated-revisions";
+} from "../../../src/catalogue/curated";
 import {
   CatalogueExportDeletionProblem,
   catalogueExportDeletionStatus,

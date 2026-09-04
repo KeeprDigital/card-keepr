@@ -25,7 +25,7 @@ import {
   assertCuratedGamesUnblocked,
   curatedRevisionInspectionForRun,
   prepareCuratedRevisionRunStart,
-} from "./curated-revisions";
+} from "./curated";
 import {
   compareSourceFreshness,
   isCatalogueSourceCheck,
