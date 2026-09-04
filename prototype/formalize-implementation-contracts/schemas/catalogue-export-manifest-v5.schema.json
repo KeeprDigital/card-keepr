@@ -188,8 +188,7 @@
         "uncompressed_bytes",
         "content_sha256",
         "compressed_bytes",
-        "compressed_sha256",
-        "content_url"
+        "compressed_sha256"
       ],
       "properties": {
         "name": { "type": "string" },
@@ -201,11 +200,7 @@
         "uncompressed_bytes": { "type": "integer", "minimum": 0 },
         "content_sha256": { "$ref": "#/$defs/Sha256" },
         "compressed_bytes": { "type": "integer", "minimum": 0 },
-        "compressed_sha256": { "$ref": "#/$defs/Sha256" },
-        "content_url": {
-          "type": "string",
-          "pattern": "^/v1/catalogue-exports/[^/]+/components/[^/]+$"
-        }
+        "compressed_sha256": { "$ref": "#/$defs/Sha256" }
       }
     },
     "SupportedGamesComponent": {

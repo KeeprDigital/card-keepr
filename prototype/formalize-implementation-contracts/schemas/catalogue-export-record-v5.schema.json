@@ -488,8 +488,7 @@
         "media_type",
         "width",
         "height",
-        "content_sha256",
-        "content_url"
+        "content_sha256"
       ],
       "properties": {
         "type": { "const": "printing_image" },
@@ -499,11 +498,7 @@
         "media_type": { "type": "string", "pattern": "^image/" },
         "width": { "type": "integer", "minimum": 1 },
         "height": { "type": "integer", "minimum": 1 },
-        "content_sha256": { "$ref": "#/$defs/Sha256" },
-        "content_url": {
-          "type": "string",
-          "pattern": "^/v1/printing-images/[^/]+/content$"
-        }
+        "content_sha256": { "$ref": "#/$defs/Sha256" }
       }
     },
     "ProductRecord": {

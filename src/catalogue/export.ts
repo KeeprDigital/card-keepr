@@ -100,7 +100,6 @@ type ExportComponent = {
   content_sha256: string;
   compressed_bytes: number;
   compressed_sha256: string;
-  content_url: string;
 };
 
 export async function buildCatalogueExport(
@@ -184,7 +183,6 @@ export async function buildCatalogueExport(
       content_sha256: analysis.contentSha256,
       compressed_bytes: analysis.compressedBytes,
       compressed_sha256: analysis.compressedSha256,
-      content_url: `/v1/catalogue-exports/${catalogueRevisionId}/components/${name}`,
     });
     objects.push({
       key,
@@ -643,8 +641,6 @@ async function exportRecordFactories(
         width: image.width,
         height: image.height,
         content_sha256: image.content_sha256,
-        content_url:
-          `/v1/printing-images/${encodeURIComponent(image.id)}/content`,
       }),
     ),
     products: () => products,

@@ -209,9 +209,6 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     ],
     cliEnvironment,
   );
-  if (approved.code !== 0) {
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
-  }
   assert.equal(
     approved.code,
     0,
