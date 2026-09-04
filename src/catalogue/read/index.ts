@@ -42,3 +42,5 @@ export {
   sourceFreshnessKey,
   sourceFreshnessStorageScope,
 } from "./source-freshness";
+
+export { catalogueRoutes } from "./routes";
