@@ -1,7 +1,6 @@
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
-import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 import { injectFixturePublication } from "./fixture-plan-injection";
 import { administrationRequest } from "./runtime-helpers";
 
@@ -14,6 +13,17 @@ beforeEach(async () => {
 // Storage persists across the tests in this file, so the single test that
 // publishes a revision also carries every assertion that needs an empty
 // catalogue first.
+test("a Bootstrap Mode Production Release names the Spine Revision", async () => {
+  const intent = {
+    ...(await bootstrapIntent("bootstrap-wrong")),
+    expected_current_revision_id: "catrev_other",
+    prepare: true,
+  };
+  const preview = await administrationRequest("/v1/production-releases", "POST", intent);
+  expect(preview.status).toBe(409);
+  await expect(preview.json()).resolves.toMatchObject({ code: "release_preflight_failed" });
+});
+
 test("Bootstrap Mode is reported and accepted only while the catalogue is provably empty, and switches off once a revision is published", async () => {
   const fresh = await administrationRequest("/v1/status", "GET");
   expect(fresh.status).toBe(200);
@@ -26,7 +36,19 @@ test("Bootstrap Mode is reported and accepted only while the catalogue is provab
     smoke_targets: null,
   });
 
-  const prepared = await administrationRequest("/v1/production-releases", "POST", await bootstrapPlan("bootstrap-1"));
+  const intent = await bootstrapIntent("bootstrap-1");
+  const preview = await administrationRequest("/v1/production-releases", "POST", { ...intent, prepare: true });
+  expect(preview.status).toBe(200);
+  const resolved = (await preview.json()) as { confirmation: string };
+  expect(resolved).toMatchObject({
+    contract: "card-keepr-production-release-confirmation@1",
+    release_id: "bootstrap-1",
+    confirmation: expect.any(String),
+  });
+  const prepared = await administrationRequest("/v1/production-releases", "POST", {
+    ...intent,
+    confirmation: resolved.confirmation,
+  });
   expect(prepared.status).toBe(201);
   await expect(prepared.json()).resolves.toMatchObject({
     contract: "card-keepr-production-release-request@1",
@@ -46,33 +68,15 @@ test("Bootstrap Mode is reported and accepted only while the catalogue is provab
   expect(populatedDocument.safe_state.current_revision_id).toBe(published);
   expect(populatedDocument.release_preflight.bootstrap).toBe(false);
 
-  const late = await administrationRequest("/v1/production-releases", "POST", await bootstrapPlan("bootstrap-late"));
+  const late = await administrationRequest("/v1/production-releases", "POST", {
+    ...(await bootstrapIntent("bootstrap-late")),
+    prepare: true,
+  });
   expect(late.status).toBe(409);
-  await expect(late.json()).resolves.toMatchObject({ code: "release_preflight_failed" });
+  await expect(late.json()).resolves.toMatchObject({ code: "bootstrap_not_applicable" });
 });
 
-test("a Bootstrap Mode Production Release names the Spine Revision", async () => {
-  const plan = { ...(await bootstrapPlan("bootstrap-wrong")), expected_current_revision_id: "catrev_other" };
-  const prepared = await administrationRequest("/v1/production-releases", "POST", plan);
-  expect(prepared.status).toBe(422);
-  await expect(prepared.json()).resolves.toMatchObject({ code: "invalid_production_release_request" });
-});
-
-async function bootstrapPlan(releaseId: string): Promise<Record<string, unknown>> {
-  const target = {
-    cloudflare_account_id: testEnv.CLOUDFLARE_ACCOUNT_ID,
-    worker_scripts: ["card-keepr-api", "card-keepr-ingestion"],
-    d1_databases: [
-      { name: "card-keepr-catalogue", id: testEnv.CATALOGUE_D1_DATABASE_ID },
-      { name: "card-keepr-disposable-verification", id: testEnv.DISPOSABLE_D1_DATABASE_ID },
-    ],
-    r2_buckets: [
-      "card-keepr-evidence",
-      "card-keepr-printing-images",
-      "card-keepr-catalogue-exports",
-      "card-keepr-backups",
-    ],
-  };
+async function bootstrapIntent(releaseId: string): Promise<Record<string, unknown>> {
   return {
     release_id: releaseId,
     idempotency_key: `${releaseId}-key`,
@@ -80,13 +84,7 @@ async function bootstrapPlan(releaseId: string): Promise<Record<string, unknown>
     expected_head_sha: "a".repeat(40),
     expected_actor: "keepr-release[bot]",
     expected_migration_level: await schemaMigrationLevel(),
-    production_target: target,
-    production_target_digest: await sha256Text(canonicalJson(target)),
     bootstrap: true,
-    recovery_bookmark: null,
-    recovery_backup_attempt_id: null,
-    smoke_targets: null,
-    retained_revision_evidence: null,
     replacement_handoff: null,
   };
 }

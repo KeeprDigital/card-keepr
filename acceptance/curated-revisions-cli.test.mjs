@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
+import { createServer } from "./helpers/cli-http.mjs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -22,19 +22,31 @@ test("CLI validates a proposal file against an explicit Catalogue Revision", asy
   const file = join(directory, "proposal.json");
   await writeFile(file, JSON.stringify(proposal));
 
-  const result = await runCli([
-    "curated-revision", "validate", "--proposal", file,
-    "--expected-current-revision", "catrev_123",
-    "--secrets-stdin-fd", "3", "--json",
-  ], server.environment, { administration_key: "cli-admin-key" });
+  const result = await runCli(
+    [
+      "curated-revision",
+      "validate",
+      "--proposal",
+      file,
+      "--expected-current-revision",
+      "catrev_123",
+      "--secrets-stdin-fd",
+      "3",
+      "--json",
+    ],
+    server.environment,
+    { administration_key: "cli-admin-key" },
+  );
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), expected);
-  assert.deepEqual(observed, [{
-    method: "POST",
-    path: "/admin/v1/curated-revisions/validate",
-    authorization: "Bearer cli-admin-key",
-    body: { proposal, catalogue_revision_id: "catrev_123" },
-  }]);
+  assert.deepEqual(observed, [
+    {
+      method: "POST",
+      path: "/admin/v1/curated-revisions/validate",
+      authorization: "Bearer cli-admin-key",
+      body: { proposal, catalogue_revision_id: "catrev_123" },
+    },
+  ]);
 });
 
 test("CLI creates a production Curated Revision with all mutation bindings", async (t) => {
@@ -64,13 +76,30 @@ test("CLI creates a production Curated Revision with all mutation bindings", asy
     content_digest: "b".repeat(64),
     idempotency_key: "create-123",
   });
-  const result = await runCli([
-    "curated-revision", "create", "--proposal", file,
-    "--proposal-digest", "b".repeat(64),
-    "--expected-current-revision", "catrev_123",
-    "--idempotency-key", "create-123", "--environment", "production",
-    "--confirm", confirmation, "--secrets-stdin-fd", "3", "--yes", "--json",
-  ], server.environment, { administration_key: "cli-admin-key" });
+  const result = await runCli(
+    [
+      "curated-revision",
+      "create",
+      "--proposal",
+      file,
+      "--proposal-digest",
+      "b".repeat(64),
+      "--expected-current-revision",
+      "catrev_123",
+      "--idempotency-key",
+      "create-123",
+      "--environment",
+      "production",
+      "--confirm",
+      confirmation,
+      "--secrets-stdin-fd",
+      "3",
+      "--yes",
+      "--json",
+    ],
+    server.environment,
+    { administration_key: "cli-admin-key" },
+  );
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), expected);
   assert.deepEqual(observed[0], {
@@ -94,14 +123,20 @@ test("CLI creates a production Curated Revision with all mutation bindings", asy
 
 test("CLI list/show have stable query paths and validation failures exit 8", async (t) => {
   const observed = [];
-  const server = await jsonServer(t, observed, {
-    code: "curated_revision_schema_invalid",
-    detail: "invalid proposal",
-  }, 422);
-  const result = await runCli([
-    "curated-revision", "show", "--revision-id", "currev_123",
-    "--secrets-stdin-fd", "3", "--json",
-  ], server.environment, { administration_key: "cli-admin-key" });
+  const server = await jsonServer(
+    t,
+    observed,
+    {
+      code: "curated_revision_schema_invalid",
+      detail: "invalid proposal",
+    },
+    422,
+  );
+  const result = await runCli(
+    ["curated-revision", "show", "--revision-id", "currev_123", "--secrets-stdin-fd", "3", "--json"],
+    server.environment,
+    { administration_key: "cli-admin-key" },
+  );
   assert.equal(result.code, 8);
   assert.deepEqual(JSON.parse(result.stdout), {
     contract: "card-keepr-cli-problem@1",
@@ -114,22 +149,21 @@ test("CLI list/show have stable query paths and validation failures exit 8", asy
 test("CLI human list renders the Supported Game from immutable content", async (t) => {
   const observed = [];
   const server = await jsonServer(t, observed, {
-    items: [{
-      id: "currev_listed",
-      content: { game: "digimon" },
-      status: "active",
-      content_digest: "a".repeat(64),
-    }],
+    items: [
+      {
+        id: "currev_listed",
+        content: { game: "digimon" },
+        status: "active",
+        content_digest: "a".repeat(64),
+      },
+    ],
     next_cursor: null,
   });
-  const result = await runCli([
-    "curated-revision", "list", "--secrets-stdin-fd", "3",
-  ], server.environment, { administration_key: "cli-admin-key" });
+  const result = await runCli(["curated-revision", "list", "--secrets-stdin-fd", "3"], server.environment, {
+    administration_key: "cli-admin-key",
+  });
   assert.equal(result.code, 0, result.stderr);
-  assert.equal(
-    result.stdout,
-    `currev_listed digimon active ${"a".repeat(64)}\n`,
-  );
+  assert.equal(result.stdout, `currev_listed digimon active ${"a".repeat(64)}\n`);
 });
 
 test("CLI reaffirmation binds the inspected source conflict before mutation", async (t) => {
@@ -158,9 +192,7 @@ test("CLI reaffirmation binds the inspected source conflict before mutation", as
     code: "curated_revision_reaffirmed",
   };
   const server = await jsonServer(t, observed, (request) =>
-    request.method === "GET"
-      ? { revision, events: [] }
-      : resultDocument
+    request.method === "GET" ? { revision, events: [] } : resultDocument,
   );
   const confirmation = JSON.stringify({
     production_target: productionTarget,
@@ -175,32 +207,50 @@ test("CLI reaffirmation binds the inspected source conflict before mutation", as
     target: revision.content.target,
     conflict_id: revision.pending_conflict.id,
   });
-  const result = await runCli([
-    "curated-revision", "reaffirm",
-    "--revision-id", revision.id,
-    "--event-version", "2",
-    "--conflict-digest", revision.pending_conflict.digest,
-    "--rationale", "The exception remains necessary after source review.",
-    "--expected-current-revision", "catrev_123",
-    "--idempotency-key", "reaffirm-123",
-    "--environment", "production",
-    "--confirm", confirmation,
-    "--secrets-stdin-fd", "3",
-    "--yes", "--json",
-  ], server.environment, { administration_key: "cli-admin-key" });
+  const result = await runCli(
+    [
+      "curated-revision",
+      "reaffirm",
+      "--revision-id",
+      revision.id,
+      "--event-version",
+      "2",
+      "--conflict-digest",
+      revision.pending_conflict.digest,
+      "--rationale",
+      "The exception remains necessary after source review.",
+      "--expected-current-revision",
+      "catrev_123",
+      "--idempotency-key",
+      "reaffirm-123",
+      "--environment",
+      "production",
+      "--confirm",
+      confirmation,
+      "--secrets-stdin-fd",
+      "3",
+      "--yes",
+      "--json",
+    ],
+    server.environment,
+    { administration_key: "cli-admin-key" },
+  );
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), resultDocument);
-  assert.deepEqual(observed.map(({ method, path }) => ({ method, path })), [
-    { method: "GET", path: "/v1/status" },
-    {
-      method: "GET",
-      path: "/admin/v1/curated-revisions/currev_reaffirm",
-    },
-    {
-      method: "POST",
-      path: "/admin/v1/curated-revisions/currev_reaffirm/reaffirm",
-    },
-  ]);
+  assert.deepEqual(
+    observed.map(({ method, path }) => ({ method, path })),
+    [
+      { method: "GET", path: "/v1/status" },
+      {
+        method: "GET",
+        path: "/admin/v1/curated-revisions/currev_reaffirm",
+      },
+      {
+        method: "POST",
+        path: "/admin/v1/curated-revisions/currev_reaffirm/reaffirm",
+      },
+    ],
+  );
   assert.deepEqual(observed[2].body, {
     environment: "production",
     expected_current_revision_id: "catrev_123",
@@ -230,9 +280,7 @@ test("CLI retirement resolves the exact revision and production identities befor
     code: "curated_revision_retired",
   };
   const server = await jsonServer(t, observed, (request) =>
-    request.method === "GET"
-      ? { revision, events: [] }
-      : resultDocument
+    request.method === "GET" ? { revision, events: [] } : resultDocument,
   );
   const confirmation = JSON.stringify({
     production_target: productionTarget,
@@ -247,25 +295,42 @@ test("CLI retirement resolves the exact revision and production identities befor
     target: revision.content.target,
     conflict_id: null,
   });
-  const result = await runCli([
-    "curated-revision", "retire",
-    "--revision-id", revision.id,
-    "--event-version", "1",
-    "--rationale", "No longer required",
-    "--expected-current-revision", "catrev_123",
-    "--idempotency-key", "retire-123",
-    "--environment", "production",
-    "--confirm", confirmation,
-    "--secrets-stdin-fd", "3",
-    "--yes", "--json",
-  ], server.environment, { administration_key: "cli-admin-key" });
+  const result = await runCli(
+    [
+      "curated-revision",
+      "retire",
+      "--revision-id",
+      revision.id,
+      "--event-version",
+      "1",
+      "--rationale",
+      "No longer required",
+      "--expected-current-revision",
+      "catrev_123",
+      "--idempotency-key",
+      "retire-123",
+      "--environment",
+      "production",
+      "--confirm",
+      confirmation,
+      "--secrets-stdin-fd",
+      "3",
+      "--yes",
+      "--json",
+    ],
+    server.environment,
+    { administration_key: "cli-admin-key" },
+  );
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), resultDocument);
-  assert.deepEqual(observed.map(({ method, path }) => ({ method, path })), [
-    { method: "GET", path: "/v1/status" },
-    { method: "GET", path: "/admin/v1/curated-revisions/currev_123" },
-    { method: "POST", path: "/admin/v1/curated-revisions/currev_123/retire" },
-  ]);
+  assert.deepEqual(
+    observed.map(({ method, path }) => ({ method, path })),
+    [
+      { method: "GET", path: "/v1/status" },
+      { method: "GET", path: "/admin/v1/curated-revisions/currev_123" },
+      { method: "POST", path: "/admin/v1/curated-revisions/currev_123/retire" },
+    ],
+  );
   assert.equal(observed[2].authorization, "Bearer cli-admin-key");
   assert.deepEqual(observed[2].body, {
     environment: "production",
@@ -300,9 +365,7 @@ test("CLI supersession sends the required explicit null conflict binding", async
     code: "curated_revision_superseded",
   };
   const server = await jsonServer(t, observed, (request) =>
-    request.method === "GET"
-      ? { revision, events: [] }
-      : resultDocument
+    request.method === "GET" ? { revision, events: [] } : resultDocument,
   );
   const directory = await mkdtemp(join(tmpdir(), "keepr-curated-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -324,20 +387,36 @@ test("CLI supersession sends the required explicit null conflict binding", async
     target: revision.content.target,
     conflict_id: null,
   });
-  const result = await runCli([
-    "curated-revision", "supersede",
-    "--revision-id", revision.id,
-    "--event-version", "1",
-    "--proposal", file,
-    "--proposal-digest", "b".repeat(64),
-    "--rationale", "Replace the exception",
-    "--expected-current-revision", "catrev_123",
-    "--idempotency-key", "supersede-123",
-    "--environment", "production",
-    "--confirm", confirmation,
-    "--secrets-stdin-fd", "3",
-    "--yes", "--json",
-  ], server.environment, { administration_key: "cli-admin-key" });
+  const result = await runCli(
+    [
+      "curated-revision",
+      "supersede",
+      "--revision-id",
+      revision.id,
+      "--event-version",
+      "1",
+      "--proposal",
+      file,
+      "--proposal-digest",
+      "b".repeat(64),
+      "--rationale",
+      "Replace the exception",
+      "--expected-current-revision",
+      "catrev_123",
+      "--idempotency-key",
+      "supersede-123",
+      "--environment",
+      "production",
+      "--confirm",
+      confirmation,
+      "--secrets-stdin-fd",
+      "3",
+      "--yes",
+      "--json",
+    ],
+    server.environment,
+    { administration_key: "cli-admin-key" },
+  );
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(observed[2].body, {
     environment: "production",
@@ -355,7 +434,9 @@ async function jsonServer(t, observed, document, status = 200) {
   const server = createServer((request, response) => {
     let body = "";
     request.setEncoding("utf8");
-    request.on("data", (chunk) => { body += chunk; });
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
     request.on("end", () => {
       observed.push({
         method: request.method,
@@ -366,13 +447,17 @@ async function jsonServer(t, observed, document, status = 200) {
       const statusRequest = request.url === "/v1/status";
       response.statusCode = statusRequest ? 200 : status;
       response.setHeader("content-type", "application/json");
-      const responseDocument = typeof document === "function"
-        ? document(request)
-        : document;
-      response.end(JSON.stringify(statusRequest ? {
-        safe_state: { current_revision_id: "catrev_123" },
-        production_target: productionTarget,
-      } : responseDocument));
+      const responseDocument = typeof document === "function" ? document(request) : document;
+      response.end(
+        JSON.stringify(
+          statusRequest
+            ? {
+                safe_state: { current_revision_id: "catrev_123" },
+                production_target: productionTarget,
+              }
+            : responseDocument,
+        ),
+      );
     });
   });
   await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));

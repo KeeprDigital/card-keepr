@@ -1,4 +1,5 @@
 import { restoreFixturePublicationHealthStatement } from "../helpers/query-helpers/runtime-fixtures";
+import { administrationPresentation } from "../../src/http/administration-presentation.mjs";
 import {
   collectFixtureEvidence,
   injectFixtureEvidencePlan,
@@ -61,7 +62,12 @@ export default {
           env.OFFICIAL_SOURCE_TRANSPORT,
           String(document.id),
         );
-        return Response.json(collected, { status: 201 });
+        return Response.json(
+          request.headers.get("accept") === "application/vnd.card-keepr.cli+json"
+            ? administrationPresentation(collected, 201)
+            : collected,
+          { status: 201, headers: { vary: "Accept" } },
+        );
       }
     }
     const productionResponse = await ingestionWorker.fetch(request, env);

@@ -1,3 +1,4 @@
+import { administrationPresentation } from "../../../src/http/administration-presentation.mjs";
 import { backupRecoveryRoutes, enforceRecoveryRestoreGuard } from "../../../src/catalogue/backup-recovery";
 import { curatedRoutes } from "../../../src/catalogue/curated";
 import { exportRoutes } from "../../../src/catalogue/export";
@@ -102,7 +103,26 @@ async function handleIngestionRequest(
       observedAt,
       publicationBackupWaiter: publicationBackupWaiter(env),
     });
-    if (response !== null) return response;
+    if (response !== null) {
+      const vary = response.headers.get("vary");
+      if (vary !== "*" && !vary?.split(",").some((value) => value.trim().toLowerCase() === "accept"))
+        response.headers.set("vary", vary ? `${vary}, Accept` : "Accept");
+      if (
+        request.headers.get("accept") === "application/vnd.card-keepr.cli+json" &&
+        response.ok &&
+        response.headers.get("content-type")?.includes("application/json")
+      ) {
+        const document = await response.json<Record<string, unknown>>();
+        const headers = new Headers(response.headers);
+        headers.delete("etag");
+        headers.delete("content-length");
+        return Response.json(administrationPresentation(document, response.status), {
+          status: response.status,
+          headers,
+        });
+      }
+      return response;
+    }
 
     return problemResponse({
       requestId,

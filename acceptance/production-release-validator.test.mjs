@@ -53,10 +53,20 @@ test("workflow validator accepts only the exact durably prepared plan", async (t
     validateDispatchAndWriteSql({ ...environment, EXPECTED_HEAD_SHA: "b".repeat(40) }, join(directory, "altered")),
     /prepared_plan_mismatch/u,
   );
-  await assert.rejects(
-    validateDispatchAndWriteSql({ ...environment, DISPATCH_DIGEST: "f".repeat(64) }, join(directory, "direct-ui")),
-    /dispatch_digest_mismatch/u,
-  );
+  // The workflow binds the server-issued bytes and digest to immutable D1
+  // preparation evidence before acquiring its lease; it does not hash locally.
+  for (const [name, changed] of [
+    ["direct-ui", { DISPATCH_DIGEST: "f".repeat(64) }],
+    ["changed-bytes", { PREPARED_PLAN_JSON: JSON.stringify(JSON.parse(environment.PREPARED_PLAN_JSON), null, 2) }],
+  ]) {
+    const altered = join(directory, name);
+    await validateDispatchAndWriteSql({ ...environment, ...changed }, altered);
+    const authority = liveGateDatabase(environment);
+    t.after(() => authority.close());
+    assert.equal(authority.prepare(await readFile(join(altered, "live-preflight.sql"), "utf8")).get().ready, 0);
+    authority.exec(await readFile(join(altered, "claim.sql"), "utf8"));
+    assert.equal(productionReleaseQueries.countDispatchClaims(authority).get().count, 0);
+  }
 });
 
 test("replacement handoff exports and seeds the durable release boundary", async (t) => {
@@ -506,6 +516,11 @@ function seedPreparedRequest(database, environment) {
     "prepare_production_release",
     environment.PREPARED_PLAN_JSON,
     stableJson({
+      prepared_plan_json: environment.PREPARED_PLAN_JSON,
+      dispatch_inputs: {
+        prepared_plan_json: environment.PREPARED_PLAN_JSON,
+        dispatch_digest: environment.DISPATCH_DIGEST,
+      },
       contract: "card-keepr-production-release-request@1",
       release_id: environment.RELEASE_ID,
       state: "requested",
@@ -729,6 +744,11 @@ function seedOriginalReplacementRelease(database, environment) {
       plan.idempotency_key,
       "prepare_production_release",
       stableJson({
+        prepared_plan_json: environment.PREPARED_PLAN_JSON,
+        dispatch_inputs: {
+          prepared_plan_json: environment.PREPARED_PLAN_JSON,
+          dispatch_digest: environment.DISPATCH_DIGEST,
+        },
         contract: "card-keepr-production-release-request@1",
         release_id: plan.release_id,
         state: "requested",
@@ -803,6 +823,11 @@ function liveGateDatabase(environment) {
     "prepare_production_release",
     plan,
     stableJson({
+      prepared_plan_json: environment.PREPARED_PLAN_JSON,
+      dispatch_inputs: {
+        prepared_plan_json: environment.PREPARED_PLAN_JSON,
+        dispatch_digest: environment.DISPATCH_DIGEST,
+      },
       contract: "card-keepr-production-release-request@1",
       release_id: environment.RELEASE_ID,
       state: "requested",
@@ -829,6 +854,11 @@ function seedRealReleaseBoundary(database, environment, migrationStartedSql) {
     "prepare_production_release",
     environment.PREPARED_PLAN_JSON,
     stableJson({
+      prepared_plan_json: environment.PREPARED_PLAN_JSON,
+      dispatch_inputs: {
+        prepared_plan_json: environment.PREPARED_PLAN_JSON,
+        dispatch_digest: environment.DISPATCH_DIGEST,
+      },
       contract: "card-keepr-production-release-request@1",
       release_id: environment.RELEASE_ID,
       state: "requested",

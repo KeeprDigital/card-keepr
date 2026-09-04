@@ -35,37 +35,55 @@ test("the release runner posts a generated SQL file to the D1 query endpoint and
     { configPath: join(directory, "wrangler.json"), sqlPath: join(directory, "claim.sql") },
     fetchImpl,
   );
-  assert.deepEqual(requests, [{
-    url: `https://api.cloudflare.com/client/v4/accounts/${account}/d1/database/${databaseId}/query`,
-    method: "POST",
-    headers: { authorization: "Bearer test-cloudflare-token-0000000000", "content-type": "application/json" },
-    body: { sql: "UPDATE operation_state SET active_ingestion_run_id='release' WHERE singleton=1;\nSELECT changes() AS changed_rows, 1 AS claimed;\n" },
-  }]);
-  assert.deepEqual(result.map((entry) => entry.results), [[], [{ changed_rows: 1, claimed: 1 }]]);
+  assert.deepEqual(requests, [
+    {
+      url: `https://api.cloudflare.com/client/v4/accounts/${account}/d1/database/${databaseId}/query`,
+      method: "POST",
+      headers: { authorization: "Bearer test-cloudflare-token-0000000000", "content-type": "application/json" },
+      body: {
+        sql: "UPDATE operation_state SET active_ingestion_run_id='release' WHERE singleton=1;\nSELECT changes() AS changed_rows, 1 AS claimed;\n",
+      },
+    },
+  ]);
+  assert.deepEqual(
+    result.map((entry) => entry.results),
+    [[], [{ changed_rows: 1, claimed: 1 }]],
+  );
 });
 
 test("the release runner fails closed on an API error, a failed statement, or a config without the catalogue binding", async (t) => {
   const directory = await releaseDirectory(t);
   const paths = { configPath: join(directory, "wrangler.json"), sqlPath: join(directory, "claim.sql") };
   await assert.rejects(
-    executeSqlFile(environment(), paths, async () => jsonResponse(400, { success: false, errors: [{ code: 7500, message: "no such table: missing" }], result: [] })),
+    executeSqlFile(environment(), paths, async () =>
+      jsonResponse(400, { success: false, errors: [{ code: 7500, message: "no such table: missing" }], result: [] }),
+    ),
     /d1_query_failed:7500:no such table: missing/u,
   );
   await assert.rejects(
-    executeSqlFile(environment(), paths, async () => jsonResponse(200, { success: true, errors: [], result: [{ results: [], success: false, meta: {} }] })),
+    executeSqlFile(environment(), paths, async () =>
+      jsonResponse(200, { success: true, errors: [], result: [{ results: [], success: false, meta: {} }] }),
+    ),
     /d1_statement_failed/u,
   );
   await assert.rejects(
     executeSqlFile(environment(), paths, async () => new Response("<html>", { status: 502 })),
     /d1_malformed_response/u,
   );
-  await writeFile(join(directory, "other.json"), JSON.stringify({ d1_databases: [{ binding: "OTHER_DB", database_id: databaseId }] }));
+  await writeFile(
+    join(directory, "other.json"),
+    JSON.stringify({ d1_databases: [{ binding: "OTHER_DB", database_id: databaseId }] }),
+  );
   await assert.rejects(
-    executeSqlFile(environment(), { ...paths, configPath: join(directory, "other.json") }, async () => jsonResponse(200, { success: true, result: [] })),
+    executeSqlFile(environment(), { ...paths, configPath: join(directory, "other.json") }, async () =>
+      jsonResponse(200, { success: true, result: [] }),
+    ),
     /missing_catalogue_database_binding/u,
   );
   await assert.rejects(
-    executeSqlFile({ ...environment(), CLOUDFLARE_API_TOKEN: "" }, paths, async () => jsonResponse(200, { success: true, result: [] })),
+    executeSqlFile({ ...environment(), CLOUDFLARE_API_TOKEN: "" }, paths, async () =>
+      jsonResponse(200, { success: true, result: [] }),
+    ),
     /missing_cloudflare_api_token/u,
   );
 });
@@ -75,23 +93,36 @@ test("the release runner command prints the statement results as JSON on stdout 
   const calls = [];
   const server = createServer((request, response) => {
     let body = "";
-    request.on("data", (chunk) => { body += chunk; });
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
     request.on("end", () => {
       calls.push({ path: request.url, body: JSON.parse(body) });
       response.setHeader("content-type", "application/json");
       if (calls.length === 1) {
-        response.end(JSON.stringify({ success: true, errors: [], result: [{ results: [{ ready: 1 }], success: true, meta: {} }] }));
+        response.end(
+          JSON.stringify({ success: true, errors: [], result: [{ results: [{ ready: 1 }], success: true, meta: {} }] }),
+        );
         return;
       }
       response.statusCode = 401;
-      response.end(JSON.stringify({ success: false, errors: [{ code: 10000, message: "Authentication error" }], result: null }));
+      response.end(
+        JSON.stringify({ success: false, errors: [{ code: 10000, message: "Authentication error" }], result: null }),
+      );
     });
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const apiUrl = `http://127.0.0.1:${server.address().port}/client/v4`;
   const env = { ...process.env, ...environment(), CLOUDFLARE_API_URL: apiUrl };
-  const arguments_ = ["scripts/production-release-d1.mjs", "execute", "--config", join(directory, "wrangler.json"), "--file", join(directory, "claim.sql")];
+  const arguments_ = [
+    "scripts/production-release-d1.mjs",
+    "execute",
+    "--config",
+    join(directory, "wrangler.json"),
+    "--file",
+    join(directory, "claim.sql"),
+  ];
 
   const ok = await run(process.execPath, arguments_, { env });
   assert.equal(ok.stderr, "");
@@ -105,11 +136,18 @@ test("the release runner command prints the statement results as JSON on stdout 
     return true;
   });
 
-  await assert.rejects(run(process.execPath, ["scripts/production-release-d1.mjs", "execute", "--config", join(directory, "wrangler.json")], { env }), (error) => {
-    assert.equal(error.code, 2);
-    assert.match(error.stderr, /usage/u);
-    return true;
-  });
+  await assert.rejects(
+    run(
+      process.execPath,
+      ["scripts/production-release-d1.mjs", "execute", "--config", join(directory, "wrangler.json")],
+      { env },
+    ),
+    (error) => {
+      assert.equal(error.code, 2);
+      assert.match(error.stderr, /usage/u);
+      return true;
+    },
+  );
 });
 
 function environment() {
@@ -123,13 +161,32 @@ function jsonResponse(status, document) {
 async function releaseDirectory(t) {
   const directory = await mkdtemp(join(tmpdir(), "keepr-release-d1-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  await writeFile(join(directory, "wrangler.json"), JSON.stringify({
-    name: "card-keepr-ingestion",
-    d1_databases: [{ binding: "CATALOGUE_DB", database_name: "card-keepr-catalogue", database_id: databaseId }],
-  }));
+  await writeFile(
+    join(directory, "wrangler.json"),
+    JSON.stringify({
+      name: "card-keepr-ingestion",
+      d1_databases: [{ binding: "CATALOGUE_DB", database_name: "card-keepr-catalogue", database_id: databaseId }],
+    }),
+  );
   await writeFile(
     join(directory, "claim.sql"),
     "UPDATE operation_state SET active_ingestion_run_id='release' WHERE singleton=1;\nSELECT changes() AS changed_rows, 1 AS claimed;\n",
   );
   return directory;
 }
+
+test("release D1 binding discovery accepts JSONC comments and trailing commas", async (t) => {
+  const directory = await releaseDirectory(t);
+  const configPath = join(directory, "wrangler.jsonc");
+  await writeFile(
+    configPath,
+    `{// production target\n"docs":"https://example.invalid/*not-a-comment*/",\n"d1_databases":[{"binding":"CATALOGUE_DB","database_id":"${databaseId}",},],}`,
+  );
+  let called = false;
+  await executeSqlFile(environment(), { configPath, sqlPath: join(directory, "claim.sql") }, async (url) => {
+    called = true;
+    assert.equal(String(url).includes(databaseId), true);
+    return jsonResponse(200, { success: true, result: [] });
+  });
+  assert.equal(called, true);
+});
