@@ -22,11 +22,8 @@ const root = resolve(import.meta.dirname, "../..");
 const PORT_RANGE_START = 20_000;
 const PORT_RANGE_END = 32_768;
 const PORT_PARTITION_SIZE = 64;
-const PORT_PARTITIONS = Math.floor(
-  (PORT_RANGE_END - PORT_RANGE_START) / PORT_PARTITION_SIZE,
-);
-const portPartitionStart = PORT_RANGE_START +
-  (process.pid % PORT_PARTITIONS) * PORT_PARTITION_SIZE;
+const PORT_PARTITIONS = Math.floor((PORT_RANGE_END - PORT_RANGE_START) / PORT_PARTITION_SIZE);
+const portPartitionStart = PORT_RANGE_START + (process.pid % PORT_PARTITIONS) * PORT_PARTITION_SIZE;
 const allocatedPorts = new Set();
 
 export function portPartition() {
@@ -46,9 +43,7 @@ export async function allocatePort() {
     }
   }
   const { start, end } = portPartition();
-  throw new Error(
-    `No free port remains in this process's partition ${start}-${end}.`,
-  );
+  throw new Error(`No free port remains in this process's partition ${start}-${end}.`);
 }
 
 function portFree(port) {
@@ -102,14 +97,9 @@ export async function applyMigrations(statePath, config) {
 async function templateKey(config) {
   const configPath = resolve(root, config);
   const parsed = JSON.parse(await readFile(configPath, "utf8"));
-  const database = parsed.d1_databases?.find(
-    (entry) => entry.binding === "CATALOGUE_DB",
-  );
+  const database = parsed.d1_databases?.find((entry) => entry.binding === "CATALOGUE_DB");
   assert.ok(database, `${config} does not bind CATALOGUE_DB`);
-  const migrationsDir = resolve(
-    dirname(configPath),
-    database.migrations_dir ?? "migrations",
-  );
+  const migrationsDir = resolve(dirname(configPath), database.migrations_dir ?? "migrations");
   const hash = createHash("sha256");
   hash.update(`${database.database_id}\n${database.database_name}\n`);
   for (const name of (await readdir(migrationsDir)).sort()) {
@@ -163,11 +153,7 @@ async function ensureMigratedTemplate(key, config) {
 async function runMigrations(statePath, config) {
   const result = await runProcess(
     resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "d1", "migrations", "apply", "CATALOGUE_DB", "--local",
-      "--config", config,
-      "--persist-to", statePath,
-    ],
+    ["d1", "migrations", "apply", "CATALOGUE_DB", "--local", "--config", config, "--persist-to", statePath],
     { ...processEnvironment(statePath), CI: "1" },
   );
   assert.equal(result.code, 0, result.stderr || result.stdout);
@@ -205,58 +191,65 @@ export async function startWorker({
   for (let attempt = 1; attempt <= BOOT_ATTEMPTS; attempt += 1) {
     const worker = await spawnWorker();
     if (!(await portCollision(worker))) return worker;
-    outputs.push(`attempt ${attempt} (port ${worker.port}, inspector ${
-      worker.inspectorPort
-    }):\n${worker.getOutput()}`);
+    outputs.push(`attempt ${attempt} (port ${worker.port}, inspector ${worker.inspectorPort}):\n${worker.getOutput()}`);
   }
-  throw new Error(
-    `${config} could not bind a local port in ${BOOT_ATTEMPTS} attempts\n` +
-      outputs.join("\n"),
-  );
+  throw new Error(`${config} could not bind a local port in ${BOOT_ATTEMPTS} attempts\n` + outputs.join("\n"));
 
   async function spawnWorker() {
-  const boundPort = port ?? await allocatePort();
-  const boundInspectorPort = inspectorPort ?? await allocatePort();
-  const boundRegistryPath = registryPath ??
-    join(dirname(statePath), "wrangler-registry");
-  // The checked-in PUBLIC_BASE_URL mounts each Worker under its production
-  // path; the emulated Worker is addressed at its root, so the base is
-  // overridden with the bound local origin unless the caller passes one.
-  const allVars = {
-    SOURCE_HOST_PACING_MODE: pacingMode,
-    PUBLIC_BASE_URL: `http://127.0.0.1:${boundPort}`,
-    ...vars,
-  };
-  let output = "";
-  const child = spawn(resolve(root, "node_modules/.bin/wrangler"), [
-    "dev", "--config", config,
-    ...(envFile === undefined ? [] : ["--env-file", envFile]),
-    "--local", "--ip", "127.0.0.1", "--port", String(boundPort),
-    "--inspector-port", String(boundInspectorPort),
-    "--persist-to", statePath,
-    ...Object.entries(allVars).flatMap(
-      ([key, value]) => ["--var", `${key}:${value}`],
-    ),
-    "--log-level", "error", "--show-interactive-dev-session", "false",
-  ], {
-    cwd: root,
-    env: {
-      ...processEnvironment(statePath),
-      WRANGLER_REGISTRY_PATH: boundRegistryPath,
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => output += chunk);
-  child.stderr.on("data", (chunk) => output += chunk);
-  return {
-    process: child,
-    getOutput: () => output,
-    port: boundPort,
-    inspectorPort: boundInspectorPort,
-    url: `http://127.0.0.1:${boundPort}`,
-  };
+    const boundPort = port ?? (await allocatePort());
+    const boundInspectorPort = inspectorPort ?? (await allocatePort());
+    const boundRegistryPath = registryPath ?? join(dirname(statePath), "wrangler-registry");
+    // The checked-in PUBLIC_BASE_URL mounts each Worker under its production
+    // path; the emulated Worker is addressed at its root, so the base is
+    // overridden with the bound local origin unless the caller passes one.
+    const allVars = {
+      SOURCE_HOST_PACING_MODE: pacingMode,
+      PUBLIC_BASE_URL: `http://127.0.0.1:${boundPort}`,
+      ...vars,
+    };
+    let output = "";
+    const child = spawn(
+      resolve(root, "node_modules/.bin/wrangler"),
+      [
+        "dev",
+        "--config",
+        config,
+        ...(envFile === undefined ? [] : ["--env-file", envFile]),
+        "--local",
+        "--ip",
+        "127.0.0.1",
+        "--port",
+        String(boundPort),
+        "--inspector-port",
+        String(boundInspectorPort),
+        "--persist-to",
+        statePath,
+        ...Object.entries(allVars).flatMap(([key, value]) => ["--var", `${key}:${value}`]),
+        "--log-level",
+        "error",
+        "--show-interactive-dev-session",
+        "false",
+      ],
+      {
+        cwd: root,
+        env: {
+          ...processEnvironment(statePath),
+          WRANGLER_REGISTRY_PATH: boundRegistryPath,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => (output += chunk));
+    child.stderr.on("data", (chunk) => (output += chunk));
+    return {
+      process: child,
+      getOutput: () => output,
+      port: boundPort,
+      inspectorPort: boundInspectorPort,
+      url: `http://127.0.0.1:${boundPort}`,
+    };
   }
 }
 
@@ -324,9 +317,7 @@ export function waitForHealth(url, key, worker) {
 // follow-up boot may safely reuse the same port.
 export async function stopWorker(worker) {
   if (hasExited(worker.process)) return;
-  const exited = new Promise((resolveExit) =>
-    worker.process.once("exit", resolveExit)
-  );
+  const exited = new Promise((resolveExit) => worker.process.once("exit", resolveExit));
   worker.process.kill("SIGTERM");
   await Promise.race([exited, delay(5_000)]);
   if (!hasExited(worker.process)) {
@@ -338,11 +329,7 @@ export async function stopWorker(worker) {
 // Run the repository CLI. "secrets" is delivered as JSON on file descriptor 3,
 // matching the --secrets-stdin-fd 3 contract the CLI documents. The
 // invocation is killed and reported after timeoutMs (default two minutes).
-export function runCli(
-  arguments_,
-  environment,
-  { secrets, stdin, timeoutMs } = {},
-) {
+export function runCli(arguments_, environment, { secrets, stdin, timeoutMs } = {}) {
   return runProcess(
     process.execPath,
     [resolve(root, "cli/keepr.mjs"), ...arguments_],
@@ -357,10 +344,16 @@ export async function executeSql(statePath, file, config) {
   const result = await runProcess(
     resolve(root, "node_modules/.bin/wrangler"),
     [
-      "d1", "execute", "CATALOGUE_DB", "--local",
-      "--config", config ?? "apps/ingestion/wrangler.jsonc",
-      "--persist-to", statePath,
-      "--file", file,
+      "d1",
+      "execute",
+      "CATALOGUE_DB",
+      "--local",
+      "--config",
+      config ?? "apps/ingestion/wrangler.jsonc",
+      "--persist-to",
+      statePath,
+      "--file",
+      file,
     ],
     { ...processEnvironment(statePath), CI: "1" },
   );
@@ -370,22 +363,26 @@ export async function executeSql(statePath, file, config) {
 // Read an ingestion administration document over HTTP, mirroring the CLI's
 // configuration (KEEPR_INGESTION_URL / KEEPR_ADMINISTRATION_KEY /
 // KEEPR_TEST_NOW). Returns null while unavailable so poll loops can retry
-// without spawning a CLI subprocess per iteration.
-export async function administrationDocument(pathname, environment) {
+// without spawning a CLI subprocess per iteration. A 429 fails immediately:
+// retrying it would hide that polling exhausted the administration budget.
+export async function administrationDocument(pathname, environment, { pollCount = 1 } = {}) {
   const base = environment.KEEPR_INGESTION_URL ?? "http://127.0.0.1:8788";
   let response;
   try {
     response = await fetch(new URL(pathname, base), {
       headers: {
         authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`,
-        ...(environment.KEEPR_TEST_NOW === undefined
-          ? {}
-          : { "x-keepr-test-now": environment.KEEPR_TEST_NOW }),
+        ...(environment.KEEPR_TEST_NOW === undefined ? {} : { "x-keepr-test-now": environment.KEEPR_TEST_NOW }),
       },
       signal: AbortSignal.timeout(10_000),
     });
   } catch {
     return null;
+  }
+  if (response.status === 429) {
+    throw new Error(
+      `ADMINISTRATION_RATE_LIMIT (30 requests per 60 seconds) returned HTTP 429 on poll ${pollCount} for ${pathname}.`,
+    );
   }
   if (!response.ok) return null;
   try {
@@ -395,6 +392,10 @@ export async function administrationDocument(pathname, environment) {
   }
 }
 
+// Reserve headroom beneath ADMINISTRATION_RATE_LIMIT (30/minute) for the
+// owner's CLI actions before and after polling; 2.5 seconds permits 24/minute.
+export const ADMINISTRATION_POLL_INTERVAL_MS = 2_500;
+
 // Poll an administration document until the predicate accepts it. The
 // predicate may return true (done), false (keep polling), or a string
 // (fail immediately with that reason).
@@ -403,28 +404,26 @@ export async function waitForAdministrationDocument(
   predicate,
   environment,
   worker,
-  { deadlineMs = 90_000, pollMs = 250, description = pathname } = {},
+  { deadlineMs = 90_000, pollMs = ADMINISTRATION_POLL_INTERVAL_MS, description = pathname } = {},
 ) {
   const deadline = Date.now() + deadlineMs;
   let last = null;
+  let pollCount = 0;
   while (Date.now() < deadline) {
-    const document = await administrationDocument(pathname, environment);
+    pollCount += 1;
+    const document = await administrationDocument(pathname, environment, { pollCount });
     if (document !== null) {
       last = document;
       const verdict = predicate(document);
       if (verdict === true) return document;
       if (typeof verdict === "string") {
-        throw new Error(
-          `${description}: ${verdict}\n${JSON.stringify(document)}\n` +
-            worker.getOutput(),
-        );
+        throw new Error(`${description}: ${verdict}\n${JSON.stringify(document)}\n` + worker.getOutput());
       }
     }
-    await delay(pollMs);
+    await delay(Math.max(pollMs, ADMINISTRATION_POLL_INTERVAL_MS));
   }
   throw new Error(
-    `${description} did not reach the expected state\n` +
-      `${JSON.stringify(last)}\n${worker.getOutput()}`,
+    `${description} did not reach the expected state\n` + `${JSON.stringify(last)}\n${worker.getOutput()}`,
   );
 }
 
@@ -456,22 +455,12 @@ function delay(milliseconds) {
 // a longer legitimate wait pass timeoutMs.
 const PROCESS_TIMEOUT_MS = 120_000;
 
-export function runProcess(
-  command,
-  arguments_,
-  environment,
-  { secrets, stdin, timeoutMs = PROCESS_TIMEOUT_MS } = {},
-) {
+export function runProcess(command, arguments_, environment, { secrets, stdin, timeoutMs = PROCESS_TIMEOUT_MS } = {}) {
   return new Promise((resolveExit, rejectExit) => {
     const child = spawn(command, arguments_, {
       cwd: root,
       env: environment,
-      stdio: [
-        stdin === undefined ? "ignore" : "pipe",
-        "pipe",
-        "pipe",
-        ...(secrets === undefined ? [] : ["pipe"]),
-      ],
+      stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe", ...(secrets === undefined ? [] : ["pipe"])],
     });
     if (stdin !== undefined) child.stdin.end(stdin);
     if (secrets !== undefined) child.stdio[3].end(JSON.stringify(secrets));
@@ -479,8 +468,8 @@ export function runProcess(
     let stderr = "";
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => stdout += chunk);
-    child.stderr.on("data", (chunk) => stderr += chunk);
+    child.stdout.on("data", (chunk) => (stdout += chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
@@ -496,11 +485,13 @@ export function runProcess(
     child.once("exit", (code) => {
       clearTimeout(timer);
       if (timedOut) {
-        rejectExit(new Error(
-          `${describeCommand(command, arguments_)} did not exit within ` +
-            `${timeoutMs} ms and was killed\nstdout:\n${stdout}\n` +
-            `stderr:\n${stderr}`,
-        ));
+        rejectExit(
+          new Error(
+            `${describeCommand(command, arguments_)} did not exit within ` +
+              `${timeoutMs} ms and was killed\nstdout:\n${stdout}\n` +
+              `stderr:\n${stderr}`,
+          ),
+        );
         return;
       }
       resolveExit({ code, stdout, stderr });
@@ -509,9 +500,7 @@ export function runProcess(
 }
 
 function describeCommand(command, arguments_) {
-  return [command, ...arguments_]
-    .map((part) => (part.startsWith(root) ? part.slice(root.length + 1) : part))
-    .join(" ");
+  return [command, ...arguments_].map((part) => (part.startsWith(root) ? part.slice(root.length + 1) : part)).join(" ");
 }
 
 function hasExited(child) {

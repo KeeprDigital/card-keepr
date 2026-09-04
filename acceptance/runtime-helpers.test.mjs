@@ -6,6 +6,7 @@ import {
   isAddressInUse,
   portPartition,
   runProcess,
+  waitForRunState,
 } from "./helpers/acceptance-runtime.mjs";
 
 // The acceptance runtime's own guarantees: each file draws Worker ports from
@@ -19,9 +20,7 @@ test("ports come from this process's partition, never repeat, and skip held port
   assert.ok(start >= 20_000 && end < 32_768, `${start}-${end}`);
   const holder = createServer();
   holder.unref();
-  await new Promise((resolveListen) =>
-    holder.listen(start, "127.0.0.1", resolveListen)
-  );
+  await new Promise((resolveListen) => holder.listen(start, "127.0.0.1", resolveListen));
   try {
     const ports = [];
     for (let index = 0; index < 4; index += 1) {
@@ -46,11 +45,7 @@ test("boot-collision detection matches address-in-use errors by code and phrasin
   ]) {
     assert.equal(isAddressInUse(output), true, output);
   }
-  for (const output of [
-    "",
-    "✘ [ERROR] Could not resolve \"missing-module\"",
-    "Ready on http://127.0.0.1:20000",
-  ]) {
+  for (const output of ["", '✘ [ERROR] Could not resolve "missing-module"', "Ready on http://127.0.0.1:20000"]) {
     assert.equal(isAddressInUse(output), false, output);
   }
 });
@@ -58,12 +53,9 @@ test("boot-collision detection matches address-in-use errors by code and phrasin
 test("a hanging subprocess is killed at the deadline with its output", async () => {
   const started = Date.now();
   await assert.rejects(
-    runProcess(
-      process.execPath,
-      ["-e", "console.log('waiting'); setInterval(() => {}, 1_000)"],
-      process.env,
-      { timeoutMs: 500 },
-    ),
+    runProcess(process.execPath, ["-e", "console.log('waiting'); setInterval(() => {}, 1_000)"], process.env, {
+      timeoutMs: 500,
+    }),
     (error) => {
       assert.match(error.message, /did not exit within 500 ms and was killed/u);
       assert.match(error.message, /stdout:\nwaiting/u);
@@ -89,4 +81,71 @@ test("a subprocess that cannot be spawned fails instead of hanging", async () =>
     }),
     { code: "ENOENT" },
   );
+});
+
+test("a slow run leaves administration request budget for candidate inspection", async (t) => {
+  let now = 0;
+  const requestTimes = [];
+  t.mock.method(Date, "now", () => now);
+  t.mock.method(globalThis, "setTimeout", (callback, milliseconds) => {
+    now += milliseconds;
+    queueMicrotask(callback);
+    return { unref() {} };
+  });
+  t.mock.method(globalThis, "fetch", async () => {
+    const recent = requestTimes.filter((time) => time > now - 60_000);
+    requestTimes.push(now);
+    if (recent.length >= 30) {
+      return Response.json({ code: "rate_limited" }, { status: 429 });
+    }
+    return Response.json({ state: now >= 20_000 ? "awaiting_approval" : "collecting" });
+  });
+  const run = await waitForRunState(
+    "slow-run",
+    "awaiting_approval",
+    {
+      KEEPR_INGESTION_URL: "http://acceptance.invalid",
+      KEEPR_ADMINISTRATION_KEY: "test-only-key",
+    },
+    { getOutput: () => "" },
+  );
+  assert.equal(run.state, "awaiting_approval");
+  const inspection = await fetch("http://acceptance.invalid/v1/ingestion-runs/slow-run/candidate");
+  assert.equal(inspection.status, 200, "the next candidate inspection must not be rate limited");
+  assert.ok(requestTimes.length <= 10, `${requestTimes.length} requests consumed the administration budget`);
+});
+
+test("an administration polling 429 names the limiter and poll count immediately", async (t) => {
+  let now = 0;
+  let polls = 0;
+  t.mock.method(Date, "now", () => now);
+  t.mock.method(globalThis, "setTimeout", (callback, milliseconds) => {
+    now += milliseconds;
+    queueMicrotask(callback);
+    return { unref() {} };
+  });
+  t.mock.method(globalThis, "fetch", async () => {
+    polls += 1;
+    return polls === 1
+      ? Response.json({ state: "collecting" })
+      : Response.json({ code: "rate_limited" }, { status: 429 });
+  });
+  await assert.rejects(
+    waitForRunState(
+      "limited-run",
+      "awaiting_approval",
+      {
+        KEEPR_INGESTION_URL: "http://acceptance.invalid",
+        KEEPR_ADMINISTRATION_KEY: "test-only-key",
+      },
+      { getOutput: () => "" },
+    ),
+    (error) => {
+      assert.match(error.message, /ADMINISTRATION_RATE_LIMIT/u);
+      assert.match(error.message, /429/u);
+      assert.match(error.message, /poll 2/u);
+      return true;
+    },
+  );
+  assert.equal(polls, 2, "a rejected poll is never retried as an unavailable document");
 });

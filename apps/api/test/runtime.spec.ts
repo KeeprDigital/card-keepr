@@ -2,17 +2,17 @@ import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { expect, test, vi } from "vitest";
-import apiWorker from "../src/index";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
-import { cardSearchQuery, cardSearchTerms, cardSearchText, cardCollectionPageQuery } from "../../../src/catalogue/read";
+import exportManifestSchemaV5 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json";
+import exportRecordSchemaV5 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json";
 import {
   prepareCardSearchForD1Export,
   reconstructCardSearchAfterD1Restore,
   withCardSearchPreparedForD1Export,
 } from "../../../src/catalogue/backup-recovery";
-import exportManifestSchemaV5 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json";
-import exportRecordSchemaV5 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json";
-import { deterministicGzip, canonicalJson, sha256, sha256Text, utf8 } from "../../../src/catalogue/shared";
+import { cardCollectionPageQuery, cardSearchQuery, cardSearchTerms, cardSearchText } from "../../../src/catalogue/read";
+import { canonicalJson, deterministicGzip, sha256, sha256Text, utf8 } from "../../../src/catalogue/shared";
+import apiWorker from "../src/index";
 import {
   apiCard,
   apiHeaders,
@@ -92,7 +92,7 @@ test("API requests emit useful structured diagnostics without leaking failures",
     }),
     testEnv,
   );
-  expect(records.at(-1)).toContain('\"route\":\"/:ref\"');
+  expect(records.at(-1)).toContain('"route":"/:ref"');
   expect(records.at(-1)).not.toContain("source-payload-path-secret");
 
   // Liveness (issue #144) is polled by monitors: it is not logged, and its
@@ -220,7 +220,7 @@ test("a supplied cursor for an unavailable current revision returns the cursor r
     },
   });
   const response = await exports.default.fetch(
-    new Request("https://card-keepr.invalid/v1/cards?q=unavailable&limit=1&after=" + encodeURIComponent(cursor), {
+    new Request(`https://card-keepr.invalid/v1/cards?q=unavailable&limit=1&after=${encodeURIComponent(cursor)}`, {
       headers: apiHeaders("203.0.113.104"),
     }),
   );
@@ -304,7 +304,7 @@ test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact 
       name,
       media_type: "application/x-ndjson",
       compression: "gzip",
-      record_schema: "https://card-keepr.invalid/schemas/" + `catalogue-export-record@5#/$defs/${schemaDefinition}`,
+      record_schema: `https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/${schemaDefinition}`,
       order,
       records: containsLegality ? 1 : 0,
       uncompressed_bytes: containsLegality ? legalityBytes.byteLength : 0,
@@ -642,11 +642,9 @@ test("Catalogue Export JSON routes validate requests and support conditional rea
     links: { self: `${apiPublicBase}/v1/catalogue-exports` },
   });
   const explicitDefault = await request("/v1/catalogue-exports?limit=50", { "if-none-match": defaultListEtag! });
-  expect(explicitDefault.status).toBe(200);
-  expect(explicitDefault.headers.get("etag")).not.toBe(defaultListEtag);
-  await expect(explicitDefault.json()).resolves.toMatchObject({
-    links: { self: `${apiPublicBase}/v1/catalogue-exports?limit=50` },
-  });
+  expect(explicitDefault.status).toBe(304);
+  expect(explicitDefault.headers.get("etag")).toBe(defaultListEtag);
+  expect(await explicitDefault.text()).toBe("");
 
   const firstDocument = await list.json<{
     page: { next_cursor: string };
@@ -667,7 +665,7 @@ test("Catalogue Export JSON routes validate requests and support conditional rea
   const unavailableCursor = JSON.parse(Buffer.from(firstDocument.page.next_cursor, "base64url").toString("utf8"));
   unavailableCursor.revision_id = "catrev_export_cursor_unavailable";
   const unavailable = await request(
-    "/v1/catalogue-exports?limit=1&after=" + Buffer.from(JSON.stringify(unavailableCursor)).toString("base64url"),
+    `/v1/catalogue-exports?limit=1&after=${Buffer.from(JSON.stringify(unavailableCursor)).toString("base64url")}`,
   );
   expect(unavailable.status).toBe(409);
   await expect(unavailable.json()).resolves.toMatchObject({
@@ -863,11 +861,11 @@ test("Legality Status reports the exact invalid query parameter", async () => {
     ["card_id=card_any&format=standard", "on", "on is required."],
     ["card_id=card_any&on=2026-07-30", "format", "format is required."],
     ["card_id=card_any&on=2026-02-30&format=standard", "on", "on must be a valid ISO date."],
-    ["card_id=card_any&on=2026-07-30&format=", "format", "format must be a non-empty string."],
+    ["card_id=card_any&on=2026-07-30&format=", "format", "format must contain at least one character."],
     [
       "card_id=card_any&on=2026-07-30&format=standard&event_tier=",
       "event_tier",
-      "event_tier must be a non-empty string.",
+      "event_tier must contain at least one character.",
     ],
     [
       "card_id=card_any&on=2026-07-30&format=standard&region=OCEANIA",
@@ -1742,7 +1740,7 @@ test("an unresolved target-scope rule answers explicitly indeterminate for every
 
   const status = async (cardId: string, query: string, ip: string) => {
     const response = await exports.default.fetch(
-      new Request("https://card-keepr.invalid/v1/legality-status" + `?card_id=${cardId}&on=2026-07-30&${query}`, {
+      new Request(`https://card-keepr.invalid/v1/legality-status?card_id=${cardId}&on=2026-07-30&${query}`, {
         headers: {
           authorization: "Bearer vitest-api-key",
           "cf-connecting-ip": ip,
@@ -2539,7 +2537,7 @@ test("Card search keeps a selective two-character relational fallback beside FTS
   expect(repeated).toEqual(["g1:a", "g2:aa"]);
 });
 
-test("authenticated Card search validates raw q at 1 through 500 characters before normalization", async () => {
+test("authenticated Card search validates raw and normalized q at 1 through 500 characters", async () => {
   const token = (length: number) => "x".repeat(length);
   await seedApiRevision({
     revisionId: "catrev_query_boundaries",
@@ -2553,7 +2551,7 @@ test("authenticated Card search validates raw q at 1 through 500 characters befo
     ],
   });
   let sequence = 40;
-  for (const query of [token(1), token(128), token(129), token(500), "ﬀ".repeat(500), "---", '"quoted"']) {
+  for (const query of [token(1), token(128), token(129), token(500), "ﬀ".repeat(250), "---", '"quoted"']) {
     const response = await exports.default.fetch(
       new Request(`https://card-keepr.invalid/v1/cards?q=${encodeURIComponent(query)}`, {
         headers: apiHeaders(`203.0.113.${sequence++}`),
@@ -2561,7 +2559,10 @@ test("authenticated Card search validates raw q at 1 through 500 characters befo
     );
     expect(response.status, `${query.length}: ${await response.clone().text()}`).toBe(200);
   }
-  for (const [query, reason] of [[token(501), "q must contain at most 500 characters."]] as const) {
+  for (const [query, reason] of [
+    [token(501), "q must contain at most 500 characters."],
+    ["ﬀ".repeat(251), "q must contain at most 500 characters."],
+  ] as const) {
     const response = await exports.default.fetch(
       new Request(`https://card-keepr.invalid/v1/cards?q=${encodeURIComponent(query)}`, {
         headers: apiHeaders(`203.0.113.${sequence++}`),
@@ -2684,7 +2685,7 @@ test("Card cursors reject route, ordering, and structural misuse", async () => {
   for (const [index, cursor] of cursors.entries()) {
     const response = await exports.default.fetch(
       new Request(
-        "https://card-keepr.invalid/v1/cards?q=cursor%20binding&limit=1&after=" + encodeURIComponent(cursor),
+        `https://card-keepr.invalid/v1/cards?q=cursor%20binding&limit=1&after=${encodeURIComponent(cursor)}`,
         { headers: apiHeaders(`203.0.113.${90 + index}`) },
       ),
     );
@@ -3262,10 +3263,7 @@ function encodeTestCardCursor(input: {
       revision_id: input.revisionId,
       route: input.route,
       order: input.order,
-      q: input.q,
-      game: null,
-      card_number: null,
-      limit: input.limit,
+      filters: { q: input.q, game: null, cardNumber: null, limit: input.limit },
       after: {
         game: input.after.game,
         identity_kind: input.after.identityKind,
