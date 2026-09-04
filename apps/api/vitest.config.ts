@@ -1,6 +1,7 @@
-import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { resolve } from "node:path";
+import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { configDefaults, defineConfig } from "vitest/config";
+import { syntheticSourceAdapterMigration } from "../../test/support/source-adapters/migration";
 
 const migrations = await readD1Migrations(resolve(import.meta.dirname, "../../migrations"));
 // KEEPR_TEST_SUITE=stress selects the *.stress.spec.ts latency-budget suite
@@ -21,7 +22,7 @@ export default defineConfig({
           PUBLIC_BASE_URL: "http://127.0.0.1:8787",
           API_BEARER_KEY: "vitest-api-key",
           API_BEARER_KEY_REPLACEMENT: "vitest-api-key-replacement-slot",
-          TEST_MIGRATIONS: migrations,
+          TEST_MIGRATIONS: [...migrations, syntheticSourceAdapterMigration],
         },
       },
     }),

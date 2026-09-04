@@ -1,3 +1,4 @@
+import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
@@ -158,7 +159,7 @@ export async function fixtureEvidenceRequest(body: {
     headers?: Record<string, string>;
   }[];
 }): Promise<Response> {
-  return Response.json(await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), body, "synthetic_fixture"), {
+  return Response.json(await injectFixtureEvidencePlan(env.CATALOGUE_DB, body), {
     status: 201,
   });
 }

@@ -664,11 +664,11 @@ test("initial Evidence Plans admit 500 bounded requests in one native transactio
       })),
     })),
   };
-  const run = await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), request, "synthetic_fixture");
+  const run = await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), request);
   expect(typeof run.id).toBe("string");
   await expect(
     sourceEvidenceQueries.countSourceRequestsCount(env.CATALOGUE_DB).bind(run.id).first(),
   ).resolves.toMatchObject({ count: 500 });
-  const replay = await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), request, "synthetic_fixture");
+  const replay = await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), request);
   expect(replay.id).toBe(run.id);
 });

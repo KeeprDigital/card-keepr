@@ -23,11 +23,8 @@ export type SourceAdapterRegistration = Readonly<{
   parserContract: string;
   maximumSnapshotBytes: number;
   requestCapacity: number;
-  origin: "production" | "synthetic_fixture";
-  requestSurface:
-    | Readonly<{ kind: "credential-free-https" }>
-    | Readonly<{ kind: "exact-url"; url: string }>
-    | Readonly<{ kind: "synthetic-fixture" }>;
+  origin: "production";
+  requestSurface: Readonly<{ kind: "credential-free-https" }> | Readonly<{ kind: "exact-url"; url: string }>;
   reconciliationCapability: "catalogue" | "errata" | "unavailable";
   reconciliationAreas?: readonly ("catalogue" | "errata")[];
   inheritDiscoveryRequestHeaders?: boolean;
@@ -210,7 +207,6 @@ const activeOfficialRawAdapterVersions = new Set([
 export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] = Object.freeze(
   installedSourceAdapterRegistrations.filter(
     (adapter) =>
-      adapter.origin !== "production" ||
       adapter.reconciliationCapability !== "catalogue" ||
       typeof adapter.parseBytes !== "function" ||
       activeOfficialRawAdapterVersions.has(adapter.adapterVersion),

@@ -1,18 +1,8 @@
-import { verifiedRunCurrentSql } from "../shared";
-import { runTransitionGuardStatement, administrationOutcomeGuardStatement } from "../shared";
-import {
-  bulkSourceRequestInsertionStatements,
-  sourceRequestPlanGuardStatement,
-  officialCollectionPlanInsertionStatement,
-  evidencePlanInsertionStatement,
-} from "./source-plan-repository";
 import {
   AdministrationProblem,
-  atomicRepositoryStatement,
-  runEventCommand,
-  runEventIdentitySql,
-  runEventStatement,
+  administrationOutcomeGuardStatement,
   assertIngestionRunTransition,
+  atomicRepositoryStatement,
   type CatalogueStore,
   canonicalJson,
   canTransitionIngestionRun,
@@ -24,22 +14,32 @@ import {
   operationalDiagnostics,
   replayByDigest,
   repositoryStatements,
+  runEventCommand,
+  runEventIdentitySql,
+  runEventStatement,
+  runTransitionGuardStatement,
   sha256,
   utf8,
+  verifiedRunCurrentSql,
   workflowDriver,
 } from "../shared";
 import { sourceRequestHostnameSql } from "./collection-inspection-repository";
-
 import {
   evidenceRunByIdempotencyKeyStatement,
   evidenceRunByIdStatement,
   type IngestionEvidenceRow,
   ingestionRunInsertStatement,
 } from "./ingestion-run-repository";
+import {
+  bulkSourceRequestInsertionStatements,
+  evidencePlanInsertionStatement,
+  officialCollectionPlanInsertionStatement,
+  sourceRequestPlanGuardStatement,
+} from "./source-plan-repository";
 
 export type { IngestionEvidenceRow } from "./ingestion-run-repository";
 
-import { globalEmergencySourceRequestCeiling, type SourceAdapterRegistration } from "../adapters";
+import { globalEmergencySourceRequestCeiling } from "../adapters";
 import { curatedRevisionPinStatementsForNewRun, curatedRevisionSetForRun } from "../curated";
 import { boundedEvidenceDetail, collectionInspection, type PacingConfiguration } from "./collection-inspection";
 import {
@@ -101,9 +101,8 @@ export type DiscoveredEvidenceRequest = {
 export async function startEvidenceRun(
   database: CatalogueStore,
   request: StartEvidenceRunRequest,
-  planOrigin: SourceAdapterRegistration["origin"] = "production",
 ): Promise<Record<string, unknown>> {
-  const plans = await validateEvidencePlans(request, planOrigin);
+  const plans = await validateEvidencePlans(request);
   const firstPlan = plans[0]!;
   const planJson = canonicalJson(plans.length === 1 ? firstPlan : { plans });
   const replay = await evidenceRunByIdempotencyKey(database, request.idempotency_key);
@@ -152,7 +151,7 @@ export async function startEvidenceRun(
       gameProfileVersion: firstPlan.game_profile_version,
       adapterVersion: firstPlan.adapter_version,
       requestPlanJson: planJson,
-      planOrigin: planOrigin,
+      planOrigin: "production",
     }),
     ...requestStatements(database, runId, plans),
     repositoryStatements(database)

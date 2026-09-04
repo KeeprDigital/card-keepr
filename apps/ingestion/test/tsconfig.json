@@ -10,5 +10,6 @@
     "../vitest.config.ts",
     "../../../test/support/**/*.ts",
     "../../../test/support/**/*.mjs"
-  ]
+  ],
+  "exclude": ["../../../test/support/api-worker.ts"]
 }

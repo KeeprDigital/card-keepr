@@ -1,5 +1,5 @@
-import type { IngestionRunState } from "../shared";
 import type { SourceFreshnessStorageRow } from "../read";
+import type { IngestionRunState } from "../shared";
 
 export const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 
@@ -106,13 +106,6 @@ export type IdempotencyClaimRow = {
 export type IdempotencyClaimOwner = {
   ownerToken: string;
   version: number;
-};
-
-export type StartRunRequest = {
-  fixture: string;
-  selected_games: readonly string[];
-  idempotency_key: string;
-  operational_request_id?: string;
 };
 
 export type ApproveRunRequest = {

@@ -10,8 +10,6 @@ import {
   takeOverAdministrationClaimStatement,
 } from "./administration-idempotency-repository";
 
-import { parseCandidate } from "./candidate-codec";
-import { firstCatalogueFixture } from "./fixture";
 import { decodePublicRunDocument, publicRun } from "./run-document-codec";
 import { publicationCleanup } from "./run-storage";
 import {
@@ -22,7 +20,7 @@ import {
   publicationLeaseMilliseconds,
   type RunRow,
 } from "./run-types";
-import { errorMessage, hasOnlyKeys, isExactStringTuple, isIsoInstant, isRecord, parseJson } from "./run-values";
+import { errorMessage, hasOnlyKeys, isIsoInstant, isRecord, parseJson } from "./run-values";
 
 export async function administrationClaim(database: CatalogueStore, key: string): Promise<IdempotencyClaimRow | null> {
   return administrationClaimStatement(database, key).first<IdempotencyClaimRow>();
@@ -135,19 +133,10 @@ async function assertSuccessfulReplayCorrelation(
   requestJson: string,
 ): Promise<void> {
   const request = parseJson(requestJson, "Administration idempotency request");
-  const expectedStatus =
-    prior.operation === "start_ingestion_run" || prior.operation === "retry_ingestion_run" ? 201 : 200;
+  const expectedStatus = prior.operation === "retry_ingestion_run" ? 201 : 200;
   let correlated = false;
   if (isRecord(request)) {
-    if (prior.operation === "start_ingestion_run") {
-      correlated =
-        hasOnlyKeys(request, ["fixture", "selected_games"]) &&
-        request.fixture === "first-catalogue" &&
-        isExactStringTuple(request.selected_games, ["one-piece"]) &&
-        run.idempotency_key === key &&
-        run.linked_run_id === null &&
-        run.state === "awaiting_approval";
-    } else if (prior.operation === "retry_ingestion_run") {
+    if (prior.operation === "retry_ingestion_run") {
       correlated =
         hasOnlyKeys(request, ["source_run_id"]) &&
         typeof request.source_run_id === "string" &&
@@ -273,13 +262,9 @@ export async function idempotentAdministration(
 }
 
 function isReplaySafeAdministrationOperation(operation: string): boolean {
-  return [
-    "start_ingestion_run",
-    "retry_ingestion_run",
-    "approve_ingestion_run",
-    "reject_ingestion_run",
-    "retry_publication_cleanup",
-  ].includes(operation);
+  return ["retry_ingestion_run", "approve_ingestion_run", "reject_ingestion_run", "retry_publication_cleanup"].includes(
+    operation,
+  );
 }
 
 function isAdministrationInProgress(value: Record<string, unknown>): boolean {
@@ -419,14 +404,6 @@ async function replayLegacyAdministration(
   const run = await legacyAdministrationRunStatement(database, key).first<RunRow>();
   if (run === null) return null;
 
-  if (operation === "start_ingestion_run" && run.idempotency_key === key) {
-    const candidate = parseCandidate(run);
-    const legacyRequestJson = canonicalJson({
-      fixture: firstCatalogueFixture,
-      selected_games: candidate.selected_games,
-    });
-    if (legacyRequestJson === requestJson) return publicRun(run);
-  }
   if (operation === "approve_ingestion_run" && run.approval_idempotency_key === key) {
     const legacyRequestJson = canonicalJson({
       run_id: run.id,

@@ -1,11 +1,12 @@
-import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { resolve } from "node:path";
+import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { configDefaults, defineConfig } from "vitest/config";
 import {
   cloudflareApiMock,
   createFakePublisher,
   workersPoolScenarios,
 } from "../../test/support/fake-publisher/index.ts";
+import { syntheticSourceAdapterMigration } from "../../test/support/source-adapters/migration";
 
 const migrations = await readD1Migrations(resolve(import.meta.dirname, "../../migrations"));
 // KEEPR_TEST_SUITE=stress selects the *.stress.spec.ts suite (scheduled /
@@ -62,7 +63,7 @@ export default defineConfig({
           ADMINISTRATION_CLOCK_MODE: "request",
           D1_VERIFICATION_TOKEN: d1VerificationToken,
           D1_EXPORT_TOKEN: "vitest-d1-export-token-active",
-          TEST_MIGRATIONS: migrations,
+          TEST_MIGRATIONS: [...migrations, syntheticSourceAdapterMigration],
         },
         // Miniflare hands over undici's Request; the publisher speaks the
         // Workers Request the scenarios were written against.

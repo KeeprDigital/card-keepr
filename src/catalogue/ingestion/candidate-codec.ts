@@ -1,20 +1,8 @@
 import { isCatalogueSourceCheck } from "../read";
-import { AdministrationProblem, type CatalogueCandidate, catalogueCandidateContract, decodeDocument } from "../shared";
-import { FixtureInputError, fixtureCandidate } from "./fixture";
+import { type CatalogueCandidate, catalogueCandidateContract, decodeDocument } from "../shared";
 
-import type { RunRow, StartRunRequest } from "./run-types";
-import { hasOnlyKeys, isRecord, parseSelectedGames } from "./run-values";
-
-export async function validatedCatalogueCandidate(
-  request: StartRunRequest,
-): Promise<{ candidate: CatalogueCandidate; digest: string }> {
-  return fixtureCandidate(request.fixture, request.selected_games).catch((error: unknown) => {
-    if (error instanceof FixtureInputError) {
-      throw new AdministrationProblem(422, error.code, error.message);
-    }
-    throw error;
-  });
-}
+import type { RunRow } from "./run-types";
+import { isRecord, parseSelectedGames } from "./run-values";
 
 export function parseCandidate(row: RunRow): CatalogueCandidate {
   const parsed: unknown = JSON.parse(row.candidate_json);
@@ -25,20 +13,6 @@ export function parseCandidate(row: RunRow): CatalogueCandidate {
       cards: [],
       printings: [],
     };
-  }
-  if (
-    isRecord(parsed) &&
-    hasOnlyKeys(parsed, ["fixture", "selected_games", "cards", "printings"]) &&
-    parsed.fixture === "first-catalogue"
-  ) {
-    const upgraded = {
-      contract: catalogueCandidateContract,
-      selected_games: parsed.selected_games,
-      cards: parsed.cards,
-      printings: parsed.printings,
-      legality_rules: [],
-    };
-    return decodeCandidate(upgraded);
   }
   return decodeCandidate(parsed);
 }

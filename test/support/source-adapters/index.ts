@@ -1,8 +1,8 @@
+import { requiredOfficialSourceScope } from "../../../src/catalogue/adapters/official-source-scope";
 import {
   registerSourceAdapters,
   type SourceAdapterRegistration,
 } from "../../../src/catalogue/adapters/source-adapters";
-import { requiredOfficialSourceScope } from "../../../src/catalogue/adapters/official-source-scope";
 
 const parseLegalitySourceDocument = (document: unknown): readonly unknown[] => {
   if (typeof document === "object" && document !== null && !Array.isArray(document)) {
@@ -40,8 +40,8 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       gameProfileVersion: "one-piece@1",
       parserContract: "synthetic-official-errata-fixture@1",
       maximumSnapshotBytes: 16 * 1024 * 1024,
-      origin: "synthetic_fixture" as const,
-      requestSurface: { kind: "synthetic-fixture" as const },
+      origin: "production" as const,
+      requestSurface: { kind: "credential-free-https" as const },
       reconciliationCapability: "errata" as const,
       parse: parseLegalitySourceDocument,
     },
@@ -103,8 +103,8 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
     ].map((adapter) => ({
       ...adapter,
       maximumSnapshotBytes: adapter.maximumSnapshotBytes ?? 16 * 1024 * 1024,
-      origin: "synthetic_fixture" as const,
-      requestSurface: { kind: "synthetic-fixture" as const },
+      origin: "production" as const,
+      requestSurface: { kind: "credential-free-https" as const },
       reconciliationCapability: "catalogue" as const,
       parse: parseLegalitySourceDocument,
     })),
