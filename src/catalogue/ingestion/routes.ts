@@ -21,7 +21,6 @@ import {
 } from "../../http/administration";
 
 type Environment = Parameters<typeof evidenceInspectionOptions>[0] & {
-  ADMINISTRATION_CLOCK_MODE: string;
   CATALOGUE_BACKUP_WORKFLOW: Parameters<typeof startOrObserveCatalogueBackupWorkflow>[1];
   CATALOGUE_D1_DATABASE_ID: string;
   CATALOGUE_DB: D1Database;
@@ -30,7 +29,11 @@ type Environment = Parameters<typeof evidenceInspectionOptions>[0] & {
   DISPOSABLE_D1_DATABASE_ID: string;
   PRINTING_IMAGES: R2Bucket;
 };
-type Context = RouteContext<Environment> & { observedAt: string };
+export type PublicationBackupWaiter = (
+  initial: Record<string, unknown>,
+  observe: () => Promise<Record<string, unknown>>,
+) => Promise<void>;
+type Context = RouteContext<Environment> & { observedAt: string; publicationBackupWaiter?: PublicationBackupWaiter };
 
 export const ingestionRoutes = [
   route<Context>("POST", "/v1/production-releases", async ({ request, env, observedAt }) => {
@@ -65,7 +68,7 @@ export const ingestionRoutes = [
   route<Context>(
     "POST",
     "/v1/ingestion-runs/:run/approval",
-    async ({ request, env, requestId, base, context, observedAt }, params) => {
+    async ({ request, env, requestId, base, observedAt, publicationBackupWaiter }, params) => {
       const body = await readAdministrationBody(request);
       assertOnlyFields(body, ["candidate_digest", "expected_current_revision_id", "idempotency_key"]);
       const result = await approveRun(
@@ -82,10 +85,9 @@ export const ingestionRoutes = [
       );
       if (result.publication_outcome === "revision" && typeof result.resulting_revision_id === "string") {
         const reservation = await publicationBackupReservation(result.resulting_revision_id);
-        const clockMode = String(env.ADMINISTRATION_CLOCK_MODE);
-        const dispatch = async () => {
-          for (let attempt = 0; attempt < 100; attempt += 1) {
-            const observed = await startOrObserveCatalogueBackupWorkflow(
+        const observe = async () =>
+          (
+            await startOrObserveCatalogueBackupWorkflow(
               env.CATALOGUE_DB,
               env.CATALOGUE_BACKUP_WORKFLOW,
               {
@@ -93,31 +95,26 @@ export const ingestionRoutes = [
                 idempotency_key: reservation.idempotencyKey,
               },
               observedAt,
-            );
-            if (clockMode !== "request" || observed.document.status === "complete") return;
-            await new Promise((resolve) => setTimeout(resolve, 10));
-          }
-          throw new Error("Publication backup did not complete in the test observation window.");
-        };
-        const reportDispatchFailure = (_error: unknown) => {
+            )
+          ).document;
+        // Publication already committed its pending dispatch. An observation
+        // outage must not turn that successful approval into an HTTP failure.
+        try {
+          const dispatched = await observe();
+          await publicationBackupWaiter?.(dispatched, observe);
+        } catch {
           console.error(
             JSON.stringify({
               contract: "card-keepr-operational-log@1",
               event: "workflow.failed",
               runtime: "ingestion",
-              failure_code: "catalogue_backup_dispatch_failed",
+              failure_code: "catalogue_backup_dispatch_observation_failed",
               request_id: requestId,
               workflow_step: "catalogue_backup_dispatch",
               catalogue_revision_id: result.resulting_revision_id,
-              retry_count: 0,
               retry_classification: "retryable",
             }),
           );
-        };
-        if (clockMode === "request") {
-          await dispatch().catch(reportDispatchFailure);
-        } else {
-          context?.waitUntil(dispatch().catch(reportDispatchFailure));
         }
       }
       return Response.json(absoluteDocumentLinks(result, base), {

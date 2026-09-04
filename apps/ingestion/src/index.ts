@@ -1,6 +1,6 @@
 import { inspectWorkflowInstance } from "../../../src/catalogue/shared";
 import { authenticateBearer } from "../../../src/http/authentication";
-import { ingestionRoutes } from "../../../src/catalogue/ingestion";
+import { ingestionRoutes, type PublicationBackupWaiter } from "../../../src/catalogue/ingestion";
 import { sourceEvidenceRoutes } from "../../../src/catalogue/source-evidence";
 import { reconciliationRoutes } from "../../../src/catalogue/reconciliation";
 import { curatedRoutes } from "../../../src/catalogue/curated";
@@ -13,7 +13,7 @@ import { ingestionCapabilities } from "../../../src/runtime-capabilities.mjs";
 import { withOperationalRequestLog } from "../../../src/http/operational-log";
 import { mountedRequest, publicBase, routePath, type PublicBase } from "../../../src/http/public-base";
 import { routeTable, routeSegments, type RouteContext } from "../../../src/http/routes";
-import { administrationObservedAt } from "./request-clock";
+import { administrationObservedAt, publicationBackupWaiter } from "./request-clock";
 import { ingestionProblemResponse } from "./problem";
 
 const routes = [
@@ -24,7 +24,9 @@ const routes = [
   ...exportRoutes,
   ...backupRecoveryRoutes,
 ];
-const dispatch = routeTable<RouteContext<Env> & { observedAt: string }>(routes);
+const dispatch = routeTable<
+  RouteContext<Env> & { observedAt: string; publicationBackupWaiter: PublicationBackupWaiter }
+>(routes);
 const logOptions = { routeSegments: routeSegments(routes, ["/health", "/healthz"]) };
 
 export {
@@ -90,6 +92,7 @@ async function handleIngestionRequest(
       requestId,
       base,
       observedAt,
+      publicationBackupWaiter: publicationBackupWaiter(env),
     });
     if (response !== null) return response;
 

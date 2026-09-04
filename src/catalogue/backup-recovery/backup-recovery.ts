@@ -1,3 +1,4 @@
+import { backupDispatchStatus } from "./backup-dispatch";
 import {
   type BackupAttemptEvidenceRow,
   backupAttemptEvidenceStatement,
@@ -181,6 +182,7 @@ export async function catalogueBackupAttemptStatus(
     restore_phase: attempt.restore_phase,
     failure: attempt.state === "failed" ? { code: attempt.failure_code, detail: attempt.failure_detail } : null,
     workflow_instance_id: workflow?.workflow_instance_id ?? null,
+    dispatch: await backupDispatchStatus(database, idempotencyKey),
     resume:
       attempt.state === "pending" || isActiveAttemptState(attempt.state)
         ? {

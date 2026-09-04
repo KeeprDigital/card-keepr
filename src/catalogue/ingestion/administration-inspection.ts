@@ -1,3 +1,4 @@
+import { outstandingBackupDispatches } from "../backup-recovery";
 import { curatedRevisionInspectionForRun } from "../curated";
 import { cardSearchFtsQuery, cardSearchText, sourceFreshnessFromStorage } from "../read";
 import { AdministrationProblem, type CatalogueCandidate, canonicalJson, retainedPayload, sha256Text } from "../shared";
@@ -208,6 +209,7 @@ export async function administrationStatus(
       catalogue_export_object_count: objectDiagnostics.objectCount,
       orphaned_catalogue_export_object_count: objectDiagnostics.orphanedObjectCount,
       pending_publication_cleanup_count: cleanupCount?.count ?? 0,
+      backup_dispatches: await outstandingBackupDispatches(database),
     },
     repairable_catalogue_revision_ids: repairableRevisions.results.map(({ revision_id }) => revision_id),
     recent_runs: recentRuns.results.map((run) => publicRun(run, cleanupByRun.get(run.id) ?? null)),

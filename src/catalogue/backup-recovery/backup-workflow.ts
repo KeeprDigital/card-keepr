@@ -1,3 +1,10 @@
+import { backupDispatchStatus, maximumBackupDispatchAttempts } from "./backup-dispatch";
+import {
+  backupDispatchAttemptStatement,
+  backupDispatchOutcomeStatement,
+  pendingBackupDispatchStatement,
+  backupWorkflowRequestStatement,
+} from "./backup-dispatch-repository";
 import { workflowDriver } from "../shared";
 import { AdministrationProblem, canonicalJson, sha256Text } from "../shared";
 import { failActiveCatalogueBackupAttempt, validateCatalogueBackupRetryEvidence } from "./backup-recovery";
@@ -72,24 +79,18 @@ export async function startOrObserveCatalogueBackupWorkflow(
       observed_at: observedAt,
     };
     const workflowInstanceId = `backup-${(await sha256Text(requestJson)).slice(0, 64)}`;
-    const inserted = await database
-      .prepare(
-        `INSERT OR IGNORE INTO catalogue_backup_workflow_requests (
-         idempotency_key, expected_current_revision_id, request_json,
-         workflow_params_json, workflow_instance_id, observed_at,
-         linked_attempt_id
-       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        input.idempotency_key,
-        input.expected_current_revision_id,
+    const inserted = await database.batch([
+      backupWorkflowRequestStatement(database, {
+        key: input.idempotency_key,
+        revisionId: input.expected_current_revision_id,
         requestJson,
-        canonicalJson(params),
-        workflowInstanceId,
-        observedAt,
+        paramsJson: canonicalJson(params),
+        workflowId: workflowInstanceId,
+        at: observedAt,
         linkedAttemptId,
-      )
-      .run();
+      }),
+      pendingBackupDispatchStatement(database, input.idempotency_key, observedAt),
+    ]);
     stored = await workflowRequest(database, input.idempotency_key);
     if (stored === null && linkedAttemptId !== null) {
       const winner = await database
@@ -104,8 +105,8 @@ export async function startOrObserveCatalogueBackupWorkflow(
     if (stored === null) throw new Error("Backup Workflow request was not retained.");
     assertExactReplay(stored, requestJson);
     return {
-      created: inserted.meta.changes === 1,
-      document: await publicWorkflowDocument(database, workflow, stored, inserted.meta.changes === 1),
+      created: inserted[0]!.meta.changes === 1,
+      document: await publicWorkflowDocument(database, workflow, stored, inserted[0]!.meta.changes === 1),
     };
   }
   assertExactReplay(stored, requestJson);
@@ -122,7 +123,34 @@ async function publicWorkflowDocument(
   createRequested = false,
 ): Promise<Record<string, unknown>> {
   const driver = workflowDriver(workflow);
-  let { status } = await driver.ensure(request.workflow_instance_id, storedParams(request), { createRequested });
+  await pendingBackupDispatchStatement(database, request.idempotency_key, request.observed_at).run();
+  const dispatch = await backupDispatchStatus(database, request.idempotency_key);
+  let observed: Awaited<ReturnType<typeof driver.ensure>> | null = null;
+  for (let attempt = 0; attempt < maximumBackupDispatchAttempts; attempt += 1) {
+    await backupDispatchAttemptStatement(database, request.idempotency_key, new Date().toISOString()).run();
+    try {
+      observed = await driver.ensure(request.workflow_instance_id, storedParams(request), {
+        createRequested: createRequested || dispatch?.state !== "dispatched",
+      });
+      await backupDispatchOutcomeStatement(database, request.idempotency_key, null, new Date().toISOString()).run();
+      break;
+    } catch (error) {
+      const detail =
+        error instanceof Error ? error.message.slice(0, 1000) : "The backup Workflow could not be dispatched.";
+      await backupDispatchOutcomeStatement(database, request.idempotency_key, detail, new Date().toISOString()).run();
+    }
+  }
+  if (observed === null)
+    return {
+      contract: "card-keepr-catalogue-backup-workflow@1",
+      expected_current_revision_id: request.expected_current_revision_id,
+      idempotency_key: request.idempotency_key,
+      workflow_instance_id: request.workflow_instance_id,
+      status: dispatch?.state === "dispatched" ? "unknown" : "dispatch_failed",
+      output: null,
+      dispatch: await backupDispatchStatus(database, request.idempotency_key),
+    };
+  let { status } = observed;
   if (status.status === "paused") status = await driver.resume(request.workflow_instance_id);
   let publicStatus = status.status;
   let output: ReturnType<typeof workflowOutput> | null = null;
