@@ -489,10 +489,10 @@ test("the schema carries the hot-path indexes and not the dead ones", async () =
     "SCAN ingestion_runs USING INDEX ingestion_runs_recent",
   ]);
   assert.deepEqual(plan(schemaQueries.explainRecoverablePublications(database)), [
-    "SEARCH ingestion_runs USING INDEX ingestion_runs_by_state (state=? AND publication_reconcile_after>? AND publication_reconcile_after<?)",
+    "SEARCH ingestion_run_current USING INDEX ingestion_runs_by_state (state=? AND publication_reconcile_after>? AND publication_reconcile_after<?)",
   ]);
   assert.deepEqual(plan(schemaQueries.explainExpiredRuns(database)), [
-    "SEARCH ingestion_runs USING COVERING INDEX ingestion_runs_by_state (state=?)",
+    "SEARCH ingestion_run_current USING COVERING INDEX ingestion_runs_by_state (state=?)",
   ]);
   database.close();
 });
