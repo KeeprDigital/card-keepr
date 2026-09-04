@@ -71,6 +71,66 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.doesNotMatch(ci, /CLOUDFLARE_API_TOKEN|environment:\s*production|--remote|wrangler (?:deploy|versions deploy)/u);
 });
 
+test("the release SHA is resolved through the GitHub API before checkout and ci stays in step with it", () => {
+  // Issue #75: expected_head_sha is verified before any other step with the
+  // workflow's own read-only token: full commit id, contained in main, and a
+  // successful latest ci check run for every ci.yml job (resolved through
+  // the merged pull request when the SHA is a merge commit on main).
+  const release = readFileSync(".github/workflows/production-release.yml", "utf8");
+  const ci = readFileSync(".github/workflows/ci.yml", "utf8");
+  const steps = release.split(/\n      - name: /u).slice(1).map((step) => ({ name: step.split("\n")[0], body: step }));
+  assert.equal(steps[0].name, "Verify the release SHA is contained in main and passed ci");
+  assert.equal(steps[1].name, "Check out the exact guarded release");
+  const gate = steps[0].body;
+  assert.match(gate, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
+  assert.match(gate, /grep -Eq '\^\[0-9a-f\]\{40\}\$'/u);
+  assert.match(gate, /compare\/main\.\.\.\$\{EXPECTED_HEAD_SHA\}/u);
+  assert.match(gate, /identical\|behind\) ;;/u);
+  assert.match(gate, /commits\/\$\{EXPECTED_HEAD_SHA\}\/pulls[^\n]*merged_at != null[^\n]*base\.ref == \\"main\\"[^\n]*merge_commit_sha == \\"\$\{EXPECTED_HEAD_SHA\}\\"/u);
+  assert.match(gate, /commits\/\$\{ci_sha\}\/check-runs\?filter=latest/u);
+  assert.match(gate, /app\.slug == "github-actions"/u);
+  assert.match(gate, /status != "completed" or \.conclusion != "success"/u);
+  assert.doesNotMatch(gate, /secrets\./u);
+  // The workflow token reads checks and pull requests and writes nothing.
+  assert.match(release, /permissions:\n      contents: read\n      checks: read\n      pull-requests: read\n/u);
+  assert.doesNotMatch(release, /:\s*write\b/u);
+  // Every ci.yml job is a required check of the release gate, and nothing
+  // else is: adding or renaming a ci job updates REQUIRED_CI_JOBS.
+  const required = gate.match(/REQUIRED_CI_JOBS: ([^\n]+)/u)[1].trim().split(/\s+/u).sort();
+  const ciJobs = (ci.split("\njobs:\n")[1].match(/^  [\w-]+:$/gmu) ?? []).map((line) => line.trim().slice(0, -1)).sort();
+  assert.deepEqual(required, ciJobs);
+  assert.ok(ciJobs.includes("lint"));
+  // ci cancels a superseded run of the same pull request.
+  assert.match(ci, /concurrency:\n  group: ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}\n  cancel-in-progress: true/u);
+});
+
+test("workflow hygiene: pinned actions, no secret written to GITHUB_ENV, no misleading job name, stress failures reported", () => {
+  // Issue #75.
+  const workflows = ["cache-warm", "ci", "production-preflight", "production-release", "stress"].map((name) => [name, readFileSync(`.github/workflows/${name}.yml`, "utf8")]);
+  for (const [name, text] of workflows) {
+    for (const uses of text.match(/^\s*(?:- )?uses: .+$/gmu) ?? []) {
+      assert.match(uses, /uses: [\w.-]+\/[\w.-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$/u, `${name}: ${uses.trim()}`);
+    }
+    // A secret interpolated into a GITHUB_ENV or GITHUB_OUTPUT write would
+    // need the heredoc-delimiter form; the workflows write only file paths.
+    for (const line of text.split("\n").filter((candidate) => /GITHUB_ENV|GITHUB_OUTPUT/u.test(candidate))) {
+      assert.doesNotMatch(line, /secrets\.|TOKEN|KEY/u, `${name}: ${line.trim()}`);
+    }
+  }
+  const release = workflows.find(([name]) => name === "production-release")[1];
+  assert.doesNotMatch(release, /deploy-production/u);
+  const stress = workflows.find(([name]) => name === "stress")[1];
+  assert.match(stress, /60 days/u);
+  assert.match(stress, /docs\/runbooks\/scheduled-stress\.md/u);
+  assert.match(stress, /report-failure:\n    needs: stress\n    if: failure\(\)/u);
+  assert.match(stress, /permissions:\n      contents: read\n      issues: write/u);
+  assert.match(stress, /gh issue create[^\n]*--label bug/u);
+  assert.match(stress, /gh issue comment/u);
+  // The stress job itself keeps the workflow's read-only token.
+  assert.doesNotMatch(stress.split("\n  report-failure:")[0], /issues: write/u);
+  assert.match(readFileSync("docs/runbooks/scheduled-stress.md", "utf8"), /60 days[\s\S]*gh workflow enable stress\.yml/u);
+});
+
 test("the Bootstrap Mode branch keeps every data-independent gate, runs no data-dependent smoke, and rolls nothing back", () => {
   // Issue #141: before the first published Catalogue Revision the guarded
   // Production Release runs in Bootstrap Mode, selected by one workflow input

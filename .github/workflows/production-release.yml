@@ -91,6 +91,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: production
+    # checks and pull-requests are read for the SHA provenance gate below;
+    # the workflow token writes nothing.
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: read
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOYMENT_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ inputs.expected_account_id }}
@@ -117,11 +123,44 @@ jobs:
       API_BASE_URL: ${{ secrets.API_BASE_URL }}
       API_TRAFFIC_TOKEN: ${{ secrets.API_TRAFFIC_TOKEN }}
     steps:
+      # Issue #75: the workflow checks out and ships whatever SHA is
+      # dispatched, so before checkout the SHA is resolved through the GitHub
+      # API. It must be a full commit id that main contains, and every ci job
+      # (ci.yml) must have a successful latest check run for it. ci runs on
+      # pull requests only, so a merge commit on main carries no ci check runs
+      # of its own: the commit's merged pull request into main is resolved and
+      # its head commit's check runs are required instead. The list of
+      # required jobs is pinned to ci.yml by the release contract test.
+      - name: Verify the release SHA is contained in main and passed ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUIRED_CI_JOBS: lint checks domain-tests ingestion-tests acceptance
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${EXPECTED_HEAD_SHA}" | grep -Eq '^[0-9a-f]{40}$'
+          compare="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${EXPECTED_HEAD_SHA}")"
+          case "$(jq -r '.status' <<<"${compare}")" in
+            identical|behind) ;;
+            *) printf 'expected_head_sha %s is not contained in main: %s\n' "${EXPECTED_HEAD_SHA}" "$(jq -c '{status, ahead_by, behind_by}' <<<"${compare}")"; exit 1 ;;
+          esac
+          ci_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${EXPECTED_HEAD_SHA}/pulls" --jq "[.[] | select(.merged_at != null and .base.ref == \"main\" and .merge_commit_sha == \"${EXPECTED_HEAD_SHA}\")] | .[0].head.sha // \"${EXPECTED_HEAD_SHA}\"")"
+          printf '%s\n' "${ci_sha}" | grep -Eq '^[0-9a-f]{40}$'
+          runs="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${ci_sha}/check-runs?filter=latest&per_page=100" --jq '[.check_runs[] | select(.app.slug == "github-actions") | {name, status, conclusion}]')"
+          for job in ${REQUIRED_CI_JOBS}; do
+            matched="$(jq -c --arg job "${job}" '[.[] | select(.name == $job or (.name | startswith($job + " (")))]' <<<"${runs}")"
+            if test "$(jq 'length' <<<"${matched}")" = 0; then
+              printf 'ci job %s has no check run on %s\n' "${job}" "${ci_sha}"; exit 1
+            fi
+            if test "$(jq '[.[] | select(.status != "completed" or .conclusion != "success")] | length' <<<"${matched}")" != 0; then
+              printf 'ci job %s did not succeed on %s: %s\n' "${job}" "${ci_sha}" "${matched}"; exit 1
+            fi
+          done
+          printf 'release SHA %s is contained in main (%s) and passed ci on %s\n' "${EXPECTED_HEAD_SHA}" "$(jq -r '.status' <<<"${compare}")" "${ci_sha}"
       - name: Check out the exact guarded release
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.expected_head_sha }}
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
