@@ -41,11 +41,11 @@ into the Worker and are not imported by the CLI.
 | Scope | Before | After |
 | --- | ---: | ---: |
 | CLI entry point, physical lines | 2,723 | 960 |
-| All CLI modules, physical lines | 3,848 | 1,743 |
-| All CLI modules under the same Biome formatter | 3,337 | 1,743 |
+| All CLI modules, physical lines | 3,848 | 1,733 |
+| All CLI modules under the same Biome formatter | 3,337 | 1,733 |
 
-The physical module total fell 54.7%; applying the same formatter to both trees
-shows a 47.8% structural reduction, so formatting savings are explicit. The
+The physical module total fell 55.0%; applying the same formatter to both trees
+shows a 48.1% structural reduction, so formatting savings are explicit. The
 entry point retains a closed command table and I/O orchestration. Release
 scripts retain pre-worker SQL and independent provider attestation; their
 transport is shared rather than hidden behind a second request implementation.

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { createServer } from "./helpers/cli-http.mjs";
+import { createHash } from "node:crypto";
 import test from "node:test";
+import { createServer } from "./helpers/cli-http.mjs";
 
 const target = {
   cloudflare_account_id: "0123456789abcdef0123456789abcdef",
@@ -457,3 +457,43 @@ function releaseResponse(response, intent, status) {
     }),
   );
 }
+
+test("release preparation preserves shared exit codes for null and malformed responses", async (t) => {
+  for (const [status, body, expectedCode, problemCode] of [
+    [401, "null", 4, "administration_error"],
+    [200, "not-json", 8, "invalid_administration_contract"],
+    [200, "null", 8, "invalid_administration_contract"],
+  ]) {
+    const server = createServer((_request, response) => {
+      response.statusCode = status;
+      response.setHeader("content-type", "application/json");
+      response.end(body);
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    t.after(() => server.close());
+    const result = await runCli(
+      [
+        "release",
+        "production",
+        "--release-id",
+        "release-response-contract",
+        "--expected-current-revision",
+        "catrev_spine_000",
+        "--expected-head-sha",
+        "a".repeat(40),
+        "--expected-migration-level",
+        "12",
+        "--idempotency-key",
+        "release-response-contract",
+        "--environment",
+        "production",
+        "--yes",
+        "--json",
+      ],
+      `http://127.0.0.1:${server.address().port}`,
+    );
+    assert.equal(result.code, expectedCode, result.stderr);
+    assert.equal(JSON.parse(result.stdout).code, problemCode);
+    assert.doesNotMatch(result.stderr, /TypeError/);
+  }
+});

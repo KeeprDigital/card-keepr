@@ -1,5 +1,5 @@
-import { exitCodeForStatus, parseOptions, runtimeUrl, writeCliFailure } from "./command-support.mjs";
-import { request } from "./lib/http-client.mjs";
+import { parseOptions, writeCliFailure } from "./command-support.mjs";
+import { requestDocument } from "./lib/json-client.mjs";
 import { dispatchProductionRelease } from "./provider-github-release.mjs";
 
 export async function runProductionReleaseCommand(args, environment, json) {
@@ -60,31 +60,21 @@ export async function runProductionReleaseCommand(args, environment, json) {
     replacement_handoff: replacement,
     ...(value["--confirm"] === undefined ? { prepare: true } : { confirmation: value["--confirm"] }),
   };
-  let response, document;
-  try {
-    response = await request(runtimeUrl(environment.KEEPR_INGESTION_URL, "/v1/production-releases"), {
-      method: "POST",
-      headers: { authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(10_000),
-    });
-    document = await response.json();
-  } catch {
-    return fail("runtime_unavailable", "Ingestion runtime is unavailable.", 9);
-  }
-  if (!response.ok)
+  const observed = await requestDocument(environment, "/v1/production-releases", { method: "POST", body });
+  if (observed.error !== null)
     return fail(
-      document.code ?? "administration_error",
-      document.detail ?? "Production Release preparation failed.",
-      document.code === "confirmation_required" ? 3 : exitCodeForStatus(response.status),
+      observed.error.code,
+      observed.error.detail,
+      observed.error.code === "confirmation_required" ? 3 : observed.exitCode,
     );
+  const document = observed.document;
   if (body.prepare === true) {
-    if (typeof document.confirmation !== "string")
+    if (typeof document?.confirmation !== "string")
       return fail("invalid_administration_contract", "Production Release confirmation is unavailable.", 8);
     return fail("confirmation_required", `Confirmation must exactly equal ${document.confirmation}`, 3);
   }
   if (
-    document.release_id !== body.release_id ||
+    document?.release_id !== body.release_id ||
     document.contract !== "card-keepr-production-release-request@1" ||
     document.dispatch_inputs === null ||
     typeof document.dispatch_inputs !== "object" ||
