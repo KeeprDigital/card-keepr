@@ -1,18 +1,19 @@
 import { expect, test } from "vitest";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
+import { currentPrintingsResponse } from "../../../src/catalogue/read";
 import {
-  installReconciliationSuite,
-  testEnv,
   approve,
   collect,
   collectRequests,
   exportComponentRecords,
   exportManifest,
   get,
+  installReconciliationSuite,
   post,
   reconcile,
   requiredFirst,
   requiredString,
+  testEnv,
   waitForRunState,
 } from "./reconciliation-helpers";
 
@@ -101,6 +102,18 @@ test("a complete Product fixture publishes separated release and distribution re
     throw new Error("Printing relationship source invalid");
   }
   const printingId = requiredString(from as Record<string, unknown>, "id");
+  const printingCollection = await currentPrintingsResponse(
+    testEnv.CATALOGUE_DB,
+    new Request(
+      `https://card-keepr.invalid/v1/printings?game=one-piece&product_id=${encodeURIComponent(productId)}&release_region=EN-OCEANIA`,
+    ),
+    { origin: "https://card-keepr.invalid", basePath: "" },
+  );
+  expect(printingCollection.status).toBe(200);
+  expect(await printingCollection.json()).toMatchObject({
+    data: expect.arrayContaining([expect.objectContaining({ id: printingId })]),
+    meta: { catalogue_revision_id: revisionId },
+  });
   expect(printings).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
