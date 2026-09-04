@@ -1,3 +1,4 @@
+import { replayByDigest } from "../shared";
 import { AdministrationProblem, canonicalJson, sha256Text } from "../shared";
 import { failReconciliationWorkflow, retainedReconciliationResult } from "./reconciliation-candidate-store";
 import { assertIdentifier } from "../source-evidence";
@@ -38,7 +39,7 @@ export async function startOrObserveReconciliationWorkflow(
   });
   const replay = await workflowRequest(database, input.idempotency_key);
   if (replay !== null) {
-    assertExactReplay(replay, requestJson);
+    await assertExactReplay(replay, requestJson);
     return {
       created: false,
       document: await publicWorkflowRequest(database, workflow, replay),
@@ -126,7 +127,7 @@ export async function startOrObserveReconciliationWorkflow(
       "The Ingestion Run is already bound to another reconciliation request.",
     );
   }
-  assertExactReplay(stored, requestJson);
+  await assertExactReplay(stored, requestJson);
   const created = insertion.meta.changes === 1;
   return {
     created,
@@ -311,12 +312,11 @@ function storedWorkflowParams(request: ReconciliationWorkflowRequestRow): Reconc
   return params as ReconciliationWorkflowParams;
 }
 
-function assertExactReplay(stored: ReconciliationWorkflowRequestRow, requestJson: string): void {
-  if (stored.request_json !== requestJson) {
-    throw new AdministrationProblem(
-      409,
-      "idempotency_conflict",
-      "The reconciliation idempotency key is already bound to another request.",
-    );
-  }
+async function assertExactReplay(stored: ReconciliationWorkflowRequestRow, requestJson: string): Promise<void> {
+  await replayByDigest({
+    lookup: async () => stored,
+    retainedDigest: (retained) => retained.request_json,
+    requestDigest: requestJson,
+    conflictDetail: "The reconciliation idempotency key is already bound to another request.",
+  });
 }
