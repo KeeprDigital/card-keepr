@@ -149,3 +149,29 @@ test("an administration polling 429 names the limiter and poll count immediately
   );
   assert.equal(polls, 2, "a rejected poll is never retried as an unavailable document");
 });
+
+test("a fixture's higher administration budget observes completion without a production-length sleep", async (t) => {
+  let now = 0;
+  let polls = 0;
+  t.mock.method(Date, "now", () => now);
+  t.mock.method(globalThis, "setTimeout", (callback, milliseconds) => {
+    now += milliseconds;
+    queueMicrotask(callback);
+    return { unref() {} };
+  });
+  t.mock.method(globalThis, "fetch", async () => {
+    polls += 1;
+    return Response.json({ state: polls > 1 ? "awaiting_approval" : "collecting" });
+  });
+  await waitForRunState(
+    "fixture-run",
+    "awaiting_approval",
+    {
+      KEEPR_INGESTION_URL: "http://acceptance.invalid",
+      KEEPR_ADMINISTRATION_KEY: "test-only-key",
+    },
+    { getOutput: () => "", administrationPollIntervalMs: 250 },
+  );
+  assert.equal(polls, 2);
+  assert.equal(now, 250);
+});

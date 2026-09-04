@@ -8,7 +8,7 @@ import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import {
-  ADMINISTRATION_POLL_INTERVAL_MS,
+  administrationPollInterval,
   runCli,
   startWorker,
   stopWorker,
@@ -1354,7 +1354,7 @@ async function ingestAndReconcile({
       }
       return { ...observed.output, http_status: candidateStatus };
     }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, ADMINISTRATION_POLL_INTERVAL_MS));
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, administrationPollInterval(ingestion)));
   }
   throw new Error(`reconciliation Workflow ${run.id} did not complete`);
 }
