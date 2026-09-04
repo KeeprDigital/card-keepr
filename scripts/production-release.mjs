@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { productionReleaseTransitionSql, productionReleaseLeaseAssignmentsSql } from "./production-release-state.mjs";
+import { productionReleaseTransitionSql, productionReleaseLeaseAssignmentsSql, productionReleaseOutcomeTimestampSql } from "./production-release-state.mjs";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { SPINE_REVISION_ID } from "../src/catalogue/shared/spine-revision.mjs";
@@ -95,7 +95,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   const preparedWhere = `idempotency_key=${q(plan.idempotency_key)} AND operation='prepare_production_release' AND request_json=${q(stableJson(plan))} AND json_extract(response_json,'$.release_id')=${q(plan.release_id)} AND json_extract(response_json,'$.dispatch_digest')=${q(environment.DISPATCH_DIGEST)}`;
   const recoveryGate =
     replacement === null
-      ? `operation.recovery_health='healthy' AND operation.active_recovery_id IS NULL`
+      ? `operation.recovery_health='healthy' AND operation.active_recovery_id IS NULL AND operation.recovery_restore_guard='clear'`
       : `operation.recovery_health='blocked' AND operation.active_recovery_id=${q(replacement.recovery_id)} AND EXISTS (SELECT 1 FROM catalogue_recovery_operations AS recovery WHERE recovery.id=${q(replacement.recovery_id)} AND recovery.state='awaiting_acceptance' AND recovery.method='replacement_database' AND recovery.target_revision_id=${q(replacement.target_revision_id)} AND recovery.target_digest=${q(replacement.target_digest)} AND recovery.restored_database_id=${q(replacement.replacement_database_id)} AND recovery.retained_database_id=${q(replacement.retained_database_id)} AND recovery.verification_json IS NOT NULL)`;
   const expectedRetention = bootstrap
     ? ""
@@ -107,7 +107,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   const claimKey = `release-dispatch:${environment.DISPATCH_DIGEST}`;
   const migrationKey = `release-migration-started:${environment.DISPATCH_DIGEST}`;
   const failureKey = `release-migration-failed:${environment.DISPATCH_DIGEST}`;
-  const durableClaim = `INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(claimKey)},'claim_production_release',request_json,${q(stableJson({ release_id: plan.release_id, state: "preflight", dispatch_digest: environment.DISPATCH_DIGEST }))},201,'success',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM administration_idempotency WHERE ${preparedWhere} AND ${liveGate};`;
+  const durableClaim = `INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(claimKey)},'claim_production_release',request_json,${q(stableJson({ release_id: plan.release_id, state: "preflight", dispatch_digest: environment.DISPATCH_DIGEST }))},201,'success',${productionReleaseOutcomeTimestampSql(claimKey)} FROM administration_idempotency WHERE ${preparedWhere} AND ${liveGate};`;
   const claimedEvidence = `EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(claimKey)} AND operation='claim_production_release')`;
   const claim =
     replacement === null
@@ -127,7 +127,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
     replacement === null ? `active_ingestion_run_id=${q(fenceRun)}` : `active_production_release_id=${q(plan.release_id)}`;
   await writeFile(
     `${directory}/migration-started.sql`,
-    `INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(migrationKey)},'production_release_migration_started',request_json,${q(stableJson({ release_id: plan.release_id, migration_started: true, dispatch_digest: environment.DISPATCH_DIGEST }))},201,'success',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM administration_idempotency WHERE idempotency_key=${q(claimKey)} AND operation='claim_production_release' AND EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND ${activeFence}); SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(migrationKey)} AND operation='production_release_migration_started') THEN 1 ELSE 0 END AS migration_started;\n`,
+    `INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(migrationKey)},'production_release_migration_started',request_json,${q(stableJson({ release_id: plan.release_id, migration_started: true, dispatch_digest: environment.DISPATCH_DIGEST }))},201,'success',${productionReleaseOutcomeTimestampSql(migrationKey)} FROM administration_idempotency WHERE idempotency_key=${q(claimKey)} AND operation='claim_production_release' AND EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND ${activeFence}); SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(migrationKey)} AND operation='production_release_migration_started') THEN 1 ELSE 0 END AS migration_started;\n`,
     { mode: 0o600 },
   );
   const migrationMarked = `EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(migrationKey)} AND operation='production_release_migration_started')`;
@@ -146,7 +146,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   const failureRecorded = `EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(failureKey)} AND operation='production_release_migration_failed' AND request_json=${q(stableJson(plan))} AND response_json=${q(failureResponse)} AND outcome='problem')`;
   await writeFile(
     `${directory}/failure-evidence.sql`,
-    `INSERT OR IGNORE INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(failureKey)},'production_release_migration_failed',request_json,${q(failureResponse)},500,'problem',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM administration_idempotency WHERE idempotency_key=${q(migrationKey)} AND operation='production_release_migration_started' AND request_json=${q(stableJson(plan))}; SELECT changes() AS inserted_rows, CASE WHEN ${migrationMarked} THEN 1 ELSE 0 END AS migration_started, CASE WHEN ${failureRecorded} THEN 1 ELSE 0 END AS failure_recorded;\n`,
+    `INSERT OR IGNORE INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(failureKey)},'production_release_migration_failed',request_json,${q(failureResponse)},500,'problem',${productionReleaseOutcomeTimestampSql(failureKey)} FROM administration_idempotency WHERE idempotency_key=${q(migrationKey)} AND operation='production_release_migration_started' AND request_json=${q(stableJson(plan))}; SELECT changes() AS inserted_rows, CASE WHEN ${migrationMarked} THEN 1 ELSE 0 END AS migration_started, CASE WHEN ${failureRecorded} THEN 1 ELSE 0 END AS failure_recorded;\n`,
     { mode: 0o600 },
   );
   await writeFile(
@@ -169,7 +169,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
     });
     await writeFile(
       `${directory}/deploying.sql`,
-      `INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(deployingKey)},'production_release_deploying',request_json,${q(deployingResponse)},201,'success',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM administration_idempotency WHERE idempotency_key=${q(claimKey)} AND operation='claim_production_release' AND ${migrationMarked} AND EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND active_production_release_id=${q(plan.release_id)}); SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(deployingKey)} AND operation='production_release_deploying') THEN 1 ELSE 0 END AS transitioned;\n`,
+      `INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(deployingKey)},'production_release_deploying',request_json,${q(deployingResponse)},201,'success',${productionReleaseOutcomeTimestampSql(deployingKey)} FROM administration_idempotency WHERE idempotency_key=${q(claimKey)} AND operation='claim_production_release' AND ${migrationMarked} AND EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND active_production_release_id=${q(plan.release_id)}); SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(deployingKey)} AND operation='production_release_deploying') THEN 1 ELSE 0 END AS transitioned;\n`,
       { mode: 0o600 },
     );
   } else {
@@ -232,7 +232,7 @@ export async function writeReplacementSeedSql(environment, serializedEvidence, o
   }
   for (const item of evidence.idempotency) {
     statements.push(
-      `INSERT OR IGNORE INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) VALUES (${q(item.idempotency_key)},${q(item.operation)},${q(item.request_json)},${q(item.response_json)},${item.http_status},${q(item.outcome)},${q(item.created_at)});`,
+      `INSERT OR IGNORE INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) VALUES (${q(item.idempotency_key)},${q(item.operation)},${q(item.request_json)},${q(item.response_json)},${item.http_status},${q(item.outcome)},${productionReleaseOutcomeTimestampSql(item.idempotency_key, item.created_at)});`,
     );
   }
   const productionRelease = evidence.production_release;
@@ -242,7 +242,7 @@ export async function writeReplacementSeedSql(environment, serializedEvidence, o
     `${productionReleaseTransitionSql(productionRelease.id, "preflight")}`,
     `${productionReleaseTransitionSql(productionRelease.id, "migrating")}`,
     `UPDATE operation_state SET ${productionReleaseLeaseAssignmentsSql(productionRelease.id, evidence.operation_state.active_production_release_expires_at)} WHERE singleton=1 AND active_ingestion_run_id IS NULL AND recovery_health='blocked' AND recovery_restore_guard='blocked' AND active_recovery_id=${q(plan.replacement_handoff.recovery_id)} AND (active_production_release_id IS NULL OR (active_production_release_id=${q(productionRelease.id)} AND active_production_release_expires_at=${q(evidence.operation_state.active_production_release_expires_at)}));`,
-    replacementTerminalAssertion(evidence, plan, environment),
+    replacementTerminalAssertion(evidence, plan),
   );
   await writeFile(output, `${statements.join("\n")}\n`, { mode: 0o600 });
 }
@@ -278,7 +278,7 @@ function bootstrapEvidenceSql(kind, id, serialized, dispatchDigest) {
     `EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(key)} AND operation=${q(operation)})`;
   const leaseHeld = `EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND active_production_release_id=${q(id)})`;
   const ledgerInsert = (key, operation, previousKey, previousOperation, response) =>
-    `INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(key)},${q(operation)},request_json,${q(response)},201,'success',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM administration_idempotency WHERE idempotency_key=${q(previousKey)} AND operation=${q(previousOperation)} AND ${leaseHeld}; SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND ${rowExists(key, operation)} THEN 1 ELSE 0 END AS transitioned;`;
+    `INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(key)},${q(operation)},request_json,${q(response)},201,'success',${productionReleaseOutcomeTimestampSql(key)} FROM administration_idempotency WHERE idempotency_key=${q(previousKey)} AND operation=${q(previousOperation)} AND ${leaseHeld}; SELECT changes() AS changed_rows, CASE WHEN changes()=1 AND ${rowExists(key, operation)} THEN 1 ELSE 0 END AS transitioned;`;
   if (kind === "binding") {
     return ledgerInsert(
       bindingKey,
@@ -823,7 +823,7 @@ function validProductionReleaseRow(row) {
   );
 }
 
-function replacementTerminalAssertion(evidence, plan, environment) {
+function replacementTerminalAssertion(evidence, plan) {
   const q = sqlQuote;
   const exactIdempotency = evidence.idempotency
     .map(

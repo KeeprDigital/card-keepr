@@ -231,3 +231,21 @@ export function removeReleaseAuditAndLegacyLease(database) {
     if (columns.some((column) => column.name === name)) database.exec(`ALTER TABLE operation_state DROP COLUMN ${name}`);
   }
 }
+
+export function blockReleaseRestoreGuard(database) {
+  return database.prepare("UPDATE operation_state SET recovery_restore_guard='blocked' WHERE singleton=1");
+}
+
+export function insertReleaseOutcomeClaim(database) {
+  return database.prepare(`INSERT INTO administration_idempotency_claims
+    (idempotency_key,operation,request_json,claimed_at,owner_token,claim_version,claim_expires_at)
+    VALUES (?,'competing_operation','{}','2026-09-04T00:00:00.000Z','competing-owner',1,'2099-09-04T00:00:00.000Z')`);
+}
+
+export function deleteReleaseOutcomeClaim(database) {
+  return database.prepare("DELETE FROM administration_idempotency_claims WHERE idempotency_key=?");
+}
+
+export function countReleaseOutcome(database) {
+  return database.prepare("SELECT COUNT(*) AS count FROM administration_idempotency WHERE idempotency_key=?");
+}

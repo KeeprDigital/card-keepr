@@ -38,3 +38,11 @@ export function productionReleaseLeaseAssignmentsSql(releaseId, expiresAt) {
   const expiry = quote(expiresAt);
   return `active_production_release_id=${identity},active_production_release_expires_at=CASE WHEN (${identity} IS NULL) <> (${expiry} IS NULL) OR (${expiry} IS NOT NULL AND (${expiry} NOT GLOB '????-??-??T??:??:??.???Z' OR julianday(${expiry}) IS NULL)) THEN json_extract('{}', 'production_release_lease_invalid') ELSE ${expiry} END`;
 }
+
+// Generated outcomes carry no claim token/version. Any existing claim therefore
+// belongs to another writer. Evaluate inside the INSERT so zero-row SELECTs stay
+// no-ops and rejection cannot leave a partial outcome or overwrite changes().
+export function productionReleaseOutcomeTimestampSql(idempotencyKey, createdAt = null) {
+  const timestamp = createdAt === null ? "strftime('%Y-%m-%dT%H:%M:%fZ','now')" : quote(createdAt);
+  return `CASE WHEN EXISTS (SELECT 1 FROM administration_idempotency_claims WHERE idempotency_key=${quote(idempotencyKey)}) THEN json_extract('{}', 'administration_idempotency_owner_changed') ELSE ${timestamp} END`;
+}

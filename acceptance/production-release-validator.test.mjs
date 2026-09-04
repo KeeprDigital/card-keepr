@@ -102,7 +102,7 @@ test("replacement release state is rehydrated into a distinct blocked database b
   const failedReplacement = await realDatabase();
   const competingReplacement = await realDatabase();
   t.after(() =>
-    [original, replacement, failedReplacement, competingReplacement].forEach((database) => database.close()),
+    [original, replacement, failedReplacement, competingReplacement].forEach((database) => { database.close(); }),
   );
   for (const database of [original, replacement, failedReplacement, competingReplacement]) {
     productionReleaseQueries.setCurrentCatalogueRevision(database).run(environment.EXPECTED_CURRENT_REVISION);
@@ -129,6 +129,12 @@ test("replacement release state is rehydrated into a distinct blocked database b
   );
   await writeReplacementSeedSql(environment, handoff, join(directory, "replacement-seed.sql"));
   const seedSql = await readFile(join(directory, "replacement-seed.sql"), "utf8");
+
+  const claimedHandoffKey = exactHandoff.idempotency[0].idempotency_key;
+  productionReleaseQueries.insertReleaseOutcomeClaim(competingReplacement).run(claimedHandoffKey);
+  assert.throws(() => competingReplacement.exec(seedSql), /administration_idempotency_owner_changed/);
+  assert.equal(productionReleaseQueries.countReleaseOutcome(competingReplacement).get(claimedHandoffKey).count, 0);
+  productionReleaseQueries.deleteReleaseOutcomeClaim(competingReplacement).run(claimedHandoffKey);
 
   replacement.exec(seedSql);
   assert.deepEqual(
@@ -383,6 +389,63 @@ test("a Bootstrap Mode dispatch relaxes only the data-dependent gates and keeps 
   );
 });
 
+test("a healthy release cannot claim while its restore guard remains blocked", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "keepr-release-restore-guard-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const environment = bootstrapEnvironment();
+  await validateDispatchAndWriteSql(environment, directory);
+  const database = await realDatabase();
+  t.after(() => database.close());
+  seedPreparedRequest(database, environment);
+  productionReleaseQueries.blockReleaseRestoreGuard(database).run();
+  const preflight = await readFile(join(directory, "live-preflight.sql"), "utf8");
+  assert.equal(database.prepare(preflight).get().ready, 0);
+  assert.equal(lastRow(database, await readFile(join(directory, "claim.sql"), "utf8")).claimed, 0);
+  assert.equal(productionReleaseQueries.countDispatchClaims(database).get().count, 0);
+  assert.equal(productionReleaseQueries.countBootstrapFenceRuns(database).get().count, 0);
+});
+
+test("every generated ledger phase rejects a competing owner and preserves zero-row phases", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "keepr-release-outcome-owner-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const environment = bootstrapEnvironment();
+  await validateDispatchAndWriteSql(environment, directory);
+  for (const kind of ["binding", "smoke"]) {
+    await writeEvidenceSql(kind, environment.RELEASE_ID, "{}", join(directory, `${kind}.sql`), environment);
+  }
+  const database = await realDatabase();
+  t.after(() => database.close());
+  seedPreparedRequest(database, environment);
+  for (const [file, prefix] of [
+    ["claim", "release-dispatch"],
+    ["migration-started", "release-migration-started"],
+    ["failure-evidence", "release-migration-failed"],
+    ["deploying", "release-deploying"],
+    ["binding", "release-binding"],
+    ["smoke", "release-smoke"],
+  ]) {
+    const key = `${prefix}:${environment.DISPATCH_DIGEST}`;
+    const sql = await readFile(join(directory, `${file}.sql`), "utf8");
+    productionReleaseQueries.insertReleaseOutcomeClaim(database).run(key);
+    // A phase with no predecessor must stay a no-op even if its target key is claimed.
+    if (file === "claim") {
+      const unavailable = await readFile(join(directory, "binding.sql"), "utf8");
+      const unavailableKey = `release-binding:${environment.DISPATCH_DIGEST}`;
+      productionReleaseQueries.insertReleaseOutcomeClaim(database).run(unavailableKey);
+      assert.equal(lastRow(database, unavailable).changed_rows, 0);
+      productionReleaseQueries.deleteReleaseOutcomeClaim(database).run(unavailableKey);
+    }
+    const previousLease = { ...productionReleaseQueries.operationLease(database).get() };
+    assert.throws(() => database.exec(sql), /administration_idempotency_owner_changed/, file);
+    assert.equal(productionReleaseQueries.countReleaseOutcome(database).get(key).count, 0, file);
+    assert.deepEqual({ ...productionReleaseQueries.operationLease(database).get() }, previousLease);
+    productionReleaseQueries.deleteReleaseOutcomeClaim(database).run(key);
+    database.exec(sql);
+    assert.equal(productionReleaseQueries.countReleaseOutcome(database).get(key).count, 1, file);
+    if (file === "migration-started") database.exec(await readFile(join(directory, "materialize.sql"), "utf8"));
+  }
+});
+
 function bootstrapEnvironment() {
   const environment = releaseEnvironment();
   const plan = JSON.parse(environment.PREPARED_PLAN_JSON);
@@ -427,7 +490,7 @@ function seedPreparedRequest(database, environment) {
 }
 
 function publishRevision(database, revision) {
-  database.exec("DROP TRIGGER guard_catalogue_publication");
+  database.exec("DROP TRIGGER IF EXISTS guard_catalogue_publication");
   productionReleaseQueries.insertFirstIngestionRun(database).run();
   productionReleaseQueries.insertFirstCatalogueRevision(database).run(revision, "b".repeat(64), "a".repeat(64));
   productionReleaseQueries.publishFirstCatalogueRevision(database).run(revision);
@@ -691,8 +754,9 @@ function liveGateDatabase(environment) {
   const db = new DatabaseSync(":memory:");
   db.exec(`
     CREATE TABLE administration_idempotency (idempotency_key TEXT PRIMARY KEY,operation TEXT,request_json TEXT,response_json TEXT,http_status INTEGER,outcome TEXT,created_at TEXT);
+    CREATE TABLE administration_idempotency_claims (idempotency_key TEXT PRIMARY KEY);
     CREATE TABLE catalogue_state (singleton INTEGER PRIMARY KEY,current_revision_id TEXT);
-    CREATE TABLE operation_state (singleton INTEGER PRIMARY KEY,active_ingestion_run_id TEXT,active_production_release_id TEXT,active_production_release_expires_at TEXT,recovery_health TEXT,active_recovery_id TEXT);
+    CREATE TABLE operation_state (singleton INTEGER PRIMARY KEY,active_ingestion_run_id TEXT,active_production_release_id TEXT,active_production_release_expires_at TEXT,recovery_health TEXT,active_recovery_id TEXT,recovery_restore_guard TEXT);
     CREATE TABLE catalogue_schema_state (singleton INTEGER PRIMARY KEY,migration_level INTEGER);
     CREATE TABLE catalogue_backup_attempts (idempotency_key TEXT PRIMARY KEY,catalogue_revision_id TEXT,state TEXT,d1_bookmark TEXT,manifest_sha256 TEXT);
     CREATE TABLE catalogue_revisions (id TEXT PRIMARY KEY,expected_previous_revision_id TEXT);
@@ -701,7 +765,7 @@ function liveGateDatabase(environment) {
     CREATE TABLE catalogue_query_revisions (catalogue_revision_id TEXT PRIMARY KEY,state TEXT);
     CREATE TABLE ingestion_runs (id TEXT PRIMARY KEY,state TEXT,selected_games_json TEXT,started_at TEXT,expected_current_revision_id TEXT,idempotency_key TEXT,candidate_json TEXT);
     INSERT INTO catalogue_state VALUES (1,'catrev-current');
-    INSERT INTO operation_state VALUES (1,NULL,NULL,NULL,'healthy',NULL);
+    INSERT INTO operation_state VALUES (1,NULL,NULL,NULL,'healthy',NULL,'clear');
     INSERT INTO catalogue_schema_state VALUES (1,${currentSchemaMigrationLevel});
     INSERT INTO catalogue_revisions VALUES ('catrev-current','catrev-previous'),('catrev-previous','catrev-old'),('catrev-old',NULL);
     INSERT INTO catalogue_exports VALUES ('catrev-current',1,'available'),('catrev-previous',1,'available'),('catrev-old',1,'available');
