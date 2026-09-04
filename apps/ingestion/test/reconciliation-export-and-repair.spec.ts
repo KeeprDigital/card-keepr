@@ -1,3 +1,4 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import * as cardSearchQueries from "./query-helpers/card-search";
 import * as ingestionQueries from "./query-helpers/ingestion";
@@ -408,7 +409,7 @@ test("publication and bounded Card search repair need no obsolete gram table and
       }),
     };
   });
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ...cards.map(({ id, document }) =>
       publishedCatalogueQueries
         .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
@@ -463,7 +464,7 @@ test("Card search repair rejects an oversized legacy Card before materializing i
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const oversizedCardId = "card_oversized_legacy_search_repair";
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     publishedCatalogueQueries
       .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
         testEnv.CATALOGUE_DB,

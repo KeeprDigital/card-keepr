@@ -7,7 +7,7 @@ import {
 } from "../../../src/catalogue/ingestion/printing-query-materialization";
 
 export async function seedPrintingQueryFixture(database: D1Database): Promise<void> {
-  await database.batch([
+  await catalogueStore(database).batch([
     ingestionQueries.insertIngestionRuns(database).bind(
       "a".repeat(64),
       JSON.stringify({
@@ -38,7 +38,7 @@ export async function seedPrintingQueryProjection(database: D1Database): Promise
   const rows = await publishedCatalogueQueries
     .readRevisionPrintingsSupportedGameNormalizedRarity(database)
     .all<PrintingQueryFact>();
-  await database.batch([
+  await catalogueStore(database).batch([
     publishedCatalogueQueries.deleteRevisionPrintingQuery(database),
     ...printingQueryProjectionStatements(catalogueStore(database), "catrev_products", rows.results),
   ]);

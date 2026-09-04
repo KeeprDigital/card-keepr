@@ -357,7 +357,7 @@ test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact 
       contentEncoding: "gzip",
     },
   });
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries
       .insertIngestionRunsForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(testEnv.CATALOGUE_DB)
       .bind(
@@ -729,7 +729,7 @@ test("a known deleting or deleted Catalogue Export is immediately 410 while an u
     .insertCatalogueExportDeletionPlans(testEnv.CATALOGUE_DB)
     .bind(planId, oldExport.manifest_digest, canonicalJson([oldExport.manifest_key]), objectSetDigest, planDigest)
     .run();
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     catalogueExportQueries
       .insertCatalogueExportDeletions(testEnv.CATALOGUE_DB)
       .bind(deletionId, planId, oldExport.manifest_digest, objectSetDigest, idempotencyKey, requestJson),
@@ -896,7 +896,7 @@ test("authenticated Legality Status reads only indexed Card and regional applica
       }),
     ],
   });
-  await testEnv.CATALOGUE_DB.batch(
+  await catalogueStore(testEnv.CATALOGUE_DB).batch(
     legalitySourceStatements({
       runId,
       key: "api_legality_applicability",
@@ -948,10 +948,14 @@ test("authenticated Legality Status reads only indexed Card and regional applica
   }));
   const rules = [targetRule, ...unrelatedCardRules, ...unrelatedRegionGlobals];
   for (let offset = 0; offset < rules.length; offset += 64) {
-    await testEnv.CATALOGUE_DB.batch(canonicalLegalityRuleStatements(revisionId, rules.slice(offset, offset + 64)));
+    await catalogueStore(testEnv.CATALOGUE_DB).batch(
+      canonicalLegalityRuleStatements(revisionId, rules.slice(offset, offset + 64)),
+    );
   }
   for (let offset = 0; offset < rules.length; offset += 64) {
-    await testEnv.CATALOGUE_DB.batch(revisionLegalityRuleStatements(revisionId, rules.slice(offset, offset + 64)));
+    await catalogueStore(testEnv.CATALOGUE_DB).batch(
+      revisionLegalityRuleStatements(revisionId, rules.slice(offset, offset + 64)),
+    );
   }
   await legalityQueries.dropRevisionLegalityRulesImmutableUpdate(testEnv.CATALOGUE_DB).run();
   await legalityQueries
@@ -1115,7 +1119,7 @@ test("authenticated Legality Status gives definitive exclusions precedence while
       source_observation_id: "srcobs_api_precedence",
     },
   ]);
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries
       .insertIngestionRunsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
         testEnv.CATALOGUE_DB,
@@ -1441,7 +1445,7 @@ test("Legality Status evidence reports the captured_at the publication projected
       source_retrieved_at: projectedCapturedAt,
     },
   ];
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries
       .insertIngestionRunsForLegalityStatusEvidenceReportsCapturedAtPublicationProjected(testEnv.CATALOGUE_DB)
       .bind(
@@ -1598,7 +1602,7 @@ test("an unresolved target-scope rule answers explicitly indeterminate for every
       ...provenance,
     },
   ];
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries
       .insertIngestionRunsForUnresolvedTargetScopeRuleAnswersExplicitlyIndeterminateEveryOverlapping(
         testEnv.CATALOGUE_DB,
@@ -1853,7 +1857,7 @@ test("authenticated Legality Status targets the functional DON!! Card and audits
       },
     },
   ];
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries
       .insertIngestionRunsForAuthenticatedLegalityStatusTargetsFunctionalDONCardAuditsUnresolved(testEnv.CATALOGUE_DB)
       .bind(
@@ -1990,7 +1994,7 @@ test("the public Printing response validates full Distribution Context objects",
   if (previousRevisionId === null) {
     throw new Error("The API test catalogue state is unavailable.");
   }
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries
       .insertIngestionRunsForPublicPrintingResponseValidatesFullDistributionContextObjects(testEnv.CATALOGUE_DB)
       .bind(
@@ -2043,7 +2047,7 @@ test("the public Printing response validates full Distribution Context objects",
       ],
     },
   });
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries.setIngestionRunsStatePublishedRevisionId(testEnv.CATALOGUE_DB),
     ingestionQueries.setOperationStateActiveIngestionRunIdForPublicPrintingResponseValidatesFullDistributionContextObjectsWithRunApiContext(
       testEnv.CATALOGUE_DB,
@@ -2107,7 +2111,7 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
   if (previousRevisionId === null) {
     throw new Error("The API test catalogue state is unavailable.");
   }
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries
       .insertIngestionRunsForAuthenticatedCardPrintingReadsExposeEffectivePrintedRulesText(testEnv.CATALOGUE_DB)
       .bind(
@@ -2207,7 +2211,7 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
   for (const response of conditionalResponses) {
     expect(response.headers.get("x-catalogue-revision")).toBe("catrev_errata_read");
   }
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries.setIngestionRunsStatePublishedRevisionIdForAuthenticatedCardPrintingReadsExposeEffectivePrintedRulesText(
       testEnv.CATALOGUE_DB,
     ),
@@ -2844,7 +2848,7 @@ test("Card detail includes revision-pinned Printings, provenance, and disagreeme
     lifecycle: card.lifecycle,
     links: { self: "/v1/printings/printing_detail_projection" },
   };
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     publishedCatalogueQueries
       .setRevisionCardsDocumentJsonForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
         testEnv.CATALOGUE_DB,
@@ -3002,7 +3006,7 @@ test("Card cursors continue on an available pinned revision and conflict only af
     .insertCatalogueExportsForCardCursorsContinueOnAvailablePinnedRevisionConflictOnly(testEnv.CATALOGUE_DB)
     .bind("e".repeat(64))
     .run();
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     publishedCatalogueQueries.archiveFixtureQueryRevision(testEnv.CATALOGUE_DB, "catrev_cursor_old"),
     publishedCatalogueQueries.deleteRevisionCardQueryDocuments(testEnv.CATALOGUE_DB),
   ]);

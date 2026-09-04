@@ -1,3 +1,4 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import { exports } from "cloudflare:workers";
@@ -226,7 +227,7 @@ test("authenticated reparse rejects a normalized fixture envelope through an una
     ],
   });
   await testEnv.EVIDENCE_OBJECTS.put(objectKey, bytes);
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries
       .insertIngestionRunsForAuthenticatedReparseRejectsNormalizedFixtureEnvelopeThroughUnavailableProduction(
         testEnv.CATALOGUE_DB,
@@ -379,7 +380,7 @@ test.each([
       ],
     });
     await testEnv.EVIDENCE_OBJECTS.put(objectKey, bytes);
-    await testEnv.CATALOGUE_DB.batch([
+    await catalogueStore(testEnv.CATALOGUE_DB).batch([
       ingestionQueries
         .insertIngestionRunsForContextualLegalitySourceChanges(testEnv.CATALOGUE_DB)
         .bind(runId, JSON.stringify([game]), `conditional-worker-${lineage}`),

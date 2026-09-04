@@ -218,7 +218,7 @@ beforeEach(async () => {
   };
   await ingestionQueries.setOperationStateActiveIngestionRunIdActiveProductionReleaseId(env.CATALOGUE_DB).run();
   await curatedQueries.setCuratedRevisionsStatusEventVersion(env.CATALOGUE_DB).run();
-  await env.CATALOGUE_DB.batch([
+  await catalogueStore(env.CATALOGUE_DB).batch([
     ingestionQueries.insertIngestionRunsForCuratedRevisions(env.CATALOGUE_DB).bind(
       runId,
       now,
@@ -253,8 +253,11 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await env.CATALOGUE_DB.batch([
-    ingestionQueries.setIngestionRunsStateTerminalAtForCuratedRevisions(env.CATALOGUE_DB),
+  const activeRunId = await ingestionQueries
+    .readOperationStateActiveIngestionRunId(env.CATALOGUE_DB)
+    .first<string>("active_ingestion_run_id");
+  await catalogueStore(env.CATALOGUE_DB).batch([
+    ingestionQueries.setIngestionRunsStateTerminalAtForCuratedRevisions(env.CATALOGUE_DB).bind(activeRunId ?? ""),
     ingestionQueries.setOperationStateActiveIngestionRunIdActiveProductionReleaseId(env.CATALOGUE_DB),
   ]);
 });
@@ -1547,7 +1550,7 @@ test("a prepared retry persists its failed run and every source-change conflict"
   );
   await expect(
     ingestionQueries.setIngestionRunsCandidateJson(env.CATALOGUE_DB).bind(document.id).run(),
-  ).rejects.toThrow("candidate_immutable");
+  ).rejects.toThrow("ingestion_run_event_payload_immutable");
   const replay = await adminRequest(`/v1/ingestion-runs/${sourceRunId}/retry`, {
     idempotency_key: `prepared-conflict-retry-${sequence}`,
   });
@@ -2002,7 +2005,7 @@ test("field absence is distinct from null and retirement restores exact absence"
   expect(applied.printings[0]!.curated_provenance?.[0]?.reviewed_source_value).toEqual(absence);
   const stripped = stripCuratedRevisionEffects(applied);
   expect(Object.hasOwn(stripped.printings[0]!.game_data!.attributes, "illustration_types")).toBe(false);
-  await env.CATALOGUE_DB.batch([
+  await catalogueStore(env.CATALOGUE_DB).batch([
     ingestionQueries
       .setIngestionRunsStateTerminalAtForFieldAbsenceDistinctFromNullRetirementRestoresExactAbsence(env.CATALOGUE_DB)
       .bind(now, appliedRunId),
@@ -2344,7 +2347,7 @@ test("the Worker lifecycle endpoints fail closed on every mutation guard", async
   await expect(activeRun.json()).resolves.toMatchObject({
     code: "active_ingestion_run",
   });
-  await env.CATALOGUE_DB.batch([
+  await catalogueStore(env.CATALOGUE_DB).batch([
     ingestionQueries
       .setIngestionRunsStateTerminalAtForFieldAbsenceDistinctFromNullRetirementRestoresExactAbsence(env.CATALOGUE_DB)
       .bind(now, activeRunId),

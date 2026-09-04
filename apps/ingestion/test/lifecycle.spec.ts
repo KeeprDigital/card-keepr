@@ -425,7 +425,7 @@ test("an orphaned start claim returns stable progress before its lease and resum
   expect(remainingClaim).toBeNull();
 });
 
-test("malformed persisted JSON is rejected instead of crossing the administration seam", async () => {
+test("malformed typed progress and approval are rejected at the administration seam", async () => {
   const started = await startRun("start-malformed-persistence");
   const runId = requiredDocumentString(started.document, "id");
   await ingestionQueries.setIngestionRunsProgressJson(testEnv.CATALOGUE_DB).bind(runId).run();
@@ -706,7 +706,7 @@ test("an interrupted publication fails atomically and leaves cleanup independent
     .run();
 
   await expect(ingestionQueries.setIngestionRunsApprovalJson(testEnv.CATALOGUE_DB).bind(runId).run()).rejects.toThrow(
-    "reserved_approval_immutable",
+    "ingestion_run_event_immutable",
   );
 
   testObservedAt = reconcileAfter;
@@ -1129,7 +1129,7 @@ test("a cleanup CAS loser replays the immutable completion that won the race", a
         if (administrationClaim === null) {
           throw new Error("cleanup administration claim is missing");
         }
-        await testEnv.CATALOGUE_DB.batch([
+        await catalogueStore(testEnv.CATALOGUE_DB).batch([
           ingestionQueries
             .setIngestionPublicationCleanupStateAttemptsForCleanupCASLoserReplaysImmutableCompletionThatWonRace(
               testEnv.CATALOGUE_DB,
@@ -1202,7 +1202,7 @@ test("normal approval never adopts a prefix that becomes a registered export", a
           .readIngestionRunsCandidateCatalogueDigest(testEnv.CATALOGUE_DB)
           .bind(runId)
           .first<{ candidate_catalogue_digest: string }>();
-        await testEnv.CATALOGUE_DB.batch([
+        await catalogueStore(testEnv.CATALOGUE_DB).batch([
           ingestionQueries
             .insertCatalogueRevisionsForNormalApprovalNeverAdoptsPrefixThatBecomesRegisteredExport(testEnv.CATALOGUE_DB)
             .bind(
@@ -1335,7 +1335,7 @@ test("cleanup deletes nothing when its failed prefix becomes registered", async 
     .first<{ not_before: string }>();
   // Inject the concurrent registration directly; normal publication owns its
   // guard in the repository and cannot create this deliberately conflicting fixture.
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries
       .insertCatalogueRevisionsForNormalApprovalNeverAdoptsPrefixThatBecomesRegisteredExport(testEnv.CATALOGUE_DB)
       .bind(revisionId, runId, startedAt, candidateDigest, expectedRevision, candidateDigest),
@@ -1967,7 +1967,7 @@ test("an exact confirmation replay resumes an interrupted deleting operation", a
     deletion_id: "export-deletion-interrupted",
     idempotency_key: "export-deletion-interrupted-key",
   };
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     catalogueExportQueries
       .insertCatalogueExportDeletionsForExactConfirmationReplayResumesInterruptedDeletingOperation(testEnv.CATALOGUE_DB)
       .bind(
@@ -2269,7 +2269,7 @@ async function seedDeletionExport(
     .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
     .first<string>("current_revision_id");
   if (previousRevisionId === null) throw new Error("missing catalogue state");
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     ingestionQueries.insertIngestionRunsForSeedDeletionExport(testEnv.CATALOGUE_DB).bind(
       runId,
       publishedAt,
@@ -2316,7 +2316,7 @@ async function seedDeletionExport(
   };
   await testEnv.CATALOGUE_EXPORTS.put(componentKey, revisionId);
   await testEnv.CATALOGUE_EXPORTS.put(manifestKey, `${canonicalJson(manifest)}\n`);
-  await testEnv.CATALOGUE_DB.batch([
+  await catalogueStore(testEnv.CATALOGUE_DB).batch([
     catalogueExportQueries.insertCatalogueExports(testEnv.CATALOGUE_DB).bind(revisionId, manifestKey, manifestDigest),
     publishedCatalogueQueries
       .setCatalogueStateCurrentRevisionIdPublishedAt(testEnv.CATALOGUE_DB)
@@ -2452,7 +2452,7 @@ function pauseBeforeThirdDeletionBatchDatabase(database: D1Database): {
               entered.resolve(undefined);
               await release.promise;
             }
-            return target.batch(statements);
+            return catalogueStore(target).batch(statements);
           };
         }
         const value = Reflect.get(target, property);
