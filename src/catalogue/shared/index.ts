@@ -98,3 +98,5 @@ export {
 } from "./export-limits";
 
 export { decodeDocument, type DocumentSchema } from "./document-decoder";
+
+export { activeRunStages } from "./ingestion-run-stages";

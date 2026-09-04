@@ -1,17 +1,5 @@
 import { AdministrationProblem, decodeDocument, type SupportedGame } from "../shared";
 
-export const activeRunStages = [
-  "planning",
-  "collecting",
-  "parsing",
-  "reconciling",
-  "awaiting_approval",
-  "publishing",
-] as const;
-// 'paused' is a non-terminal run state, not a progress stage: a paused run
-// holds the active-run reservation with collection incomplete, so it never
-// appears in a completed_stages list.
-
 export const terminalRunStates = new Set(["published", "rejected", "expired", "failed"]);
 
 export function publicationWriterToken(revisionId: string): string {
