@@ -120,63 +120,36 @@ const run = {
 test("guarded reconciliation and bounded search repair are normative administration commands", async () => {
   const schema = JSON.parse(
     await readFile(
-      resolve(
-        root,
-        "prototype/formalize-implementation-contracts/schemas/administration.schema.json",
-      ),
+      resolve(root, "prototype/formalize-implementation-contracts/schemas/administration.schema.json"),
       "utf8",
     ),
   );
-  assert.deepEqual(
-    schema.$defs.ReconciliationCommandRequest.required,
-    ["expected_current_revision_id", "idempotency_key"],
-  );
-  assert.equal(
-    schema.$defs.ReconciliationCommandRequest.additionalProperties,
-    false,
-  );
-  assert.deepEqual(
-    schema.$defs.CatalogueSearchRepairCommandRequest.required,
-    [
-      "target_revision_id",
-      "expected_current_revision_id",
-      "idempotency_key",
-    ],
-  );
-  assert.equal(
-    schema.$defs.CatalogueSearchRepairCommandRequest.additionalProperties,
-    false,
-  );
-  assert.deepEqual(
-    schema.$defs.CatalogueBackupCommandRequest.required,
-    ["expected_current_revision_id", "idempotency_key"],
-  );
-  assert.equal(
-    schema.$defs.CatalogueBackupCommandRequest.additionalProperties,
-    false,
-  );
-  assert.equal(
-    schema.$defs.CatalogueRecoveryBeginCommandRequest.additionalProperties,
-    false,
-  );
-  assert.deepEqual(
-    schema.$defs.CatalogueRecoveryVerifyCommandRequest.required,
-    ["target_digest", "idempotency_key"],
-  );
-  assert.deepEqual(
-    schema.$defs.CatalogueRecoveryAcceptCommandRequest.required,
-    [
-      "expected_restored_revision_id",
-      "target_digest",
-      "confirmation_recovery_id",
-      "idempotency_key",
-    ],
-  );
+  assert.deepEqual(schema.$defs.ReconciliationCommandRequest.required, [
+    "expected_current_revision_id",
+    "idempotency_key",
+  ]);
+  assert.equal(schema.$defs.ReconciliationCommandRequest.additionalProperties, false);
+  assert.deepEqual(schema.$defs.CatalogueSearchRepairCommandRequest.required, [
+    "target_revision_id",
+    "expected_current_revision_id",
+    "idempotency_key",
+  ]);
+  assert.equal(schema.$defs.CatalogueSearchRepairCommandRequest.additionalProperties, false);
+  assert.deepEqual(schema.$defs.CatalogueBackupCommandRequest.required, [
+    "expected_current_revision_id",
+    "idempotency_key",
+  ]);
+  assert.equal(schema.$defs.CatalogueBackupCommandRequest.additionalProperties, false);
+  assert.equal(schema.$defs.CatalogueRecoveryBeginCommandRequest.additionalProperties, false);
+  assert.deepEqual(schema.$defs.CatalogueRecoveryVerifyCommandRequest.required, ["target_digest", "idempotency_key"]);
+  assert.deepEqual(schema.$defs.CatalogueRecoveryAcceptCommandRequest.required, [
+    "expected_restored_revision_id",
+    "target_digest",
+    "confirmation_recovery_id",
+    "idempotency_key",
+  ]);
   const contract = await readFile(
-    resolve(
-      root,
-      "prototype/formalize-implementation-contracts/ADMINISTRATION.md",
-    ),
+    resolve(root, "prototype/formalize-implementation-contracts/ADMINISTRATION.md"),
     "utf8",
   );
   assert.match(contract, /never executes reconciliation inline/);
@@ -252,30 +225,30 @@ test("CLI search repair exits 10 while the retained repair remains incomplete", 
   const server = createServer((request, response) => {
     response.setHeader("content-type", "application/json");
     if (request.url === "/v1/status") {
-      response.end(JSON.stringify({
-        contract: "card-keepr-administration-status@1",
-        production_target: productionTarget,
-        safe_state: {
-          current_revision_id: "catrev_cli_demo",
-        },
-        repairable_catalogue_revision_ids: ["catrev_cli_demo"],
-      }));
+      response.end(
+        JSON.stringify({
+          contract: "card-keepr-administration-status@1",
+          production_target: productionTarget,
+          safe_state: {
+            current_revision_id: "catrev_cli_demo",
+          },
+          repairable_catalogue_revision_ids: ["catrev_cli_demo"],
+        }),
+      );
       return;
     }
-    response.end(JSON.stringify({
-      contract: "card-keepr-card-search-repair@1",
-      complete: false,
-      processed_cards: 25,
-      revisions_available: 0,
-      maximum_bound_parameter_bytes: 65_536,
-    }));
+    response.end(
+      JSON.stringify({
+        contract: "card-keepr-card-search-repair@1",
+        complete: false,
+        processed_cards: 25,
+        revisions_available: 0,
+        maximum_bound_parameter_bytes: 65_536,
+      }),
+    );
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
-  t.after(
-    () => new Promise((resolveClose) => server.close(resolveClose)),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   assert.notEqual(address, null);
   assert.equal(typeof address, "object");
@@ -326,38 +299,34 @@ test("CLI production mutation requires exact resolved Cloudflare target confirma
     });
     response.setHeader("content-type", "application/json");
     if (request.url === "/v1/status") {
-      response.end(JSON.stringify({
-        contract: "card-keepr-administration-status@1",
-        production_target: productionTarget,
-        safe_state: {
-          current_revision_id: "catrev_cli_demo",
-        },
-        repairable_catalogue_revision_ids: [
-          "catrev_cli_demo",
-          "catrev_cli_previous",
-          "catrev_cli_second_previous",
-        ],
-        recent_runs: [],
-      }));
+      response.end(
+        JSON.stringify({
+          contract: "card-keepr-administration-status@1",
+          production_target: productionTarget,
+          safe_state: {
+            current_revision_id: "catrev_cli_demo",
+          },
+          repairable_catalogue_revision_ids: ["catrev_cli_demo", "catrev_cli_previous", "catrev_cli_second_previous"],
+          recent_runs: [],
+        }),
+      );
       return;
     }
     if (request.method === "GET") {
       response.end(JSON.stringify(run));
       return;
     }
-    response.end(JSON.stringify({
-      contract: "card-keepr-card-search-repair@1",
-      complete: true,
-      processed_cards: 1,
-      revisions_available: 3,
-    }));
+    response.end(
+      JSON.stringify({
+        contract: "card-keepr-card-search-repair@1",
+        complete: true,
+        processed_cards: 1,
+        revisions_available: 3,
+      }),
+    );
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
-  t.after(
-    () => new Promise((resolveClose) => server.close(resolveClose)),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   assert.notEqual(address, null);
   assert.equal(typeof address, "object");
@@ -383,23 +352,15 @@ test("CLI production mutation requires exact resolved Cloudflare target confirma
     ],
     environment,
   );
-  assert.equal(
-    unconfirmed.code,
-    3,
-    "declining exact production confirmation is a confirmation exit",
-  );
+  assert.equal(unconfirmed.code, 3, "declining exact production confirmation is a confirmation exit");
   assert.deepEqual(JSON.parse(unconfirmed.stdout), {
     contract: "card-keepr-cli-problem@1",
     status: "error",
     code: "confirmation_required",
     detail:
-      `Resolved production target ${productionConfirmation}. ` +
-      `Re-run with --confirm '${productionConfirmation}'.`,
+      `Resolved production target ${productionConfirmation}. ` + `Re-run with --confirm '${productionConfirmation}'.`,
   });
-  assert.equal(
-    requests.filter(({ method }) => method === "POST").length,
-    0,
-  );
+  assert.equal(requests.filter(({ method }) => method === "POST").length, 0);
 
   const wronglyConfirmed = await runCli(
     [
@@ -421,19 +382,9 @@ test("CLI production mutation requires exact resolved Cloudflare target confirma
     ],
     environment,
   );
-  assert.equal(
-    wronglyConfirmed.code,
-    3,
-    "altering exact production confirmation is a confirmation exit",
-  );
-  assert.equal(
-    JSON.parse(wronglyConfirmed.stdout).code,
-    "confirmation_required",
-  );
-  assert.equal(
-    requests.filter(({ method }) => method === "POST").length,
-    0,
-  );
+  assert.equal(wronglyConfirmed.code, 3, "altering exact production confirmation is a confirmation exit");
+  assert.equal(JSON.parse(wronglyConfirmed.stdout).code, "confirmation_required");
+  assert.equal(requests.filter(({ method }) => method === "POST").length, 0);
 
   const confirmed = await runCli(
     [
@@ -456,10 +407,7 @@ test("CLI production mutation requires exact resolved Cloudflare target confirma
     environment,
   );
   assert.equal(confirmed.code, 0, confirmed.stderr);
-  assert.equal(
-    requests.filter(({ method }) => method === "POST").length,
-    1,
-  );
+  assert.equal(requests.filter(({ method }) => method === "POST").length, 1);
   assert.deepEqual(requests.at(-1), {
     method: "POST",
     path: "/v1/catalogue-search-materialization/repair",
@@ -499,15 +447,14 @@ test("CLI Catalogue Export deletion preserves the prepared bindings and typed re
     });
     response.setHeader("content-type", "application/json");
     if (request.url === "/v1/status") {
-      response.end(JSON.stringify({
-        contract: "card-keepr-administration-status@1",
-        production_target: productionTarget,
-        safe_state: { current_revision_id: "catrev_cli_demo" },
-        repairable_catalogue_revision_ids: [
-          "catrev_cli_demo",
-          "catrev_cli_previous",
-        ],
-      }));
+      response.end(
+        JSON.stringify({
+          contract: "card-keepr-administration-status@1",
+          production_target: productionTarget,
+          safe_state: { current_revision_id: "catrev_cli_demo" },
+          repairable_catalogue_revision_ids: ["catrev_cli_demo", "catrev_cli_previous"],
+        }),
+      );
       return;
     }
     if (request.url === "/v1/catalogue-export-deletion-plans") {
@@ -530,15 +477,15 @@ test("CLI Catalogue Export deletion preserves the prepared bindings and typed re
       response.end(JSON.stringify(deleting));
       return;
     }
-    response.end(JSON.stringify({
-      ...deleting,
-      state: "deleted",
-      completed_at: "2026-08-05T00:02:00.000Z",
-    }));
+    response.end(
+      JSON.stringify({
+        ...deleting,
+        state: "deleted",
+        completed_at: "2026-08-05T00:02:00.000Z",
+      }),
+    );
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
   t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   assert.notEqual(address, null);
@@ -548,14 +495,23 @@ test("CLI Catalogue Export deletion preserves the prepared bindings and typed re
     KEEPR_ADMINISTRATION_KEY: "cli-test-key",
   };
 
-  const prepared = await runCli([
-    "catalogue-export", "deletion", "prepare",
-    "--catalogue-revision", plan.catalogue_revision_id,
-    "--manifest-digest", plan.manifest_digest,
-    "--expected-current-revision", plan.expected_current_revision_id,
-    "--plan-id", plan.id,
-    "--json",
-  ], environment);
+  const prepared = await runCli(
+    [
+      "catalogue-export",
+      "deletion",
+      "prepare",
+      "--catalogue-revision",
+      plan.catalogue_revision_id,
+      "--manifest-digest",
+      plan.manifest_digest,
+      "--expected-current-revision",
+      plan.expected_current_revision_id,
+      "--plan-id",
+      plan.id,
+      "--json",
+    ],
+    environment,
+  );
   assert.equal(prepared.code, 0, prepared.stderr);
   assert.deepEqual(JSON.parse(prepared.stdout), plan);
   assert.deepEqual(requests.at(-1), {
@@ -579,21 +535,36 @@ test("CLI Catalogue Export deletion preserves the prepared bindings and typed re
     deletion_id: "deletion-cli-export",
     idempotency_key: "deletion-cli-export-key",
   });
-  const confirmed = await runCli([
-    "catalogue-export", "deletion", "confirm",
-    "--plan-id", plan.id,
-    "--plan-digest", plan.plan_digest,
-    "--catalogue-revision", plan.catalogue_revision_id,
-    "--manifest-digest", plan.manifest_digest,
-    "--expected-current-revision", plan.expected_current_revision_id,
-    "--confirm-revision", plan.catalogue_revision_id,
-    "--deletion-id", "deletion-cli-export",
-    "--idempotency-key", "deletion-cli-export-key",
-    "--environment", "production",
-    "--confirm", confirmation,
-    "--yes",
-    "--json",
-  ], environment);
+  const confirmed = await runCli(
+    [
+      "catalogue-export",
+      "deletion",
+      "confirm",
+      "--plan-id",
+      plan.id,
+      "--plan-digest",
+      plan.plan_digest,
+      "--catalogue-revision",
+      plan.catalogue_revision_id,
+      "--manifest-digest",
+      plan.manifest_digest,
+      "--expected-current-revision",
+      plan.expected_current_revision_id,
+      "--confirm-revision",
+      plan.catalogue_revision_id,
+      "--deletion-id",
+      "deletion-cli-export",
+      "--idempotency-key",
+      "deletion-cli-export-key",
+      "--environment",
+      "production",
+      "--confirm",
+      confirmation,
+      "--yes",
+      "--json",
+    ],
+    environment,
+  );
   assert.equal(confirmed.code, 10, confirmed.stderr);
   assert.deepEqual(JSON.parse(confirmed.stdout), {
     contract: "card-keepr-catalogue-export-deletion@1",
@@ -628,17 +599,28 @@ test("CLI Catalogue Export deletion preserves the prepared bindings and typed re
     expected_current_revision_id: plan.expected_current_revision_id,
     idempotency_key: retryIdempotencyKey,
   });
-  const retried = await runCli([
-    "catalogue-export", "deletion", "retry",
-    "--deletion-id", "deletion-cli-export",
-    "--object-set-digest", plan.object_set_digest,
-    "--expected-current-revision", plan.expected_current_revision_id,
-    "--idempotency-key", retryIdempotencyKey,
-    "--environment", "production",
-    "--confirm", retryConfirmation,
-    "--yes",
-    "--json",
-  ], environment);
+  const retried = await runCli(
+    [
+      "catalogue-export",
+      "deletion",
+      "retry",
+      "--deletion-id",
+      "deletion-cli-export",
+      "--object-set-digest",
+      plan.object_set_digest,
+      "--expected-current-revision",
+      plan.expected_current_revision_id,
+      "--idempotency-key",
+      retryIdempotencyKey,
+      "--environment",
+      "production",
+      "--confirm",
+      retryConfirmation,
+      "--yes",
+      "--json",
+    ],
+    environment,
+  );
   assert.equal(retried.code, 10, retried.stderr);
   assert.deepEqual(JSON.parse(retried.stdout), JSON.parse(confirmed.stdout));
   assert.deepEqual(requests.at(-1), {
@@ -650,11 +632,10 @@ test("CLI Catalogue Export deletion preserves the prepared bindings and typed re
     },
   });
 
-  const terminal = await runCli([
-    "catalogue-export", "deletion", "status",
-    "--deletion-id", "deletion-cli-export",
-    "--json",
-  ], environment);
+  const terminal = await runCli(
+    ["catalogue-export", "deletion", "status", "--deletion-id", "deletion-cli-export", "--json"],
+    environment,
+  );
   assert.equal(terminal.code, 0, terminal.stderr);
   assert.equal(JSON.parse(terminal.stdout).state, "deleted");
 });
@@ -671,56 +652,61 @@ test("CLI backup create confirms the exact target before the operation", async (
     });
     response.setHeader("content-type", "application/json");
     if (request.url === "/v1/status") {
-      response.end(JSON.stringify({
-        production_target: productionTarget,
-        safe_state: { current_revision_id: "catrev_cli_demo" },
-      }));
+      response.end(
+        JSON.stringify({
+          production_target: productionTarget,
+          safe_state: { current_revision_id: "catrev_cli_demo" },
+        }),
+      );
       return;
     }
     response.statusCode = 201;
-    response.end(JSON.stringify({
-      contract: "card-keepr-catalogue-backup-workflow@1",
-      expected_current_revision_id: "catrev_cli_demo",
-      idempotency_key: "backup-cli-confirmed-target",
-      workflow_instance_id: "backup-cli-workflow",
-      status: "complete",
-      output: {
-        contract: "card-keepr-catalogue-backup@1",
-        catalogue_revision_id: "catrev_cli_demo",
-        object_key: "d1-backups/catrev_cli_demo/backup.sql",
-        d1_bookmark: "bookmark-cli-backup",
-        verified: true,
-      },
-    }));
+    response.end(
+      JSON.stringify({
+        contract: "card-keepr-catalogue-backup-workflow@1",
+        expected_current_revision_id: "catrev_cli_demo",
+        idempotency_key: "backup-cli-confirmed-target",
+        workflow_instance_id: "backup-cli-workflow",
+        status: "complete",
+        output: {
+          contract: "card-keepr-catalogue-backup@1",
+          catalogue_revision_id: "catrev_cli_demo",
+          object_key: "d1-backups/catrev_cli_demo/backup.sql",
+          d1_bookmark: "bookmark-cli-backup",
+          verified: true,
+        },
+      }),
+    );
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
   t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   assert.notEqual(address, null);
   assert.equal(typeof address, "object");
-  const result = await runCli([
-    "backup",
-    "create",
-    "--expected-current-revision",
-    "catrev_cli_demo",
-    "--idempotency-key",
-    "backup-cli-confirmed-target",
-    "--environment",
-    "production",
-    "--confirm",
-    JSON.stringify({
-      production_target: productionTarget,
-      expected_current_revision_id: "catrev_cli_demo",
-      idempotency_key: "backup-cli-confirmed-target",
-    }),
-    "--yes",
-    "--json",
-  ], {
-    KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
-    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
-  });
+  const result = await runCli(
+    [
+      "backup",
+      "create",
+      "--expected-current-revision",
+      "catrev_cli_demo",
+      "--idempotency-key",
+      "backup-cli-confirmed-target",
+      "--environment",
+      "production",
+      "--confirm",
+      JSON.stringify({
+        production_target: productionTarget,
+        expected_current_revision_id: "catrev_cli_demo",
+        idempotency_key: "backup-cli-confirmed-target",
+      }),
+      "--yes",
+      "--json",
+    ],
+    {
+      KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+      KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+    },
+  );
 
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(requests.at(-1), {
@@ -754,18 +740,18 @@ test("CLI recovery commands resolve and confirm exact production evidence", asyn
     });
     response.setHeader("content-type", "application/json");
     if (request.url === "/v1/status") {
-      response.end(JSON.stringify({
-        production_target: productionTarget,
-        safe_state: { current_revision_id: "catrev_cli_demo" },
-      }));
+      response.end(
+        JSON.stringify({
+          production_target: productionTarget,
+          safe_state: { current_revision_id: "catrev_cli_demo" },
+        }),
+      );
       return;
     }
     response.statusCode = request.method === "POST" ? 201 : 200;
     response.end(JSON.stringify(recovery));
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
   t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   assert.notEqual(address, null);
@@ -785,23 +771,38 @@ test("CLI recovery commands resolve and confirm exact production evidence", asyn
     expected_current_revision_id: recovery.expected_current_revision_id,
     idempotency_key: "recovery-cli-begin",
   };
-  const begun = await runCli([
-    "recovery", "begin",
-    "--recovery-id", recovery.id,
-    "--method", "time_travel",
-    "--target-revision", recovery.target_revision_id,
-    "--target-bookmark", "bookmark-cli-restored",
-    "--target-digest", targetDigest,
-    "--backup-attempt-id", "backup-cli-restored",
-    "--expected-current-revision", recovery.expected_current_revision_id,
-    "--idempotency-key", "recovery-cli-begin",
-    "--environment", "production",
-    "--confirm", JSON.stringify({
-      production_target: productionTarget,
-      ...beginBody,
-    }),
-    "--yes", "--json",
-  ], environment);
+  const begun = await runCli(
+    [
+      "recovery",
+      "begin",
+      "--recovery-id",
+      recovery.id,
+      "--method",
+      "time_travel",
+      "--target-revision",
+      recovery.target_revision_id,
+      "--target-bookmark",
+      "bookmark-cli-restored",
+      "--target-digest",
+      targetDigest,
+      "--backup-attempt-id",
+      "backup-cli-restored",
+      "--expected-current-revision",
+      recovery.expected_current_revision_id,
+      "--idempotency-key",
+      "recovery-cli-begin",
+      "--environment",
+      "production",
+      "--confirm",
+      JSON.stringify({
+        production_target: productionTarget,
+        ...beginBody,
+      }),
+      "--yes",
+      "--json",
+    ],
+    environment,
+  );
   assert.equal(begun.code, 0, begun.stderr);
   assert.deepEqual(requests.at(-1), {
     method: "POST",
@@ -809,9 +810,7 @@ test("CLI recovery commands resolve and confirm exact production evidence", asyn
     body: beginBody,
   });
 
-  const inspected = await runCli([
-    "recovery", "inspect", "--recovery-id", recovery.id, "--json",
-  ], environment);
+  const inspected = await runCli(["recovery", "inspect", "--recovery-id", recovery.id, "--json"], environment);
   assert.equal(inspected.code, 0, inspected.stderr);
   assert.equal(requests.at(-1).path, `/v1/recoveries/${recovery.id}`);
 
@@ -819,19 +818,29 @@ test("CLI recovery commands resolve and confirm exact production evidence", asyn
     target_digest: targetDigest,
     idempotency_key: "recovery-cli-verify",
   };
-  const verified = await runCli([
-    "recovery", "verify",
-    "--recovery-id", recovery.id,
-    "--target-digest", targetDigest,
-    "--idempotency-key", "recovery-cli-verify",
-    "--environment", "production",
-    "--confirm", JSON.stringify({
-      production_target: productionTarget,
-      recovery_id: recovery.id,
-      ...verifyBody,
-    }),
-    "--yes", "--json",
-  ], environment);
+  const verified = await runCli(
+    [
+      "recovery",
+      "verify",
+      "--recovery-id",
+      recovery.id,
+      "--target-digest",
+      targetDigest,
+      "--idempotency-key",
+      "recovery-cli-verify",
+      "--environment",
+      "production",
+      "--confirm",
+      JSON.stringify({
+        production_target: productionTarget,
+        recovery_id: recovery.id,
+        ...verifyBody,
+      }),
+      "--yes",
+      "--json",
+    ],
+    environment,
+  );
   assert.equal(verified.code, 0, verified.stderr);
   assert.deepEqual(requests.at(-1), {
     method: "POST",
@@ -845,21 +854,33 @@ test("CLI recovery commands resolve and confirm exact production evidence", asyn
     confirmation_recovery_id: recovery.id,
     idempotency_key: "recovery-cli-accept",
   };
-  const accepted = await runCli([
-    "recovery", "accept",
-    "--recovery-id", recovery.id,
-    "--expected-restored-revision", recovery.target_revision_id,
-    "--target-digest", targetDigest,
-    "--confirmation-recovery-id", recovery.id,
-    "--idempotency-key", "recovery-cli-accept",
-    "--environment", "production",
-    "--confirm", JSON.stringify({
-      production_target: productionTarget,
-      recovery_id: recovery.id,
-      ...acceptBody,
-    }),
-    "--yes", "--json",
-  ], environment);
+  const accepted = await runCli(
+    [
+      "recovery",
+      "accept",
+      "--recovery-id",
+      recovery.id,
+      "--expected-restored-revision",
+      recovery.target_revision_id,
+      "--target-digest",
+      targetDigest,
+      "--confirmation-recovery-id",
+      recovery.id,
+      "--idempotency-key",
+      "recovery-cli-accept",
+      "--environment",
+      "production",
+      "--confirm",
+      JSON.stringify({
+        production_target: productionTarget,
+        recovery_id: recovery.id,
+        ...acceptBody,
+      }),
+      "--yes",
+      "--json",
+    ],
+    environment,
+  );
   assert.equal(accepted.code, 0, accepted.stderr);
   assert.deepEqual(requests.at(-1), {
     method: "POST",
@@ -881,22 +902,24 @@ test("CLI backup status and retry preserve the exact failed-attempt evidence", a
     });
     response.setHeader("content-type", "application/json");
     if (request.url === "/v1/status") {
-      response.end(JSON.stringify({
-        production_target: productionTarget,
-        safe_state: { current_revision_id: "catrev_cli_demo" },
-      }));
+      response.end(
+        JSON.stringify({
+          production_target: productionTarget,
+          safe_state: { current_revision_id: "catrev_cli_demo" },
+        }),
+      );
       return;
     }
-    response.end(JSON.stringify({
-      contract: "card-keepr-catalogue-backup-status@1",
-      idempotency_key: "backup-failed-exact",
-      state: "failed",
-      attempt_digest: digest,
-    }));
+    response.end(
+      JSON.stringify({
+        contract: "card-keepr-catalogue-backup-status@1",
+        idempotency_key: "backup-failed-exact",
+        state: "failed",
+        attempt_digest: digest,
+      }),
+    );
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
   t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   assert.notEqual(address, null);
@@ -905,31 +928,40 @@ test("CLI backup status and retry preserve the exact failed-attempt evidence", a
     KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
     KEEPR_ADMINISTRATION_KEY: "cli-test-key",
   };
-  const status = await runCli([
-    "backup", "status", "--attempt-id", "backup-failed-exact", "--json",
-  ], environment);
+  const status = await runCli(["backup", "status", "--attempt-id", "backup-failed-exact", "--json"], environment);
   assert.equal(status.code, 0, status.stderr);
-  const revisionStatus = await runCli([
-    "backup", "status", "--catalogue-revision", "catrev_cli_demo", "--json",
-  ], environment);
+  const revisionStatus = await runCli(
+    ["backup", "status", "--catalogue-revision", "catrev_cli_demo", "--json"],
+    environment,
+  );
   assert.equal(revisionStatus.code, 0, revisionStatus.stderr);
-  const retry = await runCli([
-    "backup", "retry",
-    "--expected-current-revision", "catrev_cli_demo",
-    "--idempotency-key", "backup-retry-exact",
-    "--failed-attempt-id", "backup-failed-exact",
-    "--failed-attempt-digest", digest,
-    "--environment", "production",
-    "--confirm", JSON.stringify({
-      production_target: productionTarget,
-      expected_current_revision_id: "catrev_cli_demo",
-      idempotency_key: "backup-retry-exact",
-      failed_attempt_id: "backup-failed-exact",
-      failed_attempt_digest: digest,
-    }),
-    "--yes",
-    "--json",
-  ], environment);
+  const retry = await runCli(
+    [
+      "backup",
+      "retry",
+      "--expected-current-revision",
+      "catrev_cli_demo",
+      "--idempotency-key",
+      "backup-retry-exact",
+      "--failed-attempt-id",
+      "backup-failed-exact",
+      "--failed-attempt-digest",
+      digest,
+      "--environment",
+      "production",
+      "--confirm",
+      JSON.stringify({
+        production_target: productionTarget,
+        expected_current_revision_id: "catrev_cli_demo",
+        idempotency_key: "backup-retry-exact",
+        failed_attempt_id: "backup-failed-exact",
+        failed_attempt_digest: digest,
+      }),
+      "--yes",
+      "--json",
+    ],
+    environment,
+  );
   assert.equal(retry.code, 0, retry.stderr);
   assert.deepEqual(JSON.parse(retry.stderr), {
     contract: "card-keepr-resolved-backup-retry@1",
@@ -940,28 +972,33 @@ test("CLI backup status and retry preserve the exact failed-attempt evidence", a
     failed_attempt_id: "backup-failed-exact",
     failed_attempt_digest: digest,
   });
-  assert.deepEqual(requests, [{
-    method: "GET",
-    path: "/v1/backups/backup-failed-exact",
-    body: null,
-  }, {
-    method: "GET",
-    path: "/v1/catalogue-revisions/catrev_cli_demo/backups",
-    body: null,
-  }, {
-    method: "GET",
-    path: "/v1/status",
-    body: null,
-  }, {
-    method: "POST",
-    path: "/v1/backups",
-    body: {
-      expected_current_revision_id: "catrev_cli_demo",
-      idempotency_key: "backup-retry-exact",
-      failed_attempt_id: "backup-failed-exact",
-      failed_attempt_digest: digest,
+  assert.deepEqual(requests, [
+    {
+      method: "GET",
+      path: "/v1/backups/backup-failed-exact",
+      body: null,
     },
-  }]);
+    {
+      method: "GET",
+      path: "/v1/catalogue-revisions/catrev_cli_demo/backups",
+      body: null,
+    },
+    {
+      method: "GET",
+      path: "/v1/status",
+      body: null,
+    },
+    {
+      method: "POST",
+      path: "/v1/backups",
+      body: {
+        expected_current_revision_id: "catrev_cli_demo",
+        idempotency_key: "backup-retry-exact",
+        failed_attempt_id: "backup-failed-exact",
+        failed_attempt_digest: digest,
+      },
+    },
+  ]);
 });
 
 test("CLI reconciliation reports an accepted non-terminal Workflow with exit 10", async (t) => {
@@ -976,14 +1013,16 @@ test("CLI reconciliation reports an accepted non-terminal Workflow with exit 10"
     });
     response.setHeader("content-type", "application/json");
     if (request.url === "/v1/status") {
-      response.end(JSON.stringify({
-        contract: "card-keepr-administration-status@1",
-        production_target: productionTarget,
-        safe_state: {
-          current_revision_id: "catrev_cli_demo",
-        },
-        repairable_catalogue_revision_ids: [],
-      }));
+      response.end(
+        JSON.stringify({
+          contract: "card-keepr-administration-status@1",
+          production_target: productionTarget,
+          safe_state: {
+            current_revision_id: "catrev_cli_demo",
+          },
+          repairable_catalogue_revision_ids: [],
+        }),
+      );
       return;
     }
     if (request.method === "GET") {
@@ -991,22 +1030,20 @@ test("CLI reconciliation reports an accepted non-terminal Workflow with exit 10"
       return;
     }
     response.statusCode = 202;
-    response.end(JSON.stringify({
-      contract: "card-keepr-reconciliation-workflow@1",
-      ingestion_run_id: "run_cli_demo",
-      expected_current_revision_id: "catrev_cli_demo",
-      idempotency_key: "reconcile-cli-running",
-      workflow_instance_id: "reconcile-cli-running-instance",
-      status: "running",
-      output: null,
-    }));
+    response.end(
+      JSON.stringify({
+        contract: "card-keepr-reconciliation-workflow@1",
+        ingestion_run_id: "run_cli_demo",
+        expected_current_revision_id: "catrev_cli_demo",
+        idempotency_key: "reconcile-cli-running",
+        workflow_instance_id: "reconcile-cli-running-instance",
+        status: "running",
+        output: null,
+      }),
+    );
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
-  t.after(
-    () => new Promise((resolveClose) => server.close(resolveClose)),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   assert.notEqual(address, null);
   assert.equal(typeof address, "object");
@@ -1070,14 +1107,16 @@ test("CLI reconciliation exits zero for a terminal Workflow returned by the init
   const server = createServer(async (request, response) => {
     response.setHeader("content-type", "application/json");
     if (request.url === "/v1/status") {
-      response.end(JSON.stringify({
-        contract: "card-keepr-administration-status@1",
-        production_target: productionTarget,
-        safe_state: {
-          current_revision_id: "catrev_cli_demo",
-        },
-        repairable_catalogue_revision_ids: [],
-      }));
+      response.end(
+        JSON.stringify({
+          contract: "card-keepr-administration-status@1",
+          production_target: productionTarget,
+          safe_state: {
+            current_revision_id: "catrev_cli_demo",
+          },
+          repairable_catalogue_revision_ids: [],
+        }),
+      );
       return;
     }
     if (request.method === "GET") {
@@ -1085,32 +1124,30 @@ test("CLI reconciliation exits zero for a terminal Workflow returned by the init
       return;
     }
     response.statusCode = 202;
-    response.end(JSON.stringify({
-      contract: "card-keepr-reconciliation-workflow@1",
-      ingestion_run_id: "run_cli_demo",
-      expected_current_revision_id: "catrev_cli_demo",
-      idempotency_key: "reconcile-cli-terminal-on-create",
-      workflow_instance_id: "reconcile-cli-terminal-on-create-instance",
-      status: "complete",
-      output: {
-        contract: "card-keepr-card-printing-reconciliation@2",
-        run_id: "run_cli_demo",
-        state: "failed",
-        publishable: false,
-        cards: [],
-        printings: [],
-        errata: [],
-        diagnostics: [],
-        warnings: [],
-      },
-    }));
+    response.end(
+      JSON.stringify({
+        contract: "card-keepr-reconciliation-workflow@1",
+        ingestion_run_id: "run_cli_demo",
+        expected_current_revision_id: "catrev_cli_demo",
+        idempotency_key: "reconcile-cli-terminal-on-create",
+        workflow_instance_id: "reconcile-cli-terminal-on-create-instance",
+        status: "complete",
+        output: {
+          contract: "card-keepr-card-printing-reconciliation@2",
+          run_id: "run_cli_demo",
+          state: "failed",
+          publishable: false,
+          cards: [],
+          printings: [],
+          errata: [],
+          diagnostics: [],
+          warnings: [],
+        },
+      }),
+    );
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
-  t.after(
-    () => new Promise((resolveClose) => server.close(resolveClose)),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   assert.notEqual(address, null);
   assert.equal(typeof address, "object");
@@ -1248,21 +1285,13 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
       response.end(JSON.stringify(rejectedRun));
       return;
     }
-    if (
-      request.url ===
-      "/v1/ingestion-runs/run_cli_demo/collection/resume"
-    ) {
+    if (request.url === "/v1/ingestion-runs/run_cli_demo/collection/resume") {
       response.statusCode = 202;
     }
     response.end(JSON.stringify(run));
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
-  t.after(
-    () =>
-      new Promise((resolveClose) => server.close(resolveClose)),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   assert.notEqual(address, null);
   assert.equal(typeof address, "object");
@@ -1278,73 +1307,37 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
   assert.match(status.stdout, /export_objects: 12/);
   assert.match(status.stdout, /orphaned_export_objects: 2/);
   assert.match(status.stdout, /pending_publication_cleanups: 1/);
-  assert.match(
-    status.stdout,
-    /one-piece\/cards-and-printings: 2026-07-29T00:00:00.000Z/,
-  );
-  assert.match(
-    status.stdout,
-    /Next: keepr run show --run-id run_cli_demo/,
-  );
+  assert.match(status.stdout, /one-piece\/cards-and-printings: 2026-07-29T00:00:00.000Z/);
+  assert.match(status.stdout, /Next: keepr run show --run-id run_cli_demo/);
 
-  const shown = await runCli(
-    ["run", "show", "--run-id", "run_cli_demo"],
-    environment,
-  );
+  const shown = await runCli(["run", "show", "--run-id", "run_cli_demo"], environment);
   assert.equal(shown.code, 0, shown.stderr);
   assert.match(shown.stdout, /Progress: failed/);
   assert.match(shown.stdout, /Warning: source_record_missing/);
   assert.match(shown.stdout, /Failure: source_unavailable/);
-  assert.match(
-    shown.stdout,
-    /Publication cleanup: failed \(publication_cleanup_failed\)/,
-  );
+  assert.match(shown.stdout, /Publication cleanup: failed \(publication_cleanup_failed\)/);
   assert.match(shown.stdout, /Approval history: 1 decision/);
-  assert.match(
-    shown.stdout,
-    /Resulting Catalogue Revision: catrev_cli_demo/,
-  );
+  assert.match(shown.stdout, /Resulting Catalogue Revision: catrev_cli_demo/);
   assert.match(shown.stdout, /Request reference: request_cli_demo/);
   assert.doesNotMatch(shown.stdout, /retry-cli-demo/);
   assert.match(shown.stdout, /Workflow: workflow_cli_demo/);
   assert.match(shown.stdout, /Adapter versions: one-piece-en@3/);
   assert.match(shown.stdout, new RegExp(`Candidate: ${"a".repeat(64)}`));
-  assert.match(
-    shown.stdout,
-    /Backup: \/v1\/catalogue-revisions\/catrev_cli_demo\/backups/,
-  );
+  assert.match(shown.stdout, /Backup: \/v1\/catalogue-revisions\/catrev_cli_demo\/backups/);
   assert.match(shown.stdout, /Recovery: \/v1\/status/);
-  assert.match(
-    shown.stdout,
-    /Retry: evidence_collection_retry_available \(run_cli_demo\)/,
-  );
-  assert.match(
-    shown.stdout,
-    /Next: POST \/v1\/ingestion-runs\/run_cli_demo\/collection\/retry/,
-  );
+  assert.match(shown.stdout, /Retry: evidence_collection_retry_available \(run_cli_demo\)/);
+  assert.match(shown.stdout, /Next: POST \/v1\/ingestion-runs\/run_cli_demo\/collection\/retry/);
   assert.match(shown.stdout, /Coverage: 7 snapshots, 7 observation sets, 8 attempts/);
   assert.doesNotMatch(shown.stdout, /cli-test-key|source payload|proposal/iu);
 
-  const shownRejected = await runCli(
-    ["run", "show", "--run-id", "run_rejected_cli"],
-    environment,
-  );
+  const shownRejected = await runCli(["run", "show", "--run-id", "run_rejected_cli"], environment);
   assert.equal(shownRejected.code, 0, shownRejected.stderr);
   assert.match(shownRejected.stdout, /Retry classification: retryable_rejection/);
-  assert.match(
-    shownRejected.stdout,
-    /Retry: ingestion_run_retry_available \(run_rejected_cli\)/,
-  );
-  assert.match(
-    shownRejected.stdout,
-    /Next: POST \/v1\/ingestion-runs\/run_rejected_cli\/retry/,
-  );
+  assert.match(shownRejected.stdout, /Retry: ingestion_run_retry_available \(run_rejected_cli\)/);
+  assert.match(shownRejected.stdout, /Next: POST \/v1\/ingestion-runs\/run_rejected_cli\/retry/);
 
   const requestCountBeforeRemovedMutation = requests.length;
-  const removedReconcile = await runCli(
-    ["run", "reconcile", "--run-id", "run_cli_demo", "--json"],
-    environment,
-  );
+  const removedReconcile = await runCli(["run", "reconcile", "--run-id", "run_cli_demo", "--json"], environment);
   assert.equal(removedReconcile.code, 2);
   assert.match(removedReconcile.stdout, /usage_error/u);
   assert.equal(requests.length, requestCountBeforeRemovedMutation);
@@ -1416,60 +1409,24 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
   assert.equal(rejected.code, 0, rejected.stderr);
 
   const retried = await runCli(
-    [
-      "run",
-      "retry",
-      "--run-id",
-      "run_cli_demo",
-      "--idempotency-key",
-      "retry-cli-demo",
-      "--json",
-    ],
+    ["run", "retry", "--run-id", "run_cli_demo", "--idempotency-key", "retry-cli-demo", "--json"],
     environment,
   );
   assert.equal(retried.code, 0, retried.stderr);
   const cleaned = await runCli(
-    [
-      "run",
-      "cleanup",
-      "--run-id",
-      "run_cli_demo",
-      "--idempotency-key",
-      "cleanup-cli-demo",
-      "--json",
-    ],
+    ["run", "cleanup", "--run-id", "run_cli_demo", "--idempotency-key", "cleanup-cli-demo", "--json"],
     environment,
   );
   assert.equal(cleaned.code, 0, cleaned.stderr);
   const sourceRetried = await runCli(
-    [
-      "source",
-      "retry",
-      "--run-id",
-      "run_cli_demo",
-      "--idempotency-key",
-      "source-retry-cli-demo",
-    ],
+    ["source", "retry", "--run-id", "run_cli_demo", "--idempotency-key", "source-retry-cli-demo"],
     environment,
   );
   assert.equal(sourceRetried.code, 0, sourceRetried.stderr);
   assert.match(sourceRetried.stdout, /Request reference: request_cli_demo/);
   assert.doesNotMatch(sourceRetried.stdout, /source-retry-cli-demo/);
-  const resumed = await runCli(
-    [
-      "source",
-      "resume",
-      "--run-id",
-      "run_cli_demo",
-      "--json",
-    ],
-    environment,
-  );
-  assert.equal(
-    resumed.code,
-    0,
-    "non-Workflow administration requests retain their established exit code",
-  );
+  const resumed = await runCli(["source", "resume", "--run-id", "run_cli_demo", "--json"], environment);
+  assert.equal(resumed.code, 0, "non-Workflow administration requests retain their established exit code");
   assert.deepEqual(requests.slice(-10), [
     {
       method: "GET",
@@ -1520,8 +1477,7 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     },
     {
       method: "POST",
-      path:
-        "/v1/ingestion-runs/run_cli_demo/publication-cleanup",
+      path: "/v1/ingestion-runs/run_cli_demo/publication-cleanup",
       body: {
         idempotency_key: "cleanup-cli-demo",
       },
@@ -1538,8 +1494,7 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     },
   ]);
 
-  const mutationCount = requests.filter(({ method }) => method === "POST")
-    .length;
+  const mutationCount = requests.filter(({ method }) => method === "POST").length;
   const staleTarget = await runCli(
     [
       "run",
@@ -1557,17 +1512,12 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     ],
     environment,
   );
-  assert.equal(
-    staleTarget.code,
-    7,
-    "a resolved production revision mismatch is a stale-conflict exit",
-  );
+  assert.equal(staleTarget.code, 7, "a resolved production revision mismatch is a stale-conflict exit");
   assert.deepEqual(JSON.parse(staleTarget.stdout), {
     contract: "card-keepr-cli-problem@1",
     status: "error",
     code: "production_target_mismatch",
-    detail:
-      "The production Ingestion Run does not resolve to the supplied run and expected Catalogue Revision.",
+    detail: "The production Ingestion Run does not resolve to the supplied run and expected Catalogue Revision.",
   });
   assert.equal(
     requests.filter(({ method }) => method === "POST").length,
@@ -1584,31 +1534,26 @@ test("CLI Card search uses the authenticated catalogue HTTP seam", async (t) => 
       authorization: request.headers.authorization,
     };
     response.setHeader("content-type", "application/json");
-    response.end(JSON.stringify({
-      data: [{ id: "card_cli_erratum", name: "Éclair LÜFFY" }],
-      meta: { catalogue_revision_id: "catrev_cli_erratum" },
-      page: { limit: 25, next_cursor: null },
-      links: { self: "/v1/cards?q=%C3%A9clair&limit=25" },
-    }));
+    response.end(
+      JSON.stringify({
+        data: [{ id: "card_cli_erratum", name: "Éclair LÜFFY" }],
+        meta: { catalogue_revision_id: "catrev_cli_erratum" },
+        page: { limit: 25, next_cursor: null },
+        links: { self: "/v1/cards?q=%C3%A9clair&limit=25" },
+      }),
+    );
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
-  t.after(
-    () => new Promise((resolveClose) => server.close(resolveClose)),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   assert.notEqual(address, null);
   assert.equal(typeof address, "object");
   // KEEPR_API_URL is a base that may carry the production mount path
   // (issue #123); the CLI appends route paths to it.
-  const result = await runCli(
-    ["cards", "search", "--query", "éclair", "--limit", "25", "--json"],
-    {
-      KEEPR_API_URL: `http://127.0.0.1:${address.port}/api/`,
-      KEEPR_API_KEY: "cli-api-test-key",
-    },
-  );
+  const result = await runCli(["cards", "search", "--query", "éclair", "--limit", "25", "--json"], {
+    KEEPR_API_URL: `http://127.0.0.1:${address.port}/api/`,
+    KEEPR_API_KEY: "cli-api-test-key",
+  });
   assert.equal(result.code, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).data[0].id, "card_cli_erratum");
   assert.deepEqual(observed, {
@@ -1655,12 +1600,8 @@ test("a capacity-paused Ingestion Run reports its pause facts through source sho
     response.statusCode = 404;
     response.end(JSON.stringify({ code: "not_found" }));
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
-  t.after(
-    () => new Promise((resolveClose) => server.close(resolveClose)),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   assert.notEqual(address, null);
   assert.equal(typeof address, "object");
@@ -1669,28 +1610,16 @@ test("a capacity-paused Ingestion Run reports its pause facts through source sho
     KEEPR_ADMINISTRATION_KEY: "cli-test-key",
   };
 
-  const shownJson = await runCli(
-    ["source", "show", "--run-id", "run_paused_cli", "--json"],
-    environment,
-  );
+  const shownJson = await runCli(["source", "show", "--run-id", "run_paused_cli", "--json"], environment);
   assert.equal(shownJson.code, 0, shownJson.stderr);
   assert.deepEqual(JSON.parse(shownJson.stdout), pausedEvidence);
 
-  const shown = await runCli(
-    ["source", "show", "--run-id", "run_paused_cli"],
-    environment,
-  );
+  const shown = await runCli(["source", "show", "--run-id", "run_paused_cli"], environment);
   assert.equal(shown.code, 0, shown.stderr);
   assert.match(shown.stdout, /Ingestion Run run_paused_cli evidence: paused/);
-  assert.match(
-    shown.stdout,
-    /Paused: source_request_capacity_exhausted at 2026-08-30T00:00:00.000Z/,
-  );
+  assert.match(shown.stdout, /Paused: source_request_capacity_exhausted at 2026-08-30T00:00:00.000Z/);
   assert.match(shown.stdout, /Source Lineage: fusion-world-en/);
-  assert.match(
-    shown.stdout,
-    /Request Capacity: 15000 used of 15000 \(generation 1\)/,
-  );
+  assert.match(shown.stdout, /Request Capacity: 15000 used of 15000 \(generation 1\)/);
   assert.match(shown.stdout, /Overflow: 3 requests require capacity 15003/);
   assert.match(shown.stdout, /Parent request: fusion-world-en:discovery/);
   assert.match(shown.stdout, /Request reference: request_paused_cli/);
@@ -1737,12 +1666,8 @@ test("a retry-paused Ingestion Run reports its pause facts through source show",
     response.statusCode = 404;
     response.end(JSON.stringify({ code: "not_found" }));
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
-  t.after(
-    () => new Promise((resolveClose) => server.close(resolveClose)),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   assert.notEqual(address, null);
   assert.equal(typeof address, "object");
@@ -1751,31 +1676,16 @@ test("a retry-paused Ingestion Run reports its pause facts through source show",
     KEEPR_ADMINISTRATION_KEY: "cli-test-key",
   };
 
-  const shownJson = await runCli(
-    ["source", "show", "--run-id", "run_retry_paused_cli", "--json"],
-    environment,
-  );
+  const shownJson = await runCli(["source", "show", "--run-id", "run_retry_paused_cli", "--json"], environment);
   assert.equal(shownJson.code, 0, shownJson.stderr);
   assert.deepEqual(JSON.parse(shownJson.stdout), pausedEvidence);
 
-  const shown = await runCli(
-    ["source", "show", "--run-id", "run_retry_paused_cli"],
-    environment,
-  );
+  const shown = await runCli(["source", "show", "--run-id", "run_retry_paused_cli"], environment);
   assert.equal(shown.code, 0, shown.stderr);
-  assert.match(
-    shown.stdout,
-    /Ingestion Run run_retry_paused_cli evidence: paused/,
-  );
-  assert.match(
-    shown.stdout,
-    /Paused: source_transport_retries_exhausted at 2026-08-31T00:00:00.000Z/,
-  );
+  assert.match(shown.stdout, /Ingestion Run run_retry_paused_cli evidence: paused/);
+  assert.match(shown.stdout, /Paused: source_transport_retries_exhausted at 2026-08-31T00:00:00.000Z/);
   assert.match(shown.stdout, /Source Lineage: fusion-world-en/);
-  assert.match(
-    shown.stdout,
-    /Request: fusion-world-en:detail:cards:0f0f0f/,
-  );
+  assert.match(shown.stdout, /Request: fusion-world-en:detail:cards:0f0f0f/);
   assert.match(shown.stdout, /Hostname: en.dbs-cardgame.com/);
   assert.match(shown.stdout, /Attempts: 4 in retry generation 1/);
   assert.match(shown.stdout, /Last failure: http_failure \(HTTP 503\)/);
@@ -1832,21 +1742,15 @@ test("a workflow-paused Ingestion Run reports its recovery facts through source 
   };
   const server = createServer((request, response) => {
     response.setHeader("content-type", "application/json");
-    if (
-      request.url === "/v1/ingestion-runs/run_workflow_paused_cli/evidence"
-    ) {
+    if (request.url === "/v1/ingestion-runs/run_workflow_paused_cli/evidence") {
       response.end(JSON.stringify(pausedEvidence));
       return;
     }
     response.statusCode = 404;
     response.end(JSON.stringify({ code: "not_found" }));
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
-  t.after(
-    () => new Promise((resolveClose) => server.close(resolveClose)),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   assert.notEqual(address, null);
   assert.equal(typeof address, "object");
@@ -1855,36 +1759,18 @@ test("a workflow-paused Ingestion Run reports its recovery facts through source 
     KEEPR_ADMINISTRATION_KEY: "cli-test-key",
   };
 
-  const shownJson = await runCli(
-    ["source", "show", "--run-id", "run_workflow_paused_cli", "--json"],
-    environment,
-  );
+  const shownJson = await runCli(["source", "show", "--run-id", "run_workflow_paused_cli", "--json"], environment);
   assert.equal(shownJson.code, 0, shownJson.stderr);
   assert.deepEqual(JSON.parse(shownJson.stdout), pausedEvidence);
 
-  const shown = await runCli(
-    ["source", "show", "--run-id", "run_workflow_paused_cli"],
-    environment,
-  );
+  const shown = await runCli(["source", "show", "--run-id", "run_workflow_paused_cli"], environment);
   assert.equal(shown.code, 0, shown.stderr);
-  assert.match(
-    shown.stdout,
-    /Ingestion Run run_workflow_paused_cli evidence: paused/,
-  );
-  assert.match(
-    shown.stdout,
-    /Paused: source_workflow_stalled at 2026-09-01T00:00:00.000Z/,
-  );
-  assert.match(
-    shown.stdout,
-    /Workflow attempt: evidence-run_workflow_paused_cli \(status running\)/,
-  );
+  assert.match(shown.stdout, /Ingestion Run run_workflow_paused_cli evidence: paused/);
+  assert.match(shown.stdout, /Paused: source_workflow_stalled at 2026-09-01T00:00:00.000Z/);
+  assert.match(shown.stdout, /Workflow attempt: evidence-run_workflow_paused_cli \(status running\)/);
   assert.match(shown.stdout, /Last progress: 2026-08-31T22:00:00.000Z/);
   assert.match(shown.stdout, /Available actions: resume, terminate/);
-  assert.match(
-    shown.stdout,
-    /Workflow attempt 1: evidence-run_workflow_paused_cli \(status running\)/,
-  );
+  assert.match(shown.stdout, /Workflow attempt 1: evidence-run_workflow_paused_cli \(status running\)/);
   assert.doesNotMatch(shown.stdout, /cli-test-key/);
 });
 
@@ -1913,38 +1799,31 @@ test("source capacity extend performs the compare-and-set administration mutatio
         body: body === "" ? null : JSON.parse(body),
       });
       response.setHeader("content-type", "application/json");
-      if (
-        request.url === "/v1/ingestion-runs/run_paused_cli/capacity/extension"
-      ) {
+      if (request.url === "/v1/ingestion-runs/run_paused_cli/capacity/extension") {
         response.end(JSON.stringify(extensionDocument));
         return;
       }
-      if (
-        request.url === "/v1/ingestion-runs/run_stale_cli/capacity/extension"
-      ) {
+      if (request.url === "/v1/ingestion-runs/run_stale_cli/capacity/extension") {
         response.statusCode = 409;
         response.setHeader("content-type", "application/problem+json");
-        response.end(JSON.stringify({
-          type: "https://card-keepr.invalid/problems/request_capacity_mismatch",
-          title: "Conflict",
-          status: 409,
-          code: "request_capacity_mismatch",
-          detail:
-            "The expected request capacity is stale: the effective capacity is 20000.",
-          request_id: "request_stale_cli",
-        }));
+        response.end(
+          JSON.stringify({
+            type: "https://card-keepr.invalid/problems/request_capacity_mismatch",
+            title: "Conflict",
+            status: 409,
+            code: "request_capacity_mismatch",
+            detail: "The expected request capacity is stale: the effective capacity is 20000.",
+            request_id: "request_stale_cli",
+          }),
+        );
         return;
       }
       response.statusCode = 404;
       response.end(JSON.stringify({ code: "not_found" }));
     });
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
-  t.after(
-    () => new Promise((resolveClose) => server.close(resolveClose)),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   assert.notEqual(address, null);
   assert.equal(typeof address, "object");
@@ -1968,10 +1847,7 @@ test("source capacity extend performs the compare-and-set administration mutatio
     "extend-cli-demo",
   ];
 
-  const extendedJson = await runCli(
-    [...extendArguments, "--json"],
-    environment,
-  );
+  const extendedJson = await runCli([...extendArguments, "--json"], environment);
   assert.equal(extendedJson.code, 0, extendedJson.stderr);
   assert.deepEqual(JSON.parse(extendedJson.stdout), extensionDocument);
   assert.deepEqual(requests.at(-1), {
@@ -1988,14 +1864,8 @@ test("source capacity extend performs the compare-and-set administration mutatio
 
   const extended = await runCli(extendArguments, environment);
   assert.equal(extended.code, 0, extended.stderr);
-  assert.match(
-    extended.stdout,
-    /Ingestion Run run_paused_cli capacity extended/,
-  );
-  assert.match(
-    extended.stdout,
-    /Request Capacity: 15000 -> 20000 \(generation 1 -> 2\)/,
-  );
+  assert.match(extended.stdout, /Ingestion Run run_paused_cli capacity extended/);
+  assert.match(extended.stdout, /Request Capacity: 15000 -> 20000 \(generation 1 -> 2\)/);
   assert.match(extended.stdout, /Source Lineage: fusion-world-en/);
   assert.doesNotMatch(extended.stdout, /cli-test-key/);
 
@@ -2025,8 +1895,7 @@ test("source capacity extend performs the compare-and-set administration mutatio
     contract: "card-keepr-cli-problem@1",
     status: "error",
     code: "request_capacity_mismatch",
-    detail:
-      "The expected request capacity is stale: the effective capacity is 20000.",
+    detail: "The expected request capacity is stale: the effective capacity is 20000.",
   });
 
   // Malformed or missing capacity values fail as usage errors before any
@@ -2038,23 +1907,14 @@ test("source capacity extend performs the compare-and-set administration mutatio
     ["--expected-generation", "1.5"],
   ]) {
     const invalid = await runCli(
-      extendArguments.map((argument, index) =>
-        extendArguments[index - 1] === option ? value : argument
-      ),
+      extendArguments.map((argument, index) => (extendArguments[index - 1] === option ? value : argument)),
       environment,
     );
     assert.equal(invalid.code, 2, `${option}=${value} must be a usage error`);
   }
-  const missing = await runCli(
-    ["source", "capacity", "extend", "--run-id", "run_paused_cli"],
-    environment,
-  );
+  const missing = await runCli(["source", "capacity", "extend", "--run-id", "run_paused_cli"], environment);
   assert.equal(missing.code, 2);
-  assert.equal(
-    requests.length,
-    mutationCount,
-    "usage failures must stop before any administration request",
-  );
+  assert.equal(requests.length, mutationCount, "usage failures must stop before any administration request");
 });
 
 test("source terminate performs the idempotent termination mutation", async (t) => {
@@ -2106,10 +1966,7 @@ test("source terminate performs the idempotent termination mutation", async (t) 
         body: body === "" ? null : JSON.parse(body),
       });
       response.setHeader("content-type", "application/json");
-      if (
-        request.url ===
-          "/v1/ingestion-runs/run_paused_cli/collection/termination"
-      ) {
+      if (request.url === "/v1/ingestion-runs/run_paused_cli/collection/termination") {
         response.end(JSON.stringify(terminationDocument));
         return;
       }
@@ -2117,32 +1974,27 @@ test("source terminate performs the idempotent termination mutation", async (t) 
         response.end(JSON.stringify(terminatedEvidence));
         return;
       }
-      if (
-        request.url ===
-          "/v1/ingestion-runs/run_collecting_cli/collection/termination"
-      ) {
+      if (request.url === "/v1/ingestion-runs/run_collecting_cli/collection/termination") {
         response.statusCode = 409;
         response.setHeader("content-type", "application/problem+json");
-        response.end(JSON.stringify({
-          type: "https://card-keepr.invalid/problems/ingestion_run_not_paused",
-          title: "Conflict",
-          status: 409,
-          code: "ingestion_run_not_paused",
-          detail: "Only a paused Ingestion Run can be terminated.",
-          request_id: "request_not_paused_cli",
-        }));
+        response.end(
+          JSON.stringify({
+            type: "https://card-keepr.invalid/problems/ingestion_run_not_paused",
+            title: "Conflict",
+            status: 409,
+            code: "ingestion_run_not_paused",
+            detail: "Only a paused Ingestion Run can be terminated.",
+            request_id: "request_not_paused_cli",
+          }),
+        );
         return;
       }
       response.statusCode = 404;
       response.end(JSON.stringify({ code: "not_found" }));
     });
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
-  t.after(
-    () => new Promise((resolveClose) => server.close(resolveClose)),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   assert.notEqual(address, null);
   assert.equal(typeof address, "object");
@@ -2159,10 +2011,7 @@ test("source terminate performs the idempotent termination mutation", async (t) 
     "terminate-cli-demo",
   ];
 
-  const terminatedJson = await runCli(
-    [...terminateArguments, "--json"],
-    environment,
-  );
+  const terminatedJson = await runCli([...terminateArguments, "--json"], environment);
   assert.equal(terminatedJson.code, 0, terminatedJson.stderr);
   assert.deepEqual(JSON.parse(terminatedJson.stdout), terminationDocument);
   assert.deepEqual(requests.at(-1), {
@@ -2175,26 +2024,17 @@ test("source terminate performs the idempotent termination mutation", async (t) 
   const terminated = await runCli(terminateArguments, environment);
   assert.equal(terminated.code, 0, terminated.stderr);
   assert.match(terminated.stdout, /Ingestion Run run_paused_cli terminated/);
-  assert.match(
-    terminated.stdout,
-    /Paused: source_request_capacity_exhausted at 2026-08-30T00:00:00.000Z/,
-  );
+  assert.match(terminated.stdout, /Paused: source_request_capacity_exhausted at 2026-08-30T00:00:00.000Z/);
   assert.match(terminated.stdout, /Terminated at: 2026-08-30T02:00:00.000Z/);
   assert.match(terminated.stdout, /Active run released: yes/);
   assert.doesNotMatch(terminated.stdout, /cli-test-key/);
 
   // Inspection of the terminated run reports the owner decision and no
   // longer advertises resume or capacity extension.
-  const shownJson = await runCli(
-    ["source", "show", "--run-id", "run_paused_cli", "--json"],
-    environment,
-  );
+  const shownJson = await runCli(["source", "show", "--run-id", "run_paused_cli", "--json"], environment);
   assert.equal(shownJson.code, 0, shownJson.stderr);
   assert.deepEqual(JSON.parse(shownJson.stdout), terminatedEvidence);
-  const shown = await runCli(
-    ["source", "show", "--run-id", "run_paused_cli"],
-    environment,
-  );
+  const shown = await runCli(["source", "show", "--run-id", "run_paused_cli"], environment);
   assert.equal(shown.code, 0, shown.stderr);
   assert.match(shown.stdout, /Ingestion Run run_paused_cli evidence: failed/);
   assert.match(
@@ -2207,15 +2047,7 @@ test("source terminate performs the idempotent termination mutation", async (t) 
   // A state conflict renders the problem document and the conflict exit
   // code.
   const conflict = await runCli(
-    [
-      "source",
-      "terminate",
-      "--run-id",
-      "run_collecting_cli",
-      "--idempotency-key",
-      "terminate-conflict-cli",
-      "--json",
-    ],
+    ["source", "terminate", "--run-id", "run_collecting_cli", "--idempotency-key", "terminate-conflict-cli", "--json"],
     environment,
   );
   assert.equal(conflict.code, 7);
@@ -2236,11 +2068,7 @@ test("source terminate performs the idempotent termination mutation", async (t) 
     const invalid = await runCli(missing, environment);
     assert.equal(invalid.code, 2, missing.join(" "));
   }
-  assert.equal(
-    requests.length,
-    mutationCount,
-    "usage failures must stop before any administration request",
-  );
+  assert.equal(requests.length, mutationCount, "usage failures must stop before any administration request");
 });
 
 test("source pause performs the idempotent owner pause mutation", async (t) => {
@@ -2272,50 +2100,37 @@ test("source pause performs the idempotent owner pause mutation", async (t) => {
         body: body === "" ? null : JSON.parse(body),
       });
       response.setHeader("content-type", "application/json");
-      if (
-        request.url === "/v1/ingestion-runs/run_collecting_cli/collection/pause"
-      ) {
+      if (request.url === "/v1/ingestion-runs/run_collecting_cli/collection/pause") {
         response.end(JSON.stringify(pauseDocument));
         return;
       }
-      if (
-        request.url === "/v1/ingestion-runs/run_paused_cli/collection/pause"
-      ) {
+      if (request.url === "/v1/ingestion-runs/run_paused_cli/collection/pause") {
         response.statusCode = 409;
         response.setHeader("content-type", "application/problem+json");
-        response.end(JSON.stringify({
-          type: "https://card-keepr.invalid/problems/ingestion_run_not_collecting",
-          title: "Conflict",
-          status: 409,
-          code: "ingestion_run_not_collecting",
-          detail: "Only a collecting Ingestion Run can be paused.",
-          request_id: "request_not_collecting_cli",
-        }));
+        response.end(
+          JSON.stringify({
+            type: "https://card-keepr.invalid/problems/ingestion_run_not_collecting",
+            title: "Conflict",
+            status: 409,
+            code: "ingestion_run_not_collecting",
+            detail: "Only a collecting Ingestion Run can be paused.",
+            request_id: "request_not_collecting_cli",
+          }),
+        );
         return;
       }
       response.statusCode = 404;
       response.end(JSON.stringify({ code: "not_found" }));
     });
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
-  t.after(
-    () => new Promise((resolveClose) => server.close(resolveClose)),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   const environment = {
     KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
     KEEPR_ADMINISTRATION_KEY: "cli-test-key",
   };
-  const pauseArguments = [
-    "source",
-    "pause",
-    "--run-id",
-    "run_collecting_cli",
-    "--idempotency-key",
-    "pause-cli-demo",
-  ];
+  const pauseArguments = ["source", "pause", "--run-id", "run_collecting_cli", "--idempotency-key", "pause-cli-demo"];
 
   const pausedJson = await runCli([...pauseArguments, "--json"], environment);
   assert.equal(pausedJson.code, 0, pausedJson.stderr);
@@ -2330,29 +2145,15 @@ test("source pause performs the idempotent owner pause mutation", async (t) => {
   const paused = await runCli(pauseArguments, environment);
   assert.equal(paused.code, 0, paused.stderr);
   assert.match(paused.stdout, /Ingestion Run run_collecting_cli paused/);
-  assert.match(
-    paused.stdout,
-    /Paused: owner_requested at 2026-09-03T00:00:00.000Z/,
-  );
-  assert.match(
-    paused.stdout,
-    /Workflow attempt 1 \(evidence-run_collecting_cli\): running/,
-  );
+  assert.match(paused.stdout, /Paused: owner_requested at 2026-09-03T00:00:00.000Z/);
+  assert.match(paused.stdout, /Workflow attempt 1 \(evidence-run_collecting_cli\): running/);
   assert.match(paused.stdout, /Available actions: resume, terminate/);
   assert.doesNotMatch(paused.stdout, /cli-test-key/);
 
   // A state conflict renders the problem document and the conflict exit
   // code.
   const conflict = await runCli(
-    [
-      "source",
-      "pause",
-      "--run-id",
-      "run_paused_cli",
-      "--idempotency-key",
-      "pause-conflict-cli",
-      "--json",
-    ],
+    ["source", "pause", "--run-id", "run_paused_cli", "--idempotency-key", "pause-conflict-cli", "--json"],
     environment,
   );
   assert.equal(conflict.code, 7);
@@ -2373,11 +2174,7 @@ test("source pause performs the idempotent owner pause mutation", async (t) => {
     const invalid = await runCli(missing, environment);
     assert.equal(invalid.code, 2, missing.join(" "));
   }
-  assert.equal(
-    requests.length,
-    mutationCount,
-    "usage failures must stop before any administration request",
-  );
+  assert.equal(requests.length, mutationCount, "usage failures must stop before any administration request");
 });
 
 test("source show renders aggregated collection progress in human-readable form", async (t) => {
@@ -2399,26 +2196,30 @@ test("source show renders aggregated collection progress in human-readable form"
       collection_completed_at: null,
       terminal_at: null,
       expected_catalogue_revision_id: "catrev_current_cli",
-      capacity: [{
-        source_lineage: "fusion-world-en",
-        adapter_version: "fusion-world-en@9",
-        capacity_generation: 2,
-        request_capacity: 20000,
-        used_capacity: 15003,
-        remaining_capacity: 4997,
-        required_capacity: null,
-        overflow_request_count: null,
-      }],
+      capacity: [
+        {
+          source_lineage: "fusion-world-en",
+          adapter_version: "fusion-world-en@9",
+          capacity_generation: 2,
+          request_capacity: 20000,
+          used_capacity: 15003,
+          remaining_capacity: 4997,
+          required_capacity: null,
+          overflow_request_count: null,
+        },
+      ],
       requests: {
         total: 15003,
         by_state: { pending: 9000, captured: 3, observed: 6000 },
         by_role: { surface: 5, detail: 12000, image: 2998 },
-        by_lineage: [{
-          source_lineage: "fusion-world-en",
-          total: 15003,
-          by_state: { pending: 9000, captured: 3, observed: 6000 },
-          by_role: { surface: 5, detail: 12000, image: 2998 },
-        }],
+        by_lineage: [
+          {
+            source_lineage: "fusion-world-en",
+            total: 15003,
+            by_state: { pending: 9000, captured: 3, observed: 6000 },
+            by_role: { surface: 5, detail: 12000, image: 2998 },
+          },
+        ],
       },
       evidence: {
         snapshot_count: 6003,
@@ -2453,13 +2254,15 @@ test("source show renders aggregated collection progress in human-readable form"
       pacing: {
         mode: "production",
         interval_ms: 1000,
-        hosts: [{
-          hostname: "www.dbs-cardgame.com",
-          pending_request_count: 9000,
-          captured_request_count: 3,
-          next_request_not_before: "2026-09-01T03:00:01.000Z",
-          waiting_ms: 800,
-        }],
+        hosts: [
+          {
+            hostname: "www.dbs-cardgame.com",
+            pending_request_count: 9000,
+            captured_request_count: 3,
+            next_request_not_before: "2026-09-01T03:00:01.000Z",
+            waiting_ms: 800,
+          },
+        ],
       },
       estimate: {
         advisory: true,
@@ -2525,29 +2328,19 @@ test("source show renders aggregated collection progress in human-readable form"
     response.statusCode = 404;
     response.end(JSON.stringify({ code: "not_found" }));
   });
-  await new Promise((resolveListen) =>
-    server.listen(0, "127.0.0.1", resolveListen),
-  );
-  t.after(
-    () => new Promise((resolveClose) => server.close(resolveClose)),
-  );
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
   const address = server.address();
   const environment = {
     KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
     KEEPR_ADMINISTRATION_KEY: "cli-test-key",
   };
 
-  const shownJson = await runCli(
-    ["source", "show", "--run-id", "run_progress_cli", "--json"],
-    environment,
-  );
+  const shownJson = await runCli(["source", "show", "--run-id", "run_progress_cli", "--json"], environment);
   assert.equal(shownJson.code, 0, shownJson.stderr);
   assert.deepEqual(JSON.parse(shownJson.stdout), evidence);
 
-  const shown = await runCli(
-    ["source", "show", "--run-id", "run_progress_cli"],
-    environment,
-  );
+  const shown = await runCli(["source", "show", "--run-id", "run_progress_cli"], environment);
   assert.equal(shown.code, 0, shown.stderr);
   const out = shown.stdout;
   assert.match(out, /Ingestion Run run_progress_cli evidence: collecting/);
@@ -2555,40 +2348,22 @@ test("source show renders aggregated collection progress in human-readable form"
   assert.match(out, /6003 Source Snapshots \(1234567890 bytes\)/);
   assert.match(out, /6000 Source Observation sets/);
   assert.match(out, /6010 fetch attempts \(7 retries, 7 failures\)/);
-  assert.match(
-    out,
-    /Requests: 15003 \(pending 9000, captured 3, observed 6000; surface 5, detail 12000, image 2998\)/,
-  );
-  assert.match(
-    out,
-    /Capacity fusion-world-en: 15003 used of 20000 \(generation 2, 4997 remaining\)/,
-  );
+  assert.match(out, /Requests: 15003 \(pending 9000, captured 3, observed 6000; surface 5, detail 12000, image 2998\)/);
+  assert.match(out, /Capacity fusion-world-en: 15003 used of 20000 \(generation 2, 4997 remaining\)/);
   assert.match(
     out,
     /Latest failure: http_failure \(HTTP 503\) on fusion-world-en:detail:abc attempt 2 at 2026-09-01T02:59:00.000Z/,
   );
-  assert.match(
-    out,
-    /Current request: fusion-world-en:detail:def \(www.dbs-cardgame.com, detail, pending, 1 attempt\)/,
-  );
+  assert.match(out, /Current request: fusion-world-en:detail:def \(www.dbs-cardgame.com, detail, pending, 1 attempt\)/);
   assert.match(
     out,
     /Pacing: production 1000ms; 1 host: www.dbs-cardgame.com 9000 pending, 3 captured \(waiting 800ms\)/,
   );
-  assert.match(
-    out,
-    /Estimated minimum remaining: 2h 30m 0s \(advisory\)/,
-  );
+  assert.match(out, /Estimated minimum remaining: 2h 30m 0s \(advisory\)/);
   assert.match(out, /Expected Catalogue Revision: catrev_current_cli/);
-  assert.match(
-    out,
-    /Detail lists bounded to the newest 200: snapshots, observation sets, diagnostics truncated/,
-  );
+  assert.match(out, /Detail lists bounded to the newest 200: snapshots, observation sets, diagnostics truncated/);
   assert.match(out, /Last progress: 2026-09-01T03:00:00.000Z/);
-  assert.match(
-    out,
-    /Workflow attempt 1: evidence-run_progress_cli \(status running\)/,
-  );
+  assert.match(out, /Workflow attempt 1: evidence-run_progress_cli \(status running\)/);
   assert.match(
     out,
     /Workflow attempts: 3 recorded, 2 current; child evidence-host-abc attempt 1 errored; child evidence-host-abc-attempt-0 attempt 2 running \(current\)/,

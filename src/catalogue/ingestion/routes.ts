@@ -32,7 +32,7 @@ type Environment = Parameters<typeof evidenceInspectionOptions>[0] & {
   CLOUDFLARE_ACCOUNT_ID: string;
   DISPOSABLE_D1_DATABASE_ID: string;
   PRINTING_IMAGES: R2Bucket;
-  BACKUPS:R2Bucket;
+  BACKUPS: R2Bucket;
 };
 export type PublicationBackupWaiter = (
   initial: Record<string, unknown>,
@@ -66,9 +66,17 @@ export const ingestionRoutes = [
     );
   }),
   route<Context>("GET", "/v1/status", async ({ env, observedAt, request }) => {
-    const query=new URL(request.url).searchParams;
-    const status=await administrationStatus(env.CATALOGUE_DB,env.CATALOGUE_EXPORTS,observedAt,productionTarget(env),query.size===0);
-    return Response.json(query.size===0?status:await resolveAdministrationTarget(env.CATALOGUE_DB,env.BACKUPS,status,query));
+    const query = new URL(request.url).searchParams;
+    const status = await administrationStatus(
+      env.CATALOGUE_DB,
+      env.CATALOGUE_EXPORTS,
+      observedAt,
+      productionTarget(env),
+      query.size === 0,
+    );
+    return Response.json(
+      query.size === 0 ? status : await resolveAdministrationTarget(env.CATALOGUE_DB, env.BACKUPS, status, query),
+    );
   }),
   route<Context>("GET", "/v1/ingestion-runs/:run/candidate", async ({ env, observedAt }, params) => {
     return Response.json(await inspectCandidate(env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, params.run!, observedAt));
@@ -212,7 +220,12 @@ function productionTarget(env: Environment) {
       "card-keepr-backups",
     ],
   });
-  if(target===null)throw new AdministrationProblem(500,"invalid_administration_contract","Production status did not expose exact Cloudflare target identities.");
+  if (target === null)
+    throw new AdministrationProblem(
+      500,
+      "invalid_administration_contract",
+      "Production status did not expose exact Cloudflare target identities.",
+    );
   return target;
 }
 
