@@ -1,3 +1,4 @@
+import { waitForCollectionCompletion } from "./runtime-helpers";
 import { dropPausePrerequisiteGuards } from "./query-helpers/collection-resume";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
@@ -15,7 +16,6 @@ import {
   installRuntimeSuite,
   showCollection,
   waitForEvidenceCondition,
-  waitForEvidenceRun,
   waitForWorkflowStatus,
 } from "./runtime-helpers";
 
@@ -138,7 +138,7 @@ test("an owner-paused live run resumes under a new Workflow Attempt and complete
   });
   expect(resumedDocument.recovery).toBeUndefined();
 
-  const completed = await waitForEvidenceRun(run.id, "parsing", 20_000);
+  const completed = await waitForCollectionCompletion(run.id, 20_000);
   expect(completed.snapshots).toHaveLength(1);
   expect(completed.diagnostics.filter((entry) => entry.outcome === "success")).toHaveLength(1);
   expect(
@@ -278,7 +278,7 @@ test("a superseded sleeping child cannot capture when termination fails and coll
   const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(resumed.status).toBe(202);
   await resumed.body?.cancel();
-  const completed = await waitForEvidenceRun(run.id, "parsing", 20_000);
+  const completed = await waitForCollectionCompletion(run.id, 20_000);
   expect(completed.diagnostics.map((entry) => entry.outcome).sort()).toEqual(["http_failure", "success"]);
   expect(completed.snapshots).toHaveLength(1);
 });

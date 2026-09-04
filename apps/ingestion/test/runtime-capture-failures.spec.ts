@@ -1,3 +1,4 @@
+import { syntheticAdapterRegistrations } from "../../../test/support/source-adapters";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as ingestionQueries from "./query-helpers/ingestion";
@@ -241,7 +242,7 @@ test("adapter registrations stay constrained while mismatched production identit
       request_capacity: number;
     }>();
   expect(constrained.results).toEqual(
-    installedSourceAdapterRegistrations
+    [...installedSourceAdapterRegistrations, ...syntheticAdapterRegistrations]
       .map((adapter) => ({
         adapter_version: adapter.adapterVersion,
         source_lineage: adapter.sourceLineage,
@@ -345,7 +346,7 @@ test.each([
       "body_failure",
     ]);
     for (let attempt = 1; attempt <= 4; attempt += 1) {
-      const identity = await captureOperationIdentity(run.id, "required-source", attempt);
+      const identity = await captureOperationIdentity(run.id, "one-piece-en:discovery", attempt);
       expect(await env.EVIDENCE_OBJECTS.head(identity.objectKey)).toBeNull();
     }
   },

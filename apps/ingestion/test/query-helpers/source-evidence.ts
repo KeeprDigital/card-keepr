@@ -109,7 +109,7 @@ export function setSourceFreshnessCheckedAt(database: D1Database): D1PreparedSta
 
 export function readSourceRequestsStateFailureCode(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT state, failure_code, retry_generation FROM source_requests
-     WHERE ingestion_run_id = ? AND request_id = 'required-source'`);
+     WHERE ingestion_run_id = ? AND request_id = 'one-piece-en:discovery'`);
 }
 
 export function readIngestionRunRetryPauses(database: D1Database): D1PreparedStatement {
@@ -118,7 +118,7 @@ export function readIngestionRunRetryPauses(database: D1Database): D1PreparedSta
 
 export function readSourceRequestsStateRetryGeneration(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT state, retry_generation FROM source_requests
-     WHERE ingestion_run_id = ? AND request_id = 'required-source'`);
+     WHERE ingestion_run_id = ? AND request_id = 'one-piece-en:discovery'`);
 }
 
 export function countIngestionRunRetryPausesCount(database: D1Database): D1PreparedStatement {
@@ -133,7 +133,7 @@ export function insertSourceCaptureOperations(database: D1Database): D1PreparedS
       completed_at, request_headers_json, http_status,
       response_headers_json, response_vary_json, media_type
     ) VALUES (
-      ?, ?, 'captured-source', 1, ?, ?, 'response_received', ?,
+      ?, ?, 'one-piece-en:discovery', 1, ?, ?, 'response_received', ?,
       ?, '{}', 200, '{"content-type":"application/json"}', '[]',
       'application/json'
     )`);
@@ -1235,27 +1235,29 @@ export function readSourceFreshnessGameAreaForInterruptedReconciliationPublicati
 }
 
 export function readSourceFetchAttemptsRequestIdAttemptNumber(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT request_id, attempt_number, outcome FROM source_fetch_attempts
-     WHERE ingestion_run_id = ? ORDER BY request_id, attempt_number`);
+  return database.prepare(`SELECT attempts.request_id, attempts.attempt_number, attempts.outcome FROM source_fetch_attempts AS attempts
+     JOIN source_requests AS requests ON requests.ingestion_run_id = attempts.ingestion_run_id AND requests.request_id = attempts.request_id
+     WHERE attempts.ingestion_run_id = ? ORDER BY requests.sequence_number, attempts.attempt_number`);
 }
 
 export function readSourceCaptureOperationsRequestIdAttemptNumber(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT request_id, attempt_number, state, completed_at, content_digest,
-            source_snapshot_id
-     FROM source_capture_operations
-     WHERE ingestion_run_id = ? ORDER BY request_id, attempt_number`);
+  return database.prepare(`SELECT operations.request_id, operations.attempt_number, operations.state, operations.completed_at, operations.content_digest,
+            operations.source_snapshot_id
+     FROM source_capture_operations AS operations
+     JOIN source_requests AS requests ON requests.ingestion_run_id = operations.ingestion_run_id AND requests.request_id = operations.request_id
+     WHERE operations.ingestion_run_id = ? ORDER BY requests.sequence_number, operations.attempt_number`);
 }
 
 export function countSourceSnapshotsCountForBatchThatFailsMidwayReplaysWithoutDuplicatingSnapshotsOr(
   database: D1Database,
 ): D1PreparedStatement {
   return database.prepare(`SELECT COUNT(*) AS count FROM source_snapshots
-     WHERE ingestion_run_id = ? AND request_id = 'sequence-3'`);
+     WHERE ingestion_run_id = ? AND request_id = ?`);
 }
 
 export function readSourceSnapshotsIdRetrievedAt(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT id, retrieved_at, content_digest FROM source_snapshots
-     WHERE ingestion_run_id = ? AND request_id = 'sequence-3'`);
+     WHERE ingestion_run_id = ? AND request_id = ?`);
 }
 
 export function countSourceSnapshotsCountForBatchThatFailsMidwayReplaysWithoutDuplicatingSnapshotsOrWithundefined(
@@ -1513,7 +1515,7 @@ export function insertSourceCaptureOperationsForR2RecoveryOutagesPauseRunResumeC
       completed_at, request_headers_json, http_status,
       response_headers_json, response_vary_json, media_type
     ) VALUES (
-      ?, ?, 'required-source', 1, ?, ?, 'response_received', ?,
+      ?, ?, 'one-piece-en:discovery', 1, ?, ?, 'response_received', ?,
       ?, '{}', 200, '{"content-type":"application/json"}', '[]',
       'application/json'
     )`);
@@ -1528,7 +1530,7 @@ export function readSourceRequestsStateFailureCodeForR2RecoveryOutagesPauseRunRe
   database: D1Database,
 ): D1PreparedStatement {
   return database.prepare(`SELECT state, failure_code FROM source_requests
-     WHERE ingestion_run_id = ? AND request_id = 'required-source'`);
+     WHERE ingestion_run_id = ? AND request_id = 'one-piece-en:discovery'`);
 }
 
 export function readSourceCaptureOperationsStateContentDigest(database: D1Database): D1PreparedStatement {

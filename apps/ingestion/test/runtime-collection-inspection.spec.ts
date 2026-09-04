@@ -215,7 +215,7 @@ test("a transport-paused run reports retry counts, the latest safe failure, and 
     retry_attempt_count: 3,
     failed_attempt_count: 4,
     latest_failure: {
-      request_id: "required-source",
+      request_id: "one-piece-en:discovery",
       hostname: "inspection-official-source.invalid",
       classification: "http_failure",
       http_status: 503,
@@ -223,7 +223,7 @@ test("a transport-paused run reports retry counts, the latest safe failure, and 
     },
   });
   expect(collection.progress.current_request).toMatchObject({
-    request_id: "required-source",
+    request_id: "one-piece-en:discovery",
     hostname: "inspection-official-source.invalid",
     role: "surface",
     state: "pending",
@@ -387,7 +387,7 @@ test("collection inspection succeeds for a 64-character Official Source hostname
   });
   expect(collection.last_progress_at).toMatch(/^\d{4}-\d{2}-\d{2}T/u);
   expect(collection.progress.current_request).toMatchObject({
-    request_id: "required-source",
+    request_id: "one-piece-en:discovery",
     hostname,
     state: "pending",
   });
