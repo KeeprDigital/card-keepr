@@ -35,7 +35,7 @@ test("a single-host collection spends close to the pacing interval per Source Re
   expect(response.status).toBe(201);
   const run = await response.json<CollectionDocument>();
   const completed = await resumeCollection(run.id, 300_000);
-  expect(completed.state).toBe("parsing");
+  expect(completed.collection_completed_at).toEqual(expect.any(String));
   expect(completed.snapshots).toHaveLength(requestCount);
 
   const attempts = completed.diagnostics

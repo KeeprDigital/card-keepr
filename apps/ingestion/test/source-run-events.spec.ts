@@ -3,8 +3,8 @@ import { beforeEach, expect, test } from "vitest";
 import { catalogueStore, foldRunEvents } from "../../../src/catalogue/shared";
 import { runEventsPageStatement } from "../../../src/catalogue/shared/ingestion-run-event-repository";
 import {
-  currentPause,
   collectionProgressFacts,
+  currentPause,
   failActiveEvidenceRequestsForWorkflowExhaustion,
   finalizeEvidenceRun,
   pauseEvidenceRunForWorkflowRecovery,
@@ -25,17 +25,13 @@ beforeEach(async () => {
 });
 
 async function createRun(key: string): Promise<string> {
-  const run = await startEvidenceRun(
-    database,
-    {
-      supported_game: "one-piece",
-      source_lineage: "one-piece-en",
-      adapter_version: "fixture-one-piece-json@3",
-      idempotency_key: key,
-      requests: [{ id: "cards", url: "https://source-event-fixture.invalid/cards" }],
-    },
-    "synthetic_fixture",
-  );
+  const run = await startEvidenceRun(database, {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "fixture-one-piece-json@3",
+    idempotency_key: key,
+    requests: [{ id: "cards", url: "https://source-event-fixture.invalid/cards" }],
+  });
   if (typeof run.id !== "string") throw new Error("Run identity is missing.");
   return run.id;
 }

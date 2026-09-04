@@ -1,10 +1,11 @@
 # Guarded Production Release
 
-`keepr release production` is the only general production mutation path. Pull
+`keepr release production` is the guarded Worker deployment path. Pull
 request and `main` CI run validation and local Wrangler dry-runs only. The
 manual `production-release` workflow is serialized, uses the protected GitHub
 `production` environment, and is the only workflow that reads Cloudflare
-deployment credentials.
+deployment credentials. Catalogue backup and recovery use the separate
+[backup/recovery procedure](backup-recovery.md).
 
 ## Prepare
 
@@ -12,7 +13,7 @@ deployment credentials.
    deployment token's least-privilege grants outside the repository. This
    repository's billing plan does not support required reviewers on the
    `production` environment, so the exact confirmation envelope the CLI
-   demands (step 4) is the only human gate before the workflow mutates
+   demands (step 5) is the only human gate before the workflow mutates
    production.
 2. Confirm the public mounts' prerequisites (ADR 0007). Zone routes do not
    create DNS: a proxied placeholder record for `card.keepr.digital` must
@@ -32,12 +33,17 @@ deployment credentials.
    command. Do not edit or reorder it. Supply the GitHub Actions-write token in
    `KEEPR_GITHUB_RELEASE_TOKEN`; deployment credentials never enter the CLI.
 
+Read the expected migration level from the live preflight; it is the level before
+this release applies its checked-in forward migrations, not a fixed example value.
+
 ```sh
+npm run --silent keepr -- status --json > release-status.json
+EXPECTED_MIGRATION_LEVEL=$(jq -er '.release_preflight.schema_migration_level' release-status.json)
 npm run keepr -- release production \
   --release-id release-2026-08-05-01 \
   --expected-current-revision catrev_example \
   --expected-head-sha 0123456789abcdef0123456789abcdef01234567 \
-  --expected-migration-level 1 \
+  --expected-migration-level "$EXPECTED_MIGRATION_LEVEL" \
   --idempotency-key release-2026-08-05-01 \
   --environment production --yes --confirm "$EXACT_CONFIRMATION" --json
 ```
@@ -99,15 +105,14 @@ Before checkout, the workflow resolves `expected_head_sha` through the
 GitHub API with its own read-only token (issue #75): the value must be a
 full 40-character commit id, `main` must contain it (compare status
 `identical` or `behind`), and every `ci.yml` job must have a successful
-latest check run for it. `ci` runs on pull requests only, so a merge commit
-on `main` has no `ci` check runs of its own; the workflow resolves the pull
-request that merged into that commit and requires the check runs of its
-head commit instead. The list of required jobs lives in the workflow step's
-`REQUIRED_CI_JOBS` and the contract test keeps it equal to the `ci.yml` job
-ids. A SHA that never went through a pull request, or whose pull request
-was merged before the `lint` job existed, fails the gate. The production
-environment's branch policy and reviewers remain the human gate on top of
-this; the gate makes provenance mechanical, not optional.
+latest check run for the resolved CI commit. `ci` runs on pull requests and
+pushes to `main`. The release workflow currently resolves the pull request that
+merged into a merge commit and requires the check runs of its head commit;
+otherwise it checks the requested SHA itself. The list of required jobs lives in
+the workflow step's `REQUIRED_CI_JOBS` and the contract test keeps it equal to the
+`ci.yml` job ids. A missing, pending, or unsuccessful required check fails the
+gate. The production environment's branch policy and exact owner confirmation
+also apply; required reviewers are unavailable on the current billing plan.
 
 `migrations/` is one schema baseline (`0001_baseline.sql`, schema level 1,
 ADR 0006) followed by guarded forward migrations. An empty database is

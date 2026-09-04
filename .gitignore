@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 .wrangler/
 .dev.vars
 .dev.vars.*
@@ -8,3 +8,5 @@ coverage/
 .env
 .env.*
 !.env.example
+
+.artifacts/

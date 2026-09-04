@@ -52,9 +52,12 @@ export async function administrationStatus(
     }>[];
     r2_buckets: readonly string[];
   }>,
+  reconcile = true,
 ): Promise<Record<string, unknown>> {
-  await expireOverdueRuns(database, observedAt);
-  await reconcileAbandonedPublication(database, catalogueExports, observedAt);
+  if (reconcile) {
+    await expireOverdueRuns(database, observedAt);
+    await reconcileAbandonedPublication(database, catalogueExports, observedAt);
+  }
   const [
     catalogue,
     operation,

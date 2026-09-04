@@ -41,7 +41,7 @@ test("production release is manual, serialized, versioned, and owns all producti
   );
   // The guarded release is the workflow's only job (ADR 0005 removed the
   // credential-probe job), and it is selected by the operation input alone.
-  assert.equal((release.split("\njobs:\n")[1].match(/^  [\w-]+:$/gmu) ?? []).length, 1);
+  assert.equal((release.split("\njobs:\n")[1].match(/^ {2}[\w-]+:$/gmu) ?? []).length, 1);
   assert.match(release, /options: \[production_release\]/u);
   assert.match(release, /validate-dispatch \/tmp\/production-release/u);
   assert.match(release, /production-release-provider\.mjs verify-target/u);
@@ -67,8 +67,8 @@ test("production release is manual, serialized, versioned, and owns all producti
   const inputs =
     release
       .split("\n    inputs:\n")[1]
-      .split(/\n  [a-z]/u)[0]
-      .match(/^      [a-z_]+:$/gmu) ?? [];
+      .split(/\n {2}[a-z]/u)[0]
+      .match(/^ {6}[a-z_]+:$/gmu) ?? [];
   assert.ok(inputs.length >= 1 && inputs.length <= 25, `workflow_dispatch declares ${inputs.length} inputs`);
   assert.match(release, /live-preflight\.sql[\s\S]*claim\.sql[\s\S]*d1 migrations apply[\s\S]*materialize\.sql/u);
   assert.match(release, /migration-started\.sql[\s\S]*d1 migrations apply/u);
@@ -110,7 +110,7 @@ test("the release SHA is resolved through the GitHub API before checkout and ci 
   const release = readFileSync(".github/workflows/production-release.yml", "utf8");
   const ci = readFileSync(".github/workflows/ci.yml", "utf8");
   const steps = release
-    .split(/\n      - name: /u)
+    .split(/\n {6}- name: /u)
     .slice(1)
     .map((step) => ({ name: step.split("\n")[0], body: step }));
   assert.equal(steps[0].name, "Verify the release SHA is contained in main and passed ci");
@@ -129,7 +129,7 @@ test("the release SHA is resolved through the GitHub API before checkout and ci 
   assert.match(gate, /status != "completed" or \.conclusion != "success"/u);
   assert.doesNotMatch(gate, /secrets\./u);
   // The workflow token reads checks and pull requests and writes nothing.
-  assert.match(release, /permissions:\n      contents: read\n      checks: read\n      pull-requests: read\n/u);
+  assert.match(release, /permissions:\n {6}contents: read\n {6}checks: read\n {6}pull-requests: read\n/u);
   assert.doesNotMatch(release, /:\s*write\b/u);
   // Every ci.yml job is a required check of the release gate, and nothing
   // else is: adding or renaming a ci job updates REQUIRED_CI_JOBS.
@@ -138,7 +138,7 @@ test("the release SHA is resolved through the GitHub API before checkout and ci 
     .trim()
     .split(/\s+/u)
     .sort();
-  const ciJobs = (ci.split("\njobs:\n")[1].match(/^  [\w-]+:$/gmu) ?? [])
+  const ciJobs = (ci.split("\njobs:\n")[1].match(/^ {2}[\w-]+:$/gmu) ?? [])
     .map((line) => line.trim().slice(0, -1))
     .sort();
   assert.deepEqual(required, ciJobs);
@@ -146,7 +146,7 @@ test("the release SHA is resolved through the GitHub API before checkout and ci 
   // ci cancels a superseded run of the same pull request.
   assert.match(
     ci,
-    /concurrency:\n  group: ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}\n  cancel-in-progress: true/u,
+    /concurrency:\n {2}group: ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}\n {2}cancel-in-progress: true/u,
   );
 });
 
@@ -171,8 +171,8 @@ test("workflow hygiene: pinned actions, no secret written to GITHUB_ENV, no misl
   const stress = workflows.find(([name]) => name === "stress")[1];
   assert.match(stress, /60 days/u);
   assert.match(stress, /docs\/runbooks\/scheduled-stress\.md/u);
-  assert.match(stress, /report-failure:\n    needs: stress\n    if: failure\(\)/u);
-  assert.match(stress, /permissions:\n      contents: read\n      issues: write/u);
+  assert.match(stress, /report-failure:\n {4}needs: stress\n {4}if: failure\(\)/u);
+  assert.match(stress, /permissions:\n {6}contents: read\n {6}issues: write/u);
   assert.match(stress, /gh issue create[^\n]*--label bug/u);
   assert.match(stress, /gh issue comment/u);
   // The stress job itself keeps the workflow's read-only token.
@@ -189,13 +189,10 @@ test("the Bootstrap Mode branch keeps every data-independent gate, runs no data-
   // that the validator checks against the prepared plan.
   const release = readFileSync(".github/workflows/production-release.yml", "utf8");
   const failure = readFileSync("scripts/production-release-failure.sh", "utf8");
-  assert.match(
-    release,
-    /^      bootstrap:\n        required: false\n        default: "false"\n        type: string$/mu,
-  );
+  assert.match(release, /^ {6}bootstrap:\n {8}required: false\n {8}default: "false"\n {8}type: string$/mu);
   assert.match(release, /BOOTSTRAP: \$\{\{ inputs\.bootstrap \}\}/u);
   const steps = release
-    .split(/\n      - name: /u)
+    .split(/\n {6}- name: /u)
     .slice(1)
     .map((step) => ({ name: step.split("\n")[0], body: step }));
   const bootstrapOnly = steps.filter((step) => /if: inputs\.bootstrap == 'true'/u.test(step.body));
@@ -291,8 +288,10 @@ test("provider credentials stay in fetch headers and out of process arguments", 
 test("only the guarded CLI provider can select release mode", () => {
   const cli = readFileSync("cli/production-release.mjs", "utf8");
   const provider = readFileSync("cli/provider-github-release.mjs", "utf8");
-  assert.match(cli, /operation: "production_release"/u);
-  assert.doesNotMatch(cli, /operation:(?!\s*"production_release")/u);
+  const server = readFileSync("src/catalogue/ingestion/production-release.ts", "utf8");
+  assert.match(server, /operation: "production_release"/u);
+  assert.match(cli, /inputs: document\.dispatch_inputs/u);
+  assert.doesNotMatch(cli, /createHash|stableJson/u);
   assert.match(provider, /inputs\?\.operation !== "production_release"/u);
   assert.equal((provider.match(/export async function dispatchProductionRelease/gu) ?? []).length, 1);
 });
@@ -311,10 +310,9 @@ test("owner preparation is durable before dispatch and post-migration failure is
   );
   assert.match(worker, /const routes = \[[\s\S]*?\.\.\.ingestionRoutes/u);
   assert.match(cluster, /export \{ ingestionRoutes \} from "\.\/routes"/u);
-  assert.match(
-    routes,
-    /route<Context>\("POST", "\/v1\/production-releases",[\s\S]*?return Response\.json\(await prepareProductionRelease\(env\.CATALOGUE_DB, body, productionTarget\(env\), observedAt\), \{\s*status: 201,/u,
-  );
+  assert.match(routes, /route<Context>\("POST", "\/v1\/production-releases",[\s\S]*?resolveProductionRelease/u);
+  const resolver = readFileSync("src/catalogue/ingestion/production-release-preparation.ts", "utf8");
+  assert.match(resolver, /return prepareProductionRelease\(database, plan, target, observedAt\)/u);
   assert.match(domain, /prepare_production_release/u);
   assert.match(domain, /recordPreparedProductionReleaseStatement/u);
   assert.match(repository, /administration_idempotency/u);

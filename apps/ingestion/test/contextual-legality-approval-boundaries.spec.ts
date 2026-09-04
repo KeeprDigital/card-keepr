@@ -1,16 +1,7 @@
-import { catalogueStore } from "../../../src/catalogue/shared";
-import {
-  insertCheckedLegalityProjectionFixture,
-  seedLegalityProjectionGuardTarget,
-} from "./query-helpers/legality-guards";
-import { publishLegalityRuleFactsStatement } from "../../../src/catalogue/legality/legality-publication-repository";
-import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
-import * as legalityQueries from "./query-helpers/legality";
-import * as ingestionQueries from "./query-helpers/ingestion";
-import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { expect, test } from "vitest";
-import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
-import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
+import { publishLegalityRuleFactsStatement } from "../../../src/catalogue/legality/legality-publication-repository";
+import { canonicalJson, catalogueStore, sha256, utf8 } from "../../../src/catalogue/shared";
+import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import {
   approve,
   canonicalLegalityCardIdInvariantErrors,
@@ -28,6 +19,15 @@ import {
   testEnv,
   waitForState,
 } from "./contextual-legality-helpers";
+import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as legalityQueries from "./query-helpers/legality";
+import {
+  insertCheckedLegalityProjectionFixture,
+  seedLegalityProjectionGuardTarget,
+} from "./query-helpers/legality-guards";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 
 installContextualLegalitySuite();
 
@@ -537,7 +537,12 @@ test("approval rejects a partial candidate when a carried-forward game's Legalit
     ],
   });
   const runId = requiredString(started, "id");
-  expect((await request(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
+  await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    testEnv.OFFICIAL_SOURCE_TRANSPORT,
+    runId,
+  );
   await waitForState(runId, "parsing");
   const partial = await reconcile(runId, "2025-12-31T23:59:00.000Z");
   expect(partial.response.status).toBe(200);

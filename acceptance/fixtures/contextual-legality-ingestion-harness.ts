@@ -1,11 +1,15 @@
 import { restoreFixturePublicationHealthStatement } from "../helpers/query-helpers/runtime-fixtures";
-import { catalogueStore } from "../../src/catalogue/shared";
+import { administrationPresentation } from "../../src/http/administration-presentation.mjs";
+import {
+  collectFixtureEvidence,
+  injectFixtureEvidencePlan,
+} from "../../test/support/fixture-evidence-plan";
 import ingestionWorker, {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
   OfficialSourceTransport,
   ReconciliationWorkflow,
-} from "../../apps/ingestion/src/index";
+} from "../../test/support/ingestion-worker";
 import {
   WorkflowEntrypoint,
   type WorkflowEvent,
@@ -14,10 +18,7 @@ import {
 import type {
   CatalogueBackupWorkflowParams,
 } from "../../src/catalogue/backup-recovery";
-import {
-  startEvidenceRun,
-  type StartEvidenceRunRequest,
-} from "../../src/catalogue/source-evidence";
+import type { StartEvidenceRunRequest } from "../../src/catalogue/source-evidence";
 
 export {
   EvidenceHostWorkflow,
@@ -46,8 +47,29 @@ export class CatalogueBackupWorkflow extends WorkflowEntrypoint<
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const copy = request.clone();
     const url = new URL(request.url);
+    if (
+      request.method === "POST" &&
+      url.pathname === "/v1/ingestion-runs/evidence" &&
+      request.headers.get("authorization") === `Bearer ${env.ADMINISTRATION_KEY}`
+    ) {
+      const body = await request.clone().json() as StartEvidenceRunRequest;
+      if (body.adapter_version?.startsWith("fixture-")) {
+        const document = await injectFixtureEvidencePlan(env.CATALOGUE_DB, body);
+        const collected = await collectFixtureEvidence(
+          env.CATALOGUE_DB,
+          env.EVIDENCE_OBJECTS,
+          env.OFFICIAL_SOURCE_TRANSPORT,
+          String(document.id),
+        );
+        return Response.json(
+          request.headers.get("accept") === "application/vnd.card-keepr.cli+json"
+            ? administrationPresentation(collected, 201)
+            : collected,
+          { status: 201, headers: { vary: "Accept" } },
+        );
+      }
+    }
     const productionResponse = await ingestionWorker.fetch(request, env);
     if (
       request.method === "POST" &&
@@ -57,28 +79,6 @@ export default {
       await restoreFixturePublicationHealthStatement(env.CATALOGUE_DB).run();
       return productionResponse;
     }
-    if (
-      request.method !== "POST" ||
-      url.pathname !== "/v1/ingestion-runs/evidence" ||
-      productionResponse.status !== 422
-    ) {
-      return productionResponse;
-    }
-    const problem = await productionResponse.clone().json() as {
-      code?: unknown;
-    };
-    if (problem.code !== "adapter_origin_not_permitted") {
-      return productionResponse;
-    }
-    const body = await copy.json() as StartEvidenceRunRequest;
-    if (!body.adapter_version.startsWith("fixture-")) {
-      return productionResponse;
-    }
-    const document = await startEvidenceRun(
-      catalogueStore(env.CATALOGUE_DB),
-      body,
-      "synthetic_fixture",
-    );
-    return Response.json(document, { status: 201 });
+    return productionResponse;
   },
 };

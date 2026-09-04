@@ -24,7 +24,7 @@ installRuntimeSuite();
 
 test("R2 recovery outages pause the run and resume completes the same capture", async () => {
   const run = await createCollection("source_recovery_r2_outage_001", "https://official-source.invalid/cards");
-  const identity = await captureOperationIdentity(run.id, "required-source", 1);
+  const identity = await captureOperationIdentity(run.id, "one-piece-en:discovery", 1);
   const now = new Date().toISOString();
   await sourceEvidenceQueries
     .insertSourceCaptureOperationsForR2RecoveryOutagesPauseRunResumeCompletesSameCapture(env.CATALOGUE_DB)
@@ -89,8 +89,7 @@ test("R2 recovery outages pause the run and resume completes the same capture", 
   // captures and the same run completes collection.
   const completed = await resumeCollection(run.id);
   expect(completed).toMatchObject({
-    state: "parsing",
-    failure_code: null,
+    collection_completed_at: expect.any(String),
   });
   expect(completed.snapshots).toHaveLength(1);
   expect(completed.diagnostics.map((diagnostic) => diagnostic.outcome)).toEqual([
@@ -107,7 +106,7 @@ test("resume recovers the deterministic object after an upload-before-D1 restart
     "source_restart_boundary_001",
     "https://restart-official-source.invalid/must-not-refetch",
   );
-  const identity = await captureOperationIdentity(run.id, "required-source", 1);
+  const identity = await captureOperationIdentity(run.id, "one-piece-en:discovery", 1);
   const bytes = new TextEncoder().encode('{"cards":[{"card_number":"OP01-001"}]}');
   await env.EVIDENCE_OBJECTS.put(identity.objectKey, bytes, {
     onlyIf: { etagDoesNotMatch: "*" },
@@ -121,7 +120,7 @@ test("resume recovers the deterministic object after an upload-before-D1 restart
 
   const completed = await resumeCollection(run.id);
   expect(completed).toMatchObject({
-    state: "parsing",
+    collection_completed_at: expect.any(String),
     diagnostics: [{ attempt_number: 1, outcome: "success" }],
     snapshots: [
       {

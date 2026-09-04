@@ -1,14 +1,15 @@
-import { catalogueStore } from "../../../src/catalogue/shared";
-import { publishLegalityRuleFactsStatement } from "../../../src/catalogue/legality/legality-publication-repository";
-import * as ingestionQueries from "./query-helpers/ingestion";
-import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
-import * as legalityQueries from "./query-helpers/legality";
-import * as catalogueExportQueries from "./query-helpers/catalogue-export";
-import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
+import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, expect } from "vitest";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
+import { publishLegalityRuleFactsStatement } from "../../../src/catalogue/legality/legality-publication-repository";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
+import * as catalogueExportQueries from "./query-helpers/catalogue-export";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as legalityQueries from "./query-helpers/legality";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 
 export type ProductionDiscoveryRequest = ReturnType<typeof officialSourceDiscoveryRequests>[number];
 
@@ -61,7 +62,12 @@ export async function collectFixtureOnePiece(
     ],
   });
   const runId = requiredString(started, "id");
-  expect((await request(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
+  await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    testEnv.OFFICIAL_SOURCE_TRANSPORT,
+    runId,
+  );
   await waitForState(runId, "parsing");
   const reconciled = await reconcile(runId);
   expect(reconciled.response.status, JSON.stringify(reconciled.document)).toBe(expectedStatus);
@@ -84,8 +90,12 @@ export async function collectFixtureLegalityEvidence(url: string, idempotencyKey
     ],
   });
   const runId = requiredString(started, "id");
-  const resumed = await request(`/v1/ingestion-runs/${runId}/collection/resume`, {});
-  expect(resumed.response.status).toBe(202);
+  await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    testEnv.OFFICIAL_SOURCE_TRANSPORT,
+    runId,
+  );
   await waitForState(runId, "parsing");
   return runId;
 }

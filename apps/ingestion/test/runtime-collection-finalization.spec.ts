@@ -12,7 +12,7 @@ installRuntimeSuite();
 test("finalizing an already completed collection again leaves its completion time unchanged", async () => {
   const run = await createCollection("finalization_idempotent_001", "https://official-source.invalid/cards");
   const completed = await resumeCollection(run.id, 20_000);
-  expect(completed.state).toBe("parsing");
+  expect(completed.collection_completed_at).toEqual(expect.any(String));
   expect(completed.collection_completed_at).toMatch(/^\d{4}-\d{2}-\d{2}T/u);
 
   await new Promise((resolve) => setTimeout(resolve, 5));

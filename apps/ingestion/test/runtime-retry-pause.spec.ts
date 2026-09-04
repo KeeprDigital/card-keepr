@@ -48,7 +48,7 @@ test("transport retry exhaustion pauses the Ingestion Run without failing the re
     reason: "source_transport_retries_exhausted",
     paused_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
     source_lineage: "one-piece-en",
-    request_id: "required-source",
+    request_id: "one-piece-en:discovery",
     hostname: "transport-pause-official-source.invalid",
     retry_generation: 1,
     attempt_count: 4,
@@ -83,7 +83,7 @@ test("transport retry exhaustion pauses the Ingestion Run without failing the re
     await ingestionQueries.readOperationStateActiveIngestionRunId(env.CATALOGUE_DB).first("active_ingestion_run_id"),
   ).toBe(run.id);
   expect(await sourceEvidenceQueries.readIngestionRunRetryPauses(env.CATALOGUE_DB).bind(run.id).first()).toMatchObject({
-    request_id: "required-source",
+    request_id: "one-piece-en:discovery",
     retry_generation: 1,
     pause_reason: "source_transport_retries_exhausted",
     source_lineage: "one-piece-en",
@@ -119,10 +119,13 @@ test("resuming a transport-paused run opens a new bounded retry generation and c
       workflow: { id: `evidence-${run.id}-resume-1` },
     });
   }
-  const completed = await waitForEvidenceCondition(run.id, (current) => current.state === "parsing", 12_000);
+  const completed = await waitForEvidenceCondition(
+    run.id,
+    (current) => current.collection_completed_at !== null,
+    12_000,
+  );
   expect(completed).toMatchObject({
-    state: "parsing",
-    failure_code: null,
+    collection_completed_at: expect.any(String),
     workflow: { parent_id: `evidence-${run.id}-resume-1` },
   });
   expect(completed.pause).toBeUndefined();
@@ -161,8 +164,8 @@ test("a captured request crosses a retry pause without another Official Source f
     requests: [
       {
         // Any fetch of this URL returns 404 and fails the run terminally,
-        // so reaching "parsing" proves the retained bytes were reused.
-        id: "captured-source",
+        // so completed collection proves the retained bytes were reused.
+        id: "one-piece-en:discovery",
         url: "https://staged-pause-official-source.invalid/must-not-refetch",
       },
       {
@@ -173,7 +176,10 @@ test("a captured request crosses a retry pause without another Official Source f
   });
   expect(created.status).toBe(201);
   const run = await created.json<{ id: string }>();
-  const identity = await captureOperationIdentity(run.id, "captured-source", 1);
+  const exhaustingRequestId = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id)).find(
+    (request) => new URL(request.url).hostname === "staged-exhaust-official-source.invalid",
+  )!.request_id;
+  const identity = await captureOperationIdentity(run.id, "one-piece-en:discovery", 1);
   const bytes = new TextEncoder().encode('{"cards":[{"card_number":"OP01-004"}]}');
   await env.EVIDENCE_OBJECTS.put(identity.objectKey, bytes, {
     onlyIf: { etagDoesNotMatch: "*" },
@@ -193,18 +199,22 @@ test("a captured request crosses a retry pause without another Official Source f
   const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(resumed.status).toBe(202);
   await resumed.body?.cancel();
-  const completed = await waitForEvidenceCondition(run.id, (current) => current.state === "parsing", 15_000);
+  const completed = await waitForEvidenceCondition(
+    run.id,
+    (current) => current.collection_completed_at !== null,
+    15_000,
+  );
   expect(completed.snapshots.map(({ id }) => id)).toContain(identity.snapshotId);
 
   // The staged capture crossed the pause untouched: one successful attempt,
   // no transport call, and only the exhausted request opened generation 2.
   expect(
     completed.diagnostics
-      .filter(({ request_id }) => request_id === "captured-source")
+      .filter(({ request_id }) => request_id === "one-piece-en:discovery")
       .map(({ attempt_number, outcome }) => ({ attempt_number, outcome })),
   ).toEqual([{ attempt_number: 1, outcome: "success" }]);
   expect(
-    completed.diagnostics.filter(({ request_id }) => request_id === "exhausting-source").map(({ outcome }) => outcome),
+    completed.diagnostics.filter(({ request_id }) => request_id === exhaustingRequestId).map(({ outcome }) => outcome),
   ).toEqual(["http_failure", "http_failure", "http_failure", "http_failure", "success"]);
   expect(
     await sourceEvidenceQueries
@@ -214,12 +224,12 @@ test("a captured request crosses a retry pause without another Official Source f
       .then(({ results }) => results),
   ).toEqual([
     {
-      request_id: "captured-source",
+      request_id: "one-piece-en:discovery",
       state: "observed",
       retry_generation: 1,
     },
     {
-      request_id: "exhausting-source",
+      request_id: exhaustingRequestId,
       state: "observed",
       retry_generation: 2,
     },
@@ -258,7 +268,7 @@ test("network failure exhaustion pauses with the network classification", async 
     failure_code: null,
     pause: {
       reason: "source_transport_retries_exhausted",
-      request_id: "required-source",
+      request_id: "one-piece-en:discovery",
       hostname: "network-pause-official-source.invalid",
       retry_generation: 1,
       attempt_count: 4,

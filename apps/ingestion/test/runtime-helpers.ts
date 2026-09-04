@@ -1,10 +1,9 @@
-import { catalogueStore } from "../../../src/catalogue/shared";
+import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import { env, exports } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
-import { beforeEach, expect, test } from "vitest";
-import { startEvidenceRun } from "../../../src/catalogue/source-evidence";
+import { beforeEach, expect } from "vitest";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import { fusionWorldProductionCollectionRequests } from "./production-collection-request-goldens";
 
@@ -158,7 +157,7 @@ export async function fixtureEvidenceRequest(body: {
     headers?: Record<string, string>;
   }[];
 }): Promise<Response> {
-  return Response.json(await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), body, "synthetic_fixture"), {
+  return Response.json(await injectFixtureEvidencePlan(env.CATALOGUE_DB, body), {
     status: 201,
   });
 }
@@ -253,6 +252,12 @@ export async function resumeCollection(runId: string, timeoutMs = 8_000): Promis
   return waitForEvidenceRun(runId, null, timeoutMs);
 }
 
+// Collection completion is retained independently of the parent Workflow's
+// subsequent reconciliation; tests of capture must not race that next phase.
+export function waitForCollectionCompletion(runId: string, timeoutMs = 8_000): Promise<CollectionDocument> {
+  return waitForEvidenceCondition(runId, (current) => current.collection_completed_at !== null, timeoutMs);
+}
+
 export async function waitForEvidenceRun(
   runId: string,
   expectedState: "parsing" | "awaiting_approval" | "failed" | null = null,
@@ -263,7 +268,7 @@ export async function waitForEvidenceRun(
     const current = await showCollection(runId);
     if (
       expectedState === null
-        ? current.state === "parsing" || current.state === "failed"
+        ? current.collection_completed_at !== null || current.state === "failed"
         : expectedState === "awaiting_approval"
           ? current.state === "awaiting_approval" || current.state === "failed"
           : current.state === expectedState

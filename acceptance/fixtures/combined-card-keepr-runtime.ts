@@ -1,3 +1,7 @@
+import {
+  collectFixtureEvidence,
+  injectFixtureEvidencePlan,
+} from "../../test/support/fixture-evidence-plan";
 import { fixtureSourceSnapshotStatement, cloneFixtureFetchAttemptStatement, cloneFixtureSourceSnapshotStatement, restoreFixturePublicationHealthStatement } from "../helpers/query-helpers/runtime-fixtures";
 import { catalogueStore } from "../../src/catalogue/shared";
 import {
@@ -6,12 +10,13 @@ import {
   type WorkflowEvent,
   type WorkflowStep,
 } from "cloudflare:workers";
+// The combined bundle shares one adapter registry; the ingestion test entrypoint installs it once.
 import apiWorker from "../../apps/api/src/index";
 import ingestionWorker, {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
   ReconciliationWorkflow,
-} from "../../apps/ingestion/src/index";
+} from "../../test/support/ingestion-worker";
 import type {
   CatalogueBackupWorkflowParams,
 } from "../../src/catalogue/backup-recovery";
@@ -19,10 +24,7 @@ import {
   onePieceOfficialErrataHtml,
   onePieceOfficialErrataShapeDriftHtml,
 } from "./one-piece-official-errata-html";
-import {
-  startEvidenceRun,
-  type StartEvidenceRunRequest,
-} from "../../src/catalogue/source-evidence";
+import type { StartEvidenceRunRequest } from "../../src/catalogue/source-evidence";
 
 export {
   EvidenceHostWorkflow,
@@ -86,14 +88,17 @@ export default {
       request.headers.get("authorization") ===
         `Bearer ${env.ADMINISTRATION_KEY}`
     ) {
-      return Response.json(
-        await startEvidenceRun(
-          catalogueStore(env.CATALOGUE_DB),
-          await request.json<StartEvidenceRunRequest>(),
-          "synthetic_fixture",
-        ),
-        { status: 201 },
+      const run = await injectFixtureEvidencePlan(
+        env.CATALOGUE_DB,
+        await request.json<StartEvidenceRunRequest>(),
       );
+      const collected = await collectFixtureEvidence(
+        env.CATALOGUE_DB,
+        env.EVIDENCE_OBJECTS,
+        env.OFFICIAL_SOURCE_TRANSPORT,
+        String(run.id),
+      );
+      return Response.json(collected, { status: 201 });
     }
     if (
       request.method === "POST" &&

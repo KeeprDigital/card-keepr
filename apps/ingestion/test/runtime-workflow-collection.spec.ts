@@ -1,3 +1,4 @@
+import { waitForCollectionCompletion } from "./runtime-helpers";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
@@ -74,9 +75,9 @@ test("a successful Official Source response is snapshotted before parsing", asyn
     workflow: { id: accepted.workflow.id },
   });
 
-  const completed = await waitForEvidenceRun(planned.id, "parsing");
+  const completed = await waitForCollectionCompletion(planned.id);
 
-  expect(completed.state).toBe("parsing");
+  expect(completed.collection_completed_at).toEqual(expect.any(String));
   expect(completed.snapshots).toHaveLength(1);
   const snapshot = completed.snapshots[0];
   if (snapshot === undefined) throw new Error("missing Source Snapshot");
@@ -381,7 +382,7 @@ test("resuming collection reactivates an errored hostname Workflow with one pers
 
   const completed = await resumeCollection(run.id);
 
-  expect(completed.state).toBe("parsing");
+  expect(completed.collection_completed_at).toEqual(expect.any(String));
   expect(completed.workflow.child_ids).toEqual([childId, `${childId}-attempt-0`]);
   expect(completed.snapshots).toHaveLength(1);
   expect(completed.observation_sets).toHaveLength(1);
@@ -406,6 +407,9 @@ test("a full parent restart retains history and appends one bounded child identi
   });
   expect(created.status).toBe(201);
   const run = await created.json<CollectionDocument>();
+  const remainingRequestId = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id)).find(
+    (request) => new URL(request.url).hostname === "mapping-z-official-source.invalid",
+  )!.request_id;
   const accepted = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(accepted.status).toBe(202);
   await accepted.body?.cancel();
@@ -414,7 +418,7 @@ test("a full parent restart retains history and appends one bounded child identi
     (current) =>
       current.snapshots.length === 1 &&
       current.diagnostics.some(
-        (diagnostic) => diagnostic.request_id === "remaining-host" && diagnostic.outcome === "http_failure",
+        (diagnostic) => diagnostic.request_id === remainingRequestId && diagnostic.outcome === "http_failure",
       ),
   );
   expect(interrupted.workflow.child_ids).toHaveLength(2);
@@ -438,7 +442,7 @@ test("a full parent restart retains history and appends one bounded child identi
   const completed = await waitForEvidenceCondition(
     run.id,
     (current) =>
-      current.state === "parsing" &&
+      current.collection_completed_at !== null &&
       current.workflow.child_ids.length === originalChildIds.length + 1 &&
       current.snapshots.length === 2 &&
       current.observation_sets.length === 2,
@@ -578,7 +582,10 @@ test("the parent Workflow creates a persisted dynamic host child before recovery
 
   const completed = await waitForEvidenceCondition(
     run.id,
-    (current) => current.state === "parsing" && current.snapshots.length === 2 && current.observation_sets.length === 2,
+    (current) =>
+      current.collection_completed_at !== null &&
+      current.snapshots.length === 2 &&
+      current.observation_sets.length === 2,
     15_000,
   );
   expect(completed.snapshots.map(({ request }) => new URL(request.url).hostname).sort()).toEqual([
@@ -715,7 +722,9 @@ test("a completed host shard durably releases the next same-host shard", async (
   const completed = await waitForEvidenceCondition(
     run.id,
     (current) =>
-      current.state === "parsing" && current.snapshots.length === 2 && current.workflow.child_ids.length === 3,
+      current.collection_completed_at !== null &&
+      current.snapshots.length === 2 &&
+      current.workflow.child_ids.length === 3,
     15_000,
   );
   expect(completed.snapshots.map(({ request }) => request.url).sort()).toEqual([
