@@ -49,7 +49,7 @@ test("an unreserved run cannot advance and rolls back its sibling write without 
         runId: "run_unreserved",
         from: "planning",
         to: "collecting",
-        progressJson: "{}",
+        progressJson: '{"completed_stages":["planning"],"current_stage":"collecting"}',
       }),
     ]),
   ).rejects.toThrow("run_not_active");
@@ -98,7 +98,8 @@ test("candidate finalization requires its exact seven-day deadline without schem
       candidateDigest: "candidate",
       candidateCreatedAt: "2026-09-01T00:00:00.000Z",
       approvalDeadline: "2026-09-09T00:00:00.000Z",
-      progressJson: "{}",
+      progressJson:
+        '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"awaiting_approval"}',
     }).run(),
   ).rejects.toThrow("invalid_candidate_deadline");
   expect(await coreGuardRun(database, "run_bad_deadline").first("state")).toBe("reconciling");
@@ -112,7 +113,8 @@ test("an approval with absent digest fields fails closed without schema guards",
       runId: "run_bad_approval",
       approvalJson: "{}",
       idempotencyKey: "bad_approval",
-      progressJson: "{}",
+      progressJson:
+        '{"completed_stages":["planning","collecting","parsing","reconciling","awaiting_approval"],"current_stage":"publishing"}',
     }).run(),
   ).rejects.toThrow("approval_guard_failed");
   expect(await coreGuardRun(database, "run_bad_approval").first("state")).toBe("awaiting_approval");
@@ -140,7 +142,7 @@ test("a stale transition compare-and-set retains its no-op result without changi
     runId: "run_replayed_transition",
     from: "planning",
     to: "collecting",
-    progressJson: "{}",
+    progressJson: '{"completed_stages":["planning"],"current_stage":"collecting"}',
   }).run();
   expect(result.meta.changes).toBe(0);
   expect(await coreGuardRun(database, "run_replayed_transition").first("state")).toBe("parsing");

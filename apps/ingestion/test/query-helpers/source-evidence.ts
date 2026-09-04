@@ -1,3 +1,10 @@
+import {
+  catalogueStore,
+  runEventCommand,
+  runEventIdentitySql,
+  runEventStatement,
+  runTransitionGuardStatement,
+} from "../../../../src/catalogue/shared";
 // Dedicated test queries. Tests retain binding, execution, and atomic batch composition.
 
 export function insertIngestionEvidencePlans(database: D1Database): D1PreparedStatement {
@@ -395,7 +402,7 @@ export function readSourceSnapshotsId(database: D1Database): D1PreparedStatement
 export function countIngestionEvidencePlansCount(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT COUNT(*) AS count
      FROM ingestion_evidence_plans AS plan
-     JOIN ingestion_runs AS run ON run.id = plan.ingestion_run_id
+     JOIN ingestion_run_read AS run ON run.id = plan.ingestion_run_id
      WHERE run.idempotency_key = 'production-route-fixture-bypass'`);
 }
 
@@ -1330,11 +1337,21 @@ export function readIngestionRunCapacityExtensions(database: D1Database): D1Prep
 
 export function setIngestionRunsStateTerminalAtForTerminalEvidenceDiagnosticsExposeCollectionRetryGuidanceWithoutStale(
   database: D1Database,
+  terminalAt: string,
+  runId: string,
 ): D1PreparedStatement {
-  return database.prepare(`UPDATE ingestion_runs
-     SET state = 'failed', terminal_at = ?,
-         failure_code = 'source_request_retries_exhausted'
-     WHERE id = ?`);
+  const store = catalogueStore(database);
+  const event = runEventCommand("failed", { runId, occurredAt: terminalAt });
+  return runEventStatement(store, {
+    event,
+    statement: database
+      .prepare(`UPDATE ingestion_run_current
+      SET ${runEventIdentitySql}, state = 'failed', terminal_at = ?,
+          failure_code = 'source_request_retries_exhausted'
+      WHERE ingestion_run_id = ? AND state = 'collecting'`)
+      .bind(event.eventId, terminalAt, runId),
+    guards: [runTransitionGuardStatement(store, { runId, from: "collecting", to: "failed" })],
+  });
 }
 
 export function insertIngestionEvidencePlansForPublishedEvidenceDiagnosticsExplicitlyAdvertiseNoRetryRoute(

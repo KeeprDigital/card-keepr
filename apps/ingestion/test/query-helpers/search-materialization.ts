@@ -1,4 +1,5 @@
-import { type CatalogueStore, repositoryStatements } from "../../../../src/catalogue/shared";
+import { seedRunFixtureStatement } from "./run-events";
+import { catalogueStore, type CatalogueStore, repositoryStatements } from "../../../../src/catalogue/shared";
 
 export async function removeSearchMaterializationTriggers(database: D1Database): Promise<void> {
   await database.batch([
@@ -51,12 +52,18 @@ export function archiveMaterializedRevision(database: CatalogueStore): D1Prepare
 }
 
 export async function seedSearchMaterializationRevision(database: D1Database): Promise<void> {
-  await database.batch([
-    database.prepare(`INSERT INTO ingestion_runs (
-      id, state, selected_games_json, started_at, expected_current_revision_id, idempotency_key,
-      candidate_json, candidate_digest, approval_json
-    ) VALUES ('run_materialization', 'publishing', '[]', '2026-09-01T00:00:00.000Z', 'catrev_spine_000',
-      'run_materialization', '{}', 'candidate', '{"candidate_digest":"candidate","expected_current_revision_id":"catrev_spine_000"}')`),
+  await catalogueStore(database).batch([
+    seedRunFixtureStatement(database, {
+      id: "run_materialization",
+      state: "publishing",
+      selected_games_json: '["one-piece"]',
+      started_at: "2026-09-01T00:00:00.000Z",
+      expected_current_revision_id: "catrev_spine_000",
+      idempotency_key: "run_materialization",
+      candidate_json: "{}",
+      candidate_digest: "candidate",
+      approval_json: '{"candidate_digest":"candidate","expected_current_revision_id":"catrev_spine_000"}',
+    }),
     database.prepare("UPDATE operation_state SET active_ingestion_run_id = 'run_materialization' WHERE singleton = 1"),
     database.prepare(`INSERT INTO catalogue_revisions (id, ingestion_run_id, published_at, content_digest,
       expected_previous_revision_id, approved_candidate_digest) VALUES ('catrev_materialization', 'run_materialization',

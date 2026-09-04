@@ -1,3 +1,4 @@
+import { seedRunFixtureStatement } from "./run-events";
 export async function removeCuratedGuards(database: D1Database): Promise<void> {
   await database.batch([
     database.prepare("DROP TRIGGER IF EXISTS curated_revision_catalogue_revision_guard"),
@@ -35,9 +36,13 @@ export async function clearCuratedAdministration(database: D1Database): Promise<
 }
 
 export function seedCuratedPinRun(database: D1Database, runId: string): D1PreparedStatement {
-  return database
-    .prepare(`INSERT INTO ingestion_runs (
-    id, state, selected_games_json, started_at, expected_current_revision_id, idempotency_key, candidate_json, progress_json
-  ) VALUES (?, 'planning', '["one-piece"]', '2026-09-01T00:00:00.000Z', 'catrev_spine_000', ?, '{}', '{}')`)
-    .bind(runId, runId);
+  return seedRunFixtureStatement(database, {
+    id: runId,
+    state: "planning",
+    selected_games_json: '["one-piece"]',
+    started_at: "2026-09-01T00:00:00.000Z",
+    expected_current_revision_id: "catrev_spine_000",
+    idempotency_key: runId,
+    candidate_json: "{}",
+  });
 }

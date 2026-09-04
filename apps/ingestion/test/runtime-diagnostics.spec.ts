@@ -1,3 +1,4 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import { env, exports } from "cloudflare:workers";
@@ -90,8 +91,9 @@ test("terminal evidence diagnostics expose collection retry guidance without a s
   await sourceEvidenceQueries
     .setIngestionRunsStateTerminalAtForTerminalEvidenceDiagnosticsExposeCollectionRetryGuidanceWithoutStale(
       env.CATALOGUE_DB,
+      "2026-08-05T00:00:00.000Z",
+      run.id,
     )
-    .bind("2026-08-05T00:00:00.000Z", run.id)
     .run();
   const shown = await administrationRequest(`/v1/ingestion-runs/${run.id}`, "GET");
   expect(shown.status).toBe(200);
@@ -152,7 +154,7 @@ test("published evidence diagnostics explicitly advertise no retry route", async
   });
   const source = await created.json<{ id: string }>();
   const run = { id: "run_published_evidence_diagnostics" };
-  await env.CATALOGUE_DB.batch([
+  await catalogueStore(env.CATALOGUE_DB).batch([
     ingestionQueries.setOperationStateActiveIngestionRunIdForInstallApiSuite(env.CATALOGUE_DB),
     ingestionQueries
       .insertIngestionRunsForPublishedEvidenceDiagnosticsExplicitlyAdvertiseNoRetryRoute(env.CATALOGUE_DB)
