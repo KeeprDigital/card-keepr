@@ -14,8 +14,7 @@ export interface FailureInjection {
 
 export function failureInjectionScope(request: Request): string {
   const url = new URL(request.url);
-  const marker = request.headers.get("user-agent")
-    ?.replace(/;\s*request-(?:role|surface)=[^;]*(?=;|$)/gu, "") ?? "";
+  const marker = request.headers.get("user-agent")?.replace(/;\s*request-(?:role|surface)=[^;]*(?=;|$)/gu, "") ?? "";
   return `${url.hostname}${url.pathname}${url.search}|${marker}`;
 }
 
@@ -40,8 +39,7 @@ function unavailable(retryAfter: string): Response {
 
 // The acceptance suites select a transport outcome through the user-agent
 // they send with the request; the outcome applies to every hostname.
-export const acceptanceTransportUserAgentPrefix =
-  "card-keepr-acceptance-transport/";
+export const acceptanceTransportUserAgentPrefix = "card-keepr-acceptance-transport/";
 
 export function transportOutcomeForUserAgent(
   context: PublisherRequest,
@@ -58,8 +56,7 @@ export function transportOutcomeForUserAgent(
     return unavailable("0");
   }
   if (
-    userAgent ===
-      `${acceptanceTransportUserAgentPrefix}unavailable-then-recovered` &&
+    userAgent === `${acceptanceTransportUserAgentPrefix}unavailable-then-recovered` &&
     context.failures.attempt(context.request) <= 4
   ) {
     return unavailable("0");
@@ -102,28 +99,25 @@ export function transportOutcomeForPath(
   if (pathname === "/retry-after-long") return unavailable("120");
   if (pathname === "/unavailable-then-recovered") {
     if (context.failures.attempt(request) <= 4) return unavailable("0");
-    return new Response(
-      '{"cards":[{"card_number":"OP01-003","name":"Recovered Card"}]}',
-      { headers: { "content-type": "application/json" } },
-    );
+    return new Response('{"cards":[{"card_number":"OP01-003","name":"Recovered Card"}]}', {
+      headers: { "content-type": "application/json" },
+    });
   }
   if (pathname === "/retry-after-empty") return unavailable("");
   if (pathname === "/retry-once") {
     if (context.failures.attempt(request) === 1) return unavailable("2");
-    return new Response(
-      '{"cards":[{"card_number":"OP01-002","name":"Retry Card"}]}',
-      { headers: { "content-type": "application/json" } },
-    );
+    return new Response('{"cards":[{"card_number":"OP01-002","name":"Retry Card"}]}', {
+      headers: { "content-type": "application/json" },
+    });
   }
-  if (pathname === "/retry-once-slow") {
+  if (pathname === "/retry-once-slow" || pathname === "/superseded-retry-once") {
     // A first refusal whose Retry-After is long enough for a test to
     // terminate the sleeping hostname shard deterministically; every later
     // fetch succeeds.
-    if (context.failures.attempt(request) === 1) return unavailable("30");
-    return new Response(
-      '{"cards":[{"card_number":"OP01-002","name":"Retry Card"}]}',
-      { headers: { "content-type": "application/json" } },
-    );
+    if (context.failures.attempt(request) === 1) return unavailable(pathname === "/superseded-retry-once" ? "5" : "30");
+    return new Response('{"cards":[{"card_number":"OP01-002","name":"Retry Card"}]}', {
+      headers: { "content-type": "application/json" },
+    });
   }
   if (pathname === "/large-json") {
     const body = JSON.stringify({ padding: "x".repeat(1024 * 1024) });
@@ -151,10 +145,9 @@ export function transportOutcomeForPath(
     );
   }
   if (pathname === "/huge-json") {
-    return new Response(
-      JSON.stringify({ padding: "x".repeat(33 * 1024 * 1024) }),
-      { headers: { "content-type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ padding: "x".repeat(33 * 1024 * 1024) }), {
+      headers: { "content-type": "application/json" },
+    });
   }
   if (pathname === "/body-failure") {
     return new Response('{"cards":[]}', {
@@ -165,10 +158,9 @@ export function transportOutcomeForPath(
     });
   }
   if (pathname.startsWith("/sequence/")) {
-    return new Response(
-      `{"cards":[{"sequence":"${url.hostname}${pathname}"}]}`,
-      { headers: { "content-type": "application/json" } },
-    );
+    return new Response(`{"cards":[{"sequence":"${url.hostname}${pathname}"}]}`, {
+      headers: { "content-type": "application/json" },
+    });
   }
   if (pathname === "/invalid-json") {
     return new Response("<html>not JSON</html>", {

@@ -1,35 +1,38 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
-import {
-  sourceHostPacingIntervalMilliseconds,
-  sourceHostPacingMode,
-  collectSourceRequestBatch,
-  collectionBatchSize,
-  type EvidenceHostWorkflowParams,
-  type EvidenceParentWorkflowParams,
-  failActiveEvidenceRequestsForWorkflowExhaustion,
-  finalizeEvidenceRun,
-  pendingEvidenceRequestPage,
-  recordWorkflowIds,
-  recordIngestionWorkflowProgress,
-  requiredEvidenceRun,
-  type EvidenceRequestRow,
-  collectionBarrierSleepDuration,
-} from "../../../src/catalogue/source-evidence";
+import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import { reconcileRetainedCardPrintingEvidence } from "../../../src/catalogue/reconciliation";
 import {
   canonicalJson,
+  isWorkflowInstanceNotFound,
+  observeWorkflowProgress,
   sha256,
   utf8,
-  workflowDriver,
   type WorkflowStatus,
-  isWorkflowInstanceNotFound,
-  workflowSteps,
+  workflowDriver,
   workflowStepName,
-  observeWorkflowProgress,
+  workflowSteps,
 } from "../../../src/catalogue/shared";
-import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
-import { durableReconciliationResult } from "./reconciliation-workflow";
+import {
+  collectionBarrierSleepDuration,
+  collectionBatchSize,
+  collectSourceRequestBatch,
+  type EvidenceHostWorkflowParams,
+  type EvidenceParentWorkflowParams,
+  type EvidenceRequestRow,
+  failActiveEvidenceRequestsForWorkflowExhaustion,
+  finalizeEvidenceRun,
+  isCurrentCollectionWorkflowAttempt,
+  pendingEvidenceRequestPage,
+  recordIngestionWorkflowProgress,
+  recordWorkflowIds,
+  requiredEvidenceRun,
+  sourceHostPacingIntervalMilliseconds,
+  sourceHostPacingMode,
+  workflowAttemptStatements,
+} from "../../../src/catalogue/source-evidence";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
+import { fenceCollectionWorkflow, isSupersededCollectionWorkflow } from "./collection-workflow-fence";
+import { durableReconciliationResult } from "./reconciliation-workflow";
 
 const deterministicDatabaseStep = {
   retries: { limit: 3, delay: 250, backoff: "exponential" as const },
@@ -67,186 +70,221 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
     event: Readonly<WorkflowEvent<EvidenceParentWorkflowParams>>,
     step: WorkflowStep,
   ): Promise<unknown> {
-    const operational = observeOperationalWorkflow(step, event, this.env);
-    this.env = operational.env;
-    step = observeWorkflowProgress(operational.step, (progress) =>
-      recordIngestionWorkflowProgress(
+    try {
+      const operational = observeOperationalWorkflow(step, event, this.env);
+      this.env = operational.env;
+      step = observeWorkflowProgress(operational.step, (progress) =>
+        recordIngestionWorkflowProgress(
+          this.env.CATALOGUE_DB,
+          event.payload.ingestion_run_id,
+          event.instanceId,
+          "parent",
+          progress,
+        ),
+      );
+      step = fenceCollectionWorkflow(
+        step,
         this.env.CATALOGUE_DB,
         event.payload.ingestion_run_id,
         event.instanceId,
-        "parent",
-        progress,
-      ),
-    );
-    const runId = event.payload.ingestion_run_id;
-    const retainedChildIds = await step.do(workflowSteps.parent.identities, deterministicDatabaseStep, async () => {
-      const run = await requiredEvidenceRun(this.env.CATALOGUE_DB, runId);
-      const parsed: unknown = run.child_workflow_ids_json === null ? [] : JSON.parse(run.child_workflow_ids_json);
-      return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
-    });
-    const allChildIds = new Set<string>(retainedChildIds);
-    let barrierStage = 0;
-    for (;;) {
-      const pendingShards = await loadPendingHostShards(step, this.env.CATALOGUE_DB, runId, barrierStage);
-      const pendingChildren = await Promise.all(
-        pendingShards.map(async (shard) => ({
-          ...shard,
-          id: await evidenceHostWorkflowId(runId, shard),
-        })),
+        event.instanceId,
       );
-      const activeChildren = [
-        ...pendingChildren
-          .reduce((byHostname, child) => {
-            if (!byHostname.has(child.hostname)) {
-              byHostname.set(child.hostname, child);
-            }
-            return byHostname;
-          }, new Map<string, (typeof pendingChildren)[number]>())
-          .values(),
-      ];
-      const shardDepths = new Map<string, number>();
-      for (const child of pendingChildren) {
-        shardDepths.set(child.hostname, (shardDepths.get(child.hostname) ?? 0) + 1);
-      }
-      const maximumShardDepth = Math.max(0, ...shardDepths.values());
-      const maximumActiveRequestCount = Math.max(0, ...activeChildren.map((child) => child.pendingRequestCount ?? 0));
-      let selectedChildIds: string[] = [];
-      if (activeChildren.length > 0) {
-        selectedChildIds = await step.do(
-          workflowStepName(workflowSteps.parent.recover, { stage: barrierStage }),
+      const runId = event.payload.ingestion_run_id;
+      const retainedChildIds = await step.do(workflowSteps.parent.identities, deterministicDatabaseStep, async () => {
+        const run = await requiredEvidenceRun(this.env.CATALOGUE_DB, runId);
+        const parsed: unknown = run.child_workflow_ids_json === null ? [] : JSON.parse(run.child_workflow_ids_json);
+        return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+      });
+      const allChildIds = new Set<string>(retainedChildIds);
+      let barrierStage = 0;
+      for (;;) {
+        const pendingShards = await loadPendingHostShards(step, this.env.CATALOGUE_DB, runId, barrierStage);
+        const pendingChildren = await Promise.all(
+          pendingShards.map(async (shard) => ({
+            ...shard,
+            id: await evidenceHostWorkflowId(runId, shard),
+          })),
+        );
+        const activeChildren = [
+          ...pendingChildren
+            .reduce((byHostname, child) => {
+              if (!byHostname.has(child.hostname)) {
+                byHostname.set(child.hostname, child);
+              }
+              return byHostname;
+            }, new Map<string, (typeof pendingChildren)[number]>())
+            .values(),
+        ];
+        const shardDepths = new Map<string, number>();
+        for (const child of pendingChildren) {
+          shardDepths.set(child.hostname, (shardDepths.get(child.hostname) ?? 0) + 1);
+        }
+        const maximumShardDepth = Math.max(0, ...shardDepths.values());
+        const maximumActiveRequestCount = Math.max(0, ...activeChildren.map((child) => child.pendingRequestCount ?? 0));
+        let selectedChildIds: string[] = [];
+        if (activeChildren.length > 0) {
+          selectedChildIds = await step.do(
+            workflowStepName(workflowSteps.parent.recover, { stage: barrierStage }),
+            deterministicDatabaseStep,
+            async () => {
+              const stillCurrent = () =>
+                isCurrentCollectionWorkflowAttempt(this.env.CATALOGUE_DB, runId, event.instanceId, event.instanceId);
+              const selected: Array<(typeof activeChildren)[number]> = [];
+              for (const child of activeChildren) {
+                const attempts = [...allChildIds]
+                  .filter((id) => isChildWorkflowIdentity(child.id, id))
+                  .sort((left, right) => childAttempt(left) - childAttempt(right));
+                const latestId = attempts.at(-1);
+                if (latestId === undefined) {
+                  selected.push(child);
+                  continue;
+                }
+                let status: WorkflowStatus;
+                try {
+                  status = await workflowDriver(this.env.EVIDENCE_HOST_WORKFLOW).inspect(latestId);
+                } catch (error) {
+                  // Only a genuinely absent instance may burn one of the
+                  // bounded replacement identities. A transient control-plane
+                  // failure rethrows into the durable step's retry policy, and
+                  // if that exhausts, the parent errors recoverably (a new
+                  // Workflow Attempt through resume) instead of terminally
+                  // failing the shard's Source Requests.
+                  if (!isWorkflowInstanceNotFound(error)) throw error;
+                  if (!(await stillCurrent())) return [];
+                  if (attempts.length >= maximumHostWorkflowIdentities) {
+                    await failActiveEvidenceRequestsForWorkflowExhaustion(this.env.CATALOGUE_DB, runId, {
+                      hostname: child.hostname,
+                      minimumSequenceNumber: child.minimumSequenceNumber,
+                      maximumSequenceNumber: child.maximumSequenceNumber,
+                    });
+                    continue;
+                  }
+                  selected.push({
+                    ...child,
+                    id: nextChildWorkflowIdentity(child.id, attempts),
+                  });
+                  continue;
+                }
+                if (!(await stillCurrent())) return [];
+                const inheritedChild =
+                  barrierStage === 0 && event.instanceId !== `evidence-${runId}` && retainedChildIds.includes(latestId);
+                if (
+                  inheritedChild ||
+                  status.status === "complete" ||
+                  status.status === "errored" ||
+                  status.status === "terminated"
+                ) {
+                  if (attempts.length >= maximumHostWorkflowIdentities) {
+                    await failActiveEvidenceRequestsForWorkflowExhaustion(this.env.CATALOGUE_DB, runId, {
+                      hostname: child.hostname,
+                      minimumSequenceNumber: child.minimumSequenceNumber,
+                      maximumSequenceNumber: child.maximumSequenceNumber,
+                    });
+                    continue;
+                  }
+                  selected.push({
+                    ...child,
+                    id: nextChildWorkflowIdentity(child.id, attempts),
+                  });
+                } else {
+                  if (status.status === "paused") {
+                    await workflowDriver(this.env.EVIDENCE_HOST_WORKFLOW).resume(latestId);
+                  }
+                  selected.push({ ...child, id: latestId });
+                }
+              }
+              // createBatch is idempotent for deterministic attempt IDs. A
+              // request can be committed before child creation succeeds, so
+              // each recovery pass closes that gap.
+              for (let offset = 0; offset < selected.length; offset += 100) {
+                const batch = selected.slice(offset, offset + 100);
+                // Publish identities before dispatch: a child may execute its
+                // first callback before createBatch returns to its parent.
+                await this.env.CATALOGUE_DB.batch(
+                  workflowAttemptStatements(
+                    this.env.CATALOGUE_DB,
+                    runId,
+                    batch.map((child) => child.id),
+                    event.instanceId,
+                  ),
+                );
+                if (!(await stillCurrent())) return [];
+                await workflowDriver(this.env.EVIDENCE_HOST_WORKFLOW).ensureBatch(
+                  batch.map((child) => ({
+                    id: child.id,
+                    params: {
+                      ingestion_run_id: runId,
+                      parent_workflow_id: event.instanceId,
+                      hostname: child.hostname,
+                      minimum_sequence_number: child.minimumSequenceNumber,
+                      maximum_sequence_number: child.maximumSequenceNumber,
+                    },
+                  })),
+                );
+              }
+              return selected.map((child) => child.id);
+            },
+          );
+        }
+        for (const child of pendingChildren) allChildIds.add(child.id);
+        for (const id of selectedChildIds) allChildIds.add(id);
+        const recordedChildIds = [...allChildIds].sort();
+        await step.do(
+          workflowStepName(workflowSteps.parent.record, { stage: barrierStage }),
           deterministicDatabaseStep,
           async () => {
-            const selected: Array<(typeof activeChildren)[number]> = [];
-            for (const child of activeChildren) {
-              const attempts = [...allChildIds]
-                .filter((id) => isChildWorkflowIdentity(child.id, id))
-                .sort((left, right) => childAttempt(left) - childAttempt(right));
-              const latestId = attempts.at(-1);
-              if (latestId === undefined) {
-                selected.push(child);
-                continue;
-              }
-              let status: WorkflowStatus;
-              try {
-                status = await workflowDriver(this.env.EVIDENCE_HOST_WORKFLOW).inspect(latestId);
-              } catch (error) {
-                // Only a genuinely absent instance may burn one of the
-                // bounded replacement identities. A transient control-plane
-                // failure rethrows into the durable step's retry policy, and
-                // if that exhausts, the parent errors recoverably (a new
-                // Workflow Attempt through resume) instead of terminally
-                // failing the shard's Source Requests.
-                if (!isWorkflowInstanceNotFound(error)) throw error;
-                if (attempts.length >= maximumHostWorkflowIdentities) {
-                  await failActiveEvidenceRequestsForWorkflowExhaustion(this.env.CATALOGUE_DB, runId, {
-                    hostname: child.hostname,
-                    minimumSequenceNumber: child.minimumSequenceNumber,
-                    maximumSequenceNumber: child.maximumSequenceNumber,
-                  });
-                  continue;
-                }
-                selected.push({
-                  ...child,
-                  id: nextChildWorkflowIdentity(child.id, attempts),
-                });
-                continue;
-              }
-              if (status.status === "complete" || status.status === "errored" || status.status === "terminated") {
-                if (attempts.length >= maximumHostWorkflowIdentities) {
-                  await failActiveEvidenceRequestsForWorkflowExhaustion(this.env.CATALOGUE_DB, runId, {
-                    hostname: child.hostname,
-                    minimumSequenceNumber: child.minimumSequenceNumber,
-                    maximumSequenceNumber: child.maximumSequenceNumber,
-                  });
-                  continue;
-                }
-                selected.push({
-                  ...child,
-                  id: nextChildWorkflowIdentity(child.id, attempts),
-                });
-              } else {
-                if (status.status === "paused") {
-                  await workflowDriver(this.env.EVIDENCE_HOST_WORKFLOW).resume(latestId);
-                }
-                selected.push({ ...child, id: latestId });
-              }
-            }
-            // createBatch is idempotent for deterministic attempt IDs. A
-            // request can be committed before child creation succeeds, so
-            // each recovery pass closes that gap.
-            for (let offset = 0; offset < selected.length; offset += 100) {
-              const batch = selected.slice(offset, offset + 100);
-              await workflowDriver(this.env.EVIDENCE_HOST_WORKFLOW).ensureBatch(
-                batch.map((child) => ({
-                  id: child.id,
-                  params: {
-                    ingestion_run_id: runId,
-                    hostname: child.hostname,
-                    minimum_sequence_number: child.minimumSequenceNumber,
-                    maximum_sequence_number: child.maximumSequenceNumber,
-                  },
-                })),
+            await recordWorkflowIds(this.env.CATALOGUE_DB, runId, event.instanceId, recordedChildIds);
+            return recordedChildIds;
+          },
+        );
+        const run = await step.do(
+          workflowStepName(workflowSteps.parent.finalize, { stage: barrierStage }),
+          deterministicDatabaseStep,
+          async () => {
+            await finalizeEvidenceRun(this.env.CATALOGUE_DB, runId);
+            return requiredEvidenceRun(this.env.CATALOGUE_DB, runId);
+          },
+        );
+        if (run.state === "collecting") {
+          await step.sleep(
+            workflowStepName(workflowSteps.parent.wait, { stage: barrierStage }),
+            collectionBarrierSleepDuration(maximumShardDepth, maximumActiveRequestCount),
+          );
+          barrierStage += 1;
+          continue;
+        }
+        if (
+          run.state === "parsing" &&
+          run.plan_origin === "production" &&
+          requiredSourceAdapter(run.adapter_version).reconciliationCapability === "catalogue"
+        ) {
+          const reconciliationResultJson = await step.do(
+            workflowSteps.parent.reconcile,
+            deterministicDatabaseStep,
+            async () => {
+              const result = await reconcileRetainedCardPrintingEvidence(
+                this.env.CATALOGUE_DB,
+                this.env.EVIDENCE_OBJECTS,
+                runId,
+                run.collection_completed_at ?? new Date().toISOString(),
               );
-            }
-            return selected.map((child) => child.id);
-          },
-        );
-      }
-      for (const child of pendingChildren) allChildIds.add(child.id);
-      for (const id of selectedChildIds) allChildIds.add(id);
-      const recordedChildIds = [...allChildIds].sort();
-      await step.do(
-        workflowStepName(workflowSteps.parent.record, { stage: barrierStage }),
-        deterministicDatabaseStep,
-        async () => {
-          await recordWorkflowIds(this.env.CATALOGUE_DB, runId, event.instanceId, recordedChildIds);
-          return recordedChildIds;
-        },
-      );
-      const run = await step.do(
-        workflowStepName(workflowSteps.parent.finalize, { stage: barrierStage }),
-        deterministicDatabaseStep,
-        async () => {
-          await finalizeEvidenceRun(this.env.CATALOGUE_DB, runId);
-          return requiredEvidenceRun(this.env.CATALOGUE_DB, runId);
-        },
-      );
-      if (run.state === "collecting") {
-        await step.sleep(
-          workflowStepName(workflowSteps.parent.wait, { stage: barrierStage }),
-          collectionBarrierSleepDuration(maximumShardDepth, maximumActiveRequestCount),
-        );
-        barrierStage += 1;
-        continue;
-      }
-      if (
-        run.state === "parsing" &&
-        run.plan_origin === "production" &&
-        requiredSourceAdapter(run.adapter_version).reconciliationCapability === "catalogue"
-      ) {
-        const reconciliationResultJson = await step.do(
-          workflowSteps.parent.reconcile,
-          deterministicDatabaseStep,
-          async () => {
-            const result = await reconcileRetainedCardPrintingEvidence(
-              this.env.CATALOGUE_DB,
-              this.env.EVIDENCE_OBJECTS,
-              runId,
-              run.collection_completed_at ?? new Date().toISOString(),
-            );
-            return durableReconciliationResult(runId, result);
-          },
-        );
+              return durableReconciliationResult(runId, result);
+            },
+          );
+          return {
+            ingestion_run_id: runId,
+            reconciliation: JSON.parse(reconciliationResultJson),
+          };
+        }
         return {
           ingestion_run_id: runId,
-          reconciliation: JSON.parse(reconciliationResultJson),
+          child_workflow_ids: [...allChildIds].sort(),
+          state: run.state,
         };
       }
-      return {
-        ingestion_run_id: runId,
-        child_workflow_ids: [...allChildIds].sort(),
-        state: run.state,
-      };
+    } catch (error) {
+      if (!isSupersededCollectionWorkflow(error)) throw error;
+      return { ingestion_run_id: event.payload.ingestion_run_id, superseded: true };
     }
   }
 }
@@ -363,110 +401,123 @@ async function evidenceHostWorkflowId(runId: string, shard: HostShard): Promise<
 
 export class EvidenceHostWorkflow extends WorkflowEntrypoint<Env, EvidenceHostWorkflowParams> {
   override async run(event: Readonly<WorkflowEvent<EvidenceHostWorkflowParams>>, step: WorkflowStep): Promise<unknown> {
-    const operational = observeOperationalWorkflow(step, event, this.env);
-    this.env = operational.env;
-    step = observeWorkflowProgress(operational.step, (progress) =>
-      recordIngestionWorkflowProgress(
+    try {
+      const operational = observeOperationalWorkflow(step, event, this.env);
+      this.env = operational.env;
+      step = observeWorkflowProgress(operational.step, (progress) =>
+        recordIngestionWorkflowProgress(
+          this.env.CATALOGUE_DB,
+          event.payload.ingestion_run_id,
+          event.instanceId,
+          "child",
+          progress,
+        ),
+      );
+      step = fenceCollectionWorkflow(
+        step,
         this.env.CATALOGUE_DB,
         event.payload.ingestion_run_id,
+        event.payload.parent_workflow_id,
         event.instanceId,
-        "child",
-        progress,
-      ),
-    );
-    const {
-      ingestion_run_id: runId,
-      hostname,
-      minimum_sequence_number: minimumSequenceNumber,
-      maximum_sequence_number: maximumSequenceNumber,
-    } = event.payload;
-    // Fails closed on unrecognized values before any capture work begins.
-    const pacingMode = sourceHostPacingMode(this.env.SOURCE_HOST_PACING_MODE);
-    const pacingIntervalMilliseconds = sourceHostPacingIntervalMilliseconds(this.env.SOURCE_HOST_PACING_INTERVAL_MS);
-    let stage = 0;
-    for (;;) {
-      // Only a collecting run has work for this shard. A run that left its
-      // collection phase (a Workflow, Capacity, or Retry Pause, a Collection
-      // Termination, or a failure recorded by another shard) keeps its
-      // pending and captured Source Requests, so this shard would otherwise
-      // reload them forever without a sleep; the run-state gate lets the
-      // child Workflow finish while the retained work awaits the owner or
-      // stays as audit evidence.
-      const runState = await step.do(
-        workflowStepName(workflowSteps.child.state, { stage }),
-        deterministicDatabaseStep,
-        async () => (await requiredEvidenceRun(this.env.CATALOGUE_DB, runId)).state,
       );
-      if (runState !== "collecting") break;
-      const requests = await loadPendingShardRequests(
-        step,
-        this.env.CATALOGUE_DB,
-        runId,
-        { hostname, minimumSequenceNumber, maximumSequenceNumber },
-        stage,
-      );
-      // Batches persist through one durable step each; see the step-layout
-      // note in source-evidence-batch.ts for what stays a separate step.
-      let halted = false;
-      for (let offset = 0; offset < requests.length && !halted; offset += collectionBatchSize) {
-        const batch = requests.slice(offset, offset + collectionBatchSize);
-        let cursor = 0;
-        let pass = 0;
-        while (cursor < batch.length) {
-          const remaining = batch.slice(cursor);
-          const outcome = await step.do(
-            workflowStepName(workflowSteps.child.collect, { stage, offset, cursor, pass }),
-            collectionBatchStep,
-            () =>
-              collectSourceRequestBatch({
-                database: this.env.CATALOGUE_DB,
-                evidenceObjects: this.env.EVIDENCE_OBJECTS,
-                officialSourceTransport: this.env.OFFICIAL_SOURCE_TRANSPORT,
-                runId,
-                hostname,
-                pacingMode,
-                pacingIntervalMilliseconds,
-                requests: remaining,
-              }),
-          );
-          pass += 1;
-          cursor += outcome.processed;
-          if (outcome.halt === null) continue;
-          if (outcome.halt.kind === "run_not_collecting") {
-            halted = true;
-            break;
-          }
-          if (outcome.halt.kind === "retry_wait" && outcome.halt.wait_ms > 0) {
-            await step.sleep(
-              workflowStepName(workflowSteps.child.retry, { request: outcome.halt.request_id, pass }),
-              outcome.halt.wait_ms,
+      const {
+        ingestion_run_id: runId,
+        hostname,
+        minimum_sequence_number: minimumSequenceNumber,
+        maximum_sequence_number: maximumSequenceNumber,
+      } = event.payload;
+      // Fails closed on unrecognized values before any capture work begins.
+      const pacingMode = sourceHostPacingMode(this.env.SOURCE_HOST_PACING_MODE);
+      const pacingIntervalMilliseconds = sourceHostPacingIntervalMilliseconds(this.env.SOURCE_HOST_PACING_INTERVAL_MS);
+      let stage = 0;
+      for (;;) {
+        // Only a collecting run has work for this shard. A run that left its
+        // collection phase (a Workflow, Capacity, or Retry Pause, a Collection
+        // Termination, or a failure recorded by another shard) keeps its
+        // pending and captured Source Requests, so this shard would otherwise
+        // reload them forever without a sleep; the run-state gate lets the
+        // child Workflow finish while the retained work awaits the owner or
+        // stays as audit evidence.
+        const runState = await step.do(
+          workflowStepName(workflowSteps.child.state, { stage }),
+          deterministicDatabaseStep,
+          async () => (await requiredEvidenceRun(this.env.CATALOGUE_DB, runId)).state,
+        );
+        if (runState !== "collecting") break;
+        const requests = await loadPendingShardRequests(
+          step,
+          this.env.CATALOGUE_DB,
+          runId,
+          { hostname, minimumSequenceNumber, maximumSequenceNumber },
+          stage,
+        );
+        // Batches persist through one durable step each; see the step-layout
+        // note in source-evidence-batch.ts for what stays a separate step.
+        let halted = false;
+        for (let offset = 0; offset < requests.length && !halted; offset += collectionBatchSize) {
+          const batch = requests.slice(offset, offset + collectionBatchSize);
+          let cursor = 0;
+          let pass = 0;
+          while (cursor < batch.length) {
+            const remaining = batch.slice(cursor);
+            const outcome = await step.do(
+              workflowStepName(workflowSteps.child.collect, { stage, offset, cursor, pass }),
+              collectionBatchStep,
+              () =>
+                collectSourceRequestBatch({
+                  database: this.env.CATALOGUE_DB,
+                  evidenceObjects: this.env.EVIDENCE_OBJECTS,
+                  officialSourceTransport: this.env.OFFICIAL_SOURCE_TRANSPORT,
+                  runId,
+                  workflowAttempt: { parentId: event.payload.parent_workflow_id, instanceId: event.instanceId },
+                  hostname,
+                  pacingMode,
+                  pacingIntervalMilliseconds,
+                  requests: remaining,
+                }),
             );
+            pass += 1;
+            cursor += outcome.processed;
+            if (outcome.halt === null) continue;
+            if (outcome.halt.kind === "run_not_collecting") {
+              halted = true;
+              break;
+            }
+            if (outcome.halt.kind === "retry_wait" && outcome.halt.wait_ms > 0) {
+              await step.sleep(
+                workflowStepName(workflowSteps.child.retry, { request: outcome.halt.request_id, pass }),
+                outcome.halt.wait_ms,
+              );
+            }
           }
         }
+        // A batch halted by the run leaving its collection phase must not
+        // reload the untouched requests into another stage: the next stage's
+        // run-state gate would stop it anyway, but only after more steps.
+        if (halted) break;
+        const localPending = await loadPendingShardRequests(
+          step,
+          this.env.CATALOGUE_DB,
+          runId,
+          { hostname, minimumSequenceNumber, maximumSequenceNumber },
+          stage,
+          "reload",
+        );
+        if (localPending.length > 0) {
+          stage += 1;
+          continue;
+        }
+        break;
       }
-      // A batch halted by the run leaving its collection phase must not
-      // reload the untouched requests into another stage: the next stage's
-      // run-state gate would stop it anyway, but only after more steps.
-      if (halted) break;
-      const localPending = await loadPendingShardRequests(
-        step,
-        this.env.CATALOGUE_DB,
-        runId,
-        { hostname, minimumSequenceNumber, maximumSequenceNumber },
-        stage,
-        "reload",
-      );
-      if (localPending.length > 0) {
-        stage += 1;
-        continue;
-      }
-      break;
+      return {
+        ingestion_run_id: runId,
+        hostname,
+        minimum_sequence_number: minimumSequenceNumber,
+        maximum_sequence_number: maximumSequenceNumber,
+      };
+    } catch (error) {
+      if (!isSupersededCollectionWorkflow(error)) throw error;
+      return { ingestion_run_id: event.payload.ingestion_run_id, superseded: true };
     }
-    return {
-      ingestion_run_id: runId,
-      hostname,
-      minimum_sequence_number: minimumSequenceNumber,
-      maximum_sequence_number: maximumSequenceNumber,
-    };
   }
 }

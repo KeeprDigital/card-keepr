@@ -55,9 +55,13 @@ test("a transient parent lookup failure leaves collection available for a later 
       throw new Error("must not create");
     },
   } as unknown as Workflow;
-  await expect(resumeEvidenceRun(env.CATALOGUE_DB, binding, run.id)).rejects.toBe(failure);
+  await expect(resumeEvidenceRun(env.CATALOGUE_DB, binding, run.id, env.EVIDENCE_HOST_WORKFLOW)).rejects.toBe(failure);
   const inspected = await showCollection(run.id);
   expect(inspected.state).toBe("collecting");
   expect(inspected.pause).toBeUndefined();
-  expect(inspected.workflow.attempts).toEqual([]);
+  // Dispatch intent is bound before creation so an immediately executing
+  // parent can prove ownership. A transport failure retains that same first
+  // identity for retry; it must not classify recovery or open a second one.
+  expect(inspected.workflow.attempts).toHaveLength(1);
+  expect(inspected.workflow.attempts[0]).toMatchObject({ id: `evidence-${run.id}`, attempt_number: 1, current: true });
 });

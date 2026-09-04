@@ -118,7 +118,7 @@ actions. Replaying the same key returns the original result; pausing a run
 that is not collecting is refused with `ingestion_run_not_collecting`, a
 key reused for another request with `idempotency_conflict`, and a pause
 that lost a race with a concurrent resume with `collection_pause_conflict`.
-A paused run that should continue after all is resumed as usual under a
+A paused run that should continue after all is resumed under a
 new Workflow Attempt.
 
 Terminating Workflow instances directly (the Cloudflare dashboard, or
@@ -192,3 +192,22 @@ refresh them. The run's stall clock includes productive collection work and
 persisted pacing/retry deadlines. Parent barrier polling cannot conceal a child
 that stopped making progress. A transient Workflow API outage does not trigger
 recovery: retry the administration request once the control plane is available.
+
+
+## Resume waits for superseded Workflow Attempts
+
+Before reopening collection, `source resume` retries termination and inspects
+all parent and hostname-shard attempts current at the pause. Only confirmed
+`terminated`, `errored`, `complete`, or absent instances permit resume. If an
+instance remains live or its status cannot be read, the command reports
+`collection_workflow_supersession_pending` (HTTP 409), names the unsettled
+identities, and keeps the run paused. Retry the same resume after the control
+plane recovers; this refusal consumes no Workflow Attempt or retry generation.
+
+Independently of that control-plane check, every collection Workflow callback
+and capture admission checks its immutable parent identity and its current
+hostname-shard attempt against D1. An old sleeper cannot regain permission
+when the run returns to `collecting`: it settles as superseded and leaves
+pending requests and retained evidence for the new attempt. The replacement
+parent gives each inherited shard a new attempt identity. Audit history and
+capture-operation identities remain append-only and idempotent.

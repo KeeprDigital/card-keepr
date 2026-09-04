@@ -1,13 +1,13 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
+import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
 import {
   appendDiscoveredEvidenceRequests,
   pauseEvidenceRunForWorkflowRecovery,
   pendingEvidenceRequests,
   requiredEvidenceRun,
 } from "../../../src/catalogue/source-evidence";
-import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
-import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
 import { fusionWorldProductionCollectionRequests } from "./production-collection-request-goldens";
 import {
   administrationRequest,
@@ -679,6 +679,7 @@ test("a hostname Workflow that wakes to a terminated run finishes without reload
     id: childId,
     params: {
       ingestion_run_id: run.id,
+      parent_workflow_id: parentId,
       hostname: "official-source.invalid",
       minimum_sequence_number: 0,
       maximum_sequence_number: 199,

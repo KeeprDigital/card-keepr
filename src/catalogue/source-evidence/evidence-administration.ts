@@ -1,16 +1,17 @@
-import { AdministrationProblem, workflowDriver, isWorkflowInstanceNotFound } from "../shared";
-import type { EvidenceParentWorkflowParams, EvidenceHostWorkflowParams } from "./source-evidence-model";
+import { AdministrationProblem, isWorkflowInstanceNotFound, workflowDriver } from "../shared";
 import {
+  type CollectionProgressFacts,
   classifyCollectionProgress,
   parentAttemptNumber,
   parentWorkflowAttemptId,
-  safeWorkflowStatus,
-  type CollectionProgressFacts,
   type SafeWorkflowStatus,
+  safeWorkflowStatus,
 } from "./collection-recovery";
+import type { EvidenceHostWorkflowParams, EvidenceParentWorkflowParams } from "./source-evidence-model";
 import {
   collectionProgressFacts,
   currentCollectionWorkflowIds,
+  type IngestionEvidenceRow,
   pauseEvidenceRunForWorkflowRecovery,
   pauseEvidenceRunOnOwnerRequest,
   releaseTerminatedEvidenceRun,
@@ -18,7 +19,6 @@ import {
   resumePausedEvidenceRun,
   terminateEvidenceRun,
   workflowAttemptStatements,
-  type IngestionEvidenceRow,
 } from "./source-evidence-repository";
 
 type AcquiredParent = {
@@ -48,17 +48,19 @@ export async function resumeEvidenceRun(
   database: D1Database,
   workflow: Workflow<EvidenceParentWorkflowParams>,
   runId: string,
+  hostWorkflow: Workflow<EvidenceHostWorkflowParams>,
 ): Promise<Record<string, unknown>> {
   let run = await requiredEvidenceRun(database, runId);
   if (run.state === "paused") {
     // A paused run resumes under a parent Workflow identity derived from the
-    // count of recorded resumes: the previous parent completed when the run
-    // left its collection phase, and a deterministic new identity keeps
+    // count of recorded resumes. Confirming that the previous instances
+    // settled first and deriving a deterministic new identity keeps
     // replayed resumes reacquiring the same instance. A still-captured
     // Source Request re-parses its retained Source Snapshot inside the
     // hostname shard without another Official Source fetch, and a
     // retry-exhausted request reopens under its next bounded retry
     // generation.
+    await verifyCollectionSupersession(database, workflow, hostWorkflow, runId, run.parent_workflow_id);
     await resumePausedEvidenceRun(database, runId);
     run = await requiredEvidenceRun(database, runId);
   }
@@ -70,12 +72,11 @@ export async function resumeEvidenceRun(
     );
   }
   let workflowId = run.parent_workflow_id ?? parentWorkflowAttemptId(runId, 1);
-  let acquired = await acquireParentWorkflow(workflow, workflowId, runId);
+
   if (run.parent_workflow_id === null) {
-    // Bind the first attempt's identity before any classification: the
-    // recovery pause below is compare-and-set on the bound identity, so an
-    // unbound run could otherwise never recover a first attempt that died
-    // between creation and binding.
+    // Bind dispatch intent before creation: an immediately executing parent
+    // must already own its persisted identity when its first callback runs.
+    // A lost create response can safely reacquire this same first attempt.
     await database
       .prepare(
         `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
@@ -84,6 +85,8 @@ export async function resumeEvidenceRun(
       .bind(workflowId, runId)
       .run();
   }
+  await database.batch(workflowAttemptStatements(database, runId, [workflowId]));
+  let acquired = await acquireParentWorkflow(workflow, workflowId, runId);
   const progress = await collectionProgressFacts(database, runId);
   let recovery: Record<string, unknown> | null = null;
   // A freshly created instance is the new current attempt by construction;
@@ -99,19 +102,10 @@ export async function resumeEvidenceRun(
     // place.
     acquired.status = safeWorkflowStatus((await workflowDriver(workflow).resume(workflowId)).status);
   } else if (classification.kind === "recover") {
-    // A running-status attempt classified as stalled is superseded, so it
-    // must not keep driving collection beside its replacement; termination
-    // is best-effort because a genuinely dead instance rejects it.
-    if (acquired !== null) {
-      try {
-        await workflowDriver(workflow).terminate(workflowId);
-      } catch {
-        // Already dead or unavailable; recovery proceeds regardless.
-      }
-    }
     ({ run, workflowId, acquired, recovery } = await recoverParentWorkflow(
       database,
       workflow,
+      hostWorkflow,
       run,
       workflowId,
       acquired,
@@ -119,10 +113,6 @@ export async function resumeEvidenceRun(
       classification.reason,
     ));
   }
-  // The bound identity becomes (or replays) its append-only Workflow Attempt
-  // record, so the very first parent attempt is retained exactly like every
-  // recovery attempt.
-  await database.batch(workflowAttemptStatements(database, runId, [workflowId]));
   return {
     ingestion_run_id: runId,
     workflow: {
@@ -268,6 +258,47 @@ async function terminateWorkflowInstance(
   }
 }
 
+// The database stays paused until every abandoned scope is confirmed
+// settled. A transient status failure is not evidence that an instance died.
+// Retry the same resume after the control plane recovers; no identity, retry
+// generation, or state transition is consumed by this conflict.
+async function verifyCollectionSupersession(
+  database: D1Database,
+  parentWorkflow: Workflow<EvidenceParentWorkflowParams>,
+  hostWorkflow: Workflow<EvidenceHostWorkflowParams>,
+  runId: string,
+  expectedParentId: string | null,
+): Promise<void> {
+  const current = await currentCollectionWorkflowIds(database, runId);
+  const run = await requiredEvidenceRun(database, runId);
+  // A competing resume may already own a new attempt. Never terminate that
+  // winner: the captured identities are valid only for this paused binding.
+  if (run.state !== "paused" || run.parent_workflow_id !== expectedParentId) return;
+  const attempts = [
+    ...current.parent.map((id) => ({ id, binding: parentWorkflow })),
+    ...current.child.map((id) => ({ id, binding: hostWorkflow })),
+  ];
+  const unsettled = await Promise.all(
+    attempts.map(async ({ id, binding }) => {
+      await terminateWorkflowInstance(binding, id);
+      try {
+        const status = (await workflowDriver(binding).inspect(id)).status;
+        return ["terminated", "errored", "complete"].includes(status) ? null : `${id} (${status})`;
+      } catch (error) {
+        return isWorkflowInstanceNotFound(error) ? null : `${id} (status unavailable)`;
+      }
+    }),
+  );
+  const pending = unsettled.filter((value) => value !== null);
+  if (pending.length > 0) {
+    throw new AdministrationProblem(
+      409,
+      "collection_workflow_supersession_pending",
+      `Collection remains paused because superseded Workflow Attempts have not settled: ${pending.join(", ")}. Retry resume after their status settles.`,
+    );
+  }
+}
+
 // Pause the run with the Workflow Pause reason, then immediately reopen it
 // through the ordinary paused-resume path: the append-only transition
 // history records collecting -> paused -> collecting, and the deterministic
@@ -279,6 +310,7 @@ async function terminateWorkflowInstance(
 async function recoverParentWorkflow(
   database: D1Database,
   workflow: Workflow<EvidenceParentWorkflowParams>,
+  hostWorkflow: Workflow<EvidenceHostWorkflowParams>,
   run: IngestionEvidenceRow,
   supersededWorkflowId: string,
   superseded: AcquiredParent | null,
@@ -301,6 +333,7 @@ async function recoverParentWorkflow(
     workflow_status: superseded?.status ?? "unavailable",
     last_progress_at: progress.last_progress_at,
   });
+  await verifyCollectionSupersession(database, workflow, hostWorkflow, runId, supersededWorkflowId);
   await resumePausedEvidenceRun(database, runId);
   const resumed = await requiredEvidenceRun(database, runId);
   if (resumed.state !== "collecting" || resumed.parent_workflow_id === null) {
