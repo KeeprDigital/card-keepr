@@ -82,3 +82,19 @@ export function coreRevisionImageCount(database: CatalogueStore, revisionId: str
     .prepare("SELECT count(*) AS count FROM revision_printing_images WHERE catalogue_revision_id = ?")
     .bind(revisionId);
 }
+
+export async function setCoreRunStartRecoveryBlock(
+  database: D1Database,
+  mode: "health" | "restore" | "clear",
+): Promise<void> {
+  await database.batch([
+    database.prepare("DROP TRIGGER IF EXISTS require_idle_ingestion"),
+    database.prepare("DROP TRIGGER IF EXISTS require_recovery_idle_ingestion"),
+    database.prepare("DROP TRIGGER IF EXISTS catalogue_recovery_health_remains_blocked"),
+    database
+      .prepare(
+        "UPDATE operation_state SET active_ingestion_run_id = NULL, recovery_health = ?, recovery_restore_guard = ? WHERE singleton = 1",
+      )
+      .bind(mode === "health" ? "blocked" : "healthy", mode === "restore" ? "blocked" : "clear"),
+  ]);
+}

@@ -14,6 +14,7 @@ import {
 } from "../../../src/catalogue/ingestion/publication-commit-repository";
 import {
   completeFixtureRunStatement,
+  createFixtureRunStatement,
   transitionRunStatement,
 } from "../../../src/catalogue/ingestion/run-lifecycle-repository";
 import { atomicRepositoryStatement, catalogueStore, runTransitionGuardStatement } from "../../../src/catalogue/shared";
@@ -27,6 +28,7 @@ import {
   removePublicationGuards,
   retainCoreTermination,
   seedCoreGuardRun,
+  setCoreRunStartRecoveryBlock,
   terminateCoreRunWithFailureCode,
 } from "./query-helpers/core-guards";
 import { seedSearchMaterializationRevision } from "./query-helpers/search-materialization";
@@ -261,3 +263,35 @@ test("one image with missing projected content rejects the entire multi-image pu
   ).rejects.toThrow("revision_printing_image_content_missing");
   expect(await coreRevisionImageCount(database, "catrev_materialization").first("count")).toBe(0);
 });
+
+for (const mode of ["health", "restore"] as const) {
+  test(`a blocked recovery ${mode} prevents run insertion and rolls back sibling writes without schema guards`, async () => {
+    await setCoreRunStartRecoveryBlock(testEnv.CATALOGUE_DB, mode);
+    const database = catalogueStore(testEnv.CATALOGUE_DB);
+    const runId = `blocked_start_${mode}`;
+    const before = await coreGuardPublicationTime(database).first();
+    try {
+      await expect(
+        database.batch([
+          markCoreGuardSibling(database),
+          createFixtureRunStatement(database, {
+            runId,
+            selectedGamesJson: "[]",
+            startedAt: "2026-09-01T00:00:00.000Z",
+            expectedRevisionId: "catrev_spine_000",
+            linkedRunId: null,
+            idempotencyKey: runId,
+            operationalRequestId: null,
+            candidateJson: "{}",
+            progressJson: "{}",
+            diagnosticsJson: "[]",
+          }),
+        ]),
+      ).rejects.toThrow("recovery_in_progress");
+      expect(await coreGuardRun(database, runId).first()).toBeNull();
+      expect(await coreGuardPublicationTime(database).first()).toEqual(before);
+    } finally {
+      await setCoreRunStartRecoveryBlock(testEnv.CATALOGUE_DB, "clear");
+    }
+  });
+}
