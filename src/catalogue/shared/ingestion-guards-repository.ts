@@ -23,7 +23,9 @@ export function runTransitionGuardStatement(
   }
   return repositoryStatements(database)
     .prepare(`WITH run AS (
-    SELECT * FROM ingestion_runs WHERE id = ?
+    SELECT current.*, identity.id, identity.expected_current_revision_id
+    FROM ingestion_run_current AS current JOIN ingestion_runs AS identity ON identity.id = current.ingestion_run_id
+    WHERE identity.id = ?
   ) SELECT CASE
     WHEN changes() = 0 THEN 1
     WHEN NOT EXISTS (SELECT 1 FROM run WHERE state = ? AND (
@@ -47,10 +49,10 @@ export function runTransitionGuardStatement(
       SELECT 1 FROM run
       JOIN catalogue_state AS catalogue ON catalogue.singleton = 1
       JOIN operation_state AS operation ON operation.singleton = 1
-      WHERE run.approval_json IS NOT NULL
-        AND json_extract(run.approval_json, '$.candidate_digest') = run.candidate_digest
-        AND json_extract(run.approval_json, '$.expected_current_revision_id') = run.expected_current_revision_id
-        AND json_extract(run.approval_json, '$.approved_at') < run.approval_deadline
+      WHERE run.approved_at IS NOT NULL
+        AND run.approved_candidate_digest = run.candidate_digest
+        AND run.approved_expected_revision_id = run.expected_current_revision_id
+        AND run.approved_at < run.approval_deadline
         AND catalogue.current_revision_id = run.expected_current_revision_id
         AND operation.active_ingestion_run_id = run.id AND operation.recovery_health = 'healthy'
     ) THEN json_extract('{}', 'approval_guard_failed')

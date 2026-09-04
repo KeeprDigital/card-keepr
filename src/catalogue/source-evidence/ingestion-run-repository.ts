@@ -1,3 +1,4 @@
+import { verifiedRunCurrentSql } from "../shared";
 import { curatedRunStartGuardStatement } from "../curated";
 import { createRunEventStatement, runStartGuardStatement } from "../shared";
 import type { SourceAdapterRegistration } from "../adapters";
@@ -63,9 +64,10 @@ export function evidenceRunByIdStatement(database: CatalogueStore, runId: string
               plans.child_workflow_ids_json,
               plans.collection_completed_at
        FROM ingestion_run_read AS runs
+       JOIN ingestion_run_current AS current ON current.ingestion_run_id = runs.id
        JOIN ingestion_evidence_plans AS plans
          ON plans.ingestion_run_id = runs.id
-       WHERE runs.id = ?`,
+       WHERE runs.id = ? AND CASE WHEN ${verifiedRunCurrentSql} THEN 1 ELSE json_extract('{}', 'ingestion_run_projection_mismatch') END`,
     )
     .bind(runId);
 }
@@ -80,9 +82,10 @@ export function evidenceRunByIdempotencyKeyStatement(database: CatalogueStore, k
               plans.child_workflow_ids_json,
               plans.collection_completed_at
        FROM ingestion_run_read AS runs
+       JOIN ingestion_run_current AS current ON current.ingestion_run_id = runs.id
        JOIN ingestion_evidence_plans AS plans
          ON plans.ingestion_run_id = runs.id
-       WHERE runs.idempotency_key = ?`,
+       WHERE runs.idempotency_key = ? AND CASE WHEN ${verifiedRunCurrentSql} THEN 1 ELSE json_extract('{}', 'ingestion_run_projection_mismatch') END`,
     )
     .bind(key);
 }

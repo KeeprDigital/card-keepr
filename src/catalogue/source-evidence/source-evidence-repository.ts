@@ -1,3 +1,4 @@
+import { verifiedRunCurrentSql } from "../shared";
 import { runTransitionGuardStatement, administrationOutcomeGuardStatement } from "../shared";
 import {
   bulkSourceRequestInsertionStatements,
@@ -1008,9 +1009,10 @@ export async function isCurrentCollectionWorkflowAttempt(
   const current = await repositoryStatements(database)
     .prepare(`
     SELECT 1 AS current FROM ingestion_evidence_plans AS plan
+    JOIN ingestion_run_current AS current ON current.ingestion_run_id = plan.ingestion_run_id
     JOIN ingestion_workflow_attempts AS attempt ON attempt.ingestion_run_id = plan.ingestion_run_id
     WHERE plan.ingestion_run_id = ?1 AND plan.parent_workflow_id = ?2
-      AND attempt.workflow_instance_id = ?3
+      AND attempt.workflow_instance_id = ?3 AND ${verifiedRunCurrentSql}
       AND NOT EXISTS (
         SELECT 1 FROM ingestion_workflow_attempts AS later
         WHERE later.ingestion_run_id = attempt.ingestion_run_id
@@ -2133,8 +2135,9 @@ export async function releaseTerminatedEvidenceRun(database: CatalogueStore, run
       `UPDATE operation_state SET active_ingestion_run_id = NULL
        WHERE singleton = 1 AND active_ingestion_run_id = ?1
          AND EXISTS (
-           SELECT 1 FROM ingestion_run_read
-           WHERE id = ?1 AND state = 'failed' AND failure_code = ?2
+           SELECT 1 FROM ingestion_run_current AS current
+           WHERE ingestion_run_id = ?1 AND state = 'failed' AND failure_code = ?2 AND ${verifiedRunCurrentSql}
+           AND EXISTS (SELECT 1 FROM ingestion_run_terminations WHERE ingestion_run_id = current.ingestion_run_id)
          )`,
     )
     .bind(runId, ingestionRunTerminatedFailureCode)

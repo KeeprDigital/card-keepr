@@ -1,3 +1,4 @@
+import { verifiedRunCurrentSql } from "../shared";
 import { runEventCommand, runEventIdentitySql, runEventStatement, runCompletedStageCount } from "../shared";
 import {
   type CatalogueStore,
@@ -66,14 +67,14 @@ export function publicationWriterAuthorityStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT ingestion_run_id AS id
-      FROM ingestion_run_current
+      FROM ingestion_run_current AS current
       WHERE ingestion_run_id = ?
         AND (
           state = 'publishing'
           OR (? = 1 AND state = 'published')
         )
         AND publication_revision_id = ?
-        AND publication_writer_token = ?`)
+        AND publication_writer_token = ? AND ${verifiedRunCurrentSql}`)
     .bind(input.runId, input.includePublished, input.revisionId, input.writerToken);
 }
 

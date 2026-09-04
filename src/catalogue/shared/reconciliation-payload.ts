@@ -77,7 +77,7 @@ export function guardedAtomicBatch(statements: readonly D1PreparedStatement[]): 
   return [...statements];
 }
 
-function byteChunks(value: string): string[] {
+export function byteChunks(value: string): string[] {
   const chunks: string[] = [];
   let offset = 0;
   while (offset < value.length) {

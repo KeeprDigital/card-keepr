@@ -186,8 +186,8 @@ batch execution, without SQL preparation or other D1 operations. Worker
 composition adapts the binding; only repository factories can request the
 statement-preparation capability. The boundary gate rejects raw D1 types and
 repository capability access in domain modules.
-Lifecycle capability detection stays in the Ingestion Run caller; the repository
-receives that decision explicitly. Curated lifecycle batches retain statement
+Every supported database has the current lifecycle shape; there is no capability
+probe or legacy write branch. Curated lifecycle batches retain statement
 ordering, event-version predicates, and append-only audit/idempotency writes.
 Backup transitions retain their owner-token, state, and phase predicates, with
 the caller still checking the affected-row count.
@@ -219,3 +219,32 @@ trigger family before exercising real repository rejection and rollback paths.
 Bulk writers guard byte-bounded groups rather than adding one query per row.
 Repeated Product Relationship IDs split groups in input order so evidence from
 intermediate updates is retained within the same native transaction.
+
+
+## Ingestion Run events
+
+Migration `0012_ingestion_run_events.sql` preserves the `ingestion_runs` identity
+anchor and its foreign keys. Mutable run facts live in `ingestion_run_current`,
+with ordered selected games in a child projection. Each accepted repository CAS
+updates the typed projection, checks its guards, and appends an immutable event
+containing the accepted scalar result in the same native transaction. Rejected
+writes and losing replays append nothing. Candidate and diagnostic payloads are
+stored once in immutable, byte-bounded event chunks; later events retain their
+references. Existing reconciliation candidate markers still refer to the
+original immutable candidate chunks.
+
+The read view renders the existing administration representation from those
+facts, including progress and ordered approval decisions. State-authorized
+mutations and external-effect authority checks verify the current projection
+against the latest event and its birth selection. An absent or corrupted
+projection cannot release an existing run's active reservation.
+
+`projectIngestionRunEvent` validates and folds retained events without a clock or
+external effects. `rebuildRunProjection` requires an existing production-release
+or blocked-recovery maintenance owner, pages the history, validates payload
+completeness, and replaces one run's projection and selection atomically. A final
+history CAS rejects concurrent advancement. Rebuild neither appends events nor
+replays retrieval, publication, backup, or Workflow operations. Level 12 requires
+an empty pre-Go-Live run dataset: release preflight reports regeneration required
+before claiming that migration, and the migration independently rejects existing
+runs. Production recreation remains an explicit operational action.

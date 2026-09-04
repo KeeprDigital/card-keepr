@@ -1,3 +1,4 @@
+import { releaseTerminalRunEventLockStatement } from "../shared";
 import { expireRunEventsStatement } from "../shared";
 import {
   runEventCommand,
@@ -61,25 +62,7 @@ export function releaseTerminalRunLockStatement(
   database: CatalogueStore,
   activeStatesJson: string,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`UPDATE operation_state
-      SET active_ingestion_run_id = NULL
-      WHERE singleton = 1
-        AND active_ingestion_run_id IS NOT NULL
-        AND (
-          active_ingestion_run_id IN (
-            SELECT ingestion_run_id
-            FROM ingestion_run_current
-            WHERE state = 'expired'
-          )
-          OR NOT EXISTS (
-            SELECT 1
-            FROM ingestion_run_current
-            WHERE ingestion_run_id = operation_state.active_ingestion_run_id
-              AND state IN (SELECT value FROM json_each(?))
-          )
-        )`)
-    .bind(activeStatesJson);
+  return releaseTerminalRunEventLockStatement(database, activeStatesJson);
 }
 
 export function failRunStatement(
