@@ -1,21 +1,22 @@
+import { cardSearchChunks, cardSearchTerms, cardSearchText } from "../read";
+import type { CatalogueStore } from "../shared";
 import {
-  revisionWithoutSearchProjectionStatement,
-  createPendingSearchProjectionStatement,
-  nextCardToRepairStatement,
-  completeSearchProjectionStatement,
-  createCardQuerySummaryStatement,
+  advanceCardSearchOffsetStatement,
+  advanceCardSearchTermOffsetStatement,
+  appendRepairedCardSearchTextStatement,
   beginCardRepairStatement,
   cardRepairSourceDocumentStatement,
-  appendRepairedCardSearchTextStatement,
-  advanceCardSearchOffsetStatement,
-  insertRepairedCardSearchTermStatement,
-  insertRepairedCardSearchChunkStatement,
-  advanceCardSearchTermOffsetStatement,
   completeCardSearchRepairStatement,
+  completeSearchProjectionStatement,
+  createCardQuerySummaryStatement,
+  createPendingSearchProjectionStatement,
+  insertRepairedCardSearchChunkStatement,
+  insertRepairedCardSearchTermStatement,
+  nextCardToRepairStatement,
   pendingSearchProjectionStatement,
+  revisionWithoutSearchProjectionStatement,
   searchRepairProgressStatement,
 } from "./card-search-repair-repository";
-import { cardSearchChunks, cardSearchTerms, cardSearchText } from "../read";
 
 type SearchableCard = {
   official_identity: { value: string };
@@ -54,7 +55,7 @@ const decoder = new TextDecoder("utf-8", {
 });
 
 export async function repairCardSearchMaterialization(
-  database: D1Database,
+  database: CatalogueStore,
   options: {
     limit?: number;
     maximumBoundParameterBytes?: number;
@@ -99,7 +100,7 @@ export async function repairCardSearchMaterialization(
 }
 
 async function repairCardSearchMaterializationStep(
-  database: D1Database,
+  database: CatalogueStore,
   options: {
     maximumBoundParameterBytes: number;
     targetRevisionId?: string;
@@ -278,12 +279,12 @@ function searchableCard(documentJson: string): SearchableCard {
   return (data !== null && typeof data === "object" && !Array.isArray(data) ? data : document) as SearchableCard;
 }
 
-async function pendingRevision(database: D1Database, targetRevisionId?: string): Promise<PendingRevision | null> {
+async function pendingRevision(database: CatalogueStore, targetRevisionId?: string): Promise<PendingRevision | null> {
   return pendingSearchProjectionStatement(database, targetRevisionId ?? null).first<PendingRevision>();
 }
 
 async function repairResult(
-  database: D1Database,
+  database: CatalogueStore,
   processedCards: number,
   maximumBoundParameterBytes: number,
   targetRevisionId?: string,

@@ -1,3 +1,8 @@
+import * as reconciliationQueries from "./query-helpers/reconciliation";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as curatedQueries from "./query-helpers/curated";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as ingestionQueries from "./query-helpers/ingestion";
 import { expect, test } from "vitest";
 import { canonicalJson, sha256 } from "../../../src/catalogue/shared";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
@@ -210,10 +215,8 @@ test("a partial-game publication carries an unselected curation and its immutabl
   const initialRevision = requiredString(initialPublication.document, "resulting_revision_id");
   const officialCard = requiredFirst(initialReconciled.document, "cards");
   const officialName = requiredString(officialCard, "name");
-  const retainedEvidence = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT source_observation_id FROM reconciliation_candidates
-     WHERE ingestion_run_id = ? ORDER BY source_observation_id LIMIT 1`,
-  )
+  const retainedEvidence = await reconciliationQueries
+    .readReconciliationCandidatesSourceObservationId(testEnv.CATALOGUE_DB)
     .bind(initial.id)
     .first<{ source_observation_id: string }>();
   expect(retainedEvidence?.source_observation_id).toMatch(/^srcobs_/u);
@@ -267,22 +270,16 @@ test("a partial-game publication carries an unselected curation and its immutabl
   expect(partialPublication.response.status).toBe(200);
   const partialCatalogueRevision = requiredString(partialPublication.document, "resulting_revision_id");
   const [before, after, ledger] = await Promise.all([
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT document_json FROM revision_cards
-       WHERE catalogue_revision_id = ? AND card_id = ?`,
-    )
+    publishedCatalogueQueries
+      .readRevisionCardsDocumentJson(testEnv.CATALOGUE_DB)
       .bind(curatedCatalogueRevision, requiredString(officialCard, "id"))
       .first<{ document_json: string }>(),
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT document_json FROM revision_cards
-       WHERE catalogue_revision_id = ? AND card_id = ?`,
-    )
+    publishedCatalogueQueries
+      .readRevisionCardsDocumentJson(testEnv.CATALOGUE_DB)
       .bind(partialCatalogueRevision, requiredString(officialCard, "id"))
       .first<{ document_json: string }>(),
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT curated_revision_id FROM catalogue_curated_provenance
-       WHERE catalogue_revision_id = ? AND curated_revision_id = ?`,
-    )
+    curatedQueries
+      .readCatalogueCuratedProvenanceCuratedRevisionId(testEnv.CATALOGUE_DB)
       .bind(partialCatalogueRevision, curatedRevisionId)
       .first<{ curated_revision_id: string }>(),
   ]);
@@ -351,12 +348,8 @@ test("new collection rejects an unregistered adapter version while retained snap
   expect((await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
 
   await waitForRunState(runId, "awaiting_approval");
-  const snapshot = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT snapshot.id
-     FROM source_snapshots AS snapshot
-     WHERE snapshot.ingestion_run_id = ?
-       AND snapshot.request_id = 'fusion-world-en:legality-current'`,
-  )
+  const snapshot = await sourceEvidenceQueries
+    .readSourceSnapshotsId(testEnv.CATALOGUE_DB)
     .bind(runId)
     .first<{ id: string }>();
   if (snapshot === null) throw new Error("Retained legality snapshot is absent");
@@ -465,18 +458,8 @@ test("complete image evidence publishes an unidentified artwork once without col
   // Publication projects the content facts the api serves onto the revision
   // row, so the read cluster never joins reconciled_printing_images
   // (issue #98).
-  const projectedImages = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT projection.image_id, projection.media_type, projection.content_sha256,
-            projection.content_byte_length, projection.object_key,
-            image.media_type AS reconciled_media_type,
-            image.content_sha256 AS reconciled_content_sha256,
-            image.content_byte_length AS reconciled_content_byte_length,
-            image.object_key AS reconciled_object_key
-     FROM revision_printing_images AS projection
-     JOIN reconciled_printing_images AS image ON image.id = projection.image_id
-     WHERE projection.catalogue_revision_id = ?
-     ORDER BY projection.image_id`,
-  )
+  const projectedImages = await reconciliationQueries
+    .readRevisionPrintingImagesReconciledMediaTypeReconciledContentSha256(testEnv.CATALOGUE_DB)
     .bind(revisionId)
     .all<Record<string, string | number | null>>();
   expect(projectedImages.results.length).toBeGreaterThanOrEqual(4);
@@ -523,12 +506,9 @@ test("the production source-plan route rejects synthetic fixture adapters withou
   expect(blocked.document).toMatchObject({
     code: "adapter_origin_not_permitted",
   });
-  const retained = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count
-     FROM ingestion_evidence_plans AS plan
-     JOIN ingestion_runs AS run ON run.id = plan.ingestion_run_id
-     WHERE run.idempotency_key = 'production-route-fixture-bypass'`,
-  ).first<{ count: number }>();
+  const retained = await sourceEvidenceQueries
+    .countIngestionEvidencePlansCount(testEnv.CATALOGUE_DB)
+    .first<{ count: number }>();
   expect(retained?.count).toBe(0);
 });
 
@@ -546,11 +526,9 @@ test("the production Worker has no route capable of injecting synthetic fixture 
   expect(legacyFixturePublication.document).toMatchObject({
     code: "not_found",
   });
-  const retained = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count
-     FROM ingestion_runs
-     WHERE idempotency_key = 'production-fixture-publication-bypass'`,
-  ).first<{ count: number }>();
+  const retained = await ingestionQueries
+    .countIngestionRunsCountForProductionWorkerHasNoRouteCapableInjectingSyntheticFixture(testEnv.CATALOGUE_DB)
+    .first<{ count: number }>();
   expect(retained?.count).toBe(0);
 });
 

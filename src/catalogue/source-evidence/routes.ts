@@ -6,6 +6,7 @@ import {
   requiredString,
 } from "../../http/administration";
 import { type RouteContext, route } from "../../http/routes";
+import type { CatalogueStore } from "../shared";
 import { pauseEvidenceCollection, resumeEvidenceRun, terminateEvidenceCollection } from "./evidence-administration";
 import {
   extendRunRequestCapacity,
@@ -20,7 +21,7 @@ import { sourceHostPacingIntervalMilliseconds, sourceHostPacingMode } from "./so
 import type { EvidenceInspectionOptions } from "./source-evidence-repository";
 
 type Environment = {
-  CATALOGUE_DB: D1Database;
+  CATALOGUE_DB: CatalogueStore;
   EVIDENCE_HOST_WORKFLOW: Parameters<typeof pauseEvidenceCollection>[2];
   EVIDENCE_INGESTION_WORKFLOW: Parameters<typeof resumeEvidenceRun>[1];
   EVIDENCE_OBJECTS: R2Bucket;

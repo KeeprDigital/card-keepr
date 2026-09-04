@@ -1,5 +1,3 @@
-import type { ContextRow, RuleRow } from "./published-read-repository";
-import { legalityCardStatement, applicableLegalityRulesStatement } from "./published-read-repository";
 import { type PublicBase, publicUrl } from "../../http/public-base";
 import { requiredLegalityRegionsForGame } from "../adapters";
 import {
@@ -11,7 +9,7 @@ import {
   type StoredLegalityStatusRule,
   unresolvedTargetScope,
 } from "../legality";
-import { isIsoCalendarDate, type LegalityRegion, maximumLegalityStatusRules } from "../shared";
+import { type CatalogueStore, isIsoCalendarDate, type LegalityRegion, maximumLegalityStatusRules } from "../shared";
 import {
   canonicalEtag,
   collectionFilter,
@@ -24,6 +22,8 @@ import {
   ReadProblem,
   revisionHeaders,
 } from "./collection-endpoint";
+import type { ContextRow, RuleRow } from "./published-read-repository";
+import { applicableLegalityRulesStatement, legalityCardStatement } from "./published-read-repository";
 
 type StoredRule = {
   rule: StoredLegalityStatusRule;
@@ -32,7 +32,7 @@ type StoredRule = {
 
 export async function contextualLegalityStatusResponse(
   request: Request,
-  database: D1Database,
+  database: CatalogueStore,
   base: PublicBase,
 ): Promise<Response> {
   const url = new URL(request.url);

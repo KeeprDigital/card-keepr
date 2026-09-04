@@ -1,3 +1,8 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as curatedQueries from "./query-helpers/curated";
+import * as reconciliationQueries from "./query-helpers/reconciliation";
 import { env, exports } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { afterEach, beforeEach, expect, test } from "vitest";
@@ -52,9 +57,9 @@ let card: CatalogueCard = {
 beforeEach(async () => {
   await applyD1Migrations(env.CATALOGUE_DB, env.TEST_MIGRATIONS);
   sequence += 1;
-  const previousRevision = await env.CATALOGUE_DB.prepare(
-    "SELECT current_revision_id FROM catalogue_state WHERE singleton = 1",
-  ).first<{ current_revision_id: string }>();
+  const previousRevision = await publishedCatalogueQueries
+    .readCatalogueStateCurrentRevisionId(env.CATALOGUE_DB)
+    .first<{ current_revision_id: string }>();
   currentRevision = `catrev_curated_seed_${sequence}`;
   const runId = `run_curated_seed_${sequence}`;
   card = { ...card, id: `card_op01_001_${sequence}` };
@@ -203,27 +208,10 @@ beforeEach(async () => {
       },
     ],
   };
-  await env.CATALOGUE_DB.prepare(
-    "UPDATE operation_state SET active_ingestion_run_id = NULL, active_production_release_id = NULL, active_production_release_expires_at = NULL, recovery_health = 'healthy' WHERE singleton = 1",
-  ).run();
-  await env.CATALOGUE_DB.prepare(
-    "UPDATE curated_revisions SET status = 'retired', event_version = event_version + 1 WHERE status IN ('active', 'reconfirmation_required')",
-  ).run();
+  await ingestionQueries.setOperationStateActiveIngestionRunIdActiveProductionReleaseId(env.CATALOGUE_DB).run();
+  await curatedQueries.setCuratedRevisionsStatusEventVersion(env.CATALOGUE_DB).run();
   await env.CATALOGUE_DB.batch([
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, idempotency_key, candidate_digest,
-        candidate_catalogue_digest, candidate_created_at, approval_deadline,
-        candidate_json, approval_json, progress_json, warnings_json, approval_history_json
-      ) VALUES (
-        ?, 'publishing', '["one-piece"]', ?,
-        ?, ?, 'seed-digest', 'seed-digest', ?,
-        '2099-01-01T00:00:00.000Z', ?,
-        ?,
-        '{"completed_stages":[],"current_stage":"publishing"}', '[]', '[]'
-      )`,
-    ).bind(
+    ingestionQueries.insertIngestionRunsForCuratedRevisions(env.CATALOGUE_DB).bind(
       runId,
       now,
       previousRevision!.current_revision_id,
@@ -235,55 +223,31 @@ beforeEach(async () => {
         expected_current_revision_id: previousRevision!.current_revision_id,
       }),
     ),
-    env.CATALOGUE_DB.prepare("UPDATE operation_state SET active_ingestion_run_id = ? WHERE singleton = 1").bind(runId),
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO catalogue_revisions (
-        id, ingestion_run_id, published_at, content_digest,
-        expected_previous_revision_id, approved_candidate_digest
-      ) VALUES (?, ?, ?, 'seed-digest', ?, 'seed-digest')`,
-    ).bind(currentRevision, runId, now, previousRevision!.current_revision_id),
-    env.CATALOGUE_DB.prepare(
-      "UPDATE catalogue_state SET current_revision_id = ?, published_at = ? WHERE singleton = 1",
-    ).bind(currentRevision, now),
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_cards (catalogue_revision_id, card_id, document_json)
-       VALUES (?, ?, ?)`,
-    ).bind(currentRevision, card.id, canonicalJson(card)),
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_printings (catalogue_revision_id, printing_id, card_id, document_json)
-       VALUES (?, ?, ?, ?)`,
-    ).bind(currentRevision, `printing_${sequence}`, card.id, canonicalJson(candidate.printings[0])),
-    env.CATALOGUE_DB.prepare("UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1"),
+    ingestionQueries
+      .setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        env.CATALOGUE_DB,
+      )
+      .bind(runId),
+    ingestionQueries
+      .insertCatalogueRevisionsForCuratedRevisions(env.CATALOGUE_DB)
+      .bind(currentRevision, runId, now, previousRevision!.current_revision_id),
+    publishedCatalogueQueries
+      .setCatalogueStateCurrentRevisionIdPublishedAt(env.CATALOGUE_DB)
+      .bind(currentRevision, now),
+    publishedCatalogueQueries
+      .insertRevisionCardsForCuratedRevisions(env.CATALOGUE_DB)
+      .bind(currentRevision, card.id, canonicalJson(card)),
+    publishedCatalogueQueries
+      .insertRevisionPrintingsForCuratedRevisions(env.CATALOGUE_DB)
+      .bind(currentRevision, `printing_${sequence}`, card.id, canonicalJson(candidate.printings[0])),
+    ingestionQueries.setOperationStateActiveIngestionRunIdForInstallApiSuite(env.CATALOGUE_DB),
   ]);
 });
 
 afterEach(async () => {
   await env.CATALOGUE_DB.batch([
-    env.CATALOGUE_DB.prepare(
-      `UPDATE ingestion_runs
-       SET state = 'failed',
-           terminal_at = COALESCE(candidate_created_at, started_at),
-           failure_code = CASE WHEN state = 'publishing'
-             THEN 'publication_abandoned'
-             ELSE 'test_cleanup_active_run'
-           END,
-           progress_json = json_set(progress_json, '$.current_stage', 'failed')
-       WHERE id = (
-         SELECT active_ingestion_run_id FROM operation_state
-         WHERE singleton = 1
-       ) AND state IN (
-         'planning', 'collecting', 'parsing', 'reconciling',
-         'awaiting_approval', 'publishing'
-       )`,
-    ),
-    env.CATALOGUE_DB.prepare(
-      `UPDATE operation_state
-       SET active_ingestion_run_id = NULL,
-           active_production_release_id = NULL,
-           active_production_release_expires_at = NULL,
-           recovery_health = 'healthy'
-       WHERE singleton = 1`,
-    ),
+    ingestionQueries.setIngestionRunsStateTerminalAtForCuratedRevisions(env.CATALOGUE_DB),
+    ingestionQueries.setOperationStateActiveIngestionRunIdActiveProductionReleaseId(env.CATALOGUE_DB),
   ]);
 });
 
@@ -393,7 +357,7 @@ test("administration mutations require the exact normative request shapes", asyn
   });
 
   const created = await createCuratedRevision(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     {
       environment: "production",
       expected_current_revision_id: currentRevision,
@@ -499,40 +463,26 @@ test("product-only Source Observations remain valid Curated Revision evidence", 
     relationship: `srcobs_relationship_only_${sequence}`,
   };
   await env.CATALOGUE_DB.batch([
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_products (
-         catalogue_revision_id, product_id, supported_game,
-         official_code, name, search_text, release_regions_json,
-         document_json
-       ) VALUES (?, ?, 'one-piece', 'OP-01', 'Booster', 'op-01 booster',
-         '["EN-OCEANIA"]', ?)`,
-    ).bind(
-      currentRevision,
-      `product_${sequence}`,
-      canonicalJson({
-        data: { id: `product_${sequence}` },
-        included: Object.values(evidenceIds)
-          .slice(0, 3)
-          .map((id) => ({
-            type: "source_observation",
-            id,
-            captured_at: now,
-            source: "one-piece-en",
-          })),
-        provenance: {},
-        disagreements: [],
-      }),
-    ),
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO reconciled_product_relationships (
-         id, supported_game, relationship_kind, from_type, from_id,
-         to_type, to_id, evidence_category, source_lineage,
-         source_observation_ids_json, relationship_value,
-         first_revision_id, last_observed_revision_id, current,
-         last_missing_revision_id, document_json
-       ) VALUES (?, 'one-piece', 'product-card', 'product', ?,
-         'card', ?, 'explicit', 'one-piece-en', ?, ?, ?, ?, 1, NULL, ?)`,
-    ).bind(
+    publishedCatalogueQueries
+      .insertRevisionProductsForProductOnlySourceObservationsRemainValidCuratedRevisionEvidence(env.CATALOGUE_DB)
+      .bind(
+        currentRevision,
+        `product_${sequence}`,
+        canonicalJson({
+          data: { id: `product_${sequence}` },
+          included: Object.values(evidenceIds)
+            .slice(0, 3)
+            .map((id) => ({
+              type: "source_observation",
+              id,
+              captured_at: now,
+              source: "one-piece-en",
+            })),
+          provenance: {},
+          disagreements: [],
+        }),
+      ),
+    reconciliationQueries.insertReconciledProductRelationships(env.CATALOGUE_DB).bind(
       `relationship_product_card_${sequence}`,
       `product_${sequence}`,
       card.id,
@@ -643,11 +593,8 @@ test("validation uses the pinned shared and Game Profile schemas", async () => {
   });
   expect(nullable.status).toBe(200);
 
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE revision_printings SET document_json = json_set(
-       document_json, '$.game_data', json('{"profile":"one-piece@1","attributes":{}}')
-     ) WHERE catalogue_revision_id = ? AND printing_id = ?`,
-  )
+  await publishedCatalogueQueries
+    .setRevisionPrintingsDocumentJsonForValidationUsesPinnedSharedGameProfileSchemas(env.CATALOGUE_DB)
     .bind(currentRevision, `printing_${sequence}`)
     .run();
   const optionalProposal = {
@@ -786,22 +733,15 @@ test("create is idempotent, server-authored, and available through stable list/s
     events: [{ type: "authored" }],
   });
   await expect(
-    env.CATALOGUE_DB.prepare("UPDATE curated_revision_idempotency SET response_status = 202 WHERE idempotency_key = ?")
-      .bind(input.idempotency_key)
-      .run(),
+    curatedQueries.setCuratedRevisionIdempotencyResponseStatus(env.CATALOGUE_DB).bind(input.idempotency_key).run(),
   ).rejects.toThrow("curated_revision_idempotency_immutable");
-  await env.CATALOGUE_DB.prepare(
-    `INSERT INTO catalogue_curated_provenance (
-       catalogue_revision_id, curated_revision_id, target_key,
-       content_digest, provenance_json
-     ) VALUES (?, ?, 'target', ?, '{}')`,
-  )
+  await curatedQueries
+    .insertCatalogueCuratedProvenanceForCreateIdempotentServerAuthoredAvailableThroughStableListShow(env.CATALOGUE_DB)
     .bind(currentRevision, mutation.curated_revision_id, mutation.content_digest)
     .run();
   await expect(
-    env.CATALOGUE_DB.prepare(
-      "DELETE FROM catalogue_curated_provenance WHERE catalogue_revision_id = ? AND curated_revision_id = ?",
-    )
+    curatedQueries
+      .deleteCatalogueCuratedProvenance(env.CATALOGUE_DB)
       .bind(currentRevision, mutation.curated_revision_id)
       .run(),
   ).rejects.toThrow("catalogue_curated_provenance_immutable");
@@ -822,7 +762,7 @@ test("create is guarded by production binding, current revision, idle operation,
     code: "production_target_required",
   });
 
-  await env.CATALOGUE_DB.prepare("UPDATE operation_state SET recovery_health = 'blocked' WHERE singleton = 1").run();
+  await ingestionQueries.setOperationStateRecoveryHealth(env.CATALOGUE_DB).run();
   const blocked = await adminRequest("/admin/v1/curated-revisions", {
     ...base,
     environment: "production",
@@ -833,9 +773,7 @@ test("create is guarded by production binding, current revision, idle operation,
     code: "recovery_in_progress",
   });
 
-  await env.CATALOGUE_DB.prepare(
-    "UPDATE operation_state SET recovery_health = 'healthy', active_production_release_id = 'release_active', active_production_release_expires_at = '2099-01-01T00:00:00.000Z' WHERE singleton = 1",
-  ).run();
+  await ingestionQueries.setOperationStateRecoveryHealthActiveProductionReleaseId(env.CATALOGUE_DB).run();
   const releaseBlocked = await adminRequest("/admin/v1/curated-revisions", {
     ...base,
     environment: "production",
@@ -851,14 +789,8 @@ test("create is guarded by production binding, current revision, idle operation,
 test("the atomic mutation boundary rechecks the current Catalogue Revision", async () => {
   const authored = await proposal("/name", "Curated Name");
   await expect(
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO curated_revisions (
-       id, game, target_key, target_kind, proposal_json, content_digest,
-       reviewed_source_digest, schema_binding_json, author, created_at,
-       status, event_version
-     ) VALUES ('currev_stale_atomic', 'one-piece', 'stale-target', 'field',
-       ?, ?, ?, ?, 'owner', ?, 'active', 1)`,
-    )
+    curatedQueries
+      .insertCuratedRevisionsForAtomicMutationBoundaryRechecksCurrentCatalogueRevision(env.CATALOGUE_DB)
       .bind(
         canonicalJson(authored),
         await sha256Text(canonicalJson(authored)),
@@ -870,7 +802,7 @@ test("the atomic mutation boundary rechecks the current Catalogue Revision", asy
   ).rejects.toThrow("curated_revision_current_revision_mismatch");
 
   const created = await createCuratedRevision(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     {
       environment: "production",
       expected_current_revision_id: currentRevision,
@@ -881,11 +813,8 @@ test("the atomic mutation boundary rechecks the current Catalogue Revision", asy
     now,
   );
   await expect(
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO curated_revision_events (
-       revision_id, event_version, kind, event_json, created_at, author
-     ) VALUES (?, 2, 'retired', ?, ?, 'owner')`,
-    )
+    curatedQueries
+      .insertCuratedRevisionEvents(env.CATALOGUE_DB)
       .bind(created.document.curated_revision_id, canonicalJson({ expected_current_revision_id: "catrev_stale" }), now)
       .run(),
   ).rejects.toThrow("curated_revision_current_revision_mismatch");
@@ -893,64 +822,31 @@ test("the atomic mutation boundary rechecks the current Catalogue Revision", asy
 
 test("release leases reclaim stale owners and fence cleanup and renewal", async () => {
   const insertBootstrap = async (id: string) =>
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-       id, state, selected_games_json, started_at,
-       expected_current_revision_id, idempotency_key, candidate_json
-     ) VALUES (
-       ?, 'planning', '[]', ?, ?, ?,
-       '{"production_release_bootstrap":true}'
-     )`,
-    )
+    ingestionQueries
+      .insertIngestionRunsForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(env.CATALOGUE_DB)
       .bind(id, now, currentRevision, id)
       .run();
   const claimBootstrap = async (id: string) =>
-    env.CATALOGUE_DB.prepare(
-      `UPDATE operation_state SET active_ingestion_run_id = ?
-     WHERE singleton = 1 AND active_ingestion_run_id IS NULL
-       AND recovery_health = 'healthy'`,
-    )
+    ingestionQueries
+      .setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(env.CATALOGUE_DB)
       .bind(id)
       .run();
   const failBootstrap = async (id: string, failureCode: string) =>
-    env.CATALOGUE_DB.prepare(
-      `UPDATE ingestion_runs
-       SET state = 'failed', terminal_at = ?, failure_code = ?,
-           progress_json =
-             '{"completed_stages":[],"current_stage":"failed"}'
-       WHERE id = ? AND state = 'planning'
-         AND EXISTS (
-           SELECT 1 FROM operation_state
-           WHERE singleton = 1 AND active_ingestion_run_id = ?
-         )`,
-    )
+    ingestionQueries
+      .setIngestionRunsStateTerminalAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(env.CATALOGUE_DB)
       .bind(now, failureCode, id, id)
       .run();
   const clearBootstrap = async (id: string) =>
-    env.CATALOGUE_DB.prepare(
-      `UPDATE operation_state SET active_ingestion_run_id = NULL
-     WHERE singleton = 1 AND active_ingestion_run_id = ?`,
-    )
+    ingestionQueries
+      .setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewalWithundefined(
+        env.CATALOGUE_DB,
+      )
       .bind(id)
       .run();
   const deleteBootstrap = async (id: string) => {
     const [, result] = await env.CATALOGUE_DB.batch([
-      env.CATALOGUE_DB.prepare(
-        `DELETE FROM ingestion_run_transitions
-         WHERE ingestion_run_id = ?`,
-      ).bind(id),
-      env.CATALOGUE_DB.prepare(
-        `DELETE FROM ingestion_runs
-         WHERE id = ? AND idempotency_key = id
-           AND selected_games_json = '[]'
-           AND candidate_json = '{"production_release_bootstrap":true}'
-           AND state IN ('planning', 'failed')
-           AND NOT EXISTS (
-             SELECT 1 FROM operation_state
-             WHERE singleton = 1
-               AND active_ingestion_run_id = ingestion_runs.id
-           )`,
-      ).bind(id),
+      ingestionQueries.deleteIngestionRunTransitions(env.CATALOGUE_DB).bind(id),
+      ingestionQueries.deleteIngestionRuns(env.CATALOGUE_DB).bind(id),
     ]);
     if (result === undefined) {
       throw new Error("The bootstrap cleanup batch did not return a result.");
@@ -967,21 +863,14 @@ test("release leases reclaim stale owners and fence cleanup and renewal", async 
   // This is the cleanup query used by the previously deployed ingestion
   // worker. A matching active planning row prevents it from dropping the
   // pre-migration release fence as an orphan.
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE operation_state SET active_ingestion_run_id = NULL
-     WHERE singleton = 1 AND active_ingestion_run_id IS NOT NULL
-       AND NOT EXISTS (
-         SELECT 1 FROM ingestion_runs
-         WHERE id = operation_state.active_ingestion_run_id
-           AND state IN (
-             'planning', 'collecting', 'parsing', 'reconciling',
-             'awaiting_approval', 'publishing'
-           )
-       )`,
-  ).run();
-  expect(
-    await env.CATALOGUE_DB.prepare("SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1").first(),
-  ).toEqual({ active_ingestion_run_id: firstBootstrap });
+  await ingestionQueries
+    .setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewalWithPublishing(
+      env.CATALOGUE_DB,
+    )
+    .run();
+  expect(await ingestionQueries.readOperationStateActiveIngestionRunId(env.CATALOGUE_DB).first()).toEqual({
+    active_ingestion_run_id: firstBootstrap,
+  });
 
   const blockedBootstrap = `release-bootstrap|2099-01-01T00:00:00.000Z|release_blocked_${sequence}`;
   await expect(insertBootstrap(blockedBootstrap)).rejects.toThrow("active_ingestion_run_or_release");
@@ -993,9 +882,7 @@ test("release leases reclaim stale owners and fence cleanup and renewal", async 
   );
   expect((await clearBootstrap(firstBootstrap)).meta.changes).toBe(1);
   expect((await deleteBootstrap(firstBootstrap)).meta.changes).toBe(1);
-  expect(
-    await env.CATALOGUE_DB.prepare("SELECT id FROM ingestion_runs WHERE id = ?").bind(firstBootstrap).first(),
-  ).toBeNull();
+  expect(await ingestionQueries.readIngestionRunsId(env.CATALOGUE_DB).bind(firstBootstrap).first()).toBeNull();
 
   const staleBootstrap = `release-bootstrap|2000-01-01T00:00:00.000Z|${firstFence}`;
   await insertBootstrap(staleBootstrap);
@@ -1008,58 +895,47 @@ test("release leases reclaim stale owners and fence cleanup and renewal", async 
   await insertBootstrap(secondBootstrap);
   const reclaimed = await claimBootstrap(secondBootstrap);
   expect(reclaimed.meta.changes).toBe(1);
-  const transferred = await env.CATALOGUE_DB.prepare(
-    `UPDATE operation_state
-     SET active_production_release_id = ?, active_production_release_expires_at = ?,
-         active_ingestion_run_id = NULL
-     WHERE singleton = 1 AND active_ingestion_run_id = ?
-       AND (active_production_release_id IS NULL OR active_production_release_expires_at <= ?)`,
-  )
+  const transferred = await ingestionQueries
+    .setOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAt(env.CATALOGUE_DB)
     .bind(secondFence, "2099-01-01T00:00:00.000Z", secondBootstrap, now)
     .run();
   expect(transferred.meta.changes).toBeGreaterThan(0);
   expect((await deleteBootstrap(secondBootstrap)).meta.changes).toBe(1);
   expect((await deleteBootstrap(staleBootstrap)).meta.changes).toBe(1);
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT count(*) AS bootstrap_count FROM ingestion_runs
-     WHERE id IN (?, ?)`,
-    )
+    await ingestionQueries
+      .countIngestionRunsBootstrapCount(env.CATALOGUE_DB)
       .bind(staleBootstrap, secondBootstrap)
       .first(),
   ).toEqual({
     bootstrap_count: 0,
   });
 
-  const staleCleanup = await env.CATALOGUE_DB.prepare(
-    `UPDATE operation_state
-     SET active_production_release_id = NULL, active_production_release_expires_at = NULL
-     WHERE singleton = 1 AND active_production_release_id = ?`,
-  )
+  const staleCleanup = await ingestionQueries
+    .setOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
+      env.CATALOGUE_DB,
+    )
     .bind(firstFence)
     .run();
   expect(staleCleanup.meta.changes).toBe(0);
-  const renewed = await env.CATALOGUE_DB.prepare(
-    `UPDATE operation_state SET active_production_release_expires_at = ?
-     WHERE singleton = 1 AND active_production_release_id = ?
-       AND active_production_release_expires_at > ?`,
-  )
+  const renewed = await ingestionQueries
+    .setOperationStateActiveProductionReleaseExpiresAt(env.CATALOGUE_DB)
     .bind("2099-01-01T00:15:00.000Z", secondFence, now)
     .run();
   expect(renewed.meta.changes).toBeGreaterThan(0);
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT active_production_release_id, active_production_release_expires_at
-     FROM operation_state WHERE singleton = 1`,
-    ).first(),
+    await ingestionQueries
+      .readOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAt(env.CATALOGUE_DB)
+      .first(),
   ).toEqual({
     active_production_release_id: secondFence,
     active_production_release_expires_at: "2099-01-01T00:15:00.000Z",
   });
 
-  await env.CATALOGUE_DB.prepare(
-    "UPDATE operation_state SET active_production_release_expires_at = ? WHERE singleton = 1 AND active_production_release_id = ?",
-  )
+  await ingestionQueries
+    .setOperationStateActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
+      env.CATALOGUE_DB,
+    )
     .bind("2000-01-01T00:00:00.000Z", secondFence)
     .run();
   const thirdFence = `release_third_${sequence}`;
@@ -1068,13 +944,10 @@ test("release leases reclaim stale owners and fence cleanup and renewal", async 
   expect((await claimBootstrap(thirdBootstrap)).meta.changes).toBe(1);
   expect(
     (
-      await env.CATALOGUE_DB.prepare(
-        `UPDATE operation_state
-     SET active_production_release_id = ?, active_production_release_expires_at = ?,
-         active_ingestion_run_id = NULL
-     WHERE singleton = 1 AND active_ingestion_run_id = ?
-       AND active_production_release_expires_at <= ?`,
-      )
+      await ingestionQueries
+        .setOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewalWithundefined(
+          env.CATALOGUE_DB,
+        )
         .bind(thirdFence, "2099-01-01T00:00:00.000Z", thirdBootstrap, now)
         .run()
     ).meta.changes,
@@ -1082,30 +955,27 @@ test("release leases reclaim stale owners and fence cleanup and renewal", async 
   expect((await deleteBootstrap(thirdBootstrap)).meta.changes).toBe(1);
   expect(
     (
-      await env.CATALOGUE_DB.prepare(
-        `UPDATE operation_state SET active_production_release_expires_at = ?
-     WHERE singleton = 1 AND active_production_release_id = ?`,
-      )
+      await ingestionQueries
+        .setOperationStateActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
+          env.CATALOGUE_DB,
+        )
         .bind("2099-01-01T00:30:00.000Z", secondFence)
         .run()
     ).meta.changes,
   ).toBe(0);
   expect(
     (
-      await env.CATALOGUE_DB.prepare(
-        `UPDATE operation_state
-     SET active_production_release_id = NULL, active_production_release_expires_at = NULL
-     WHERE singleton = 1 AND active_production_release_id = ?`,
-      )
+      await ingestionQueries
+        .setOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAtForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewal(
+          env.CATALOGUE_DB,
+        )
         .bind(secondFence)
         .run()
     ).meta.changes,
   ).toBe(0);
-  expect(
-    await env.CATALOGUE_DB.prepare(
-      "SELECT active_production_release_id FROM operation_state WHERE singleton = 1",
-    ).first(),
-  ).toEqual({ active_production_release_id: thirdFence });
+  expect(await ingestionQueries.readOperationStateActiveProductionReleaseId(env.CATALOGUE_DB).first()).toEqual({
+    active_production_release_id: thirdFence,
+  });
 });
 
 test("only one active assertion may overlap the same target interval", async () => {
@@ -1144,7 +1014,7 @@ test("a run pins an exact ordered set and applies it after official reconciliati
   const runId = `run_curated_apply_${sequence}`;
   await insertParsingRun(runId);
 
-  const pin = await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
+  const pin = await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), runId, now);
   expect(pin.revision_ids).toContain(revision.curated_revision_id);
   expect(pin.set_digest).toMatch(/^[a-f0-9]{64}$/);
 
@@ -1176,7 +1046,7 @@ test("a run pins an exact ordered set and applies it after official reconciliati
     ],
   };
   const applied = await applyPinnedCuratedRevisions(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     runId,
     {
       contract: "card-keepr-catalogue-candidate@1",
@@ -1197,7 +1067,8 @@ test("a run pins an exact ordered set and applies it after official reconciliati
 });
 
 test("candidate inspection exposes the exact pinned set and every curated effect", async () => {
-  const seed = await env.CATALOGUE_DB.prepare("SELECT candidate_json FROM ingestion_runs WHERE idempotency_key = ?")
+  const seed = await ingestionQueries
+    .readIngestionRunsCandidateJsonForCandidateInspectionExposesExactPinnedSetEveryCuratedEffect(env.CATALOGUE_DB)
     .bind(`curated-seed-${sequence}`)
     .first<{ candidate_json: string }>();
   const official = JSON.parse(seed!.candidate_json) as {
@@ -1312,7 +1183,7 @@ test("candidate inspection exposes the exact pinned set and every curated effect
       supersedes_revision_id: null,
     };
     const created = await createCuratedRevision(
-      env.CATALOGUE_DB,
+      catalogueStore(env.CATALOGUE_DB),
       {
         environment: "production",
         expected_current_revision_id: currentRevision,
@@ -1350,26 +1221,12 @@ test("candidate inspection exposes the exact pinned set and every curated effect
 
   const runId = `run_candidate_inspection_${sequence}`;
   await insertParsingRun(runId);
-  const pinned = await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
-  const candidate = await applyPinnedCuratedRevisions(env.CATALOGUE_DB, runId, official as never, now);
+  const pinned = await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), runId, now);
+  const candidate = await applyPinnedCuratedRevisions(catalogueStore(env.CATALOGUE_DB), runId, official as never, now);
   const digest = await sha256Text(canonicalJson(candidate));
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE ingestion_runs SET state = 'reconciling',
-       progress_json =
-         '{"completed_stages":["planning","collecting","parsing"],"current_stage":"reconciling"}'
-     WHERE id = ?`,
-  )
-    .bind(runId)
-    .run();
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE ingestion_runs
-     SET state = 'awaiting_approval', candidate_json = ?,
-         candidate_digest = ?, candidate_catalogue_digest = ?,
-         candidate_created_at = ?, approval_deadline = ?,
-         progress_json =
-           '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"awaiting_approval"}'
-     WHERE id = ?`,
-  )
+  await ingestionQueries.setIngestionRunsStateProgressJson(env.CATALOGUE_DB).bind(runId).run();
+  await ingestionQueries
+    .setIngestionRunsStateCandidateJson(env.CATALOGUE_DB)
     .bind(canonicalJson(candidate), digest, digest, now, "2026-08-12T01:02:03.000Z", runId)
     .run();
 
@@ -1430,7 +1287,7 @@ test("prepared runs strip prior effects, reapply exact pins, and persist the rea
     ],
   };
   const prepared = await prepareCuratedRevisionRunStart(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     runId,
     ["one-piece"],
     {
@@ -1468,20 +1325,13 @@ test("prepared runs strip prior effects, reapply exact pins, and persist the rea
   });
   expect(prepared.candidate.cards[1]).toEqual(unselectedCard);
   await env.CATALOGUE_DB.batch([
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, idempotency_key, candidate_json,
-         progress_json, warnings_json, approval_history_json
-       ) VALUES (?, 'planning', '["one-piece"]', ?, ?, ?, '{}',
-         '{"completed_stages":[],"current_stage":"planning"}', '[]', '[]')`,
-    ).bind(runId, now, currentRevision, `prepared-${sequence}`),
+    ingestionQueries
+      .insertIngestionRunsForPreparedRunsStripPriorEffectsReapplyExactPinsPersist(env.CATALOGUE_DB)
+      .bind(runId, now, currentRevision, `prepared-${sequence}`),
     ...prepared.statements,
   ]);
-  const pin = await env.CATALOGUE_DB.prepare(
-    `SELECT revision_ids_json, set_digest
-     FROM ingestion_run_curated_revision_sets WHERE ingestion_run_id = ?`,
-  )
+  const pin = await ingestionQueries
+    .readIngestionRunCuratedRevisionSetsRevisionIdsJsonSetDigest(env.CATALOGUE_DB)
     .bind(runId)
     .first<{ revision_ids_json: string; set_digest: string }>();
   expect(pin).toEqual({
@@ -1513,7 +1363,7 @@ test("pinned assertions hard-fail when companion-field drift makes the composed 
     supersedes_revision_id: null,
   };
   const created = await createCuratedRevision(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     {
       environment: "production",
       expected_current_revision_id: currentRevision,
@@ -1525,14 +1375,12 @@ test("pinned assertions hard-fail when companion-field drift makes the composed 
   );
   const runId = `run_companion_drift_${sequence}`;
   await insertParsingRun(runId);
-  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
+  await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), runId, now);
   const officialRule = {
     ...(
       JSON.parse(
-        (await env.CATALOGUE_DB.prepare(
-          `SELECT candidate_json FROM ingestion_runs
-       WHERE idempotency_key = ?`,
-        )
+        (await ingestionQueries
+          .readIngestionRunsCandidateJsonForCandidateInspectionExposesExactPinnedSetEveryCuratedEffect(env.CATALOGUE_DB)
           .bind(`curated-seed-${sequence}`)
           .first<{ candidate_json: string }>())!.candidate_json,
       ) as { legality_rules: Record<string, unknown>[] }
@@ -1545,7 +1393,7 @@ test("pinned assertions hard-fail when companion-field drift makes the composed 
   };
   await expect(
     applyPinnedCuratedRevisions(
-      env.CATALOGUE_DB,
+      catalogueStore(env.CATALOGUE_DB),
       runId,
       {
         contract: "card-keepr-catalogue-candidate@1",
@@ -1557,7 +1405,8 @@ test("pinned assertions hard-fail when companion-field drift makes the composed 
       now,
     ),
   ).rejects.toThrow("curated_revision_composed_candidate_invalid");
-  const run = await env.CATALOGUE_DB.prepare("SELECT state, failure_code FROM ingestion_runs WHERE id = ?")
+  const run = await ingestionQueries
+    .readIngestionRunsStateFailureCode(env.CATALOGUE_DB)
     .bind(runId)
     .first<{ state: string; failure_code: string | null }>();
   expect(run).toEqual({
@@ -1608,7 +1457,7 @@ test("Legality Rule curation preserves registered regional authority", async () 
     reviewed_source_digest: await sha256Text(canonicalJson("This Gundam rule is eligible.")),
   };
   const created = await createCuratedRevision(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     {
       environment: "production",
       expected_current_revision_id: currentRevision,
@@ -1620,8 +1469,9 @@ test("Legality Rule curation preserves registered regional authority", async () 
   );
   const runId = `run_gundam_authority_${sequence}`;
   await insertParsingRun(runId, ["gundam"]);
-  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
-  const stored = await env.CATALOGUE_DB.prepare("SELECT candidate_json FROM ingestion_runs WHERE idempotency_key = ?")
+  await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), runId, now);
+  const stored = await ingestionQueries
+    .readIngestionRunsCandidateJsonForCandidateInspectionExposesExactPinnedSetEveryCuratedEffect(env.CATALOGUE_DB)
     .bind(`curated-seed-${sequence}`)
     .first<{ candidate_json: string }>();
   const official = JSON.parse(stored!.candidate_json) as {
@@ -1630,7 +1480,7 @@ test("Legality Rule curation preserves registered regional authority", async () 
   const gundamRule = official.legality_rules.find((rule) => rule.id === `legality_rule_gundam_${sequence}`)!;
   await expect(
     applyPinnedCuratedRevisions(
-      env.CATALOGUE_DB,
+      catalogueStore(env.CATALOGUE_DB),
       runId,
       {
         contract: "card-keepr-catalogue-candidate@1",
@@ -1648,7 +1498,7 @@ test("Legality Rule curation preserves registered regional authority", async () 
 test("a prepared retry persists its failed run and every source-change conflict", async () => {
   const authored = await proposal("/name", "Curated Name");
   const created = await createCuratedRevision(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     {
       environment: "production",
       expected_current_revision_id: currentRevision,
@@ -1660,7 +1510,7 @@ test("a prepared retry persists its failed run and every source-change conflict"
   );
   const authoredRules = await proposal("/effective_rules_text", "Curated rules text");
   const createdRules = await createCuratedRevision(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     {
       environment: "production",
       expected_current_revision_id: currentRevision,
@@ -1704,18 +1554,8 @@ test("a prepared retry persists its failed run and every source-change conflict"
     printings: [],
   };
   const sourceDigest = await sha256Text(canonicalJson(failedCandidate));
-  await env.CATALOGUE_DB.prepare(
-    `INSERT INTO ingestion_runs (
-       id, state, selected_games_json, started_at,
-       expected_current_revision_id, idempotency_key, candidate_digest,
-       candidate_catalogue_digest, candidate_created_at, terminal_at,
-       candidate_json, failure_code, progress_json, warnings_json,
-       approval_history_json
-     ) VALUES (?, 'failed', '["one-piece"]', ?, ?, ?, ?, ?, ?, ?, ?,
-       'prior_failure',
-       '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}',
-       '[]', '[]')`,
-  )
+  await ingestionQueries
+    .insertIngestionRunsForPreparedRetryPersistsFailedRunEverySourceChangeConflict(env.CATALOGUE_DB)
     .bind(
       sourceRunId,
       now,
@@ -1747,15 +1587,14 @@ test("a prepared retry persists its failed run and every source-change conflict"
     ]),
   );
   await expect(
-    env.CATALOGUE_DB.prepare("SELECT state, failure_code FROM ingestion_runs WHERE id = ?").bind(document.id).first(),
+    ingestionQueries.readIngestionRunsStateFailureCode(env.CATALOGUE_DB).bind(document.id).first(),
   ).resolves.toEqual({
     state: "failed",
     failure_code: "curated_revision_reconfirmation_required",
   });
   const conflictedIds = [created.document.curated_revision_id, createdRules.document.curated_revision_id];
-  const statuses = await env.CATALOGUE_DB.prepare(
-    "SELECT status, event_version FROM curated_revisions WHERE id IN (SELECT value FROM json_each(?))",
-  )
+  const statuses = await curatedQueries
+    .readCuratedRevisionsStatusEventVersion(env.CATALOGUE_DB)
     .bind(canonicalJson(conflictedIds))
     .all<{ status: string; event_version: number }>();
   expect(statuses.results).toHaveLength(2);
@@ -1763,11 +1602,7 @@ test("a prepared retry persists its failed run and every source-change conflict"
     statuses.results.every(({ status, event_version }) => status === "reconfirmation_required" && event_version === 2),
   ).toBe(true);
   await expect(
-    env.CATALOGUE_DB.prepare(
-      "SELECT COUNT(*) AS count FROM curated_revision_events WHERE revision_id IN (SELECT value FROM json_each(?)) AND kind = 'source_change_detected'",
-    )
-      .bind(canonicalJson(conflictedIds))
-      .first(),
+    curatedQueries.countCuratedRevisionEventsCount(env.CATALOGUE_DB).bind(canonicalJson(conflictedIds)).first(),
   ).resolves.toEqual({ count: 2 });
   const inspectionResponse = await adminRequest(`/v1/ingestion-runs/${document.id}/candidate`);
   expect(inspectionResponse.status, JSON.stringify(await inspectionResponse.clone().json())).toBe(200);
@@ -1794,7 +1629,7 @@ test("a prepared retry persists its failed run and every source-change conflict"
     ),
   );
   await expect(
-    env.CATALOGUE_DB.prepare("UPDATE ingestion_runs SET candidate_json = '{}' WHERE id = ?").bind(document.id).run(),
+    ingestionQueries.setIngestionRunsCandidateJson(env.CATALOGUE_DB).bind(document.id).run(),
   ).rejects.toThrow("candidate_immutable");
   const replay = await adminRequest(`/v1/ingestion-runs/${sourceRunId}/retry`, {
     idempotency_key: `prepared-conflict-retry-${sequence}`,
@@ -1846,18 +1681,8 @@ test("the Worker binds source-change reaffirmation to the exact public conflict"
     printings: [],
   };
   const sourceDigest = await sha256Text(canonicalJson(sourceCandidate));
-  await env.CATALOGUE_DB.prepare(
-    `INSERT INTO ingestion_runs (
-       id, state, selected_games_json, started_at,
-       expected_current_revision_id, idempotency_key, candidate_digest,
-       candidate_catalogue_digest, candidate_created_at, terminal_at,
-       candidate_json, failure_code, progress_json, warnings_json,
-       approval_history_json
-     ) VALUES (?, 'failed', '["one-piece"]', ?, ?, ?, ?, ?, ?, ?, ?,
-       'test_source_changed',
-       '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}',
-       '[]', '[]')`,
-  )
+  await ingestionQueries
+    .insertIngestionRunsForWorkerBindsSourceChangeReaffirmationExactPublicConflict(env.CATALOGUE_DB)
     .bind(
       sourceRunId,
       now,
@@ -1950,18 +1775,10 @@ test("the Worker binds source-change reaffirmation to the exact public conflict"
     printings: [],
   };
   const unaffectedDigest = await sha256Text(canonicalJson(unaffectedCandidate));
-  await env.CATALOGUE_DB.prepare(
-    `INSERT INTO ingestion_runs (
-       id, state, selected_games_json, started_at,
-       expected_current_revision_id, idempotency_key, candidate_digest,
-       candidate_catalogue_digest, candidate_created_at, terminal_at,
-       candidate_json, failure_code, progress_json, warnings_json,
-       approval_history_json
-     ) VALUES (?, 'failed', '["digimon"]', ?, ?, ?, ?, ?, ?, ?, ?,
-       'test_unaffected_game',
-       '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}',
-       '[]', '[]')`,
-  )
+  await ingestionQueries
+    .insertIngestionRunsForWorkerBindsSourceChangeReaffirmationExactPublicConflictWithCompletedStagesPlanningCollectingParsingReconciling(
+      env.CATALOGUE_DB,
+    )
     .bind(
       unaffectedSourceRunId,
       now,
@@ -2087,11 +1904,11 @@ test("a changed official value requires reconfirmation instead of silently apply
   const revision = (await created.json()) as { curated_revision_id: string };
   const runId = `run_curated_source_change_${sequence}`;
   await insertParsingRun(runId);
-  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
+  await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), runId, now);
 
   await expect(
     applyPinnedCuratedRevisions(
-      env.CATALOGUE_DB,
+      catalogueStore(env.CATALOGUE_DB),
       runId,
       {
         contract: "card-keepr-catalogue-candidate@1",
@@ -2103,7 +1920,10 @@ test("a changed official value requires reconfirmation instead of silently apply
     ),
   ).rejects.toThrow("curated_revision_reconfirmation_required");
   await expect(
-    env.CATALOGUE_DB.prepare("SELECT status, event_version FROM curated_revisions WHERE id = ?")
+    curatedQueries
+      .readCuratedRevisionsStatusEventVersionForChangedOfficialValueRequiresReconfirmationInsteadSilentlyApplying(
+        env.CATALOGUE_DB,
+      )
       .bind(revision.curated_revision_id)
       .first(),
   ).resolves.toMatchObject({
@@ -2111,7 +1931,10 @@ test("a changed official value requires reconfirmation instead of silently apply
     event_version: 2,
   });
   await expect(
-    env.CATALOGUE_DB.prepare("SELECT state, failure_code, terminal_at FROM ingestion_runs WHERE id = ?")
+    ingestionQueries
+      .readIngestionRunsStateFailureCodeForChangedOfficialValueRequiresReconfirmationInsteadSilentlyApplying(
+        env.CATALOGUE_DB,
+      )
       .bind(runId)
       .first(),
   ).resolves.toEqual({
@@ -2119,12 +1942,12 @@ test("a changed official value requires reconfirmation instead of silently apply
     failure_code: "curated_revision_reconfirmation_required",
     terminal_at: now,
   });
-  await expect(
-    env.CATALOGUE_DB.prepare("SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1").first(),
-  ).resolves.toEqual({ active_ingestion_run_id: null });
+  await expect(ingestionQueries.readOperationStateActiveIngestionRunId(env.CATALOGUE_DB).first()).resolves.toEqual({
+    active_ingestion_run_id: null,
+  });
   await expect(
     applyPinnedCuratedRevisions(
-      env.CATALOGUE_DB,
+      catalogueStore(env.CATALOGUE_DB),
       runId,
       {
         contract: "card-keepr-catalogue-candidate@1",
@@ -2136,9 +1959,10 @@ test("a changed official value requires reconfirmation instead of silently apply
     ),
   ).rejects.toThrow("curated_revision_reconfirmation_required");
   await expect(
-    env.CATALOGUE_DB.prepare(
-      "SELECT COUNT(*) AS count FROM curated_revision_events WHERE revision_id = ? AND kind = 'source_change_detected'",
-    )
+    curatedQueries
+      .countCuratedRevisionEventsCountForChangedOfficialValueRequiresReconfirmationInsteadSilentlyApplying(
+        env.CATALOGUE_DB,
+      )
       .bind(revision.curated_revision_id)
       .first(),
   ).resolves.toEqual({ count: 1 });
@@ -2171,10 +1995,10 @@ test("all changed pinned revisions are marked before the run fails once", async 
   }
   const runId = `run_all_conflicts_${sequence}`;
   await insertParsingRun(runId);
-  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
+  await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), runId, now);
   await expect(
     applyPinnedCuratedRevisions(
-      env.CATALOGUE_DB,
+      catalogueStore(env.CATALOGUE_DB),
       runId,
       {
         contract: "card-keepr-catalogue-candidate@1",
@@ -2191,9 +2015,8 @@ test("all changed pinned revisions are marked before the run fails once", async 
       now,
     ),
   ).rejects.toThrow("curated_revision_reconfirmation_required");
-  const statuses = await env.CATALOGUE_DB.prepare(
-    "SELECT id, status FROM curated_revisions WHERE id IN (SELECT value FROM json_each(?)) ORDER BY id",
-  )
+  const statuses = await curatedQueries
+    .readCuratedRevisionsIdStatus(env.CATALOGUE_DB)
     .bind(JSON.stringify(createdIds))
     .all<{ id: string; status: string }>();
   expect(statuses.results).toHaveLength(2);
@@ -2210,11 +2033,8 @@ test("field absence is distinct from null and retirement restores exact absence"
     printed_rules_text: null,
     game_data: { profile: "one-piece@1", attributes: {} },
   };
-  await env.CATALOGUE_DB.prepare(
-    `INSERT INTO revision_printings (
-       catalogue_revision_id, printing_id, card_id, document_json
-     ) VALUES (?, ?, ?, ?)`,
-  )
+  await publishedCatalogueQueries
+    .insertRevisionPrintingsForPublicPrintingResponseValidatesFullDistributionContextObjects(env.CATALOGUE_DB)
     .bind(currentRevision, printingId, card.id, canonicalJson(printing))
     .run();
   const authored = {
@@ -2234,7 +2054,7 @@ test("field absence is distinct from null and retirement restores exact absence"
   });
   expect(validation.status, JSON.stringify(await validation.clone().json())).toBe(200);
   const created = await createCuratedRevision(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     {
       environment: "production",
       expected_current_revision_id: currentRevision,
@@ -2247,9 +2067,9 @@ test("field absence is distinct from null and retirement restores exact absence"
 
   const appliedRunId = `run_absence_applied_${sequence}`;
   await insertParsingRun(appliedRunId);
-  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, appliedRunId, now);
+  await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), appliedRunId, now);
   const applied = await applyPinnedCuratedRevisions(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     appliedRunId,
     {
       contract: "card-keepr-catalogue-candidate@1",
@@ -2266,20 +2086,20 @@ test("field absence is distinct from null and retirement restores exact absence"
   const stripped = stripCuratedRevisionEffects(applied);
   expect(Object.hasOwn(stripped.printings[0]!.game_data!.attributes, "illustration_types")).toBe(false);
   await env.CATALOGUE_DB.batch([
-    env.CATALOGUE_DB.prepare(
-      "UPDATE ingestion_runs SET state = 'failed', terminal_at = ?, failure_code = 'test_complete' WHERE id = ?",
-    ).bind(now, appliedRunId),
-    env.CATALOGUE_DB.prepare("UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1"),
+    ingestionQueries
+      .setIngestionRunsStateTerminalAtForFieldAbsenceDistinctFromNullRetirementRestoresExactAbsence(env.CATALOGUE_DB)
+      .bind(now, appliedRunId),
+    ingestionQueries.setOperationStateActiveIngestionRunIdForInstallApiSuite(env.CATALOGUE_DB),
   ]);
 
   const nullRunId = `run_absence_to_null_${sequence}`;
   await insertParsingRun(nullRunId);
-  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, nullRunId, now);
+  await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), nullRunId, now);
   const explicitNull = structuredClone(printing) as Record<string, unknown>;
   (explicitNull.game_data as { attributes: Record<string, unknown> }).attributes.illustration_types = null;
   await expect(
     applyPinnedCuratedRevisions(
-      env.CATALOGUE_DB,
+      catalogueStore(env.CATALOGUE_DB),
       nullRunId,
       {
         contract: "card-keepr-catalogue-candidate@1",
@@ -2291,11 +2111,11 @@ test("field absence is distinct from null and retirement restores exact absence"
     ),
   ).rejects.toThrow("curated_revision_reconfirmation_required");
 
-  const shown = (await showCuratedRevision(env.CATALOGUE_DB, created.document.curated_revision_id)) as {
+  const shown = (await showCuratedRevision(catalogueStore(env.CATALOGUE_DB), created.document.curated_revision_id)) as {
     revision: { event_version: number; pending_conflict: { digest: string } };
   };
   await retireCuratedRevision(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     created.document.curated_revision_id,
     {
       environment: "production",
@@ -2309,9 +2129,9 @@ test("field absence is distinct from null and retirement restores exact absence"
   );
   const restoredRunId = `run_absence_restored_${sequence}`;
   await insertParsingRun(restoredRunId);
-  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, restoredRunId, now);
+  await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), restoredRunId, now);
   const restored = await applyPinnedCuratedRevisions(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     restoredRunId,
     {
       contract: "card-keepr-catalogue-candidate@1",
@@ -2327,7 +2147,7 @@ test("field absence is distinct from null and retirement restores exact absence"
 test("retargeted supersession binds the old conflict and the replacement target's official digest", async () => {
   const authored = await proposal("/name", "Curated Name");
   const created = await createCuratedRevision(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     {
       environment: "production",
       expected_current_revision_id: currentRevision,
@@ -2339,10 +2159,10 @@ test("retargeted supersession binds the old conflict and the replacement target'
   );
   const runId = `run_retarget_${sequence}`;
   await insertParsingRun(runId);
-  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
+  await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), runId, now);
   await expect(
     applyPinnedCuratedRevisions(
-      env.CATALOGUE_DB,
+      catalogueStore(env.CATALOGUE_DB),
       runId,
       {
         contract: "card-keepr-catalogue-candidate@1",
@@ -2353,7 +2173,7 @@ test("retargeted supersession binds the old conflict and the replacement target'
       now,
     ),
   ).rejects.toThrow("curated_revision_reconfirmation_required");
-  await env.CATALOGUE_DB.prepare("UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1").run();
+  await ingestionQueries.setOperationStateActiveIngestionRunIdForInstallApiSuite(env.CATALOGUE_DB).run();
   const shown = await adminRequest(`/admin/v1/curated-revisions/${created.document.curated_revision_id}`);
   const inspected = (await shown.json()) as {
     revision: { pending_conflict: { digest: string }; event_version: number };
@@ -2385,7 +2205,7 @@ test("retargeted supersession binds the old conflict and the replacement target'
 test("exact reaffirmation, supersession, and retirement recover lifecycle without rewriting history", async () => {
   const authoredProposal = await proposal("/name", "Curated Name");
   const createdResult = await createCuratedRevision(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     {
       environment: "production",
       expected_current_revision_id: currentRevision,
@@ -2398,10 +2218,10 @@ test("exact reaffirmation, supersession, and retirement recover lifecycle withou
   const created = createdResult.document;
   const runId = `run_curated_lifecycle_${sequence}`;
   await insertParsingRun(runId);
-  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
+  await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), runId, now);
   await expect(
     applyPinnedCuratedRevisions(
-      env.CATALOGUE_DB,
+      catalogueStore(env.CATALOGUE_DB),
       runId,
       {
         contract: "card-keepr-catalogue-candidate@1",
@@ -2412,14 +2232,17 @@ test("exact reaffirmation, supersession, and retirement recover lifecycle withou
       now,
     ),
   ).rejects.toThrow("curated_revision_reconfirmation_required");
-  await env.CATALOGUE_DB.prepare("UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1").run();
+  await ingestionQueries.setOperationStateActiveIngestionRunIdForInstallApiSuite(env.CATALOGUE_DB).run();
 
-  const conflictDocument = (await showCuratedRevision(env.CATALOGUE_DB, created.curated_revision_id)) as {
+  const conflictDocument = (await showCuratedRevision(
+    catalogueStore(env.CATALOGUE_DB),
+    created.curated_revision_id,
+  )) as {
     events: { details: { conflict_digest?: string } }[];
   };
   const conflictDigest = conflictDocument.events.at(-1)!.details.conflict_digest!;
   const reaffirmed = await reaffirmCuratedRevision(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     created.curated_revision_id,
     {
       environment: "production",
@@ -2454,7 +2277,7 @@ test("exact reaffirmation, supersession, and retirement recover lifecycle withou
   };
   await expect(
     supersedeCuratedRevision(
-      env.CATALOGUE_DB,
+      catalogueStore(env.CATALOGUE_DB),
       created.curated_revision_id,
       {
         environment: "production",
@@ -2472,7 +2295,7 @@ test("exact reaffirmation, supersession, and retirement recover lifecycle withou
     code: "curated_revision_evidence_not_retained",
   });
   const superseded = await supersedeCuratedRevision(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     created.curated_revision_id,
     {
       environment: "production",
@@ -2490,7 +2313,7 @@ test("exact reaffirmation, supersession, and retirement recover lifecycle withou
   const replacementResult = superseded.document;
 
   const retired = await retireCuratedRevision(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     replacementResult.curated_revision_id,
     {
       environment: "production",
@@ -2565,7 +2388,7 @@ test("the Worker lifecycle endpoints fail closed on every mutation guard", async
     await expect(response.json()).resolves.toMatchObject({ code });
   }
 
-  await env.CATALOGUE_DB.prepare("UPDATE operation_state SET recovery_health = 'blocked' WHERE singleton = 1").run();
+  await ingestionQueries.setOperationStateRecoveryHealth(env.CATALOGUE_DB).run();
   const recovery = await adminRequest(retirePath, {
     ...retireInput,
     idempotency_key: `public-guards-recovery-${sequence}`,
@@ -2575,12 +2398,11 @@ test("the Worker lifecycle endpoints fail closed on every mutation guard", async
     code: "recovery_in_progress",
   });
 
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE operation_state
-     SET recovery_health = 'healthy', active_production_release_id = 'release_guard',
-         active_production_release_expires_at = '2099-01-01T00:00:00.000Z'
-     WHERE singleton = 1`,
-  ).run();
+  await ingestionQueries
+    .setOperationStateRecoveryHealthActiveProductionReleaseIdForWorkerLifecycleEndpointsFailClosedOnEveryMutationGuard(
+      env.CATALOGUE_DB,
+    )
+    .run();
   const release = await adminRequest(retirePath, {
     ...retireInput,
     idempotency_key: `public-guards-release-${sequence}`,
@@ -2590,11 +2412,11 @@ test("the Worker lifecycle endpoints fail closed on every mutation guard", async
     code: "release_not_idle",
   });
 
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE operation_state
-     SET active_production_release_id = NULL, active_production_release_expires_at = NULL
-     WHERE singleton = 1`,
-  ).run();
+  await ingestionQueries
+    .setOperationStateActiveProductionReleaseIdActiveProductionReleaseExpiresAtForWorkerLifecycleEndpointsFailClosedOnEveryMutationGuard(
+      env.CATALOGUE_DB,
+    )
+    .run();
   const activeRunId = `run_public_guard_active_${sequence}`;
   await insertParsingRun(activeRunId);
   const activeRun = await adminRequest(retirePath, {
@@ -2606,15 +2428,14 @@ test("the Worker lifecycle endpoints fail closed on every mutation guard", async
     code: "active_ingestion_run",
   });
   await env.CATALOGUE_DB.batch([
-    env.CATALOGUE_DB.prepare(
-      `UPDATE ingestion_runs SET state = 'failed', terminal_at = ?,
-       failure_code = 'test_complete'
-       WHERE id = ?`,
-    ).bind(now, activeRunId),
-    env.CATALOGUE_DB.prepare(
-      `UPDATE operation_state SET active_ingestion_run_id = NULL
-       WHERE singleton = 1 AND active_ingestion_run_id = ?`,
-    ).bind(activeRunId),
+    ingestionQueries
+      .setIngestionRunsStateTerminalAtForFieldAbsenceDistinctFromNullRetirementRestoresExactAbsence(env.CATALOGUE_DB)
+      .bind(now, activeRunId),
+    ingestionQueries
+      .setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStaleOwnersFenceCleanupRenewalWithundefined(
+        env.CATALOGUE_DB,
+      )
+      .bind(activeRunId),
   ]);
 
   const replacement = {
@@ -2723,18 +2544,12 @@ test("supersession rolls back both lifecycle sides when replacement persistence 
     rationale: "Replace both lifecycle sides atomically.",
     idempotency_key: `atomic-supersession-${sequence}`,
   };
-  await env.CATALOGUE_DB.prepare(
-    `CREATE TRIGGER inject_curated_replacement_failure
-     BEFORE INSERT ON curated_revisions
-     BEGIN
-       SELECT RAISE(ABORT, 'injected_replacement_failure');
-     END`,
-  ).run();
+  await curatedQueries.createInjectCuratedReplacementFailure(env.CATALOGUE_DB).run();
   const failed = await adminRequest(
     `/admin/v1/curated-revisions/${created.curated_revision_id}/supersede`,
     supersedeInput,
   );
-  await env.CATALOGUE_DB.prepare("DROP TRIGGER inject_curated_replacement_failure").run();
+  await publishedCatalogueQueries.dropInjectCuratedReplacementFailure(env.CATALOGUE_DB).run();
   expect(failed.status).toBe(500);
   await expect(failed.json()).resolves.toMatchObject({ code: "internal_error" });
 
@@ -2748,24 +2563,12 @@ test("supersession rolls back both lifecycle sides when replacement persistence 
     events: [{ type: "authored", event_version: 1 }],
   });
   await expect(
-    env.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count
-     FROM curated_revision_idempotency
-     WHERE idempotency_key = ?`,
-    )
-      .bind(supersedeInput.idempotency_key)
-      .first(),
+    curatedQueries.countCuratedRevisionIdempotencyCount(env.CATALOGUE_DB).bind(supersedeInput.idempotency_key).first(),
   ).resolves.toEqual({
     count: 0,
   });
   await expect(
-    env.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count
-     FROM curated_revisions
-     WHERE json_extract(proposal_json, '$.supersedes_revision_id') = ?`,
-    )
-      .bind(created.curated_revision_id)
-      .first(),
+    curatedQueries.countCuratedRevisionsCount(env.CATALOGUE_DB).bind(created.curated_revision_id).first(),
   ).resolves.toEqual({ count: 0 });
 
   const committed = await adminRequest(
@@ -2799,12 +2602,13 @@ test("supersession rolls back both lifecycle sides when replacement persistence 
 test("an empty curated revision set is still pinned with its digest", async () => {
   const runId = `run_curated_empty_${sequence}`;
   await insertParsingRun(runId);
-  const pin = await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
+  const pin = await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), runId, now);
   expect(pin.revision_ids).toEqual([]);
   await expect(
-    env.CATALOGUE_DB.prepare(
-      "SELECT revision_ids_json, set_digest, pinned_at FROM ingestion_run_curated_revision_sets WHERE ingestion_run_id = ?",
-    )
+    ingestionQueries
+      .readIngestionRunCuratedRevisionSetsRevisionIdsJsonSetDigestForEmptyCuratedRevisionSetStillPinnedDigest(
+        env.CATALOGUE_DB,
+      )
       .bind(runId)
       .first(),
   ).resolves.toEqual({
@@ -2814,11 +2618,9 @@ test("an empty curated revision set is still pinned with its digest", async () =
   });
 
   await expect(
-    env.CATALOGUE_DB.prepare("UPDATE ingestion_run_curated_revision_sets SET set_digest = ? WHERE ingestion_run_id = ?")
-      .bind("f".repeat(64), runId)
-      .run(),
+    ingestionQueries.setIngestionRunCuratedRevisionSetsSetDigest(env.CATALOGUE_DB).bind("f".repeat(64), runId).run(),
   ).rejects.toThrow("curated_revision_pin_set_immutable");
-  const replay = await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, "2026-08-06T00:00:00.000Z");
+  const replay = await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), runId, "2026-08-06T00:00:00.000Z");
   expect(replay).toEqual(pin);
 });
 
@@ -2845,7 +2647,7 @@ test("a curated relationship carries owner provenance and never invents Official
     supersedes_revision_id: null,
   };
   const created = await createCuratedRevision(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     {
       environment: "production",
       expected_current_revision_id: currentRevision,
@@ -2859,9 +2661,9 @@ test("a curated relationship carries owner provenance and never invents Official
   const mutation = created.document;
   const runId = `run_relationship_${sequence}`;
   await insertParsingRun(runId);
-  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
+  await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), runId, now);
   const applied = await applyPinnedCuratedRevisions(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     runId,
     {
       contract: "card-keepr-catalogue-candidate@1",
@@ -2953,7 +2755,7 @@ test("a curated absence derives one relationship state and retains Official Sour
     supersedes_revision_id: null,
   };
   const created = await createCuratedRevision(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     {
       environment: "production",
       expected_current_revision_id: currentRevision,
@@ -2966,9 +2768,9 @@ test("a curated absence derives one relationship state and retains Official Sour
   expect(created.created).toBe(true);
   const runId = `run_relationship_absence_${sequence}`;
   await insertParsingRun(runId);
-  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
+  await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), runId, now);
   const applied = await applyPinnedCuratedRevisions(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     runId,
     {
       contract: "card-keepr-catalogue-candidate@1",
@@ -3095,14 +2897,13 @@ function digimonAttributes(): Record<string, unknown> {
 
 async function insertParsingRun(runId: string, selectedGames: readonly string[] = ["one-piece"]) {
   await env.CATALOGUE_DB.batch([
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, idempotency_key, candidate_json,
-        progress_json, warnings_json, approval_history_json
-      ) VALUES (?, 'parsing', ?, ?, ?, ?, '{}',
-        '{"completed_stages":["planning","collecting"],"current_stage":"parsing"}', '[]', '[]')`,
-    ).bind(runId, canonicalJson(selectedGames), now, currentRevision, `parse-${runId}`),
-    env.CATALOGUE_DB.prepare("UPDATE operation_state SET active_ingestion_run_id = ? WHERE singleton = 1").bind(runId),
+    ingestionQueries
+      .insertIngestionRunsForInsertParsingRun(env.CATALOGUE_DB)
+      .bind(runId, canonicalJson(selectedGames), now, currentRevision, `parse-${runId}`),
+    ingestionQueries
+      .setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        env.CATALOGUE_DB,
+      )
+      .bind(runId),
   ]);
 }

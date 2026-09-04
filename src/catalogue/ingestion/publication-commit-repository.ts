@@ -1,11 +1,11 @@
-import { ingestionRunTransitionSql } from "../shared";
+import { type CatalogueStore, ingestionRunTransitionSql, repositoryStatements } from "../shared";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
 export function recordNoChangeResultStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; revisionId: string; candidateDigest: string; checkedAt: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO ingestion_no_change_results (
             ingestion_run_id,
             catalogue_revision_id,
@@ -16,7 +16,7 @@ export function recordNoChangeResultStatement(
 }
 
 export function approveNoChangeRunStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     approvalJson: string;
     idempotencyKey: string;
@@ -25,7 +25,7 @@ export function approveNoChangeRunStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
           SET state = 'publishing',
               approval_json = ?,
@@ -37,10 +37,10 @@ export function approveNoChangeRunStatement(
 }
 
 export function publishNoChangeRunStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ terminalAt: string; progressJson: string; revisionId: string; checkedAt: string; runId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
           SET state = 'published',
               terminal_at = ?,
@@ -53,10 +53,10 @@ export function publishNoChangeRunStatement(
 }
 
 export function publishCardDocumentsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; documentsJson: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO revision_cards (
            catalogue_revision_id, card_id, document_json
          )
@@ -67,10 +67,10 @@ export function publishCardDocumentsStatement(
 }
 
 export function publishCardQueryDocumentsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; documentsJson: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO revision_card_query_documents (
            catalogue_revision_id, card_id, summary_json, search_text
          )
@@ -82,10 +82,10 @@ export function publishCardQueryDocumentsStatement(
 }
 
 export function publishCardSearchTermsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ termsJson: string; revisionId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO revision_card_search_terms (
            catalogue_revision_id, card_id, term, sort_game,
            sort_identity_kind, sort_identity_value, sort_id
@@ -102,10 +102,10 @@ export function publishCardSearchTermsStatement(
 }
 
 export function publishCardSearchChunksStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; chunksJson: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO revision_card_search_chunks (
            catalogue_revision_id, card_id, field_ordinal,
            chunk_ordinal, search_text
@@ -119,10 +119,10 @@ export function publishCardSearchChunksStatement(
 }
 
 export function publishPrintingDocumentsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; documentsJson: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO revision_printings (
            catalogue_revision_id, printing_id, card_id, document_json
          )
@@ -134,10 +134,10 @@ export function publishPrintingDocumentsStatement(
 }
 
 export function publishReconciledPrintingImagesStatement(
-  database: D1Database,
+  database: CatalogueStore,
   imagesJson: string,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO reconciled_printing_images (
            id, printing_id, role, media_type, width, height,
            content_sha256, content_byte_length, object_key
@@ -167,10 +167,10 @@ export function publishReconciledPrintingImagesStatement(
 }
 
 export function publishRevisionPrintingImagesStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; imagesJson: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO revision_printing_images (
            catalogue_revision_id, image_id, printing_id,
            media_type, content_sha256, content_byte_length, object_key
@@ -187,7 +187,7 @@ export function publishRevisionPrintingImagesStatement(
 }
 
 export function registerCatalogueRevisionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     revisionId: string;
     runId: string;
@@ -197,7 +197,7 @@ export function registerCatalogueRevisionStatement(
     candidateDigest: string | null;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO catalogue_revisions (
           id,
           ingestion_run_id,
@@ -216,16 +216,19 @@ export function registerCatalogueRevisionStatement(
     );
 }
 
-export function registerAvailableQueryRevisionStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database
+export function registerAvailableQueryRevisionStatement(
+  database: CatalogueStore,
+  revisionId: string,
+): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`INSERT INTO catalogue_query_revisions (
            catalogue_revision_id, state, repaired_through_card_id
          ) VALUES (?, 'available', NULL)`)
     .bind(revisionId);
 }
 
-export function archiveOldQueryRevisionsStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database
+export function archiveOldQueryRevisionsStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`WITH RECURSIVE retained(catalogue_revision_id, depth) AS (
          SELECT ?, 0
          UNION ALL
@@ -249,8 +252,8 @@ export function archiveOldQueryRevisionsStatement(database: D1Database, revision
     .bind(revisionId);
 }
 
-export function deleteArchivedCardQueryDocumentsStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`DELETE FROM revision_card_query_documents
+export function deleteArchivedCardQueryDocumentsStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`DELETE FROM revision_card_query_documents
        WHERE catalogue_revision_id IN (
          SELECT catalogue_revision_id
          FROM catalogue_query_revisions
@@ -259,10 +262,10 @@ export function deleteArchivedCardQueryDocumentsStatement(database: D1Database):
 }
 
 export function registerVerifiedCatalogueExportStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; manifestKey: string; manifestDigest: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO catalogue_exports (
           catalogue_revision_id,
           manifest_key,
@@ -273,10 +276,10 @@ export function registerVerifiedCatalogueExportStatement(
 }
 
 export function advanceCatalogueRevisionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; publishedAt: string; expectedRevisionId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_state
         SET current_revision_id = ?, published_at = ?
         WHERE singleton = 1
@@ -285,7 +288,7 @@ export function advanceCatalogueRevisionStatement(
 }
 
 export function publishApprovedRunStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     revisionId: string;
     manifestDigest: string;
@@ -294,7 +297,7 @@ export function publishApprovedRunStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
         SET state = 'published',
             published_revision_id = ?,
@@ -317,7 +320,7 @@ export function publishApprovedRunStatement(
 }
 
 export function createPublicationBackupStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     idempotencyKey: string;
     requestJson: string;
@@ -328,7 +331,7 @@ export function createPublicationBackupStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO catalogue_backup_attempts (
          idempotency_key, request_json, owner_token, catalogue_revision_id,
          state, object_key, started_at, publication_ingestion_run_id
@@ -344,7 +347,7 @@ export function createPublicationBackupStatement(
     );
 }
 
-export function degradeRecoveryAfterPublicationStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE operation_state SET recovery_health = 'degraded'
+export function degradeRecoveryAfterPublicationStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`UPDATE operation_state SET recovery_health = 'degraded'
        WHERE singleton = 1 AND recovery_health = 'healthy'`);
 }

@@ -1,11 +1,14 @@
-export function enforceRestoreGuardStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE operation_state SET recovery_health = 'blocked'
+import { type CatalogueStore, repositoryStatements } from "../shared";
+export function enforceRestoreGuardStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`UPDATE operation_state SET recovery_health = 'blocked'
      WHERE singleton = 1 AND recovery_restore_guard = 'blocked'
        AND recovery_health <> 'blocked'`);
 }
 
-export function recoveryOperationStateStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT catalogue.current_revision_id, operation.active_ingestion_run_id,
+export function recoveryOperationStateStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(
+    database,
+  ).prepare(`SELECT catalogue.current_revision_id, operation.active_ingestion_run_id,
             operation.active_release_id AS active_production_release_id,
             operation.active_release_expires_at AS active_production_release_expires_at,
             operation.recovery_health, operation.active_recovery_id
@@ -15,10 +18,10 @@ export function recoveryOperationStateStatement(database: D1Database): D1Prepare
 }
 
 export function guardRecoveryStartStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ expectedCurrentRevisionId: string; observedAt: string; linkedOperationId: string | null }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN EXISTS (
            SELECT 1 FROM catalogue_state AS catalogue
            JOIN operation_state AS operation ON operation.singleton = 1
@@ -44,7 +47,7 @@ export function guardRecoveryStartStatement(
 }
 
 export function insertRecoveryOperationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     recoveryId: string;
     method: "time_travel" | "replacement_database";
@@ -63,7 +66,7 @@ export function insertRecoveryOperationStatement(
     observedAt: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO catalogue_recovery_operations (
            id, state, method, request_json, idempotency_key,
            target_revision_id, target_bookmark, target_digest,
@@ -92,10 +95,10 @@ export function insertRecoveryOperationStatement(
 }
 
 export function reserveRecoveryOperationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ recoveryId: string; observedAt: string; linkedOperationId: string | null }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE operation_state
          SET recovery_health = 'blocked', active_recovery_id = ?,
              recovery_restore_guard = 'blocked'
@@ -117,10 +120,10 @@ export function reserveRecoveryOperationStatement(
 }
 
 export function guardRecoveryReservationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ recoveryId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN recovery_health = 'blocked'
              AND active_recovery_id = ?
            THEN 1 ELSE json_extract('invalid', '$') END
@@ -129,7 +132,7 @@ export function guardRecoveryReservationStatement(
 }
 
 export function completeRecoveryVerificationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     verificationJson: string;
     idempotencyKey: string;
@@ -138,7 +141,7 @@ export function completeRecoveryVerificationStatement(
     recoveryId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_recovery_operations
        SET state = 'awaiting_acceptance', verification_json = ?,
            verification_idempotency_key = ?,
@@ -148,15 +151,15 @@ export function completeRecoveryVerificationStatement(
     .bind(input.verificationJson, input.idempotencyKey, input.requestDigest, input.observedAt, input.recoveryId);
 }
 
-export function recoveryCurrentRevisionStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare("SELECT current_revision_id FROM catalogue_state WHERE singleton = 1");
+export function recoveryCurrentRevisionStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare("SELECT current_revision_id FROM catalogue_state WHERE singleton = 1");
 }
 
 export function guardRecoveryAcceptanceStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ recoveryId: string; target_revision_id: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN EXISTS (
            SELECT 1 FROM catalogue_recovery_operations AS recovery
            JOIN catalogue_state AS catalogue ON catalogue.singleton = 1
@@ -172,10 +175,10 @@ export function guardRecoveryAcceptanceStatement(
 }
 
 export function acceptRecoveryOperationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ idempotencyKey: string; requestDigest: string; observedAt: string; recoveryId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_recovery_operations
          SET state = 'accepted', acceptance_idempotency_key = ?,
              acceptance_request_digest = ?, accepted_at = ?
@@ -184,20 +187,20 @@ export function acceptRecoveryOperationStatement(
 }
 
 export function confirmRecoveredCatalogueRevisionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ target_revision_id: string; observedAt: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_state SET current_revision_id = ?, published_at = ?
          WHERE singleton = 1 AND current_revision_id = ?`)
     .bind(input.target_revision_id, input.observedAt, input.target_revision_id);
 }
 
 export function releaseAcceptedRecoveryStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ recoveryId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE operation_state
          SET recovery_health = 'healthy', active_recovery_id = NULL,
              recovery_restore_guard = 'clear'
@@ -207,10 +210,10 @@ export function releaseAcceptedRecoveryStatement(
 }
 
 export function guardAcceptedRecoveryStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ recoveryId: string; idempotencyKey: string; requestDigest: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN EXISTS (
            SELECT 1 FROM catalogue_recovery_operations AS recovery
            JOIN catalogue_state AS catalogue ON catalogue.singleton = 1
@@ -226,16 +229,16 @@ export function guardAcceptedRecoveryStatement(
     .bind(input.recoveryId, input.idempotencyKey, input.requestDigest);
 }
 
-export function recoveryGuardStateStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT recovery_health, active_recovery_id, recovery_restore_guard
+export function recoveryGuardStateStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`SELECT recovery_health, active_recovery_id, recovery_restore_guard
      FROM operation_state WHERE singleton = 1`);
 }
 
 export function guardRecoveryReleaseStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ id: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN recovery_health = 'blocked'
              AND active_recovery_id = ?
              AND recovery_restore_guard = 'blocked'
@@ -245,10 +248,10 @@ export function guardRecoveryReleaseStatement(
 }
 
 export function clearBlockedRecoveryStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ id: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE operation_state
          SET recovery_health = 'healthy', active_recovery_id = NULL,
              recovery_restore_guard = 'clear'
@@ -258,8 +261,8 @@ export function clearBlockedRecoveryStatement(
     .bind(input.id);
 }
 
-export function guardHealthyRecoveryStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT CASE WHEN recovery_health = 'healthy'
+export function guardHealthyRecoveryStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`SELECT CASE WHEN recovery_health = 'healthy'
              AND active_recovery_id IS NULL
              AND recovery_restore_guard = 'clear'
            THEN 1 ELSE json_extract('invalid', '$') END
@@ -267,10 +270,10 @@ export function guardHealthyRecoveryStatement(database: D1Database): D1PreparedS
 }
 
 export function verifiedBackupSchemaEvidenceStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ idempotency_key: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT backup.catalogue_revision_id, backup.d1_bookmark,
             backup.manifest_sha256, backup.schema_migration_level,
             schema_state.migration_level AS current_schema_migration_level
@@ -280,15 +283,15 @@ export function verifiedBackupSchemaEvidenceStatement(
     .bind(input.idempotency_key);
 }
 
-export function recoveryEvidenceCurrentRevisionStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare("SELECT current_revision_id FROM catalogue_state WHERE singleton = 1");
+export function recoveryEvidenceCurrentRevisionStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare("SELECT current_revision_id FROM catalogue_state WHERE singleton = 1");
 }
 
 export function verifiedRecoveryBackupStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ backupAttemptId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT idempotency_key, catalogue_revision_id, object_key, d1_bookmark,
             manifest_key, manifest_sha256, content_sha256, export_bytes,
             schema_migration_level, disposable_database_id,
@@ -301,10 +304,10 @@ export function verifiedRecoveryBackupStatement(
 }
 
 export function recoveryBackupSchemaStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ backupAttemptId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT backup.schema_migration_level, schema_state.migration_level
        FROM catalogue_backup_attempts AS backup
        JOIN catalogue_schema_state AS schema_state ON schema_state.singleton = 1
@@ -313,7 +316,7 @@ export function recoveryBackupSchemaStatement(
 }
 
 export function insertRecoveryJournalStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     id: string;
     state: string;
@@ -348,7 +351,7 @@ export function insertRecoveryJournalStatement(
     failed_at: string | null;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO catalogue_recovery_operations (
        id, state, method, request_json, idempotency_key,
        target_revision_id, target_bookmark, target_digest,
@@ -399,10 +402,10 @@ export function insertRecoveryJournalStatement(
 }
 
 export function restoreRecoveryReservationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ id: string; linked_operation_id: string | null }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE operation_state
      SET recovery_health = 'blocked', active_recovery_id = ?,
          recovery_restore_guard = 'blocked'
@@ -413,25 +416,25 @@ export function restoreRecoveryReservationStatement(
 }
 
 export function rehydratedBackupStateStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ idempotency_key: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare("SELECT state FROM catalogue_backup_attempts WHERE idempotency_key = ?")
     .bind(input.idempotency_key);
 }
 
 export function startRehydratedBackupExportStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ idempotency_key: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare("UPDATE catalogue_backup_attempts SET state = 'exporting' WHERE idempotency_key = ? AND state = 'pending'")
     .bind(input.idempotency_key);
 }
 
 export function restoreRehydratedBackupEvidenceStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     d1_bookmark: string;
     manifest_key: string;
@@ -444,7 +447,7 @@ export function restoreRehydratedBackupEvidenceStatement(
     idempotency_key: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_backup_attempts
        SET state = 'restoring_verification', d1_bookmark = ?,
            manifest_key = ?, content_sha256 = ?, manifest_sha256 = ?,
@@ -466,10 +469,10 @@ export function restoreRehydratedBackupEvidenceStatement(
 }
 
 export function startRehydratedBackupVerificationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ idempotency_key: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_backup_attempts
        SET state = 'verifying', restore_phase = 'imported'
        WHERE idempotency_key = ? AND state = 'restoring_verification'`)
@@ -477,10 +480,10 @@ export function startRehydratedBackupVerificationStatement(
 }
 
 export function completeRehydratedBackupStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ completed_at: string; idempotency_key: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_backup_attempts
        SET state = 'verified', completed_at = ?, restore_phase = 'verified'
        WHERE idempotency_key = ? AND state = 'verifying'`)
@@ -488,26 +491,26 @@ export function completeRehydratedBackupStatement(
 }
 
 export function linkedRecoveryOperationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ linkedOperationId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT id FROM catalogue_recovery_operations
        WHERE linked_operation_id = ? LIMIT 1`)
     .bind(input.linkedOperationId);
 }
 
 export function transitionRecoveryOperationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ to: string; recoveryId: string; from: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare("UPDATE catalogue_recovery_operations SET state = ? WHERE id = ? AND state = ?")
     .bind(input.to, input.recoveryId, input.from);
 }
 
 export function startRecoveryValidationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     restoredBookmark: string;
     undoBookmark: string | null;
@@ -517,7 +520,7 @@ export function startRecoveryValidationStatement(
     recoveryId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_recovery_operations
      SET state = 'validating', restored_bookmark = ?, undo_bookmark = ?,
          restored_database_id = ?, retained_database_id = ?, restored_at = ?
@@ -533,10 +536,10 @@ export function startRecoveryValidationStatement(
 }
 
 export function failRecoveryOperationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ code: string; observedAt: string; recoveryId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_recovery_operations
      SET state = 'failed', failure_code = ?, failure_detail = ?, failed_at = ?
      WHERE id = ? AND state IN (
@@ -546,17 +549,19 @@ export function failRecoveryOperationStatement(
 }
 
 export function recoveryOperationByIdStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ recoveryId: string }>,
 ): D1PreparedStatement {
-  return database.prepare("SELECT * FROM catalogue_recovery_operations WHERE id = ?").bind(input.recoveryId);
+  return repositoryStatements(database)
+    .prepare("SELECT * FROM catalogue_recovery_operations WHERE id = ?")
+    .bind(input.recoveryId);
 }
 
 export function recoveryOperationByIdempotencyStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ idempotencyKey: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare("SELECT * FROM catalogue_recovery_operations WHERE idempotency_key = ?")
     .bind(input.idempotencyKey);
 }

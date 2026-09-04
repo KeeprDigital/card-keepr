@@ -1,9 +1,9 @@
-import { canonicalJson, sha256Text } from "../shared";
+import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import {
   type BackupDispatchRow,
-  type OutstandingBackupDispatchRow,
   backupDispatchStatusStatement,
   backupWorkflowRequestStatement,
+  type OutstandingBackupDispatchRow,
   outstandingBackupDispatchesStatement,
   pendingBackupDispatchStatement,
 } from "./backup-dispatch-repository";
@@ -11,7 +11,7 @@ import {
 export const maximumBackupDispatchAttempts = 3;
 
 export async function publicationBackupDispatchStatements(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
   key: string,
   at: string,
@@ -32,7 +32,10 @@ export async function publicationBackupDispatchStatements(
   ];
 }
 
-export async function backupDispatchStatus(database: D1Database, key: string): Promise<Record<string, unknown> | null> {
+export async function backupDispatchStatus(
+  database: CatalogueStore,
+  key: string,
+): Promise<Record<string, unknown> | null> {
   const row = await backupDispatchStatusStatement(database, key).first<BackupDispatchRow>();
   if (row === null) return null;
   return {
@@ -54,7 +57,7 @@ export async function backupDispatchStatus(database: D1Database, key: string): P
   };
 }
 
-export async function outstandingBackupDispatches(database: D1Database): Promise<Record<string, unknown>[]> {
+export async function outstandingBackupDispatches(database: CatalogueStore): Promise<Record<string, unknown>[]> {
   const rows = await outstandingBackupDispatchesStatement(database).all<OutstandingBackupDispatchRow>();
   const statuses = await Promise.all(
     rows.results.map(async ({ idempotency_key }) => ({

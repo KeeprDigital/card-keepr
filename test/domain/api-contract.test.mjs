@@ -1,3 +1,5 @@
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence.ts";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue.ts";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -373,14 +375,8 @@ test("the baseline registers exactly the installed adapter versions immutably", 
     }))
     .sort((left, right) => left.adapter_version.localeCompare(right.adapter_version));
   const assertVersionSet = (database) => {
-    const versions = database
-      .prepare(
-        `SELECT adapter_version, source_lineage, supported_game,
-              game_profile_version, parser_contract, adapter_origin,
-              request_capacity
-       FROM source_adapter_versions
-       ORDER BY adapter_version`,
-      )
+    const versions = sourceEvidenceQueries
+      .readSourceAdapterVersionsAdapterVersionSourceLineage(database)
       .all()
       .map((row) => ({ ...row }));
     assert.deepEqual(versions, expected);
@@ -409,8 +405,8 @@ test("the baseline registers exactly the installed adapter versions immutably", 
         ),
       /source_adapter_version_immutable/u,
     );
-    assert.deepEqual(database.prepare("PRAGMA foreign_key_check").all(), []);
-    assert.equal(database.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
+    assert.deepEqual(publishedCatalogueQueries.inspectForeignKeyCheck(database).all(), []);
+    assert.equal(publishedCatalogueQueries.inspectIntegrityCheck(database).get().integrity_check, "ok");
   };
 
   const fresh = new DatabaseSync(":memory:");

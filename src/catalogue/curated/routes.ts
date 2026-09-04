@@ -1,6 +1,6 @@
-import { route, type RouteContext } from "../../http/routes";
-import { AdministrationProblem } from "../shared";
-import { readAdministrationBody, requiredString, assertOnlyFields } from "../../http/administration";
+import { assertOnlyFields, readAdministrationBody, requiredString } from "../../http/administration";
+import { type RouteContext, route } from "../../http/routes";
+import { AdministrationProblem, type CatalogueStore } from "../shared";
 import {
   createCuratedRevision,
   listCuratedRevisions,
@@ -12,7 +12,7 @@ import {
 } from "./curated-revisions";
 
 type Environment = {
-  CATALOGUE_DB: D1Database;
+  CATALOGUE_DB: CatalogueStore;
 };
 type Context = RouteContext<Environment> & { observedAt: string };
 

@@ -1,6 +1,7 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 /** Extract scalar Game Profile leaves once, preserving array membership without positions. */
-export function cardAttributeProjectionStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database
+export function cardAttributeProjectionStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`
     INSERT INTO revision_card_attributes (catalogue_revision_id, card_id, profile, attribute, value)
     WITH RECURSIVE attributes(catalogue_revision_id, card_id, profile, attribute, value, kind) AS (

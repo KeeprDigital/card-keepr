@@ -1,3 +1,5 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import { env } from "cloudflare:workers";
 import { expect } from "vitest";
 import {
@@ -30,43 +32,24 @@ export async function retainCapturedDiscoveryRoot(
   const objectKey = `source-snapshots/${snapshotId}.bin`;
   await env.EVIDENCE_OBJECTS.put(objectKey, bytes);
   await env.CATALOGUE_DB.batch([
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO source_fetch_attempts (
-         id, ingestion_run_id, request_id, attempt_number,
-         requested_at, completed_at, outcome, http_status,
-         response_headers_json, retry_after_ms, diagnostic
-       ) VALUES (?, ?, ?, 1, '2026-08-07T00:00:00.000Z',
-         '2026-08-07T00:00:01.000Z', 'success', 200, '{}', NULL, NULL)`,
-    ).bind(fetchId, runId, requestId),
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO source_snapshots (
-         id, ingestion_run_id, request_id, fetch_attempt_id,
-         request_method, request_url, request_headers_json,
-         representation_fingerprint, response_vary_json, retrieved_at,
-         http_status, response_headers_json, media_type, content_digest,
-         content_byte_length, content_object_key, source_lineage,
-         supported_game, game_profile_version, adapter_version,
-         reused_source_snapshot_id
-       ) VALUES (?, ?, ?, ?, 'GET', ?, ?, ?, '[]',
-         '2026-08-07T00:00:01.000Z', 200, '{}', 'text/html', ?, ?, ?,
-         'fusion-world-en', 'fusion-world', 'fusion-world@1',
-         'fusion-world-en@9', NULL)`,
-    ).bind(
-      snapshotId,
-      runId,
-      requestId,
-      fetchId,
-      url,
-      JSON.stringify({ accept: "text/html" }),
-      digest,
-      digest,
-      bytes.byteLength,
-      objectKey,
-    ),
-    env.CATALOGUE_DB.prepare(
-      `UPDATE source_requests SET state = 'captured', source_snapshot_id = ?
-       WHERE ingestion_run_id = ? AND request_id = ? AND state = 'pending'`,
-    ).bind(snapshotId, runId, requestId),
+    sourceEvidenceQueries
+      .insertSourceFetchAttemptsForRetainCapturedDiscoveryRoot(env.CATALOGUE_DB)
+      .bind(fetchId, runId, requestId),
+    sourceEvidenceQueries
+      .insertSourceSnapshotsForRetainCapturedDiscoveryRoot(env.CATALOGUE_DB)
+      .bind(
+        snapshotId,
+        runId,
+        requestId,
+        fetchId,
+        url,
+        JSON.stringify({ accept: "text/html" }),
+        digest,
+        digest,
+        bytes.byteLength,
+        objectKey,
+      ),
+    sourceEvidenceQueries.setSourceRequestsStateSourceSnapshotId(env.CATALOGUE_DB).bind(snapshotId, runId, requestId),
   ]);
   return snapshotId;
 }
@@ -81,35 +64,8 @@ export async function fillLineageToCapacity(
   fillerState: "pending" | "observed" = "pending",
 ): Promise<void> {
   await env.CATALOGUE_DB.batch([
-    env.CATALOGUE_DB.prepare(
-      `WITH RECURSIVE filler(n) AS (
-         SELECT 1 UNION ALL SELECT n + 1 FROM filler WHERE n < ?2
-       )
-       INSERT INTO source_discovery_request_plans (
-         ingestion_run_id, request_id, sequence_number, parent_request_id,
-         method, url, request_headers_json, representation_fingerprint,
-         request_role
-       )
-       SELECT ?1, 'fusion-world-en:detail:' || printf('%08d', n), 1000 + n,
-              ?3, 'GET',
-              'https://www.dbs-cardgame.com/fw/en/cardlist/detail/' || n,
-              '{}', printf('%064x', n), 'detail'
-       FROM filler`,
-    ).bind(runId, fusionWorldRequestCapacity - 1, parentRequestId),
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO source_requests (
-         ingestion_run_id, request_id, sequence_number, method, url,
-         request_headers_json, representation_fingerprint, state,
-         source_snapshot_id, failure_code, request_role,
-         discovered_from_request_id
-       )
-       SELECT ingestion_run_id, request_id, sequence_number, method, url,
-              request_headers_json, representation_fingerprint, ?2,
-              NULL, NULL, request_role, parent_request_id
-       FROM source_discovery_request_plans
-       WHERE ingestion_run_id = ?1
-         AND request_id LIKE 'fusion-world-en:detail:%'`,
-    ).bind(runId, fillerState),
+    sourceEvidenceQueries.inspectFiller(env.CATALOGUE_DB).bind(runId, fusionWorldRequestCapacity - 1, parentRequestId),
+    sourceEvidenceQueries.insertSourceRequestsForFillLineageToCapacity(env.CATALOGUE_DB).bind(runId, fillerState),
   ]);
 }
 
@@ -126,8 +82,8 @@ export async function pauseRunAtCapacity(idempotencyKey: string, fillerState: "p
   });
   expect(created.status).toBe(201);
   const run = await created.json<{ id: string }>();
-  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  const storedRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+  const root = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
   if (root === undefined) throw new Error("discovery root request is absent");
   await fillLineageToCapacity(run.id, root.request_id, fillerState);
   const snapshotId = await retainCapturedDiscoveryRoot(
@@ -137,7 +93,7 @@ export async function pauseRunAtCapacity(idempotencyKey: string, fillerState: "p
     Buffer.from(retainedFusionWorldDiscovery.body_base64, "base64"),
   );
   await expect(
-    parseCapturedRequest(env.CATALOGUE_DB, env.EVIDENCE_OBJECTS, storedRun, root, snapshotId),
+    parseCapturedRequest(catalogueStore(env.CATALOGUE_DB), env.EVIDENCE_OBJECTS, storedRun, root, snapshotId),
   ).resolves.toMatchObject({ kind: "done", failure_code: null });
   return { runId: run.id, storedRun, root, snapshotId };
 }

@@ -1,17 +1,12 @@
-import {
-  startEvidenceRun,
-  type StartEvidenceRunRequest,
-} from "../../../src/catalogue/source-evidence";
-import {
-  startFixtureRun,
-  type StartRunRequest,
-} from "../../../src/catalogue/ingestion";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { startEvidenceRun, type StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
+import { startFixtureRun, type StartRunRequest } from "../../../src/catalogue/ingestion";
 
 export function injectFixtureEvidencePlan(
   database: D1Database,
   request: StartEvidenceRunRequest,
 ): Promise<Record<string, unknown>> {
-  return startEvidenceRun(database, request, "synthetic_fixture");
+  return startEvidenceRun(catalogueStore(database), request, "synthetic_fixture");
 }
 
 export function injectFixturePublication(
@@ -20,10 +15,5 @@ export function injectFixturePublication(
   request: StartRunRequest,
   observedAt?: string,
 ): Promise<Record<string, unknown>> {
-  return startFixtureRun(
-    database,
-    catalogueExports,
-    request,
-    observedAt,
-  );
+  return startFixtureRun(catalogueStore(database), catalogueExports, request, observedAt);
 }

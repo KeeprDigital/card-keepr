@@ -1,3 +1,4 @@
+import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { expect, test } from "vitest";
@@ -12,18 +13,12 @@ test("Printing projection backfills retained bare and enveloped documents and cu
   );
   await seedPrintingQueryFixture(testEnv.CATALOGUE_DB);
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE revision_cards SET document_json = json_object('data', json(document_json)) WHERE catalogue_revision_id = 'catrev_products'`,
+    publishedCatalogueQueries.setRevisionCardsDocumentJson(testEnv.CATALOGUE_DB),
+    publishedCatalogueQueries.insertRevisionPrintings(testEnv.CATALOGUE_DB),
+    publishedCatalogueQueries.insertRevisionProducts(testEnv.CATALOGUE_DB),
+    publishedCatalogueQueries.insertRevisionProductsForPrintingProjectionBackfillsRetainedBareEnvelopedDocumentsCurrentProduct(
+      testEnv.CATALOGUE_DB,
     ),
-    testEnv.CATALOGUE_DB.prepare(`INSERT INTO revision_printings
-      SELECT catalogue_revision_id, 'printing_enveloped', card_id, json_object('data', json_set(document_json, '$.id', 'printing_enveloped'))
-      FROM revision_printings WHERE printing_id = 'printing_st15_event'`),
-    testEnv.CATALOGUE_DB.prepare(`INSERT INTO revision_products
-      SELECT catalogue_revision_id, 'product_empty', supported_game, NULL, 'No regions', '', '[]', '{}'
-      FROM revision_products WHERE product_id = 'product_st15'`),
-    testEnv.CATALOGUE_DB.prepare(`INSERT INTO revision_products
-      SELECT catalogue_revision_id, 'product_shared', supported_game, NULL, 'Shared', '', '["EN-US","EN-EU"]', '{}'
-      FROM revision_products WHERE product_id = 'product_st15'`),
     ...[
       ["shared-first", "printing_enveloped", "product_shared", true],
       ["shared-second", "printing_st15_event", "product_shared", true],
@@ -32,7 +27,7 @@ test("Printing projection backfills retained bare and enveloped documents and cu
       ["historical", "printing_enveloped", "product_st15", false],
       ["no-region", "printing_enveloped", "product_empty", true],
     ].map(([id, printing, product, current]) =>
-      testEnv.CATALOGUE_DB.prepare(`INSERT INTO revision_product_relationships VALUES ('catrev_products', ?, ?)`).bind(
+      publishedCatalogueQueries.insertRevisionProductRelationships(testEnv.CATALOGUE_DB).bind(
         id,
         JSON.stringify({
           kind: "printing-product",

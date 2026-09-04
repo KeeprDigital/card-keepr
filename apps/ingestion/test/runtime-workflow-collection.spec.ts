@@ -1,3 +1,7 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as reconciliationQueries from "./query-helpers/reconciliation";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
@@ -159,11 +163,8 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
   );
   const completed = await showCollection(run.id);
   if (completed.state === "failed") {
-    const failures = await env.CATALOGUE_DB.prepare(
-      `SELECT request_id, failure_code FROM source_requests
-       WHERE ingestion_run_id = ? AND failure_code IS NOT NULL
-       ORDER BY sequence_number`,
-    )
+    const failures = await sourceEvidenceQueries
+      .readSourceRequestsRequestIdFailureCode(env.CATALOGUE_DB)
       .bind(run.id)
       .all();
     throw new Error(
@@ -349,11 +350,8 @@ test("the parent Workflow keeps a greater-than-1-MiB legality candidate in D1 an
       },
     },
   });
-  const persisted = await env.CATALOGUE_DB.prepare(
-    `SELECT SUM(length(CAST(content AS BLOB))) AS candidate_bytes
-     FROM reconciliation_payload_chunks
-     WHERE ingestion_run_id = ? AND payload_kind = 'candidate'`,
-  )
+  const persisted = await reconciliationQueries
+    .readReconciliationPayloadChunksBLOBCandidateBytes(env.CATALOGUE_DB)
     .bind(run.id)
     .first<{ candidate_bytes: number }>();
   expect(persisted?.candidate_bytes).toBeGreaterThan(1_048_576);
@@ -367,13 +365,7 @@ test("the parent Workflow keeps a greater-than-1-MiB legality candidate in D1 an
 
 test("resuming collection reactivates an errored hostname Workflow with one persisted replacement", async () => {
   const run = await createCollection("source_collection_existing_child_001", "https://official-source.invalid/cards");
-  await env.CATALOGUE_DB.prepare(
-    `CREATE TRIGGER fail_initial_observation_set_insert
-     BEFORE INSERT ON source_observation_sets
-     BEGIN
-       SELECT RAISE(FAIL, 'synthetic_initial_parse_d1_outage');
-     END`,
-  ).run();
+  await sourceEvidenceQueries.createFailInitialObservationSetInsert(env.CATALOGUE_DB).run();
   const accepted = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(accepted.status).toBe(202);
   await accepted.body?.cancel();
@@ -385,7 +377,7 @@ test("resuming collection reactivates an errored hostname Workflow with one pers
   }
   await waitForWorkflowStatus(childId, async () => (await env.EVIDENCE_HOST_WORKFLOW.get(childId)).status(), "errored");
   expect(staged.state).toBe("uploaded");
-  await env.CATALOGUE_DB.prepare("DROP TRIGGER fail_initial_observation_set_insert").run();
+  await publishedCatalogueQueries.dropFailInitialObservationSetInsert(env.CATALOGUE_DB).run();
 
   const completed = await resumeCollection(run.id);
 
@@ -566,12 +558,12 @@ test("the parent Workflow creates a persisted dynamic host child before recovery
   expect(resumed.status).toBe(202);
   await resumed.body?.cancel();
   const collecting = await waitForEvidenceCondition(run.id, (current) => current.workflow.child_ids.length === 1);
-  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-  const parentRequest = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  const storedRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+  const parentRequest = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
   if (parentRequest === undefined) {
     throw new Error("pending parent request missing");
   }
-  await appendDiscoveredEvidenceRequests(env.CATALOGUE_DB, storedRun, parentRequest, [
+  await appendDiscoveredEvidenceRequests(catalogueStore(env.CATALOGUE_DB), storedRun, parentRequest, [
     {
       role: "detail",
       url: "https://dynamic-b-official-source.invalid/cards",
@@ -613,10 +605,8 @@ test("the parent Workflow fails deterministically at the persisted child-attempt
     `${baseChildId}-attempt-1`,
     `${baseChildId}-attempt-2`,
   ];
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE ingestion_evidence_plans SET child_workflow_ids_json = ?
-     WHERE ingestion_run_id = ?`,
-  )
+  await sourceEvidenceQueries
+    .setIngestionEvidencePlansChildWorkflowIdsJson(env.CATALOGUE_DB)
     .bind(canonicalJson(exhaustedIds), run.id)
     .run();
 
@@ -641,13 +631,8 @@ test("a hostname Workflow that wakes to a terminated run finishes without reload
   // was torn down. The retained request is audit evidence, not work.
   const run = await createCollection("source_child_terminated_run_001", "https://official-source.invalid/cards");
   const parentId = `evidence-${run.id}`;
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
-     WHERE ingestion_run_id = ?`,
-  )
-    .bind(parentId, run.id)
-    .run();
-  await pauseEvidenceRunForWorkflowRecovery(env.CATALOGUE_DB, run.id, {
+  await sourceEvidenceQueries.setIngestionEvidencePlansParentWorkflowId(env.CATALOGUE_DB).bind(parentId, run.id).run();
+  await pauseEvidenceRunForWorkflowRecovery(catalogueStore(env.CATALOGUE_DB), run.id, {
     workflow_instance_id: parentId,
     pause_reason: "source_workflow_unavailable",
     workflow_status: "unavailable",
@@ -691,14 +676,13 @@ test("a hostname Workflow that wakes to a terminated run finishes without reload
     "complete",
     10_000,
   );
-  const requests = await env.CATALOGUE_DB.prepare(`SELECT state FROM source_requests WHERE ingestion_run_id = ?`)
+  const requests = await sourceEvidenceQueries
+    .readSourceRequestsStateForHostnameWorkflowThatWakesTerminatedRunFinishesWithoutReloading(env.CATALOGUE_DB)
     .bind(run.id)
     .all<{ state: string }>();
   expect(requests.results).toEqual([{ state: "pending" }]);
-  const captures = await env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM source_fetch_attempts
-     WHERE ingestion_run_id = ?`,
-  )
+  const captures = await sourceEvidenceQueries
+    .countSourceFetchAttemptsCount(env.CATALOGUE_DB)
     .bind(run.id)
     .first<{ count: number }>();
   expect(captures?.count).toBe(0);
@@ -709,11 +693,11 @@ test("a completed host shard durably releases the next same-host shard", async (
     "source_workflow_shard_progression_001",
     "https://official-source.invalid/sequence/root",
   );
-  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  const storedRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+  const root = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
   if (root === undefined) throw new Error("pending discovery root missing");
   await appendDiscoveredEvidenceRequests(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     storedRun,
     root,
     Array.from({ length: 200 }, (_, index) => ({
@@ -723,12 +707,7 @@ test("a completed host shard durably releases the next same-host shard", async (
     })),
   );
   // Bounded test setup leaves one live request in each 200-sequence shard.
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE source_requests SET state = 'observed'
-     WHERE ingestion_run_id = ? AND sequence_number BETWEEN 1 AND 199`,
-  )
-    .bind(run.id)
-    .run();
+  await sourceEvidenceQueries.setSourceRequestsState(env.CATALOGUE_DB).bind(run.id).run();
 
   const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(resumed.status).toBe(202);
@@ -748,8 +727,8 @@ test("a completed host shard durably releases the next same-host shard", async (
 
 test("dynamic discovery preserves the first edge when two parents reach one immutable request", async () => {
   const run = await createCollection("source_dynamic_shared_request_001", "https://official-source.invalid/cards");
-  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  const storedRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+  const root = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
   if (root === undefined) throw new Error("pending discovery root missing");
   const discovered = [
     {
@@ -763,24 +742,24 @@ test("dynamic discovery preserves the first edge when two parents reach one immu
       headers: { accept: "text/html" },
     },
   ];
-  const [first, second] = await appendDiscoveredEvidenceRequests(env.CATALOGUE_DB, storedRun, root, discovered);
+  const [first, second] = await appendDiscoveredEvidenceRequests(
+    catalogueStore(env.CATALOGUE_DB),
+    storedRun,
+    root,
+    discovered,
+  );
   if (first === undefined || second === undefined) {
     throw new Error("dynamic requests were not persisted");
   }
 
-  const replayed = await appendDiscoveredEvidenceRequests(env.CATALOGUE_DB, storedRun, first, [discovered[1]!]);
+  const replayed = await appendDiscoveredEvidenceRequests(catalogueStore(env.CATALOGUE_DB), storedRun, first, [
+    discovered[1]!,
+  ]);
 
   expect(replayed).toHaveLength(1);
   expect(replayed[0]).toMatchObject({
     request_id: second.request_id,
     discovered_from_request_id: root.request_id,
   });
-  expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count FROM source_requests
-     WHERE ingestion_run_id = ?`,
-    )
-      .bind(run.id)
-      .first("count"),
-  ).toBe(3);
+  expect(await sourceEvidenceQueries.countSourceRequestsCount(env.CATALOGUE_DB).bind(run.id).first("count")).toBe(3);
 });

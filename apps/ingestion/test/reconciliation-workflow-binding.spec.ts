@@ -1,3 +1,9 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as reconciliationQueries from "./query-helpers/reconciliation";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as catalogueExportQueries from "./query-helpers/catalogue-export";
 import { type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { expect, test, vi } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
@@ -163,7 +169,7 @@ test("a Workflow that terminalizes during initial HTTP creation returns 200", as
   const workflow = {
     create: async () => {
       const retained = await reconcileRetainedCardPrintingEvidence(
-        testEnv.CATALOGUE_DB,
+        catalogueStore(testEnv.CATALOGUE_DB),
         testEnv.EVIDENCE_OBJECTS,
         run.id,
         "2026-07-31T01:00:00.000Z",
@@ -245,7 +251,7 @@ test("an exact reconciliation replay observes without creating or executing the 
       }
       instanceExists = true;
       const result = await reconcileRetainedCardPrintingEvidence(
-        testEnv.CATALOGUE_DB,
+        catalogueStore(testEnv.CATALOGUE_DB),
         testEnv.EVIDENCE_OBJECTS,
         run.id,
         "2026-07-31T01:00:00.000Z",
@@ -274,13 +280,13 @@ test("an exact reconciliation replay observes without creating or executing the 
     idempotency_key: "observe-only-workflow-replay-request",
   };
   const first = await startOrObserveReconciliationWorkflow(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     workflow,
     input,
     "2026-07-31T01:00:00.000Z",
   );
   const replay = await startOrObserveReconciliationWorkflow(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     workflow,
     input,
     "2026-07-31T01:01:00.000Z",
@@ -292,11 +298,8 @@ test("an exact reconciliation replay observes without creating or executing the 
   expect(createIds).toEqual([first.document.workflow_instance_id]);
   expect(getIds).toEqual([first.document.workflow_instance_id]);
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count
-       FROM reconciliation_workflow_requests
-       WHERE ingestion_run_id = ?`,
-    )
+    reconciliationQueries
+      .countReconciliationWorkflowRequestsCount(testEnv.CATALOGUE_DB)
       .bind(run.id)
       .first<{ count: number }>(),
   ).resolves.toMatchObject({ count: 1 });
@@ -349,12 +352,17 @@ test("an exact reconciliation replay recreates a deterministically bound instanc
   };
 
   await expect(
-    startOrObserveReconciliationWorkflow(testEnv.CATALOGUE_DB, workflow, input, "2026-07-31T01:00:00.000Z"),
+    startOrObserveReconciliationWorkflow(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      workflow,
+      input,
+      "2026-07-31T01:00:00.000Z",
+    ),
     // Dispatch failed and no instance was observed: retain the dispatch failure,
     // rather than recategorizing this control-plane outage as a lost identity.
   ).rejects.toThrow("injected create response loss");
   const replay = await startOrObserveReconciliationWorkflow(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     workflow,
     input,
     "2026-07-31T02:00:00.000Z",
@@ -371,16 +379,13 @@ test("an exact reconciliation replay recreates a deterministically bound instanc
       observed_at: "2026-07-31T01:00:00.000Z",
     },
   ]);
-  const stored = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT workflow_params_json
-     FROM reconciliation_workflow_requests
-     WHERE ingestion_run_id = ?`,
-  )
+  const stored = await reconciliationQueries
+    .readReconciliationWorkflowRequestsWorkflowParamsJson(testEnv.CATALOGUE_DB)
     .bind(run.id)
     .first<{ workflow_params_json: string }>();
   expect(JSON.parse(stored?.workflow_params_json ?? "null")).toEqual(createParams[0]);
   const reconciled = await reconcileRetainedCardPrintingEvidence(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.EVIDENCE_OBJECTS,
     run.id,
     "2026-07-31T01:00:00.000Z",
@@ -500,7 +505,7 @@ test("a complete Workflow recovers retained reconciliation after missing or malf
     idempotency_key: "workflow-complete-output-recovery-request",
   };
   const accepted = await startOrObserveReconciliationWorkflow(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     workflow,
     input,
     "2026-07-31T01:00:00.000Z",
@@ -508,7 +513,7 @@ test("a complete Workflow recovers retained reconciliation after missing or malf
   expect(accepted.document.status).toBe("running");
 
   const retained = await reconcileRetainedCardPrintingEvidence(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.EVIDENCE_OBJECTS,
     run.id,
     "2026-07-31T01:00:00.000Z",
@@ -517,7 +522,7 @@ test("a complete Workflow recovers retained reconciliation after missing or malf
   for (const output of [undefined, { result_json: "not-json" }, { result_json: JSON.stringify([]) }]) {
     instanceStatus = { status: "complete", output };
     const recovered = await startOrObserveReconciliationWorkflow(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       workflow,
       input,
       "2026-07-31T02:00:00.000Z",
@@ -542,7 +547,12 @@ test("a complete Workflow recovers retained reconciliation after missing or malf
     },
   };
   await expect(
-    startOrObserveReconciliationWorkflow(testEnv.CATALOGUE_DB, workflow, input, "2026-07-31T03:00:00.000Z"),
+    startOrObserveReconciliationWorkflow(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      workflow,
+      input,
+      "2026-07-31T03:00:00.000Z",
+    ),
   ).rejects.toThrow("The reconciliation Workflow result does not bind the retained candidate.");
   expect(
     (
@@ -597,13 +607,13 @@ test("exhausted reconciliation retries fail the run and release the global mutat
     state: "failed",
   });
   await expect(
-    testEnv.CATALOGUE_DB.prepare("SELECT state, failure_code FROM ingestion_runs WHERE id = ?").bind(run.id).first(),
+    ingestionQueries.readIngestionRunsStateFailureCode(testEnv.CATALOGUE_DB).bind(run.id).first(),
   ).resolves.toMatchObject({
     state: "failed",
     failure_code: "reconciliation_workflow_failed",
   });
   await expect(
-    testEnv.CATALOGUE_DB.prepare("SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1").first(),
+    ingestionQueries.readOperationStateActiveIngestionRunId(testEnv.CATALOGUE_DB).first(),
   ).resolves.toMatchObject({ active_ingestion_run_id: null });
   const status = await get("/v1/status");
   expect(status.response.status).toBe(200);
@@ -640,7 +650,7 @@ test("an exact replay terminalizes a run when Workflow failure-finalization itse
     idempotency_key: "workflow-finalization-exhausted-request",
   };
   const accepted = await startOrObserveReconciliationWorkflow(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     workflow,
     input,
     "2026-07-31T01:00:00.000Z",
@@ -675,7 +685,7 @@ test("an exact replay terminalizes a run when Workflow failure-finalization itse
   };
 
   const recovered = await startOrObserveReconciliationWorkflow(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     workflow,
     input,
     "2026-07-31T02:00:00.000Z",
@@ -695,18 +705,18 @@ test("an exact replay terminalizes a run when Workflow failure-finalization itse
     },
   });
   await expect(
-    testEnv.CATALOGUE_DB.prepare("SELECT state, failure_code FROM ingestion_runs WHERE id = ?").bind(run.id).first(),
+    ingestionQueries.readIngestionRunsStateFailureCode(testEnv.CATALOGUE_DB).bind(run.id).first(),
   ).resolves.toMatchObject({
     state: "failed",
     failure_code: "reconciliation_workflow_failed",
   });
   await expect(
-    testEnv.CATALOGUE_DB.prepare("SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1").first(),
+    ingestionQueries.readOperationStateActiveIngestionRunId(testEnv.CATALOGUE_DB).first(),
   ).resolves.toMatchObject({ active_ingestion_run_id: null });
 
   instanceStatus = { status: "errored" };
   const exactReplay = await startOrObserveReconciliationWorkflow(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     workflow,
     input,
     "2026-07-31T03:00:00.000Z",
@@ -723,29 +733,13 @@ test("an empty published revision has an available projection and concurrent rep
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT query.state,
-              COUNT(document.card_id) AS document_count
-       FROM catalogue_query_revisions AS query
-       LEFT JOIN revision_card_query_documents AS document
-         ON document.catalogue_revision_id =
-              query.catalogue_revision_id
-       WHERE query.catalogue_revision_id = ?
-       GROUP BY query.catalogue_revision_id, query.state`,
-    )
-      .bind(revisionId)
-      .first(),
+    publishedCatalogueQueries.countCatalogueQueryRevisionsDocumentCount(testEnv.CATALOGUE_DB).bind(revisionId).first(),
   ).resolves.toMatchObject({
     state: "available",
     document_count: 0,
   });
 
-  await testEnv.CATALOGUE_DB.prepare(
-    `DELETE FROM catalogue_query_revisions
-     WHERE catalogue_revision_id = ?`,
-  )
-    .bind(revisionId)
-    .run();
+  await publishedCatalogueQueries.deleteCatalogueQueryRevisions(testEnv.CATALOGUE_DB).bind(revisionId).run();
   const repair = (idempotencyKey: string) =>
     post("/v1/catalogue-search-materialization/repair", {
       target_revision_id: revisionId,
@@ -770,12 +764,7 @@ test("an empty published revision has an available projection and concurrent rep
   expect(complete.response.status).toBe(200);
   expect(complete.document).toMatchObject({ complete: true });
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT state FROM catalogue_query_revisions
-       WHERE catalogue_revision_id = ?`,
-    )
-      .bind(revisionId)
-      .first(),
+    publishedCatalogueQueries.readCatalogueQueryRevisionsState(testEnv.CATALOGUE_DB).bind(revisionId).first(),
   ).resolves.toMatchObject({ state: "available" });
 });
 
@@ -934,11 +923,10 @@ test("retained immutable evidence publishes stable identities and warns when ear
     }),
   ]);
   expect(JSON.stringify(await exportComponentRecords(secondRevision, "relationships"))).not.toContain("source_bucket");
-  const publishedPrinting = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT document_json
-     FROM revision_printings
-     WHERE catalogue_revision_id = ? AND printing_id = ?`,
-  )
+  const publishedPrinting = await publishedCatalogueQueries
+    .readRevisionPrintingsDocumentJsonForRetainedImmutableEvidencePublishesStableIdentitiesWarnsEarlierMembership(
+      testEnv.CATALOGUE_DB,
+    )
     .bind(secondRevision, firstPrinting.id)
     .first<{ document_json: string }>();
   const publishedPrintingDocument = JSON.parse(publishedPrinting?.document_json ?? "{}") as {
@@ -1024,10 +1012,10 @@ test("retained immutable evidence publishes stable identities and warns when ear
       },
     }),
   );
-  const revisionDocument = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT document_json FROM revision_printings
-     WHERE catalogue_revision_id = ? AND printing_id = ?`,
-  )
+  const revisionDocument = await publishedCatalogueQueries
+    .readRevisionPrintingsDocumentJsonForRetainedImmutableEvidencePublishesStableIdentitiesWarnsEarlierMembership(
+      testEnv.CATALOGUE_DB,
+    )
     .bind(withdrawalRevision, firstPrinting.id)
     .first<{ document_json: string }>();
   expect(JSON.parse(revisionDocument?.document_json ?? "{}")).toMatchObject({
@@ -1084,27 +1072,8 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
   const reconciled = await reconcile(run.id);
   const digest = requiredString(reconciled.document, "candidate_digest");
   const expectedRevision = requiredString(reconciled.document, "expected_current_revision_id");
-  const persisted = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT
-       CASE
-         WHEN candidate_json =
-           '{"chunked_reconciliation_payload":"candidate"}'
-         THEN (
-           SELECT group_concat(content, '')
-           FROM (
-             SELECT content
-             FROM reconciliation_payload_chunks
-             WHERE ingestion_run_id = ingestion_runs.id
-               AND payload_kind = 'candidate'
-             ORDER BY chunk_index
-           )
-         )
-         ELSE candidate_json
-       END AS candidate_json,
-       candidate_catalogue_digest
-     FROM ingestion_runs
-     WHERE id = ?`,
-  )
+  const persisted = await reconciliationQueries
+    .readReconciliationPayloadChunks(testEnv.CATALOGUE_DB)
     .bind(run.id)
     .first<{
       candidate_json: string;
@@ -1121,15 +1090,18 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
   const approvalKey = "approve-reconciliation-interrupted";
   const cardId = candidate.cards[0]!.id;
   const printingId = candidate.printings[0]!.id;
-  const publication = await reconciliationPublication(testEnv.CATALOGUE_DB, run.id, revisionId, approvedAt);
+  const publication = await reconciliationPublication(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    run.id,
+    revisionId,
+    approvedAt,
+  );
   if (publication === null) throw new Error("publication plan missing");
-  const priorFreshness = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT game, area, source_lineage, region, checked_at
-     FROM source_freshness
-     WHERE area IN (
-       'cards-and-printings', 'products-and-releases', 'legality-rules'
-     )`,
-  ).all<SourceFreshnessStorageRow>();
+  const priorFreshness = await sourceEvidenceQueries
+    .readSourceFreshnessGameAreaForInterruptedReconciliationPublicationRecoversExactDigestBoundCandidateExport(
+      testEnv.CATALOGUE_DB,
+    )
+    .all<SourceFreshnessStorageRow>();
   const exactFreshness = new Map(
     priorFreshness.results
       .map(sourceFreshnessFromStorage)
@@ -1162,20 +1134,8 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
     candidate_digest: digest,
     expected_current_revision_id: expectedRevision,
   };
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE ingestion_runs
-     SET state = 'publishing',
-         approval_json = ?,
-         approval_idempotency_key = ?,
-         approval_history_json = ?,
-         progress_json = ?,
-         publication_revision_id = ?,
-         publication_started_at = ?,
-         publication_reconcile_after = ?,
-         publication_manifest_digest = ?,
-         publication_writer_token = ?
-     WHERE id = ? AND state = 'awaiting_approval'`,
-  )
+  await ingestionQueries
+    .setIngestionRunsStateApprovalJson(testEnv.CATALOGUE_DB)
     .bind(
       JSON.stringify(approval),
       approvalKey,
@@ -1243,20 +1203,8 @@ test("reserved recovery never adopts or cleans an existing published export pref
     candidate_digest: digest,
     expected_current_revision_id: expectedRevision,
   };
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE ingestion_runs
-     SET state = 'publishing',
-         approval_json = ?,
-         approval_idempotency_key = ?,
-         approval_history_json = ?,
-         progress_json = ?,
-         publication_revision_id = ?,
-         publication_started_at = ?,
-         publication_reconcile_after = ?,
-         publication_manifest_digest = ?,
-         publication_writer_token = ?
-     WHERE id = ? AND state = 'awaiting_approval'`,
-  )
+  await ingestionQueries
+    .setIngestionRunsStateApprovalJson(testEnv.CATALOGUE_DB)
     .bind(
       JSON.stringify(approval),
       approvalKey,
@@ -1274,9 +1222,8 @@ test("reserved recovery never adopts or cleans an existing published export pref
     )
     .run();
   const objectsBefore = (await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort();
-  const exportBefore = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT * FROM catalogue_exports WHERE catalogue_revision_id = ?`,
-  )
+  const exportBefore = await catalogueExportQueries
+    .readCatalogueExports(testEnv.CATALOGUE_DB)
     .bind(existingRevision)
     .first();
 
@@ -1287,17 +1234,8 @@ test("reserved recovery never adopts or cleans an existing published export pref
   });
   expect(blocked.response.status).toBe(500);
   expect(blocked.document).toMatchObject({ code: "publication_abandoned" });
-  const ownership = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT
-       (SELECT COUNT(*) FROM ingestion_publication_cleanup
-        WHERE ingestion_run_id = ?) AS cleanups,
-       (SELECT COUNT(*) FROM administration_idempotency_claims
-        WHERE idempotency_key = ?) AS claims,
-       (SELECT active_ingestion_run_id FROM operation_state
-        WHERE singleton = 1) AS active_ingestion_run_id,
-       (SELECT current_revision_id FROM catalogue_state
-        WHERE singleton = 1) AS current_revision_id`,
-  )
+  const ownership = await ingestionQueries
+    .countIngestionPublicationCleanup(testEnv.CATALOGUE_DB)
     .bind(run.id, approvalKey)
     .first<{
       cleanups: number;
@@ -1313,9 +1251,7 @@ test("reserved recovery never adopts or cleans an existing published export pref
   });
   expect((await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort()).toEqual(objectsBefore);
   expect(
-    await testEnv.CATALOGUE_DB.prepare(`SELECT * FROM catalogue_exports WHERE catalogue_revision_id = ?`)
-      .bind(existingRevision)
-      .first(),
+    await catalogueExportQueries.readCatalogueExports(testEnv.CATALOGUE_DB).bind(existingRevision).first(),
   ).toEqual(exportBefore);
 
   const replay = await post(`/v1/ingestion-runs/${run.id}/approval`, {

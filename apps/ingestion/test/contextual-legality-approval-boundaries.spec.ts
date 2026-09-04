@@ -1,3 +1,7 @@
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as legalityQueries from "./query-helpers/legality";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { expect, test } from "vitest";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
@@ -110,13 +114,8 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   // Publication projects each rule's Source Snapshot retrieval instant onto
   // the revision row, so the api's evidence sidecar reads the projection
   // rather than source_snapshots (issue #98).
-  const projectedEvidence = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT rule.source_retrieved_at, snapshot.retrieved_at
-     FROM revision_legality_rules AS rule
-     JOIN source_snapshots AS snapshot
-       ON snapshot.id = json_extract(rule.document_json, '$.source_snapshot_id')
-     WHERE rule.catalogue_revision_id = ?`,
-  )
+  const projectedEvidence = await sourceEvidenceQueries
+    .readRevisionLegalityRulesSourceRetrievedAtRetrievedAt(testEnv.CATALOGUE_DB)
     .bind(requiredString(published.document, "resulting_revision_id"))
     .all<{ source_retrieved_at: string | null; retrieved_at: string }>();
   expect(projectedEvidence.results.length).toBeGreaterThan(0);
@@ -160,33 +159,26 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   );
   expect(eligible).toMatchObject({ current: false });
 
-  const canonicalRules = await testEnv.CATALOGUE_DB.prepare(`SELECT id FROM legality_rules ORDER BY id LIMIT 3`).all<{
+  const canonicalRules = await legalityQueries.readLegalityRulesId(testEnv.CATALOGUE_DB).all<{
     id: string;
   }>();
   expect(canonicalRules.results).toHaveLength(3);
   const [idMutable, firstRevisionMutable, deleteMutable] = canonicalRules.results;
   const identityUpdate = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(`UPDATE legality_rules SET id = ? WHERE id = ?`)
-      .bind(`${idMutable!.id}_changed`, idMutable!.id)
-      .run(),
+    legalityQueries.setLegalityRulesId(testEnv.CATALOGUE_DB).bind(`${idMutable!.id}_changed`, idMutable!.id).run(),
   );
   const firstRevisionUpdate = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(`UPDATE legality_rules SET first_revision_id = ? WHERE id = ?`)
+    legalityQueries
+      .setLegalityRulesFirstRevisionId(testEnv.CATALOGUE_DB)
       .bind(requiredString(emptyPublished.document, "resulting_revision_id"), firstRevisionMutable!.id)
       .run(),
   );
   const canonicalDelete = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(`DELETE FROM legality_rules WHERE id = ?`).bind(deleteMutable!.id).run(),
+    legalityQueries.deleteLegalityRules(testEnv.CATALOGUE_DB).bind(deleteMutable!.id).run(),
   );
   const orphanRevisionRule = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_legality_rules (
-         catalogue_revision_id, legality_rule_id, supported_game,
-         region, format, event_tier, effective_from, effective_until,
-         card_ids_json, document_json
-       ) VALUES (?, 'legality_rule_missing_canonical', 'gundam',
-         'EN-ASIA', 'standard', NULL, '2026-01-01', NULL, '[]', ?)`,
-    )
+    legalityQueries
+      .insertRevisionLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeeps(testEnv.CATALOGUE_DB)
       .bind(
         requiredString(emptyPublished.document, "resulting_revision_id"),
         JSON.stringify({
@@ -196,17 +188,8 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       )
       .run(),
   );
-  const canonicalSnapshot = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT canonical.*, revision.document_json
-     FROM legality_rules AS canonical
-     JOIN revision_legality_rules AS revision
-       ON revision.legality_rule_id = canonical.id
-     WHERE revision.catalogue_revision_id = ?
-       AND json_extract(canonical.effect_json, '$.type') =
-       'prohibited_combination'
-     ORDER BY canonical.id
-     LIMIT 1`,
-  )
+  const canonicalSnapshot = await legalityQueries
+    .readLegalityRulesDocumentJson(testEnv.CATALOGUE_DB)
     .bind(requiredString(emptyPublished.document, "resulting_revision_id"))
     .first<Record<string, string | number | null>>();
   if (canonicalSnapshot === null) {
@@ -229,31 +212,22 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
     freshCanonicalEffectErrors.map(() => expect.stringMatching(/legality_rule_effect_invalid/)),
   );
   const revisionUpdate = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE revision_legality_rules
-       SET format = 'attacker-format'
-       WHERE catalogue_revision_id = ? AND legality_rule_id = ?`,
-    )
+    legalityQueries
+      .setRevisionLegalityRulesFormatForTestOwnedDomainEvidencePublishesExactLegalityRulesKeeps(testEnv.CATALOGUE_DB)
       .bind(requiredString(emptyPublished.document, "resulting_revision_id"), canonicalSnapshot.id)
       .run(),
   );
   const revisionDelete = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(
-      `DELETE FROM revision_legality_rules
-       WHERE catalogue_revision_id = ? AND legality_rule_id = ?`,
-    )
+    legalityQueries
+      .deleteRevisionLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeeps(testEnv.CATALOGUE_DB)
       .bind(requiredString(emptyPublished.document, "resulting_revision_id"), canonicalSnapshot.id)
       .run(),
   );
   const inconsistentRevisionContext = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_legality_rules (
-         catalogue_revision_id, legality_rule_id, supported_game,
-         region, format, event_tier, effective_from, effective_until,
-         card_ids_json, document_json
-       ) VALUES ('catrev_spine_000', ?, ?, ?, 'attacker-format', ?, ?, ?,
-         ?, ?)`,
-    )
+    legalityQueries
+      .insertRevisionLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeepsWithAttackerFormat(
+        testEnv.CATALOGUE_DB,
+      )
       .bind(
         canonicalSnapshot.id,
         canonicalSnapshot.supported_game,
@@ -271,13 +245,10 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
     official_wording: "Attacker-controlled wording.",
   });
   const inconsistentRevisionDocument = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_legality_rules (
-         catalogue_revision_id, legality_rule_id, supported_game,
-         region, format, event_tier, effective_from, effective_until,
-         card_ids_json, document_json
-       ) VALUES ('catrev_spine_000', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
+    legalityQueries
+      .insertRevisionLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeepsWithCatrevSpine000(
+        testEnv.CATALOGUE_DB,
+      )
       .bind(
         canonicalSnapshot.id,
         canonicalSnapshot.supported_game,
@@ -295,13 +266,10 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   const { event_tier: _missingEventTier, ...documentWithoutNullableKey } = canonicalDocument;
   const { effective_until: _replacedEffectiveUntil, ...documentWithReplacementKey } = canonicalDocument;
   const missingNullableDocumentKey = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_legality_rules (
-         catalogue_revision_id, legality_rule_id, supported_game,
-         region, format, event_tier, effective_from, effective_until,
-         card_ids_json, document_json
-       ) VALUES ('catrev_spine_000', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
+    legalityQueries
+      .insertRevisionLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeepsWithCatrevSpine000(
+        testEnv.CATALOGUE_DB,
+      )
       .bind(
         canonicalSnapshot.id,
         canonicalSnapshot.supported_game,
@@ -316,13 +284,10 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       .run(),
   );
   const arbitraryDocumentKeySubstitution = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_legality_rules (
-         catalogue_revision_id, legality_rule_id, supported_game,
-         region, format, event_tier, effective_from, effective_until,
-         card_ids_json, document_json
-       ) VALUES ('catrev_spine_000', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
+    legalityQueries
+      .insertRevisionLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeepsWithCatrevSpine000(
+        testEnv.CATALOGUE_DB,
+      )
       .bind(
         canonicalSnapshot.id,
         canonicalSnapshot.supported_game,
@@ -340,13 +305,10 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       .run(),
   );
   const duplicateRequiredDocumentKey = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_legality_rules (
-         catalogue_revision_id, legality_rule_id, supported_game,
-         region, format, event_tier, effective_from, effective_until,
-         card_ids_json, document_json
-       ) VALUES ('catrev_spine_000', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
+    legalityQueries
+      .insertRevisionLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeepsWithCatrevSpine000(
+        testEnv.CATALOGUE_DB,
+      )
       .bind(
         canonicalSnapshot.id,
         canonicalSnapshot.supported_game,
@@ -386,13 +348,10 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   const nestedCardIdMutations = await Promise.all(
     nestedCardIdDocuments.map((document) =>
       rejectedError(
-        testEnv.CATALOGUE_DB.prepare(
-          `INSERT INTO revision_legality_rules (
-             catalogue_revision_id, legality_rule_id, supported_game,
-             region, format, event_tier, effective_from, effective_until,
-             card_ids_json, document_json
-           ) VALUES ('catrev_spine_000', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
+        legalityQueries
+          .insertRevisionLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeepsWithCatrevSpine000(
+            testEnv.CATALOGUE_DB,
+          )
           .bind(
             canonicalSnapshot.id,
             canonicalSnapshot.supported_game,
@@ -408,11 +367,9 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       ),
     ),
   );
-  const provenanceOwners = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT id, source_snapshot_id
-     FROM source_observation_sets
-     ORDER BY id`,
-  ).all<{ id: string; source_snapshot_id: string }>();
+  const provenanceOwners = await sourceEvidenceQueries
+    .readSourceObservationSetsIdSourceSnapshotId(testEnv.CATALOGUE_DB)
+    .all<{ id: string; source_snapshot_id: string }>();
   const firstOwner = provenanceOwners.results[0];
   const differentOwner = provenanceOwners.results.find(
     (row) => row.source_snapshot_id !== firstOwner?.source_snapshot_id,
@@ -421,24 +378,14 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
     throw new Error("Distinct provenance owners are absent");
   }
   const provenanceUpdate = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(`UPDATE legality_rules SET source_snapshot_id = ? WHERE id = ?`)
+    sourceEvidenceQueries
+      .setLegalityRulesSourceSnapshotIdForTestOwnedDomainEvidencePublishesExactLegalityRulesKeeps(testEnv.CATALOGUE_DB)
       .bind(differentOwner.source_snapshot_id, canonicalSnapshot.id)
       .run(),
   );
   const crossOwnedProvenance = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO legality_rules (
-         id, official_id, supported_game, region, format, event_tier,
-         effective_from, effective_until, official_wording, effect_json,
-         card_ids_json, direct_card_ids_json, source_lineage, source_snapshot_id,
-         source_observation_set_id, source_observation_id,
-         source_observation_pointer, source_field_pointers_json,
-         first_revision_id, last_observed_revision_id, current,
-         last_missing_revision_id
-       ) VALUES ('legality_rule_cross_owned', 'cross-owned', ?, ?, ?, ?, ?, ?,
-         ?, ?, ?, ?, ?, ?, ?, 'srcobs_cross_owned',
-         '/observations/0/value/legality_rules/0', ?, ?, ?, 1, NULL)`,
-    )
+    sourceEvidenceQueries
+      .insertLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeeps(testEnv.CATALOGUE_DB)
       .bind(
         canonicalSnapshot.supported_game,
         canonicalSnapshot.region,
@@ -557,13 +504,8 @@ test.each([
     );
     const reconciled = await reconcile(runId, reconciledAt);
     expect(reconciled.response.status).toBe(200);
-    const beforeApproval = await testEnv.CATALOGUE_DB.prepare(
-      `SELECT state, candidate_digest, expected_current_revision_id,
-              approval_json, approval_idempotency_key,
-              published_revision_id, publication_outcome,
-              resulting_revision_id
-       FROM ingestion_runs WHERE id = ?`,
-    )
+    const beforeApproval = await ingestionQueries
+      .readIngestionRunsStateCandidateDigest(testEnv.CATALOGUE_DB)
       .bind(runId)
       .first();
     const blocked = await approve(reconciled.document, `approve-legality-clock-${boundary}`, approvedAt);
@@ -572,15 +514,7 @@ test.each([
       code: "candidate_legality_stale",
     });
     expect(
-      await testEnv.CATALOGUE_DB.prepare(
-        `SELECT state, candidate_digest, expected_current_revision_id,
-              approval_json, approval_idempotency_key,
-              published_revision_id, publication_outcome,
-              resulting_revision_id
-       FROM ingestion_runs WHERE id = ?`,
-      )
-        .bind(runId)
-        .first(),
+      await ingestionQueries.readIngestionRunsStateCandidateDigest(testEnv.CATALOGUE_DB).bind(runId).first(),
     ).toEqual(beforeApproval);
     const retained = await request(`/v1/ingestion-runs/${runId}`, undefined, approvedAt);
     expect(retained.document).toMatchObject({
@@ -641,13 +575,8 @@ test("approval rejects a partial candidate when a carried-forward game's Legalit
       }),
     ]),
   );
-  const beforeApproval = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT state, candidate_digest, expected_current_revision_id,
-            approval_json, approval_idempotency_key,
-            published_revision_id, publication_outcome,
-            resulting_revision_id
-     FROM ingestion_runs WHERE id = ?`,
-  )
+  const beforeApproval = await ingestionQueries
+    .readIngestionRunsStateCandidateDigest(testEnv.CATALOGUE_DB)
     .bind(runId)
     .first();
 
@@ -655,15 +584,7 @@ test("approval rejects a partial candidate when a carried-forward game's Legalit
   expect(blocked.response.status).toBe(409);
   expect(blocked.document).toMatchObject({ code: "candidate_legality_stale" });
   expect(
-    await testEnv.CATALOGUE_DB.prepare(
-      `SELECT state, candidate_digest, expected_current_revision_id,
-            approval_json, approval_idempotency_key,
-            published_revision_id, publication_outcome,
-            resulting_revision_id
-     FROM ingestion_runs WHERE id = ?`,
-    )
-      .bind(runId)
-      .first(),
+    await ingestionQueries.readIngestionRunsStateCandidateDigest(testEnv.CATALOGUE_DB).bind(runId).first(),
   ).toEqual(beforeApproval);
   expect((await request(`/v1/ingestion-runs/${runId}`, undefined, "2026-01-01T00:01:00.000Z")).document).toMatchObject({
     state: "awaiting_approval",
@@ -748,19 +669,12 @@ test.each(["missing", "false"])(
     );
     const published = await approve(initial.reconciled, `incomplete-legality-${variant}-publish-initial`);
     expect(published.response.status).toBe(200);
-    const currentBefore = await testEnv.CATALOGUE_DB.prepare(
-      `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
-    ).first();
-    const freshnessBefore = (
-      await testEnv.CATALOGUE_DB.prepare(`SELECT * FROM source_freshness ORDER BY game, area`).all()
-    ).results;
-    const initialEvidence = await testEnv.CATALOGUE_DB.prepare(
-      `SELECT observations.content_object_key
-       FROM source_observation_sets AS observations
-       JOIN source_snapshots AS snapshots
-         ON snapshots.id = observations.source_snapshot_id
-       WHERE snapshots.ingestion_run_id = ?`,
-    )
+    const currentBefore = await publishedCatalogueQueries
+      .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
+      .first();
+    const freshnessBefore = (await sourceEvidenceQueries.readSourceFreshness(testEnv.CATALOGUE_DB).all()).results;
+    const initialEvidence = await sourceEvidenceQueries
+      .readSourceObservationSetsContentObjectKeyForContextualLegalityApprovalBoundaries(testEnv.CATALOGUE_DB)
       .bind(initial.runId)
       .first<{ content_object_key: string }>();
     const initialObject = await testEnv.EVIDENCE_OBJECTS.get(initialEvidence?.content_object_key ?? "");
@@ -779,14 +693,8 @@ test.each(["missing", "false"])(
       "https://official-source.invalid/reconciliation/contextual-legality-domain?rules=omitted",
       `incomplete-legality-${variant}-changed`,
     );
-    const retained = await testEnv.CATALOGUE_DB.prepare(
-      `SELECT observations.id, observations.parse_operation_id,
-              observations.content_object_key
-       FROM source_observation_sets AS observations
-       JOIN source_snapshots AS snapshots
-         ON snapshots.id = observations.source_snapshot_id
-       WHERE snapshots.ingestion_run_id = ?`,
-    )
+    const retained = await sourceEvidenceQueries
+      .readSourceObservationSetsIdParseOperationId(testEnv.CATALOGUE_DB)
       .bind(runId)
       .first<{
         id: string;
@@ -831,28 +739,18 @@ test.each(["missing", "false"])(
     const bytes = utf8(canonicalJson(changedDocument));
     const digest = await sha256(bytes);
     await testEnv.EVIDENCE_OBJECTS.put(retained.content_object_key, bytes);
-    await testEnv.CATALOGUE_DB.prepare(`DROP TRIGGER IF EXISTS source_observation_sets_are_immutable_on_update`).run();
+    await sourceEvidenceQueries
+      .dropSourceObservationSetsAreImmutableOnUpdateForContextualLegalityApprovalBoundaries(testEnv.CATALOGUE_DB)
+      .run();
     await testEnv.CATALOGUE_DB.batch([
-      testEnv.CATALOGUE_DB.prepare(
-        `UPDATE source_observation_sets
-         SET content_digest = ?, content_byte_length = ?,
-             observation_count = ?
-         WHERE id = ?`,
-      ).bind(digest, bytes.byteLength, changedDocument.observations.length, retained.id),
-      testEnv.CATALOGUE_DB.prepare(
-        `UPDATE source_parse_operations
-         SET content_digest = ?, content_byte_length = ?,
-             observation_count = ?
-         WHERE id = ?`,
-      ).bind(digest, bytes.byteLength, changedDocument.observations.length, retained.parse_operation_id),
+      sourceEvidenceQueries
+        .setSourceObservationSetsContentDigestContentByteLength(testEnv.CATALOGUE_DB)
+        .bind(digest, bytes.byteLength, changedDocument.observations.length, retained.id),
+      sourceEvidenceQueries
+        .setSourceParseOperationsContentDigestContentByteLength(testEnv.CATALOGUE_DB)
+        .bind(digest, bytes.byteLength, changedDocument.observations.length, retained.parse_operation_id),
     ]);
-    await testEnv.CATALOGUE_DB.prepare(
-      `CREATE TRIGGER source_observation_sets_are_immutable_on_update
-       BEFORE UPDATE ON source_observation_sets
-       BEGIN
-         SELECT RAISE(ABORT, 'immutable_source_observation_set');
-       END`,
-    ).run();
+    await sourceEvidenceQueries.createSourceObservationSetsAreImmutableOnUpdate(testEnv.CATALOGUE_DB).run();
 
     const blocked = await reconcile(runId);
     expect(blocked.response.status).toBe(409);
@@ -866,12 +764,12 @@ test.each(["missing", "false"])(
         }),
       ],
     });
-    expect(
-      await testEnv.CATALOGUE_DB.prepare(`SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`).first(),
-    ).toEqual(currentBefore);
-    expect(
-      (await testEnv.CATALOGUE_DB.prepare(`SELECT * FROM source_freshness ORDER BY game, area`).all()).results,
-    ).toEqual(freshnessBefore);
+    expect(await publishedCatalogueQueries.readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB).first()).toEqual(
+      currentBefore,
+    );
+    expect((await sourceEvidenceQueries.readSourceFreshness(testEnv.CATALOGUE_DB).all()).results).toEqual(
+      freshnessBefore,
+    );
   },
 );
 
@@ -926,11 +824,8 @@ test("resolved opaque Card identities are canonical before approval and publicat
     type: "prohibited_combination",
     with_card_ids: canonicalCompanionIds,
   });
-  const canonicalRule = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT direct_card_ids_json, card_ids_json, effect_json
-     FROM legality_rules
-     WHERE official_id = ?`,
-  )
+  const canonicalRule = await legalityQueries
+    .readLegalityRulesDirectCardIdsJsonCardIdsJson(testEnv.CATALOGUE_DB)
     .bind("legality_rule_asia_resolved_card_order")
     .first<{
       direct_card_ids_json: string;
@@ -953,13 +848,11 @@ test("resolved opaque Card identities are canonical before approval and publicat
 });
 
 test("overlapping prohibited-combination operands fail before a candidate can be approved or published", async () => {
-  const currentBefore = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
-  ).first();
-  const revisionsBefore = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM catalogue_revisions`,
-  ).first();
-  const rulesBefore = await testEnv.CATALOGUE_DB.prepare(`SELECT COUNT(*) AS count FROM legality_rules`).first();
+  const currentBefore = await publishedCatalogueQueries
+    .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
+    .first();
+  const revisionsBefore = await publishedCatalogueQueries.countCatalogueRevisionsCount(testEnv.CATALOGUE_DB).first();
+  const rulesBefore = await legalityQueries.countLegalityRulesCount(testEnv.CATALOGUE_DB).first();
   const objectsBefore = (await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort();
 
   const blocked = await collectFixtureLegality(
@@ -978,14 +871,12 @@ test("overlapping prohibited-combination operands fail before a candidate can be
       }),
     ],
   });
-  expect(
-    await testEnv.CATALOGUE_DB.prepare(`SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`).first(),
-  ).toEqual(currentBefore);
-  expect(await testEnv.CATALOGUE_DB.prepare(`SELECT COUNT(*) AS count FROM catalogue_revisions`).first()).toEqual(
+  expect(await publishedCatalogueQueries.readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB).first()).toEqual(
+    currentBefore,
+  );
+  expect(await publishedCatalogueQueries.countCatalogueRevisionsCount(testEnv.CATALOGUE_DB).first()).toEqual(
     revisionsBefore,
   );
-  expect(await testEnv.CATALOGUE_DB.prepare(`SELECT COUNT(*) AS count FROM legality_rules`).first()).toEqual(
-    rulesBefore,
-  );
+  expect(await legalityQueries.countLegalityRulesCount(testEnv.CATALOGUE_DB).first()).toEqual(rulesBefore);
   expect((await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort()).toEqual(objectsBefore);
 });

@@ -1,3 +1,4 @@
+import * as ingestionQueries from "./query-helpers/ingestion";
 import { env } from "cloudflare:test";
 import { expect, test } from "vitest";
 import ingestionWorker from "../src/index";
@@ -21,9 +22,7 @@ function mountedRequest(
     new Request(`https://card.keepr.digital${path}`, {
       method,
       headers: {
-        ...(authenticated
-          ? { authorization: "Bearer vitest-administration-key" }
-          : {}),
+        ...(authenticated ? { authorization: "Bearer vitest-administration-key" } : {}),
         "cf-connecting-ip": "198.51.100.31",
         ...(body === undefined ? {} : { "content-type": "application/json" }),
       },
@@ -56,12 +55,8 @@ test("the health route answers under the mount and nowhere else", async () => {
 test("administration operation links are absolute public URLs", async () => {
   // An orphaned retry claim makes the route report the operation as in
   // progress; that document is the ingestion worker's link-bearing response.
-  await env.CATALOGUE_DB.prepare(
-    `INSERT INTO administration_idempotency_claims (
-       idempotency_key, operation, request_json, claimed_at,
-       owner_token, claim_version, claim_expires_at
-     ) VALUES (?, 'retry_ingestion_run', ?, ?, ?, 1, ?)`,
-  )
+  await ingestionQueries
+    .insertAdministrationIdempotencyClaimsForAdministrationOperationLinksAreAbsolutePublicURLs(env.CATALOGUE_DB)
     .bind(
       "retry-public-mount",
       `{"source_run_id":"run_public_mount"}`,
@@ -71,10 +66,10 @@ test("administration operation links are absolute public URLs", async () => {
     )
     .run();
 
-  const response = await mountedRequest(
-    "/ingest/v1/ingestion-runs/run_public_mount/retry",
-    { method: "POST", body: { idempotency_key: "retry-public-mount" } },
-  );
+  const response = await mountedRequest("/ingest/v1/ingestion-runs/run_public_mount/retry", {
+    method: "POST",
+    body: { idempotency_key: "retry-public-mount" },
+  });
   expect(response.status).toBe(202);
   await expect(response.json()).resolves.toMatchObject({
     contract: "card-keepr-administration-operation@1",

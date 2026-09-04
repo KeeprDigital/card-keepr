@@ -1,3 +1,6 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as reconciliationQueries from "./query-helpers/reconciliation";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { expect, test } from "vitest";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import { currentPrintingsResponse } from "../../../src/catalogue/read";
@@ -103,7 +106,7 @@ test("a complete Product fixture publishes separated release and distribution re
   }
   const printingId = requiredString(from as Record<string, unknown>, "id");
   const printingCollection = await currentPrintingsResponse(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     new Request(
       `https://card-keepr.invalid/v1/printings?game=one-piece&product_id=${encodeURIComponent(productId)}&release_region=EN-OCEANIA`,
     ),
@@ -235,11 +238,9 @@ test("a disappeared Distribution Context with no remaining lineage is not curren
   const missingCandidate = await reconcile(missingRun.id);
   const published = await approve(missingCandidate.document);
   expect(published.response.status).toBe(200);
-  const stored = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT current, source_lineages_json
-     FROM reconciled_distribution_contexts
-     WHERE context_key = 'championship-2026-pack'`,
-  ).first<{ current: number; source_lineages_json: string }>();
+  const stored = await reconciliationQueries
+    .readReconciledDistributionContextsCurrentSourceLineagesJson(testEnv.CATALOGUE_DB)
+    .first<{ current: number; source_lineages_json: string }>();
   expect(stored).toEqual({
     current: 0,
     source_lineages_json: "[]",
@@ -274,12 +275,10 @@ test("registered Product detail evidence outranks its conflicting listing throug
   const published = await approve(candidate.document);
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
-  const productDocument = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT document_json
-     FROM revision_products
-     WHERE catalogue_revision_id = ?
-       AND json_extract(document_json, '$.data.official_code') = ?`,
-  )
+  const productDocument = await publishedCatalogueQueries
+    .readRevisionProductsDocumentJsonForRegisteredProductDetailEvidenceOutranksConflictingListingThroughPublication(
+      testEnv.CATALOGUE_DB,
+    )
     .bind(revisionId, "FB-AUTHORITY")
     .first<{ document_json: string }>();
   expect(JSON.parse(productDocument?.document_json ?? "{}")).toMatchObject({
@@ -349,12 +348,8 @@ test("a registered code-less Product refresh preserves its established code", as
   expect(refreshPublication.response.status, JSON.stringify(refreshPublication.document)).toBe(200);
   const refreshRevision = requiredString(refreshPublication.document, "resulting_revision_id");
   expect(
-    await testEnv.CATALOGUE_DB.prepare(
-      `SELECT json_extract(document_json, '$.data.official_code') AS official_code
-       FROM revision_products
-       WHERE catalogue_revision_id = ?
-         AND product_id = ?`,
-    )
+    await publishedCatalogueQueries
+      .readRevisionProductsOfficialCode(testEnv.CATALOGUE_DB)
       .bind(refreshRevision, firstProduct?.id)
       .first<{ official_code: string | null }>(),
   ).toEqual({ official_code: "FB-STABLE" });
@@ -399,11 +394,8 @@ test("a registered fuzzy Product link remains a review warning through publicati
   expect(publication.response.status, JSON.stringify(publication.document)).toBe(200);
   const revisionId = requiredString(publication.document, "resulting_revision_id");
   expect(
-    await testEnv.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count
-       FROM reconciled_product_relationships
-       WHERE relationship_value = ?`,
-    )
+    await reconciliationQueries
+      .countReconciledProductRelationshipsCount(testEnv.CATALOGUE_DB)
       .bind("Possible Booster Product")
       .first<{ count: number }>(),
   ).toEqual({ count: 0 });

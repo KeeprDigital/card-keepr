@@ -1,8 +1,8 @@
-import { ingestionRunTransitionSql } from "../shared";
+import { type CatalogueStore, ingestionRunTransitionSql, repositoryStatements } from "../shared";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
-export function retainedPublicationCleanupStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function retainedPublicationCleanupStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT *
       FROM ingestion_publication_cleanup
       WHERE ingestion_run_id = ?`)
@@ -10,7 +10,7 @@ export function retainedPublicationCleanupStatement(database: D1Database, runId:
 }
 
 export function claimPublicationCleanupStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     observedAt: string;
     objectKeysJson: string;
@@ -22,7 +22,7 @@ export function claimPublicationCleanupStatement(
     priorClaimVersion: number;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_publication_cleanup
       SET state = 'cleaning',
           attempts = attempts + 1,
@@ -59,10 +59,10 @@ export function claimPublicationCleanupStatement(
 }
 
 export function completePublicationCleanupStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ completedAt: string; runId: string; claimToken: string; claimVersion: number }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_publication_cleanup
         SET state = 'completed',
             failure_code = NULL,
@@ -79,10 +79,10 @@ export function completePublicationCleanupStatement(
 }
 
 export function failPublicationCleanupStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; claimToken: string; claimVersion: number }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_publication_cleanup
         SET state = 'failed',
             failure_code = 'publication_cleanup_failed',
@@ -97,10 +97,10 @@ export function failPublicationCleanupStatement(
 }
 
 export function failCandidatePublicationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ terminalAt: string; failureCode: string; runId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
         SET state = 'failed',
             terminal_at = ?,
@@ -115,10 +115,10 @@ export function failCandidatePublicationStatement(
 }
 
 export function failPublicationEvidencePlanStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ failureCode: string; runId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_evidence_plans
         SET failure_code = ?
         WHERE ingestion_run_id = ?`)
@@ -126,7 +126,7 @@ export function failPublicationEvidencePlanStatement(
 }
 
 export function recordApprovalFailureStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     key: string;
     requestJson: string;
@@ -137,7 +137,7 @@ export function recordApprovalFailureStatement(
     claimVersion: number | null;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO administration_idempotency (
           idempotency_key,
           operation,
@@ -163,10 +163,10 @@ export function recordApprovalFailureStatement(
 }
 
 export function failReservedPublicationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ terminalAt: string; failureCode: string; runId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
         SET state = 'failed',
             terminal_at = ?,
@@ -181,10 +181,10 @@ export function failReservedPublicationStatement(
 }
 
 export function schedulePublicationCleanupStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; objectKeysJson: string; notBefore: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO ingestion_publication_cleanup (
             ingestion_run_id,
             state,

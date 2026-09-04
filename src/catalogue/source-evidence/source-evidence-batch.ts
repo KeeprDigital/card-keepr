@@ -1,3 +1,4 @@
+import type { CatalogueStore } from "../shared";
 import {
   advanceHostPacing,
   type CaptureTransportResult,
@@ -69,7 +70,7 @@ export const collectionBatchSize = 8;
 export const collectionBatchTimeBudgetMilliseconds = 4 * 60_000;
 
 export type SourceRequestBatchInput = Readonly<{
-  database: D1Database;
+  database: CatalogueStore;
   evidenceObjects: R2Bucket;
   officialSourceTransport: Fetcher;
   runId: string;

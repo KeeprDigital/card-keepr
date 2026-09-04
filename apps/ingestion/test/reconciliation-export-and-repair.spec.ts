@@ -1,3 +1,5 @@
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as ingestionQueries from "./query-helpers/ingestion";
 import { expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import {
@@ -266,23 +268,7 @@ test("Card search repair permits only retained revisions and revalidates unfinis
     return requiredString(published.document, "resulting_revision_id");
   };
   const revisionLineage = () =>
-    testEnv.CATALOGUE_DB.prepare(
-      `WITH RECURSIVE lineage(revision_id, depth) AS (
-         SELECT current_revision_id, 0
-         FROM catalogue_state
-         WHERE singleton = 1
-         UNION ALL
-         SELECT revision.expected_previous_revision_id,
-                lineage.depth + 1
-         FROM lineage
-         JOIN catalogue_revisions AS revision
-           ON revision.id = lineage.revision_id
-         WHERE lineage.depth < 4
-       )
-       SELECT revision_id, depth
-       FROM lineage
-       ORDER BY depth`,
-    ).all<{ revision_id: string; depth: number }>();
+    publishedCatalogueQueries.inspectCatalogueState(testEnv.CATALOGUE_DB).all<{ revision_id: string; depth: number }>();
   let lineage = (await revisionLineage()).results;
   for (let sequence = 1; lineage.length < 5; sequence += 1) {
     await publishScenario(sequence);
@@ -311,12 +297,8 @@ test("Card search repair permits only retained revisions and revalidates unfinis
     expected_current_revision_id: currentRevisionId,
     idempotency_key: "stale-unfinished-repair-replay",
   };
-  await testEnv.CATALOGUE_DB.prepare(
-    `INSERT INTO catalogue_search_repair_requests (
-       idempotency_key, target_revision_id,
-       expected_current_revision_id, request_json, result_json
-     ) VALUES (?, ?, ?, ?, ?)`,
-  )
+  await publishedCatalogueQueries
+    .insertCatalogueSearchRepairRequests(testEnv.CATALOGUE_DB)
     .bind(
       unfinishedRequest.idempotency_key,
       unfinishedRequest.target_revision_id,
@@ -408,16 +390,13 @@ test("one Card search repair idempotency key resumes bounded steps and replays o
   });
   await testEnv.CATALOGUE_DB.batch([
     ...cards.map(({ id, document }) =>
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO revision_cards (
-           catalogue_revision_id, card_id, document_json
-         ) VALUES (?, ?, ?)`,
-      ).bind(revisionId, id, document),
+      publishedCatalogueQueries
+        .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+          testEnv.CATALOGUE_DB,
+        )
+        .bind(revisionId, id, document),
     ),
-    testEnv.CATALOGUE_DB.prepare(
-      `DELETE FROM catalogue_query_revisions
-       WHERE catalogue_revision_id = ?`,
-    ).bind(revisionId),
+    publishedCatalogueQueries.deleteCatalogueQueryRevisions(testEnv.CATALOGUE_DB).bind(revisionId),
   ]);
 
   const repair = () =>
@@ -435,11 +414,8 @@ test("one Card search repair idempotency key resumes bounded steps and replays o
   });
   expect(Number(first.document.maximum_bound_parameter_bytes)).toBeLessThanOrEqual(65_536);
 
-  const revisionCardCount = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count
-     FROM revision_cards
-     WHERE catalogue_revision_id = ?`,
-  )
+  const revisionCardCount = await publishedCatalogueQueries
+    .countRevisionCardsCount(testEnv.CATALOGUE_DB)
     .bind(revisionId)
     .first<{ count: number }>();
   const maximumRepairCalls = Math.ceil(Number(revisionCardCount?.count ?? 0) / 25) + 1;
@@ -468,32 +444,29 @@ test("Card search repair rejects an oversized legacy Card before materializing i
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const oversizedCardId = "card_oversized_legacy_search_repair";
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_cards (
-         catalogue_revision_id, card_id, document_json
-       ) VALUES (?, ?, ?)`,
-    ).bind(
-      revisionId,
-      oversizedCardId,
-      JSON.stringify({
-        type: "card",
-        id: oversizedCardId,
-        game: "one-piece",
-        official_identity: {
-          kind: "card_number",
-          value: "OVERSIZED-001",
-        },
-        name: "Oversized legacy Card",
-        effective_rules_text: "x".repeat(65_536),
-        game_data: {},
-        lifecycle: {},
-        links: {},
-      }),
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `DELETE FROM catalogue_query_revisions
-       WHERE catalogue_revision_id = ?`,
-    ).bind(revisionId),
+    publishedCatalogueQueries
+      .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(
+        revisionId,
+        oversizedCardId,
+        JSON.stringify({
+          type: "card",
+          id: oversizedCardId,
+          game: "one-piece",
+          official_identity: {
+            kind: "card_number",
+            value: "OVERSIZED-001",
+          },
+          name: "Oversized legacy Card",
+          effective_rules_text: "x".repeat(65_536),
+          game_data: {},
+          lifecycle: {},
+          links: {},
+        }),
+      ),
+    publishedCatalogueQueries.deleteCatalogueQueryRevisions(testEnv.CATALOGUE_DB).bind(revisionId),
   ]);
 
   const repair = await post("/v1/catalogue-search-materialization/repair", {
@@ -514,16 +487,16 @@ test("publication rejects an over-budget candidate before writing any immutable 
   if (reconciled.response.status !== 200) {
     throw new Error(JSON.stringify(reconciled.document));
   }
-  const currentBefore = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
-  ).first<{ current_revision_id: string }>();
+  const currentBefore = await publishedCatalogueQueries
+    .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
+    .first<{ current_revision_id: string }>();
   const objectsBefore = (await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort();
 
   const blocked = await approve(reconciled.document);
   const objectsAfter = (await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort();
-  const currentAfter = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
-  ).first<{ current_revision_id: string }>();
+  const currentAfter = await publishedCatalogueQueries
+    .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
+    .first<{ current_revision_id: string }>();
 
   expect(blocked.response.status).toBe(422);
   expect(blocked.document).toMatchObject({
@@ -562,12 +535,12 @@ test("an oversized legality relationship export fails terminally before reservat
     expected_current_revision_id: requiredString(reconciled.document, "expected_current_revision_id"),
     idempotency_key: approvalKey,
   };
-  const currentBefore = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
-  ).first<{ current_revision_id: string }>();
-  const revisionsBefore = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM catalogue_revisions`,
-  ).first<{ count: number }>();
+  const currentBefore = await publishedCatalogueQueries
+    .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
+    .first<{ current_revision_id: string }>();
+  const revisionsBefore = await publishedCatalogueQueries
+    .countCatalogueRevisionsCount(testEnv.CATALOGUE_DB)
+    .first<{ count: number }>();
   const objectsBefore = (await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort();
 
   const blocked = await post(`/v1/ingestion-runs/${run.id}/approval`, approvalRequest);
@@ -576,9 +549,8 @@ test("an oversized legality relationship export fails terminally before reservat
     code: "catalogue_export_too_large",
   });
 
-  const storedFailure = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT state, failure_code FROM ingestion_runs WHERE id = ?`,
-  )
+  const storedFailure = await ingestionQueries
+    .readIngestionRunsStateFailureCode(testEnv.CATALOGUE_DB)
     .bind(run.id)
     .first<{ state: string; failure_code: string | null }>();
   expect(storedFailure).toEqual({
@@ -591,17 +563,8 @@ test("an oversized legality relationship export fails terminally before reservat
     state: "failed",
     failure_code: "catalogue_export_too_large",
   });
-  const lifecycle = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT
-       (SELECT COUNT(*) FROM administration_idempotency_claims
-        WHERE idempotency_key = ?) AS claims,
-       (SELECT COUNT(*) FROM administration_idempotency
-        WHERE idempotency_key = ?
-          AND operation = 'approve_ingestion_run'
-          AND outcome = 'problem') AS outcomes,
-       (SELECT active_ingestion_run_id FROM operation_state
-        WHERE singleton = 1) AS active_ingestion_run_id`,
-  )
+  const lifecycle = await ingestionQueries
+    .countAdministrationIdempotencyClaims(testEnv.CATALOGUE_DB)
     .bind(approvalKey, approvalKey)
     .first<{
       claims: number;
@@ -623,10 +586,10 @@ test("an oversized legality relationship export fails terminally before reservat
     type: blocked.document.type,
   });
   expect((await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort()).toEqual(objectsBefore);
-  expect(
-    await testEnv.CATALOGUE_DB.prepare(`SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`).first(),
-  ).toEqual(currentBefore);
-  expect(await testEnv.CATALOGUE_DB.prepare(`SELECT COUNT(*) AS count FROM catalogue_revisions`).first()).toEqual(
+  expect(await publishedCatalogueQueries.readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB).first()).toEqual(
+    currentBefore,
+  );
+  expect(await publishedCatalogueQueries.countCatalogueRevisionsCount(testEnv.CATALOGUE_DB).first()).toEqual(
     revisionsBefore,
   );
 });
@@ -665,20 +628,8 @@ test("reserved oversized legality relationship recovery preserves the typed term
     candidate_digest: digest,
     expected_current_revision_id: expectedRevision,
   };
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE ingestion_runs
-     SET state = 'publishing',
-         approval_json = ?,
-         approval_idempotency_key = ?,
-         approval_history_json = ?,
-         progress_json = ?,
-         publication_revision_id = ?,
-         publication_started_at = ?,
-         publication_reconcile_after = ?,
-         publication_manifest_digest = ?,
-         publication_writer_token = ?
-     WHERE id = ? AND state = 'awaiting_approval'`,
-  )
+  await ingestionQueries
+    .setIngestionRunsStateApprovalJson(testEnv.CATALOGUE_DB)
     .bind(
       JSON.stringify(approval),
       approvalKey,
@@ -695,12 +646,12 @@ test("reserved oversized legality relationship recovery preserves the typed term
       run.id,
     )
     .run();
-  const currentBefore = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
-  ).first<{ current_revision_id: string }>();
-  const revisionsBefore = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM catalogue_revisions`,
-  ).first<{ count: number }>();
+  const currentBefore = await publishedCatalogueQueries
+    .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
+    .first<{ current_revision_id: string }>();
+  const revisionsBefore = await publishedCatalogueQueries
+    .countCatalogueRevisionsCount(testEnv.CATALOGUE_DB)
+    .first<{ count: number }>();
   const objectsBefore = (await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort();
 
   const blocked = await post(`/v1/ingestion-runs/${run.id}/approval`, approvalRequest);
@@ -713,21 +664,10 @@ test("reserved oversized legality relationship recovery preserves the typed term
     state: "failed",
     failure_code: "catalogue_export_too_large",
   });
-  const lifecycle = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT
-       (SELECT COUNT(*) FROM administration_idempotency_claims
-        WHERE idempotency_key = ?) AS claims,
-       (SELECT COUNT(*) FROM administration_idempotency
-        WHERE idempotency_key = ?
-          AND operation = 'approve_ingestion_run'
-          AND outcome = 'problem' AND http_status = 422) AS outcomes,
-       (SELECT active_ingestion_run_id FROM operation_state
-        WHERE singleton = 1) AS active_ingestion_run_id,
-       (SELECT state FROM ingestion_publication_cleanup
-        WHERE ingestion_run_id = ?) AS cleanup_state,
-       (SELECT object_keys_json FROM ingestion_publication_cleanup
-        WHERE ingestion_run_id = ?) AS cleanup_keys`,
-  )
+  const lifecycle = await ingestionQueries
+    .countAdministrationIdempotencyClaimsForReservedOversizedLegalityRelationshipRecoveryPreservesTypedTerminalProblem(
+      testEnv.CATALOGUE_DB,
+    )
     .bind(approvalKey, approvalKey, run.id, run.id)
     .first<{
       claims: number;
@@ -753,10 +693,10 @@ test("reserved oversized legality relationship recovery preserves the typed term
     type: blocked.document.type,
   });
   expect((await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort()).toEqual(objectsBefore);
-  expect(
-    await testEnv.CATALOGUE_DB.prepare(`SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`).first(),
-  ).toEqual(currentBefore);
-  expect(await testEnv.CATALOGUE_DB.prepare(`SELECT COUNT(*) AS count FROM catalogue_revisions`).first()).toEqual(
+  expect(await publishedCatalogueQueries.readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB).first()).toEqual(
+    currentBefore,
+  );
+  expect(await publishedCatalogueQueries.countCatalogueRevisionsCount(testEnv.CATALOGUE_DB).first()).toEqual(
     revisionsBefore,
   );
 });

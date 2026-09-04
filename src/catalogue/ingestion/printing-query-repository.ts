@@ -1,10 +1,11 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
 export function publishPrintingQueryFactsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; factsJson: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO revision_printing_query (
         catalogue_revision_id, printing_id, card_id, supported_game, normalized_rarity
       ) SELECT ?, json_extract(value, '$.printing_id'), json_extract(value, '$.card_id'),
@@ -14,10 +15,10 @@ export function publishPrintingQueryFactsStatement(
 }
 
 export function publishPrintingProductQueryFactsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO revision_printing_product_query (
         catalogue_revision_id, printing_id, card_id, product_id, release_region
       )

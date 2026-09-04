@@ -1,7 +1,8 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
-export function publishLegalityRuleFactsStatement(database: D1Database, payload: string): D1PreparedStatement {
-  return database
+export function publishLegalityRuleFactsStatement(database: CatalogueStore, payload: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`INSERT INTO legality_rules (
              id, official_id, supported_game, region, format, event_tier,
              effective_from, effective_until, official_wording,
@@ -47,10 +48,10 @@ export function publishLegalityRuleFactsStatement(database: D1Database, payload:
 }
 
 export function publishRevisionLegalityRulesStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ revisionId: string; payload: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO revision_legality_rules (
              catalogue_revision_id, legality_rule_id, supported_game,
              region, format, event_tier, effective_from, effective_until,

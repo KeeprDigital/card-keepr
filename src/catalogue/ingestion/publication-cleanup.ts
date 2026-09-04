@@ -1,22 +1,21 @@
-import {
-  retainedPublicationCleanupStatement,
-  claimPublicationCleanupStatement,
-  completePublicationCleanupStatement,
-  failPublicationCleanupStatement,
-  failCandidatePublicationStatement,
-  failPublicationEvidencePlanStatement,
-  recordApprovalFailureStatement,
-  failReservedPublicationStatement,
-  schedulePublicationCleanupStatement,
-} from "./publication-cleanup-repository";
-import { AdministrationProblem, canonicalJson } from "../shared";
-
+import { AdministrationProblem, type CatalogueStore, canonicalJson } from "../shared";
 import {
   administrationClaimDeleteStatement,
   currentAdministrationClaimOwner,
   idempotencyCompletionStatements,
   replayAdministration,
 } from "./administration-idempotency";
+import {
+  claimPublicationCleanupStatement,
+  completePublicationCleanupStatement,
+  failCandidatePublicationStatement,
+  failPublicationCleanupStatement,
+  failPublicationEvidencePlanStatement,
+  failReservedPublicationStatement,
+  recordApprovalFailureStatement,
+  retainedPublicationCleanupStatement,
+  schedulePublicationCleanupStatement,
+} from "./publication-cleanup-repository";
 import {
   listCatalogueExportPrefix,
   PublicationPrefixOwnershipError,
@@ -39,7 +38,7 @@ import {
 import { isIsoInstant, isSha256Digest, requiredPublicationValue } from "./run-values";
 
 export async function attemptPublicationCleanup(
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
   runId: string,
   observedAt: string,
@@ -305,7 +304,7 @@ async function deleteR2KeysInBatches(bucket: R2Bucket, keys: readonly string[]):
 }
 
 export async function failUnreservedPublication(
-  database: D1Database,
+  database: CatalogueStore,
   run: RunRow,
   request: ApproveRunRequest,
   requestJson: string,
@@ -342,7 +341,7 @@ export async function failUnreservedPublication(
 }
 
 export async function failReservedPublication(
-  database: D1Database,
+  database: CatalogueStore,
   run: RunRow,
   objectKeys: readonly string[] | null,
   terminalAt: string,

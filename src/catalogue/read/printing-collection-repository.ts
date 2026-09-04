@@ -1,3 +1,4 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 export type PrintingCollectionFilters = {
   card_id: string | null;
   game: string | null;
@@ -91,12 +92,14 @@ export function printingCollectionQuery(
 }
 
 export function printingCollectionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
   filters: PrintingCollectionFilters,
   after: { card_id: string; id: string } | null,
   limit: number,
 ): D1PreparedStatement {
   const query = printingCollectionQuery(revisionId, filters, after, limit);
-  return database.prepare(query.sql).bind(...query.bindings);
+  return repositoryStatements(database)
+    .prepare(query.sql)
+    .bind(...query.bindings);
 }

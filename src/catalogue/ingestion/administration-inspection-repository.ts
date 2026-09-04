@@ -1,38 +1,44 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
-export function administrationSourceFreshnessStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT game, area, source_lineage, region, checked_at,
+export function administrationSourceFreshnessStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`SELECT game, area, source_lineage, region, checked_at,
                   ingestion_run_id
           FROM source_freshness
           ORDER BY game, area, source_lineage, region`);
 }
 
-export function recentIngestionRunsStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT * FROM ingestion_runs
+export function recentIngestionRunsStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`SELECT * FROM ingestion_runs
           ORDER BY started_at DESC, id DESC
           LIMIT 20`);
 }
 
-export function catalogueRevisionCountStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare("SELECT COUNT(*) AS count FROM catalogue_revisions");
+export function catalogueRevisionCountStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare("SELECT COUNT(*) AS count FROM catalogue_revisions");
 }
 
-export function catalogueExportCountStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare("SELECT COUNT(*) AS count FROM catalogue_exports");
+export function catalogueExportCountStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare("SELECT COUNT(*) AS count FROM catalogue_exports");
 }
 
-export function pendingPublicationCleanupCountStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT COUNT(*) AS count
+export function pendingPublicationCleanupCountStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`SELECT COUNT(*) AS count
           FROM ingestion_publication_cleanup
           WHERE state IN ('pending', 'failed')`);
 }
 
-export function catalogueSchemaLevelStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare("SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1");
+export function catalogueSchemaLevelStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(
+    "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
+  );
 }
 
-export function currentRevisionVerifiedBackupStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database
+export function currentRevisionVerifiedBackupStatement(
+  database: CatalogueStore,
+  revisionId: string,
+): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT idempotency_key, d1_bookmark, manifest_sha256
      FROM catalogue_backup_attempts
      WHERE state = 'verified' AND catalogue_revision_id = ?
@@ -41,8 +47,8 @@ export function currentRevisionVerifiedBackupStatement(database: D1Database, rev
     .bind(revisionId);
 }
 
-export function retainedRevisionInspectionStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`WITH RECURSIVE retained(revision_id, depth) AS (
+export function retainedRevisionInspectionStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`WITH RECURSIVE retained(revision_id, depth) AS (
        SELECT revision.id, 0 FROM catalogue_state AS state
        JOIN catalogue_revisions AS revision ON revision.id = state.current_revision_id
        WHERE state.singleton = 1
@@ -67,31 +73,35 @@ export function retainedRevisionInspectionStatement(database: D1Database): D1Pre
      ORDER BY retained.depth`);
 }
 
-export function pendingReplacementRecoveryStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT id, target_revision_id, target_digest, restored_database_id, retained_database_id, verification_json
+export function pendingReplacementRecoveryStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(
+    database,
+  ).prepare(`SELECT id, target_revision_id, target_digest, restored_database_id, retained_database_id, verification_json
      FROM catalogue_recovery_operations
      WHERE state = 'awaiting_acceptance' AND method = 'replacement_database'
      ORDER BY started_at DESC LIMIT 1`);
 }
 
-export function activeProductionReleaseStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT id, state, expected_head_sha, api_version_id, ingestion_version_id,
+export function activeProductionReleaseStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(
+    database,
+  ).prepare(`SELECT id, state, expected_head_sha, api_version_id, ingestion_version_id,
             failure_code, roll_forward_required
      FROM production_releases
      WHERE state IN ('requested','preflight','migrating','deploying','smoke_testing')
      LIMIT 1`);
 }
 
-export function runHasReconciliationContextStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function runHasReconciliationContextStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT 1 AS present
            FROM reconciliation_contexts
            WHERE ingestion_run_id = ?`)
     .bind(runId);
 }
 
-export function smokeTargetCardsStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database
+export function smokeTargetCardsStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT query.card_id,query.sort_game,query.sort_identity_kind,
                 query.sort_identity_value,query.sort_id,card.document_json
          FROM revision_card_query_documents AS query
@@ -103,18 +113,18 @@ export function smokeTargetCardsStatement(database: D1Database, revisionId: stri
     .bind(revisionId);
 }
 
-export function smokeTargetPrintingsStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database
+export function smokeTargetPrintingsStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT printing_id,card_id FROM revision_printings
          WHERE catalogue_revision_id=? ORDER BY card_id,printing_id LIMIT 2`)
     .bind(revisionId);
 }
 
 export function smokeTargetSearchMatchStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ ftsQuery: string; revisionId: string; cardId: string; searchQuery: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT 1 AS present FROM revision_card_search_fts
        WHERE revision_card_search_fts MATCH ?
          AND catalogue_revision_id=? AND card_id=?
@@ -122,13 +132,13 @@ export function smokeTargetSearchMatchStatement(
     .bind(input.ftsQuery, input.revisionId, input.cardId, input.searchQuery);
 }
 
-export function archivedQueryRevisionStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT catalogue_revision_id FROM catalogue_query_revisions
+export function archivedQueryRevisionStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`SELECT catalogue_revision_id FROM catalogue_query_revisions
        WHERE state='archived' ORDER BY catalogue_revision_id DESC LIMIT 1`);
 }
 
-export function smokeTargetExtrasStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database
+export function smokeTargetExtrasStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT
        (SELECT image_id FROM revision_printing_images WHERE catalogue_revision_id=? ORDER BY image_id LIMIT 1) AS printing_image_id,
        (SELECT json_extract(card_ids_json,'$[0]') FROM revision_legality_rules WHERE catalogue_revision_id=? AND json_array_length(card_ids_json)>0 ORDER BY legality_rule_id LIMIT 1) AS legality_card_id,
@@ -137,9 +147,9 @@ export function smokeTargetExtrasStatement(database: D1Database, revisionId: str
     .bind(revisionId, revisionId, revisionId, revisionId);
 }
 
-export function registeredRevisionIdsStatement(database: D1Database, ids: readonly string[]): D1PreparedStatement {
+export function registeredRevisionIdsStatement(database: CatalogueStore, ids: readonly string[]): D1PreparedStatement {
   const placeholders = ids.map(() => "?").join(", ");
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT id
           FROM catalogue_revisions
           WHERE id IN (${placeholders})`)
@@ -147,11 +157,11 @@ export function registeredRevisionIdsStatement(database: D1Database, ids: readon
 }
 
 export function publicationCleanupsForRunIdsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   ids: readonly string[],
 ): D1PreparedStatement {
   const placeholders = ids.map(() => "?").join(", ");
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT *
       FROM ingestion_publication_cleanup
       WHERE ingestion_run_id IN (${placeholders})`)

@@ -1,20 +1,25 @@
-import { inspectWorkflowInstance } from "../../../src/catalogue/shared";
-import { authenticateBearer } from "../../../src/http/authentication";
-import { ingestionRoutes, type PublicationBackupWaiter } from "../../../src/catalogue/ingestion";
-import { sourceEvidenceRoutes } from "../../../src/catalogue/source-evidence";
-import { reconciliationRoutes } from "../../../src/catalogue/reconciliation";
+import { backupRecoveryRoutes, enforceRecoveryRestoreGuard } from "../../../src/catalogue/backup-recovery";
 import { curatedRoutes } from "../../../src/catalogue/curated";
 import { exportRoutes } from "../../../src/catalogue/export";
-import { backupRecoveryRoutes, enforceRecoveryRestoreGuard } from "../../../src/catalogue/backup-recovery";
+import { ingestionRoutes, type PublicationBackupWaiter } from "../../../src/catalogue/ingestion";
+import { reconciliationRoutes } from "../../../src/catalogue/reconciliation";
+import {
+  type CatalogueStore,
+  catalogueEnvironment,
+  catalogueStore,
+  inspectWorkflowInstance,
+} from "../../../src/catalogue/shared";
+import { sourceEvidenceRoutes } from "../../../src/catalogue/source-evidence";
+import { authenticateBearer } from "../../../src/http/authentication";
 import { isLivenessRequest, livenessRequest, readinessResponse } from "../../../src/http/health";
-import { problemResponse } from "../../../src/http/problem";
-import { rateLimitFailure } from "../../../src/http/rate-limit";
-import { ingestionCapabilities } from "../../../src/runtime-capabilities.mjs";
 import { withOperationalRequestLog } from "../../../src/http/operational-log";
-import { mountedRequest, publicBase, routePath, type PublicBase } from "../../../src/http/public-base";
-import { routeTable, routeSegments, type RouteContext } from "../../../src/http/routes";
-import { administrationObservedAt, publicationBackupWaiter } from "./request-clock";
+import { problemResponse } from "../../../src/http/problem";
+import { mountedRequest, type PublicBase, publicBase, routePath } from "../../../src/http/public-base";
+import { rateLimitFailure } from "../../../src/http/rate-limit";
+import { type RouteContext, routeSegments, routeTable } from "../../../src/http/routes";
+import { ingestionCapabilities } from "../../../src/runtime-capabilities.mjs";
 import { ingestionProblemResponse } from "./problem";
+import { administrationObservedAt, publicationBackupWaiter } from "./request-clock";
 
 const routes = [
   ...ingestionRoutes,
@@ -25,17 +30,20 @@ const routes = [
   ...backupRecoveryRoutes,
 ];
 const dispatch = routeTable<
-  RouteContext<Env> & { observedAt: string; publicationBackupWaiter: PublicationBackupWaiter }
+  RouteContext<Omit<Env, "CATALOGUE_DB"> & { CATALOGUE_DB: CatalogueStore }> & {
+    observedAt: string;
+    publicationBackupWaiter: PublicationBackupWaiter;
+  }
 >(routes);
 const logOptions = { routeSegments: routeSegments(routes, ["/health", "/healthz"]) };
 
+export { CatalogueBackupWorkflow } from "./backup-workflow";
 export {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
 } from "./evidence-workflows";
-export { ReconciliationWorkflow } from "./reconciliation-workflow";
-export { CatalogueBackupWorkflow } from "./backup-workflow";
 export { OfficialSourceTransport } from "./official-source-transport";
+export { ReconciliationWorkflow } from "./reconciliation-workflow";
 
 async function handleIngestionRequest(
   request: Request,
@@ -83,11 +91,11 @@ async function handleIngestionRequest(
       });
     }
     const observedAt = administrationObservedAt(request, env);
-    await enforceRecoveryRestoreGuard(env.CATALOGUE_DB);
+    await enforceRecoveryRestoreGuard(catalogueStore(env.CATALOGUE_DB));
 
     const response = await dispatch(request.method, url.pathname, {
       request,
-      env,
+      env: catalogueEnvironment(env),
       context,
       requestId,
       base,

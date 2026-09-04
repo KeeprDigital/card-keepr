@@ -1,10 +1,11 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
 export function collectionRequestGroupsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; lineagesJson: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT
              CASE WHEN instr(request_id, ':') > 0
                AND substr(request_id, 1, instr(request_id, ':') - 1)
@@ -19,8 +20,8 @@ export function collectionRequestGroupsStatement(
     .bind(input.runId, input.lineagesJson);
 }
 
-export function collectionEvidenceCountsStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function collectionEvidenceCountsStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT
              (SELECT COUNT(*) FROM source_snapshots
               WHERE ingestion_run_id = ?1) AS snapshot_count,
@@ -44,8 +45,8 @@ export function collectionEvidenceCountsStatement(database: D1Database, runId: s
     .bind(runId);
 }
 
-export function latestCollectionFailureStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function latestCollectionFailureStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT attempts.request_id, attempts.outcome, attempts.http_status,
                   attempts.attempt_number, attempts.completed_at,
                   ${hostnameSql} AS hostname
@@ -61,8 +62,8 @@ export function latestCollectionFailureStatement(database: D1Database, runId: st
     .bind(runId);
 }
 
-export function latestCollectionRequestStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function latestCollectionRequestStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT requests.request_id, requests.request_role, requests.state,
                   ${hostnameSql} AS hostname,
                   (SELECT COUNT(*) FROM source_fetch_attempts AS attempts
@@ -86,8 +87,8 @@ export function latestCollectionRequestStatement(database: D1Database, runId: st
     .bind(runId);
 }
 
-export function collectionHostProgressStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function collectionHostProgressStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT open.hostname,
                   SUM(CASE WHEN open.state = 'pending' THEN 1 ELSE 0 END)
                     AS pending_request_count,
@@ -108,10 +109,10 @@ export function collectionHostProgressStatement(database: D1Database, runId: str
 }
 
 export function failedPrintingImagesStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; toleratedCodesJson: string; limit: number }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT requests.request_id, ${hostnameSql} AS hostname,
                   requests.failure_code,
                   (SELECT COUNT(*) FROM source_fetch_attempts AS attempts
@@ -130,10 +131,10 @@ export function failedPrintingImagesStatement(
 }
 
 export function recentCollectionSnapshotsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; limit: number }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT * FROM source_snapshots
          WHERE ingestion_run_id = ?
          ORDER BY retrieved_at DESC, id DESC LIMIT ?`)
@@ -141,10 +142,10 @@ export function recentCollectionSnapshotsStatement(
 }
 
 export function recentCollectionObservationsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; limit: number }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT observations.* FROM source_observation_sets AS observations
          JOIN source_snapshots AS snapshots
            ON snapshots.id = observations.source_snapshot_id
@@ -154,10 +155,10 @@ export function recentCollectionObservationsStatement(
 }
 
 export function recentCollectionAttemptsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; limit: number }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT * FROM source_fetch_attempts
          WHERE ingestion_run_id = ?
          ORDER BY completed_at DESC, request_id DESC, attempt_number DESC

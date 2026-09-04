@@ -1,3 +1,4 @@
+import type { CatalogueStore } from "./catalogue-store-repository";
 import {
   persistReconciliationPayloadChunkStatement,
   retainedReconciliationPayloadChunksStatement,
@@ -13,7 +14,7 @@ export function chunkedPayloadMarker(kind: "candidate" | "digest"): string {
 }
 
 export function payloadChunkStatements(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   kind: "candidate" | "digest",
   value: string,
@@ -24,7 +25,7 @@ export function payloadChunkStatements(
 }
 
 export async function retainedPayload(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   kind: "candidate" | "digest",
   inline: string,

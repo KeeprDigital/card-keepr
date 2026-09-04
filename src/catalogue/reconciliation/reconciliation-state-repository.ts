@@ -1,8 +1,8 @@
-import { ingestionRunTransitionSql } from "../shared";
+import { type CatalogueStore, ingestionRunTransitionSql, repositoryStatements } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
 export function createReconciliationContextStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     runId: string;
     observationSetId: string;
@@ -11,7 +11,7 @@ export function createReconciliationContextStatement(
     digestPayload: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO reconciliation_contexts (
           ingestion_run_id, source_observation_set_id,
           source_snapshot_id, source_lineage, digest_payload_json
@@ -19,8 +19,8 @@ export function createReconciliationContextStatement(
     .bind(input.runId, input.observationSetId, input.snapshotId, input.sourceLineage, input.digestPayload);
 }
 
-export function beginReconciliationStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function beginReconciliationStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
          SET state = 'reconciling',
              progress_json =
@@ -30,7 +30,7 @@ export function beginReconciliationStatement(database: D1Database, runId: string
 }
 
 export function reviewableCandidateStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     candidatePayload: string;
     candidateDigest: string;
@@ -41,7 +41,7 @@ export function reviewableCandidateStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
          SET state = 'awaiting_approval',
              candidate_json = ?,
@@ -65,7 +65,7 @@ export function reviewableCandidateStatement(
 }
 
 export function blockedCandidateStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     candidatePayload: string;
     candidateDigest: string;
@@ -78,7 +78,7 @@ export function blockedCandidateStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
          SET state = 'failed',
              candidate_json = ?,
@@ -105,8 +105,8 @@ export function blockedCandidateStatement(
     );
 }
 
-export function releaseReconciliationRunStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function releaseReconciliationRunStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`UPDATE operation_state
          SET active_ingestion_run_id = NULL
          WHERE singleton = 1 AND active_ingestion_run_id = ?`)
@@ -114,10 +114,10 @@ export function releaseReconciliationRunStatement(database: D1Database, runId: s
 }
 
 export function failedReconciliationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ terminalAt: string; diagnosticsJson: string; runId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
          SET state = 'failed', terminal_at = ?,
              failure_code = 'printing_reconciliation_blocked',
@@ -129,10 +129,10 @@ export function failedReconciliationStatement(
 }
 
 export function failedReconciliationWorkflowStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ terminalAt: string; failureCode: string; diagnosticsJson: string; runId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
          SET state = 'failed', terminal_at = ?,
              failure_code = ?,
@@ -144,10 +144,10 @@ export function failedReconciliationWorkflowStatement(
 }
 
 export function releaseFailedReconciliationWorkflowStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ activeRunId: string; runId: string; failureCode: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE operation_state
          SET active_ingestion_run_id = NULL
          WHERE singleton = 1
@@ -161,10 +161,10 @@ export function releaseFailedReconciliationWorkflowStatement(
 }
 
 export function candidatePlansStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; warningsJson: string; plansJson: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO reconciliation_candidates (
          ingestion_run_id, source_observation_set_id, source_snapshot_id,
          source_observation_id, card_id, printing_id, source_lineage,
@@ -192,10 +192,10 @@ export function candidatePlansStatement(
 }
 
 export function evidencePartitionsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; partitionsJson: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO reconciliation_evidence_partitions (
            ingestion_run_id, sequence_number, request_id,
            source_observation_set_id, source_snapshot_id, source_lineage,
@@ -213,8 +213,8 @@ export function evidencePartitionsStatement(
     .bind(input.runId, input.partitionsJson);
 }
 
-export function reconciliationCandidatePlansStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function reconciliationCandidatePlansStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT *
        FROM reconciliation_candidates
        WHERE ingestion_run_id = ?
@@ -223,16 +223,16 @@ export function reconciliationCandidatePlansStatement(database: D1Database, runI
     .bind(runId);
 }
 
-export function reconciliationDigestPayloadStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function reconciliationDigestPayloadStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT digest_payload_json
        FROM reconciliation_contexts
        WHERE ingestion_run_id = ?`)
     .bind(runId);
 }
 
-export function retainedCandidateResultStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function retainedCandidateResultStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT run.candidate_json, run.candidate_digest,
               run.expected_current_revision_id,
               context.digest_payload_json

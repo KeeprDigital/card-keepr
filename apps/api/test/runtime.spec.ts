@@ -1,3 +1,10 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { inspectCardCollectionQuery } from "../../ingestion/test/query-helpers/collection-query-plans";
+import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
+import * as ingestionQueries from "../../ingestion/test/query-helpers/ingestion";
+import * as catalogueExportQueries from "../../ingestion/test/query-helpers/catalogue-export";
+import * as legalityQueries from "../../ingestion/test/query-helpers/legality";
+import * as cardSearchQueries from "../../ingestion/test/query-helpers/card-search";
 import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
@@ -10,7 +17,7 @@ import {
   reconstructCardSearchAfterD1Restore,
   withCardSearchPreparedForD1Export,
 } from "../../../src/catalogue/backup-recovery";
-import { cardCollectionPageQuery, cardSearchQuery, cardSearchTerms, cardSearchText } from "../../../src/catalogue/read";
+import { cardSearchQuery, cardSearchTerms, cardSearchText } from "../../../src/catalogue/read";
 import { canonicalJson, deterministicGzip, sha256, sha256Text, utf8 } from "../../../src/catalogue/shared";
 import apiWorker from "../src/index";
 import {
@@ -170,11 +177,7 @@ test("every Card collection shape returns the normative 503 while the current pr
       }),
     ],
   });
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_query_revisions
-     SET state = 'pending'
-     WHERE catalogue_revision_id = 'catrev_pending_query_projection'`,
-  ).run();
+  await publishedCatalogueQueries.setCatalogueQueryRevisionsState(testEnv.CATALOGUE_DB).run();
   for (const path of ["/v1/cards", "/v1/cards?q=pending"]) {
     const response = await exports.default.fetch(
       new Request(`https://card-keepr.invalid${path}`, {
@@ -201,11 +204,11 @@ test("a supplied cursor for an unavailable current revision returns the cursor r
       }),
     ],
   });
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_query_revisions
-     SET state = 'pending'
-     WHERE catalogue_revision_id = 'catrev_current_cursor_unavailable'`,
-  ).run();
+  await publishedCatalogueQueries
+    .setCatalogueQueryRevisionsStateForSuppliedCursorUnavailableCurrentRevisionReturnsCursorRestartProblem(
+      testEnv.CATALOGUE_DB,
+    )
+    .run();
   const cursor = encodeTestCardCursor({
     revisionId: "catrev_current_cursor_unavailable",
     route: "/v1/cards",
@@ -355,45 +358,26 @@ test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact 
     },
   });
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, linked_run_id, idempotency_key,
-        candidate_digest, candidate_created_at, approval_deadline,
-        approval_json, published_revision_id, export_manifest_digest,
-        terminal_at, candidate_json, approval_idempotency_key
-      ) VALUES (
-        'run_retained_export', 'publishing', '["gundam"]', ?,
-        'catrev_spine_000', NULL, 'historical-v1-seed', ?, ?,
-        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-      )`,
-    ).bind(
-      publishedAt,
-      candidateDigest,
-      publishedAt,
-      JSON.stringify({
-        action: "approved",
-        candidate_digest: candidateDigest,
-        expected_current_revision_id: "catrev_spine_000",
-        approved_at: publishedAt,
-      }),
+    ingestionQueries
+      .insertIngestionRunsForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(testEnv.CATALOGUE_DB)
+      .bind(
+        publishedAt,
+        candidateDigest,
+        publishedAt,
+        JSON.stringify({
+          action: "approved",
+          candidate_digest: candidateDigest,
+          expected_current_revision_id: "catrev_spine_000",
+          approved_at: publishedAt,
+        }),
+      ),
+    ingestionQueries.setOperationStateActiveIngestionRunIdForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(
+      testEnv.CATALOGUE_DB,
     ),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE operation_state
-       SET active_ingestion_run_id = 'run_retained_export'
-       WHERE singleton = 1`,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO catalogue_revisions (
-        id, ingestion_run_id, published_at, content_digest,
-        expected_previous_revision_id, approved_candidate_digest
-      ) VALUES (?, 'run_retained_export', ?, ?, 'catrev_spine_000', ?)`,
-    ).bind(revisionId, publishedAt, candidateDigest, candidateDigest),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO catalogue_exports (
-        catalogue_revision_id, manifest_key, manifest_digest, verified
-      ) VALUES (?, ?, ?, 1)`,
-    ).bind(revisionId, manifestKey, manifestDigest),
+    ingestionQueries
+      .insertCatalogueRevisionsForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(testEnv.CATALOGUE_DB)
+      .bind(revisionId, publishedAt, candidateDigest, candidateDigest),
+    catalogueExportQueries.insertCatalogueExports(testEnv.CATALOGUE_DB).bind(revisionId, manifestKey, manifestDigest),
   ]);
 
   const authenticatedRequest = (path: string) =>
@@ -698,9 +682,7 @@ test("Catalogue Export listing ETags change when a retained package disappears",
     page: { next_cursor: expect.any(String) },
   });
 
-  await testEnv.CATALOGUE_DB.prepare(`DELETE FROM catalogue_exports WHERE catalogue_revision_id = ?`)
-    .bind("catrev_export_etag_old")
-    .run();
+  await catalogueExportQueries.deleteCatalogueExports(testEnv.CATALOGUE_DB).bind("catrev_export_etag_old").run();
   const changed = await exports.default.fetch(
     new Request(`https://card-keepr.invalid${path}`, {
       headers: {
@@ -724,10 +706,9 @@ test("a known deleting or deleted Catalogue Export is immediately 410 while an u
     "run_export_deleted_current",
     "2026-07-19T00:00:00.000Z",
   );
-  const oldExport = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT manifest_key, manifest_digest FROM catalogue_exports
-     WHERE catalogue_revision_id = 'catrev_export_deleted_old'`,
-  ).first<{ manifest_key: string; manifest_digest: string }>();
+  const oldExport = await catalogueExportQueries
+    .readCatalogueExportsManifestKeyManifestDigest(testEnv.CATALOGUE_DB)
+    .first<{ manifest_key: string; manifest_digest: string }>();
   if (oldExport === null) throw new Error("missing API deletion fixture");
   const planId = "export-deletion-api-plan";
   const deletionId = "export-deletion-api-test";
@@ -744,33 +725,17 @@ test("a known deleting or deleted Catalogue Export is immediately 410 while an u
     deletion_id: deletionId,
     idempotency_key: idempotencyKey,
   });
-  await testEnv.CATALOGUE_DB.prepare(
-    `INSERT INTO catalogue_export_deletion_plans (
-       id, catalogue_revision_id, manifest_digest,
-       expected_current_revision_id, object_keys_json, component_names_json,
-       object_set_digest,
-       dependencies_json, plan_digest, created_at, expires_at
-     ) VALUES (?, 'catrev_export_deleted_old', ?,
-       'catrev_export_deleted_current', ?, '["cards"]', ?, '[]', ?,
-       '2026-07-20T00:00:00.000Z', '2099-01-01T00:00:00.000Z')`,
-  )
+  await catalogueExportQueries
+    .insertCatalogueExportDeletionPlans(testEnv.CATALOGUE_DB)
     .bind(planId, oldExport.manifest_digest, canonicalJson([oldExport.manifest_key]), objectSetDigest, planDigest)
     .run();
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO catalogue_export_deletions (
-         id, plan_id, state, catalogue_revision_id, manifest_digest,
-         expected_current_revision_id, object_set_digest, idempotency_key,
-         request_json, requested_at, completed_at, failure_code
-       ) VALUES (?, ?, 'deleting', 'catrev_export_deleted_old', ?,
-         'catrev_export_deleted_current', ?, ?, ?,
-         '2026-07-20T00:01:00.000Z', NULL, NULL)`,
-    ).bind(deletionId, planId, oldExport.manifest_digest, objectSetDigest, idempotencyKey, requestJson),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE catalogue_exports
-       SET maintenance_state = 'deleting', deletion_operation_id = ?
-       WHERE catalogue_revision_id = 'catrev_export_deleted_old'`,
-    ).bind(deletionId),
+    catalogueExportQueries
+      .insertCatalogueExportDeletions(testEnv.CATALOGUE_DB)
+      .bind(deletionId, planId, oldExport.manifest_digest, objectSetDigest, idempotencyKey, requestJson),
+    catalogueExportQueries
+      .setCatalogueExportsMaintenanceStateDeletionOperationId(testEnv.CATALOGUE_DB)
+      .bind(deletionId),
   ]);
 
   const request = (path: string) =>
@@ -988,13 +953,9 @@ test("authenticated Legality Status reads only indexed Card and regional applica
   for (let offset = 0; offset < rules.length; offset += 64) {
     await testEnv.CATALOGUE_DB.batch(revisionLegalityRuleStatements(revisionId, rules.slice(offset, offset + 64)));
   }
-  await testEnv.CATALOGUE_DB.prepare("DROP TRIGGER revision_legality_rules_immutable_update").run();
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE revision_legality_rules
-     SET document_json = '{"attacker":"malformed"}'
-     WHERE catalogue_revision_id = ?
-       AND legality_rule_id <> ?`,
-  )
+  await legalityQueries.dropRevisionLegalityRulesImmutableUpdate(testEnv.CATALOGUE_DB).run();
+  await legalityQueries
+    .setRevisionLegalityRulesDocumentJson(testEnv.CATALOGUE_DB)
     .bind(revisionId, targetRule.id)
     .run();
 
@@ -1006,13 +967,7 @@ test("authenticated Legality Status reads only indexed Card and regional applica
       { headers: apiHeaders("203.0.113.22") },
     ),
   );
-  await testEnv.CATALOGUE_DB.prepare(
-    `CREATE TRIGGER revision_legality_rules_immutable_update
-     BEFORE UPDATE ON revision_legality_rules
-     BEGIN
-       SELECT RAISE(ABORT, 'revision_legality_rule_immutable');
-     END`,
-  ).run();
+  await legalityQueries.createRevisionLegalityRulesImmutableUpdate(testEnv.CATALOGUE_DB).run();
   expect(response.status).toBe(200);
   await expect(response.json()).resolves.toMatchObject({
     data: [
@@ -1161,34 +1116,27 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     },
   ]);
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, linked_run_id, idempotency_key,
-        candidate_digest, candidate_created_at, approval_deadline,
-        approval_json, published_revision_id, export_manifest_digest,
-        terminal_at, candidate_json, approval_idempotency_key
-      ) VALUES (
-        ?, 'publishing', '["gundam"]', ?, 'catrev_spine_000', NULL,
-        'api-legality-precedence-seed', ?, ?,
-        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-      )`,
-    ).bind(
-      runId,
-      publishedAt,
-      digest,
-      publishedAt,
-      JSON.stringify({
-        action: "approved",
-        candidate_digest: digest,
-        expected_current_revision_id: "catrev_spine_000",
-        approved_at: publishedAt,
-      }),
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE operation_state SET active_ingestion_run_id = ?
-       WHERE singleton = 1`,
-    ).bind(runId),
+    ingestionQueries
+      .insertIngestionRunsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(
+        runId,
+        publishedAt,
+        digest,
+        publishedAt,
+        JSON.stringify({
+          action: "approved",
+          candidate_digest: digest,
+          expected_current_revision_id: "catrev_spine_000",
+          approved_at: publishedAt,
+        }),
+      ),
+    ingestionQueries
+      .setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(runId),
     ...legalitySourceStatements({
       runId,
       key: "api_precedence",
@@ -1199,25 +1147,23 @@ test("authenticated Legality Status gives definitive exclusions precedence while
       snapshotId: "srcsnap_api_precedence",
       observationSetId: "srcset_api_precedence",
     }),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO catalogue_revisions (
-        id, ingestion_run_id, published_at, content_digest,
-        expected_previous_revision_id, approved_candidate_digest
-      ) VALUES (?, ?, ?, ?, 'catrev_spine_000', ?)`,
-    ).bind(revisionId, runId, publishedAt, digest, digest),
+    ingestionQueries
+      .insertCatalogueRevisionsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(revisionId, runId, publishedAt, digest, digest),
     ...canonicalLegalityRuleStatements(revisionId, rules),
     ...cards.map((card) =>
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO revision_cards (
-          catalogue_revision_id, card_id, document_json
-        ) VALUES (?, ?, ?)`,
-      ).bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
+      publishedCatalogueQueries
+        .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+          testEnv.CATALOGUE_DB,
+        )
+        .bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
     ),
     ...revisionLegalityRuleStatements(revisionId, rules),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE catalogue_state SET current_revision_id = ?, published_at = ?
-       WHERE singleton = 1`,
-    ).bind(revisionId, publishedAt),
+    publishedCatalogueQueries
+      .setCatalogueStateCurrentRevisionIdPublishedAt(testEnv.CATALOGUE_DB)
+      .bind(revisionId, publishedAt),
   ]);
 
   const legalityAjv = new Ajv2020({ allErrors: true, strict: false });
@@ -1373,18 +1319,18 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     },
   ];
   for (const malformed of malformedCards) {
-    await testEnv.CATALOGUE_DB.prepare(
-      `UPDATE revision_cards SET document_json = ?
-       WHERE catalogue_revision_id = ? AND card_id = ?`,
-    )
+    await publishedCatalogueQueries
+      .setRevisionCardsDocumentJsonForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
       .bind(JSON.stringify(publishedCardEnvelope(malformed)), revisionId, originalCard.id)
       .run();
     await expectInvalidStoredDocument();
   }
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE revision_cards SET document_json = ?
-     WHERE catalogue_revision_id = ? AND card_id = ?`,
-  )
+  await publishedCatalogueQueries
+    .setRevisionCardsDocumentJsonForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+      testEnv.CATALOGUE_DB,
+    )
     .bind(JSON.stringify(publishedCardEnvelope(originalCard)), revisionId, originalCard.id)
     .run();
 
@@ -1398,7 +1344,7 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     current: true,
     last_missing_revision_id: null,
   };
-  await testEnv.CATALOGUE_DB.prepare("DROP TRIGGER revision_legality_rules_immutable_update").run();
+  await legalityQueries.dropRevisionLegalityRulesImmutableUpdate(testEnv.CATALOGUE_DB).run();
   const malformedRules = [
     {
       ...originalRule,
@@ -1422,10 +1368,10 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     },
   ];
   for (const malformed of malformedRules) {
-    await testEnv.CATALOGUE_DB.prepare(
-      `UPDATE revision_legality_rules SET document_json = ?
-       WHERE catalogue_revision_id = ? AND legality_rule_id = ?`,
-    )
+    await legalityQueries
+      .setRevisionLegalityRulesDocumentJsonForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
       .bind(JSON.stringify(malformed), revisionId, originalRule.id)
       .run();
     await expectInvalidStoredDocument();
@@ -1496,34 +1442,25 @@ test("Legality Status evidence reports the captured_at the publication projected
     },
   ];
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, linked_run_id, idempotency_key,
-        candidate_digest, candidate_created_at, approval_deadline,
-        approval_json, published_revision_id, export_manifest_digest,
-        terminal_at, candidate_json, approval_idempotency_key
-      ) VALUES (
-        ?, 'publishing', '["gundam"]', ?, 'catrev_spine_000', NULL,
-        'api-legality-projected-evidence-seed', ?, ?,
-        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-      )`,
-    ).bind(
-      runId,
-      publishedAt,
-      digest,
-      publishedAt,
-      JSON.stringify({
-        action: "approved",
-        candidate_digest: digest,
-        expected_current_revision_id: "catrev_spine_000",
-        approved_at: publishedAt,
-      }),
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE operation_state SET active_ingestion_run_id = ?
-       WHERE singleton = 1`,
-    ).bind(runId),
+    ingestionQueries
+      .insertIngestionRunsForLegalityStatusEvidenceReportsCapturedAtPublicationProjected(testEnv.CATALOGUE_DB)
+      .bind(
+        runId,
+        publishedAt,
+        digest,
+        publishedAt,
+        JSON.stringify({
+          action: "approved",
+          candidate_digest: digest,
+          expected_current_revision_id: "catrev_spine_000",
+          approved_at: publishedAt,
+        }),
+      ),
+    ingestionQueries
+      .setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(runId),
     ...legalitySourceStatements({
       runId,
       key: "api_projected_evidence",
@@ -1534,23 +1471,21 @@ test("Legality Status evidence reports the captured_at the publication projected
       snapshotId: "srcsnap_api_projected_evidence",
       observationSetId: "srcset_api_projected_evidence",
     }),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO catalogue_revisions (
-        id, ingestion_run_id, published_at, content_digest,
-        expected_previous_revision_id, approved_candidate_digest
-      ) VALUES (?, ?, ?, ?, 'catrev_spine_000', ?)`,
-    ).bind(revisionId, runId, publishedAt, digest, digest),
+    ingestionQueries
+      .insertCatalogueRevisionsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(revisionId, runId, publishedAt, digest, digest),
     ...canonicalLegalityRuleStatements(revisionId, rules),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_cards (
-        catalogue_revision_id, card_id, document_json
-      ) VALUES (?, ?, ?)`,
-    ).bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
+    publishedCatalogueQueries
+      .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
     ...revisionLegalityRuleStatements(revisionId, rules),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE catalogue_state SET current_revision_id = ?, published_at = ?
-       WHERE singleton = 1`,
-    ).bind(revisionId, publishedAt),
+    publishedCatalogueQueries
+      .setCatalogueStateCurrentRevisionIdPublishedAt(testEnv.CATALOGUE_DB)
+      .bind(revisionId, publishedAt),
   ]);
 
   const response = await exports.default.fetch(
@@ -1664,34 +1599,27 @@ test("an unresolved target-scope rule answers explicitly indeterminate for every
     },
   ];
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, linked_run_id, idempotency_key,
-        candidate_digest, candidate_created_at, approval_deadline,
-        approval_json, published_revision_id, export_manifest_digest,
-        terminal_at, candidate_json, approval_idempotency_key
-      ) VALUES (
-        ?, 'publishing', '["gundam"]', ?, 'catrev_spine_000', NULL,
-        'api-legality-target-scope-seed', ?, ?,
-        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-      )`,
-    ).bind(
-      runId,
-      publishedAt,
-      digest,
-      publishedAt,
-      JSON.stringify({
-        action: "approved",
-        candidate_digest: digest,
-        expected_current_revision_id: "catrev_spine_000",
-        approved_at: publishedAt,
-      }),
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE operation_state SET active_ingestion_run_id = ?
-       WHERE singleton = 1`,
-    ).bind(runId),
+    ingestionQueries
+      .insertIngestionRunsForUnresolvedTargetScopeRuleAnswersExplicitlyIndeterminateEveryOverlapping(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(
+        runId,
+        publishedAt,
+        digest,
+        publishedAt,
+        JSON.stringify({
+          action: "approved",
+          candidate_digest: digest,
+          expected_current_revision_id: "catrev_spine_000",
+          approved_at: publishedAt,
+        }),
+      ),
+    ingestionQueries
+      .setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(runId),
     ...legalitySourceStatements({
       runId,
       key: "api_target_scope",
@@ -1702,35 +1630,29 @@ test("an unresolved target-scope rule answers explicitly indeterminate for every
       snapshotId: "srcsnap_api_target_scope",
       observationSetId: "srcset_api_target_scope",
     }),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO catalogue_revisions (
-        id, ingestion_run_id, published_at, content_digest,
-        expected_previous_revision_id, approved_candidate_digest
-      ) VALUES (?, ?, ?, ?, 'catrev_spine_000', ?)`,
-    ).bind(revisionId, runId, publishedAt, digest, digest),
+    ingestionQueries
+      .insertCatalogueRevisionsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(revisionId, runId, publishedAt, digest, digest),
     ...canonicalLegalityRuleStatements(revisionId, rules),
     ...cards.map((card) =>
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO revision_cards (
-          catalogue_revision_id, card_id, document_json
-        ) VALUES (?, ?, ?)`,
-      ).bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
+      publishedCatalogueQueries
+        .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+          testEnv.CATALOGUE_DB,
+        )
+        .bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
     ),
     ...revisionLegalityRuleStatements(revisionId, rules),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE catalogue_state SET current_revision_id = ?, published_at = ?
-       WHERE singleton = 1`,
-    ).bind(revisionId, publishedAt),
+    publishedCatalogueQueries
+      .setCatalogueStateCurrentRevisionIdPublishedAt(testEnv.CATALOGUE_DB)
+      .bind(revisionId, publishedAt),
   ]);
 
   // The target-scope rule materializes one explicit all_cards row alongside
   // its enumerated Card row.
-  const applicability = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT applicability_kind, card_id
-     FROM revision_legality_rule_applicability
-     WHERE catalogue_revision_id = ? AND legality_rule_id = ?
-     ORDER BY applicability_kind`,
-  )
+  const applicability = await legalityQueries
+    .readRevisionLegalityRuleApplicabilityApplicabilityKindCardId(testEnv.CATALOGUE_DB)
     .bind(revisionId, "legality_rule_open_predicate")
     .all();
   expect(applicability.results).toEqual([
@@ -1932,32 +1854,25 @@ test("authenticated Legality Status targets the functional DON!! Card and audits
     },
   ];
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, linked_run_id, idempotency_key,
-        candidate_digest, candidate_created_at, approval_deadline,
-        approval_json, published_revision_id, export_manifest_digest,
-        terminal_at, candidate_json, approval_idempotency_key
-      ) VALUES (?, 'publishing', '["one-piece"]', ?,
-        'catrev_spine_000', NULL, 'api-don-seed', ?, ?,
-        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL)`,
-    ).bind(
-      runId,
-      publishedAt,
-      digest,
-      publishedAt,
-      JSON.stringify({
-        action: "approved",
-        candidate_digest: digest,
-        expected_current_revision_id: "catrev_spine_000",
-        approved_at: publishedAt,
-      }),
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE operation_state SET active_ingestion_run_id = ?
-       WHERE singleton = 1`,
-    ).bind(runId),
+    ingestionQueries
+      .insertIngestionRunsForAuthenticatedLegalityStatusTargetsFunctionalDONCardAuditsUnresolved(testEnv.CATALOGUE_DB)
+      .bind(
+        runId,
+        publishedAt,
+        digest,
+        publishedAt,
+        JSON.stringify({
+          action: "approved",
+          candidate_digest: digest,
+          expected_current_revision_id: "catrev_spine_000",
+          approved_at: publishedAt,
+        }),
+      ),
+    ingestionQueries
+      .setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(runId),
     ...legalitySourceStatements({
       runId,
       key: "api_don",
@@ -1968,25 +1883,23 @@ test("authenticated Legality Status targets the functional DON!! Card and audits
       snapshotId: "srcsnap_api_don",
       observationSetId: "srcobsset_api_don",
     }),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO catalogue_revisions (
-        id, ingestion_run_id, published_at, content_digest,
-        expected_previous_revision_id, approved_candidate_digest
-      ) VALUES (?, ?, ?, ?, 'catrev_spine_000', ?)`,
-    ).bind(revisionId, runId, publishedAt, digest, digest),
+    ingestionQueries
+      .insertCatalogueRevisionsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(revisionId, runId, publishedAt, digest, digest),
     ...canonicalLegalityRuleStatements(revisionId, rules),
     ...cards.map((card) =>
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO revision_cards (
-          catalogue_revision_id, card_id, document_json
-        ) VALUES (?, ?, ?)`,
-      ).bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
+      publishedCatalogueQueries
+        .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+          testEnv.CATALOGUE_DB,
+        )
+        .bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
     ),
     ...revisionLegalityRuleStatements(revisionId, rules),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE catalogue_state SET current_revision_id = ?, published_at = ?
-       WHERE singleton = 1`,
-    ).bind(revisionId, publishedAt),
+    publishedCatalogueQueries
+      .setCatalogueStateCurrentRevisionIdPublishedAt(testEnv.CATALOGUE_DB)
+      .bind(revisionId, publishedAt),
   ]);
 
   const response = await exports.default.fetch(
@@ -2071,61 +1984,35 @@ test("the public Printing response validates full Distribution Context objects",
     },
     links: { self: "/v1/printings/printing_api_context" },
   };
-  const previousRevisionId = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT current_revision_id
-     FROM catalogue_state WHERE singleton = 1`,
-  ).first<string>("current_revision_id");
+  const previousRevisionId = await publishedCatalogueQueries
+    .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
+    .first<string>("current_revision_id");
   if (previousRevisionId === null) {
     throw new Error("The API test catalogue state is unavailable.");
   }
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, linked_run_id, idempotency_key,
-        candidate_digest, candidate_created_at, approval_deadline,
-        approval_json, published_revision_id, export_manifest_digest,
-        terminal_at, candidate_json, approval_idempotency_key
-      ) VALUES (
-        'run_api_context', 'publishing', '["one-piece"]',
-        '2026-01-01T00:00:00.000Z', ?, NULL,
-        'api-context-seed', ?, '2026-01-01T00:00:00.000Z',
-        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-      )`,
-    ).bind(
-      previousRevisionId,
-      "a".repeat(64),
-      JSON.stringify({
-        candidate_digest: "a".repeat(64),
-        expected_current_revision_id: previousRevisionId,
-        approved_at: "2026-01-01T00:00:00.000Z",
-      }),
+    ingestionQueries
+      .insertIngestionRunsForPublicPrintingResponseValidatesFullDistributionContextObjects(testEnv.CATALOGUE_DB)
+      .bind(
+        previousRevisionId,
+        "a".repeat(64),
+        JSON.stringify({
+          candidate_digest: "a".repeat(64),
+          expected_current_revision_id: previousRevisionId,
+          approved_at: "2026-01-01T00:00:00.000Z",
+        }),
+      ),
+    ingestionQueries.setOperationStateActiveIngestionRunIdForPublicPrintingResponseValidatesFullDistributionContextObjects(
+      testEnv.CATALOGUE_DB,
     ),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE operation_state
-       SET active_ingestion_run_id = 'run_api_context'
-       WHERE singleton = 1`,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO catalogue_revisions (
-        id, ingestion_run_id, published_at, content_digest,
-        expected_previous_revision_id, approved_candidate_digest
-      ) VALUES (
-        'catrev_api_context', 'run_api_context',
-        '2026-01-01T00:00:00.000Z', ?,
-        ?, ?
-      )`,
-    ).bind("a".repeat(64), previousRevisionId, "a".repeat(64)),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_printings (
-        catalogue_revision_id, printing_id, card_id, document_json
-      ) VALUES (?, ?, ?, ?)`,
-    ).bind("catrev_api_context", document.id, document.card_id, JSON.stringify(document)),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE catalogue_state
-       SET current_revision_id = 'catrev_api_context',
-           published_at = '2026-01-01T00:00:00.000Z'
-       WHERE singleton = 1`,
+    ingestionQueries
+      .insertCatalogueRevisionsForPublicPrintingResponseValidatesFullDistributionContextObjects(testEnv.CATALOGUE_DB)
+      .bind("a".repeat(64), previousRevisionId, "a".repeat(64)),
+    publishedCatalogueQueries
+      .insertRevisionPrintingsForPublicPrintingResponseValidatesFullDistributionContextObjects(testEnv.CATALOGUE_DB)
+      .bind("catrev_api_context", document.id, document.card_id, JSON.stringify(document)),
+    publishedCatalogueQueries.setCatalogueStateCurrentRevisionIdPublishedAtForPublicPrintingResponseValidatesFullDistributionContextObjects(
+      testEnv.CATALOGUE_DB,
     ),
   ]);
   const response = await exports.default.fetch(
@@ -2157,19 +2044,9 @@ test("the public Printing response validates full Distribution Context objects",
     },
   });
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE ingestion_runs
-       SET state = 'published',
-           published_revision_id = 'catrev_api_context',
-           resulting_revision_id = 'catrev_api_context',
-           publication_outcome = 'revision',
-           terminal_at = '2026-01-01T00:00:00.000Z'
-       WHERE id = 'run_api_context'`,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE operation_state
-       SET active_ingestion_run_id = NULL
-       WHERE active_ingestion_run_id = 'run_api_context'`,
+    ingestionQueries.setIngestionRunsStatePublishedRevisionId(testEnv.CATALOGUE_DB),
+    ingestionQueries.setOperationStateActiveIngestionRunIdForPublicPrintingResponseValidatesFullDistributionContextObjectsWithRunApiContext(
+      testEnv.CATALOGUE_DB,
     ),
   ]);
 });
@@ -2224,72 +2101,44 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
     lifecycle,
     links: { self: "/v1/printings/printing_errata_read" },
   };
-  const previousRevisionId = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT current_revision_id
-     FROM catalogue_state WHERE singleton = 1`,
-  ).first<string>("current_revision_id");
+  const previousRevisionId = await publishedCatalogueQueries
+    .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
+    .first<string>("current_revision_id");
   if (previousRevisionId === null) {
     throw new Error("The API test catalogue state is unavailable.");
   }
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-        id, state, selected_games_json, started_at,
-        expected_current_revision_id, linked_run_id, idempotency_key,
-        candidate_digest, candidate_created_at, approval_deadline,
-        approval_json, published_revision_id, export_manifest_digest,
-        terminal_at, candidate_json, approval_idempotency_key
-      ) VALUES (
-        'run_errata_read', 'publishing', '["one-piece"]',
-        '2026-07-01T00:00:00.000Z', ?, NULL,
-        'errata-read-seed', ?, '2026-07-01T00:00:00.000Z',
-        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
-      )`,
-    ).bind(
-      previousRevisionId,
-      "b".repeat(64),
-      JSON.stringify({
-        candidate_digest: "b".repeat(64),
-        expected_current_revision_id: previousRevisionId,
-        approved_at: "2026-07-01T00:00:00.000Z",
-      }),
+    ingestionQueries
+      .insertIngestionRunsForAuthenticatedCardPrintingReadsExposeEffectivePrintedRulesText(testEnv.CATALOGUE_DB)
+      .bind(
+        previousRevisionId,
+        "b".repeat(64),
+        JSON.stringify({
+          candidate_digest: "b".repeat(64),
+          expected_current_revision_id: previousRevisionId,
+          approved_at: "2026-07-01T00:00:00.000Z",
+        }),
+      ),
+    ingestionQueries.setOperationStateActiveIngestionRunIdForAuthenticatedCardPrintingReadsExposeEffectivePrintedRulesText(
+      testEnv.CATALOGUE_DB,
     ),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE operation_state
-       SET active_ingestion_run_id = 'run_errata_read'
-       WHERE singleton = 1`,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO catalogue_revisions (
-        id, ingestion_run_id, published_at, content_digest,
-        expected_previous_revision_id, approved_candidate_digest
-      ) VALUES (
-        'catrev_errata_read', 'run_errata_read',
-        '2026-07-01T00:00:00.000Z', ?,
-        ?, ?
-      )`,
-    ).bind("b".repeat(64), previousRevisionId, "b".repeat(64)),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_cards (
-        catalogue_revision_id, card_id, document_json
-      ) VALUES (?, ?, ?)`,
-    ).bind("catrev_errata_read", card.id, JSON.stringify(card)),
+    ingestionQueries
+      .insertCatalogueRevisionsForAuthenticatedCardPrintingReadsExposeEffectivePrintedRulesText(testEnv.CATALOGUE_DB)
+      .bind("b".repeat(64), previousRevisionId, "b".repeat(64)),
+    publishedCatalogueQueries
+      .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind("catrev_errata_read", card.id, JSON.stringify(card)),
     ...cardSearchStatements("catrev_errata_read", card),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO catalogue_query_revisions (
-         catalogue_revision_id, state, repaired_through_card_id
-       ) VALUES ('catrev_errata_read', 'available', NULL)`,
+    publishedCatalogueQueries.insertCatalogueQueryRevisionsForAuthenticatedCardPrintingReadsExposeEffectivePrintedRulesText(
+      testEnv.CATALOGUE_DB,
     ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_printings (
-        catalogue_revision_id, printing_id, card_id, document_json
-      ) VALUES (?, ?, ?, ?)`,
-    ).bind("catrev_errata_read", printing.id, printing.card_id, JSON.stringify(printing)),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE catalogue_state
-       SET current_revision_id = 'catrev_errata_read',
-           published_at = '2026-07-01T00:00:00.000Z'
-       WHERE singleton = 1`,
+    publishedCatalogueQueries
+      .insertRevisionPrintingsForPublicPrintingResponseValidatesFullDistributionContextObjects(testEnv.CATALOGUE_DB)
+      .bind("catrev_errata_read", printing.id, printing.card_id, JSON.stringify(printing)),
+    publishedCatalogueQueries.setCatalogueStateCurrentRevisionIdPublishedAtForAuthenticatedCardPrintingReadsExposeEffectivePrintedRulesText(
+      testEnv.CATALOGUE_DB,
     ),
   ]);
 
@@ -2323,11 +2172,10 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
   });
   const etag = searchResponse.headers.get("etag");
   expect(etag).not.toBeNull();
-  await testEnv.CATALOGUE_DB.prepare(
-    `INSERT INTO revision_cards (
-       catalogue_revision_id, card_id, document_json
-     ) VALUES (?, ?, ?)`,
-  )
+  await publishedCatalogueQueries
+    .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+      testEnv.CATALOGUE_DB,
+    )
     .bind(
       "catrev_errata_read",
       "card_etag_query_must_not_load",
@@ -2360,19 +2208,11 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
     expect(response.headers.get("x-catalogue-revision")).toBe("catrev_errata_read");
   }
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE ingestion_runs
-       SET state = 'published',
-           published_revision_id = 'catrev_errata_read',
-           resulting_revision_id = 'catrev_errata_read',
-           publication_outcome = 'revision',
-           terminal_at = '2026-07-01T00:00:00.000Z'
-       WHERE id = 'run_errata_read'`,
+    ingestionQueries.setIngestionRunsStatePublishedRevisionIdForAuthenticatedCardPrintingReadsExposeEffectivePrintedRulesText(
+      testEnv.CATALOGUE_DB,
     ),
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE operation_state
-       SET active_ingestion_run_id = NULL
-       WHERE active_ingestion_run_id = 'run_errata_read'`,
+    ingestionQueries.setOperationStateActiveIngestionRunIdForAuthenticatedCardPrintingReadsExposeEffectivePrintedRulesTextWithRunErrataRead(
+      testEnv.CATALOGUE_DB,
     ),
   ]);
 });
@@ -2499,11 +2339,8 @@ test("Card search keeps a selective two-character relational fallback beside FTS
 
   const query = cardSearchQuery("qu");
   expect(query).toEqual({ text: "qu", anchorTerm: "g2:qu" });
-  const indexedCards = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT COUNT(DISTINCT card_id) AS count
-     FROM revision_card_search_terms
-     WHERE catalogue_revision_id = ? AND term = ?`,
-  )
+  const indexedCards = await cardSearchQueries
+    .countRevisionCardSearchTermsCount(testEnv.CATALOGUE_DB)
     .bind("catrev_selective_trigrams", query!.anchorTerm)
     .first<{ count: number }>();
   expect(indexedCards?.count).toBe(1);
@@ -2751,12 +2588,9 @@ test("Card cursors reject route, ordering, and structural misuse", async () => {
 });
 
 test("Card search uses a revision-scoped D1 FTS5 index", async () => {
-  const virtualTables = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT name FROM sqlite_schema
-     WHERE type = 'table'
-       AND name LIKE 'revision_card%'
-       AND lower(sql) LIKE '%create virtual table%'`,
-  ).all<{ name: string }>();
+  const virtualTables = await publishedCatalogueQueries
+    .readSqliteSchemaName(testEnv.CATALOGUE_DB)
+    .all<{ name: string }>();
   expect(virtualTables.results).toEqual([{ name: "revision_card_search_fts" }]);
 
   await seedApiRevision({
@@ -2782,14 +2616,13 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
       }),
     ],
   });
-  const productionQuery = cardCollectionPageQuery(
+  const productionQuery = inspectCardCollectionQuery(
+    testEnv.CATALOGUE_DB,
     "catrev_fts_search",
     { q: "quartz", game: null, cardNumber: null, productId: null, rarity: null, attributes: {}, limit: 50 },
     null,
   );
-  const plan = await testEnv.CATALOGUE_DB.prepare(`EXPLAIN QUERY PLAN ${productionQuery.sql}`)
-    .bind(...productionQuery.bindings)
-    .all<{ detail: string }>();
+  const plan = await productionQuery.plan().all<{ detail: string }>();
   const planDetails = plan.results.map(({ detail }) => detail);
   expect(planDetails).toEqual([
     "MATERIALIZE search_matches",
@@ -2801,7 +2634,8 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
     "USE TEMP B-TREE FOR ORDER BY",
     "SCAN search_matches",
   ]);
-  const filteredCursorQuery = cardCollectionPageQuery(
+  const filteredCursorQuery = inspectCardCollectionQuery(
+    testEnv.CATALOGUE_DB,
     "catrev_fts_search",
     {
       q: "quartz",
@@ -2827,9 +2661,7 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
   expect(materialization).toContain("filtered.sort_identity_value = ?");
   expect(materialization).toContain("(filtered.sort_game, filtered.sort_identity_kind,");
   expect(materialization).toContain("LIMIT ?");
-  const filteredPlan = await testEnv.CATALOGUE_DB.prepare(`EXPLAIN QUERY PLAN ${filteredCursorQuery.sql}`)
-    .bind(...filteredCursorQuery.bindings)
-    .all<{ detail: string }>();
+  const filteredPlan = await filteredCursorQuery.plan().all<{ detail: string }>();
   expect(filteredPlan.results.map(({ detail }) => detail)).toEqual([
     "MATERIALIZE search_matches",
     "SCAN search VIRTUAL TABLE INDEX 0:M6",
@@ -2840,32 +2672,21 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
     "USE TEMP B-TREE FOR ORDER BY",
     "SCAN search_matches",
   ]);
-  const filteredRows = await testEnv.CATALOGUE_DB.prepare(filteredCursorQuery.sql)
-    .bind(...filteredCursorQuery.bindings)
-    .all<{ summary_json: string }>();
+  const filteredRows = await filteredCursorQuery.rows().all<{ summary_json: string }>();
   expect(filteredRows.results.map(({ summary_json }) => JSON.parse(summary_json).id)).toEqual(["card_fts_search"]);
-  const matchedRevisions = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT DISTINCT catalogue_revision_id
-     FROM revision_card_search_fts
-     WHERE revision_card_search_fts MATCH ?
-     ORDER BY catalogue_revision_id`,
-  )
+  const matchedRevisions = await cardSearchQueries
+    .readRevisionCardSearchFts(testEnv.CATALOGUE_DB)
     .bind(productionQuery.bindings[0])
     .all<{
       catalogue_revision_id: string;
     }>();
   expect(matchedRevisions.results).toEqual([{ catalogue_revision_id: "catrev_fts_search" }]);
-  const redundantRelationalTerms = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT count(*) AS count
-     FROM revision_card_search_terms
-     WHERE catalogue_revision_id = ? AND term LIKE 'g3:%'`,
-  )
+  const redundantRelationalTerms = await cardSearchQueries
+    .countRevisionCardSearchTermsCountForCardSearchUsesRevisionScopedD1FTS5Index(testEnv.CATALOGUE_DB)
     .bind("catrev_fts_search")
     .first<{ count: number }>();
   expect(redundantRelationalTerms?.count).toBe(0);
-  await testEnv.CATALOGUE_DB.prepare("DELETE FROM revision_card_search_terms WHERE catalogue_revision_id = ?")
-    .bind("catrev_fts_search")
-    .run();
+  await cardSearchQueries.deleteRevisionCardSearchTerms(testEnv.CATALOGUE_DB).bind("catrev_fts_search").run();
 
   const response = await exports.default.fetch(
     new Request("https://card-keepr.invalid/v1/cards?q=quartz", { headers: apiHeaders("203.0.113.100") }),
@@ -2895,37 +2716,22 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
       }),
     ],
   });
-  const retainedChunks = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT catalogue_revision_id, card_id, field_ordinal,
-            chunk_ordinal, search_text
-     FROM revision_card_search_chunks
-     WHERE catalogue_revision_id = ?
-     ORDER BY card_id, field_ordinal, chunk_ordinal`,
-  )
+  const retainedChunks = await cardSearchQueries
+    .readRevisionCardSearchChunksCatalogueRevisionIdCardId(testEnv.CATALOGUE_DB)
     .bind("catrev_fts_restore")
     .all();
   expect(retainedChunks.results.length).toBeGreaterThan(0);
 
   await withCardSearchPreparedForD1Export(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     {
       ownerToken: "backup-owner-primary",
       observedAt: "2026-08-05T00:00:00.000Z",
       leaseExpiresAt: "2026-08-05T00:15:00.000Z",
     },
     async () => {
-      const exportBoundary = await testEnv.CATALOGUE_DB.prepare(
-        `SELECT
-           (SELECT state FROM card_search_fts_state WHERE singleton = 1)
-             AS state,
-           (SELECT count(*) FROM sqlite_schema
-            WHERE type = 'table'
-              AND name LIKE 'revision_card%'
-              AND lower(sql) LIKE '%create virtual table%')
-             AS virtual_tables,
-           (SELECT count(*) FROM revision_card_search_chunks
-            WHERE catalogue_revision_id = ?) AS retained_chunks`,
-      )
+      const exportBoundary = await cardSearchQueries
+        .readCardSearchFtsState(testEnv.CATALOGUE_DB)
         .bind("catrev_fts_restore")
         .first();
       expect(exportBoundary).toEqual({
@@ -2934,14 +2740,14 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
         retained_chunks: retainedChunks.results.length,
       });
       await expect(
-        prepareCardSearchForD1Export(testEnv.CATALOGUE_DB, {
+        prepareCardSearchForD1Export(catalogueStore(testEnv.CATALOGUE_DB), {
           ownerToken: "backup-owner-concurrent",
           observedAt: "2026-08-05T00:01:00.000Z",
           leaseExpiresAt: "2026-08-05T00:16:00.000Z",
         }),
       ).rejects.toThrow("Card search FTS export lease is unavailable.");
       await expect(
-        reconstructCardSearchAfterD1Restore(testEnv.CATALOGUE_DB, "backup-owner-concurrent"),
+        reconstructCardSearchAfterD1Restore(catalogueStore(testEnv.CATALOGUE_DB), "backup-owner-concurrent"),
       ).rejects.toThrow("Card search FTS export lease owner changed.");
       const unavailable = await exports.default.fetch(
         new Request("https://card-keepr.invalid/v1/cards?q=quartz", { headers: apiHeaders("203.0.113.105") }),
@@ -2950,12 +2756,8 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
     },
   );
 
-  const reconstructed = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT
-       (SELECT state FROM card_search_fts_state WHERE singleton = 1) AS state,
-       (SELECT count(*) FROM revision_card_search_fts_rows
-        WHERE catalogue_revision_id = ?) AS indexed_chunks`,
-  )
+  const reconstructed = await cardSearchQueries
+    .readCardSearchFtsStateForCardSearchFTSReconstructibleAcrossD1ExportRestoreBoundary(testEnv.CATALOGUE_DB)
     .bind("catrev_fts_restore")
     .first();
   expect(reconstructed).toEqual({
@@ -2969,11 +2771,8 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
   await expect(restored.json()).resolves.toMatchObject({
     data: [{ id: "card_fts_restore" }],
   });
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE revision_card_search_chunks
-     SET search_text = 'trigger-rebuilt-quartz'
-     WHERE catalogue_revision_id = ? AND card_id = ? AND field_ordinal = 1`,
-  )
+  await cardSearchQueries
+    .setRevisionCardSearchChunksSearchText(testEnv.CATALOGUE_DB)
     .bind("catrev_fts_restore", "card_fts_restore")
     .run();
   const triggerMaintained = await exports.default.fetch(
@@ -2987,7 +2786,7 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
   });
   await expect(
     withCardSearchPreparedForD1Export(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       {
         ownerToken: "backup-owner-failure",
         observedAt: "2026-08-05T01:00:00.000Z",
@@ -2998,18 +2797,15 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
       },
     ),
   ).rejects.toThrow("simulated D1 export failure");
-  await expect(
-    testEnv.CATALOGUE_DB.prepare("SELECT state FROM card_search_fts_state WHERE singleton = 1").first(),
-  ).resolves.toEqual({ state: "ready" });
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE card_search_fts_state
-     SET state = 'reconstructing', owner_token = ?, lease_expires_at = ?
-     WHERE singleton = 1 AND state = 'ready'`,
-  )
+  await expect(cardSearchQueries.readCardSearchFtsStateState(testEnv.CATALOGUE_DB).first()).resolves.toEqual({
+    state: "ready",
+  });
+  await cardSearchQueries
+    .setCardSearchFtsStateStateOwnerToken(testEnv.CATALOGUE_DB)
     .bind("backup-owner-abandoned", "2026-08-05T02:00:00.000Z")
     .run();
   await withCardSearchPreparedForD1Export(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     {
       ownerToken: "backup-owner-takeover",
       observedAt: "2026-08-05T02:01:00.000Z",
@@ -3017,9 +2813,10 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
     },
     async () => undefined,
   );
-  await expect(
-    testEnv.CATALOGUE_DB.prepare("SELECT state, owner_token FROM card_search_fts_state WHERE singleton = 1").first(),
-  ).resolves.toEqual({ state: "ready", owner_token: null });
+  await expect(cardSearchQueries.readCardSearchFtsStateStateOwnerToken(testEnv.CATALOGUE_DB).first()).resolves.toEqual({
+    state: "ready",
+    owner_token: null,
+  });
 }, 15_000);
 
 test("Card detail includes revision-pinned Printings, provenance, and disagreements", async () => {
@@ -3063,35 +2860,34 @@ test("Card detail includes revision-pinned Printings, provenance, and disagreeme
     links: { self: "/v1/printings/printing_detail_projection" },
   };
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE revision_cards SET document_json = ?
-       WHERE catalogue_revision_id = ? AND card_id = ?`,
-    ).bind(
-      JSON.stringify({
-        data: card,
-        included: [evidence, otherEvidence],
-        provenance: {
-          "/data/effective_rules_text": [evidence.id],
-        },
-        disagreements: [
-          {
-            path: "/data/effective_rules_text",
-            status: "unresolved",
-            candidates: [
-              { value: "Candidate A", observation_id: evidence.id },
-              { value: "Candidate B", observation_id: otherEvidence.id },
-            ],
+    publishedCatalogueQueries
+      .setRevisionCardsDocumentJsonForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(
+        JSON.stringify({
+          data: card,
+          included: [evidence, otherEvidence],
+          provenance: {
+            "/data/effective_rules_text": [evidence.id],
           },
-        ],
-      }),
-      "catrev_detail_projection",
-      card.id,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_printings (
-         catalogue_revision_id, printing_id, card_id, document_json
-       ) VALUES (?, ?, ?, ?)`,
-    ).bind("catrev_detail_projection", printing.id, card.id, JSON.stringify(printing)),
+          disagreements: [
+            {
+              path: "/data/effective_rules_text",
+              status: "unresolved",
+              candidates: [
+                { value: "Candidate A", observation_id: evidence.id },
+                { value: "Candidate B", observation_id: otherEvidence.id },
+              ],
+            },
+          ],
+        }),
+        "catrev_detail_projection",
+        card.id,
+      ),
+    publishedCatalogueQueries
+      .insertRevisionPrintingsForPublicPrintingResponseValidatesFullDistributionContextObjects(testEnv.CATALOGUE_DB)
+      .bind("catrev_detail_projection", printing.id, card.id, JSON.stringify(printing)),
   ]);
 
   const url =
@@ -3217,34 +3013,12 @@ test("Card cursors continue on an available pinned revision and conflict only af
     meta: { catalogue_revision_id: "catrev_cursor_old" },
   });
 
-  await testEnv.CATALOGUE_DB.prepare(
-    `INSERT INTO catalogue_exports (
-       catalogue_revision_id, manifest_key, manifest_digest, verified
-     ) VALUES (
-       'catrev_cursor_old',
-       'catalogue/catrev_cursor_old/manifest.json',
-       ?, 1
-     )`,
-  )
+  await catalogueExportQueries
+    .insertCatalogueExportsForCardCursorsContinueOnAvailablePinnedRevisionConflictOnly(testEnv.CATALOGUE_DB)
     .bind("e".repeat(64))
     .run();
-  await testEnv.CATALOGUE_DB.prepare(
-    `DELETE FROM revision_card_query_documents
-     WHERE catalogue_revision_id = 'catrev_cursor_old'`,
-  ).run();
-  await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT
-         EXISTS(
-           SELECT 1 FROM catalogue_revisions
-           WHERE id = 'catrev_cursor_old'
-         ) AS revision_retained,
-         EXISTS(
-           SELECT 1 FROM catalogue_exports
-           WHERE catalogue_revision_id = 'catrev_cursor_old'
-         ) AS export_retained`,
-    ).first(),
-  ).resolves.toMatchObject({
+  await publishedCatalogueQueries.deleteRevisionCardQueryDocuments(testEnv.CATALOGUE_DB).run();
+  await expect(catalogueExportQueries.readCatalogueRevisions(testEnv.CATALOGUE_DB).first()).resolves.toMatchObject({
     revision_retained: 1,
     export_retained: 1,
   });
@@ -3340,13 +3114,12 @@ function encodeTestCardCursor(input: {
 
 async function seedCatalogueExportSummary(revisionId: string, runId: string, publishedAt: string): Promise<void> {
   await seedApiRevision({ revisionId, runId, cards: [] });
-  await testEnv.CATALOGUE_DB.prepare(`UPDATE catalogue_revisions SET published_at = ? WHERE id = ?`)
+  await publishedCatalogueQueries
+    .setCatalogueRevisionsPublishedAt(testEnv.CATALOGUE_DB)
     .bind(publishedAt, revisionId)
     .run();
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_state SET published_at = ?
-     WHERE singleton = 1 AND current_revision_id = ?`,
-  )
+  await publishedCatalogueQueries
+    .setCatalogueStatePublishedAt(testEnv.CATALOGUE_DB)
     .bind(publishedAt, revisionId)
     .run();
   const manifestWithPlaceholder = {
@@ -3365,11 +3138,8 @@ async function seedCatalogueExportSummary(revisionId: string, runId: string, pub
   };
   const manifestKey = `catalogue-exports/${revisionId}/manifest.json`;
   await testEnv.CATALOGUE_EXPORTS.put(manifestKey, `${canonicalJson(manifest)}\n`);
-  await testEnv.CATALOGUE_DB.prepare(
-    `INSERT INTO catalogue_exports (
-       catalogue_revision_id, manifest_key, manifest_digest, verified
-     ) VALUES (?, ?, ?, 1)`,
-  )
+  await catalogueExportQueries
+    .insertCatalogueExports(testEnv.CATALOGUE_DB)
     .bind(revisionId, manifestKey, manifestDigest)
     .run();
 }

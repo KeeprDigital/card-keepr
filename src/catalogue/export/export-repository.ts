@@ -1,3 +1,4 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 export type CatalogueExportRow = {
   catalogue_revision_id: string;
   manifest_key: string;
@@ -5,8 +6,8 @@ export type CatalogueExportRow = {
   maintenance_state: "available" | "deleting" | "deleted";
 };
 
-export function catalogueExportStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database
+export function catalogueExportStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(
       `SELECT catalogue_revision_id, manifest_key, manifest_digest,
             maintenance_state
@@ -30,10 +31,10 @@ export type CatalogueExportDeletionPlanInput = {
 };
 
 export function catalogueExportDeletionPlanInsertStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: CatalogueExportDeletionPlanInput,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(
       `INSERT INTO catalogue_export_deletion_plans (
        id, catalogue_revision_id, manifest_digest,
@@ -58,49 +59,53 @@ export function catalogueExportDeletionPlanInsertStatement(
 }
 
 export function catalogueExportDeletionPlanExistsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ plan_id: string }>,
 ): D1PreparedStatement {
-  return database.prepare("SELECT 1 AS present FROM catalogue_export_deletion_plans WHERE id = ?").bind(input.plan_id);
+  return repositoryStatements(database)
+    .prepare("SELECT 1 AS present FROM catalogue_export_deletion_plans WHERE id = ?")
+    .bind(input.plan_id);
 }
 
 export function catalogueExportDeletionByIdempotencyStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ idempotency_key: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare("SELECT * FROM catalogue_export_deletions WHERE idempotency_key = ?")
     .bind(input.idempotency_key);
 }
 
 export function catalogueExportManifestKeyStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ catalogueRevisionId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare("SELECT manifest_key FROM catalogue_exports WHERE catalogue_revision_id = ?")
     .bind(input.catalogueRevisionId);
 }
 
 export function catalogueExportForDeletionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ catalogue_revision_id: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT catalogue_revision_id, manifest_key, manifest_digest, maintenance_state
      FROM catalogue_exports WHERE catalogue_revision_id = ?`)
     .bind(input.catalogue_revision_id);
 }
 
 export function catalogueExportDeletionExistsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ deletion_id: string }>,
 ): D1PreparedStatement {
-  return database.prepare("SELECT 1 AS present FROM catalogue_export_deletions WHERE id = ?").bind(input.deletion_id);
+  return repositoryStatements(database)
+    .prepare("SELECT 1 AS present FROM catalogue_export_deletions WHERE id = ?")
+    .bind(input.deletion_id);
 }
 
 export function insertCatalogueExportDeletionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     deletionId: string;
     planId: string;
@@ -115,7 +120,7 @@ export function insertCatalogueExportDeletionStatement(
     executionLeaseExpiresAt: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO catalogue_export_deletions (
            id, plan_id, state, catalogue_revision_id, manifest_digest,
            expected_current_revision_id, object_set_digest, idempotency_key,
@@ -140,10 +145,10 @@ export function insertCatalogueExportDeletionStatement(
 }
 
 export function markCatalogueExportDeletingStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ deletion_id: string; catalogue_revision_id: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_exports
          SET maintenance_state = 'deleting', deletion_operation_id = ?
          WHERE catalogue_revision_id = ? AND maintenance_state = 'available'`)
@@ -151,10 +156,10 @@ export function markCatalogueExportDeletingStatement(
 }
 
 export function catalogueExportDeletionConfirmationReplayStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ idempotency_key: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(
       "SELECT request_json, confirmation_response_json FROM catalogue_export_deletions WHERE idempotency_key = ?",
     )
@@ -162,24 +167,26 @@ export function catalogueExportDeletionConfirmationReplayStatement(
 }
 
 export function catalogueExportDeletionByIdStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ deletionId: string }>,
 ): D1PreparedStatement {
-  return database.prepare("SELECT * FROM catalogue_export_deletions WHERE id = ?").bind(input.deletionId);
+  return repositoryStatements(database)
+    .prepare("SELECT * FROM catalogue_export_deletions WHERE id = ?")
+    .bind(input.deletionId);
 }
 
 export function catalogueExportDeletionRetryStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ idempotency_key: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT deletion_id, object_set_digest, request_json, response_json
      FROM catalogue_export_deletion_retries WHERE idempotency_key = ?`)
     .bind(input.idempotency_key);
 }
 
 export function insertCatalogueExportDeletionRetryStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     idempotency_key: string;
     deletionId: string;
@@ -188,7 +195,7 @@ export function insertCatalogueExportDeletionRetryStatement(
     observedAt: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO catalogue_export_deletion_retries (
              idempotency_key, deletion_id, object_set_digest,
              request_json, response_json, created_at
@@ -197,7 +204,7 @@ export function insertCatalogueExportDeletionRetryStatement(
 }
 
 export function claimCatalogueExportDeletionRetryStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     idempotency_key: string;
     executionOwnerToken: string;
@@ -205,7 +212,7 @@ export function claimCatalogueExportDeletionRetryStatement(
     deletionId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_export_deletions
            SET state = 'deleting', failure_code = NULL,
                retry_owner_idempotency_key = ?, execution_owner_token = ?,
@@ -215,14 +222,14 @@ export function claimCatalogueExportDeletionRetryStatement(
 }
 
 export function guardCatalogueExportDeletionRetryStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     deletionId: string;
     idempotency_key: string;
     executionOwnerToken: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN EXISTS (
              SELECT 1 FROM catalogue_export_deletions
              WHERE id = ? AND state = 'deleting'
@@ -233,27 +240,27 @@ export function guardCatalogueExportDeletionRetryStatement(
 }
 
 export function catalogueExportDeletionRetryReplayStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ idempotency_key: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT request_json, response_json
          FROM catalogue_export_deletion_retries WHERE idempotency_key = ?`)
     .bind(input.idempotency_key);
 }
 
 export function persistCatalogueExportDeletionRetryResponseStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ responseJson: string; idempotencyKey: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_export_deletion_retries SET response_json = ?
      WHERE idempotency_key = ? AND response_json IS NULL`)
     .bind(input.responseJson, input.idempotencyKey);
 }
 
 export function completeCatalogueExportDeletionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     observedAt: string;
     responseJson: string;
@@ -262,7 +269,7 @@ export function completeCatalogueExportDeletionStatement(
     executionOwnerToken: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_export_deletions
          SET state = 'deleted', completed_at = ?, failure_code = NULL,
              confirmation_response_json = COALESCE(confirmation_response_json, ?)
@@ -273,10 +280,10 @@ export function completeCatalogueExportDeletionStatement(
 }
 
 export function markCatalogueExportDeletedStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ observedAt: string; catalogue_revision_id: string; deletionId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_exports
          SET maintenance_state = 'deleted', deleted_at = ?
          WHERE catalogue_revision_id = ? AND maintenance_state = 'deleting'
@@ -285,7 +292,7 @@ export function markCatalogueExportDeletedStatement(
 }
 
 export function insertCatalogueExportDeletionTombstoneStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     catalogue_revision_id: string;
     deletionId: string;
@@ -294,7 +301,7 @@ export function insertCatalogueExportDeletionTombstoneStatement(
     observedAt: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO catalogue_export_deletion_tombstones (
            catalogue_revision_id, deletion_id, manifest_digest,
            object_set_digest, deleted_at
@@ -309,7 +316,7 @@ export function insertCatalogueExportDeletionTombstoneStatement(
 }
 
 export function failCatalogueExportDeletionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     responseJson: string;
     deletionId: string;
@@ -317,7 +324,7 @@ export function failCatalogueExportDeletionStatement(
     executionOwnerToken: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_export_deletions
          SET state = 'failed', failure_code = 'deleted_object_set_mismatch',
              confirmation_response_json = COALESCE(confirmation_response_json, ?)
@@ -328,7 +335,7 @@ export function failCatalogueExportDeletionStatement(
 }
 
 export function claimCatalogueExportDeletionLeaseStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     executionOwnerToken: string;
     executionLeaseExpiresAt: string;
@@ -337,7 +344,7 @@ export function claimCatalogueExportDeletionLeaseStatement(
     observedAt: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_export_deletions
          SET execution_owner_token = ?, execution_lease_expires_at = ?
          WHERE id = ? AND state = 'deleting'
@@ -354,7 +361,7 @@ export function claimCatalogueExportDeletionLeaseStatement(
 }
 
 export function renewCatalogueExportDeletionLeaseStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     renewedLeaseExpiresAt: string;
     deletionId: string;
@@ -363,7 +370,7 @@ export function renewCatalogueExportDeletionLeaseStatement(
     observedAt: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_export_deletions
          SET execution_lease_expires_at = ?
          WHERE id = ? AND state = 'deleting'
@@ -380,7 +387,7 @@ export function renewCatalogueExportDeletionLeaseStatement(
 }
 
 export function guardRenewedCatalogueExportDeletionLeaseStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     deletionId: string;
     retryIdempotencyKey: string | null;
@@ -388,7 +395,7 @@ export function guardRenewedCatalogueExportDeletionLeaseStatement(
     renewedLeaseExpiresAt: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN EXISTS (
            SELECT 1 FROM catalogue_export_deletions
            WHERE id = ? AND state = 'deleting'
@@ -400,10 +407,10 @@ export function guardRenewedCatalogueExportDeletionLeaseStatement(
 }
 
 export function persistCatalogueExportDeletionAcceptedResponseStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ acceptedResponseJson: string; deletionId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_export_deletions
        SET confirmation_response_json = ?
        WHERE id = ? AND state = 'deleting'
@@ -412,10 +419,10 @@ export function persistCatalogueExportDeletionAcceptedResponseStatement(
 }
 
 export function persistCatalogueExportDeletionRetryAcceptedResponseStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ acceptedResponseJson: string; retryIdempotencyKey: string; deletionId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE catalogue_export_deletion_retries SET response_json = ?
        WHERE idempotency_key = ? AND deletion_id = ?
          AND response_json IS NULL`)
@@ -423,27 +430,29 @@ export function persistCatalogueExportDeletionRetryAcceptedResponseStatement(
 }
 
 export function catalogueExportDeletionConfirmationResponseStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ deletionId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare("SELECT confirmation_response_json FROM catalogue_export_deletions WHERE id = ?")
     .bind(input.deletionId);
 }
 
 export function catalogueExportDeletionRetryResponseStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ retryIdempotencyKey: string; deletionId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(
       "SELECT response_json FROM catalogue_export_deletion_retries WHERE idempotency_key = ? AND deletion_id = ?",
     )
     .bind(input.retryIdempotencyKey, input.deletionId);
 }
 
-export function catalogueExportMaintenanceStateStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT catalogue.current_revision_id, operation.active_ingestion_run_id,
+export function catalogueExportMaintenanceStateStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(
+    database,
+  ).prepare(`SELECT catalogue.current_revision_id, operation.active_ingestion_run_id,
             operation.active_release_id AS active_production_release_id,
             operation.active_release_expires_at AS active_production_release_expires_at,
             operation.recovery_health
@@ -452,25 +461,27 @@ export function catalogueExportMaintenanceStateStatement(database: D1Database): 
      WHERE catalogue.singleton = 1`);
 }
 
-export function catalogueExportCurrentRevisionStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare("SELECT current_revision_id FROM catalogue_state WHERE singleton = 1");
+export function catalogueExportCurrentRevisionStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare("SELECT current_revision_id FROM catalogue_state WHERE singleton = 1");
 }
 
 export function catalogueExportDeletionPlanStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ planId: string }>,
 ): D1PreparedStatement {
-  return database.prepare("SELECT * FROM catalogue_export_deletion_plans WHERE id = ?").bind(input.planId);
+  return repositoryStatements(database)
+    .prepare("SELECT * FROM catalogue_export_deletion_plans WHERE id = ?")
+    .bind(input.planId);
 }
 
 export function guardCatalogueExportDeletionExecutionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   deletionId: string,
   retryIdempotencyKey: string | null,
   executionOwnerToken: string,
   leaseObservedAt?: string,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(
       `SELECT CASE WHEN EXISTS (
        SELECT 1 FROM catalogue_export_deletions

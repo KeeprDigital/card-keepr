@@ -1,3 +1,7 @@
+import { failSnapshotCommitFor } from "./query-helpers/database-failures";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { collectSourceRequestBatch, pendingEvidenceRequests } from "../../../src/catalogue/source-evidence";
@@ -26,10 +30,8 @@ type AttemptFacts = {
 };
 
 async function attemptFacts(runId: string): Promise<AttemptFacts[]> {
-  const rows = await env.CATALOGUE_DB.prepare(
-    `SELECT request_id, attempt_number, outcome FROM source_fetch_attempts
-     WHERE ingestion_run_id = ? ORDER BY request_id, attempt_number`,
-  )
+  const rows = await sourceEvidenceQueries
+    .readSourceFetchAttemptsRequestIdAttemptNumber(env.CATALOGUE_DB)
     .bind(runId)
     .all<AttemptFacts>();
   return rows.results;
@@ -45,12 +47,8 @@ async function captureOperations(runId: string): Promise<
     source_snapshot_id: string;
   }>
 > {
-  const rows = await env.CATALOGUE_DB.prepare(
-    `SELECT request_id, attempt_number, state, completed_at, content_digest,
-            source_snapshot_id
-     FROM source_capture_operations
-     WHERE ingestion_run_id = ? ORDER BY request_id, attempt_number`,
-  )
+  const rows = await sourceEvidenceQueries
+    .readSourceCaptureOperationsRequestIdAttemptNumber(env.CATALOGUE_DB)
     .bind(runId)
     .all<{
       request_id: string;
@@ -64,10 +62,8 @@ async function captureOperations(runId: string): Promise<
 }
 
 async function requestStates(runId: string): Promise<Record<string, string>> {
-  const rows = await env.CATALOGUE_DB.prepare(
-    `SELECT request_id, state FROM source_requests
-     WHERE ingestion_run_id = ? ORDER BY request_id`,
-  )
+  const rows = await sourceEvidenceQueries
+    .readSourceRequestsRequestIdStateForChildIdentityExhaustionFailsOnlyExhaustedHostnameShard(env.CATALOGUE_DB)
     .bind(runId)
     .all<{ request_id: string; state: string }>();
   return Object.fromEntries(rows.results.map((row) => [row.request_id, row.state]));
@@ -80,19 +76,8 @@ function sequenceRequests(hostname: string, count: number) {
   }));
 }
 
-async function failSnapshotCommitFor(requestId: string): Promise<void> {
-  await env.CATALOGUE_DB.prepare(
-    `CREATE TRIGGER fail_batch_snapshot_commit
-     BEFORE INSERT ON source_snapshots
-     WHEN NEW.request_id = '${requestId}'
-     BEGIN
-       SELECT RAISE(FAIL, 'synthetic_batch_commit_outage');
-     END`,
-  ).run();
-}
-
 async function releaseSnapshotCommit(): Promise<void> {
-  await env.CATALOGUE_DB.prepare("DROP TRIGGER fail_batch_snapshot_commit").run();
+  await publishedCatalogueQueries.dropFailBatchSnapshotCommit(env.CATALOGUE_DB).run();
 }
 
 test("a batch that fails midway replays without duplicating snapshots or attempts", async () => {
@@ -106,10 +91,10 @@ test("a batch that fails midway replays without duplicating snapshots or attempt
   });
   expect(created.status).toBe(201);
   const run = await created.json<CollectionDocument>();
-  const requests = await pendingEvidenceRequests(env.CATALOGUE_DB, run.id);
+  const requests = await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id);
   expect(requests).toHaveLength(6);
   const batchInput = {
-    database: env.CATALOGUE_DB,
+    database: catalogueStore(env.CATALOGUE_DB),
     evidenceObjects: env.EVIDENCE_OBJECTS,
     officialSourceTransport: env.OFFICIAL_SOURCE_TRANSPORT,
     runId: run.id,
@@ -121,7 +106,7 @@ test("a batch that fails midway replays without duplicating snapshots or attempt
 
   // The third request's commit fails after its bytes reached R2: the batch
   // step rejects as a whole, exactly as a durable step would before replay.
-  await failSnapshotCommitFor("sequence-3");
+  await failSnapshotCommitFor(env.CATALOGUE_DB, "sequence-3").run();
   await expect(collectSourceRequestBatch(batchInput)).rejects.toThrowError(/synthetic_batch_commit_outage/u);
   const interrupted = await captureOperations(run.id);
   const stagedThird = interrupted.find((operation) => operation.request_id === "sequence-3");
@@ -146,10 +131,8 @@ test("a batch that fails midway replays without duplicating snapshots or attempt
     "sequence-3": "pending",
   });
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count FROM source_snapshots
-     WHERE ingestion_run_id = ? AND request_id = 'sequence-3'`,
-    )
+    await sourceEvidenceQueries
+      .countSourceSnapshotsCountForBatchThatFailsMidwayReplaysWithoutDuplicatingSnapshotsOr(env.CATALOGUE_DB)
       .bind(run.id)
       .first("count"),
   ).toBe(0);
@@ -180,10 +163,8 @@ test("a batch that fails midway replays without duplicating snapshots or attempt
     completed_at: stagedThird?.completed_at,
     content_digest: stagedThird?.content_digest,
   });
-  const thirdSnapshot = await env.CATALOGUE_DB.prepare(
-    `SELECT id, retrieved_at, content_digest FROM source_snapshots
-     WHERE ingestion_run_id = ? AND request_id = 'sequence-3'`,
-  )
+  const thirdSnapshot = await sourceEvidenceQueries
+    .readSourceSnapshotsIdRetrievedAt(env.CATALOGUE_DB)
     .bind(run.id)
     .all<{
       id: string;
@@ -198,7 +179,10 @@ test("a batch that fails midway replays without duplicating snapshots or attempt
     },
   ]);
   expect(
-    await env.CATALOGUE_DB.prepare(`SELECT COUNT(*) AS count FROM source_snapshots WHERE ingestion_run_id = ?`)
+    await sourceEvidenceQueries
+      .countSourceSnapshotsCountForBatchThatFailsMidwayReplaysWithoutDuplicatingSnapshotsOrWithundefined(
+        env.CATALOGUE_DB,
+      )
       .bind(run.id)
       .first("count"),
   ).toBe(6);
@@ -281,10 +265,8 @@ test("a Retry Pause inside a batch leaves later requests untouched and resumes w
     { request_id: "sequence-6", attempt_number: 1, outcome: "success" },
   ]);
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT request_id, retry_generation FROM source_requests
-     WHERE ingestion_run_id = ? AND retry_generation > 1`,
-    )
+    await sourceEvidenceQueries
+      .readSourceRequestsRequestIdRetryGeneration(env.CATALOGUE_DB)
       .bind(run.id)
       .all()
       .then(({ results }) => results),
@@ -302,7 +284,7 @@ test("a hostname Workflow whose batch step errors is superseded by an attempt th
   });
   expect(created.status).toBe(201);
   const run = await created.json<CollectionDocument>();
-  await failSnapshotCommitFor("sequence-3");
+  await failSnapshotCommitFor(env.CATALOGUE_DB, "sequence-3").run();
   const started = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(started.status).toBe(202);
   await started.body?.cancel();

@@ -1,31 +1,31 @@
-import * as curatedStatements from "./curated-repository";
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
+import { assertCanonicalLegalityRule } from "../legality";
 import {
-  type CatalogueCandidate,
-  type SupportedGame,
   AdministrationProblem,
-  canonicalJson,
-  sha256Text,
-  replayByDigest,
-  decodeDocument,
-  retainedPayload,
+  type CatalogueCandidate,
+  type CatalogueStore,
   type CuratedEvidence,
   type CuratedFieldTarget,
   type CuratedProvenance,
   type CuratedRelationshipTarget,
-  type ProductRelationship,
+  canonicalJson,
   canonicalProfileAttributes,
+  decodeDocument,
   exportedGameProfileSchema,
   type LegalityRule,
+  type ProductRelationship,
+  replayByDigest,
+  retainedPayload,
+  type SupportedGame,
+  sha256Text,
 } from "../shared";
+import * as curatedStatements from "./curated-repository";
 import {
-  type CuratedRevisionRow as RevisionRow,
-  curatedRevisionStatement,
   curatedLifecycleMutationStatements,
+  curatedRevisionStatement,
+  type CuratedRevisionRow as RevisionRow,
 } from "./curated-repository";
-
-import Ajv2020 from "ajv/dist/2020.js";
-import addFormats from "ajv-formats";
-import { assertCanonicalLegalityRule } from "../legality";
 
 const games = new Set(["one-piece", "fusion-world", "digimon", "gundam"]);
 const forbiddenRoots = new Set([
@@ -111,7 +111,7 @@ type MutationResult = {
 };
 
 export async function validateCuratedRevision(
-  database: D1Database,
+  database: CatalogueStore,
   proposalValue: unknown,
   expectedCurrentRevisionId: string,
 ): Promise<Record<string, unknown>> {
@@ -198,7 +198,7 @@ export async function validateCuratedRevision(
 }
 
 export async function createCuratedRevision(
-  database: D1Database,
+  database: CatalogueStore,
   input: Record<string, unknown>,
   observedAt: string,
 ): Promise<{ created: boolean; document: MutationResult }> {
@@ -307,7 +307,7 @@ export async function createCuratedRevision(
 }
 
 export async function reaffirmCuratedRevision(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
   input: Record<string, unknown>,
   observedAt: string,
@@ -364,7 +364,7 @@ export async function reaffirmCuratedRevision(
 }
 
 export async function retireCuratedRevision(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
   input: Record<string, unknown>,
   observedAt: string,
@@ -407,7 +407,7 @@ export async function retireCuratedRevision(
 }
 
 export async function supersedeCuratedRevision(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
   input: Record<string, unknown>,
   observedAt: string,
@@ -515,7 +515,7 @@ export async function supersedeCuratedRevision(
 }
 
 export async function listCuratedRevisions(
-  database: D1Database,
+  database: CatalogueStore,
   filters: { game?: string; target?: string; status?: string },
 ): Promise<Record<string, unknown>> {
   if (filters.game !== undefined && !games.has(filters.game)) {
@@ -540,7 +540,7 @@ export async function listCuratedRevisions(
   };
 }
 
-export async function showCuratedRevision(database: D1Database, id: string): Promise<Record<string, unknown>> {
+export async function showCuratedRevision(database: CatalogueStore, id: string): Promise<Record<string, unknown>> {
   const row = await curatedRevisionStatement(database, id).first<RevisionRow>();
   if (row === null)
     throw new AdministrationProblem(
@@ -556,7 +556,7 @@ export async function showCuratedRevision(database: D1Database, id: string): Pro
 }
 
 export async function pinCuratedRevisionsForRun(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   observedAt: string,
 ): Promise<{ revision_ids: string[]; set_digest: string }> {
@@ -592,7 +592,7 @@ export async function pinCuratedRevisionsForRun(
 }
 
 export async function curatedRevisionPinStatementsForNewRun(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   selectedGames: readonly string[],
   observedAt: string,
@@ -603,7 +603,7 @@ export async function curatedRevisionPinStatementsForNewRun(
 }
 
 export async function prepareCuratedRevisionRunStart(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   selectedGames: readonly SupportedGame[],
   candidate: CatalogueCandidate,
@@ -704,7 +704,7 @@ type ActiveCuratedRevisionRow = {
 };
 
 async function activeCuratedRevisionRows(
-  database: D1Database,
+  database: CatalogueStore,
   selectedGames: readonly string[],
   observedAt: string,
 ): Promise<ActiveCuratedRevisionRow[]> {
@@ -717,7 +717,7 @@ async function activeCuratedRevisionRows(
 }
 
 async function preparedSourceChangeStatements(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   conflicts: readonly {
     row: ActiveCuratedRevisionRow;
@@ -768,7 +768,7 @@ async function preparedSourceChangeStatements(
 }
 
 async function curatedRevisionPinStatements(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   rows: readonly ActiveCuratedRevisionRow[],
   observedAt: string,
@@ -795,7 +795,7 @@ async function curatedRevisionPinStatements(
 }
 
 export async function assertCuratedGamesUnblocked(
-  database: D1Database,
+  database: CatalogueStore,
   selectedGames: readonly string[],
 ): Promise<void> {
   if (!(await curatedRevisionSchemaAvailable(database))) return;
@@ -812,7 +812,7 @@ export async function assertCuratedGamesUnblocked(
 }
 
 export async function applyPinnedCuratedRevisions(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   candidate: CatalogueCandidate,
   observedAt: string,
@@ -905,7 +905,7 @@ export async function applyPinnedCuratedRevisions(
 }
 
 export async function curatedRevisionSetForRun(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
 ): Promise<{ revision_ids: string[]; set_digest: string } | null> {
   if (!(await curatedRevisionSchemaAvailable(database))) return null;
@@ -916,7 +916,7 @@ export async function curatedRevisionSetForRun(
 }
 
 export async function curatedRevisionInspectionForRun(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   candidate: CatalogueCandidate,
 ): Promise<{
@@ -1002,7 +1002,7 @@ function candidateContainsCuratedRevision(
 }
 
 export async function curatedPublicationStatements(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   revisionId: string,
 ): Promise<D1PreparedStatement[]> {
@@ -1063,13 +1063,13 @@ export function stripCuratedRevisionEffects(
   return candidate;
 }
 
-async function curatedRevisionSchemaAvailable(database: D1Database): Promise<boolean> {
+async function curatedRevisionSchemaAvailable(database: CatalogueStore): Promise<boolean> {
   const row = await curatedStatements.curatedSchemaAvailableStatement(database).first<{ present: number }>();
   return row?.present === 1;
 }
 
 async function recordSourceChanges(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   conflicts: readonly {
     row: { id: string; reviewed_source_digest: string };
@@ -1082,7 +1082,7 @@ async function recordSourceChanges(
 }
 
 async function sourceChangePersistence(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   conflicts: readonly {
     row: { id: string; reviewed_source_digest: string };
@@ -1135,7 +1135,7 @@ async function sourceChangePersistence(
   return { statements, diagnostics };
 }
 
-function sourceChangeRunFailureStatements(database: D1Database, runId: string, at: string): D1PreparedStatement[] {
+function sourceChangeRunFailureStatements(database: CatalogueStore, runId: string, at: string): D1PreparedStatement[] {
   return [
     curatedStatements.failCuratedSourceChangeRunStatement(database, { at, runId }),
     curatedStatements.releaseCuratedRunStatement(database, { runId }),
@@ -1181,7 +1181,7 @@ type ExistingMutation = {
 };
 
 async function existingRevisionMutation(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
   input: Record<string, unknown>,
   observedAt: string,
@@ -1275,7 +1275,7 @@ async function existingRevisionMutation(
   };
 }
 
-async function pendingConflict(database: D1Database, row: RevisionRow): Promise<PendingConflict | null> {
+async function pendingConflict(database: CatalogueStore, row: RevisionRow): Promise<PendingConflict | null> {
   if (row.status !== "reconfirmation_required") return null;
   const event = await curatedStatements
     .curatedPendingConflictStatement(database, { id: row.id })
@@ -1323,7 +1323,7 @@ function mutationResult(
 }
 
 async function appendLifecycleMutation(
-  database: D1Database,
+  database: CatalogueStore,
   mutation: ExistingMutation,
   result: MutationResult,
   event: {
@@ -1357,7 +1357,7 @@ async function appendLifecycleMutation(
 }
 
 async function idempotencyReplay(
-  database: D1Database,
+  database: CatalogueStore,
   key: string,
   requestDigest: string,
 ): Promise<{ created: boolean; document: MutationResult } | null> {
@@ -1411,7 +1411,7 @@ function lifecycleWriteProblem(error: unknown): Error {
 }
 
 async function effectiveReviewedSourceDigest(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
   fallback: string,
 ): Promise<string> {
@@ -1422,7 +1422,7 @@ async function effectiveReviewedSourceDigest(
 }
 
 async function validateSupersedingProposal(
-  database: D1Database,
+  database: CatalogueStore,
   mutation: ExistingMutation,
   proposal: Proposal,
 ): Promise<void> {
@@ -1437,7 +1437,7 @@ async function validateSupersedingProposal(
         `The protected field ${proposal.target.path} cannot be curated.`,
       );
     }
-    const source = valueAt(target, parts);
+    const _source = valueAt(target, parts);
     const schema = curatedFieldSchema(proposal.target.entity_type, target, parts);
     if (
       schema === null ||
@@ -1486,7 +1486,7 @@ async function sourceDigestForProposal(target: Record<string, unknown>, proposal
   );
 }
 
-async function revisionContent(database: D1Database, row: RevisionRow): Promise<Record<string, unknown>> {
+async function revisionContent(database: CatalogueStore, row: RevisionRow): Promise<Record<string, unknown>> {
   const proposal = structuralProposal(JSON.parse(row.proposal_json));
   const events = await curatedStatements
     .curatedRevisionEventHistoryStatement(database, { id: row.id })
@@ -1530,7 +1530,7 @@ async function operationIdentity(idempotencyKey: string): Promise<string> {
   return `curop_${(await sha256Text(idempotencyKey)).slice(0, 32)}`;
 }
 
-async function currentCatalogueRevisionId(database: D1Database): Promise<string> {
+async function currentCatalogueRevisionId(database: CatalogueStore): Promise<string> {
   const row = await curatedStatements
     .curatedCurrentCatalogueRevisionStatement(database)
     .first<{ current_revision_id: string }>();
@@ -1539,7 +1539,7 @@ async function currentCatalogueRevisionId(database: D1Database): Promise<string>
 }
 
 async function currentTarget(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
   proposal: Proposal,
 ): Promise<Record<string, unknown>> {
@@ -1608,7 +1608,7 @@ async function currentTarget(
 }
 
 async function catalogueCardsAtRevision(
-  database: D1Database,
+  database: CatalogueStore,
   revisionId: string,
 ): Promise<CatalogueCandidate["cards"]> {
   const rows = await curatedStatements
@@ -1867,7 +1867,7 @@ function structuralProposal(input: unknown): Proposal {
 }
 
 async function assertRetainedCuratedEvidence(
-  database: D1Database,
+  database: CatalogueStore,
   evidence: readonly CuratedEvidence[],
 ): Promise<void> {
   const sourceObservationIds = evidence.flatMap((item) => (item.kind === "source_observation" ? [item.id] : []));

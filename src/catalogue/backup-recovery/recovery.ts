@@ -1,10 +1,10 @@
-import * as recoveryStatements from "./recovery-repository";
-import { AdministrationProblem, canonicalJson, sha256Text } from "../shared";
+import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import {
-  cloudflareD1BackupProvider,
   type CatalogueVerificationEvidence,
+  cloudflareD1BackupProvider,
   type RestoredCatalogueVerification,
 } from "./backup-recovery";
+import * as recoveryStatements from "./recovery-repository";
 
 export type D1RecoveryProvider = Readonly<{
   currentBookmark(
@@ -86,7 +86,7 @@ export type AcceptCatalogueRecoveryInput = Readonly<{
   boundDatabaseId: string;
 }>;
 
-export async function enforceRecoveryRestoreGuard(database: D1Database): Promise<void> {
+export async function enforceRecoveryRestoreGuard(database: CatalogueStore): Promise<void> {
   await recoveryStatements.enforceRestoreGuardStatement(database).run();
 }
 
@@ -160,7 +160,7 @@ type RecoveryJournal = Readonly<{
 }>;
 
 export async function beginCatalogueRecovery(
-  database: D1Database,
+  database: CatalogueStore,
   backups: R2Bucket,
   input: BeginCatalogueRecoveryInput,
   provider: D1RecoveryProvider = cloudflareD1RecoveryProvider,
@@ -260,7 +260,7 @@ export async function beginCatalogueRecovery(
       }),
       recoveryStatements.guardRecoveryReservationStatement(database, { recoveryId: input.recoveryId }),
     ]);
-  } catch (error) {
+  } catch (_error) {
     const winner = await recoveryByIdempotency(database, input.idempotencyKey);
     if (winner !== null) {
       if (winner.request_json !== requestJson) throw idempotencyReused();
@@ -332,7 +332,7 @@ export async function beginCatalogueRecovery(
 }
 
 export async function inspectCatalogueRecovery(
-  database: D1Database,
+  database: CatalogueStore,
   backups: R2Bucket,
   recoveryId: string,
 ): Promise<Record<string, unknown>> {
@@ -346,7 +346,7 @@ export async function inspectCatalogueRecovery(
 }
 
 export async function verifyCatalogueRecovery(
-  database: D1Database,
+  database: CatalogueStore,
   backups: R2Bucket,
   recoveryId: string,
   input: VerifyCatalogueRecoveryInput,
@@ -428,7 +428,7 @@ export async function verifyCatalogueRecovery(
 }
 
 export async function acceptCatalogueRecovery(
-  database: D1Database,
+  database: CatalogueStore,
   backups: R2Bucket,
   recoveryId: string,
   input: AcceptCatalogueRecoveryInput,
@@ -536,7 +536,7 @@ export async function acceptCatalogueRecovery(
 }
 
 async function releaseAcceptedRecoveryIfSafe(
-  database: D1Database,
+  database: CatalogueStore,
   recovery: RecoveryRow,
   backup: VerifiedBackupRow,
   boundDatabaseId: string,
@@ -565,7 +565,7 @@ async function releaseAcceptedRecoveryIfSafe(
 }
 
 async function assertRecoveryEvidenceMatches(
-  database: D1Database,
+  database: CatalogueStore,
   recovery: RecoveryRow,
   backup: VerifiedBackupRow,
   boundDatabaseId: string,
@@ -625,7 +625,7 @@ async function assertRecoveryEvidenceMatches(
 }
 
 async function exactVerifiedBackup(
-  database: D1Database,
+  database: CatalogueStore,
   input: BeginCatalogueRecoveryInput,
 ): Promise<VerifiedBackupRow> {
   const row = await recoveryStatements
@@ -702,7 +702,7 @@ async function requiredRecoveryJournal(backups: R2Bucket, recoveryId: string): P
 }
 
 async function hydrateRecoveryJournal(
-  database: D1Database,
+  database: CatalogueStore,
   backups: R2Bucket,
   recoveryId: string,
   ambiguousRestoringIsFailure = false,
@@ -777,7 +777,7 @@ async function hydrateRecoveryJournal(
 }
 
 async function hydrateRetainedRecoveryIfPresent(
-  database: D1Database,
+  database: CatalogueStore,
   backups: R2Bucket,
   recoveryId: string,
   ambiguousRestoringIsFailure: boolean,
@@ -790,7 +790,7 @@ async function hydrateRetainedRecoveryIfPresent(
   }
 }
 
-async function rehydrateVerifiedBackup(database: D1Database, backup: VerifiedBackupRow): Promise<void> {
+async function rehydrateVerifiedBackup(database: CatalogueStore, backup: VerifiedBackupRow): Promise<void> {
   let backupState = await recoveryStatements
     .rehydratedBackupStateStatement(database, { idempotency_key: backup.idempotency_key })
     .first<{ state: string }>();
@@ -884,7 +884,7 @@ async function exactBackupManifest(backups: R2Bucket, backup: VerifiedBackupRow)
 }
 
 async function assertLinkedRecovery(
-  database: D1Database,
+  database: CatalogueStore,
   state: Readonly<{
     recovery_health: string;
     active_recovery_id: string | null;
@@ -943,7 +943,12 @@ async function assertLinkedRecovery(
   }
 }
 
-async function transitionRecovery(database: D1Database, recoveryId: string, from: string, to: string): Promise<void> {
+async function transitionRecovery(
+  database: CatalogueStore,
+  recoveryId: string,
+  from: string,
+  to: string,
+): Promise<void> {
   const result = await recoveryStatements
     .transitionRecoveryOperationStatement(database, { to, recoveryId, from })
     .run();
@@ -953,7 +958,7 @@ async function transitionRecovery(database: D1Database, recoveryId: string, from
 }
 
 async function transitionToValidating(
-  database: D1Database,
+  database: CatalogueStore,
   recoveryId: string,
   input: Readonly<{
     restoredBookmark: string;
@@ -978,11 +983,16 @@ async function transitionToValidating(
   }
 }
 
-async function failRecovery(database: D1Database, recoveryId: string, observedAt: string, code: string): Promise<void> {
+async function failRecovery(
+  database: CatalogueStore,
+  recoveryId: string,
+  observedAt: string,
+  code: string,
+): Promise<void> {
   await recoveryStatements.failRecoveryOperationStatement(database, { code, observedAt, recoveryId }).run();
 }
 
-async function requiredRecovery(database: D1Database, recoveryId: string): Promise<RecoveryRow> {
+async function requiredRecovery(database: CatalogueStore, recoveryId: string): Promise<RecoveryRow> {
   assertOpaqueId(recoveryId, "recovery_id");
   const row = await recoveryRow(database, recoveryId);
   if (row === null) {
@@ -991,11 +1001,11 @@ async function requiredRecovery(database: D1Database, recoveryId: string): Promi
   return row;
 }
 
-function recoveryRow(database: D1Database, recoveryId: string): Promise<RecoveryRow | null> {
+function recoveryRow(database: CatalogueStore, recoveryId: string): Promise<RecoveryRow | null> {
   return recoveryStatements.recoveryOperationByIdStatement(database, { recoveryId }).first<RecoveryRow>();
 }
 
-function recoveryByIdempotency(database: D1Database, idempotencyKey: string): Promise<RecoveryRow | null> {
+function recoveryByIdempotency(database: CatalogueStore, idempotencyKey: string): Promise<RecoveryRow | null> {
   return recoveryStatements.recoveryOperationByIdempotencyStatement(database, { idempotencyKey }).first<RecoveryRow>();
 }
 
@@ -1124,7 +1134,7 @@ function validVerificationEvidence(value: unknown): value is CatalogueVerificati
   ].every((key) => Number.isSafeInteger(evidence[key]) && Number(evidence[key]) >= 0);
   const validRepresentativeDigests = ["representative_product_digest", "representative_legality_rule_digest"].every(
     (key) =>
-      !Object.prototype.hasOwnProperty.call(evidence, key) ||
+      !Object.hasOwn(evidence, key) ||
       evidence[key] === null ||
       (typeof evidence[key] === "string" && /^[a-f0-9]{64}$/u.test(evidence[key])),
   );

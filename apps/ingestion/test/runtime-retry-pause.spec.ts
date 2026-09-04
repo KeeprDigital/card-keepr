@@ -1,3 +1,6 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as ingestionQueries from "./query-helpers/ingestion";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
@@ -68,38 +71,22 @@ test("transport retry exhaustion pauses the Ingestion Run without failing the re
   // The request is not misreported as source failure, and the pause is a
   // recorded lifecycle transition that keeps the active-run reservation.
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT state, failure_code, retry_generation FROM source_requests
-     WHERE ingestion_run_id = ? AND request_id = 'required-source'`,
-    )
-      .bind(run.id)
-      .first(),
+    await sourceEvidenceQueries.readSourceRequestsStateFailureCode(env.CATALOGUE_DB).bind(run.id).first(),
   ).toMatchObject({
     state: "pending",
     failure_code: null,
     retry_generation: 1,
   });
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT from_state, to_state FROM ingestion_run_transitions
-     WHERE ingestion_run_id = ? ORDER BY sequence DESC LIMIT 1`,
-    )
-      .bind(run.id)
-      .first(),
+    await ingestionQueries.readIngestionRunTransitionsFromStateToState(env.CATALOGUE_DB).bind(run.id).first(),
   ).toMatchObject({
     from_state: "collecting",
     to_state: "paused",
   });
   expect(
-    await env.CATALOGUE_DB.prepare(`SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1`).first(
-      "active_ingestion_run_id",
-    ),
+    await ingestionQueries.readOperationStateActiveIngestionRunId(env.CATALOGUE_DB).first("active_ingestion_run_id"),
   ).toBe(run.id);
-  expect(
-    await env.CATALOGUE_DB.prepare(`SELECT * FROM ingestion_run_retry_pauses WHERE ingestion_run_id = ?`)
-      .bind(run.id)
-      .first(),
-  ).toMatchObject({
+  expect(await sourceEvidenceQueries.readIngestionRunRetryPauses(env.CATALOGUE_DB).bind(run.id).first()).toMatchObject({
     request_id: "required-source",
     retry_generation: 1,
     pause_reason: "source_transport_retries_exhausted",
@@ -153,20 +140,15 @@ test("resuming a transport-paused run opens a new bounded retry generation and c
   ]);
 
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT state, retry_generation FROM source_requests
-     WHERE ingestion_run_id = ? AND request_id = 'required-source'`,
-    )
-      .bind(run.id)
-      .first(),
+    await sourceEvidenceQueries.readSourceRequestsStateRetryGeneration(env.CATALOGUE_DB).bind(run.id).first(),
   ).toMatchObject({
     state: "observed",
     retry_generation: 2,
   });
-  const transitions = await env.CATALOGUE_DB.prepare(
-    `SELECT from_state, to_state FROM ingestion_run_transitions
-     WHERE ingestion_run_id = ? ORDER BY sequence`,
-  )
+  const transitions = await ingestionQueries
+    .readIngestionRunTransitionsFromStateToStateForResumingTransportPausedRunOpensNewBoundedRetryGeneration(
+      env.CATALOGUE_DB,
+    )
     .bind(run.id)
     .all<{ from_state: string | null; to_state: string }>();
   expect(transitions.results.map((row) => `${row.from_state}->${row.to_state}`)).toEqual([
@@ -177,12 +159,7 @@ test("resuming a transport-paused run opens a new bounded retry generation and c
   ]);
   // The immutable pause record survives the resume as audit history.
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count FROM ingestion_run_retry_pauses
-     WHERE ingestion_run_id = ?`,
-    )
-      .bind(run.id)
-      .first("count"),
+    await sourceEvidenceQueries.countIngestionRunRetryPausesCount(env.CATALOGUE_DB).bind(run.id).first("count"),
   ).toBe(1);
 });
 
@@ -214,18 +191,8 @@ test("a captured request crosses a retry pause without another Official Source f
     httpMetadata: { contentType: "application/json" },
   });
   const now = new Date().toISOString();
-  await env.CATALOGUE_DB.prepare(
-    `INSERT INTO source_capture_operations (
-      attempt_id, ingestion_run_id, request_id, attempt_number,
-      source_snapshot_id, content_object_key, state, requested_at,
-      completed_at, request_headers_json, http_status,
-      response_headers_json, response_vary_json, media_type
-    ) VALUES (
-      ?, ?, 'captured-source', 1, ?, ?, 'response_received', ?,
-      ?, '{}', 200, '{"content-type":"application/json"}', '[]',
-      'application/json'
-    )`,
-  )
+  await sourceEvidenceQueries
+    .insertSourceCaptureOperations(env.CATALOGUE_DB)
     .bind(identity.attemptId, run.id, identity.snapshotId, identity.objectKey, now, now)
     .run();
 
@@ -251,10 +218,8 @@ test("a captured request crosses a retry pause without another Official Source f
     completed.diagnostics.filter(({ request_id }) => request_id === "exhausting-source").map(({ outcome }) => outcome),
   ).toEqual(["http_failure", "http_failure", "http_failure", "http_failure", "success"]);
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT request_id, state, retry_generation FROM source_requests
-     WHERE ingestion_run_id = ? ORDER BY request_id`,
-    )
+    await sourceEvidenceQueries
+      .readSourceRequestsRequestIdState(env.CATALOGUE_DB)
       .bind(run.id)
       .all()
       .then(({ results }) => results),
@@ -279,16 +244,16 @@ test("network failure exhaustion pauses with the network classification", async 
       throw new TypeError("synthetic connection reset");
     },
   } as unknown as Fetcher;
-  const evidenceRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-  const request = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  const evidenceRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+  const request = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
   if (request === undefined) throw new Error("missing evidence request");
   for (let attempt = 1; attempt <= 4; attempt += 1) {
-    const prepared = await prepareCaptureAttempt(env.CATALOGUE_DB, evidenceRun, request);
+    const prepared = await prepareCaptureAttempt(catalogueStore(env.CATALOGUE_DB), evidenceRun, request);
     if (prepared.kind !== "attempt") {
       throw new Error(`unexpected preparation result ${prepared.kind}`);
     }
     const result = await capturePreparedAttempt(
-      env.CATALOGUE_DB,
+      catalogueStore(env.CATALOGUE_DB),
       env.EVIDENCE_OBJECTS,
       unreachableTransport,
       evidenceRun,

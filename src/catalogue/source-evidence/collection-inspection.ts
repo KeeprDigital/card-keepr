@@ -1,13 +1,14 @@
+import type { CatalogueStore } from "../shared";
 import {
-  collectionRequestGroupsStatement,
   collectionEvidenceCountsStatement,
+  collectionHostProgressStatement,
+  collectionRequestGroupsStatement,
+  failedPrintingImagesStatement,
   latestCollectionFailureStatement,
   latestCollectionRequestStatement,
-  collectionHostProgressStatement,
-  failedPrintingImagesStatement,
-  recentCollectionSnapshotsStatement,
-  recentCollectionObservationsStatement,
   recentCollectionAttemptsStatement,
+  recentCollectionObservationsStatement,
+  recentCollectionSnapshotsStatement,
 } from "./collection-inspection-repository";
 // The owner's aggregated view of one Ingestion Run's collection: capacity
 // per Source Lineage, request counts by lineage, role, and state, evidence
@@ -18,7 +19,7 @@ import {
 // status document. Nothing here carries request headers, credentials,
 // response bodies, or unvetted provider text: identifiers, hostnames,
 // bounded counters, timestamps, and closed machine codes only.
-import { toleratedPrintingImageFailureCodes, type EvidencePlan } from "./source-evidence-model";
+import { type EvidencePlan, toleratedPrintingImageFailureCodes } from "./source-evidence-model";
 import type {
   CurrentPause,
   ObservationSetRow,
@@ -81,7 +82,7 @@ type AttemptRow = {
 };
 
 export async function collectionInspection(
-  database: D1Database,
+  database: CatalogueStore,
   input: CollectionInspectionInput,
 ): Promise<{ collection: Record<string, unknown>; counts: EvidenceCounts }> {
   const runId = input.run.id;
@@ -311,7 +312,7 @@ function groupedRequests(rows: readonly RequestGroupRow[], plans: readonly Evide
 // stable ascending order the status document has always used. Counts come
 // from the aggregate query, so truncation never changes them.
 export async function boundedEvidenceDetail(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
 ): Promise<{
   snapshots: SnapshotRow[];

@@ -1,3 +1,8 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as backupRecoveryQueries from "./query-helpers/backup-recovery";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as cardSearchQueries from "./query-helpers/card-search";
 import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
@@ -31,18 +36,14 @@ const freshRestoreTarget: D1BackupProvider["prepareRestoreTarget"] = async (inpu
 
 beforeEach(async () => {
   await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
-  await testEnv.CATALOGUE_DB.prepare("DELETE FROM catalogue_backup_retention").run();
-  await testEnv.CATALOGUE_DB.prepare("DELETE FROM catalogue_backup_attempts").run();
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE operation_state
-     SET recovery_health = 'healthy', active_ingestion_run_id = NULL
-     WHERE singleton = 1`,
-  ).run();
+  await backupRecoveryQueries.deleteCatalogueBackupRetention(testEnv.CATALOGUE_DB).run();
+  await backupRecoveryQueries.deleteCatalogueBackupAttempts(testEnv.CATALOGUE_DB).run();
+  await ingestionQueries.setOperationStateRecoveryHealthActiveIngestionRunId(testEnv.CATALOGUE_DB).run();
 });
 
 test("restored verification executes the real D1 schema and rejects an empty or partial catalogue", async () => {
   await expect(
-    verifyRestoredCatalogue(testEnv.CATALOGUE_DB, {
+    verifyRestoredCatalogue(catalogueStore(testEnv.CATALOGUE_DB), {
       expectedRevisionId: "catrev_spine_000",
       expectedSchemaMigrationLevel: 16,
       expected: {
@@ -94,21 +95,18 @@ test("the Cloudflare provider recreates the disposable D1 for each restore gener
 
 test("the production backup boundary exports and verifies the exact restored revision", async () => {
   const events: string[] = [];
-  const schemaState = await testEnv.CATALOGUE_DB.prepare(
-    "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
-  ).first<{ migration_level: number }>();
+  const schemaState = await publishedCatalogueQueries
+    .readCatalogueSchemaStateMigrationLevel(testEnv.CATALOGUE_DB)
+    .first<{ migration_level: number }>();
   if (schemaState === null) throw new Error("Catalogue schema state is unavailable.");
   const sqlBytes = new TextEncoder().encode("-- exact D1 SQL export without derived FTS virtual tables\n");
   const firstRestoreDatabaseId = `${testEnv.DISPOSABLE_D1_DATABASE_ID}:backup-production-boundary:1`;
   const provider: D1BackupProvider = {
     async exportSql(input) {
       events.push(`export:${input.databaseId}`);
-      const virtual = await testEnv.CATALOGUE_DB.prepare(
-        `SELECT count(*) AS count FROM sqlite_schema
-         WHERE type = 'table'
-           AND name LIKE 'revision_card%'
-           AND lower(sql) LIKE '%create virtual table%'`,
-      ).first<{ count: number }>();
+      const virtual = await publishedCatalogueQueries
+        .countSqliteSchemaCount(testEnv.CATALOGUE_DB)
+        .first<{ count: number }>();
       expect(virtual?.count).toBe(0);
       return {
         body: new Blob([sqlBytes]).stream(),
@@ -133,7 +131,7 @@ test("the production backup boundary exports and verifies the exact restored rev
   };
 
   const document = await createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     {
       expectedCurrentRevisionId: "catrev_spine_000",
@@ -166,7 +164,7 @@ test("the production backup boundary exports and verifies the exact restored rev
   ]);
 
   const replay = await createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     {
       expectedCurrentRevisionId: "catrev_spine_000",
@@ -184,7 +182,7 @@ test("the production backup boundary exports and verifies the exact restored rev
   expect(events).toHaveLength(3);
   await expect(
     createVerifiedCatalogueBackup(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       {
         expectedCurrentRevisionId: "catrev_changed_999",
@@ -245,21 +243,22 @@ test("the production backup boundary exports and verifies the exact restored rev
     },
   });
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT state, owner_token, lease_expires_at
-     FROM card_search_fts_state WHERE singleton = 1`,
-    ).first(),
+    cardSearchQueries
+      .readCardSearchFtsStateStateOwnerTokenForProductionBackupBoundaryExportsVerifiesExactRestoredRevision(
+        testEnv.CATALOGUE_DB,
+      )
+      .first(),
   ).resolves.toEqual({
     state: "ready",
     owner_token: null,
     lease_expires_at: null,
   });
-  await expect(
-    testEnv.CATALOGUE_DB.prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1").first(),
-  ).resolves.toEqual({ recovery_health: "healthy" });
+  await expect(ingestionQueries.readOperationStateRecoveryHealth(testEnv.CATALOGUE_DB).first()).resolves.toEqual({
+    recovery_health: "healthy",
+  });
 
   await createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     {
       expectedCurrentRevisionId: "catrev_spine_000",
@@ -277,7 +276,7 @@ test("the production backup boundary exports and verifies the exact restored rev
   expect(secondRestoreDatabaseId).not.toBe(firstRestoreDatabaseId);
   expect(events.slice(-2)).toEqual([`restore:${secondRestoreDatabaseId}`, `verify:${secondRestoreDatabaseId}`]);
   const datedReplay = await createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     {
       expectedCurrentRevisionId: "catrev_spine_000",
@@ -323,7 +322,7 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
 
   await expect(
     createVerifiedCatalogueBackup(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       {
         expectedCurrentRevisionId: "catrev_spine_000",
@@ -340,7 +339,7 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
   ).rejects.toThrow("synthetic export outage");
   await expect(
     createVerifiedCatalogueBackup(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       {
         expectedCurrentRevisionId: "catrev_spine_000",
@@ -357,22 +356,22 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
   ).rejects.toMatchObject({ status: 409, code: "backup_failed" });
   expect(exportAttempts).toBe(1);
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT state, failure_code FROM catalogue_backup_attempts
-     WHERE idempotency_key = 'backup-production-failure'`,
-    ).first(),
+    backupRecoveryQueries.readCatalogueBackupAttemptsStateFailureCode(testEnv.CATALOGUE_DB).first(),
   ).resolves.toEqual({
     state: "failed",
     failure_code: "backup_failed",
   });
-  await expect(
-    testEnv.CATALOGUE_DB.prepare("SELECT state FROM card_search_fts_state WHERE singleton = 1").first(),
-  ).resolves.toEqual({ state: "ready" });
-  await expect(
-    testEnv.CATALOGUE_DB.prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1").first(),
-  ).resolves.toEqual({ recovery_health: "degraded" });
+  await expect(cardSearchQueries.readCardSearchFtsStateState(testEnv.CATALOGUE_DB).first()).resolves.toEqual({
+    state: "ready",
+  });
+  await expect(ingestionQueries.readOperationStateRecoveryHealth(testEnv.CATALOGUE_DB).first()).resolves.toEqual({
+    recovery_health: "degraded",
+  });
 
-  const failedStatus = await catalogueBackupAttemptStatus(testEnv.CATALOGUE_DB, "backup-production-failure");
+  const failedStatus = await catalogueBackupAttemptStatus(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    "backup-production-failure",
+  );
   expect(failedStatus).toMatchObject({
     contract: "card-keepr-catalogue-backup-status@1",
     state: "failed",
@@ -384,7 +383,7 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
   });
   await expect(
     createVerifiedCatalogueBackup(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       {
         expectedCurrentRevisionId: "catrev_spine_000",
@@ -403,14 +402,11 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
     code: "backup_retry_required",
   });
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT 1 AS present FROM catalogue_backup_attempts
-     WHERE idempotency_key = 'backup-production-unlinked-after-failure'`,
-    ).first(),
+    backupRecoveryQueries.readCatalogueBackupAttemptsPresent(testEnv.CATALOGUE_DB).first(),
   ).resolves.toBeNull();
   await expect(
     createVerifiedCatalogueBackup(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       {
         expectedCurrentRevisionId: "catrev_spine_000",
@@ -427,13 +423,16 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
       provider,
     ),
   ).rejects.toThrow("synthetic export outage");
-  const newerFailedStatus = await catalogueBackupAttemptStatus(testEnv.CATALOGUE_DB, "backup-production-newer-failure");
-  await expect(
-    testEnv.CATALOGUE_DB.prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1").first(),
-  ).resolves.toEqual({ recovery_health: "degraded" });
+  const newerFailedStatus = await catalogueBackupAttemptStatus(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    "backup-production-newer-failure",
+  );
+  await expect(ingestionQueries.readOperationStateRecoveryHealth(testEnv.CATALOGUE_DB).first()).resolves.toEqual({
+    recovery_health: "degraded",
+  });
   await expect(
     createVerifiedCatalogueBackup(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       {
         expectedCurrentRevisionId: "catrev_spine_000",
@@ -454,14 +453,15 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
     code: "backup_retry_source_superseded",
   });
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT 1 AS present FROM catalogue_backup_attempts
-     WHERE idempotency_key = 'backup-production-superseded-retry'`,
-    ).first(),
+    backupRecoveryQueries
+      .readCatalogueBackupAttemptsPresentForBackupFailureReconstructsLiveSearchLeavesRecoveryDegraded(
+        testEnv.CATALOGUE_DB,
+      )
+      .first(),
   ).resolves.toBeNull();
   await expect(
     createVerifiedCatalogueBackup(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       {
         expectedCurrentRevisionId: "catrev_spine_000",
@@ -483,7 +483,7 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
   });
   exportAvailable = true;
   const retry = await createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     {
       expectedCurrentRevisionId: "catrev_spine_000",
@@ -505,13 +505,13 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
   });
   expect(retry.object_key).not.toContain("backup-production-failure.sql");
   expect(exportAttempts).toBe(3);
-  await expect(
-    testEnv.CATALOGUE_DB.prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1").first(),
-  ).resolves.toEqual({ recovery_health: "healthy" });
+  await expect(ingestionQueries.readOperationStateRecoveryHealth(testEnv.CATALOGUE_DB).first()).resolves.toEqual({
+    recovery_health: "healthy",
+  });
 
   await expect(
     createVerifiedCatalogueBackup(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       {
         expectedCurrentRevisionId: "catrev_spine_000",
@@ -563,7 +563,7 @@ test("recovery stays degraded unless every restored catalogue contract passes", 
 
   await expect(
     createVerifiedCatalogueBackup(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       {
         expectedCurrentRevisionId: "catrev_spine_000",
@@ -578,9 +578,9 @@ test("recovery stays degraded unless every restored catalogue contract passes", 
       provider,
     ),
   ).rejects.toThrow(/restored.*verification/iu);
-  await expect(
-    testEnv.CATALOGUE_DB.prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1").first(),
-  ).resolves.toEqual({ recovery_health: "degraded" });
+  await expect(ingestionQueries.readOperationStateRecoveryHealth(testEnv.CATALOGUE_DB).first()).resolves.toEqual({
+    recovery_health: "degraded",
+  });
 });
 
 test("the Workflow can resume the same owner after an interrupted active attempt", async () => {
@@ -616,10 +616,14 @@ test("the Workflow can resume the same owner after an interrupted active attempt
     verificationToken: "verification-token",
   } as const;
   await expect(
-    createVerifiedCatalogueBackup(testEnv.CATALOGUE_DB, testEnv.BACKUPS, input, provider, { terminalFailure: false }),
+    createVerifiedCatalogueBackup(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, input, provider, {
+      terminalFailure: false,
+    }),
   ).rejects.toThrow("interrupted export");
   await expect(
-    createVerifiedCatalogueBackup(testEnv.CATALOGUE_DB, testEnv.BACKUPS, input, provider, { terminalFailure: false }),
+    createVerifiedCatalogueBackup(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, input, provider, {
+      terminalFailure: false,
+    }),
   ).resolves.toMatchObject({
     verified: true,
     d1_bookmark: "bookmark-resumed",
@@ -675,13 +679,13 @@ test("a lost import response recreates and journals a fresh disposable target be
   } as const;
 
   await expect(
-    createVerifiedCatalogueBackup(testEnv.CATALOGUE_DB, testEnv.BACKUPS, input, provider, { terminalFailure: false }),
+    createVerifiedCatalogueBackup(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, input, provider, {
+      terminalFailure: false,
+    }),
   ).rejects.toThrow("synthetic lost import response");
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT state, disposable_database_id, restore_generation, restore_phase
-     FROM catalogue_backup_attempts WHERE idempotency_key = ?`,
-    )
+    backupRecoveryQueries
+      .readCatalogueBackupAttemptsStateDisposableDatabaseId(testEnv.CATALOGUE_DB)
       .bind(input.idempotencyKey)
       .first(),
   ).resolves.toEqual({
@@ -692,7 +696,9 @@ test("a lost import response recreates and journals a fresh disposable target be
   });
 
   await expect(
-    createVerifiedCatalogueBackup(testEnv.CATALOGUE_DB, testEnv.BACKUPS, input, provider, { terminalFailure: false }),
+    createVerifiedCatalogueBackup(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, input, provider, {
+      terminalFailure: false,
+    }),
   ).resolves.toMatchObject({ verified: true });
   expect(preparedTargets).toEqual([
     "disposable-backup-lost-import-response-1",
@@ -732,18 +738,17 @@ test("an exact retained export resumes after the R2 put and D1 transition respon
     exportToken: "export-token",
     verificationToken: "verification-token",
   } as const;
-  await testEnv.CATALOGUE_DB.prepare(
-    `CREATE TRIGGER synthetic_lost_export_transition
-     BEFORE UPDATE OF state ON catalogue_backup_attempts
-     WHEN OLD.state = 'exporting' AND NEW.state = 'restoring_verification'
-     BEGIN SELECT RAISE(ABORT, 'synthetic_lost_export_transition'); END`,
-  ).run();
+  await backupRecoveryQueries.createSyntheticLostExportTransition(testEnv.CATALOGUE_DB).run();
   await expect(
-    createVerifiedCatalogueBackup(testEnv.CATALOGUE_DB, testEnv.BACKUPS, input, provider, { terminalFailure: false }),
+    createVerifiedCatalogueBackup(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, input, provider, {
+      terminalFailure: false,
+    }),
   ).rejects.toThrow();
-  await testEnv.CATALOGUE_DB.prepare("DROP TRIGGER synthetic_lost_export_transition").run();
+  await publishedCatalogueQueries.dropSyntheticLostExportTransition(testEnv.CATALOGUE_DB).run();
   await expect(
-    createVerifiedCatalogueBackup(testEnv.CATALOGUE_DB, testEnv.BACKUPS, input, provider, { terminalFailure: false }),
+    createVerifiedCatalogueBackup(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, input, provider, {
+      terminalFailure: false,
+    }),
   ).resolves.toMatchObject({
     verified: true,
     d1_bookmark: "bookmark-ambiguous-transition",
@@ -771,13 +776,13 @@ test("terminal Workflow failure is an exact replayable observation", async () =>
     idempotency_key: "backup-terminal-observation",
   } as const;
   const first = await startOrObserveCatalogueBackupWorkflow(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     workflow,
     input,
     "2026-08-05T03:45:00.000Z",
   );
   const replay = await startOrObserveCatalogueBackupWorkflow(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     workflow,
     input,
     "2026-08-05T03:46:00.000Z",
@@ -826,7 +831,7 @@ test("a failed observer preserves another caller's acknowledged backup dispatch"
     idempotency_key: "backup-concurrent-dispatch-observation",
   };
   const unavailable = startOrObserveCatalogueBackupWorkflow(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     unavailableWorkflow,
     input,
     "2026-08-05T03:50:00.000Z",
@@ -834,7 +839,7 @@ test("a failed observer preserves another caller's acknowledged backup dispatch"
   await entered;
   try {
     const winner = await startOrObserveCatalogueBackupWorkflow(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       availableWorkflow,
       input,
       "2026-08-05T03:51:00.000Z",
@@ -852,14 +857,10 @@ test("a failed observer preserves another caller's acknowledged backup dispatch"
 });
 
 test("the authenticated status route exposes the exact pending publication attempt and resume request", async () => {
-  await testEnv.CATALOGUE_DB.prepare(
-    `INSERT INTO catalogue_backup_attempts (
-       idempotency_key, request_json, owner_token, catalogue_revision_id,
-       state, object_key, started_at, publication_ingestion_run_id
-     ) VALUES (?, ?, ?, ?, 'pending', ?, ?, (
-       SELECT ingestion_run_id FROM catalogue_revisions WHERE id = ?
-     ))`,
-  )
+  await backupRecoveryQueries
+    .insertCatalogueBackupAttemptsForAuthenticatedStatusRouteExposesExactPendingPublicationAttemptResume(
+      testEnv.CATALOGUE_DB,
+    )
     .bind(
       "backup-production-route",
       '{"expected_current_revision_id":"catrev_spine_000"}',
@@ -943,13 +944,8 @@ test("backup retry rejects source state, revision, and digest before Workflow cr
     revisionId: string,
     linkedAttemptId: string | null = null,
   ) => {
-    await testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO catalogue_backup_attempts (
-         idempotency_key, request_json, owner_token, catalogue_revision_id,
-         state, object_key, started_at, failure_code, failure_detail,
-         completed_at, linked_attempt_id
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
+    await backupRecoveryQueries
+      .insertCatalogueBackupAttemptsForBackupRetryRejectsSourceStateRevisionDigestBeforeWorkflow(testEnv.CATALOGUE_DB)
       .bind(
         id,
         JSON.stringify({ expected_current_revision_id: revisionId }),
@@ -1014,7 +1010,10 @@ test("backup retry rejects source state, revision, and digest before Workflow cr
   await expect(oldRevision.json()).resolves.toMatchObject({
     code: "backup_not_current_revision",
   });
-  const parentStatus = await catalogueBackupAttemptStatus(testEnv.CATALOGUE_DB, "backup-source-current");
+  const parentStatus = await catalogueBackupAttemptStatus(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    "backup-source-current",
+  );
   const superseded = await retry("backup-source-current", String(parentStatus.attempt_digest));
   expect(superseded.status).toBe(409);
   await expect(superseded.json()).resolves.toMatchObject({
@@ -1025,10 +1024,8 @@ test("backup retry rejects source state, revision, and digest before Workflow cr
   await expect(wrongDigest.json()).resolves.toMatchObject({
     code: "backup_digest_mismatch",
   });
-  const retained = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT count(*) AS count FROM catalogue_backup_workflow_requests
-     WHERE idempotency_key LIKE 'retry-backup-source-%'
-        OR idempotency_key = 'backup-unlinked-route'`,
-  ).first<{ count: number }>();
+  const retained = await backupRecoveryQueries
+    .countCatalogueBackupWorkflowRequestsCount(testEnv.CATALOGUE_DB)
+    .first<{ count: number }>();
   expect(retained?.count).toBe(0);
 });

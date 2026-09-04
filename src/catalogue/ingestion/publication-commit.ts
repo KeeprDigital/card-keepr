@@ -9,7 +9,13 @@ import {
   reconciliationPublication,
   typedPrintingProjections,
 } from "../reconciliation";
-import { byteBoundedJsonArrays, type CatalogueCandidate, guardedAtomicBatch, type SupportedGame } from "../shared";
+import {
+  byteBoundedJsonArrays,
+  type CatalogueCandidate,
+  type CatalogueStore,
+  guardedAtomicBatch,
+  type SupportedGame,
+} from "../shared";
 import { idempotencyCompletionStatements, replayAfterConflict } from "./administration-idempotency";
 import { cardAttributeProjectionStatement } from "./card-attribute-repository";
 import { printingQueryProjectionStatements } from "./printing-query-materialization";
@@ -42,7 +48,7 @@ import type { ApproveRunRequest, IdempotencyClaimOwner, RunRow } from "./run-typ
 import { parseSelectedGames, requiredPublicationValue } from "./run-values";
 
 export async function publishNoChange(
-  database: D1Database,
+  database: CatalogueStore,
   run: RunRow,
   request: ApproveRunRequest,
   requestJson: string,
@@ -266,7 +272,7 @@ function lifecycle(revisionId: string) {
 }
 
 export async function commitVerifiedPublication(
-  database: D1Database,
+  database: CatalogueStore,
   input: {
     run: RunRow;
     candidate: CatalogueCandidate;

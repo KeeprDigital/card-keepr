@@ -1,3 +1,5 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
@@ -47,10 +49,8 @@ type CollectionInspection = {
 
 test("a capacity-paused production-shaped run reports aggregated capacity, request, evidence, and pacing facts", async () => {
   const { runId, root, snapshotId } = await pauseRunAtCapacity("collection_inspection_capacity_001", "observed");
-  const pause = await env.CATALOGUE_DB.prepare(
-    `SELECT paused_at, overflow_request_count, required_capacity
-     FROM ingestion_run_capacity_pauses WHERE ingestion_run_id = ?`,
-  )
+  const pause = await sourceEvidenceQueries
+    .readIngestionRunCapacityPausesPausedAtOverflowRequestCount(env.CATALOGUE_DB)
     .bind(runId)
     .first<{
       paused_at: string;
@@ -58,7 +58,8 @@ test("a capacity-paused production-shaped run reports aggregated capacity, reque
       required_capacity: number;
     }>();
   if (pause === null) throw new Error("capacity pause record is absent");
-  const snapshotBytes = await env.CATALOGUE_DB.prepare("SELECT content_byte_length FROM source_snapshots WHERE id = ?")
+  const snapshotBytes = await sourceEvidenceQueries
+    .readSourceSnapshotsContentByteLength(env.CATALOGUE_DB)
     .bind(snapshotId)
     .first("content_byte_length");
 
@@ -274,23 +275,8 @@ test("per-request detail is bounded while aggregate counts stay exact", async ()
   const { runId } = await pauseRunAtCapacity("collection_inspection_bounded_001", "observed");
   // Retain 250 synthetic failed attempts across filler requests so the
   // attempt history exceeds the detail bound.
-  await env.CATALOGUE_DB.prepare(
-    `WITH RECURSIVE filler(n) AS (
-       SELECT 1 UNION ALL SELECT n + 1 FROM filler WHERE n < 250
-     )
-     INSERT INTO source_fetch_attempts (
-       id, ingestion_run_id, request_id, attempt_number, requested_at,
-       completed_at, outcome, http_status, response_headers_json,
-       retry_after_ms, diagnostic
-     )
-     SELECT 'srcfetch_bounded_' || printf('%08d', n), ?1,
-            'fusion-world-en:detail:' || printf('%08d', n), 1,
-            '2026-08-07T01:00:00.000Z',
-            '2026-08-07T01:' || printf('%02d', n / 60) || ':' ||
-              printf('%02d', n % 60) || '.000Z',
-            'http_failure', 503, '{}', NULL, NULL
-     FROM filler`,
-  )
+  await sourceEvidenceQueries
+    .inspectFillerForPerRequestDetailBoundedWhileAggregateCountsStayExact(env.CATALOGUE_DB)
     .bind(runId)
     .run();
   const document = (await showCollection(runId)) as unknown as Record<string, unknown> & {
@@ -330,8 +316,8 @@ test("per-request detail is bounded while aggregate counts stay exact", async ()
 
 test("request counts group listing, detail, product-detail, image, and surface roles per lineage", async () => {
   const run = await createCollection("collection_inspection_roles_001", "https://official-source.invalid/cards");
-  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  const storedRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+  const root = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
   if (root === undefined) throw new Error("pending root request missing");
   const discovered = [
     { role: "listing" as const, url: "https://official-source.invalid/listing/1" },
@@ -345,7 +331,7 @@ test("request counts group listing, detail, product-detail, image, and surface r
     { role: "image" as const, url: "https://official-source.invalid/images/3.png" },
     { role: "image" as const, url: "https://official-source.invalid/images/4.png" },
   ].map((request) => ({ ...request, headers: { accept: "*/*" } }));
-  await appendDiscoveredEvidenceRequests(env.CATALOGUE_DB, storedRun, root, discovered);
+  await appendDiscoveredEvidenceRequests(catalogueStore(env.CATALOGUE_DB), storedRun, root, discovered);
   const document = (await showCollection(run.id)) as unknown as {
     collection: CollectionInspection;
   };

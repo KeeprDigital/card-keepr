@@ -1,3 +1,7 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
@@ -22,18 +26,8 @@ test("R2 recovery outages pause the run and resume completes the same capture", 
   const run = await createCollection("source_recovery_r2_outage_001", "https://official-source.invalid/cards");
   const identity = await captureOperationIdentity(run.id, "required-source", 1);
   const now = new Date().toISOString();
-  await env.CATALOGUE_DB.prepare(
-    `INSERT INTO source_capture_operations (
-      attempt_id, ingestion_run_id, request_id, attempt_number,
-      source_snapshot_id, content_object_key, state, requested_at,
-      completed_at, request_headers_json, http_status,
-      response_headers_json, response_vary_json, media_type
-    ) VALUES (
-      ?, ?, 'required-source', 1, ?, ?, 'response_received', ?,
-      ?, '{}', 200, '{"content-type":"application/json"}', '[]',
-      'application/json'
-    )`,
-  )
+  await sourceEvidenceQueries
+    .insertSourceCaptureOperationsForR2RecoveryOutagesPauseRunResumeCompletesSameCapture(env.CATALOGUE_DB)
     .bind(identity.attemptId, run.id, identity.snapshotId, identity.objectKey, now, now)
     .run();
   const outageBucket = new Proxy(env.EVIDENCE_OBJECTS, {
@@ -47,17 +41,17 @@ test("R2 recovery outages pause the run and resume completes the same capture", 
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
-  const evidenceRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-  const request = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  const evidenceRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+  const request = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
   if (request === undefined) throw new Error("missing evidence request");
 
   for (let attempt = 1; attempt <= 4; attempt += 1) {
-    const prepared = await prepareCaptureAttempt(env.CATALOGUE_DB, evidenceRun, request);
+    const prepared = await prepareCaptureAttempt(catalogueStore(env.CATALOGUE_DB), evidenceRun, request);
     if (prepared.kind !== "attempt") {
       throw new Error(`unexpected preparation result ${prepared.kind}`);
     }
     const result = await capturePreparedAttempt(
-      env.CATALOGUE_DB,
+      catalogueStore(env.CATALOGUE_DB),
       outageBucket,
       env.OFFICIAL_SOURCE_TRANSPORT,
       evidenceRun,
@@ -70,14 +64,10 @@ test("R2 recovery outages pause the run and resume completes the same capture", 
   // Exhausting the bounded storage retries pauses the run with its own
   // reason instead of failing the request: transient R2 problems do not
   // destroy the collection attempt.
+  expect(await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(run.id).first("state")).toBe("paused");
   expect(
-    await env.CATALOGUE_DB.prepare("SELECT state FROM ingestion_runs WHERE id = ?").bind(run.id).first("state"),
-  ).toBe("paused");
-  expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT pause_reason, failure_classification, retry_generation
-     FROM ingestion_run_retry_pauses WHERE ingestion_run_id = ?`,
-    )
+    await sourceEvidenceQueries
+      .readIngestionRunRetryPausesPauseReasonFailureClassification(env.CATALOGUE_DB)
       .bind(run.id)
       .first(),
   ).toMatchObject({
@@ -86,10 +76,8 @@ test("R2 recovery outages pause the run and resume completes the same capture", 
     retry_generation: 1,
   });
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT state, failure_code FROM source_requests
-     WHERE ingestion_run_id = ? AND request_id = 'required-source'`,
-    )
+    await sourceEvidenceQueries
+      .readSourceRequestsStateFailureCodeForR2RecoveryOutagesPauseRunResumeCompletesSameCapture(env.CATALOGUE_DB)
       .bind(run.id)
       .first(),
   ).toMatchObject({
@@ -126,18 +114,8 @@ test("resume recovers the deterministic object after an upload-before-D1 restart
     httpMetadata: { contentType: "application/json" },
   });
   const now = new Date().toISOString();
-  await env.CATALOGUE_DB.prepare(
-    `INSERT INTO source_capture_operations (
-      attempt_id, ingestion_run_id, request_id, attempt_number,
-      source_snapshot_id, content_object_key, state, requested_at,
-      completed_at, request_headers_json, http_status,
-      response_headers_json, response_vary_json, media_type
-    ) VALUES (
-      ?, ?, 'required-source', 1, ?, ?, 'response_received', ?,
-      ?, '{}', 200, '{"content-type":"application/json"}', '[]',
-      'application/json'
-    )`,
-  )
+  await sourceEvidenceQueries
+    .insertSourceCaptureOperationsForR2RecoveryOutagesPauseRunResumeCompletesSameCapture(env.CATALOGUE_DB)
     .bind(identity.attemptId, run.id, identity.snapshotId, identity.objectKey, now, now)
     .run();
 
@@ -152,10 +130,8 @@ test("resume recovers the deterministic object after an upload-before-D1 restart
       },
     ],
   });
-  const operation = await env.CATALOGUE_DB.prepare(
-    `SELECT state, content_digest, content_byte_length
-     FROM source_capture_operations WHERE attempt_id = ?`,
-  )
+  const operation = await sourceEvidenceQueries
+    .readSourceCaptureOperationsStateContentDigest(env.CATALOGUE_DB)
     .bind(identity.attemptId)
     .first<{
       state: string;
@@ -189,28 +165,19 @@ test("reparse retries recover one staged immutable observation set while new int
     ).objects.map((object) => object.key),
   );
 
-  await env.CATALOGUE_DB.prepare(
-    `CREATE TRIGGER fail_observation_set_insert
-     BEFORE INSERT ON source_observation_sets
-     BEGIN
-       SELECT RAISE(FAIL, 'synthetic_observation_d1_outage');
-     END`,
-  ).run();
+  await sourceEvidenceQueries.createFailObservationSetInsert(env.CATALOGUE_DB).run();
   const interrupted = await administrationRequest(`/v1/source-snapshots/${snapshot.id}/observations`, "POST", {
     adapter_version: "fixture-one-piece-json@3",
     idempotency_key: "reparse_intent_001",
   });
   expect(interrupted.status).toBe(500);
-  const staged = await env.CATALOGUE_DB.prepare(
-    `SELECT state, content_object_key FROM source_parse_operations
-     WHERE source_snapshot_id = ? AND adapter_version = ?
-       AND idempotency_key = ?`,
-  )
+  const staged = await sourceEvidenceQueries
+    .readSourceParseOperationsStateContentObjectKey(env.CATALOGUE_DB)
     .bind(snapshot.id, "fixture-one-piece-json@3", "reparse_intent_001")
     .first<{ state: string; content_object_key: string }>();
   expect(staged?.state).toBe("uploaded");
   expect(await env.EVIDENCE_OBJECTS.head(staged!.content_object_key)).not.toBeNull();
-  await env.CATALOGUE_DB.prepare("DROP TRIGGER fail_observation_set_insert").run();
+  await publishedCatalogueQueries.dropFailObservationSetInsert(env.CATALOGUE_DB).run();
 
   const retriedResponses = await Promise.all([
     administrationRequest(`/v1/source-snapshots/${snapshot.id}/observations`, "POST", {

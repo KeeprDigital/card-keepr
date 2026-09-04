@@ -1,3 +1,7 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as ingestionQueries from "./query-helpers/ingestion";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { pauseEvidenceRunForWorkflowRecovery, resumePausedEvidenceRun } from "../../../src/catalogue/source-evidence";
@@ -22,17 +26,11 @@ installRuntimeSuite();
 // child_workflow_ids_json, while the resume endpoint touches only
 // parent_workflow_id.
 async function holdParentAtRecordStep(): Promise<void> {
-  await env.CATALOGUE_DB.prepare(
-    `CREATE TRIGGER hold_child_workflow_ids
-     BEFORE UPDATE OF child_workflow_ids_json ON ingestion_evidence_plans
-     BEGIN
-       SELECT RAISE(FAIL, 'synthetic_record_step_outage');
-     END`,
-  ).run();
+  await sourceEvidenceQueries.createHoldChildWorkflowIds(env.CATALOGUE_DB).run();
 }
 
 async function releaseParentRecordStep(): Promise<void> {
-  await env.CATALOGUE_DB.prepare("DROP TRIGGER hold_child_workflow_ids").run();
+  await publishedCatalogueQueries.dropHoldChildWorkflowIds(env.CATALOGUE_DB).run();
 }
 
 async function terminateBestEffort(workflow: Workflow, instanceId: string): Promise<void> {
@@ -57,13 +55,8 @@ async function resumeDocument(runId: string): Promise<{
 test("a recorded Workflow Pause is inspectable, immutable, and resumable", async () => {
   const run = await createCollection("workflow_pause_inspection_001", "https://official-source.invalid/cards");
   const parentId = `evidence-${run.id}`;
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
-     WHERE ingestion_run_id = ?`,
-  )
-    .bind(parentId, run.id)
-    .run();
-  await pauseEvidenceRunForWorkflowRecovery(env.CATALOGUE_DB, run.id, {
+  await sourceEvidenceQueries.setIngestionEvidencePlansParentWorkflowId(env.CATALOGUE_DB).bind(parentId, run.id).run();
+  await pauseEvidenceRunForWorkflowRecovery(catalogueStore(env.CATALOGUE_DB), run.id, {
     workflow_instance_id: parentId,
     pause_reason: "source_workflow_stalled",
     workflow_status: "running",
@@ -83,9 +76,9 @@ test("a recorded Workflow Pause is inspectable, immutable, and resumable", async
     },
   });
   await expect(
-    env.CATALOGUE_DB.prepare("UPDATE ingestion_run_workflow_pauses SET workflow_status = 'errored'").run(),
+    sourceEvidenceQueries.setIngestionRunWorkflowPausesWorkflowStatus(env.CATALOGUE_DB).run(),
   ).rejects.toThrowError(/workflow_pause_immutable/u);
-  await expect(env.CATALOGUE_DB.prepare("DELETE FROM ingestion_run_workflow_pauses").run()).rejects.toThrowError(
+  await expect(sourceEvidenceQueries.deleteIngestionRunWorkflowPauses(env.CATALOGUE_DB).run()).rejects.toThrowError(
     /workflow_pause_immutable/u,
   );
 
@@ -115,7 +108,7 @@ test("a recorded Workflow Pause is inspectable, immutable, and resumable", async
     { id: parentId, attempt_number: 1, current: false },
     { id: `evidence-${run.id}-resume-1`, attempt_number: 2, current: true },
   ]);
-  await expect(env.CATALOGUE_DB.prepare("DELETE FROM ingestion_workflow_attempts").run()).rejects.toThrowError(
+  await expect(sourceEvidenceQueries.deleteIngestionWorkflowAttempts(env.CATALOGUE_DB).run()).rejects.toThrowError(
     /workflow_attempt_immutable/u,
   );
 });
@@ -156,19 +149,14 @@ test("an errored parent Workflow recovers as a recorded new attempt without dupl
   expect(completed.snapshots).toHaveLength(1);
   expect(completed.observation_sets).toHaveLength(1);
   expect(completed.diagnostics.filter((entry) => entry.outcome === "success")).toHaveLength(1);
-  const captureOperations = await env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM source_capture_operations
-     WHERE ingestion_run_id = ?`,
-  )
+  const captureOperations = await sourceEvidenceQueries
+    .countSourceCaptureOperationsCount(env.CATALOGUE_DB)
     .bind(run.id)
     .first<{ count: number }>();
   expect(captureOperations?.count).toBe(1);
 
-  const pauseRecord = await env.CATALOGUE_DB.prepare(
-    `SELECT pause_reason, workflow_instance_id, workflow_status,
-            last_progress_at
-     FROM ingestion_run_workflow_pauses WHERE ingestion_run_id = ?`,
-  )
+  const pauseRecord = await sourceEvidenceQueries
+    .readIngestionRunWorkflowPausesPauseReasonWorkflowInstanceId(env.CATALOGUE_DB)
     .bind(run.id)
     .first<Record<string, unknown>>();
   expect(pauseRecord).toMatchObject({
@@ -177,10 +165,10 @@ test("an errored parent Workflow recovers as a recorded new attempt without dupl
     workflow_status: "errored",
   });
   expect(pauseRecord?.last_progress_at).toMatch(/^\d{4}-\d{2}-\d{2}T/u);
-  const transitions = await env.CATALOGUE_DB.prepare(
-    `SELECT from_state, to_state FROM ingestion_run_transitions
-     WHERE ingestion_run_id = ? ORDER BY sequence`,
-  )
+  const transitions = await ingestionQueries
+    .readIngestionRunTransitionsFromStateToStateForResumingTransportPausedRunOpensNewBoundedRetryGeneration(
+      env.CATALOGUE_DB,
+    )
     .bind(run.id)
     .all<{ from_state: string; to_state: string }>();
   expect(transitions.results).toEqual([
@@ -256,10 +244,10 @@ test("a collecting run whose parent Workflow died can be terminated without resu
     failure_code: "ingestion_run_terminated",
     active_run_released: true,
   });
-  const pauses = await env.CATALOGUE_DB.prepare(
-    `SELECT pause_reason, workflow_instance_id, workflow_status
-     FROM ingestion_run_workflow_pauses WHERE ingestion_run_id = ?`,
-  )
+  const pauses = await sourceEvidenceQueries
+    .readIngestionRunWorkflowPausesPauseReasonWorkflowInstanceIdForCollectingRunWhoseParentWorkflowDiedBeTerminatedWithout(
+      env.CATALOGUE_DB,
+    )
     .bind(run.id)
     .all<{ pause_reason: string; workflow_instance_id: string; workflow_status: string }>();
   expect(pauses.results).toEqual([
@@ -269,9 +257,8 @@ test("a collecting run whose parent Workflow died can be terminated without resu
       workflow_status: "terminated",
     },
   ]);
-  const attempts = await env.CATALOGUE_DB.prepare(
-    "SELECT count(*) AS count FROM ingestion_workflow_attempts WHERE ingestion_run_id = ? AND workflow_kind = 'parent'",
-  )
+  const attempts = await sourceEvidenceQueries
+    .countIngestionWorkflowAttemptsCount(env.CATALOGUE_DB)
     .bind(run.id)
     .first<{ count: number }>();
   expect(attempts?.count).toBe(1);
@@ -279,10 +266,8 @@ test("a collecting run whose parent Workflow died can be terminated without resu
 
 test("a bound but never-created parent instance is recreated under its own identity", async () => {
   const run = await createCollection("workflow_missing_instance_001", "https://official-source.invalid/cards");
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
-     WHERE ingestion_run_id = ?`,
-  )
+  await sourceEvidenceQueries
+    .setIngestionEvidencePlansParentWorkflowId(env.CATALOGUE_DB)
     .bind(`evidence-${run.id}`, run.id)
     .run();
 
@@ -319,29 +304,21 @@ test("concurrent resumes of a dead Workflow cannot create competing attempts", a
       workflow: { id: `evidence-${run.id}-resume-1`, attempt_number: 2 },
     });
   }
-  const parentAttempts = await env.CATALOGUE_DB.prepare(
-    `SELECT workflow_instance_id FROM ingestion_workflow_attempts
-     WHERE ingestion_run_id = ? AND workflow_kind = 'parent'
-     ORDER BY attempt_number`,
-  )
+  const parentAttempts = await sourceEvidenceQueries
+    .readIngestionWorkflowAttemptsWorkflowInstanceId(env.CATALOGUE_DB)
     .bind(run.id)
     .all<{ workflow_instance_id: string }>();
   expect(parentAttempts.results.map((row) => row.workflow_instance_id)).toEqual([
     parentId,
     `evidence-${run.id}-resume-1`,
   ]);
-  const resumeTransitions = await env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM ingestion_run_transitions
-     WHERE ingestion_run_id = ?
-       AND from_state = 'paused' AND to_state = 'collecting'`,
-  )
+  const resumeTransitions = await ingestionQueries
+    .countIngestionRunTransitionsCount(env.CATALOGUE_DB)
     .bind(run.id)
     .first<{ count: number }>();
   expect(resumeTransitions?.count).toBe(1);
-  const pauseRecords = await env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM ingestion_run_workflow_pauses
-     WHERE ingestion_run_id = ?`,
-  )
+  const pauseRecords = await sourceEvidenceQueries
+    .countIngestionRunWorkflowPausesCount(env.CATALOGUE_DB)
     .bind(run.id)
     .first<{ count: number }>();
   expect(pauseRecords?.count).toBe(1);
@@ -377,10 +354,8 @@ test("child identity exhaustion fails only the exhausted hostname shard", async 
       }),
     ),
   )}`;
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE ingestion_evidence_plans SET child_workflow_ids_json = ?
-     WHERE ingestion_run_id = ?`,
-  )
+  await sourceEvidenceQueries
+    .setIngestionEvidencePlansChildWorkflowIdsJson(env.CATALOGUE_DB)
     .bind(
       canonicalJson([baseChildId, `${baseChildId}-attempt-0`, `${baseChildId}-attempt-1`, `${baseChildId}-attempt-2`]),
       run.id,
@@ -394,10 +369,8 @@ test("child identity exhaustion fails only the exhausted hostname shard", async 
     state: "failed",
     failure_code: "source_workflow_retries_exhausted",
   });
-  const requestStates = await env.CATALOGUE_DB.prepare(
-    `SELECT request_id, state FROM source_requests
-     WHERE ingestion_run_id = ? ORDER BY request_id`,
-  )
+  const requestStates = await sourceEvidenceQueries
+    .readSourceRequestsRequestIdStateForChildIdentityExhaustionFailsOnlyExhaustedHostnameShard(env.CATALOGUE_DB)
     .bind(run.id)
     .all<{ request_id: string; state: string }>();
   const byRequest = Object.fromEntries(requestStates.results.map((row) => [row.request_id, row.state]));
@@ -476,13 +449,13 @@ test("a parent Workflow that completed with a request still pending resumes as a
   for (const childId of interrupted.workflow.child_ids) {
     await terminateBestEffort(env.EVIDENCE_HOST_WORKFLOW, childId);
   }
-  await pauseEvidenceRunForWorkflowRecovery(env.CATALOGUE_DB, run.id, {
+  await pauseEvidenceRunForWorkflowRecovery(catalogueStore(env.CATALOGUE_DB), run.id, {
     workflow_instance_id: firstParentId,
     pause_reason: "source_workflow_terminated",
     workflow_status: "terminated",
     last_progress_at: interrupted.workflow.last_progress_at,
   });
-  await resumePausedEvidenceRun(env.CATALOGUE_DB, run.id);
+  await resumePausedEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
   const completedParentId = `evidence-${run.id}-resume-1`;
   await env.EVIDENCE_INGESTION_WORKFLOW.create({
     id: completedParentId,
@@ -528,10 +501,8 @@ test("a parent Workflow that completed with a request still pending resumes as a
   }
   expect(outcomesByRequest.get("captured-host")).toEqual(["success"]);
   expect(outcomesByRequest.get("pending-host")?.sort()).toEqual(["http_failure", "success"]);
-  const captureOperations = await env.CATALOGUE_DB.prepare(
-    `SELECT request_id, COUNT(*) AS count FROM source_capture_operations
-     WHERE ingestion_run_id = ? GROUP BY request_id ORDER BY request_id`,
-  )
+  const captureOperations = await sourceEvidenceQueries
+    .countSourceCaptureOperationsCountForParentWorkflowThatCompletedRequestStillPendingResumesAs(env.CATALOGUE_DB)
     .bind(run.id)
     .all<{ request_id: string; count: number }>();
   expect(captureOperations.results).toEqual([

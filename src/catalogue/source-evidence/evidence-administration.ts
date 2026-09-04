@@ -1,4 +1,4 @@
-import { AdministrationProblem, isWorkflowInstanceNotFound, workflowDriver } from "../shared";
+import { AdministrationProblem, type CatalogueStore, isWorkflowInstanceNotFound, workflowDriver } from "../shared";
 import {
   type CollectionProgressFacts,
   classifyCollectionProgress,
@@ -46,7 +46,7 @@ async function acquireParentWorkflow(
 }
 
 export async function resumeEvidenceRun(
-  database: D1Database,
+  database: CatalogueStore,
   workflow: Workflow<EvidenceParentWorkflowParams>,
   runId: string,
   hostWorkflow: Workflow<EvidenceHostWorkflowParams>,
@@ -127,7 +127,7 @@ export async function resumeEvidenceRun(
 // response and re-runs no fence, because the run may since have resumed
 // under a new Workflow Attempt that must keep driving collection.
 export async function pauseEvidenceCollection(
-  database: D1Database,
+  database: CatalogueStore,
   parentWorkflow: Workflow<EvidenceParentWorkflowParams>,
   hostWorkflow: Workflow<EvidenceHostWorkflowParams>,
   runId: string,
@@ -189,7 +189,7 @@ async function observeWorkflowStatus(
 // idempotent, so a replayed termination re-runs the fences harmlessly and
 // returns the original result.
 export async function terminateEvidenceCollection(
-  database: D1Database,
+  database: CatalogueStore,
   parentWorkflow: Workflow<EvidenceParentWorkflowParams>,
   hostWorkflow: Workflow<EvidenceHostWorkflowParams>,
   runId: string,
@@ -218,7 +218,7 @@ export async function terminateEvidenceCollection(
 // the owner can abandon it without resuming it. A live parent leaves the run
 // collecting and the termination is refused as before.
 async function pauseCollectingRunWithDeadWorkflow(
-  database: D1Database,
+  database: CatalogueStore,
   parentWorkflow: Workflow<EvidenceParentWorkflowParams>,
   runId: string,
 ): Promise<void> {
@@ -254,7 +254,7 @@ async function terminateWorkflowInstance(
 // Retry the same resume after the control plane recovers; no identity, retry
 // generation, or state transition is consumed by this conflict.
 async function verifyCollectionSupersession(
-  database: D1Database,
+  database: CatalogueStore,
   parentWorkflow: Workflow<EvidenceParentWorkflowParams>,
   hostWorkflow: Workflow<EvidenceHostWorkflowParams>,
   runId: string,
@@ -299,7 +299,7 @@ async function verifyCollectionSupersession(
 // attempt because the identity binding is compare-and-set on the transition
 // count that derived it.
 async function recoverParentWorkflow(
-  database: D1Database,
+  database: CatalogueStore,
   workflow: Workflow<EvidenceParentWorkflowParams>,
   hostWorkflow: Workflow<EvidenceHostWorkflowParams>,
   run: IngestionEvidenceRow,

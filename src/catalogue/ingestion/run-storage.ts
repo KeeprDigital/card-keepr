@@ -2,6 +2,7 @@ import {
   AdministrationProblem,
   assertIngestionRunTransition,
   CatalogueExportLimitError,
+  type CatalogueStore,
   type IngestionRunState,
   ingestionRunStates,
   isTerminalIngestionRunState,
@@ -46,7 +47,7 @@ export function assertRunIsApprovable(run: RunRow, request: ApproveRunRequest): 
 }
 
 export async function throwApprovalFailure(
-  database: D1Database,
+  database: CatalogueStore,
   run: RunRow,
   error: unknown,
   now: string,
@@ -122,7 +123,10 @@ export function publicationFailureProblem(error: unknown): AdministrationProblem
   );
 }
 
-export async function requiredPublicationCleanup(database: D1Database, runId: string): Promise<PublicationCleanupRow> {
+export async function requiredPublicationCleanup(
+  database: CatalogueStore,
+  runId: string,
+): Promise<PublicationCleanupRow> {
   const cleanup = await publicationCleanup(database, runId);
   if (cleanup === null) {
     throw new Error("The publication cleanup claim disappeared.");
@@ -136,7 +140,7 @@ export function publicationCleanupNotBefore(run: RunRow, terminalAt: string): st
   return new Date(Math.max(Date.parse(terminalAt), reconcileAt) + publicationLeaseMilliseconds).toISOString();
 }
 
-export async function currentCatalogueState(database: D1Database): Promise<CatalogueStateRow> {
+export async function currentCatalogueState(database: CatalogueStore): Promise<CatalogueStateRow> {
   const state = await currentCatalogueStateStatement(database).first<CatalogueStateRow>();
   if (state === null) {
     throw new Error("Catalogue state is unavailable");
@@ -144,7 +148,7 @@ export async function currentCatalogueState(database: D1Database): Promise<Catal
   return state;
 }
 
-export async function currentOperationState(database: D1Database): Promise<OperationStateRow> {
+export async function currentOperationState(database: CatalogueStore): Promise<OperationStateRow> {
   const state = await currentOperationStateStatement(database).first<OperationStateRow>();
   if (state === null) {
     throw new Error("Operation state is unavailable");
@@ -152,7 +156,7 @@ export async function currentOperationState(database: D1Database): Promise<Opera
   return state;
 }
 
-export async function requiredRun(database: D1Database, runId: string): Promise<RunRow> {
+export async function requiredRun(database: CatalogueStore, runId: string): Promise<RunRow> {
   const run = await runByIdStatement(database, runId).first<RunRow>();
   if (run === null) {
     throw new AdministrationProblem(404, "ingestion_run_not_found", "The requested Ingestion Run does not exist.");
@@ -160,12 +164,15 @@ export async function requiredRun(database: D1Database, runId: string): Promise<
   return run;
 }
 
-export async function publicationCleanup(database: D1Database, runId: string): Promise<PublicationCleanupRow | null> {
+export async function publicationCleanup(
+  database: CatalogueStore,
+  runId: string,
+): Promise<PublicationCleanupRow | null> {
   return publicationCleanupStatement(database, runId).first<PublicationCleanupRow>();
 }
 
 export function transitionStatement(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   from: IngestionRunState,
   to: IngestionRunState,
@@ -173,11 +180,11 @@ export function transitionStatement(
   return transitionRunStatement(database, { runId, from, to, progressJson: JSON.stringify(progressFor(to)) });
 }
 
-export function releaseRunLockStatement(database: D1Database, runId: string): D1PreparedStatement {
+export function releaseRunLockStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return releaseActiveRunLockStatement(database, runId);
 }
 
-export async function expireOverdueRuns(database: D1Database, observedAt: string): Promise<void> {
+export async function expireOverdueRuns(database: CatalogueStore, observedAt: string): Promise<void> {
   await database.batch([
     expireOverdueRunsStatement(database, observedAt),
     releaseTerminalRunLockStatement(
@@ -187,7 +194,12 @@ export async function expireOverdueRuns(database: D1Database, observedAt: string
   ]);
 }
 
-async function failRun(database: D1Database, runId: string, terminalAt: string, failureCode: string): Promise<void> {
+async function failRun(
+  database: CatalogueStore,
+  runId: string,
+  terminalAt: string,
+  failureCode: string,
+): Promise<void> {
   await database.batch([
     failRunStatement(database, { terminalAt: terminalAt, failureCode: failureCode, runId: runId }),
     releaseRunLockStatement(database, runId),

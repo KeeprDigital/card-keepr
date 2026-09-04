@@ -1,14 +1,17 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
-export function hostPacingStatement(database: D1Database, hostname: string): D1PreparedStatement {
-  return database.prepare("SELECT next_request_not_before FROM source_host_pacing WHERE hostname = ?").bind(hostname);
+export function hostPacingStatement(database: CatalogueStore, hostname: string): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare("SELECT next_request_not_before FROM source_host_pacing WHERE hostname = ?")
+    .bind(hostname);
 }
 
 export function advanceHostPacingStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ hostname: string; nextRequestAt: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO source_host_pacing (
         hostname, next_request_not_before, locked_by, lease_expires_at
        ) VALUES (?, ?, NULL, NULL)
@@ -18,10 +21,10 @@ export function advanceHostPacingStatement(
 }
 
 export function latestCaptureOperationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; requestId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT * FROM source_capture_operations
        WHERE ingestion_run_id = ? AND request_id = ?
          AND state IN ('planned', 'response_received', 'uploaded')
@@ -30,10 +33,10 @@ export function latestCaptureOperationStatement(
 }
 
 export function latestAttemptNumberStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; requestId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT COALESCE(MAX(attempt_number), 0) AS attempt_number
        FROM source_fetch_attempts
        WHERE ingestion_run_id = ? AND request_id = ?`)
@@ -41,10 +44,10 @@ export function latestAttemptNumberStatement(
 }
 
 export function latestTransportAttemptStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; requestId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT outcome, http_status, attempt_number
          FROM source_fetch_attempts
          WHERE ingestion_run_id = ? AND request_id = ?
@@ -53,7 +56,7 @@ export function latestTransportAttemptStatement(
 }
 
 export function createCaptureOperationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     attemptId: string;
     runId: string;
@@ -64,7 +67,7 @@ export function createCaptureOperationStatement(
     requestedAt: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT OR IGNORE INTO source_capture_operations (
         attempt_id, ingestion_run_id, request_id, attempt_number,
         source_snapshot_id, content_object_key, state, requested_at
@@ -81,17 +84,17 @@ export function createCaptureOperationStatement(
 }
 
 export function refreshCaptureRequestedAtStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ requestedAt: string; attemptId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE source_capture_operations SET requested_at = ?
          WHERE attempt_id = ? AND state = 'planned'`)
     .bind(input.requestedAt, input.attemptId);
 }
 
 export function revalidatedCaptureStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     completedAt: string;
     requestHeadersJson: string;
@@ -105,7 +108,7 @@ export function revalidatedCaptureStatement(
     attemptId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE source_capture_operations
          SET state = 'uploaded', completed_at = ?,
              request_headers_json = ?, http_status = ?,
@@ -129,7 +132,7 @@ export function revalidatedCaptureStatement(
 }
 
 export function receivedCaptureResponseStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     completedAt: string;
     requestHeadersJson: string;
@@ -140,7 +143,7 @@ export function receivedCaptureResponseStatement(
     attemptId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE source_capture_operations
        SET state = 'response_received', completed_at = ?,
            request_headers_json = ?, http_status = ?,
@@ -159,10 +162,10 @@ export function receivedCaptureResponseStatement(
 }
 
 export function uploadedCaptureContentStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ digest: string; byteLength: number; attemptId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE source_capture_operations
          SET state = 'uploaded', content_digest = ?,
              content_byte_length = ?
@@ -171,7 +174,7 @@ export function uploadedCaptureContentStatement(
 }
 
 export function capturedSnapshotStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     snapshotId: string;
     runId: string;
@@ -195,7 +198,7 @@ export function capturedSnapshotStatement(
     reusedSnapshotId: string | null;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT OR IGNORE INTO source_snapshots (
           id, ingestion_run_id, request_id, fetch_attempt_id,
           request_method, request_url, request_headers_json,
@@ -230,28 +233,28 @@ export function capturedSnapshotStatement(
 }
 
 export function capturedSourceRequestStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ snapshotId: string; runId: string; requestId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE source_requests
          SET state = 'captured', source_snapshot_id = ?
          WHERE ingestion_run_id = ? AND request_id = ? AND state = 'pending'`)
     .bind(input.snapshotId, input.runId, input.requestId);
 }
 
-export function finalizeCaptureStatement(database: D1Database, attemptId: string): D1PreparedStatement {
-  return database
+export function finalizeCaptureStatement(database: CatalogueStore, attemptId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`UPDATE source_capture_operations SET state = 'finalized'
          WHERE attempt_id = ? AND state = 'uploaded'`)
     .bind(attemptId);
 }
 
 export function remainingLineageRequestsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; lineagePattern: string; excludedRequestId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT COUNT(*) AS count FROM source_requests
              WHERE ingestion_run_id = ?
                AND request_id LIKE ?
@@ -261,10 +264,10 @@ export function remainingLineageRequestsStatement(
 }
 
 export function observedSourceRequestStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; requestId: string; snapshotId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE source_requests SET state = 'observed'
          WHERE ingestion_run_id = ? AND request_id = ?
            AND source_snapshot_id = ? AND state = 'captured'`)
@@ -272,21 +275,23 @@ export function observedSourceRequestStatement(
 }
 
 export function sourceRequestStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ runId: string; requestId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT * FROM source_requests
        WHERE ingestion_run_id = ? AND request_id = ?`)
     .bind(input.runId, input.requestId);
 }
 
-export function captureOperationStatement(database: D1Database, attemptId: string): D1PreparedStatement {
-  return database.prepare("SELECT * FROM source_capture_operations WHERE attempt_id = ?").bind(attemptId);
+export function captureOperationStatement(database: CatalogueStore, attemptId: string): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare("SELECT * FROM source_capture_operations WHERE attempt_id = ?")
+    .bind(attemptId);
 }
 
 export function failedCaptureTransportStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     completedAt: string;
     status: number | null;
@@ -296,7 +301,7 @@ export function failedCaptureTransportStatement(
     attemptId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE source_capture_operations
          SET state = 'failed', completed_at = ?, http_status = ?,
              response_headers_json = ?, failure_outcome = ?,
@@ -306,7 +311,7 @@ export function failedCaptureTransportStatement(
 }
 
 export function rejectedCaptureStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     completedAt: string;
     status: number;
@@ -315,7 +320,7 @@ export function rejectedCaptureStatement(
     attemptId: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE source_capture_operations
          SET state = 'failed', completed_at = ?, http_status = ?,
              response_headers_json = ?, diagnostic = ?
@@ -324,10 +329,10 @@ export function rejectedCaptureStatement(
 }
 
 export function failedSourceRequestStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ failureCode: string; runId: string; requestId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE source_requests
        SET state = 'failed', failure_code = ?
        WHERE ingestion_run_id = ? AND request_id = ?
@@ -336,7 +341,7 @@ export function failedSourceRequestStatement(
 }
 
 export function reusableSnapshotsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     sourceLineage: string;
     requestUrl: string;
@@ -344,7 +349,7 @@ export function reusableSnapshotsStatement(
     representationFingerprint: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT * FROM source_snapshots
        WHERE source_lineage = ? AND request_url = ?
          AND adapter_version = ? AND representation_fingerprint = ?

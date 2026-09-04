@@ -1,4 +1,4 @@
-import type { CatalogueCandidate } from "../shared";
+import type { CatalogueCandidate, CatalogueStore } from "../shared";
 import {
   inferredProductLifecycleStatement,
   productLifecycleRowsStatement,
@@ -65,7 +65,7 @@ type InferredProductLifecycleRow = {
 };
 
 export async function productReleaseLifecyclePlan(
-  database: D1Database,
+  database: CatalogueStore,
   candidate: CatalogueCandidate,
   revisionId: string,
 ): Promise<ProductReleaseLifecyclePlan> {
@@ -233,7 +233,7 @@ export async function productReleaseLifecyclePlan(
 }
 
 export function productReleasePublicationStatements(
-  database: D1Database,
+  database: CatalogueStore,
   candidate: CatalogueCandidate,
   revisionId: string,
   lifecycles: ProductReleaseLifecyclePlan,
@@ -399,8 +399,8 @@ function productSearchText(officialCode: string | null, name: string | null): st
 }
 
 async function rowsById<T extends { id: string }>(
-  database: D1Database,
-  statement: (database: D1Database, idsJson: string) => D1PreparedStatement,
+  database: CatalogueStore,
+  statement: (database: CatalogueStore, idsJson: string) => D1PreparedStatement,
   ids: readonly string[],
 ): Promise<Map<string, T>> {
   if (ids.length === 0) return new Map();

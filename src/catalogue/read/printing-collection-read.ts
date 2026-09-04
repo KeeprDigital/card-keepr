@@ -1,4 +1,5 @@
 import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
+import type { CatalogueStore } from "../shared";
 import {
   canonicalEtag,
   collectionFilter,
@@ -37,7 +38,7 @@ type PrintingCursor = {
 };
 
 export async function currentPrintingsResponse(
-  database: D1Database,
+  database: CatalogueStore,
   request: Request,
   base: PublicBase,
 ): Promise<Response> {

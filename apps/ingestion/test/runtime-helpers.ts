@@ -1,3 +1,6 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import { env, exports } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
@@ -17,9 +20,7 @@ export function installRuntimeSuite(): void {
     // Workflow instances outlive a Vitest request isolate. Reset only the
     // singleton lock so each test begins with an independent administration
     // scenario; production never performs this test-only setup.
-    await env.CATALOGUE_DB.prepare(
-      "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
-    ).run();
+    await ingestionQueries.setOperationStateActiveIngestionRunIdForInstallApiSuite(env.CATALOGUE_DB).run();
   });
 }
 
@@ -157,7 +158,9 @@ export async function fixtureEvidenceRequest(body: {
     headers?: Record<string, string>;
   }[];
 }): Promise<Response> {
-  return Response.json(await startEvidenceRun(env.CATALOGUE_DB, body, "synthetic_fixture"), { status: 201 });
+  return Response.json(await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), body, "synthetic_fixture"), {
+    status: 201,
+  });
 }
 
 export function exactOnePiecePlan(idempotencyKey: string) {
@@ -231,13 +234,8 @@ export async function waitForParseOperation(
 ): Promise<{ state: string }> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const operation = await env.CATALOGUE_DB.prepare(
-      `SELECT state FROM source_parse_operations
-       WHERE intent = 'collection' AND source_snapshot_id IN (
-         SELECT source_snapshot_id FROM source_requests
-         WHERE ingestion_run_id = ?
-       )`,
-    )
+    const operation = await sourceEvidenceQueries
+      .readSourceParseOperationsState(env.CATALOGUE_DB)
       .bind(runId)
       .first<{ state: string }>();
     if (operation?.state === expectedState) return operation;
@@ -282,9 +280,7 @@ export async function waitForEvidenceRun(
 }
 
 export function clearActiveRunForNextScenario(): Promise<D1Result<unknown>> {
-  return env.CATALOGUE_DB.prepare(
-    "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
-  ).run();
+  return ingestionQueries.setOperationStateActiveIngestionRunIdForInstallApiSuite(env.CATALOGUE_DB).run();
 }
 
 export async function showCollection(runId: string): Promise<CollectionDocument> {

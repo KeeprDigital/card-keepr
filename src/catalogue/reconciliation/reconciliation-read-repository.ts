@@ -1,11 +1,12 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
-export function reconciliationRunStateStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database.prepare("SELECT state FROM ingestion_runs WHERE id = ?").bind(runId);
+export function reconciliationRunStateStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database).prepare("SELECT state FROM ingestion_runs WHERE id = ?").bind(runId);
 }
 
-export function candidateAtRevisionStatement(database: D1Database, revisionId: string): D1PreparedStatement {
-  return database
+export function candidateAtRevisionStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT run.id AS ingestion_run_id, run.candidate_json
        FROM catalogue_revisions AS revision
        JOIN ingestion_runs AS run ON run.id = revision.ingestion_run_id
@@ -13,8 +14,8 @@ export function candidateAtRevisionStatement(database: D1Database, revisionId: s
     .bind(revisionId);
 }
 
-export function errataProvenanceByIdsStatement(database: D1Database, erratumIdsJson: string): D1PreparedStatement {
-  return database
+export function errataProvenanceByIdsStatement(database: CatalogueStore, erratumIdsJson: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT erratum_id, source_lineage, source_observation_id
          FROM erratum_provenance
          WHERE erratum_id IN (SELECT value FROM json_each(?))
@@ -22,8 +23,8 @@ export function errataProvenanceByIdsStatement(database: D1Database, erratumIdsJ
     .bind(erratumIdsJson);
 }
 
-export function currentPrintingMembershipsStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT printing_id, source_lineage, relationship_kind,
+export function currentPrintingMembershipsStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`SELECT printing_id, source_lineage, relationship_kind,
                   relationship_value
            FROM reconciled_printing_memberships
            WHERE current = 1
@@ -31,25 +32,25 @@ export function currentPrintingMembershipsStatement(database: D1Database): D1Pre
                     relationship_kind, relationship_value`);
 }
 
-export function currentCardWithdrawalEvidenceStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT id, withdrawal_evidence_json
+export function currentCardWithdrawalEvidenceStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`SELECT id, withdrawal_evidence_json
            FROM reconciled_cards
            WHERE withdrawn = 1
            ORDER BY id`);
 }
 
-export function currentPrintingWithdrawalEvidenceStatement(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT id, withdrawal_evidence_json
+export function currentPrintingWithdrawalEvidenceStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`SELECT id, withdrawal_evidence_json
            FROM reconciled_printings
            WHERE withdrawn = 1
            ORDER BY id`);
 }
 
 export function publishedWithdrawalAssertionsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ entityType: string; entityId: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT assertion, state, effective_at
            FROM reconciled_withdrawal_assertions
            WHERE entity_type = ? AND entity_id = ?
@@ -57,8 +58,8 @@ export function publishedWithdrawalAssertionsStatement(
     .bind(input.entityType, input.entityId);
 }
 
-export function activeParsingRunStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function activeParsingRunStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT run.id, run.state, run.selected_games_json,
               run.expected_current_revision_id,
               operation.active_ingestion_run_id,
@@ -70,10 +71,10 @@ export function activeParsingRunStatement(database: D1Database, runId: string): 
 }
 
 export function printingRelationshipsForLineageStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ printingId: string; sourceLineage: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT source_lineage, source_observation_id,
               relationship_kind, relationship_value,
               membership.first_revision_id,
@@ -96,10 +97,10 @@ export function printingRelationshipsForLineageStatement(
 }
 
 export function disappearedPrintingsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ sourceLineage: string; observedPrintingIdsJson: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT DISTINCT printing.id
        FROM reconciled_printings AS printing
        JOIN reconciled_printing_locators AS locator
@@ -116,10 +117,10 @@ export function disappearedPrintingsStatement(
 }
 
 export function disappearedCardsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ sourceLineage: string; observedCardIdsJson: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT DISTINCT card.id
        FROM reconciled_cards AS card
        JOIN reconciled_card_observations AS observation
@@ -135,12 +136,12 @@ export function disappearedCardsStatement(
     .bind(input.sourceLineage, input.observedCardIdsJson);
 }
 
-export function reconciledPrintingDocumentStatement(database: D1Database, printingId: string): D1PreparedStatement {
-  return database.prepare("SELECT * FROM reconciled_printings WHERE id = ?").bind(printingId);
+export function reconciledPrintingDocumentStatement(database: CatalogueStore, printingId: string): D1PreparedStatement {
+  return repositoryStatements(database).prepare("SELECT * FROM reconciled_printings WHERE id = ?").bind(printingId);
 }
 
-export function reconciledPrintingLocatorsStatement(database: D1Database, printingId: string): D1PreparedStatement {
-  return database
+export function reconciledPrintingLocatorsStatement(database: CatalogueStore, printingId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT source_lineage, locator, variant_key,
                 first_revision_id, last_observed_revision_id,
                 current, last_missing_revision_id
@@ -150,10 +151,10 @@ export function reconciledPrintingLocatorsStatement(database: D1Database, printi
 }
 
 export function reconciledPrintingRelationshipsStatement(
-  database: D1Database,
+  database: CatalogueStore,
   printingId: string,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT source_lineage, source_observation_id,
                 relationship_kind, relationship_value,
                 membership.first_revision_id,

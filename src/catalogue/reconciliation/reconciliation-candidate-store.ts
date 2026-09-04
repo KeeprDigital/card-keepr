@@ -1,6 +1,7 @@
 import {
   byteBoundedJsonArrays,
   type CatalogueCandidate,
+  type CatalogueStore,
   canonicalJson,
   chunkedPayloadMarker,
   guardedAtomicBatch,
@@ -65,7 +66,7 @@ export type CandidatePlanRow = {
 };
 
 export async function persistReviewableCandidate(
-  database: D1Database,
+  database: CatalogueStore,
   input: {
     runId: string;
     observationSetId: string;
@@ -127,7 +128,7 @@ export async function persistReviewableCandidate(
 }
 
 export async function persistBlockedCandidate(
-  database: D1Database,
+  database: CatalogueStore,
   input: {
     runId: string;
     observationSetId: string;
@@ -209,7 +210,7 @@ function publicRunDiagnostic(diagnostic: Record<string, unknown>): Record<string
 }
 
 export async function failReconciliation(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   diagnostics: readonly Record<string, unknown>[],
   observedAt: string,
@@ -233,7 +234,7 @@ export async function failReconciliation(
 }
 
 export async function failReconciliationWorkflow(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   observedAt: string,
   detail: string,
@@ -280,7 +281,7 @@ type CandidatePlanInput = {
 };
 
 function candidatePlanInsertionStatements(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   plans: readonly CandidatePlanInput[],
   warningsJson: string,
@@ -306,7 +307,7 @@ function candidatePlanInsertionStatements(
 }
 
 function evidencePartitionStatements(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   partitions: readonly EvidencePartitionInput[],
 ): D1PreparedStatement[] {
@@ -325,18 +326,21 @@ function evidencePartitionStatements(
   );
 }
 
-export async function reconciliationCandidatePlans(database: D1Database, runId: string): Promise<CandidatePlanRow[]> {
+export async function reconciliationCandidatePlans(
+  database: CatalogueStore,
+  runId: string,
+): Promise<CandidatePlanRow[]> {
   const rows = await reconciliationCandidatePlansStatement(database, runId).all<CandidatePlanRow>();
   return rows.results;
 }
 
-export async function digestBoundCandidatePayload(database: D1Database, runId: string): Promise<string | null> {
+export async function digestBoundCandidatePayload(database: CatalogueStore, runId: string): Promise<string | null> {
   const row = await reconciliationDigestPayloadStatement(database, runId).first<{ digest_payload_json: string }>();
   return row === null ? null : retainedPayload(database, runId, "digest", row.digest_payload_json);
 }
 
 export async function retainedReconciliationResult(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
 ): Promise<Record<string, unknown>> {
   const terminal = await terminalResult(database, runId);
@@ -397,7 +401,7 @@ function terminalFailureResult(
   };
 }
 
-async function requiredTerminalResult(database: D1Database, runId: string): Promise<Record<string, unknown>> {
+async function requiredTerminalResult(database: CatalogueStore, runId: string): Promise<Record<string, unknown>> {
   const result = await terminalResult(database, runId);
   if (result === null) {
     throw new Error("The terminal reconciliation result is unavailable.");
@@ -405,7 +409,7 @@ async function requiredTerminalResult(database: D1Database, runId: string): Prom
   return result;
 }
 
-async function terminalResult(database: D1Database, runId: string): Promise<Record<string, unknown> | null> {
+async function terminalResult(database: CatalogueStore, runId: string): Promise<Record<string, unknown> | null> {
   const row = await terminalResultStatement(database, runId).first<ReconciliationTerminalResultRow>();
   if (row === null) return null;
   const parsed = JSON.parse(row.result_json) as unknown;

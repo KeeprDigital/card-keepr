@@ -7,6 +7,7 @@ import {
 import { absoluteDocumentLinks } from "../../http/public-base";
 import { type RouteContext, route } from "../../http/routes";
 import { publicationBackupReservation, startOrObserveCatalogueBackupWorkflow } from "../backup-recovery";
+import type { CatalogueStore } from "../shared";
 import { evidenceInspectionOptions, showEvidenceRun } from "../source-evidence";
 import { runGuardedCardSearchRepair } from "./card-search-repair-administration";
 import {
@@ -24,7 +25,7 @@ import { runHasEvidencePlanStatement } from "./run-lifecycle-repository";
 type Environment = Parameters<typeof evidenceInspectionOptions>[0] & {
   CATALOGUE_BACKUP_WORKFLOW: Parameters<typeof startOrObserveCatalogueBackupWorkflow>[1];
   CATALOGUE_D1_DATABASE_ID: string;
-  CATALOGUE_DB: D1Database;
+  CATALOGUE_DB: CatalogueStore;
   CATALOGUE_EXPORTS: R2Bucket;
   CLOUDFLARE_ACCOUNT_ID: string;
   DISPOSABLE_D1_DATABASE_ID: string;
@@ -207,7 +208,7 @@ function productionTarget(env: Environment) {
   } as const;
 }
 
-async function hasEvidencePlan(database: D1Database, runId: string): Promise<boolean> {
+async function hasEvidencePlan(database: CatalogueStore, runId: string): Promise<boolean> {
   const row = await runHasEvidencePlanStatement(database, runId).first<{ present: number }>();
   return row?.present === 1;
 }

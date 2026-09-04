@@ -1,3 +1,4 @@
+import { withoutCatalogueSchemaState } from "../../ingestion/test/query-helpers/database-failures";
 import { expect, test, vi } from "vitest";
 import apiWorker from "../src/index";
 import { apiHeaders, installApiSuite, testEnv } from "./api-fixtures";
@@ -20,10 +21,7 @@ function anonymous(path: string, init?: RequestInit): Promise<Response> {
 }
 
 function authenticated(path: string, env: Env = testEnv): Promise<Response> {
-  return apiWorker.fetch(
-    new Request(`${origin}${path}`, { headers: apiHeaders("192.0.2.145") }),
-    env,
-  );
+  return apiWorker.fetch(new Request(`${origin}${path}`, { headers: apiHeaders("192.0.2.145") }), env);
 }
 
 function withOverrides(overrides: Record<string, unknown>): Env {
@@ -99,20 +97,14 @@ test("liveness answers under the public mount and nowhere else", async () => {
   const mountedEnv = withOverrides({
     PUBLIC_BASE_URL: "https://card.keepr.digital/api",
   });
-  const mounted = await apiWorker.fetch(
-    new Request("https://card.keepr.digital/api/healthz"),
-    mountedEnv,
-  );
+  const mounted = await apiWorker.fetch(new Request("https://card.keepr.digital/api/healthz"), mountedEnv);
   expect(mounted.status).toBe(200);
   await expect(mounted.json()).resolves.toEqual({
     status: "ok",
     runtime: "api",
   });
 
-  const outside = await apiWorker.fetch(
-    new Request("https://card.keepr.digital/healthz"),
-    mountedEnv,
-  );
+  const outside = await apiWorker.fetch(new Request("https://card.keepr.digital/healthz"), mountedEnv);
   expect(outside.status).toBe(404);
 });
 
@@ -124,8 +116,7 @@ test("liveness has its own rate limit and stays out of the operational request l
 
   const live = await anonymous("/healthz");
   expect(live.status).toBe(200);
-  expect(records.filter((record) => record.includes("request.completed")))
-    .toHaveLength(0);
+  expect(records.filter((record) => record.includes("request.completed"))).toHaveLength(0);
 
   const catalogueLimit = {
     limit: async () => {
@@ -178,12 +169,7 @@ test("readiness proves the database, both buckets, the public base, and the vers
     },
   });
   const checks = document.checks as Record<string, unknown>;
-  expect(Object.keys(checks).sort()).toEqual([
-    "database",
-    "objects",
-    "public_base",
-    "version",
-  ]);
+  expect(Object.keys(checks).sort()).toEqual(["database", "objects", "public_base", "version"]);
 });
 
 test("readiness reports the public base as reached when the request arrives through it", async () => {
@@ -209,10 +195,7 @@ test("a broken database binding turns readiness degraded without leaking the fai
   vi.spyOn(console, "error").mockImplementation((value) => {
     errors.push(String(value));
   });
-  const response = await authenticated(
-    "/health",
-    withOverrides({ CATALOGUE_DB: brokenDatabase() }),
-  );
+  const response = await authenticated("/health", withOverrides({ CATALOGUE_DB: brokenDatabase() }));
   expect(response.status).toBe(503);
   expect(response.headers.get("cache-control")).toBe("no-store");
   const text = await response.text();
@@ -231,10 +214,7 @@ test("a broken database binding turns readiness degraded without leaking the fai
 });
 
 test("a broken or missing bucket binding fails only that bucket", async () => {
-  const broken = await authenticated(
-    "/health",
-    withOverrides({ CATALOGUE_EXPORTS: brokenBucket() }),
-  );
+  const broken = await authenticated("/health", withOverrides({ CATALOGUE_EXPORTS: brokenBucket() }));
   expect(broken.status).toBe(503);
   const brokenText = await broken.text();
   expect(JSON.parse(brokenText)).toMatchObject({
@@ -252,10 +232,7 @@ test("a broken or missing bucket binding fails only that bucket", async () => {
   });
   expect(brokenText).not.toContain(secret);
 
-  const missing = await authenticated(
-    "/health",
-    withOverrides({ PRINTING_IMAGES: undefined }),
-  );
+  const missing = await authenticated("/health", withOverrides({ PRINTING_IMAGES: undefined }));
   expect(missing.status).toBe(503);
   await expect(missing.json()).resolves.toMatchObject({
     status: "degraded",
@@ -271,21 +248,8 @@ test("a broken or missing bucket binding fails only that bucket", async () => {
 });
 
 test("readiness fails a database whose schema state is unreadable", async () => {
-  const noSchema = new Proxy(testEnv.CATALOGUE_DB, {
-    get(database, property, receiver) {
-      if (property === "prepare") {
-        return (query: string) =>
-          database.prepare(
-            query.replace("catalogue_schema_state", "missing_schema_state"),
-          );
-      }
-      return Reflect.get(database, property, receiver);
-    },
-  });
-  const response = await authenticated(
-    "/health",
-    withOverrides({ CATALOGUE_DB: noSchema }),
-  );
+  const noSchema = withoutCatalogueSchemaState(testEnv.CATALOGUE_DB);
+  const response = await authenticated("/health", withOverrides({ CATALOGUE_DB: noSchema }));
   expect(response.status).toBe(503);
   await expect(response.json()).resolves.toMatchObject({
     status: "degraded",

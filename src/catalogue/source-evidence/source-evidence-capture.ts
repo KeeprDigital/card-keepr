@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { requiredSourceAdapter } from "../adapters";
-import { AdministrationProblem, canonicalJson, sha256, utf8 } from "../shared";
+import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256, utf8 } from "../shared";
 import { type AttemptOutcome, attemptStatement, sourceSnapshotStatement } from "./evidence-repository";
 import {
   advanceHostPacingStatement,
@@ -163,7 +163,7 @@ export function sourceHostPacingIntervalMilliseconds(value: string | undefined):
 }
 
 export async function hostPacingDelay(
-  database: D1Database,
+  database: CatalogueStore,
   hostname: string,
   mode: SourceHostPacingMode = "production",
 ): Promise<number> {
@@ -174,7 +174,7 @@ export async function hostPacingDelay(
 }
 
 export async function advanceHostPacing(
-  database: D1Database,
+  database: CatalogueStore,
   hostname: string,
   mode: SourceHostPacingMode = "production",
   intervalMilliseconds: number = defaultSourceHostPacingIntervalMilliseconds,
@@ -194,7 +194,7 @@ function admitsCollectionWork(run: Pick<IngestionEvidenceRow, "state">): boolean
 }
 
 export async function prepareCaptureAttempt(
-  database: D1Database,
+  database: CatalogueStore,
   run: IngestionEvidenceRow,
   sourceRequest: EvidenceRequestRow,
 ): Promise<PreparedCaptureAttempt> {
@@ -278,7 +278,7 @@ export async function prepareCaptureAttempt(
 }
 
 export async function capturePreparedAttempt(
-  database: D1Database,
+  database: CatalogueStore,
   evidenceObjects: R2Bucket,
   officialSourceTransport: Fetcher,
   run: IngestionEvidenceRow,
@@ -496,7 +496,7 @@ export async function capturePreparedAttempt(
 }
 
 export async function completeUploadedCapture(
-  database: D1Database,
+  database: CatalogueStore,
   run: IngestionEvidenceRow,
   sourceRequest: EvidenceRequestRow,
   attemptId: string,
@@ -585,7 +585,7 @@ export async function completeUploadedCapture(
 }
 
 export async function parseCapturedRequest(
-  database: D1Database,
+  database: CatalogueStore,
   evidenceObjects: R2Bucket,
   run: IngestionEvidenceRow,
   sourceRequest: EvidenceRequestRow,
@@ -691,7 +691,7 @@ function publicPreparedAttempt(operation: CaptureOperationRow): Extract<Prepared
   };
 }
 
-async function currentRequest(database: D1Database, runId: string, requestId: string): Promise<EvidenceRequestRow> {
+async function currentRequest(database: CatalogueStore, runId: string, requestId: string): Promise<EvidenceRequestRow> {
   const request = await sourceRequestStatement(database, {
     runId: runId,
     requestId: requestId,
@@ -700,14 +700,14 @@ async function currentRequest(database: D1Database, runId: string, requestId: st
   return request;
 }
 
-async function requiredCaptureOperation(database: D1Database, attemptId: string): Promise<CaptureOperationRow> {
+async function requiredCaptureOperation(database: CatalogueStore, attemptId: string): Promise<CaptureOperationRow> {
   const operation = await captureOperationStatement(database, attemptId).first<CaptureOperationRow>();
   if (operation === null) throw new Error("Capture operation disappeared");
   return operation;
 }
 
 async function recoverCompletedUpload(
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
   operation: CaptureOperationRow,
 ): Promise<boolean> {
@@ -903,7 +903,7 @@ async function streamSnapshotToR2(
 }
 
 async function recordFailedTransportAttempt(
-  database: D1Database,
+  database: CatalogueStore,
   run: IngestionEvidenceRow,
   request: EvidenceRequestRow,
   operation: CaptureOperationRow,
@@ -967,7 +967,7 @@ async function recordFailedTransportAttempt(
 }
 
 async function recordRejectedAttempt(
-  database: D1Database,
+  database: CatalogueStore,
   run: IngestionEvidenceRow,
   request: EvidenceRequestRow,
   operation: CaptureOperationRow,
@@ -1071,7 +1071,7 @@ function recoverableExhaustionClassification(
 // continues. Statements are returned unexecuted so callers commit them in
 // the same atomic batch as the final failed attempt.
 function recoverableExhaustion(
-  database: D1Database,
+  database: CatalogueStore,
   run: IngestionEvidenceRow,
   request: EvidenceRequestRow,
   attemptCount: number,
@@ -1100,12 +1100,12 @@ function recoverableExhaustion(
   };
 }
 
-async function failRequest(database: D1Database, request: EvidenceRequestRow, failureCode: string): Promise<void> {
+async function failRequest(database: CatalogueStore, request: EvidenceRequestRow, failureCode: string): Promise<void> {
   await failRequestStatement(database, request, failureCode).run();
 }
 
 function failRequestStatement(
-  database: D1Database,
+  database: CatalogueStore,
   request: EvidenceRequestRow,
   failureCode: string,
 ): D1PreparedStatement {
@@ -1117,7 +1117,7 @@ function failRequestStatement(
 }
 
 async function findReusableSnapshot(
-  database: D1Database,
+  database: CatalogueStore,
   run: IngestionEvidenceRow,
   request: EvidenceRequestRow,
 ): Promise<SnapshotRow | null> {

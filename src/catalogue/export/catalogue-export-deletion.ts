@@ -1,10 +1,10 @@
+import { type CatalogueStore, canonicalJson, compareUtf8, sha256Text } from "../shared";
 import * as exportStatements from "./export-repository";
 import {
-  type CatalogueExportRow as ExportRow,
-  catalogueExportStatement,
   catalogueExportDeletionPlanInsertStatement,
+  catalogueExportStatement,
+  type CatalogueExportRow as ExportRow,
 } from "./export-repository";
-import { canonicalJson, compareUtf8, sha256Text } from "../shared";
 
 const PLAN_TTL_MS = 15 * 60 * 1_000;
 const EXECUTION_LEASE_MS = 5 * 60 * 1_000;
@@ -82,7 +82,7 @@ export type ConfirmCatalogueExportDeletion = {
 };
 
 export async function prepareCatalogueExportDeletion(
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
   request: PrepareCatalogueExportDeletion,
   observedAt: string,
@@ -159,7 +159,7 @@ export async function prepareCatalogueExportDeletion(
 }
 
 export async function confirmCatalogueExportDeletion(
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
   request: ConfirmCatalogueExportDeletion,
   observedAt: string,
@@ -296,7 +296,7 @@ export async function confirmCatalogueExportDeletion(
 }
 
 export async function catalogueExportDeletionStatus(
-  database: D1Database,
+  database: CatalogueStore,
   deletionId: string,
 ): Promise<Record<string, unknown>> {
   const row = await exportStatements
@@ -309,7 +309,7 @@ export async function catalogueExportDeletionStatus(
 }
 
 export async function retryCatalogueExportDeletion(
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
   deletionId: string,
   request: { object_set_digest: string; idempotency_key: string },
@@ -426,7 +426,7 @@ export async function retryCatalogueExportDeletion(
 }
 
 async function persistRetryResponse(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
   document: Record<string, unknown>,
 ): Promise<void> {
@@ -439,7 +439,7 @@ async function persistRetryResponse(
 }
 
 async function executeDeletion(
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
   deletionId: string,
   plan: PlanRow,
@@ -600,7 +600,7 @@ function leaseExpiresAt(observedAt: string): string {
 }
 
 async function claimDeletionExecutionLease(
-  database: D1Database,
+  database: CatalogueStore,
   deletionId: string,
   retryIdempotencyKey: string | null,
   executionOwnerToken: string,
@@ -630,7 +630,7 @@ async function claimDeletionExecutionLease(
 }
 
 async function renewDeletionExecutionLease(
-  database: D1Database,
+  database: CatalogueStore,
   deletionId: string,
   retryIdempotencyKey: string | null,
   executionOwnerToken: string,
@@ -660,7 +660,7 @@ async function renewDeletionExecutionLease(
 }
 
 async function waitForDeletionResponse(
-  database: D1Database,
+  database: CatalogueStore,
   deletionId: string,
   retryIdempotencyKey: string | null,
 ): Promise<Record<string, unknown>> {
@@ -701,7 +701,7 @@ async function waitForDeletionResponse(
 }
 
 async function loadDeletionResponse(
-  database: D1Database,
+  database: CatalogueStore,
   deletionId: string,
   retryIdempotencyKey: string | null,
 ): Promise<Record<string, unknown> | null> {
@@ -717,7 +717,7 @@ async function loadDeletionResponse(
 }
 
 async function assertMutationGuards(
-  database: D1Database,
+  database: CatalogueStore,
   plan: PlanRow,
   confirmationRevisionId: string,
   observedAt: string,
@@ -736,7 +736,7 @@ async function assertMutationGuards(
 }
 
 async function assertMaintenanceIdle(
-  database: D1Database,
+  database: CatalogueStore,
   expectedCurrentRevisionId: string,
   observedAt: string,
 ): Promise<void> {
@@ -753,7 +753,7 @@ async function assertMaintenanceIdle(
   }
 }
 
-async function currentRevision(database: D1Database): Promise<string> {
+async function currentRevision(database: CatalogueStore): Promise<string> {
   const revisionId = await exportStatements
     .catalogueExportCurrentRevisionStatement(database)
     .first<string>("current_revision_id");
@@ -846,7 +846,7 @@ async function verifiedExportObjects(
   };
 }
 
-async function loadPlan(database: D1Database, planId: string): Promise<PlanRow | null> {
+async function loadPlan(database: CatalogueStore, planId: string): Promise<PlanRow | null> {
   return exportStatements.catalogueExportDeletionPlanStatement(database, { planId }).first<PlanRow>();
 }
 

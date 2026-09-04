@@ -1,5 +1,6 @@
 import { catalogueResponse } from "../../http/catalogue";
 import { type RouteContext, route } from "../../http/routes";
+import type { CatalogueStore } from "../shared";
 import { cardCollectionResponse } from "./card-collection-read";
 import { contextualLegalityStatusResponse } from "./legality-status";
 import { currentPrintingsResponse } from "./printing-collection-read";
@@ -15,7 +16,7 @@ import {
 } from "./read";
 
 type Context = RouteContext<{
-  CATALOGUE_DB: D1Database;
+  CATALOGUE_DB: CatalogueStore;
   PRINTING_IMAGES: R2Bucket;
   CATALOGUE_EXPORTS: R2Bucket;
 }>;

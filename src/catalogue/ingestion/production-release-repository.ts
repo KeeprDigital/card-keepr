@@ -1,18 +1,18 @@
-import { SPINE_REVISION_ID } from "../shared";
+import { type CatalogueStore, repositoryStatements, SPINE_REVISION_ID } from "../shared";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
-export function preparedProductionReleaseStatement(database: D1Database, key: string): D1PreparedStatement {
-  return database
+export function preparedProductionReleaseStatement(database: CatalogueStore, key: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT operation, request_json, response_json FROM administration_idempotency
      WHERE idempotency_key = ?`)
     .bind(key);
 }
 
 export function recordPreparedProductionReleaseStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{ key: string; requestJson: string; responseJson: string; createdAt: string }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO administration_idempotency (
            idempotency_key, operation, request_json, response_json,
            http_status, outcome, created_at
@@ -25,11 +25,11 @@ export function recordPreparedProductionReleaseStatement(
 // data-independent check and additionally proves emptiness, so a bootstrap
 // plan is refused the moment a Catalogue Revision has been published.
 export function bootstrapGate(
-  database: D1Database,
+  database: CatalogueStore,
   plan: Readonly<{ expected_migration_level: number }>,
   observedAt: string,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(
       `SELECT CASE WHEN EXISTS (
        SELECT 1 FROM catalogue_state AS catalogue
@@ -49,7 +49,7 @@ export function bootstrapGate(
 }
 
 export function populatedGate(
-  database: D1Database,
+  database: CatalogueStore,
   plan: Readonly<{
     expected_migration_level: number;
     expected_current_revision_id: string;
@@ -90,7 +90,7 @@ export function populatedGate(
           replacement.retained_database_id,
         ];
   const retainedRevisionIds = plan.retained_revision_evidence.map((item) => item.revision_id);
-  return database
+  return repositoryStatements(database)
     .prepare(
       `SELECT CASE WHEN EXISTS (
        SELECT 1 FROM catalogue_state AS catalogue

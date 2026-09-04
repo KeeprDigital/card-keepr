@@ -1,7 +1,8 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
-export function administrationClaimStatement(database: D1Database, key: string): D1PreparedStatement {
-  return database
+export function administrationClaimStatement(database: CatalogueStore, key: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT
         operation,
         request_json,
@@ -15,7 +16,7 @@ export function administrationClaimStatement(database: D1Database, key: string):
 }
 
 export function releaseAdministrationClaimStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     key: string;
     operation: string;
@@ -24,7 +25,7 @@ export function releaseAdministrationClaimStatement(
     claimVersion: number | null;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`DELETE FROM administration_idempotency_claims
       WHERE idempotency_key = ?
         AND operation = ?
@@ -43,7 +44,7 @@ export function releaseAdministrationClaimStatement(
 }
 
 export function completeAdministrationStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     key: string;
     operation: string;
@@ -55,7 +56,7 @@ export function completeAdministrationStatement(
     claimVersion: number | null;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO administration_idempotency (
         idempotency_key,
         operation,
@@ -79,8 +80,8 @@ export function completeAdministrationStatement(
     );
 }
 
-export function administrationOutcomeStatement(database: D1Database, key: string): D1PreparedStatement {
-  return database
+export function administrationOutcomeStatement(database: CatalogueStore, key: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT
         operation,
         request_json,
@@ -93,7 +94,7 @@ export function administrationOutcomeStatement(database: D1Database, key: string
 }
 
 export function recordAdministrationProblemStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     key: string;
     operation: string;
@@ -105,7 +106,7 @@ export function recordAdministrationProblemStatement(
     claimVersion: number;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO administration_idempotency (
               idempotency_key,
               operation,
@@ -130,7 +131,7 @@ export function recordAdministrationProblemStatement(
 }
 
 export function acquireAdministrationClaimStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     key: string;
     operation: string;
@@ -140,7 +141,7 @@ export function acquireAdministrationClaimStatement(
     expiresAt: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT INTO administration_idempotency_claims (
           idempotency_key,
           operation,
@@ -156,7 +157,7 @@ export function acquireAdministrationClaimStatement(
 }
 
 export function takeOverAdministrationClaimStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     claimedAt: string;
     ownerToken: string;
@@ -169,7 +170,7 @@ export function takeOverAdministrationClaimStatement(
     priorExpiresAt: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`UPDATE administration_idempotency_claims
           SET claimed_at = ?,
               owner_token = ?,
@@ -196,8 +197,8 @@ export function takeOverAdministrationClaimStatement(
     );
 }
 
-export function legacyAdministrationRunStatement(database: D1Database, key: string): D1PreparedStatement {
-  return database
+export function legacyAdministrationRunStatement(database: CatalogueStore, key: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT *
       FROM ingestion_runs
       WHERE idempotency_key = ?

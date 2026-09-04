@@ -1,7 +1,8 @@
+import { type CatalogueStore, repositoryStatements } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
-export function reconciliationWorkflowRunStatement(database: D1Database, runId: string): D1PreparedStatement {
-  return database
+export function reconciliationWorkflowRunStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(`SELECT run.id, run.state, run.expected_current_revision_id,
               state.current_revision_id, operation.active_ingestion_run_id,
               operation.recovery_health
@@ -13,7 +14,7 @@ export function reconciliationWorkflowRunStatement(database: D1Database, runId: 
 }
 
 export function createReconciliationWorkflowRequestStatement(
-  database: D1Database,
+  database: CatalogueStore,
   input: Readonly<{
     idempotencyKey: string;
     runId: string;
@@ -24,7 +25,7 @@ export function createReconciliationWorkflowRequestStatement(
     observedAt: string;
   }>,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`INSERT OR IGNORE INTO reconciliation_workflow_requests (
          idempotency_key, ingestion_run_id,
          expected_current_revision_id, request_json,
@@ -42,10 +43,10 @@ export function createReconciliationWorkflowRequestStatement(
 }
 
 export function reconciliationWorkflowCandidateDigestStatement(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT candidate_digest
        FROM ingestion_runs
        WHERE id = ?`)
@@ -53,10 +54,10 @@ export function reconciliationWorkflowCandidateDigestStatement(
 }
 
 export function reconciliationWorkflowRequestStatement(
-  database: D1Database,
+  database: CatalogueStore,
   idempotencyKey: string,
 ): D1PreparedStatement {
-  return database
+  return repositoryStatements(database)
     .prepare(`SELECT idempotency_key, ingestion_run_id,
               expected_current_revision_id, request_json,
               workflow_params_json, workflow_instance_id, observed_at

@@ -1,3 +1,4 @@
+import type { CatalogueStore } from "../shared";
 import * as searchRecoveryStatements from "./card-search-recovery-repository";
 
 // D1 export does not support virtual tables. Card-search chunks are the
@@ -7,7 +8,10 @@ import * as searchRecoveryStatements from "./card-search-recovery-repository";
 // after restore and before recovery verification. Both batches finish
 // atomically; the readiness row keeps Card reads closed between them.
 
-export async function prepareCardSearchForD1Export(database: D1Database, lease: CardSearchExportLease): Promise<void> {
+export async function prepareCardSearchForD1Export(
+  database: CatalogueStore,
+  lease: CardSearchExportLease,
+): Promise<void> {
   validateLease(lease);
   const acquired = await searchRecoveryStatements
     .acquireCardSearchExportLeaseStatement(database, {
@@ -28,7 +32,7 @@ export async function prepareCardSearchForD1Export(database: D1Database, lease: 
 }
 
 export async function withCardSearchPreparedForD1Export<T>(
-  database: D1Database,
+  database: CatalogueStore,
   lease: CardSearchExportLease,
   exportDatabase: () => Promise<T>,
 ): Promise<T> {
@@ -40,7 +44,7 @@ export async function withCardSearchPreparedForD1Export<T>(
   }
 }
 
-export async function reconstructCardSearchAfterD1Restore(database: D1Database, ownerToken: string): Promise<void> {
+export async function reconstructCardSearchAfterD1Restore(database: CatalogueStore, ownerToken: string): Promise<void> {
   try {
     await database.batch([
       searchRecoveryStatements.guardCardSearchExportLeaseStatement(database, { ownerToken }),
@@ -64,7 +68,7 @@ export type CardSearchExportLease = Readonly<{
   leaseExpiresAt: string;
 }>;
 
-async function releaseLease(database: D1Database, ownerToken: string): Promise<void> {
+async function releaseLease(database: CatalogueStore, ownerToken: string): Promise<void> {
   await searchRecoveryStatements.releaseCardSearchExportLeaseStatement(database, { ownerToken }).run();
 }
 

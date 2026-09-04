@@ -1,3 +1,8 @@
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as reconciliationQueries from "./query-helpers/reconciliation";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as catalogueExportQueries from "./query-helpers/catalogue-export";
 import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, describe, expect, test } from "vitest";
@@ -167,10 +172,9 @@ describe("Errata rules-text lifecycle", () => {
       code: "adapter_not_supported",
     });
     expect(
-      await testEnv.CATALOGUE_DB.prepare(
-        `SELECT COUNT(*) AS count FROM ingestion_runs
-       WHERE idempotency_key = 'reject-generic-production-errata-authority'`,
-      ).first("count"),
+      await ingestionQueries
+        .countIngestionRunsCountForUnregisteredGenericCardAdapterCannotSelfAssertOfficialErrata(testEnv.CATALOGUE_DB)
+        .first("count"),
     ).toBe(0);
   });
 
@@ -297,39 +301,15 @@ describe("Errata rules-text lifecycle", () => {
       idempotency_key: "reject-legacy-candidate-without-errata",
     });
     expect(rejected.response.status).toBe(200);
-    const stored = await testEnv.CATALOGUE_DB.prepare("SELECT candidate_json FROM ingestion_runs WHERE id = ?")
+    const stored = await ingestionQueries
+      .readIngestionRunsCandidateJson(testEnv.CATALOGUE_DB)
       .bind(runId)
       .first<{ candidate_json: string }>();
     const legacy = JSON.parse(stored?.candidate_json ?? "{}") as Record<string, unknown>;
     delete legacy.errata;
     const legacyRunId = "run_legacy_candidate_without_errata";
-    await testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_digest, candidate_created_at, approval_deadline,
-         approval_json, published_revision_id, export_manifest_digest,
-         terminal_at, candidate_json, approval_idempotency_key,
-         failure_code, progress_json, warnings_json,
-         approval_history_json, publication_outcome,
-         resulting_revision_id, freshness_checked_at,
-         publication_revision_id, publication_started_at,
-         publication_reconcile_after, publication_manifest_digest,
-         publication_writer_token, candidate_catalogue_digest
-       )
-       SELECT ?, state, selected_games_json, started_at,
-              expected_current_revision_id, NULL, ?,
-              candidate_digest, candidate_created_at, approval_deadline,
-              approval_json, published_revision_id, export_manifest_digest,
-              terminal_at, ?, NULL,
-              failure_code, progress_json, warnings_json,
-              approval_history_json, publication_outcome,
-              resulting_revision_id, freshness_checked_at,
-              publication_revision_id, publication_started_at,
-              publication_reconcile_after, publication_manifest_digest,
-              publication_writer_token, candidate_catalogue_digest
-       FROM ingestion_runs WHERE id = ?`,
-    )
+    await ingestionQueries
+      .insertIngestionRunsForLegacyPersistedCandidatesWithoutErrataRemainInspectableRetryable(testEnv.CATALOGUE_DB)
       .bind(legacyRunId, "persisted-legacy-candidate-without-errata", JSON.stringify(legacy), runId)
       .run();
 
@@ -481,16 +461,8 @@ describe("Errata rules-text lifecycle", () => {
     if (erratum === undefined) {
       throw new Error("Expected the published Card Erratum in the export.");
     }
-    const persisted = await testEnv.CATALOGUE_DB.prepare(
-      `SELECT erratum.id, provenance.source_lineage,
-              provenance.source_observation_id
-       FROM reconciled_errata AS erratum
-       JOIN erratum_provenance AS provenance
-         ON provenance.erratum_id = erratum.id
-       JOIN revision_errata AS revision
-         ON revision.erratum_id = erratum.id
-       WHERE revision.catalogue_revision_id = ? AND erratum.id = ?`,
-    )
+    const persisted = await reconciliationQueries
+      .readReconciledErrataIdSourceLineage(testEnv.CATALOGUE_DB)
       .bind(revisionId, erratum.id)
       .first<{
         id: string;
@@ -502,32 +474,20 @@ describe("Errata rules-text lifecycle", () => {
       source_lineage: "one-piece-en",
       source_observation_id: expect.stringMatching(/^srcobs_/),
     });
-    const sourceFacts = await testEnv.CATALOGUE_DB.prepare(
-      `SELECT canonical_facts_json
-       FROM reconciled_card_observations
-       WHERE card_id = ? AND source_observation_id = ?`,
-    )
+    const sourceFacts = await reconciliationQueries
+      .readReconciledCardObservationsCanonicalFactsJson(testEnv.CATALOGUE_DB)
       .bind(erratum.target_id, persisted?.source_observation_id ?? "")
       .first<{ canonical_facts_json: string }>();
     expect(JSON.parse(sourceFacts?.canonical_facts_json ?? "null")).toMatchObject({
       effective_rules_text: "[On Play] Draw 1 card.",
     });
     await expect(
-      testEnv.CATALOGUE_DB.prepare(
-        `UPDATE reconciled_errata
-         SET corrected_value_json = '"mutated wording"'
-         WHERE id = ?`,
-      )
-        .bind(erratum.id)
-        .run(),
+      reconciliationQueries.setReconciledErrataCorrectedValueJson(testEnv.CATALOGUE_DB).bind(erratum.id).run(),
     ).rejects.toThrow(/reconciled_erratum_immutable/);
-    const observationSet = await testEnv.CATALOGUE_DB.prepare(
-      `SELECT observation.content_object_key
-       FROM source_observation_sets AS observation
-       JOIN source_snapshots AS snapshot
-         ON snapshot.id = observation.source_snapshot_id
-       WHERE snapshot.ingestion_run_id = ?`,
-    )
+    const observationSet = await sourceEvidenceQueries
+      .readSourceObservationSetsContentObjectKeyForOfficialErratumPreservesObservedPrintedRulesTextWhilePublishing(
+        testEnv.CATALOGUE_DB,
+      )
       .bind(run.id)
       .first<{ content_object_key: string }>();
     const retainedObservation = await testEnv.EVIDENCE_OBJECTS.get(observationSet?.content_object_key ?? "");
@@ -635,12 +595,9 @@ describe("Errata rules-text lifecycle", () => {
         effective_from: null,
       }),
     );
-    const freshness = await testEnv.CATALOGUE_DB.prepare(
-      `SELECT area, ingestion_run_id
-       FROM source_freshness
-       WHERE game = 'one-piece'
-       ORDER BY area`,
-    ).all<{ area: string; ingestion_run_id: string }>();
+    const freshness = await sourceEvidenceQueries
+      .readSourceFreshnessAreaIngestionRunId(testEnv.CATALOGUE_DB)
+      .all<{ area: string; ingestion_run_id: string }>();
     expect(freshness.results).toEqual([
       {
         area: "cards-and-printings",
@@ -716,11 +673,8 @@ describe("Errata rules-text lifecycle", () => {
     );
     const missingPublished = await approve(missing.document);
     expect(missingPublished.response.status).toBe(200);
-    const retained = await testEnv.CATALOGUE_DB.prepare(
-      `SELECT last_observed_revision_id
-       FROM reconciled_errata
-       WHERE id = ?`,
-    )
+    const retained = await reconciliationQueries
+      .readReconciledErrataLastObservedRevisionId(testEnv.CATALOGUE_DB)
       .bind(requiredString(observedErratum, "id"))
       .first<{ last_observed_revision_id: string }>();
     expect(retained).toEqual({
@@ -961,19 +915,15 @@ describe("Errata rules-text lifecycle", () => {
     expect(secondPublished.response.status).toBe(200);
     const secondRevisionId = requiredString(secondPublished.document, "resulting_revision_id");
     const [persistedErratum, persistedProvenance, relationships] = await Promise.all([
-      testEnv.CATALOGUE_DB.prepare(
-        `SELECT first_revision_id, last_observed_revision_id
-           FROM reconciled_errata WHERE id = ?`,
-      )
+      reconciliationQueries
+        .readReconciledErrataFirstRevisionIdLastObservedRevisionId(testEnv.CATALOGUE_DB)
         .bind(firstErratum.id)
         .first<{
           first_revision_id: string;
           last_observed_revision_id: string;
         }>(),
-      testEnv.CATALOGUE_DB.prepare(
-        `SELECT first_revision_id, last_observed_revision_id
-           FROM erratum_provenance WHERE erratum_id = ?`,
-      )
+      publishedCatalogueQueries
+        .readErratumProvenanceFirstRevisionIdLastObservedRevisionId(testEnv.CATALOGUE_DB)
         .bind(firstErratum.id)
         .first<{
           first_revision_id: string;
@@ -1011,13 +961,8 @@ describe("Errata rules-text lifecycle", () => {
     expect(published.response.status).toBe(200);
     const revisionId = requiredString(published.document, "resulting_revision_id");
     const insert = (id: string, game: "one-piece" | "gundam", targetType: "card" | "printing", targetId: string) =>
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO reconciled_errata (
-           id, game, target_type, target_id, effective_from,
-           official_wording, corrected_value_json,
-           first_revision_id, last_observed_revision_id
-         ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
-      )
+      reconciliationQueries
+        .insertReconciledErrata(testEnv.CATALOGUE_DB)
         .bind(
           id,
           game,
@@ -1220,10 +1165,8 @@ function requiredString(document: Record<string, unknown>, field: string): strin
 }
 
 async function exportComponentRecords(revisionId: string, componentName: string): Promise<Record<string, unknown>[]> {
-  const exportRow = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT manifest_key FROM catalogue_exports
-     WHERE catalogue_revision_id = ? AND verified = 1`,
-  )
+  const exportRow = await catalogueExportQueries
+    .readCatalogueExportsManifestKeyForExportComponentRecords(testEnv.CATALOGUE_DB)
     .bind(revisionId)
     .first<{ manifest_key: string }>();
   const manifestObject = await testEnv.CATALOGUE_EXPORTS.get(exportRow?.manifest_key ?? "");

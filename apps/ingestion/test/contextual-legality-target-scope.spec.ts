@@ -1,3 +1,5 @@
+import * as legalityQueries from "./query-helpers/legality";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import { expect, test } from "vitest";
 import {
   approve,
@@ -32,20 +34,11 @@ test("an open-predicate rule publishes with explicit target-scope uncertainty an
       }),
     ]),
   });
-  const published = await approve(
-    collected.reconciled,
-    "publish-target-scope-rule",
-  );
+  const published = await approve(collected.reconciled, "publish-target-scope-rule");
   expect(published.response.status).toBe(200);
-  const revisionId = requiredString(
-    published.document,
-    "resulting_revision_id",
-  );
+  const revisionId = requiredString(published.document, "resulting_revision_id");
 
-  const rule = await revisionLegalityRule(
-    revisionId,
-    "legality_rule_asia_open_predicate",
-  );
+  const rule = await revisionLegalityRule(revisionId, "legality_rule_asia_open_predicate");
   expect(rule).toMatchObject({
     region: "EN-ASIA",
     format: "standard",
@@ -59,44 +52,37 @@ test("an open-predicate rule publishes with explicit target-scope uncertainty an
   // Publication materializes the enumerated Card rows plus one explicit
   // all_cards row so every contextual status query in the rule's game,
   // region, and format retains the uncertainty.
-  const applicability = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT applicability_kind, card_id
-     FROM revision_legality_rule_applicability
-     WHERE catalogue_revision_id = ? AND legality_rule_id = ?
-     ORDER BY applicability_kind, card_id`,
-  ).bind(revisionId, requiredString(rule!, "id")).all<{
-    applicability_kind: string;
-    card_id: string;
-  }>();
-  expect(applicability.results.map(({ applicability_kind }) =>
-    applicability_kind
-  )).toEqual(["all_cards", "card", "card"]);
+  const applicability = await legalityQueries
+    .readRevisionLegalityRuleApplicabilityApplicabilityKindCardIdForOpenPredicateRulePublishesExplicitTargetScopeUncertaintyAll(
+      testEnv.CATALOGUE_DB,
+    )
+    .bind(revisionId, requiredString(rule!, "id"))
+    .all<{
+      applicability_kind: string;
+      card_id: string;
+    }>();
+  expect(applicability.results.map(({ applicability_kind }) => applicability_kind)).toEqual([
+    "all_cards",
+    "card",
+    "card",
+  ]);
   expect(applicability.results[0]).toEqual({
     applicability_kind: "all_cards",
     card_id: "",
   });
 
   // A rule without the target_scope dimension keeps its Card-only rows.
-  const intervalRule = await revisionLegalityRule(
-    revisionId,
-    "legality_rule_asia_unresolved_scope",
-  );
-  const intervalApplicability = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT applicability_kind
-     FROM revision_legality_rule_applicability
-     WHERE catalogue_revision_id = ? AND legality_rule_id = ?`,
-  ).bind(revisionId, requiredString(intervalRule!, "id")).all<{
-    applicability_kind: string;
-  }>();
-  expect(intervalApplicability.results).toEqual([
-    { applicability_kind: "card" },
-  ]);
+  const intervalRule = await revisionLegalityRule(revisionId, "legality_rule_asia_unresolved_scope");
+  const intervalApplicability = await legalityQueries
+    .readRevisionLegalityRuleApplicabilityApplicabilityKind(testEnv.CATALOGUE_DB)
+    .bind(revisionId, requiredString(intervalRule!, "id"))
+    .all<{
+      applicability_kind: string;
+    }>();
+  expect(intervalApplicability.results).toEqual([{ applicability_kind: "card" }]);
 
   // The schema-major-5 export retains the complete unresolved scope.
-  const exported = await exportedLegalityRule(
-    revisionId,
-    "legality_rule_asia_open_predicate",
-  );
+  const exported = await exportedLegalityRule(revisionId, "legality_rule_asia_open_predicate");
   expect(exported).toMatchObject({
     kind: "indeterminate",
     effective_from: null,
@@ -115,10 +101,7 @@ test("an open-predicate rule publishes with explicit target-scope uncertainty an
     official_wording: "Malformed target-scope variant.",
     source_lineage: "gundam-en-asia",
     source_snapshot_id: requiredString(rule!, "source_snapshot_id"),
-    source_observation_set_id: requiredString(
-      rule!,
-      "source_observation_set_id",
-    ),
+    source_observation_set_id: requiredString(rule!, "source_observation_set_id"),
     source_observation_id: requiredString(rule!, "source_observation_id"),
   };
   const insertScopedRule = (
@@ -130,40 +113,31 @@ test("an open-predicate rule publishes with explicit target-scope uncertainty an
       cardIds: readonly string[];
     },
   ) =>
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO legality_rules (
-         id, official_id, supported_game, region, format, event_tier,
-         effective_from, effective_until, unresolved_scope_json,
-         official_wording, effect_json,
-         card_ids_json, direct_card_ids_json, source_lineage,
-         source_snapshot_id, source_observation_set_id,
-         source_observation_id, source_observation_pointer,
-         source_field_pointers_json, first_revision_id,
-         last_observed_revision_id, current, last_missing_revision_id
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-         ?, ?, ?, 1, NULL)`,
-    ).bind(
-      id,
-      id,
-      base.supported_game,
-      base.region,
-      base.format,
-      base.event_tier,
-      variant.effectiveFrom,
-      JSON.stringify(variant.scope),
-      base.official_wording,
-      JSON.stringify(variant.effect),
-      JSON.stringify(variant.cardIds),
-      JSON.stringify(variant.cardIds),
-      base.source_lineage,
-      base.source_snapshot_id,
-      base.source_observation_set_id,
-      base.source_observation_id,
-      "/observations/0/value/legality_rules/0",
-      JSON.stringify({}),
-      revisionId,
-      revisionId,
-    ).run();
+    sourceEvidenceQueries
+      .insertLegalityRulesForOpenPredicateRulePublishesExplicitTargetScopeUncertaintyAll(testEnv.CATALOGUE_DB)
+      .bind(
+        id,
+        id,
+        base.supported_game,
+        base.region,
+        base.format,
+        base.event_tier,
+        variant.effectiveFrom,
+        JSON.stringify(variant.scope),
+        base.official_wording,
+        JSON.stringify(variant.effect),
+        JSON.stringify(variant.cardIds),
+        JSON.stringify(variant.cardIds),
+        base.source_lineage,
+        base.source_snapshot_id,
+        base.source_observation_set_id,
+        base.source_observation_id,
+        "/observations/0/value/legality_rules/0",
+        JSON.stringify({}),
+        revisionId,
+        revisionId,
+      )
+      .run();
 
   // Control: a canonical target-scope rule with the same provenance inserts.
   await insertScopedRule("legality_rule_target_scope_control", {
@@ -210,12 +184,11 @@ test("an open-predicate rule publishes with explicit target-scope uncertainty an
       cardIds: [],
     },
   ] as const;
-  const errors = await Promise.all(malformed.map((variant, index) =>
-    rejectedError(insertScopedRule(
-      `legality_rule_target_scope_malformed_${index}`,
-      variant,
-    ))
-  ));
+  const errors = await Promise.all(
+    malformed.map((variant, index) =>
+      rejectedError(insertScopedRule(`legality_rule_target_scope_malformed_${index}`, variant)),
+    ),
+  );
   for (const error of errors) {
     expect(String(error)).toMatch(/legality_rule_scope_invalid/u);
   }

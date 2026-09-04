@@ -1,10 +1,10 @@
-import { advancesCollectionProgress, type WorkflowProgress } from "../shared";
-import { recordWorkflowProgressStatement } from "./workflow-progress-repository";
+import { advancesCollectionProgress, type CatalogueStore, type WorkflowProgress } from "../shared";
 import { workflowAttemptStatements } from "./source-evidence-repository";
+import { recordWorkflowProgressStatement } from "./workflow-progress-repository";
 
 /** Identity is immutable; a callback advances only its own retained progress fact. */
 export async function recordIngestionWorkflowProgress(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   instanceId: string,
   kind: "parent" | "child",

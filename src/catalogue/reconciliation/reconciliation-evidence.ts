@@ -1,6 +1,6 @@
 import { adapterReconciliationAreas, parsedOfficialArtworkIdentity, requiredSourceAdapter } from "../adapters";
 import { parseRetainedLegalityRules, type RetainedLegalityRule, regionForLineage } from "../legality";
-import { canonicalJson, type LegalityRegion, type SupportedGame, sha256 } from "../shared";
+import { type CatalogueStore, canonicalJson, type LegalityRegion, type SupportedGame, sha256 } from "../shared";
 import {
   type EvidencePlanRequest,
   evidencePlanForRequest,
@@ -103,7 +103,7 @@ type DiscoveryRequestPlanRow = {
 const maximumAggregateReconciliationBytes = 32 * 1024 * 1024;
 
 export async function retainedReconciliationObservation(
-  database: D1Database,
+  database: CatalogueStore,
   evidenceObjects: R2Bucket,
   runId: string,
 ) {
@@ -424,7 +424,7 @@ export async function retainedReconciliationObservation(
 }
 
 async function sourceObservationCountChangeWarnings(
-  database: D1Database,
+  database: CatalogueStore,
   runId: string,
   currentRows: readonly EvidenceRow[],
 ): Promise<Record<string, unknown>[]> {

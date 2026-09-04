@@ -1,3 +1,5 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
@@ -40,43 +42,20 @@ test("a single-lineage graph larger than 5,000 requests completes collection thr
   });
   expect(created.status).toBe(201);
   const run = await created.json<CollectionDocument>();
-  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  const storedRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+  const root = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
   if (root === undefined) throw new Error("pending root request missing");
 
   // Retained, already observed identities occupy sequence numbers
   // 1000..5799, so the live requests appended afterwards start exactly on a
   // 200-request shard boundary: one bounded shard per live host.
   await env.CATALOGUE_DB.batch([
-    env.CATALOGUE_DB.prepare(
-      `WITH RECURSIVE filler(n) AS (
-         SELECT 1 UNION ALL SELECT n + 1 FROM filler WHERE n < ?2
-       )
-       INSERT INTO source_discovery_request_plans (
-         ingestion_run_id, request_id, sequence_number, parent_request_id,
-         method, url, request_headers_json, representation_fingerprint,
-         request_role
-       )
-       SELECT ?1, 'fusion-world-en:detail:' || printf('%08d', n), 999 + n,
-              ?3, 'GET',
-              'https://retained-official-source.invalid/sequence/' || n,
-              '{}', printf('%064x', n), 'detail'
-       FROM filler`,
-    ).bind(run.id, retainedObservedCount, root.request_id),
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO source_requests (
-         ingestion_run_id, request_id, sequence_number, method, url,
-         request_headers_json, representation_fingerprint, state,
-         source_snapshot_id, failure_code, request_role,
-         discovered_from_request_id
-       )
-       SELECT ingestion_run_id, request_id, sequence_number, method, url,
-              request_headers_json, representation_fingerprint, 'observed',
-              NULL, NULL, request_role, parent_request_id
-       FROM source_discovery_request_plans
-       WHERE ingestion_run_id = ?1
-         AND request_id LIKE 'fusion-world-en:detail:%'`,
-    ).bind(run.id),
+    sourceEvidenceQueries
+      .inspectFillerForSingleLineageGraphLargerThan5000RequestsCompletes(env.CATALOGUE_DB)
+      .bind(run.id, retainedObservedCount, root.request_id),
+    sourceEvidenceQueries
+      .insertSourceRequestsForSingleLineageGraphLargerThan5000RequestsCompletes(env.CATALOGUE_DB)
+      .bind(run.id),
   ]);
   const discovered = liveHosts.flatMap((host) =>
     Array.from({ length: requestsPerHost }, (_, index) => ({
@@ -85,14 +64,12 @@ test("a single-lineage graph larger than 5,000 requests completes collection thr
       headers: { accept: "application/json" },
     })),
   );
-  await appendDiscoveredEvidenceRequests(env.CATALOGUE_DB, storedRun, root, discovered);
+  await appendDiscoveredEvidenceRequests(catalogueStore(env.CATALOGUE_DB), storedRun, root, discovered);
   const totalRequests = 1 + retainedObservedCount + discovered.length;
   expect(totalRequests).toBeGreaterThan(5_000);
-  expect(
-    await env.CATALOGUE_DB.prepare("SELECT COUNT(*) AS count FROM source_requests WHERE ingestion_run_id = ?")
-      .bind(run.id)
-      .first("count"),
-  ).toBe(totalRequests);
+  expect(await sourceEvidenceQueries.countSourceRequestsCount(env.CATALOGUE_DB).bind(run.id).first("count")).toBe(
+    totalRequests,
+  );
 
   const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(resumed.status).toBe(202);
@@ -153,19 +130,9 @@ test("a single-lineage graph larger than 5,000 requests completes collection thr
   expect(completed?.snapshots).toHaveLength(200);
   expect(completed?.diagnostics).toHaveLength(200);
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count FROM ingestion_run_capacity_pauses
-     WHERE ingestion_run_id = ?`,
-    )
-      .bind(run.id)
-      .first("count"),
+    await sourceEvidenceQueries.countIngestionRunCapacityPausesCount(env.CATALOGUE_DB).bind(run.id).first("count"),
   ).toBe(0);
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count FROM ingestion_run_retry_pauses
-     WHERE ingestion_run_id = ?`,
-    )
-      .bind(run.id)
-      .first("count"),
+    await sourceEvidenceQueries.countIngestionRunRetryPausesCount(env.CATALOGUE_DB).bind(run.id).first("count"),
   ).toBe(0);
 }, 480_000);

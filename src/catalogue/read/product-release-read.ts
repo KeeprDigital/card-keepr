@@ -1,10 +1,5 @@
-import type { ProductRow } from "./published-read-repository";
-import {
-  currentProductStatement,
-  productCuratedEvidenceStatement,
-  productCollectionStatement,
-} from "./published-read-repository";
 import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
+import type { CatalogueStore } from "../shared";
 import {
   canonicalEtag,
   collectionFilter,
@@ -21,6 +16,12 @@ import {
   singleParameter,
 } from "./collection-endpoint";
 import { canonicalDetailSelf, detailIncludeProjection, detailRepresentationKey } from "./detail-representation";
+import type { ProductRow } from "./published-read-repository";
+import {
+  currentProductStatement,
+  productCollectionStatement,
+  productCuratedEvidenceStatement,
+} from "./published-read-repository";
 
 type ProductOrderValue = {
   id: string;
@@ -44,7 +45,7 @@ const productRoute = "/v1/products";
 const productOrder = "supported-game,official-code-null-last,name-null-last,id";
 
 export async function currentProductResponse(
-  database: D1Database,
+  database: CatalogueStore,
   productId: string,
   request: Request,
   base: PublicBase,
@@ -87,7 +88,7 @@ export async function currentProductResponse(
 }
 
 async function productEvidenceProjection(
-  database: D1Database,
+  database: CatalogueStore,
   catalogueRevisionId: string,
   envelope: ProductEnvelope,
 ): Promise<{
@@ -194,7 +195,7 @@ function curatedFieldReferences(
 }
 
 export async function currentProductsResponse(
-  database: D1Database,
+  database: CatalogueStore,
   request: Request,
   base: PublicBase,
 ): Promise<Response> {

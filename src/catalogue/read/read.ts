@@ -1,25 +1,7 @@
-import type {
-  CatalogueStateRow,
-  RevisionDocumentRow,
-  PrintingDocumentRow,
-  PrintingImageRow,
-  ExportRow,
-} from "./published-read-repository";
-import {
-  exportCollectionStatement,
-  catalogueStatusStatement,
-  catalogueFreshnessStatement,
-  currentCardStatement,
-  cardPrintingsStatement,
-  currentPrintingStatement,
-  printingImageStatement,
-  pendingExportComponentDeletionStatement,
-  catalogueExportStatement,
-} from "./published-read-repository";
 import { parseCatalogueRevisionId, parsePublicationInstant } from "../../http/catalogue";
 import { ifNoneMatchMatches as ifNoneMatch } from "../../http/conditional-request";
 import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
-import { canonicalJson, sha256Text } from "../shared";
+import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import {
   canonicalEtag,
   collectionLimit,
@@ -34,6 +16,24 @@ import {
   revisionHeaders,
 } from "./collection-endpoint";
 import { canonicalDetailSelf, detailIncludeProjection, detailRepresentationKey } from "./detail-representation";
+import type {
+  CatalogueStateRow,
+  ExportRow,
+  PrintingDocumentRow,
+  PrintingImageRow,
+  RevisionDocumentRow,
+} from "./published-read-repository";
+import {
+  cardPrintingsStatement,
+  catalogueExportStatement,
+  catalogueFreshnessStatement,
+  catalogueStatusStatement,
+  currentCardStatement,
+  currentPrintingStatement,
+  exportCollectionStatement,
+  pendingExportComponentDeletionStatement,
+  printingImageStatement,
+} from "./published-read-repository";
 import { type SourceFreshnessStorageRow, sourceFreshnessFromStorage } from "./source-freshness";
 
 type DetailEnvelope = {
@@ -59,7 +59,7 @@ type ExportManifest = {
 
 export async function catalogueExportsResponse(
   request: Request,
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
   base: PublicBase,
 ): Promise<Response> {
@@ -198,7 +198,7 @@ function assertCatalogueExportCollectionParameters(url: URL): void {
   collectionParameters(url, ["limit", "after"]);
 }
 
-export async function currentCatalogueStatus(database: D1Database) {
+export async function currentCatalogueStatus(database: CatalogueStore) {
   const [state, freshness] = await Promise.all([
     catalogueStatusStatement(database).first<CatalogueStateRow>(),
     catalogueFreshnessStatement(database).all<SourceFreshnessStorageRow>(),
@@ -222,7 +222,7 @@ export async function currentCatalogueStatus(database: D1Database) {
 }
 
 export async function currentCardResponse(
-  database: D1Database,
+  database: CatalogueStore,
   cardId: string,
   request: Request,
   base: PublicBase,
@@ -273,7 +273,7 @@ export async function currentCardResponse(
 }
 
 export async function currentPrintingResponse(
-  database: D1Database,
+  database: CatalogueStore,
   printingId: string,
   request: Request,
   base: PublicBase,
@@ -313,7 +313,7 @@ export async function currentPrintingResponse(
 
 export async function printingImageContentResponse(
   request: Request,
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
   imageId: string,
 ): Promise<Response | null> {
@@ -389,7 +389,7 @@ function detailEnvelope(documentJson: string): DetailEnvelope {
 
 export async function catalogueExportResponse(
   request: Request,
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
   revisionId: string,
   base: PublicBase,
@@ -420,7 +420,7 @@ export async function catalogueExportResponse(
 
 export async function catalogueExportComponentResponse(
   request: Request,
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
   revisionId: string,
   componentName: string,
@@ -552,12 +552,12 @@ async function readableSha256(readable: ReadableStream<Uint8Array>): Promise<str
   return [...new Uint8Array(await digest.digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-async function findExport(database: D1Database, revisionId: string): Promise<ExportRow | null> {
+async function findExport(database: CatalogueStore, revisionId: string): Promise<ExportRow | null> {
   return catalogueExportStatement(database, revisionId).first<ExportRow>();
 }
 
 async function loadVerifiedExportManifest(
-  database: D1Database,
+  database: CatalogueStore,
   bucket: R2Bucket,
   revisionId: string,
 ): Promise<{

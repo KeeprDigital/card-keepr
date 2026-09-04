@@ -1,3 +1,5 @@
+import { fixtureSourceSnapshotStatement, cloneFixtureFetchAttemptStatement, cloneFixtureSourceSnapshotStatement, restoreFixturePublicationHealthStatement } from "../helpers/query-helpers/runtime-fixtures";
+import { catalogueStore } from "../../src/catalogue/shared";
 import {
   WorkerEntrypoint,
   WorkflowEntrypoint,
@@ -86,7 +88,7 @@ export default {
     ) {
       return Response.json(
         await startEvidenceRun(
-          env.CATALOGUE_DB,
+          catalogueStore(env.CATALOGUE_DB),
           await request.json<StartEvidenceRunRequest>(),
           "synthetic_fixture",
         ),
@@ -111,9 +113,7 @@ export default {
       const suffix = crypto.randomUUID();
       const snapshotId = `srcsnap_acceptance_${suffix}`;
       const fetchAttemptId = `srcfetch_acceptance_${suffix}`;
-      const source = await env.CATALOGUE_DB.prepare(
-        "SELECT * FROM source_snapshots WHERE id = ?",
-      ).bind(body.source_snapshot_id).first<{
+      const source = await fixtureSourceSnapshotStatement(env.CATALOGUE_DB).bind(body.source_snapshot_id).first<{
         ingestion_run_id: string;
         request_id: string;
         fetch_attempt_id: string;
@@ -124,36 +124,8 @@ export default {
         });
       }
       await env.CATALOGUE_DB.batch([
-        env.CATALOGUE_DB.prepare(
-          `INSERT INTO source_fetch_attempts (
-             id, ingestion_run_id, request_id, attempt_number,
-             requested_at, completed_at, outcome, http_status,
-             response_headers_json, retry_after_ms, diagnostic
-           )
-           SELECT ?, ingestion_run_id, request_id, attempt_number + 100,
-                  requested_at, completed_at, outcome, http_status,
-                  response_headers_json, retry_after_ms, diagnostic
-           FROM source_fetch_attempts WHERE id = ?`,
-        ).bind(fetchAttemptId, source.fetch_attempt_id),
-        env.CATALOGUE_DB.prepare(
-          `INSERT INTO source_snapshots (
-             id, ingestion_run_id, request_id, fetch_attempt_id,
-             request_method, request_url, request_headers_json,
-             representation_fingerprint, response_vary_json, retrieved_at,
-             http_status, response_headers_json, media_type, content_digest,
-             content_byte_length, content_object_key, source_lineage,
-             supported_game, game_profile_version, adapter_version,
-             reused_source_snapshot_id
-           )
-           SELECT ?, ingestion_run_id, request_id, ?, request_method,
-                  request_url, request_headers_json,
-                  representation_fingerprint, response_vary_json,
-                  retrieved_at, http_status, response_headers_json,
-                  media_type, content_digest, content_byte_length,
-                  content_object_key, source_lineage, supported_game,
-                  game_profile_version, ?, id
-           FROM source_snapshots WHERE id = ?`,
-        ).bind(
+        cloneFixtureFetchAttemptStatement(env.CATALOGUE_DB).bind(fetchAttemptId, source.fetch_attempt_id),
+        cloneFixtureSourceSnapshotStatement(env.CATALOGUE_DB).bind(
           snapshotId,
           fetchAttemptId,
           body.adapter_version,
@@ -179,10 +151,7 @@ export default {
     ) {
       const resolved = await response;
       if (resolved.status === 200) {
-        await env.CATALOGUE_DB.prepare(
-          `UPDATE operation_state SET recovery_health = 'healthy'
-           WHERE singleton = 1 AND recovery_health = 'degraded'`,
-        ).run();
+        await restoreFixturePublicationHealthStatement(env.CATALOGUE_DB).run();
       }
       return resolved;
     }
