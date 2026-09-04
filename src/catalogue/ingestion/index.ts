@@ -2,26 +2,24 @@
 // owner administration (approve, reject, retry, inspect, status), the
 // fixture run, card-search repair, and the guarded Production Release.
 // `AdministrationProblem` is deliberately not re-exported here: `shared`
-// owns it, and the compatibility re-export on `ingestion.ts` goes with #98.
+// owns it.
 // See ../README.md (issue #96).
 
 export {
   administrationStatus,
-  approveRun,
   inspectCandidate,
   productionReleaseSmokeTargets,
-  rejectRun,
   releaseSmokeSearchQuery,
-  retryPublicationCleanup,
-  retryRun,
-  showRun,
-  startFixtureRun,
-  type ApproveRunRequest,
-  type RejectRunRequest,
-  type RetryPublicationCleanupRequest,
-  type RetryRunRequest,
-  type StartRunRequest,
-} from "./ingestion";
+} from "./administration-inspection";
+export { approveRun } from "./publication-lifecycle";
+export { rejectRun, retryPublicationCleanup, retryRun, showRun, startFixtureRun } from "./run-lifecycle";
+export type {
+  ApproveRunRequest,
+  RejectRunRequest,
+  RetryPublicationCleanupRequest,
+  RetryRunRequest,
+  StartRunRequest,
+} from "./run-types";
 export {
   FixtureInputError,
   firstCatalogueFixture,
@@ -34,3 +32,5 @@ export {
   prepareProductionRelease,
   type ProductionTarget,
 } from "./production-release";
+
+export { ingestionRoutes } from "./routes";

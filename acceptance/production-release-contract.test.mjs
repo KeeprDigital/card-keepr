@@ -298,10 +298,19 @@ test("only the guarded CLI provider can select release mode", () => {
 });
 
 test("owner preparation is durable before dispatch and post-migration failure is retained", () => {
-  const route = readFileSync("apps/ingestion/src/index.ts", "utf8");
+  const worker = readFileSync("apps/ingestion/src/index.ts", "utf8");
+  const cluster = readFileSync("src/catalogue/ingestion/index.ts", "utf8");
+  const routes = readFileSync("src/catalogue/ingestion/routes.ts", "utf8");
   const domain = readFileSync("src/catalogue/ingestion/production-release.ts", "utf8");
   const script = readFileSync("scripts/production-release.mjs", "utf8");
-  assert.match(route, /POST" && url\.pathname === "\/v1\/production-releases"/u);
+  // Resource routes now own the handler; the worker mounts their exported table.
+  assert.match(worker, /import \{ ingestionRoutes \} from "\.\.\/\.\.\/\.\.\/src\/catalogue\/ingestion"/u);
+  assert.match(worker, /const routes = \[[\s\S]*?\.\.\.ingestionRoutes/u);
+  assert.match(cluster, /export \{ ingestionRoutes \} from "\.\/routes"/u);
+  assert.match(
+    routes,
+    /route<Context>\("POST", "\/v1\/production-releases",[\s\S]*?return Response\.json\(await prepareProductionRelease\(env\.CATALOGUE_DB, body, productionTarget\(env\), observedAt\), \{\s*status: 201,/u,
+  );
   assert.match(domain, /prepare_production_release/u);
   assert.match(domain, /administration_idempotency/u);
   assert.match(script, /claim_production_release/u);
