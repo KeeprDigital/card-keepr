@@ -1423,22 +1423,20 @@ async function collectionPauseReplay(
   idempotencyKey: string,
   requestJson: string,
 ): Promise<Record<string, unknown> | null> {
-  const retained = await database
-    .prepare(
-      `SELECT operation, request_json, response_json
+  const retained = await replayByDigest({
+    lookup: () =>
+      database
+        .prepare(
+          `SELECT operation, request_json, response_json
        FROM administration_idempotency WHERE idempotency_key = ?`,
-    )
-    .bind(idempotencyKey)
-    .first<{ operation: string; request_json: string; response_json: string }>();
-  if (retained === null) return null;
-  if (retained.operation !== collectionPauseOperation || retained.request_json !== requestJson) {
-    throw new AdministrationProblem(
-      409,
-      "idempotency_conflict",
-      "The idempotency key was already used for a different request.",
-    );
-  }
-  return JSON.parse(retained.response_json) as Record<string, unknown>;
+        )
+        .bind(idempotencyKey)
+        .first<{ operation: string; request_json: string; response_json: string }>(),
+    retainedDigest: (retained) => canonicalJson([retained.operation, retained.request_json]),
+    requestDigest: canonicalJson([collectionPauseOperation, requestJson]),
+    conflictDetail: "The idempotency key was already used for a different request.",
+  });
+  return retained === null ? null : (JSON.parse(retained.response_json) as Record<string, unknown>);
 }
 
 // The deterministic progress evidence stall classification consumes: the
@@ -1793,23 +1791,21 @@ async function capacityExtensionReplay(
   idempotencyKey: string,
   requestDigest: string,
 ): Promise<Record<string, unknown> | null> {
-  const retained = await database
-    .prepare(
-      `SELECT request_digest, response_json
+  const retained = await replayByDigest({
+    lookup: () =>
+      database
+        .prepare(
+          `SELECT request_digest, response_json
        FROM ingestion_run_capacity_extensions
        WHERE idempotency_key = ?`,
-    )
-    .bind(idempotencyKey)
-    .first<{ request_digest: string; response_json: string }>();
-  if (retained === null) return null;
-  if (retained.request_digest !== requestDigest) {
-    throw new AdministrationProblem(
-      409,
-      "idempotency_conflict",
-      "The idempotency key was already used for a different capacity extension.",
-    );
-  }
-  return JSON.parse(retained.response_json) as Record<string, unknown>;
+        )
+        .bind(idempotencyKey)
+        .first<{ request_digest: string; response_json: string }>(),
+    retainedDigest: (retained) => retained.request_digest,
+    requestDigest: requestDigest,
+    conflictDetail: "The idempotency key was already used for a different capacity extension.",
+  });
+  return retained === null ? null : (JSON.parse(retained.response_json) as Record<string, unknown>);
 }
 
 export type CollectionTerminationRequest = Readonly<{

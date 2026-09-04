@@ -1,22 +1,27 @@
-import {
-  type LegalityRegion,
-  canonicalJson,
-  sha256Text,
-  isIsoCalendarDate,
-  maximumLegalityStatusRules,
-} from "../shared";
+import { type PublicBase, publicUrl } from "../../http/public-base";
+import { requiredLegalityRegionsForGame } from "../adapters";
 import {
   evaluateLegalityRuleEffect,
   legalityRuleCardIds,
-  unresolvedTargetScope,
   parseStoredCatalogueCard,
   parseStoredLegalityRule,
   type StoredLegalityStatusCard,
   type StoredLegalityStatusRule,
+  unresolvedTargetScope,
 } from "../legality";
-import { ifNoneMatchMatches } from "../../http/conditional-request";
-import { publicUrl, type PublicBase } from "../../http/public-base";
-import { requiredLegalityRegionsForGame } from "../adapters";
+import { isIsoCalendarDate, type LegalityRegion, maximumLegalityStatusRules } from "../shared";
+import {
+  canonicalEtag,
+  collectionFilter,
+  collectionPage,
+  collectionParameters,
+  collectionSelf,
+  conditionalResponse,
+  invalidParameter as invalidQueryParameter,
+  pinRevision,
+  ReadProblem,
+  revisionHeaders,
+} from "./collection-endpoint";
 
 type ContextRow = {
   current_revision_id: string;
@@ -37,20 +42,6 @@ type StoredRule = {
   sourceRetrievedAt: string | null;
 };
 
-export class LegalityStatusProblem extends Error {
-  constructor(
-    readonly status: 400 | 404 | 422 | 500,
-    readonly code: "invalid_parameter" | "not_found" | "invalid_legality_region" | "internal_error",
-    message: string,
-    readonly invalidParameter: {
-      name: string;
-      reason: string;
-    } | null = null,
-  ) {
-    super(message);
-  }
-}
-
 export async function contextualLegalityStatusResponse(
   request: Request,
   database: D1Database,
@@ -58,28 +49,25 @@ export async function contextualLegalityStatusResponse(
 ): Promise<Response> {
   const url = new URL(request.url);
   const query = parseQuery(url);
+  const revision = await pinRevision(database, null, url.pathname, base, { projection: false });
   const context = await database
     .prepare(
-      `SELECT catalogue.current_revision_id, catalogue.published_at,
+      `SELECT catalogue.id AS current_revision_id, catalogue.published_at,
               card.document_json
-       FROM catalogue_state AS catalogue
+       FROM catalogue_revisions AS catalogue
        JOIN revision_cards AS card
-         ON card.catalogue_revision_id = catalogue.current_revision_id
-       WHERE catalogue.singleton = 1 AND card.card_id = ?`,
+         ON card.catalogue_revision_id = catalogue.id
+       WHERE card.card_id = ? AND catalogue.id = ?`,
     )
-    .bind(query.cardId)
+    .bind(query.cardId, revision.id)
     .first<ContextRow>();
   if (context === null) {
-    throw new LegalityStatusProblem(
-      404,
-      "not_found",
-      "The requested Card does not exist in the current Catalogue Revision.",
-    );
+    throw new ReadProblem(404, "not_found", "The requested Card does not exist in the current Catalogue Revision.");
   }
   const card = parsedStoredDocument(() => parseStoredCatalogueCard(context.document_json));
   const supportedRegions = requiredLegalityRegionsForGame(card.game);
   if (query.region !== null && !supportedRegions.includes(query.region)) {
-    throw new LegalityStatusProblem(
+    throw new ReadProblem(
       422,
       "invalid_legality_region",
       card.game === "gundam"
@@ -88,9 +76,10 @@ export async function contextualLegalityStatusResponse(
     );
   }
   const regions = query.region === null ? supportedRegions : [query.region];
-  const rows = await database
-    .prepare(
-      `WITH applicable AS (
+  const page = await collectionPage<RuleRow>(
+    database
+      .prepare(
+        `WITH applicable AS (
          SELECT legality_rule_id
          FROM revision_legality_rule_applicability
          WHERE catalogue_revision_id = ?
@@ -140,31 +129,42 @@ export async function contextualLegalityStatusResponse(
          )
        ORDER BY rule.region, rule.legality_rule_id
        LIMIT ?`,
-    )
-    .bind(
-      context.current_revision_id,
-      query.cardId,
-      context.current_revision_id,
-      context.current_revision_id,
-      JSON.stringify(regions),
-      card.game,
-      query.format,
-      query.on,
-      query.on,
-      query.eventTier,
-      maximumLegalityStatusRules + 1,
-    )
-    .all<RuleRow>();
-  if (rows.results.length > maximumLegalityStatusRules) {
-    throw new LegalityStatusProblem(500, "internal_error", "The request could not be completed.");
+      )
+      .bind(
+        context.current_revision_id,
+        query.cardId,
+        context.current_revision_id,
+        context.current_revision_id,
+        JSON.stringify(regions),
+        card.game,
+        query.format,
+        query.on,
+        query.on,
+        query.eventTier,
+        maximumLegalityStatusRules + 1,
+      ),
+    maximumLegalityStatusRules,
+  );
+  if (page.hasMore) {
+    throw new ReadProblem(500, "internal_error", "The request could not be completed.");
   }
-  const stored: StoredRule[] = rows.results.map((row) => ({
+  const stored: StoredRule[] = page.rows.map((row) => ({
     rule: parsedStoredDocument(() => parseStoredLegalityRule(row.document_json)),
     sourceRetrievedAt: row.source_retrieved_at,
   }));
   const rules = stored.map(({ rule }) => rule);
   const data = regions.map((region) => deriveRegionStatus(card, rules, query, region));
-  const self = publicUrl(base, `${url.pathname}${url.search}`);
+  const self = publicUrl(
+    base,
+    collectionSelf(url.pathname, {
+      card_id: query.cardId,
+      on: query.on,
+      format: query.format,
+      event_tier: query.eventTier,
+      region: query.region,
+      include: query.includeEvidence ? "evidence" : null,
+    }),
+  );
   const document = {
     data,
     ...(query.includeEvidence ? legalityEvidenceSidecar(stored, query, regions) : {}),
@@ -174,31 +174,17 @@ export async function contextualLegalityStatusResponse(
     },
     links: { self },
   };
-  const etag = `"${await sha256Text(canonicalJson(document))}"`;
-  if (ifNoneMatchMatches(request, etag)) {
-    return new Response(null, {
-      status: 304,
-      headers: {
-        etag,
-        "x-catalogue-revision": context.current_revision_id,
-        "cache-control": "private, max-age=0, must-revalidate",
-      },
-    });
-  }
-  return Response.json(document, {
-    headers: {
-      etag,
-      "x-catalogue-revision": context.current_revision_id,
-      "cache-control": "private, max-age=0, must-revalidate",
-    },
-  });
+  const etag = await canonicalEtag(document);
+  const headers = revisionHeaders(revision.id, etag);
+  const conditional = conditionalResponse(request, headers);
+  return conditional ?? Response.json(document, { headers });
 }
 
 function parsedStoredDocument<T>(parse: () => T): T {
   try {
     return parse();
   } catch {
-    throw new LegalityStatusProblem(500, "internal_error", "The request could not be completed.");
+    throw new ReadProblem(500, "internal_error", "The request could not be completed.");
   }
 }
 
@@ -356,18 +342,7 @@ function parseQuery(url: URL): {
   region: LegalityRegion | null;
   includeEvidence: boolean;
 } {
-  const allowed = new Set(["card_id", "on", "format", "event_tier", "region", "include"]);
-  for (const key of url.searchParams.keys()) {
-    if (!allowed.has(key)) {
-      if (key.length === 0) {
-        throw invalidQueryParameter("query", "query parameter names must be non-empty.");
-      }
-      throw invalidQueryParameter(key, `${key} is not accepted.`);
-    }
-    if (url.searchParams.getAll(key).length !== 1) {
-      throw invalidQueryParameter(key, `${key} must be supplied exactly once.`);
-    }
-  }
+  collectionParameters(url, ["card_id", "on", "format", "event_tier", "region", "include"]);
   const cardId = requiredParameter(url, "card_id");
   if (cardId.length > 200 || !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(cardId)) {
     throw invalidQueryParameter("card_id", "card_id must be an opaque identity of at most 200 characters.");
@@ -405,14 +380,10 @@ function requiredParameter(url: URL, name: string): string {
 }
 
 function optionalParameter(url: URL, name: string): string | null {
-  const value = url.searchParams.get(name);
+  const value = collectionFilter(url, name);
   if (value === null) return null;
   if (value.length === 0 || value !== value.trim()) {
     throw invalidQueryParameter(name, `${name} must be a non-empty string.`);
   }
   return value;
-}
-
-function invalidQueryParameter(name: string, reason: string): LegalityStatusProblem {
-  return new LegalityStatusProblem(400, "invalid_parameter", reason, { name, reason });
 }

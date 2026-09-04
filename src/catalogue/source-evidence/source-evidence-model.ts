@@ -1,4 +1,4 @@
-import { canonicalJson, sha256, utf8, AdministrationProblem } from "../shared";
+import { decodeDocument, canonicalJson, sha256, utf8, AdministrationProblem } from "../shared";
 import {
   assertAdapterRequestSurface,
   assertAdapterBinding,
@@ -535,43 +535,23 @@ function resolvedDiscoveryUrl(discovery: Record<string, unknown>): string | null
 }
 
 export function parseEvidencePlan(json: string): EvidencePlan {
-  const value: unknown = JSON.parse(json);
-  if (
-    !isRecord(value) ||
-    typeof value.supported_game !== "string" ||
-    typeof value.source_lineage !== "string" ||
-    typeof value.game_profile_version !== "string" ||
-    typeof value.adapter_version !== "string" ||
-    !Array.isArray(value.requests)
-  ) {
-    throw new Error("Stored ingestion evidence plan is invalid");
-  }
-  const requests = value.requests.map((item): EvidencePlanRequest => {
-    if (
-      !isRecord(item) ||
-      typeof item.id !== "string" ||
-      typeof item.url !== "string" ||
-      item.method !== "GET" ||
-      !isRecord(item.headers) ||
-      typeof item.representation_fingerprint !== "string" ||
-      Object.values(item.headers).some((header) => typeof header !== "string")
-    ) {
-      throw new Error("Stored ingestion evidence plan is invalid");
-    }
-    return {
-      id: item.id,
-      url: item.url,
-      method: "GET",
-      headers: item.headers as Record<string, string>,
-      representation_fingerprint: item.representation_fingerprint,
-    };
-  });
+  const value = decodeDocument<EvidencePlan>(
+    "evidencePlan",
+    JSON.parse(json),
+    "Stored ingestion evidence plan is invalid",
+  );
   return {
     supported_game: value.supported_game,
     source_lineage: value.source_lineage,
     game_profile_version: value.game_profile_version,
     adapter_version: value.adapter_version,
-    requests,
+    requests: value.requests.map((item) => ({
+      id: item.id,
+      url: item.url,
+      method: "GET",
+      headers: item.headers,
+      representation_fingerprint: item.representation_fingerprint,
+    })),
   };
 }
 
@@ -621,11 +601,7 @@ export function validOfficialSourceUrl(value: string): URL {
 }
 
 export function parseStringRecord(json: string): Record<string, string> {
-  const value: unknown = JSON.parse(json);
-  if (!isRecord(value) || Object.values(value).some((item) => typeof item !== "string")) {
-    throw new Error("Stored header metadata is invalid");
-  }
-  return value as Record<string, string>;
+  return decodeDocument("stringRecord", JSON.parse(json), "Stored header metadata is invalid");
 }
 
 export function headersRecord(headers: Headers): Record<string, string> {
