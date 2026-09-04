@@ -1,4 +1,5 @@
-import { type CatalogueStore, repositoryStatements } from "../shared";
+import { atomicRepositoryStatement, type CatalogueStore, repositoryStatements } from "../shared";
+import { materializeCardSearchChunkStatements } from "./card-search-materialization-repository";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
 export function createSearchRepairRequestStatement(
@@ -278,12 +279,21 @@ export function insertRepairedCardSearchChunkStatement(
     searchText: string;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`INSERT OR IGNORE INTO revision_card_search_chunks (
              catalogue_revision_id, card_id, field_ordinal,
              chunk_ordinal, search_text
            ) VALUES (?, ?, ?, ?, ?)`)
     .bind(input.revisionId, input.cardId, input.fieldOrdinal, input.chunkOrdinal, input.searchText);
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: materializeCardSearchChunkStatements(database, {
+      revisionId: input.revisionId,
+      chunksJson: JSON.stringify([
+        { card_id: input.cardId, field_ordinal: input.fieldOrdinal, chunk_ordinal: input.chunkOrdinal },
+      ]),
+    }),
+  });
 }
 
 export function advanceCardSearchChunkOffsetStatement(

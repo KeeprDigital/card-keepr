@@ -7,6 +7,8 @@ import {
 } from "../../../src/catalogue/ingestion/administration-idempotency-repository";
 import {
   approveNoChangeRunStatement,
+  publishReconciledPrintingImagesStatement,
+  publishRevisionPrintingImagesStatement,
   recordNoChangeResultStatement,
   registerCatalogueRevisionStatement,
 } from "../../../src/catalogue/ingestion/publication-commit-repository";
@@ -18,6 +20,7 @@ import { atomicRepositoryStatement, catalogueStore, runTransitionGuardStatement 
 import {
   coreGuardPublicationTime,
   coreGuardRun,
+  coreRevisionImageCount,
   markCoreGuardSibling,
   removeAdministrationGuards,
   removeCoreRunGuards,
@@ -26,6 +29,7 @@ import {
   seedCoreGuardRun,
   terminateCoreRunWithFailureCode,
 } from "./query-helpers/core-guards";
+import { seedSearchMaterializationRevision } from "./query-helpers/search-materialization";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 beforeEach(async () => {
@@ -220,4 +224,40 @@ test("an already completed administration action cannot acquire another claim wi
       expiresAt: "2026-09-02T00:00:00.000Z",
     }).run(),
   ).rejects.toThrow("administration_idempotency_completed");
+});
+
+test("one image with missing projected content rejects the entire multi-image publication", async () => {
+  await removePublicationGuards(testEnv.CATALOGUE_DB);
+  const database = catalogueStore(testEnv.CATALOGUE_DB);
+  // This fixture creates a real approved revision with no published image rows.
+  await seedCoreGuardRun(testEnv.CATALOGUE_DB, "run_image_fixture_reset", "planning", false);
+  await seedSearchMaterializationRevision(testEnv.CATALOGUE_DB);
+  const images = ["image_valid", "image_invalid"].map((id) => ({
+    id,
+    printing_id: id,
+    role: "front",
+    media_type: "image/webp",
+    width: 1,
+    height: 1,
+    content_sha256: "a".repeat(64),
+    content_byte_length: 1,
+    object_key: `printing-images/${id}`,
+  }));
+  await publishReconciledPrintingImagesStatement(database, JSON.stringify(images)).run();
+  await expect(
+    publishRevisionPrintingImagesStatement(database, {
+      revisionId: "catrev_materialization",
+      imagesJson: JSON.stringify(
+        images.map((image, index) => ({
+          image_id: image.id,
+          printing_id: image.printing_id,
+          media_type: index === 0 ? image.media_type : null,
+          content_sha256: image.content_sha256,
+          content_byte_length: image.content_byte_length,
+          object_key: image.object_key,
+        })),
+      ),
+    }).run(),
+  ).rejects.toThrow("revision_printing_image_content_missing");
+  expect(await coreRevisionImageCount(database, "catrev_materialization").first("count")).toBe(0);
 });

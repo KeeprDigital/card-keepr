@@ -76,3 +76,9 @@ export async function removePublicationGuards(database: D1Database): Promise<voi
     database.prepare("DROP TRIGGER IF EXISTS revision_printing_image_content_projected"),
   ]);
 }
+
+export function coreRevisionImageCount(database: CatalogueStore, revisionId: string): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare("SELECT count(*) AS count FROM revision_printing_images WHERE catalogue_revision_id = ?")
+    .bind(revisionId);
+}

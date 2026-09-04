@@ -6,6 +6,11 @@ import {
   runTransitionGuardStatement,
 } from "../shared";
 import {
+  archiveEmptyCardQueryRevisionStatement,
+  materializeCardSearchChunkStatements,
+  removeArchivedCardSearchStatements,
+} from "./card-search-materialization-repository";
+import {
   cataloguePublicationGuardStatement,
   noChangeResultGuardStatement,
   projectedPrintingImagesGuardStatement,
@@ -108,7 +113,7 @@ export function publishCardSearchChunksStatement(
   database: CatalogueStore,
   input: Readonly<{ revisionId: string; chunksJson: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`INSERT INTO revision_card_search_chunks (
            catalogue_revision_id, card_id, field_ordinal,
            chunk_ordinal, search_text
@@ -119,6 +124,10 @@ export function publishCardSearchChunksStatement(
                 json_extract(value, '$.search_text')
          FROM json_each(?)`)
     .bind(input.revisionId, input.chunksJson);
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: materializeCardSearchChunkStatements(database, input),
+  });
 }
 
 export function publishPrintingDocumentsStatement(
@@ -264,12 +273,17 @@ export function archiveOldQueryRevisionsStatement(database: CatalogueStore, revi
 }
 
 export function deleteArchivedCardQueryDocumentsStatement(database: CatalogueStore): D1PreparedStatement {
-  return repositoryStatements(database).prepare(`DELETE FROM revision_card_query_documents
+  const statement = repositoryStatements(database).prepare(`DELETE FROM revision_card_query_documents
        WHERE catalogue_revision_id IN (
          SELECT catalogue_revision_id
          FROM catalogue_query_revisions
          WHERE state = 'archived'
        )`);
+  return atomicRepositoryStatement(database, {
+    statement,
+    before: removeArchivedCardSearchStatements(database),
+    after: [archiveEmptyCardQueryRevisionStatement(database)],
+  });
 }
 
 export function registerVerifiedCatalogueExportStatement(
