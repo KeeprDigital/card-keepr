@@ -5,6 +5,7 @@ import {
   repositoryStatements,
   runTransitionGuardStatement,
 } from "../shared";
+import { retainCandidateEvidenceStatement } from "./evidence-retention-repository";
 // Prepared statements only; callers own execution and atomic batch composition.
 
 export function createReconciliationContextStatement(
@@ -194,8 +195,10 @@ export function candidatePlansStatement(
   database: CatalogueStore,
   input: Readonly<{ runId: string; warningsJson: string; plansJson: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`INSERT INTO reconciliation_candidates (
+  return atomicRepositoryStatement(database, {
+    after: [retainCandidateEvidenceStatement(database, input)],
+    statement: repositoryStatements(database)
+      .prepare(`INSERT INTO reconciliation_candidates (
          ingestion_run_id, source_observation_set_id, source_snapshot_id,
          source_observation_id, card_id, printing_id, source_lineage,
          locator, variant_key, compatibility_json, memberships_json,
@@ -218,7 +221,8 @@ export function candidatePlansStatement(
               '{"reconciliation_context":"shared"}',
               json_extract(planned.value, '$.observation_kind')
        FROM json_each(?) AS planned`)
-    .bind(input.runId, input.warningsJson, input.plansJson);
+      .bind(input.runId, input.warningsJson, input.plansJson),
+  });
 }
 
 export function evidencePartitionsStatement(
