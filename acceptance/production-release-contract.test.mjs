@@ -321,13 +321,16 @@ test("owner preparation is durable before dispatch and post-migration failure is
   assert.match(script, /roll_forward_required/u);
 });
 
-test("the guarded Production Release schema retains immutable state and legal transitions", () => {
+test("the Production Release baseline retains immutable request identity and closed state vocabulary", () => {
   const sql = readFileSync("migrations/0001_baseline.sql", "utf8");
   assert.match(sql, /CREATE TABLE production_releases/u);
   assert.match(sql, /requested.*preflight.*migrating.*deploying.*smoke_testing.*succeeded.*failed/su);
   assert.match(sql, /one_active_production_release/u);
   assert.match(sql, /production_release_request_immutable/u);
-  assert.match(sql, /illegal production release transition/u);
+  // #106 moved legal transition authority into the release compiler. The full
+  // executed transition matrix is covered by production-release-state.test.mjs;
+  // the folded baseline must not bring the removed SQL state trigger back.
+  assert.doesNotMatch(sql, /illegal production release transition/u);
   assert.match(sql, /replacement_database_id/u);
   assert.match(sql, /retained_database_id/u);
   assert.match(sql, /roll_forward_required/u);
