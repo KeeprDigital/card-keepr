@@ -27,9 +27,18 @@ test("production release is manual, serialized, versioned, and owns all producti
   // migrations still run through wrangler.
   assert.doesNotMatch(release, /d1 execute/u);
   assert.doesNotMatch(failure, /d1 execute/u);
-  assert.match(release, /production-release-d1\.mjs execute --config apps\/ingestion\/wrangler\.jsonc --file \/tmp\/production-release\/live-preflight\.sql/u);
-  assert.match(release, /production-release-d1\.mjs execute --config apps\/ingestion\/wrangler\.jsonc --file \/tmp\/production-release\/claim\.sql/u);
-  assert.match(failure, /production-release-d1\.mjs execute --config "\$\{config\}" --file "\$\{release_directory\}\/cleanup\.sql"/u);
+  assert.match(
+    release,
+    /production-release-d1\.mjs execute --config apps\/ingestion\/wrangler\.jsonc --file \/tmp\/production-release\/live-preflight\.sql/u,
+  );
+  assert.match(
+    release,
+    /production-release-d1\.mjs execute --config apps\/ingestion\/wrangler\.jsonc --file \/tmp\/production-release\/claim\.sql/u,
+  );
+  assert.match(
+    failure,
+    /production-release-d1\.mjs execute --config "\$\{config\}" --file "\$\{release_directory\}\/cleanup\.sql"/u,
+  );
   // The guarded release is the workflow's only job (ADR 0005 removed the
   // credential-probe job), and it is selected by the operation input alone.
   assert.equal((release.split("\njobs:\n")[1].match(/^  [\w-]+:$/gmu) ?? []).length, 1);
@@ -41,20 +50,37 @@ test("production release is manual, serialized, versioned, and owns all producti
   // upload and before activation, so config changes ship through the guard.
   assert.match(release, /versions upload[\s\S]*production-release-provider\.mjs verify-version[\s\S]*versions deploy/u);
   assert.match(release, /RELEASE_WORKER=card-keepr-api [^\n]*\$\{API_RELEASE_CONFIG\}[^\n]*verify-version/u);
-  assert.match(release, /RELEASE_WORKER=card-keepr-ingestion [^\n]*\$\{INGESTION_RELEASE_CONFIG\}[^\n]*verify-version/u);
+  assert.match(
+    release,
+    /RELEASE_WORKER=card-keepr-ingestion [^\n]*\$\{INGESTION_RELEASE_CONFIG\}[^\n]*verify-version/u,
+  );
   // Issue #123: zone routes are script-level triggers that `versions deploy`
   // never applies, so both workers' routes are deployed after activation and
   // before the binding observation and smoke checks read the public mounts.
-  assert.match(release, /versions deploy[\s\S]*Deploy the route triggers[\s\S]*triggers deploy --config "\$\{API_RELEASE_CONFIG\}"[\s\S]*triggers deploy --config "\$\{INGESTION_RELEASE_CONFIG\}"[\s\S]*Observe the binding while recovery remains blocked[\s\S]*production-smoke\.mjs/u);
+  assert.match(
+    release,
+    /versions deploy[\s\S]*Deploy the route triggers[\s\S]*triggers deploy --config "\$\{API_RELEASE_CONFIG\}"[\s\S]*triggers deploy --config "\$\{INGESTION_RELEASE_CONFIG\}"[\s\S]*Observe the binding while recovery remains blocked[\s\S]*production-smoke\.mjs/u,
+  );
   assert.doesNotMatch(release, /triggers deploy[\s\S]*versions deploy/u);
   // GitHub rejects a workflow with more than 25 workflow_dispatch inputs and
   // records a failed run on every push instead; the file carried 26 until #120.
-  const inputs = release.split("\n    inputs:\n")[1].split(/\n  [a-z]/u)[0].match(/^      [a-z_]+:$/gmu) ?? [];
+  const inputs =
+    release
+      .split("\n    inputs:\n")[1]
+      .split(/\n  [a-z]/u)[0]
+      .match(/^      [a-z_]+:$/gmu) ?? [];
   assert.ok(inputs.length >= 1 && inputs.length <= 25, `workflow_dispatch declares ${inputs.length} inputs`);
   assert.match(release, /live-preflight\.sql[\s\S]*claim\.sql[\s\S]*d1 migrations apply[\s\S]*materialize\.sql/u);
   assert.match(release, /migration-started\.sql[\s\S]*d1 migrations apply/u);
   assert.match(release, /replacement-handoff\.sql[\s\S]*replacement-seed[\s\S]*seeded[\s\S]*RELEASE_STATE_CONFIG/u);
-  assert.equal((release.match(/--config "\$\{RELEASE_STATE_CONFIG\}" --file \/tmp\/production-release\/(?:deploying|binding|smoke)\.sql/gu) ?? []).length, 4);
+  assert.equal(
+    (
+      release.match(
+        /--config "\$\{RELEASE_STATE_CONFIG\}" --file \/tmp\/production-release\/(?:deploying|binding|smoke)\.sql/gu,
+      ) ?? []
+    ).length,
+    4,
+  );
   assert.ok(release.indexOf("seeded' <<<") < release.indexOf("versions upload"));
   assert.match(failure, /RELEASE_STATE_CONFIG:-apps\/ingestion\/wrangler\.jsonc/u);
   assert.doesNotMatch(release, /recovery accept|acceptCatalogueRecovery|\/acceptance/u);
@@ -68,7 +94,10 @@ test("production release is manual, serialized, versioned, and owns all producti
   // Pull requests already test refs/pull/N/merge; a push-to-main run repeats it.
   assert.match(ci, /workflow_dispatch:/u);
   assert.doesNotMatch(ci, /^\s*push:/mu);
-  assert.doesNotMatch(ci, /CLOUDFLARE_API_TOKEN|environment:\s*production|--remote|wrangler (?:deploy|versions deploy)/u);
+  assert.doesNotMatch(
+    ci,
+    /CLOUDFLARE_API_TOKEN|environment:\s*production|--remote|wrangler (?:deploy|versions deploy)/u,
+  );
 });
 
 test("the release SHA is resolved through the GitHub API before checkout and ci stays in step with it", () => {
@@ -78,7 +107,10 @@ test("the release SHA is resolved through the GitHub API before checkout and ci 
   // the merged pull request when the SHA is a merge commit on main).
   const release = readFileSync(".github/workflows/production-release.yml", "utf8");
   const ci = readFileSync(".github/workflows/ci.yml", "utf8");
-  const steps = release.split(/\n      - name: /u).slice(1).map((step) => ({ name: step.split("\n")[0], body: step }));
+  const steps = release
+    .split(/\n      - name: /u)
+    .slice(1)
+    .map((step) => ({ name: step.split("\n")[0], body: step }));
   assert.equal(steps[0].name, "Verify the release SHA is contained in main and passed ci");
   assert.equal(steps[1].name, "Check out the exact guarded release");
   const gate = steps[0].body;
@@ -86,7 +118,10 @@ test("the release SHA is resolved through the GitHub API before checkout and ci 
   assert.match(gate, /grep -Eq '\^\[0-9a-f\]\{40\}\$'/u);
   assert.match(gate, /compare\/main\.\.\.\$\{EXPECTED_HEAD_SHA\}/u);
   assert.match(gate, /identical\|behind\) ;;/u);
-  assert.match(gate, /commits\/\$\{EXPECTED_HEAD_SHA\}\/pulls[^\n]*merged_at != null[^\n]*base\.ref == \\"main\\"[^\n]*merge_commit_sha == \\"\$\{EXPECTED_HEAD_SHA\}\\"/u);
+  assert.match(
+    gate,
+    /commits\/\$\{EXPECTED_HEAD_SHA\}\/pulls[^\n]*merged_at != null[^\n]*base\.ref == \\"main\\"[^\n]*merge_commit_sha == \\"\$\{EXPECTED_HEAD_SHA\}\\"/u,
+  );
   assert.match(gate, /commits\/\$\{ci_sha\}\/check-runs\?filter=latest/u);
   assert.match(gate, /app\.slug == "github-actions"/u);
   assert.match(gate, /status != "completed" or \.conclusion != "success"/u);
@@ -96,17 +131,29 @@ test("the release SHA is resolved through the GitHub API before checkout and ci 
   assert.doesNotMatch(release, /:\s*write\b/u);
   // Every ci.yml job is a required check of the release gate, and nothing
   // else is: adding or renaming a ci job updates REQUIRED_CI_JOBS.
-  const required = gate.match(/REQUIRED_CI_JOBS: ([^\n]+)/u)[1].trim().split(/\s+/u).sort();
-  const ciJobs = (ci.split("\njobs:\n")[1].match(/^  [\w-]+:$/gmu) ?? []).map((line) => line.trim().slice(0, -1)).sort();
+  const required = gate
+    .match(/REQUIRED_CI_JOBS: ([^\n]+)/u)[1]
+    .trim()
+    .split(/\s+/u)
+    .sort();
+  const ciJobs = (ci.split("\njobs:\n")[1].match(/^  [\w-]+:$/gmu) ?? [])
+    .map((line) => line.trim().slice(0, -1))
+    .sort();
   assert.deepEqual(required, ciJobs);
   assert.ok(ciJobs.includes("lint"));
   // ci cancels a superseded run of the same pull request.
-  assert.match(ci, /concurrency:\n  group: ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}\n  cancel-in-progress: true/u);
+  assert.match(
+    ci,
+    /concurrency:\n  group: ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}\n  cancel-in-progress: true/u,
+  );
 });
 
 test("workflow hygiene: pinned actions, no secret written to GITHUB_ENV, no misleading job name, stress failures reported", () => {
   // Issue #75.
-  const workflows = ["cache-warm", "ci", "production-preflight", "production-release", "stress"].map((name) => [name, readFileSync(`.github/workflows/${name}.yml`, "utf8")]);
+  const workflows = ["cache-warm", "ci", "production-preflight", "production-release", "stress"].map((name) => [
+    name,
+    readFileSync(`.github/workflows/${name}.yml`, "utf8"),
+  ]);
   for (const [name, text] of workflows) {
     for (const uses of text.match(/^\s*(?:- )?uses: .+$/gmu) ?? []) {
       assert.match(uses, /uses: [\w.-]+\/[\w.-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$/u, `${name}: ${uses.trim()}`);
@@ -128,7 +175,10 @@ test("workflow hygiene: pinned actions, no secret written to GITHUB_ENV, no misl
   assert.match(stress, /gh issue comment/u);
   // The stress job itself keeps the workflow's read-only token.
   assert.doesNotMatch(stress.split("\n  report-failure:")[0], /issues: write/u);
-  assert.match(readFileSync("docs/runbooks/scheduled-stress.md", "utf8"), /60 days[\s\S]*gh workflow enable stress\.yml/u);
+  assert.match(
+    readFileSync("docs/runbooks/scheduled-stress.md", "utf8"),
+    /60 days[\s\S]*gh workflow enable stress\.yml/u,
+  );
 });
 
 test("the Bootstrap Mode branch keeps every data-independent gate, runs no data-dependent smoke, and rolls nothing back", () => {
@@ -137,23 +187,56 @@ test("the Bootstrap Mode branch keeps every data-independent gate, runs no data-
   // that the validator checks against the prepared plan.
   const release = readFileSync(".github/workflows/production-release.yml", "utf8");
   const failure = readFileSync("scripts/production-release-failure.sh", "utf8");
-  assert.match(release, /^      bootstrap:\n        required: false\n        default: "false"\n        type: string$/mu);
+  assert.match(
+    release,
+    /^      bootstrap:\n        required: false\n        default: "false"\n        type: string$/mu,
+  );
   assert.match(release, /BOOTSTRAP: \$\{\{ inputs\.bootstrap \}\}/u);
-  const steps = release.split(/\n      - name: /u).slice(1).map((step) => ({ name: step.split("\n")[0], body: step }));
+  const steps = release
+    .split(/\n      - name: /u)
+    .slice(1)
+    .map((step) => ({ name: step.split("\n")[0], body: step }));
   const bootstrapOnly = steps.filter((step) => /if: inputs\.bootstrap == 'true'/u.test(step.body));
   const populatedOnly = steps.filter((step) => /if: inputs\.bootstrap != 'true'/u.test(step.body));
   const shared = steps.filter((step) => !/inputs\.bootstrap/u.test(step.body));
-  assert.deepEqual(bootstrapOnly.map((step) => step.name), ["Transfer the pre-migration fence to the Production Release lease in Bootstrap Mode", "Run reduced Bootstrap Mode smoke checks"]);
-  assert.deepEqual(populatedOnly.map((step) => step.name), ["Transfer the pre-migration fence to the durable Production Release", "Run black-box production smoke checks"]);
+  assert.deepEqual(
+    bootstrapOnly.map((step) => step.name),
+    [
+      "Transfer the pre-migration fence to the Production Release lease in Bootstrap Mode",
+      "Run reduced Bootstrap Mode smoke checks",
+    ],
+  );
+  assert.deepEqual(
+    populatedOnly.map((step) => step.name),
+    ["Transfer the pre-migration fence to the durable Production Release", "Run black-box production smoke checks"],
+  );
   // Every other gate stays: exact dispatch, target and secret inventory,
   // live recheck, fence, migrations, version bindings, activation, routes.
-  for (const required of [/validate-dispatch/u, /verify-target/u, /live-preflight\.sql/u, /claim\.sql/u, /migrations apply/u, /versions upload/u, /verify-version/u, /versions deploy/u, /triggers deploy/u, /observe-bindings/u, /production-release-failure\.sh/u]) {
-    assert.ok(shared.some((step) => required.test(step.body)), String(required));
+  for (const required of [
+    /validate-dispatch/u,
+    /verify-target/u,
+    /live-preflight\.sql/u,
+    /claim\.sql/u,
+    /migrations apply/u,
+    /versions upload/u,
+    /verify-version/u,
+    /versions deploy/u,
+    /triggers deploy/u,
+    /observe-bindings/u,
+    /production-release-failure\.sh/u,
+  ]) {
+    assert.ok(
+      shared.some((step) => required.test(step.body)),
+      String(required),
+    );
   }
   const smoke = bootstrapOnly[1].body;
   assert.match(smoke, /production-smoke\.mjs bootstrap/u);
   assert.match(smoke, /evidence-sql smoke/u);
-  assert.doesNotMatch(smoke, /SMOKE_TARGETS_JSON|RETAINED_REVISION_EVIDENCE_JSON|RECOVERY_BOOKMARK|RECOVERY_BACKUP_ATTEMPT_ID|legality|printing|cards|exports|stale/u);
+  assert.doesNotMatch(
+    smoke,
+    /SMOKE_TARGETS_JSON|RETAINED_REVISION_EVIDENCE_JSON|RECOVERY_BOOKMARK|RECOVERY_BACKUP_ATTEMPT_ID|legality|printing|cards|exports|stale/u,
+  );
   assert.doesNotMatch(release, /rollback|versions rollback|restore|recovery accept/iu);
   // The bootstrap branch writes no failed.sql (no production_releases row can
   // exist without a backup); the handler only records the ledger failure and
@@ -184,10 +267,16 @@ test("the production preflight rehearsal is read-only", () => {
   assert.match(preflight, /workflow_dispatch:/u);
   assert.match(preflight, /environment: production/u);
   assert.match(preflight, /production-release-provider\.mjs verify-target/u);
-  assert.doesNotMatch(preflight, /versions upload|versions deploy|wrangler deploy|migrations apply|d1 execute|secret put|triggers deploy/u);
+  assert.doesNotMatch(
+    preflight,
+    /versions upload|versions deploy|wrangler deploy|migrations apply|d1 execute|secret put|triggers deploy/u,
+  );
   // Issue #148: the rehearsal proves the release state query path against
   // the live database with a read-only statement.
-  assert.match(preflight, /production-release-d1\.mjs execute --config apps\/ingestion\/wrangler\.jsonc --file [^\n]*ready\.sql/u);
+  assert.match(
+    preflight,
+    /production-release-d1\.mjs execute --config apps\/ingestion\/wrangler\.jsonc --file [^\n]*ready\.sql/u,
+  );
   assert.match(preflight, /SELECT 1 AS ready/u);
 });
 
