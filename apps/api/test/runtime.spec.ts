@@ -313,8 +313,6 @@ test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact 
         compressed_sha256: containsLegality
           ? compressedLegalityDigest
           : compressedEmptyDigest,
-        content_url:
-          `/v1/catalogue-exports/${revisionId}/components/${name}`,
       };
     },
   );

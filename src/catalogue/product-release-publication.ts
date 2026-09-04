@@ -1,5 +1,5 @@
 import type { CatalogueCandidate } from "./catalogue-candidate";
-import type { NormalizedLifecycle } from "./reconciliation-publication";
+import type { NormalizedLifecycle } from "./publication-lifecycle-types";
 import { byteBoundedJsonArrays } from "./reconciliation-payload";
 
 export type ProductRelationshipLifecycle = {

@@ -210,6 +210,18 @@ export async function reconcileRetainedCardPrintingEvidence(
   }[] = [];
   const sourceWarnings: Record<string, unknown>[] = [
     ...retained.countChangeWarnings,
+    // A Printing Image whose transport retries were exhausted never blocks
+    // publication: the candidate carries the gap explicitly so the owner can
+    // see it and a later run can collect the image.
+    ...retained.unavailablePrintingImages.map((image) => ({
+      code: "printing_image_unavailable",
+      request_id: image.requestId,
+      source_url: image.sourceUrl,
+      source_lineage: image.sourceLineage,
+      failure_code: image.failureCode,
+      detail:
+        "The Official Source did not serve this Printing Image within its bounded transport retries; the Printing is published without it and a later Ingestion Run can collect it.",
+    })),
   ];
   const observedErrata: CatalogueErratum[] = [];
   const targetedCardIds = new Set<string>();

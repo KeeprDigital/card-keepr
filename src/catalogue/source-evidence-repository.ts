@@ -6,6 +6,7 @@ import {
   defaultSourceHostPacingIntervalMilliseconds,
   parseEvidencePlans,
   parseStringRecord,
+  toleratedPrintingImageFailureCodes,
   type EvidencePlan,
   type OfficialSourceCollectionPlan,
   type OfficialSourceCollectionRequest,
@@ -42,6 +43,21 @@ import {
   collectionInspection,
   type PacingConfiguration,
 } from "./collection-inspection";
+import type {
+  CurrentPause,
+  ObservationSetRow,
+  RunCapacityPolicy,
+  SnapshotRow,
+} from "./source-evidence-repository-types";
+// The row and policy shapes the collection inspection reads live in the
+// leaf module `source-evidence-repository-types`; they stay importable from
+// here.
+export type {
+  CurrentPause,
+  ObservationSetRow,
+  RunCapacityPolicy,
+  SnapshotRow,
+} from "./source-evidence-repository-types";
 
 export type IngestionEvidenceRow = {
   id: string;
@@ -98,44 +114,6 @@ export type DiscoveredEvidenceRequest = {
   discoveryKey?: string;
   url: string;
   headers: Record<string, string>;
-};
-
-export type SnapshotRow = {
-  id: string;
-  ingestion_run_id: string;
-  request_id: string;
-  fetch_attempt_id: string;
-  request_method: string;
-  request_url: string;
-  request_headers_json: string;
-  representation_fingerprint: string;
-  response_vary_json: string;
-  retrieved_at: string;
-  http_status: number;
-  response_headers_json: string;
-  media_type: string | null;
-  content_digest: string;
-  content_byte_length: number;
-  content_object_key: string;
-  source_lineage: string;
-  supported_game: string;
-  game_profile_version: string;
-  adapter_version: string;
-  reused_source_snapshot_id: string | null;
-};
-
-export type ObservationSetRow = {
-  id: string;
-  source_snapshot_id: string;
-  source_lineage: string;
-  supported_game: string;
-  game_profile_version: string;
-  adapter_version: string;
-  parsed_at: string;
-  content_digest: string;
-  content_byte_length: number;
-  content_object_key: string;
-  observation_count: number;
 };
 
 export async function startEvidenceRun(
@@ -540,15 +518,6 @@ export class RequestCapacityProblem extends AdministrationProblem {
 // extension supersedes it with a larger absolute capacity at the next
 // generation.
 export const initialRequestCapacityGeneration = 1;
-
-// The effective capacity policy of one Ingestion Run: the newest capacity
-// extension when the owner has extended it, otherwise the Source Adapter
-// Version's registered capacity. Both remain constrained by the global
-// emergency ceiling.
-export type RunCapacityPolicy = Readonly<{
-  request_capacity: number;
-  capacity_generation: number;
-}>;
 
 export async function runRequestCapacityPolicy(
   database: D1Database,
@@ -2153,12 +2122,6 @@ type WorkflowPauseRow = {
   last_progress_at: string | null;
 };
 
-export type CurrentPause = Readonly<{
-  reason: string;
-  paused_at: string;
-  document: Record<string, unknown>;
-}>;
-
 // The current pause of a run: the newest record across the capacity,
 // retry-exhaustion, and Workflow pause tables (a retry pause wins an equal
 // capacity-pause timestamp, because a run can only re-enter capacity
@@ -2456,14 +2419,25 @@ export async function finalizeEvidenceRun(
   database: D1Database,
   runId: string,
 ): Promise<void> {
+  // A Printing Image that failed under one of its tolerated codes (exhausted
+  // transport retries, or a terminal outcome such as a missing or redirected
+  // file) is recorded on its own request, reported by inspection, and
+  // carried into reconciliation as an explicit gap, but it never fails the
+  // run. Every other failed request is missing catalogue facts.
+  const toleratedImageCodes = JSON.stringify(
+    toleratedPrintingImageFailureCodes,
+  );
   const counts = await database
     .prepare(
       `SELECT
         SUM(CASE WHEN state IN ('pending', 'captured') THEN 1 ELSE 0 END) AS active,
-        SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END) AS failed
-       FROM source_requests WHERE ingestion_run_id = ?`,
+        SUM(CASE WHEN state = 'failed'
+                  AND NOT (request_role = 'image'
+                    AND failure_code IN (SELECT value FROM json_each(?2)))
+                 THEN 1 ELSE 0 END) AS failed
+       FROM source_requests WHERE ingestion_run_id = ?1`,
     )
-    .bind(runId)
+    .bind(runId, toleratedImageCodes)
     .first<{ active: number | null; failed: number | null }>();
   if (counts === null || (counts.active ?? 0) > 0) return;
   const completedAt = new Date().toISOString();
@@ -2472,10 +2446,12 @@ export async function finalizeEvidenceRun(
     const failure = await database
       .prepare(
         `SELECT failure_code FROM source_requests
-         WHERE ingestion_run_id = ? AND state = 'failed'
+         WHERE ingestion_run_id = ?1 AND state = 'failed'
+           AND NOT (request_role = 'image'
+             AND failure_code IN (SELECT value FROM json_each(?2)))
          ORDER BY sequence_number LIMIT 1`,
       )
-      .bind(runId)
+      .bind(runId, toleratedImageCodes)
       .first<{ failure_code: string | null }>();
     const failureCode = failure?.failure_code ?? "source_evidence_failed";
     await database.batch([

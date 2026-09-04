@@ -4,17 +4,13 @@ import {
   type WorkflowStep,
 } from "cloudflare:workers";
 import {
-  advanceHostPacing,
-  capturePreparedAttempt,
-  completeUploadedCapture,
-  hostPacingDelay,
-  parseCapturedRequest,
-  prepareCaptureAttempt,
   sourceHostPacingIntervalMilliseconds,
   sourceHostPacingMode,
-  type CaptureTransportResult,
-  type PreparedCaptureAttempt,
 } from "../../../src/catalogue/source-evidence-capture";
+import {
+  collectSourceRequestBatch,
+  collectionBatchSize,
+} from "../../../src/catalogue/source-evidence-batch";
 import {
   type EvidenceHostWorkflowParams,
   type EvidenceParentWorkflowParams,
@@ -46,14 +42,19 @@ const deterministicDatabaseStep = {
   timeout: "1 minute" as const,
 };
 
-const transportStep = {
+// One batch step covers up to `collectionBatchSize` fetches with their
+// pacing waits and persistence; the batch's own time budget (see
+// source-evidence-batch.ts) keeps it well inside this timeout.
+const collectionBatchStep = {
   retries: { limit: 3, delay: 500, backoff: "exponential" as const },
   timeout: "10 minutes" as const,
 };
 
 // A page remains far below the 1 MiB non-stream Workflow step-result limit.
 // A 200-request child remains safely below the default 10,000 paid-step limit
-// even when every request consumes every capture attempt and parse step.
+// even when every request consumes every capture attempt: steady-state
+// collection costs one durable step per `collectionBatchSize` requests, and
+// only a retry wait adds a durable sleep plus a fresh batch step.
 const workflowRequestPageSize = 100;
 const hostShardRequestCapacity = 200;
 // One stable hostname identity plus three replacement identities exceeds the
@@ -462,87 +463,45 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<
         { hostname, minimumSequenceNumber, maximumSequenceNumber },
         stage,
       );
-      for (const request of requests) {
-        for (;;) {
-          const prepared = await step.do(
-            `prepare ${request.request_id}`,
-            deterministicDatabaseStep,
-            async () =>
-              prepareCaptureAttempt(
-                this.env.CATALOGUE_DB,
-                await requiredEvidenceRun(this.env.CATALOGUE_DB, runId),
-                request,
-              ),
-          );
-          if (prepared.kind === "done") break;
-          let result: CaptureTransportResult;
-          if (prepared.kind === "captured") {
-            result = await parseStep(step, this.env, runId, request, prepared);
-          } else {
-            const pacingDelay = await step.do(
-              `read pacing deadline for ${request.request_id}`,
-              deterministicDatabaseStep,
-              () => hostPacingDelay(this.env.CATALOGUE_DB, hostname, pacingMode),
-            );
-            if (pacingDelay > 0) {
-              await step.sleep(`pace ${request.request_id}`, pacingDelay);
-            }
-            result = await step.do(
-              `transport ${request.request_id} attempt ${prepared.attempt_number}`,
-              transportStep,
-              async () =>
-                capturePreparedAttempt(
-                  this.env.CATALOGUE_DB,
-                  this.env.EVIDENCE_OBJECTS,
-                  this.env.OFFICIAL_SOURCE_TRANSPORT,
-                  await requiredEvidenceRun(this.env.CATALOGUE_DB, runId),
-                  request,
-                  prepared,
-                ),
-            );
-            if (result.request_made) {
-              await step.do(
-                `advance pacing for ${request.request_id} attempt ${prepared.attempt_number}`,
-                deterministicDatabaseStep,
-                () =>
-                  advanceHostPacing(
-                    this.env.CATALOGUE_DB,
-                    hostname,
-                    pacingMode,
-                    pacingIntervalMilliseconds,
-                  ),
-              );
-            }
-            if (result.kind === "uploaded") {
-              result = await step.do(
-                `commit ${request.request_id} attempt ${prepared.attempt_number}`,
-                deterministicDatabaseStep,
-                async () =>
-                  completeUploadedCapture(
-                    this.env.CATALOGUE_DB,
-                    await requiredEvidenceRun(this.env.CATALOGUE_DB, runId),
-                    request,
-                    result.kind === "uploaded"
-                      ? result.attempt_id
-                      : prepared.attempt_id,
-                  ),
-              );
-            }
-            if (result.kind === "captured") {
-              result = await parseStep(
-                step,
-                this.env,
+      // Batches persist through one durable step each; see the step-layout
+      // note in source-evidence-batch.ts for what stays a separate step.
+      let halted = false;
+      for (
+        let offset = 0;
+        offset < requests.length && !halted;
+        offset += collectionBatchSize
+      ) {
+        const batch = requests.slice(offset, offset + collectionBatchSize);
+        let cursor = 0;
+        let pass = 0;
+        while (cursor < batch.length) {
+          const remaining = batch.slice(cursor);
+          const outcome = await step.do(
+            `collect stage ${stage} batch ${offset} from ${cursor} pass ${pass}`,
+            collectionBatchStep,
+            () =>
+              collectSourceRequestBatch({
+                database: this.env.CATALOGUE_DB,
+                evidenceObjects: this.env.EVIDENCE_OBJECTS,
+                officialSourceTransport: this.env.OFFICIAL_SOURCE_TRANSPORT,
                 runId,
-                request,
-                result,
-              );
-            }
+                hostname,
+                pacingMode,
+                pacingIntervalMilliseconds,
+                requests: remaining,
+              }),
+          );
+          pass += 1;
+          cursor += outcome.processed;
+          if (outcome.halt === null) continue;
+          if (outcome.halt.kind === "run_not_collecting") {
+            halted = true;
+            break;
           }
-          if (result.kind === "done") break;
-          if (result.kind === "wait") {
+          if (outcome.halt.kind === "retry_wait" && outcome.halt.wait_ms > 0) {
             await step.sleep(
-              `retry ${request.request_id}`,
-              result.wait_ms,
+              `retry ${outcome.halt.request_id} pass ${pass}`,
+              outcome.halt.wait_ms,
             );
           }
         }
@@ -568,27 +527,4 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<
       maximum_sequence_number: maximumSequenceNumber,
     };
   }
-}
-
-async function parseStep(
-  step: WorkflowStep,
-  env: Env,
-  runId: string,
-  request: EvidenceRequestRow,
-  captured:
-    | Extract<PreparedCaptureAttempt, { kind: "captured" }>
-    | Extract<CaptureTransportResult, { kind: "captured" }>,
-): Promise<CaptureTransportResult> {
-  return step.do(
-    `parse ${request.request_id}`,
-    deterministicDatabaseStep,
-    async () =>
-      parseCapturedRequest(
-        env.CATALOGUE_DB,
-        env.EVIDENCE_OBJECTS,
-        await requiredEvidenceRun(env.CATALOGUE_DB, runId),
-        request,
-        captured.source_snapshot_id,
-      ),
-  );
 }

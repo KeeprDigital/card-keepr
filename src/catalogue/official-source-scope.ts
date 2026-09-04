@@ -1,5 +1,7 @@
-import type { SupportedGame } from "./catalogue-candidate";
-import type { LegalityRegion } from "./legality-rule";
+import type {
+  LegalityRegion,
+  SupportedGame,
+} from "./catalogue-candidate-types";
 
 export type OfficialSourceScope = Readonly<{
   sourceLineage: string;

@@ -202,18 +202,14 @@ test("a Fusion Leader publishes immutable role-labelled Printing Images and expo
       role: "back",
       content_sha256:
         "eed832d958fc4054fffb3027319dcd914448475c226ce55ae8053a442ed1b2cf",
-      content_url: expect.stringMatching(
-        /^\/v1\/printing-images\/[^/]+\/content$/u,
-      ),
+      id: expect.stringMatching(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u),
     }),
     expect.objectContaining({
       type: "printing_image",
       role: "front",
       content_sha256:
         "46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
-      content_url: expect.stringMatching(
-        /^\/v1\/printing-images\/[^/]+\/content$/u,
-      ),
+      id: expect.stringMatching(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u),
     }),
   ]);
   for (const image of images) {

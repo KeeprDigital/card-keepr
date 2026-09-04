@@ -23,7 +23,7 @@ import {
   onePieceRecordingMemberships,
 } from "./one-piece-source-adapter.ts";
 import { parse as parseHtml } from "parse5";
-import type { ListingReconciliationTraits } from "./source-adapters.ts";
+import type { ListingReconciliationTraits } from "./source-adapter-registration-types.ts";
 
 type ProductSourceGame =
   | "one-piece"
