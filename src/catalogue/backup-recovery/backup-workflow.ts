@@ -140,16 +140,18 @@ async function publicWorkflowDocument(
       await backupDispatchOutcomeStatement(database, request.idempotency_key, detail, new Date().toISOString()).run();
     }
   }
-  if (observed === null)
+  if (observed === null) {
+    const latestDispatch = await backupDispatchStatus(database, request.idempotency_key);
     return {
       contract: "card-keepr-catalogue-backup-workflow@1",
       expected_current_revision_id: request.expected_current_revision_id,
       idempotency_key: request.idempotency_key,
       workflow_instance_id: request.workflow_instance_id,
-      status: dispatch?.state === "dispatched" ? "unknown" : "dispatch_failed",
+      status: latestDispatch?.state === "dispatched" ? "unknown" : "dispatch_failed",
       output: null,
-      dispatch: await backupDispatchStatus(database, request.idempotency_key),
+      dispatch: latestDispatch,
     };
+  }
   let { status } = observed;
   if (status.status === "paused") status = await driver.resume(request.workflow_instance_id);
   let publicStatus = status.status;

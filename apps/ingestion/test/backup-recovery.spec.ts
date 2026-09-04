@@ -797,6 +797,60 @@ test("terminal Workflow failure is an exact replayable observation", async () =>
   expect(creates).toBe(1);
 });
 
+test("a failed observer preserves another caller's acknowledged backup dispatch", async () => {
+  let signalEntered!: () => void;
+  let signalAcknowledged!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    signalEntered = resolve;
+  });
+  const acknowledged = new Promise<void>((resolve) => {
+    signalAcknowledged = resolve;
+  });
+  const unavailableWorkflow = {
+    async create() {
+      signalEntered();
+      await acknowledged;
+      throw new Error("synthetic Workflow observation outage");
+    },
+    async get() {
+      throw new Error("synthetic Workflow observation outage");
+    },
+  } as unknown as Workflow<CatalogueBackupWorkflowParams>;
+  const running = { status: async () => ({ status: "running" }) } as unknown as WorkflowInstance;
+  const availableWorkflow = {
+    create: async () => running,
+    get: async () => running,
+  } as unknown as Workflow<CatalogueBackupWorkflowParams>;
+  const input = {
+    expected_current_revision_id: "catrev_spine_000",
+    idempotency_key: "backup-concurrent-dispatch-observation",
+  };
+  const unavailable = startOrObserveCatalogueBackupWorkflow(
+    testEnv.CATALOGUE_DB,
+    unavailableWorkflow,
+    input,
+    "2026-08-05T03:50:00.000Z",
+  );
+  await entered;
+  try {
+    const winner = await startOrObserveCatalogueBackupWorkflow(
+      testEnv.CATALOGUE_DB,
+      availableWorkflow,
+      input,
+      "2026-08-05T03:51:00.000Z",
+    );
+    expect(winner.document).toMatchObject({ status: "running" });
+  } finally {
+    signalAcknowledged();
+  }
+  await expect(unavailable).resolves.toMatchObject({
+    document: {
+      status: "unknown",
+      dispatch: { state: "dispatched", failure: null, retry: null },
+    },
+  });
+});
+
 test("the authenticated status route exposes the exact pending publication attempt and resume request", async () => {
   await testEnv.CATALOGUE_DB.prepare(
     `INSERT INTO catalogue_backup_attempts (
