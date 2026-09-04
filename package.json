@@ -35,7 +35,9 @@
     "prototype:game-contracts": "node prototype/v1-game-profiles-source-adapters/cli.mjs",
     "prototype:implementation-contracts": "node prototype/formalize-implementation-contracts/cli.mjs",
     "prototype:lifecycle-evidence-export-deletion": "node prototype/formalize-implementation-contracts/cli.mjs",
-    "prototype:curated-revisions": "node prototype/curated-revision-administration/cli.mjs"
+    "prototype:curated-revisions": "node prototype/curated-revision-administration/cli.mjs",
+    "documents:generate": "node scripts/document-validators.mjs",
+    "documents:check": "node scripts/document-validators.mjs --check"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",

@@ -5,6 +5,7 @@ import {
   canonicalJson,
   sha256Text,
   replayByDigest,
+  decodeDocument,
   retainedPayload,
   type CuratedEvidence,
   type CuratedFieldTarget,
@@ -20,15 +21,6 @@ import addFormats from "ajv-formats";
 import { assertCanonicalLegalityRule } from "../legality";
 
 const games = new Set(["one-piece", "fusion-world", "digimon", "gundam"]);
-const fieldEntityTypes = new Set([
-  "card",
-  "printing",
-  "product",
-  "release",
-  "distribution_context",
-  "erratum",
-  "legality_rule",
-]);
 const forbiddenRoots = new Set([
   "id",
   "game",
@@ -1992,8 +1984,12 @@ function entityExists(candidate: CatalogueCandidate, type: string, id: string, g
   return false;
 }
 
-function structuralProposal(value: unknown): Proposal {
-  if (!record(value)) invalid("Proposal is required.");
+function structuralProposal(input: unknown): Proposal {
+  const value = decodeDocument<Record<string, unknown>>(
+    "record",
+    input,
+    () => new AdministrationProblem(422, "curated_revision_schema_invalid", "Proposal is required."),
+  );
   onlyFields(value, [
     "game",
     "target",
@@ -2012,7 +2008,17 @@ function structuralProposal(value: unknown): Proposal {
   if (typeof value.rationale !== "string" || value.rationale.trim() === "")
     invalid("A non-empty rationale is required.");
   if (!sha256Digest(value.reviewed_source_digest)) invalid("reviewed_source_digest must be a lower-case SHA-256.");
-  if (!Array.isArray(value.evidence) || value.evidence.length === 0 || !value.evidence.every(validEvidence))
+  const evidence = decodeDocument<CuratedEvidence[]>(
+    "proposalEvidence",
+    value.evidence,
+    () =>
+      new AdministrationProblem(
+        422,
+        "curated_revision_schema_invalid",
+        "At least one valid evidence reference is required.",
+      ),
+  );
+  if (evidence.some((item) => item.kind === "owner_reference" && !absoluteUri(item.uri)))
     invalid("At least one valid evidence reference is required.");
   const interval = value.effective_interval;
   if (record(interval)) onlyFields(interval, ["from", "to"]);
@@ -2033,13 +2039,11 @@ function structuralProposal(value: unknown): Proposal {
   if (value.target.kind === "field") {
     onlyFields(value.target, ["kind", "entity_type", "entity_id", "path"]);
     onlyFields(value.assertion, ["kind", "value"]);
-    if (
-      !fieldEntityTypes.has(String(value.target.entity_type)) ||
-      !opaque(value.target.entity_id) ||
-      typeof value.target.path !== "string" ||
-      !value.target.path.startsWith("/")
-    )
-      throw new AdministrationProblem(422, "curated_revision_target_invalid", "Field target is incomplete.");
+    decodeDocument(
+      "proposalFieldTarget",
+      value.target,
+      () => new AdministrationProblem(422, "curated_revision_target_invalid", "Field target is incomplete."),
+    );
     if (value.assertion.kind !== "field" || !Object.hasOwn(value.assertion, "value"))
       invalid("A field target requires an explicit field assertion.");
   } else if (value.target.kind === "relationship") {
@@ -2447,17 +2451,6 @@ function validComposedCuratedCandidate(candidate: CatalogueCandidate): boolean {
       relationshipEndpointPairs[relationship.kind] === `${relationship.from.type}->${relationship.to.type}` &&
       entityExists(candidate, relationship.from.type, relationship.from.id, relationship.game) &&
       entityExists(candidate, relationship.to.type, relationship.to.id, relationship.game),
-  );
-}
-function validEvidence(value: unknown): boolean {
-  if (!record(value)) return false;
-  if (value.kind === "source_observation") return Object.keys(value).length === 2 && opaque(value.id);
-  return (
-    value.kind === "owner_reference" &&
-    Object.keys(value).length === 3 &&
-    typeof value.uri === "string" &&
-    absoluteUri(value.uri) &&
-    sha256Digest(value.content_digest)
   );
 }
 function absoluteUri(value: string): boolean {
