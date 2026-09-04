@@ -1,6 +1,6 @@
 # Acceptance catalogue queries
 
-Named SQLite statement factories own fixed schema and fixture queries. Tests
+Named SQLite and D1 statement factories own fixed schema and fixture queries. Tests
 keep argument values, `.get()` / `.all()` / `.run()` execution, assertions, and
 transaction composition at the call site. Identical statements share one
 factory; add a descriptive query here when a test needs another schema shape.
@@ -16,3 +16,6 @@ preflight, handoff, transition results, and ordered statement stream. Those
 queries are the tested output rather than separately maintained fixture SQL.
 They deliberately remain explicit instead of gaining a generic helper that
 accepts arbitrary SQL. No fixed SQL literal remains in a test `.prepare()` call.
+
+`runtime-fixtures.ts` owns the fixed D1 queries for acceptance Worker harnesses.
+Their domain calls adapt bindings through CatalogueStore at the entry point.

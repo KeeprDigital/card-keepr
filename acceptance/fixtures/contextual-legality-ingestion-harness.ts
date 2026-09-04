@@ -1,3 +1,5 @@
+import { restoreFixturePublicationHealthStatement } from "../helpers/query-helpers/runtime-fixtures";
+import { catalogueStore } from "../../src/catalogue/shared";
 import ingestionWorker, {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
@@ -52,10 +54,7 @@ export default {
       /^\/v1\/ingestion-runs\/[^/]+\/approval$/u.test(url.pathname) &&
       productionResponse.status === 200
     ) {
-      await env.CATALOGUE_DB.prepare(
-        `UPDATE operation_state SET recovery_health = 'healthy'
-         WHERE singleton = 1 AND recovery_health = 'degraded'`,
-      ).run();
+      await restoreFixturePublicationHealthStatement(env.CATALOGUE_DB).run();
       return productionResponse;
     }
     if (
@@ -76,7 +75,7 @@ export default {
       return productionResponse;
     }
     const document = await startEvidenceRun(
-      env.CATALOGUE_DB,
+      catalogueStore(env.CATALOGUE_DB),
       body,
       "synthetic_fixture",
     );
