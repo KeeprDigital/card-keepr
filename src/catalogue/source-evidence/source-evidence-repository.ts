@@ -14,6 +14,7 @@ import {
   utf8,
   workflowDriver,
 } from "../shared";
+import { sourceRequestHostnameSql } from "./collection-inspection-repository";
 
 import {
   evidenceRunByIdempotencyKeyStatement,
@@ -27,12 +28,7 @@ export type { IngestionEvidenceRow } from "./ingestion-run-repository";
 
 import { globalEmergencySourceRequestCeiling, type SourceAdapterRegistration } from "../adapters";
 import { curatedRevisionPinStatementsForNewRun, curatedRevisionSetForRun } from "../curated";
-import {
-  boundedEvidenceDetail,
-  collectionInspection,
-  type PacingConfiguration,
-  sourceRequestHostnameSql,
-} from "./collection-inspection";
+import { boundedEvidenceDetail, collectionInspection, type PacingConfiguration } from "./collection-inspection";
 import {
   type CollectionProgressFacts,
   classifyCollectionProgress,

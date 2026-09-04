@@ -1,15 +1,21 @@
 import { workflowDriver } from "../shared";
 import {
+  AdministrationProblem,
   assertIngestionRunTransition,
+  canonicalJson,
   type IngestionRunState,
   replayByDigest,
-  AdministrationProblem,
-  canonicalJson,
   sha256Text,
 } from "../shared";
+import { assertIdentifier } from "../source-evidence";
 
 import { failReconciliationWorkflow, retainedReconciliationResult } from "./reconciliation-candidate-store";
-import { assertIdentifier } from "../source-evidence";
+import {
+  createReconciliationWorkflowRequestStatement,
+  reconciliationWorkflowCandidateDigestStatement,
+  reconciliationWorkflowRequestStatement,
+  reconciliationWorkflowRunStatement,
+} from "./reconciliation-workflow-repository";
 
 export type ReconciliationWorkflowParams = Readonly<{
   ingestion_run_id: string;
@@ -54,25 +60,14 @@ export async function startOrObserveReconciliationWorkflow(
     };
   }
 
-  const run = await database
-    .prepare(
-      `SELECT run.id, run.state, run.expected_current_revision_id,
-              state.current_revision_id, operation.active_ingestion_run_id,
-              operation.recovery_health
-       FROM ingestion_runs AS run
-       CROSS JOIN catalogue_state AS state
-       CROSS JOIN operation_state AS operation
-       WHERE run.id = ?`,
-    )
-    .bind(input.ingestion_run_id)
-    .first<{
-      id: string;
-      state: IngestionRunState;
-      expected_current_revision_id: string;
-      current_revision_id: string;
-      active_ingestion_run_id: string | null;
-      recovery_health: string;
-    }>();
+  const run = await reconciliationWorkflowRunStatement(database, input.ingestion_run_id).first<{
+    id: string;
+    state: IngestionRunState;
+    expected_current_revision_id: string;
+    current_revision_id: string;
+    active_ingestion_run_id: string | null;
+    recovery_health: string;
+  }>();
   if (run === null) {
     throw new AdministrationProblem(404, "ingestion_run_not_found", "The requested Ingestion Run does not exist.");
   }
@@ -117,24 +112,15 @@ export async function startOrObserveReconciliationWorkflow(
     observed_at: observedAt,
   };
   const workflowParamsJson = canonicalJson(workflowParams);
-  const insertion = await database
-    .prepare(
-      `INSERT OR IGNORE INTO reconciliation_workflow_requests (
-         idempotency_key, ingestion_run_id,
-         expected_current_revision_id, request_json,
-         workflow_params_json, workflow_instance_id, observed_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .bind(
-      input.idempotency_key,
-      input.ingestion_run_id,
-      input.expected_current_revision_id,
-      requestJson,
-      workflowParamsJson,
-      workflowInstanceId,
-      observedAt,
-    )
-    .run();
+  const insertion = await createReconciliationWorkflowRequestStatement(database, {
+    idempotencyKey: input.idempotency_key,
+    runId: input.ingestion_run_id,
+    expectedRevisionId: input.expected_current_revision_id,
+    requestJson: requestJson,
+    paramsJson: workflowParamsJson,
+    workflowId: workflowInstanceId,
+    observedAt: observedAt,
+  }).run();
   const stored = await workflowRequest(database, input.idempotency_key);
   if (stored === null) {
     throw new AdministrationProblem(
@@ -193,14 +179,9 @@ async function recoverTerminalWorkflow(
   request: ReconciliationWorkflowRequestRow,
   detail: string,
 ): Promise<Record<string, unknown>> {
-  const run = await database
-    .prepare(
-      `SELECT candidate_digest
-       FROM ingestion_runs
-       WHERE id = ?`,
-    )
-    .bind(request.ingestion_run_id)
-    .first<{ candidate_digest: string | null }>();
+  const run = await reconciliationWorkflowCandidateDigestStatement(database, request.ingestion_run_id).first<{
+    candidate_digest: string | null;
+  }>();
   if (run === null) {
     throw new Error("The reconciliation Workflow run is unavailable.");
   }
@@ -268,16 +249,7 @@ async function workflowRequest(
   database: D1Database,
   idempotencyKey: string,
 ): Promise<ReconciliationWorkflowRequestRow | null> {
-  return database
-    .prepare(
-      `SELECT idempotency_key, ingestion_run_id,
-              expected_current_revision_id, request_json,
-              workflow_params_json, workflow_instance_id, observed_at
-       FROM reconciliation_workflow_requests
-       WHERE idempotency_key = ?`,
-    )
-    .bind(idempotencyKey)
-    .first<ReconciliationWorkflowRequestRow>();
+  return reconciliationWorkflowRequestStatement(database, idempotencyKey).first<ReconciliationWorkflowRequestRow>();
 }
 
 function storedWorkflowParams(request: ReconciliationWorkflowRequestRow): ReconciliationWorkflowParams {

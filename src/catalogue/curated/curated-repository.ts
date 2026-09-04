@@ -1,4 +1,4 @@
-import type { SupportedGame } from "../shared";
+import { ingestionRunTransitionSql, type SupportedGame } from "../shared";
 
 export type CuratedRevisionRow = {
   id: string;
@@ -54,4 +54,487 @@ export function curatedLifecycleMutationStatements(
       )
       .bind(input.idempotencyKey, input.requestDigest, input.responseJson, input.observedAt),
   ];
+}
+
+export function curatedMutationOperationStateStatement(database: D1Database): D1PreparedStatement {
+  return database.prepare(
+    "SELECT active_ingestion_run_id, active_release_id AS active_production_release_id, active_release_expires_at AS active_production_release_expires_at, recovery_health FROM operation_state WHERE singleton = 1",
+  );
+}
+
+export function insertAuthoredCuratedRevisionStatement(
+  database: D1Database,
+  input: Readonly<{
+    revisionId: string;
+    game: SupportedGame;
+    targetKey: string;
+    targetKind: "field" | "relationship";
+    effectiveFrom: string | null;
+    effectiveTo: string | null;
+    proposalJson: string;
+    contentDigest: string;
+    reviewedSourceDigest: string;
+    schemaBindingJson: string;
+    observedAt: string;
+  }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`INSERT INTO curated_revisions (
+          id, game, target_key, target_kind, effective_from, effective_to,
+          proposal_json, content_digest, reviewed_source_digest,
+          schema_binding_json, author, created_at, status, event_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'owner', ?, 'active', 1)`)
+    .bind(
+      input.revisionId,
+      input.game,
+      input.targetKey,
+      input.targetKind,
+      input.effectiveFrom,
+      input.effectiveTo,
+      input.proposalJson,
+      input.contentDigest,
+      input.reviewedSourceDigest,
+      input.schemaBindingJson,
+      input.observedAt,
+    );
+}
+
+export function insertCuratedAuthoredEventStatement(
+  database: D1Database,
+  input: Readonly<{ revisionId: string; eventJson: string; observedAt: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`INSERT INTO curated_revision_events (
+          revision_id, event_version, kind, event_json, created_at, author
+        ) VALUES (?, 1, 'authored', ?, ?, 'owner')`)
+    .bind(input.revisionId, input.eventJson, input.observedAt);
+}
+
+export function insertCuratedCreationResponseStatement(
+  database: D1Database,
+  input: Readonly<{ idempotencyKey: string; requestDigest: string; documentJson: string; observedAt: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`INSERT INTO curated_revision_idempotency (
+          idempotency_key, request_digest, response_json, response_status, created_at
+        ) VALUES (?, ?, ?, 201, ?)`)
+    .bind(input.idempotencyKey, input.requestDigest, input.documentJson, input.observedAt);
+}
+
+export function supersedeCuratedRevisionStatement(
+  database: D1Database,
+  input: Readonly<{ eventVersion: number; revisionId: string; expectedEventVersion: number }>,
+): D1PreparedStatement {
+  return database
+    .prepare(
+      "UPDATE curated_revisions SET status = 'superseded', event_version = ? WHERE id = ? AND event_version = ? AND status IN ('active', 'reconfirmation_required')",
+    )
+    .bind(input.eventVersion, input.revisionId, input.expectedEventVersion);
+}
+
+export function insertCuratedSupersededEventStatement(
+  database: D1Database,
+  input: Readonly<{ revisionId: string; eventVersion: number; eventJson: string; observedAt: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
+         VALUES (?, ?, 'superseded', ?, ?, 'owner')`)
+    .bind(input.revisionId, input.eventVersion, input.eventJson, input.observedAt);
+}
+
+export function insertCuratedReplacementAuthoredEventStatement(
+  database: D1Database,
+  input: Readonly<{ revisionId: string; eventJson: string; observedAt: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
+         VALUES (?, 1, 'authored', ?, ?, 'owner')`)
+    .bind(input.revisionId, input.eventJson, input.observedAt);
+}
+
+export function insertCuratedReplacementResponseStatement(
+  database: D1Database,
+  input: Readonly<{ idempotencyKey: string; requestDigest: string; responseJson: string; observedAt: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`INSERT INTO curated_revision_idempotency (idempotency_key, request_digest, response_json, response_status, created_at)
+         VALUES (?, ?, ?, 201, ?)`)
+    .bind(input.idempotencyKey, input.requestDigest, input.responseJson, input.observedAt);
+}
+
+export function filteredCuratedRevisionsStatement(
+  database: D1Database,
+  input: Readonly<{ game: string | null; target: string | null; status: string | null }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT * FROM curated_revisions
+     WHERE (? IS NULL OR game = ?)
+       AND (? IS NULL OR target_key = ?)
+       AND (? IS NULL OR status = ?)
+     ORDER BY created_at, id`)
+    .bind(input.game, input.game, input.target, input.target, input.status, input.status);
+}
+
+export function curatedPinnedSetStatement(
+  database: D1Database,
+  input: Readonly<{ runId: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare("SELECT revision_ids_json, set_digest FROM ingestion_run_curated_revision_sets WHERE ingestion_run_id = ?")
+    .bind(input.runId);
+}
+
+export function curatedRunSelectedGamesStatement(
+  database: D1Database,
+  input: Readonly<{ runId: string }>,
+): D1PreparedStatement {
+  return database.prepare("SELECT selected_games_json FROM ingestion_runs WHERE id = ?").bind(input.runId);
+}
+
+export function activeCuratedRevisionsStatement(
+  database: D1Database,
+  input: Readonly<{ gamesJson: string; on: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT revision.id, revision.proposal_json, revision.content_digest,
+            revision.event_version,
+            COALESCE((
+              SELECT json_extract(event.event_json, '$.reviewed_source_digest')
+              FROM curated_revision_events AS event
+              WHERE event.revision_id = revision.id
+                AND event.kind = 'reaffirmed'
+              ORDER BY event.event_version DESC LIMIT 1
+            ), revision.reviewed_source_digest) AS reviewed_source_digest
+     FROM curated_revisions AS revision
+     WHERE revision.status = 'active'
+       AND revision.game IN (SELECT value FROM json_each(?))
+       AND (revision.effective_from IS NULL OR revision.effective_from <= ?)
+       AND (revision.effective_to IS NULL OR ? < revision.effective_to)
+     ORDER BY revision.id`)
+    .bind(input.gamesJson, input.on, input.on);
+}
+
+export function markCuratedSourceChangeStatement(
+  database: D1Database,
+  input: Readonly<{ eventVersion: number; revisionId: string; expectedEventVersion: number }>,
+): D1PreparedStatement {
+  return database
+    .prepare(
+      "UPDATE curated_revisions SET status = 'reconfirmation_required', event_version = ? WHERE id = ? AND status = 'active' AND event_version = ?",
+    )
+    .bind(input.eventVersion, input.revisionId, input.expectedEventVersion);
+}
+
+export function insertCuratedSourceChangeEventStatement(
+  database: D1Database,
+  input: Readonly<{ revisionId: string; eventVersion: number; eventJson: string; observedAt: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
+         SELECT ?, ?, 'source_change_detected', ?, ?, 'system'
+         WHERE EXISTS (SELECT 1 FROM curated_revisions WHERE id = ? AND status = 'reconfirmation_required' AND event_version = ?)`)
+    .bind(
+      input.revisionId,
+      input.eventVersion,
+      input.eventJson,
+      input.observedAt,
+      input.revisionId,
+      input.eventVersion,
+    );
+}
+
+export function insertCuratedRunPinStatement(
+  database: D1Database,
+  input: Readonly<{
+    runId: string;
+    ordinal: number;
+    id: string;
+    content_digest: string;
+    reviewed_source_digest: string;
+  }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`INSERT INTO ingestion_run_curated_revisions (
+         ingestion_run_id, ordinal, revision_id, content_digest,
+         reviewed_source_digest
+       ) VALUES (?, ?, ?, ?, ?)`)
+    .bind(input.runId, input.ordinal, input.id, input.content_digest, input.reviewed_source_digest);
+}
+
+export function insertCuratedRunPinSetStatement(
+  database: D1Database,
+  input: Readonly<{ runId: string; idsJson: string; setDigest: string; observedAt: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`INSERT INTO ingestion_run_curated_revision_sets (
+         ingestion_run_id, revision_ids_json, set_digest, pinned_at
+       ) VALUES (?, ?, ?, ?)`)
+    .bind(input.runId, input.idsJson, input.setDigest, input.observedAt);
+}
+
+export function blockingCuratedRevisionStatement(
+  database: D1Database,
+  input: Readonly<{ selectedGamesJson: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT id, game FROM curated_revisions
+     WHERE status = 'reconfirmation_required'
+       AND game IN (SELECT value FROM json_each(?))
+     ORDER BY id LIMIT 1`)
+    .bind(input.selectedGamesJson);
+}
+
+export function pinnedCuratedRevisionsStatement(
+  database: D1Database,
+  input: Readonly<{ runId: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT revision.id, revision.proposal_json, revision.content_digest,
+            pin.reviewed_source_digest
+     FROM ingestion_run_curated_revisions AS pin
+     JOIN curated_revisions AS revision ON revision.id = pin.revision_id
+     WHERE pin.ingestion_run_id = ? ORDER BY pin.ordinal`)
+    .bind(input.runId);
+}
+
+export function failInvalidCuratedCandidateStatement(
+  database: D1Database,
+  input: Readonly<{ observedAt: string; runId: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`UPDATE ingestion_runs
+         SET state = 'failed', terminal_at = ?,
+             failure_code = 'curated_revision_composed_candidate_invalid',
+             progress_json = json_set(progress_json, '$.current_stage', 'failed')
+         WHERE id = ? AND ${ingestionRunTransitionSql(["planning", "collecting", "parsing", "reconciling", "awaiting_approval"], "failed")}`)
+    .bind(input.observedAt, input.runId);
+}
+
+export function releaseCuratedRunStatement(
+  database: D1Database,
+  input: Readonly<{ runId: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`UPDATE operation_state SET active_ingestion_run_id = NULL
+         WHERE singleton = 1 AND active_ingestion_run_id = ?`)
+    .bind(input.runId);
+}
+
+export function curatedRevisionSetStatement(
+  database: D1Database,
+  input: Readonly<{ runId: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT revision_ids_json, set_digest
+     FROM ingestion_run_curated_revision_sets
+     WHERE ingestion_run_id = ?`)
+    .bind(input.runId);
+}
+
+export function curatedRunStateStatement(
+  database: D1Database,
+  input: Readonly<{ runId: string }>,
+): D1PreparedStatement {
+  return database.prepare("SELECT state, failure_code FROM ingestion_runs WHERE id = ?").bind(input.runId);
+}
+
+export function curatedRunPinInspectionStatement(
+  database: D1Database,
+  input: Readonly<{ runId: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT pin.ordinal, pin.revision_id, pin.content_digest,
+            revision.proposal_json
+     FROM ingestion_run_curated_revisions AS pin
+     JOIN curated_revisions AS revision ON revision.id = pin.revision_id
+     WHERE pin.ingestion_run_id = ? ORDER BY pin.ordinal`)
+    .bind(input.runId);
+}
+
+export function insertPublishedCuratedProvenanceStatement(
+  database: D1Database,
+  input: Readonly<{ revisionId: string; runId: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`INSERT OR IGNORE INTO catalogue_curated_provenance (
+       catalogue_revision_id, curated_revision_id, target_key,
+       content_digest, provenance_json
+     )
+     SELECT ?, prior.curated_revision_id, prior.target_key,
+            prior.content_digest, prior.provenance_json
+     FROM ingestion_runs AS run
+     JOIN catalogue_curated_provenance AS prior
+       ON prior.catalogue_revision_id = run.expected_current_revision_id
+     JOIN curated_revisions AS prior_revision
+       ON prior_revision.id = prior.curated_revision_id
+     WHERE run.id = ?
+       AND NOT EXISTS (
+         SELECT 1 FROM json_each(run.selected_games_json)
+         WHERE value = prior_revision.game
+       )
+     UNION ALL
+     SELECT ?, revision.id, revision.target_key,
+            revision.content_digest,
+            json_object(
+              'author', revision.author,
+              'created_at', revision.created_at,
+              'evidence', json_extract(revision.proposal_json, '$.evidence'),
+              'rationale', json_extract(revision.proposal_json, '$.rationale')
+            )
+     FROM ingestion_run_curated_revisions AS pin
+     JOIN curated_revisions AS revision ON revision.id = pin.revision_id
+     WHERE pin.ingestion_run_id = ?`)
+    .bind(input.revisionId, input.runId, input.revisionId, input.runId);
+}
+
+export function curatedSchemaAvailableStatement(database: D1Database): D1PreparedStatement {
+  return database.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'curated_revisions'");
+}
+
+export function curatedRevisionStatusStatement(
+  database: D1Database,
+  input: Readonly<{ revisionId: string }>,
+): D1PreparedStatement {
+  return database.prepare("SELECT status, event_version FROM curated_revisions WHERE id = ?").bind(input.revisionId);
+}
+
+export function markActiveCuratedSourceChangeStatement(
+  database: D1Database,
+  input: Readonly<{ eventVersion: number; revisionId: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(
+      "UPDATE curated_revisions SET status = 'reconfirmation_required', event_version = ? WHERE id = ? AND status = 'active'",
+    )
+    .bind(input.eventVersion, input.revisionId);
+}
+
+export function insertLegacyCuratedSourceChangeEventStatement(
+  database: D1Database,
+  input: Readonly<{ revisionId: string; eventVersion: number; eventJson: string; observedAt: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
+         SELECT ?, ?, 'source_change_detected', ?, ?, 'system'
+         WHERE EXISTS (SELECT 1 FROM curated_revisions WHERE id = ? AND status = 'reconfirmation_required' AND event_version = ?)`)
+    .bind(
+      input.revisionId,
+      input.eventVersion,
+      input.eventJson,
+      input.observedAt,
+      input.revisionId,
+      input.eventVersion,
+    );
+}
+
+export function failCuratedSourceChangeRunStatement(
+  database: D1Database,
+  input: Readonly<{ at: string; runId: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`UPDATE ingestion_runs
+       SET state = 'failed', terminal_at = ?,
+           failure_code = 'curated_revision_reconfirmation_required',
+           progress_json = json_set(progress_json, '$.current_stage', 'failed')
+       WHERE id = ? AND ${ingestionRunTransitionSql(["planning", "collecting", "parsing", "reconciling", "awaiting_approval"], "failed")}`)
+    .bind(input.at, input.runId);
+}
+
+export function curatedPendingConflictStatement(
+  database: D1Database,
+  input: Readonly<{ id: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT event_json FROM curated_revision_events
+     WHERE revision_id = ? AND kind = 'source_change_detected'
+     ORDER BY event_version DESC LIMIT 1`)
+    .bind(input.id);
+}
+
+export function curatedIdempotencyReplayStatement(
+  database: D1Database,
+  input: Readonly<{ key: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare("SELECT request_digest, response_json FROM curated_revision_idempotency WHERE idempotency_key = ?")
+    .bind(input.key);
+}
+
+export function curatedReaffirmedSourceDigestStatement(
+  database: D1Database,
+  input: Readonly<{ revisionId: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT json_extract(event_json, '$.reviewed_source_digest') AS digest
+     FROM curated_revision_events
+     WHERE revision_id = ? AND kind = 'reaffirmed'
+     ORDER BY event_version DESC LIMIT 1`)
+    .bind(input.revisionId);
+}
+
+export function curatedRevisionEventHistoryStatement(
+  database: D1Database,
+  input: Readonly<{ id: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(
+      "SELECT kind, event_version, event_json, created_at, author FROM curated_revision_events WHERE revision_id = ? ORDER BY event_version",
+    )
+    .bind(input.id);
+}
+
+export function curatedCurrentCatalogueRevisionStatement(database: D1Database): D1PreparedStatement {
+  return database.prepare("SELECT current_revision_id FROM catalogue_state WHERE singleton = 1");
+}
+
+export function curatedCardDocumentStatement(
+  database: D1Database,
+  input: Readonly<{ revisionId: string; cardId: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare("SELECT document_json FROM revision_cards WHERE catalogue_revision_id = ? AND card_id = ?")
+    .bind(input.revisionId, input.cardId);
+}
+
+export function curatedCatalogueCandidateStatement(
+  database: D1Database,
+  input: Readonly<{ revisionId: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT run.id AS ingestion_run_id, run.candidate_json FROM catalogue_revisions AS revision
+     JOIN ingestion_runs AS run ON run.id = revision.ingestion_run_id
+     WHERE revision.id = ?`)
+    .bind(input.revisionId);
+}
+
+export function curatedCatalogueCardDocumentsStatement(
+  database: D1Database,
+  input: Readonly<{ revisionId: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT document_json FROM revision_cards
+     WHERE catalogue_revision_id = ? ORDER BY card_id`)
+    .bind(input.revisionId);
+}
+
+export function retainedCuratedObservationEvidenceStatement(
+  database: D1Database,
+  input: Readonly<{ sourceObservationIdsJson: string }>,
+): D1PreparedStatement {
+  return database
+    .prepare(`SELECT source_observation_id
+     FROM retained_source_observation_evidence
+     WHERE source_observation_id IN (SELECT value FROM json_each(?))`)
+    .bind(input.sourceObservationIdsJson);
+}
+
+export function curatedEntityDocumentStatement(
+  database: D1Database,
+  input: Readonly<{ revisionId: string; entityType: "card" | "printing"; entityId: string }>,
+): D1PreparedStatement {
+  const table = input.entityType === "card" ? "revision_cards" : "revision_printings";
+  const idColumn = input.entityType === "card" ? "card_id" : "printing_id";
+  return database
+    .prepare(`SELECT document_json FROM ${table} WHERE catalogue_revision_id = ? AND ${idColumn} = ?`)
+    .bind(input.revisionId, input.entityId);
 }

@@ -1,4 +1,14 @@
-import { route, type RouteContext } from "../../http/routes";
+import {
+  administrationResultStatus,
+  assertOnlyFields,
+  readAdministrationBody,
+  requiredString,
+} from "../../http/administration";
+import { absoluteDocumentLinks } from "../../http/public-base";
+import { type RouteContext, route } from "../../http/routes";
+import { publicationBackupReservation, startOrObserveCatalogueBackupWorkflow } from "../backup-recovery";
+import { evidenceInspectionOptions, showEvidenceRun } from "../source-evidence";
+import { runGuardedCardSearchRepair } from "./card-search-repair-administration";
 import {
   administrationStatus,
   approveRun,
@@ -9,16 +19,7 @@ import {
   showRun,
 } from "./ingestion";
 import { prepareProductionRelease } from "./production-release";
-import { runGuardedCardSearchRepair } from "./card-search-repair-administration";
-import { showEvidenceRun, evidenceInspectionOptions } from "../source-evidence";
-import { startOrObserveCatalogueBackupWorkflow, publicationBackupReservation } from "../backup-recovery";
-import { absoluteDocumentLinks } from "../../http/public-base";
-import {
-  readAdministrationBody,
-  requiredString,
-  assertOnlyFields,
-  administrationResultStatus,
-} from "../../http/administration";
+import { runHasEvidencePlanStatement } from "./run-lifecycle-repository";
 
 type Environment = Parameters<typeof evidenceInspectionOptions>[0] & {
   ADMINISTRATION_CLOCK_MODE: string;
@@ -210,9 +211,6 @@ function productionTarget(env: Environment) {
 }
 
 async function hasEvidencePlan(database: D1Database, runId: string): Promise<boolean> {
-  const row = await database
-    .prepare("SELECT 1 AS present FROM ingestion_evidence_plans WHERE ingestion_run_id = ?")
-    .bind(runId)
-    .first<{ present: number }>();
+  const row = await runHasEvidencePlanStatement(database, runId).first<{ present: number }>();
   return row?.present === 1;
 }

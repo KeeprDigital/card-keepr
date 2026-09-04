@@ -1,3 +1,4 @@
+import { collectionRevisionStatement } from "./collection-revision-repository";
 import { ifNoneMatchMatches } from "../../http/conditional-request";
 import { type PublicBase, publicUrl } from "../../http/public-base";
 import { canonicalJson, sha256Text } from "../shared";
@@ -93,21 +94,10 @@ export async function pinRevision(
   base: PublicBase,
   options: { search?: boolean; projection?: boolean } = {},
 ): Promise<{ id: string; published_at: string }> {
-  const revision = await database
-    .prepare(`
-    SELECT revision.id, revision.published_at
-    FROM catalogue_revisions AS revision
-    ${
-      options.projection === false
-        ? ""
-        : `JOIN catalogue_query_revisions AS projection
-      ON projection.catalogue_revision_id = revision.id AND projection.state = 'available'`
-    }
-    ${options.search === true ? "JOIN card_search_fts_state AS search ON search.singleton = 1 AND search.state = 'ready'" : ""}
-    WHERE revision.id = coalesce(?, (SELECT current_revision_id FROM catalogue_state WHERE singleton = 1))
-  `)
-    .bind(cursorRevision)
-    .first<{ id: string; published_at: string }>();
+  const revision = await collectionRevisionStatement(database, cursorRevision, options).first<{
+    id: string;
+    published_at: string;
+  }>();
   if (revision !== null) return revision;
   if (cursorRevision !== null) {
     throw new ReadProblem(409, "cursor_revision_unavailable", "The cursor Catalogue Revision is unavailable.", null, {

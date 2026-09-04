@@ -14,7 +14,7 @@ import {
   ReadProblem,
   revisionHeaders,
 } from "./collection-endpoint";
-import { printingCollectionQuery } from "./printing-collection-query";
+import { printingCollectionStatement } from "./printing-collection-repository";
 
 const printingRoute = "/v1/printings";
 const printingOrder = "card-id,printing-id";
@@ -78,9 +78,8 @@ export async function currentPrintingsResponse(
   const conditional = conditionalResponse(request, revisionHeaders(revisionId, etag));
   if (conditional !== null) return conditional;
 
-  const query = printingCollectionQuery(revisionId, filters, after, limit + 1);
   const page = await collectionPage<{ printing_id: string; card_id: string; document_json: string }>(
-    database.prepare(query.sql).bind(...query.bindings),
+    printingCollectionStatement(database, revisionId, filters, after, limit + 1),
     limit,
   );
   const selected = page.rows.map((row) => ({

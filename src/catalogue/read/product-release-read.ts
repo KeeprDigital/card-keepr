@@ -1,3 +1,9 @@
+import type { ProductRow } from "./published-read-repository";
+import {
+  currentProductStatement,
+  productCuratedEvidenceStatement,
+  productCollectionStatement,
+} from "./published-read-repository";
 import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
 import {
   canonicalEtag,
@@ -15,12 +21,6 @@ import {
   singleParameter,
 } from "./collection-endpoint";
 import { canonicalDetailSelf, detailIncludeProjection, detailRepresentationKey } from "./detail-representation";
-
-type ProductRow = {
-  document_json: string;
-  current_revision_id: string;
-  published_at: string;
-};
 
 type ProductOrderValue = {
   id: string;
@@ -50,17 +50,7 @@ export async function currentProductResponse(
   base: PublicBase,
 ): Promise<Response | null> {
   const url = new URL(request.url);
-  const row = await database
-    .prepare(
-      `SELECT product.document_json, catalogue.current_revision_id,
-              catalogue.published_at
-       FROM catalogue_state AS catalogue
-       JOIN revision_products AS product
-         ON product.catalogue_revision_id = catalogue.current_revision_id
-       WHERE catalogue.singleton = 1 AND product.product_id = ?`,
-    )
-    .bind(productId)
-    .first<ProductRow>();
+  const row = await currentProductStatement(database, productId).first<ProductRow>();
   if (row === null) return null;
   const include = detailIncludeProjection(
     url,
@@ -116,17 +106,10 @@ async function productEvidenceProjection(
   // catalogue_curated_provenance with its author and creation instant, so
   // the evidence sidecar reads the projection, not curated_revisions
   // (issue #98).
-  const rows = await database
-    .prepare(
-      `SELECT curated_revision_id AS id,
-              json_extract(provenance_json, '$.created_at') AS created_at,
-              json_extract(provenance_json, '$.author') AS author
-       FROM catalogue_curated_provenance
-       WHERE catalogue_revision_id = ?
-         AND curated_revision_id IN (SELECT value FROM json_each(?))`,
-    )
-    .bind(catalogueRevisionId, JSON.stringify(revisionIds))
-    .all<{ id: string; created_at: unknown; author: unknown }>();
+  const rows = await productCuratedEvidenceStatement(database, {
+    revisionId: catalogueRevisionId,
+    revisionIdsJson: JSON.stringify(revisionIds),
+  }).all<{ id: string; created_at: unknown; author: unknown }>();
   const rowsById = new Map(
     rows.results.map((row) => {
       if (typeof row.created_at !== "string" || typeof row.author !== "string") {
@@ -240,62 +223,21 @@ export async function currentProductsResponse(
   const conditional = conditionalResponse(request, revisionHeaders(revisionId, etag));
   if (conditional !== null) return conditional;
   const page = await collectionPage<{ document_json: string }>(
-    database
-      .prepare(
-        `SELECT document_json
-       FROM revision_products
-       WHERE catalogue_revision_id = ?
-         AND (? IS NULL OR supported_game = ?)
-         AND (
-           ? IS NULL OR product_id IN (
-             SELECT product_id
-             FROM revision_products_fts
-             WHERE catalogue_revision_id = ?
-               AND search_text MATCH ?
-           )
-         )
-         AND (
-           ? IS NULL OR EXISTS (
-             SELECT 1 FROM json_each(release_regions_json)
-             WHERE value = ?
-           )
-         )
-         AND (
-           ? = 0 OR (
-             supported_game,
-             official_code IS NULL,
-             coalesce(official_code, ''),
-             name IS NULL,
-             coalesce(name, ''),
-             product_id
-           ) > (?, ?, ?, ?, ?, ?)
-         )
-       ORDER BY supported_game,
-                official_code IS NULL,
-                official_code,
-                name IS NULL,
-                name,
-                product_id
-       LIMIT ?`,
-      )
-      .bind(
-        revisionId,
-        game,
-        game,
-        q,
-        revisionId,
-        fts,
-        region,
-        region,
-        after === null ? 0 : 1,
-        after?.game ?? "",
-        after?.official_code === null ? 1 : 0,
-        after?.official_code ?? "",
-        after?.name === null ? 1 : 0,
-        after?.name ?? "",
-        after?.id ?? "",
-        limit + 1,
-      ),
+    productCollectionStatement(database, {
+      revisionId: revisionId,
+      game: game,
+      query: q,
+      fts: fts,
+      region: region,
+      hasAfter: after === null ? 0 : 1,
+      afterGame: after?.game ?? "",
+      afterCodeNull: after?.official_code === null ? 1 : 0,
+      afterCode: after?.official_code ?? "",
+      afterNameNull: after?.name === null ? 1 : 0,
+      afterName: after?.name ?? "",
+      afterId: after?.id ?? "",
+      rowLimit: limit + 1,
+    }),
     limit,
   );
   const selected = page.rows.map(({ document_json }) => storedProductApiProjection(document_json));

@@ -1,5 +1,5 @@
+import * as curatedStatements from "./curated-repository";
 import {
-  ingestionRunTransitionSql,
   type CatalogueCandidate,
   type SupportedGame,
   AdministrationProblem,
@@ -224,16 +224,12 @@ export async function createCuratedRevision(
       "The supplied proposal digest does not match the canonical proposal.",
     );
   }
-  const operation = await database
-    .prepare(
-      "SELECT active_ingestion_run_id, active_release_id AS active_production_release_id, active_release_expires_at AS active_production_release_expires_at, recovery_health FROM operation_state WHERE singleton = 1",
-    )
-    .first<{
-      active_ingestion_run_id: string | null;
-      active_production_release_id: string | null;
-      active_production_release_expires_at: string | null;
-      recovery_health: string;
-    }>();
+  const operation = await curatedStatements.curatedMutationOperationStateStatement(database).first<{
+    active_ingestion_run_id: string | null;
+    active_production_release_id: string | null;
+    active_production_release_expires_at: string | null;
+    recovery_health: string;
+  }>();
   if (operation?.recovery_health === "blocked") {
     throw new AdministrationProblem(409, "recovery_in_progress", "Recovery blocks Curated Revision mutation.");
   }
@@ -277,41 +273,30 @@ export async function createCuratedRevision(
   };
   try {
     await database.batch([
-      database
-        .prepare(
-          `INSERT INTO curated_revisions (
-          id, game, target_key, target_kind, effective_from, effective_to,
-          proposal_json, content_digest, reviewed_source_digest,
-          schema_binding_json, author, created_at, status, event_version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'owner', ?, 'active', 1)`,
-        )
-        .bind(
-          id,
-          proposal.game,
-          targetKey(proposal),
-          proposal.target.kind,
-          interval.from,
-          interval.to,
-          canonicalJson(proposal),
-          suppliedDigest,
-          proposal.reviewed_source_digest,
-          canonicalJson(schemaBinding),
-          observedAt,
-        ),
-      database
-        .prepare(
-          `INSERT INTO curated_revision_events (
-          revision_id, event_version, kind, event_json, created_at, author
-        ) VALUES (?, 1, 'authored', ?, ?, 'owner')`,
-        )
-        .bind(id, canonicalJson({ reviewed_source_digest: proposal.reviewed_source_digest }), observedAt),
-      database
-        .prepare(
-          `INSERT INTO curated_revision_idempotency (
-          idempotency_key, request_digest, response_json, response_status, created_at
-        ) VALUES (?, ?, ?, 201, ?)`,
-        )
-        .bind(idempotencyKey, requestDigest, canonicalJson(document), observedAt),
+      curatedStatements.insertAuthoredCuratedRevisionStatement(database, {
+        revisionId: id,
+        game: proposal.game,
+        targetKey: targetKey(proposal),
+        targetKind: proposal.target.kind,
+        effectiveFrom: interval.from,
+        effectiveTo: interval.to,
+        proposalJson: canonicalJson(proposal),
+        contentDigest: suppliedDigest,
+        reviewedSourceDigest: proposal.reviewed_source_digest,
+        schemaBindingJson: canonicalJson(schemaBinding),
+        observedAt,
+      }),
+      curatedStatements.insertCuratedAuthoredEventStatement(database, {
+        revisionId: id,
+        eventJson: canonicalJson({ reviewed_source_digest: proposal.reviewed_source_digest }),
+        observedAt,
+      }),
+      curatedStatements.insertCuratedCreationResponseStatement(database, {
+        idempotencyKey,
+        requestDigest,
+        documentJson: canonicalJson(document),
+        observedAt,
+      }),
     ]);
   } catch (error) {
     const concurrentReplay = await idempotencyReplay(database, idempotencyKey, requestDigest);
@@ -477,67 +462,49 @@ export async function supersedeCuratedRevision(
   };
   try {
     await database.batch([
-      database
-        .prepare(
-          "UPDATE curated_revisions SET status = 'superseded', event_version = ? WHERE id = ? AND event_version = ? AND status IN ('active', 'reconfirmation_required')",
-        )
-        .bind(oldVersion, revisionId, mutation.row.event_version),
-      database
-        .prepare(
-          `INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
-         VALUES (?, ?, 'superseded', ?, ?, 'owner')`,
-        )
-        .bind(
-          revisionId,
-          oldVersion,
-          canonicalJson({
-            superseded_by_revision_id: replacementId,
-            rationale: input.rationale,
-            conflict_digest: mutation.conflict?.conflict_digest ?? null,
-            expected_current_revision_id: mutation.currentRevisionId,
-          }),
-          observedAt,
-        ),
-      database
-        .prepare(
-          `INSERT INTO curated_revisions (
-          id, game, target_key, target_kind, effective_from, effective_to,
-          proposal_json, content_digest, reviewed_source_digest,
-          schema_binding_json, author, created_at, status, event_version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'owner', ?, 'active', 1)`,
-        )
-        .bind(
-          replacementId,
-          proposal.game,
-          targetKey(proposal),
-          proposal.target.kind,
-          interval.from,
-          interval.to,
-          canonicalJson(proposal),
-          proposalDigest,
-          proposal.reviewed_source_digest,
-          canonicalJson(schemaBinding),
-          observedAt,
-        ),
-      database
-        .prepare(
-          `INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
-         VALUES (?, 1, 'authored', ?, ?, 'owner')`,
-        )
-        .bind(
-          replacementId,
-          canonicalJson({
-            reviewed_source_digest: proposal.reviewed_source_digest,
-            supersedes_revision_id: revisionId,
-          }),
-          observedAt,
-        ),
-      database
-        .prepare(
-          `INSERT INTO curated_revision_idempotency (idempotency_key, request_digest, response_json, response_status, created_at)
-         VALUES (?, ?, ?, 201, ?)`,
-        )
-        .bind(mutation.idempotencyKey, mutation.requestDigest, canonicalJson(result), observedAt),
+      curatedStatements.supersedeCuratedRevisionStatement(database, {
+        eventVersion: oldVersion,
+        revisionId,
+        expectedEventVersion: mutation.row.event_version,
+      }),
+      curatedStatements.insertCuratedSupersededEventStatement(database, {
+        revisionId,
+        eventVersion: oldVersion,
+        eventJson: canonicalJson({
+          superseded_by_revision_id: replacementId,
+          rationale: input.rationale,
+          conflict_digest: mutation.conflict?.conflict_digest ?? null,
+          expected_current_revision_id: mutation.currentRevisionId,
+        }),
+        observedAt,
+      }),
+      curatedStatements.insertAuthoredCuratedRevisionStatement(database, {
+        revisionId: replacementId,
+        game: proposal.game,
+        targetKey: targetKey(proposal),
+        targetKind: proposal.target.kind,
+        effectiveFrom: interval.from,
+        effectiveTo: interval.to,
+        proposalJson: canonicalJson(proposal),
+        contentDigest: proposalDigest,
+        reviewedSourceDigest: proposal.reviewed_source_digest,
+        schemaBindingJson: canonicalJson(schemaBinding),
+        observedAt,
+      }),
+      curatedStatements.insertCuratedReplacementAuthoredEventStatement(database, {
+        revisionId: replacementId,
+        eventJson: canonicalJson({
+          reviewed_source_digest: proposal.reviewed_source_digest,
+          supersedes_revision_id: revisionId,
+        }),
+        observedAt,
+      }),
+      curatedStatements.insertCuratedReplacementResponseStatement(database, {
+        idempotencyKey: mutation.idempotencyKey,
+        requestDigest: mutation.requestDigest,
+        responseJson: canonicalJson(result),
+        observedAt,
+      }),
     ]);
   } catch (error) {
     const replay = await idempotencyReplay(database, mutation.idempotencyKey, mutation.requestDigest);
@@ -560,22 +527,12 @@ export async function listCuratedRevisions(
   ) {
     throw new AdministrationProblem(422, "invalid_parameter", "The Curated Revision status filter is invalid.");
   }
-  const rows = await database
-    .prepare(
-      `SELECT * FROM curated_revisions
-     WHERE (? IS NULL OR game = ?)
-       AND (? IS NULL OR target_key = ?)
-       AND (? IS NULL OR status = ?)
-     ORDER BY created_at, id`,
-    )
-    .bind(
-      filters.game ?? null,
-      filters.game ?? null,
-      filters.target ?? null,
-      filters.target ?? null,
-      filters.status ?? null,
-      filters.status ?? null,
-    )
+  const rows = await curatedStatements
+    .filteredCuratedRevisionsStatement(database, {
+      game: filters.game ?? null,
+      target: filters.target ?? null,
+      status: filters.status ?? null,
+    })
     .all<RevisionRow>();
   return {
     items: await Promise.all(rows.results.map(async (row) => withoutEvents(await revisionContent(database, row)))),
@@ -606,9 +563,8 @@ export async function pinCuratedRevisionsForRun(
   if (!(await curatedRevisionSchemaAvailable(database))) {
     return { revision_ids: [], set_digest: await sha256Text(canonicalJson([])) };
   }
-  const existing = await database
-    .prepare("SELECT revision_ids_json, set_digest FROM ingestion_run_curated_revision_sets WHERE ingestion_run_id = ?")
-    .bind(runId)
+  const existing = await curatedStatements
+    .curatedPinnedSetStatement(database, { runId })
     .first<{ revision_ids_json: string; set_digest: string }>();
   if (existing !== null) {
     const revisionIds = JSON.parse(existing.revision_ids_json) as string[];
@@ -618,9 +574,8 @@ export async function pinCuratedRevisionsForRun(
     }
     return { revision_ids: revisionIds, set_digest: digest };
   }
-  const run = await database
-    .prepare("SELECT selected_games_json FROM ingestion_runs WHERE id = ?")
-    .bind(runId)
+  const run = await curatedStatements
+    .curatedRunSelectedGamesStatement(database, { runId })
     .first<{ selected_games_json: string }>();
   if (run === null)
     throw new AdministrationProblem(404, "ingestion_run_not_found", "The requested Ingestion Run does not exist.");
@@ -755,25 +710,8 @@ async function activeCuratedRevisionRows(
 ): Promise<ActiveCuratedRevisionRow[]> {
   const gamesJson = canonicalJson([...new Set(selectedGames)].sort());
   const on = observedAt.slice(0, 10);
-  const rows = await database
-    .prepare(
-      `SELECT revision.id, revision.proposal_json, revision.content_digest,
-            revision.event_version,
-            COALESCE((
-              SELECT json_extract(event.event_json, '$.reviewed_source_digest')
-              FROM curated_revision_events AS event
-              WHERE event.revision_id = revision.id
-                AND event.kind = 'reaffirmed'
-              ORDER BY event.event_version DESC LIMIT 1
-            ), revision.reviewed_source_digest) AS reviewed_source_digest
-     FROM curated_revisions AS revision
-     WHERE revision.status = 'active'
-       AND revision.game IN (SELECT value FROM json_each(?))
-       AND (revision.effective_from IS NULL OR revision.effective_from <= ?)
-       AND (revision.effective_to IS NULL OR ? < revision.effective_to)
-     ORDER BY revision.id`,
-    )
-    .bind(gamesJson, on, on)
+  const rows = await curatedStatements
+    .activeCuratedRevisionsStatement(database, { gamesJson, on })
     .all<ActiveCuratedRevisionRow>();
   return rows.results;
 }
@@ -813,18 +751,17 @@ async function preparedSourceChangeStatements(
     };
     diagnostics.push(sourceChangeDiagnostic(conflict.row.id, details));
     statements.push(
-      database
-        .prepare(
-          "UPDATE curated_revisions SET status = 'reconfirmation_required', event_version = ? WHERE id = ? AND status = 'active' AND event_version = ?",
-        )
-        .bind(version, conflict.row.id, conflict.row.event_version),
-      database
-        .prepare(
-          `INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
-         SELECT ?, ?, 'source_change_detected', ?, ?, 'system'
-         WHERE EXISTS (SELECT 1 FROM curated_revisions WHERE id = ? AND status = 'reconfirmation_required' AND event_version = ?)`,
-        )
-        .bind(conflict.row.id, version, canonicalJson(details), at, conflict.row.id, version),
+      curatedStatements.markCuratedSourceChangeStatement(database, {
+        eventVersion: version,
+        revisionId: conflict.row.id,
+        expectedEventVersion: conflict.row.event_version,
+      }),
+      curatedStatements.insertCuratedSourceChangeEventStatement(database, {
+        revisionId: conflict.row.id,
+        eventVersion: version,
+        eventJson: canonicalJson(details),
+        observedAt: at,
+      }),
     );
   }
   return { statements, diagnostics };
@@ -840,22 +777,20 @@ async function curatedRevisionPinStatements(
   const setDigest = await sha256Text(canonicalJson(ids));
   return [
     ...rows.map((row, ordinal) =>
-      database
-        .prepare(
-          `INSERT INTO ingestion_run_curated_revisions (
-         ingestion_run_id, ordinal, revision_id, content_digest,
-         reviewed_source_digest
-       ) VALUES (?, ?, ?, ?, ?)`,
-        )
-        .bind(runId, ordinal, row.id, row.content_digest, row.reviewed_source_digest),
+      curatedStatements.insertCuratedRunPinStatement(database, {
+        runId,
+        ordinal,
+        id: row.id,
+        content_digest: row.content_digest,
+        reviewed_source_digest: row.reviewed_source_digest,
+      }),
     ),
-    database
-      .prepare(
-        `INSERT INTO ingestion_run_curated_revision_sets (
-         ingestion_run_id, revision_ids_json, set_digest, pinned_at
-       ) VALUES (?, ?, ?, ?)`,
-      )
-      .bind(runId, canonicalJson(ids), setDigest, observedAt),
+    curatedStatements.insertCuratedRunPinSetStatement(database, {
+      runId,
+      idsJson: canonicalJson(ids),
+      setDigest,
+      observedAt,
+    }),
   ];
 }
 
@@ -864,14 +799,8 @@ export async function assertCuratedGamesUnblocked(
   selectedGames: readonly string[],
 ): Promise<void> {
   if (!(await curatedRevisionSchemaAvailable(database))) return;
-  const conflict = await database
-    .prepare(
-      `SELECT id, game FROM curated_revisions
-     WHERE status = 'reconfirmation_required'
-       AND game IN (SELECT value FROM json_each(?))
-     ORDER BY id LIMIT 1`,
-    )
-    .bind(canonicalJson(selectedGames))
+  const conflict = await curatedStatements
+    .blockingCuratedRevisionStatement(database, { selectedGamesJson: canonicalJson(selectedGames) })
     .first<{ id: string; game: string }>();
   if (conflict !== null) {
     throw new AdministrationProblem(
@@ -891,25 +820,13 @@ export async function applyPinnedCuratedRevisions(
 ): Promise<CatalogueCandidate> {
   if (!(await curatedRevisionSchemaAvailable(database))) return candidate;
   const [rows, run] = await Promise.all([
-    database
-      .prepare(
-        `SELECT revision.id, revision.proposal_json, revision.content_digest,
-            pin.reviewed_source_digest
-     FROM ingestion_run_curated_revisions AS pin
-     JOIN curated_revisions AS revision ON revision.id = pin.revision_id
-     WHERE pin.ingestion_run_id = ? ORDER BY pin.ordinal`,
-      )
-      .bind(runId)
-      .all<{
-        id: string;
-        proposal_json: string;
-        content_digest: string;
-        reviewed_source_digest: string;
-      }>(),
-    database
-      .prepare("SELECT selected_games_json FROM ingestion_runs WHERE id = ?")
-      .bind(runId)
-      .first<{ selected_games_json: string }>(),
+    curatedStatements.pinnedCuratedRevisionsStatement(database, { runId }).all<{
+      id: string;
+      proposal_json: string;
+      content_digest: string;
+      reviewed_source_digest: string;
+    }>(),
+    curatedStatements.curatedRunSelectedGamesStatement(database, { runId }).first<{ selected_games_json: string }>(),
   ]);
   if (run === null) {
     throw new AdministrationProblem(404, "ingestion_run_not_found", "The requested Ingestion Run does not exist.");
@@ -979,21 +896,8 @@ export async function applyPinnedCuratedRevisions(
   }
   if (!validComposedCuratedCandidate(result)) {
     await database.batch([
-      database
-        .prepare(
-          `UPDATE ingestion_runs
-         SET state = 'failed', terminal_at = ?,
-             failure_code = 'curated_revision_composed_candidate_invalid',
-             progress_json = json_set(progress_json, '$.current_stage', 'failed')
-         WHERE id = ? AND ${ingestionRunTransitionSql(["planning", "collecting", "parsing", "reconciling", "awaiting_approval"], "failed")}`,
-        )
-        .bind(observedAt, runId),
-      database
-        .prepare(
-          `UPDATE operation_state SET active_ingestion_run_id = NULL
-         WHERE singleton = 1 AND active_ingestion_run_id = ?`,
-        )
-        .bind(runId),
+      curatedStatements.failInvalidCuratedCandidateStatement(database, { observedAt, runId }),
+      curatedStatements.releaseCuratedRunStatement(database, { runId }),
     ]);
     throw new Error("curated_revision_composed_candidate_invalid");
   }
@@ -1005,13 +909,8 @@ export async function curatedRevisionSetForRun(
   runId: string,
 ): Promise<{ revision_ids: string[]; set_digest: string } | null> {
   if (!(await curatedRevisionSchemaAvailable(database))) return null;
-  const row = await database
-    .prepare(
-      `SELECT revision_ids_json, set_digest
-     FROM ingestion_run_curated_revision_sets
-     WHERE ingestion_run_id = ?`,
-    )
-    .bind(runId)
+  const row = await curatedStatements
+    .curatedRevisionSetStatement(database, { runId })
     .first<{ revision_ids_json: string; set_digest: string }>();
   return row === null ? null : { revision_ids: JSON.parse(row.revision_ids_json), set_digest: row.set_digest };
 }
@@ -1027,9 +926,8 @@ export async function curatedRevisionInspectionForRun(
 } | null> {
   const set = await curatedRevisionSetForRun(database, runId);
   if (set === null) return null;
-  const run = await database
-    .prepare("SELECT state, failure_code FROM ingestion_runs WHERE id = ?")
-    .bind(runId)
+  const run = await curatedStatements
+    .curatedRunStateStatement(database, { runId })
     .first<{ state: string; failure_code: string | null }>();
   const sourceChangeFailure =
     run?.state === "failed" && run.failure_code === "curated_revision_reconfirmation_required";
@@ -1037,21 +935,12 @@ export async function curatedRevisionInspectionForRun(
   if (expectedDigest !== set.set_digest) {
     throw new Error("The immutable Curated Revision pin-set digest is invalid.");
   }
-  const rows = await database
-    .prepare(
-      `SELECT pin.ordinal, pin.revision_id, pin.content_digest,
-            revision.proposal_json
-     FROM ingestion_run_curated_revisions AS pin
-     JOIN curated_revisions AS revision ON revision.id = pin.revision_id
-     WHERE pin.ingestion_run_id = ? ORDER BY pin.ordinal`,
-    )
-    .bind(runId)
-    .all<{
-      ordinal: number;
-      revision_id: string;
-      content_digest: string;
-      proposal_json: string;
-    }>();
+  const rows = await curatedStatements.curatedRunPinInspectionStatement(database, { runId }).all<{
+    ordinal: number;
+    revision_id: string;
+    content_digest: string;
+    proposal_json: string;
+  }>();
   if (canonicalJson(rows.results.map(({ revision_id }) => revision_id)) !== canonicalJson(set.revision_ids)) {
     throw new Error("The immutable Curated Revision pin-set rows are invalid.");
   }
@@ -1118,40 +1007,7 @@ export async function curatedPublicationStatements(
   revisionId: string,
 ): Promise<D1PreparedStatement[]> {
   if (!(await curatedRevisionSchemaAvailable(database))) return [];
-  return [
-    database
-      .prepare(
-        `INSERT OR IGNORE INTO catalogue_curated_provenance (
-       catalogue_revision_id, curated_revision_id, target_key,
-       content_digest, provenance_json
-     )
-     SELECT ?, prior.curated_revision_id, prior.target_key,
-            prior.content_digest, prior.provenance_json
-     FROM ingestion_runs AS run
-     JOIN catalogue_curated_provenance AS prior
-       ON prior.catalogue_revision_id = run.expected_current_revision_id
-     JOIN curated_revisions AS prior_revision
-       ON prior_revision.id = prior.curated_revision_id
-     WHERE run.id = ?
-       AND NOT EXISTS (
-         SELECT 1 FROM json_each(run.selected_games_json)
-         WHERE value = prior_revision.game
-       )
-     UNION ALL
-     SELECT ?, revision.id, revision.target_key,
-            revision.content_digest,
-            json_object(
-              'author', revision.author,
-              'created_at', revision.created_at,
-              'evidence', json_extract(revision.proposal_json, '$.evidence'),
-              'rationale', json_extract(revision.proposal_json, '$.rationale')
-            )
-     FROM ingestion_run_curated_revisions AS pin
-     JOIN curated_revisions AS revision ON revision.id = pin.revision_id
-     WHERE pin.ingestion_run_id = ?`,
-      )
-      .bind(revisionId, runId, revisionId, runId),
-  ];
+  return [curatedStatements.insertPublishedCuratedProvenanceStatement(database, { revisionId, runId })];
 }
 
 export function stripCuratedRevisionEffects(
@@ -1208,9 +1064,7 @@ export function stripCuratedRevisionEffects(
 }
 
 async function curatedRevisionSchemaAvailable(database: D1Database): Promise<boolean> {
-  const row = await database
-    .prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'curated_revisions'")
-    .first<{ present: number }>();
+  const row = await curatedStatements.curatedSchemaAvailableStatement(database).first<{ present: number }>();
   return row?.present === 1;
 }
 
@@ -1242,9 +1096,8 @@ async function sourceChangePersistence(
   const statements: D1PreparedStatement[] = [];
   const diagnostics: Record<string, unknown>[] = [];
   for (const conflict of conflicts) {
-    const revision = await database
-      .prepare("SELECT status, event_version FROM curated_revisions WHERE id = ?")
-      .bind(conflict.row.id)
+    const revision = await curatedStatements
+      .curatedRevisionStatusStatement(database, { revisionId: conflict.row.id })
       .first<{ status: string; event_version: number }>();
     if (revision?.status === "reconfirmation_required") continue;
     const observed = await sha256Text(canonicalJson(conflict.reviewedSourceValue));
@@ -1267,18 +1120,16 @@ async function sourceChangePersistence(
     };
     diagnostics.push(sourceChangeDiagnostic(conflict.row.id, details));
     statements.push(
-      database
-        .prepare(
-          "UPDATE curated_revisions SET status = 'reconfirmation_required', event_version = ? WHERE id = ? AND status = 'active'",
-        )
-        .bind(version, conflict.row.id),
-      database
-        .prepare(
-          `INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
-         SELECT ?, ?, 'source_change_detected', ?, ?, 'system'
-         WHERE EXISTS (SELECT 1 FROM curated_revisions WHERE id = ? AND status = 'reconfirmation_required' AND event_version = ?)`,
-        )
-        .bind(conflict.row.id, version, canonicalJson(details), at, conflict.row.id, version),
+      curatedStatements.markActiveCuratedSourceChangeStatement(database, {
+        eventVersion: version,
+        revisionId: conflict.row.id,
+      }),
+      curatedStatements.insertLegacyCuratedSourceChangeEventStatement(database, {
+        revisionId: conflict.row.id,
+        eventVersion: version,
+        eventJson: canonicalJson(details),
+        observedAt: at,
+      }),
     );
   }
   return { statements, diagnostics };
@@ -1286,21 +1137,8 @@ async function sourceChangePersistence(
 
 function sourceChangeRunFailureStatements(database: D1Database, runId: string, at: string): D1PreparedStatement[] {
   return [
-    database
-      .prepare(
-        `UPDATE ingestion_runs
-       SET state = 'failed', terminal_at = ?,
-           failure_code = 'curated_revision_reconfirmation_required',
-           progress_json = json_set(progress_json, '$.current_stage', 'failed')
-       WHERE id = ? AND ${ingestionRunTransitionSql(["planning", "collecting", "parsing", "reconciling", "awaiting_approval"], "failed")}`,
-      )
-      .bind(at, runId),
-    database
-      .prepare(
-        `UPDATE operation_state SET active_ingestion_run_id = NULL
-       WHERE singleton = 1 AND active_ingestion_run_id = ?`,
-      )
-      .bind(runId),
+    curatedStatements.failCuratedSourceChangeRunStatement(database, { at, runId }),
+    curatedStatements.releaseCuratedRunStatement(database, { runId }),
   ];
 }
 
@@ -1377,16 +1215,12 @@ async function existingRevisionMutation(
       "The expected current Catalogue Revision is stale.",
     );
   }
-  const operation = await database
-    .prepare(
-      "SELECT active_ingestion_run_id, active_release_id AS active_production_release_id, active_release_expires_at AS active_production_release_expires_at, recovery_health FROM operation_state WHERE singleton = 1",
-    )
-    .first<{
-      active_ingestion_run_id: string | null;
-      active_production_release_id: string | null;
-      active_production_release_expires_at: string | null;
-      recovery_health: string;
-    }>();
+  const operation = await curatedStatements.curatedMutationOperationStateStatement(database).first<{
+    active_ingestion_run_id: string | null;
+    active_production_release_id: string | null;
+    active_production_release_expires_at: string | null;
+    recovery_health: string;
+  }>();
   if (operation?.recovery_health === "blocked") {
     throw new AdministrationProblem(409, "recovery_in_progress", "Recovery blocks Curated Revision mutation.");
   }
@@ -1443,13 +1277,8 @@ async function existingRevisionMutation(
 
 async function pendingConflict(database: D1Database, row: RevisionRow): Promise<PendingConflict | null> {
   if (row.status !== "reconfirmation_required") return null;
-  const event = await database
-    .prepare(
-      `SELECT event_json FROM curated_revision_events
-     WHERE revision_id = ? AND kind = 'source_change_detected'
-     ORDER BY event_version DESC LIMIT 1`,
-    )
-    .bind(row.id)
+  const event = await curatedStatements
+    .curatedPendingConflictStatement(database, { id: row.id })
     .first<{ event_json: string }>();
   return event === null ? null : (JSON.parse(event.event_json) as PendingConflict);
 }
@@ -1534,9 +1363,8 @@ async function idempotencyReplay(
 ): Promise<{ created: boolean; document: MutationResult } | null> {
   const row = await replayByDigest({
     lookup: () =>
-      database
-        .prepare("SELECT request_digest, response_json FROM curated_revision_idempotency WHERE idempotency_key = ?")
-        .bind(key)
+      curatedStatements
+        .curatedIdempotencyReplayStatement(database, { key })
         .first<{ request_digest: string; response_json: string }>(),
     retainedDigest: (retained) => retained.request_digest,
     requestDigest,
@@ -1587,14 +1415,8 @@ async function effectiveReviewedSourceDigest(
   revisionId: string,
   fallback: string,
 ): Promise<string> {
-  const row = await database
-    .prepare(
-      `SELECT json_extract(event_json, '$.reviewed_source_digest') AS digest
-     FROM curated_revision_events
-     WHERE revision_id = ? AND kind = 'reaffirmed'
-     ORDER BY event_version DESC LIMIT 1`,
-    )
-    .bind(revisionId)
+  const row = await curatedStatements
+    .curatedReaffirmedSourceDigestStatement(database, { revisionId })
     .first<{ digest: string | null }>();
   return row?.digest ?? fallback;
 }
@@ -1666,11 +1488,8 @@ async function sourceDigestForProposal(target: Record<string, unknown>, proposal
 
 async function revisionContent(database: D1Database, row: RevisionRow): Promise<Record<string, unknown>> {
   const proposal = structuralProposal(JSON.parse(row.proposal_json));
-  const events = await database
-    .prepare(
-      "SELECT kind, event_version, event_json, created_at, author FROM curated_revision_events WHERE revision_id = ? ORDER BY event_version",
-    )
-    .bind(row.id)
+  const events = await curatedStatements
+    .curatedRevisionEventHistoryStatement(database, { id: row.id })
     .all<{ kind: string; event_version: number; event_json: string; created_at: string; author: string }>();
   const conflict = await pendingConflict(database, row);
   return {
@@ -1712,8 +1531,8 @@ async function operationIdentity(idempotencyKey: string): Promise<string> {
 }
 
 async function currentCatalogueRevisionId(database: D1Database): Promise<string> {
-  const row = await database
-    .prepare("SELECT current_revision_id FROM catalogue_state WHERE singleton = 1")
+  const row = await curatedStatements
+    .curatedCurrentCatalogueRevisionStatement(database)
     .first<{ current_revision_id: string }>();
   if (row === null) throw new Error("Catalogue state is unavailable.");
   return row.current_revision_id;
@@ -1728,11 +1547,12 @@ async function currentTarget(
     proposal.target.kind === "field" &&
     (proposal.target.entity_type === "card" || proposal.target.entity_type === "printing")
   ) {
-    const table = proposal.target.entity_type === "card" ? "revision_cards" : "revision_printings";
-    const idColumn = proposal.target.entity_type === "card" ? "card_id" : "printing_id";
-    const row = await database
-      .prepare(`SELECT document_json FROM ${table} WHERE catalogue_revision_id = ? AND ${idColumn} = ?`)
-      .bind(revisionId, proposal.target.entity_id)
+    const row = await curatedStatements
+      .curatedEntityDocumentStatement(database, {
+        revisionId,
+        entityType: proposal.target.entity_type,
+        entityId: proposal.target.entity_id,
+      })
       .first<{ document_json: string }>();
     if (row === null)
       throw new AdministrationProblem(
@@ -1754,9 +1574,8 @@ async function currentTarget(
       const owner =
         cardId === null
           ? null
-          : await database
-              .prepare("SELECT document_json FROM revision_cards WHERE catalogue_revision_id = ? AND card_id = ?")
-              .bind(revisionId, cardId)
+          : await curatedStatements
+              .curatedCardDocumentStatement(database, { revisionId, cardId })
               .first<{ document_json: string }>();
       const cardDocument = owner === null ? null : (JSON.parse(owner.document_json) as Record<string, unknown>);
       const cardEntity = cardDocument !== null && record(cardDocument.data) ? cardDocument.data : cardDocument;
@@ -1770,13 +1589,8 @@ async function currentTarget(
     }
     return stripCuratedEntityEffects(entity);
   }
-  const row = await database
-    .prepare(
-      `SELECT run.id AS ingestion_run_id, run.candidate_json FROM catalogue_revisions AS revision
-     JOIN ingestion_runs AS run ON run.id = revision.ingestion_run_id
-     WHERE revision.id = ?`,
-    )
-    .bind(revisionId)
+  const row = await curatedStatements
+    .curatedCatalogueCandidateStatement(database, { revisionId })
     .first<{ ingestion_run_id: string; candidate_json: string }>();
   if (row === null) {
     throw new AdministrationProblem(
@@ -1797,12 +1611,8 @@ async function catalogueCardsAtRevision(
   database: D1Database,
   revisionId: string,
 ): Promise<CatalogueCandidate["cards"]> {
-  const rows = await database
-    .prepare(
-      `SELECT document_json FROM revision_cards
-     WHERE catalogue_revision_id = ? ORDER BY card_id`,
-    )
-    .bind(revisionId)
+  const rows = await curatedStatements
+    .curatedCatalogueCardDocumentsStatement(database, { revisionId })
     .all<{ document_json: string }>();
   return rows.results.map(({ document_json }) => {
     const document = JSON.parse(document_json) as Record<string, unknown>;
@@ -2062,13 +1872,10 @@ async function assertRetainedCuratedEvidence(
 ): Promise<void> {
   const sourceObservationIds = evidence.flatMap((item) => (item.kind === "source_observation" ? [item.id] : []));
   if (sourceObservationIds.length === 0) return;
-  const retained = await database
-    .prepare(
-      `SELECT source_observation_id
-     FROM retained_source_observation_evidence
-     WHERE source_observation_id IN (SELECT value FROM json_each(?))`,
-    )
-    .bind(JSON.stringify(sourceObservationIds))
+  const retained = await curatedStatements
+    .retainedCuratedObservationEvidenceStatement(database, {
+      sourceObservationIdsJson: JSON.stringify(sourceObservationIds),
+    })
     .all<{
       source_observation_id: string;
     }>();

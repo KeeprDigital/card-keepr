@@ -1,3 +1,12 @@
+import {
+  createSearchRepairRequestStatement,
+  claimSearchRepairRequestStatement,
+  searchRepairCurrentRevisionStatement,
+  releaseSearchRepairClaimStatement,
+  completeSearchRepairRequestStatement,
+  oversizedSearchRepairCardStatement,
+  searchRepairRequestStatement,
+} from "./card-search-repair-repository";
 import { repairCardSearchMaterialization, type CardSearchRepairResult } from "./card-search-materialization";
 import { repairableCatalogueRevisionTarget } from "./catalogue-revision-retention";
 import { AdministrationProblem, replayByDigest, canonicalJson } from "../shared";
@@ -59,15 +68,12 @@ export async function runGuardedCardSearchRepair(
       );
     }
     await assertRepairSourceBound(database, input.target_revision_id);
-    await database
-      .prepare(
-        `INSERT OR IGNORE INTO catalogue_search_repair_requests (
-           idempotency_key, target_revision_id,
-           expected_current_revision_id, request_json, result_json
-         ) VALUES (?, ?, ?, ?, NULL)`,
-      )
-      .bind(input.idempotency_key, input.target_revision_id, input.expected_current_revision_id, requestJson)
-      .run();
+    await createSearchRepairRequestStatement(database, {
+      key: input.idempotency_key,
+      targetRevisionId: input.target_revision_id,
+      expectedRevisionId: input.expected_current_revision_id,
+      requestJson: requestJson,
+    }).run();
     const stored = await searchRepairReplay(database, input.idempotency_key, requestJson);
     if (stored === null) {
       throw new Error("The Card search repair request was not retained.");
@@ -80,42 +86,19 @@ export async function runGuardedCardSearchRepair(
 
   const claimToken = crypto.randomUUID();
   const claimExpiresAt = new Date(Date.parse(observedAt) + 2 * 60 * 1_000).toISOString();
-  const claim = await database
-    .prepare(
-      `UPDATE catalogue_search_repair_requests
-       SET claim_token = ?, claim_expires_at = ?
-       WHERE idempotency_key = ?
-         AND (
-           result_json IS NULL
-           OR json_extract(result_json, '$.complete') = 0
-         )
-         AND (
-           claim_token IS NULL
-           OR claim_expires_at <= ?
-         )
-         AND EXISTS (
-           SELECT 1
-           FROM catalogue_state AS state
-           WHERE state.singleton = 1
-             AND state.current_revision_id =
-                   catalogue_search_repair_requests.expected_current_revision_id
-         )`,
-    )
-    .bind(claimToken, claimExpiresAt, input.idempotency_key, observedAt)
-    .run();
+  const claim = await claimSearchRepairRequestStatement(database, {
+    claimToken: claimToken,
+    expiresAt: claimExpiresAt,
+    key: input.idempotency_key,
+    observedAt: observedAt,
+  }).run();
   if (claim.meta.changes !== 1) {
     const observed = await searchRepairRequest(database, input.idempotency_key);
     if (observed?.result_json !== null && observed !== null) {
       const result = parseRepairResult(observed.result_json);
       if (result.complete) return result;
     }
-    const current = await database
-      .prepare(
-        `SELECT current_revision_id
-         FROM catalogue_state
-         WHERE singleton = 1`,
-      )
-      .first<{ current_revision_id: string }>();
+    const current = await searchRepairCurrentRevisionStatement(database).first<{ current_revision_id: string }>();
     if (current?.current_revision_id !== input.expected_current_revision_id) {
       throw new AdministrationProblem(
         409,
@@ -135,33 +118,15 @@ export async function runGuardedCardSearchRepair(
       targetRevisionId: input.target_revision_id,
     });
   } catch (error) {
-    await database
-      .prepare(
-        `UPDATE catalogue_search_repair_requests
-         SET claim_token = NULL, claim_expires_at = NULL
-         WHERE idempotency_key = ? AND claim_token = ?
-           AND (
-             result_json IS NULL
-             OR json_extract(result_json, '$.complete') = 0
-           )`,
-      )
-      .bind(input.idempotency_key, claimToken)
-      .run();
+    await releaseSearchRepairClaimStatement(database, { key: input.idempotency_key, claimToken: claimToken }).run();
     throw error;
   }
   const resultJson = canonicalJson(result);
-  const completedUpdate = await database
-    .prepare(
-      `UPDATE catalogue_search_repair_requests
-       SET result_json = ?, claim_token = NULL, claim_expires_at = NULL
-       WHERE idempotency_key = ? AND claim_token = ?
-         AND (
-           result_json IS NULL
-           OR json_extract(result_json, '$.complete') = 0
-         )`,
-    )
-    .bind(resultJson, input.idempotency_key, claimToken)
-    .run();
+  const completedUpdate = await completeSearchRepairRequestStatement(database, {
+    resultJson: resultJson,
+    key: input.idempotency_key,
+    claimToken: claimToken,
+  }).run();
   if (completedUpdate.meta.changes !== 1) {
     throw new Error("The Card search repair claim was lost.");
   }
@@ -173,17 +138,10 @@ export async function runGuardedCardSearchRepair(
 }
 
 async function assertRepairSourceBound(database: D1Database, targetRevisionId: string): Promise<void> {
-  const oversized = await database
-    .prepare(
-      `SELECT card_id
-       FROM revision_cards
-       WHERE catalogue_revision_id = ?
-         AND length(CAST(document_json AS BLOB)) > ?
-       ORDER BY card_id
-       LIMIT 1`,
-    )
-    .bind(targetRevisionId, maximumSearchRepairSourceBytes)
-    .first<{ card_id: string }>();
+  const oversized = await oversizedSearchRepairCardStatement(database, {
+    revisionId: targetRevisionId,
+    maximumBytes: maximumSearchRepairSourceBytes,
+  }).first<{ card_id: string }>();
   if (oversized !== null) {
     throw new AdministrationProblem(
       422,
@@ -197,16 +155,7 @@ async function searchRepairRequest(
   database: D1Database,
   idempotencyKey: string,
 ): Promise<SearchRepairRequestRow | null> {
-  return database
-    .prepare(
-      `SELECT idempotency_key, target_revision_id,
-              expected_current_revision_id, request_json, result_json,
-              claim_token, claim_expires_at
-       FROM catalogue_search_repair_requests
-       WHERE idempotency_key = ?`,
-    )
-    .bind(idempotencyKey)
-    .first<SearchRepairRequestRow>();
+  return searchRepairRequestStatement(database, idempotencyKey).first<SearchRepairRequestRow>();
 }
 
 // The retained fingerprint is the canonical request itself rather than a

@@ -52,3 +52,7 @@ export function attemptStatement(database: D1Database, attempt: AttemptInput): D
 export function sourceSnapshotStatement(database: D1Database, snapshotId: string): D1PreparedStatement {
   return database.prepare("SELECT * FROM source_snapshots WHERE id = ?").bind(snapshotId);
 }
+
+export function sourceObservationSetStatement(database: D1Database, observationSetId: string): D1PreparedStatement {
+  return database.prepare("SELECT * FROM source_observation_sets WHERE id = ?").bind(observationSetId);
+}

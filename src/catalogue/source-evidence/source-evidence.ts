@@ -1,3 +1,4 @@
+import { sourceSnapshotStatement, sourceObservationSetStatement } from "./evidence-repository";
 import { AdministrationProblem } from "../shared";
 import { parseSnapshot, reparseSnapshot } from "./source-evidence-parsing";
 import { assertIdentifier, type StartEvidenceRunRequest } from "./source-evidence-model";
@@ -33,10 +34,7 @@ export async function sourceSnapshotContent(
   snapshotId: string,
 ): Promise<Response> {
   assertIdentifier(snapshotId, "source_snapshot_id");
-  const snapshot = await database
-    .prepare("SELECT * FROM source_snapshots WHERE id = ?")
-    .bind(snapshotId)
-    .first<SnapshotRow>();
+  const snapshot = await sourceSnapshotStatement(database, snapshotId).first<SnapshotRow>();
   if (snapshot === null) {
     throw new AdministrationProblem(404, "source_snapshot_not_found", "The requested Source Snapshot does not exist.");
   }
@@ -54,10 +52,7 @@ export async function sourceObservationSetContent(
   observationSetId: string,
 ): Promise<Response> {
   assertIdentifier(observationSetId, "source_observation_set_id");
-  const observation = await database
-    .prepare("SELECT * FROM source_observation_sets WHERE id = ?")
-    .bind(observationSetId)
-    .first<ObservationSetRow>();
+  const observation = await sourceObservationSetStatement(database, observationSetId).first<ObservationSetRow>();
   if (observation === null) {
     throw new AdministrationProblem(
       404,
