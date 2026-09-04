@@ -770,6 +770,25 @@
         }
       }
     },
+    "CardCollectionQuery": {
+      "type": "object",
+      "description": "GET /v1/cards query parameters. Every parameter occurs at most once. Filters are ANDed and pinned to the cursor Catalogue Revision. Unknown Product ids, normalized rarities, or attribute values in that revision return invalid_parameter (400), as do malformed or unsupported Game Profile attributes. Product and rarity may match different Printings of the same Card. Attribute equality is typed by the registered Game Profile; scalar arrays use membership and nested object leaves use dotted paths. Null is written null, integers use canonical nonnegative decimal, booleans use true or false, strings are exact and case-sensitive. Attributes require game. Valid filter values with no matching combination return an empty page. All normalized filters are bound to card-keepr-card-cursor@1; changed filters return invalid_cursor (400).",
+      "properties": {
+        "q": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "game": { "enum": ["one-piece", "fusion-world", "digimon", "gundam"] },
+        "card_number": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "product_id": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "rarity": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,100}$", "description": "Normalized rarity, case-insensitive; matched against any Printing in the pinned revision." },
+        "limit": { "type": "string", "pattern": "^(100|[1-9][0-9]?)$" },
+        "after": { "type": "string", "maxLength": 16384, "description": "Opaque revision-pinned cursor returned by page.next_cursor." }
+      },
+      "patternProperties": {
+        "^attribute\\.[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$": { "type": "string", "minLength": 1, "maxLength": 500 }
+      },
+      "additionalProperties": false,
+      "if": { "not": { "propertyNames": { "enum": ["q", "game", "card_number", "product_id", "rarity", "limit", "after"] } } },
+      "then": { "required": ["game"] }
+    },
     "CardCollection": {
       "type": "object",
       "additionalProperties": false,

@@ -1,23 +1,23 @@
-import {
-  type CatalogueVerificationQuery,
-  catalogueVerificationQuery,
-  catalogueVerificationStatement,
-} from "./backup-verification-repository";
+import { parseStoredLegalityRule } from "../legality";
+import { storedProductApiProjection } from "../read";
+import { AdministrationProblem, canonicalJson, StreamingSha256, sha256Text } from "../shared";
 import * as backupStatements from "./backup-repository";
 import {
   type BackupAttemptEvidenceRow,
   backupAttemptEvidenceStatement,
   restorePhaseTransitionStatement,
 } from "./backup-repository";
-import { AdministrationProblem, canonicalJson, sha256Text, StreamingSha256 } from "../shared";
+import {
+  type CatalogueVerificationQuery,
+  catalogueVerificationQuery,
+  catalogueVerificationStatement,
+} from "./backup-verification-repository";
+import { withCardSearchPreparedForD1Export } from "./card-search-recovery";
+import { completedCardSearchReconstructionQuery } from "./card-search-recovery-repository";
 import {
   prepareCardSearchForD1ExportStatements,
   reconstructCardSearchAfterD1RestoreStatements,
 } from "./card-search-recovery-statements.ts";
-import { completedCardSearchReconstructionQuery } from "./card-search-recovery-repository";
-import { withCardSearchPreparedForD1Export } from "./card-search-recovery";
-import { storedProductApiProjection } from "../read";
-import { parseStoredLegalityRule } from "../legality";
 
 export type D1BackupProvider = Readonly<{
   exportSql(
@@ -912,7 +912,7 @@ async function representativeDigestMatches(
   key: "representative_product_digest" | "representative_legality_rule_digest",
   documentJson: string | null,
 ): Promise<boolean> {
-  if (!Object.prototype.hasOwnProperty.call(expected, key)) return true;
+  if (!Object.hasOwn(expected, key)) return true;
   const digest = expected[key];
   if (digest === null) return documentJson === null;
   return (
@@ -1246,7 +1246,7 @@ function d1Path(accountId: string, databaseId: string, action: string): string {
   return `/accounts/${encodeURIComponent(accountId)}/d1/database/${encodeURIComponent(databaseId)}/${action}`;
 }
 
-function firstQueryRow(result: Record<string, unknown>): Record<string, unknown> {
+function _firstQueryRow(result: Record<string, unknown>): Record<string, unknown> {
   const rows = queryRows(result);
   if (rows.length !== 1) {
     throw new Error("Restored D1 verification response is invalid.");

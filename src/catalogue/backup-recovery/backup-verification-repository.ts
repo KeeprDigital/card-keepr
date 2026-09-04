@@ -15,7 +15,7 @@ export function catalogueVerificationQuery(input: CatalogueVerificationQuery): {
     return { sql: verificationEvidenceSql(), params: [input.revisionId, input.expectedJson] };
   const page = cardCollectionPageQuery(
     input.revisionId,
-    { q: input.searchText, game: null, cardNumber: null, limit: 100 },
+    { q: input.searchText, game: null, cardNumber: null, productId: null, rarity: null, attributes: {}, limit: 100 },
     null,
     100,
   );

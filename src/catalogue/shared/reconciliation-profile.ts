@@ -255,6 +255,31 @@ export function requiredProfileContract(profile: string): ProfileContract {
   return contract;
 }
 
+export function gameProfileForGame(game: string): string | null {
+  return Object.entries(profileContracts).find(([, contract]) => contract.game === game)?.[0] ?? null;
+}
+
+/** Parse equality against a scalar profile leaf; arrays mean membership. */
+export function gameProfileFilterValue(profile: string, path: string, raw: string): string | null {
+  let schema: Schema | undefined = requiredProfileContract(profile).card;
+  for (const part of path.split(".")) {
+    while (schema?.kind === "array") schema = schema.items;
+    schema = schema?.kind === "object" && Object.hasOwn(schema.properties, part) ? schema.properties[part] : undefined;
+  }
+  while (schema?.kind === "array") schema = schema.items;
+  if (schema === undefined || schema.kind === "object") return null;
+  if ("nullable" in schema && schema.nullable && raw === "null") return "null";
+  if (schema.kind === "enum") return schema.values.includes(raw) ? JSON.stringify(raw) : null;
+  if (schema.kind === "string") return raw.length >= (schema.minimumLength ?? 0) ? JSON.stringify(raw) : null;
+  if (schema.kind === "integer") {
+    const value = Number(raw);
+    return /^(0|[1-9][0-9]*)$/u.test(raw) && Number.isSafeInteger(value) && value >= (schema.minimum ?? 0)
+      ? JSON.stringify(value)
+      : null;
+  }
+  return raw === "true" || raw === "false" ? raw : null;
+}
+
 export function exportedGameProfileSchema(profile: string) {
   const contract = requiredProfileContract(profile);
   return {
