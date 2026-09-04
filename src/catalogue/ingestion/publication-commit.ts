@@ -16,9 +16,8 @@ import {
   reconciliationPublication,
   typedPrintingProjections,
 } from "../reconciliation";
-
-import { idempotencyCompletionStatements } from "./administration-idempotency";
-import { replayAfterConflict } from "./administration-idempotency";
+import { idempotencyCompletionStatements, replayAfterConflict } from "./administration-idempotency";
+import { printingQueryProjectionStatements } from "./printing-query-materialization";
 import { requiredCandidateCatalogueDigest } from "./publication-storage";
 import { progressFor, publicRun } from "./run-document-codec";
 import { freshnessStatementsForRun } from "./run-freshness";
@@ -335,12 +334,13 @@ export async function commitVerifiedPublication(
       searchText: cardSearchText(document.data),
     };
   });
+  const gamesByCardId = new Map(input.candidate.cards.map((card) => [card.id, card.game]));
   const printingDocuments = await Promise.all(
     input.candidate.printings.map(async (printing) => ({
       printing,
       document: await cataloguePrinting(
         printing,
-        input.candidate.cards.find((card) => card.id === printing.card_id)!.game,
+        gamesByCardId.get(printing.card_id)!,
         revisionId,
         input.reconciliation?.printingLifecycles[printing.id],
         input.reconciliation?.relationshipEvidence[printing.id] ?? [],
@@ -619,6 +619,16 @@ export async function commitVerifiedPublication(
     ...printingImageStatements,
     ...revisionPrintingImageStatements,
     ...productReleaseStatements,
+    ...printingQueryProjectionStatements(
+      database,
+      revisionId,
+      printingDocuments.map(({ printing }) => ({
+        printing_id: printing.id,
+        card_id: printing.card_id,
+        supported_game: gamesByCardId.get(printing.card_id)!,
+        normalized_rarity: printing.rarity.normalized,
+      })),
+    ),
     database
       .prepare(
         `INSERT INTO catalogue_exports (

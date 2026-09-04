@@ -16,6 +16,7 @@ export {
 } from "./card-search";
 export { ReadProblem } from "./collection-endpoint";
 export { contextualLegalityStatusResponse } from "./legality-status";
+export { type PrintingCollectionFilters, printingCollectionQuery } from "./printing-collection-query";
 export { currentPrintingsResponse } from "./printing-collection-read";
 export {
   currentProductResponse,
@@ -32,7 +33,6 @@ export {
   currentPrintingResponse,
   printingImageContentResponse,
 } from "./read";
-
 export { catalogueRoutes } from "./routes";
 export {
   compareSourceFreshness,

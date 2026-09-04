@@ -7,6 +7,7 @@ import apiSchema from "../../../prototype/formalize-implementation-contracts/sch
 import { productReleasePublicationStatements } from "../../../src/catalogue/reconciliation";
 import { type CatalogueCandidate, catalogueCandidateContract } from "../../../src/catalogue/shared";
 import { apiPublicBase } from "./api-fixtures";
+import { seedPrintingQueryProjection } from "./printing-query-fixtures";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 
@@ -282,6 +283,7 @@ beforeEach(async () => {
       sha256: backPrintingImage.content_sha256,
     },
   );
+  await seedPrintingQueryProjection(testEnv.CATALOGUE_DB);
 });
 
 test("authenticated Product reads preserve regional precision and announced status", async () => {
@@ -1456,6 +1458,8 @@ test("Printing collection binds every normalized filter to one card-ordered revi
       ),
     ),
   ]);
+
+  await seedPrintingQueryProjection(testEnv.CATALOGUE_DB);
 
   const firstResponse = await api("/v1/printings?product_id=product_st15&release_region=EN-OCEANIA&limit=1");
   expect(firstResponse.status).toBe(200);
