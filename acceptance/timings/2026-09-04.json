@@ -1,0 +1,52 @@
+{
+  "date": "2026-09-04",
+  "environment": {
+    "platform": "macOS",
+    "architecture": "arm64",
+    "node": "26.3.0"
+  },
+  "method": "Python time.monotonic around each command; three shards sequentially, files concurrent within each shard; installed dependencies and existing Wrangler migration template cache; no install or runner provisioning included",
+  "command": "node scripts/acceptance-shard.mjs --shard=N/3",
+  "baseline": {
+    "commit": "7b5f959c67c0e0db564b7242dcd8322877ee0679",
+    "tests": 174,
+    "shards": [
+      {
+        "shard": 1,
+        "seconds": 38.942,
+        "exit_code": 0
+      },
+      {
+        "shard": 2,
+        "seconds": 104.156,
+        "exit_code": 0
+      },
+      {
+        "shard": 3,
+        "seconds": 41.775,
+        "exit_code": 0
+      }
+    ]
+  },
+  "after": {
+    "commit": "be9d1d3",
+    "tests": 179,
+    "shards": [
+      {
+        "shard": 1,
+        "seconds": 38.567,
+        "exit_code": 0
+      },
+      {
+        "shard": 2,
+        "seconds": 44.691,
+        "exit_code": 0
+      },
+      {
+        "shard": 3,
+        "seconds": 25.281,
+        "exit_code": 0
+      }
+    ]
+  }
+}

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import {
-  ADMINISTRATION_POLL_INTERVAL_MS,
+  administrationPollInterval,
   applyMigrations,
   runCli,
   startWorker,
@@ -476,7 +476,7 @@ async function waitForRunState(url, key, worker, capturedResponses, expectedStat
   let pollCount = 0;
   while (Date.now() < deadline) {
     pollCount += 1;
-    if (worker.process.exitCode !== null) throw new Error(worker.getOutput());
+    if (worker.closed || (worker.process && worker.process.exitCode !== null)) throw new Error(worker.getOutput());
     const response = await fetch(url, {
       headers: { authorization: `Bearer ${key}` },
     });
@@ -494,7 +494,7 @@ async function waitForRunState(url, key, worker, capturedResponses, expectedStat
         return document;
       }
     }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, ADMINISTRATION_POLL_INTERVAL_MS));
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, administrationPollInterval(worker)));
   }
   throw new Error(`the evidence run did not reach ${expectedState}: ${lastBody}\n${worker.getOutput()}`);
 }
