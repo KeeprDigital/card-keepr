@@ -30,39 +30,23 @@ versions, so there is no retired registry or list to populate speculatively.
 
 ## Pre-merge check
 
-Use this read-only SQL with a JSON array containing the exact identifiers being
-retired. Replace the sample value before running it. Run through the selected
-environment's verified D1 target and retain the JSON result with the PR.
+Generate the read-only query from the exact retiring identifiers. The generator
+reuses the production repository's immutable-event authority predicate, including
+the full current projection, latest event identity and birth selection. It treats
+missing or inconsistent authority as a blocker even if a mutable row says terminal.
 
-```sql
-WITH retiring(adapter_version) AS (
-  SELECT value FROM json_each('["EXACT_RETIRED_ADAPTER_ID"]')
-), pinned(ingestion_run_id, adapter_version) AS (
-  SELECT ingestion_run_id, adapter_version FROM ingestion_evidence_plans
-  UNION
-  SELECT ingestion_run_id, adapter_version FROM source_snapshots
-  UNION
-  SELECT snapshot.ingestion_run_id, operation.adapter_version
-  FROM source_parse_operations AS operation
-  JOIN source_snapshots AS snapshot ON snapshot.id = operation.source_snapshot_id
-  UNION
-  SELECT snapshot.ingestion_run_id, observations.adapter_version
-  FROM source_observation_sets AS observations
-  JOIN source_snapshots AS snapshot ON snapshot.id = observations.source_snapshot_id
-  UNION
-  SELECT ingestion_run_id, adapter_version FROM reconciliation_evidence_partitions
-)
-SELECT DISTINCT pinned.ingestion_run_id, current.state, pinned.adapter_version
-FROM pinned
-JOIN retiring USING (adapter_version)
-LEFT JOIN ingestion_run_current AS current USING (ingestion_run_id)
-WHERE current.state IS NULL
-   OR current.state NOT IN ('published', 'rejected', 'expired', 'failed');
+```sh
+node scripts/adapter-retirement-sql.mjs EXACT_ADAPTER_ID > retirement-check.sql
+npx wrangler d1 execute CATALOGUE_DB --remote --json \
+  --config apps/ingestion/wrangler.jsonc \
+  --command "$(cat retirement-check.sql)" > retirement-check.json
 ```
 
-Retirement requires an empty result. A missing current projection also blocks it;
-inspect/rebuild verified run projections before deciding that evidence is safe.
-Do not treat a missing row as terminal or edit the database to clear a pin.
+Replace `EXACT_ADAPTER_ID` with each exact retiring identifier (additional arguments
+are supported). Use the selected environment's verified D1 target and retain the
+query and result with the PR. Retirement requires an empty `results` array after
+a successful query; an error is never equivalent to no blockers. Do not edit the
+database to clear a pin or make a current projection appear terminal.
 
 For a non-terminal collection run, inspect it with `source show`, follow the
 [collection pause and termination runbook](collection-pause.md), and restart under

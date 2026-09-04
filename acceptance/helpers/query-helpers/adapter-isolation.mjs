@@ -13,9 +13,9 @@ export const schemaLevel = (database) =>
   database.prepare("SELECT migration_level FROM catalogue_schema_state WHERE singleton=1");
 export const foreignKeyViolations = (database) => database.prepare("PRAGMA foreign_key_check");
 
-let runFixtureSql;
-async function seedRun(database) {
-  if (runFixtureSql === undefined) {
+const runFixtureSql = new Map();
+async function seedRun(database, state) {
+  if (!runFixtureSql.has(state)) {
     const vite = await createServer({
       configFile: false,
       server: { middlewareMode: true },
@@ -23,21 +23,24 @@ async function seedRun(database) {
       logLevel: "error",
     });
     try {
-      runFixtureSql = await renderRunFixtureSql(vite, {
-        id: "adapter-isolation-run",
-        state: "planning",
-        selected_games_json: '["one-piece"]',
-      });
+      runFixtureSql.set(
+        state,
+        await renderRunFixtureSql(vite, {
+          id: "adapter-isolation-run",
+          state,
+          selected_games_json: '["one-piece"]',
+        }),
+      );
     } finally {
       await vite.close();
     }
   }
-  database.exec(runFixtureSql);
+  database.exec(runFixtureSql.get(state));
 }
 
 /** Seed linked production evidence against the baseline registration. */
-export async function seedEvidence(database) {
-  await seedRun(database);
+export async function seedEvidence(database, state = "planning") {
+  await seedRun(database, state);
   const adapter = "one-piece-en@6";
   const identity = ["one-piece-en", "one-piece", "one-piece@1"];
   database
