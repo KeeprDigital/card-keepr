@@ -2316,20 +2316,32 @@ async function commitVerifiedPublication(
       )
       .bind(chunk),
   );
+  // The projection carries the content facts the api serves, so the read
+  // cluster never joins reconciled_printing_images, the reconciliation
+  // cluster's identity table (issue #98).
   const revisionPrintingImageStatements = byteBoundedJsonArrays(
     (input.candidate.printing_images ?? []).map((image) => ({
       image_id: image.id,
       printing_id: image.printing_id,
+      media_type: image.media_type,
+      content_sha256: image.content_sha256,
+      content_byte_length: image.content_byte_length,
+      object_key: image.object_key,
     })),
   ).map((chunk) =>
     database
       .prepare(
         `INSERT INTO revision_printing_images (
-           catalogue_revision_id, image_id, printing_id
+           catalogue_revision_id, image_id, printing_id,
+           media_type, content_sha256, content_byte_length, object_key
          )
          SELECT ?,
            json_extract(value, '$.image_id'),
-           json_extract(value, '$.printing_id')
+           json_extract(value, '$.printing_id'),
+           json_extract(value, '$.media_type'),
+           json_extract(value, '$.content_sha256'),
+           json_extract(value, '$.content_byte_length'),
+           json_extract(value, '$.object_key')
          FROM json_each(?)`,
       )
       .bind(revisionId, chunk),

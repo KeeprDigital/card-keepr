@@ -1434,6 +1434,153 @@ test("authenticated Legality Status gives definitive exclusions precedence while
   }
 });
 
+test("Legality Status evidence reports the captured_at the publication projected", async () => {
+  // The evidence sidecar reads source_retrieved_at from the revision row
+  // (migration 0004), not source_snapshots: the projected instant here
+  // deliberately differs from the seeded snapshot's retrieved_at
+  // (issue #98).
+  const revisionId = "catrev_api_projected_evidence";
+  const runId = "run_api_projected_evidence";
+  const publishedAt = "2026-07-30T00:00:00.000Z";
+  const digest = "f".repeat(64);
+  const projectedCapturedAt = "2026-07-29T23:59:59.000Z";
+  const card = {
+    type: "card",
+    id: "card_projected_evidence",
+    game: "gundam",
+    official_identity: { kind: "card_number", value: "GD-PROJ-001" },
+    name: "Projected evidence",
+    effective_rules_text: null,
+    game_data: {
+      profile: "gundam@1",
+      attributes: {
+        card_type: "unit",
+        colours: [],
+        level: null,
+        cost: null,
+        block_icon: null,
+        effect_text: null,
+        zone: null,
+        traits: [],
+        link_condition: null,
+        ap: null,
+        hp: null,
+        series_titles: [],
+      },
+    },
+    printing_ids: [],
+    source_lineages: ["gundam-en-asia"],
+    lifecycle: {
+      first_revision_id: revisionId,
+      last_observed_revision_id: revisionId,
+      withdrawn: false,
+    },
+    links: { self: "/v1/cards/card_projected_evidence" },
+  };
+  const rules = [
+    {
+      id: "legality_rule_projected_evidence",
+      official_id: "projected-evidence-ban",
+      game: "gundam",
+      region: "EN-ASIA",
+      format: "standard",
+      event_tier: null,
+      effective_from: "2026-01-01",
+      effective_until: null,
+      card_ids: [card.id],
+      official_wording: "Banned with projected evidence.",
+      effect: { type: "ban" },
+      source_lineage: "gundam-en-asia",
+      source_snapshot_id: "srcsnap_api_projected_evidence",
+      source_observation_set_id: "srcset_api_projected_evidence",
+      source_observation_id: "srcobs_api_projected_evidence",
+      source_retrieved_at: projectedCapturedAt,
+    },
+  ];
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_runs (
+        id, state, selected_games_json, started_at,
+        expected_current_revision_id, linked_run_id, idempotency_key,
+        candidate_digest, candidate_created_at, approval_deadline,
+        approval_json, published_revision_id, export_manifest_digest,
+        terminal_at, candidate_json, approval_idempotency_key
+      ) VALUES (
+        ?, 'publishing', '["gundam"]', ?, 'catrev_spine_000', NULL,
+        'api-legality-projected-evidence-seed', ?, ?,
+        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
+      )`,
+    ).bind(
+      runId,
+      publishedAt,
+      digest,
+      publishedAt,
+      JSON.stringify({
+        action: "approved",
+        candidate_digest: digest,
+        expected_current_revision_id: "catrev_spine_000",
+        approved_at: publishedAt,
+      }),
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state SET active_ingestion_run_id = ?
+       WHERE singleton = 1`,
+    ).bind(runId),
+    ...legalitySourceStatements({
+      runId,
+      key: "api_projected_evidence",
+      game: "gundam",
+      profile: "gundam@1",
+      lineage: "gundam-en-asia",
+      adapter: "fixture-gundam-en-asia-json@2",
+      snapshotId: "srcsnap_api_projected_evidence",
+      observationSetId: "srcset_api_projected_evidence",
+    }),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_revisions (
+        id, ingestion_run_id, published_at, content_digest,
+        expected_previous_revision_id, approved_candidate_digest
+      ) VALUES (?, ?, ?, ?, 'catrev_spine_000', ?)`,
+    ).bind(revisionId, runId, publishedAt, digest, digest),
+    ...canonicalLegalityRuleStatements(revisionId, rules),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_cards (
+        catalogue_revision_id, card_id, document_json
+      ) VALUES (?, ?, ?)`,
+    ).bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
+    ...revisionLegalityRuleStatements(revisionId, rules),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_state SET current_revision_id = ?, published_at = ?
+       WHERE singleton = 1`,
+    ).bind(revisionId, publishedAt),
+  ]);
+
+  const response = await exports.default.fetch(
+    new Request(
+      "https://card-keepr.invalid/v1/legality-status" +
+        `?card_id=${card.id}&on=2026-07-30&format=standard&region=EN-ASIA&include=evidence`,
+      {
+        headers: {
+          authorization: "Bearer vitest-api-key",
+          "cf-connecting-ip": "203.0.113.90",
+        },
+      },
+    ),
+  );
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toMatchObject({
+    data: [{ status: "not_legal", rule_ids: ["legality_rule_projected_evidence"] }],
+    included: [
+      {
+        type: "source_observation",
+        id: "srcobs_api_projected_evidence",
+        captured_at: projectedCapturedAt,
+        source: "gundam-en-asia",
+      },
+    ],
+  });
+});
+
 test("an unresolved target-scope rule answers explicitly indeterminate for every overlapping query", async () => {
   const revisionId = "catrev_api_target_scope";
   const runId = "run_api_target_scope";

@@ -460,6 +460,9 @@ export async function printingImageContentResponse(
 ): Promise<Response | null> {
   const row = await database
     .prepare(
+      // The content facts come from the revision projection alone;
+      // reconciled_printing_images belongs to the reconciliation cluster
+      // and the api serves what the revision published (issue #98).
       `SELECT
          image.media_type,
          image.content_sha256,
@@ -467,15 +470,12 @@ export async function printingImageContentResponse(
          image.object_key,
          catalogue.current_revision_id
        FROM catalogue_state AS catalogue
-       JOIN revision_printing_images AS membership
-         ON membership.catalogue_revision_id =
-           catalogue.current_revision_id
-       JOIN reconciled_printing_images AS image
-         ON image.id = membership.image_id
+       JOIN revision_printing_images AS image
+         ON image.catalogue_revision_id = catalogue.current_revision_id
        JOIN revision_printings AS printing
          ON printing.catalogue_revision_id = catalogue.current_revision_id
-        AND printing.printing_id = membership.printing_id
-       WHERE catalogue.singleton = 1 AND image.id = ?`,
+        AND printing.printing_id = image.printing_id
+       WHERE catalogue.singleton = 1 AND image.image_id = ?`,
     )
     .bind(imageId)
     .first<PrintingImageRow>();

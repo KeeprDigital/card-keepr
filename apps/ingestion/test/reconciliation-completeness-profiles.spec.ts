@@ -462,6 +462,30 @@ test("complete image evidence publishes an unidentified artwork once without col
       .map(({ width, height }) => `${width}x${height}`)
       .sort(),
   ).toEqual(["1x1", "2x2"]);
+  // Publication projects the content facts the api serves onto the revision
+  // row, so the read cluster never joins reconciled_printing_images
+  // (issue #98).
+  const projectedImages = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT projection.image_id, projection.media_type, projection.content_sha256,
+            projection.content_byte_length, projection.object_key,
+            image.media_type AS reconciled_media_type,
+            image.content_sha256 AS reconciled_content_sha256,
+            image.content_byte_length AS reconciled_content_byte_length,
+            image.object_key AS reconciled_object_key
+     FROM revision_printing_images AS projection
+     JOIN reconciled_printing_images AS image ON image.id = projection.image_id
+     WHERE projection.catalogue_revision_id = ?
+     ORDER BY projection.image_id`,
+  )
+    .bind(revisionId)
+    .all<Record<string, string | number | null>>();
+  expect(projectedImages.results.length).toBeGreaterThanOrEqual(4);
+  for (const row of projectedImages.results) {
+    expect(row.media_type).toBe(row.reconciled_media_type);
+    expect(row.content_sha256).toBe(row.reconciled_content_sha256);
+    expect(row.content_byte_length).toBe(row.reconciled_content_byte_length);
+    expect(row.object_key).toBe(row.reconciled_object_key);
+  }
 }, 120_000);
 
 test("production Evidence Plans bind discovery identity to its exact Official Source URL", async () => {

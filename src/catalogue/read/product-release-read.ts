@@ -75,7 +75,9 @@ export async function currentProductResponse(
   if (ifNoneMatch(request, etag)) {
     return notModified(etag, row.current_revision_id);
   }
-  const evidenceSidecar = include.has("evidence") ? await productEvidenceProjection(database, envelope) : {};
+  const evidenceSidecar = include.has("evidence")
+    ? await productEvidenceProjection(database, row.current_revision_id, envelope)
+    : {};
   return Response.json(
     {
       data: absoluteDocumentLinks(envelope.data, base),
@@ -95,6 +97,7 @@ export async function currentProductResponse(
 
 async function productEvidenceProjection(
   database: D1Database,
+  catalogueRevisionId: string,
   envelope: ProductEnvelope,
 ): Promise<{
   included: unknown[];
@@ -108,15 +111,29 @@ async function productEvidenceProjection(
     };
   }
   const revisionIds = [...new Set(references.map(({ revisionId }) => revisionId))];
+  // Publication projects every Curated Revision the revision carries into
+  // catalogue_curated_provenance with its author and creation instant, so
+  // the evidence sidecar reads the projection, not curated_revisions
+  // (issue #98).
   const rows = await database
     .prepare(
-      `SELECT id, created_at, author
-       FROM curated_revisions
-       WHERE id IN (SELECT value FROM json_each(?))`,
+      `SELECT curated_revision_id AS id,
+              json_extract(provenance_json, '$.created_at') AS created_at,
+              json_extract(provenance_json, '$.author') AS author
+       FROM catalogue_curated_provenance
+       WHERE catalogue_revision_id = ?
+         AND curated_revision_id IN (SELECT value FROM json_each(?))`,
     )
-    .bind(JSON.stringify(revisionIds))
-    .all<{ id: string; created_at: string; author: string }>();
-  const rowsById = new Map(rows.results.map((row) => [row.id, row]));
+    .bind(catalogueRevisionId, JSON.stringify(revisionIds))
+    .all<{ id: string; created_at: unknown; author: unknown }>();
+  const rowsById = new Map(
+    rows.results.map((row) => {
+      if (typeof row.created_at !== "string" || typeof row.author !== "string") {
+        throw new Error("A revision-pinned Product references unavailable Curated Revision evidence.");
+      }
+      return [row.id, { id: row.id, created_at: row.created_at, author: row.author }];
+    }),
+  );
   if (rowsById.size !== revisionIds.length) {
     throw new Error("A revision-pinned Product references unavailable Curated Revision evidence.");
   }

@@ -144,6 +144,230 @@ test("migration 0002 retains pause and termination rows and re-guards both table
   database.close();
 });
 
+// Migration 0004 projects the Printing Image content facts and the Legality
+// Rule Source Snapshot retrieval instant onto the revision rows (issue #98).
+// The backfill is proven on a populated database: existing rows receive the
+// facts from the tables the api used to join, the revision_legality_rules
+// immutability guard is back, and a new row omitting the facts is rejected.
+test("migration 0004 backfills the projected read facts and guards new rows", async () => {
+  const migrations = await readMigrations();
+  const projection = migrations.find(({ level }) => level === 4);
+  assert.ok(projection);
+  const database = new DatabaseSync(":memory:");
+  database.exec("PRAGMA foreign_keys = ON");
+  for (const earlier of migrations) {
+    if (earlier.level >= 4) break;
+    database.exec(earlier.sql);
+  }
+  const sha = "a".repeat(64);
+  const pointer = "/observations/0/value/legality_rules/0";
+  const document = {
+    id: "legality_0004",
+    official_id: "official-0004",
+    game: "one-piece",
+    region: "EN-OCEANIA",
+    format: "standard",
+    event_tier: null,
+    effective_from: "2026-01-01",
+    effective_until: null,
+    card_ids: [],
+    official_wording: "Backfilled rule.",
+    unresolved_scope: null,
+    effect: { type: "ban" },
+    source_lineage: "one-piece-en",
+    source_snapshot_id: "snapshot_0004",
+    source_observation_set_id: "set_0004",
+    source_observation_id: "observation_0004",
+    source_observation_pointer: pointer,
+    source_field_pointers: Object.fromEntries(
+      ["official_wording", "effective_from", "effective_until", "region", "unresolved_scope", "format", "event_tier", "card_numbers", "effect"]
+        .map((field) => [field, `${pointer}/${field}`]),
+    ),
+    first_revision_id: "catrev_0004",
+    last_observed_revision_id: "catrev_0004",
+    current: true,
+    last_missing_revision_id: null,
+  };
+  database.exec(`
+    INSERT INTO ingestion_runs (
+      id, state, selected_games_json, started_at,
+      expected_current_revision_id, idempotency_key, candidate_json,
+      candidate_digest, candidate_created_at, approval_deadline, approval_json
+    ) VALUES ('run_0004', 'publishing', '["one-piece"]', '2026-09-03T00:00:00.000Z',
+              'catrev_spine_000', 'key_0004', '{}', '${sha}',
+              '2026-09-03T00:30:00.000Z', '2099-01-01T00:00:00.000Z',
+              '{"candidate_digest":"${sha}","expected_current_revision_id":"catrev_spine_000","approved_at":"2026-09-03T00:45:00.000Z"}');
+    UPDATE operation_state SET active_ingestion_run_id = 'run_0004' WHERE singleton = 1;
+    INSERT INTO catalogue_revisions (
+      id, ingestion_run_id, published_at, content_digest,
+      expected_previous_revision_id, approved_candidate_digest
+    ) VALUES ('catrev_0004', 'run_0004', '2026-09-03T01:00:00.000Z', '${sha}',
+              'catrev_spine_000', '${sha}');
+    INSERT INTO reconciled_printing_images (
+      id, printing_id, role, media_type, width, height,
+      content_sha256, content_byte_length, object_key
+    ) VALUES ('image_0004', 'printing_0004', 'front', 'image/webp', 1, 1,
+              '${sha}', 18, 'printing-images/${sha}');
+    INSERT INTO revision_printing_images (catalogue_revision_id, image_id, printing_id)
+      VALUES ('catrev_0004', 'image_0004', 'printing_0004');
+    INSERT INTO ingestion_evidence_plans (
+      ingestion_run_id, source_lineage, supported_game, game_profile_version,
+      adapter_version, request_plan_json, plan_origin
+    ) VALUES ('run_0004', 'one-piece-en', 'one-piece', 'one-piece@1', 'fixture-one-piece-json@3',
+              '${JSON.stringify({
+                requests: [
+                  {
+                    id: "request_0004",
+                    method: "GET",
+                    url: "https://example.invalid/0004",
+                    headers: {},
+                    representation_fingerprint: sha,
+                  },
+                ],
+              })}', 'synthetic_fixture');
+    INSERT INTO source_requests (
+      ingestion_run_id, request_id, sequence_number, method, url,
+      request_headers_json, representation_fingerprint, state
+    ) VALUES ('run_0004', 'request_0004', 0, 'GET', 'https://example.invalid/0004',
+              '{}', '${sha}', 'pending');
+    INSERT INTO source_fetch_attempts (
+      id, ingestion_run_id, request_id, attempt_number, requested_at,
+      completed_at, outcome, http_status, response_headers_json
+    ) VALUES ('fetch_0004', 'run_0004', 'request_0004', 1, '2026-09-03T00:00:00.000Z',
+              '2026-09-03T00:00:01.000Z', 'success', 200, '{}');
+    INSERT INTO source_snapshots (
+      id, ingestion_run_id, request_id, fetch_attempt_id, request_method,
+      request_url, request_headers_json, representation_fingerprint,
+      response_vary_json, retrieved_at, http_status, response_headers_json,
+      media_type, content_digest, content_byte_length, content_object_key,
+      source_lineage, supported_game, game_profile_version, adapter_version
+    ) VALUES ('snapshot_0004', 'run_0004', 'request_0004', 'fetch_0004', 'GET',
+              'https://example.invalid/0004', '{}', '${sha}', '[]',
+              '2026-09-03T00:00:01.000Z', 200, '{}', 'application/json', '${sha}', 2,
+              'evidence/0004.json', 'one-piece-en', 'one-piece', 'one-piece@1',
+              'fixture-one-piece-json@3');
+    INSERT INTO source_parse_operations (
+      id, source_snapshot_id, adapter_version, intent, idempotency_key,
+      observation_set_id, content_object_key, parsed_at, state,
+      content_digest, content_byte_length, observation_count
+    ) VALUES ('parse_0004', 'snapshot_0004', 'fixture-one-piece-json@3', 'collection',
+              'parse-0004', 'set_0004', 'observations/0004.json',
+              '2026-09-03T00:00:02.000Z', 'finalized', '${sha}', 2, 1);
+    INSERT INTO source_observation_sets (
+      id, parse_operation_id, source_snapshot_id, source_lineage,
+      supported_game, game_profile_version, adapter_version, parsed_at,
+      content_digest, content_byte_length, content_object_key, observation_count
+    ) VALUES ('set_0004', 'parse_0004', 'snapshot_0004', 'one-piece-en',
+              'one-piece', 'one-piece@1', 'fixture-one-piece-json@3',
+              '2026-09-03T00:00:02.000Z', '${sha}', 2, 'observations/0004.json', 1);
+    INSERT INTO legality_rules (
+      id, official_id, supported_game, region, format, event_tier,
+      effective_from, effective_until, unresolved_scope_json, official_wording,
+      effect_json, card_ids_json, direct_card_ids_json, source_lineage,
+      source_snapshot_id, source_observation_set_id, source_observation_id,
+      source_observation_pointer, source_field_pointers_json,
+      first_revision_id, last_observed_revision_id, current
+    ) VALUES ('legality_0004', 'official-0004', 'one-piece', 'EN-OCEANIA',
+              'standard', NULL, '2026-01-01', NULL, 'null', 'Backfilled rule.',
+              '{"type":"ban"}', '[]', '[]', 'one-piece-en', 'snapshot_0004',
+              'set_0004', 'observation_0004', '${pointer}',
+              '${JSON.stringify(document.source_field_pointers)}',
+              'catrev_0004', 'catrev_0004', 1);
+    INSERT INTO revision_legality_rules (
+      catalogue_revision_id, legality_rule_id, supported_game, region, format,
+      event_tier, effective_from, effective_until, unresolved_scope_json,
+      card_ids_json, document_json
+    ) VALUES ('catrev_0004', 'legality_0004', 'one-piece', 'EN-OCEANIA',
+              'standard', NULL, '2026-01-01', NULL, 'null', '[]',
+              '${JSON.stringify(document)}');
+  `);
+
+  database.exec(projection.sql);
+
+  assert.equal(schemaLevel(database), 4);
+  assert.deepEqual(
+    {
+      ...database.prepare(
+        `SELECT media_type, content_sha256, content_byte_length, object_key
+         FROM revision_printing_images WHERE image_id = 'image_0004'`,
+      ).get(),
+    },
+    { media_type: "image/webp", content_sha256: sha, content_byte_length: 18, object_key: `printing-images/${sha}` },
+  );
+  assert.equal(
+    database.prepare(
+      "SELECT source_retrieved_at FROM revision_legality_rules WHERE legality_rule_id = 'legality_0004'",
+    ).get().source_retrieved_at,
+    "2026-09-03T00:00:01.000Z",
+  );
+  assert.equal(database.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
+  assert.deepEqual(database.prepare("PRAGMA foreign_key_check").all(), []);
+  assert.throws(
+    () => database.exec("UPDATE revision_legality_rules SET source_retrieved_at = '2027-01-01T00:00:00.000Z'"),
+    /revision_legality_rule_immutable/u,
+  );
+  database.exec(`
+    INSERT INTO reconciled_printing_images (
+      id, printing_id, role, media_type, width, height,
+      content_sha256, content_byte_length, object_key
+    ) VALUES ('image_0004_late', 'printing_0004', 'back', 'image/webp', 1, 1,
+              '${"b".repeat(64)}', 17, 'printing-images/${"b".repeat(64)}');
+    INSERT INTO legality_rules (
+      id, official_id, supported_game, region, format, event_tier,
+      effective_from, effective_until, unresolved_scope_json, official_wording,
+      effect_json, card_ids_json, direct_card_ids_json, source_lineage,
+      source_snapshot_id, source_observation_set_id, source_observation_id,
+      source_observation_pointer, source_field_pointers_json,
+      first_revision_id, last_observed_revision_id, current
+    ) VALUES ('legality_0004_late', 'official-0004-late', 'one-piece', 'EN-OCEANIA',
+              'standard', NULL, '2026-01-01', NULL, 'null', 'Late rule.',
+              '{"type":"ban"}', '[]', '[]', 'one-piece-en', 'snapshot_0004',
+              'set_0004', 'observation_0004_late', '${pointer}',
+              '${JSON.stringify(document.source_field_pointers)}',
+              'catrev_0004', 'catrev_0004', 1);
+  `);
+  const lateDocument = JSON.stringify({
+    ...document,
+    id: "legality_0004_late",
+    official_id: "official-0004-late",
+    official_wording: "Late rule.",
+    source_observation_id: "observation_0004_late",
+  });
+  assert.throws(
+    () => database.exec(
+      `INSERT INTO revision_printing_images (catalogue_revision_id, image_id, printing_id)
+       VALUES ('catrev_0004', 'image_0004_late', 'printing_0004')`,
+    ),
+    /revision_printing_image_content_missing/u,
+  );
+  assert.throws(
+    () => database.exec(
+      `INSERT INTO revision_legality_rules (
+         catalogue_revision_id, legality_rule_id, supported_game, region, format,
+         event_tier, effective_from, effective_until, unresolved_scope_json,
+         card_ids_json, document_json
+       ) VALUES ('catrev_0004', 'legality_0004_late', 'one-piece', 'EN-OCEANIA',
+                 'standard', NULL, '2026-01-01', NULL, 'null', '[]', '${lateDocument}')`,
+    ),
+    /revision_legality_rule_source_retrieved_at_missing/u,
+  );
+  database.exec(`
+    INSERT INTO revision_printing_images (
+      catalogue_revision_id, image_id, printing_id,
+      media_type, content_sha256, content_byte_length, object_key
+    ) VALUES ('catrev_0004', 'image_0004_late', 'printing_0004', 'image/webp',
+              '${"b".repeat(64)}', 17, 'printing-images/${"b".repeat(64)}');
+    INSERT INTO revision_legality_rules (
+      catalogue_revision_id, legality_rule_id, supported_game, region, format,
+      event_tier, effective_from, effective_until, unresolved_scope_json,
+      card_ids_json, source_retrieved_at, document_json
+    ) VALUES ('catrev_0004', 'legality_0004_late', 'one-piece', 'EN-OCEANIA',
+              'standard', NULL, '2026-01-01', NULL, 'null', '[]',
+              '2026-09-03T00:00:01.000Z', '${lateDocument}');
+  `);
+  database.close();
+});
+
 test("the schema carries the hot-path indexes and not the dead ones", async () => {
   const database = await migratedDatabase();
   const indexes = database.prepare(
