@@ -184,3 +184,11 @@ evidence remains auditable and it can be retried as a new linked run with
 The CLI keeps its established conventions: `0` success, `2` usage error,
 `7` for a conflict problem document (stale expectation, wrong state), and
 problem documents in `--json` mode follow `card-keepr-cli-problem@1`.
+
+Each recorded Workflow Attempt also reports `last_progress_at`, `last_step_name`,
+and `last_phase` (`started`, `completed`, or `failed`). These facts come from
+executed durable callbacks; rereading status or replaying a cached step does not
+refresh them. The run's stall clock includes productive collection work and
+persisted pacing/retry deadlines. Parent barrier polling cannot conceal a child
+that stopped making progress. A transient Workflow API outage does not trigger
+recovery: retry the administration request once the control plane is available.

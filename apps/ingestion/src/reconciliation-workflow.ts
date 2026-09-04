@@ -4,7 +4,7 @@ import {
   failReconciliationWorkflow,
   type ReconciliationWorkflowParams,
 } from "../../../src/catalogue/reconciliation";
-import { canonicalJson } from "../../../src/catalogue/shared";
+import { canonicalJson, workflowSteps } from "../../../src/catalogue/shared";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 
 const reconciliationStep = {
@@ -29,33 +29,25 @@ export async function runReconciliationWorkflow(
   ({ env, step } = observeOperationalWorkflow(step, event, env));
   let reconciliationResultJson: string;
   try {
-    reconciliationResultJson = await step.do(
-      "reconcile retained Card, Printing, and Erratum evidence",
-      reconciliationStep,
-      async () => {
-        const result = await reconcileRetainedCardPrintingEvidence(
-          env.CATALOGUE_DB,
-          env.EVIDENCE_OBJECTS,
-          event.payload.ingestion_run_id,
-          event.payload.observed_at,
-        );
-        return durableReconciliationResult(event.payload.ingestion_run_id, result);
-      },
-    );
+    reconciliationResultJson = await step.do(workflowSteps.reconciliation.reconcile, reconciliationStep, async () => {
+      const result = await reconcileRetainedCardPrintingEvidence(
+        env.CATALOGUE_DB,
+        env.EVIDENCE_OBJECTS,
+        event.payload.ingestion_run_id,
+        event.payload.observed_at,
+      );
+      return durableReconciliationResult(event.payload.ingestion_run_id, result);
+    });
   } catch (error) {
-    reconciliationResultJson = await step.do(
-      "finalize exhausted reconciliation failure",
-      reconciliationStep,
-      async () => {
-        const result = await failReconciliationWorkflow(
-          env.CATALOGUE_DB,
-          event.payload.ingestion_run_id,
-          event.payload.observed_at,
-          error instanceof Error ? error.message : "The reconciliation Workflow exhausted its retries.",
-        );
-        return durableReconciliationResult(event.payload.ingestion_run_id, result);
-      },
-    );
+    reconciliationResultJson = await step.do(workflowSteps.reconciliation.failure, reconciliationStep, async () => {
+      const result = await failReconciliationWorkflow(
+        env.CATALOGUE_DB,
+        event.payload.ingestion_run_id,
+        event.payload.observed_at,
+        error instanceof Error ? error.message : "The reconciliation Workflow exhausted its retries.",
+      );
+      return durableReconciliationResult(event.payload.ingestion_run_id, result);
+    });
   }
   return {
     result_json: reconciliationResultJson,

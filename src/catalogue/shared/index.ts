@@ -113,3 +113,9 @@ export {
   assertIngestionRunTransition,
   type IngestionRunTransitionFacts,
 } from "./ingestion-run-state";
+
+export { workflowDriver, isWorkflowInstanceNotFound, type WorkflowStatus } from "./workflow-driver";
+
+export { workflowSteps, workflowStepName, advancesCollectionProgress, type WorkflowKind } from "./workflow-steps";
+
+export { observeWorkflowProgress, type WorkflowProgress } from "./workflow-progress";
