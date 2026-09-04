@@ -48,6 +48,42 @@ const ingestionConfig = JSON.parse(
   readFileSync(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"),
 );
 
+const rateLimitWindowSeconds = 60;
+const rateLimitBatchSize = 25;
+const rateLimitLoopBudgetMs = 30_000;
+
+// Exhausts a fixed-window per-IP limit without depending on request
+// throughput: the limiter counts `limit` requests per 60-second window, so the
+// requests go out concurrently in bounded batches and the loop is timed against
+// a budget well inside the window. A slow runner then fails on the timing
+// message rather than on a 200 from a rolled-over window.
+async function exhaustRateLimit(request, limit) {
+  const total = limit + rateLimitBatchSize;
+  const startedAt = performance.now();
+  let finalBatch = [];
+  for (let sent = 0; sent < total; sent += rateLimitBatchSize) {
+    const batchSize = Math.min(rateLimitBatchSize, total - sent);
+    finalBatch = await Promise.all(
+      Array.from({ length: batchSize }, () => request()),
+    );
+    await Promise.all(finalBatch.map((response) => response.arrayBuffer()));
+  }
+  const elapsedMs = Math.round(performance.now() - startedAt);
+  assert.ok(
+    elapsedMs < rateLimitLoopBudgetMs,
+    `sending ${total} requests took ${elapsedMs} ms, over the ${rateLimitLoopBudgetMs} ms budget; ` +
+      `the limiter's ${rateLimitWindowSeconds}-second window may have rolled over, ` +
+      "so a 429 after this loop would not prove the limit",
+  );
+  const statuses = finalBatch.map((response) => response.status);
+  assert.ok(
+    statuses.includes(429),
+    `none of the final ${finalBatch.length} of ${total} requests was rate limited ` +
+      `(statuses ${statuses.join(", ")}) after ${elapsedMs} ms`,
+  );
+  return { elapsedMs, total };
+}
+
 test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
   const testDirectory = await mkdtemp(join(tmpdir(), "card-keepr-health-"));
   const apiKey = crypto.randomUUID();
@@ -464,16 +500,16 @@ test("catalogue requests return a stable problem after the per-IP limit", async 
   });
   await waitForHealth(`${api.url}/health`, apiKey, api);
 
-  let response;
-  for (let requestNumber = 1; requestNumber <= 301; requestNumber += 1) {
-    response = await fetch(`${api.url}/v1/catalogue`, {
+  const request = () =>
+    fetch(`${api.url}/v1/catalogue`, {
       headers: {
         authorization: `Bearer ${apiKey}`,
         "cf-connecting-ip": "192.0.2.10",
       },
     });
-  }
-  assert.ok(response);
+  const { elapsedMs, total } = await exhaustRateLimit(request, 300);
+  t.diagnostic(`exhausted the catalogue limit with ${total} requests in ${elapsedMs} ms`);
+  const response = await request();
   const problem = await response.json();
 
   assert.equal(response.status, 429);
@@ -553,16 +589,16 @@ test("administration requests return a stable problem after the per-IP limit", a
   });
   await waitForHealth(`${ingestion.url}/health`, administrationKey, ingestion);
 
-  let response;
-  for (let requestNumber = 1; requestNumber <= 31; requestNumber += 1) {
-    response = await fetch(`${ingestion.url}/health`, {
+  const request = () =>
+    fetch(`${ingestion.url}/health`, {
       headers: {
         authorization: `Bearer ${administrationKey}`,
         "cf-connecting-ip": "192.0.2.30",
       },
     });
-  }
-  assert.ok(response);
+  const { elapsedMs, total } = await exhaustRateLimit(request, 30);
+  t.diagnostic(`exhausted the administration limit with ${total} requests in ${elapsedMs} ms`);
+  const response = await request();
   const problem = await response.json();
 
   assert.equal(response.status, 429);
