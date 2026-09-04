@@ -111,7 +111,7 @@ function observeD1(database: D1Database, metrics: D1Metrics): D1Database {
         };
       }
       const value = Reflect.get(target, property, target) as unknown;
-      return typeof value === "function" ? value.bind(target) : value;
+      return typeof value === "function" ? (...args: unknown[]) => Reflect.apply(value, target, args) : value;
     },
   });
 }
@@ -140,7 +140,7 @@ export function observeOperationalWorkflow<Environment extends { CATALOGUE_DB: D
         };
       }
       const value = Reflect.get(target, property, target) as unknown;
-      return typeof value === "function" ? value.bind(target) : value;
+      return typeof value === "function" ? (...args: unknown[]) => Reflect.apply(value, target, args) : value;
     },
   });
   const observedEnv = new Proxy(env, {
@@ -152,7 +152,8 @@ export function observeOperationalWorkflow<Environment extends { CATALOGUE_DB: D
   const observedStep = new Proxy(step, {
     get(target, property) {
       if (property !== "do") {
-        return Reflect.get(target, property, target);
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === "function" ? (...args: unknown[]) => Reflect.apply(value, target, args) : value;
       }
       return (name: string, configOrCallback: unknown, possibleCallback?: unknown) => {
         const callback = (typeof configOrCallback === "function" ? configOrCallback : possibleCallback) as (

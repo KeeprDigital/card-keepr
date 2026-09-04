@@ -350,7 +350,9 @@ test("an exact reconciliation replay recreates a deterministically bound instanc
 
   await expect(
     startOrObserveReconciliationWorkflow(testEnv.CATALOGUE_DB, workflow, input, "2026-07-31T01:00:00.000Z"),
-  ).rejects.toThrow("instance not found");
+    // Dispatch failed and no instance was observed: retain the dispatch failure,
+    // rather than recategorizing this control-plane outage as a lost identity.
+  ).rejects.toThrow("injected create response loss");
   const replay = await startOrObserveReconciliationWorkflow(
     testEnv.CATALOGUE_DB,
     workflow,

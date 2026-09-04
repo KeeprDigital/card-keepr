@@ -4,6 +4,7 @@
 // binding error messages never enter the document; they may carry resource
 // names or provider detail that the health route must not leak.
 
+import { inspectWorkflowInstance } from "../catalogue/shared";
 import type { PublicBase } from "./public-base";
 
 export type CheckStatus = "pass" | "fail";
@@ -101,9 +102,7 @@ export async function runHealthChecks(
   const [database, objects, workflows] = await Promise.all([
     checkDatabase(input.database, input.configuredDatabaseId, "configuredDatabaseId" in input),
     checkObjects(input.buckets),
-    input.workflows === undefined
-      ? Promise.resolve(undefined)
-      : checkWorkflows(input.workflows),
+    input.workflows === undefined ? Promise.resolve(undefined) : checkWorkflows(input.workflows),
   ]);
   const checks: HealthChecks = {
     database,
@@ -121,9 +120,7 @@ export async function checkDatabase(
   configuredDatabaseId: string | undefined,
   requireConfiguredId: boolean,
 ): Promise<DatabaseCheck> {
-  const identity = requireConfiguredId
-    ? { configured_database_id: configuredDatabaseId ?? "" }
-    : {};
+  const identity = requireConfiguredId ? { configured_database_id: configuredDatabaseId ?? "" } : {};
   const failure = (reason: DatabaseFailure): DatabaseCheck => ({
     status: "fail",
     migration_level: null,
@@ -138,26 +135,23 @@ export async function checkDatabase(
   if (
     requireConfiguredId &&
     (typeof configuredDatabaseId !== "string" ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
-        .test(configuredDatabaseId))
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(configuredDatabaseId))
   ) {
     return failure("database_id_not_configured");
   }
-  let rows: [
-    { one: number } | null,
-    { migration_level: number } | null,
-    { current_revision_id: string } | null,
-  ];
+  let rows: [{ one: number } | null, { migration_level: number } | null, { current_revision_id: string } | null];
   try {
-    rows = await bounded(Promise.all([
-      database.prepare("SELECT 1 AS one").first<{ one: number }>(),
-      database.prepare(
-        "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
-      ).first<{ migration_level: number }>(),
-      database.prepare(
-        "SELECT current_revision_id FROM catalogue_state WHERE singleton = 1",
-      ).first<{ current_revision_id: string }>(),
-    ]));
+    rows = await bounded(
+      Promise.all([
+        database.prepare("SELECT 1 AS one").first<{ one: number }>(),
+        database
+          .prepare("SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1")
+          .first<{ migration_level: number }>(),
+        database
+          .prepare("SELECT current_revision_id FROM catalogue_state WHERE singleton = 1")
+          .first<{ current_revision_id: string }>(),
+      ]),
+    );
   } catch (error) {
     return failure(error instanceof ProbeTimeout ? "timed_out" : "query_failed");
   }
@@ -177,19 +171,13 @@ export async function checkDatabase(
   };
 }
 
-export async function checkObjects(
-  buckets: Record<string, R2Bucket | undefined>,
-): Promise<ObjectsCheck> {
+export async function checkObjects(buckets: Record<string, R2Bucket | undefined>): Promise<ObjectsCheck> {
   const entries = await Promise.all(
-    Object.entries(buckets).map(async ([name, bucket]) =>
-      [name, await probeBucket(bucket)] as const
-    ),
+    Object.entries(buckets).map(async ([name, bucket]) => [name, await probeBucket(bucket)] as const),
   );
   const result = Object.fromEntries(entries);
   return {
-    status: entries.some(([, check]) => check.status === "fail")
-      ? "fail"
-      : "pass",
+    status: entries.some(([, check]) => check.status === "fail") ? "fail" : "pass",
     buckets: result,
   };
 }
@@ -211,18 +199,12 @@ async function probeBucket(bucket: R2Bucket | undefined): Promise<BucketCheck> {
   }
 }
 
-export async function checkWorkflows(
-  workflows: Record<string, ProbedWorkflow | undefined>,
-): Promise<WorkflowsCheck> {
+export async function checkWorkflows(workflows: Record<string, ProbedWorkflow | undefined>): Promise<WorkflowsCheck> {
   const entries = await Promise.all(
-    Object.entries(workflows).map(async ([name, workflow]) =>
-      [name, await probeWorkflow(workflow)] as const
-    ),
+    Object.entries(workflows).map(async ([name, workflow]) => [name, await probeWorkflow(workflow)] as const),
   );
   return {
-    status: entries.some(([, check]) => check.status === "fail")
-      ? "fail"
-      : "pass",
+    status: entries.some(([, check]) => check.status === "fail") ? "fail" : "pass",
     bindings: Object.fromEntries(entries),
   };
 }
@@ -231,28 +213,18 @@ export async function checkWorkflows(
 // instance-not-found error (or, on runtimes that hand out a lazy handle, a
 // status of "unknown"). Anything else is either a binding failure or an
 // instance that must not exist.
-async function probeWorkflow(
-  workflow: ProbedWorkflow | undefined,
-): Promise<WorkflowBindingCheck> {
+async function probeWorkflow(workflow: ProbedWorkflow | undefined): Promise<WorkflowBindingCheck> {
   if (workflow === undefined || workflow === null) {
     return { status: "fail", reason: "binding_missing" };
   }
   try {
-    const status = await bounded(
-      Promise.resolve()
-        .then(() => workflow.get(workflowProbeInstanceId))
-        .then((instance) => instance.status()),
-    );
-    return status.status === "unknown"
-      ? { status: "pass" }
-      : { status: "fail", reason: "unexpected_instance" };
+    const status = await bounded(inspectWorkflowInstance(workflow, workflowProbeInstanceId));
+    return status.status === "unknown" ? { status: "pass" } : { status: "fail", reason: "unexpected_instance" };
   } catch (error) {
     if (error instanceof ProbeTimeout) {
       return { status: "fail", reason: "timed_out" };
     }
-    return isInstanceNotFound(error)
-      ? { status: "pass" }
-      : { status: "fail", reason: "probe_failed" };
+    return isInstanceNotFound(error) ? { status: "pass" } : { status: "fail", reason: "probe_failed" };
   }
 }
 
@@ -261,10 +233,7 @@ function isInstanceNotFound(error: unknown): boolean {
   return /instance\.not_found|instance does not exist/iu.test(message);
 }
 
-export function checkPublicBase(
-  base: PublicBase,
-  request: Request,
-): PublicBaseCheck {
+export function checkPublicBase(base: PublicBase, request: Request): PublicBaseCheck {
   const configured = `${base.origin}${base.basePath}`;
   let arrived = false;
   try {
@@ -279,9 +248,7 @@ export function checkPublicBase(
   };
 }
 
-export function checkVersion(
-  metadata: VersionMetadata | undefined,
-): VersionCheck {
+export function checkVersion(metadata: VersionMetadata | undefined): VersionCheck {
   return {
     status: "pass",
     id: nonEmpty(metadata?.id),

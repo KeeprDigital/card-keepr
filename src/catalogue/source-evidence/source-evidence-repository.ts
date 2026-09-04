@@ -1,3 +1,4 @@
+import { workflowDriver, isWorkflowInstanceNotFound } from "../shared";
 import {
   assertIngestionRunTransition,
   canTransitionIngestionRun,
@@ -1466,6 +1467,17 @@ export async function collectionProgressFacts(database: D1Database, runId: strin
             WHERE ingestion_run_id = ?1) AS captured_at,
            (SELECT MAX(created_at) FROM ingestion_workflow_attempts
             WHERE ingestion_run_id = ?1) AS attempted_at,
+           (SELECT MAX(progress.last_work_at)
+            FROM ingestion_workflow_progress AS progress
+            JOIN ingestion_workflow_attempts AS attempt USING (workflow_instance_id)
+            WHERE attempt.ingestion_run_id = ?1
+              AND NOT EXISTS (
+                SELECT 1 FROM ingestion_workflow_attempts AS later
+                WHERE later.ingestion_run_id = attempt.ingestion_run_id
+                  AND later.workflow_kind = attempt.workflow_kind
+                  AND later.base_workflow_id = attempt.base_workflow_id
+                  AND later.attempt_number > attempt.attempt_number
+              )) AS workflow_work_at,
            (SELECT MAX(observations.parsed_at)
             FROM source_observation_sets AS observations
             JOIN source_snapshots AS snapshots
@@ -2428,14 +2440,19 @@ type WorkflowAttemptRow = {
   attempt_number: number;
   workflow_instance_id: string;
   created_at: string;
+  last_progress_at?: string | null;
+  last_step_name?: string | null;
+  last_phase?: string | null;
 };
 
 async function workflowAttemptRows(database: D1Database, runId: string): Promise<WorkflowAttemptRow[]> {
   const rows = await database
     .prepare(
       `SELECT workflow_kind, base_workflow_id, attempt_number,
-              workflow_instance_id, created_at
+              workflow_instance_id, created_at,
+              progress.last_progress_at, progress.last_step_name, progress.last_phase
        FROM ingestion_workflow_attempts
+       LEFT JOIN ingestion_workflow_progress AS progress USING (workflow_instance_id)
        WHERE ingestion_run_id = ?
        ORDER BY workflow_kind, base_workflow_id, attempt_number`,
     )
@@ -2526,10 +2543,12 @@ async function collectionWorkflowDocument(
           return [attempt.workflow_instance_id, null] as const;
         }
         try {
-          const instance = await binding.get(attempt.workflow_instance_id);
-          return [attempt.workflow_instance_id, safeWorkflowStatus((await instance.status()).status)] as const;
-        } catch {
-          return [attempt.workflow_instance_id, "unavailable"] as const;
+          const status = await workflowDriver(binding).inspect(attempt.workflow_instance_id);
+          return [attempt.workflow_instance_id, safeWorkflowStatus(status.status)] as const;
+        } catch (error) {
+          // Inspection remains available during a control-plane outage, but
+          // unavailable means confirmed absence, never a guessed recovery.
+          return [attempt.workflow_instance_id, isWorkflowInstanceNotFound(error) ? "unavailable" : null] as const;
         }
       }),
     ),
@@ -2557,6 +2576,9 @@ async function collectionWorkflowDocument(
       attempt_number: attempt.attempt_number,
       created_at: attempt.created_at === "" ? null : attempt.created_at,
       current: isCurrent(attempt),
+      last_progress_at: attempt.last_progress_at ?? null,
+      last_step_name: attempt.last_step_name ?? null,
+      last_phase: attempt.last_phase ?? null,
       status: statuses.get(attempt.workflow_instance_id) ?? null,
     })),
     ...(status === null ? {} : { status }),

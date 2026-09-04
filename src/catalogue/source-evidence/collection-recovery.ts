@@ -129,16 +129,6 @@ function parseProgressTime(value: string | null): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-// A Workflow lookup can fail for two very different reasons: the platform
-// genuinely holds no instance under the identity (the instance is lost, or
-// was never created), or the control-plane call itself failed transiently.
-// Only the former may burn a bounded replacement identity; a transient error
-// must surface to the durable step so its retry policy absorbs it.
-export function isWorkflowInstanceNotFound(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return /not[._ ]?found/iu.test(`${error.name} ${error.message}`);
-}
-
 // Parent Workflow Attempt identities are minted from the count of recorded
 // paused -> collecting transitions: attempt 1 is the original identity and
 // each recovery appends '-resume-N'. Child hostname-shard attempts append
