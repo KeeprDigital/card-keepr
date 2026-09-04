@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -77,7 +77,7 @@ test("invalid retained digests fail before fetching and transport errors remain 
   await writeFile(join(input.directory, "capture.json"), JSON.stringify(input.capture));
   const failed = await recaptureOfficialBytes({
     fixturesDirectory: input.directory,
-    outputDirectory: input.output,
+    outputDirectory: join(input.directory, "failed"),
     fetch: async () => {
       throw new Error("offline");
     },
@@ -87,3 +87,50 @@ test("invalid retained digests fail before fetching and transport errors remain 
   assert.equal(failed.captures[0].status, "fetch_failed");
   assert.match(failed.captures[0].error, /offline/u);
 });
+
+for (const alias of ["direct", "symlink"]) {
+  test(`recapture rejects a ${alias} output alias of the golden directory before fetching or writing`, async (t) => {
+    const input = await fixture(t);
+    const original = await readFile(join(input.directory, "capture.json"), "utf8");
+    const output = alias === "direct" ? input.directory : input.output;
+    if (alias === "symlink") await symlink(input.directory, output, "dir");
+    let fetched = false;
+    await assert.rejects(
+      recaptureOfficialBytes({
+        fixturesDirectory: input.directory,
+        outputDirectory: output,
+        intervalMs: 0,
+        fetch: async () => {
+          fetched = true;
+          return new Response(input.body);
+        },
+      }),
+      /output directory.*golden directory/iu,
+    );
+    assert.equal(fetched, false);
+    assert.equal(await readFile(join(input.directory, "capture.json"), "utf8"), original);
+  });
+}
+
+for (const filename of ["capture.json", "report.json"]) {
+  test(`recapture never follows an existing ${filename} output symlink into a golden file`, async (t) => {
+    const input = await fixture(t);
+    const golden = join(input.directory, "capture.json");
+    const original = await readFile(golden, "utf8");
+    await mkdir(input.output);
+    await symlink(golden, join(input.output, filename));
+    const recapture = recaptureOfficialBytes({
+      fixturesDirectory: input.directory,
+      outputDirectory: input.output,
+      intervalMs: 0,
+      fetch: async () => new Response(input.body),
+    });
+    if (filename === "report.json") await assert.rejects(recapture, { code: "EEXIST" });
+    else {
+      const result = await recapture;
+      assert.equal(result.ok, false);
+      assert.match(result.captures[0].error, /EEXIST/u);
+    }
+    assert.equal(await readFile(golden, "utf8"), original);
+  });
+}

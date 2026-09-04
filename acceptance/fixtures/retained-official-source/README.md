@@ -221,3 +221,7 @@ gh workflow run official-source-recapture.yml --repo KeeprDigital/card-keepr
 
 See [GitHub's schedule rules](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
 and [disable/enable guidance](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
+
+Use a fresh output directory for each manual recapture. The tool rejects a direct
+or symlink alias of the golden directory and creates each capture/report
+exclusively, so existing output files or symlinks cannot overwrite retained bytes.

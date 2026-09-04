@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
@@ -16,6 +16,12 @@ export async function recaptureOfficialBytes({
   fetch: fetchBytes = globalThis.fetch,
   intervalMs = 1_000,
 }) {
+  const goldenDirectory = await realpath(fixturesDirectory);
+  const outputTarget = await realpath(outputDirectory).catch((error) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (outputTarget === goldenDirectory) throw new Error("The output directory must not alias the golden directory.");
   await mkdir(outputDirectory, { recursive: true });
   const captures = [];
   const byUrl = new Map();
@@ -66,7 +72,7 @@ export async function recaptureOfficialBytes({
         );
         if (actual.http_status !== (golden.http_status ?? 200)) differences.push("http_status");
         if (actual.effective_url !== (golden.effective_url ?? url)) differences.push("effective_url");
-        await writeFile(join(outputDirectory, name), `${JSON.stringify(actual, null, 2)}\n`);
+        await writeFile(join(outputDirectory, name), `${JSON.stringify(actual, null, 2)}\n`, { flag: "wx" });
         captures.push({
           file: name,
           source_url: url,
@@ -83,7 +89,7 @@ export async function recaptureOfficialBytes({
   }
   captures.sort((a, b) => a.file.localeCompare(b.file));
   const result = { ok: captures.length > 0 && captures.every((capture) => capture.status === "unchanged"), captures };
-  await writeFile(join(outputDirectory, "report.json"), `${JSON.stringify(result, null, 2)}\n`);
+  await writeFile(join(outputDirectory, "report.json"), `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" });
   return result;
 }
 
