@@ -1,5 +1,5 @@
 import type { BuiltCatalogueExport, ExportObject } from "../export";
-import { cardSearchChunks, cardSearchTerms, cardSearchText } from "../read";
+import { cardSearchChunks, cardSearchText } from "../read";
 import {
   AdministrationProblem,
   type CatalogueCandidate,
@@ -188,21 +188,10 @@ export function assertPublicationAggregateBudget(candidate: CatalogueCandidate):
       "The Catalogue candidate exceeds the bounded publication aggregate.",
     );
   }
-  let searchTermBytes = 2;
   let searchChunkBytes = 2;
   for (const card of candidate.cards) {
     assertPublicationEntityBudget(card, "Card", encoder);
     const document = cardSearchText(card);
-    for (const term of cardSearchTerms(document)) {
-      searchTermBytes +=
-        (searchTermBytes === 2 ? 0 : 1) +
-        encoder.encode(
-          canonicalJson({
-            card_id: card.id,
-            term,
-          }),
-        ).byteLength;
-    }
     for (const chunk of cardSearchChunks(document)) {
       searchChunkBytes +=
         (searchChunkBytes === 2 ? 0 : 1) +
@@ -215,7 +204,7 @@ export function assertPublicationAggregateBudget(candidate: CatalogueCandidate):
           }),
         ).byteLength;
     }
-    if (searchTermBytes + searchChunkBytes > maximumPublicationSearchMaterializationBytes) {
+    if (searchChunkBytes > maximumPublicationSearchMaterializationBytes) {
       throw new AdministrationProblem(
         422,
         "publication_aggregate_too_large",

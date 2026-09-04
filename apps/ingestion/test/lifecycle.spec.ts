@@ -1,7 +1,7 @@
+import { disableExportTransitionTriggers } from "./query-helpers/maintenance-guards";
 import {
   crashAfterRetryTerminalDatabase,
   countDeletionResponseQueriesDatabase,
-  capturePublicationGuard,
 } from "./query-helpers/database-failures";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as ingestionQueries from "./query-helpers/ingestion";
@@ -20,7 +20,6 @@ import {
   sha256Text,
 } from "../../../src/catalogue/shared";
 import {
-  administrationStatus as administrationStatusDirect,
   approveRun as approveRunDirect,
   retryPublicationCleanup as retryPublicationCleanupDirect,
   showRun as showRunDirect,
@@ -36,6 +35,7 @@ let testObservedAt: string | null = null;
 beforeEach(async () => {
   testObservedAt = null;
   await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
+  await disableExportTransitionTriggers(testEnv.CATALOGUE_DB);
 });
 
 afterEach(async () => {
@@ -1333,11 +1333,8 @@ test("cleanup deletes nothing when its failed prefix becomes registered", async 
     .readIngestionPublicationCleanupNotBefore(testEnv.CATALOGUE_DB)
     .bind(runId)
     .first<{ not_before: string }>();
-  const guard = await capturePublicationGuard(testEnv.CATALOGUE_DB);
-  if (guard?.sql === undefined) {
-    throw new Error("publication guard definition missing");
-  }
-  await publishedCatalogueQueries.dropGuardCataloguePublication(testEnv.CATALOGUE_DB).run();
+  // Inject the concurrent registration directly; normal publication owns its
+  // guard in the repository and cannot create this deliberately conflicting fixture.
   await testEnv.CATALOGUE_DB.batch([
     ingestionQueries
       .insertCatalogueRevisionsForNormalApprovalNeverAdoptsPrefixThatBecomesRegisteredExport(testEnv.CATALOGUE_DB)
@@ -1346,7 +1343,6 @@ test("cleanup deletes nothing when its failed prefix becomes registered", async 
       .insertCatalogueExports(testEnv.CATALOGUE_DB)
       .bind(revisionId, failedObjectKey, "b".repeat(64)),
   ]);
-  await guard.restore().run();
 
   await expect(
     retryPublicationCleanupDirect(

@@ -197,7 +197,6 @@ function removeCardAndLegalityProjection(database) {
     DELETE FROM revision_card_search_fts;
     DELETE FROM revision_card_search_fts_rows;
     DELETE FROM revision_card_search_chunks;
-    DELETE FROM revision_card_search_terms;
     DELETE FROM revision_card_query_documents;
     DELETE FROM revision_printings;
     DELETE FROM revision_legality_rule_applicability;
@@ -282,8 +281,6 @@ function validStoredLegalityRule(id, cardIds, officialWording = "The global tour
 
 function seedRepresentativeCatalogue(database) {
   const digest = "a".repeat(64);
-  const legalityOwnerTrigger = schemaQueries.legalityProvenanceOwnerTrigger(database).get().sql;
-  database.exec("DROP TRIGGER legality_rule_provenance_owner_insert");
   database.exec(`
     INSERT INTO ingestion_runs (
       id, state, selected_games_json, started_at,
@@ -403,9 +400,6 @@ function seedRepresentativeCatalogue(database) {
     backupQueries
       .insertCardSearchChunk(database)
       .run("catrev_restore_acceptance", id, `${number} ${name}`.toLowerCase());
-    backupQueries
-      .insertCardSearchTerm(database)
-      .run("catrev_restore_acceptance", id, `g3:${number.slice(0, 3).toLowerCase()}`, number, id);
   }
   database.exec(`
     INSERT INTO revision_printings (
@@ -472,5 +466,4 @@ function seedRepresentativeCatalogue(database) {
       '{"author":"owner","created_at":"2026-08-05T00:01:30.000Z","evidence":[],"rationale":"Owner-reviewed name."}'
     );
   `);
-  database.exec(legalityOwnerTrigger);
 }

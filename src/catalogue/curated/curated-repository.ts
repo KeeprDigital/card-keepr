@@ -1,4 +1,16 @@
-import { type CatalogueStore, ingestionRunTransitionSql, repositoryStatements, type SupportedGame } from "../shared";
+import {
+  curatedOwnerMutationGuardStatement,
+  curatedTargetAvailabilityGuardStatement,
+  curatedRunPinSetGuardStatement,
+} from "./curated-guard-repository";
+import {
+  atomicRepositoryStatement,
+  type CatalogueStore,
+  ingestionRunTransitionSql,
+  repositoryStatements,
+  runTransitionGuardStatement,
+  type SupportedGame,
+} from "../shared";
 
 export type CuratedRevisionRow = {
   id: string;
@@ -41,12 +53,15 @@ export function curatedLifecycleMutationStatements(
         "UPDATE curated_revisions SET status = ?, event_version = ? WHERE id = ? AND event_version = ? AND status IN ('active', 'reconfirmation_required')",
       )
       .bind(input.status, input.eventVersion, input.revisionId, input.expectedEventVersion),
-    repositoryStatements(database)
-      .prepare(
-        `INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
+    atomicRepositoryStatement(database, {
+      before: [curatedOwnerMutationGuardStatement(database, { evidenceJson: input.eventJson, evidenceKind: "event" })],
+      statement: repositoryStatements(database)
+        .prepare(
+          `INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
          VALUES (?, ?, ?, ?, ?, 'owner')`,
-      )
-      .bind(input.revisionId, input.eventVersion, input.kind, input.eventJson, input.observedAt),
+        )
+        .bind(input.revisionId, input.eventVersion, input.kind, input.eventJson, input.observedAt),
+    }),
     repositoryStatements(database)
       .prepare(
         `INSERT INTO curated_revision_idempotency (idempotency_key, request_digest, response_json, response_status, created_at)
@@ -58,7 +73,7 @@ export function curatedLifecycleMutationStatements(
 
 export function curatedMutationOperationStateStatement(database: CatalogueStore): D1PreparedStatement {
   return repositoryStatements(database).prepare(
-    "SELECT active_ingestion_run_id, active_release_id AS active_production_release_id, active_release_expires_at AS active_production_release_expires_at, recovery_health FROM operation_state WHERE singleton = 1",
+    "SELECT active_ingestion_run_id, active_production_release_id, active_production_release_expires_at, recovery_health FROM operation_state WHERE singleton = 1",
   );
 }
 
@@ -78,25 +93,31 @@ export function insertAuthoredCuratedRevisionStatement(
     observedAt: string;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`INSERT INTO curated_revisions (
+  return atomicRepositoryStatement(database, {
+    before: [
+      curatedOwnerMutationGuardStatement(database, { evidenceJson: input.schemaBindingJson, evidenceKind: "schema" }),
+      curatedTargetAvailabilityGuardStatement(database, input),
+    ],
+    statement: repositoryStatements(database)
+      .prepare(`INSERT INTO curated_revisions (
           id, game, target_key, target_kind, effective_from, effective_to,
           proposal_json, content_digest, reviewed_source_digest,
           schema_binding_json, author, created_at, status, event_version
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'owner', ?, 'active', 1)`)
-    .bind(
-      input.revisionId,
-      input.game,
-      input.targetKey,
-      input.targetKind,
-      input.effectiveFrom,
-      input.effectiveTo,
-      input.proposalJson,
-      input.contentDigest,
-      input.reviewedSourceDigest,
-      input.schemaBindingJson,
-      input.observedAt,
-    );
+      .bind(
+        input.revisionId,
+        input.game,
+        input.targetKey,
+        input.targetKind,
+        input.effectiveFrom,
+        input.effectiveTo,
+        input.proposalJson,
+        input.contentDigest,
+        input.reviewedSourceDigest,
+        input.schemaBindingJson,
+        input.observedAt,
+      ),
+  });
 }
 
 export function insertCuratedAuthoredEventStatement(
@@ -136,10 +157,13 @@ export function insertCuratedSupersededEventStatement(
   database: CatalogueStore,
   input: Readonly<{ revisionId: string; eventVersion: number; eventJson: string; observedAt: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
+  return atomicRepositoryStatement(database, {
+    before: [curatedOwnerMutationGuardStatement(database, { evidenceJson: input.eventJson, evidenceKind: "event" })],
+    statement: repositoryStatements(database)
+      .prepare(`INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
          VALUES (?, ?, 'superseded', ?, ?, 'owner')`)
-    .bind(input.revisionId, input.eventVersion, input.eventJson, input.observedAt);
+      .bind(input.revisionId, input.eventVersion, input.eventJson, input.observedAt),
+  });
 }
 
 export function insertCuratedReplacementAuthoredEventStatement(
@@ -267,11 +291,14 @@ export function insertCuratedRunPinSetStatement(
   database: CatalogueStore,
   input: Readonly<{ runId: string; idsJson: string; setDigest: string; observedAt: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`INSERT INTO ingestion_run_curated_revision_sets (
+  return atomicRepositoryStatement(database, {
+    before: [curatedRunPinSetGuardStatement(database, input)],
+    statement: repositoryStatements(database)
+      .prepare(`INSERT INTO ingestion_run_curated_revision_sets (
          ingestion_run_id, revision_ids_json, set_digest, pinned_at
        ) VALUES (?, ?, ?, ?)`)
-    .bind(input.runId, input.idsJson, input.setDigest, input.observedAt);
+      .bind(input.runId, input.idsJson, input.setDigest, input.observedAt),
+  });
 }
 
 export function blockingCuratedRevisionStatement(
@@ -303,13 +330,22 @@ export function failInvalidCuratedCandidateStatement(
   database: CatalogueStore,
   input: Readonly<{ observedAt: string; runId: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
+  return atomicRepositoryStatement(database, {
+    after: [
+      runTransitionGuardStatement(database, {
+        runId: input.runId,
+        from: ["planning", "collecting", "parsing", "reconciling", "awaiting_approval"],
+        to: "failed",
+      }),
+    ],
+    statement: repositoryStatements(database)
+      .prepare(`UPDATE ingestion_runs
          SET state = 'failed', terminal_at = ?,
              failure_code = 'curated_revision_composed_candidate_invalid',
              progress_json = json_set(progress_json, '$.current_stage', 'failed')
          WHERE id = ? AND ${ingestionRunTransitionSql(["planning", "collecting", "parsing", "reconciling", "awaiting_approval"], "failed")}`)
-    .bind(input.observedAt, input.runId);
+      .bind(input.observedAt, input.runId),
+  });
 }
 
 export function releaseCuratedRunStatement(
@@ -439,13 +475,22 @@ export function failCuratedSourceChangeRunStatement(
   database: CatalogueStore,
   input: Readonly<{ at: string; runId: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`UPDATE ingestion_runs
+  return atomicRepositoryStatement(database, {
+    after: [
+      runTransitionGuardStatement(database, {
+        runId: input.runId,
+        from: ["planning", "collecting", "parsing", "reconciling", "awaiting_approval"],
+        to: "failed",
+      }),
+    ],
+    statement: repositoryStatements(database)
+      .prepare(`UPDATE ingestion_runs
        SET state = 'failed', terminal_at = ?,
            failure_code = 'curated_revision_reconfirmation_required',
            progress_json = json_set(progress_json, '$.current_stage', 'failed')
        WHERE id = ? AND ${ingestionRunTransitionSql(["planning", "collecting", "parsing", "reconciling", "awaiting_approval"], "failed")}`)
-    .bind(input.at, input.runId);
+      .bind(input.at, input.runId),
+  });
 }
 
 export function curatedPendingConflictStatement(

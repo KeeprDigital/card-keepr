@@ -2,13 +2,6 @@ import type { DatabaseSync, StatementSync } from "node:sqlite";
 
 // Dedicated test queries. Tests retain binding, execution, and atomic batch composition.
 
-export function insertRevisionCardSearchChunks(database: DatabaseSync): StatementSync {
-  return database.prepare(`INSERT INTO revision_card_search_chunks (
-         catalogue_revision_id, card_id, field_ordinal,
-         chunk_ordinal, search_text
-       ) VALUES (?, ?, 1, 0, ?)`);
-}
-
 export function setCardSearchFtsStateStateOwnerToken(database: DatabaseSync): StatementSync {
   return database.prepare(`UPDATE card_search_fts_state
        SET state = 'reconstructing', owner_token = ?, lease_expires_at = ?
@@ -30,12 +23,6 @@ export function setCardSearchFtsStateStateOwnerTokenForD1BackupExportRestoresRec
 
 export function readCardSearchFtsStateState(database: DatabaseSync): StatementSync {
   return database.prepare("SELECT state FROM card_search_fts_state WHERE singleton = 1");
-}
-
-export function setRevisionCardSearchChunksSearchText(database: DatabaseSync): StatementSync {
-  return database.prepare(`UPDATE revision_card_search_chunks
-       SET search_text = 'restored trigger quartz'
-       WHERE catalogue_revision_id = 'catrev_backup_restore'`);
 }
 
 export function readRevisionCardSearchFtsCatalogueRevisionId(database: DatabaseSync): StatementSync {

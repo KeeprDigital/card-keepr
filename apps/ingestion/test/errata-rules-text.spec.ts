@@ -1,3 +1,5 @@
+import { publishReconciledErrataStatement } from "../../../src/catalogue/reconciliation/reconciliation-publication-repository";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
@@ -961,19 +963,21 @@ describe("Errata rules-text lifecycle", () => {
     expect(published.response.status).toBe(200);
     const revisionId = requiredString(published.document, "resulting_revision_id");
     const insert = (id: string, game: "one-piece" | "gundam", targetType: "card" | "printing", targetId: string) =>
-      reconciliationQueries
-        .insertReconciledErrata(testEnv.CATALOGUE_DB)
-        .bind(
-          id,
-          game,
-          targetType,
-          targetId,
-          "Before: old\nAfter: corrected",
-          JSON.stringify("corrected"),
-          revisionId,
-          revisionId,
-        )
-        .run();
+      publishReconciledErrataStatement(catalogueStore(testEnv.CATALOGUE_DB), {
+        revisionId,
+        observedRevisionId: revisionId,
+        payload: JSON.stringify([
+          {
+            id,
+            game,
+            target_type: targetType,
+            target_id: targetId,
+            effective_from: null,
+            official_wording: "Before: old\nAfter: corrected",
+            corrected_value_json: JSON.stringify("corrected"),
+          },
+        ]),
+      }).run();
 
     for (const invalid of [
       ["erratum_missing_card_target", "one-piece", "card", "card_missing_target"],

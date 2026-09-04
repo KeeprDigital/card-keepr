@@ -5,6 +5,7 @@ import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
   captureOperationIdentity,
+  startEvidenceRun,
   parseCapturedRequest,
   pendingEvidenceRequests,
   persistOfficialSourceCollectionPlan,
@@ -574,3 +575,100 @@ test("an Official Source Collection Plan beyond the adapter capacity is rejected
     count: 0,
   });
 }, 30_000);
+
+test.each([true, false])(
+  "bulk Official Source admission covers 449 requests atomically (valid tail: %s)",
+  async (validTail) => {
+    const created = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
+      supported_game: "fusion-world",
+      source_lineage: "fusion-world-en",
+      adapter_version: "fusion-world-en@9",
+      idempotency_key: `official_collection_plan_bulk_${validTail}`,
+      requests: officialSourceDiscoveryRequests("fusion-world-en"),
+    });
+    expect(created.status).toBe(201);
+    const run = await created.json<{ id: string }>();
+    const root = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
+    if (root === undefined) throw new Error("discovery root request is absent");
+    const snapshotId = await retainProductionSnapshot(
+      run.id,
+      root.request_id,
+      root.url,
+      utf8(`<html>fusion bulk discovery ${validTail}</html>`),
+    );
+    const observationSetId = `srcobsset_collection_bulk_${validTail}`;
+    await env.CATALOGUE_DB.batch([
+      sourceEvidenceQueries
+        .insertSourceParseOperationsForOfficialSourceCollectionPlanBeyondAdapterCapacityRejectedWithout(
+          env.CATALOGUE_DB,
+        )
+        .bind(
+          `srcparse_collection_bulk_${validTail}`,
+          snapshotId,
+          `official_collection_plan_bulk_parse_${validTail}`,
+          observationSetId,
+          `source-observation-sets/${observationSetId}.json`,
+        ),
+      sourceEvidenceQueries
+        .insertSourceObservationSetsForOfficialSourceCollectionPlanBeyondAdapterCapacityRejectedWithout(
+          env.CATALOGUE_DB,
+        )
+        .bind(
+          observationSetId,
+          `srcparse_collection_bulk_${validTail}`,
+          snapshotId,
+          `source-observation-sets/${observationSetId}.json`,
+        ),
+    ]);
+
+    const collectionRequests = Array.from({ length: 449 }, (_, index) => ({
+      id: `fusion-world-en:bulk-${index}`,
+      method: "GET" as const,
+      url: `https://www.dbs-cardgame.com/fw/en/cardlist/?page=${index}`,
+      headers: { accept: "text/html" },
+      representation_fingerprint: "f".repeat(64),
+      surface: !validTail && index === 448 ? "" : "cards",
+    }));
+    const persist = () =>
+      persistOfficialSourceCollectionPlan(
+        catalogueStore(env.CATALOGUE_DB),
+        run.id,
+        observationSetId,
+        collectionRequests,
+      );
+    if (validTail) {
+      await expect(persist()).resolves.toBeUndefined();
+      await expect(persist()).resolves.toBeUndefined();
+    } else {
+      await expect(persist()).rejects.toThrow("source_request_not_in_immutable_plan");
+    }
+    await expect(
+      ingestionQueries.countOfficialSourceCollectionPlansCount(env.CATALOGUE_DB).bind(run.id).first(),
+    ).resolves.toMatchObject({ count: validTail ? 1 : 0 });
+    await expect(
+      sourceEvidenceQueries.countSourceRequestsCount(env.CATALOGUE_DB).bind(run.id).first(),
+    ).resolves.toMatchObject({ count: validTail ? 450 : 1 });
+  },
+);
+
+test("initial Evidence Plans admit 500 bounded requests in one native transaction", async () => {
+  const request = {
+    idempotency_key: "initial_bulk_plan_001",
+    plans: Array.from({ length: 5 }, (_, plan) => ({
+      supported_game: "one-piece",
+      source_lineage: "one-piece-en",
+      adapter_version: "fixture-one-piece-json@3",
+      requests: Array.from({ length: 100 }, (_, index) => ({
+        id: `bulk-${plan}-${index}`,
+        url: `https://bulk-fixture.invalid/cards/${plan}/${index}`,
+      })),
+    })),
+  };
+  const run = await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), request, "synthetic_fixture");
+  expect(typeof run.id).toBe("string");
+  await expect(
+    sourceEvidenceQueries.countSourceRequestsCount(env.CATALOGUE_DB).bind(run.id).first(),
+  ).resolves.toMatchObject({ count: 500 });
+  const replay = await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), request, "synthetic_fixture");
+  expect(replay.id).toBe(run.id);
+});

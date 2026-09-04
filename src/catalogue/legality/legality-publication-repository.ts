@@ -1,8 +1,14 @@
-import { type CatalogueStore, repositoryStatements } from "../shared";
+import {
+  guardLegalityRuleFactsStatement,
+  guardRevisionLegalityRulesStatement,
+  retainPublishedLegalityEvidenceStatement,
+  publishLegalityApplicabilityStatement,
+} from "./legality-guard-repository";
+import { type CatalogueStore, repositoryStatements, atomicRepositoryStatement } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
 export function publishLegalityRuleFactsStatement(database: CatalogueStore, payload: string): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`INSERT INTO legality_rules (
              id, official_id, supported_game, region, format, event_tier,
              effective_from, effective_until, official_wording,
@@ -45,13 +51,18 @@ export function publishLegalityRuleFactsStatement(database: CatalogueStore, payl
              last_missing_revision_id =
                excluded.last_missing_revision_id`)
     .bind(payload);
+  return atomicRepositoryStatement(database, {
+    statement,
+    before: [guardLegalityRuleFactsStatement(database, payload)],
+    after: [retainPublishedLegalityEvidenceStatement(database, payload)],
+  });
 }
 
 export function publishRevisionLegalityRulesStatement(
   database: CatalogueStore,
   input: Readonly<{ revisionId: string; payload: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`INSERT INTO revision_legality_rules (
              catalogue_revision_id, legality_rule_id, supported_game,
              region, format, event_tier, effective_from, effective_until,
@@ -96,4 +107,11 @@ export function publishRevisionLegalityRulesStatement(
            JOIN legality_rules AS canonical
              ON canonical.id = json_extract(value, '$.id')`)
     .bind(input.revisionId, input.payload);
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [
+      guardRevisionLegalityRulesStatement(database, input),
+      publishLegalityApplicabilityStatement(database, input),
+    ],
+  });
 }

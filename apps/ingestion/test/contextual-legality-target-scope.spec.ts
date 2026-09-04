@@ -1,5 +1,6 @@
 import * as legalityQueries from "./query-helpers/legality";
-import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import { publishLegalityRuleFactsStatement } from "../../../src/catalogue/legality/legality-publication-repository";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import { expect, test } from "vitest";
 import {
   approve,
@@ -113,31 +114,29 @@ test("an open-predicate rule publishes with explicit target-scope uncertainty an
       cardIds: readonly string[];
     },
   ) =>
-    sourceEvidenceQueries
-      .insertLegalityRulesForOpenPredicateRulePublishesExplicitTargetScopeUncertaintyAll(testEnv.CATALOGUE_DB)
-      .bind(
-        id,
-        id,
-        base.supported_game,
-        base.region,
-        base.format,
-        base.event_tier,
-        variant.effectiveFrom,
-        JSON.stringify(variant.scope),
-        base.official_wording,
-        JSON.stringify(variant.effect),
-        JSON.stringify(variant.cardIds),
-        JSON.stringify(variant.cardIds),
-        base.source_lineage,
-        base.source_snapshot_id,
-        base.source_observation_set_id,
-        base.source_observation_id,
-        "/observations/0/value/legality_rules/0",
-        JSON.stringify({}),
-        revisionId,
-        revisionId,
-      )
-      .run();
+    publishLegalityRuleFactsStatement(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      JSON.stringify([
+        {
+          ...base,
+          id,
+          official_id: id,
+          game: base.supported_game,
+          effective_from: variant.effectiveFrom,
+          effective_until: null,
+          unresolved_scope_json: JSON.stringify(variant.scope),
+          effect_json: JSON.stringify(variant.effect),
+          card_ids_json: JSON.stringify(variant.cardIds),
+          direct_card_ids_json: JSON.stringify(variant.cardIds),
+          source_observation_pointer: "/observations/0/value/legality_rules/0",
+          source_field_pointers_json: JSON.stringify({}),
+          first_revision_id: revisionId,
+          last_observed_revision_id: revisionId,
+          current: 1,
+          last_missing_revision_id: null,
+        },
+      ]),
+    ).run();
 
   // Control: a canonical target-scope rule with the same provenance inserts.
   await insertScopedRule("legality_rule_target_scope_control", {

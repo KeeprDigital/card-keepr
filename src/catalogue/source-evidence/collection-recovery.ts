@@ -129,8 +129,8 @@ function parseProgressTime(value: string | null): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-// Parent Workflow Attempt identities are minted from the count of recorded
-// paused -> collecting transitions: attempt 1 is the original identity and
+// Parent Workflow Attempt identities advance the immutable parent-attempt
+// sequence: attempt 1 is the original identity and
 // each recovery appends '-resume-N'. Child hostname-shard attempts append
 // '-attempt-N' to their digest base identity (see evidence-workflows.ts).
 export function parentWorkflowAttemptId(runId: string, attemptNumber: number): string {

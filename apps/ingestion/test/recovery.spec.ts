@@ -1,3 +1,4 @@
+import { disableRecoveryTransitionTrigger, disableRecoveryHealthTrigger } from "./query-helpers/maintenance-guards";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
@@ -30,6 +31,8 @@ const completeVerification: RestoredCatalogueVerification = {
 
 beforeEach(async () => {
   await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
+  await disableRecoveryTransitionTrigger(testEnv.CATALOGUE_DB);
+  await disableRecoveryHealthTrigger(testEnv.CATALOGUE_DB);
   await ingestionQueries.setOperationStateActiveRecoveryIdActiveIngestionRunId(testEnv.CATALOGUE_DB).run();
   await retainVerifiedBackup("recovery-source", "bookmark-target", await currentSchemaMigrationLevel());
 });
@@ -894,7 +897,6 @@ async function retainVerifiedBackup(attemptId: string, bookmark: string, schemaM
         products: 1,
         legality_rules: 1,
         api_documents: 1,
-        search_terms: 1,
         search_chunks: 1,
         provenance: 0,
         audit_rows: 1,

@@ -1,4 +1,10 @@
-import { type CatalogueStore, repositoryStatements } from "../shared";
+import {
+  guardNewCatalogueExportDeletionStatement,
+  guardRetryingCatalogueExportDeletionStatement,
+  guardMarkingCatalogueExportDeletingStatement,
+  guardRecordingCatalogueExportDeletionResponseStatement,
+} from "./export-deletion-guard-repository";
+import { type CatalogueStore, repositoryStatements, atomicRepositoryStatement } from "../shared";
 export type CatalogueExportRow = {
   catalogue_revision_id: string;
   manifest_key: string;
@@ -120,7 +126,7 @@ export function insertCatalogueExportDeletionStatement(
     executionLeaseExpiresAt: string;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`INSERT INTO catalogue_export_deletions (
            id, plan_id, state, catalogue_revision_id, manifest_digest,
            expected_current_revision_id, object_set_digest, idempotency_key,
@@ -142,17 +148,25 @@ export function insertCatalogueExportDeletionStatement(
       input.executionOwnerToken,
       input.executionLeaseExpiresAt,
     );
+  return atomicRepositoryStatement(database, {
+    statement,
+    before: [guardNewCatalogueExportDeletionStatement(database, input)],
+  });
 }
 
 export function markCatalogueExportDeletingStatement(
   database: CatalogueStore,
   input: Readonly<{ deletion_id: string; catalogue_revision_id: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE catalogue_exports
          SET maintenance_state = 'deleting', deletion_operation_id = ?
          WHERE catalogue_revision_id = ? AND maintenance_state = 'available'`)
     .bind(input.deletion_id, input.catalogue_revision_id);
+  return atomicRepositoryStatement(database, {
+    statement,
+    before: [guardMarkingCatalogueExportDeletingStatement(database, input)],
+  });
 }
 
 export function catalogueExportDeletionConfirmationReplayStatement(
@@ -212,13 +226,17 @@ export function claimCatalogueExportDeletionRetryStatement(
     deletionId: string;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE catalogue_export_deletions
            SET state = 'deleting', failure_code = NULL,
                retry_owner_idempotency_key = ?, execution_owner_token = ?,
                execution_lease_expires_at = ?
            WHERE id = ? AND state = 'failed'`)
     .bind(input.idempotency_key, input.executionOwnerToken, input.executionLeaseExpiresAt, input.deletionId);
+  return atomicRepositoryStatement(database, {
+    statement,
+    before: [guardRetryingCatalogueExportDeletionStatement(database, input)],
+  });
 }
 
 export function guardCatalogueExportDeletionRetryStatement(
@@ -410,12 +428,16 @@ export function persistCatalogueExportDeletionAcceptedResponseStatement(
   database: CatalogueStore,
   input: Readonly<{ acceptedResponseJson: string; deletionId: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE catalogue_export_deletions
        SET confirmation_response_json = ?
        WHERE id = ? AND state = 'deleting'
          AND confirmation_response_json IS NULL`)
     .bind(input.acceptedResponseJson, input.deletionId);
+  return atomicRepositoryStatement(database, {
+    statement,
+    before: [guardRecordingCatalogueExportDeletionResponseStatement(database, input)],
+  });
 }
 
 export function persistCatalogueExportDeletionRetryAcceptedResponseStatement(
@@ -453,8 +475,8 @@ export function catalogueExportMaintenanceStateStatement(database: CatalogueStor
   return repositoryStatements(
     database,
   ).prepare(`SELECT catalogue.current_revision_id, operation.active_ingestion_run_id,
-            operation.active_release_id AS active_production_release_id,
-            operation.active_release_expires_at AS active_production_release_expires_at,
+            operation.active_production_release_id,
+            operation.active_production_release_expires_at,
             operation.recovery_health
      FROM catalogue_state AS catalogue
      JOIN operation_state AS operation ON operation.singleton = catalogue.singleton

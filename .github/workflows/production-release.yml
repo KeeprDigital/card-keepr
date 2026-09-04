@@ -205,7 +205,6 @@ jobs:
         run: |
           set -euo pipefail
           result="$(node scripts/production-release-d1.mjs execute --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/materialize.sql)"
-          test "$(jq -r '.[-1].results[0].transition_rows' <<<"${result}")" = 3
           test "$(jq -r '.[-1].results[0].transferred' <<<"${result}")" = 1
       - name: Transfer the pre-migration fence to the Production Release lease in Bootstrap Mode
         # No production_releases row can exist without a verified backup, so a

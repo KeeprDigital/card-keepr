@@ -73,7 +73,6 @@ export type CatalogueVerificationEvidence = Readonly<{
   products: number;
   legality_rules: number;
   api_documents: number;
-  search_terms: number;
   search_chunks: number;
   provenance: number;
   audit_rows: number;
@@ -738,7 +737,6 @@ async function captureCatalogueVerificationEvidenceWithDocuments(
     products: row.products,
     legality_rules: row.legality_rules,
     api_documents: row.api_documents,
-    search_terms: row.search_terms,
     search_chunks: row.search_chunks,
     provenance: row.provenance,
     audit_rows: row.audit_rows,
@@ -812,7 +810,6 @@ async function verifyRestoredCatalogueQueries(
     row.products === expected.products &&
     row.legality_rules === expected.legality_rules &&
     row.api_documents === expected.api_documents &&
-    row.search_terms === expected.search_terms &&
     row.search_chunks === expected.search_chunks &&
     row.provenance === expected.provenance &&
     row.audit_rows === expected.audit_rows &&
@@ -826,12 +823,10 @@ async function verifyRestoredCatalogueQueries(
   const cardEvidence =
     expected.cards === 0
       ? expected.api_documents === 0 &&
-        expected.search_terms === 0 &&
         expected.search_chunks === 0 &&
         expected.representative_card_id === null &&
         expected.representative_search_text === null
       : expected.api_documents > 0 &&
-        expected.search_terms > 0 &&
         expected.search_chunks > 0 &&
         [expected.representative_card_id, expected.representative_search_text].every(
           (value) => typeof value === "string" && value.length > 0,

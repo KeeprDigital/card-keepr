@@ -776,3 +776,9 @@ export function countSqliteSchemaCount(database: D1Database): D1PreparedStatemen
 export function dropSyntheticLostExportTransition(database: D1Database): D1PreparedStatement {
   return database.prepare("DROP TRIGGER synthetic_lost_export_transition");
 }
+
+export function archiveFixtureQueryRevision(database: D1Database, revisionId: string): D1PreparedStatement {
+  return database
+    .prepare("UPDATE catalogue_query_revisions SET state = 'archived' WHERE catalogue_revision_id = ?")
+    .bind(revisionId);
+}

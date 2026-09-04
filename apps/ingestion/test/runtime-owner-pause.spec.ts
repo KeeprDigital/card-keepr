@@ -1,9 +1,9 @@
+import { dropPausePrerequisiteGuards } from "./query-helpers/collection-resume";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
-import * as ingestionQueries from "./query-helpers/ingestion";
 import { env } from "cloudflare:workers";
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 import {
   pauseEvidenceCollection,
   resumeEvidenceRun,
@@ -20,6 +20,7 @@ import {
 } from "./runtime-helpers";
 
 installRuntimeSuite();
+beforeEach(() => dropPausePrerequisiteGuards(env.CATALOGUE_DB));
 
 // Holds the parent Workflow at its record step so a test can pause a live,
 // running parent deterministically (see runtime-workflow-recovery.spec.ts).
@@ -151,18 +152,6 @@ test("an owner-paused live run resumes under a new Workflow Attempt and complete
   ).toEqual([
     { id: parentId, attempt_number: 1, current: false },
     { id: `${parentId}-resume-1`, attempt_number: 2, current: true },
-  ]);
-  const transitions = await ingestionQueries
-    .readIngestionRunTransitionsFromStateToStateForResumingTransportPausedRunOpensNewBoundedRetryGeneration(
-      env.CATALOGUE_DB,
-    )
-    .bind(run.id)
-    .all<{ from_state: string | null; to_state: string }>();
-  expect(transitions.results).toEqual([
-    { from_state: null, to_state: "collecting" },
-    { from_state: "collecting", to_state: "paused" },
-    { from_state: "paused", to_state: "collecting" },
-    { from_state: "collecting", to_state: "parsing" },
   ]);
 });
 

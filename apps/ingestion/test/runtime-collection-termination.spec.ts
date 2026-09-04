@@ -1,9 +1,10 @@
+import { dropPausePrerequisiteGuards } from "./query-helpers/collection-resume";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { env, exports } from "cloudflare:workers";
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 import {
   prepareCaptureAttempt,
   finalizeEvidenceRun,
@@ -28,6 +29,7 @@ import {
 import { pauseRunAtCapacity } from "./capacity-pause-helpers";
 
 installRuntimeSuite();
+beforeEach(() => dropPausePrerequisiteGuards(env.CATALOGUE_DB));
 
 async function pauseForWorkflowRecovery(
   runId: string,
@@ -118,9 +120,6 @@ test("terminating a paused run records the owner decision, releases the reservat
     terminal_at: document.terminated_at,
     failure_code: "ingestion_run_terminated",
   });
-  expect(
-    await ingestionQueries.readIngestionRunTransitionsFromStateToState(env.CATALOGUE_DB).bind(runId).first(),
-  ).toEqual({ from_state: "paused", to_state: "failed" });
   const record = await sourceEvidenceQueries
     .readIngestionRunTerminations(env.CATALOGUE_DB)
     .bind(runId)

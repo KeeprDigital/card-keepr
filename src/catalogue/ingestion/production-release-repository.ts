@@ -1,4 +1,10 @@
-import { type CatalogueStore, repositoryStatements, SPINE_REVISION_ID } from "../shared";
+import {
+  atomicRepositoryStatement,
+  administrationOutcomeGuardStatement,
+  type CatalogueStore,
+  repositoryStatements,
+  SPINE_REVISION_ID,
+} from "../shared";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
 export function preparedProductionReleaseStatement(database: CatalogueStore, key: string): D1PreparedStatement {
@@ -12,12 +18,15 @@ export function recordPreparedProductionReleaseStatement(
   database: CatalogueStore,
   input: Readonly<{ key: string; requestJson: string; responseJson: string; createdAt: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`INSERT INTO administration_idempotency (
+  return atomicRepositoryStatement(database, {
+    statement: repositoryStatements(database)
+      .prepare(`INSERT INTO administration_idempotency (
            idempotency_key, operation, request_json, response_json,
            http_status, outcome, created_at
          ) VALUES (?, 'prepare_production_release', ?, ?, 201, 'success', ?)`)
-    .bind(input.key, input.requestJson, input.responseJson, input.createdAt);
+      .bind(input.key, input.requestJson, input.responseJson, input.createdAt),
+    after: [administrationOutcomeGuardStatement(database, input.key)],
+  });
 }
 
 // Bootstrap Mode (issue #141): the catalogue is provably empty, so no backup,
@@ -40,8 +49,8 @@ export function bootstrapGate(
          AND NOT EXISTS (SELECT 1 FROM catalogue_revisions)
          AND schema_state.migration_level = ?
          AND operation.active_ingestion_run_id IS NULL
-         AND (operation.active_release_id IS NULL
-           OR operation.active_release_expires_at <= ?)
+         AND (operation.active_production_release_id IS NULL
+           OR operation.active_production_release_expires_at <= ?)
          AND operation.recovery_health = 'healthy' AND operation.active_recovery_id IS NULL
      ) THEN 1 ELSE json_extract('invalid', '$') END`,
     )
@@ -100,8 +109,8 @@ export function populatedGate(
          AND catalogue.current_revision_id = ?
          AND schema_state.migration_level = ?
          AND operation.active_ingestion_run_id IS NULL
-         AND (operation.active_release_id IS NULL
-           OR operation.active_release_expires_at <= ?)
+         AND (operation.active_production_release_id IS NULL
+           OR operation.active_production_release_expires_at <= ?)
          AND ${recoveryGate}
          AND EXISTS (SELECT 1 FROM catalogue_backup_attempts AS backup
            WHERE backup.idempotency_key = ? AND backup.catalogue_revision_id = ?

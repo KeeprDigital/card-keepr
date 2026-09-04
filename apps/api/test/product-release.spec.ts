@@ -339,7 +339,7 @@ test("Product search normalizes compatibility-form official facts during publica
       },
     ],
   };
-  await testEnv.CATALOGUE_DB.batch(
+  await catalogueStore(testEnv.CATALOGUE_DB).batch(
     productReleasePublicationStatements(catalogueStore(testEnv.CATALOGUE_DB), candidate, "catrev_products", {
       products: {
         [productId]: {

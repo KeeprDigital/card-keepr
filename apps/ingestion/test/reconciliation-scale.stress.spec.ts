@@ -70,15 +70,15 @@ test("a 1001-entity reconciliation publishes atomically within bounded D1 statem
   expect(chunks?.candidate_bytes).toBeGreaterThan(8 * 1024 * 1024);
   expect(chunks?.candidate_bytes).toBeLessThan(16 * 1024 * 1024);
   const searchMaterialization = await cardSearchQueries
-    .countRevisionCardSearchTerms(testEnv.CATALOGUE_DB)
-    .bind(revisionId, JSON.stringify(publicCardIds), revisionId, revisionId)
+    .measureRevisionCardSearchChunks(testEnv.CATALOGUE_DB)
+    .bind(revisionId, JSON.stringify(publicCardIds))
     .first<{
-      term_count: number;
-      maximum_term_length: number;
+      chunk_count: number;
+      maximum_chunk_length: number;
       chunk_bytes: number;
     }>();
-  expect(searchMaterialization?.term_count).toBeLessThanOrEqual(256 * 1_001);
-  expect(searchMaterialization?.maximum_term_length).toBeLessThanOrEqual(6);
+  expect(searchMaterialization?.chunk_count).toBeLessThanOrEqual(3 * 1_001);
+  expect(searchMaterialization?.maximum_chunk_length).toBeLessThanOrEqual(12 * 1024);
   expect(searchMaterialization?.chunk_bytes).toBeLessThan(16 * 1024 * 1024);
   const storedRun = await ingestionQueries
     .readIngestionRunsCandidateJson(testEnv.CATALOGUE_DB)

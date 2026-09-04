@@ -344,20 +344,8 @@ export function insertCatalogueRevisionsForPrintingDetailConditionalReadsBindExa
        )`);
 }
 
-export function readIngestionRunTransitionsFromStateToState(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT from_state, to_state FROM ingestion_run_transitions
-     WHERE ingestion_run_id = ? ORDER BY sequence DESC LIMIT 1`);
-}
-
 export function readOperationStateActiveIngestionRunId(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1`);
-}
-
-export function readIngestionRunTransitionsFromStateToStateForResumingTransportPausedRunOpensNewBoundedRetryGeneration(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`SELECT from_state, to_state FROM ingestion_run_transitions
-     WHERE ingestion_run_id = ? ORDER BY sequence`);
 }
 
 export function countIngestionRunsCount(database: D1Database): D1PreparedStatement {
@@ -827,12 +815,6 @@ export function readIngestionRunsStateFailureCode(database: D1Database): D1Prepa
   return database.prepare("SELECT state, failure_code FROM ingestion_runs WHERE id = ?");
 }
 
-export function countIngestionRunTransitionsCount(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT COUNT(*) AS count FROM ingestion_run_transitions
-     WHERE ingestion_run_id = ?
-       AND from_state = 'paused' AND to_state = 'collecting'`);
-}
-
 export function countIngestionPublicationCleanup(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT
        (SELECT COUNT(*) FROM ingestion_publication_cleanup
@@ -972,11 +954,6 @@ export function setOperationStateActiveIngestionRunIdForReleaseLeasesReclaimStal
 ): D1PreparedStatement {
   return database.prepare(`UPDATE operation_state SET active_ingestion_run_id = NULL
      WHERE singleton = 1 AND active_ingestion_run_id = ?`);
-}
-
-export function deleteIngestionRunTransitions(database: D1Database): D1PreparedStatement {
-  return database.prepare(`DELETE FROM ingestion_run_transitions
-         WHERE ingestion_run_id = ?`);
 }
 
 export function deleteIngestionRuns(database: D1Database): D1PreparedStatement {

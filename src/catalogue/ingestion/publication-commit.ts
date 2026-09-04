@@ -1,7 +1,7 @@
 import { publicationBackupDispatchStatements, publicationBackupReservation } from "../backup-recovery";
 import { type BuiltCatalogueExport, distributionContextExportId } from "../export";
 import { legalityPublicationStatements } from "../legality";
-import { cardSearchChunks, cardSearchTerms, cardSearchText } from "../read";
+import { cardSearchChunks, cardSearchText } from "../read";
 import {
   type PublicationEvidenceResource,
   productReleasePublicationStatements,
@@ -30,7 +30,6 @@ import {
   publishCardDocumentsStatement,
   publishCardQueryDocumentsStatement,
   publishCardSearchChunksStatement,
-  publishCardSearchTermsStatement,
   publishNoChangeRunStatement,
   publishPrintingDocumentsStatement,
   publishReconciledPrintingImagesStatement,
@@ -395,14 +394,6 @@ export async function commitVerifiedPublication(
       search_text: searchText,
     })),
   ).map((chunk) => publishCardQueryDocumentsStatement(database, { revisionId: revisionId, documentsJson: chunk }));
-  const revisionCardSearchStatements = byteBoundedJsonArrays(
-    cardDocuments.flatMap(({ card, searchText }) =>
-      cardSearchTerms(searchText).map((term) => ({
-        card_id: card.id,
-        term,
-      })),
-    ),
-  ).map((chunk) => publishCardSearchTermsStatement(database, { termsJson: chunk, revisionId: revisionId }));
   const revisionCardSearchChunkStatements = byteBoundedJsonArrays(
     cardDocuments.flatMap(({ card, searchText }) =>
       cardSearchChunks(searchText).map((chunk) => ({
@@ -460,7 +451,6 @@ export async function commitVerifiedPublication(
     ...revisionCardStatements,
     ...revisionCardQueryStatements,
     ...revisionCardSearchChunkStatements,
-    ...revisionCardSearchStatements,
     registerAvailableQueryRevisionStatement(database, revisionId),
     archiveOldQueryRevisionsStatement(database, revisionId),
     deleteArchivedCardQueryDocumentsStatement(database),

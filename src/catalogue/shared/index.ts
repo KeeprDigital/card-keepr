@@ -2,6 +2,10 @@
 // modules every other cluster may import. Nothing here imports another
 // cluster. See ../README.md for the cluster map (issue #96).
 
+export {
+  administrationClaimGuardStatement,
+  administrationOutcomeGuardStatement,
+} from "./administration-guards-repository";
 export { AdministrationProblem } from "./administration-problem";
 export { isIsoCalendarDate } from "./calendar-date";
 // The Catalogue Candidate's shape (the leaf types from issue #90).
@@ -36,6 +40,7 @@ export {
   type UnresolvedLegalityScopeDimension,
 } from "./catalogue-candidate-types";
 export {
+  atomicRepositoryStatement,
   type CatalogueStore,
   catalogueEnvironment,
   catalogueStore,
@@ -67,6 +72,7 @@ export {
   evidenceRunIdentity,
   replayByDigest,
 } from "./idempotent-identities";
+export { runStartGuardStatement, runTransitionGuardStatement } from "./ingestion-guards-repository";
 export {
   activeRunStages,
   assertIngestionRunTransition,
@@ -82,7 +88,6 @@ export {
   isTerminalIngestionRunState,
 } from "./ingestion-run-state";
 export { operationalDiagnostics } from "./operational-diagnostics";
-
 // D1 payload chunking and the guarded atomic batch, consumed by every
 // cluster that writes publication statements.
 export {
@@ -122,6 +127,5 @@ export {
   type WorkflowStatus,
   workflowDriver,
 } from "./workflow-driver";
-
 export { observeWorkflowProgress, type WorkflowProgress } from "./workflow-progress";
 export { advancesCollectionProgress, type WorkflowKind, workflowStepName, workflowSteps } from "./workflow-steps";

@@ -88,7 +88,7 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.match(release, /original_status=\$\?[\s\S]*exit "\$\{original_status\}"/u);
   assert.match(release, /production-release-failure\.sh/u);
   assert.doesNotMatch(release, /touch .*migrat|test -f .*migrated/u);
-  assert.match(release, /changed_rows[\s\S]*transition_rows[\s\S]*changed_rows/u);
+  assert.match(release, /changed_rows[\s\S]*transferred[\s\S]*changed_rows/u);
   assert.doesNotMatch(release, /d1 delete|databases\/\$\{RETAINED_DATABASE_ID\}/u);
   assert.match(ci, /pull_request:/u);
   // A pull request's refs/pull/N/merge only matches the eventual merge when

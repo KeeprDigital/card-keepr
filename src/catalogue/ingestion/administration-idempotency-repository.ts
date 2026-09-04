@@ -1,4 +1,10 @@
-import { type CatalogueStore, repositoryStatements } from "../shared";
+import {
+  administrationClaimGuardStatement,
+  administrationOutcomeGuardStatement,
+  atomicRepositoryStatement,
+  type CatalogueStore,
+  repositoryStatements,
+} from "../shared";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
 export function administrationClaimStatement(database: CatalogueStore, key: string): D1PreparedStatement {
@@ -56,7 +62,7 @@ export function completeAdministrationStatement(
     claimVersion: number | null;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`INSERT INTO administration_idempotency (
         idempotency_key,
         operation,
@@ -78,6 +84,10 @@ export function completeAdministrationStatement(
       input.ownerToken,
       input.claimVersion,
     );
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [administrationOutcomeGuardStatement(database, input.key)],
+  });
 }
 
 export function administrationOutcomeStatement(database: CatalogueStore, key: string): D1PreparedStatement {
@@ -106,7 +116,7 @@ export function recordAdministrationProblemStatement(
     claimVersion: number;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`INSERT INTO administration_idempotency (
               idempotency_key,
               operation,
@@ -128,6 +138,10 @@ export function recordAdministrationProblemStatement(
       input.ownerToken,
       input.claimVersion,
     );
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [administrationOutcomeGuardStatement(database, input.key)],
+  });
 }
 
 export function acquireAdministrationClaimStatement(
@@ -141,7 +155,7 @@ export function acquireAdministrationClaimStatement(
     expiresAt: string;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`INSERT INTO administration_idempotency_claims (
           idempotency_key,
           operation,
@@ -154,6 +168,10 @@ export function acquireAdministrationClaimStatement(
         RETURNING operation, request_json, claimed_at,
           owner_token, claim_version, claim_expires_at`)
     .bind(input.key, input.operation, input.requestJson, input.claimedAt, input.ownerToken, input.expiresAt);
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [administrationClaimGuardStatement(database, input.key)],
+  });
 }
 
 export function takeOverAdministrationClaimStatement(

@@ -1,4 +1,10 @@
-import { type CatalogueStore, ingestionRunTransitionSql, repositoryStatements } from "../shared";
+import {
+  atomicRepositoryStatement,
+  type CatalogueStore,
+  ingestionRunTransitionSql,
+  repositoryStatements,
+  runTransitionGuardStatement,
+} from "../shared";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
 export function reservePublicationWriterStatement(
@@ -16,7 +22,7 @@ export function reservePublicationWriterStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
       SET state = 'publishing',
           approval_json = ?,
@@ -42,6 +48,10 @@ export function reservePublicationWriterStatement(
       input.writerToken,
       input.runId,
     );
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "awaiting_approval", to: "publishing" })],
+  });
 }
 
 export function publicationWriterAuthorityStatement(

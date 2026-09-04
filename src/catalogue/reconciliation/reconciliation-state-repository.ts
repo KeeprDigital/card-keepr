@@ -1,4 +1,11 @@
-import { type CatalogueStore, ingestionRunTransitionSql, repositoryStatements } from "../shared";
+import {
+  atomicRepositoryStatement,
+  type CatalogueStore,
+  ingestionRunTransitionSql,
+  repositoryStatements,
+  runTransitionGuardStatement,
+} from "../shared";
+import { retainCandidateEvidenceStatement } from "./evidence-retention-repository";
 // Prepared statements only; callers own execution and atomic batch composition.
 
 export function createReconciliationContextStatement(
@@ -16,13 +23,17 @@ export function createReconciliationContextStatement(
 }
 
 export function beginReconciliationStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
          SET state = 'reconciling',
              progress_json =
                '{"completed_stages":["planning","collecting","parsing"],"current_stage":"reconciling"}'
          WHERE id = ? AND ${ingestionRunTransitionSql("parsing", "reconciling")}`)
     .bind(runId);
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [runTransitionGuardStatement(database, { runId: runId, from: "parsing", to: "reconciling" })],
+  });
 }
 
 export function reviewableCandidateStatement(
@@ -37,7 +48,7 @@ export function reviewableCandidateStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
          SET state = 'awaiting_approval',
              candidate_json = ?,
@@ -58,6 +69,12 @@ export function reviewableCandidateStatement(
       input.warningsJson,
       input.runId,
     );
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [
+      runTransitionGuardStatement(database, { runId: input.runId, from: "reconciling", to: "awaiting_approval" }),
+    ],
+  });
 }
 
 export function blockedCandidateStatement(
@@ -74,7 +91,7 @@ export function blockedCandidateStatement(
     runId: string;
   }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
          SET state = 'failed',
              candidate_json = ?,
@@ -99,6 +116,10 @@ export function blockedCandidateStatement(
       input.diagnosticsJson,
       input.runId,
     );
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "reconciling", to: "failed" })],
+  });
 }
 
 export function releaseReconciliationRunStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
@@ -113,7 +134,7 @@ export function failedReconciliationStatement(
   database: CatalogueStore,
   input: Readonly<{ terminalAt: string; diagnosticsJson: string; runId: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
          SET state = 'failed', terminal_at = ?,
              failure_code = 'printing_reconciliation_blocked',
@@ -122,13 +143,17 @@ export function failedReconciliationStatement(
                '{"completed_stages":["planning","collecting","parsing"],"current_stage":"failed"}'
          WHERE id = ? AND ${ingestionRunTransitionSql("reconciling", "failed")}`)
     .bind(input.terminalAt, input.diagnosticsJson, input.runId);
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [runTransitionGuardStatement(database, { runId: input.runId, from: "reconciling", to: "failed" })],
+  });
 }
 
 export function failedReconciliationWorkflowStatement(
   database: CatalogueStore,
   input: Readonly<{ terminalAt: string; failureCode: string; diagnosticsJson: string; runId: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`UPDATE ingestion_runs
          SET state = 'failed', terminal_at = ?,
              failure_code = ?,
@@ -137,6 +162,12 @@ export function failedReconciliationWorkflowStatement(
                '{"completed_stages":["planning","collecting","parsing"],"current_stage":"failed"}'
          WHERE id = ? AND ${ingestionRunTransitionSql(["parsing", "reconciling"], "failed")}`)
     .bind(input.terminalAt, input.failureCode, input.diagnosticsJson, input.runId);
+  return atomicRepositoryStatement(database, {
+    statement,
+    after: [
+      runTransitionGuardStatement(database, { runId: input.runId, from: ["parsing", "reconciling"], to: "failed" }),
+    ],
+  });
 }
 
 export function releaseFailedReconciliationWorkflowStatement(
@@ -160,8 +191,10 @@ export function candidatePlansStatement(
   database: CatalogueStore,
   input: Readonly<{ runId: string; warningsJson: string; plansJson: string }>,
 ): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`INSERT INTO reconciliation_candidates (
+  return atomicRepositoryStatement(database, {
+    after: [retainCandidateEvidenceStatement(database, input)],
+    statement: repositoryStatements(database)
+      .prepare(`INSERT INTO reconciliation_candidates (
          ingestion_run_id, source_observation_set_id, source_snapshot_id,
          source_observation_id, card_id, printing_id, source_lineage,
          locator, variant_key, compatibility_json, memberships_json,
@@ -184,7 +217,8 @@ export function candidatePlansStatement(
               '{"reconciliation_context":"shared"}',
               json_extract(planned.value, '$.observation_kind')
        FROM json_each(?) AS planned`)
-    .bind(input.runId, input.warningsJson, input.plansJson);
+      .bind(input.runId, input.warningsJson, input.plansJson),
+  });
 }
 
 export function evidencePartitionsStatement(

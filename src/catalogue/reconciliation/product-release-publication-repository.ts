@@ -1,4 +1,8 @@
-import { byteBoundedJsonArrays, type CatalogueStore, repositoryStatements } from "../shared";
+import { atomicRepositoryStatement, byteBoundedJsonArrays, type CatalogueStore, repositoryStatements } from "../shared";
+import {
+  retainProductRelationshipEvidenceStatement,
+  retainRevisionProductEvidenceStatement,
+} from "./evidence-retention-repository";
 
 export function productLifecycleRowsStatement(database: CatalogueStore, idsJson: string): D1PreparedStatement {
   return repositoryStatements(database)
@@ -154,9 +158,11 @@ export function publishProductRelationshipLifecyclesStatements(
   database: CatalogueStore,
   rows: readonly Record<string, unknown>[],
 ): D1PreparedStatement[] {
-  return byteBoundedJsonArrays(rows).map((chunk) =>
-    repositoryStatements(database)
-      .prepare(`INSERT INTO reconciled_product_relationships (
+  return relationshipChunksWithoutRepeatedIds(rows).map((chunk) =>
+    atomicRepositoryStatement(database, {
+      after: [retainProductRelationshipEvidenceStatement(database, chunk)],
+      statement: repositoryStatements(database)
+        .prepare(`INSERT INTO reconciled_product_relationships (
          id, supported_game, relationship_kind, from_type, from_id,
          to_type, to_id, evidence_category, source_lineage,
          source_observation_ids_json, relationship_value,
@@ -189,7 +195,8 @@ export function publishProductRelationshipLifecyclesStatements(
          current = excluded.current,
          last_missing_revision_id = excluded.last_missing_revision_id,
          document_json = excluded.document_json`)
-      .bind(chunk),
+        .bind(chunk),
+    }),
   );
 }
 
@@ -199,8 +206,10 @@ export function publishRevisionProductsStatements(
   revisionId: string,
 ): D1PreparedStatement[] {
   return byteBoundedJsonArrays(rows).map((chunk) =>
-    repositoryStatements(database)
-      .prepare(`INSERT INTO revision_products (
+    atomicRepositoryStatement(database, {
+      after: [retainRevisionProductEvidenceStatement(database, { revisionId, payload: chunk })],
+      statement: repositoryStatements(database)
+        .prepare(`INSERT INTO revision_products (
          catalogue_revision_id, product_id, supported_game,
          official_code, name, search_text, release_regions_json,
          document_json
@@ -213,7 +222,8 @@ export function publishRevisionProductsStatements(
               json_extract(value, '$.release_regions_json'),
               json_extract(value, '$.document_json')
        FROM json_each(?)`)
-      .bind(revisionId, chunk),
+        .bind(revisionId, chunk),
+    }),
   );
 }
 
@@ -249,4 +259,24 @@ export function publishRevisionProductRelationshipsStatements(
        FROM json_each(?)`)
       .bind(revisionId, chunk),
   );
+}
+
+// A repeated relationship is a later update, not another row in the same
+// materialization group. Retain its intermediate evidence before that update.
+function relationshipChunksWithoutRepeatedIds(rows: readonly Record<string, unknown>[]): string[] {
+  const chunks: string[] = [];
+  let group: Record<string, unknown>[] = [];
+  const ids = new Set<string>();
+  for (const row of rows) {
+    const id = String(row.id);
+    if (ids.has(id)) {
+      chunks.push(...byteBoundedJsonArrays(group));
+      group = [];
+      ids.clear();
+    }
+    ids.add(id);
+    group.push(row);
+  }
+  if (group.length > 0 || chunks.length === 0) chunks.push(...byteBoundedJsonArrays(group));
+  return chunks;
 }

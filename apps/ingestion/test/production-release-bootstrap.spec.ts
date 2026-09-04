@@ -113,6 +113,7 @@ async function publishFixtureRevision(): Promise<string> {
     idempotency_key: "bootstrap-first-catalogue-approval",
   });
   const document = (await approved.json()) as { state: string; resulting_revision_id: string };
+  expect(approved.status, JSON.stringify(document)).toBe(200);
   expect(document.state).toBe("published");
   return document.resulting_revision_id;
 }

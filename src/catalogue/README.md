@@ -191,3 +191,31 @@ receives that decision explicitly. Curated lifecycle batches retain statement
 ordering, event-version predicates, and append-only audit/idempotency writes.
 Backup transitions retain their owner-token, state, and phase predicates, with
 the caller still checking the affected-row count.
+
+
+## Repository guards and materialization
+
+Migration `0011_repository_guards.sql` moves mutable authority and state checks
+into named repository recipes. `atomicRepositoryStatement` binds each primary
+mutation to its before/after guards and side effects. CatalogueStore expands
+those recipes into one native D1 batch and returns only primary results in the
+caller's original order. A failed guard rolls back every sibling write; direct
+execution uses the same transaction path. Expanded batches above 900 statements
+are rejected before any write.
+
+The level-10 schema had 175 triggers and 98 tables. Level 11 has 103 triggers,
+all protecting immutable rows or fields, and 95 tables. The unconditional
+Legality Card-ID update prohibition remains an immutability guard. Export
+Deletion identity protection is retained separately from its former state guard.
+The two transition audit tables, short-search terms, and legacy lease columns
+are removed. Run progress and resume identity use retained run/attempt facts;
+release transfer uses the prepared request, idempotency result, state, and lease.
+Short search uses existing indexed chunks. Search repair now names its progress
+`repair_chunk_offset`; partial cursors restart safely during migration.
+
+Search FTS rows, archived query cleanup, Legality applicability, and retained
+source evidence are explicit atomic repository effects. Tests remove the old
+trigger family before exercising real repository rejection and rollback paths.
+Bulk writers guard byte-bounded groups rather than adding one query per row.
+Repeated Product Relationship IDs split groups in input order so evidence from
+intermediate updates is retained within the same native transaction.

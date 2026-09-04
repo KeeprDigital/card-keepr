@@ -53,15 +53,6 @@ export function schemaObjectRows(database) {
   return database.prepare("SELECT type, name, sql FROM sqlite_schema ORDER BY type, name");
 }
 
-export function ingestionTransitionTrigger(database) {
-  return database.prepare("SELECT sql FROM sqlite_schema WHERE name = 'guard_legal_ingestion_transition'");
-}
-
-export function legalityProvenanceOwnerTrigger(database) {
-  return database.prepare(`SELECT sql FROM sqlite_schema
-     WHERE type = 'trigger' AND name = 'legality_rule_provenance_owner_insert'`);
-}
-
 // Every row of every table except the schema level itself.
 export function seedRows(database) {
   const tables = seedTableNames(database)
@@ -172,4 +163,21 @@ export function reconciliationContextColumns(database) {
 }
 export function reconciliationContextCount(database) {
   return database.prepare("SELECT count(*) AS count FROM reconciliation_contexts");
+}
+
+export function operationStateColumns(database) {
+  return database.prepare("PRAGMA table_info(operation_state)");
+}
+export function queryRevisionColumns(database) {
+  return database.prepare("PRAGMA table_info(catalogue_query_revisions)");
+}
+export function canonicalReleaseLease(database) {
+  return database.prepare(
+    "SELECT active_production_release_id, active_production_release_expires_at FROM operation_state WHERE singleton = 1",
+  );
+}
+export function seedPreGuardMigrationLease(database) {
+  return database.prepare(
+    "UPDATE operation_state SET active_production_release_id = 'release_migration', active_production_release_expires_at = '2099-01-01T00:00:00.000Z' WHERE singleton = 1",
+  );
 }

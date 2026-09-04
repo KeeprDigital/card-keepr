@@ -24,3 +24,5 @@ export {
 } from "./curated-revisions";
 
 export { curatedRoutes } from "./routes";
+
+export { curatedRunStartGuardStatement } from "./curated-guard-repository";

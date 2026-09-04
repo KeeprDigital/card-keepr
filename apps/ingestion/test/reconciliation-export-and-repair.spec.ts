@@ -1,4 +1,5 @@
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as cardSearchQueries from "./query-helpers/card-search";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import { expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
@@ -378,7 +379,8 @@ test("Card search repair binds exact target/current/idempotency and fails stale 
   expect(stale.document).toMatchObject({ code: "current_revision_mismatch" });
 }, 60_000);
 
-test("one Card search repair idempotency key resumes bounded steps and replays only its completed result", async () => {
+test("publication and bounded Card search repair need no obsolete gram table and replay only their completed result", async () => {
+  await cardSearchQueries.dropObsoleteCardSearchTerms(testEnv.CATALOGUE_DB).run();
   const run = await collect("/reconciliation/complete-empty-lineage", "bounded-25-card-search-repair");
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
