@@ -16,6 +16,15 @@ type D1Metrics = {
   batchStatements: number;
 };
 
+export type OperationalRequestLogOptions = {
+  /**
+   * Whether the completed request is written to the operational log. The
+   * liveness probe (issue #144) is polled by external monitors and would
+   * dominate the per-route record, so it is not written at all.
+   */
+  logged?: boolean;
+};
+
 export async function withOperationalRequestLog<
   Environment extends { CATALOGUE_DB: D1Database },
 >(
@@ -23,7 +32,9 @@ export async function withOperationalRequestLog<
   request: Request,
   env: Environment,
   handle: (observedEnv: Environment, requestId: string) => Promise<Response>,
+  options: OperationalRequestLogOptions = {},
 ): Promise<Response> {
+  const logged = options.logged ?? true;
   const startedAt = Date.now();
   const requestId = crypto.randomUUID();
   const d1: D1Metrics = {
@@ -44,7 +55,7 @@ export async function withOperationalRequestLog<
     return response;
   } finally {
     const status = response?.status ?? 500;
-    console.info(JSON.stringify({
+    if (logged) console.info(JSON.stringify({
       contract: "card-keepr-operational-log@1",
       event: "request.completed",
       runtime,
@@ -77,7 +88,7 @@ const staticRouteSegments = new Set([
   "admin", "approval", "backups", "candidate", "cards", "catalogue",
   "catalogue-exports", "catalogue-revisions",
   "catalogue-search-materialization", "collection", "components", "content",
-  "curated-revisions", "evidence", "health", "ingestion-runs",
+  "curated-revisions", "evidence", "health", "healthz", "ingestion-runs",
   "legality-status", "observations", "printing-images", "printings",
   "products", "publication-cleanup", "reaffirm", "reconciliation",
   "rejection", "repair", "resume", "retire", "retry",

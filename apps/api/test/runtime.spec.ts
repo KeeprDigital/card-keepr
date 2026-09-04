@@ -106,6 +106,19 @@ test("API requests emit useful structured diagnostics without leaking failures",
   expect(records.at(-1)).toContain('\"route\":\"/:ref\"');
   expect(records.at(-1)).not.toContain("source-payload-path-secret");
 
+  // Liveness (issue #144) is polled by monitors: it is not logged, and its
+  // body carries nothing an anonymous caller could learn from.
+  const loggedBefore = records.length;
+  const liveness = await apiWorker.fetch(
+    new Request("https://card-keepr.invalid/healthz?probe=source-payload", {
+      headers: { "x-secret-diagnostic-test": "credential-material" },
+    }),
+    testEnv,
+  );
+  expect(liveness.status).toBe(200);
+  expect(await liveness.text()).toBe('{"status":"ok","runtime":"api"}');
+  expect(records).toHaveLength(loggedBefore);
+
   const secret = "credential-and-source-payload-must-not-leak";
   const failingEnv = new Proxy(testEnv, {
     get(target, property, receiver) {

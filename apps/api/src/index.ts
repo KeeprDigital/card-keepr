@@ -29,8 +29,9 @@ import {
   withCorsHeaders,
 } from "../../../src/http/cors";
 import {
-  assertBindingsAvailable,
-  healthResponse,
+  isLivenessRequest,
+  livenessRequest,
+  readinessResponse,
 } from "../../../src/http/health";
 import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
@@ -290,19 +291,17 @@ async function handleApiRequest(
       }
 
       if (request.method === "GET" && url.pathname === "/health") {
-        assertBindingsAvailable(
-          "read",
-          env.CATALOGUE_DB,
-          env.PRINTING_IMAGES,
-          env.CATALOGUE_EXPORTS,
-        );
         return withCorsHeaders(
           request,
-          healthResponse({
-            contract: "card-keepr-runtime-health@1",
-            runtime: "api",
-            status: "ok",
-            capabilities: apiCapabilities,
+          await readinessResponse("api", apiCapabilities, {
+            database: env.CATALOGUE_DB,
+            buckets: {
+              PRINTING_IMAGES: env.PRINTING_IMAGES,
+              CATALOGUE_EXPORTS: env.CATALOGUE_EXPORTS,
+            },
+            publicBase: base,
+            request,
+            version: env.CF_VERSION_METADATA,
           }),
         );
       }
@@ -460,6 +459,23 @@ const apiWorker = {
       );
     }
     const mounted = mountedRequest(request, route);
+    // Liveness (issue #144) is unauthenticated, behind its own rate limit,
+    // and kept out of the operational request log.
+    if (isLivenessRequest(request.method, route)) {
+      return withOperationalRequestLog(
+        "api",
+        mounted,
+        env,
+        (observedEnv, requestId) =>
+          livenessRequest(
+            mounted,
+            observedEnv.API_LIVENESS_RATE_LIMIT,
+            "api",
+            requestId,
+          ),
+        { logged: false },
+      );
+    }
     return withOperationalRequestLog(
       "api",
       mounted,
