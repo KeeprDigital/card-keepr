@@ -40,9 +40,7 @@ test("a guarded migration aborts before changing anything when the recorded leve
       database.exec(earlier.sql);
     }
     const expectedObjects = schemaObjects(database);
-    database.prepare(
-      "UPDATE catalogue_schema_state SET migration_level = 99 WHERE singleton = 1",
-    ).run();
+    database.prepare("UPDATE catalogue_schema_state SET migration_level = 99 WHERE singleton = 1").run();
     assert.throws(
       () => database.exec(migration.sql),
       /malformed JSON/u,
@@ -75,9 +73,7 @@ test("migration 0002 retains pause and termination rows and re-guards both table
        ) VALUES ('${id}', 'planning', '["one-piece"]', '2026-09-03T00:00:00.000Z',
                  'catrev_spine_000', 'key_${id}', '{}')`,
     );
-    database.exec(
-      `UPDATE operation_state SET active_ingestion_run_id = '${id}' WHERE singleton = 1`,
-    );
+    database.exec(`UPDATE operation_state SET active_ingestion_run_id = '${id}' WHERE singleton = 1`);
     database.exec(`UPDATE ingestion_runs SET state = 'collecting' WHERE id = '${id}'`);
     database.exec(`UPDATE ingestion_runs SET state = 'paused' WHERE id = '${id}'`);
     database.exec(
@@ -94,13 +90,10 @@ test("migration 0002 retains pause and termination rows and re-guards both table
       `UPDATE ingestion_runs SET state = 'failed', failure_code = 'ingestion_run_terminated'
        WHERE id = '${id}'`,
     );
-    database.exec(
-      "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
-    );
+    database.exec("UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1");
   };
   terminateRun("run_retained", "source_workflow_terminated");
-  const rows = (table) =>
-    database.prepare(`SELECT * FROM ${table} ORDER BY ingestion_run_id`).all();
+  const rows = (table) => database.prepare(`SELECT * FROM ${table} ORDER BY ingestion_run_id`).all();
   const before = {
     pauses: rows("ingestion_run_workflow_pauses"),
     terminations: rows("ingestion_run_terminations"),
@@ -116,20 +109,18 @@ test("migration 0002 retains pause and termination rows and re-guards both table
   assert.equal(database.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
   assert.deepEqual(database.prepare("PRAGMA foreign_key_check").all(), []);
   assert.throws(
-    () => database.exec(
-      `INSERT INTO ingestion_run_workflow_pauses VALUES
+    () =>
+      database.exec(
+        `INSERT INTO ingestion_run_workflow_pauses VALUES
          ('run_retained', 'late', 'owner_requested', 'running', '2026-09-03T03:00:00.000Z', NULL)`,
-    ),
+      ),
     /workflow_pause_requires_paused_run/u,
   );
   assert.throws(
     () => database.exec("UPDATE ingestion_run_workflow_pauses SET workflow_status = 'errored'"),
     /workflow_pause_immutable/u,
   );
-  assert.throws(
-    () => database.exec("DELETE FROM ingestion_run_terminations"),
-    /termination_immutable/u,
-  );
+  assert.throws(() => database.exec("DELETE FROM ingestion_run_terminations"), /termination_immutable/u);
   assert.throws(
     () => database.exec("UPDATE ingestion_run_terminations SET terminated_at = '2026-09-04T00:00:00.000Z'"),
     /termination_immutable/u,
@@ -137,10 +128,7 @@ test("migration 0002 retains pause and termination rows and re-guards both table
   // The widened vocabulary is accepted end to end: an owner-requested pause
   // can be recorded and terminated on the migrated schema.
   terminateRun("run_owner", "owner_requested");
-  assert.equal(
-    database.prepare("SELECT state FROM ingestion_runs WHERE id = 'run_owner'").get().state,
-    "failed",
-  );
+  assert.equal(database.prepare("SELECT state FROM ingestion_runs WHERE id = 'run_owner'").get().state, "failed");
   database.close();
 });
 
@@ -180,8 +168,17 @@ test("migration 0004 backfills the projected read facts and guards new rows", as
     source_observation_id: "observation_0004",
     source_observation_pointer: pointer,
     source_field_pointers: Object.fromEntries(
-      ["official_wording", "effective_from", "effective_until", "region", "unresolved_scope", "format", "event_tier", "card_numbers", "effect"]
-        .map((field) => [field, `${pointer}/${field}`]),
+      [
+        "official_wording",
+        "effective_from",
+        "effective_until",
+        "region",
+        "unresolved_scope",
+        "format",
+        "event_tier",
+        "card_numbers",
+        "effect",
+      ].map((field) => [field, `${pointer}/${field}`]),
     ),
     first_revision_id: "catrev_0004",
     last_observed_revision_id: "catrev_0004",
@@ -287,17 +284,19 @@ test("migration 0004 backfills the projected read facts and guards new rows", as
   assert.equal(schemaLevel(database), 4);
   assert.deepEqual(
     {
-      ...database.prepare(
-        `SELECT media_type, content_sha256, content_byte_length, object_key
+      ...database
+        .prepare(
+          `SELECT media_type, content_sha256, content_byte_length, object_key
          FROM revision_printing_images WHERE image_id = 'image_0004'`,
-      ).get(),
+        )
+        .get(),
     },
     { media_type: "image/webp", content_sha256: sha, content_byte_length: 18, object_key: `printing-images/${sha}` },
   );
   assert.equal(
-    database.prepare(
-      "SELECT source_retrieved_at FROM revision_legality_rules WHERE legality_rule_id = 'legality_0004'",
-    ).get().source_retrieved_at,
+    database
+      .prepare("SELECT source_retrieved_at FROM revision_legality_rules WHERE legality_rule_id = 'legality_0004'")
+      .get().source_retrieved_at,
     "2026-09-03T00:00:01.000Z",
   );
   assert.equal(database.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
@@ -334,21 +333,23 @@ test("migration 0004 backfills the projected read facts and guards new rows", as
     source_observation_id: "observation_0004_late",
   });
   assert.throws(
-    () => database.exec(
-      `INSERT INTO revision_printing_images (catalogue_revision_id, image_id, printing_id)
+    () =>
+      database.exec(
+        `INSERT INTO revision_printing_images (catalogue_revision_id, image_id, printing_id)
        VALUES ('catrev_0004', 'image_0004_late', 'printing_0004')`,
-    ),
+      ),
     /revision_printing_image_content_missing/u,
   );
   assert.throws(
-    () => database.exec(
-      `INSERT INTO revision_legality_rules (
+    () =>
+      database.exec(
+        `INSERT INTO revision_legality_rules (
          catalogue_revision_id, legality_rule_id, supported_game, region, format,
          event_tier, effective_from, effective_until, unresolved_scope_json,
          card_ids_json, document_json
        ) VALUES ('catrev_0004', 'legality_0004_late', 'one-piece', 'EN-OCEANIA',
                  'standard', NULL, '2026-01-01', NULL, 'null', '[]', '${lateDocument}')`,
-    ),
+      ),
     /revision_legality_rule_source_retrieved_at_missing/u,
   );
   database.exec(`
@@ -370,9 +371,10 @@ test("migration 0004 backfills the projected read facts and guards new rows", as
 
 test("the schema carries the hot-path indexes and not the dead ones", async () => {
   const database = await migratedDatabase();
-  const indexes = database.prepare(
-    "SELECT name FROM sqlite_schema WHERE type = 'index' ORDER BY name",
-  ).all().map((row) => row.name);
+  const indexes = database
+    .prepare("SELECT name FROM sqlite_schema WHERE type = 'index' ORDER BY name")
+    .all()
+    .map((row) => row.name);
   assert.ok(!indexes.includes("revision_products_region"));
   assert.ok(!indexes.includes("revision_errata_by_revision"));
 
@@ -393,13 +395,9 @@ test("the schema carries the hot-path indexes and not the dead ones", async () =
     ),
     ["SEARCH source_snapshots USING INDEX source_snapshots_by_run (ingestion_run_id=?)"],
   );
-  assert.deepEqual(
-    plan(
-      database,
-      "SELECT COUNT(*) FROM source_snapshots WHERE ingestion_run_id = ?",
-    ),
-    ["SEARCH source_snapshots USING COVERING INDEX source_snapshots_by_run (ingestion_run_id=?)"],
-  );
+  assert.deepEqual(plan(database, "SELECT COUNT(*) FROM source_snapshots WHERE ingestion_run_id = ?"), [
+    "SEARCH source_snapshots USING COVERING INDEX source_snapshots_by_run (ingestion_run_id=?)",
+  ]);
   assert.deepEqual(
     plan(
       database,
@@ -433,7 +431,9 @@ test("the schema carries the hot-path indexes and not the dead ones", async () =
        WHERE catalogue_revision_id = ?
        ORDER BY started_at DESC, idempotency_key DESC`,
     ),
-    ["SEARCH catalogue_backup_attempts USING COVERING INDEX catalogue_backup_attempts_by_revision (catalogue_revision_id=?)"],
+    [
+      "SEARCH catalogue_backup_attempts USING COVERING INDEX catalogue_backup_attempts_by_revision (catalogue_revision_id=?)",
+    ],
   );
   assert.deepEqual(
     plan(
@@ -446,19 +446,14 @@ test("the schema carries the hot-path indexes and not the dead ones", async () =
     "SEARCH catalogue_backup_attempts USING INDEX catalogue_backup_attempts_by_revision (catalogue_revision_id=?)",
   );
   assert.deepEqual(
-    plan(
-      database,
-      "SELECT idempotency_key FROM catalogue_backup_attempts WHERE linked_attempt_id = ? LIMIT 1",
-    ),
-    ["SEARCH catalogue_backup_attempts USING INDEX one_catalogue_backup_retry_per_failed_attempt (linked_attempt_id=?)"],
+    plan(database, "SELECT idempotency_key FROM catalogue_backup_attempts WHERE linked_attempt_id = ? LIMIT 1"),
+    [
+      "SEARCH catalogue_backup_attempts USING INDEX one_catalogue_backup_retry_per_failed_attempt (linked_attempt_id=?)",
+    ],
   );
-  assert.deepEqual(
-    plan(
-      database,
-      "SELECT * FROM ingestion_runs ORDER BY started_at DESC, id DESC LIMIT 20",
-    ),
-    ["SCAN ingestion_runs USING INDEX ingestion_runs_recent"],
-  );
+  assert.deepEqual(plan(database, "SELECT * FROM ingestion_runs ORDER BY started_at DESC, id DESC LIMIT 20"), [
+    "SCAN ingestion_runs USING INDEX ingestion_runs_recent",
+  ]);
   assert.deepEqual(
     plan(
       database,
@@ -468,48 +463,42 @@ test("the schema carries the hot-path indexes and not the dead ones", async () =
          AND publication_reconcile_after <= ?
        ORDER BY publication_reconcile_after, id LIMIT 1`,
     ),
-    ["SEARCH ingestion_runs USING INDEX ingestion_runs_by_state (state=? AND publication_reconcile_after>? AND publication_reconcile_after<?)"],
+    [
+      "SEARCH ingestion_runs USING INDEX ingestion_runs_by_state (state=? AND publication_reconcile_after>? AND publication_reconcile_after<?)",
+    ],
   );
-  assert.deepEqual(
-    plan(database, "SELECT id FROM ingestion_runs WHERE state = 'expired'"),
-    ["SEARCH ingestion_runs USING COVERING INDEX ingestion_runs_by_state (state=?)"],
-  );
+  assert.deepEqual(plan(database, "SELECT id FROM ingestion_runs WHERE state = 'expired'"), [
+    "SEARCH ingestion_runs USING COVERING INDEX ingestion_runs_by_state (state=?)",
+  ]);
   database.close();
 });
 
 test("dropping the dead indexes leaves their queries on an equivalent seek", async () => {
   const database = await migratedDatabase();
   assert.match(
-    plan(
-      database,
-      "SELECT product_id FROM revision_products WHERE catalogue_revision_id = ? ORDER BY product_id",
-    )[0],
+    plan(database, "SELECT product_id FROM revision_products WHERE catalogue_revision_id = ? ORDER BY product_id")[0],
     /^SEARCH revision_products USING (?:COVERING )?INDEX \S+ \(catalogue_revision_id=\?\)$/u,
   );
-  assert.deepEqual(
-    plan(
-      database,
-      "SELECT erratum_id FROM revision_errata WHERE catalogue_revision_id = ?",
-    ),
-    ["SEARCH revision_errata USING COVERING INDEX sqlite_autoindex_revision_errata_1 (catalogue_revision_id=?)"],
-  );
+  assert.deepEqual(plan(database, "SELECT erratum_id FROM revision_errata WHERE catalogue_revision_id = ?"), [
+    "SEARCH revision_errata USING COVERING INDEX sqlite_autoindex_revision_errata_1 (catalogue_revision_id=?)",
+  ]);
   database.close();
 });
 
 function plan(database, sql) {
-  return database.prepare(`EXPLAIN QUERY PLAN ${sql}`).all().map((row) => row.detail);
+  return database
+    .prepare(`EXPLAIN QUERY PLAN ${sql}`)
+    .all()
+    .map((row) => row.detail);
 }
 
 function schemaLevel(database) {
-  return database.prepare(
-    "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
-  ).get().migration_level;
+  return database.prepare("SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1").get()
+    .migration_level;
 }
 
 function schemaObjects(database) {
-  return database.prepare(
-    "SELECT type, name, sql FROM sqlite_schema ORDER BY type, name",
-  ).all();
+  return database.prepare("SELECT type, name, sql FROM sqlite_schema ORDER BY type, name").all();
 }
 
 async function migratedDatabase() {
@@ -520,12 +509,12 @@ async function migratedDatabase() {
 
 async function readMigrations() {
   const directory = resolve(root, "migrations");
-  const names = (await readdir(directory))
-    .filter((name) => name.endsWith(".sql"))
-    .sort();
-  return Promise.all(names.map(async (name) => ({
-    name,
-    level: Number.parseInt(name, 10),
-    sql: await readFile(resolve(directory, name), "utf8"),
-  })));
+  const names = (await readdir(directory)).filter((name) => name.endsWith(".sql")).sort();
+  return Promise.all(
+    names.map(async (name) => ({
+      name,
+      level: Number.parseInt(name, 10),
+      sql: await readFile(resolve(directory, name), "utf8"),
+    })),
+  );
 }
