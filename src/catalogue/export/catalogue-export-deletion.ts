@@ -1,3 +1,8 @@
+import {
+  type CatalogueExportRow as ExportRow,
+  catalogueExportStatement,
+  catalogueExportDeletionPlanInsertStatement,
+} from "./export-repository";
 import { canonicalJson, compareUtf8, sha256Text } from "../shared";
 
 const PLAN_TTL_MS = 15 * 60 * 1_000;
@@ -5,13 +10,6 @@ const EXECUTION_LEASE_MS = 5 * 60 * 1_000;
 const REPLAY_RESPONSE_QUERY_BUDGET = 8;
 const REPLAY_WAIT_INITIAL_MS = 10;
 const REPLAY_WAIT_MAX_MS = 250;
-
-type ExportRow = {
-  catalogue_revision_id: string;
-  manifest_key: string;
-  manifest_digest: string;
-  maintenance_state: "available" | "deleting" | "deleted";
-};
 
 type PlanRow = {
   id: string;
@@ -88,14 +86,7 @@ export async function prepareCatalogueExportDeletion(
   request: PrepareCatalogueExportDeletion,
   observedAt: string,
 ): Promise<Record<string, unknown>> {
-  const catalogueExport = await database
-    .prepare(
-      `SELECT catalogue_revision_id, manifest_key, manifest_digest,
-            maintenance_state
-     FROM catalogue_exports WHERE catalogue_revision_id = ?`,
-    )
-    .bind(request.catalogue_revision_id)
-    .first<ExportRow>();
+  const catalogueExport = await catalogueExportStatement(database, request.catalogue_revision_id).first<ExportRow>();
   if (catalogueExport === null) {
     throw problem(404, "catalogue_export_not_found", "The Catalogue Export is not known.");
   }
@@ -158,29 +149,12 @@ export async function prepareCatalogueExportDeletion(
     ...core,
     plan_digest: await sha256Text(canonicalJson(core)),
   };
-  await database
-    .prepare(
-      `INSERT INTO catalogue_export_deletion_plans (
-       id, catalogue_revision_id, manifest_digest,
-       expected_current_revision_id, object_keys_json, component_names_json,
-       object_set_digest,
-       dependencies_json, plan_digest, created_at, expires_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .bind(
-      document.id,
-      document.catalogue_revision_id,
-      document.manifest_digest,
-      document.expected_current_revision_id,
-      canonicalJson(document.object_keys),
-      canonicalJson(resolvedObjects.componentNames),
-      document.object_set_digest,
-      canonicalJson(document.dependencies),
-      document.plan_digest,
-      document.created_at,
-      document.expires_at,
-    )
-    .run();
+  await catalogueExportDeletionPlanInsertStatement(database, {
+    ...document,
+    object_keys_json: canonicalJson(document.object_keys),
+    component_names_json: canonicalJson(resolvedObjects.componentNames),
+    dependencies_json: canonicalJson(document.dependencies),
+  }).run();
   return document;
 }
 
