@@ -24,24 +24,30 @@ export type SourceRequestRole =
 // Per-role transport policy. A missing listing, detail, product, or surface
 // response means missing catalogue facts, so exhausting those bounded
 // transport retries pauses the run (Retry Pause) until the Official Source
-// recovers. A Printing Image is a static file that reconciliation can
-// publish without: exhausting its retries records that one request as failed
-// under a distinct code and collection continues, so a slow CDN path cannot
-// stall a run once per stubborn image. Image fetches also get a longer
-// bound, so slow-but-succeeding transfers complete instead of retrying.
+// recovers, and every terminal outcome (a non-retryable status, a redirect,
+// a rejected revalidation, a body-contract violation) fails the run. A
+// Printing Image is a static file that reconciliation can publish without:
+// exhausting its retries or reaching a terminal outcome records that one
+// request as failed under a distinct, class-specific code and collection
+// continues, so a slow CDN path or a removed file cannot stall or discard a
+// run once per stubborn image. Image fetches also get a longer bound, so
+// slow-but-succeeding transfers complete instead of retrying.
 export type SourceRequestTransportPolicy = Readonly<{
   timeout_ms: number;
   on_transport_exhaustion: "pause_run" | "fail_request";
+  on_terminal_outcome: "fail_run" | "fail_request";
 }>;
 
 const catalogueFactTransportPolicy: SourceRequestTransportPolicy = {
   timeout_ms: 30_000,
   on_transport_exhaustion: "pause_run",
+  on_terminal_outcome: "fail_run",
 };
 
 const printingImageTransportPolicy: SourceRequestTransportPolicy = {
   timeout_ms: 60_000,
   on_transport_exhaustion: "fail_request",
+  on_terminal_outcome: "fail_request",
 };
 
 export function transportPolicyForRole(
@@ -52,10 +58,69 @@ export function transportPolicyForRole(
     : catalogueFactTransportPolicy;
 }
 
+// The classes of Source Request failure capture records on a request. Every
+// class maps to one stable failure code per transport policy: the
+// catalogue-fact codes fail the run, the image codes fail the request alone.
+export type SourceRequestFailureClass =
+  | "retries_exhausted"
+  | "not_found"
+  | "rejected"
+  | "redirected"
+  | "revalidation_rejected"
+  | "body_contract";
+
+const catalogueFactFailureCodes: Readonly<
+  Record<SourceRequestFailureClass, string>
+> = {
+  retries_exhausted: "source_request_retries_exhausted",
+  not_found: "source_request_rejected",
+  rejected: "source_request_rejected",
+  redirected: "source_redirect_rejected",
+  revalidation_rejected: "source_revalidation_rejected",
+  body_contract: "source_request_retries_exhausted",
+};
+
+const printingImageFailureCodes: Readonly<
+  Record<SourceRequestFailureClass, string>
+> = {
+  retries_exhausted: "source_image_retries_exhausted",
+  not_found: "source_image_not_found",
+  rejected: "source_image_rejected",
+  redirected: "source_image_redirected",
+  revalidation_rejected: "source_image_revalidation_rejected",
+  body_contract: "source_image_body_contract",
+};
+
 // The stable failure code of an image Source Request whose bounded
 // transport retries were exhausted under the fail-request policy.
 export const printingImageRetriesExhaustedFailureCode =
-  "source_image_retries_exhausted";
+  printingImageFailureCodes.retries_exhausted;
+
+// Every failure code a Printing Image request can carry without failing or
+// pausing its run, in a stable order for SQL `json_each` membership tests.
+export const toleratedPrintingImageFailureCodes: readonly string[] =
+  Object.freeze(Object.values(printingImageFailureCodes));
+
+// The failure code one request records for a failure class under its role's
+// transport policy.
+export function requestFailureCode(
+  role: SourceRequestRole,
+  failureClass: SourceRequestFailureClass,
+): string {
+  return transportPolicyForRole(role).on_terminal_outcome === "fail_request"
+    ? printingImageFailureCodes[failureClass]
+    : catalogueFactFailureCodes[failureClass];
+}
+
+// The failure class of a non-success HTTP status that is never retried: a
+// missing file is distinguished from every other refusal so the gap stays
+// diagnosable. Retryable statuses (429 and 5xx) have no terminal class.
+export function terminalHttpFailureClass(
+  status: number,
+): Extract<SourceRequestFailureClass, "not_found" | "rejected"> | null {
+  if (status === 404 || status === 410) return "not_found";
+  return status !== 429 && status < 500 ? "rejected" : null;
+}
 
 // A failed Source Request that collection completion, reconciliation, and
 // publication tolerate: the run proceeds and the missing Printing Image is
@@ -64,8 +129,8 @@ export function toleratesRequestFailure(
   role: SourceRequestRole,
   failureCode: string | null,
 ): boolean {
-  return role === "image" &&
-    failureCode === printingImageRetriesExhaustedFailureCode;
+  return role === "image" && failureCode !== null &&
+    toleratedPrintingImageFailureCodes.includes(failureCode);
 }
 
 const allowedRequestHeaders = new Set([
