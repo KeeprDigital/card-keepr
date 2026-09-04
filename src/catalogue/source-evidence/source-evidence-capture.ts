@@ -1,3 +1,4 @@
+import { type AttemptOutcome, attemptStatement, sourceSnapshotStatement } from "./evidence-repository";
 import { createHash } from "node:crypto";
 import { AdministrationProblem, canonicalJson, sha256, utf8 } from "../shared";
 import { requiredSourceAdapter } from "../adapters";
@@ -32,16 +33,6 @@ import {
 import type { SnapshotRow } from "./source-evidence-repository-types";
 const multipartPartBytes = 5 * 1024 * 1024;
 const representedRequestHeaders = new Set(["accept", "accept-language", "user-agent"]);
-
-type AttemptOutcome =
-  | "success"
-  | "cache_revalidated"
-  | "redirect"
-  | "http_failure"
-  | "network_failure"
-  | "body_failure"
-  | "storage_failure"
-  | "content_rejected";
 
 type CaptureOperationRow = {
   attempt_id: string;
@@ -568,10 +559,7 @@ export async function completeUploadedCapture(
   const reusedSnapshot =
     operation.reused_source_snapshot_id === null
       ? null
-      : await database
-          .prepare("SELECT * FROM source_snapshots WHERE id = ?")
-          .bind(operation.reused_source_snapshot_id)
-          .first<SnapshotRow>();
+      : await sourceSnapshotStatement(database, operation.reused_source_snapshot_id).first<SnapshotRow>();
   if (operation.reused_source_snapshot_id !== null && reusedSnapshot === null) {
     throw new Error("Revalidated Source Snapshot bytes are unavailable");
   }
@@ -1192,44 +1180,6 @@ function recoverableExhaustion(
     }),
     failure_code: null,
   };
-}
-
-type AttemptInput = {
-  id: string;
-  runId: string;
-  requestId: string;
-  attemptNumber: number;
-  requestedAt: string;
-  completedAt: string;
-  outcome: AttemptOutcome;
-  status: number | null;
-  headers: Record<string, string>;
-  retryAfterMs: number | null;
-  diagnostic: string | null;
-};
-
-function attemptStatement(database: D1Database, attempt: AttemptInput): D1PreparedStatement {
-  return database
-    .prepare(
-      `INSERT OR IGNORE INTO source_fetch_attempts (
-        id, ingestion_run_id, request_id, attempt_number, requested_at,
-        completed_at, outcome, http_status, response_headers_json,
-        retry_after_ms, diagnostic
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .bind(
-      attempt.id,
-      attempt.runId,
-      attempt.requestId,
-      attempt.attemptNumber,
-      attempt.requestedAt,
-      attempt.completedAt,
-      attempt.outcome,
-      attempt.status,
-      canonicalJson(attempt.headers),
-      attempt.retryAfterMs,
-      attempt.diagnostic,
-    );
 }
 
 async function failRequest(database: D1Database, request: EvidenceRequestRow, failureCode: string): Promise<void> {

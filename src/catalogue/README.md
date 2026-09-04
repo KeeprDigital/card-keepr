@@ -154,3 +154,31 @@ re-exports on `legality-rule.ts`, `legality-effect-policy.ts`,
 - `official-legality-*.ts` and `official-source-scope.ts` are Official
   Source parsers and scope registration, so they belong to `adapters`, not
   `legality`.
+
+## Aggregate repositories (#103 expand)
+
+The repository functions introduced by #103 prepare and bind SQL; their callers
+still execute reads and writes and compose atomic batches. Query row types live
+beside the statements (or in the existing retained-evidence types module), and
+the existing typed readers preserve missing-row and validation behavior. No
+statement factory executes a query, checks a capability, or opens a transaction.
+The existing reconciliation repository also retains its older read helpers during
+this expansion.
+
+| Aggregate | Repository | First adopted path |
+| --- | --- | --- |
+| Catalogue Revision | `ingestion/catalogue-revision-repository.ts` | Retained revision window and repair target readers |
+| Ingestion Run | `source-evidence/ingestion-run-repository.ts` | Evidence run start/retry insertion and evidence run readers |
+| Source evidence | `source-evidence/evidence-repository.ts` | Fetch Attempt insertion and reused Source Snapshot reader |
+| Reconciliation | `reconciliation/reconciliation-repository.ts` | Terminal result insertion and reader |
+| Curated Revision | `curated/curated-repository.ts` | Revision readers and reaffirm/retire lifecycle batch |
+| Backup Attempt | `backup-recovery/backup-repository.ts` | Attempt evidence reader and Restore Phase transition |
+| Catalogue Export | `export/export-repository.ts` | Export reader and deletion plan insertion |
+
+These are cluster-internal seams. Existing cluster entrypoints stay unchanged,
+and inline SQL outside the adopted paths remains for the later migration.
+Lifecycle capability detection stays in the Ingestion Run caller; the repository
+receives that decision explicitly. Curated lifecycle batches retain statement
+ordering, event-version predicates, and append-only audit/idempotency writes.
+Backup transitions retain their owner-token, state, and phase predicates, with
+the caller still checking the affected-row count.

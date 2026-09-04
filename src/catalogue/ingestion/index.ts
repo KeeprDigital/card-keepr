@@ -34,3 +34,5 @@ export {
   prepareProductionRelease,
   type ProductionTarget,
 } from "./production-release";
+
+export { ingestionRoutes } from "./routes";

@@ -1,4 +1,9 @@
 import {
+  type ReconciliationTerminalResultRow,
+  terminalResultInsertion,
+  terminalResultStatement,
+} from "./reconciliation-repository";
+import {
   type CatalogueCandidate,
   canonicalJson,
   byteBoundedJsonArrays,
@@ -546,20 +551,6 @@ function terminalFailureResult(
   };
 }
 
-function terminalResultInsertion(
-  database: D1Database,
-  runId: string,
-  result: Record<string, unknown>,
-): D1PreparedStatement {
-  return database
-    .prepare(
-      `INSERT OR IGNORE INTO reconciliation_terminal_results (
-         ingestion_run_id, result_json
-       ) VALUES (?, ?)`,
-    )
-    .bind(runId, canonicalJson(result));
-}
-
 async function requiredTerminalResult(database: D1Database, runId: string): Promise<Record<string, unknown>> {
   const result = await terminalResult(database, runId);
   if (result === null) {
@@ -569,14 +560,7 @@ async function requiredTerminalResult(database: D1Database, runId: string): Prom
 }
 
 async function terminalResult(database: D1Database, runId: string): Promise<Record<string, unknown> | null> {
-  const row = await database
-    .prepare(
-      `SELECT result_json
-       FROM reconciliation_terminal_results
-       WHERE ingestion_run_id = ?`,
-    )
-    .bind(runId)
-    .first<{ result_json: string }>();
+  const row = await terminalResultStatement(database, runId).first<ReconciliationTerminalResultRow>();
   if (row === null) return null;
   const parsed = JSON.parse(row.result_json) as unknown;
   if (

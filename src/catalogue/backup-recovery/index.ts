@@ -41,3 +41,5 @@ export {
   prepareCardSearchForD1ExportStatements,
   reconstructCardSearchAfterD1RestoreStatements,
 } from "./card-search-recovery-statements";
+
+export { backupRecoveryRoutes } from "./routes";
