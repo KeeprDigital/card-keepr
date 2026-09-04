@@ -38,7 +38,7 @@ An unknown adapter identifier also produces a blocker instead of an empty result
 
 ```sh
 node scripts/adapter-retirement-sql.mjs EXACT_ADAPTER_ID > retirement-check.sql
-npx wrangler d1 execute CATALOGUE_DB --remote --json \
+./node_modules/.bin/wrangler d1 execute CATALOGUE_DB --remote --json \
   --config apps/ingestion/wrangler.jsonc \
   --command "$(cat retirement-check.sql)" > retirement-check.json
 ```
