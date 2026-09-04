@@ -325,7 +325,16 @@ export async function currentProductsResponse(
             game,
             region,
             limit,
-            after: requestedAfter,
+            after:
+              cursor === null
+                ? null
+                : encodeCursor({
+                    route: productRoute,
+                    ordering: productOrder,
+                    revision: revisionId,
+                    filters,
+                    last: cursor.last,
+                  }),
           }),
         ),
       },
@@ -459,7 +468,7 @@ function parseCursor(
   ) {
     throw invalidCursor();
   }
-  return { revision: cursor.revision, last: cursor.last };
+  return { revision: cursor.revision, last: orderValue(cursor.last) };
 }
 
 function invalidCursor(): ReadProblem {

@@ -4,6 +4,7 @@ import { cardSearchFtsQuery, cardSearchQuery } from "./card-search";
 import {
   canonicalEtag,
   collectionFilter,
+  collectionFilterValue,
   collectionLimit,
   collectionParameters,
   collectionSelf,
@@ -102,7 +103,7 @@ export async function cardCollectionResponse(
             game: filters.game,
             card_number: filters.cardNumber,
             limit: filters.limit,
-            after: url.searchParams.get("after"),
+            after: cursor === null ? null : encodeCursor(cursor),
           }),
         ),
       },
@@ -303,7 +304,7 @@ function parseFilters(url: URL): CollectionFilters {
   collectionParameters(url);
   const limit = collectionLimit(url.searchParams.get("limit"));
   const rawQuery = collectionFilter(url, "q");
-  const q = cardSearchQuery(rawQuery)?.text ?? null;
+  const q = collectionFilterValue(cardSearchQuery(rawQuery)?.text ?? null, "q");
   if (rawQuery !== null && q === null) throw invalidParameter("q", "q must contain at least one character.");
   const rawGame = collectionFilter(url, "game");
   const game = normalizedFilter(rawGame);
@@ -311,7 +312,7 @@ function parseFilters(url: URL): CollectionFilters {
   if (game !== null && !["one-piece", "fusion-world", "digimon", "gundam"].includes(game))
     throw invalidParameter("game", "game is not a Supported Game.");
   const rawCardNumber = collectionFilter(url, "card_number");
-  const cardNumber = normalizedFilter(rawCardNumber);
+  const cardNumber = collectionFilterValue(normalizedFilter(rawCardNumber), "card_number");
   if (rawCardNumber !== null && cardNumber === null)
     throw invalidParameter("card_number", "card_number must contain at least one character.");
   return { q, game, cardNumber, limit };
@@ -357,7 +358,19 @@ function parseCursor(encoded: string | null, filters: CollectionFilters): CardCu
     ) {
       throw new Error("invalid cursor");
     }
-    return value as CardCursor;
+    return {
+      contract: "card-keepr-card-cursor@1",
+      route: "/v1/cards",
+      order: cardCollectionOrder,
+      revision_id: value.revision_id,
+      filters,
+      after: {
+        game: after.game,
+        identity_kind: after.identity_kind,
+        identity_value: after.identity_value,
+        id: after.id,
+      },
+    };
   } catch {
     return "invalid";
   }

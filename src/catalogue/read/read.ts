@@ -164,7 +164,12 @@ export async function catalogueExportsResponse(
       published_at: revision.published_at,
     },
     page: { limit, next_cursor: next },
-    links: { self: publicUrl(base, collectionSelf(url.pathname, { limit, after: url.searchParams.get("after") })) },
+    links: {
+      self: publicUrl(
+        base,
+        collectionSelf(url.pathname, { limit, after: cursor === null ? null : encodeCursor(cursor) }),
+      ),
+    },
   };
   const etag = await canonicalEtag(document);
   const headers = revisionHeaders(revisionId, etag);
@@ -190,7 +195,14 @@ function decodeCatalogueExportCursor(value: string | null): CatalogueExportCurso
   try {
     const parsed = decodeCursor(value);
     if (!isCatalogueExportCursor(parsed)) throw new Error("invalid shape");
-    return parsed;
+    return {
+      contract: "card-keepr-catalogue-export-cursor@1",
+      route: "/v1/catalogue-exports",
+      order: "published_at:desc,catalogue_revision_id:desc",
+      revision_id: parsed.revision_id,
+      limit: parsed.limit,
+      after: { published_at: parsed.after.published_at, catalogue_revision_id: parsed.after.catalogue_revision_id },
+    };
   } catch {
     throw new ReadProblem(400, "invalid_cursor", "The Catalogue Export cursor is invalid.");
   }

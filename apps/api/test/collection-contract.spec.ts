@@ -1,8 +1,55 @@
 import { expect, test } from "vitest";
 import apiWorker from "../src/index";
-import { apiHeaders, installApiSuite, seedApiRevision, testEnv } from "./api-fixtures";
+import { apiCard, apiHeaders, installApiSuite, seedApiRevision, testEnv } from "./api-fixtures";
 
 installApiSuite();
+
+test.each(["q", "card_number"])(
+  "Card %s caps normalization expansion before publishing a canonical link",
+  async (name) => {
+    await seedApiRevision({ revisionId: `catrev_expansion_${name}`, runId: `run_expansion_${name}`, cards: [] });
+    const response = await apiWorker.fetch(
+      new Request(`https://card-keepr.invalid/v1/cards?${name}=${encodeURIComponent("ﬃ".repeat(167))}`, {
+        headers: apiHeaders(`collection-expansion-${name}`),
+      }),
+      testEnv,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: "invalid_parameter", invalid_params: [{ name }] });
+  },
+);
+
+test("equivalent Card cursor encodings have byte-identical representations and validators", async () => {
+  await seedApiRevision({
+    revisionId: "catrev_collection_cursor_encoding",
+    runId: "run_collection_cursor_encoding",
+    cards: [
+      apiCard({ id: "card_encoding_a", cardNumber: "OP01-001", name: "First" }),
+      apiCard({ id: "card_encoding_b", cardNumber: "OP01-002", name: "Second" }),
+    ],
+  });
+  const fetchPage = (after: string | null) =>
+    apiWorker.fetch(
+      new Request(
+        `https://card-keepr.invalid/v1/cards?limit=1${after === null ? "" : `&after=${encodeURIComponent(after)}`}`,
+        { headers: apiHeaders("collection-cursor-encoding") },
+      ),
+      testEnv,
+    );
+  const first = await fetchPage(null);
+  const { page } = await first.json<{ page: { next_cursor: string } }>();
+  const decoded = JSON.parse(atob(page.next_cursor.replaceAll("-", "+").replaceAll("_", "/"))) as Record<
+    string,
+    unknown
+  >;
+  const alternate = btoa(JSON.stringify(Object.fromEntries(Object.entries(decoded).reverse())));
+  const original = await fetchPage(page.next_cursor);
+  const equivalent = await fetchPage(alternate);
+  expect(original.status).toBe(200);
+  expect(equivalent.status).toBe(200);
+  expect(equivalent.headers.get("etag")).toBe(original.headers.get("etag"));
+  expect(await equivalent.text()).toBe(await original.text());
+});
 
 test.each(["cards", "printings", "products"])(
   "%s requires an available current query projection before returning a page or 304",
@@ -51,7 +98,7 @@ test.each(["cards", "printings", "products"])(
     );
     expect(second.status).toBe(304);
     expect(await second.text()).toBe("");
-    for (const validator of [`*, ${first.headers.get("etag")}`, `${first.headers.get("etag")},`]) {
+    for (const validator of [`*, ${first.headers.get("etag")}`, `"different", *`, `${first.headers.get("etag")},`]) {
       const malformed = await apiWorker.fetch(
         new Request(`https://card-keepr.invalid/v1/${collection}?limit=1&game=one-piece`, {
           headers: { ...apiHeaders(`collection-etag-${collection}-malformed`), "if-none-match": validator },

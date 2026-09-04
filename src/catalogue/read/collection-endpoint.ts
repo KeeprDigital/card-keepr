@@ -55,7 +55,10 @@ export function collectionParameters(url: URL, allowed?: readonly string[]): voi
 }
 
 export function collectionFilter(url: URL, name: string): string | null {
-  const value = singleParameter(url, name);
+  return collectionFilterValue(singleParameter(url, name), name);
+}
+
+export function collectionFilterValue(value: string | null, name: string): string | null {
   if (value !== null && value.length === 0)
     throw invalidParameter(name, `${name} must contain at least one character.`);
   if (value !== null && [...value].length > 500)

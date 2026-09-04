@@ -43,11 +43,11 @@ export async function currentPrintingsResponse(
   const url = new URL(request.url);
   collectionParameters(url);
   const limit = collectionLimit(url.searchParams.get("limit"));
-  const cardId = optionalSingle(url, "card_id");
-  const game = optionalSingle(url, "game");
-  const rarity = normalizedRarity(optionalSingle(url, "rarity"));
-  const productId = optionalSingle(url, "product_id");
-  const releaseRegion = optionalSingle(url, "release_region");
+  const cardId = collectionFilter(url, "card_id");
+  const game = collectionFilter(url, "game");
+  const rarity = normalizedRarity(collectionFilter(url, "rarity"));
+  const productId = collectionFilter(url, "product_id");
+  const releaseRegion = collectionFilter(url, "release_region");
   if (game !== null && !supportedGames.has(game)) {
     throw invalidParameter("game", "Printing Supported Game is invalid.");
   }
@@ -203,7 +203,7 @@ export async function currentPrintingsResponse(
             productId,
             releaseRegion,
             limit,
-            after: url.searchParams.get("after"),
+            after: cursor === null ? null : encodeCursor(cursor),
           }),
         ),
       },
@@ -224,10 +224,6 @@ function printingData(value: unknown): unknown {
     return (value as Record<string, unknown>).data;
   }
   return value;
-}
-
-function optionalSingle(url: URL, name: string): string | null {
-  return collectionFilter(url, name);
 }
 
 function normalizedRarity(value: string | null): string | null {
@@ -254,7 +250,13 @@ function parseCursor(value: string | null, filters: PrintingCursor["filters"]): 
     ) {
       throw new Error("invalid");
     }
-    return parsed as PrintingCursor;
+    return {
+      route: printingRoute,
+      ordering: printingOrder,
+      revision: parsed.revision,
+      filters,
+      last: { card_id: parsed.last.card_id, id: parsed.last.id },
+    };
   } catch {
     throw new ReadProblem(400, "invalid_cursor", "Printing cursor is invalid.");
   }

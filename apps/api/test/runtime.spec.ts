@@ -2537,7 +2537,7 @@ test("Card search keeps a selective two-character relational fallback beside FTS
   expect(repeated).toEqual(["g1:a", "g2:aa"]);
 });
 
-test("authenticated Card search validates raw q at 1 through 500 characters before normalization", async () => {
+test("authenticated Card search validates raw and normalized q at 1 through 500 characters", async () => {
   const token = (length: number) => "x".repeat(length);
   await seedApiRevision({
     revisionId: "catrev_query_boundaries",
@@ -2551,7 +2551,7 @@ test("authenticated Card search validates raw q at 1 through 500 characters befo
     ],
   });
   let sequence = 40;
-  for (const query of [token(1), token(128), token(129), token(500), "ﬀ".repeat(500), "---", '"quoted"']) {
+  for (const query of [token(1), token(128), token(129), token(500), "ﬀ".repeat(250), "---", '"quoted"']) {
     const response = await exports.default.fetch(
       new Request(`https://card-keepr.invalid/v1/cards?q=${encodeURIComponent(query)}`, {
         headers: apiHeaders(`203.0.113.${sequence++}`),
@@ -2559,7 +2559,10 @@ test("authenticated Card search validates raw q at 1 through 500 characters befo
     );
     expect(response.status, `${query.length}: ${await response.clone().text()}`).toBe(200);
   }
-  for (const [query, reason] of [[token(501), "q must contain at most 500 characters."]] as const) {
+  for (const [query, reason] of [
+    [token(501), "q must contain at most 500 characters."],
+    ["ﬀ".repeat(251), "q must contain at most 500 characters."],
+  ] as const) {
     const response = await exports.default.fetch(
       new Request(`https://card-keepr.invalid/v1/cards?q=${encodeURIComponent(query)}`, {
         headers: apiHeaders(`203.0.113.${sequence++}`),
