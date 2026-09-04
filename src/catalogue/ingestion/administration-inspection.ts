@@ -1,6 +1,26 @@
 import { curatedRevisionInspectionForRun } from "../curated";
 import { cardSearchFtsQuery, cardSearchText, sourceFreshnessFromStorage } from "../read";
 import { AdministrationProblem, type CatalogueCandidate, canonicalJson, retainedPayload, sha256Text } from "../shared";
+import {
+  activeProductionReleaseStatement,
+  administrationSourceFreshnessStatement,
+  archivedQueryRevisionStatement,
+  catalogueExportCountStatement,
+  catalogueRevisionCountStatement,
+  catalogueSchemaLevelStatement,
+  currentRevisionVerifiedBackupStatement,
+  pendingPublicationCleanupCountStatement,
+  pendingReplacementRecoveryStatement,
+  publicationCleanupsForRunIdsStatement,
+  recentIngestionRunsStatement,
+  registeredRevisionIdsStatement,
+  retainedRevisionInspectionStatement,
+  runHasReconciliationContextStatement,
+  smokeTargetCardsStatement,
+  smokeTargetExtrasStatement,
+  smokeTargetPrintingsStatement,
+  smokeTargetSearchMatchStatement,
+} from "./administration-inspection-repository";
 import { inspectCatalogueCandidate } from "./candidate-inspection";
 import { repairableCatalogueRevisionWindow } from "./catalogue-revision-retention";
 import { SPINE_REVISION_ID } from "./production-release";
@@ -40,30 +60,11 @@ export async function administrationStatus(
   ] = await Promise.all([
     currentCatalogueState(database),
     currentOperationState(database),
-    database
-      .prepare(
-        `SELECT game, area, source_lineage, region, checked_at,
-                  ingestion_run_id
-          FROM source_freshness
-          ORDER BY game, area, source_lineage, region`,
-      )
-      .all<FreshnessRow>(),
-    database
-      .prepare(
-        `SELECT * FROM ingestion_runs
-          ORDER BY started_at DESC, id DESC
-          LIMIT 20`,
-      )
-      .all<RunRow>(),
-    database.prepare("SELECT COUNT(*) AS count FROM catalogue_revisions").first<{ count: number }>(),
-    database.prepare("SELECT COUNT(*) AS count FROM catalogue_exports").first<{ count: number }>(),
-    database
-      .prepare(
-        `SELECT COUNT(*) AS count
-          FROM ingestion_publication_cleanup
-          WHERE state IN ('pending', 'failed')`,
-      )
-      .first<{ count: number }>(),
+    administrationSourceFreshnessStatement(database).all<FreshnessRow>(),
+    recentIngestionRunsStatement(database).all<RunRow>(),
+    catalogueRevisionCountStatement(database).first<{ count: number }>(),
+    catalogueExportCountStatement(database).first<{ count: number }>(),
+    pendingPublicationCleanupCountStatement(database).first<{ count: number }>(),
     catalogueExportObjectDiagnostics(database, catalogueExports),
     repairableCatalogueRevisionWindow(database),
   ]);
@@ -73,74 +74,27 @@ export async function administrationStatus(
     ...recentRuns.results.map((run) => run.id),
     ...(active === null ? [] : [active.id]),
   ]);
-  const schema = await database
-    .prepare("SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1")
-    .first<{ migration_level: number }>();
-  const recoveryBackup = await database
-    .prepare(
-      `SELECT idempotency_key, d1_bookmark, manifest_sha256
-     FROM catalogue_backup_attempts
-     WHERE state = 'verified' AND catalogue_revision_id = ?
-       AND d1_bookmark IS NOT NULL AND manifest_sha256 IS NOT NULL
-     ORDER BY completed_at DESC LIMIT 1`,
-    )
-    .bind(catalogue.current_revision_id)
-    .first<{
-      idempotency_key: string;
-      d1_bookmark: string;
-      manifest_sha256: string;
-    }>();
-  const retainedEvidence = await database
-    .prepare(
-      `WITH RECURSIVE retained(revision_id, depth) AS (
-       SELECT revision.id, 0 FROM catalogue_state AS state
-       JOIN catalogue_revisions AS revision ON revision.id = state.current_revision_id
-       WHERE state.singleton = 1
-       UNION ALL
-       SELECT previous.id, retained.depth + 1 FROM retained
-       JOIN catalogue_revisions AS revision ON revision.id = retained.revision_id
-       JOIN catalogue_revisions AS previous
-         ON previous.id = revision.expected_previous_revision_id
-       WHERE retained.depth < 2
-     )
-     SELECT retained.revision_id, retained.depth,
-       CASE WHEN export.verified = 1 AND export.maintenance_state = 'available'
-         THEN 1 ELSE 0 END AS export_verified,
-       CASE WHEN EXISTS (
-         SELECT 1 FROM catalogue_backup_attempts AS backup
-         WHERE backup.catalogue_revision_id = retained.revision_id
-           AND backup.state = 'verified' AND backup.d1_bookmark IS NOT NULL
-           AND backup.manifest_sha256 IS NOT NULL
-       ) THEN 1 ELSE 0 END AS recovery_verified
-     FROM retained LEFT JOIN catalogue_exports AS export
-       ON export.catalogue_revision_id = retained.revision_id
-     ORDER BY retained.depth`,
-    )
-    .all<{ revision_id: string; depth: number; export_verified: number; recovery_verified: number }>();
-  const replacement = await database
-    .prepare(
-      `SELECT id, target_revision_id, target_digest, restored_database_id, retained_database_id, verification_json
-     FROM catalogue_recovery_operations
-     WHERE state = 'awaiting_acceptance' AND method = 'replacement_database'
-     ORDER BY started_at DESC LIMIT 1`,
-    )
-    .first<{
-      id: string;
-      target_revision_id: string;
-      target_digest: string;
-      restored_database_id: string;
-      retained_database_id: string;
-      verification_json: string;
-    }>();
-  const activeProductionRelease = await database
-    .prepare(
-      `SELECT id, state, expected_head_sha, api_version_id, ingestion_version_id,
-            failure_code, roll_forward_required
-     FROM production_releases
-     WHERE state IN ('requested','preflight','migrating','deploying','smoke_testing')
-     LIMIT 1`,
-    )
-    .first<Record<string, unknown>>();
+  const schema = await catalogueSchemaLevelStatement(database).first<{ migration_level: number }>();
+  const recoveryBackup = await currentRevisionVerifiedBackupStatement(database, catalogue.current_revision_id).first<{
+    idempotency_key: string;
+    d1_bookmark: string;
+    manifest_sha256: string;
+  }>();
+  const retainedEvidence = await retainedRevisionInspectionStatement(database).all<{
+    revision_id: string;
+    depth: number;
+    export_verified: number;
+    recovery_verified: number;
+  }>();
+  const replacement = await pendingReplacementRecoveryStatement(database).first<{
+    id: string;
+    target_revision_id: string;
+    target_digest: string;
+    restored_database_id: string;
+    retained_database_id: string;
+    verification_json: string;
+  }>();
+  const activeProductionRelease = await activeProductionReleaseStatement(database).first<Record<string, unknown>>();
   const productionTargetDigest = await sha256Text(canonicalJson(productionTarget));
   const retention = retainedEvidence.results.map((row) => ({
     revision_id: row.revision_id,
@@ -228,14 +182,7 @@ export async function inspectCandidate(
     row.state === "failed" &&
     row.candidate_digest !== null &&
     (row.failure_code === "curated_revision_reconfirmation_required" ||
-      (await database
-        .prepare(
-          `SELECT 1 AS present
-           FROM reconciliation_contexts
-           WHERE ingestion_run_id = ?`,
-        )
-        .bind(row.id)
-        .first<{ present: number }>()) !== null);
+      (await runHasReconciliationContextStatement(database, row.id).first<{ present: number }>()) !== null);
   if (row.state !== "awaiting_approval" && !inspectableFailure) {
     throw new AdministrationProblem(
       409,
@@ -281,33 +228,15 @@ export async function productionReleaseSmokeTargets(
   const revisions = [];
   for (const revisionId of revisionIds) {
     const [cards, printings] = await Promise.all([
-      database
-        .prepare(
-          `SELECT query.card_id,query.sort_game,query.sort_identity_kind,
-                query.sort_identity_value,query.sort_id,card.document_json
-         FROM revision_card_query_documents AS query
-         JOIN revision_cards AS card
-           ON card.catalogue_revision_id=query.catalogue_revision_id
-          AND card.card_id=query.card_id
-         WHERE query.catalogue_revision_id=?
-         ORDER BY sort_game,sort_identity_kind,sort_identity_value,sort_id LIMIT 2`,
-        )
-        .bind(revisionId)
-        .all<{
-          card_id: string;
-          sort_game: string;
-          sort_identity_kind: string;
-          sort_identity_value: string;
-          sort_id: string;
-          document_json: string;
-        }>(),
-      database
-        .prepare(
-          `SELECT printing_id,card_id FROM revision_printings
-         WHERE catalogue_revision_id=? ORDER BY card_id,printing_id LIMIT 2`,
-        )
-        .bind(revisionId)
-        .all<{ printing_id: string; card_id: string }>(),
+      smokeTargetCardsStatement(database, revisionId).all<{
+        card_id: string;
+        sort_game: string;
+        sort_identity_kind: string;
+        sort_identity_value: string;
+        sort_id: string;
+        document_json: string;
+      }>(),
+      smokeTargetPrintingsStatement(database, revisionId).all<{ printing_id: string; card_id: string }>(),
     ]);
     if (cards.results.length !== 2 || printings.results.length !== 2) return null;
     const firstCard = cards.results[0]!;
@@ -324,15 +253,12 @@ export async function productionReleaseSmokeTargets(
     if (searchQuery === null) return null;
     const ftsQuery = cardSearchFtsQuery(searchQuery, revisionId);
     if (ftsQuery === null) return null;
-    const indexed = await database
-      .prepare(
-        `SELECT 1 AS present FROM revision_card_search_fts
-       WHERE revision_card_search_fts MATCH ?
-         AND catalogue_revision_id=? AND card_id=?
-         AND instr(search_text,?)>0 LIMIT 1`,
-      )
-      .bind(ftsQuery, revisionId, representativeCard.card_id, searchQuery)
-      .first<{ present: number }>();
+    const indexed = await smokeTargetSearchMatchStatement(database, {
+      ftsQuery: ftsQuery,
+      revisionId: revisionId,
+      cardId: representativeCard.card_id,
+      searchQuery: searchQuery,
+    }).first<{ present: number }>();
     if (indexed?.present !== 1) return null;
     revisions.push({
       revision_id: revisionId,
@@ -371,22 +297,8 @@ export async function productionReleaseSmokeTargets(
     });
   }
   const [currentExtras, unavailable] = await Promise.all([
-    database
-      .prepare(
-        `SELECT
-       (SELECT image_id FROM revision_printing_images WHERE catalogue_revision_id=? ORDER BY image_id LIMIT 1) AS printing_image_id,
-       (SELECT json_extract(card_ids_json,'$[0]') FROM revision_legality_rules WHERE catalogue_revision_id=? AND json_array_length(card_ids_json)>0 ORDER BY legality_rule_id LIMIT 1) AS legality_card_id,
-       (SELECT format FROM revision_legality_rules WHERE catalogue_revision_id=? AND json_array_length(card_ids_json)>0 ORDER BY legality_rule_id LIMIT 1) AS legality_format,
-       (SELECT region FROM revision_legality_rules WHERE catalogue_revision_id=? AND json_array_length(card_ids_json)>0 ORDER BY legality_rule_id LIMIT 1) AS legality_region`,
-      )
-      .bind(...Array(4).fill(revisionIds[0]))
-      .first<Record<string, string | null>>(),
-    database
-      .prepare(
-        `SELECT catalogue_revision_id FROM catalogue_query_revisions
-       WHERE state='archived' ORDER BY catalogue_revision_id DESC LIMIT 1`,
-      )
-      .first<{ catalogue_revision_id: string }>(),
+    smokeTargetExtrasStatement(database, revisionIds[0]!).first<Record<string, string | null>>(),
+    archivedQueryRevisionStatement(database).first<{ catalogue_revision_id: string }>(),
   ]);
   if (
     currentExtras === null ||
@@ -466,15 +378,8 @@ async function catalogueExportObjectDiagnostics(
     const published = new Set<string>();
     for (let index = 0; index < revisionIds.length; index += 50) {
       const chunk = revisionIds.slice(index, index + 50);
-      const placeholders = chunk.map(() => "?").join(", ");
-      const matches = await database
-        .prepare(
-          `SELECT id
-          FROM catalogue_revisions
-          WHERE id IN (${placeholders})`,
-        )
-        .bind(...chunk)
-        .all<{ id: string }>();
+
+      const matches = await registeredRevisionIdsStatement(database, chunk).all<{ id: string }>();
       for (const match of matches.results) published.add(match.id);
     }
     orphanedObjectCount += page.objects.filter((object) => {
@@ -492,14 +397,7 @@ async function publicationCleanupsForRuns(
 ): Promise<Map<string, PublicationCleanupRow>> {
   const uniqueRunIds = [...new Set(runIds)].slice(0, 21);
   if (uniqueRunIds.length === 0) return new Map();
-  const placeholders = uniqueRunIds.map(() => "?").join(", ");
-  const cleanups = await database
-    .prepare(
-      `SELECT *
-      FROM ingestion_publication_cleanup
-      WHERE ingestion_run_id IN (${placeholders})`,
-    )
-    .bind(...uniqueRunIds)
-    .all<PublicationCleanupRow>();
+
+  const cleanups = await publicationCleanupsForRunIdsStatement(database, uniqueRunIds).all<PublicationCleanupRow>();
   return new Map(cleanups.results.map((cleanup) => [cleanup.ingestion_run_id, cleanup]));
 }

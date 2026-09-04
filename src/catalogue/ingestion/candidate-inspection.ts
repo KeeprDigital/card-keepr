@@ -1,4 +1,15 @@
 import { type CatalogueCandidate, canonicalJson } from "../shared";
+import {
+  candidateSourceLineagesStatement,
+  candidateWarningDocumentStatement,
+  currentCardObservationLineagesStatement,
+  currentPrintingLocatorsStatement,
+  reconciliationContextLineageStatement,
+  reconciliationPartitionLineagesStatement,
+  revisionCardDocumentsStatement,
+  revisionLegalityDocumentsStatement,
+  revisionPrintingDocumentsStatement,
+} from "./candidate-inspection-repository";
 
 export async function inspectCatalogueCandidate(
   database: D1Database,
@@ -21,76 +32,18 @@ export async function inspectCatalogueCandidate(
     cardLineages,
   ] = await Promise.all([
     candidateWarnings(database, input.runId, input.fallbackWarnings),
-    database
-      .prepare(
-        `SELECT card_id AS id, document_json
-         FROM revision_cards
-         WHERE catalogue_revision_id = ?`,
-      )
-      .bind(input.expectedRevisionId)
-      .all<{ id: string; document_json: string }>(),
-    database
-      .prepare(
-        `SELECT printing_id AS id, document_json
-         FROM revision_printings
-         WHERE catalogue_revision_id = ?`,
-      )
-      .bind(input.expectedRevisionId)
-      .all<{ id: string; document_json: string }>(),
-    database
-      .prepare(
-        `SELECT legality_rule_id AS id, document_json
-         FROM revision_legality_rules
-         WHERE catalogue_revision_id = ?`,
-      )
-      .bind(input.expectedRevisionId)
-      .all<{ id: string; document_json: string }>(),
-    database
-      .prepare(
-        `SELECT card_id, printing_id, source_lineage
-         FROM reconciliation_candidates
-         WHERE ingestion_run_id = ?`,
-      )
-      .bind(input.runId)
-      .all<{
-        card_id: string;
-        printing_id: string | null;
-        source_lineage: string;
-      }>(),
-    database
-      .prepare(
-        `SELECT source_lineage
-         FROM reconciliation_contexts
-         WHERE ingestion_run_id = ?`,
-      )
-      .bind(input.runId)
-      .first<{ source_lineage: string }>(),
-    database
-      .prepare(
-        `SELECT DISTINCT source_lineage
-         FROM reconciliation_evidence_partitions
-         WHERE ingestion_run_id = ?
-         ORDER BY source_lineage`,
-      )
-      .bind(input.runId)
-      .all<{ source_lineage: string }>(),
-    database
-      .prepare(
-        `SELECT printing_id, source_lineage
-         FROM reconciled_printing_locators
-         WHERE current = 1
-         ORDER BY printing_id, source_lineage, locator`,
-      )
-      .all<{ printing_id: string; source_lineage: string }>(),
-    database
-      .prepare(
-        `SELECT card_id, source_lineage
-         FROM reconciled_card_observations
-         WHERE current = 1
-         ORDER BY card_id, source_lineage, catalogue_revision_id,
-                  source_observation_id`,
-      )
-      .all<{ card_id: string; source_lineage: string }>(),
+    revisionCardDocumentsStatement(database, input.expectedRevisionId).all<{ id: string; document_json: string }>(),
+    revisionPrintingDocumentsStatement(database, input.expectedRevisionId).all<{ id: string; document_json: string }>(),
+    revisionLegalityDocumentsStatement(database, input.expectedRevisionId).all<{ id: string; document_json: string }>(),
+    candidateSourceLineagesStatement(database, input.runId).all<{
+      card_id: string;
+      printing_id: string | null;
+      source_lineage: string;
+    }>(),
+    reconciliationContextLineageStatement(database, input.runId).first<{ source_lineage: string }>(),
+    reconciliationPartitionLineagesStatement(database, input.runId).all<{ source_lineage: string }>(),
+    currentPrintingLocatorsStatement(database).all<{ printing_id: string; source_lineage: string }>(),
+    currentCardObservationLineagesStatement(database).all<{ card_id: string; source_lineage: string }>(),
   ]);
   const cardsBefore = documentMap(priorCards.results);
   const printingsBefore = documentMap(priorPrintings.results);
@@ -196,16 +149,7 @@ function intersects(left: ReadonlySet<string>, right: ReadonlySet<string>): bool
 }
 
 async function candidateWarnings(database: D1Database, runId: string, fallback: readonly Record<string, unknown>[]) {
-  const reconciled = await database
-    .prepare(
-      `SELECT warnings_json
-       FROM reconciliation_candidates
-       WHERE ingestion_run_id = ?
-       ORDER BY source_observation_id
-       LIMIT 1`,
-    )
-    .bind(runId)
-    .first<{ warnings_json: string }>();
+  const reconciled = await candidateWarningDocumentStatement(database, runId).first<{ warnings_json: string }>();
   if (reconciled === null) return fallback;
   const parsed: unknown = JSON.parse(reconciled.warnings_json);
   return Array.isArray(parsed) ? parsed.filter(isRecord) : fallback;

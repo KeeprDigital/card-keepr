@@ -1,22 +1,30 @@
+import { assertCuratedGamesUnblocked, prepareCuratedRevisionRunStart } from "../curated";
 import {
-  assertIngestionRunTransition,
-  ingestionRunTransitionSql,
-  isTerminalIngestionRunState,
   AdministrationProblem,
+  assertIngestionRunTransition,
   type CatalogueCandidate,
   canonicalJson,
+  isTerminalIngestionRunState,
   type SupportedGame,
   sha256,
 } from "../shared";
-
-import { assertCuratedGamesUnblocked, prepareCuratedRevisionRunStart } from "../curated";
-
-import { idempotencyCompletionStatements } from "./administration-idempotency";
-import { idempotentAdministration, replayAfterConflict } from "./administration-idempotency";
+import {
+  idempotencyCompletionStatements,
+  idempotentAdministration,
+  replayAfterConflict,
+} from "./administration-idempotency";
 import { parseCandidate, validatedCatalogueCandidate } from "./candidate-codec";
 import { attemptPublicationCleanup } from "./publication-cleanup";
 import { reconcileAbandonedPublication } from "./publication-lifecycle";
 import { progressFor, publicRun, terminalProgress } from "./run-document-codec";
+import {
+  acquireRunLockStatement,
+  completeFixtureRunStatement,
+  createFixtureRunStatement,
+  failFixtureRunStatement,
+  rejectRunStatement,
+  runEvidencePlanStatement,
+} from "./run-lifecycle-repository";
 import {
   currentCatalogueState,
   currentOperationState,
@@ -103,10 +111,7 @@ export async function retryRun(
           "Only a terminal Ingestion Run can be retried.",
         );
       }
-      const evidencePlan = await database
-        .prepare("SELECT ingestion_run_id FROM ingestion_evidence_plans WHERE ingestion_run_id = ?")
-        .bind(source.id)
-        .first<{ ingestion_run_id: string }>();
+      const evidencePlan = await runEvidencePlanStatement(database, source.id).first<{ ingestion_run_id: string }>();
       if (evidencePlan !== null) {
         throw new AdministrationProblem(
           409,
@@ -246,16 +251,12 @@ async function rejectRunAttempt(
   });
   try {
     await database.batch([
-      database
-        .prepare(
-          `UPDATE ingestion_runs
-          SET state = 'rejected',
-              terminal_at = ?,
-              progress_json = ?,
-              approval_history_json = ?
-          WHERE id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "rejected")}`,
-        )
-        .bind(now, JSON.stringify(rejectedProgress), JSON.stringify([decision]), run.id),
+      rejectRunStatement(database, {
+        terminalAt: now,
+        progressJson: JSON.stringify(rejectedProgress),
+        approvalHistoryJson: JSON.stringify([decision]),
+        runId: run.id,
+      }),
       releaseRunLockStatement(database, run.id),
       ...idempotencyCompletionStatements(database, {
         key: request.idempotency_key,
@@ -360,121 +361,45 @@ async function startPreparedRun(
 
   try {
     await database.batch([
-      database
-        .prepare(
-          `INSERT INTO ingestion_runs (
-            id,
-            state,
-            selected_games_json,
-            started_at,
-            expected_current_revision_id,
-            linked_run_id,
-            idempotency_key,
-            operational_request_id,
-            candidate_digest,
-            candidate_catalogue_digest,
-            candidate_created_at,
-            approval_deadline,
-            approval_json,
-            published_revision_id,
-            export_manifest_digest,
-            terminal_at,
-            candidate_json,
-            approval_idempotency_key,
-            failure_code,
-            progress_json,
-            warnings_json,
-            approval_history_json,
-            publication_outcome,
-            resulting_revision_id,
-            freshness_checked_at
-          ) VALUES (
-            ?, 'planning', ?, ?, ?, ?, ?, ?,
-            NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, NULL,
-            NULL, ?, ?, '[]', NULL, NULL, NULL
-          )`,
-        )
-        .bind(
-          runId,
-          JSON.stringify(input.selectedGames),
-          startedAt,
-          catalogueState.current_revision_id,
-          input.linkedRunId,
-          input.idempotencyKey,
-          input.operationalRequestId,
-          candidateJson,
-          JSON.stringify(progressFor("planning")),
-          canonicalJson(curated.diagnostics),
-        ),
+      createFixtureRunStatement(database, {
+        runId: runId,
+        selectedGamesJson: JSON.stringify(input.selectedGames),
+        startedAt: startedAt,
+        expectedRevisionId: catalogueState.current_revision_id,
+        linkedRunId: input.linkedRunId,
+        idempotencyKey: input.idempotencyKey,
+        operationalRequestId: input.operationalRequestId,
+        candidateJson: candidateJson,
+        progressJson: JSON.stringify(progressFor("planning")),
+        diagnosticsJson: canonicalJson(curated.diagnostics),
+      }),
       ...curatedPinStatements,
       ...(curatedFailure
         ? [
-            database
-              .prepare(
-                `UPDATE operation_state
-           SET active_ingestion_run_id = ?
-           WHERE singleton = 1
-             AND active_ingestion_run_id IS NULL
-             AND recovery_health <> 'blocked'`,
-              )
-              .bind(runId),
-            database
-              .prepare(
-                `UPDATE ingestion_runs
-           SET state = 'failed',
-               candidate_digest = ?,
-               candidate_catalogue_digest = ?,
-               candidate_created_at = ?,
-               approval_deadline = ?,
-               terminal_at = ?,
-               failure_code = ?,
-               progress_json = ?
-           WHERE id = ? AND ${ingestionRunTransitionSql("planning", "failed")}`,
-              )
-              .bind(
-                candidateDigest,
-                candidateDigest,
-                startedAt,
-                approvalDeadline,
-                startedAt,
-                curated.failureCode,
-                JSON.stringify(progressFor("failed")),
-                runId,
-              ),
+            acquireRunLockStatement(database, runId),
+            failFixtureRunStatement(database, {
+              candidateDigest: candidateDigest,
+              candidateCreatedAt: startedAt,
+              approvalDeadline: approvalDeadline,
+              terminalAt: startedAt,
+              failureCode: curated.failureCode,
+              progressJson: JSON.stringify(progressFor("failed")),
+              runId: runId,
+            }),
             releaseRunLockStatement(database, runId),
           ]
         : [
-            database
-              .prepare(
-                `UPDATE operation_state
-          SET active_ingestion_run_id = ?
-          WHERE singleton = 1
-            AND active_ingestion_run_id IS NULL
-            AND recovery_health <> 'blocked'`,
-              )
-              .bind(runId),
+            acquireRunLockStatement(database, runId),
             transitionStatement(database, runId, "planning", "collecting"),
             transitionStatement(database, runId, "collecting", "parsing"),
             transitionStatement(database, runId, "parsing", "reconciling"),
-            database
-              .prepare(
-                `UPDATE ingestion_runs
-          SET state = 'awaiting_approval',
-              candidate_digest = ?,
-              candidate_catalogue_digest = ?,
-              candidate_created_at = ?,
-              approval_deadline = ?,
-              progress_json = ?
-          WHERE id = ? AND ${ingestionRunTransitionSql("reconciling", "awaiting_approval")}`,
-              )
-              .bind(
-                candidateDigest,
-                candidateDigest,
-                startedAt,
-                approvalDeadline,
-                JSON.stringify(progressFor("awaiting_approval")),
-                runId,
-              ),
+            completeFixtureRunStatement(database, {
+              candidateDigest: candidateDigest,
+              candidateCreatedAt: startedAt,
+              approvalDeadline: approvalDeadline,
+              progressJson: JSON.stringify(progressFor("awaiting_approval")),
+              runId: runId,
+            }),
           ]),
       ...idempotencyCompletionStatements(database, {
         key: input.idempotencyKey,

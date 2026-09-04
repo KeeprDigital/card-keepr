@@ -8,6 +8,11 @@ import {
   sourceFreshnessStorageScope,
 } from "../read";
 import type { CatalogueCandidate, SupportedGame } from "../shared";
+import {
+  publishedSourceFreshnessStatement,
+  recordSourceFreshnessStatement,
+  runObservationAdaptersStatement,
+} from "./run-freshness-repository";
 
 export async function freshnessStatementsForRun(
   database: D1Database,
@@ -48,21 +53,14 @@ function freshnessStatements(
 ): D1PreparedStatement[] {
   return checks.map((check) => {
     const scope = sourceFreshnessStorageScope(check);
-    return database
-      .prepare(
-        `INSERT INTO source_freshness (
-          game,
-          area,
-          source_lineage,
-          region,
-          checked_at,
-          ingestion_run_id
-        ) VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT (game, area, source_lineage, region) DO UPDATE SET
-          checked_at = excluded.checked_at,
-          ingestion_run_id = excluded.ingestion_run_id`,
-      )
-      .bind(check.game, check.area, scope.sourceLineage, scope.region, check.checked_at, runId);
+    return recordSourceFreshnessStatement(database, {
+      game: check.game,
+      area: check.area,
+      sourceLineage: scope.sourceLineage,
+      region: scope.region,
+      checkedAt: check.checked_at,
+      runId: runId,
+    });
   });
 }
 
@@ -124,19 +122,10 @@ async function freshnessCoverage(
     errata: ReadonlySet<SupportedGame>;
   }>
 > {
-  const observedAdapters = await database
-    .prepare(
-      `SELECT DISTINCT
-         observation.adapter_version,
-         observation.supported_game
-       FROM source_observation_sets AS observation
-       JOIN source_snapshots AS snapshot
-         ON snapshot.id = observation.source_snapshot_id
-       WHERE snapshot.ingestion_run_id = ?
-       ORDER BY observation.supported_game, observation.adapter_version`,
-    )
-    .bind(runId)
-    .all<{ adapter_version: string; supported_game: SupportedGame }>();
+  const observedAdapters = await runObservationAdaptersStatement(database, runId).all<{
+    adapter_version: string;
+    supported_game: SupportedGame;
+  }>();
   const selectedGames = new Set(games as readonly SupportedGame[]);
   if (observedAdapters.results.length === 0) {
     return { catalogue: selectedGames, errata: new Set() };
@@ -158,17 +147,7 @@ export async function sourceFreshnessForExport(
   refreshedChecks: readonly SourceFreshness[],
   publishedAt: string,
 ): Promise<SourceFreshness[]> {
-  const prior = await database
-    .prepare(
-      `SELECT game, area, source_lineage, region, checked_at
-       FROM source_freshness
-       WHERE area IN (
-         'cards-and-printings', 'products-and-releases',
-         'legality-rules', 'errata'
-       )
-       ORDER BY game, area, source_lineage, region`,
-    )
-    .all<SourceFreshnessStorageRow>();
+  const prior = await publishedSourceFreshnessStatement(database).all<SourceFreshnessStorageRow>();
   const freshness = new Map<string, SourceFreshness>();
   for (const row of prior.results) {
     const check = sourceFreshnessFromStorage(row);
