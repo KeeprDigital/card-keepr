@@ -1,4 +1,9 @@
 import {
+  type CuratedRevisionRow as RevisionRow,
+  curatedRevisionStatement,
+  curatedLifecycleMutationStatements,
+} from "./curated-repository";
+import {
   type CatalogueCandidate,
   type SupportedGame,
   AdministrationProblem,
@@ -91,20 +96,6 @@ type Proposal = {
   effective_interval: { from: string | null; to: string | null };
   reviewed_source_digest: string;
   supersedes_revision_id: string | null;
-};
-
-type RevisionRow = {
-  id: string;
-  game: SupportedGame;
-  target_key: string;
-  proposal_json: string;
-  content_digest: string;
-  schema_binding_json: string;
-  author: string;
-  created_at: string;
-  status: string;
-  event_version: number;
-  reviewed_source_digest: string;
 };
 
 type MutationResult = {
@@ -591,7 +582,7 @@ export async function listCuratedRevisions(
 }
 
 export async function showCuratedRevision(database: D1Database, id: string): Promise<Record<string, unknown>> {
-  const row = await database.prepare("SELECT * FROM curated_revisions WHERE id = ?").bind(id).first<RevisionRow>();
+  const row = await curatedRevisionStatement(database, id).first<RevisionRow>();
   if (row === null)
     throw new AdministrationProblem(
       404,
@@ -1421,10 +1412,7 @@ async function existingRevisionMutation(
       "An active production release blocks Curated Revision mutation.",
     );
   }
-  const row = await database
-    .prepare("SELECT * FROM curated_revisions WHERE id = ?")
-    .bind(revisionId)
-    .first<RevisionRow>();
+  const row = await curatedRevisionStatement(database, revisionId).first<RevisionRow>();
   if (row === null)
     throw new AdministrationProblem(
       404,
@@ -1522,25 +1510,20 @@ async function appendLifecycleMutation(
   },
 ): Promise<void> {
   try {
-    await database.batch([
-      database
-        .prepare(
-          "UPDATE curated_revisions SET status = ?, event_version = ? WHERE id = ? AND event_version = ? AND status IN ('active', 'reconfirmation_required')",
-        )
-        .bind(event.status, event.version, mutation.row.id, mutation.row.event_version),
-      database
-        .prepare(
-          `INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
-         VALUES (?, ?, ?, ?, ?, 'owner')`,
-        )
-        .bind(mutation.row.id, event.version, event.kind, canonicalJson(event.details), event.observedAt),
-      database
-        .prepare(
-          `INSERT INTO curated_revision_idempotency (idempotency_key, request_digest, response_json, response_status, created_at)
-         VALUES (?, ?, ?, 200, ?)`,
-        )
-        .bind(mutation.idempotencyKey, mutation.requestDigest, canonicalJson(result), event.observedAt),
-    ]);
+    await database.batch(
+      curatedLifecycleMutationStatements(database, {
+        revisionId: mutation.row.id,
+        expectedEventVersion: mutation.row.event_version,
+        status: event.status,
+        eventVersion: event.version,
+        kind: event.kind,
+        eventJson: canonicalJson(event.details),
+        observedAt: event.observedAt,
+        idempotencyKey: mutation.idempotencyKey,
+        requestDigest: mutation.requestDigest,
+        responseJson: canonicalJson(result),
+      }),
+    );
   } catch (error) {
     const replay = await idempotencyReplay(database, mutation.idempotencyKey, mutation.requestDigest);
     if (replay !== null) return;

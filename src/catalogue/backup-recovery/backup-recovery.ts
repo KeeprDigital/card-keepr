@@ -1,3 +1,8 @@
+import {
+  type BackupAttemptEvidenceRow,
+  backupAttemptEvidenceStatement,
+  restorePhaseTransitionStatement,
+} from "./backup-repository";
 import { AdministrationProblem, canonicalJson, sha256Text, StreamingSha256 } from "../shared";
 import {
   prepareCardSearchForD1ExportStatements,
@@ -145,26 +150,6 @@ export type CatalogueBackupDocument = Readonly<{
   verified: true;
 }>;
 
-type BackupAttemptEvidenceRow = Readonly<{
-  idempotency_key: string;
-  request_json: string;
-  catalogue_revision_id: string;
-  state: string;
-  object_key: string;
-  d1_bookmark: string | null;
-  content_sha256: string | null;
-  export_bytes: number | null;
-  failure_code: string | null;
-  failure_detail: string | null;
-  started_at: string;
-  completed_at: string | null;
-  linked_attempt_id: string | null;
-  manifest_sha256: string | null;
-  disposable_database_id: string | null;
-  restore_generation: number;
-  restore_phase: string | null;
-}>;
-
 export async function catalogueBackupAttemptStatus(
   database: D1Database,
   idempotencyKey: string,
@@ -253,17 +238,7 @@ async function backupAttemptEvidenceRow(
   database: D1Database,
   idempotencyKey: string,
 ): Promise<BackupAttemptEvidenceRow | null> {
-  return database
-    .prepare(
-      `SELECT idempotency_key, request_json, catalogue_revision_id, state,
-            object_key, d1_bookmark, content_sha256, export_bytes,
-            failure_code, failure_detail, started_at, completed_at,
-            linked_attempt_id, manifest_sha256, disposable_database_id,
-            restore_generation, restore_phase
-     FROM catalogue_backup_attempts WHERE idempotency_key = ?`,
-    )
-    .bind(idempotencyKey)
-    .first<BackupAttemptEvidenceRow>();
+  return backupAttemptEvidenceStatement(database, idempotencyKey).first<BackupAttemptEvidenceRow>();
 }
 
 async function backupAttemptDigest(row: BackupAttemptEvidenceRow): Promise<string> {
@@ -1460,14 +1435,7 @@ async function transitionRestorePhase(
   from: string,
   to: string,
 ): Promise<void> {
-  const changed = await database
-    .prepare(
-      `UPDATE catalogue_backup_attempts SET restore_phase = ?
-     WHERE idempotency_key = ? AND owner_token = ?
-       AND state = 'restoring_verification' AND restore_phase = ?`,
-    )
-    .bind(to, idempotencyKey, ownerToken, from)
-    .run();
+  const changed = await restorePhaseTransitionStatement(database, { idempotencyKey, ownerToken, from, to }).run();
   if (changed.meta.changes !== 1) {
     throw new AdministrationProblem(409, "backup_in_progress", "The disposable restore phase changed concurrently.");
   }

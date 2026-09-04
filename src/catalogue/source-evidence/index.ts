@@ -76,7 +76,6 @@ export {
   workflowAttemptStatements,
   type EvidenceInspectionOptions,
   type EvidenceRequestRow,
-  type IngestionEvidenceRow,
 } from "./source-evidence-repository";
 export {
   classifyCollectionProgress,
@@ -93,3 +92,5 @@ export {
   type WorkflowAttemptRecord,
   type WorkflowPauseReason,
 } from "./collection-recovery";
+
+export type { IngestionEvidenceRow } from "./ingestion-run-repository";
