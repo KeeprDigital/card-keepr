@@ -1,10 +1,16 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
+  pauseEvidenceCollection,
+  resumeEvidenceRun,
+  resumePausedEvidenceRun,
+} from "../../../src/catalogue/source-evidence";
+import {
   administrationRequest,
   createCollection,
   installRuntimeSuite,
   showCollection,
+  waitForEvidenceCondition,
   waitForEvidenceRun,
   waitForWorkflowStatus,
 } from "./runtime-helpers";
@@ -24,20 +30,16 @@ async function holdParentAtRecordStep(): Promise<void> {
 }
 
 async function releaseParentRecordStep(): Promise<void> {
-  await env.CATALOGUE_DB.prepare(
-    "DROP TRIGGER hold_child_workflow_ids",
-  ).run();
+  await env.CATALOGUE_DB.prepare("DROP TRIGGER hold_child_workflow_ids").run();
 }
 
 async function requestPause(
   runId: string,
   idempotencyKey: string,
 ): Promise<{ status: number; document: Record<string, unknown> }> {
-  const response = await administrationRequest(
-    `/v1/ingestion-runs/${runId}/collection/pause`,
-    "POST",
-    { idempotency_key: idempotencyKey },
-  );
+  const response = await administrationRequest(`/v1/ingestion-runs/${runId}/collection/pause`, "POST", {
+    idempotency_key: idempotencyKey,
+  });
   return {
     status: response.status,
     document: await response.json<Record<string, unknown>>(),
@@ -45,15 +47,9 @@ async function requestPause(
 }
 
 test("an owner pause stops a live collecting run so it can be terminated without resuming", async () => {
-  const run = await createCollection(
-    "owner_pause_terminate_001",
-    "https://official-source.invalid/cards",
-  );
+  const run = await createCollection("owner_pause_terminate_001", "https://official-source.invalid/cards");
   await holdParentAtRecordStep();
-  const started = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/resume`,
-    "POST",
-  );
+  const started = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(started.status).toBe(202);
   await started.body?.cancel();
   const parentId = `evidence-${run.id}`;
@@ -85,18 +81,15 @@ test("an owner pause stops a live collecting run so it can be terminated without
   });
   await waitForWorkflowStatus(
     parentId,
-    async () =>
-      (await env.EVIDENCE_INGESTION_WORKFLOW.get(parentId)).status(),
+    async () => (await env.EVIDENCE_INGESTION_WORKFLOW.get(parentId)).status(),
     "terminated",
     20_000,
   );
   await releaseParentRecordStep();
 
-  const terminated = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/termination`,
-    "POST",
-    { idempotency_key: "owner_pause_terminate_001_terminate" },
-  );
+  const terminated = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/termination`, "POST", {
+    idempotency_key: "owner_pause_terminate_001_terminate",
+  });
   expect(terminated.status).toBe(200);
   await expect(terminated.json()).resolves.toMatchObject({
     state: "failed",
@@ -111,21 +104,13 @@ test("an owner pause stops a live collecting run so it can be terminated without
     termination: { pause_reason: "owner_requested" },
     actions: ["retry"],
   });
-  expect(
-    abandoned.workflow.attempts.filter((attempt) => attempt.kind === "parent"),
-  ).toHaveLength(1);
+  expect(abandoned.workflow.attempts.filter((attempt) => attempt.kind === "parent")).toHaveLength(1);
 });
 
 test("an owner-paused live run resumes under a new Workflow Attempt and completes", async () => {
-  const run = await createCollection(
-    "owner_pause_resume_001",
-    "https://official-source.invalid/cards",
-  );
+  const run = await createCollection("owner_pause_resume_001", "https://official-source.invalid/cards");
   await holdParentAtRecordStep();
-  const started = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/resume`,
-    "POST",
-  );
+  const started = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(started.status).toBe(202);
   await started.body?.cancel();
   const parentId = `evidence-${run.id}`;
@@ -139,17 +124,13 @@ test("an owner-paused live run resumes under a new Workflow Attempt and complete
   });
   await waitForWorkflowStatus(
     parentId,
-    async () =>
-      (await env.EVIDENCE_INGESTION_WORKFLOW.get(parentId)).status(),
+    async () => (await env.EVIDENCE_INGESTION_WORKFLOW.get(parentId)).status(),
     "terminated",
     20_000,
   );
   await releaseParentRecordStep();
 
-  const resumed = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/resume`,
-    "POST",
-  );
+  const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(resumed.status).toBe(202);
   const resumedDocument = await resumed.json<Record<string, unknown>>();
   expect(resumedDocument).toMatchObject({
@@ -160,9 +141,7 @@ test("an owner-paused live run resumes under a new Workflow Attempt and complete
 
   const completed = await waitForEvidenceRun(run.id, "parsing", 20_000);
   expect(completed.snapshots).toHaveLength(1);
-  expect(
-    completed.diagnostics.filter((entry) => entry.outcome === "success"),
-  ).toHaveLength(1);
+  expect(completed.diagnostics.filter((entry) => entry.outcome === "success")).toHaveLength(1);
   expect(
     completed.workflow.attempts
       .filter((attempt) => attempt.kind === "parent")
@@ -178,7 +157,9 @@ test("an owner-paused live run resumes under a new Workflow Attempt and complete
   const transitions = await env.CATALOGUE_DB.prepare(
     `SELECT from_state, to_state FROM ingestion_run_transitions
      WHERE ingestion_run_id = ? ORDER BY sequence`,
-  ).bind(run.id).all<{ from_state: string | null; to_state: string }>();
+  )
+    .bind(run.id)
+    .all<{ from_state: string | null; to_state: string }>();
   expect(transitions.results).toEqual([
     { from_state: null, to_state: "collecting" },
     { from_state: "collecting", to_state: "paused" },
@@ -188,10 +169,7 @@ test("an owner-paused live run resumes under a new Workflow Attempt and complete
 });
 
 test("an owner pause replays idempotently and refuses a run that is not collecting", async () => {
-  const run = await createCollection(
-    "owner_pause_idempotent_001",
-    "https://official-source.invalid/cards",
-  );
+  const run = await createCollection("owner_pause_idempotent_001", "https://official-source.invalid/cards");
   // A first attempt that never started is paused under its bound identity
   // and reports the instance as unavailable.
   const first = await requestPause(run.id, "owner_pause_idempotent_001_pause");
@@ -205,7 +183,9 @@ test("an owner pause replays idempotently and refuses a run that is not collecti
   expect(replayed.document).toEqual(first.document);
   const pauses = await env.CATALOGUE_DB.prepare(
     "SELECT COUNT(*) AS count FROM ingestion_run_workflow_pauses WHERE ingestion_run_id = ?",
-  ).bind(run.id).first<{ count: number }>();
+  )
+    .bind(run.id)
+    .first<{ count: number }>();
   expect(pauses?.count).toBe(1);
 
   // A new request against the already-paused run is a typed state conflict.
@@ -216,11 +196,9 @@ test("an owner pause replays idempotently and refuses a run that is not collecti
   });
 
   // A terminated run cannot be paused either.
-  const terminated = await administrationRequest(
-    `/v1/ingestion-runs/${run.id}/collection/termination`,
-    "POST",
-    { idempotency_key: "owner_pause_idempotent_001_terminate" },
-  );
+  const terminated = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/termination`, "POST", {
+    idempotency_key: "owner_pause_idempotent_001_terminate",
+  });
   expect(terminated.status).toBe(200);
   await terminated.body?.cancel();
   const afterTermination = await requestPause(run.id, "owner_pause_idempotent_001_late");
@@ -230,21 +208,86 @@ test("an owner pause replays idempotently and refuses a run that is not collecti
   });
 
   // The key belongs to the first run: reusing it for another run is refused.
-  const other = await createCollection(
-    "owner_pause_idempotent_002",
-    "https://official-source.invalid/cards",
-  );
+  const other = await createCollection("owner_pause_idempotent_002", "https://official-source.invalid/cards");
   const reused = await requestPause(other.id, "owner_pause_idempotent_001_pause");
   expect(reused.status).toBe(409);
   expect(reused.document).toMatchObject({ code: "idempotency_conflict" });
 });
 
 test("inspection lists pause as the available action while a run collects", async () => {
-  const run = await createCollection(
-    "owner_pause_actions_001",
-    "https://official-source.invalid/cards",
-  );
+  const run = await createCollection("owner_pause_actions_001", "https://official-source.invalid/cards");
   const collecting = await showCollection(run.id);
   expect(collecting.state).toBe("collecting");
   expect(collecting.actions).toEqual(["pause"]);
+});
+
+test("a superseded sleeping child cannot capture when termination fails and collection reopens", async () => {
+  const run = await createCollection(
+    "owner_pause_stale_child_001",
+    "https://superseded-official-source.invalid/superseded-retry-once",
+  );
+  const started = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
+  expect(started.status).toBe(202);
+  await started.body?.cancel();
+  const sleeping = await waitForEvidenceCondition(
+    run.id,
+    (current) =>
+      current.workflow.child_ids.length === 1 && current.diagnostics.some((entry) => entry.outcome === "http_failure"),
+  );
+  const childId = sleeping.workflow.child_ids[0]!;
+  let failedTerminations = 0;
+  const unavailableTermination = new Proxy(env.EVIDENCE_HOST_WORKFLOW, {
+    get(target, property) {
+      if (property === "get")
+        return async (id: string) => {
+          const instance = await target.get(id);
+          return new Proxy(instance, {
+            get(instanceTarget, operation) {
+              if (operation === "terminate")
+                return async () => {
+                  failedTerminations += 1;
+                  throw new Error("synthetic termination control-plane outage");
+                };
+              const value = Reflect.get(instanceTarget, operation, instanceTarget);
+              return typeof value === "function" ? value.bind(instanceTarget) : value;
+            },
+          });
+        };
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  await pauseEvidenceCollection(
+    env.CATALOGUE_DB,
+    env.EVIDENCE_INGESTION_WORKFLOW,
+    unavailableTermination,
+    run.id,
+    "owner_pause_stale_child_pause_001",
+  );
+  expect(failedTerminations).toBe(1);
+  await expect((await env.EVIDENCE_HOST_WORKFLOW.get(childId)).status()).resolves.toMatchObject({ status: "running" });
+  await expect(
+    resumeEvidenceRun(env.CATALOGUE_DB, env.EVIDENCE_INGESTION_WORKFLOW, run.id, unavailableTermination),
+  ).rejects.toMatchObject({ status: 409, code: "collection_workflow_supersession_pending" });
+  expect((await showCollection(run.id)).state).toBe("paused");
+  // Exercise the durable guarantee independently of the administration
+  // control-plane verification: the same public resume transition reopens
+  // collection and supersedes the parent, without creating its replacement.
+  await resumePausedEvidenceRun(env.CATALOGUE_DB, run.id);
+  expect((await showCollection(run.id)).state).toBe("collecting");
+  await waitForWorkflowStatus(
+    childId,
+    async () => (await env.EVIDENCE_HOST_WORKFLOW.get(childId)).status(),
+    "complete",
+    15_000,
+  );
+  const after = await showCollection(run.id);
+  expect(after.diagnostics.map((entry) => entry.outcome)).toEqual(["http_failure"]);
+  expect(after.snapshots).toHaveLength(0);
+  const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
+  expect(resumed.status).toBe(202);
+  await resumed.body?.cancel();
+  const completed = await waitForEvidenceRun(run.id, "parsing", 20_000);
+  expect(completed.diagnostics.map((entry) => entry.outcome).sort()).toEqual(["http_failure", "success"]);
+  expect(completed.snapshots).toHaveLength(1);
 });

@@ -1,8 +1,9 @@
-import { type AttemptOutcome, attemptStatement, sourceSnapshotStatement } from "./evidence-repository";
 import { createHash } from "node:crypto";
-import { AdministrationProblem, canonicalJson, sha256, utf8 } from "../shared";
 import { requiredSourceAdapter } from "../adapters";
+import { AdministrationProblem, canonicalJson, sha256, utf8 } from "../shared";
+import { type AttemptOutcome, attemptStatement, sourceSnapshotStatement } from "./evidence-repository";
 import {
+  type CollectionWorkflowAttempt,
   completeOfficialCollectionRequestsFromDiscovery,
   defaultSourceHostPacingIntervalMilliseconds,
   headersRecord,
@@ -21,16 +22,18 @@ import {
 import {
   appendDiscoveredEvidenceRequests,
   captureAttemptsPerRetryGeneration,
+  type EvidenceRequestRow,
   evidencePlanForRequest,
+  type IngestionEvidenceRow,
+  isCurrentCollectionWorkflowAttempt,
   pauseEvidenceRunForRequestCapacity,
   persistOfficialSourceCollectionPlan,
   RequestCapacityProblem,
-  retryExhaustionPauseStatements,
-  type EvidenceRequestRow,
-  type IngestionEvidenceRow,
   type RetryExhaustionFacts,
+  retryExhaustionPauseStatements,
 } from "./source-evidence-repository";
 import type { SnapshotRow } from "./source-evidence-repository-types";
+
 const multipartPartBytes = 5 * 1024 * 1024;
 const representedRequestHeaders = new Set(["accept", "accept-language", "user-agent"]);
 
@@ -293,6 +296,7 @@ export async function capturePreparedAttempt(
   run: IngestionEvidenceRow,
   sourceRequest: EvidenceRequestRow,
   prepared: Extract<PreparedCaptureAttempt, { kind: "attempt" }>,
+  workflowAttempt?: CollectionWorkflowAttempt,
 ): Promise<CaptureTransportResult> {
   if (!admitsCollectionWork(run)) {
     return { kind: "done", failure_code: null, request_made: false };
@@ -362,6 +366,13 @@ export async function capturePreparedAttempt(
     ...configuredHeaders,
     ...(reusable === null ? {} : revalidationHeaders(reusable)),
   };
+  // Resolving retained operation/snapshot state may span supersession too.
+  // Recheck immediately at the non-idempotent Official Source boundary.
+  if (
+    workflowAttempt !== undefined &&
+    !(await isCurrentCollectionWorkflowAttempt(database, run.id, workflowAttempt.parentId, workflowAttempt.instanceId))
+  )
+    return { kind: "done", failure_code: null, request_made: false };
   let response: Response | null = null;
   let networkError: string | null = null;
   let fetchFailureOutcome: "network_failure" | "body_failure" = "network_failure";

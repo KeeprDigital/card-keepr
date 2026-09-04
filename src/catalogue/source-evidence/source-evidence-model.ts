@@ -1,13 +1,13 @@
-import { decodeDocument, canonicalJson, sha256, utf8, AdministrationProblem } from "../shared";
 import {
-  assertAdapterRequestSurface,
   assertAdapterBinding,
+  assertAdapterRequestSurface,
   assertOfficialSourceUrl,
   requiredActiveSourceAdapter,
   requiredOfficialSourceContract,
   requiredSourceAdapter,
   type SourceAdapterRegistration,
 } from "../adapters";
+import { AdministrationProblem, canonicalJson, decodeDocument, sha256, utf8 } from "../shared";
 
 // The polite steady-state interval between requests to one Official Source
 // hostname when no deployment override is configured.
@@ -169,12 +169,15 @@ export type StartEvidenceRunRequest =
       operational_request_id?: string;
     };
 
+export type CollectionWorkflowAttempt = Readonly<{ parentId: string; instanceId: string }>;
+
 export type EvidenceParentWorkflowParams = {
   ingestion_run_id: string;
 };
 
 export type EvidenceHostWorkflowParams = {
   ingestion_run_id: string;
+  parent_workflow_id: string;
   hostname: string;
   minimum_sequence_number: number;
   maximum_sequence_number: number;
