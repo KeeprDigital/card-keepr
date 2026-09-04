@@ -173,6 +173,3 @@ export function reconciliationContextColumns(database) {
 export function reconciliationContextCount(database) {
   return database.prepare("SELECT count(*) AS count FROM reconciliation_contexts");
 }
-export function foreignKeyViolations(database) {
-  return database.prepare("PRAGMA foreign_key_check");
-}
