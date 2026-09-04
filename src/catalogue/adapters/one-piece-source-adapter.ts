@@ -1,3 +1,4 @@
+import { AdapterParseFailure } from "./adapter-parse-failure";
 const colourOrder = ["red", "green", "blue", "purple", "black", "yellow", "white", "colourless"];
 
 const cardTypes = new Map([
@@ -39,17 +40,17 @@ export function normalizeOnePieceCardPage(value: Readonly<Record<string, unknown
     .map((colour) => normalizedToken(colour))
     .map((colour) => {
       if (!colourOrder.includes(colour)) {
-        throw new Error(`One Piece Color has unrecognized value ${colour}.`);
+        throw new AdapterParseFailure(`One Piece Color has unrecognized value ${colour}.`);
       }
       return colour;
     })
     .sort((left, right) => colourOrder.indexOf(left) - colourOrder.indexOf(right));
   if (colours.length === 0) {
-    throw new Error("One Piece Color is required.");
+    throw new AdapterParseFailure("One Piece Color is required.");
   }
   const printing = optionalRecord(value.printing, "One Piece Printing");
   if (printing?.normalized_rarity !== undefined) {
-    throw new Error("One Piece raw Printing fields cannot supply normalized rarity.");
+    throw new AdapterParseFailure("One Piece raw Printing fields cannot supply normalized rarity.");
   }
   const rawIllustrationTypes = optionalRecord(
     printing?.attributes,
@@ -90,15 +91,15 @@ export function onePieceDonCardObservation(value: unknown): Record<string, unkno
   const fields = ["functional_designation", "name", "Category", "Effect"];
   const undeclared = Object.keys(card).filter((field) => !fields.includes(field));
   if (undeclared.length > 0) {
-    throw new Error(`One Piece DON!! Card contains undeclared fields: ${undeclared.sort().join(", ")}.`);
+    throw new AdapterParseFailure(`One Piece DON!! Card contains undeclared fields: ${undeclared.sort().join(", ")}.`);
   }
   if (normalizedText(card.functional_designation) !== "DON!!" || normalizedToken(card.Category) !== "don!! card") {
-    throw new Error("One Piece DON!! rules must use the exact functional designation.");
+    throw new AdapterParseFailure("One Piece DON!! rules must use the exact functional designation.");
   }
   const name = normalizedText(card.name);
   const effect = nullableText(card.Effect, "One Piece DON!! rules text");
   if (name.length === 0 || effect === null) {
-    throw new Error("One Piece DON!! rules are incomplete.");
+    throw new AdapterParseFailure("One Piece DON!! rules are incomplete.");
   }
   return {
     completeness: {
@@ -156,43 +157,43 @@ export function normalizedOnePieceRarity(value: unknown): string | null {
   if (raw === null) return null;
   const normalized = rarities.get(normalizedToken(raw));
   if (normalized === undefined) {
-    throw new Error(`One Piece rarity has unrecognized value ${raw}.`);
+    throw new AdapterParseFailure(`One Piece rarity has unrecognized value ${raw}.`);
   }
   return normalized;
 }
 
 function assertOnePieceTypeNullability(cardType: string, cost: number | null, life: number | null): void {
   if (cardType === "leader" && cost !== null) {
-    throw new Error("One Piece Leader cost must be null.");
+    throw new AdapterParseFailure("One Piece Leader cost must be null.");
   }
   if (cardType !== "leader" && life !== null) {
-    throw new Error(`One Piece ${cardType} life must be null.`);
+    throw new AdapterParseFailure(`One Piece ${cardType} life must be null.`);
   }
   if (cardType !== "leader" && cost === null) {
-    throw new Error(`One Piece ${cardType} cost must be non-null.`);
+    throw new AdapterParseFailure(`One Piece ${cardType} cost must be non-null.`);
   }
   if (cardType === "leader" && life === null) {
-    throw new Error("One Piece Leader life must be non-null.");
+    throw new AdapterParseFailure("One Piece Leader life must be non-null.");
   }
 }
 
 export function onePieceRecordingMemberships(value: unknown): ReadonlyMap<string, readonly string[]> {
   if (!Array.isArray(value)) {
-    throw new Error("One Piece Recording partitions are invalid.");
+    throw new AdapterParseFailure("One Piece Recording partitions are invalid.");
   }
   const memberships = new Map<string, Set<string>>();
   for (const item of value) {
     const partition = requiredRecord(item, "One Piece Recording partition");
     const recording = normalizedText(partition.bucket);
     if (!Array.isArray(partition.entries)) {
-      throw new Error("One Piece Recording partition identity is invalid.");
+      throw new AdapterParseFailure("One Piece Recording partition identity is invalid.");
     }
     if (!/^\d+$/u.test(recording)) continue;
     for (const entryValue of partition.entries) {
       const entry = requiredRecord(entryValue, "One Piece Recording entry");
       const locator = normalizedText(entry.detail);
       if (locator.length === 0) {
-        throw new Error("One Piece Recording entry locator is invalid.");
+        throw new AdapterParseFailure("One Piece Recording entry locator is invalid.");
       }
       const recordings = memberships.get(locator) ?? new Set<string>();
       recordings.add(`recording:${recording}`);
@@ -206,7 +207,7 @@ function controlledValue(value: unknown, vocabulary: ReadonlyMap<string, string>
   const raw = normalizedText(value);
   const normalized = vocabulary.get(normalizedToken(raw));
   if (normalized === undefined) {
-    throw new Error(`${name} has unrecognized value ${raw}.`);
+    throw new AdapterParseFailure(`${name} has unrecognized value ${raw}.`);
   }
   return normalized;
 }
@@ -215,7 +216,7 @@ function uniqueValues(value: unknown, name: string): string[] {
   const values: unknown[] = Array.isArray(value) ? value : value === null ? [] : [value];
   const normalized = values.map((item) => {
     const text = normalizedText(item);
-    if (text.length === 0) throw new Error(`${name} contains an empty value.`);
+    if (text.length === 0) throw new AdapterParseFailure(`${name} contains an empty value.`);
     return text;
   });
   return [...new Set(normalized)];
@@ -232,7 +233,7 @@ function nonNegativeIntegerOrNull(value: unknown, name: string): number | null {
         ? Number(value.trim())
         : Number.NaN;
   if (!Number.isSafeInteger(normalized) || normalized < 0) {
-    throw new Error(`${name} is not a non-negative integer.`);
+    throw new AdapterParseFailure(`${name} is not a non-negative integer.`);
   }
   return normalized;
 }
@@ -241,7 +242,7 @@ function nullableText(value: unknown, name: string): string | null {
   if (value === null || value === undefined || value === "" || value === "-") {
     return null;
   }
-  if (typeof value !== "string") throw new Error(`${name} is invalid.`);
+  if (typeof value !== "string") throw new AdapterParseFailure(`${name} is invalid.`);
   const text = normalizedText(value);
   return text.length === 0 ? null : text;
 }
@@ -257,7 +258,7 @@ function normalizedText(value: unknown): string {
 
 function requiredRecord(value: unknown, name: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${name} is invalid.`);
+    throw new AdapterParseFailure(`${name} is invalid.`);
   }
   return value as Record<string, unknown>;
 }

@@ -1,3 +1,5 @@
+import { adapterUrl } from "./adapter-parse-failure";
+import { AdapterParseFailure } from "./adapter-parse-failure";
 import { AdministrationProblem } from "../shared";
 import { officialRawAdapterContracts } from "./product-release-source-adapters.ts";
 import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.ts";
@@ -81,7 +83,7 @@ const declaredSourceRequestCapacities: ReadonlyMap<string, number> = new Map([
 function sourceRequestCapacity(adapterVersion: string): number {
   const capacity = declaredSourceRequestCapacities.get(adapterVersion) ?? historicalSourceRequestCapacity;
   if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity >= globalEmergencySourceRequestCeiling) {
-    throw new Error(
+    throw new AdapterParseFailure(
       `Source Adapter Version ${adapterVersion} declares a request capacity outside the global emergency ceiling.`,
     );
   }
@@ -117,13 +119,13 @@ const parseLegalitySourceDocument = (document: unknown): readonly unknown[] => {
 
 export function requiredOfficialSourceContract(adapter: SourceAdapterRegistration): OfficialSourceContract {
   if (adapter.reconciliationCapability !== "catalogue" || adapter.officialSourceContract === undefined) {
-    throw new Error(`Adapter ${adapter.adapterVersion} has no complete Official Source contract.`);
+    throw new AdapterParseFailure(`Adapter ${adapter.adapterVersion} has no complete Official Source contract.`);
   }
   return adapter.officialSourceContract;
 }
 
 export function assertOfficialSourceUrl(value: string, contract: OfficialSourceContract): URL {
-  const url = new URL(value);
+  const url = adapterUrl(value);
   if (
     url.origin !== contract.origin ||
     !contract.documentPathnamePrefixes.some((prefix) => url.pathname.startsWith(prefix)) ||
@@ -131,7 +133,9 @@ export function assertOfficialSourceUrl(value: string, contract: OfficialSourceC
     url.password !== "" ||
     url.hash !== ""
   ) {
-    throw new Error(`Official Source URL is outside the exact path authority registered for ${contract.origin}.`);
+    throw new AdapterParseFailure(
+      `Official Source URL is outside the exact path authority registered for ${contract.origin}.`,
+    );
   }
   return url;
 }
@@ -179,20 +183,29 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
       requiredSurfaces: ["errata"],
       requestUrlForSurface: (surface: string) => {
         if (surface !== "errata") {
-          throw new Error("Official Errata surface identity is invalid.");
+          throw new AdapterParseFailure("Official Errata surface identity is invalid.");
         }
         return "https://en.onepiece-cardgame.com/rules/errata_card/";
       },
       reconciliationCapability: "errata" as const,
       parseBytes: (bytes: Uint8Array) => {
-        const document = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
+        let document: string;
+        try {
+          document = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
+        } catch (error) {
+          throw new AdapterParseFailure(
+            error instanceof Error ? error.message : "Official Errata bytes are not valid UTF-8.",
+            { cause: error },
+          );
+        }
         return parseOnePieceOfficialErrataHtml(document);
       },
     },
     ...officialRawAdapterContracts.map((adapter) => ({
       ...productionCatalogueRegistration(adapter),
       listingReconciliation: adapter.listingReconciliation,
-      parseBytes: adapter.parseBytes,
+      parseBytes: (bytes: Uint8Array, context: { mediaType: string | null; url: string; requestId?: string }) =>
+        adapter.parse(context, bytes),
       discoverRequests: adapter.discoverRequests,
       requiredSurfaces: adapter.requiredSurfaces,
       requestUrlForDiscovery: adapter.requestUrlForDiscovery,
@@ -363,7 +376,7 @@ export function registeredLegalitySourceScope(sourceLineage: string): {
       (adapter) => adapter.supportedGame !== first.supportedGame || adapter.legalityRegion !== first.legalityRegion,
     )
   ) {
-    throw new Error("Legality Source Lineage has no consistent registered ownership.");
+    throw new AdapterParseFailure("Legality Source Lineage has no consistent registered ownership.");
   }
   return {
     game: first.supportedGame as "one-piece" | "fusion-world" | "digimon" | "gundam",
