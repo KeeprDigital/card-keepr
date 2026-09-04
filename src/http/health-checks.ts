@@ -4,7 +4,6 @@
 // binding error messages never enter the document; they may carry resource
 // names or provider detail that the health route must not leak.
 
-import { inspectWorkflowInstance } from "../catalogue/shared";
 import type { PublicBase } from "./public-base";
 
 export type CheckStatus = "pass" | "fail";
@@ -78,17 +77,21 @@ export type ProbedWorkflow = {
   get(id: string): Promise<{ status(): Promise<{ status: string }> }>;
 };
 
+/** Supplied by the Worker composition; health has no catalogue dependency. */
+export type WorkflowInspector = (workflow: ProbedWorkflow, id: string) => Promise<{ status: string }>;
+
 export type HealthCheckInput = {
   database: D1Database | undefined;
   /** Present only for the ingestion worker, which configures the id. */
   configuredDatabaseId?: string | undefined;
   buckets: Record<string, R2Bucket | undefined>;
-  /** Omitted for a worker without Workflow bindings. */
-  workflows?: Record<string, ProbedWorkflow | undefined>;
   publicBase: PublicBase;
   request: Request;
   version: VersionMetadata | undefined;
-};
+} & (
+  | { workflows?: undefined; inspectWorkflow?: never }
+  | { workflows: Record<string, ProbedWorkflow | undefined>; inspectWorkflow: WorkflowInspector }
+);
 
 /** The bound each probe gets before it is reported as timed out. */
 export const probeTimeoutMilliseconds = 5_000;
@@ -102,7 +105,7 @@ export async function runHealthChecks(
   const [database, objects, workflows] = await Promise.all([
     checkDatabase(input.database, input.configuredDatabaseId, "configuredDatabaseId" in input),
     checkObjects(input.buckets),
-    input.workflows === undefined ? Promise.resolve(undefined) : checkWorkflows(input.workflows),
+    input.workflows === undefined ? Promise.resolve(undefined) : checkWorkflows(input.workflows, input.inspectWorkflow),
   ]);
   const checks: HealthChecks = {
     database,
@@ -199,9 +202,14 @@ async function probeBucket(bucket: R2Bucket | undefined): Promise<BucketCheck> {
   }
 }
 
-export async function checkWorkflows(workflows: Record<string, ProbedWorkflow | undefined>): Promise<WorkflowsCheck> {
+export async function checkWorkflows(
+  workflows: Record<string, ProbedWorkflow | undefined>,
+  inspectWorkflow: WorkflowInspector,
+): Promise<WorkflowsCheck> {
   const entries = await Promise.all(
-    Object.entries(workflows).map(async ([name, workflow]) => [name, await probeWorkflow(workflow)] as const),
+    Object.entries(workflows).map(
+      async ([name, workflow]) => [name, await probeWorkflow(workflow, inspectWorkflow)] as const,
+    ),
   );
   return {
     status: entries.some(([, check]) => check.status === "fail") ? "fail" : "pass",
@@ -213,12 +221,15 @@ export async function checkWorkflows(workflows: Record<string, ProbedWorkflow | 
 // instance-not-found error (or, on runtimes that hand out a lazy handle, a
 // status of "unknown"). Anything else is either a binding failure or an
 // instance that must not exist.
-async function probeWorkflow(workflow: ProbedWorkflow | undefined): Promise<WorkflowBindingCheck> {
+async function probeWorkflow(
+  workflow: ProbedWorkflow | undefined,
+  inspectWorkflow: WorkflowInspector,
+): Promise<WorkflowBindingCheck> {
   if (workflow === undefined || workflow === null) {
     return { status: "fail", reason: "binding_missing" };
   }
   try {
-    const status = await bounded(inspectWorkflowInstance(workflow, workflowProbeInstanceId));
+    const status = await bounded(inspectWorkflow(workflow, workflowProbeInstanceId));
     return status.status === "unknown" ? { status: "pass" } : { status: "fail", reason: "unexpected_instance" };
   } catch (error) {
     if (error instanceof ProbeTimeout) {
