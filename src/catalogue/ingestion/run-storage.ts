@@ -1,4 +1,13 @@
-import { AdministrationProblem, CatalogueExportLimitError } from "../shared";
+import {
+  assertIngestionRunTransition,
+  type IngestionRunState,
+  ingestionRunTransitionSql,
+  ingestionRunTransitionSources,
+  ingestionRunStates,
+  isTerminalIngestionRunState,
+  AdministrationProblem,
+  CatalogueExportLimitError,
+} from "../shared";
 
 import { progressFor } from "./run-document-codec";
 import {
@@ -15,9 +24,10 @@ export function assertRunIsApprovable(run: RunRow, request: ApproveRunRequest): 
   if (run.state === "expired") {
     throw new AdministrationProblem(409, "candidate_expired", "The candidate approval deadline has passed.");
   }
-  if (run.state !== "awaiting_approval") {
-    throw new AdministrationProblem(409, "run_not_awaiting_approval", "The Ingestion Run is not awaiting approval.");
-  }
+  assertIngestionRunTransition(run.state, "publishing", {
+    invalid: () =>
+      new AdministrationProblem(409, "run_not_awaiting_approval", "The Ingestion Run is not awaiting approval."),
+  });
   if (run.candidate_digest !== request.candidate_digest) {
     throw new AdministrationProblem(
       409,
@@ -171,16 +181,16 @@ export async function publicationCleanup(database: D1Database, runId: string): P
 export function transitionStatement(
   database: D1Database,
   runId: string,
-  from: string,
-  to: string,
+  from: IngestionRunState,
+  to: IngestionRunState,
 ): D1PreparedStatement {
   return database
     .prepare(
       `UPDATE ingestion_runs
       SET state = ?, progress_json = ?
-      WHERE id = ? AND state = ?`,
+      WHERE id = ? AND ${ingestionRunTransitionSql(from, to)}`,
     )
-    .bind(to, JSON.stringify(progressFor(to)), runId, from);
+    .bind(to, JSON.stringify(progressFor(to)), runId);
 }
 
 export function releaseRunLockStatement(database: D1Database, runId: string): D1PreparedStatement {
@@ -205,13 +215,14 @@ export async function expireOverdueRuns(database: D1Database, observedAt: string
               '$.current_stage',
               'expired'
             )
-        WHERE state = 'awaiting_approval'
+        WHERE ${ingestionRunTransitionSql("awaiting_approval", "expired")}
           AND approval_deadline IS NOT NULL
           AND approval_deadline <= ?`,
       )
       .bind(observedAt),
-    database.prepare(
-      `UPDATE operation_state
+    database
+      .prepare(
+        `UPDATE operation_state
       SET active_ingestion_run_id = NULL
       WHERE singleton = 1
         AND active_ingestion_run_id IS NOT NULL
@@ -225,18 +236,11 @@ export async function expireOverdueRuns(database: D1Database, observedAt: string
             SELECT 1
             FROM ingestion_runs
             WHERE id = operation_state.active_ingestion_run_id
-              AND state IN (
-                'planning',
-                'collecting',
-                'paused',
-                'parsing',
-                'reconciling',
-                'awaiting_approval',
-                'publishing'
-              )
+              AND state IN (SELECT value FROM json_each(?))
           )
         )`,
-    ),
+      )
+      .bind(JSON.stringify(ingestionRunStates.filter((state) => !isTerminalIngestionRunState(state)))),
   ]);
 }
 
@@ -254,14 +258,7 @@ async function failRun(database: D1Database, runId: string, terminalAt: string, 
               'failed'
             )
         WHERE id = ?
-          AND state IN (
-            'planning',
-            'collecting',
-            'parsing',
-            'reconciling',
-            'awaiting_approval',
-            'publishing'
-          )`,
+          AND ${ingestionRunTransitionSql(ingestionRunTransitionSources("failed"), "failed")}`,
       )
       .bind(terminalAt, failureCode, runId),
     releaseRunLockStatement(database, runId),

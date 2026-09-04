@@ -1,3 +1,10 @@
+import {
+  ingestionRunTransitionSql,
+  byteBoundedJsonArrays,
+  type CatalogueCandidate,
+  guardedAtomicBatch,
+  type SupportedGame,
+} from "../shared";
 import { publicationBackupReservation } from "../backup-recovery";
 import { type BuiltCatalogueExport, distributionContextExportId } from "../export";
 import { legalityPublicationStatements } from "../legality";
@@ -9,7 +16,7 @@ import {
   reconciliationPublication,
   typedPrintingProjections,
 } from "../reconciliation";
-import { byteBoundedJsonArrays, type CatalogueCandidate, guardedAtomicBatch, type SupportedGame } from "../shared";
+
 import { idempotencyCompletionStatements } from "./administration-idempotency";
 import { replayAfterConflict } from "./administration-idempotency";
 import { requiredCandidateCatalogueDigest } from "./publication-storage";
@@ -69,7 +76,7 @@ export async function publishNoChange(
               approval_idempotency_key = ?,
               approval_history_json = ?,
               progress_json = ?
-          WHERE id = ? AND state = 'awaiting_approval'`,
+          WHERE id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "publishing")}`,
         )
         .bind(
           JSON.stringify(approval),
@@ -89,7 +96,7 @@ export async function publishNoChange(
               publication_outcome = 'no_change',
               resulting_revision_id = ?,
               freshness_checked_at = ?
-          WHERE id = ? AND state = 'publishing'`,
+          WHERE id = ? AND ${ingestionRunTransitionSql("publishing", "published")}`,
         )
         .bind(now, JSON.stringify(progressFor("published")), request.expected_current_revision_id, now, run.id),
       releaseRunLockStatement(database, run.id),
@@ -642,7 +649,7 @@ export async function commitVerifiedPublication(
             publication_outcome = 'revision',
             resulting_revision_id = ?,
             freshness_checked_at = ?
-        WHERE id = ? AND state = 'publishing'`,
+        WHERE id = ? AND ${ingestionRunTransitionSql("publishing", "published")}`,
       )
       .bind(
         revisionId,

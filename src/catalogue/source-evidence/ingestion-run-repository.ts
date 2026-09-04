@@ -1,9 +1,10 @@
-import { canonicalJson } from "../shared";
+import { type IngestionRunState, canonicalJson } from "../shared";
+
 import type { SourceAdapterRegistration } from "../adapters";
 
 export type IngestionEvidenceRow = {
   id: string;
-  state: string;
+  state: IngestionRunState;
   selected_games_json: string;
   started_at: string;
   expected_current_revision_id: string;

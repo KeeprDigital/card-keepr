@@ -1,4 +1,5 @@
-import { AdministrationProblem, canonicalJson } from "../shared";
+import { isTerminalIngestionRunState, AdministrationProblem, canonicalJson } from "../shared";
+
 import { parseCandidate } from "./candidate-codec";
 import { firstCatalogueFixture } from "./fixture";
 import { decodePublicRunDocument, publicRun } from "./run-document-codec";
@@ -11,15 +12,7 @@ import {
   publicationLeaseMilliseconds,
   type RunRow,
 } from "./run-types";
-import {
-  errorMessage,
-  hasOnlyKeys,
-  isExactStringTuple,
-  isIsoInstant,
-  isRecord,
-  parseJson,
-  terminalRunStates,
-} from "./run-values";
+import { errorMessage, hasOnlyKeys, isExactStringTuple, isIsoInstant, isRecord, parseJson } from "./run-values";
 
 export async function administrationClaim(database: D1Database, key: string): Promise<IdempotencyClaimRow | null> {
   return database
@@ -528,7 +521,7 @@ async function replayLegacyAdministration(
       candidate_digest: run.candidate_digest,
       expected_current_revision_id: run.expected_current_revision_id,
     });
-    if (legacyRequestJson === requestJson && terminalRunStates.has(run.state)) {
+    if (legacyRequestJson === requestJson && isTerminalIngestionRunState(run.state)) {
       return publicRun(run);
     }
     if (legacyRequestJson === requestJson) return null;

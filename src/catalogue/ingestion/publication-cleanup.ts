@@ -1,4 +1,5 @@
-import { AdministrationProblem, canonicalJson } from "../shared";
+import { ingestionRunTransitionSql, AdministrationProblem, canonicalJson } from "../shared";
+
 import {
   administrationClaimDeleteStatement,
   currentAdministrationClaimOwner,
@@ -368,7 +369,7 @@ export async function failUnreservedPublication(
               '$.current_stage',
               'failed'
             )
-        WHERE id = ? AND state = 'awaiting_approval'`,
+        WHERE id = ? AND ${ingestionRunTransitionSql("awaiting_approval", "failed")}`,
       )
       .bind(terminalAt, problem.code, run.id),
     database
@@ -448,7 +449,7 @@ export async function failReservedPublication(
               '$.current_stage',
               'failed'
             )
-        WHERE id = ? AND state = 'publishing'`,
+        WHERE id = ? AND ${ingestionRunTransitionSql("publishing", "failed")}`,
       )
       .bind(terminalAt, problem.code, run.id),
     database

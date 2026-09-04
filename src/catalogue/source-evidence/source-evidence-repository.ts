@@ -1,12 +1,9 @@
 import {
-  type IngestionEvidenceRow,
-  type IngestionRunInsertInput,
-  ingestionRunInsertStatement,
-  evidenceRunByIdStatement,
-  evidenceRunByIdempotencyKeyStatement,
-} from "./ingestion-run-repository";
-export type { IngestionEvidenceRow } from "./ingestion-run-repository";
-import {
+  assertIngestionRunTransition,
+  canTransitionIngestionRun,
+  isTerminalIngestionRunState,
+  ingestionRunTerminatedFailureCode,
+  ingestionRunTransitionSql,
   AdministrationProblem,
   canonicalJson,
   sha256,
@@ -15,6 +12,16 @@ import {
   replayByDigest,
   operationalDiagnostics,
 } from "../shared";
+
+import {
+  type IngestionEvidenceRow,
+  type IngestionRunInsertInput,
+  ingestionRunInsertStatement,
+  evidenceRunByIdStatement,
+  evidenceRunByIdempotencyKeyStatement,
+} from "./ingestion-run-repository";
+export type { IngestionEvidenceRow } from "./ingestion-run-repository";
+
 import {
   assertBoundedOfficialSourceRequest,
   assertIdentifier,
@@ -204,7 +211,7 @@ export async function retryEvidenceRun(
 ): Promise<Record<string, unknown>> {
   assertIdentifier(idempotencyKey, "idempotency_key");
   const source = await requiredEvidenceRun(database, sourceRunId);
-  if (!["failed", "rejected", "expired"].includes(source.state)) {
+  if (!isTerminalIngestionRunState(source.state) || source.state === "published") {
     throw new AdministrationProblem(
       409,
       "ingestion_run_not_retryable",
@@ -1103,7 +1110,7 @@ export async function pauseEvidenceRunForRequestCapacity(
          SET state = 'paused',
              progress_json =
                '{"completed_stages":["planning"],"current_stage":"paused"}'
-         WHERE id = ? AND state = 'collecting'`,
+         WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "paused")}`,
       )
       .bind(runId),
     // Guarded and idempotent under durable Workflow step replay: the run is
@@ -1183,7 +1190,7 @@ export function retryExhaustionPauseStatements(
          SET state = 'paused',
              progress_json =
                '{"completed_stages":["planning"],"current_stage":"paused"}'
-         WHERE id = ? AND state = 'collecting'`,
+         WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "paused")}`,
       )
       .bind(runId),
     // Guarded and idempotent under durable Workflow step replay, mirroring
@@ -1265,7 +1272,7 @@ function workflowPauseStatements(
          SET state = 'paused',
              progress_json =
                '{"completed_stages":["planning"],"current_stage":"paused"}'
-         WHERE id = ?1 AND state = 'collecting'
+         WHERE id = ?1 AND ${ingestionRunTransitionSql("collecting", "paused")}
            AND EXISTS (
              SELECT 1 FROM ingestion_evidence_plans
              WHERE ingestion_run_id = ?1 AND parent_workflow_id = ?2
@@ -1338,7 +1345,7 @@ export async function pauseEvidenceRunOnOwnerRequest(
   const replayed = await collectionPauseReplay(database, request.idempotency_key, requestJson);
   if (replayed !== null) return { document: replayed, applied: false };
   const run = await requiredEvidenceRun(database, runId);
-  if (run.state !== "collecting") throw ingestionRunNotCollectingForPause();
+  assertIngestionRunTransition(run.state, "paused", { invalid: ingestionRunNotCollectingForPause });
   const pausedAt = new Date().toISOString();
   const response: Record<string, unknown> = {
     contract: collectionPauseContract,
@@ -1402,7 +1409,7 @@ export async function pauseEvidenceRunOnOwnerRequest(
   const recorded = await collectionPauseReplay(database, request.idempotency_key, requestJson);
   if (recorded !== null) return { document: recorded, applied };
   const current = await requiredEvidenceRun(database, runId);
-  if (current.state !== "collecting") throw ingestionRunNotCollectingForPause();
+  assertIngestionRunTransition(current.state, "paused", { invalid: ingestionRunNotCollectingForPause });
   throw new AdministrationProblem(
     409,
     "collection_pause_conflict",
@@ -1560,7 +1567,7 @@ export async function resumePausedEvidenceRun(database: D1Database, runId: strin
          SET state = 'collecting',
              progress_json =
                '{"completed_stages":["planning"],"current_stage":"collecting"}'
-         WHERE id = ? AND state = 'paused'`,
+         WHERE id = ? AND ${ingestionRunTransitionSql("paused", "collecting")}`,
       )
       .bind(runId),
     // The reassignment holds only while the run is actually collecting (the
@@ -1812,9 +1819,6 @@ export type CollectionTerminationRequest = Readonly<{
   idempotency_key: string;
 }>;
 
-// The stable terminal reason of an owner-terminated Ingestion Run.
-export const ingestionRunTerminatedFailureCode = "ingestion_run_terminated";
-
 // The collection actions the lifecycle currently admits for a run in the
 // given state (approval and rejection belong to the run document): the
 // inspection document lists them explicitly so automation never infers
@@ -1828,8 +1832,8 @@ export function collectionActions(state: string, pauseReason: string | null): st
       ? ["resume", "extend_capacity", "terminate"]
       : ["resume", "terminate"];
   }
-  if (state === "collecting") return ["pause"];
-  if (state === "failed" || state === "rejected" || state === "expired") {
+  if (canTransitionIngestionRun(state, "paused")) return ["pause"];
+  if (isTerminalIngestionRunState(state) && state !== "published") {
     return ["retry"];
   }
   return [];
@@ -1964,7 +1968,13 @@ export async function terminateEvidenceRun(
   );
   const replayed = await terminationReplay(database, request.idempotency_key, requestDigest);
   if (replayed !== null) return replayed;
-  if (run.state !== "paused") throw ingestionRunNotPausedForTermination();
+  assertIngestionRunTransition(run.state, "failed", {
+    requiredFrom: "paused",
+    failureCode: ingestionRunTerminatedFailureCode,
+    // The guarded batch inserts this decision before changing the run state.
+    terminationRecorded: true,
+    invalid: ingestionRunNotPausedForTermination,
+  });
   const pause = await currentPause(database, runId);
   if (pause === null) {
     throw new Error("The paused Ingestion Run has no retained pause record.");
@@ -2008,7 +2018,7 @@ export async function terminateEvidenceRun(
            SET state = 'failed', terminal_at = ?2, failure_code = ?3,
                progress_json =
                  '{"completed_stages":["planning"],"current_stage":"failed"}'
-           WHERE id = ?1 AND state = 'paused'
+           WHERE id = ?1 AND ${ingestionRunTransitionSql("paused", "failed", { failureCode: ingestionRunTerminatedFailureCode, terminationRecorded: true })}
              AND EXISTS (
                SELECT 1 FROM ingestion_run_terminations
                WHERE ingestion_run_id = ?1 AND idempotency_key = ?4
@@ -2037,7 +2047,13 @@ export async function terminateEvidenceRun(
   const raced = await terminationReplay(database, request.idempotency_key, requestDigest);
   if (raced !== null) return raced;
   const current = await requiredEvidenceRun(database, runId);
-  if (current.state !== "paused") throw ingestionRunNotPausedForTermination();
+  assertIngestionRunTransition(current.state, "failed", {
+    requiredFrom: "paused",
+    failureCode: ingestionRunTerminatedFailureCode,
+    // The guarded batch inserts this decision before changing the run state.
+    terminationRecorded: true,
+    invalid: ingestionRunNotPausedForTermination,
+  });
   throw new AdministrationProblem(
     409,
     "collection_termination_conflict",
@@ -2179,14 +2195,14 @@ export async function finalizeEvidenceRun(database: D1Database, runId: string): 
                SET state = 'failed', terminal_at = ?, failure_code = ?,
                    progress_json =
                      '{"completed_stages":["planning"],"current_stage":"failed"}'
-               WHERE id = ? AND state = 'collecting'`,
+               WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "failed")}`,
             )
             .bind(completedAt, failureCode, runId)
         : database
             .prepare(
               `UPDATE ingestion_runs
                SET state = 'failed', terminal_at = ?
-               WHERE id = ? AND state = 'collecting'`,
+               WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "failed")}`,
             )
             .bind(completedAt, runId),
       // Completion is recorded once: a superseded parent attempt that wakes
@@ -2216,13 +2232,13 @@ export async function finalizeEvidenceRun(database: D1Database, runId: string): 
              SET state = 'parsing',
                  progress_json =
                    '{"completed_stages":["planning","collecting"],"current_stage":"parsing"}'
-             WHERE id = ? AND state = 'collecting'`,
+             WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "parsing")}`,
           )
           .bind(runId)
       : database
           .prepare(
             `UPDATE ingestion_runs SET state = 'parsing'
-             WHERE id = ? AND state = 'collecting'`,
+             WHERE id = ? AND ${ingestionRunTransitionSql("collecting", "parsing")}`,
           )
           .bind(runId),
     database
