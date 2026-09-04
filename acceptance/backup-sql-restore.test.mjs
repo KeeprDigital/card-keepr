@@ -281,8 +281,6 @@ function validStoredLegalityRule(id, cardIds, officialWording = "The global tour
 
 function seedRepresentativeCatalogue(database) {
   const digest = "a".repeat(64);
-  const legalityOwnerTrigger = schemaQueries.legalityProvenanceOwnerTrigger(database).get().sql;
-  database.exec("DROP TRIGGER legality_rule_provenance_owner_insert");
   database.exec(`
     INSERT INTO ingestion_runs (
       id, state, selected_games_json, started_at,
@@ -468,5 +466,4 @@ function seedRepresentativeCatalogue(database) {
       '{"author":"owner","created_at":"2026-08-05T00:01:30.000Z","evidence":[],"rationale":"Owner-reviewed name."}'
     );
   `);
-  database.exec(legalityOwnerTrigger);
 }

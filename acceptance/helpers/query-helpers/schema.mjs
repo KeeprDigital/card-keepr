@@ -53,15 +53,6 @@ export function schemaObjectRows(database) {
   return database.prepare("SELECT type, name, sql FROM sqlite_schema ORDER BY type, name");
 }
 
-export function ingestionTransitionTrigger(database) {
-  return database.prepare("SELECT sql FROM sqlite_schema WHERE name = 'guard_legal_ingestion_transition'");
-}
-
-export function legalityProvenanceOwnerTrigger(database) {
-  return database.prepare(`SELECT sql FROM sqlite_schema
-     WHERE type = 'trigger' AND name = 'legality_rule_provenance_owner_insert'`);
-}
-
 // Every row of every table except the schema level itself.
 export function seedRows(database) {
   const tables = seedTableNames(database)
