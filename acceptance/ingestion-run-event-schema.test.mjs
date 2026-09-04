@@ -197,6 +197,7 @@ test("the read projection renders ordered games, payload chunks, progress and de
   assert.deepEqual(JSON.parse(rendered.candidate_json), { candidate: true });
   assert.deepEqual(JSON.parse(rendered.warnings_json), ["warning"]);
   assert.deepEqual(JSON.parse(rendered.approval_json), {
+    action: "approved",
     approved_at: "2026-09-04T01:00:00.000Z",
     candidate_digest: "digest",
     expected_current_revision_id: "catrev_spine_000",

@@ -6,7 +6,7 @@ export function reconciliationWorkflowRunStatement(database: CatalogueStore, run
     .prepare(`SELECT run.id, run.state, run.expected_current_revision_id,
               state.current_revision_id, operation.active_ingestion_run_id,
               operation.recovery_health
-       FROM ingestion_runs AS run
+       FROM ingestion_run_read AS run
        CROSS JOIN catalogue_state AS state
        CROSS JOIN operation_state AS operation
        WHERE run.id = ?`)
@@ -48,8 +48,8 @@ export function reconciliationWorkflowCandidateDigestStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT candidate_digest
-       FROM ingestion_runs
-       WHERE id = ?`)
+       FROM ingestion_run_current
+       WHERE ingestion_run_id = ?`)
     .bind(runId);
 }
 

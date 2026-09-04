@@ -44,7 +44,7 @@ export function curatedRunPinSetGuardStatement(
     SELECT json_group_array(id) FROM (
       SELECT revision.id FROM curated_revisions AS revision JOIN ingestion_runs AS run ON run.id = ?
       WHERE revision.status = 'active'
-        AND revision.game IN (SELECT value FROM json_each(run.selected_games_json))
+        AND revision.game IN (SELECT game FROM ingestion_run_selected_games WHERE ingestion_run_id = run.id)
         AND (revision.effective_from IS NULL OR revision.effective_from <= substr(run.started_at, 1, 10))
         AND (revision.effective_to IS NULL OR substr(run.started_at, 1, 10) < revision.effective_to)
       ORDER BY revision.id
@@ -58,7 +58,7 @@ export function curatedRunStartGuardStatement(database: CatalogueStore, runId: s
   return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN changes() > 0 AND EXISTS (
     SELECT 1 FROM curated_revisions AS revision WHERE revision.status = 'reconfirmation_required'
-      AND revision.game IN (SELECT value FROM json_each((SELECT selected_games_json FROM ingestion_runs WHERE id = ?)))
+      AND revision.game IN (SELECT game FROM ingestion_run_selected_games WHERE ingestion_run_id = ?)
   ) THEN json_extract('{}', 'curated_revision_reconfirmation_required') ELSE 1 END`)
     .bind(runId);
 }

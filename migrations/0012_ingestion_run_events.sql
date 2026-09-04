@@ -153,6 +153,7 @@ SELECT identity.id, current.state,
   identity.idempotency_key, current.candidate_digest, current.candidate_created_at,
   current.approval_deadline,
   CASE WHEN current.approved_at IS NULL THEN NULL ELSE json_object(
+    'action', 'approved',
     'candidate_digest', current.approved_candidate_digest,
     'expected_current_revision_id', current.approved_expected_revision_id,
     'approved_at', current.approved_at
