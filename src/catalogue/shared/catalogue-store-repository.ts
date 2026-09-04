@@ -28,3 +28,12 @@ export function repositoryStatements(store: CatalogueStore): Pick<D1Database, "p
   if (database === undefined) throw new TypeError("A CatalogueStore must be created from a database binding.");
   return database;
 }
+
+/** Preserve inherited and lazily supplied bindings while adapting the catalogue capability. */
+export function catalogueEnvironment<Environment extends { CATALOGUE_DB: D1Database }>(
+  environment: Environment,
+): Omit<Environment, "CATALOGUE_DB"> & { CATALOGUE_DB: CatalogueStore } {
+  return Object.create(environment, {
+    CATALOGUE_DB: { value: catalogueStore(environment.CATALOGUE_DB), enumerable: true },
+  }) as Omit<Environment, "CATALOGUE_DB"> & { CATALOGUE_DB: CatalogueStore };
+}

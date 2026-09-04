@@ -1,5 +1,5 @@
 import { catalogueRoutes } from "../../../src/catalogue/read";
-import { catalogueStore } from "../../../src/catalogue/shared";
+import { catalogueEnvironment } from "../../../src/catalogue/shared";
 import { authenticateBearer } from "../../../src/http/authentication";
 import { allowedPreflightResponse, hasAllowedOrigin, withCorsHeaders } from "../../../src/http/cors";
 import { isLivenessRequest, livenessRequest, readinessResponse } from "../../../src/http/health";
@@ -80,7 +80,7 @@ async function handleApiRequest(request: Request, env: Env, requestId: string, b
 
     const response = await dispatch(request.method, url.pathname, {
       request,
-      env: { ...env, CATALOGUE_DB: catalogueStore(env.CATALOGUE_DB) },
+      env: catalogueEnvironment(env),
       requestId,
       base,
     });

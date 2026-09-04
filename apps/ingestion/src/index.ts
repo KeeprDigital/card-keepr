@@ -3,7 +3,12 @@ import { curatedRoutes } from "../../../src/catalogue/curated";
 import { exportRoutes } from "../../../src/catalogue/export";
 import { ingestionRoutes } from "../../../src/catalogue/ingestion";
 import { reconciliationRoutes } from "../../../src/catalogue/reconciliation";
-import { type CatalogueStore, catalogueStore, inspectWorkflowInstance } from "../../../src/catalogue/shared";
+import {
+  type CatalogueStore,
+  catalogueEnvironment,
+  catalogueStore,
+  inspectWorkflowInstance,
+} from "../../../src/catalogue/shared";
 import { sourceEvidenceRoutes } from "../../../src/catalogue/source-evidence";
 import { authenticateBearer } from "../../../src/http/authentication";
 import { isLivenessRequest, livenessRequest, readinessResponse } from "../../../src/http/health";
@@ -87,7 +92,7 @@ async function handleIngestionRequest(
 
     const response = await dispatch(request.method, url.pathname, {
       request,
-      env: { ...env, CATALOGUE_DB: catalogueStore(env.CATALOGUE_DB) },
+      env: catalogueEnvironment(env),
       context,
       requestId,
       base,

@@ -35,7 +35,12 @@ export {
   type UnresolvedLegalityScope,
   type UnresolvedLegalityScopeDimension,
 } from "./catalogue-candidate-types";
-export { type CatalogueStore, catalogueStore, repositoryStatements } from "./catalogue-store-repository";
+export {
+  type CatalogueStore,
+  catalogueEnvironment,
+  catalogueStore,
+  repositoryStatements,
+} from "./catalogue-store-repository";
 export type {
   CuratedEvidence,
   CuratedFieldTarget,
