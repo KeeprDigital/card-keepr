@@ -11,6 +11,44 @@ const root = resolve(import.meta.dirname, "..");
 const firstSchemaStateLevel = 1;
 const firstGuardedLevel = 2;
 
+test("Reconciliation Context migration discards pre-Go-Live anchors and retains immutable per-run digests", async () => {
+  const migrations = await readMigrations();
+  const migration = migrations.find(({ level }) => level === 10);
+  assert.ok(migration, "the Reconciliation Context migration must exist");
+  const database = new DatabaseSync(":memory:");
+  for (const earlier of migrations.filter(({ level }) => level < 10)) database.exec(earlier.sql);
+  // Old evidence references are deliberately opaque: this migration discards
+  // the pre-Go-Live context rather than carrying any selected partition forward.
+  database.exec("PRAGMA foreign_keys = OFF");
+  database.exec(`INSERT INTO ingestion_runs (
+    id, state, selected_games_json, started_at, expected_current_revision_id, idempotency_key, candidate_json
+  ) VALUES ('run_context', 'planning', '["one-piece"]', '2026-09-04T00:00:00.000Z',
+    'catrev_spine_000', 'context_migration', '{}');
+  INSERT INTO reconciliation_contexts VALUES ('run_context', 'old_set', 'old_snapshot', 'one-piece-en', '{}');`);
+  database.exec("PRAGMA foreign_keys = ON");
+  database.exec(migration.sql);
+  assert.deepEqual(
+    database
+      .prepare("PRAGMA table_info(reconciliation_contexts)")
+      .all()
+      .map(({ name }) => name),
+    ["ingestion_run_id", "digest_payload_json"],
+  );
+  assert.equal(database.prepare("SELECT count(*) AS count FROM reconciliation_contexts").get().count, 0);
+  database.exec("INSERT INTO reconciliation_contexts VALUES ('run_context', '{\"partitions\":[]}')");
+  assert.throws(
+    () => database.exec("UPDATE reconciliation_contexts SET digest_payload_json = '{}'"),
+    /reconciliation_context_immutable/u,
+  );
+  assert.throws(() => database.exec("DELETE FROM reconciliation_contexts"), /reconciliation_context_immutable/u);
+  assert.throws(
+    () => database.exec("INSERT INTO reconciliation_contexts VALUES ('missing_run', '{}')"),
+    /FOREIGN KEY constraint failed/u,
+  );
+  assert.deepEqual(database.prepare("PRAGMA foreign_key_check").all(), []);
+  database.close();
+});
+
 test("every migration leaves catalogue_schema_state at its own level", async () => {
   const migrations = await readMigrations();
   const database = new DatabaseSync(":memory:");

@@ -69,9 +69,6 @@ export async function persistReviewableCandidate(
   database: CatalogueStore,
   input: {
     runId: string;
-    observationSetId: string;
-    sourceSnapshotId: string;
-    sourceLineage: string;
     partitions: readonly EvidencePartitionInput[];
     plans: readonly {
       sourceObservationSetId: string;
@@ -104,9 +101,6 @@ export async function persistReviewableCandidate(
   const statements = [
     createReconciliationContextStatement(database, {
       runId: input.runId,
-      observationSetId: input.observationSetId,
-      snapshotId: input.sourceSnapshotId,
-      sourceLineage: input.sourceLineage,
       digestPayload: chunkedPayloadMarker("digest"),
     }),
     ...evidencePartitionStatements(database, input.runId, input.partitions),
@@ -131,9 +125,6 @@ export async function persistBlockedCandidate(
   database: CatalogueStore,
   input: {
     runId: string;
-    observationSetId: string;
-    sourceSnapshotId: string;
-    sourceLineage: string;
     partitions: readonly EvidencePartitionInput[];
     plans: readonly {
       sourceObservationSetId: string;
@@ -166,9 +157,6 @@ export async function persistBlockedCandidate(
   const statements = [
     createReconciliationContextStatement(database, {
       runId: input.runId,
-      observationSetId: input.observationSetId,
-      snapshotId: input.sourceSnapshotId,
-      sourceLineage: input.sourceLineage,
       digestPayload: chunkedPayloadMarker("digest"),
     }),
     ...evidencePartitionStatements(database, input.runId, input.partitions),

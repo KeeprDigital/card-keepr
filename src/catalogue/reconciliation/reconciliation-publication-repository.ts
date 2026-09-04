@@ -1,13 +1,13 @@
 import { byteBoundedJsonArrays, type CatalogueStore, repositoryStatements } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
+export type PublicationContextRow = { observed_at: string };
+export type PublicationLineageRow = { source_lineage: string; adapter_version: string };
+
 export function publicationContextStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT context.source_lineage, plan.adapter_version,
-              run.candidate_created_at AS observed_at
+    .prepare(`SELECT run.candidate_created_at AS observed_at
        FROM reconciliation_contexts AS context
-       JOIN ingestion_evidence_plans AS plan
-         ON plan.ingestion_run_id = context.ingestion_run_id
        JOIN ingestion_runs AS run
          ON run.id = context.ingestion_run_id
        WHERE context.ingestion_run_id = ?`)

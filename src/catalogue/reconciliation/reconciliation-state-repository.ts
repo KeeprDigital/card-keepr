@@ -5,18 +5,14 @@ export function createReconciliationContextStatement(
   database: CatalogueStore,
   input: Readonly<{
     runId: string;
-    observationSetId: string;
-    snapshotId: string;
-    sourceLineage: string;
     digestPayload: string;
   }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`INSERT INTO reconciliation_contexts (
-          ingestion_run_id, source_observation_set_id,
-          source_snapshot_id, source_lineage, digest_payload_json
-        ) VALUES (?, ?, ?, ?, ?)`)
-    .bind(input.runId, input.observationSetId, input.snapshotId, input.sourceLineage, input.digestPayload);
+          ingestion_run_id, digest_payload_json
+        ) VALUES (?, ?)`)
+    .bind(input.runId, input.digestPayload);
 }
 
 export function beginReconciliationStatement(database: CatalogueStore, runId: string): D1PreparedStatement {

@@ -1,10 +1,11 @@
 import { type CatalogueCandidate, type CatalogueStore, canonicalJson } from "../shared";
 import {
-  candidateSourceLineagesStatement,
+  type CandidateObservedEntityRow,
+  type ReconciliationPartitionLineageRow,
+  candidateObservedEntitiesStatement,
   candidateWarningDocumentStatement,
   currentCardObservationLineagesStatement,
   currentPrintingLocatorsStatement,
-  reconciliationContextLineageStatement,
   reconciliationPartitionLineagesStatement,
   revisionCardDocumentsStatement,
   revisionLegalityDocumentsStatement,
@@ -26,7 +27,6 @@ export async function inspectCatalogueCandidate(
     priorPrintings,
     priorLegalityRules,
     plans,
-    context,
     evidenceLineages,
     printingLineages,
     cardLineages,
@@ -35,13 +35,8 @@ export async function inspectCatalogueCandidate(
     revisionCardDocumentsStatement(database, input.expectedRevisionId).all<{ id: string; document_json: string }>(),
     revisionPrintingDocumentsStatement(database, input.expectedRevisionId).all<{ id: string; document_json: string }>(),
     revisionLegalityDocumentsStatement(database, input.expectedRevisionId).all<{ id: string; document_json: string }>(),
-    candidateSourceLineagesStatement(database, input.runId).all<{
-      card_id: string;
-      printing_id: string | null;
-      source_lineage: string;
-    }>(),
-    reconciliationContextLineageStatement(database, input.runId).first<{ source_lineage: string }>(),
-    reconciliationPartitionLineagesStatement(database, input.runId).all<{ source_lineage: string }>(),
+    candidateObservedEntitiesStatement(database, input.runId).all<CandidateObservedEntityRow>(),
+    reconciliationPartitionLineagesStatement(database, input.runId).all<ReconciliationPartitionLineageRow>(),
     currentPrintingLocatorsStatement(database).all<{ printing_id: string; source_lineage: string }>(),
     currentCardObservationLineagesStatement(database).all<{ card_id: string; source_lineage: string }>(),
   ]);
@@ -52,14 +47,7 @@ export async function inspectCatalogueCandidate(
   const observedPrintingIds = new Set(
     plans.results.flatMap((plan) => (plan.printing_id === null ? [] : [plan.printing_id])),
   );
-  const selectedLineages = new Set([
-    ...(evidenceLineages.results.length > 0
-      ? evidenceLineages.results.map(({ source_lineage }) => source_lineage)
-      : context === null
-        ? []
-        : [context.source_lineage]),
-    ...plans.results.map((plan) => plan.source_lineage),
-  ]);
+  const selectedLineages = new Set(evidenceLineages.results.map(({ source_lineage }) => source_lineage));
   const printingEvidence = groupedLineages(printingLineages.results, "printing_id");
   const cardEvidence = groupedLineages(cardLineages.results, "card_id");
   const cards = {

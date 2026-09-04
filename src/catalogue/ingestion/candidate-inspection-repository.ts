@@ -25,18 +25,13 @@ export function revisionLegalityDocumentsStatement(database: CatalogueStore, rev
     .bind(revisionId);
 }
 
-export function candidateSourceLineagesStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`SELECT card_id, printing_id, source_lineage
-         FROM reconciliation_candidates
-         WHERE ingestion_run_id = ?`)
-    .bind(runId);
-}
+export type CandidateObservedEntityRow = { card_id: string; printing_id: string | null };
+export type ReconciliationPartitionLineageRow = { source_lineage: string };
 
-export function reconciliationContextLineageStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+export function candidateObservedEntitiesStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT source_lineage
-         FROM reconciliation_contexts
+    .prepare(`SELECT card_id, printing_id
+         FROM reconciliation_candidates
          WHERE ingestion_run_id = ?`)
     .bind(runId);
 }
