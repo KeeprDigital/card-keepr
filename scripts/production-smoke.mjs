@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { request as httpRequest } from "../cli/lib/http-client.mjs";
 import { runtimeUrl } from "../cli/command-support.mjs";
 import { SPINE_REVISION_ID } from "../src/catalogue/shared/spine-revision.mjs";
 
@@ -216,7 +217,7 @@ function assertRevisionCollection(document, revision, expectedId, kind) {
 }
 
 async function expectStatus(fetchImpl, url, headers, status, revision) {
-  const response = await fetchImpl(url, { headers, signal: AbortSignal.timeout(15_000) });
+  const response = await httpRequest(url, { headers, signal: AbortSignal.timeout(15_000) }, fetchImpl);
   if (response.status !== status) throw new Error(`smoke_http_${response.status}_${url.pathname}`);
   if (revision !== undefined && response.headers.get("x-catalogue-revision") !== revision)
     throw new Error(`smoke_revision_header_${url.pathname}`);

@@ -1,31 +1,12 @@
-import {
-  exitCodeForStatus,
-  parseOptions,
-  runtimeUrl,
-  writeCliFailure,
-} from "./command-support.mjs";
+import { parseOptions, writeCliFailure } from "./command-support.mjs";
+import { requestDocument } from "./lib/json-client.mjs";
 
-export async function runLegalityStatusCommand(
-  arguments_,
-  environment,
-  json,
-) {
-  const options = parseOptions(arguments_, [
-    "--card-id",
-    "--on",
-    "--format",
-    "--event-tier",
-    "--region",
-  ]);
+export async function runLegalityStatusCommand(arguments_, environment, json) {
+  const options = parseOptions(arguments_, ["--card-id", "--on", "--format", "--event-tier", "--region"]);
   const cardId = options.values["--card-id"];
   const on = options.values["--on"];
   const format = options.values["--format"];
-  if (
-    options.error !== null ||
-    cardId === undefined ||
-    on === undefined ||
-    format === undefined
-  ) {
+  if (options.error !== null || cardId === undefined || on === undefined || format === undefined) {
     return usageFailure(json);
   }
   const parameters = new URLSearchParams({
@@ -41,92 +22,19 @@ export async function runLegalityStatusCommand(
   if (region !== undefined) {
     parameters.set("region", region);
   }
-  return apiRequest(
-    environment,
-    json,
-    `/v1/legality-status?${parameters}`,
-  );
+  return apiRequest(environment, json, `/v1/legality-status?${parameters}`);
 }
 
 async function apiRequest(environment, json, pathname) {
-  const configuration = readApiConfiguration(environment);
-  if (configuration.error !== null) {
-    return writeCliFailure(
-      json,
-      {
-        code: "configuration_error",
-        detail: configuration.error,
-      },
-      2,
-    );
-  }
-  let response;
-  try {
-    response = await fetch(runtimeUrl(configuration.url, pathname), {
-      headers: {
-        authorization: `Bearer ${configuration.key}`,
-      },
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch {
-    return writeCliFailure(
-      json,
-      {
-        code: "runtime_unavailable",
-        detail: "API runtime is unavailable",
-        runtime: "api",
-      },
-      9,
-    );
-  }
-  let document;
-  try {
-    document = await response.json();
-  } catch {
-    return writeCliFailure(
-      json,
-      {
-        code: "invalid_api_contract",
-        detail: "API runtime returned invalid JSON",
-        runtime: "api",
-      },
-      8,
-    );
-  }
-  if (!response.ok) {
-    const code =
-      typeof document?.code === "string" ? document.code : "api_error";
-    const detail =
-      typeof document?.detail === "string"
-        ? document.detail
-        : `API runtime returned HTTP ${response.status}`;
-    return writeCliFailure(
-      json,
-      { code, detail },
-      exitCodeForStatus(response.status),
-    );
-  }
-  process.stdout.write(
-    json
-      ? `${JSON.stringify(document)}\n`
-      : `${formatLegalityStatus(document)}\n`,
-  );
-  return 0;
-}
-
-function readApiConfiguration(environment) {
-  if (!environment.KEEPR_API_KEY) {
-    return {
-      error: "Missing required environment: KEEPR_API_KEY",
-      url: "",
-      key: "",
-    };
-  }
-  return {
-    error: null,
-    url: environment.KEEPR_API_URL ?? "http://127.0.0.1:8787",
+  const result = await requestDocument(environment, pathname, {
+    runtime: "api",
     key: environment.KEEPR_API_KEY,
-  };
+    contract: "api",
+  });
+  if (result.error !== null) return writeCliFailure(json, result.error, result.exitCode);
+  const document = result.document;
+  process.stdout.write(json ? `${JSON.stringify(document)}\n` : `${formatLegalityStatus(document)}\n`);
+  return 0;
 }
 
 function formatLegalityStatus(document) {

@@ -1,8 +1,4 @@
-export function parseOptions(
-  arguments_,
-  valueOptions,
-  flagOptions = ["--json"],
-) {
+export function parseOptions(arguments_, valueOptions, flagOptions = ["--json"]) {
   const values = {};
   const flags = new Set();
   for (let index = 0; index < arguments_.length; index += 1) {
