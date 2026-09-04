@@ -1,3 +1,5 @@
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import { exports } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
@@ -182,10 +184,8 @@ test.each([
   expect(blocked.document).toMatchObject({
     code: "adapter_not_supported",
   });
-  const retained = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM ingestion_runs
-       WHERE idempotency_key = ?`,
-  )
+  const retained = await ingestionQueries
+    .countIngestionRunsCount(testEnv.CATALOGUE_DB)
     .bind(idempotencyKey)
     .first<{ count: number }>();
   expect(retained?.count).toBe(0);
@@ -227,56 +227,31 @@ test("authenticated reparse rejects a normalized fixture envelope through an una
   });
   await testEnv.EVIDENCE_OBJECTS.put(objectKey, bytes);
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_json
-       ) VALUES (?, 'parsing', '["one-piece"]',
-         '2026-08-01T00:00:00.000Z', 'catrev_spine_000', NULL, ?, '{}')`,
-    ).bind(runId, "unavailable-adapter-raw-boundary"),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_evidence_plans (
-         ingestion_run_id, source_lineage, supported_game,
-         game_profile_version, adapter_version, request_plan_json,
-         plan_origin
-       ) VALUES (?, 'one-piece-en', 'one-piece', 'one-piece@1',
-         'fixture-one-piece-json@3', ?, 'synthetic_fixture')`,
-    ).bind(runId, plan),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO source_requests (
-         ingestion_run_id, request_id, sequence_number, method, url,
-         request_headers_json, representation_fingerprint, state,
-         source_snapshot_id
-       ) VALUES (?, 'raw-boundary', 0, 'GET',
-         'https://official-source.invalid/normalized-envelope', '{}', ?,
-         'observed', ?)`,
-    ).bind(runId, "5".repeat(64), snapshotId),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO source_fetch_attempts (
-         id, ingestion_run_id, request_id, attempt_number,
-         requested_at, completed_at, outcome, http_status,
-         response_headers_json, retry_after_ms, diagnostic
-       ) VALUES ('srcfetch_unavailable_adapter_raw_boundary', ?,
-         'raw-boundary', 1, '2026-08-01T00:00:00.000Z',
-         '2026-08-01T00:00:01.000Z', 'success', 200, '{}', NULL, NULL)`,
-    ).bind(runId),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO source_snapshots (
-         id, ingestion_run_id, request_id, fetch_attempt_id,
-         request_method, request_url, request_headers_json,
-         representation_fingerprint, response_vary_json, retrieved_at,
-         http_status, response_headers_json, media_type, content_digest,
-         content_byte_length, content_object_key, source_lineage,
-         supported_game, game_profile_version, adapter_version,
-         reused_source_snapshot_id
-       ) VALUES (?, ?, 'raw-boundary',
-         'srcfetch_unavailable_adapter_raw_boundary', 'GET',
-         'https://official-source.invalid/normalized-envelope', '{}', ?, '[]',
-         '2026-08-01T00:00:01.000Z', 200, '{}', 'application/json', ?, ?, ?,
-         'one-piece-en', 'one-piece', 'one-piece@1',
-         'fixture-one-piece-json@3', NULL)`,
-    ).bind(snapshotId, runId, "5".repeat(64), digest, bytes.byteLength, objectKey),
+    ingestionQueries
+      .insertIngestionRunsForAuthenticatedReparseRejectsNormalizedFixtureEnvelopeThroughUnavailableProduction(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(runId, "unavailable-adapter-raw-boundary"),
+    sourceEvidenceQueries
+      .insertIngestionEvidencePlansForAuthenticatedReparseRejectsNormalizedFixtureEnvelopeThroughUnavailableProduction(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(runId, plan),
+    sourceEvidenceQueries
+      .insertSourceRequestsForAuthenticatedReparseRejectsNormalizedFixtureEnvelopeThroughUnavailableProduction(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(runId, "5".repeat(64), snapshotId),
+    sourceEvidenceQueries
+      .insertSourceFetchAttemptsForAuthenticatedReparseRejectsNormalizedFixtureEnvelopeThroughUnavailableProduction(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(runId),
+    sourceEvidenceQueries
+      .insertSourceSnapshotsForAuthenticatedReparseRejectsNormalizedFixtureEnvelopeThroughUnavailableProduction(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(snapshotId, runId, "5".repeat(64), digest, bytes.byteLength, objectKey),
   ]);
 
   const blocked = await request(`/v1/source-snapshots/${snapshotId}/observations`, {
@@ -285,10 +260,8 @@ test("authenticated reparse rejects a normalized fixture envelope through an una
   });
   expect(blocked.response.status).toBe(422);
   expect(blocked.document).toMatchObject({ code: "adapter_not_supported" });
-  const retained = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM source_parse_operations
-     WHERE source_snapshot_id = ?`,
-  )
+  const retained = await sourceEvidenceQueries
+    .countSourceParseOperationsCount(testEnv.CATALOGUE_DB)
     .bind(snapshotId)
     .first<{ count: number }>();
   expect(retained?.count).toBe(0);
@@ -407,64 +380,35 @@ test.each([
     });
     await testEnv.EVIDENCE_OBJECTS.put(objectKey, bytes);
     await testEnv.CATALOGUE_DB.batch([
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO ingestion_runs (
-           id, state, selected_games_json, started_at,
-           expected_current_revision_id, linked_run_id, idempotency_key,
-           candidate_json
-         ) VALUES (?, 'parsing', ?, '2026-08-01T00:00:00.000Z',
-           'catrev_spine_000', NULL, ?, '{}')`,
-      ).bind(runId, JSON.stringify([game]), `conditional-worker-${lineage}`),
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO ingestion_evidence_plans (
-           ingestion_run_id, source_lineage, supported_game,
-           game_profile_version, adapter_version, request_plan_json,
-           plan_origin
-         ) VALUES (?, ?, ?, ?, ?, ?, 'production')`,
-      ).bind(runId, lineage, game, `${game}@1`, adapterVersion, plan),
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO source_requests (
-           ingestion_run_id, request_id, sequence_number, method, url,
-           request_headers_json, representation_fingerprint, state,
-           source_snapshot_id
-         ) VALUES (?, 'conditional-worker', 0, 'GET', ?, ?, ?, 'observed', ?)`,
-      ).bind(runId, requestUrl, JSON.stringify({ accept: "text/html" }), fingerprint, snapshotId),
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO source_fetch_attempts (
-           id, ingestion_run_id, request_id, attempt_number,
-           requested_at, completed_at, outcome, http_status,
-           response_headers_json, retry_after_ms, diagnostic
-         ) VALUES (?, ?, 'conditional-worker', 1,
-           '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:01.000Z',
-           'success', 200, '{}', NULL, NULL)`,
-      ).bind(fetchId, runId),
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO source_snapshots (
-           id, ingestion_run_id, request_id, fetch_attempt_id,
-           request_method, request_url, request_headers_json,
-           representation_fingerprint, response_vary_json, retrieved_at,
-           http_status, response_headers_json, media_type, content_digest,
-           content_byte_length, content_object_key, source_lineage,
-           supported_game, game_profile_version, adapter_version,
-           reused_source_snapshot_id
-         ) VALUES (?, ?, 'conditional-worker', ?, 'GET', ?, ?, ?, '[]',
-           '2026-08-01T00:00:01.000Z', 200, '{}', 'text/html', ?, ?, ?,
-           ?, ?, ?, ?, NULL)`,
-      ).bind(
-        snapshotId,
-        runId,
-        fetchId,
-        requestUrl,
-        JSON.stringify({ accept: "text/html" }),
-        fingerprint,
-        digest,
-        bytes.byteLength,
-        objectKey,
-        lineage,
-        game,
-        `${game}@1`,
-        adapterVersion,
-      ),
+      ingestionQueries
+        .insertIngestionRunsForContextualLegalitySourceChanges(testEnv.CATALOGUE_DB)
+        .bind(runId, JSON.stringify([game]), `conditional-worker-${lineage}`),
+      sourceEvidenceQueries
+        .insertIngestionEvidencePlansForContextualLegalitySourceChanges(testEnv.CATALOGUE_DB)
+        .bind(runId, lineage, game, `${game}@1`, adapterVersion, plan),
+      sourceEvidenceQueries
+        .insertSourceRequestsForContextualLegalitySourceChanges(testEnv.CATALOGUE_DB)
+        .bind(runId, requestUrl, JSON.stringify({ accept: "text/html" }), fingerprint, snapshotId),
+      sourceEvidenceQueries
+        .insertSourceFetchAttemptsForContextualLegalitySourceChanges(testEnv.CATALOGUE_DB)
+        .bind(fetchId, runId),
+      sourceEvidenceQueries
+        .insertSourceSnapshotsForContextualLegalitySourceChanges(testEnv.CATALOGUE_DB)
+        .bind(
+          snapshotId,
+          runId,
+          fetchId,
+          requestUrl,
+          JSON.stringify({ accept: "text/html" }),
+          fingerprint,
+          digest,
+          bytes.byteLength,
+          objectKey,
+          lineage,
+          game,
+          `${game}@1`,
+          adapterVersion,
+        ),
     ]);
 
     const blocked = await request(`/v1/source-snapshots/${snapshotId}/observations`, {

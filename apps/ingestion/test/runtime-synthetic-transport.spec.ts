@@ -1,3 +1,5 @@
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as reconciliationQueries from "./query-helpers/reconciliation";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { requiredSourceAdapter, officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
@@ -87,18 +89,9 @@ test("synthetic production transport captures Gundam pages and reconciles one co
   await resumed.body?.cancel();
   const completed = await waitForEvidenceRun(run.id, "awaiting_approval", 45_000);
   if (completed.state === "failed") {
-    const failures = await env.CATALOGUE_DB.prepare(
-      `SELECT request_id, url, failure_code
-       FROM source_requests
-       WHERE ingestion_run_id = ? AND failure_code IS NOT NULL
-       ORDER BY sequence_number`,
-    )
-      .bind(run.id)
-      .all();
-    const terminal = await env.CATALOGUE_DB.prepare(
-      `SELECT result_json FROM reconciliation_terminal_results
-       WHERE ingestion_run_id = ?`,
-    )
+    const failures = await sourceEvidenceQueries.readSourceRequestsRequestIdUrl(env.CATALOGUE_DB).bind(run.id).all();
+    const terminal = await reconciliationQueries
+      .readReconciliationTerminalResultsResultJson(env.CATALOGUE_DB)
       .bind(run.id)
       .first<{ result_json: string }>();
     throw new Error(
@@ -113,31 +106,16 @@ test("synthetic production transport captures Gundam pages and reconciles one co
     state: "awaiting_approval",
     failure_code: null,
   });
-  const listingRequests = await env.CATALOGUE_DB.prepare(
-    `SELECT url
-     FROM source_requests
-     WHERE ingestion_run_id = ? AND request_role = 'listing'
-       AND url LIKE '%package=619102%'
-     ORDER BY url`,
-  )
+  const listingRequests = await sourceEvidenceQueries
+    .readSourceRequestsUrl(env.CATALOGUE_DB)
     .bind(run.id)
     .all<{ url: string }>();
   expect(listingRequests.results.map(({ url }) => url)).toEqual([
     "https://www.gundam-gcg.com/asia-en/cards/?package=619102",
     "https://www.gundam-gcg.com/asia-en/cards/?package=619102&page=2",
   ]);
-  const discoveredHeaders = await env.CATALOGUE_DB.prepare(
-    `SELECT request_role, request_headers_json
-     FROM source_requests
-     WHERE ingestion_run_id = ?
-       AND request_role IN ('listing', 'detail', 'image')
-       AND (
-         url LIKE '%package=619102%'
-         OR url LIKE '%detailSearch=GD02-00%'
-         OR url LIKE '%/GD02-00%.png'
-       )
-     ORDER BY sequence_number`,
-  )
+  const discoveredHeaders = await sourceEvidenceQueries
+    .readSourceRequestsRequestRoleRequestHeadersJson(env.CATALOGUE_DB)
     .bind(run.id)
     .all<{
       request_role: "listing" | "detail" | "image";
@@ -151,16 +129,8 @@ test("synthetic production transport captures Gundam pages and reconciles one co
         "card-keepr-gundam-pagination-v4",
     ),
   ).toBe(true);
-  const firstPageEvidence = await env.CATALOGUE_DB.prepare(
-    `SELECT observation.content_object_key
-     FROM source_requests AS request
-     JOIN source_snapshots AS snapshot
-       ON snapshot.id = request.source_snapshot_id
-     JOIN source_observation_sets AS observation
-       ON observation.source_snapshot_id = snapshot.id
-     WHERE request.ingestion_run_id = ?
-       AND request.url = ?`,
-  )
+  const firstPageEvidence = await sourceEvidenceQueries
+    .readSourceRequestsContentObjectKey(env.CATALOGUE_DB)
     .bind(run.id, "https://www.gundam-gcg.com/asia-en/cards/?package=619102")
     .first<{ content_object_key: string }>();
   const firstPageObject = await env.EVIDENCE_OBJECTS.get(firstPageEvidence?.content_object_key ?? "");

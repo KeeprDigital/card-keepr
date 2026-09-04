@@ -1,3 +1,7 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as backupRecoveryQueries from "./query-helpers/backup-recovery";
 import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
@@ -26,9 +30,7 @@ const completeVerification: RestoredCatalogueVerification = {
 
 beforeEach(async () => {
   await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
-  await testEnv.CATALOGUE_DB.prepare(
-    "UPDATE operation_state SET active_recovery_id = NULL, active_ingestion_run_id = NULL, active_production_release_id = NULL, active_production_release_expires_at = NULL WHERE singleton = 1 AND recovery_health = 'healthy'",
-  ).run();
+  await ingestionQueries.setOperationStateActiveRecoveryIdActiveIngestionRunId(testEnv.CATALOGUE_DB).run();
   await retainVerifiedBackup("recovery-source", "bookmark-target", await currentSchemaMigrationLevel());
 });
 
@@ -41,14 +43,14 @@ test("recovery keeps legacy backup manifests without representative document dig
     },
   });
   await beginCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     recoveryInput("recovery-legacy-manifest", "begin-legacy-manifest"),
     provider,
   );
   await expect(
     verifyCatalogueRecovery(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       "recovery-legacy-manifest",
       {
@@ -62,7 +64,7 @@ test("recovery keeps legacy backup manifests without representative document dig
     ),
   ).resolves.toMatchObject({ state: "awaiting_acceptance" });
   await expect(
-    acceptCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-legacy-manifest", {
+    acceptCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-legacy-manifest", {
       expectedRestoredRevisionId: "catrev_spine_000",
       targetDigest: digest,
       confirmationRecoveryId: "recovery-legacy-manifest",
@@ -90,7 +92,7 @@ test("recovery rejects invalid representative document digests present in a back
     await testEnv.BACKUPS.put(manifestKey, JSON.stringify(mutated));
     await expect(
       beginCatalogueRecovery(
-        testEnv.CATALOGUE_DB,
+        catalogueStore(testEnv.CATALOGUE_DB),
         testEnv.BACKUPS,
         recoveryInput(`recovery-invalid-${key}`, `begin-invalid-${key}`),
         recoveryProvider(),
@@ -116,7 +118,7 @@ test("Time Travel recovery records the current and immediate undo bookmarks whil
   });
 
   const begun = await beginCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     {
       recoveryId: "recovery-time-travel",
@@ -148,12 +150,12 @@ test("Time Travel recovery records the current and immediate undo bookmarks whil
     undo_bookmark: "bookmark-immediate-undo",
     retained_database_id: null,
   });
-  await expect(
-    testEnv.CATALOGUE_DB.prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1").first(),
-  ).resolves.toEqual({ recovery_health: "blocked" });
+  await expect(ingestionQueries.readOperationStateRecoveryHealth(testEnv.CATALOGUE_DB).first()).resolves.toEqual({
+    recovery_health: "blocked",
+  });
 
   const replay = await beginCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     {
       recoveryId: "recovery-time-travel",
@@ -174,7 +176,7 @@ test("Time Travel recovery records the current and immediate undo bookmarks whil
   expect(replay).toEqual(begun);
   expect(events).toHaveLength(2);
   await verifyCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     "recovery-time-travel",
     {
@@ -186,7 +188,7 @@ test("Time Travel recovery records the current and immediate undo bookmarks whil
     },
     provider,
   );
-  await acceptCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-time-travel", {
+  await acceptCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-time-travel", {
     expectedRestoredRevisionId: "catrev_spine_000",
     targetDigest: digest,
     confirmationRecoveryId: "recovery-time-travel",
@@ -217,7 +219,7 @@ test("replacement recovery validates a fresh database and retains the old databa
   });
 
   const begun = await beginCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     {
       recoveryId: "recovery-replacement",
@@ -243,7 +245,7 @@ test("replacement recovery validates a fresh database and retains the old databa
   expect(events).toEqual([`prepare:${testEnv.CATALOGUE_D1_DATABASE_ID}`, "import:replacement-database-id"]);
 
   const verified = await verifyCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     "recovery-replacement",
     {
@@ -263,7 +265,7 @@ test("replacement recovery validates a fresh database and retains the old databa
   expect(events.at(-1)).toBe("verify:replacement-database-id");
 
   await expect(
-    acceptCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-replacement", {
+    acceptCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-replacement", {
       expectedRestoredRevisionId: "catrev_spine_000",
       targetDigest: digest,
       confirmationRecoveryId: "recovery-replacement",
@@ -275,17 +277,22 @@ test("replacement recovery validates a fresh database and retains the old databa
     status: 409,
     code: "recovery_database_not_bound",
   });
-  await expect(
-    testEnv.CATALOGUE_DB.prepare("SELECT recovery_health FROM operation_state WHERE singleton = 1").first(),
-  ).resolves.toEqual({ recovery_health: "blocked" });
-  const accepted = await acceptCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-replacement", {
-    expectedRestoredRevisionId: "catrev_spine_000",
-    targetDigest: digest,
-    confirmationRecoveryId: "recovery-replacement",
-    idempotencyKey: "accept-replacement",
-    observedAt: "2026-08-05T09:21:00.000Z",
-    boundDatabaseId: "replacement-database-id",
+  await expect(ingestionQueries.readOperationStateRecoveryHealth(testEnv.CATALOGUE_DB).first()).resolves.toEqual({
+    recovery_health: "blocked",
   });
+  const accepted = await acceptCatalogueRecovery(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    testEnv.BACKUPS,
+    "recovery-replacement",
+    {
+      expectedRestoredRevisionId: "catrev_spine_000",
+      targetDigest: digest,
+      confirmationRecoveryId: "recovery-replacement",
+      idempotencyKey: "accept-replacement",
+      observedAt: "2026-08-05T09:21:00.000Z",
+      boundDatabaseId: "replacement-database-id",
+    },
+  );
   expect(accepted).toMatchObject({ state: "accepted" });
 });
 
@@ -305,7 +312,7 @@ test("recovery rejects a backup from another schema level before any provider re
   });
   await expect(
     beginCatalogueRecovery(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       {
         ...recoveryInput("recovery-schema-incompatible", "begin-schema-incompatible"),
@@ -319,10 +326,7 @@ test("recovery rejects a backup from another schema level before any provider re
   });
   expect(providerCalls).toBe(0);
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT recovery_health, active_recovery_id, recovery_restore_guard
-     FROM operation_state WHERE singleton = 1`,
-    ).first(),
+    ingestionQueries.readOperationStateRecoveryHealthActiveRecoveryId(testEnv.CATALOGUE_DB).first(),
   ).resolves.toEqual({
     recovery_health: "healthy",
     active_recovery_id: null,
@@ -334,13 +338,13 @@ test("recovery acceptance stays blocked if the guarded schema level changes", as
   const provider = recoveryProvider();
   const currentLevel = await currentSchemaMigrationLevel();
   await beginCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     recoveryInput("recovery-schema-raced", "begin-schema-raced"),
     provider,
   );
   await verifyCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     "recovery-schema-raced",
     {
@@ -352,13 +356,10 @@ test("recovery acceptance stays blocked if the guarded schema level changes", as
     },
     provider,
   );
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_schema_state SET migration_level = migration_level + 1
-     WHERE singleton = 1`,
-  ).run();
+  await publishedCatalogueQueries.setCatalogueSchemaStateMigrationLevel(testEnv.CATALOGUE_DB).run();
 
   await expect(
-    acceptCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-schema-raced", {
+    acceptCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-schema-raced", {
       expectedRestoredRevisionId: "catrev_spine_000",
       targetDigest: digest,
       confirmationRecoveryId: "recovery-schema-raced",
@@ -368,20 +369,20 @@ test("recovery acceptance stays blocked if the guarded schema level changes", as
     }),
   ).rejects.toMatchObject({ code: "recovery_journal_invalid" });
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT recovery_health, active_recovery_id, recovery_restore_guard
-     FROM operation_state WHERE singleton = 1`,
-    ).first(),
+    ingestionQueries.readOperationStateRecoveryHealthActiveRecoveryId(testEnv.CATALOGUE_DB).first(),
   ).resolves.toEqual({
     recovery_health: "blocked",
     active_recovery_id: "recovery-schema-raced",
     recovery_restore_guard: "blocked",
   });
-  await testEnv.CATALOGUE_DB.prepare("UPDATE catalogue_schema_state SET migration_level = ? WHERE singleton = 1")
+  await publishedCatalogueQueries
+    .setCatalogueSchemaStateMigrationLevelForRecoveryAcceptanceStaysBlockedIfGuardedSchemaLevelChanges(
+      testEnv.CATALOGUE_DB,
+    )
     .bind(currentLevel)
     .run();
   await expect(
-    acceptCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-schema-raced", {
+    acceptCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-schema-raced", {
       expectedRestoredRevisionId: "catrev_spine_000",
       targetDigest: digest,
       confirmationRecoveryId: "recovery-schema-raced",
@@ -395,13 +396,13 @@ test("recovery acceptance stays blocked if the guarded schema level changes", as
 test("concurrent acceptance keys produce one retained acceptance", async () => {
   const provider = recoveryProvider();
   await beginCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     recoveryInput("recovery-concurrent-accept", "begin-concurrent-accept"),
     provider,
   );
   await verifyCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     "recovery-concurrent-accept",
     {
@@ -414,7 +415,7 @@ test("concurrent acceptance keys produce one retained acceptance", async () => {
     provider,
   );
   const accept = (idempotencyKey: string) =>
-    acceptCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-concurrent-accept", {
+    acceptCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-concurrent-accept", {
       expectedRestoredRevisionId: "catrev_spine_000",
       targetDigest: digest,
       confirmationRecoveryId: "recovery-concurrent-accept",
@@ -430,11 +431,7 @@ test("concurrent acceptance keys produce one retained acceptance", async () => {
     reason: { code: "idempotency_key_reused" },
   });
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT state, acceptance_idempotency_key
-     FROM catalogue_recovery_operations
-     WHERE id = 'recovery-concurrent-accept'`,
-    ).first(),
+    backupRecoveryQueries.readCatalogueRecoveryOperationsStateAcceptanceIdempotencyKey(testEnv.CATALOGUE_DB).first(),
   ).resolves.toMatchObject({
     state: "accepted",
     acceptance_idempotency_key: expect.stringMatching(/^accept-concurrent-[ab]$/),
@@ -444,13 +441,13 @@ test("concurrent acceptance keys produce one retained acceptance", async () => {
 test("exact accepted replay remains immutable after a later publication", async () => {
   const provider = recoveryProvider();
   await beginCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     recoveryInput("recovery-accepted-replay", "begin-accepted-replay"),
     provider,
   );
   await verifyCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     "recovery-accepted-replay",
     {
@@ -471,36 +468,39 @@ test("exact accepted replay remains immutable after a later publication", async 
     boundDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
   };
   const accepted = await acceptCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     "recovery-accepted-replay",
     acceptance,
   );
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_state SET current_revision_id = 'catrev_later_publication'
-     WHERE singleton = 1`,
-  ).run();
+  await publishedCatalogueQueries
+    .setCatalogueStateCurrentRevisionIdForExactAcceptedReplayRemainsImmutableAfterLaterPublication(testEnv.CATALOGUE_DB)
+    .run();
   await expect(
-    acceptCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-accepted-replay", acceptance),
+    acceptCatalogueRecovery(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      testEnv.BACKUPS,
+      "recovery-accepted-replay",
+      acceptance,
+    ),
   ).resolves.toEqual(accepted);
   await expect(
-    testEnv.CATALOGUE_DB.prepare("SELECT current_revision_id FROM catalogue_state WHERE singleton = 1").first(),
+    publishedCatalogueQueries.readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB).first(),
   ).resolves.toEqual({
     current_revision_id: "catrev_later_publication",
   });
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_state SET current_revision_id = 'catrev_spine_000'
-     WHERE singleton = 1`,
-  ).run();
+  await publishedCatalogueQueries
+    .setCatalogueStateCurrentRevisionIdForProductCursorsPinRoutePreserveFilteredKeysetOrder(testEnv.CATALOGUE_DB)
+    .run();
 });
 
 test("a race during external prework cannot acquire the block or begin restore", async () => {
   let restoreCalls = 0;
   const provider = recoveryProvider({
     currentBookmark: async () => {
-      await testEnv.CATALOGUE_DB.prepare(
-        "UPDATE catalogue_state SET current_revision_id = 'catrev_raced' WHERE singleton = 1",
-      ).run();
+      await publishedCatalogueQueries
+        .setCatalogueStateCurrentRevisionIdForRaceDuringExternalPreworkCannotAcquireBlockOrBegin(testEnv.CATALOGUE_DB)
+        .run();
       return "bookmark-before-race";
     },
     timeTravelRestore: async () => {
@@ -513,7 +513,7 @@ test("a race during external prework cannot acquire the block or begin restore",
   });
   await expect(
     beginCatalogueRecovery(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       recoveryInput("recovery-raced", "begin-raced"),
       provider,
@@ -521,13 +521,11 @@ test("a race during external prework cannot acquire the block or begin restore",
   ).rejects.toMatchObject({ code: "recovery_state_changed" });
   expect(restoreCalls).toBe(0);
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      "SELECT COUNT(*) AS count FROM catalogue_recovery_operations WHERE id = 'recovery-raced'",
-    ).first(),
+    backupRecoveryQueries.countCatalogueRecoveryOperationsCount(testEnv.CATALOGUE_DB).first(),
   ).resolves.toEqual({ count: 0 });
-  await testEnv.CATALOGUE_DB.prepare(
-    "UPDATE catalogue_state SET current_revision_id = 'catrev_spine_000' WHERE singleton = 1",
-  ).run();
+  await publishedCatalogueQueries
+    .setCatalogueStateCurrentRevisionIdForProductCursorsPinRoutePreserveFilteredKeysetOrder(testEnv.CATALOGUE_DB)
+    .run();
 });
 
 test("inspect observes a paused restore without mutation and a second begin reports recovery_exists", async () => {
@@ -547,18 +545,18 @@ test("inspect observes a paused restore without mutation and a second begin repo
     },
   });
   const beginning = beginCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     recoveryInput("recovery-paused", "begin-paused"),
     provider,
   );
   await restoreStarted;
   await expect(
-    inspectCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-paused"),
+    inspectCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-paused"),
   ).resolves.toMatchObject({ state: "restoring", failure: null });
   await expect(
     beginCatalogueRecovery(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       recoveryInput("recovery-paused", "begin-paused"),
       provider,
@@ -567,17 +565,14 @@ test("inspect observes a paused restore without mutation and a second begin repo
   expect(restoreCalls).toBe(1);
   await expect(
     beginCatalogueRecovery(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       recoveryInput("recovery-second-unlinked", "begin-second-unlinked"),
       recoveryProvider(),
     ),
   ).rejects.toMatchObject({ code: "recovery_exists" });
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT state, failure_code FROM catalogue_recovery_operations
-     WHERE id = 'recovery-paused'`,
-    ).first(),
+    backupRecoveryQueries.readCatalogueRecoveryOperationsStateFailureCode(testEnv.CATALOGUE_DB).first(),
   ).resolves.toEqual({ state: "restoring", failure_code: null });
   releaseRestore?.({
     bookmark: "bookmark-restored",
@@ -585,7 +580,7 @@ test("inspect observes a paused restore without mutation and a second begin repo
   });
   await beginning;
   await verifyCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     "recovery-paused",
     {
@@ -597,7 +592,7 @@ test("inspect observes a paused restore without mutation and a second begin repo
     },
     provider,
   );
-  await acceptCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-paused", {
+  await acceptCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-paused", {
     expectedRestoredRevisionId: "catrev_spine_000",
     targetDigest: digest,
     confirmationRecoveryId: "recovery-paused",
@@ -610,39 +605,29 @@ test("inspect observes a paused restore without mutation and a second begin repo
 test("an ambiguous Time Travel response rehydrates a fail-closed journal", async () => {
   const provider = recoveryProvider({
     timeTravelRestore: async () => {
-      await testEnv.CATALOGUE_DB.prepare("DROP TRIGGER catalogue_recovery_operations_are_not_deleted").run();
-      await testEnv.CATALOGUE_DB.prepare(
-        "DELETE FROM catalogue_recovery_operations WHERE id = 'recovery-ambiguous'",
-      ).run();
-      await testEnv.CATALOGUE_DB.prepare(
-        `UPDATE operation_state
-         SET recovery_health = 'healthy', active_recovery_id = NULL,
-             recovery_restore_guard = 'blocked'
-         WHERE singleton = 1`,
-      ).run();
+      await backupRecoveryQueries.dropCatalogueRecoveryOperationsAreNotDeleted(testEnv.CATALOGUE_DB).run();
+      await backupRecoveryQueries.deleteCatalogueRecoveryOperations(testEnv.CATALOGUE_DB).run();
+      await ingestionQueries.setOperationStateRecoveryHealthActiveRecoveryId(testEnv.CATALOGUE_DB).run();
       throw new Error("response lost after accepted restore");
     },
   });
   await expect(
     beginCatalogueRecovery(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       recoveryInput("recovery-ambiguous", "begin-ambiguous"),
       provider,
     ),
   ).rejects.toMatchObject({ code: "recovery_failed" });
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT recovery_health, active_recovery_id, recovery_restore_guard
-     FROM operation_state WHERE singleton = 1`,
-    ).first(),
+    ingestionQueries.readOperationStateRecoveryHealthActiveRecoveryId(testEnv.CATALOGUE_DB).first(),
   ).resolves.toEqual({
     recovery_health: "blocked",
     active_recovery_id: "recovery-ambiguous",
     recovery_restore_guard: "blocked",
   });
   await expect(
-    inspectCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-ambiguous"),
+    inspectCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-ambiguous"),
   ).resolves.toMatchObject({
     state: "failed",
     failure: { code: "recovery_failed" },
@@ -656,7 +641,7 @@ test("replacement acceptance rehydrates its journal through the rebound HTTP rou
     }),
   });
   await beginCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     {
       ...recoveryInput("recovery-route-rebound", "begin-route-rebound"),
@@ -667,7 +652,7 @@ test("replacement acceptance rehydrates its journal through the rebound HTTP rou
     provider,
   );
   await verifyCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     "recovery-route-rebound",
     {
@@ -679,16 +664,12 @@ test("replacement acceptance rehydrates its journal through the rebound HTTP rou
     },
     provider,
   );
-  await testEnv.CATALOGUE_DB.prepare(
-    `DELETE FROM catalogue_recovery_operations
-     WHERE id IN ('recovery-route-rebound', 'recovery-ambiguous')`,
-  ).run();
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE operation_state
-     SET recovery_health = 'healthy', active_recovery_id = NULL,
-         recovery_restore_guard = 'blocked'
-     WHERE singleton = 1`,
-  ).run();
+  await backupRecoveryQueries
+    .deleteCatalogueRecoveryOperationsForReplacementAcceptanceRehydratesJournalThroughReboundHTTPRoute(
+      testEnv.CATALOGUE_DB,
+    )
+    .run();
+  await ingestionQueries.setOperationStateRecoveryHealthActiveRecoveryId(testEnv.CATALOGUE_DB).run();
 
   const response = await exports.default.fetch(
     new Request("https://card-keepr.invalid/v1/recoveries/recovery-route-rebound/acceptance", {
@@ -708,10 +689,7 @@ test("replacement acceptance rehydrates its journal through the rebound HTTP rou
   expect(response.status).toBe(200);
   await expect(response.json()).resolves.toMatchObject({ state: "accepted" });
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT recovery_health, active_recovery_id, recovery_restore_guard
-     FROM operation_state WHERE singleton = 1`,
-    ).first(),
+    ingestionQueries.readOperationStateRecoveryHealthActiveRecoveryId(testEnv.CATALOGUE_DB).first(),
   ).resolves.toEqual({
     recovery_health: "healthy",
     active_recovery_id: null,
@@ -722,13 +700,13 @@ test("replacement acceptance rehydrates its journal through the rebound HTTP rou
 test("accepted journal hydration stays blocked against the wrong local catalogue", async () => {
   const provider = recoveryProvider();
   await beginCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     recoveryInput("recovery-accepted-wrong-local", "begin-accepted-wrong-local"),
     provider,
   );
   await verifyCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     "recovery-accepted-wrong-local",
     {
@@ -748,46 +726,53 @@ test("accepted journal hydration stays blocked against the wrong local catalogue
     observedAt: "2026-08-05T09:51:00.000Z",
     boundDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
   };
-  await acceptCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-accepted-wrong-local", acceptance);
-  await testEnv.CATALOGUE_DB.prepare(
-    `DELETE FROM catalogue_recovery_operations
-     WHERE id = 'recovery-accepted-wrong-local'`,
-  ).run();
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_state SET current_revision_id = 'catrev_wrong_local'
-     WHERE singleton = 1`,
-  ).run();
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE operation_state SET recovery_restore_guard = 'blocked'
-     WHERE singleton = 1`,
-  ).run();
+  await acceptCatalogueRecovery(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    testEnv.BACKUPS,
+    "recovery-accepted-wrong-local",
+    acceptance,
+  );
+  await backupRecoveryQueries
+    .deleteCatalogueRecoveryOperationsForAcceptedJournalHydrationStaysBlockedAgainstWrongLocalCatalogue(
+      testEnv.CATALOGUE_DB,
+    )
+    .run();
+  await publishedCatalogueQueries
+    .setCatalogueStateCurrentRevisionIdForAcceptedJournalHydrationStaysBlockedAgainstWrongLocalCatalogue(
+      testEnv.CATALOGUE_DB,
+    )
+    .run();
+  await ingestionQueries.setOperationStateRecoveryRestoreGuard(testEnv.CATALOGUE_DB).run();
 
   await expect(
-    inspectCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-accepted-wrong-local"),
+    inspectCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-accepted-wrong-local"),
   ).resolves.toMatchObject({ state: "accepted" });
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT recovery_health, active_recovery_id, recovery_restore_guard
-     FROM operation_state WHERE singleton = 1`,
-    ).first(),
+    ingestionQueries.readOperationStateRecoveryHealthActiveRecoveryId(testEnv.CATALOGUE_DB).first(),
   ).resolves.toEqual({
     recovery_health: "blocked",
     active_recovery_id: "recovery-accepted-wrong-local",
     recovery_restore_guard: "blocked",
   });
   await expect(
-    acceptCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-accepted-wrong-local", acceptance),
+    acceptCatalogueRecovery(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      testEnv.BACKUPS,
+      "recovery-accepted-wrong-local",
+      acceptance,
+    ),
   ).rejects.toMatchObject({ code: "restored_revision_mismatch" });
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE catalogue_state SET current_revision_id = 'catrev_spine_000'
-     WHERE singleton = 1`,
-  ).run();
-  await acceptCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-accepted-wrong-local", acceptance);
+  await publishedCatalogueQueries
+    .setCatalogueStateCurrentRevisionIdForProductCursorsPinRoutePreserveFilteredKeysetOrder(testEnv.CATALOGUE_DB)
+    .run();
+  await acceptCatalogueRecovery(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    testEnv.BACKUPS,
+    "recovery-accepted-wrong-local",
+    acceptance,
+  );
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT recovery_health, active_recovery_id, recovery_restore_guard
-     FROM operation_state WHERE singleton = 1`,
-    ).first(),
+    ingestionQueries.readOperationStateRecoveryHealthActiveRecoveryId(testEnv.CATALOGUE_DB).first(),
   ).resolves.toEqual({
     recovery_health: "healthy",
     active_recovery_id: null,
@@ -803,19 +788,21 @@ test("failed recovery remains blocked and only one exact linked child may contin
   });
   await expect(
     beginCatalogueRecovery(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       recoveryInput("recovery-failed", "begin-failed"),
       failing,
     ),
   ).rejects.toMatchObject({ code: "recovery_failed" });
-  expect(await inspectCatalogueRecovery(testEnv.CATALOGUE_DB, testEnv.BACKUPS, "recovery-failed")).toMatchObject({
+  expect(
+    await inspectCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-failed"),
+  ).toMatchObject({
     state: "failed",
     failure: { code: "recovery_failed" },
   });
   await expect(
     beginCatalogueRecovery(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       recoveryInput("recovery-unlinked", "begin-unlinked"),
       recoveryProvider(),
@@ -823,7 +810,7 @@ test("failed recovery remains blocked and only one exact linked child may contin
   ).rejects.toMatchObject({ code: "recovery_link_required" });
 
   const linked = await beginCatalogueRecovery(
-    testEnv.CATALOGUE_DB,
+    catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
     {
       ...recoveryInput("recovery-linked", "begin-linked"),
@@ -837,7 +824,7 @@ test("failed recovery remains blocked and only one exact linked child may contin
   });
   await expect(
     beginCatalogueRecovery(
-      testEnv.CATALOGUE_DB,
+      catalogueStore(testEnv.CATALOGUE_DB),
       testEnv.BACKUPS,
       {
         ...recoveryInput("recovery-second-child", "begin-second-child"),
@@ -928,15 +915,8 @@ async function retainVerifiedBackup(attemptId: string, bookmark: string, schemaM
       },
     }),
   );
-  await testEnv.CATALOGUE_DB.prepare(
-    `INSERT OR IGNORE INTO catalogue_backup_attempts (
-       idempotency_key, request_json, owner_token, catalogue_revision_id,
-       state, object_key, d1_bookmark, started_at, completed_at,
-       manifest_key, content_sha256, manifest_sha256, export_bytes,
-       schema_migration_level, disposable_database_id, restore_generation,
-       restore_phase
-     ) VALUES (?, ?, ?, 'catrev_spine_000', 'verified', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'verified')`,
-  )
+  await backupRecoveryQueries
+    .insertCatalogueBackupAttempts(testEnv.CATALOGUE_DB)
     .bind(
       attemptId,
       JSON.stringify({ expected_current_revision_id: "catrev_spine_000" }),
@@ -956,9 +936,9 @@ async function retainVerifiedBackup(attemptId: string, bookmark: string, schemaM
 }
 
 async function currentSchemaMigrationLevel(): Promise<number> {
-  const state = await testEnv.CATALOGUE_DB.prepare(
-    "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
-  ).first<{ migration_level: number }>();
+  const state = await publishedCatalogueQueries
+    .readCatalogueSchemaStateMigrationLevel(testEnv.CATALOGUE_DB)
+    .first<{ migration_level: number }>();
   if (state === null) throw new Error("Catalogue schema state is unavailable.");
   return state.migration_level;
 }

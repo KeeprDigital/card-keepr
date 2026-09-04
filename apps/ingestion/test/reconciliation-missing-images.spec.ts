@@ -1,3 +1,4 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
 import { expect, test } from "vitest";
 import {
   appendDiscoveredEvidenceRequests,
@@ -57,10 +58,10 @@ for (const scenario of [
     });
     expect(started.response.status).toBe(201);
     const id = requiredString(started.document, "id");
-    const storedRun = await requiredEvidenceRun(testEnv.CATALOGUE_DB, id);
-    const root = (await pendingEvidenceRequests(testEnv.CATALOGUE_DB, id))[0];
+    const storedRun = await requiredEvidenceRun(catalogueStore(testEnv.CATALOGUE_DB), id);
+    const root = (await pendingEvidenceRequests(catalogueStore(testEnv.CATALOGUE_DB), id))[0];
     if (root === undefined) throw new Error("pending root request missing");
-    const [image] = await appendDiscoveredEvidenceRequests(testEnv.CATALOGUE_DB, storedRun, root, [
+    const [image] = await appendDiscoveredEvidenceRequests(catalogueStore(testEnv.CATALOGUE_DB), storedRun, root, [
       { role: "image", url: scenario.url, headers: { accept: "*/*" } },
     ]);
     if (image === undefined) throw new Error("image request missing");

@@ -1,3 +1,7 @@
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { env, exports } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
@@ -29,21 +33,17 @@ async function pauseForWorkflowRecovery(
   runId: string,
   reason: "source_workflow_stalled" | "source_workflow_errored",
 ): Promise<void> {
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
-     WHERE ingestion_run_id = ?`,
-  )
+  await sourceEvidenceQueries
+    .setIngestionEvidencePlansParentWorkflowId(env.CATALOGUE_DB)
     .bind(`evidence-${runId}`, runId)
     .run();
-  await pauseEvidenceRunForWorkflowRecovery(env.CATALOGUE_DB, runId, {
+  await pauseEvidenceRunForWorkflowRecovery(catalogueStore(env.CATALOGUE_DB), runId, {
     workflow_instance_id: `evidence-${runId}`,
     pause_reason: reason,
     workflow_status: reason === "source_workflow_errored" ? "errored" : "running",
     last_progress_at: null,
   });
-  expect(
-    await env.CATALOGUE_DB.prepare("SELECT state FROM ingestion_runs WHERE id = ?").bind(runId).first("state"),
-  ).toBe("paused");
+  expect(await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(runId).first("state")).toBe("paused");
 }
 
 type RetainedEvidenceCounts = {
@@ -57,27 +57,32 @@ type RetainedEvidenceCounts = {
 
 // Every retained evidence object a termination must leave untouched.
 async function retainedEvidenceCounts(runId: string): Promise<RetainedEvidenceCounts> {
-  const count = (sql: string) => env.CATALOGUE_DB.prepare(sql).bind(runId).first("count");
   return {
-    snapshots: await count("SELECT COUNT(*) AS count FROM source_snapshots WHERE ingestion_run_id = ?"),
-    observation_sets: await count(
-      `SELECT COUNT(*) AS count FROM source_observation_sets
-       WHERE source_snapshot_id IN (
-         SELECT id FROM source_snapshots WHERE ingestion_run_id = ?
-       )`,
-    ),
-    fetch_attempts: await count("SELECT COUNT(*) AS count FROM source_fetch_attempts WHERE ingestion_run_id = ?"),
-    discovery_plans: await count(
-      "SELECT COUNT(*) AS count FROM source_discovery_request_plans WHERE ingestion_run_id = ?",
-    ),
-    capacity_pauses: await count(
-      "SELECT COUNT(*) AS count FROM ingestion_run_capacity_pauses WHERE ingestion_run_id = ?",
-    ),
-    requests_by_state: (
-      await env.CATALOGUE_DB.prepare(
-        `SELECT state, COUNT(*) AS count FROM source_requests
-       WHERE ingestion_run_id = ? GROUP BY state ORDER BY state`,
+    snapshots: await sourceEvidenceQueries
+      .countSourceSnapshotsCountForBatchThatFailsMidwayReplaysWithoutDuplicatingSnapshotsOrWithundefined(
+        env.CATALOGUE_DB,
       )
+      .bind(runId)
+      .first("count"),
+    observation_sets: await sourceEvidenceQueries
+      .countSourceObservationSetsCountForRetainedEvidenceCounts(env.CATALOGUE_DB)
+      .bind(runId)
+      .first("count"),
+    fetch_attempts: await sourceEvidenceQueries
+      .countSourceFetchAttemptsCount(env.CATALOGUE_DB)
+      .bind(runId)
+      .first("count"),
+    discovery_plans: await sourceEvidenceQueries
+      .countSourceDiscoveryRequestPlansCount(env.CATALOGUE_DB)
+      .bind(runId)
+      .first("count"),
+    capacity_pauses: await sourceEvidenceQueries
+      .countIngestionRunCapacityPausesCount(env.CATALOGUE_DB)
+      .bind(runId)
+      .first("count"),
+    requests_by_state: (
+      await sourceEvidenceQueries
+        .countSourceRequestsCountForRetainedEvidenceCounts(env.CATALOGUE_DB)
         .bind(runId)
         .all<{ state: string; count: number }>()
     ).results,
@@ -108,24 +113,16 @@ test("terminating a paused run records the owner decision, releases the reservat
 
   // The run is terminal with the stable owner-termination reason, recorded
   // as the paused -> failed transition.
-  expect(
-    await env.CATALOGUE_DB.prepare("SELECT state, terminal_at, failure_code FROM ingestion_runs WHERE id = ?")
-      .bind(runId)
-      .first(),
-  ).toEqual({
+  expect(await ingestionQueries.readIngestionRunsStateTerminalAt(env.CATALOGUE_DB).bind(runId).first()).toEqual({
     state: "failed",
     terminal_at: document.terminated_at,
     failure_code: "ingestion_run_terminated",
   });
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT from_state, to_state FROM ingestion_run_transitions
-     WHERE ingestion_run_id = ? ORDER BY sequence DESC LIMIT 1`,
-    )
-      .bind(runId)
-      .first(),
+    await ingestionQueries.readIngestionRunTransitionsFromStateToState(env.CATALOGUE_DB).bind(runId).first(),
   ).toEqual({ from_state: "paused", to_state: "failed" });
-  const record = await env.CATALOGUE_DB.prepare("SELECT * FROM ingestion_run_terminations WHERE ingestion_run_id = ?")
+  const record = await sourceEvidenceQueries
+    .readIngestionRunTerminations(env.CATALOGUE_DB)
     .bind(runId)
     .first<Record<string, unknown>>();
   expect(record).toMatchObject({
@@ -135,26 +132,24 @@ test("terminating a paused run records the owner decision, releases the reservat
     idempotency_key: "termination_001",
   });
   await expect(
-    env.CATALOGUE_DB.prepare("UPDATE ingestion_run_terminations SET terminated_at = '2099-01-01T00:00:00.000Z'").run(),
+    sourceEvidenceQueries.setIngestionRunTerminationsTerminatedAt(env.CATALOGUE_DB).run(),
   ).rejects.toThrowError(/termination_immutable/u);
-  await expect(env.CATALOGUE_DB.prepare("DELETE FROM ingestion_run_terminations").run()).rejects.toThrowError(
+  await expect(sourceEvidenceQueries.deleteIngestionRunTerminations(env.CATALOGUE_DB).run()).rejects.toThrowError(
     /termination_immutable/u,
   );
 
   // The single active-run reservation is released.
   expect(
-    await env.CATALOGUE_DB.prepare("SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1").first(
-      "active_ingestion_run_id",
-    ),
+    await ingestionQueries.readOperationStateActiveIngestionRunId(env.CATALOGUE_DB).first("active_ingestion_run_id"),
   ).toBeNull();
 
   // No retained evidence object was deleted or re-stated.
   expect(await retainedEvidenceCounts(runId)).toEqual(before);
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT state, source_snapshot_id FROM source_requests
-     WHERE ingestion_run_id = ? AND source_snapshot_id = ?`,
-    )
+    await sourceEvidenceQueries
+      .readSourceRequestsStateSourceSnapshotIdForTerminatingPausedRunRecordsOwnerDecisionReleasesReservationRetains(
+        env.CATALOGUE_DB,
+      )
       .bind(runId, snapshotId)
       .first(),
   ).toEqual({
@@ -208,11 +203,9 @@ test("a terminated run refuses every lifecycle continuation and frees the reserv
     id: string;
     expected_current_revision_id: string;
   }>();
-  const revisionsBefore = await env.CATALOGUE_DB.prepare("SELECT COUNT(*) AS count FROM catalogue_revisions").first(
-    "count",
-  );
+  const revisionsBefore = await publishedCatalogueQueries.countCatalogueRevisionsCount(env.CATALOGUE_DB).first("count");
   await pauseEvidenceRunForRequestCapacity(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     run.id,
     "cards",
     new RequestCapacityProblem({
@@ -280,36 +273,32 @@ test("a terminated run refuses every lifecycle continuation and frees the reserv
 
   // The collection barrier and a replayed resume cannot move the terminal
   // run anywhere, and no capture work is admitted for its pending request.
-  await finalizeEvidenceRun(env.CATALOGUE_DB, run.id);
-  await resumePausedEvidenceRun(env.CATALOGUE_DB, run.id);
-  const terminalRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
+  await finalizeEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+  await resumePausedEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+  const terminalRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
   expect(terminalRun).toMatchObject({
     state: "failed",
     failure_code: "ingestion_run_terminated",
   });
-  const pending = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  const pending = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
   if (pending === undefined) throw new Error("pending request absent");
-  await expect(prepareCaptureAttempt(env.CATALOGUE_DB, terminalRun, pending)).resolves.toEqual({
+  await expect(prepareCaptureAttempt(catalogueStore(env.CATALOGUE_DB), terminalRun, pending)).resolves.toEqual({
     kind: "done",
     failure_code: null,
   });
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count FROM source_capture_operations
-     WHERE ingestion_run_id = ?`,
-    )
-      .bind(run.id)
-      .first("count"),
+    await sourceEvidenceQueries.countSourceCaptureOperationsCount(env.CATALOGUE_DB).bind(run.id).first("count"),
   ).toBe(0);
   expect(
-    await env.CATALOGUE_DB.prepare(`SELECT state FROM source_requests WHERE ingestion_run_id = ?`)
+    await sourceEvidenceQueries
+      .readSourceRequestsStateForHostnameWorkflowThatWakesTerminatedRunFinishesWithoutReloading(env.CATALOGUE_DB)
       .bind(run.id)
       .first("state"),
   ).toBe("pending");
 
   // The current Catalogue Revision is untouched, and a new Ingestion Run can
   // start now that the reservation is released.
-  expect(await env.CATALOGUE_DB.prepare("SELECT COUNT(*) AS count FROM catalogue_revisions").first("count")).toEqual(
+  expect(await publishedCatalogueQueries.countCatalogueRevisionsCount(env.CATALOGUE_DB).first("count")).toEqual(
     revisionsBefore,
   );
   const successor = await fixtureEvidenceRequest({
@@ -323,9 +312,7 @@ test("a terminated run refuses every lifecycle continuation and frees the reserv
   const successorRun = await successor.json<{ id: string }>();
   expect(successorRun.id).not.toBe(run.id);
   expect(
-    await env.CATALOGUE_DB.prepare("SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1").first(
-      "active_ingestion_run_id",
-    ),
+    await ingestionQueries.readOperationStateActiveIngestionRunId(env.CATALOGUE_DB).first("active_ingestion_run_id"),
   ).toBe(successorRun.id);
 
   // The terminated run's linked retry remains the sanctioned terminal path.
@@ -348,9 +335,9 @@ test("termination problems fail closed with explicit documents", async () => {
   await expect(notPaused.json()).resolves.toMatchObject({
     code: "ingestion_run_not_paused",
   });
-  expect(
-    await env.CATALOGUE_DB.prepare("SELECT state FROM ingestion_runs WHERE id = ?").bind(collecting.id).first("state"),
-  ).toBe("collecting");
+  expect(await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(collecting.id).first("state")).toBe(
+    "collecting",
+  );
 
   const absent = await administrationRequest(
     "/v1/ingestion-runs/run_absent_000000000000/collection/termination",
@@ -386,11 +373,7 @@ test("termination problems fail closed with explicit documents", async () => {
   );
   expect(missingKey.status).toBe(422);
   expect(
-    await env.CATALOGUE_DB.prepare(
-      "SELECT COUNT(*) AS count FROM ingestion_run_terminations WHERE ingestion_run_id = ?",
-    )
-      .bind(collecting.id)
-      .first("count"),
+    await sourceEvidenceQueries.countIngestionRunTerminationsCount(env.CATALOGUE_DB).bind(collecting.id).first("count"),
   ).toBe(0);
 
   // Reusing a termination key on a different run conflicts instead of
@@ -417,9 +400,7 @@ test("termination problems fail closed with explicit documents", async () => {
   await expect(reused.json()).resolves.toMatchObject({
     code: "idempotency_conflict",
   });
-  expect(
-    await env.CATALOGUE_DB.prepare("SELECT state FROM ingestion_runs WHERE id = ?").bind(second.id).first("state"),
-  ).toBe("paused");
+  expect(await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(second.id).first("state")).toBe("paused");
 });
 
 test("concurrent terminate, resume, and extension requests resolve to exactly one outcome", async () => {
@@ -435,18 +416,14 @@ test("concurrent terminate, resume, and extension requests resolve to exactly on
   );
   expect(terminations.map((response) => response.status).sort()).toEqual([200, 409]);
   expect(
-    await env.CATALOGUE_DB.prepare(
-      "SELECT COUNT(*) AS count FROM ingestion_run_terminations WHERE ingestion_run_id = ?",
-    )
-      .bind(first.id)
-      .first("count"),
+    await sourceEvidenceQueries.countIngestionRunTerminationsCount(env.CATALOGUE_DB).bind(first.id).first("count"),
   ).toBe(1);
   await clearActiveRunForNextScenario();
 
   // Terminate racing resume: whichever wins, the run has exactly one
   // outcome and the loser reports a state conflict.
   const second = await createCollection("termination_race_resume_001", "https://official-source.invalid/cards");
-  await pauseEvidenceRunForWorkflowRecovery(env.CATALOGUE_DB, second.id, {
+  await pauseEvidenceRunForWorkflowRecovery(catalogueStore(env.CATALOGUE_DB), second.id, {
     workflow_instance_id: `evidence-${second.id}`,
     pause_reason: "source_workflow_stalled",
     workflow_status: "running",
@@ -458,9 +435,7 @@ test("concurrent terminate, resume, and extension requests resolve to exactly on
     }),
     administrationRequest(`/v1/ingestion-runs/${second.id}/collection/resume`, "POST"),
   ]);
-  const state = await env.CATALOGUE_DB.prepare("SELECT state FROM ingestion_runs WHERE id = ?")
-    .bind(second.id)
-    .first("state");
+  const state = await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(second.id).first("state");
   if (terminateOutcome.status === 200) {
     expect(state).toBe("failed");
     expect(resumeOutcome.status).toBe(409);
@@ -490,7 +465,7 @@ test("concurrent terminate, resume, and extension requests resolve to exactly on
   });
   const thirdRun = await third.json<{ id: string }>();
   await pauseEvidenceRunForRequestCapacity(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     thirdRun.id,
     "cards",
     new RequestCapacityProblem({
@@ -514,9 +489,8 @@ test("concurrent terminate, resume, and extension requests resolve to exactly on
     }),
   ]);
   expect(terminateThird.status).toBe(200);
-  const extensions = await env.CATALOGUE_DB.prepare(
-    "SELECT COUNT(*) AS count FROM ingestion_run_capacity_extensions WHERE ingestion_run_id = ?",
-  )
+  const extensions = await sourceEvidenceQueries
+    .countIngestionRunCapacityExtensionsCount(env.CATALOGUE_DB)
     .bind(thirdRun.id)
     .first("count");
   // An extension that committed before termination is retained history; one
@@ -527,11 +501,7 @@ test("concurrent terminate, resume, and extension requests resolve to exactly on
   } else {
     expect(extensions).toBe(1);
   }
-  expect(
-    await env.CATALOGUE_DB.prepare("SELECT state, failure_code FROM ingestion_runs WHERE id = ?")
-      .bind(thirdRun.id)
-      .first(),
-  ).toEqual({
+  expect(await ingestionQueries.readIngestionRunsStateFailureCode(env.CATALOGUE_DB).bind(thirdRun.id).first()).toEqual({
     state: "failed",
     failure_code: "ingestion_run_terminated",
   });
@@ -578,13 +548,12 @@ test("terminating a transport-paused run fences its collection Workflows", async
   // no late step fetched again after termination.
   await new Promise((resolve) => setTimeout(resolve, 500));
   expect(shown.diagnostics).toHaveLength(4);
+  expect(await sourceEvidenceQueries.countSourceFetchAttemptsCount(env.CATALOGUE_DB).bind(run.id).first("count")).toBe(
+    4,
+  );
   expect(
-    await env.CATALOGUE_DB.prepare("SELECT COUNT(*) AS count FROM source_fetch_attempts WHERE ingestion_run_id = ?")
-      .bind(run.id)
-      .first("count"),
-  ).toBe(4);
-  expect(
-    await env.CATALOGUE_DB.prepare(`SELECT state, failure_code FROM source_requests WHERE ingestion_run_id = ?`)
+    await sourceEvidenceQueries
+      .readSourceRequestsStateFailureCodeForTerminatingTransportPausedRunFencesCollectionWorkflows(env.CATALOGUE_DB)
       .bind(run.id)
       .first(),
   ).toEqual({ state: "pending", failure_code: null });

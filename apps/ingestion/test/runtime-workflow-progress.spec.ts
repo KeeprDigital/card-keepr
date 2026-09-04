@@ -1,3 +1,4 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { recordIngestionWorkflowProgress, resumeEvidenceRun } from "../../../src/catalogue/source-evidence";
@@ -11,12 +12,12 @@ test("inspection retains each attempt's durable progress, while barrier polling 
   const child = "evidence-host-progress-test";
   const workAt = "2099-01-01T00:00:00.000Z";
   const pollAt = "2099-01-01T01:00:00.000Z";
-  await recordIngestionWorkflowProgress(env.CATALOGUE_DB, run.id, child, "child", {
+  await recordIngestionWorkflowProgress(catalogueStore(env.CATALOGUE_DB), run.id, child, "child", {
     name: "collect stage 0 batch 0 from 0 pass 0",
     phase: "completed",
     at: workAt,
   });
-  await recordIngestionWorkflowProgress(env.CATALOGUE_DB, run.id, parent, "parent", {
+  await recordIngestionWorkflowProgress(catalogueStore(env.CATALOGUE_DB), run.id, parent, "parent", {
     name: "finalize collection barrier stage 1",
     phase: "completed",
     at: pollAt,
@@ -36,7 +37,7 @@ test("inspection retains each attempt's durable progress, while barrier polling 
     ]),
   );
   // A stale callback cannot move the retained timestamp backwards.
-  await recordIngestionWorkflowProgress(env.CATALOGUE_DB, run.id, child, "child", {
+  await recordIngestionWorkflowProgress(catalogueStore(env.CATALOGUE_DB), run.id, child, "child", {
     name: "collect stage 0 batch 0 from 0 pass 0",
     phase: "started",
     at: "2098-01-01T00:00:00.000Z",
@@ -55,7 +56,9 @@ test("a transient parent lookup failure leaves collection available for a later 
       throw new Error("must not create");
     },
   } as unknown as Workflow;
-  await expect(resumeEvidenceRun(env.CATALOGUE_DB, binding, run.id, env.EVIDENCE_HOST_WORKFLOW)).rejects.toBe(failure);
+  await expect(
+    resumeEvidenceRun(catalogueStore(env.CATALOGUE_DB), binding, run.id, env.EVIDENCE_HOST_WORKFLOW),
+  ).rejects.toBe(failure);
   const inspected = await showCollection(run.id);
   expect(inspected.state).toBe("collecting");
   expect(inspected.pause).toBeUndefined();

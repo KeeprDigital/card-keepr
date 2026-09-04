@@ -1,3 +1,5 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
@@ -61,11 +63,11 @@ test("each request uses its owning Evidence Plan adapter capture cap", async () 
 
 test("dynamic discovery rejects oversized request identities before Workflow scheduling", async () => {
   const run = await createCollection("source_dynamic_identity_bound_001", "https://official-source.invalid/cards");
-  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  const storedRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+  const root = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
   if (root === undefined) throw new Error("pending discovery root missing");
   await expect(
-    appendDiscoveredEvidenceRequests(env.CATALOGUE_DB, storedRun, root, [
+    appendDiscoveredEvidenceRequests(catalogueStore(env.CATALOGUE_DB), storedRun, root, [
       {
         role: "detail",
         url: `https://official-source.invalid/cards/${"x".repeat(2_100)}`,
@@ -74,12 +76,7 @@ test("dynamic discovery rejects oversized request identities before Workflow sch
     ]),
   ).rejects.toMatchObject({ code: "source_discovery_failed" });
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count FROM source_discovery_request_plans
-     WHERE ingestion_run_id = ?`,
-    )
-      .bind(run.id)
-      .first("count"),
+    await sourceEvidenceQueries.countSourceDiscoveryRequestPlansCount(env.CATALOGUE_DB).bind(run.id).first("count"),
   ).toBe(0);
 });
 
@@ -217,11 +214,11 @@ test("final Official Source collection identities enforce the merged-header byte
 
 test("maximum admitted request pages retain a Workflow result safety margin", async () => {
   const run = await createCollection("source_workflow_page_byte_bound_001", "https://official-source.invalid/cards");
-  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  const storedRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+  const root = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
   if (root === undefined) throw new Error("pending discovery root missing");
   await appendDiscoveredEvidenceRequests(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     storedRun,
     root,
     Array.from({ length: 99 }, (_, index) => ({
@@ -230,7 +227,13 @@ test("maximum admitted request pages retain a Workflow result safety margin", as
       headers: { "user-agent": "u".repeat(1_900) },
     })),
   );
-  const page = await pendingEvidenceRequestPage(env.CATALOGUE_DB, run.id, -1, Number.MAX_SAFE_INTEGER, 100);
+  const page = await pendingEvidenceRequestPage(
+    catalogueStore(env.CATALOGUE_DB),
+    run.id,
+    -1,
+    Number.MAX_SAFE_INTEGER,
+    100,
+  );
   expect(page).toHaveLength(100);
   expect(new TextEncoder().encode(JSON.stringify(page)).byteLength).toBeLessThan(512 * 1024);
 });

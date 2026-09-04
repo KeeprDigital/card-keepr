@@ -1,3 +1,5 @@
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as ingestionQueries from "./query-helpers/ingestion";
 import { env, exports } from "cloudflare:workers";
 import { expect, test, vi } from "vitest";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
@@ -85,12 +87,10 @@ test("terminal evidence diagnostics expose collection retry guidance without a s
     requests: officialSourceDiscoveryRequests("one-piece-en"),
   });
   const run = await created.json<{ id: string }>();
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE ingestion_runs
-     SET state = 'failed', terminal_at = ?,
-         failure_code = 'source_request_retries_exhausted'
-     WHERE id = ?`,
-  )
+  await sourceEvidenceQueries
+    .setIngestionRunsStateTerminalAtForTerminalEvidenceDiagnosticsExposeCollectionRetryGuidanceWithoutStale(
+      env.CATALOGUE_DB,
+    )
     .bind("2026-08-05T00:00:00.000Z", run.id)
     .run();
   const shown = await administrationRequest(`/v1/ingestion-runs/${run.id}`, "GET");
@@ -120,7 +120,7 @@ test("terminal evidence diagnostics expose collection retry guidance without a s
     },
   });
   expect(JSON.stringify(document.operational_diagnostics)).not.toContain(`/v1/ingestion-runs/${run.id}/candidate`);
-  await env.CATALOGUE_DB.prepare("UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1").run();
+  await ingestionQueries.setOperationStateActiveIngestionRunIdForInstallApiSuite(env.CATALOGUE_DB).run();
   const retried = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/retry`, "POST", {
     idempotency_key: "terminal-evidence-diagnostics-retry",
   });
@@ -153,33 +153,19 @@ test("published evidence diagnostics explicitly advertise no retry route", async
   const source = await created.json<{ id: string }>();
   const run = { id: "run_published_evidence_diagnostics" };
   await env.CATALOGUE_DB.batch([
-    env.CATALOGUE_DB.prepare("UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1"),
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         operational_request_id, terminal_at, candidate_json
-       ) VALUES (
-         ?, 'published', '["one-piece"]', ?, 'catrev_spine_000', NULL, ?,
-         ?, ?, '{}'
-       )`,
-    ).bind(
-      run.id,
-      "2026-08-05T00:00:00.000Z",
-      "published-evidence-diagnostics-row",
-      "published-evidence-request",
-      "2026-08-05T00:00:00.000Z",
-    ),
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_evidence_plans (
-         ingestion_run_id, source_lineage, supported_game,
-         game_profile_version, adapter_version, request_plan_json,
-         plan_origin
-       )
-       SELECT ?, source_lineage, supported_game, game_profile_version,
-              adapter_version, request_plan_json, plan_origin
-       FROM ingestion_evidence_plans WHERE ingestion_run_id = ?`,
-    ).bind(run.id, source.id),
+    ingestionQueries.setOperationStateActiveIngestionRunIdForInstallApiSuite(env.CATALOGUE_DB),
+    ingestionQueries
+      .insertIngestionRunsForPublishedEvidenceDiagnosticsExplicitlyAdvertiseNoRetryRoute(env.CATALOGUE_DB)
+      .bind(
+        run.id,
+        "2026-08-05T00:00:00.000Z",
+        "published-evidence-diagnostics-row",
+        "published-evidence-request",
+        "2026-08-05T00:00:00.000Z",
+      ),
+    sourceEvidenceQueries
+      .insertIngestionEvidencePlansForPublishedEvidenceDiagnosticsExplicitlyAdvertiseNoRetryRoute(env.CATALOGUE_DB)
+      .bind(run.id, source.id),
   ]);
   const shown = await administrationRequest(`/v1/ingestion-runs/${run.id}`, "GET");
   expect(shown.status).toBe(200);

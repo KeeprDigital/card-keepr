@@ -1,3 +1,4 @@
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
 import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
@@ -93,9 +94,9 @@ async function bootstrapPlan(releaseId: string): Promise<Record<string, unknown>
 // The release gate binds the recorded schema level, which every migration
 // in the repository advances; the plan reads it rather than pinning it.
 async function schemaMigrationLevel(): Promise<number> {
-  const state = await testEnv.CATALOGUE_DB.prepare(
-    "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
-  ).first<{ migration_level: number }>();
+  const state = await publishedCatalogueQueries
+    .readCatalogueSchemaStateMigrationLevel(testEnv.CATALOGUE_DB)
+    .first<{ migration_level: number }>();
   if (state === null) throw new Error("The schema level is unavailable.");
   return state.migration_level;
 }

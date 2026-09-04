@@ -1,3 +1,6 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as ingestionQueries from "./query-helpers/ingestion";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
@@ -22,10 +25,10 @@ installRuntimeSuite();
 // image; catalogue-fact roles keep the pause (runtime-retry-pause.spec.ts).
 test("an image request that exhausts its transport retries fails alone and collection completes", async () => {
   const run = await createCollection("image_failure_001", "https://official-source.invalid/cards");
-  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  const storedRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+  const root = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
   if (root === undefined) throw new Error("pending root request missing");
-  const [image] = await appendDiscoveredEvidenceRequests(env.CATALOGUE_DB, storedRun, root, [
+  const [image] = await appendDiscoveredEvidenceRequests(catalogueStore(env.CATALOGUE_DB), storedRun, root, [
     {
       role: "image",
       url: "https://official-source.invalid/unavailable",
@@ -63,10 +66,8 @@ test("an image request that exhausts its transport retries fails alone and colle
     })),
   );
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT request_id, state, failure_code FROM source_requests
-     WHERE ingestion_run_id = ? ORDER BY sequence_number`,
-    )
+    await sourceEvidenceQueries
+      .readSourceRequestsRequestIdStateForImageRequestThatExhaustsTransportRetriesFailsAloneCollection(env.CATALOGUE_DB)
       .bind(run.id)
       .all()
       .then(({ results }) => results),
@@ -83,20 +84,10 @@ test("an image request that exhausts its transport retries fails alone and colle
     },
   ]);
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count FROM ingestion_run_retry_pauses
-     WHERE ingestion_run_id = ?`,
-    )
-      .bind(run.id)
-      .first("count"),
+    await sourceEvidenceQueries.countIngestionRunRetryPausesCount(env.CATALOGUE_DB).bind(run.id).first("count"),
   ).toBe(0);
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT from_state, to_state FROM ingestion_run_transitions
-     WHERE ingestion_run_id = ? ORDER BY sequence DESC LIMIT 1`,
-    )
-      .bind(run.id)
-      .first(),
+    await ingestionQueries.readIngestionRunTransitionsFromStateToState(env.CATALOGUE_DB).bind(run.id).first(),
   ).toMatchObject({
     from_state: "collecting",
     to_state: "parsing",
@@ -128,10 +119,10 @@ test("an image request that exhausts its transport retries fails alone and colle
 // run exactly like any other role, with the request kept pending.
 test("an image request that exhausts its storage retries still pauses the run", async () => {
   const run = await createCollection("image_failure_storage_001", "https://official-source.invalid/cards");
-  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  const storedRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+  const root = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
   if (root === undefined) throw new Error("pending root request missing");
-  const [image] = await appendDiscoveredEvidenceRequests(env.CATALOGUE_DB, storedRun, root, [
+  const [image] = await appendDiscoveredEvidenceRequests(catalogueStore(env.CATALOGUE_DB), storedRun, root, [
     {
       role: "image",
       url: "https://official-source.invalid/cards",
@@ -151,12 +142,12 @@ test("an image request that exhausts its storage retries still pauses the run", 
     },
   });
   for (let attempt = 1; attempt <= 4; attempt += 1) {
-    const prepared = await prepareCaptureAttempt(env.CATALOGUE_DB, storedRun, image);
+    const prepared = await prepareCaptureAttempt(catalogueStore(env.CATALOGUE_DB), storedRun, image);
     if (prepared.kind !== "attempt") {
       throw new Error(`unexpected preparation result ${prepared.kind}`);
     }
     const result = await capturePreparedAttempt(
-      env.CATALOGUE_DB,
+      catalogueStore(env.CATALOGUE_DB),
       outageBucket,
       env.OFFICIAL_SOURCE_TRANSPORT,
       storedRun,
@@ -165,26 +156,17 @@ test("an image request that exhausts its storage retries still pauses the run", 
     );
     expect(result.kind).toBe(attempt === 4 ? "done" : "wait");
   }
+  expect(await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(run.id).first("state")).toBe("paused");
   expect(
-    await env.CATALOGUE_DB.prepare("SELECT state FROM ingestion_runs WHERE id = ?").bind(run.id).first("state"),
-  ).toBe("paused");
-  expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT request_id, pause_reason, failure_classification
-     FROM ingestion_run_retry_pauses WHERE ingestion_run_id = ?`,
-    )
-      .bind(run.id)
-      .first(),
+    await sourceEvidenceQueries.readIngestionRunRetryPausesRequestIdPauseReason(env.CATALOGUE_DB).bind(run.id).first(),
   ).toMatchObject({
     request_id: image.request_id,
     pause_reason: "source_storage_retries_exhausted",
     failure_classification: "storage_failure",
   });
   expect(
-    await env.CATALOGUE_DB.prepare(
-      `SELECT state, failure_code FROM source_requests
-     WHERE ingestion_run_id = ? AND request_id = ?`,
-    )
+    await sourceEvidenceQueries
+      .readSourceRequestsStateFailureCodeForImageRequestThatExhaustsStorageRetriesStillPausesRun(env.CATALOGUE_DB)
       .bind(run.id, image.request_id)
       .first(),
   ).toMatchObject({
@@ -243,10 +225,10 @@ for (const scenario of [
 ]) {
   test(`an image request that gets ${scenario.name} fails alone and collection completes`, async () => {
     const run = await createCollection(scenario.key, "https://official-source.invalid/cards");
-    const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-    const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+    const storedRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+    const root = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
     if (root === undefined) throw new Error("pending root request missing");
-    const [image] = await appendDiscoveredEvidenceRequests(env.CATALOGUE_DB, storedRun, root, [
+    const [image] = await appendDiscoveredEvidenceRequests(catalogueStore(env.CATALOGUE_DB), storedRun, root, [
       { role: "image", url: scenario.url, headers: { accept: "*/*" } },
     ]);
     if (image === undefined) throw new Error("image request missing");
@@ -275,10 +257,10 @@ for (const scenario of [
     // Source Snapshot from its redirect target.
     expect(completed.snapshots).toHaveLength(1);
     expect(
-      await env.CATALOGUE_DB.prepare(
-        `SELECT request_id, state, failure_code FROM source_requests
-       WHERE ingestion_run_id = ? ORDER BY sequence_number`,
-      )
+      await sourceEvidenceQueries
+        .readSourceRequestsRequestIdStateForImageRequestThatExhaustsTransportRetriesFailsAloneCollection(
+          env.CATALOGUE_DB,
+        )
         .bind(run.id)
         .all()
         .then(({ results }) => results),
@@ -291,12 +273,7 @@ for (const scenario of [
       },
     ]);
     expect(
-      await env.CATALOGUE_DB.prepare(
-        `SELECT COUNT(*) AS count FROM ingestion_run_retry_pauses
-       WHERE ingestion_run_id = ?`,
-      )
-        .bind(run.id)
-        .first("count"),
+      await sourceEvidenceQueries.countIngestionRunRetryPausesCount(env.CATALOGUE_DB).bind(run.id).first("count"),
     ).toBe(0);
 
     const collection = completed.collection as {

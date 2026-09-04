@@ -1,3 +1,7 @@
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as legalityQueries from "./query-helpers/legality";
 import { applyD1Migrations } from "cloudflare:test";
 import { expect, test } from "vitest";
 import { sha256 } from "../../../src/catalogue/shared";
@@ -27,160 +31,91 @@ import fusionLivePolicyDetail from "../../../acceptance/fixtures/retained-offici
 installContextualLegalitySuite();
 
 test("D1 freshness scope remains structural while registered Source metadata owns lineage semantics", async () => {
-  await testEnv.CATALOGUE_DB.prepare(
-    `INSERT INTO ingestion_runs (
-       id, state, selected_games_json, started_at,
-       expected_current_revision_id, linked_run_id, idempotency_key,
-       candidate_json
-     ) VALUES (
-       'run_future_legality_scope', 'planning', '["gundam"]',
-       '2026-08-02T00:00:00.000Z', 'catrev_spine_000', NULL,
-       'future-legality-scope', '{}'
-     )`,
-  ).run();
+  await ingestionQueries
+    .insertIngestionRunsForD1FreshnessScopeRemainsStructuralWhileRegisteredSourceMetadata(testEnv.CATALOGUE_DB)
+    .run();
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO source_freshness (
-       game, area, source_lineage, region, checked_at, ingestion_run_id
-     ) VALUES (
-       'gundam', 'legality-rules', 'gundam-en-future', 'EN-FUTURE',
-       '2026-08-02T00:00:00.000Z', 'run_future_legality_scope'
-     )`,
-    ).run(),
+    sourceEvidenceQueries
+      .insertSourceFreshnessForD1FreshnessScopeRemainsStructuralWhileRegisteredSourceMetadata(testEnv.CATALOGUE_DB)
+      .run(),
   ).resolves.toBeDefined();
-  await testEnv.CATALOGUE_DB.prepare(
-    "DELETE FROM source_freshness WHERE ingestion_run_id = 'run_future_legality_scope'",
-  ).run();
+  await sourceEvidenceQueries.deleteSourceFreshness(testEnv.CATALOGUE_DB).run();
 });
 
 test("applied D1 request copies and owning run identities are immutable", async () => {
   const runId = "run_operational_plan_immutability";
   const ownerTargetRunId = "run_operational_plan_owner_target";
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_json
-       ) VALUES (?, 'collecting', '["one-piece"]',
-         '2026-08-01T00:00:00.000Z', 'catrev_spine_000', NULL, ?, '{}')`,
-    ).bind(runId, "operational-plan-immutability"),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_json
-       ) VALUES (?, 'collecting', '["one-piece"]',
-         '2026-08-01T00:00:00.000Z', 'catrev_spine_000', NULL, ?, '{}')`,
-    ).bind(ownerTargetRunId, "operational-plan-owner-target"),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_evidence_plans (
-         ingestion_run_id, source_lineage, supported_game,
-         game_profile_version, adapter_version, request_plan_json,
-         plan_origin
-       ) VALUES (?, 'one-piece-en', 'one-piece', 'one-piece@1',
-         'fixture-one-piece-json@3', ?, 'synthetic_fixture')`,
-    ).bind(
-      runId,
-      JSON.stringify({
-        requests: [
-          {
-            id: "update-target",
-            method: "GET",
-            url: "https://en.onepiece-cardgame.com/cardlist/",
-            headers: { accept: "text/html" },
-            representation_fingerprint: "a".repeat(64),
-          },
-          {
-            id: "delete-target",
-            method: "GET",
-            url: "https://en.onepiece-cardgame.com/rules/",
-            headers: { accept: "text/html" },
-            representation_fingerprint: "b".repeat(64),
-          },
-          {
-            id: "insert-target",
-            method: "GET",
-            url: "https://en.onepiece-cardgame.com/products/",
-            headers: { accept: "text/html" },
-            representation_fingerprint: "e".repeat(64),
-          },
-        ],
-      }),
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO source_requests (
-         ingestion_run_id, request_id, sequence_number, method, url,
-         request_headers_json, representation_fingerprint, state
-       ) VALUES (?, 'update-target', 0, 'GET',
-         'https://en.onepiece-cardgame.com/cardlist/',
-         '{"accept":"text/html"}', ?, 'pending')`,
-    ).bind(runId, "a".repeat(64)),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO source_requests (
-         ingestion_run_id, request_id, sequence_number, method, url,
-         request_headers_json, representation_fingerprint, state
-       ) VALUES (?, 'delete-target', 1, 'GET',
-         'https://en.onepiece-cardgame.com/rules/',
-         '{"accept":"text/html"}', ?, 'pending')`,
-    ).bind(runId, "b".repeat(64)),
+    ingestionQueries
+      .insertIngestionRunsForAppliedD1RequestCopiesOwningRunIdentitiesAreImmutable(testEnv.CATALOGUE_DB)
+      .bind(runId, "operational-plan-immutability"),
+    ingestionQueries
+      .insertIngestionRunsForAppliedD1RequestCopiesOwningRunIdentitiesAreImmutable(testEnv.CATALOGUE_DB)
+      .bind(ownerTargetRunId, "operational-plan-owner-target"),
+    sourceEvidenceQueries
+      .insertIngestionEvidencePlansForAuthenticatedReparseRejectsNormalizedFixtureEnvelopeThroughUnavailableProduction(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(
+        runId,
+        JSON.stringify({
+          requests: [
+            {
+              id: "update-target",
+              method: "GET",
+              url: "https://en.onepiece-cardgame.com/cardlist/",
+              headers: { accept: "text/html" },
+              representation_fingerprint: "a".repeat(64),
+            },
+            {
+              id: "delete-target",
+              method: "GET",
+              url: "https://en.onepiece-cardgame.com/rules/",
+              headers: { accept: "text/html" },
+              representation_fingerprint: "b".repeat(64),
+            },
+            {
+              id: "insert-target",
+              method: "GET",
+              url: "https://en.onepiece-cardgame.com/products/",
+              headers: { accept: "text/html" },
+              representation_fingerprint: "e".repeat(64),
+            },
+          ],
+        }),
+      ),
+    sourceEvidenceQueries
+      .insertSourceRequestsForAppliedD1RequestCopiesOwningRunIdentitiesAreImmutable(testEnv.CATALOGUE_DB)
+      .bind(runId, "a".repeat(64)),
+    sourceEvidenceQueries
+      .insertSourceRequestsForAppliedD1RequestCopiesOwningRunIdentitiesAreImmutableWithPending(testEnv.CATALOGUE_DB)
+      .bind(runId, "b".repeat(64)),
   ]);
 
   const updateError = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE source_requests
-       SET url = 'https://attacker.example/changed',
-           request_headers_json = '{"accept":"application/json"}',
-           representation_fingerprint = ?
-       WHERE ingestion_run_id = ? AND request_id = 'update-target'`,
-    )
+    sourceEvidenceQueries
+      .setSourceRequestsUrlRequestHeadersJson(testEnv.CATALOGUE_DB)
       .bind("c".repeat(64), runId)
       .run(),
   );
   const deleteError = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(
-      `DELETE FROM source_requests
-       WHERE ingestion_run_id = ? AND request_id = 'delete-target'`,
-    )
-      .bind(runId)
-      .run(),
+    sourceEvidenceQueries.deleteSourceRequests(testEnv.CATALOGUE_DB).bind(runId).run(),
   );
   const insertError = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO source_requests (
-         ingestion_run_id, request_id, sequence_number, method, url,
-         request_headers_json, representation_fingerprint, state
-       ) VALUES (?, 'insert-target', 2, 'GET',
-         'https://attacker.example/wrong-plan-fields',
-         '{"accept":"application/json"}', ?, 'pending')`,
-    )
+    sourceEvidenceQueries
+      .insertSourceRequestWithMismatchedPlanFields(testEnv.CATALOGUE_DB)
       .bind(runId, "f".repeat(64))
       .run(),
   );
   const unplannedInsertError = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO source_requests (
-         ingestion_run_id, request_id, sequence_number, method, url,
-         request_headers_json, representation_fingerprint, state
-       ) VALUES (?, 'unplanned', 3, 'GET',
-         'https://attacker.example/unplanned', '{}', ?, 'pending')`,
-    )
-      .bind(runId, "d".repeat(64))
-      .run(),
+    sourceEvidenceQueries.insertUnplannedSourceRequest(testEnv.CATALOGUE_DB).bind(runId, "d".repeat(64)).run(),
   );
   const requestOwnerError = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE source_requests SET ingestion_run_id = ?
-       WHERE ingestion_run_id = ? AND request_id = 'update-target'`,
-    )
-      .bind(ownerTargetRunId, runId)
-      .run(),
+    sourceEvidenceQueries.setSourceRequestsIngestionRunId(testEnv.CATALOGUE_DB).bind(ownerTargetRunId, runId).run(),
   );
   const planOwnerError = await rejectedError(
-    testEnv.CATALOGUE_DB.prepare(
-      `UPDATE ingestion_evidence_plans SET ingestion_run_id = ?
-       WHERE ingestion_run_id = ?`,
-    )
+    sourceEvidenceQueries
+      .setIngestionEvidencePlansIngestionRunId(testEnv.CATALOGUE_DB)
       .bind(ownerTargetRunId, runId)
       .run(),
   );
@@ -218,81 +153,32 @@ test("an Official Source Collection Plan cannot freeze another run's discovery e
   });
   await testEnv.CATALOGUE_DB.batch([
     ...[sourceRunId, targetRunId].map((runId, index) =>
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO ingestion_runs (
-           id, state, selected_games_json, started_at,
-           expected_current_revision_id, linked_run_id, idempotency_key,
-           candidate_json
-         ) VALUES (?, 'collecting', '["one-piece"]',
-           '2026-08-01T00:00:00.000Z', 'catrev_spine_000', NULL, ?, '{}')`,
-      ).bind(runId, `collection-plan-owner-${index}`),
+      ingestionQueries
+        .insertIngestionRunsForAppliedD1RequestCopiesOwningRunIdentitiesAreImmutable(testEnv.CATALOGUE_DB)
+        .bind(runId, `collection-plan-owner-${index}`),
     ),
     ...[sourceRunId, targetRunId].map((runId) =>
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO ingestion_evidence_plans (
-           ingestion_run_id, source_lineage, supported_game,
-           game_profile_version, adapter_version, request_plan_json,
-           plan_origin
-         ) VALUES (?, 'one-piece-en', 'one-piece', 'one-piece@1',
-           'fixture-one-piece-json@3', ?, 'synthetic_fixture')`,
-      ).bind(runId, plan),
+      sourceEvidenceQueries
+        .insertIngestionEvidencePlansForAuthenticatedReparseRejectsNormalizedFixtureEnvelopeThroughUnavailableProduction(
+          testEnv.CATALOGUE_DB,
+        )
+        .bind(runId, plan),
     ),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO source_requests (
-         ingestion_run_id, request_id, sequence_number, method, url,
-         request_headers_json, representation_fingerprint, state
-       ) VALUES (?, 'discovery', 0, 'GET',
-         'https://en.onepiece-cardgame.com/cardlist/', '{}', ?, 'observed')`,
-    ).bind(sourceRunId, "1".repeat(64)),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO source_fetch_attempts (
-         id, ingestion_run_id, request_id, attempt_number,
-         requested_at, completed_at, outcome, http_status,
-         response_headers_json, retry_after_ms, diagnostic
-       ) VALUES ('srcfetch_collection_owner', ?, 'discovery', 1,
-         '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:01.000Z',
-         'success', 200, '{}', NULL, NULL)`,
-    ).bind(sourceRunId),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO source_snapshots (
-         id, ingestion_run_id, request_id, fetch_attempt_id,
-         request_method, request_url, request_headers_json,
-         representation_fingerprint, response_vary_json, retrieved_at,
-         http_status, response_headers_json, media_type, content_digest,
-         content_byte_length, content_object_key, source_lineage,
-         supported_game, game_profile_version, adapter_version,
-         reused_source_snapshot_id
-       ) VALUES ('srcsnap_collection_owner', ?, 'discovery',
-         'srcfetch_collection_owner', 'GET',
-         'https://en.onepiece-cardgame.com/cardlist/', '{}', ?, '[]',
-         '2026-08-01T00:00:01.000Z', 200, '{}', 'application/json', ?,
-         2, 'source-snapshots/collection-owner.bin', 'one-piece-en',
-         'one-piece', 'one-piece@1', 'fixture-one-piece-json@3', NULL)`,
-    ).bind(sourceRunId, "1".repeat(64), "2".repeat(64)),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO source_parse_operations (
-         id, source_snapshot_id, adapter_version, intent,
-         idempotency_key, observation_set_id, content_object_key,
-         parsed_at, state, content_digest, content_byte_length,
-         observation_count
-       ) VALUES ('srcparse_collection_owner', 'srcsnap_collection_owner',
-         'fixture-one-piece-json@3', 'collection',
-         'collection-owner-parse', 'srcobsset_collection_owner',
-         'source-observations/collection-owner.json',
-         '2026-08-01T00:00:02.000Z', 'finalized', ?, 2, 1)`,
-    ).bind("3".repeat(64)),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO source_observation_sets (
-         id, parse_operation_id, source_snapshot_id, source_lineage,
-         supported_game, game_profile_version, adapter_version, parsed_at,
-         content_digest, content_byte_length, content_object_key,
-         observation_count
-       ) VALUES ('srcobsset_collection_owner',
-         'srcparse_collection_owner', 'srcsnap_collection_owner',
-         'one-piece-en', 'one-piece', 'one-piece@1',
-         'fixture-one-piece-json@3', '2026-08-01T00:00:02.000Z', ?, 2,
-         'source-observations/collection-owner.json', 1)`,
-    ).bind("3".repeat(64)),
+    sourceEvidenceQueries
+      .insertSourceRequestsForOfficialSourceCollectionPlanCannotFreezeAnotherRunS(testEnv.CATALOGUE_DB)
+      .bind(sourceRunId, "1".repeat(64)),
+    sourceEvidenceQueries
+      .insertSourceFetchAttemptsForOfficialSourceCollectionPlanCannotFreezeAnotherRunS(testEnv.CATALOGUE_DB)
+      .bind(sourceRunId),
+    sourceEvidenceQueries
+      .insertSourceSnapshotsForOfficialSourceCollectionPlanCannotFreezeAnotherRunS(testEnv.CATALOGUE_DB)
+      .bind(sourceRunId, "1".repeat(64), "2".repeat(64)),
+    sourceEvidenceQueries
+      .insertSourceParseOperationsForOfficialSourceCollectionPlanCannotFreezeAnotherRunS(testEnv.CATALOGUE_DB)
+      .bind("3".repeat(64)),
+    sourceEvidenceQueries
+      .insertSourceObservationSetsForOfficialSourceCollectionPlanCannotFreezeAnotherRunS(testEnv.CATALOGUE_DB)
+      .bind("3".repeat(64)),
   ]);
 
   const collectionPlan = JSON.stringify({
@@ -305,28 +191,14 @@ test("an Official Source Collection Plan cannot freeze another run's discovery e
     requests: [],
   });
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO official_source_collection_plans (
-         ingestion_run_id, source_lineage,
-         discovery_observation_set_id, contract,
-         collection_plan_json, content_digest, created_at
-       ) VALUES (?, 'one-piece-en', 'srcobsset_collection_owner',
-         'card-keepr-official-source-collection-plan@1', ?, ?,
-         '2026-08-01T00:00:03.000Z')`,
-    )
+    sourceEvidenceQueries
+      .insertOfficialSourceCollectionPlans(testEnv.CATALOGUE_DB)
       .bind(sourceRunId, collectionPlan, `a${"Z".repeat(63)}`)
       .run(),
   ).rejects.toThrow(/CHECK constraint failed/);
   await expect(
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO official_source_collection_plans (
-         ingestion_run_id, source_lineage,
-         discovery_observation_set_id, contract,
-         collection_plan_json, content_digest, created_at
-       ) VALUES (?, 'one-piece-en', 'srcobsset_collection_owner',
-         'card-keepr-official-source-collection-plan@1', ?, ?,
-         '2026-08-01T00:00:03.000Z')`,
-    )
+    sourceEvidenceQueries
+      .insertOfficialSourceCollectionPlans(testEnv.CATALOGUE_DB)
       .bind(targetRunId, collectionPlan, "4".repeat(64))
       .run(),
   ).rejects.toThrow(/official_source_collection_plan_discovery_owner_mismatch/);
@@ -337,33 +209,17 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
   // the digest and identity guards can be exercised without a real plan.
   const scratchDatabase = testEnv.SCRATCH_DB;
   await applyD1Migrations(scratchDatabase, testEnv.TEST_MIGRATIONS);
-  await scratchDatabase.prepare(`DROP TRIGGER official_source_collection_plan_discovery_owner`).run();
+  await publishedCatalogueQueries.dropOfficialSourceCollectionPlanDiscoveryOwner(scratchDatabase).run();
 
   const malformedDigest = await rejectedError(
-    scratchDatabase
-      .prepare(
-        `INSERT INTO official_source_collection_plans (
-        ingestion_run_id, source_lineage,
-        discovery_observation_set_id, contract,
-        collection_plan_json, content_digest, created_at
-      ) VALUES ('run_missing', 'missing-lineage', 'srcobsset_missing',
-        'card-keepr-official-source-collection-plan@1', '{}', ?,
-        '2026-08-01T00:00:00.000Z')`,
-      )
+    sourceEvidenceQueries
+      .insertOfficialSourceCollectionPlansForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(scratchDatabase)
       .bind(`a${"Z".repeat(63)}`)
       .run(),
   );
   const validDigestMissingOwner = await rejectedError(
-    scratchDatabase
-      .prepare(
-        `INSERT INTO official_source_collection_plans (
-        ingestion_run_id, source_lineage,
-        discovery_observation_set_id, contract,
-        collection_plan_json, content_digest, created_at
-      ) VALUES ('run_missing', 'missing-lineage', 'srcobsset_missing',
-        'card-keepr-official-source-collection-plan@1', '{}', ?,
-        '2026-08-01T00:00:00.000Z')`,
-      )
+    sourceEvidenceQueries
+      .insertOfficialSourceCollectionPlansForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(scratchDatabase)
       .bind("a".repeat(64))
       .run(),
   );
@@ -372,8 +228,8 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
     /official_source_collection_plan_discovery_owner_mismatch|FOREIGN KEY constraint failed/,
   );
 
-  const foreignKeys = await scratchDatabase
-    .prepare(`PRAGMA foreign_key_list(revision_legality_rules)`)
+  const foreignKeys = await legalityQueries
+    .inspectForeignKeyList(scratchDatabase)
     .all<{ table: string; from: string }>();
   expect(foreignKeys.results).toEqual(
     expect.arrayContaining([
@@ -383,25 +239,7 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
       }),
     ]),
   );
-  const guards = await scratchDatabase
-    .prepare(
-      `SELECT name FROM sqlite_master
-     WHERE type = 'trigger' AND name IN (
-       'guard_legality_rule_identity',
-       'legality_rule_card_ids_canonical_insert',
-       'legality_rule_card_ids_canonical_update',
-       'legality_rule_provenance_owner_insert',
-       'legality_rule_provenance_owner_update',
-       'legality_rule_provenance_immutable',
-       'legality_rule_scope_valid_insert',
-       'legality_rules_immutable_delete',
-       'revision_legality_rule_matches_canonical',
-       'revision_legality_rule_scope_valid_insert',
-       'revision_legality_rules_immutable_delete',
-       'revision_legality_rules_immutable_update'
-     ) ORDER BY name`,
-    )
-    .all<{ name: string }>();
+  const guards = await legalityQueries.readSqliteMasterName(scratchDatabase).all<{ name: string }>();
   expect(guards.results.map((row) => row.name)).toEqual([
     "guard_legality_rule_identity",
     "legality_rule_card_ids_canonical_insert",
@@ -459,18 +297,8 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
     last_missing_revision_id: null,
   };
   await scratchDatabase.batch([
-    scratchDatabase
-      .prepare(
-        `INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_digest, candidate_created_at, approval_deadline,
-         approval_json, candidate_json
-       ) VALUES ('run_upgraded_legality_guard', 'publishing',
-         '["one-piece"]', '2026-08-01T00:00:00.000Z',
-         'catrev_spine_000', NULL, 'upgraded-legality-guard', ?,
-         '2026-08-01T00:00:02.000Z', '2099-01-01T00:00:00.000Z', ?, '{}')`,
-      )
+    ingestionQueries
+      .insertIngestionRunsForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(scratchDatabase)
       .bind(
         "8".repeat(64),
         JSON.stringify({
@@ -478,116 +306,32 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
           expected_current_revision_id: "catrev_spine_000",
         }),
       ),
-    scratchDatabase.prepare(
-      `UPDATE operation_state
-       SET active_ingestion_run_id = 'run_upgraded_legality_guard'
-       WHERE singleton = 1`,
+    ingestionQueries.setOperationStateActiveIngestionRunIdForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(
+      scratchDatabase,
     ),
-    scratchDatabase
-      .prepare(
-        `INSERT INTO ingestion_evidence_plans (
-         ingestion_run_id, source_lineage, supported_game,
-         game_profile_version, adapter_version, request_plan_json,
-         plan_origin
-       ) VALUES ('run_upgraded_legality_guard', 'one-piece-en',
-         'one-piece', 'one-piece@1', 'fixture-one-piece-json@3', ?,
-         'synthetic_fixture')`,
-      )
+    sourceEvidenceQueries
+      .insertIngestionEvidencePlansForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(scratchDatabase)
       .bind(requestPlan),
-    scratchDatabase
-      .prepare(
-        `INSERT INTO source_requests (
-         ingestion_run_id, request_id, sequence_number, method, url,
-         request_headers_json, representation_fingerprint, state,
-         source_snapshot_id
-       ) VALUES ('run_upgraded_legality_guard', 'upgraded-legality', 0,
-         'GET', 'https://en.onepiece-cardgame.com/rules/restriction/',
-         '{}', ?, 'observed', 'srcsnap_upgraded_legality_guard')`,
-      )
+    sourceEvidenceQueries
+      .insertSourceRequestsForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(scratchDatabase)
       .bind("5".repeat(64)),
-    scratchDatabase.prepare(
-      `INSERT INTO source_fetch_attempts (
-         id, ingestion_run_id, request_id, attempt_number,
-         requested_at, completed_at, outcome, http_status,
-         response_headers_json, retry_after_ms, diagnostic
-       ) VALUES ('srcfetch_upgraded_legality_guard',
-         'run_upgraded_legality_guard', 'upgraded-legality', 1,
-         '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:01.000Z',
-         'success', 200, '{}', NULL, NULL)`,
+    sourceEvidenceQueries.insertSourceFetchAttemptsForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(
+      scratchDatabase,
     ),
-    scratchDatabase
-      .prepare(
-        `INSERT INTO source_snapshots (
-         id, ingestion_run_id, request_id, fetch_attempt_id,
-         request_method, request_url, request_headers_json,
-         representation_fingerprint, response_vary_json, retrieved_at,
-         http_status, response_headers_json, media_type, content_digest,
-         content_byte_length, content_object_key, source_lineage,
-         supported_game, game_profile_version, adapter_version,
-         reused_source_snapshot_id
-       ) VALUES ('srcsnap_upgraded_legality_guard',
-         'run_upgraded_legality_guard', 'upgraded-legality',
-         'srcfetch_upgraded_legality_guard', 'GET',
-         'https://en.onepiece-cardgame.com/rules/restriction/', '{}', ?,
-         '[]', '2026-08-01T00:00:01.000Z', 200, '{}',
-         'application/json', ?, 2,
-         'source-snapshots/upgraded-legality-guard.bin', 'one-piece-en',
-         'one-piece', 'one-piece@1', 'fixture-one-piece-json@3', NULL)`,
-      )
+    sourceEvidenceQueries
+      .insertSourceSnapshotsForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(scratchDatabase)
       .bind("5".repeat(64), "6".repeat(64)),
-    scratchDatabase
-      .prepare(
-        `INSERT INTO source_parse_operations (
-         id, source_snapshot_id, adapter_version, intent,
-         idempotency_key, observation_set_id, content_object_key,
-         parsed_at, state, content_digest, content_byte_length,
-         observation_count
-       ) VALUES ('srcparse_upgraded_legality_guard',
-         'srcsnap_upgraded_legality_guard', 'fixture-one-piece-json@3',
-         'collection', 'upgraded-legality-guard-parse',
-         'srcobsset_upgraded_legality_guard',
-         'source-observations/upgraded-legality-guard.json',
-         '2026-08-01T00:00:02.000Z', 'finalized', ?, 2, 1)`,
-      )
+    sourceEvidenceQueries
+      .insertSourceParseOperationsForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(scratchDatabase)
       .bind("7".repeat(64)),
-    scratchDatabase
-      .prepare(
-        `INSERT INTO source_observation_sets (
-         id, parse_operation_id, source_snapshot_id, source_lineage,
-         supported_game, game_profile_version, adapter_version, parsed_at,
-         content_digest, content_byte_length, content_object_key,
-         observation_count
-       ) VALUES ('srcobsset_upgraded_legality_guard',
-         'srcparse_upgraded_legality_guard',
-         'srcsnap_upgraded_legality_guard', 'one-piece-en', 'one-piece',
-         'one-piece@1', 'fixture-one-piece-json@3',
-         '2026-08-01T00:00:02.000Z', ?, 2,
-         'source-observations/upgraded-legality-guard.json', 1)`,
-      )
+    sourceEvidenceQueries
+      .insertSourceObservationSetsForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(scratchDatabase)
       .bind("7".repeat(64)),
-    scratchDatabase
-      .prepare(
-        `INSERT INTO catalogue_revisions (
-         id, ingestion_run_id, published_at, content_digest,
-         expected_previous_revision_id, approved_candidate_digest
-       ) VALUES ('catrev_upgraded_legality_guard',
-         'run_upgraded_legality_guard', '2026-08-01T00:00:03.000Z', ?,
-         'catrev_spine_000', ?)`,
-      )
+    ingestionQueries
+      .insertCatalogueRevisionsForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(scratchDatabase)
       .bind("8".repeat(64), "8".repeat(64)),
-    scratchDatabase
-      .prepare(
-        `INSERT INTO legality_rules (
-         id, official_id, supported_game, region, format, event_tier,
-         effective_from, effective_until, official_wording, effect_json,
-         card_ids_json, direct_card_ids_json, source_lineage, source_snapshot_id,
-         source_observation_set_id, source_observation_id,
-         source_observation_pointer, source_field_pointers_json,
-         first_revision_id, last_observed_revision_id, current,
-         last_missing_revision_id
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-         1, NULL)`,
-      )
+    sourceEvidenceQueries
+      .insertLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(scratchDatabase)
       .bind(
         upgradedRule.id,
         upgradedRule.official_id,
@@ -610,15 +354,8 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
         upgradedRule.first_revision_id,
         upgradedRule.last_observed_revision_id,
       ),
-    scratchDatabase
-      .prepare(
-        `INSERT INTO revision_legality_rules (
-         catalogue_revision_id, legality_rule_id, supported_game,
-         region, format, event_tier, effective_from, effective_until,
-         card_ids_json, source_retrieved_at, document_json
-       ) VALUES ('catrev_upgraded_legality_guard', ?, ?, ?, ?, ?, ?, ?, ?,
-         '2026-08-01T00:00:01.000Z', ?)`,
-      )
+    sourceEvidenceQueries
+      .insertRevisionLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(scratchDatabase)
       .bind(
         upgradedRule.id,
         upgradedRule.game,
@@ -666,66 +403,27 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
     upgradedScopeErrors.map(() => expect.stringMatching(/legality_rule_scope_invalid/)),
   );
   const upgradedProvenanceMutation = await rejectedError(
-    scratchDatabase
-      .prepare(
-        `UPDATE legality_rules
-       SET source_snapshot_id = 'srcsnap_attacker'
-       WHERE id = ?`,
-      )
-      .bind(upgradedRule.id)
-      .run(),
+    sourceEvidenceQueries.setLegalityRulesSourceSnapshotId(scratchDatabase).bind(upgradedRule.id).run(),
   );
   const upgradedCrossOwner = await rejectedError(
-    scratchDatabase
-      .prepare(
-        `INSERT INTO legality_rules (
-         id, official_id, supported_game, region, format, event_tier,
-         effective_from, effective_until, official_wording, effect_json,
-         card_ids_json, direct_card_ids_json, source_lineage, source_snapshot_id,
-         source_observation_set_id, source_observation_id,
-         source_observation_pointer, source_field_pointers_json,
-         first_revision_id, last_observed_revision_id, current,
-         last_missing_revision_id
-       ) VALUES ('legality_rule_upgraded_cross_owner', 'cross-owner',
-         'one-piece', 'EN-OCEANIA', 'standard', NULL, '2026-01-01', NULL,
-         'Cross-owner rule.', '{"type":"ban"}', '[]', '[]', 'one-piece-en',
-         'srcsnap_attacker', 'srcobsset_upgraded_legality_guard',
-         'srcobs_attacker', '/observations/0/value/legality_rules/1', '{}',
-         'catrev_upgraded_legality_guard',
-         'catrev_upgraded_legality_guard', 1, NULL)`,
+    sourceEvidenceQueries
+      .insertLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRuleWithCatrevUpgradedLegalityGuard(
+        scratchDatabase,
       )
       .run(),
   );
   const upgradedRevisionMutation = await rejectedError(
-    scratchDatabase
-      .prepare(
-        `UPDATE revision_legality_rules SET format = 'attacker-format'
-       WHERE catalogue_revision_id = 'catrev_upgraded_legality_guard'
-         AND legality_rule_id = ?`,
-      )
-      .bind(upgradedRule.id)
-      .run(),
+    legalityQueries.setRevisionLegalityRulesFormat(scratchDatabase).bind(upgradedRule.id).run(),
   );
   const upgradedRevisionDelete = await rejectedError(
-    scratchDatabase
-      .prepare(
-        `DELETE FROM revision_legality_rules
-       WHERE catalogue_revision_id = 'catrev_upgraded_legality_guard'
-         AND legality_rule_id = ?`,
-      )
-      .bind(upgradedRule.id)
-      .run(),
+    legalityQueries.deleteRevisionLegalityRules(scratchDatabase).bind(upgradedRule.id).run(),
   );
   const { event_tier: _missingUpgradedEventTier, ...upgradedWithoutNullableKey } = upgradedRule;
   const { effective_until: _replacedUpgradedEffectiveUntil, ...upgradedWithReplacementKey } = upgradedRule;
   const upgradedMissingNullableKey = await rejectedError(
-    scratchDatabase
-      .prepare(
-        `INSERT INTO revision_legality_rules (
-         catalogue_revision_id, legality_rule_id, supported_game,
-         region, format, event_tier, effective_from, effective_until,
-         card_ids_json, document_json
-       ) VALUES ('catrev_upgraded_legality_guard', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    legalityQueries
+      .insertRevisionLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRuleWithCatrevUpgradedLegalityGuard(
+        scratchDatabase,
       )
       .bind(
         upgradedRule.id,
@@ -741,13 +439,9 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
       .run(),
   );
   const upgradedArbitraryKeySubstitution = await rejectedError(
-    scratchDatabase
-      .prepare(
-        `INSERT INTO revision_legality_rules (
-         catalogue_revision_id, legality_rule_id, supported_game,
-         region, format, event_tier, effective_from, effective_until,
-         card_ids_json, document_json
-       ) VALUES ('catrev_upgraded_legality_guard', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    legalityQueries
+      .insertRevisionLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRuleWithCatrevUpgradedLegalityGuard(
+        scratchDatabase,
       )
       .bind(
         upgradedRule.id,
@@ -766,13 +460,9 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
       .run(),
   );
   const upgradedDuplicateRequiredKey = await rejectedError(
-    scratchDatabase
-      .prepare(
-        `INSERT INTO revision_legality_rules (
-         catalogue_revision_id, legality_rule_id, supported_game,
-         region, format, event_tier, effective_from, effective_until,
-         card_ids_json, document_json
-       ) VALUES ('catrev_upgraded_legality_guard', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    legalityQueries
+      .insertRevisionLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRuleWithCatrevUpgradedLegalityGuard(
+        scratchDatabase,
       )
       .bind(
         upgradedRule.id,
@@ -801,13 +491,9 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
   const upgradedNestedCardIds = await Promise.all(
     upgradedNestedDocuments.map((document) =>
       rejectedError(
-        scratchDatabase
-          .prepare(
-            `INSERT INTO revision_legality_rules (
-             catalogue_revision_id, legality_rule_id, supported_game,
-             region, format, event_tier, effective_from, effective_until,
-             card_ids_json, document_json
-           ) VALUES ('catrev_upgraded_legality_guard', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        legalityQueries
+          .insertRevisionLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRuleWithCatrevUpgradedLegalityGuard(
+            scratchDatabase,
           )
           .bind(
             upgradedRule.id,
@@ -902,14 +588,8 @@ test("legality freshness remains independent across partial regional refreshes",
     expect(reconciled.response.status).toBe(200);
     const published = await approve(reconciled.document, `publish-${key}`, observedAt);
     expect(published.response.status).toBe(200);
-    const freshness = await testEnv.CATALOGUE_DB.prepare(
-      `SELECT checked_at
-       FROM source_freshness
-       WHERE game = 'gundam'
-         AND area = 'legality-rules'
-         AND source_lineage = ?
-         AND ingestion_run_id = ?`,
-    )
+    const freshness = await sourceEvidenceQueries
+      .readSourceFreshnessCheckedAt(testEnv.CATALOGUE_DB)
       .bind(lineage, runId)
       .first<{ checked_at: string }>();
     if (freshness === null) {
@@ -923,12 +603,7 @@ test("legality freshness remains independent across partial regional refreshes",
     };
   };
   const freshnessRows = () =>
-    testEnv.CATALOGUE_DB.prepare(
-      `SELECT game, area, source_lineage, region, checked_at, ingestion_run_id
-     FROM source_freshness
-     WHERE game = 'gundam' AND area = 'legality-rules'
-     ORDER BY source_lineage, region`,
-    ).all<Record<string, unknown>>();
+    sourceEvidenceQueries.readSourceFreshnessGameArea(testEnv.CATALOGUE_DB).all<Record<string, unknown>>();
 
   const asia = await publishScope(
     "regional-freshness-asia",
@@ -1066,11 +741,8 @@ test("a versioned production adapter derives and exports an exact representable 
   ).child_ids;
   expect(childIds.length).toBeGreaterThanOrEqual(3);
   expect(new Set(childIds).size).toBe(childIds.length);
-  const duplicateSnapshots = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT request_id, COUNT(*) AS count
-     FROM source_snapshots WHERE ingestion_run_id = ?
-     GROUP BY request_id HAVING COUNT(*) > 1`,
-  )
+  const duplicateSnapshots = await sourceEvidenceQueries
+    .countSourceSnapshotsCount(testEnv.CATALOGUE_DB)
     .bind(runId)
     .all();
   expect(duplicateSnapshots.results).toEqual([]);
@@ -1125,21 +797,14 @@ test("production discovery retains literal stages and cannot freeze a Collection
     state: "failed",
   });
 
-  const frozen = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count
-     FROM official_source_collection_plans
-     WHERE ingestion_run_id = ?`,
-  )
+  const frozen = await ingestionQueries
+    .countOfficialSourceCollectionPlansCount(testEnv.CATALOGUE_DB)
     .bind(runId)
     .first<{ count: number }>();
   expect(frozen?.count).toBe(0);
 
-  const staged = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT parent_request_id, url, request_role
-     FROM source_discovery_request_plans
-     WHERE ingestion_run_id = ?
-     ORDER BY sequence_number`,
-  )
+  const staged = await sourceEvidenceQueries
+    .readSourceDiscoveryRequestPlansParentRequestIdUrl(testEnv.CATALOGUE_DB)
     .bind(runId)
     .all<{
       parent_request_id: string;
@@ -1193,83 +858,53 @@ test("authenticated parsing retains staged live Fusion policy root and detail ob
     }),
   );
   await testEnv.CATALOGUE_DB.batch([
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_runs (
-         id, state, selected_games_json, started_at,
-         expected_current_revision_id, linked_run_id, idempotency_key,
-         candidate_json
-       ) VALUES (?, 'parsing', '["fusion-world"]',
-         '2026-08-03T00:00:00.000Z', 'catrev_spine_000', NULL, ?, '{}')`,
-    ).bind(runId, "live-fusion-policy-evidence"),
-    testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO ingestion_evidence_plans (
-         ingestion_run_id, source_lineage, supported_game,
-         game_profile_version, adapter_version, request_plan_json,
-         plan_origin
-       ) VALUES (?, 'fusion-world-en', 'fusion-world', 'fusion-world@1',
-         'fusion-world-en@9', ?, 'production')`,
-    ).bind(
-      runId,
-      JSON.stringify({
-        requests: retained.map((item) => ({
-          id: item.requestId,
-          method: "GET",
-          url: item.fixture.source_url,
-          headers: { accept: "text/html" },
-          representation_fingerprint: item.digest,
-        })),
-      }),
-    ),
+    ingestionQueries
+      .insertIngestionRunsForAuthenticatedParsingRetainsStagedLiveFusionPolicyRootDetail(testEnv.CATALOGUE_DB)
+      .bind(runId, "live-fusion-policy-evidence"),
+    sourceEvidenceQueries
+      .insertIngestionEvidencePlansForAuthenticatedParsingRetainsStagedLiveFusionPolicyRootDetail(testEnv.CATALOGUE_DB)
+      .bind(
+        runId,
+        JSON.stringify({
+          requests: retained.map((item) => ({
+            id: item.requestId,
+            method: "GET",
+            url: item.fixture.source_url,
+            headers: { accept: "text/html" },
+            representation_fingerprint: item.digest,
+          })),
+        }),
+      ),
     ...retained.flatMap((item, index) => [
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO source_requests (
-           ingestion_run_id, request_id, sequence_number, method, url,
-           request_headers_json, representation_fingerprint, state,
-           source_snapshot_id
-         ) VALUES (?, ?, ?, 'GET', ?, ?, ?, 'observed', ?)`,
-      ).bind(
-        runId,
-        item.requestId,
-        index,
-        item.fixture.source_url,
-        JSON.stringify({ accept: "text/html" }),
-        item.digest,
-        item.snapshotId,
-      ),
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO source_fetch_attempts (
-           id, ingestion_run_id, request_id, attempt_number,
-           requested_at, completed_at, outcome, http_status,
-           response_headers_json, retry_after_ms, diagnostic
-         ) VALUES (?, ?, ?, 1, '2026-08-03T00:00:00.000Z',
-           '2026-08-03T00:00:01.000Z', 'success', 200, '{}', NULL, NULL)`,
-      ).bind(item.fetchId, runId, item.requestId),
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO source_snapshots (
-           id, ingestion_run_id, request_id, fetch_attempt_id,
-           request_method, request_url, request_headers_json,
-           representation_fingerprint, response_vary_json, retrieved_at,
-           http_status, response_headers_json, media_type, content_digest,
-           content_byte_length, content_object_key, source_lineage,
-           supported_game, game_profile_version, adapter_version,
-           reused_source_snapshot_id
-         ) VALUES (?, ?, ?, ?, 'GET', ?, ?, ?, '[]',
-           '2026-08-03T00:00:01.000Z', 200, '{}', ?, ?, ?, ?,
-           'fusion-world-en', 'fusion-world', 'fusion-world@1',
-           'fusion-world-en@9', NULL)`,
-      ).bind(
-        item.snapshotId,
-        runId,
-        item.requestId,
-        item.fetchId,
-        item.fixture.source_url,
-        JSON.stringify({ accept: "text/html" }),
-        item.digest,
-        item.fixture.content_type,
-        item.digest,
-        item.bytes.byteLength,
-        `source-snapshots/${item.snapshotId}.bin`,
-      ),
+      sourceEvidenceQueries
+        .insertSourceRequestsForAuthenticatedParsingRetainsStagedLiveFusionPolicyRootDetail(testEnv.CATALOGUE_DB)
+        .bind(
+          runId,
+          item.requestId,
+          index,
+          item.fixture.source_url,
+          JSON.stringify({ accept: "text/html" }),
+          item.digest,
+          item.snapshotId,
+        ),
+      sourceEvidenceQueries
+        .insertSourceFetchAttemptsForAuthenticatedParsingRetainsStagedLiveFusionPolicyRootDetail(testEnv.CATALOGUE_DB)
+        .bind(item.fetchId, runId, item.requestId),
+      sourceEvidenceQueries
+        .insertSourceSnapshotsForAuthenticatedParsingRetainsStagedLiveFusionPolicyRootDetail(testEnv.CATALOGUE_DB)
+        .bind(
+          item.snapshotId,
+          runId,
+          item.requestId,
+          item.fetchId,
+          item.fixture.source_url,
+          JSON.stringify({ accept: "text/html" }),
+          item.digest,
+          item.fixture.content_type,
+          item.digest,
+          item.bytes.byteLength,
+          `source-snapshots/${item.snapshotId}.bin`,
+        ),
     ]),
   ]);
   await Promise.all(
@@ -1284,12 +919,8 @@ test("authenticated parsing retains staged live Fusion policy root and detail ob
     expect(parsed.response.status).toBe(201);
   }
 
-  const observationSets = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT source_snapshot_id, observation_count, content_object_key
-     FROM source_observation_sets
-     WHERE source_snapshot_id IN (?, ?)
-     ORDER BY source_snapshot_id`,
-  )
+  const observationSets = await sourceEvidenceQueries
+    .readSourceObservationSetsSourceSnapshotIdObservationCount(testEnv.CATALOGUE_DB)
     .bind(fixtures[0]!.snapshotId, fixtures[1]!.snapshotId)
     .all<{
       source_snapshot_id: string;
@@ -1398,8 +1029,8 @@ test("the One Piece production release surface publishes release timing through 
   });
   expect(rejected.response.status).toBe(200);
   expect(
-    await testEnv.CATALOGUE_DB.prepare("SELECT current_revision_id FROM catalogue_state WHERE singleton = 1").first(
-      "current_revision_id",
-    ),
+    await publishedCatalogueQueries
+      .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
+      .first("current_revision_id"),
   ).toBe(revisionId);
 }, 90_000);

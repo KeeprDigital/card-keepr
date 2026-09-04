@@ -1,3 +1,7 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as ingestionQueries from "./query-helpers/ingestion";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { pauseEvidenceRunForRequestCapacity, RequestCapacityProblem } from "../../../src/catalogue/source-evidence";
@@ -13,14 +17,12 @@ import { fusionWorldRequestCapacity, pauseRunAtCapacity } from "./capacity-pause
 installRuntimeSuite();
 
 async function catalogueRevisionCount(): Promise<unknown> {
-  return env.CATALOGUE_DB.prepare("SELECT COUNT(*) AS count FROM catalogue_revisions").first("count");
+  return publishedCatalogueQueries.countCatalogueRevisionsCount(env.CATALOGUE_DB).first("count");
 }
 
 async function terminateRunWorkflows(runId: string, parentWorkflowId: string): Promise<void> {
-  const plan = await env.CATALOGUE_DB.prepare(
-    `SELECT child_workflow_ids_json FROM ingestion_evidence_plans
-     WHERE ingestion_run_id = ?`,
-  )
+  const plan = await sourceEvidenceQueries
+    .readIngestionEvidencePlansChildWorkflowIdsJson(env.CATALOGUE_DB)
     .bind(runId)
     .first<{ child_workflow_ids_json: string | null }>();
   const childIds: string[] = JSON.parse(plan?.child_workflow_ids_json ?? "[]");
@@ -41,10 +43,8 @@ test("resuming an extended run derives the overflow batch again without refetchi
   // Fillers are retained as already observed Source Requests so the resumed
   // collection proves they are neither fetched nor parsed again.
   const { runId, root, snapshotId } = await pauseRunAtCapacity("capacity_resume_noretch_001", "observed");
-  const pause = await env.CATALOGUE_DB.prepare(
-    `SELECT overflow_request_count, required_capacity
-     FROM ingestion_run_capacity_pauses WHERE ingestion_run_id = ?`,
-  )
+  const pause = await sourceEvidenceQueries
+    .readIngestionRunCapacityPausesOverflowRequestCountRequiredCapacity(env.CATALOGUE_DB)
     .bind(runId)
     .first<{
       overflow_request_count: number;
@@ -73,16 +73,11 @@ test("resuming an extended run derives the overflow batch again without refetchi
       ingestion_run_id: runId,
       workflow: { id: resumedParentId },
     });
+    expect(await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(runId).first("state")).toBe(
+      "collecting",
+    );
     expect(
-      await env.CATALOGUE_DB.prepare("SELECT state FROM ingestion_runs WHERE id = ?").bind(runId).first("state"),
-    ).toBe("collecting");
-    expect(
-      await env.CATALOGUE_DB.prepare(
-        `SELECT from_state, to_state FROM ingestion_run_transitions
-       WHERE ingestion_run_id = ? ORDER BY sequence DESC LIMIT 1`,
-      )
-        .bind(runId)
-        .first(),
+      await ingestionQueries.readIngestionRunTransitionsFromStateToState(env.CATALOGUE_DB).bind(runId).first(),
     ).toMatchObject({
       from_state: "paused",
       to_state: "collecting",
@@ -99,10 +94,8 @@ test("resuming an extended run derives the overflow batch again without refetchi
     // discovery evidence and admitted under the new capacity.
     const deadline = Date.now() + 20_000;
     for (;;) {
-      const parent = await env.CATALOGUE_DB.prepare(
-        `SELECT state FROM source_requests
-         WHERE ingestion_run_id = ? AND request_id = ?`,
-      )
+      const parent = await sourceEvidenceQueries
+        .readSourceRequestsState(env.CATALOGUE_DB)
         .bind(runId, root.request_id)
         .first("state");
       if (parent === "observed") break;
@@ -111,31 +104,19 @@ test("resuming an extended run derives the overflow batch again without refetchi
       }
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    expect(
-      await env.CATALOGUE_DB.prepare(
-        `SELECT COUNT(*) AS count FROM source_requests
-       WHERE ingestion_run_id = ?`,
-      )
-        .bind(runId)
-        .first("count"),
-    ).toBe(fusionWorldRequestCapacity + pause.overflow_request_count);
+    expect(await sourceEvidenceQueries.countSourceRequestsCount(env.CATALOGUE_DB).bind(runId).first("count")).toBe(
+      fusionWorldRequestCapacity + pause.overflow_request_count,
+    );
 
     // The parent Source Request resumed from its retained Source Snapshot:
     // the only fetch attempt in the whole run is the one retained before the
     // pause, so nothing already captured or observed was fetched again.
+    expect(await sourceEvidenceQueries.countSourceFetchAttemptsCount(env.CATALOGUE_DB).bind(runId).first("count")).toBe(
+      1,
+    );
     expect(
-      await env.CATALOGUE_DB.prepare(
-        `SELECT COUNT(*) AS count FROM source_fetch_attempts
-       WHERE ingestion_run_id = ?`,
-      )
-        .bind(runId)
-        .first("count"),
-    ).toBe(1);
-    expect(
-      await env.CATALOGUE_DB.prepare(
-        `SELECT state, source_snapshot_id FROM source_requests
-       WHERE ingestion_run_id = ? AND request_id = ?`,
-      )
+      await sourceEvidenceQueries
+        .readSourceRequestsStateSourceSnapshotId(env.CATALOGUE_DB)
         .bind(runId, root.request_id)
         .first(),
     ).toMatchObject({
@@ -145,29 +126,17 @@ test("resuming an extended run derives the overflow batch again without refetchi
     // Reparsing the retained snapshot replays the retained Source
     // Observation Set instead of appending another interpretation.
     expect(
-      await env.CATALOGUE_DB.prepare(
-        `SELECT COUNT(*) AS count FROM source_observation_sets
-       WHERE source_snapshot_id = ?`,
-      )
-        .bind(snapshotId)
-        .first("count"),
+      await sourceEvidenceQueries.countSourceObservationSetsCount(env.CATALOGUE_DB).bind(snapshotId).first("count"),
     ).toBe(1);
 
     // The immutable pause record, the extension record, and the current
     // Catalogue Revision all survive the resumed collection unchanged.
     expect(
-      await env.CATALOGUE_DB.prepare(
-        `SELECT COUNT(*) AS count FROM ingestion_run_capacity_pauses
-       WHERE ingestion_run_id = ?`,
-      )
-        .bind(runId)
-        .first("count"),
+      await sourceEvidenceQueries.countIngestionRunCapacityPausesCount(env.CATALOGUE_DB).bind(runId).first("count"),
     ).toBe(1);
     expect(
-      await env.CATALOGUE_DB.prepare(
-        `SELECT capacity_generation FROM ingestion_run_capacity_extensions
-       WHERE ingestion_run_id = ?`,
-      )
+      await sourceEvidenceQueries
+        .readIngestionRunCapacityExtensionsCapacityGeneration(env.CATALOGUE_DB)
         .bind(runId)
         .first("capacity_generation"),
     ).toBe(2);
@@ -197,7 +166,7 @@ test("a resumed run advances through the existing completeness gates once collec
 
   // Pause the run through the production pause path, then extend and resume.
   await pauseEvidenceRunForRequestCapacity(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     run.id,
     "cards",
     new RequestCapacityProblem({
@@ -209,9 +178,7 @@ test("a resumed run advances through the existing completeness gates once collec
       required_capacity: 5_001,
     }),
   );
-  expect(
-    await env.CATALOGUE_DB.prepare("SELECT state FROM ingestion_runs WHERE id = ?").bind(run.id).first("state"),
-  ).toBe("paused");
+  expect(await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(run.id).first("state")).toBe("paused");
   const extended = await administrationRequest(`/v1/ingestion-runs/${run.id}/capacity/extension`, "POST", {
     expected_request_capacity: 5_000,
     expected_capacity_generation: 1,
@@ -227,10 +194,10 @@ test("a resumed run advances through the existing completeness gates once collec
   const completed = await waitForEvidenceRun(run.id, "parsing");
   expect(completed.state).toBe("parsing");
   expect(completed.snapshots).toHaveLength(1);
-  const transitions = await env.CATALOGUE_DB.prepare(
-    `SELECT from_state, to_state FROM ingestion_run_transitions
-     WHERE ingestion_run_id = ? ORDER BY sequence`,
-  )
+  const transitions = await ingestionQueries
+    .readIngestionRunTransitionsFromStateToStateForResumingTransportPausedRunOpensNewBoundedRetryGeneration(
+      env.CATALOGUE_DB,
+    )
     .bind(run.id)
     .all();
   expect(transitions.results.slice(-3)).toEqual([
@@ -244,8 +211,8 @@ test("a resumed run advances through the existing completeness gates once collec
   // throughout pause, extension, and resumed collection.
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
-  expect(
-    await env.CATALOGUE_DB.prepare("SELECT state FROM ingestion_runs WHERE id = ?").bind(run.id).first("state"),
-  ).toBe("awaiting_approval");
+  expect(await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(run.id).first("state")).toBe(
+    "awaiting_approval",
+  );
   expect(await catalogueRevisionCount()).toEqual(revisionsBefore);
 }, 30_000);

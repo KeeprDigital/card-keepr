@@ -1,3 +1,7 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as ingestionQueries from "./query-helpers/ingestion";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
@@ -20,17 +24,11 @@ installRuntimeSuite();
 // Holds the parent Workflow at its record step so a test can pause a live,
 // running parent deterministically (see runtime-workflow-recovery.spec.ts).
 async function holdParentAtRecordStep(): Promise<void> {
-  await env.CATALOGUE_DB.prepare(
-    `CREATE TRIGGER hold_child_workflow_ids
-     BEFORE UPDATE OF child_workflow_ids_json ON ingestion_evidence_plans
-     BEGIN
-       SELECT RAISE(FAIL, 'synthetic_record_step_outage');
-     END`,
-  ).run();
+  await sourceEvidenceQueries.createHoldChildWorkflowIds(env.CATALOGUE_DB).run();
 }
 
 async function releaseParentRecordStep(): Promise<void> {
-  await env.CATALOGUE_DB.prepare("DROP TRIGGER hold_child_workflow_ids").run();
+  await publishedCatalogueQueries.dropHoldChildWorkflowIds(env.CATALOGUE_DB).run();
 }
 
 async function requestPause(
@@ -154,10 +152,10 @@ test("an owner-paused live run resumes under a new Workflow Attempt and complete
     { id: parentId, attempt_number: 1, current: false },
     { id: `${parentId}-resume-1`, attempt_number: 2, current: true },
   ]);
-  const transitions = await env.CATALOGUE_DB.prepare(
-    `SELECT from_state, to_state FROM ingestion_run_transitions
-     WHERE ingestion_run_id = ? ORDER BY sequence`,
-  )
+  const transitions = await ingestionQueries
+    .readIngestionRunTransitionsFromStateToStateForResumingTransportPausedRunOpensNewBoundedRetryGeneration(
+      env.CATALOGUE_DB,
+    )
     .bind(run.id)
     .all<{ from_state: string | null; to_state: string }>();
   expect(transitions.results).toEqual([
@@ -181,9 +179,8 @@ test("an owner pause replays idempotently and refuses a run that is not collecti
   const replayed = await requestPause(run.id, "owner_pause_idempotent_001_pause");
   expect(replayed.status).toBe(200);
   expect(replayed.document).toEqual(first.document);
-  const pauses = await env.CATALOGUE_DB.prepare(
-    "SELECT COUNT(*) AS count FROM ingestion_run_workflow_pauses WHERE ingestion_run_id = ?",
-  )
+  const pauses = await sourceEvidenceQueries
+    .countIngestionRunWorkflowPausesCount(env.CATALOGUE_DB)
     .bind(run.id)
     .first<{ count: number }>();
   expect(pauses?.count).toBe(1);
@@ -258,7 +255,7 @@ test("a superseded sleeping child cannot capture when termination fails and coll
     },
   });
   await pauseEvidenceCollection(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     env.EVIDENCE_INGESTION_WORKFLOW,
     unavailableTermination,
     run.id,
@@ -267,13 +264,18 @@ test("a superseded sleeping child cannot capture when termination fails and coll
   expect(failedTerminations).toBe(1);
   await expect((await env.EVIDENCE_HOST_WORKFLOW.get(childId)).status()).resolves.toMatchObject({ status: "running" });
   await expect(
-    resumeEvidenceRun(env.CATALOGUE_DB, env.EVIDENCE_INGESTION_WORKFLOW, run.id, unavailableTermination),
+    resumeEvidenceRun(
+      catalogueStore(env.CATALOGUE_DB),
+      env.EVIDENCE_INGESTION_WORKFLOW,
+      run.id,
+      unavailableTermination,
+    ),
   ).rejects.toMatchObject({ status: 409, code: "collection_workflow_supersession_pending" });
   expect((await showCollection(run.id)).state).toBe("paused");
   // Exercise the durable guarantee independently of the administration
   // control-plane verification: the same public resume transition reopens
   // collection and supersedes the parent, without creating its replacement.
-  await resumePausedEvidenceRun(env.CATALOGUE_DB, run.id);
+  await resumePausedEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
   expect((await showCollection(run.id)).state).toBe("collecting");
   await waitForWorkflowStatus(
     childId,

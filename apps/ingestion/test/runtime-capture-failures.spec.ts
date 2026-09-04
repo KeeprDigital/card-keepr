@@ -1,3 +1,6 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as ingestionQueries from "./query-helpers/ingestion";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
@@ -225,20 +228,17 @@ test("adapter registrations stay constrained while mismatched production identit
     code: "adapter_binding_mismatch",
   });
 
-  const constrained = await env.CATALOGUE_DB.prepare(
-    `SELECT adapter_version, source_lineage, supported_game,
-            game_profile_version, parser_contract, adapter_origin,
-            request_capacity
-     FROM source_adapter_versions ORDER BY adapter_version`,
-  ).all<{
-    adapter_version: string;
-    source_lineage: string;
-    supported_game: string;
-    game_profile_version: string;
-    parser_contract: string;
-    adapter_origin: string;
-    request_capacity: number;
-  }>();
+  const constrained = await sourceEvidenceQueries
+    .readSourceAdapterVersionsAdapterVersionSourceLineage(env.CATALOGUE_DB)
+    .all<{
+      adapter_version: string;
+      source_lineage: string;
+      supported_game: string;
+      game_profile_version: string;
+      parser_contract: string;
+      adapter_origin: string;
+      request_capacity: number;
+    }>();
   expect(constrained.results).toEqual(
     installedSourceAdapterRegistrations
       .map((adapter) => ({
@@ -283,12 +283,8 @@ test.each([["cap"], ["pagination"]])(
       const run = await created.json<{ id: string }>();
       const terminal = await resumeCollection(run.id, 20_000);
       if (terminal.failure_code !== "source_parse_failed") {
-        const failures = await env.CATALOGUE_DB.prepare(
-          `SELECT request_id, state, failure_code
-           FROM source_requests
-           WHERE ingestion_run_id = ? AND failure_code IS NOT NULL
-           ORDER BY sequence_number`,
-        )
+        const failures = await sourceEvidenceQueries
+          .readSourceRequestsRequestIdStateForRuntimeCaptureFailures(env.CATALOGUE_DB)
           .bind(run.id)
           .all();
         throw new Error(
@@ -306,11 +302,8 @@ test.each([["cap"], ["pagination"]])(
       expect(terminal.observation_sets).toHaveLength(10);
       expect(terminal.snapshots.some((snapshot) => snapshot.request.url === plan.requests[0]!.url)).toBe(true);
       await expect(
-        env.CATALOGUE_DB.prepare(
-          `SELECT request_id, failure_code FROM source_requests
-         WHERE ingestion_run_id = ? AND state = 'failed'
-         ORDER BY sequence_number`,
-        )
+        sourceEvidenceQueries
+          .readSourceRequestsRequestIdFailureCodeForRuntimeCaptureFailures(env.CATALOGUE_DB)
           .bind(run.id)
           .all(),
       ).resolves.toMatchObject({
@@ -400,39 +393,23 @@ async function retainProductionSnapshot(
   const objectKey = `source-snapshots/${snapshotId}.bin`;
   await env.EVIDENCE_OBJECTS.put(objectKey, bytes);
   await env.CATALOGUE_DB.batch([
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO source_fetch_attempts (
-         id, ingestion_run_id, request_id, attempt_number,
-         requested_at, completed_at, outcome, http_status,
-         response_headers_json, retry_after_ms, diagnostic
-       ) VALUES (?, ?, ?, 1, '2026-08-07T00:00:00.000Z',
-         '2026-08-07T00:00:01.000Z', 'success', 200, '{}', NULL, NULL)`,
-    ).bind(fetchId, runId, requestId),
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO source_snapshots (
-         id, ingestion_run_id, request_id, fetch_attempt_id,
-         request_method, request_url, request_headers_json,
-         representation_fingerprint, response_vary_json, retrieved_at,
-         http_status, response_headers_json, media_type, content_digest,
-         content_byte_length, content_object_key, source_lineage,
-         supported_game, game_profile_version, adapter_version,
-         reused_source_snapshot_id
-       ) VALUES (?, ?, ?, ?, 'GET', ?, ?, ?, '[]',
-         '2026-08-07T00:00:01.000Z', 200, '{}', 'text/html', ?, ?, ?,
-         'fusion-world-en', 'fusion-world', 'fusion-world@1',
-         'fusion-world-en@9', NULL)`,
-    ).bind(
-      snapshotId,
-      runId,
-      requestId,
-      fetchId,
-      url,
-      JSON.stringify({ accept: "text/html" }),
-      digest,
-      digest,
-      bytes.byteLength,
-      objectKey,
-    ),
+    sourceEvidenceQueries
+      .insertSourceFetchAttemptsForRetainCapturedDiscoveryRoot(env.CATALOGUE_DB)
+      .bind(fetchId, runId, requestId),
+    sourceEvidenceQueries
+      .insertSourceSnapshotsForRetainCapturedDiscoveryRoot(env.CATALOGUE_DB)
+      .bind(
+        snapshotId,
+        runId,
+        requestId,
+        fetchId,
+        url,
+        JSON.stringify({ accept: "text/html" }),
+        digest,
+        digest,
+        bytes.byteLength,
+        objectKey,
+      ),
   ]);
   return snapshotId;
 }
@@ -447,14 +424,14 @@ test("production discovery that proves no collection surface fails its last disc
   });
   expect(created.status).toBe(201);
   const run = await created.json<{ id: string }>();
-  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
-  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  const storedRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
+  const root = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
   if (root === undefined) throw new Error("discovery root request is absent");
 
   // The retained discovery root proves its publisher navigation, so it plans
   // its stage requests and cannot yet freeze a Collection Plan.
   await parseCapturedRequest(
-    env.CATALOGUE_DB,
+    catalogueStore(env.CATALOGUE_DB),
     env.EVIDENCE_OBJECTS,
     storedRun,
     root,
@@ -466,15 +443,13 @@ test("production discovery that proves no collection surface fails its last disc
     ),
   );
 
-  const staged = await pendingEvidenceRequests(env.CATALOGUE_DB, run.id);
+  const staged = await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id);
   const cards = staged.find(({ request_id }) => request_id.startsWith("fusion-world-en:listing:cards:"));
   if (cards === undefined) throw new Error("cards discovery stage is absent");
   // Every other discovery stage completes without proving a collection
   // surface, leaving the cards stage as the run's last outstanding request.
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE source_requests SET state = 'observed'
-     WHERE ingestion_run_id = ? AND request_id != ?`,
-  )
+  await sourceEvidenceQueries
+    .setSourceRequestsStateForProductionDiscoveryThatProvesNoCollectionSurfaceFailsLast(env.CATALOGUE_DB)
     .bind(run.id, cards.request_id)
     .run();
 
@@ -485,16 +460,14 @@ test("production discovery that proves no collection surface fails its last disc
     utf8("<html><title>BANDAI DRAGON BALL CARD LIST</title><main>Cards</main></html>"),
   );
   await expect(
-    parseCapturedRequest(env.CATALOGUE_DB, env.EVIDENCE_OBJECTS, storedRun, cards, stageSnapshotId),
+    parseCapturedRequest(catalogueStore(env.CATALOGUE_DB), env.EVIDENCE_OBJECTS, storedRun, cards, stageSnapshotId),
   ).resolves.toMatchObject({
     kind: "done",
     failure_code: "official_collection_plan_empty",
   });
   await expect(
-    env.CATALOGUE_DB.prepare(
-      `SELECT request_id, state, failure_code FROM source_requests
-     WHERE ingestion_run_id = ? AND failure_code IS NOT NULL`,
-    )
+    sourceEvidenceQueries
+      .readSourceRequestsRequestIdStateForProductionDiscoveryThatProvesNoCollectionSurfaceFailsLast(env.CATALOGUE_DB)
       .bind(run.id)
       .all(),
   ).resolves.toMatchObject({
@@ -507,12 +480,7 @@ test("production discovery that proves no collection surface fails its last disc
     ],
   });
   await expect(
-    env.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count FROM official_source_collection_plans
-     WHERE ingestion_run_id = ?`,
-    )
-      .bind(run.id)
-      .first<{ count: number }>(),
+    ingestionQueries.countOfficialSourceCollectionPlansCount(env.CATALOGUE_DB).bind(run.id).first<{ count: number }>(),
   ).resolves.toMatchObject({
     count: 0,
   });
@@ -528,7 +496,7 @@ test("an Official Source Collection Plan beyond the adapter capacity is rejected
   });
   expect(created.status).toBe(201);
   const run = await created.json<{ id: string }>();
-  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  const root = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
   if (root === undefined) throw new Error("discovery root request is absent");
   const snapshotId = await retainProductionSnapshot(
     run.id,
@@ -538,70 +506,35 @@ test("an Official Source Collection Plan beyond the adapter capacity is rejected
   );
   const observationSetId = "srcobsset_collection_capacity_001";
   await env.CATALOGUE_DB.batch([
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO source_parse_operations (
-         id, source_snapshot_id, adapter_version, intent, idempotency_key,
-         observation_set_id, content_object_key, parsed_at, state,
-         content_digest, content_byte_length, observation_count
-       ) VALUES (?, ?, 'fusion-world-en@9', 'collection', ?, ?, ?,
-         '2026-08-07T00:00:02.000Z', 'finalized', 'digest', 2, 1)`,
-    ).bind(
-      "srcparse_collection_capacity_001",
-      snapshotId,
-      "official_collection_plan_capacity_parse_001",
-      observationSetId,
-      `source-observation-sets/${observationSetId}.json`,
-    ),
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO source_observation_sets (
-         id, parse_operation_id, source_snapshot_id, source_lineage,
-         supported_game, game_profile_version, adapter_version, parsed_at,
-         content_digest, content_byte_length, content_object_key,
-         observation_count
-       ) VALUES (?, ?, ?, 'fusion-world-en', 'fusion-world',
-         'fusion-world@1', 'fusion-world-en@9', '2026-08-07T00:00:02.000Z',
-         'digest', 2, ?, 1)`,
-    ).bind(
-      observationSetId,
-      "srcparse_collection_capacity_001",
-      snapshotId,
-      `source-observation-sets/${observationSetId}.json`,
-    ),
+    sourceEvidenceQueries
+      .insertSourceParseOperationsForOfficialSourceCollectionPlanBeyondAdapterCapacityRejectedWithout(env.CATALOGUE_DB)
+      .bind(
+        "srcparse_collection_capacity_001",
+        snapshotId,
+        "official_collection_plan_capacity_parse_001",
+        observationSetId,
+        `source-observation-sets/${observationSetId}.json`,
+      ),
+    sourceEvidenceQueries
+      .insertSourceObservationSetsForOfficialSourceCollectionPlanBeyondAdapterCapacityRejectedWithout(env.CATALOGUE_DB)
+      .bind(
+        observationSetId,
+        "srcparse_collection_capacity_001",
+        snapshotId,
+        `source-observation-sets/${observationSetId}.json`,
+      ),
   ]);
   // Fill the Source Lineage with retained unique request identities up to
   // the exact fusion-world-en@9 capacity (the discovery root is the
   // 15,000th). The immutable-plan trigger admits a source_requests row only
   // through a matching retained discovery plan row, so retain those first.
   await env.CATALOGUE_DB.batch([
-    env.CATALOGUE_DB.prepare(
-      `WITH RECURSIVE filler(n) AS (
-         SELECT 1 UNION ALL SELECT n + 1 FROM filler WHERE n < 14999
-       )
-       INSERT INTO source_discovery_request_plans (
-         ingestion_run_id, request_id, sequence_number, parent_request_id,
-         method, url, request_headers_json, representation_fingerprint,
-         request_role
-       )
-       SELECT ?1, 'fusion-world-en:detail:' || printf('%08d', n), 1000 + n,
-              ?2, 'GET',
-              'https://www.dbs-cardgame.com/fw/en/cardlist/detail/' || n,
-              '{}', printf('%064x', n), 'detail'
-       FROM filler`,
-    ).bind(run.id, root.request_id),
-    env.CATALOGUE_DB.prepare(
-      `INSERT INTO source_requests (
-         ingestion_run_id, request_id, sequence_number, method, url,
-         request_headers_json, representation_fingerprint, state,
-         source_snapshot_id, failure_code, request_role,
-         discovered_from_request_id
-       )
-       SELECT ingestion_run_id, request_id, sequence_number, method, url,
-              request_headers_json, representation_fingerprint, 'pending',
-              NULL, NULL, request_role, parent_request_id
-       FROM source_discovery_request_plans
-       WHERE ingestion_run_id = ?1
-         AND request_id LIKE 'fusion-world-en:detail:%'`,
-    ).bind(run.id),
+    sourceEvidenceQueries
+      .inspectFillerForOfficialSourceCollectionPlanBeyondAdapterCapacityRejectedWithout(env.CATALOGUE_DB)
+      .bind(run.id, root.request_id),
+    sourceEvidenceQueries
+      .insertSourceRequestsForOfficialSourceCollectionPlanBeyondAdapterCapacityRejectedWithout(env.CATALOGUE_DB)
+      .bind(run.id),
   ]);
 
   const collectionRequests = [
@@ -615,38 +548,26 @@ test("an Official Source Collection Plan beyond the adapter capacity is rejected
     },
   ];
   await expect(
-    persistOfficialSourceCollectionPlan(env.CATALOGUE_DB, run.id, observationSetId, collectionRequests),
+    persistOfficialSourceCollectionPlan(catalogueStore(env.CATALOGUE_DB), run.id, observationSetId, collectionRequests),
   ).rejects.toMatchObject({ code: "source_discovery_too_large" });
   await expect(
-    env.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count FROM official_source_collection_plans
-     WHERE ingestion_run_id = ?`,
-    )
-      .bind(run.id)
-      .first<{ count: number }>(),
+    ingestionQueries.countOfficialSourceCollectionPlansCount(env.CATALOGUE_DB).bind(run.id).first<{ count: number }>(),
   ).resolves.toMatchObject({
     count: 0,
   });
   await expect(
-    env.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count FROM source_requests
-     WHERE ingestion_run_id = ?`,
-    )
-      .bind(run.id)
-      .first<{ count: number }>(),
+    sourceEvidenceQueries.countSourceRequestsCount(env.CATALOGUE_DB).bind(run.id).first<{ count: number }>(),
   ).resolves.toMatchObject({
     count: 15_000,
   });
   // The rejection is deterministic: replaying the identical admission keeps
   // failing closed without partially inserting the plan or its requests.
   await expect(
-    persistOfficialSourceCollectionPlan(env.CATALOGUE_DB, run.id, observationSetId, collectionRequests),
+    persistOfficialSourceCollectionPlan(catalogueStore(env.CATALOGUE_DB), run.id, observationSetId, collectionRequests),
   ).rejects.toMatchObject({ code: "source_discovery_too_large" });
   await expect(
-    env.CATALOGUE_DB.prepare(
-      `SELECT COUNT(*) AS count FROM source_requests
-     WHERE ingestion_run_id = ? AND request_id = 'fusion-world-en:cards'`,
-    )
+    sourceEvidenceQueries
+      .countSourceRequestsCountForOfficialSourceCollectionPlanBeyondAdapterCapacityRejectedWithout(env.CATALOGUE_DB)
       .bind(run.id)
       .first<{ count: number }>(),
   ).resolves.toMatchObject({

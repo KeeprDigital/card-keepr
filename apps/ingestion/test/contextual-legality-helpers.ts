@@ -1,3 +1,7 @@
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import * as legalityQueries from "./query-helpers/legality";
+import * as catalogueExportQueries from "./query-helpers/catalogue-export";
 import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, expect } from "vitest";
@@ -151,55 +155,16 @@ export async function waitForState(runId: string, expected: string) {
     last = shown.document;
     if (shown.document.state === expected) return shown.document;
     if (shown.document.state === "failed") {
-      const persisted = await testEnv.CATALOGUE_DB.prepare(`SELECT warnings_json FROM ingestion_runs WHERE id = ?`)
+      const persisted = await ingestionQueries
+        .readIngestionRunsWarningsJson(testEnv.CATALOGUE_DB)
         .bind(runId)
         .first<{ warnings_json: string }>();
-      const sourceFailures = await testEnv.CATALOGUE_DB.prepare(
-        `SELECT requests.request_id, requests.state AS request_state,
-                requests.failure_code, requests.request_role,
-                requests.method, requests.url,
-                requests.request_headers_json,
-                attempts.attempt_number, attempts.outcome,
-                attempts.http_status, attempts.response_headers_json,
-                attempts.diagnostic AS fetch_diagnostic,
-                capture.state AS capture_state,
-                capture.diagnostic AS capture_diagnostic,
-                snapshots.id AS snapshot_id,
-                snapshots.content_digest AS snapshot_content_digest,
-                snapshots.content_byte_length AS snapshot_content_byte_length,
-                snapshots.media_type AS snapshot_media_type,
-                parse.id AS parse_operation_id,
-                parse.state AS parse_operation_state
-         FROM source_requests AS requests
-         LEFT JOIN source_fetch_attempts AS attempts
-           ON attempts.ingestion_run_id = requests.ingestion_run_id
-          AND attempts.request_id = requests.request_id
-         LEFT JOIN source_capture_operations AS capture
-           ON capture.ingestion_run_id = requests.ingestion_run_id
-          AND capture.request_id = requests.request_id
-          AND capture.attempt_number = attempts.attempt_number
-         LEFT JOIN source_snapshots AS snapshots
-           ON snapshots.ingestion_run_id = requests.ingestion_run_id
-          AND snapshots.request_id = requests.request_id
-          AND snapshots.fetch_attempt_id = attempts.id
-         LEFT JOIN source_parse_operations AS parse
-           ON parse.source_snapshot_id = snapshots.id
-         WHERE requests.ingestion_run_id = ?
-           AND (requests.failure_code IS NOT NULL
-             OR attempts.diagnostic IS NOT NULL
-             OR capture.diagnostic IS NOT NULL)
-         ORDER BY requests.request_id, attempts.attempt_number`,
-      )
+      const sourceFailures = await sourceEvidenceQueries
+        .readSourceRequestsRequestStateFetchDiagnostic(testEnv.CATALOGUE_DB)
         .bind(runId)
         .all();
-      const discoveryChildren = await testEnv.CATALOGUE_DB.prepare(
-        `SELECT parent_request_id, request_id, sequence_number,
-                method, url, request_headers_json,
-                representation_fingerprint, request_role
-         FROM source_discovery_request_plans
-         WHERE ingestion_run_id = ?
-         ORDER BY sequence_number`,
-      )
+      const discoveryChildren = await sourceEvidenceQueries
+        .readSourceDiscoveryRequestPlansParentRequestIdRequestId(testEnv.CATALOGUE_DB)
         .bind(runId)
         .all();
       throw new Error(
@@ -276,12 +241,8 @@ export async function revisionLegalityRule(
   revisionId: string,
   officialId: string,
 ): Promise<Record<string, unknown> | undefined> {
-  const retained = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT document_json
-     FROM revision_legality_rules
-     WHERE catalogue_revision_id = ?
-       AND json_extract(document_json, '$.official_id') = ?`,
-  )
+  const retained = await legalityQueries
+    .readRevisionLegalityRulesDocumentJson(testEnv.CATALOGUE_DB)
     .bind(revisionId, officialId)
     .first<{ document_json: string }>();
   return retained === null ? undefined : (JSON.parse(retained.document_json) as Record<string, unknown>);
@@ -298,10 +259,8 @@ export async function exportedLegalityRule(revisionId: string, officialId: strin
 export async function exportedManifest(revisionId: string): Promise<{
   source_freshness: Array<Record<string, unknown>>;
 }> {
-  const exportRow = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT manifest_key FROM catalogue_exports
-     WHERE catalogue_revision_id = ?`,
-  )
+  const exportRow = await catalogueExportQueries
+    .readCatalogueExportsManifestKey(testEnv.CATALOGUE_DB)
     .bind(revisionId)
     .first<{ manifest_key: string }>();
   if (exportRow === null) throw new Error("Catalogue Export is absent");
@@ -314,10 +273,8 @@ export async function exportedComponentRecords(
   revisionId: string,
   componentName: string,
 ): Promise<Record<string, unknown>[]> {
-  const exportRow = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT manifest_key FROM catalogue_exports
-     WHERE catalogue_revision_id = ?`,
-  )
+  const exportRow = await catalogueExportQueries
+    .readCatalogueExportsManifestKey(testEnv.CATALOGUE_DB)
     .bind(revisionId)
     .first<{ manifest_key: string }>();
   if (exportRow === null) throw new Error("Catalogue Export is absent");
@@ -422,19 +379,8 @@ export async function canonicalLegalityCardIdInvariantErrors(
   return Promise.all(
     malformed.map((variant, index) =>
       rejectedError(
-        database
-          .prepare(
-            `INSERT INTO legality_rules (
-             id, official_id, supported_game, region, format, event_tier,
-             effective_from, effective_until, official_wording, effect_json,
-             card_ids_json, direct_card_ids_json, source_lineage,
-             source_snapshot_id, source_observation_set_id,
-             source_observation_id, source_observation_pointer,
-             source_field_pointers_json, first_revision_id,
-             last_observed_revision_id, current, last_missing_revision_id
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-             ?, ?, 1, NULL)`,
-          )
+        sourceEvidenceQueries
+          .insertLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(database)
           .bind(
             `legality_rule_${prefix}_malformed_${index}`,
             `${prefix}-malformed-${index}`,
@@ -503,19 +449,8 @@ export async function canonicalLegalityEffectInvariantErrors(
           : [];
       const allCardIds = [...variant.direct, ...companion].sort();
       return rejectedError(
-        database
-          .prepare(
-            `INSERT INTO legality_rules (
-             id, official_id, supported_game, region, format, event_tier,
-             effective_from, effective_until, official_wording, effect_json,
-             card_ids_json, direct_card_ids_json, source_lineage,
-             source_snapshot_id, source_observation_set_id,
-             source_observation_id, source_observation_pointer,
-             source_field_pointers_json, first_revision_id,
-             last_observed_revision_id, current, last_missing_revision_id
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-             ?, ?, 1, NULL)`,
-          )
+        sourceEvidenceQueries
+          .insertLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(database)
           .bind(
             `legality_rule_${prefix}_malformed_effect_${index}`,
             `${prefix}-malformed-effect-${index}`,
@@ -606,19 +541,8 @@ export async function canonicalLegalityScopeInvariantErrors(
   return Promise.all(
     variants.map((variant, index) =>
       rejectedError(
-        database
-          .prepare(
-            `INSERT INTO legality_rules (
-         id, official_id, supported_game, region, format, event_tier,
-         effective_from, effective_until, unresolved_scope_json,
-         official_wording, effect_json, card_ids_json, direct_card_ids_json,
-         source_lineage, source_snapshot_id, source_observation_set_id,
-         source_observation_id, source_observation_pointer,
-         source_field_pointers_json, first_revision_id,
-         last_observed_revision_id, current, last_missing_revision_id
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-         ?, ?, 1, NULL)`,
-          )
+        sourceEvidenceQueries
+          .insertLegalityRules(database)
           .bind(
             `legality_rule_${prefix}_malformed_scope_${index}`,
             `${prefix}-malformed-scope-${index}`,
