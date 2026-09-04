@@ -1,10 +1,22 @@
 import { parseCatalogueRevisionId, parsePublicationInstant } from "../../http/catalogue";
-import { ifNoneMatch } from "../../http/conditional";
-import { absoluteDocumentLinks, publicUrl, type PublicBase } from "../../http/public-base";
-import { problemResponse } from "../../http/problem";
+import { ifNoneMatchMatches as ifNoneMatch } from "../../http/conditional-request";
+import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
 import { canonicalJson, sha256Text } from "../shared";
+import {
+  canonicalEtag,
+  collectionLimit,
+  collectionPage,
+  collectionParameters,
+  collectionSelf,
+  conditionalResponse,
+  decodeCursor,
+  encodeCursor,
+  pinRevision,
+  ReadProblem,
+  revisionHeaders,
+} from "./collection-endpoint";
 import { canonicalDetailSelf, detailIncludeProjection, detailRepresentationKey } from "./detail-representation";
-import { sourceFreshnessFromStorage, type SourceFreshnessStorageRow } from "./source-freshness";
+import { type SourceFreshnessStorageRow, sourceFreshnessFromStorage } from "./source-freshness";
 
 type CatalogueStateRow = {
   current_revision_id: string;
@@ -34,16 +46,6 @@ type PrintingImageRow = {
   current_revision_id: string;
 };
 
-export class PrintingReadProblem extends Error {
-  readonly status = 400;
-  readonly code = "invalid_parameter";
-}
-
-export class CardReadProblem extends Error {
-  readonly status = 400;
-  readonly code = "invalid_parameter";
-}
-
 type ExportRow = {
   catalogue_revision_id: string;
   published_at: string;
@@ -66,16 +68,6 @@ type ExportManifest = {
   }[];
 };
 
-export class CatalogueExportReadProblem extends Error {
-  constructor(
-    readonly status: 400 | 409 | 410,
-    readonly code: "invalid_parameter" | "invalid_cursor" | "cursor_revision_unavailable" | "catalogue_export_deleted",
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
 export async function catalogueExportsResponse(
   request: Request,
   database: D1Database,
@@ -84,40 +76,19 @@ export async function catalogueExportsResponse(
 ): Promise<Response> {
   const url = new URL(request.url);
   assertCatalogueExportCollectionParameters(url);
-  const state = await database
-    .prepare(
-      `SELECT current_revision_id, published_at
-       FROM catalogue_state WHERE singleton = 1`,
-    )
-    .first<CatalogueStateRow>();
-  if (state === null) throw new Error("Catalogue state is unavailable");
-  const limit = catalogueExportCollectionLimit(url.searchParams.get("limit"));
+  const limit = collectionLimit(url.searchParams.get("limit"));
   const cursor = decodeCatalogueExportCursor(url.searchParams.get("after"));
   if (cursor !== null && cursor.limit !== limit) {
-    throw new CatalogueExportReadProblem(
-      400,
-      "invalid_cursor",
-      "The Catalogue Export cursor does not match the requested limit.",
-    );
+    throw new ReadProblem(400, "invalid_cursor", "The Catalogue Export cursor does not match the requested limit.");
   }
-  const revisionId = cursor?.revision_id ?? state.current_revision_id;
-  const revision =
-    revisionId === state.current_revision_id
-      ? { published_at: state.published_at }
-      : await database
-          .prepare("SELECT published_at FROM catalogue_revisions WHERE id = ?")
-          .bind(revisionId)
-          .first<{ published_at: string }>();
-  if (revision === null) {
-    throw new CatalogueExportReadProblem(
-      409,
-      "cursor_revision_unavailable",
-      "The Catalogue Export cursor revision is unavailable.",
-    );
-  }
-  const exports = await database
-    .prepare(
-      `WITH RECURSIVE pinned_revision(id) AS (
+  const revision = await pinRevision(database, cursor?.revision_id ?? null, "/v1/catalogue-exports", base, {
+    projection: false,
+  });
+  const revisionId = revision.id;
+  const page = await collectionPage<ExportRow>(
+    database
+      .prepare(
+        `WITH RECURSIVE pinned_revision(id) AS (
          SELECT ?
          UNION ALL
          SELECT revision.expected_previous_revision_id
@@ -143,17 +114,18 @@ export async function catalogueExportsResponse(
        ORDER BY revision.published_at DESC,
                 export.catalogue_revision_id DESC
        LIMIT ?`,
-    )
-    .bind(
-      revisionId,
-      cursor?.after.published_at ?? null,
-      cursor?.after.published_at ?? "",
-      cursor?.after.published_at ?? "",
-      cursor?.after.catalogue_revision_id ?? "",
-      limit + 1,
-    )
-    .all<ExportRow>();
-  const selected = exports.results.slice(0, limit);
+      )
+      .bind(
+        revisionId,
+        cursor?.after.published_at ?? null,
+        cursor?.after.published_at ?? "",
+        cursor?.after.published_at ?? "",
+        cursor?.after.catalogue_revision_id ?? "",
+        limit + 1,
+      ),
+    limit,
+  );
+  const selected = page.rows;
   const data = await Promise.all(
     selected.map(async (exportRow) => {
       const verified = await loadVerifiedExportManifest(database, bucket, exportRow.catalogue_revision_id);
@@ -172,20 +144,19 @@ export async function catalogueExportsResponse(
       };
     }),
   );
-  const next =
-    exports.results.length > limit
-      ? encodeCatalogueExportCursor({
-          contract: "card-keepr-catalogue-export-cursor@1",
-          route: "/v1/catalogue-exports",
-          order: "published_at:desc,catalogue_revision_id:desc",
-          revision_id: revisionId,
-          limit,
-          after: {
-            published_at: selected.at(-1)!.published_at,
-            catalogue_revision_id: selected.at(-1)!.catalogue_revision_id,
-          },
-        })
-      : null;
+  const next = page.hasMore
+    ? encodeCursor({
+        contract: "card-keepr-catalogue-export-cursor@1",
+        route: "/v1/catalogue-exports",
+        order: "published_at:desc,catalogue_revision_id:desc",
+        revision_id: revisionId,
+        limit,
+        after: {
+          published_at: selected.at(-1)!.published_at,
+          catalogue_revision_id: selected.at(-1)!.catalogue_revision_id,
+        },
+      })
+    : null;
   const document = {
     data,
     meta: {
@@ -193,13 +164,12 @@ export async function catalogueExportsResponse(
       published_at: revision.published_at,
     },
     page: { limit, next_cursor: next },
-    links: { self: publicUrl(base, `${url.pathname}${url.search}`) },
+    links: { self: publicUrl(base, collectionSelf(url.pathname, { limit, after: url.searchParams.get("after") })) },
   };
-  const etag = `"${await sha256Text(canonicalJson(document))}"`;
+  const etag = await canonicalEtag(document);
   const headers = revisionHeaders(revisionId, etag);
-  if (ifNoneMatch(request, etag)) {
-    return new Response(null, { status: 304, headers });
-  }
+  const conditional = conditionalResponse(request, headers);
+  if (conditional !== null) return conditional;
   return Response.json(document, { headers });
 }
 
@@ -215,21 +185,14 @@ type CatalogueExportCursor = {
   };
 };
 
-function encodeCatalogueExportCursor(cursor: CatalogueExportCursor): string {
-  return btoa(JSON.stringify(cursor)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
-}
-
 function decodeCatalogueExportCursor(value: string | null): CatalogueExportCursor | null {
   if (value === null) return null;
   try {
-    if (!/^[A-Za-z0-9_-]+$/u.test(value)) throw new Error("invalid base64url");
-    const decoded = value.replaceAll("-", "+").replaceAll("_", "/");
-    const padded = decoded + "=".repeat((4 - (decoded.length % 4)) % 4);
-    const parsed: unknown = JSON.parse(atob(padded));
+    const parsed = decodeCursor(value);
     if (!isCatalogueExportCursor(parsed)) throw new Error("invalid shape");
     return parsed;
   } catch {
-    throw new CatalogueExportReadProblem(400, "invalid_cursor", "The Catalogue Export cursor is invalid.");
+    throw new ReadProblem(400, "invalid_cursor", "The Catalogue Export cursor is invalid.");
   }
 }
 
@@ -261,44 +224,7 @@ function isCatalogueExportCursor(value: unknown): value is CatalogueExportCursor
 }
 
 function assertCatalogueExportCollectionParameters(url: URL): void {
-  for (const key of url.searchParams.keys()) {
-    if (key !== "limit" && key !== "after") {
-      throw new CatalogueExportReadProblem(
-        400,
-        "invalid_parameter",
-        `Catalogue Export query parameter ${key || "<empty>"} is invalid.`,
-      );
-    }
-  }
-  for (const key of ["limit", "after"]) {
-    if (url.searchParams.getAll(key).length > 1) {
-      throw new CatalogueExportReadProblem(
-        400,
-        "invalid_parameter",
-        `Catalogue Export query parameter ${key} must be supplied once.`,
-      );
-    }
-  }
-}
-
-function catalogueExportCollectionLimit(value: string | null): number {
-  if (value === null) return 50;
-  if (!/^[1-9][0-9]*$/u.test(value)) {
-    throw new CatalogueExportReadProblem(
-      400,
-      "invalid_parameter",
-      "Catalogue Export limit must be an integer from 1 through 100.",
-    );
-  }
-  const limit = Number(value);
-  if (limit > 100) {
-    throw new CatalogueExportReadProblem(
-      400,
-      "invalid_parameter",
-      "Catalogue Export limit must be an integer from 1 through 100.",
-    );
-  }
-  return limit;
+  collectionParameters(url, ["limit", "after"]);
 }
 
 export async function currentCatalogueStatus(database: D1Database) {
@@ -353,11 +279,11 @@ export async function currentCardResponse(
     .first<RevisionDocumentRow>();
   if (row === null) return null;
   const url = new URL(request.url);
-  const include = detailIncludeProjection(url, () => new CardReadProblem("Card include projection is invalid."), [
-    "printings",
-    "evidence",
-    "disagreements",
-  ]);
+  const include = detailIncludeProjection(
+    url,
+    () => new ReadProblem(400, "invalid_parameter", "Card include projection is invalid."),
+    ["printings", "evidence", "disagreements"],
+  );
   const envelope = detailEnvelope(row.document_json);
   const etag = `"card:${cardId}:${row.current_revision_id}:` + `${detailRepresentationKey(include)}"`;
   const headers = revisionHeaders(row.current_revision_id, etag);
@@ -423,7 +349,7 @@ export async function currentPrintingResponse(
   const url = new URL(request.url);
   const include = detailIncludeProjection(
     url,
-    () => new PrintingReadProblem("Printing include projection is invalid."),
+    () => new ReadProblem(400, "invalid_parameter", "Printing include projection is invalid."),
   );
   const envelope = detailEnvelope(row.document_json);
   const etag = `"printing:${printingId}:${row.current_revision_id}:` + `${detailRepresentationKey(include)}"`;
@@ -456,7 +382,6 @@ export async function printingImageContentResponse(
   database: D1Database,
   bucket: R2Bucket,
   imageId: string,
-  requestId: string,
 ): Promise<Response | null> {
   const row = await database
     .prepare(
@@ -494,19 +419,20 @@ export async function printingImageContentResponse(
   }
   const range = isHead ? null : parseRange(request.headers.get("range"), row.content_byte_length);
   if (range === "unsatisfiable") {
-    return problemResponse({
-      requestId,
-      status: 416,
-      code: "range_not_satisfiable",
-      title: "Range not satisfiable",
-      detail: "The requested Printing Image byte range is not satisfiable.",
-      headers: {
-        "accept-ranges": "bytes",
-        "content-range": `bytes */${row.content_byte_length}`,
-        etag,
-        "x-catalogue-revision": row.current_revision_id,
+    throw new ReadProblem(
+      416,
+      "range_not_satisfiable",
+      "The requested Printing Image byte range is not satisfiable.",
+      null,
+      {
+        headers: {
+          "accept-ranges": "bytes",
+          "content-range": `bytes */${row.content_byte_length}`,
+          etag,
+          "x-catalogue-revision": row.current_revision_id,
+        },
       },
-    });
+    );
   }
   const object = isHead
     ? await bucket.head(row.object_key)
@@ -520,7 +446,7 @@ export async function printingImageContentResponse(
   if (range !== null) {
     baseHeaders.set(
       "content-range",
-      `bytes ${range.offset}-${range.offset + range.length - 1}/` + row.content_byte_length,
+      `bytes ${range.offset}-${range.offset + range.length - 1}/${row.content_byte_length}`,
     );
   }
   return new Response(isHead ? null : (object as R2ObjectBody).body, {
@@ -557,7 +483,7 @@ export async function catalogueExportResponse(
   const verifiedExport = await loadVerifiedExportManifest(database, bucket, revisionId);
   if (verifiedExport === null) return null;
   const { exportRow, manifest } = verifiedExport;
-  const headers = revisionHeaders(exportRow.catalogue_revision_id, exportRow.manifest_digest);
+  const headers = revisionHeaders(exportRow.catalogue_revision_id, `"${exportRow.manifest_digest}"`);
   if (ifNoneMatch(request, `"${exportRow.manifest_digest}"`)) {
     return new Response(null, { status: 304, headers });
   }
@@ -584,7 +510,6 @@ export async function catalogueExportComponentResponse(
   bucket: R2Bucket,
   revisionId: string,
   componentName: string,
-  requestId: string,
 ): Promise<Response | null> {
   const exportRow = await findExport(database, revisionId);
   if (exportRow === null) return null;
@@ -603,11 +528,7 @@ export async function catalogueExportComponentResponse(
       .bind(revisionId, componentName)
       .first();
     if (knownComponent === null) return null;
-    throw new CatalogueExportReadProblem(
-      410,
-      "catalogue_export_deleted",
-      "This known Catalogue Export component has been deleted.",
-    );
+    throw new ReadProblem(410, "catalogue_export_deleted", "This known Catalogue Export component has been deleted.");
   }
   const verifiedExport = await loadVerifiedExportManifest(database, bucket, revisionId);
   if (verifiedExport === null) return null;
@@ -630,7 +551,7 @@ export async function catalogueExportComponentResponse(
     component.compressed_sha256,
   );
   if (verifiedObject === null) {
-    return unavailableCatalogueExportComponent(requestId);
+    throw new ReadProblem(404, "not_found", "The Catalogue Export component is unavailable.");
   }
   if (ifNoneMatch(request, etag)) {
     return new Response(null, {
@@ -641,26 +562,27 @@ export async function catalogueExportComponentResponse(
 
   const range = request.method === "HEAD" ? null : parseRange(request.headers.get("range"), component.compressed_bytes);
   if (range === "unsatisfiable") {
-    return problemResponse({
-      requestId,
-      status: 416,
-      code: "range_not_satisfiable",
-      title: "Range not satisfiable",
-      detail: "The requested Catalogue Export component byte range is not satisfiable.",
-      headers: {
-        "accept-ranges": "bytes",
-        "content-range": `bytes */${component.compressed_bytes}`,
-        etag,
-        "x-catalogue-revision": revisionId,
+    throw new ReadProblem(
+      416,
+      "range_not_satisfiable",
+      "The requested Catalogue Export component byte range is not satisfiable.",
+      null,
+      {
+        headers: {
+          "accept-ranges": "bytes",
+          "content-range": `bytes */${component.compressed_bytes}`,
+          etag,
+          "x-catalogue-revision": revisionId,
+        },
       },
-    });
+    );
   }
   const object = request.method === "HEAD" ? null : await bucket.get(key, range === null ? {} : { range });
   if (
     request.method !== "HEAD" &&
     !exportComponentReadMatches(object, verifiedObject.etag, component.compressed_bytes, component.compressed_sha256)
   ) {
-    return unavailableCatalogueExportComponent(requestId);
+    throw new ReadProblem(404, "not_found", "The Catalogue Export component is unavailable.");
   }
 
   const partial = range !== null;
@@ -725,16 +647,6 @@ async function readableSha256(readable: ReadableStream<Uint8Array>): Promise<str
   return [...new Uint8Array(await digest.digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-function unavailableCatalogueExportComponent(requestId: string): Response {
-  return problemResponse({
-    requestId,
-    status: 404,
-    code: "not_found",
-    title: "Not found",
-    detail: "The Catalogue Export component is unavailable.",
-  });
-}
-
 async function findExport(database: D1Database, revisionId: string): Promise<ExportRow | null> {
   return database
     .prepare(
@@ -764,11 +676,7 @@ async function loadVerifiedExportManifest(
   const exportRow = await findExport(database, revisionId);
   if (exportRow === null) return null;
   if (exportRow.maintenance_state !== "available") {
-    throw new CatalogueExportReadProblem(
-      410,
-      "catalogue_export_deleted",
-      "This known Catalogue Export has been deleted.",
-    );
+    throw new ReadProblem(410, "catalogue_export_deleted", "This known Catalogue Export has been deleted.");
   }
   const object = await bucket.get(exportRow.manifest_key);
   if (object === null || object.size > 1_048_576) {
@@ -792,41 +700,6 @@ async function loadVerifiedExportManifest(
     throw new Error("Verified Catalogue Export manifest changed");
   }
   return { exportRow, manifest };
-}
-
-function revisionDocumentResponse(
-  data: unknown,
-  state: CatalogueStateRow,
-  self: string,
-  etag: string,
-  request?: Request,
-): Response {
-  const headers = revisionHeaders(state.current_revision_id, etag);
-  const responseEtag = `"${etag.replaceAll('"', "")}"`;
-  if (request !== undefined && ifNoneMatch(request, responseEtag)) {
-    return new Response(null, { status: 304, headers });
-  }
-  return Response.json(
-    {
-      data,
-      meta: {
-        catalogue_revision_id: state.current_revision_id,
-        published_at: state.published_at,
-      },
-      links: { self },
-    },
-    {
-      headers,
-    },
-  );
-}
-
-function revisionHeaders(revisionId: string, etag: string): HeadersInit {
-  return {
-    "cache-control": "private, no-cache",
-    etag: `"${etag.replaceAll('"', "")}"`,
-    "x-catalogue-revision": revisionId,
-  };
 }
 
 function parseRange(header: string | null, size: number): { offset: number; length: number } | "unsatisfiable" | null {

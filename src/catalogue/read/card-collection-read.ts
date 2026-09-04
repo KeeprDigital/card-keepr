@@ -1,7 +1,20 @@
-import { ifNoneMatchMatches } from "../../http/conditional-request";
-import { problemResponse } from "../../http/problem";
-import { absoluteDocumentLinks, publicUrl, type PublicBase } from "../../http/public-base";
+import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
+import { canonicalJson } from "../shared";
 import { cardSearchFtsQuery, cardSearchQuery } from "./card-search";
+import {
+  canonicalEtag,
+  collectionFilter,
+  collectionLimit,
+  collectionParameters,
+  collectionSelf,
+  conditionalResponse,
+  decodeCursor,
+  encodeCursor,
+  invalidParameter,
+  pinRevision,
+  ReadProblem,
+  revisionHeaders,
+} from "./collection-endpoint";
 
 type CardRow = {
   summary_json: string;
@@ -21,10 +34,7 @@ type CardCursor = {
   route: "/v1/cards";
   order: typeof cardCollectionOrder;
   revision_id: string;
-  q: string | null;
-  game: string | null;
-  card_number: string | null;
-  limit: number;
+  filters: CollectionFilters;
   after: {
     game: string;
     identity_kind: string;
@@ -45,40 +55,22 @@ type CollectionFilters = {
 export async function cardCollectionResponse(
   database: D1Database,
   request: Request,
-  requestId: string,
   base: PublicBase,
 ): Promise<Response> {
   const url = new URL(request.url);
-  const filters = parseFilters(url, requestId);
-  if (filters instanceof Response) return filters;
-  const cursor = parseCursor(url.searchParams.get("after"));
-  if (cursor === "invalid") return invalidCursor(requestId);
-  if (
-    cursor !== null &&
-    (cursor.route !== url.pathname ||
-      cursor.order !== cardCollectionOrder ||
-      cursor.q !== filters.q ||
-      cursor.game !== filters.game ||
-      cursor.card_number !== filters.cardNumber ||
-      cursor.limit !== filters.limit)
-  ) {
-    return invalidCursor(requestId);
-  }
-  const current = await currentRevision(database);
-  const revision = await availableRevision(database, cursor?.revision_id ?? current.id);
-  if (revision === null) {
-    return cursor === null ? catalogueQueryUnavailable(requestId) : cursorUnavailable(requestId, base);
-  }
-
-  const etag = `"cards:${revision.id}:${await digestFilters(url.search)}"`;
-  const headers = {
-    "cache-control": "private, no-cache",
-    etag,
-    "x-catalogue-revision": revision.id,
-  };
-  if (ifNoneMatchMatches(request, etag)) {
-    return new Response(null, { status: 304, headers });
-  }
+  const filters = parseFilters(url);
+  const cursor = parseCursor(url.searchParams.get("after"), filters);
+  if (cursor === "invalid") throw invalidCursor();
+  const revision = await pinRevision(database, cursor?.revision_id ?? null, "/v1/cards", base, { search: true });
+  const etag = await canonicalEtag({
+    route: "/v1/cards",
+    revision: revision.id,
+    filters,
+    after: cursor?.after ?? null,
+  });
+  const headers = revisionHeaders(revision.id, etag);
+  const conditional = conditionalResponse(request, headers);
+  if (conditional !== null) return conditional;
 
   const queried = await queryCardPage(database, revision.id, filters, cursor?.after ?? null);
   const pageRows = [...queried.rows];
@@ -91,10 +83,7 @@ export async function cardCollectionResponse(
             route: "/v1/cards",
             order: cardCollectionOrder,
             revision_id: revision.id,
-            q: filters.q,
-            game: filters.game,
-            card_number: filters.cardNumber,
-            limit: filters.limit,
+            filters,
             after: rowCursor(pageRows.at(-1)!),
           })
         : null;
@@ -102,10 +91,21 @@ export async function cardCollectionResponse(
       data: pageRows.map((row) => absoluteDocumentLinks(JSON.parse(row.summary_json), base)),
       meta: {
         catalogue_revision_id: revision.id,
-        published_at: revision.publishedAt,
+        published_at: revision.published_at,
       },
       page: { limit: filters.limit, next_cursor: nextCursor },
-      links: { self: publicUrl(base, `/v1/cards${url.search}`) },
+      links: {
+        self: publicUrl(
+          base,
+          collectionSelf("/v1/cards", {
+            q: filters.q,
+            game: filters.game,
+            card_number: filters.cardNumber,
+            limit: filters.limit,
+            after: url.searchParams.get("after"),
+          }),
+        ),
+      },
     });
     if (encoder.encode(serialized).byteLength <= maximumCollectionResponseBytes) {
       return new Response(serialized, {
@@ -116,7 +116,7 @@ export async function cardCollectionResponse(
       });
     }
     if (pageRows.length <= 1) {
-      return catalogueQueryUnavailable(requestId);
+      throw new ReadProblem(503, "catalogue_query_unavailable", "The Card page exceeds its response budget.");
     }
     pageRows.pop();
     truncated = true;
@@ -299,76 +299,22 @@ function ftsCardCollectionPageQuery(
   };
 }
 
-function parseFilters(url: URL, requestId: string): CollectionFilters | Response {
-  const requestedLimit = url.searchParams.get("limit");
-  const limit = requestedLimit === null ? 50 : Number.parseInt(requestedLimit, 10);
-  if (!Number.isInteger(limit) || limit < 1 || limit > 100 || String(limit) !== (requestedLimit ?? "50")) {
-    return invalidParameter(requestId, "limit", "limit must be an integer from 1 to 100.");
-  }
-  const rawQuery = url.searchParams.get("q");
-  if (rawQuery !== null && rawQuery.length === 0) {
-    return invalidParameter(requestId, "q", "q must contain at least one character.");
-  }
-  if (rawQuery !== null && [...rawQuery].length > 500) {
-    return invalidParameter(requestId, "q", "q must contain at most 500 characters.");
-  }
+function parseFilters(url: URL): CollectionFilters {
+  collectionParameters(url);
+  const limit = collectionLimit(url.searchParams.get("limit"));
+  const rawQuery = collectionFilter(url, "q");
   const q = cardSearchQuery(rawQuery)?.text ?? null;
-  if (rawQuery !== null && q === null) {
-    return invalidParameter(requestId, "q", "q must contain at least one character.");
-  }
-  const rawGame = url.searchParams.get("game");
+  if (rawQuery !== null && q === null) throw invalidParameter("q", "q must contain at least one character.");
+  const rawGame = collectionFilter(url, "game");
   const game = normalizedFilter(rawGame);
-  if (rawGame !== null && game === null) {
-    return invalidParameter(requestId, "game", "game must contain at least one character.");
-  }
-  if (game !== null && game !== "one-piece" && game !== "fusion-world" && game !== "digimon" && game !== "gundam") {
-    return invalidParameter(requestId, "game", "game is not a Supported Game.");
-  }
-  const rawCardNumber = url.searchParams.get("card_number");
+  if (rawGame !== null && game === null) throw invalidParameter("game", "game must contain at least one character.");
+  if (game !== null && !["one-piece", "fusion-world", "digimon", "gundam"].includes(game))
+    throw invalidParameter("game", "game is not a Supported Game.");
+  const rawCardNumber = collectionFilter(url, "card_number");
   const cardNumber = normalizedFilter(rawCardNumber);
-  if (rawCardNumber !== null && cardNumber === null) {
-    return invalidParameter(requestId, "card_number", "card_number must contain at least one character.");
-  }
-  return {
-    q,
-    game,
-    cardNumber,
-    limit,
-  };
-}
-
-async function currentRevision(database: D1Database) {
-  const state = await database
-    .prepare(
-      `SELECT current_revision_id, published_at
-       FROM catalogue_state WHERE singleton = 1`,
-    )
-    .first<{
-      current_revision_id: string;
-      published_at: string;
-    }>();
-  if (state === null) {
-    throw new Error("Catalogue state is unavailable.");
-  }
-  return { id: state.current_revision_id, publishedAt: state.published_at };
-}
-
-async function availableRevision(database: D1Database, id: string) {
-  const revision = await database
-    .prepare(
-      `SELECT revision.id, revision.published_at
-       FROM catalogue_revisions AS revision
-       JOIN catalogue_query_revisions AS query
-         ON query.catalogue_revision_id = revision.id
-        AND query.state = 'available'
-       JOIN card_search_fts_state AS search_index
-         ON search_index.singleton = 1
-        AND search_index.state = 'ready'
-       WHERE revision.id = ?`,
-    )
-    .bind(id)
-    .first<{ id: string; published_at: string }>();
-  return revision === null ? null : { id: revision.id, publishedAt: revision.published_at };
+  if (rawCardNumber !== null && cardNumber === null)
+    throw invalidParameter("card_number", "card_number must contain at least one character.");
+  return { q, game, cardNumber, limit };
 }
 
 function rowCursor(row: CardRow): CardCursor["after"] {
@@ -386,20 +332,10 @@ function normalizedFilter(value: string | null): string | null {
   return normalized.length === 0 ? null : normalized;
 }
 
-function encodeCursor(cursor: CardCursor): string {
-  return btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(cursor))));
-}
-
-function parseCursor(encoded: string | null): CardCursor | "invalid" | null {
+function parseCursor(encoded: string | null, filters: CollectionFilters): CardCursor | "invalid" | null {
   if (encoded === null) return null;
   try {
-    const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
-    const value = JSON.parse(
-      new TextDecoder("utf-8", {
-        fatal: true,
-        ignoreBOM: false,
-      }).decode(bytes),
-    ) as Partial<CardCursor>;
+    const value = decodeCursor(encoded) as Partial<CardCursor>;
     const after = value.after;
     if (
       value.contract !== "card-keepr-card-cursor@1" ||
@@ -407,10 +343,7 @@ function parseCursor(encoded: string | null): CardCursor | "invalid" | null {
       value.order !== cardCollectionOrder ||
       typeof value.revision_id !== "string" ||
       value.revision_id.length === 0 ||
-      typeof value.limit !== "number" ||
-      (value.q !== null && typeof value.q !== "string") ||
-      (value.game !== null && typeof value.game !== "string") ||
-      (value.card_number !== null && typeof value.card_number !== "string") ||
+      canonicalJson(value.filters) !== canonicalJson(filters) ||
       after === null ||
       typeof after !== "object" ||
       typeof after.game !== "string" ||
@@ -430,49 +363,6 @@ function parseCursor(encoded: string | null): CardCursor | "invalid" | null {
   }
 }
 
-async function digestFilters(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function invalidParameter(requestId: string, name: string, reason: string): Response {
-  return problemResponse({
-    requestId,
-    status: 400,
-    code: "invalid_parameter",
-    title: "Invalid parameter",
-    detail: "Invalid parameter",
-    extensions: { invalid_params: [{ name, reason }] },
-  });
-}
-
-function invalidCursor(requestId: string): Response {
-  return problemResponse({
-    requestId,
-    status: 400,
-    code: "invalid_cursor",
-    title: "Invalid cursor",
-    detail: "Invalid cursor",
-  });
-}
-
-function cursorUnavailable(requestId: string, base: PublicBase): Response {
-  return problemResponse({
-    requestId,
-    status: 409,
-    code: "cursor_revision_unavailable",
-    title: "Cursor revision unavailable",
-    detail: "Cursor revision unavailable",
-    extensions: { links: { collection: publicUrl(base, "/v1/cards") } },
-  });
-}
-
-function catalogueQueryUnavailable(requestId: string): Response {
-  return problemResponse({
-    requestId,
-    status: 503,
-    code: "catalogue_query_unavailable",
-    title: "Catalogue query unavailable",
-    detail: "The current Catalogue Revision is not yet available through the Card query projection.",
-  });
+function invalidCursor(): ReadProblem {
+  return new ReadProblem(400, "invalid_cursor", "The Card cursor is invalid.");
 }
