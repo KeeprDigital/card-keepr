@@ -34,3 +34,5 @@ export {
 } from "./production-release";
 
 export { ingestionRoutes } from "./routes";
+
+export type { PublicationBackupWaiter } from "./routes";
