@@ -1998,6 +1998,26 @@ function formatCollectionProgress(collection) {
       );
     }
   }
+  const failedImages = collection.failed_images;
+  if (
+    typeof failedImages === "object" && failedImages !== null &&
+    Number.isSafeInteger(failedImages.count) && failedImages.count > 0
+  ) {
+    const listed = (Array.isArray(failedImages.requests)
+      ? failedImages.requests
+      : [])
+      .map((image) => safeDiagnosticReference(image?.request_id))
+      .filter((requestId) => requestId !== null);
+    lines.push(
+      `Failed images: ${formatCount(failedImages.count, "Printing Image")}${
+        failedImages.truncated === true
+          ? ` (first ${listed.length} listed)`
+          : ""
+      } not collected; the run continued and a later run can collect them${
+        listed.length === 0 ? "" : `: ${listed.join(", ")}`
+      }`,
+    );
+  }
   const current = collection.progress?.current_request;
   if (typeof current === "object" && current !== null) {
     const requestId = safeDiagnosticReference(current.request_id);

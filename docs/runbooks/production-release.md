@@ -143,7 +143,8 @@ Two checks cover the Worker inventory, at different points:
   operators: a deploy never adds or removes one. When a release removes a
   secret from the expected list, delete it from the live Worker first with
   `wrangler secret delete`; when it adds one, `wrangler secret put` it first.
-  Never delete an expected slot (see the credential rotation runbook).
+  Never delete an expected slot: the `*_REPLACEMENT` bearer slots are part of
+  the expected set, so change a slot's value by overwriting it.
 - **After upload, before activation** (`verify-version`): the version tagged
   `release-<id>-api` / `-ingestion` must bind exactly the vars, D1, R2,
   service, Workflow, and rate-limit bindings of the release configuration

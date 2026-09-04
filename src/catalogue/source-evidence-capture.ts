@@ -7,7 +7,11 @@ import {
   defaultSourceHostPacingIntervalMilliseconds,
   headersRecord,
   parseStringRecord,
+  requestFailureCode,
   responseVary,
+  type SourceRequestFailureClass,
+  terminalHttpFailureClass,
+  transportPolicyForRole,
 } from "./source-evidence-model";
 import {
   discoverSnapshotRequests,
@@ -259,8 +263,9 @@ export async function prepareCaptureAttempt(
   if (attemptNumber > retryBudget(request)) {
     // The current retry generation is exhausted but no capture operation is
     // open: reached on replay after a crash, or when a resume did not open a
-    // new generation. Recoverable exhaustion re-pauses the run instead of
-    // failing the request; only a terminal latest outcome fails closed.
+    // new generation. Recoverable exhaustion follows the role's transport
+    // policy (re-pause the run, or fail a Printing Image request alone);
+    // only a terminal latest outcome fails closed.
     const previous = await database
       .prepare(
         `SELECT outcome, http_status, attempt_number
@@ -278,23 +283,25 @@ export async function prepareCaptureAttempt(
       previous?.outcome ?? null,
     );
     if (previous === null || classification === null) {
-      await failRequest(database, request, "source_request_retries_exhausted");
-      return {
-        kind: "done",
-        failure_code: "source_request_retries_exhausted",
-      };
+      const failureCode = requestFailureCode(
+        request.request_role,
+        previous?.outcome === "body_failure"
+          ? "body_contract"
+          : "retries_exhausted",
+      );
+      await failRequest(database, request, failureCode);
+      return { kind: "done", failure_code: failureCode };
     }
-    await database.batch(
-      retryExhaustionPause(
-        database,
-        run,
-        request,
-        previous.attempt_number,
-        classification,
-        previous.http_status,
-      ),
+    const exhaustion = recoverableExhaustion(
+      database,
+      run,
+      request,
+      previous.attempt_number,
+      classification,
+      previous.http_status,
     );
-    return { kind: "done", failure_code: null };
+    await database.batch(exhaustion.statements);
+    return { kind: "done", failure_code: exhaustion.failure_code };
   }
   const identity = await captureOperationIdentity(
     run.id,
@@ -429,7 +436,9 @@ export async function capturePreparedAttempt(
       method: "GET",
       headers: requestHeaders,
       redirect: "manual",
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(
+        transportPolicyForRole(request.request_role).timeout_ms,
+      ),
     });
   } catch (error) {
     networkError = errorMessage(
@@ -462,7 +471,7 @@ export async function capturePreparedAttempt(
         headers: responseHeaders,
         diagnostic:
           "A 304 response did not match an immutable Source Snapshot validator and representation.",
-        failureCode: "source_revalidation_rejected",
+        failureClass: "revalidation_rejected",
       });
     }
     if (response.body !== null) await response.body.cancel();
@@ -513,11 +522,11 @@ export async function capturePreparedAttempt(
       diagnostic: redirect
         ? "Redirect responses are retained only as diagnostics."
         : `Official Source returned HTTP ${response.status}.`,
-      failureCode: redirect
-        ? "source_redirect_rejected"
-        : response.status !== 429 && response.status < 500
-          ? "source_request_rejected"
-          : null,
+      // A redirect is recorded, never followed, for every role: following
+      // it would silently change the evidence origin of the retained bytes.
+      failureClass: redirect
+        ? "redirected"
+        : terminalHttpFailureClass(response.status),
     });
   }
 
@@ -1144,10 +1153,26 @@ async function recordFailedTransportAttempt(
 ): Promise<CaptureTransportResult> {
   const exhausted = operation.attempt_number >= retryBudget(request);
   // Exhausted network and storage retries remain semantically safe to retry
-  // later, so they pause the run in the same atomic batch that records the
-  // final failed attempt; a body-contract violation stays terminal.
+  // later, so their exhaustion outcome (a Retry Pause, or a tolerated image
+  // failure under the role's transport policy) commits in the same atomic
+  // batch that records the final failed attempt; a body-contract violation
+  // stays terminal.
   const classification =
     failure.outcome === "body_failure" ? null : failure.outcome;
+  const bodyContractFailureCode = requestFailureCode(
+    request.request_role,
+    "body_contract",
+  );
+  const exhaustion = exhausted && classification !== null
+    ? recoverableExhaustion(
+      database,
+      run,
+      request,
+      operation.attempt_number,
+      classification,
+      failure.status,
+    )
+    : null;
   await database.batch([
     attemptStatement(database, {
       id: operation.attempt_id,
@@ -1179,24 +1204,9 @@ async function recordFailedTransportAttempt(
         operation.attempt_id,
       ),
     ...(exhausted && classification === null
-      ? [
-          failRequestStatement(
-            database,
-            request,
-            "source_request_retries_exhausted",
-          ),
-        ]
+      ? [failRequestStatement(database, request, bodyContractFailureCode)]
       : []),
-    ...(exhausted && classification !== null
-      ? retryExhaustionPause(
-          database,
-          run,
-          request,
-          operation.attempt_number,
-          classification,
-          failure.status,
-        )
-      : []),
+    ...(exhaustion?.statements ?? []),
   ]);
   if (!exhausted) {
     return {
@@ -1207,8 +1217,9 @@ async function recordFailedTransportAttempt(
   }
   return {
     kind: "done",
-    failure_code:
-      classification !== null ? null : "source_request_retries_exhausted",
+    failure_code: exhaustion === null
+      ? bodyContractFailureCode
+      : exhaustion.failure_code,
     request_made: true,
   };
 }
@@ -1225,15 +1236,30 @@ async function recordRejectedAttempt(
     headers: Record<string, string>;
     retryAfterMs?: number | null;
     diagnostic: string;
-    failureCode: string | null;
+    failureClass: SourceRequestFailureClass | null;
   },
 ): Promise<CaptureTransportResult> {
   const exhausted = operation.attempt_number >= retryBudget(request);
-  // A rejection without its own terminal failure code is a retryable HTTP
+  // A rejection without a terminal failure class is a retryable HTTP
   // response (429 or 5xx): exhausting its bounded retries pauses the run
-  // rather than failing the request. Redirects, non-retryable statuses, and
-  // rejected revalidations keep their terminal codes.
-  const pausing = exhausted && rejection.failureCode === null;
+  // rather than failing the request, except for a Printing Image, whose
+  // transport policy fails that one request and lets collection continue.
+  // Redirects, non-retryable statuses, and rejected revalidations are
+  // terminal for the request under the code its role's policy assigns:
+  // fatal for the run on a catalogue-fact role, a tolerated gap on an image.
+  const failureCode = rejection.failureClass === null
+    ? null
+    : requestFailureCode(request.request_role, rejection.failureClass);
+  const exhaustion = exhausted && failureCode === null
+    ? recoverableExhaustion(
+      database,
+      run,
+      request,
+      operation.attempt_number,
+      "http_failure",
+      rejection.status,
+    )
+    : null;
   await database.batch([
     attemptStatement(database, {
       id: operation.attempt_id,
@@ -1262,29 +1288,20 @@ async function recordRejectedAttempt(
         rejection.diagnostic,
         operation.attempt_id,
       ),
-    ...(rejection.failureCode === null
+    ...(failureCode === null
       ? []
-      : [failRequestStatement(database, request, rejection.failureCode)]),
-    ...(pausing
-      ? retryExhaustionPause(
-          database,
-          run,
-          request,
-          operation.attempt_number,
-          "http_failure",
-          rejection.status,
-        )
-      : []),
+      : [failRequestStatement(database, request, failureCode)]),
+    ...(exhaustion?.statements ?? []),
   ]);
-  if (rejection.failureCode !== null) {
+  if (failureCode !== null) {
+    return { kind: "done", failure_code: failureCode, request_made: true };
+  }
+  if (exhaustion !== null) {
     return {
       kind: "done",
-      failure_code: rejection.failureCode,
+      failure_code: exhaustion.failure_code,
       request_made: true,
     };
-  }
-  if (pausing) {
-    return { kind: "done", failure_code: null, request_made: true };
   }
   return {
     kind: "wait",
@@ -1329,24 +1346,52 @@ function recoverableExhaustionClassification(
   return null;
 }
 
-function retryExhaustionPause(
+// The committed outcome of one exhausted retry generation whose latest
+// failure is recoverable. Storage exhaustion always pauses: R2 is ours to
+// recover regardless of what was being fetched. Transport exhaustion follows
+// the role's transport policy: a Retry Pause for catalogue-fact roles, or a
+// tolerated failure of that one request for a Printing Image so collection
+// continues. Statements are returned unexecuted so callers commit them in
+// the same atomic batch as the final failed attempt.
+function recoverableExhaustion(
   database: D1Database,
   run: IngestionEvidenceRow,
   request: EvidenceRequestRow,
   attemptCount: number,
   classification: RetryExhaustionFacts["failure_classification"],
   httpStatus: number | null,
-): D1PreparedStatement[] {
-  return retryExhaustionPauseStatements(database, request.ingestion_run_id, {
-    request_id: request.request_id,
-    source_lineage: evidencePlanForRequest(run, request.request_id)
-      .source_lineage,
-    hostname: new URL(request.url).hostname,
-    retry_generation: request.retry_generation,
-    attempt_count: attemptCount,
-    failure_classification: classification,
-    http_status: httpStatus,
-  });
+): { statements: D1PreparedStatement[]; failure_code: string | null } {
+  const policy = transportPolicyForRole(request.request_role);
+  if (
+    classification !== "storage_failure" &&
+    policy.on_transport_exhaustion === "fail_request"
+  ) {
+    const failureCode = requestFailureCode(
+      request.request_role,
+      "retries_exhausted",
+    );
+    return {
+      statements: [failRequestStatement(database, request, failureCode)],
+      failure_code: failureCode,
+    };
+  }
+  return {
+    statements: retryExhaustionPauseStatements(
+      database,
+      request.ingestion_run_id,
+      {
+        request_id: request.request_id,
+        source_lineage: evidencePlanForRequest(run, request.request_id)
+          .source_lineage,
+        hostname: new URL(request.url).hostname,
+        retry_generation: request.retry_generation,
+        attempt_count: attemptCount,
+        failure_classification: classification,
+        http_status: httpStatus,
+      },
+    ),
+    failure_code: null,
+  };
 }
 
 type AttemptInput = {
