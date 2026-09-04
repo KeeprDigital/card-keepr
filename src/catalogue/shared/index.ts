@@ -96,14 +96,3 @@ export {
   maximumLegalityRuleRelationships,
   maximumLegalityStatusRules,
 } from "./export-limits";
-
-export {
-  readAdministrationBody,
-  requiredString,
-  requiredStringArray,
-  requiredEvidencePlans,
-  requiredSourceRequests,
-  assertOnlyFields,
-  administrationResultStatus,
-  catalogueExportDeletionResultStatus,
-} from "./administration-http";

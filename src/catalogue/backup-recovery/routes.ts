@@ -1,5 +1,6 @@
 import { route, type RouteContext } from "../../http/routes";
-import { AdministrationProblem, readAdministrationBody, requiredString, assertOnlyFields } from "../shared";
+import { AdministrationProblem } from "../shared";
+import { readAdministrationBody, requiredString, assertOnlyFields } from "../../http/administration";
 import { startOrObserveCatalogueBackupWorkflow } from "./backup-workflow";
 import { catalogueBackupAttemptStatus, catalogueRevisionBackupStatus } from "./backup-recovery";
 import {
@@ -20,11 +21,11 @@ type Environment = {
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const backupRecoveryRoutes = [
-  route<Context>("GET", "/v1/backups/:ref1", async ({ env }, params) => {
-    return Response.json(await catalogueBackupAttemptStatus(env.CATALOGUE_DB, params.ref1!));
+  route<Context>("GET", "/v1/backups/:attempt", async ({ env }, params) => {
+    return Response.json(await catalogueBackupAttemptStatus(env.CATALOGUE_DB, params.attempt!));
   }),
-  route<Context>("GET", "/v1/catalogue-revisions/:ref1/backups", async ({ env }, params) => {
-    return Response.json(await catalogueRevisionBackupStatus(env.CATALOGUE_DB, params.ref1!));
+  route<Context>("GET", "/v1/catalogue-revisions/:revision/backups", async ({ env }, params) => {
+    return Response.json(await catalogueRevisionBackupStatus(env.CATALOGUE_DB, params.revision!));
   }),
   route<Context>("POST", "/v1/backups", async ({ request, env, observedAt }) => {
     const body = await readAdministrationBody(request);
@@ -57,8 +58,8 @@ export const backupRecoveryRoutes = [
       status: result.created && result.document.status !== "complete" ? 202 : 200,
     });
   }),
-  route<Context>("GET", "/v1/recoveries/:ref1", async ({ env }, params) => {
-    return Response.json(await inspectCatalogueRecovery(env.CATALOGUE_DB, env.BACKUPS, params.ref1!));
+  route<Context>("GET", "/v1/recoveries/:recovery", async ({ env }, params) => {
+    return Response.json(await inspectCatalogueRecovery(env.CATALOGUE_DB, env.BACKUPS, params.recovery!));
   }),
   route<Context>("POST", "/v1/recoveries", async ({ request, env, observedAt }) => {
     const body = await readAdministrationBody(request);
@@ -110,11 +111,11 @@ export const backupRecoveryRoutes = [
     });
     return Response.json(document, { status: 201 });
   }),
-  route<Context>("POST", "/v1/recoveries/:ref1/verification", async ({ request, env, observedAt }, params) => {
+  route<Context>("POST", "/v1/recoveries/:recovery/verification", async ({ request, env, observedAt }, params) => {
     const body = await readAdministrationBody(request);
     assertOnlyFields(body, ["target_digest", "idempotency_key"]);
     return Response.json(
-      await verifyCatalogueRecovery(env.CATALOGUE_DB, env.BACKUPS, params.ref1!, {
+      await verifyCatalogueRecovery(env.CATALOGUE_DB, env.BACKUPS, params.recovery!, {
         targetDigest: requiredString(body, "target_digest"),
         idempotencyKey: requiredString(body, "idempotency_key"),
         observedAt,
@@ -123,7 +124,7 @@ export const backupRecoveryRoutes = [
       }),
     );
   }),
-  route<Context>("POST", "/v1/recoveries/:ref1/acceptance", async ({ request, env, observedAt }, params) => {
+  route<Context>("POST", "/v1/recoveries/:recovery/acceptance", async ({ request, env, observedAt }, params) => {
     const body = await readAdministrationBody(request);
     assertOnlyFields(body, [
       "expected_restored_revision_id",
@@ -132,7 +133,7 @@ export const backupRecoveryRoutes = [
       "idempotency_key",
     ]);
     return Response.json(
-      await acceptCatalogueRecovery(env.CATALOGUE_DB, env.BACKUPS, params.ref1!, {
+      await acceptCatalogueRecovery(env.CATALOGUE_DB, env.BACKUPS, params.recovery!, {
         expectedRestoredRevisionId: requiredString(body, "expected_restored_revision_id"),
         targetDigest: requiredString(body, "target_digest"),
         confirmationRecoveryId: requiredString(body, "confirmation_recovery_id"),
