@@ -13,9 +13,9 @@ export class ReconciliationDocumentStorageError extends Error {
     this.name = "ReconciliationDocumentStorageError";
   }
 }
-export async function documentStorage<T>(operation: Promise<T>): Promise<T> {
+export async function documentStorage<T>(operation: Promise<T> | (() => Promise<T>)): Promise<T> {
   try {
-    return await operation;
+    return await (typeof operation === "function" ? operation() : operation);
   } catch (cause) {
     throw new ReconciliationDocumentStorageError(cause);
   }

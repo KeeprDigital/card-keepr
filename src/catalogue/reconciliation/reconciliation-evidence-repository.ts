@@ -108,10 +108,15 @@ export function reconciliationOverflowRequestsStatement(database: CatalogueStore
     .bind(runId);
 }
 
-export function reconciliationObservationCountsStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+export function reconciliationObservationCountsStatement(
+  database: CatalogueStore,
+  runId: string,
+  lineage: string,
+  adapter: string,
+  requestId: string,
+): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT snapshots.request_id, snapshots.source_lineage, observations.adapter_version,
-              observations.observation_count
+    .prepare(`SELECT observations.observation_count
        FROM catalogue_revisions AS prior_revision
        JOIN source_snapshots AS snapshots
          ON snapshots.ingestion_run_id = prior_revision.ingestion_run_id
@@ -120,10 +125,11 @@ export function reconciliationObservationCountsStatement(database: CatalogueStor
        JOIN source_parse_operations AS parse
          ON parse.id = observations.parse_operation_id
        WHERE parse.intent = 'collection'
-         AND snapshots.ingestion_run_id <> ?
+         AND snapshots.ingestion_run_id <> ? AND snapshots.source_lineage = ?
+         AND observations.adapter_version = ? AND snapshots.request_id = ?
        ORDER BY prior_revision.published_at DESC, prior_revision.id DESC,
-                snapshots.source_lineage, snapshots.request_id`)
-    .bind(runId);
+                snapshots.source_lineage, snapshots.request_id LIMIT 1`)
+    .bind(runId, lineage, adapter, requestId);
 }
 
 // A source may verify its already accepted bytes without collecting a different

@@ -92,13 +92,6 @@ type EvidencePlanRow = {
   request_plan_json: string;
 };
 
-type PriorObservationCountRow = {
-  adapter_version: string;
-  request_id: string;
-  source_lineage: string;
-  observation_count: number;
-};
-
 type DiscoveryRequestPlanRow = {
   ingestion_run_id: string;
   request_id: string;
@@ -125,6 +118,7 @@ export type NormalizedReconciliationObservation = ReturnType<typeof parseReconci
 };
 
 type CollectedReconciliationInput = Awaited<ReturnType<typeof collectRetainedReconciliationObservation>>;
+type SequenceElement<T> = T extends Iterable<infer U> | AsyncIterable<infer U> ? U : never;
 type MetadataSequence = "partitions" | "countChangeWarnings" | "unavailablePrintingImages" | "evidencePlans";
 
 export async function retainedReconciliationObservation(
@@ -151,7 +145,7 @@ export async function retainedReconciliationObservation(
         identity,
       ),
   } as Omit<CollectedReconciliationInput, MetadataSequence | "observations"> & {
-    [K in MetadataSequence]: AsyncIterable<CollectedReconciliationInput[K][number]>;
+    [K in MetadataSequence]: AsyncIterable<SequenceElement<CollectedReconciliationInput[K]>>;
   } & {
     observations: () => AsyncGenerator<NormalizedReconciliationObservation>;
     cardErrata: (
@@ -177,13 +171,15 @@ async function collectRetainedReconciliationObservation(
   runId: string,
   printingImages: R2Bucket,
 ) {
-  const [requests, observations, collectionPlans, evidencePlanRow, discoveryRequestPlans] = await Promise.all([
-    reconciliationSourceRequestsStatement(database, runId).all<PlannedRequestRow>(),
-    reconciliationObservationSetsStatement(database, runId).all<EvidenceRow>(),
-    reconciliationCollectionPlansStatement(database, runId).all<CollectionPlanRow>(),
-    reconciliationEvidencePlanStatement(database, runId).first<EvidencePlanRow>(),
-    reconciliationOverflowRequestsStatement(database, runId).all<DiscoveryRequestPlanRow>(),
-  ]);
+  const [requests, observations, collectionPlans, evidencePlanRow, discoveryRequestPlans] = await documentStorage(() =>
+    Promise.all([
+      reconciliationSourceRequestsStatement(database, runId).all<PlannedRequestRow>(),
+      reconciliationObservationSetsStatement(database, runId).all<EvidenceRow>(),
+      reconciliationCollectionPlansStatement(database, runId).all<CollectionPlanRow>(),
+      reconciliationEvidencePlanStatement(database, runId).first<EvidencePlanRow>(),
+      reconciliationOverflowRequestsStatement(database, runId).all<DiscoveryRequestPlanRow>(),
+    ]),
+  );
   if (requests.results.length === 0 || evidencePlanRow === null) {
     throw new Error("Reconciliation requires complete coverage of every planned Source Request.");
   }
@@ -430,7 +426,20 @@ async function collectRetainedReconciliationObservation(
     gameProfileVersion: row.game_profile_version,
     adapterVersion: row.adapter_version,
   }));
-  const countChangeWarnings = await sourceObservationCountChangeWarnings(database, runId, orderedRows);
+  const countChangeWarnings = {
+    async *[Symbol.asyncIterator]() {
+      yield* sourceObservationCountChangeWarnings(database, runId, orderedRows);
+      for (const plan of evidencePlans)
+        if (omittedLineages.has(plan.source_lineage))
+          yield {
+            code: "optional_source_carried_forward",
+            source_lineage: plan.source_lineage,
+            coverage: plan.coverage,
+            detail:
+              "The optional Source Coverage was not completely checked. Prior accepted facts and their evidence/check dates carry forward; partial captures establish no disappearance.",
+          };
+    },
+  };
   return {
     observationSetId: first.observation_set_id,
     sourceSnapshotId: first.source_snapshot_id,
@@ -438,18 +447,7 @@ async function collectRetainedReconciliationObservation(
     supportedGame: supportedGame(first.supported_game),
     reconciliationCapability: requiredSourceAdapter(first.adapter_version).reconciliationCapability,
     structurallyComplete: true,
-    countChangeWarnings: [
-      ...countChangeWarnings,
-      ...evidencePlans
-        .filter((plan) => omittedLineages.has(plan.source_lineage))
-        .map((plan) => ({
-          code: "optional_source_carried_forward",
-          source_lineage: plan.source_lineage,
-          coverage: plan.coverage,
-          detail:
-            "The optional Source Coverage was not completely checked. Prior accepted facts and their evidence/check dates carry forward; partial captures establish no disappearance.",
-        })),
-    ],
+    countChangeWarnings,
     unavailablePrintingImages,
     partitions,
     evidencePlans: selectedPlans.map((plan) => {
@@ -464,19 +462,22 @@ async function collectRetainedReconciliationObservation(
   };
 }
 
-async function sourceObservationCountChangeWarnings(
+async function* sourceObservationCountChangeWarnings(
   database: CatalogueStore,
   runId: string,
-  currentRows: readonly EvidenceRow[],
-): Promise<Record<string, unknown>[]> {
-  const prior = await reconciliationObservationCountsStatement(database, runId).all<PriorObservationCountRow>();
-  const priorCounts = new Map<string, number>();
-  for (const row of prior.results) {
-    const key = `${row.source_lineage}\u0000${row.adapter_version}\u0000${row.request_id}`;
-    if (!priorCounts.has(key)) priorCounts.set(key, row.observation_count);
-  }
-  return currentRows.flatMap((row) => {
-    const previousCount = priorCounts.get(`${row.source_lineage}\u0000${row.adapter_version}\u0000${row.request_id}`);
+  currentRows: Iterable<EvidenceRow> | AsyncIterable<EvidenceRow>,
+): AsyncGenerator<Record<string, unknown>> {
+  for await (const row of currentRows) {
+    const prior = await documentStorage(() =>
+      reconciliationObservationCountsStatement(
+        database,
+        runId,
+        row.source_lineage,
+        row.adapter_version,
+        row.request_id,
+      ).first<{ observation_count: number }>(),
+    );
+    const previousCount = prior?.observation_count;
     const policy = requiredSourceAdapter(row.adapter_version).coverageLossThreshold;
     const threshold =
       previousCount === undefined
@@ -488,22 +489,20 @@ async function sourceObservationCountChangeWarnings(
         `Unexplained Source Coverage loss for ${row.source_lineage}/${row.request_id}: ${previousCount} to ${row.observation_count} observations. Completeness is blocked; inspect retained evidence and explicitly select an independently complete narrower scope or repair the adapter.`,
       );
     }
-    return previousCount === undefined || threshold === null || absoluteDelta === null || absoluteDelta < threshold
-      ? []
-      : [
-          {
-            code: "source_observation_count_changed",
-            semantic_effect: "additions",
-            source_lineage: row.source_lineage,
-            request_id: row.request_id,
-            previous_count: previousCount,
-            current_count: row.observation_count,
-            absolute_delta: absoluteDelta,
-            warning_threshold: threshold,
-            detail: `Official Source request ${row.request_id} changed by ${absoluteDelta} parsed observations since the prior published snapshot, meeting the review threshold of ${threshold}.`,
-          },
-        ];
-  });
+    if (previousCount === undefined || threshold === null || absoluteDelta === null || absoluteDelta < threshold)
+      continue;
+    yield {
+      code: "source_observation_count_changed",
+      semantic_effect: "additions",
+      source_lineage: row.source_lineage,
+      request_id: row.request_id,
+      previous_count: previousCount,
+      current_count: row.observation_count,
+      absolute_delta: absoluteDelta,
+      warning_threshold: threshold,
+      detail: `Official Source request ${row.request_id} changed by ${absoluteDelta} parsed observations since the prior published snapshot, meeting the review threshold of ${threshold}.`,
+    };
+  }
 }
 
 async function validateOfficialSurfaceCoverage(input: {

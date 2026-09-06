@@ -1566,6 +1566,8 @@ const retainedStateNamespaces = [
   "semantic_memberships",
   "warning_records_sorted",
   "observed_card_ids",
+  "prior_observation_counts",
+  "initial_evidence_metadata",
 ];
 test.each(retainedStateNamespaces)(
   "a %s storage outage resumes retained identities and effective rules text",
@@ -1584,6 +1586,20 @@ test.each(retainedStateNamespaces)(
       const proxy = new Proxy(statement, {
         get(target, property) {
           if (property === "bind") return (...bound: unknown[]) => wrap(target.bind(...bound), sql, bound);
+          if (
+            (property === "first" || property === "all") &&
+            ((namespace === "prior_observation_counts" && sql.includes("FROM catalogue_revisions AS prior_revision")) ||
+              (namespace === "initial_evidence_metadata" &&
+                sql.includes("FROM source_requests") &&
+                sql.includes("ORDER BY sequence_number, request_id")))
+          )
+            return () => {
+              if (unavailable) {
+                failures++;
+                throw new Error("Injected prior observation count storage outage");
+              }
+              return property === "first" ? target.first() : target.all();
+            };
           const value = Reflect.get(target, property);
           return typeof value === "function" ? value.bind(target) : value;
         },
