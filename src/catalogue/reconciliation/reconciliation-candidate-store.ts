@@ -1,7 +1,6 @@
 import type { ObservationPlan } from "./reconciliation-plan-state";
 import {
   boundedAsyncRecordArrays,
-  boundedRecordArrays,
   canonicalStreamValueChunks,
   prepareCandidateBatch,
 } from "./reconciliation-preparation";
@@ -80,7 +79,7 @@ export async function persistReviewableCandidate(
   database: CatalogueStore,
   input: {
     runId: string;
-    partitions: readonly EvidencePartitionInput[];
+    partitions: AsyncIterable<EvidencePartitionInput>;
     plans: AsyncIterable<ObservationPlan>;
     warnings:
       | Iterable<ReconciliationWarning | Record<string, unknown>>
@@ -126,7 +125,7 @@ export async function persistBlockedCandidate(
   database: CatalogueStore,
   input: {
     runId: string;
-    partitions: readonly EvidencePartitionInput[];
+    partitions: AsyncIterable<EvidencePartitionInput>;
     plans: AsyncIterable<ObservationPlan>;
     diagnostics: Iterable<Record<string, unknown>> | AsyncIterable<Record<string, unknown>>;
     candidate: Record<string, unknown>;
@@ -261,7 +260,7 @@ async function stageCandidatePreparation(
     draft: CatalogueDraft;
     digestPayload: Record<string, unknown>;
     plans: AsyncIterable<CandidatePlanInput>;
-    partitions: readonly EvidencePartitionInput[];
+    partitions: AsyncIterable<EvidencePartitionInput>;
   },
 ): Promise<number> {
   const warningsJson = canonicalJson({ reconciliation_warning_partitions: true });
@@ -276,7 +275,7 @@ async function stageCandidatePreparation(
     marker,
     createReconciliationContextStatement(database, { runId: input.runId, digestPayload: marker }),
   );
-  for (const content of boundedRecordArrays(evidencePartitionRows(input.partitions))) {
+  for await (const content of boundedAsyncRecordArrays(evidencePartitionRows(input.partitions))) {
     await prepare(
       "evidence",
       content,
@@ -325,8 +324,8 @@ async function* candidatePlanRows(plans: AsyncIterable<CandidatePlanInput>) {
     };
 }
 
-function* evidencePartitionRows(partitions: readonly EvidencePartitionInput[]) {
-  for (const partition of partitions)
+async function* evidencePartitionRows(partitions: AsyncIterable<EvidencePartitionInput>) {
+  for await (const partition of partitions)
     yield {
       sequence_number: partition.sequenceNumber,
       request_id: partition.requestId,

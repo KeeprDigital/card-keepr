@@ -1,7 +1,7 @@
 import {
   readVerifiedReconciliationInput,
   retainVerifiedReconciliationInput,
-  verifiedReconciliationObservations,
+  verifiedReconciliationRecords,
 } from "./reconciliation-input";
 import { documentStorage, readVerifiedSourceDocument, retainVerifiedSourceDocument } from "./reconciliation-document";
 import { canonicalValueDigest } from "./reconciliation-preparation";
@@ -124,6 +124,9 @@ export type NormalizedReconciliationObservation = ReturnType<typeof parseReconci
   structurallyComplete: true;
 };
 
+type CollectedReconciliationInput = Awaited<ReturnType<typeof collectRetainedReconciliationObservation>>;
+type MetadataSequence = "partitions" | "countChangeWarnings" | "unavailablePrintingImages" | "evidencePlans";
+
 export async function retainedReconciliationObservation(
   database: CatalogueStore,
   evidenceObjects: R2Bucket,
@@ -138,7 +141,8 @@ export async function retainedReconciliationObservation(
   if (!retained) throw new Error("The verified reconciliation input is unavailable.");
   return {
     ...retained,
-    observations: () => verifiedReconciliationObservations<NormalizedReconciliationObservation>(database, runId),
+    observations: () =>
+      verifiedReconciliationRecords<NormalizedReconciliationObservation>(database, runId, "observations"),
     cardErrata: (game: string, identity: unknown) =>
       normalizedCardErrata<Extract<NormalizedReconciliationObservation, { kind: "official_erratum" }>>(
         database,
@@ -146,7 +150,9 @@ export async function retainedReconciliationObservation(
         game,
         identity,
       ),
-  } as Omit<Awaited<ReturnType<typeof collectRetainedReconciliationObservation>>, "observations"> & {
+  } as Omit<CollectedReconciliationInput, MetadataSequence | "observations"> & {
+    [K in MetadataSequence]: AsyncIterable<CollectedReconciliationInput[K][number]>;
+  } & {
     observations: () => AsyncGenerator<NormalizedReconciliationObservation>;
     cardErrata: (
       game: string,
@@ -452,10 +458,6 @@ async function collectRetainedReconciliationObservation(
         supportedGame: supportedGame(plan.supported_game),
         adapterVersion: plan.adapter_version,
         reconciliationCapability: requiredSourceAdapter(plan.adapter_version).reconciliationCapability,
-        partitions: partitions.filter(
-          ({ requestId }) =>
-            requestId.startsWith(`${plan.source_lineage}:`) || plan.requests.some(({ id }) => id === requestId),
-        ),
       };
     }),
     observations: stagedNormalizedObservations<NormalizedReconciliationObservation>(database, runId),

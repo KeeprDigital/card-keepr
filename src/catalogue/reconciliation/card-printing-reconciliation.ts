@@ -285,21 +285,25 @@ export async function reconcileRetainedCardPrintingEvidence(
     runId,
     "warning_records",
   );
-  await sourceWarnings.push(
-    ...retained.countChangeWarnings,
-    // A Printing Image whose transport retries were exhausted never blocks
-    // publication: the candidate carries the gap explicitly so the owner can
-    // see it and a later run can collect the image.
-    ...retained.unavailablePrintingImages.map((image) => ({
+  for await (const warning of retained.countChangeWarnings) await sourceWarnings.push(warning);
+  for await (const image of retained.unavailablePrintingImages)
+    await sourceWarnings.push({
       code: "printing_image_unavailable",
       request_id: image.requestId,
       source_url: image.sourceUrl,
       source_lineage: image.sourceLineage,
       failure_code: image.failureCode,
       detail:
-        "The Official Source did not serve this Printing Image within its bounded transport retries; the Printing is published without it and a later Ingestion Run can collect it.",
-    })),
-  );
+        "The Official Source did not serve this Printing Image within its bounded transport retries; the Printing is published without it and a later run can collect it.",
+    });
+  const evidenceGames = new Set<SupportedGame>();
+  const evidenceLineages = new Set<string>();
+  let errataOnlyEvidence = true;
+  for await (const plan of retained.evidencePlans) {
+    evidenceGames.add(plan.supportedGame);
+    evidenceLineages.add(plan.sourceLineage);
+    if (plan.reconciliationCapability !== "errata") errataOnlyEvidence = false;
+  }
   await pinCorrectionDecisions(database, runId, JSON.parse(run.selected_games_json) as string[]);
   const correctedCardIdentity = await pinnedCardIdentityResolver(database, runId);
   await pinEntityAdmissions(database, runId, JSON.parse(run.selected_games_json) as string[]);
@@ -1229,7 +1233,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       "cards",
       omitUndefinedValues(
         await (async (card: CatalogueCard) => {
-          if (!retained.partitions.some(({ supportedGame }) => supportedGame === card.game)) return card;
+          if (!evidenceGames.has(card.game)) return card;
           try {
             return {
               ...card,
@@ -1261,12 +1265,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     await official.set("printing_images", omitUndefinedValues(image) as CataloguePrintingImage);
   let candidate: CatalogueCandidate = {
     contract: catalogueCandidateContract,
-    selected_games: [
-      ...new Set([
-        ...(priorCandidate?.selected_games ?? []),
-        ...retained.partitions.map(({ supportedGame }) => supportedGame as SupportedGame),
-      ]),
-    ].sort(),
+    selected_games: [...new Set([...(priorCandidate?.selected_games ?? []), ...evidenceGames])].sort(),
     ...(priorCandidate?.identity_corrections ? { identity_corrections: priorCandidate.identity_corrections } : {}),
     cards: [],
     printings: [],
@@ -1299,15 +1298,10 @@ export async function reconcileRetainedCardPrintingEvidence(
   candidate = omitUndefinedValues(candidate) as CatalogueCandidate;
   await official.seed(candidate, ["identity_corrections"]);
   for await (const erratum of currentErrata.values()) await official.set("errata", erratum);
-  const errataOnlyEvidence = retained.evidencePlans.every(
-    ({ reconciliationCapability }) => reconciliationCapability === "errata",
-  );
   for await (const { printingId, sourceLineage, memberships } of plans.memberships())
     for await (const warning of relationshipDisappearanceWarnings(database, printingId, sourceLineage, memberships))
       await sourceWarnings.push(warning);
-  const checkedSourceLineages = errataOnlyEvidence
-    ? []
-    : [...new Set(retained.partitions.map(({ sourceLineage }) => sourceLineage))].sort();
+  const checkedSourceLineages = errataOnlyEvidence ? [] : [...evidenceLineages].sort();
   const addLineageWarning = async (printingId: string) => {
     const lineages = new Set(
       (await gundamPrintingLineages(database, printingId))
@@ -1341,7 +1335,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     for await (const warning of plans.disappearanceWarnings("card", lineage)) await sourceWarnings.push(warning);
   }
   if (errataOnlyEvidence) {
-    const lineages = new Set(retained.partitions.map(({ sourceLineage }) => sourceLineage));
+    const lineages = evidenceLineages;
     for (const sourceLineage of lineages)
       for await (const erratum of priorErrata.values()) {
         if (
@@ -1542,7 +1536,7 @@ async function finalizedReconciliationResult(
 
 function reconciliationDigestPayload(input: {
   candidate: Record<string, unknown>;
-  partitions: readonly unknown[];
+  partitions: AsyncIterable<unknown>;
   plans: Parameters<typeof digestObservationPlans>[0];
   state: "awaiting_approval" | "failed";
   publishable: boolean;

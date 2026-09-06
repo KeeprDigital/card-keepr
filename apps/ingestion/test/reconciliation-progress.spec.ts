@@ -575,6 +575,7 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
               if (
                 sql.includes("FROM reconciliation_input_partitions") &&
                 sql.includes("kind = ?") &&
+                values.includes("observations") &&
                 values.at(-1) === -1
               ) {
                 passes++;

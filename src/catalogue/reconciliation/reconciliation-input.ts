@@ -60,7 +60,7 @@ export async function retainVerifiedReconciliationInput(
   await storage(sealReconciliationInputStatement(database, runId, digest, ordinal).run());
 }
 
-/** Legacy computation consumes the verified records; input reads themselves are page bounded. */
+/** Verify the manifest without rebuilding any retained record collection. */
 export async function readVerifiedReconciliationInput(
   database: CatalogueStore,
   runId: string,
@@ -82,18 +82,16 @@ export async function readVerifiedReconciliationInput(
     if (!partition) break;
     if ((await sha256Text(partition.content)) !== partition.sha256)
       throw new Error("Retained reconciliation input partition failed integrity verification.");
-    const records: unknown[] = [];
     for (const record of JSON.parse(partition.content)) {
+      // Verify every retained text reference before exposing the stream, retaining only one restored record.
       const restored = await restorePartitionedRecord(database, runId, record);
-      if (partition.kind !== "observations") records.push(restored);
-    }
-    if (partition.kind === "$metadata") {
-      const metadata = records[0] as { values: Record<string, unknown>; array_keys: string[] };
+      if (partition.kind !== "$metadata") continue;
+      const metadata = restored as { values: Record<string, unknown>; array_keys: string[] };
       Object.assign(result, metadata.values);
-      for (const key of metadata.array_keys) if (key !== "observations") result[key] = [];
-    } else {
-      const values = (result[partition.kind] ??= []) as unknown[];
-      values.push(...records);
+      for (const kind of metadata.array_keys)
+        result[kind] = {
+          [Symbol.asyncIterator]: () => verifiedReconciliationRecords(database, runId, kind),
+        };
     }
     digest = await sha256Text(
       canonicalJson({ previous: digest, ordinal, kind: partition.kind, sha256: partition.sha256 }),
@@ -105,14 +103,15 @@ export async function readVerifiedReconciliationInput(
 }
 
 /** Re-open the immutable verified sequence without retaining the complete observation array. */
-export async function* verifiedReconciliationObservations<T>(
+export async function* verifiedReconciliationRecords<T>(
   database: CatalogueStore,
   runId: string,
+  kind: string,
 ): AsyncGenerator<T> {
   let after = -1;
   for (;;) {
     const partition = await storage(
-      nextReconciliationInputKindStatement(database, runId, "observations", after).first<{
+      nextReconciliationInputKindStatement(database, runId, kind, after).first<{
         ordinal: number;
         content: string;
         sha256: string;

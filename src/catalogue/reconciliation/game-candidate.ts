@@ -34,7 +34,7 @@ export async function prepareGameCandidateManifests(
   runId: string,
   candidate: CatalogueDraft,
   inputManifest: string,
-  lineages: readonly { supportedGame: string; sourceLineage: string }[],
+  lineages: AsyncIterable<{ supportedGame: string; sourceLineage: string }>,
 ) {
   for (const kind of ["cards", "printings"] as const) {
     async function* scopes() {
@@ -47,6 +47,15 @@ export async function prepareGameCandidateManifests(
 
   const headers = (await gameCandidatesForRunStatement(database, runId).all<GameCandidate>()).results;
   const seals: D1PreparedStatement[] = [];
+  const lineageGames = new Map(
+    sourceAdapterRegistrations.map(({ sourceLineage, supportedGame }) => [
+      sourceLineage,
+      { sourceLineage, supportedGame },
+    ]),
+  );
+  for await (const { sourceLineage, supportedGame } of lineages)
+    lineageGames.set(sourceLineage, { sourceLineage, supportedGame });
+  const scopedLineages = canonicalJson([...lineageGames.values()]);
   for (const header of headers) {
     let digest = await sha256Text(
       canonicalJson({
@@ -60,14 +69,6 @@ export async function prepareGameCandidateManifests(
         preparation_manifest: inputManifest,
       }),
     );
-    const scopedLineages = canonicalJson([
-      ...new Map(
-        [...sourceAdapterRegistrations, ...lineages].map(({ sourceLineage, supportedGame }) => [
-          sourceLineage,
-          { sourceLineage, supportedGame },
-        ]),
-      ).values(),
-    ]);
     let after = -1;
     let ordinal = 0;
     for (;;) {
