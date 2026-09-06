@@ -311,8 +311,14 @@ async function collectRetainedReconciliationObservation(
         `Unplanned Source Observation Set ${row.observation_set_id} cannot participate in reconciliation.`,
       );
   }
-  const evidenceAfter = async function* (after?: { sequenceNumber: number; requestId: string }) {
-    for await (const request of sourceRequests(database, runId, after?.sequenceNumber, after?.requestId)) {
+  const evidenceAfter = async function* (after?: { sequenceNumber: number; requestId: string; complete?: boolean }) {
+    for await (const request of sourceRequests(
+      database,
+      runId,
+      after?.sequenceNumber,
+      after?.requestId,
+      after?.complete === false,
+    )) {
       if (!isSelected(request)) continue;
       const rows = evidenceRows(database, runId, request.source_snapshot_id!);
       const first = await rows.next();
@@ -369,15 +375,19 @@ async function collectRetainedReconciliationObservation(
     sequenceNumber: number;
     requestId: string;
     observationSetId: string;
+    nextObservationOrdinal: number;
+    complete: boolean;
+    officialSurfaceSeen: boolean;
   }>(database, runId, "normalization");
   if (normalized && normalized.value.inputDigest !== inputDigest)
     throw new Error("Normalization checkpoint provenance changed.");
   let checkpointOrdinal = (normalized?.ordinal ?? -1) + 1;
   for await (const { request, row } of evidenceAfter(normalized?.value)) {
     const document = await loadDocument(row);
-    let officialSurfaceSeen = false;
+    const continuingDocument = normalized?.value.requestId === request.request_id && !normalized.value.complete;
+    let officialSurfaceSeen = continuingDocument ? normalized!.value.officialSurfaceSeen : false;
     const sourceSurface = await sourceSurfaceForRequest(request, selectedRequestById, row);
-    for (const [sourceOrdinal, wrapped] of document.observations.entries()) {
+    const normalize = async (wrapped: unknown, sourceOrdinal: number) => {
       if (!isRecord(wrapped) || typeof wrapped.id !== "string") {
         throw new Error("Retained Source Observation identity is invalid.");
       }
@@ -387,9 +397,9 @@ async function collectRetainedReconciliationObservation(
           throw new Error("Retained Official Source surface evidence is invalid or duplicated.");
         }
         officialSurfaceSeen = true;
-        continue;
+        return;
       }
-      if (await hasNormalizedObservation(database, runId, wrapped.id)) continue;
+      if (await hasNormalizedObservation(database, runId, wrapped.id)) return;
       let parsed = parseReconciliationObservation(
         wrapped.id,
         await attachRetainedPrintingImages(
@@ -433,12 +443,29 @@ async function collectRetainedReconciliationObservation(
           ? { game: parsed.game, officialIdentity: parsed.target.officialIdentity }
           : null,
       );
+    };
+    const startOrdinal = continuingDocument ? normalized!.value.nextObservationOrdinal : 0;
+    for (let sourceOrdinal = startOrdinal; sourceOrdinal < document.observations.length; sourceOrdinal++) {
+      await normalize(document.observations[sourceOrdinal], sourceOrdinal);
+      if ((sourceOrdinal + 1) % 8 === 0 && sourceOrdinal + 1 < document.observations.length)
+        await retainReconciliationCheckpoint(database, runId, "normalization", checkpointOrdinal++, {
+          inputDigest,
+          sequenceNumber: request.sequence_number,
+          requestId: request.request_id,
+          observationSetId: row.observation_set_id,
+          nextObservationOrdinal: sourceOrdinal + 1,
+          complete: false,
+          officialSurfaceSeen,
+        });
     }
     await retainReconciliationCheckpoint(database, runId, "normalization", checkpointOrdinal++, {
       inputDigest,
       sequenceNumber: request.sequence_number,
       requestId: request.request_id,
       observationSetId: row.observation_set_id,
+      nextObservationOrdinal: document.observations.length,
+      complete: true,
+      officialSurfaceSeen,
     });
   }
   for (const plan of selectedPlans)
@@ -1033,7 +1060,16 @@ async function* sourceRequests(
   runId: string,
   sequence = -1,
   id = "",
+  includeCurrent = false,
 ): AsyncGenerator<PlannedRequestRow> {
+  if (includeCurrent) {
+    const current = await documentStorage(() =>
+      reconciliationSourceRequestStatement(database, runId, id).first<PlannedRequestRow>(),
+    );
+    if (!current || current.sequence_number !== sequence)
+      throw new Error("Normalization checkpoint names an unavailable Source Request.");
+    yield current;
+  }
   while (true) {
     const row = await documentStorage(() =>
       reconciliationSourceRequestsStatement(database, runId, sequence, id).first<PlannedRequestRow>(),
