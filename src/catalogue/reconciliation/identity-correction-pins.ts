@@ -1,8 +1,10 @@
+import { ReconciliationCandidateState } from "./reconciliation-candidate-state";
 import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
 import type { IdentityCorrectionProposal } from "./identity-corrections";
 import {
   AdministrationProblem,
   type CatalogueCandidate,
+  type CatalogueDraft,
   type CatalogueStore,
   canonicalJson,
   sha256Text,
@@ -45,14 +47,28 @@ export async function applyPinnedIdentityCorrections(
   candidate: CatalogueCandidate,
   warnings: Record<string, unknown>[],
 ) {
-  await correctionDecisionPinMetadata(database, runId);
+  const pin = await correctionDecisionPinMetadata(database, runId);
+  if (pin.decision_cutoff === 0) return candidate;
+  const draft = new ReconciliationCandidateState(database, runId, "corrections");
+  await draft.seed(candidate, [
+    "cards",
+    "printings",
+    "printing_images",
+    "product_relationships",
+    "errata",
+    "identity_corrections",
+  ]);
+  await applyPinnedIdentityCorrectionsToDraft(database, runId, draft, warnings);
+  return draft.candidate(candidate);
+}
+
+export async function applyPinnedIdentityCorrectionsToDraft(
+  database: CatalogueStore,
+  runId: string,
+  draft: CatalogueDraft,
+  warnings: Record<string, unknown>[],
+): Promise<void> {
   const correctedCardIdentity = await pinnedCardIdentityResolver(database, runId);
-  const cards = new Map(candidate.cards.map((c) => [c.id, c]));
-  const printings = new Map(candidate.printings.map((p) => [p.id, p]));
-  const corrections = new Map((candidate.identity_corrections ?? []).map((c) => [c.id, c]));
-  let images = [...(candidate.printing_images ?? [])];
-  let relationships = [...(candidate.product_relationships ?? [])];
-  let errata = [...(candidate.errata ?? [])];
   for await (const row of pinnedCorrectionRows(database, runId)) {
     const decision = JSON.parse(row.request_json) as IdentityCorrectionProposal;
     if (decision.action === "assign") {
@@ -65,46 +81,65 @@ export async function applyPinnedIdentityCorrections(
       continue;
     }
     const retired = new Set(decision.source_ids);
-    // Replaying a retained correction suppresses any re-observed old alias;
-    // the historical source mapping remains attached to that original ID.
     for (const id of retired) {
-      corrections.set(id, {
+      await draft.set("identity_corrections", {
         id,
         game: decision.game as CatalogueCandidate["selected_games"][number],
         entity_kind: decision.entity_kind,
         action: decision.action,
         replacement_ids: decision.replacement_ids,
       });
-      if (decision.entity_kind === "card") cards.delete(id);
-      else printings.delete(id);
+      await draft.delete(decision.entity_kind === "card" ? "cards" : "printings", id);
     }
+    let affected = 0;
+    const countAffected = () => {
+      if (++affected > 500)
+        throw new Error("reconciliation_capacity_exceeded: one correction affects too many dependent entities.");
+    };
     if (decision.entity_kind === "card") {
-      for (const [id, printing] of printings) {
+      for await (const printing of draft.values("printings")) {
         if (!retired.has(printing.card_id)) continue;
-        const resolved = await correctedCardIdentity(printing.card_id, id);
-        const target = resolved === printing.card_id ? undefined : resolved;
-        if (target) printings.set(id, { ...printing, card_id: target });
+        countAffected();
+        const resolved = await correctedCardIdentity(printing.card_id, printing.id);
+        if (resolved !== printing.card_id) await draft.set("printings", { ...printing, card_id: resolved });
         else {
-          printings.delete(id);
+          await draft.delete("printings", printing.id);
           warnings.push({
             code: "identity_correction_exclusion",
-            detail: `Printing ${id} has no reviewed split assignment and is excluded pending owner review.`,
-            printing_id: id,
+            detail: `Printing ${printing.id} has no reviewed split assignment and is excluded pending owner review.`,
+            printing_id: printing.id,
             correction_id: row.id,
           });
         }
       }
     }
-    const excludedImages = images.filter((i) => !printings.has(i.printing_id));
-    const validEndpoint = (e: { type: string; id: string }) =>
-      e.type === "card" ? cards.has(e.id) : e.type === "printing" ? printings.has(e.id) : true;
-    const excludedRelationships = relationships.filter((r) => !validEndpoint(r.from) || !validEndpoint(r.to));
-    const excludedErrata = errata.filter((e) =>
-      e.target_type === "card" ? !cards.has(e.target_id) : !printings.has(e.target_id),
-    );
-    images = images.filter((i) => printings.has(i.printing_id));
-    relationships = relationships.filter((r) => validEndpoint(r.from) && validEndpoint(r.to));
-    errata = errata.filter((e) => (e.target_type === "card" ? cards.has(e.target_id) : printings.has(e.target_id)));
+    const excludedImages: string[] = [];
+    for await (const image of draft.values("printing_images")) {
+      if (await draft.has("printings", image.printing_id)) continue;
+      countAffected();
+      excludedImages.push(image.id);
+      await draft.delete("printing_images", image.id);
+    }
+    const validEndpoint = async (endpoint: { type: string; id: string }) =>
+      endpoint.type === "card"
+        ? await draft.has("cards", endpoint.id)
+        : endpoint.type === "printing"
+          ? await draft.has("printings", endpoint.id)
+          : true;
+    const excludedRelationships: string[] = [];
+    for await (const relationship of draft.values("product_relationships")) {
+      if ((await validEndpoint(relationship.from)) && (await validEndpoint(relationship.to))) continue;
+      countAffected();
+      excludedRelationships.push(relationship.id);
+      await draft.delete("product_relationships", relationship.id);
+    }
+    const excludedErrata: string[] = [];
+    for await (const erratum of draft.values("errata")) {
+      if (await draft.has(erratum.target_type === "card" ? "cards" : "printings", erratum.target_id)) continue;
+      countAffected();
+      excludedErrata.push(erratum.id);
+      await draft.delete("errata", erratum.id);
+    }
     warnings.push({
       code: "identity_correction",
       correction_id: row.id,
@@ -112,34 +147,25 @@ export async function applyPinnedIdentityCorrections(
       source_ids: decision.source_ids,
       replacement_ids: decision.replacement_ids,
       exclusions: {
-        printing_image_ids: excludedImages.map((i) => i.id),
-        relationship_ids: excludedRelationships.map((r) => r.id),
-        erratum_ids: excludedErrata.map((e) => e.id),
+        printing_image_ids: excludedImages,
+        relationship_ids: excludedRelationships,
+        erratum_ids: excludedErrata,
       },
     });
   }
-  // Correction chains may lead to another retired identity (including a split).
-  // Consumers follow the links and retain the choice; never collapse a split.
-  for (const correction of corrections.values())
+  for await (const correction of draft.values("identity_corrections")) {
     for (const id of correction.replacement_ids) {
-      if (!(correction.entity_kind === "card" ? cards.has(id) : printings.has(id)) && !corrections.has(id))
+      if (
+        !(await draft.has(correction.entity_kind === "card" ? "cards" : "printings", id)) &&
+        !(await draft.has("identity_corrections", id))
+      )
         throw new AdministrationProblem(
           409,
           "identity_correction_target_unavailable",
           "A reviewed replacement is unavailable; reconciliation cannot publish dangling correction links.",
         );
     }
-  return {
-    ...candidate,
-    cards: [...cards.values()],
-    printings: [...printings.values()],
-    printing_images: images,
-    product_relationships: relationships,
-    errata,
-    ...(corrections.size
-      ? { identity_corrections: [...corrections.values()].sort((a, b) => a.id.localeCompare(b.id)) }
-      : {}),
-  };
+  }
 }
 
 // Identity corrections only relax the Card association explicitly reviewed by

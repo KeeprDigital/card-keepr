@@ -220,4 +220,6 @@ BEGIN SELECT RAISE(ABORT, 'reconciliation_reducer_state_immutable'); END;
 CREATE TRIGGER reconciliation_reducer_state_no_delete BEFORE DELETE ON reconciliation_reducer_state
 BEGIN SELECT RAISE(ABORT, 'reconciliation_reducer_state_audit_retained'); END;
 CREATE INDEX reconciliation_source_image_lookup ON source_snapshots (ingestion_run_id, source_lineage, request_url);
+CREATE INDEX reconciliation_reducer_entity_cursor ON reconciliation_reducer_state
+(ingestion_run_id, namespace, json_extract(content, '$.value.id'), observation_ordinal);
 UPDATE catalogue_schema_state SET migration_level = 20 WHERE singleton = 1;

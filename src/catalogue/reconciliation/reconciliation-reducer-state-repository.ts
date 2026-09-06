@@ -109,3 +109,24 @@ export function nextReducerCardReferenceStatement(
     ORDER BY state.key_digest LIMIT 1`)
     .bind(runId, namespace, group, after, before, before);
 }
+
+export function nextReducerEntityStateStatement(
+  database: CatalogueStore,
+  runId: string,
+  namespace: string,
+  ordinal: number,
+  after: string,
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(`SELECT state.content, state.sha256,
+    json_extract(state.content, '$.value.id') AS entity_id
+    FROM reconciliation_reducer_state AS state
+    WHERE state.ingestion_run_id = ? AND state.namespace = ? AND state.observation_ordinal <= ?
+      AND json_extract(state.content, '$.value.id') > ?
+      AND NOT EXISTS (SELECT 1 FROM reconciliation_reducer_state AS later
+        WHERE later.ingestion_run_id = state.ingestion_run_id AND later.namespace = state.namespace
+          AND later.key_digest = state.key_digest AND later.observation_ordinal > state.observation_ordinal
+          AND later.observation_ordinal <= ?)
+    ORDER BY json_extract(state.content, '$.value.id') LIMIT 1`)
+    .bind(runId, namespace, ordinal, after, ordinal);
+}

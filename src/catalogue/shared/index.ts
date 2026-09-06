@@ -149,3 +149,9 @@ export { nextLiveIngestionReservationSql } from "./ingestion-reservation-reposit
 export { persistReconciliationPayloadChunkStatement } from "./reconciliation-payload-repository";
 
 export { streamedObjectMembers } from "./streamed-object-members";
+export {
+  catalogueEntityCollections,
+  type CatalogueDraft,
+  type CatalogueDraftEntity,
+  type CatalogueEntityCollection,
+} from "./catalogue-draft";

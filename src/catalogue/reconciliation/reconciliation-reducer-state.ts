@@ -2,6 +2,7 @@ import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { retainPartitionedRecord, restorePartitionedRecord } from "./reconciliation-text";
 import {
   nextLatestReducerStateStatement,
+  nextReducerEntityStateStatement,
   nextReducerGroupStateStatement,
   exactReducerStateStatement,
   reducerStateStatement,
@@ -108,6 +109,41 @@ export class ReconciliationReducerIndex<T> {
       yield (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T;
       after = row.key_digest;
     }
+  }
+
+  /** Entity drafts retain stable ID order while applying deletions and updates during iteration. */
+  async *entityValues(): AsyncGenerator<T> {
+    let after = "";
+    for (;;) {
+      const row = await storage(
+        nextReducerEntityStateStatement(this.database, this.runId, this.namespace, this.ordinal, after).first<
+          StateRow & { entity_id: string }
+        >(),
+      );
+      if (!row) return;
+      if ((await sha256Text(row.content)) !== row.sha256)
+        throw new Error("Reducer state failed integrity verification.");
+      yield (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T;
+      after = row.entity_id;
+    }
+  }
+
+  /** Draft existence checks verify metadata without hydrating the entity's retained text. */
+  async hasEntity(key: string): Promise<boolean> {
+    const digest = await sha256Text(key);
+    const row = await storage(
+      reducerStateStatement(
+        this.database,
+        this.runId,
+        this.namespace,
+        digest,
+        this.ordinal + (this.written.has(digest) ? 1 : 0),
+      ).first<StateRow>(),
+    );
+    if (!row) return false;
+    if ((await sha256Text(row.content)) !== row.sha256) throw new Error("Reducer state failed integrity verification.");
+    const envelope = JSON.parse(row.content) as { value: { entity: unknown } };
+    return envelope.value.entity !== null;
   }
 
   async has(key: string): Promise<boolean> {
