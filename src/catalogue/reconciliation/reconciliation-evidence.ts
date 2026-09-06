@@ -16,7 +16,14 @@ import {
 } from "./reconciliation-normalized";
 import { imageStorage, retainCandidateImage } from "./reconciliation-images";
 import { adapterReconciliationAreas, parsedOfficialArtworkIdentity, requiredSourceAdapter } from "../adapters";
-import { type CatalogueStore, canonicalJson, type SupportedGame, sha256 } from "../shared";
+import {
+  type CatalogueStore,
+  canonicalJson,
+  type SupportedGame,
+  sha256,
+  StreamingSha256,
+  streamedObjectMembers,
+} from "../shared";
 import {
   isOptionalSourceOutage,
   assertSelectedAuthoritiesCollected,
@@ -29,6 +36,7 @@ import {
 import {
   unchangedAcceptedSourceStatement,
   reconciliationCollectionPlansStatement,
+  reconciliationCollectionPlanChunkStatement,
   reconciliationEvidencePlanStatement,
   reconciliationObservationCountsStatement,
   reconciliationObservationSetsStatement,
@@ -67,7 +75,6 @@ type EvidenceRow = {
   content_byte_length: number;
   content_object_key: string;
   observation_count: number;
-  request_plan_json: string;
   plan_origin: string;
   snapshot_request_method: string;
   snapshot_request_url: string;
@@ -87,7 +94,6 @@ type CollectionPlanRow = {
   source_lineage: string;
   discovery_observation_set_id: string;
   contract: string;
-  collection_plan_json: string;
   content_digest: string;
 };
 
@@ -174,31 +180,23 @@ async function collectRetainedReconciliationObservation(
   runId: string,
   printingImages: R2Bucket,
 ) {
-  const [requests, observations, collectionPlans, evidencePlanRow, discoveryRequestPlans] = await documentStorage(() =>
-    Promise.all([
-      reconciliationSourceRequestsStatement(database, runId).all<PlannedRequestRow>(),
-      reconciliationObservationSetsStatement(database, runId).all<EvidenceRow>(),
-      reconciliationCollectionPlansStatement(database, runId).all<CollectionPlanRow>(),
-      reconciliationEvidencePlanStatement(database, runId).first<EvidencePlanRow>(),
-      reconciliationOverflowRequestsStatement(database, runId).all<DiscoveryRequestPlanRow>(),
-    ]),
+  const evidencePlanRow = await documentStorage(() =>
+    reconciliationEvidencePlanStatement(database, runId).first<EvidencePlanRow>(),
   );
-  if (requests.results.length === 0 || evidencePlanRow === null) {
+  const requests = { [Symbol.asyncIterator]: () => sourceRequests(database, runId) };
+  if (evidencePlanRow === null || (await requests[Symbol.asyncIterator]().next()).done) {
     throw new Error("Reconciliation requires complete coverage of every planned Source Request.");
   }
   const evidencePlans = parseEvidencePlans(evidencePlanRow.request_plan_json);
-  const omittedLineages = new Set(
-    requests.results
-      .filter(
-        (request) =>
-          request.state === "failed" &&
-          isOptionalSourceOutage(evidencePlanForRequest(evidencePlanRow, request.request_id), request.failure_code),
-      )
-      .map((request) => evidencePlanForRequest(evidencePlanRow, request.request_id).source_lineage),
-  );
+  const omittedLineages = new Set<string>();
+  for await (const request of requests) {
+    const plan = evidencePlanForRequest(evidencePlanRow, request.request_id);
+    if (request.state === "failed" && isOptionalSourceOutage(plan, request.failure_code))
+      omittedLineages.add(plan.source_lineage);
+  }
   const selectedPlans = evidencePlans.filter((plan) => !omittedLineages.has(plan.source_lineage));
   // Optional transport failure never excuses a parser/identity/retained-byte failure.
-  for (const request of requests.results) {
+  for await (const request of requests) {
     const plan = evidencePlanForRequest(evidencePlanRow, request.request_id);
     if (
       request.state === "failed" &&
@@ -215,156 +213,168 @@ async function collectRetainedReconciliationObservation(
       unchangedAcceptedLineages.add(plan.source_lineage);
   }
   await assertSelectedAuthoritiesCollected(database, selectedPlans, unchangedAcceptedLineages, runId);
-  const plannedRequests = evidencePlans.flatMap((plan) => plan.requests);
-  if (
-    plannedRequests.length === 0 ||
-    plannedRequests.length > requests.results.length ||
-    plannedRequests.some((planned) => {
-      const request = requests.results.find(({ request_id: requestId }) => requestId === planned.id);
-      return !samePlannedRequest(request, planned, request?.sequence_number ?? -1);
-    })
-  ) {
-    throw new Error("Operational Source Requests differ from the immutable Evidence Plan.");
+  const requestById = async (id: string) =>
+    (await documentStorage(() =>
+      reconciliationSourceRequestStatement(database, runId, id).first<PlannedRequestRow>(),
+    )) ?? undefined;
+  const immutableRequestIds = new ReconciliationReducerIndex<boolean>(database, runId, "immutable_request_ids");
+  let immutableCount = 0;
+  const claimRequest = async (id: string) => {
+    if (await immutableRequestIds.has(id)) return;
+    await immutableRequestIds.seed(id, true);
+    immutableCount++;
+  };
+  let rootRequestCount = 0;
+  for (const plan of evidencePlans)
+    for (const planned of plan.requests) {
+      rootRequestCount++;
+      const request = await requestById(planned.id);
+      if (!samePlannedRequest(request, planned, request?.sequence_number ?? -1))
+        throw new Error("Operational Source Requests differ from the immutable Evidence Plan.");
+      await claimRequest(planned.id);
+    }
+  if (!rootRequestCount) throw new Error("Operational Source Requests differ from the immutable Evidence Plan.");
+  const collectionSurfaces = new ReconciliationReducerIndex<boolean>(database, runId, "collection_request_ids");
+  for await (const collectionPlan of collectionPlans(database, runId)) {
+    for await (const planned of retainedCollectionRequests(database, runId, collectionPlan)) {
+      const id = planned.id as string;
+      await claimRequest(id);
+      await collectionSurfaces.seed(id, true);
+      if (!omittedLineages.has(collectionPlan.source_lineage)) {
+        const request = await requestById(id);
+        if (
+          !samePlannedRequest(request, planned, request?.sequence_number ?? -1) ||
+          request === undefined ||
+          (request.state === "failed" && toleratesRequestFailure(request.request_role, request.failure_code)) ||
+          omittedLineages.has(evidencePlanForRequest(evidencePlanRow, id).source_lineage)
+        )
+          throw new Error("Official Source requests differ from the immutable Collection Plan.");
+      }
+    }
   }
-  const collectionRequests = (await Promise.all(collectionPlans.results.map(retainedCollectionRequests))).flat();
-  const immutableRequestIds = new Set([
-    ...plannedRequests.map(({ id }) => id),
-    ...collectionRequests.map(({ id }) => id as string),
-    ...discoveryRequestPlans.results.map(({ request_id }) => request_id),
-  ]);
-  if (
-    immutableRequestIds.size !== requests.results.length ||
-    requests.results.some(({ request_id: requestId }) => !immutableRequestIds.has(requestId)) ||
-    discoveryRequestPlans.results.some((planned) => {
-      const request = requests.results.find(({ request_id: requestId }) => requestId === planned.request_id);
-      return (
-        request === undefined ||
-        request.sequence_number !== planned.sequence_number ||
-        request.method !== planned.method ||
-        request.url !== planned.url ||
-        request.request_headers_json !== planned.request_headers_json ||
-        request.representation_fingerprint !== planned.representation_fingerprint ||
-        request.request_role !== planned.request_role ||
-        request.discovered_from_request_id !== planned.parent_request_id
-      );
-    })
-  ) {
-    throw new Error("Operational Source Requests differ from their immutable request plans.");
+  for await (const planned of discoveryRequests(database, runId)) {
+    await claimRequest(planned.request_id);
+    const request = await requestById(planned.request_id);
+    if (
+      request === undefined ||
+      request.sequence_number !== planned.sequence_number ||
+      request.method !== planned.method ||
+      request.url !== planned.url ||
+      request.request_headers_json !== planned.request_headers_json ||
+      request.representation_fingerprint !== planned.representation_fingerprint ||
+      request.request_role !== planned.request_role ||
+      request.discovered_from_request_id !== planned.parent_request_id
+    )
+      throw new Error("Operational Source Requests differ from their immutable request plans.");
   }
-  // A Printing Image whose transport retries were exhausted is a tolerated
-  // failure: it takes no part in the observed evidence graph and is carried
-  // out explicitly so the candidate records the gap instead of failing.
   const isToleratedImageFailure = (request: PlannedRequestRow): boolean =>
     request.state === "failed" && toleratesRequestFailure(request.request_role, request.failure_code);
-  const unavailablePrintingImages = requests.results.filter(isToleratedImageFailure).map((request) => ({
-    requestId: request.request_id,
-    sourceUrl: request.url,
-    sourceLineage: evidencePlanForRequest({ request_plan_json: evidencePlanRow.request_plan_json }, request.request_id)
-      .source_lineage,
-    failureCode: request.failure_code ?? printingImageRetriesExhaustedFailureCode,
-  }));
-  const retainedRequests = requests.results.filter(
-    (request) =>
-      !isToleratedImageFailure(request) &&
-      !omittedLineages.has(evidencePlanForRequest(evidencePlanRow, request.request_id).source_lineage),
-  );
-  if (retainedRequests.length === 0)
-    throw new Error("No independently complete Source Coverage remains in this refresh.");
-  const selectedObservations = observations.results.filter((row) => !omittedLineages.has(row.source_lineage));
-  const selectedSnapshots = new Map<string, PlannedRequestRow>();
-  for (const request of retainedRequests) {
-    if (request.state !== "observed" || request.source_snapshot_id === null) {
+  const isSelected = (request: PlannedRequestRow) =>
+    !isToleratedImageFailure(request) &&
+    !omittedLineages.has(evidencePlanForRequest(evidencePlanRow, request.request_id).source_lineage);
+  const selectedRequestById = async (id: string) => {
+    const request = await requestById(id);
+    return request !== undefined && isSelected(request) ? request : undefined;
+  };
+  const unavailablePrintingImages = {
+    async *[Symbol.asyncIterator]() {
+      for await (const request of requests)
+        if (isToleratedImageFailure(request))
+          yield {
+            requestId: request.request_id,
+            sourceUrl: request.url,
+            sourceLineage: evidencePlanForRequest(evidencePlanRow, request.request_id).source_lineage,
+            failureCode: request.failure_code ?? printingImageRetriesExhaustedFailureCode,
+          };
+    },
+  };
+  const selectedSnapshots = new ReconciliationReducerIndex<boolean>(database, runId, "selected_snapshot_ids");
+  let requestCount = 0;
+  let selectedCount = 0;
+  for await (const request of requests) {
+    requestCount++;
+    if (!(await immutableRequestIds.has(request.request_id)))
+      throw new Error("Operational Source Requests differ from their immutable request plans.");
+    if (!isSelected(request)) continue;
+    selectedCount++;
+    if (request.state !== "observed" || request.source_snapshot_id === null)
       throw new Error(`Planned Source Request ${request.request_id} has no observed Source Snapshot.`);
-    }
-    if (selectedSnapshots.has(request.source_snapshot_id)) {
+    if (await selectedSnapshots.has(request.source_snapshot_id))
       throw new Error("Planned Source Requests selected a duplicate Source Snapshot.");
-    }
-    selectedSnapshots.set(request.source_snapshot_id, request);
+    await selectedSnapshots.seed(request.source_snapshot_id, true);
   }
-  for (const row of selectedObservations) {
-    if (!selectedSnapshots.has(row.source_snapshot_id)) {
+  if (requestCount !== immutableCount || rootRequestCount > requestCount)
+    throw new Error("Operational Source Requests differ from their immutable request plans.");
+  if (!selectedCount) throw new Error("No independently complete Source Coverage remains in this refresh.");
+  for await (const row of evidenceRows(database, runId)) {
+    if (!omittedLineages.has(row.source_lineage) && !(await selectedSnapshots.has(row.source_snapshot_id)))
       throw new Error(
         `Unplanned Source Observation Set ${row.observation_set_id} cannot participate in reconciliation.`,
       );
-    }
   }
-  const rowsBySnapshot = new Map<string, EvidenceRow[]>();
-  for (const row of selectedObservations) {
-    rowsBySnapshot.set(row.source_snapshot_id, [...(rowsBySnapshot.get(row.source_snapshot_id) ?? []), row]);
-  }
-  const orderedRows = retainedRequests.map((request) => {
-    const rows = rowsBySnapshot.get(request.source_snapshot_id!) ?? [];
-    if (rows.length !== 1) {
-      throw new Error(
-        `Planned Source Request ${request.request_id} requires exactly one collection Source Observation Set.`,
-      );
-    }
-    return rows[0]!;
-  });
-  const first = orderedRows[0]!;
-  for (const [index, row] of orderedRows.entries()) {
-    const request = retainedRequests[index]!;
-    const plan = evidencePlanForRequest({ request_plan_json: row.request_plan_json }, row.request_id);
-    if (
-      row.request_id !== request.request_id ||
-      row.snapshot_request_method !== request.method ||
-      row.snapshot_request_url !== request.url ||
-      row.snapshot_representation_fingerprint !== request.representation_fingerprint
-    ) {
-      throw new Error("Retained Source Snapshot provenance differs from its immutable Source Request.");
-    }
-    if (
-      row.source_lineage !== plan.source_lineage ||
-      row.supported_game !== plan.supported_game ||
-      row.game_profile_version !== plan.game_profile_version ||
-      row.adapter_version !== plan.adapter_version
-    ) {
-      throw new Error("Retained Source Observation Set provenance is inconsistent with its Evidence Plan.");
-    }
-  }
-  const aggregateBytes = orderedRows.reduce((total, row) => total + row.content_byte_length, 0);
+  const selectedEvidence = {
+    async *[Symbol.asyncIterator]() {
+      for await (const request of requests) {
+        if (!isSelected(request)) continue;
+        const rows = evidenceRows(database, runId, request.source_snapshot_id!);
+        const first = await rows.next();
+        if (first.done || !(await rows.next()).done)
+          throw new Error(
+            `Planned Source Request ${request.request_id} requires exactly one collection Source Observation Set.`,
+          );
+        const row = first.value;
+        const plan = evidencePlanForRequest(evidencePlanRow, row.request_id);
+        if (
+          row.request_id !== request.request_id ||
+          row.snapshot_request_method !== request.method ||
+          row.snapshot_request_url !== request.url ||
+          row.snapshot_representation_fingerprint !== request.representation_fingerprint
+        )
+          throw new Error("Retained Source Snapshot provenance differs from its immutable Source Request.");
+        if (
+          row.source_lineage !== plan.source_lineage ||
+          row.supported_game !== plan.supported_game ||
+          row.game_profile_version !== plan.game_profile_version ||
+          row.adapter_version !== plan.adapter_version
+        )
+          throw new Error("Retained Source Observation Set provenance is inconsistent with its Evidence Plan.");
+        yield { request, row };
+      }
+    },
+  };
+  const orderedRows = {
+    async *[Symbol.asyncIterator]() {
+      for await (const { row } of selectedEvidence) yield row;
+    },
+  };
+  const first = (await orderedRows[Symbol.asyncIterator]().next()).value!;
+  let aggregateBytes = 0;
+  for await (const row of orderedRows) aggregateBytes += row.content_byte_length;
   if (aggregateBytes > maximumAggregateReconciliationBytes) {
     throw new Error("Retained Source Observation Sets exceed the aggregate reconciliation byte budget.");
   }
-  const loadDocument = (index: number) =>
-    retainedObservationDocument(database, evidenceObjects, runId, orderedRows[index]!);
-  for (const row of orderedRows) {
+  const loadDocument = (row: EvidenceRow) => retainedObservationDocument(database, evidenceObjects, runId, row);
+  for await (const row of orderedRows) {
     const adapter = requiredSourceAdapter(row.adapter_version);
-    if (row.content_byte_length > adapter.maximumSnapshotBytes) {
+    if (row.content_byte_length > adapter.maximumSnapshotBytes)
       throw new Error(`Retained Source Observation Set ${row.observation_set_id} exceeds its adapter byte limit.`);
-    }
-    await retainedObservationDocument(database, evidenceObjects, runId, row);
+    await loadDocument(row);
   }
-  await assertClosedRequestGraph(database, runId, retainedRequests, orderedRows, loadDocument, async (requestId) => {
-    const request = await documentStorage(() =>
-      reconciliationSourceRequestStatement(database, runId, requestId).first<PlannedRequestRow>(),
-    );
-    return request !== null &&
-      !isToleratedImageFailure(request) &&
-      !omittedLineages.has(evidencePlanForRequest(evidencePlanRow, request.request_id).source_lineage)
-      ? request
-      : undefined;
-  });
-  const officialSurfaces = new Set<string>();
-  const requestsById = new Map(retainedRequests.map((request) => [request.request_id, request]));
-  for (let index = 0; index < orderedRows.length; index++) {
-    const document = await loadDocument(index);
-    const row = orderedRows[index]!;
-    const request = retainedRequests[index]!;
+  await assertClosedRequestGraph(database, runId, selectedEvidence, loadDocument, selectedRequestById);
+  for await (const { request, row } of selectedEvidence) {
+    const document = await loadDocument(row);
+    let officialSurfaceSeen = false;
+    const sourceSurface = await sourceSurfaceForRequest(request, selectedRequestById, row);
     for (const [sourceOrdinal, wrapped] of document.observations.entries()) {
       if (!isRecord(wrapped) || typeof wrapped.id !== "string") {
         throw new Error("Retained Source Observation identity is invalid.");
       }
       await claimObservationOrigin(database, runId, wrapped.id, row.observation_set_id, sourceOrdinal);
       if (isRecord(wrapped.value) && wrapped.value.observation_type === "official_surface_evidence") {
-        if (
-          typeof wrapped.value.surface !== "string" ||
-          !Array.isArray(wrapped.value.records) ||
-          officialSurfaces.has(request.request_id)
-        ) {
+        if (typeof wrapped.value.surface !== "string" || !Array.isArray(wrapped.value.records) || officialSurfaceSeen) {
           throw new Error("Retained Official Source surface evidence is invalid or duplicated.");
         }
-        officialSurfaces.add(request.request_id);
+        officialSurfaceSeen = true;
         continue;
       }
       if (await hasNormalizedObservation(database, runId, wrapped.id)) continue;
@@ -391,7 +401,6 @@ async function collectRetainedReconciliationObservation(
         parsed = { ...parsed, printingImages: references };
       }
       const adapter = requiredSourceAdapter(row.adapter_version);
-      const sourceSurface = sourceSurfaceForRequest(request, requestsById, row);
       assertObservationAuthority(parsed, adapter, sourceSurface);
       await retainNormalizedObservation(
         database,
@@ -414,30 +423,27 @@ async function collectRetainedReconciliationObservation(
       );
     }
   }
-  for (const plan of selectedPlans) {
+  for (const plan of selectedPlans)
     await validateOfficialSurfaceCoverage({
       adapter: requiredSourceAdapter(plan.adapter_version),
       plan,
-      collectionRequests,
+      hasCollectionRequest: (id) => collectionSurfaces.has(id),
     });
-  }
-  for (const collectionPlan of collectionPlans.results.filter((plan) => !omittedLineages.has(plan.source_lineage))) {
-    await validateLegacyCollectionPlan(
-      collectionPlan,
-      await retainedCollectionRequests(collectionPlan),
-      retainedRequests,
-    );
-  }
-  const partitions = orderedRows.map((row, index) => ({
-    sequenceNumber: retainedRequests[index]!.sequence_number,
-    requestId: retainedRequests[index]!.request_id,
-    observationSetId: row.observation_set_id,
-    sourceSnapshotId: row.source_snapshot_id,
-    sourceLineage: row.source_lineage,
-    supportedGame: row.supported_game,
-    gameProfileVersion: row.game_profile_version,
-    adapterVersion: row.adapter_version,
-  }));
+  const partitions = {
+    async *[Symbol.asyncIterator]() {
+      for await (const { request, row } of selectedEvidence)
+        yield {
+          sequenceNumber: request.sequence_number,
+          requestId: request.request_id,
+          observationSetId: row.observation_set_id,
+          sourceSnapshotId: row.source_snapshot_id,
+          sourceLineage: row.source_lineage,
+          supportedGame: row.supported_game,
+          gameProfileVersion: row.game_profile_version,
+          adapterVersion: row.adapter_version,
+        };
+    },
+  };
   const countChangeWarnings = {
     async *[Symbol.asyncIterator]() {
       yield* sourceObservationCountChangeWarnings(database, runId, orderedRows);
@@ -520,69 +526,46 @@ async function* sourceObservationCountChangeWarnings(
 async function validateOfficialSurfaceCoverage(input: {
   adapter: ReturnType<typeof requiredSourceAdapter>;
   plan: ReturnType<typeof parseEvidencePlans>[number];
-  collectionRequests: readonly Record<string, unknown>[];
+  hasCollectionRequest: (id: string) => Promise<boolean>;
 }): Promise<void> {
   const { adapter, plan } = input;
   if (adapter.origin !== "production" || adapter.reconciliationCapability !== "catalogue") {
     return;
   }
-  const requiredSurfaces = adapter.requiredSurfaces ?? [];
-  if (
-    requiredSurfaces.some(
-      (surface) =>
-        !input.collectionRequests.some((request) => request.id === `${adapter.sourceLineage}:${surface}`) &&
-        !plan.requests.some((request) => request.id === `${adapter.sourceLineage}:${surface}`),
-    )
-  ) {
-    throw new Error("Complete Official Source evidence omitted a required live surface.");
+  for (const surface of adapter.requiredSurfaces ?? []) {
+    const id = `${adapter.sourceLineage}:${surface}`;
+    if (!(await input.hasCollectionRequest(id)) && !plan.requests.some((request) => request.id === id))
+      throw new Error("Complete Official Source evidence omitted a required live surface.");
   }
 }
 
-async function validateLegacyCollectionPlan(
-  retainedCollectionPlan: CollectionPlanRow,
-  collectionRequests: readonly Record<string, unknown>[],
-  requests: readonly PlannedRequestRow[],
-): Promise<void> {
-  if (
-    retainedCollectionPlan.contract !== "card-keepr-official-source-collection-plan@1" ||
-    (await sha256(new TextEncoder().encode(retainedCollectionPlan.collection_plan_json))) !==
-      retainedCollectionPlan.content_digest
-  ) {
-    throw new Error("Official Source Collection Plan failed immutable artifact verification.");
-  }
-  const document: unknown = JSON.parse(retainedCollectionPlan.collection_plan_json);
-  if (!isRecord(document) || document.source_lineage !== retainedCollectionPlan.source_lineage) {
-    throw new Error("Official Source Collection Plan lineage ownership is invalid.");
-  }
-  const retainedRequests = new Map(collectionRequests.map((value) => [value.id as string, value] as const));
-  if (
-    retainedRequests.size !== collectionRequests.length ||
-    collectionRequests.some((planned) => {
-      const request = requests.find(({ request_id: requestId }) => requestId === planned.id);
-      return !samePlannedRequest(request, planned, request?.sequence_number ?? -1);
-    })
-  ) {
-    throw new Error("Official Source requests differ from the immutable Collection Plan.");
-  }
-}
-
-function sourceSurfaceForRequest(
+async function sourceSurfaceForRequest(
   request: PlannedRequestRow,
-  requests: ReadonlyMap<string, PlannedRequestRow>,
+  requestById: (id: string) => Promise<PlannedRequestRow | undefined>,
   row: Pick<EvidenceRow, "adapter_version" | "plan_origin" | "source_lineage">,
-): string | undefined {
+): Promise<string | undefined> {
   let current = request;
-  const visited = new Set<string>();
+  // Brent cycle detection keeps the parent walk bounded in memory.
+  let checkpoint = current.request_id;
+  let power = 1;
+  let distance = 0;
   while (current.request_role !== "surface") {
-    if (current.discovered_from_request_id === null || visited.has(current.request_id)) {
+    if (current.discovered_from_request_id === null) {
       throw new Error(`Discovered Source Request ${request.request_id} has no closed root surface lineage.`);
     }
-    visited.add(current.request_id);
-    const parent = requests.get(current.discovered_from_request_id);
+    const parent = await requestById(current.discovered_from_request_id);
     if (parent === undefined) {
       throw new Error(`Discovered Source Request ${request.request_id} names an unavailable parent.`);
     }
     current = parent;
+    distance++;
+    if (current.request_id === checkpoint)
+      throw new Error(`Discovered Source Request ${request.request_id} has no closed root surface lineage.`);
+    if (distance === power) {
+      checkpoint = current.request_id;
+      power *= 2;
+      distance = 0;
+    }
   }
   const prefix = `${row.source_lineage}:`;
   if (!current.request_id.startsWith(prefix)) {
@@ -599,16 +582,14 @@ export {
 async function assertClosedRequestGraph(
   database: CatalogueStore,
   runId: string,
-  requests: readonly PlannedRequestRow[],
-  rows: readonly EvidenceRow[],
-  loadDocument: (index: number) => Promise<Awaited<ReturnType<typeof retainedObservationDocument>>>,
+  evidence: AsyncIterable<{ request: PlannedRequestRow; row: EvidenceRow }>,
+  loadDocument: (row: EvidenceRow) => Promise<Awaited<ReturnType<typeof retainedObservationDocument>>>,
   requestById: (id: string) => Promise<PlannedRequestRow | undefined>,
 ): Promise<void> {
   const gundamGraph = new ReconciliationGundamGraph(database, runId);
-  for (const [index, request] of requests.entries()) {
-    if (requiredSourceAdapter(rows[index]!.adapter_version).listingReconciliation?.groupsPublisherPages !== true)
-      continue;
-    const document = await loadDocument(index);
+  for await (const { request, row } of evidence) {
+    if (requiredSourceAdapter(row.adapter_version).listingReconciliation?.groupsPublisherPages !== true) continue;
+    const document = await loadDocument(row);
     const observations = document.observations.flatMap((wrapped) => {
       const observation = isRecord(wrapped) && isRecord(wrapped.value) ? wrapped.value : wrapped;
       if (
@@ -621,7 +602,7 @@ async function assertClosedRequestGraph(
       const surfaces = observation.source_sidecar.raw.official_surfaces.flatMap((surface) => {
         if (
           !isRecord(surface) ||
-          surface.source_lineage !== rows[index]!.source_lineage ||
+          surface.source_lineage !== row.source_lineage ||
           surface.surface !== "listing" ||
           !isRecord(surface.document) ||
           !("terminal_page" in surface.document)
@@ -651,8 +632,8 @@ async function assertClosedRequestGraph(
     await gundamGraph.add({
       requestId: request.request_id,
       requestUrl: request.url,
-      sourceLineage: rows[index]!.source_lineage,
-      adapterVersion: rows[index]!.adapter_version,
+      sourceLineage: row.source_lineage,
+      adapterVersion: row.adapter_version,
       observations,
     });
   }
@@ -672,9 +653,8 @@ async function assertClosedRequestGraph(
   }>(database, runId, "listing_page_groups");
   const pageIdentities = new ReconciliationReducerIndex<boolean>(database, runId, "listing_page_ids");
   const detailLocators = new ReconciliationReducerIndex<boolean>(database, runId, "listing_detail_locators");
-  for (const [index, request] of requests.entries()) {
-    const row = rows[index]!;
-    const document = await loadDocument(index);
+  for await (const { request, row } of evidence) {
+    const document = await loadDocument(row);
     if (
       document.evidenceSummary.observation_count !== document.observations.length ||
       ((document.evidenceSummary.structurally_complete !== true ||
@@ -1030,31 +1010,111 @@ function assertObservationAuthority(
   }
 }
 
-async function retainedCollectionRequests(retained: CollectionPlanRow): Promise<Record<string, unknown>[]> {
-  if (
-    retained.contract !== "card-keepr-official-source-collection-plan@1" ||
-    (await sha256(new TextEncoder().encode(retained.collection_plan_json))) !== retained.content_digest
-  ) {
+async function* sourceRequests(database: CatalogueStore, runId: string): AsyncGenerator<PlannedRequestRow> {
+  let sequence = -1,
+    id = "";
+  while (true) {
+    const row = await documentStorage(() =>
+      reconciliationSourceRequestsStatement(database, runId, sequence, id).first<PlannedRequestRow>(),
+    );
+    if (!row) return;
+    sequence = row.sequence_number;
+    id = row.request_id;
+    yield row;
+  }
+}
+async function* discoveryRequests(database: CatalogueStore, runId: string): AsyncGenerator<DiscoveryRequestPlanRow> {
+  let sequence = -1,
+    id = "";
+  while (true) {
+    const row = await documentStorage(() =>
+      reconciliationOverflowRequestsStatement(database, runId, sequence, id).first<DiscoveryRequestPlanRow>(),
+    );
+    if (!row) return;
+    sequence = row.sequence_number;
+    id = row.request_id;
+    yield row;
+  }
+}
+async function* evidenceRows(
+  database: CatalogueStore,
+  runId: string,
+  snapshotId: string | null = null,
+): AsyncGenerator<EvidenceRow> {
+  let id = "";
+  while (true) {
+    const row = await documentStorage(() =>
+      reconciliationObservationSetsStatement(database, runId, id, snapshotId).first<EvidenceRow>(),
+    );
+    if (!row) return;
+    id = row.observation_set_id;
+    yield row;
+  }
+}
+async function* collectionPlans(database: CatalogueStore, runId: string): AsyncGenerator<CollectionPlanRow> {
+  let lineage = "";
+  while (true) {
+    const row = await documentStorage(() =>
+      reconciliationCollectionPlansStatement(database, runId, lineage).first<CollectionPlanRow>(),
+    );
+    if (!row) return;
+    lineage = row.source_lineage;
+    yield row;
+  }
+}
+async function* retainedCollectionRequests(
+  database: CatalogueStore,
+  runId: string,
+  retained: CollectionPlanRow,
+): AsyncGenerator<Record<string, unknown>> {
+  if (retained.contract !== "card-keepr-official-source-collection-plan@1")
     throw new Error("Official Source Collection Plan failed immutable artifact verification.");
-  }
-  const collection: unknown = JSON.parse(retained.collection_plan_json);
-  if (!isRecord(collection) || collection.contract !== retained.contract || !Array.isArray(collection.requests)) {
-    throw new Error("Official Source Collection Plan is malformed.");
-  }
-  const identities = new Set<string>();
-  return collection.requests.map((value) => {
-    if (
-      !isRecord(value) ||
-      typeof value.id !== "string" ||
-      identities.has(value.id) ||
-      typeof value.surface !== "string" ||
-      value.surface.length === 0
-    ) {
-      throw new Error("Official Source Collection Plan request is malformed.");
+  const chunks = async function* () {
+    for (let offset = 1; ; offset += 32768) {
+      const row = await documentStorage(() =>
+        reconciliationCollectionPlanChunkStatement(database, runId, retained.source_lineage, offset).first<{
+          content: string;
+        }>(),
+      );
+      if (!row) throw new Error("Official Source Collection Plan failed immutable artifact verification.");
+      if (!row.content) return;
+      yield row.content;
     }
-    identities.add(value.id);
-    return value;
-  });
+  };
+  const digest = new StreamingSha256();
+  for await (const chunk of chunks()) digest.update(new TextEncoder().encode(chunk));
+  if (digest.digestHex() !== retained.content_digest)
+    throw new Error("Official Source Collection Plan failed immutable artifact verification.");
+  const identities = new ReconciliationReducerIndex<boolean>(
+    database,
+    runId,
+    `collection_plan_ids_${retained.source_lineage}`,
+  );
+  let contract = false,
+    requests = false,
+    lineage = false;
+  for await (const member of streamedObjectMembers(chunks())) {
+    if (member.key === "contract" && member.kind === "value" && !member.array)
+      contract = member.value === retained.contract;
+    else if (member.key === "source_lineage" && member.kind === "value" && !member.array)
+      lineage = member.value === retained.source_lineage;
+    else if (member.key === "requests" && member.kind === "array") requests = true;
+    else if (member.key === "requests" && member.kind === "value" && member.array) {
+      const value = member.value;
+      if (
+        !isRecord(value) ||
+        typeof value.id !== "string" ||
+        typeof value.surface !== "string" ||
+        value.surface.length === 0 ||
+        (await identities.has(value.id))
+      )
+        throw new Error("Official Source Collection Plan request is malformed.");
+      await identities.seed(value.id, true);
+      yield value;
+    }
+  }
+  if (!contract || !requests) throw new Error("Official Source Collection Plan is malformed.");
+  if (!lineage) throw new Error("Official Source Collection Plan lineage ownership is invalid.");
 }
 
 function samePlannedRequest(
