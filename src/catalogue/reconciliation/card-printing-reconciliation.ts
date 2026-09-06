@@ -131,7 +131,12 @@ export async function reconcileRetainedCardPrintingEvidence(
   try {
     retained = await retainedReconciliationObservation(database, evidenceObjects, runId, printingImageObjects);
   } catch (error) {
-    if (error instanceof CandidateImageStorageError || error instanceof ReconciliationInputStorageError) throw error;
+    if (
+      error instanceof CandidateImageStorageError ||
+      error instanceof ReconciliationInputStorageError ||
+      (error instanceof Error && error.message.startsWith("reconciliation_capacity_exceeded:"))
+    )
+      throw error;
     const diagnostics: Diagnostic[] = [
       {
         code: "retained_evidence_invalid",

@@ -587,6 +587,25 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       ],
     };
   }
+  if (scenario === "capacity-single-observation") {
+    return {
+      cards: [
+        {
+          ...printingObservation({
+            game: "one-piece",
+            profile: "one-piece@1",
+            cardNumber: "OP94-999",
+            name: "Synthetic indivisible capacity failure",
+            locator: "capacity-record",
+            lineageMarker: "capacity-record",
+            cardAttributes: onePieceLeaderAttributes(),
+            printingAttributes: { illustration_types: [] },
+          }),
+          [`unrecognized_${"x".repeat(600000)}`]: "Synthetic oversized field identity",
+        },
+      ],
+    };
+  }
   if (scenario === "scale-warning-partitions") {
     return {
       cards: Array.from({ length: 64 }, (_, index) => ({

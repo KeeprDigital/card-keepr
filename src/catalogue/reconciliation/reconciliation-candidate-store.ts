@@ -218,9 +218,11 @@ export async function failReconciliationWorkflow(
   observedAt: string,
   detail: string,
 ): Promise<Record<string, unknown>> {
-  const failureCode = detail.includes("curated_revision_reconfirmation_required")
-    ? "curated_revision_reconfirmation_required"
-    : "reconciliation_workflow_failed";
+  const failureCode = detail.startsWith("reconciliation_capacity_exceeded:")
+    ? "reconciliation_capacity_exceeded"
+    : detail.includes("curated_revision_reconfirmation_required")
+      ? "curated_revision_reconfirmation_required"
+      : "reconciliation_workflow_failed";
   const diagnostic = {
     code: failureCode,
     detail,

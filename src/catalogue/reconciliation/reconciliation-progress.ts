@@ -1,4 +1,4 @@
-import { retainedReconciliationResult } from "./reconciliation-candidate-store";
+import { failReconciliationWorkflow, retainedReconciliationResult } from "./reconciliation-candidate-store";
 import {
   reconciliationInputPartitionStatement,
   reconciliationInputPartitionsStatement,
@@ -11,7 +11,10 @@ import {
 } from "./reconciliation-state-repository";
 import { gameProfileRegistrations, sourceAdapterRegistrations } from "../adapters";
 import { reconciliationPartitionStatement } from "./reconciliation-progress-repository";
-import { createReconciliationOperationStatement } from "./reconciliation-progress-repository";
+import {
+  createReconciliationOperationStatement,
+  reconciliationWriterGuard,
+} from "./reconciliation-progress-repository";
 import { pauseFailedReconciliationStatement } from "./reconciliation-progress-repository";
 import {
   reconciliationActionStatement,
@@ -19,7 +22,7 @@ import {
   reconciliationActionUpdate,
   retainReconciliationAction,
 } from "./reconciliation-progress-repository";
-import { AdministrationProblem, canonicalJson, type CatalogueStore } from "../shared";
+import { AdministrationProblem, canonicalJson, type CatalogueStore, guardedCatalogueStore } from "../shared";
 import {
   reconciliationOperationStatement,
   reconciliationPartitionsStatement,
@@ -151,6 +154,11 @@ export async function pauseFailedReconciliation(
   generation: number,
   detail: string,
 ) {
+  if (detail.startsWith("reconciliation_capacity_exceeded:")) {
+    const base = database;
+    const scoped = guardedCatalogueStore(base, () => reconciliationWriterGuard(base, runId, generation));
+    return failReconciliationWorkflow(scoped, runId, new Date().toISOString(), detail);
+  }
   await pauseFailedReconciliationStatement(database, runId, generation, detail).run();
   const current = await reconciliationOperationStatement(database, runId).first<{ state: string }>();
   if (!current) throw new Error("The durable reconciliation operation is unavailable.");

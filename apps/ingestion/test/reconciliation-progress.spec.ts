@@ -502,3 +502,17 @@ test("a completed Workflow that paused durable work reports paused without requi
     deadline: operation.document.deadline,
   });
 });
+
+test("an indivisible oversized metadata record produces an explicit terminal capacity result", async () => {
+  const run = await collect("/reconciliation/capacity-single-observation", "explicit-capacity-result");
+  const result = await reconcile(run.id);
+  expect(result.response.status).toBe(409);
+  expect(result.document).toMatchObject({
+    state: "failed",
+    diagnostics: expect.arrayContaining([expect.objectContaining({ code: "reconciliation_capacity_exceeded" })]),
+  });
+  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+    state: "failed",
+    failure_code: "reconciliation_capacity_exceeded",
+  });
+});
