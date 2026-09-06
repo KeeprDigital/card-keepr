@@ -97,7 +97,7 @@ async function handleApiRequest(request: Request, env: Env, requestId: string, b
       }),
     );
   } catch (error) {
-    return withCorsHeaders(request, apiProblemResponse(error, requestId));
+    return withCorsHeaders(request, await apiProblemResponse(error, requestId));
   }
 }
 

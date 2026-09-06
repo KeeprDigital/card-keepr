@@ -1,3 +1,4 @@
+import { MissingObjectError } from "../shared";
 import { parseCatalogueRevisionId, parsePublicationInstant } from "../../http/catalogue";
 import { ifNoneMatchMatches as ifNoneMatch } from "../../http/conditional-request";
 import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
@@ -351,7 +352,8 @@ export async function printingImageContentResponse(
   const object = isHead
     ? await bucket.head(row.object_key)
     : await bucket.get(row.object_key, range === null ? {} : { range });
-  if (object === null || object.size !== row.content_byte_length) {
+  if (object === null) throw new MissingObjectError();
+  if (object.size !== row.content_byte_length) {
     throw new Error("Published Printing Image content is unavailable.");
   }
   const responseLength = range === null ? row.content_byte_length : range.length;
@@ -570,7 +572,8 @@ async function loadVerifiedExportManifest(
     throw new ReadProblem(410, "catalogue_export_deleted", "This known Catalogue Export has been deleted.");
   }
   const object = await bucket.get(exportRow.manifest_key);
-  if (object === null || object.size > 1_048_576) {
+  if (object === null) throw new MissingObjectError();
+  if (object.size > 1_048_576) {
     throw new Error("Verified Catalogue Export manifest is unavailable");
   }
   const text = await object.text();
