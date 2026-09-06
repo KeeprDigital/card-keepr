@@ -88,15 +88,17 @@ export function reconciliationSnapshotEvidenceStatement(
           snapshot.media_type,
           snapshot.content_digest,
           snapshot.content_byte_length,
-          snapshot.content_object_key
+          snapshot.content_object_key,
+          selection.content AS selection_content,
+          selection.sha256 AS selection_sha256
          FROM source_snapshots AS snapshot
-         JOIN source_requests AS request
-           ON request.ingestion_run_id = snapshot.ingestion_run_id
-          AND request.request_id = snapshot.request_id
+         JOIN reconciliation_evidence_selection AS selection
+           ON selection.ingestion_run_id = snapshot.ingestion_run_id
+          AND selection.request_id = snapshot.request_id
          WHERE snapshot.ingestion_run_id = ? AND snapshot.request_url = ? AND snapshot.source_lineage = ?
-           AND request.source_snapshot_id = snapshot.id
-           AND request.request_role = 'image'
-           AND request.state = 'observed'
+           AND json_extract(selection.content, '$.request.source_snapshot_id') = snapshot.id
+           AND json_extract(selection.content, '$.request.request_role') = 'image'
+           AND json_extract(selection.content, '$.request.state') = 'observed'
          ORDER BY snapshot.rowid DESC LIMIT 1`)
     .bind(runId, sourceUrl, sourceLineage);
 }

@@ -207,7 +207,7 @@ test.each([
           return (sql: string) => {
             if (requireFrozenMetadata && completedGroups.length > 0 && sql.includes("AS completed_reducer_records"))
               throw new Error("Continuing a work unit must not recount the complete retained candidate.");
-            if (requireFrozenMetadata && completedGroups.length > 0 && sql.includes("FROM source_requests"))
+            if (requireFrozenMetadata && completedGroups.length > 0 && /\b(?:FROM|JOIN)\s+source_requests\b/u.test(sql))
               throw new Error("A returning normalization unit must reopen the frozen request selection.");
             return wrap(target.prepare(sql));
           };
@@ -269,7 +269,9 @@ test.each([
       step,
     );
     const completed = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
-    expect(completed, JSON.stringify(completed)).toMatchObject({ state: "sealed" });
+    expect(completed, JSON.stringify({ state: completed.state, failure_code: completed.failure_code })).toMatchObject({
+      state: "sealed",
+    });
     expect(completedGroups).toEqual(groups);
     if (requireFrozenMetadata) {
       expect(Math.max(...callsPerGroup)).toBeLessThanOrEqual(100);

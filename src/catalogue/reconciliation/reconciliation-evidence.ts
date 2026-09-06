@@ -30,6 +30,7 @@ import {
   canonicalJson,
   type SupportedGame,
   sha256,
+  sha256Text,
   StreamingSha256,
   streamedObjectMembers,
 } from "../shared";
@@ -500,15 +501,16 @@ async function collectRetainedReconciliationObservation(
         wrapped.id,
         await attachRetainedPrintingImages(
           wrapped.value,
-          async (url) =>
-            imageStorage(() =>
-              reconciliationSnapshotEvidenceStatement(
-                database,
-                runId,
-                url,
-                row.source_lineage,
-              ).first<PrintingImageSnapshotRow>(),
-            ),
+          async (url) => {
+            const image = await imageStorage(() =>
+              reconciliationSnapshotEvidenceStatement(database, runId, url, row.source_lineage).first<
+                PrintingImageSnapshotRow & { selection_content: string; selection_sha256: string }
+              >(),
+            );
+            if (image && (await sha256Text(image.selection_content)) !== image.selection_sha256)
+              throw new Error("Retained image evidence selection failed integrity verification.");
+            return image;
+          },
           evidenceObjects,
           row.plan_origin === "production",
         ),
