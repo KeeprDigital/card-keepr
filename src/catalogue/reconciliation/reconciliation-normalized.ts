@@ -1,6 +1,7 @@
 import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { retainPartitionedRecord, restorePartitionedRecord } from "./reconciliation-text";
 import {
+  nextNormalizedCardErratumStatement,
   retainObservationOriginStatement,
   observationOriginStatement,
   normalizedObservationExistsStatement,
@@ -47,17 +48,30 @@ export async function retainNormalizedObservation(
   runId: string,
   id: string,
   record: unknown,
+  cardErratumTarget: { game: string; officialIdentity: unknown } | null = null,
 ) {
   const envelope = await retainPartitionedRecord(database, runId, JSON.parse(JSON.stringify(record)));
   const content = canonicalJson(envelope);
   if (new TextEncoder().encode(content).byteLength > 524286)
     throw new Error("reconciliation_capacity_exceeded: one normalized observation exceeds 512 KiB.");
   const sha256 = await sha256Text(content);
-  await storage(retainNormalizedObservationStatement(database, runId, id, content, sha256).run());
+  const targetDigest =
+    cardErratumTarget === null
+      ? null
+      : await sha256Text(canonicalJson([cardErratumTarget.game, cardErratumTarget.officialIdentity]));
+  await storage(retainNormalizedObservationStatement(database, runId, id, content, sha256, targetDigest).run());
   const retained = await storage(
-    normalizedObservationStatement(database, runId, id).first<{ content: string; sha256: string }>(),
+    normalizedObservationStatement(database, runId, id).first<{
+      content: string;
+      sha256: string;
+      card_erratum_target_digest: string | null;
+    }>(),
   );
-  if (retained?.content !== content || retained.sha256 !== sha256)
+  if (
+    retained?.content !== content ||
+    retained.sha256 !== sha256 ||
+    retained.card_erratum_target_digest !== targetDigest
+  )
     throw new Error("Normalized observation replay changed its immutable content.");
 }
 
@@ -75,6 +89,35 @@ export async function* stagedNormalizedObservations<T>(database: CatalogueStore,
     if (!row) return;
     if ((await sha256Text(row.content)) !== row.sha256)
       throw new Error("Normalized observation failed integrity verification.");
+    yield (await restorePartitionedRecord(database, runId, JSON.parse(row.content))) as T;
+    after = row.observation_id;
+  }
+}
+
+export async function* normalizedCardErrata<T>(
+  database: CatalogueStore,
+  runId: string,
+  game: string,
+  officialIdentity: unknown,
+): AsyncGenerator<T> {
+  const digest = await sha256Text(canonicalJson([game, officialIdentity]));
+  let after: string | null = null;
+  let count = 0;
+  let bytes = 0;
+  for (;;) {
+    const row: { observation_id: string; content: string; sha256: string } | null = await storage(
+      nextNormalizedCardErratumStatement(database, runId, digest, after).first<{
+        observation_id: string;
+        content: string;
+        sha256: string;
+      }>(),
+    );
+    if (!row) return;
+    bytes += new TextEncoder().encode(row.content).byteLength;
+    if (++count > 500 || bytes > 1048576)
+      throw new Error("reconciliation_capacity_exceeded: one Card has too many Erratum records.");
+    if ((await sha256Text(row.content)) !== row.sha256)
+      throw new Error("Normalized Erratum failed integrity verification.");
     yield (await restorePartitionedRecord(database, runId, JSON.parse(row.content))) as T;
     after = row.observation_id;
   }

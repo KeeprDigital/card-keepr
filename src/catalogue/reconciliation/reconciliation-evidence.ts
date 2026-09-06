@@ -6,6 +6,7 @@ import {
 import { documentStorage, readVerifiedSourceDocument, retainVerifiedSourceDocument } from "./reconciliation-document";
 import { canonicalValueDigest } from "./reconciliation-preparation";
 import {
+  normalizedCardErrata,
   claimObservationOrigin,
   hasNormalizedObservation,
   retainNormalizedObservation,
@@ -138,8 +139,19 @@ export async function retainedReconciliationObservation(
   return {
     ...retained,
     observations: () => verifiedReconciliationObservations<NormalizedReconciliationObservation>(database, runId),
+    cardErrata: (game: string, identity: unknown) =>
+      normalizedCardErrata<Extract<NormalizedReconciliationObservation, { kind: "official_erratum" }>>(
+        database,
+        runId,
+        game,
+        identity,
+      ),
   } as Omit<Awaited<ReturnType<typeof collectRetainedReconciliationObservation>>, "observations"> & {
     observations: () => AsyncGenerator<NormalizedReconciliationObservation>;
+    cardErrata: (
+      game: string,
+      identity: unknown,
+    ) => AsyncGenerator<Extract<NormalizedReconciliationObservation, { kind: "official_erratum" }>>;
   };
 }
 
@@ -362,17 +374,25 @@ async function collectRetainedReconciliationObservation(
       const adapter = requiredSourceAdapter(row.adapter_version);
       const sourceSurface = sourceSurfaceForRequest(request, requestsById, row);
       assertObservationAuthority(parsed, adapter, sourceSurface);
-      await retainNormalizedObservation(database, runId, wrapped.id, {
-        ...parsed,
-        sourceObservationSetId: row.observation_set_id,
-        sourceSnapshotId: row.source_snapshot_id,
-        sourceCapturedAt: row.retrieved_at,
-        sourceLineage: row.source_lineage,
-        sourceRequestRole: request.request_role,
-        sourceSurface,
-        supportedGame: supportedGame(row.supported_game),
-        structurallyComplete: true,
-      });
+      await retainNormalizedObservation(
+        database,
+        runId,
+        wrapped.id,
+        {
+          ...parsed,
+          sourceObservationSetId: row.observation_set_id,
+          sourceSnapshotId: row.source_snapshot_id,
+          sourceCapturedAt: row.retrieved_at,
+          sourceLineage: row.source_lineage,
+          sourceRequestRole: request.request_role,
+          sourceSurface,
+          supportedGame: supportedGame(row.supported_game),
+          structurallyComplete: true,
+        },
+        parsed.kind === "official_erratum" && parsed.target.type === "card" && parsed.appliesToParallelPrintings
+          ? { game: parsed.game, officialIdentity: parsed.target.officialIdentity }
+          : null,
+      );
     }
   }
   for (const plan of selectedPlans) {

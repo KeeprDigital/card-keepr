@@ -107,11 +107,14 @@ BEGIN SELECT RAISE(ABORT, 'reconciliation_observation_origin_audit_retained'); E
 CREATE TABLE reconciliation_normalized_observations (
   ingestion_run_id TEXT NOT NULL,
   observation_id TEXT NOT NULL,
+  card_erratum_target_digest TEXT CHECK (card_erratum_target_digest IS NULL OR length(card_erratum_target_digest) = 64),
   content TEXT NOT NULL CHECK (json_valid(content) AND length(CAST(content AS BLOB)) <= 524288),
   sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
   PRIMARY KEY (ingestion_run_id, observation_id),
   FOREIGN KEY (ingestion_run_id, observation_id) REFERENCES reconciliation_observation_origins(ingestion_run_id, observation_id)
 );
+CREATE INDEX reconciliation_normalized_card_erratum_target
+ON reconciliation_normalized_observations (ingestion_run_id, card_erratum_target_digest, observation_id);
 CREATE TRIGGER reconciliation_normalized_no_update BEFORE UPDATE ON reconciliation_normalized_observations
 BEGIN SELECT RAISE(ABORT, 'reconciliation_normalized_observation_immutable'); END;
 CREATE TRIGGER reconciliation_normalized_no_delete BEFORE DELETE ON reconciliation_normalized_observations

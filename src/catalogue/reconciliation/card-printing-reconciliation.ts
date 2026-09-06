@@ -238,16 +238,6 @@ export async function reconcileRetainedCardPrintingEvidence(
   const cardCheckTimes = new Map<SupportedGame, string>();
   const productCheckTimes = new Map<SupportedGame, string>();
   type RetainedObservation = NormalizedReconciliationObservation;
-  const standaloneCardErrata: Extract<RetainedObservation, { kind: "official_erratum" }>[] = [];
-  for await (const observation of retained.observations()) {
-    if (
-      observation.kind === "official_erratum" &&
-      observation.target.type === "card" &&
-      observation.appliesToParallelPrintings
-    )
-      standaloneCardErrata.push(observation);
-  }
-
   for await (const observation of retained.observations()) {
     if (observation.kind !== "card_printing") continue;
     for (const index of [
@@ -451,11 +441,9 @@ export async function reconcileRetainedCardPrintingEvidence(
         runId,
         observedAt,
       ));
-    const matchingStandaloneErrata = standaloneCardErrata.filter(
-      (erratum) =>
-        erratum.game === proposedCard.game &&
-        canonicalJson(erratum.target.officialIdentity) === canonicalJson(proposedCard.official_identity),
-    );
+    const matchingStandaloneErrata: Extract<RetainedObservation, { kind: "official_erratum" }>[] = [];
+    for await (const erratum of retained.cardErrata(proposedCard.game, proposedCard.official_identity))
+      matchingStandaloneErrata.push(erratum);
     const currentCardErrata = (
       await Promise.all([
         identifyRulesTextErrata({

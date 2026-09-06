@@ -577,7 +577,7 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
                 values.at(-1) === -1
               ) {
                 passes++;
-                if (unavailable && passes % 4 === 0) {
+                if (unavailable && passes % 3 === 0) {
                   failures++;
                   throw new Error("Injected Product-pass input storage outage");
                 }
