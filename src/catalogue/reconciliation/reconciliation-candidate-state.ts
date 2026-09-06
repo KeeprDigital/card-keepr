@@ -92,15 +92,25 @@ export class ReconciliationCandidateState implements CatalogueDraft {
     return this.collections.has(kind) || this.base?.represents(kind) === true;
   }
 
-  /** Legacy aggregate callers can still inspect the completed state during migration to streamed preparation. */
-  async candidate(metadata: CatalogueCandidate): Promise<CatalogueCandidate> {
-    const result = { ...metadata };
+  /** Reusable collections allow hashing and preparation to read the same pinned view. */
+  async document(metadata: CatalogueCandidate): Promise<Record<string, unknown>> {
+    const result: Record<string, unknown> = { ...metadata };
     for (const kind of catalogueEntityCollections) {
       if (!this.represents(kind)) continue;
-      const values = [];
-      for await (const entity of this.values(kind)) values.push(entity);
-      if (values.length === 0 && metadata[kind] === undefined) continue;
-      Object.defineProperty(result, kind, { value: values, enumerable: true, writable: true, configurable: true });
+      if (metadata[kind] === undefined) {
+        const values = this.values(kind);
+        try {
+          if ((await values.next()).done) continue;
+        } finally {
+          await values.return(undefined);
+        }
+      }
+      const draft = this;
+      result[kind] = {
+        [Symbol.asyncIterator]() {
+          return draft.values(kind);
+        },
+      };
     }
     return result;
   }

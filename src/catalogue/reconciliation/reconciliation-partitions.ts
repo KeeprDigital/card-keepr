@@ -1,7 +1,7 @@
 import { correctionDecisionPinMetadata } from "./identity-correction-pins";
 import { entityAdmissionPinMetadata } from "./entity-admission-pins";
 import { retainPartitionedRecord } from "./reconciliation-text";
-import { type CatalogueStore, type CatalogueCandidate, canonicalJson, sha256Text } from "../shared";
+import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import {
   insertReconciliationPartitionStatement,
   reconciliationPartitionStatement,
@@ -15,7 +15,7 @@ const maximumPartitionRecords = 500;
 export async function persistCandidatePartitions(
   database: CatalogueStore,
   runId: string,
-  candidate: CatalogueCandidate,
+  candidate: Record<string, unknown>,
   warnings: readonly unknown[] = [],
 ) {
   let ordinal = 0;
@@ -45,7 +45,11 @@ export async function persistCandidatePartitions(
     }),
   );
   for (const [kind, records] of Object.entries({ ...candidate, warnings })) {
-    if (!Array.isArray(records)) continue;
+    if (
+      !Array.isArray(records) &&
+      !(records !== null && typeof records === "object" && Symbol.asyncIterator in records)
+    )
+      continue;
     let parts: string[] = [];
     let bytes = 2;
     const flush = async () => {
@@ -80,7 +84,7 @@ export async function persistCandidatePartitions(
       parts = [];
       bytes = 2;
     };
-    for (const record of records) {
+    for await (const record of records as Iterable<unknown> | AsyncIterable<unknown>) {
       const encoded = canonicalJson(await retainPartitionedRecord(database, runId, record));
       const length = new TextEncoder().encode(encoded).byteLength;
       if (length + 2 > maximumPartitionBytes)

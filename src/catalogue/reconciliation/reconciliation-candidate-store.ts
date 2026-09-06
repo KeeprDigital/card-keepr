@@ -1,4 +1,4 @@
-import { boundedRecordArrays, canonicalValueChunks, prepareCandidateBatch } from "./reconciliation-preparation";
+import { boundedRecordArrays, canonicalStreamValueChunks, prepareCandidateBatch } from "./reconciliation-preparation";
 import { prepareGameCandidateManifests } from "./game-candidate";
 import { preparationCompleteGuard } from "./reconciliation-preparation-repository";
 import { persistCandidatePartitions } from "./reconciliation-partitions";
@@ -6,6 +6,7 @@ import { sealReconciliationOperationStatement } from "./reconciliation-progress-
 import {
   persistReconciliationPayloadChunkStatement,
   type CatalogueCandidate,
+  type CatalogueDraft,
   type CatalogueStore,
   canonicalJson,
   chunkedPayloadMarker,
@@ -90,7 +91,8 @@ export async function persistReviewableCandidate(
       sourceCardFactsJson: string | null;
     }[];
     warnings: readonly (ReconciliationWarning | Record<string, unknown>)[];
-    candidate: CatalogueCandidate;
+    candidate: Record<string, unknown>;
+    draft: CatalogueDraft;
     digestPayload: Record<string, unknown>;
     candidateDigest: string;
     candidateCatalogueDigest: string;
@@ -104,7 +106,7 @@ export async function persistReviewableCandidate(
   const gameSeals = await prepareGameCandidateManifests(
     database,
     input.runId,
-    input.candidate,
+    input.draft,
     manifest.digest,
     input.partitions,
   );
@@ -147,7 +149,8 @@ export async function persistBlockedCandidate(
       sourceCardFactsJson: string | null;
     }[];
     diagnostics: readonly Record<string, unknown>[];
-    candidate: CatalogueCandidate;
+    candidate: Record<string, unknown>;
+    draft: CatalogueDraft;
     digestPayload: Record<string, unknown>;
     candidateDigest: string;
     candidateCatalogueDigest: string;
@@ -274,7 +277,8 @@ async function stageCandidatePreparation(
   database: CatalogueStore,
   input: {
     runId: string;
-    candidate: CatalogueCandidate;
+    candidate: Record<string, unknown>;
+    draft: CatalogueDraft;
     digestPayload: Record<string, unknown>;
     plans: readonly CandidatePlanInput[];
     partitions: readonly EvidencePartitionInput[];
@@ -301,7 +305,9 @@ async function stageCandidatePreparation(
   }
   for (const kind of ["candidate", "digest"] as const) {
     let index = 0;
-    for (const content of canonicalValueChunks(kind === "candidate" ? input.candidate : input.digestPayload)) {
+    for await (const content of canonicalStreamValueChunks(
+      kind === "candidate" ? input.candidate : input.digestPayload,
+    )) {
       await prepare(
         kind,
         content,

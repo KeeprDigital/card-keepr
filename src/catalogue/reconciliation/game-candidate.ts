@@ -1,11 +1,5 @@
-import {
-  AdministrationProblem,
-  canonicalJson,
-  type CatalogueCandidate,
-  type CatalogueStore,
-  sha256Text,
-} from "../shared";
-import { boundedRecordArrays } from "./reconciliation-preparation";
+import { AdministrationProblem, canonicalJson, type CatalogueDraft, type CatalogueStore, sha256Text } from "../shared";
+import { boundedAsyncRecordArrays } from "./reconciliation-preparation";
 import {
   reconciliationPartitionsStatement,
   reconciliationPartitionStatement,
@@ -38,21 +32,19 @@ type GameCandidate = {
 export async function prepareGameCandidateManifests(
   database: CatalogueStore,
   runId: string,
-  candidate: CatalogueCandidate,
+  candidate: CatalogueDraft,
   inputManifest: string,
   lineages: readonly { supportedGame: string; sourceLineage: string }[],
 ) {
   for (const kind of ["cards", "printings"] as const) {
-    for (let offset = 0; offset < candidate[kind].length; offset += 100) {
-      const scopes = candidate[kind]
-        .slice(offset, offset + 100)
-        .map((record) =>
-          "game" in record ? { id: record.id, game: record.game } : { id: record.id, card_id: record.card_id },
-        );
-      for (const content of boundedRecordArrays(scopes))
-        await retainGameEntityScopesStatement(database, runId, kind, content).run();
+    async function* scopes() {
+      for await (const record of candidate.values(kind))
+        yield "game" in record ? { id: record.id, game: record.game } : { id: record.id, card_id: record.card_id };
     }
+    for await (const content of boundedAsyncRecordArrays(scopes()))
+      await retainGameEntityScopesStatement(database, runId, kind, content).run();
   }
+
   const headers = (await gameCandidatesForRunStatement(database, runId).all<GameCandidate>()).results;
   const seals: D1PreparedStatement[] = [];
   for (const header of headers) {

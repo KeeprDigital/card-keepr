@@ -115,16 +115,21 @@ export class ReconciliationReducerIndex<T> {
   async *entityValues(): AsyncGenerator<T> {
     let after = "";
     for (;;) {
-      const row = await storage(
-        nextReducerEntityStateStatement(this.database, this.runId, this.namespace, this.ordinal, after).first<
+      const ordinal = this.ordinal;
+      const page = await storage(
+        nextReducerEntityStateStatement(this.database, this.runId, this.namespace, ordinal, after).all<
           StateRow & { entity_id: string }
         >(),
       );
-      if (!row) return;
-      if ((await sha256Text(row.content)) !== row.sha256)
-        throw new Error("Reducer state failed integrity verification.");
-      yield (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T;
-      after = row.entity_id;
+      if (!page.results.length) return;
+      for (const row of page.results) {
+        if ((await sha256Text(row.content)) !== row.sha256)
+          throw new Error("Reducer state failed integrity verification.");
+        yield (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T;
+        after = row.entity_id;
+        // Mutating consumers must see any changes to the unread suffix.
+        if (this.ordinal !== ordinal) break;
+      }
     }
   }
 

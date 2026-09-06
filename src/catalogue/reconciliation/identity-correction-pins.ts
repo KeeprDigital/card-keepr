@@ -1,4 +1,3 @@
-import { ReconciliationCandidateState } from "./reconciliation-candidate-state";
 import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
 import type { IdentityCorrectionProposal } from "./identity-corrections";
 import {
@@ -41,34 +40,13 @@ export async function correctionDecisionPinMetadata(database: CatalogueStore, ru
   if (!pin) throw new Error("Correction decisions must be pinned before reconciliation.");
   return { decision_cutoff: pin.decision_cutoff, set_digest: await sha256Text(canonicalJson(pin)) };
 }
-export async function applyPinnedIdentityCorrections(
-  database: CatalogueStore,
-  runId: string,
-  candidate: CatalogueCandidate,
-  warnings: Record<string, unknown>[],
-) {
-  const pin = await correctionDecisionPinMetadata(database, runId);
-  if (pin.decision_cutoff === 0) return candidate;
-  const official = new ReconciliationCandidateState(database, runId, "before_corrections");
-  await official.seed(candidate, [
-    "cards",
-    "printings",
-    "printing_images",
-    "product_relationships",
-    "errata",
-    "identity_corrections",
-  ]);
-  const draft = new ReconciliationCandidateState(database, runId, "corrections", official);
-  await applyPinnedIdentityCorrectionsToDraft(database, runId, draft, warnings);
-  return draft.candidate(candidate);
-}
-
 export async function applyPinnedIdentityCorrectionsToDraft(
   database: CatalogueStore,
   runId: string,
   draft: CatalogueDraft,
   warnings: Record<string, unknown>[],
 ): Promise<void> {
+  if ((await correctionDecisionPinMetadata(database, runId)).decision_cutoff === 0) return;
   const correctedCardIdentity = await pinnedCardIdentityResolver(database, runId);
   for await (const row of pinnedCorrectionRows(database, runId)) {
     const decision = JSON.parse(row.request_json) as IdentityCorrectionProposal;

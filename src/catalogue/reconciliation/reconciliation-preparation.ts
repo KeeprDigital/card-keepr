@@ -130,3 +130,54 @@ export async function canonicalValueDigest(value: unknown): Promise<string> {
   await writer.close();
   return Array.from(new Uint8Array(await digest.digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
+
+/** Async collections are serialized as arrays without gathering their members. */
+export async function* canonicalStreamValueChunks(value: unknown): AsyncGenerator<string> {
+  let chunk = "";
+  let bytes = 0;
+  for await (const part of streamedParts(value)) {
+    const length = new TextEncoder().encode(part).byteLength;
+    if (bytes + length > 524288) {
+      if (chunk) yield chunk;
+      chunk = "";
+      bytes = 0;
+    }
+    chunk += part;
+    bytes += length;
+  }
+  if (chunk) yield chunk;
+}
+
+async function* streamedParts(value: unknown): AsyncGenerator<string> {
+  if (value !== null && typeof value === "object" && Symbol.asyncIterator in value) {
+    yield "[";
+    let first = true;
+    for await (const member of value as AsyncIterable<unknown>) {
+      if (!first) yield ",";
+      first = false;
+      yield* canonicalValueChunks(member);
+    }
+    yield "]";
+  } else if (Array.isArray(value)) {
+    yield* canonicalValueChunks(value);
+  } else if (value !== null && typeof value === "object") {
+    yield "{";
+    let first = true;
+    for (const key of Object.keys(value).sort(compareUtf8)) {
+      if (!first) yield ",";
+      first = false;
+      yield* canonicalParts(key);
+      yield ":";
+      yield* streamedParts((value as Record<string, unknown>)[key]);
+    }
+    yield "}";
+  } else yield* canonicalValueChunks(value);
+}
+
+export async function canonicalStreamValueDigest(value: unknown): Promise<string> {
+  const digest = new crypto.DigestStream("SHA-256");
+  const writer = digest.getWriter();
+  for await (const chunk of canonicalStreamValueChunks(value)) await writer.write(new TextEncoder().encode(chunk));
+  await writer.close();
+  return Array.from(new Uint8Array(await digest.digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}

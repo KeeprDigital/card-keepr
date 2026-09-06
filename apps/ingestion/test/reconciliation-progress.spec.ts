@@ -565,6 +565,7 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
     let passes = 0;
     let failures = 0;
     let unavailable = true;
+    let replayingSealed = false;
     const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement =>
       new Proxy(statement, {
         get(target, property) {
@@ -590,7 +591,12 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
       });
     const database = new Proxy(testEnv.CATALOGUE_DB, {
       get(target, property) {
-        if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
+        if (property === "prepare")
+          return (sql: string) => {
+            if (replayingSealed && sql.includes("reconciliation_payload_chunks"))
+              throw new Error("Sealed Workflow replay must use the retained candidate reference.");
+            return wrap(target.prepare(sql), sql);
+          };
         const value = Reflect.get(target, property);
         return typeof value === "function" ? value.bind(target) : value;
       },
@@ -639,6 +645,7 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
     const sealed = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
     expect(sealed).toMatchObject({ state: "sealed", generation: 1 });
     expect(Number(sealed.completed_reducer_records)).toBeGreaterThan(Number(paused.completed_reducer_records));
+    replayingSealed = true;
     await runReconciliationWorkflow(
       { ...testEnv, CATALOGUE_DB: database },
       { payload: { ...payload, generation: 1 } } as typeof event,

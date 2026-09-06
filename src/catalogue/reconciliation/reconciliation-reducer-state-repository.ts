@@ -118,7 +118,7 @@ export function nextReducerEntityStateStatement(
   after: string,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT state.content, state.sha256,
+    .prepare(`WITH candidates AS (SELECT state.content, state.sha256,
     json_extract(state.content, '$.value.id') AS entity_id
     FROM reconciliation_reducer_state AS state
     WHERE state.ingestion_run_id = ? AND state.namespace = ? AND state.observation_ordinal <= ?
@@ -127,6 +127,9 @@ export function nextReducerEntityStateStatement(
         WHERE later.ingestion_run_id = state.ingestion_run_id AND later.namespace = state.namespace
           AND later.key_digest = state.key_digest AND later.observation_ordinal > state.observation_ordinal
           AND later.observation_ordinal <= ?)
-    ORDER BY json_extract(state.content, '$.value.id') LIMIT 1`)
+    ORDER BY json_extract(state.content, '$.value.id') LIMIT 16),
+    bounded AS (SELECT content, sha256, entity_id,
+      sum(length(CAST(content AS BLOB))) OVER (ORDER BY entity_id) AS retained_bytes FROM candidates)
+    SELECT content, sha256, entity_id FROM bounded WHERE retained_bytes <= 524288 ORDER BY entity_id`)
     .bind(runId, namespace, ordinal, after, ordinal);
 }

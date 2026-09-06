@@ -3,7 +3,7 @@ import { type CatalogueStore, repositoryStatements } from "../shared";
 
 export function reconciliationRunStateStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare("SELECT state FROM ingestion_run_current WHERE ingestion_run_id = ?")
+    .prepare("SELECT state, candidate_digest FROM ingestion_run_current WHERE ingestion_run_id = ?")
     .bind(runId);
 }
 
