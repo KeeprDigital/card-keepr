@@ -1,3 +1,4 @@
+import { ReconciliationCardState } from "./reconciliation-card-state";
 import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
 import { ReconciliationInputStorageError } from "./reconciliation-input";
 import { canonicalValueDigest } from "./reconciliation-preparation";
@@ -172,13 +173,30 @@ export async function reconcileRetainedCardPrintingEvidence(
     run.expected_current_revision_id,
     JSON.parse(run.selected_games_json) as SupportedGame[],
   );
-  const cards = new Map<string, CatalogueCard>(priorCandidate?.cards.map((card) => [card.id, card]) ?? []);
-  const printings = new Map<string, CataloguePrinting>(
-    priorCandidate?.printings.map((printing) => [printing.id, printing]) ?? [],
+  const cards = new ReconciliationCardState(database, runId, "cards");
+  const priorCards = new ReconciliationCardState(database, runId, "prior_cards");
+  for (const card of priorCandidate?.cards ?? []) {
+    await priorCards.seed(card);
+    await cards.seed(card);
+  }
+  if (priorCandidate) priorCandidate.cards = [];
+  const printings = new ReconciliationReducerIndex<CataloguePrinting>(
+    database,
+    runId,
+    "printings",
+    (printing) => printing.card_id,
   );
-  const printingImages = new Map<string, CataloguePrintingImage>(
-    priorCandidate?.printing_images?.map((image) => [image.id, image]) ?? [],
-  );
+  const priorPrintings = new ReconciliationReducerIndex<CataloguePrinting>(database, runId, "prior_printings");
+  for (const printing of priorCandidate?.printings ?? []) {
+    await priorPrintings.seed(printing.id, printing);
+    await printings.seed(printing.id, printing);
+  }
+  const printingImages = new ReconciliationReducerIndex<CataloguePrintingImage>(database, runId, "printing_images");
+  for (const image of priorCandidate?.printing_images ?? []) await printingImages.seed(image.id, image);
+  if (priorCandidate) {
+    priorCandidate.printings = [];
+    priorCandidate.printing_images = [];
+  }
   const sourceMappings: SourceMapping[] = [];
   const localCardFacts = new ReconciliationReducerIndex<string>(database, runId, "card_facts");
   const localDigimonCardAuthorities = new ReconciliationReducerIndex<DigimonCardAuthority>(
@@ -241,6 +259,9 @@ export async function reconcileRetainedCardPrintingEvidence(
   for await (const observation of retained.observations()) {
     if (observation.kind !== "card_printing") continue;
     for (const index of [
+      cards,
+      printings,
+      printingImages,
       localCardFacts,
       localDigimonCardAuthorities,
       localPrintingFacts,
@@ -304,44 +325,46 @@ export async function reconcileRetainedCardPrintingEvidence(
             identityKind: sourceCard.official_identity.kind,
             identityValue: sourceCard.official_identity.value,
           });
+    const localOfficialCards =
+      sourceCard.official_identity.kind === "unknown"
+        ? []
+        : await cards.sameOfficialIdentity(sourceCard.game, sourceCard.official_identity);
     const canConfirmPublisherNumber =
       sourceCard.official_identity.kind !== "unknown" &&
       publisherLineage(observation.sourceLineage) &&
       existing === null &&
-      ![...cards.values()].some(
-        (card) =>
-          card.game === sourceCard.game &&
-          canonicalJson(card.official_identity) === canonicalJson(sourceCard.official_identity),
-      );
+      localOfficialCards.length === 0;
     const exactUnnumberedCards =
       sourceCard.official_identity.kind === "unknown" || canConfirmPublisherNumber
-        ? [...cards.values()].filter(
-            (card) =>
-              card.game === sourceCard.game &&
-              (!canConfirmPublisherNumber || card.official_identity.kind === "unknown") &&
-              card.name === sourceCard.name &&
-              card.effective_rules_text === sourceCard.effective_rules_text &&
-              canonicalJson(card.game_data) === canonicalJson(sourceCard.game_data),
-          )
+        ? await cards.sameFacts(sourceCard, canConfirmPublisherNumber)
         : [];
-    let unnumberedCard: CatalogueCard | undefined;
+    let unnumberedCard: (typeof exactUnnumberedCards)[number] | undefined;
     let reviewedCardPrintingId: string | null = null;
     if (exactUnnumberedCards.length > 0) {
       const printing = observation.observedCardAndPrinting.printing;
-      const candidates = [...printings.values()].filter(
-        (candidate) =>
-          exactUnnumberedCards.some((card) => card.id === candidate.card_id) &&
-          printing !== null &&
-          printingFactsFormattingEquivalent(
-            {
-              rarity: candidate.rarity,
-              printed_rules_text: candidate.printed_rules_text,
-              game_data: candidate.game_data,
-            },
-            printing,
-          ),
-      );
-      const provenCards: CatalogueCard[] = [];
+      const candidates: Pick<CataloguePrinting, "id" | "card_id">[] = [];
+      if (printing !== null)
+        for (const card of exactUnnumberedCards) {
+          for await (const candidate of printings.matchingBeforeObservation(card.id)) {
+            if (
+              printingFactsFormattingEquivalent(
+                {
+                  rarity: candidate.rarity,
+                  printed_rules_text: candidate.printed_rules_text,
+                  game_data: candidate.game_data,
+                },
+                printing,
+              )
+            ) {
+              if (candidates.length === 500)
+                throw new Error(
+                  "reconciliation_capacity_exceeded: one Card identity has too many Printing candidates.",
+                );
+              candidates.push({ id: candidate.id, card_id: candidate.card_id });
+            }
+          }
+        }
+      const provenCards: typeof exactUnnumberedCards = [];
       if (printing !== null) {
         for (const card of exactUnnumberedCards) {
           const expected = compatibilityFor(card.id, observation.sourceLineage, observation);
@@ -415,18 +438,12 @@ export async function reconcileRetainedCardPrintingEvidence(
     const confirmedPublisherNumber = canConfirmPublisherNumber && unnumberedCard !== undefined;
     const proposedCard =
       unnumberedCard && sourceCard.official_identity.kind === "unknown"
-        ? { ...sourceCard, official_identity: unnumberedCard.official_identity }
+        ? { ...sourceCard, official_identity: (await cards.get(unnumberedCard.id))!.official_identity }
         : sourceCard;
     const cardId =
       admission?.decision?.card.id ??
       existing?.id ??
-      (sourceCard.official_identity.kind === "unknown"
-        ? undefined
-        : [...cards.values()].find(
-            (card) =>
-              card.game === sourceCard.game &&
-              canonicalJson(card.official_identity) === canonicalJson(sourceCard.official_identity),
-          )?.id) ??
+      localOfficialCards[0]?.id ??
       unnumberedCard?.id ??
       (await allocateCanonicalIdentity(
         database,
@@ -488,7 +505,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           "Known DON!! Printing evidence is retained when present, but Official Source coverage is incomplete and absence never proves zero Printings.",
       });
     }
-    const carriedCard = cards.get(cardId);
+    const carriedCard = await cards.get(cardId);
     if (observation.sourceLineage === "gundam-en-asia" || observation.sourceLineage === "gundam-en-us") {
       await addGundamLineage(localGundamCardLineages, cardId, observation.sourceLineage);
     }
@@ -579,7 +596,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       });
     } else {
       await localCardFacts.set(cardId, canonicalFacts);
-      cards.set(cardId, { id: cardId, ...acceptedCanonicalCard });
+      await cards.set(cardId, { id: cardId, ...acceptedCanonicalCard });
     }
 
     let compatibility: PrintingCompatibility | null = null;
@@ -788,7 +805,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         await addGundamLineage(localGundamPrintingProvenance, printingId, observation.sourceLineage);
         await addGundamProducts(localGundamProducts, printingId, observation.memberships.products);
       }
-      const carriedPrinting = printings.get(printingId);
+      const carriedPrinting = await printings.get(printingId);
       const publishedPrintingConflict = await canonicalPrintingConflict(
         database,
         printingId,
@@ -826,12 +843,15 @@ export async function reconcileRetainedCardPrintingEvidence(
         });
       } else {
         await localPrintingFacts.set(printingId, acceptedPrinting);
-        printings.set(printingId, {
+        await printings.set(printingId, {
           id: printingId,
           card_id: cardId,
           ...acceptedPrinting,
         });
       }
+      if (observation.printingImages.length > 500)
+        throw new Error("reconciliation_capacity_exceeded: one Printing has too many images.");
+      const pendingImages = new Map<string, CataloguePrintingImage>();
       for (const image of observation.printingImages) {
         const id =
           `printing_image_${printingId.slice("printing_".length)}_` +
@@ -842,7 +862,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           object_key: `printing-images/${image.content_sha256}`,
           ...image,
         };
-        const existingImage = printingImages.get(id);
+        const existingImage = pendingImages.get(id) ?? (await printingImages.get(id));
         if (existingImage !== undefined && !printingImageEvidenceEquivalent(existingImage, observedImage)) {
           diagnostics.push({
             code: "retained_evidence_invalid",
@@ -852,7 +872,7 @@ export async function reconcileRetainedCardPrintingEvidence(
             detail: "A Printing Image identity maps to conflicting immutable bytes or metadata.",
           });
         } else {
-          printingImages.set(
+          pendingImages.set(
             id,
             existingImage === undefined
               ? observedImage
@@ -866,6 +886,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           );
         }
       }
+      for (const [id, image] of pendingImages) await printingImages.set(id, image);
     } else if (!observation.structurallyComplete) {
       diagnostics.push({
         code: "printing_match_insufficient_evidence",
@@ -880,8 +901,8 @@ export async function reconcileRetainedCardPrintingEvidence(
         database,
         runId,
         admission,
-        cards.get(cardId)!,
-        printingId ? printings.get(printingId)! : null,
+        (await cards.get(cardId))!,
+        printingId ? (await printings.get(printingId))! : null,
         observedAt,
       );
       sourceWarnings.push({
@@ -918,7 +939,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           publisher_confirmation: publisherConfirmation(
             observation.sourceLineage,
             kind === "card" ? observation.observedCardAndPrinting.card : proposedPrinting,
-            kind === "card" ? cards.get(cardId) : printingId ? printings.get(printingId) : null,
+            kind === "card" ? await cards.get(cardId) : printingId ? await printings.get(printingId) : null,
           ),
         }),
         mappedAt: observedAt,
@@ -987,13 +1008,10 @@ export async function reconcileRetainedCardPrintingEvidence(
     }
     const matchingCards = [
       ...new Map(
-        [...cards.values(), ...(priorCandidate?.cards ?? [])]
-          .filter(
-            (card) =>
-              card.game === observation.game &&
-              canonicalJson(card.official_identity) === canonicalJson(observation.target.officialIdentity),
-          )
-          .map((card) => [card.id, card] as const),
+        [
+          ...(await cards.sameOfficialIdentity(observation.game, observation.target.officialIdentity, true)),
+          ...(await priorCards.sameOfficialIdentity(observation.game, observation.target.officialIdentity, true)),
+        ].map((card) => [card.id, card]),
       ).values(),
     ];
     if (matchingCards.length !== 1) {
@@ -1009,21 +1027,17 @@ export async function reconcileRetainedCardPrintingEvidence(
       });
       continue;
     }
-    const card = matchingCards[0]!;
+    const card = (await priorCards.get(matchingCards[0]!.id)) ?? (await cards.get(matchingCards[0]!.id))!;
     targetedCardIds.add(card.id);
     let targetPrintingId: string | null = null;
     if (observation.target.type === "printing") {
       const located = await printingsAtLocator(database, observation.sourceLineage, observation.target.locator);
-      const publishedPrintings = [
-        ...new Map(
-          located.flatMap((locatedPrinting) => {
-            const published = priorCandidate?.printings.find(
-              (printing) => printing.id === locatedPrinting.id && printing.card_id === card.id,
-            );
-            return published === undefined ? [] : [[published.id, published] as const];
-          }),
-        ).values(),
-      ];
+      const publishedById = new Map<string, CataloguePrinting>();
+      for (const locatedPrinting of located) {
+        const published = await priorPrintings.get(locatedPrinting.id);
+        if (published?.card_id === card.id) publishedById.set(published.id, published);
+      }
+      const publishedPrintings = [...publishedById.values()];
       if (publishedPrintings.length !== 1) {
         diagnostics.push({
           code: "retained_evidence_invalid",
@@ -1155,30 +1169,40 @@ export async function reconcileRetainedCardPrintingEvidence(
     });
   }
   const errata = mergeCatalogueErrata(priorCandidate?.errata ?? [], observedErrata);
-  const candidateCards = [...cards.values()]
-    .map((card) => {
-      if (!retained.partitions.some(({ supportedGame }) => supportedGame === card.game)) return card;
-      try {
-        return {
-          ...card,
-          effective_rules_text: deriveEffectiveRulesText(card, errata, observedAt),
-        };
-      } catch (error) {
-        const conflictPlans = plans.filter((plan) => plan.cardId === card.id);
-        diagnostics.push({
-          code: "canonical_card_conflict",
-          source_observation_id: conflictPlans[0]?.sourceObservationId ?? null,
-          locator: conflictPlans[0]?.locator ?? null,
-          matched_printing_ids: conflictPlans.flatMap((plan) => (plan.printingId === null ? [] : [plan.printingId])),
-          detail:
-            error instanceof ErratumRulesTextError
-              ? error.message
-              : "The Card has an unresolved Effective Rules Text conflict.",
-        });
-        return card;
-      }
-    })
-    .sort((left, right) => left.id.localeCompare(right.id));
+  const candidateCards: CatalogueCard[] = [];
+  for await (const card of cards.values()) {
+    candidateCards.push(
+      ((card: CatalogueCard) => {
+        if (!retained.partitions.some(({ supportedGame }) => supportedGame === card.game)) return card;
+        try {
+          return {
+            ...card,
+            effective_rules_text: deriveEffectiveRulesText(card, errata, observedAt),
+          };
+        } catch (error) {
+          const conflictPlans = plans.filter((plan) => plan.cardId === card.id);
+          diagnostics.push({
+            code: "canonical_card_conflict",
+            source_observation_id: conflictPlans[0]?.sourceObservationId ?? null,
+            locator: conflictPlans[0]?.locator ?? null,
+            matched_printing_ids: conflictPlans.flatMap((plan) => (plan.printingId === null ? [] : [plan.printingId])),
+            detail:
+              error instanceof ErratumRulesTextError
+                ? error.message
+                : "The Card has an unresolved Effective Rules Text conflict.",
+          });
+          return card;
+        }
+      })(card),
+    );
+  }
+  candidateCards.sort((left, right) => left.id.localeCompare(right.id));
+  const candidatePrintings: CataloguePrinting[] = [];
+  for await (const printing of printings.latestValues()) candidatePrintings.push(printing);
+  candidatePrintings.sort((left, right) => left.id.localeCompare(right.id));
+  const candidateImages: CataloguePrintingImage[] = [];
+  for await (const image of printingImages.latestValues()) candidateImages.push(image);
+  candidateImages.sort((left, right) => left.id.localeCompare(right.id));
   let candidate: CatalogueCandidate = {
     contract: catalogueCandidateContract,
     selected_games: [
@@ -1189,8 +1213,8 @@ export async function reconcileRetainedCardPrintingEvidence(
     ].sort(),
     ...(priorCandidate?.identity_corrections ? { identity_corrections: priorCandidate.identity_corrections } : {}),
     cards: candidateCards,
-    printings: [...printings.values()].sort((left, right) => left.id.localeCompare(right.id)),
-    printing_images: [...printingImages.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    printings: candidatePrintings,
+    printing_images: candidateImages,
     products: productCatalogue.products.map((product) => ({
       ...omitUndefinedCuratedProvenance(product),
       releases: product.releases.map(omitUndefinedCuratedProvenance),
@@ -1325,7 +1349,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       observedCards.push(card);
   }
   observedCards.sort((left, right) => left.id.localeCompare(right.id));
-  const observedPrintings = [...printings.values()]
+  const observedPrintings = candidatePrintings
     .filter(
       (printing) =>
         plans.some((plan) => plan.observationKind === "card_printing" && plan.printingId === printing.id) ||

@@ -84,3 +84,28 @@ export function nextLatestReducerStateStatement(
     ORDER BY state.key_digest LIMIT 1`)
     .bind(runId, namespace, after, through, through);
 }
+
+export function nextReducerCardReferenceStatement(
+  database: CatalogueStore,
+  runId: string,
+  namespace: string,
+  group: string,
+  before: number,
+  after: string,
+) {
+  return repositoryStatements(database)
+    .prepare(`SELECT state.key_digest,
+    json_extract(state.content, '$.value.id') AS id,
+    COALESCE(json_extract(state.content, '$.value.identity_kind'), json_extract(state.content, '$.value.official_identity.kind')) AS identity_kind,
+    (SELECT min(first.observation_ordinal) FROM reconciliation_reducer_state first
+      WHERE first.ingestion_run_id = state.ingestion_run_id AND first.namespace = state.namespace AND first.key_digest = state.key_digest) AS first_ordinal
+    FROM reconciliation_reducer_state state
+    WHERE state.ingestion_run_id = ? AND state.namespace = ? AND state.group_digest = ?
+      AND state.key_digest > ? AND state.observation_ordinal < ?
+      AND NOT EXISTS (SELECT 1 FROM reconciliation_reducer_state later
+        WHERE later.ingestion_run_id = state.ingestion_run_id AND later.namespace = state.namespace
+          AND later.key_digest = state.key_digest AND later.observation_ordinal > state.observation_ordinal
+          AND later.observation_ordinal < ?)
+    ORDER BY state.key_digest LIMIT 1`)
+    .bind(runId, namespace, group, after, before, before);
+}

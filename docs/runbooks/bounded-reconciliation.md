@@ -73,9 +73,10 @@ document and position are retained separately, so retries can reuse completed
 observations without accepting a duplicate identity from another position or
 document. Completed observations do not repeat Printing Image verification work.
 
-`completed_reducer_records` counts retained versions of local Card facts,
-Digimon authority, Printing facts, compatibility, locator and Gundam provenance
-indexes. Replay
+`completed_reducer_records` counts retained versions of Cards, Printings,
+Printing Image references, local facts, authority, compatibility, locator and
+Gundam provenance indexes. Card identity searches return small references;
+matching reads complete facts one at a time. Replay
 reads only earlier observation versions and its own writes, so retained later
 observations cannot change earlier identity decisions. This counter counts
 individual effects, not completed work units or a resume cursor.

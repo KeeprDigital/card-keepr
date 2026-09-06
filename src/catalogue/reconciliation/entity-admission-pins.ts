@@ -41,11 +41,16 @@ export type AdmittedEntity = {
   linked: boolean;
   warnings: Record<string, unknown>[];
 };
+type AdmissionEntityIndex<T> = {
+  has(id: string): boolean | Promise<boolean>;
+  set(id: string, value: T): unknown;
+  beginObservation?(): void;
+};
 export async function applyPinnedEntityAdmissions(
   database: CatalogueStore,
   runId: string,
-  cards: Map<string, CatalogueCard>,
-  printings: Map<string, CataloguePrinting>,
+  cards: AdmissionEntityIndex<CatalogueCard>,
+  printings: AdmissionEntityIndex<CataloguePrinting>,
   warnings: Record<string, unknown>[],
 ) {
   let after = "";
@@ -61,6 +66,8 @@ export async function applyPinnedEntityAdmissions(
       >()
     ).results;
     for (const row of rows) {
+      cards.beginObservation?.();
+      printings.beginObservation?.();
       if (row.action !== "admit" && row.action !== "link") {
         warnings.push({
           code: "entity_proposal_excluded",
@@ -79,9 +86,9 @@ export async function applyPinnedEntityAdmissions(
           detail: `Entity Proposal ${row.id} was admitted under changed requirements. Reassess the accepted identity; policy change alone does not remove it.`,
         });
       if (!decision.linked) {
-        if (!cards.has(decision.card.id)) cards.set(decision.card.id, decision.card);
-        if (decision.printing && !printings.has(decision.printing.id))
-          printings.set(decision.printing.id, decision.printing);
+        if (!(await cards.has(decision.card.id))) await cards.set(decision.card.id, decision.card);
+        if (decision.printing && !(await printings.has(decision.printing.id)))
+          await printings.set(decision.printing.id, decision.printing);
       }
       admitted.push(decision);
       warnings.push(

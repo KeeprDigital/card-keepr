@@ -35,9 +35,18 @@ export class ReconciliationReducerIndex<T> {
     private group?: (value: T) => string,
   ) {}
 
+  get position() {
+    return this.ordinal;
+  }
+
   beginObservation() {
     this.ordinal++;
     this.written.clear();
+  }
+
+  async seed(key: string, value: T): Promise<void> {
+    this.beginObservation();
+    await this.set(key, value);
   }
 
   async get(key: string): Promise<T | undefined> {
