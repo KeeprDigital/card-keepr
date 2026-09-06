@@ -1,3 +1,4 @@
+import { candidateAtRevision, type PriorStatePositions } from "./reconciliation-prior-state";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
 import { ReconciliationRecordCollection } from "./reconciliation-record-collection";
 import { ReconciliationSortedRecords } from "./reconciliation-sorted-records";
@@ -35,7 +36,6 @@ import {
   CuratedDraftSourceChangeError,
   CuratedConflictStorageError,
   applyPinnedCuratedRevisionsToDraft,
-  stripCuratedRevisionEffects,
   restoreCuratedEntitySourceFields,
 } from "../curated";
 import {
@@ -55,8 +55,6 @@ import {
   sha256Text,
   catalogueCandidateContract,
   type IngestionRunState,
-  retainedPayloadChunks,
-  streamedObjectMembers,
   type SupportedGame,
 } from "../shared";
 import { type DigimonCardAuthority, reconcileDigimonCardAuthority } from "./digimon-reconciliation";
@@ -85,7 +83,6 @@ import {
 import { publicReconciledPrinting, relationshipDisappearanceWarnings } from "./reconciliation-read";
 import {
   activeParsingRunStatement,
-  candidateAtRevisionStatement,
   currentWithdrawalEvidenceStatement,
   currentPrintingMembershipsStatement,
   errataProvenanceByIdsStatement,
@@ -207,70 +204,102 @@ export async function reconcileRetainedCardPrintingEvidence(
     }
   };
   const priorProducts = new ReconciliationCandidateState(database, runId, "prior_products");
-  const priorCandidate = await candidateAtRevision(database, run.expected_current_revision_id, selectedGames, {
-    card: async (card) => {
-      if (selectedGames.includes(card.game)) restoreCuratedEntitySourceFields(card);
-      await priorCards.seed(card);
-      await cards.seed(card);
-    },
-    printing: async (printing) => {
-      const card = await priorCards.get(printing.card_id);
-      if (card && selectedGames.includes(card.game)) restoreCuratedEntitySourceFields(printing);
-      await priorPrintings.seed(printing.id, printing);
-      await printings.seed(printing.id, printing);
-    },
-    image: async (image) => {
-      await printingImages.seed(image.id, image);
-    },
-    product: async (product) => {
-      if (selectedGames.includes(product.game)) {
-        restoreCuratedEntitySourceFields(product);
-        for (const release of product.releases) restoreCuratedEntitySourceFields(release);
-      }
-      await priorProducts.set("products", product);
-    },
-    context: async (context) => {
-      if (selectedGames.includes(context.game)) restoreCuratedEntitySourceFields(context);
-      await priorProducts.set("distribution_contexts", context);
-    },
-    relationship: async (relationship) => {
-      if (selectedGames.includes(relationship.game)) {
-        if (relationship.evidence_category === "curated") return;
-        const reviewed = relationship.curated_provenance?.at(-1)?.reviewed_source_value;
-        delete relationship.curated_provenance;
-        if (reviewed === "present" || reviewed === "absent") relationship.observed = reviewed === "present";
-      }
-      await priorProducts.set("product_relationships", relationship);
-    },
-    correction: async (correction) => {
-      await priorProducts.set("identity_corrections", correction);
-    },
-    erratum: async (erratum) => {
-      if (selectedGames.includes(erratum.game)) restoreCuratedEntitySourceFields(erratum);
-      let provenance: D1Result<{ source_lineage: string; source_observation_id: string; total: number }>;
-      try {
-        provenance = await errataProvenanceByIdsStatement(database, canonicalJson([erratum.id])).all();
-      } catch (cause) {
-        throw new ReconciliationReducerStorageError(cause);
-      }
-      if ((provenance.results[0]?.total ?? 0) > 500)
-        throw new Error("reconciliation_capacity_exceeded: one Erratum has too many provenance records.");
-      const restored = mergeCatalogueErrata(
-        [erratum],
-        [
-          {
-            ...erratum,
-            provenance: provenance.results.map(({ source_lineage, source_observation_id }) => ({
-              source_lineage,
-              source_observation_id,
-            })),
-          },
-        ],
-      )[0]!;
-      await priorErrata.merge(restored);
-      await currentErrata.merge(restored);
-    },
+  const priorPositions = () => ({
+    cards: cards.position,
+    priorCards: priorCards.position,
+    printings: printings.position,
+    priorPrintings: priorPrintings.position,
+    printingImages: printingImages.position,
+    priorProducts: priorProducts.positions,
+    priorErrata: priorErrata.position,
+    currentErrata: currentErrata.position,
   });
+  const restorePriorPositions = (positions: PriorStatePositions) => {
+    cards.resumeAt(positions.cards);
+    priorCards.resumeAt(positions.priorCards);
+    printings.resumeAt(positions.printings);
+    priorPrintings.resumeAt(positions.priorPrintings);
+    printingImages.resumeAt(positions.printingImages);
+    priorProducts.resumeAt(positions.priorProducts);
+    priorErrata.resumeAt(positions.priorErrata);
+    currentErrata.resumeAt(positions.currentErrata);
+  };
+  let priorCandidate: CatalogueCandidate | null;
+  try {
+    priorCandidate = await candidateAtRevision(
+      database,
+      run.expected_current_revision_id,
+      selectedGames,
+      {
+        card: async (card) => {
+          if (selectedGames.includes(card.game)) restoreCuratedEntitySourceFields(card);
+          await priorCards.seed(card);
+          await cards.seed(card);
+        },
+        printing: async (printing) => {
+          const card = await priorCards.get(printing.card_id);
+          if (card && selectedGames.includes(card.game)) restoreCuratedEntitySourceFields(printing);
+          await priorPrintings.seed(printing.id, printing);
+          await printings.seed(printing.id, printing);
+        },
+        image: async (image) => {
+          await printingImages.seed(image.id, image);
+        },
+        product: async (product) => {
+          if (selectedGames.includes(product.game)) {
+            restoreCuratedEntitySourceFields(product);
+            for (const release of product.releases) restoreCuratedEntitySourceFields(release);
+          }
+          await priorProducts.set("products", product);
+        },
+        context: async (context) => {
+          if (selectedGames.includes(context.game)) restoreCuratedEntitySourceFields(context);
+          await priorProducts.set("distribution_contexts", context);
+        },
+        relationship: async (relationship) => {
+          if (selectedGames.includes(relationship.game)) {
+            if (relationship.evidence_category === "curated") return;
+            const reviewed = relationship.curated_provenance?.at(-1)?.reviewed_source_value;
+            delete relationship.curated_provenance;
+            if (reviewed === "present" || reviewed === "absent") relationship.observed = reviewed === "present";
+          }
+          await priorProducts.set("product_relationships", relationship);
+        },
+        correction: async (correction) => {
+          await priorProducts.set("identity_corrections", correction);
+        },
+        erratum: async (erratum) => {
+          if (selectedGames.includes(erratum.game)) restoreCuratedEntitySourceFields(erratum);
+          let provenance: D1Result<{ source_lineage: string; source_observation_id: string; total: number }>;
+          try {
+            provenance = await errataProvenanceByIdsStatement(database, canonicalJson([erratum.id])).all();
+          } catch (cause) {
+            throw new ReconciliationReducerStorageError(cause);
+          }
+          if ((provenance.results[0]?.total ?? 0) > 500)
+            throw new Error("reconciliation_capacity_exceeded: one Erratum has too many provenance records.");
+          const restored = mergeCatalogueErrata(
+            [erratum],
+            [
+              {
+                ...erratum,
+                provenance: provenance.results.map(({ source_lineage, source_observation_id }) => ({
+                  source_lineage,
+                  source_observation_id,
+                })),
+              },
+            ],
+          )[0]!;
+          await priorErrata.merge(restored);
+          await currentErrata.merge(restored);
+        },
+      },
+      { runId, capture: priorPositions, restore: restorePriorPositions, yieldAtCheckpoint },
+    );
+  } catch (error) {
+    if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
+    throw error;
+  }
   const sourceMappings = new ReconciliationRecordLog<SourceMapping>(database, runId, "source_mappings");
   const localCardFacts = new ReconciliationReducerIndex<string>(database, runId, "card_facts");
   const localDigimonCardAuthorities = new ReconciliationReducerIndex<DigimonCardAuthority>(
@@ -1575,68 +1604,6 @@ function reconciliationDigestPayload(input: {
       warnings: input.warnings,
     },
   };
-}
-
-async function candidateAtRevision(
-  database: CatalogueStore,
-  revisionId: string,
-  selectedGames: readonly SupportedGame[],
-  seed: {
-    card: (card: CatalogueCard) => Promise<void>;
-    printing: (printing: CataloguePrinting) => Promise<void>;
-    image: (image: CataloguePrintingImage) => Promise<void>;
-    product: (product: CatalogueProduct) => Promise<void>;
-    context: (context: CatalogueDistributionContext) => Promise<void>;
-    relationship: (relationship: ProductRelationship) => Promise<void>;
-    erratum: (erratum: CatalogueErratum) => Promise<void>;
-    correction: (correction: NonNullable<CatalogueCandidate["identity_corrections"]>[number]) => Promise<void>;
-  },
-): Promise<CatalogueCandidate | null> {
-  const row = await candidateAtRevisionStatement(database, revisionId).first<{
-    ingestion_run_id: string;
-    candidate_json: string;
-  }>();
-  if (row === null) return null;
-  const values: Record<string, unknown> = {};
-  // Cards are seeded first even for legacy payloads whose object members were not canonicalized.
-  // The second pass can therefore resolve each Printing's game without retaining all Cards.
-  for (const cardsOnly of [true, false]) {
-    for await (const member of streamedObjectMembers(
-      retainedPayloadChunks(database, row.ingestion_run_id, "candidate", row.candidate_json),
-    )) {
-      if ((member.key === "cards") !== cardsOnly) continue;
-      if (member.kind === "array") {
-        Object.defineProperty(values, member.key, { value: [], writable: true, enumerable: true, configurable: true });
-      } else if (member.key === "cards" && member.array) {
-        await seed.card(member.value as CatalogueCard);
-      } else if (member.key === "printings" && member.array) {
-        await seed.printing(member.value as CataloguePrinting);
-      } else if (member.key === "printing_images" && member.array) {
-        await seed.image(member.value as CataloguePrintingImage);
-      } else if (member.key === "products" && member.array) {
-        await seed.product(member.value as CatalogueProduct);
-      } else if (member.key === "distribution_contexts" && member.array) {
-        await seed.context(member.value as CatalogueDistributionContext);
-      } else if (member.key === "product_relationships" && member.array) {
-        await seed.relationship(member.value as ProductRelationship);
-      } else if (member.key === "identity_corrections" && member.array) {
-        await seed.correction(member.value as NonNullable<CatalogueCandidate["identity_corrections"]>[number]);
-      } else if (member.key === "errata" && member.array) {
-        await seed.erratum(member.value as CatalogueErratum);
-      } else if (member.array) {
-        (values[member.key] as unknown[]).push(member.value);
-      } else {
-        Object.defineProperty(values, member.key, {
-          value: member.value,
-          writable: true,
-          enumerable: true,
-          configurable: true,
-        });
-      }
-    }
-  }
-  const candidate = stripCuratedRevisionEffects(values as CatalogueCandidate, selectedGames);
-  return candidate;
 }
 
 export async function showReconciledPrinting(

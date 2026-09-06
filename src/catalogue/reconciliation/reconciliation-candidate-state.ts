@@ -21,6 +21,18 @@ export class ReconciliationCandidateState implements CatalogueDraft {
     private readonly base?: ReconciliationCandidateState,
   ) {}
 
+  get positions(): Partial<Record<CatalogueEntityCollection, number>> {
+    return Object.fromEntries([...this.collections].map((kind) => [kind, this.index(kind).position]));
+  }
+  resumeAt(positions: Partial<Record<CatalogueEntityCollection, number>>) {
+    for (const kind of catalogueEntityCollections) {
+      const position = positions[kind];
+      if (position === undefined) continue;
+      this.collections.add(kind);
+      this.index(kind).resumeAt(position);
+    }
+  }
+
   private index(kind: CatalogueEntityCollection): ReconciliationReducerIndex<EntityRow> {
     let index = this.indexes.get(kind);
     if (!index) {

@@ -107,12 +107,14 @@ export async function* retainedPayloadChunks(
   runId: string,
   kind: "candidate" | "digest",
   inline: string,
+  startIndex = 0,
 ): AsyncGenerator<string> {
   if (inline !== marker(kind)) {
+    if (startIndex !== 0) throw new Error("An inline retained payload cursor has an invalid chunk index.");
     yield inline;
     return;
   }
-  let expected = 0;
+  let expected = startIndex;
   while (true) {
     const chunk = await retainedReconciliationPayloadChunkStatement(database, {
       runId,

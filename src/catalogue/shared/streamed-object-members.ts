@@ -4,42 +4,88 @@ export type ObjectMember =
   | { kind: "value"; key: string; array: boolean; value: unknown };
 
 export async function* streamedObjectMembers(source: AsyncIterable<string>): AsyncGenerator<ObjectMember> {
-  const input = new JsonChunks(source[Symbol.asyncIterator]());
-  const keys = new Set<string>();
+  for await (const entry of resumableObjectMembers(() => source)) yield entry.member;
+}
+
+export type ObjectMemberCursor = {
+  chunkIndex: number;
+  offset: number;
+  keys: string[];
+  key: string;
+  state: "start" | "key" | "array_value" | "array_separator" | "object_separator";
+};
+
+/** Resume at an exact token boundary in immutable, independently addressable chunks. */
+export async function* resumableObjectMembers(
+  source: (chunkIndex: number) => AsyncIterable<string>,
+  after: ObjectMemberCursor | null = null,
+): AsyncGenerator<{ member: ObjectMember; cursor: ObjectMemberCursor }> {
+  const input = new JsonChunks(
+    source(after?.chunkIndex ?? 0)[Symbol.asyncIterator](),
+    after?.chunkIndex,
+    after?.offset,
+  );
+  const keys = new Set(after?.keys);
+  let key = after?.key ?? "";
+  let state = after?.state ?? "start";
+  const entry = (member: ObjectMember) => ({ member, cursor: { ...input.position, keys: [...keys], key, state } });
   try {
-    await input.require("{");
-    if ((await input.peek()) === "}") input.advance();
-    else {
-      while (true) {
+    if (state === "start") {
+      await input.require("{");
+      if ((await input.peek()) === "}") {
+        input.advance();
+        if ((await input.peek()) !== undefined) throw new Error("A retained payload contains trailing data.");
+        return;
+      }
+      state = "key";
+    }
+    while (true) {
+      if (state === "key") {
         if ((await input.peek()) !== '"') throw new Error("A retained payload member requires a JSON key.");
-        const key: unknown = JSON.parse(await input.token());
-        if (typeof key !== "string" || keys.has(key))
+        const value: unknown = JSON.parse(await input.token());
+        if (typeof value !== "string" || keys.has(value))
           throw new Error("A retained payload contains an invalid or duplicate key.");
+        key = value;
         keys.add(key);
         await input.require(":");
         if ((await input.peek()) === "[") {
           input.advance();
-          yield { kind: "array", key };
-          if ((await input.peek()) !== "]") {
-            while (true) {
-              yield { kind: "value", key, array: true, value: JSON.parse(await input.token()) };
-              const separator = await input.peek();
-              if (separator === "]") break;
-              await input.require(",");
-            }
-          }
-          await input.require("]");
+          state = "array_value";
+          yield entry({ kind: "array", key });
         } else {
-          yield { kind: "value", key, array: false, value: JSON.parse(await input.token()) };
+          const value = JSON.parse(await input.token());
+          state = "object_separator";
+          yield entry({ kind: "value", key, array: false, value });
         }
+      } else if (state === "array_value") {
+        if ((await input.peek()) === "]") {
+          input.advance();
+          state = "object_separator";
+        } else {
+          const value = JSON.parse(await input.token());
+          state = "array_separator";
+          yield entry({ kind: "value", key, array: true, value });
+        }
+      } else if (state === "array_separator") {
+        if ((await input.peek()) === "]") {
+          input.advance();
+          state = "object_separator";
+        } else {
+          await input.require(",");
+          // A trailing comma cannot be accepted as an empty suffix.
+          if ((await input.peek()) === "]") throw new Error("A retained payload contains a trailing comma.");
+          state = "array_value";
+        }
+      } else {
         if ((await input.peek()) === "}") {
           input.advance();
-          break;
+          if ((await input.peek()) !== undefined) throw new Error("A retained payload contains trailing data.");
+          return;
         }
         await input.require(",");
+        state = "key";
       }
     }
-    if ((await input.peek()) !== undefined) throw new Error("A retained payload contains trailing data.");
   } finally {
     await input.close();
   }
@@ -49,7 +95,19 @@ class JsonChunks {
   private chunk = "";
   private offset = 0;
   private ended = false;
-  constructor(private readonly source: AsyncIterator<string>) {}
+  private chunkIndex: number;
+  private initialOffset: number;
+  constructor(
+    private readonly source: AsyncIterator<string>,
+    chunkIndex = 0,
+    offset = 0,
+  ) {
+    this.chunkIndex = chunkIndex - 1;
+    this.initialOffset = offset;
+  }
+  get position() {
+    return { chunkIndex: this.chunkIndex, offset: this.offset };
+  }
 
   async close(): Promise<void> {
     await this.source.return?.();
@@ -60,7 +118,10 @@ class JsonChunks {
       const next = await this.source.next();
       this.ended = next.done === true;
       this.chunk = next.value ?? "";
-      this.offset = 0;
+      this.offset = this.initialOffset;
+      this.initialOffset = 0;
+      this.chunkIndex++;
+      if (this.offset > this.chunk.length) throw new Error("A retained payload cursor exceeds its chunk.");
     }
     return this.offset < this.chunk.length;
   }

@@ -2,7 +2,7 @@
 export class ReconciliationContinuation extends Error {
   constructor(
     readonly checkpoint: {
-      phase: "source_graph" | "normalization" | "input_preparation" | "input_verification";
+      phase: "source_graph" | "normalization" | "input_preparation" | "input_verification" | "prior_state";
       ordinal: number;
     },
   ) {

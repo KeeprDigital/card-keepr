@@ -25,6 +25,13 @@ export class ReconciliationCardState {
       (reference) => reference.match_digest,
     );
   }
+  get position() {
+    return this.cards.position;
+  }
+  resumeAt(position: number) {
+    this.cards.resumeAt(position);
+    this.facts.resumeAt(position);
+  }
   beginObservation() {
     this.cards.beginObservation();
     this.facts.beginObservation();

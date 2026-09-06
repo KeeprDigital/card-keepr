@@ -200,10 +200,16 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
         },
       ],
     };
-  if (scenario === "curated-conflict-fanout-base" || scenario === "curated-conflict-fanout-changed") {
+  if (
+    scenario === "curated-conflict-fanout-base" ||
+    scenario === "curated-conflict-fanout-changed" ||
+    scenario === "prior-state-text-pages" ||
+    scenario === "prior-state-carry-forward"
+  ) {
     return {
-      cards: Array.from({ length: 32 }, (_, index) =>
-        printingObservation({
+      cards: Array.from({ length: 32 }, (_, offset) => {
+        const index = offset + (scenario === "prior-state-carry-forward" ? 8 : 0);
+        return printingObservation({
           game: "one-piece",
           profile: "one-piece@1",
           cardNumber: `OP96-${String(index + 1).padStart(3, "0")}`,
@@ -212,8 +218,9 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
           printingAttributes: { illustration_types: [] },
           locator: `/curated-conflict-fanout/${index}`,
           lineageMarker: `curated-conflict-fanout-${index}`,
-        }),
-      ),
+          ...(scenario === "prior-state-text-pages" ? { printedRulesText: "Prior printed text. ".repeat(1000) } : {}),
+        });
+      }),
     };
   }
   if (scenario === "curated-draft-source-changed") {

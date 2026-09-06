@@ -29,6 +29,7 @@ type StateRow = { content: string; sha256: string };
 /** A replay sees its predecessor state, even when later observations already have retained effects. */
 export class ReconciliationReducerIndex<T> {
   private ordinal = 0;
+  private completedPrefix = false;
   private written = new Set<string>();
   constructor(
     private database: CatalogueStore,
@@ -41,7 +42,16 @@ export class ReconciliationReducerIndex<T> {
     return this.ordinal;
   }
 
+  /** Reopen exactly the completed prefix; uncheckpointed future effects stay invisible. */
+  resumeAt(position: number) {
+    if (!Number.isSafeInteger(position) || position < 0) throw new Error("Invalid reducer continuation position.");
+    this.ordinal = position;
+    this.written.clear();
+    this.completedPrefix = true;
+  }
+
   beginObservation() {
+    this.completedPrefix = false;
     this.ordinal++;
     this.written.clear();
   }
@@ -59,7 +69,7 @@ export class ReconciliationReducerIndex<T> {
         this.runId,
         this.namespace,
         digest,
-        this.ordinal + (this.written.has(digest) ? 1 : 0),
+        this.ordinal + (this.completedPrefix || this.written.has(digest) ? 1 : 0),
       ).first<StateRow>(),
     );
     if (!row) return undefined;
@@ -162,7 +172,7 @@ export class ReconciliationReducerIndex<T> {
         this.runId,
         this.namespace,
         digest,
-        this.ordinal + (this.written.has(digest) ? 1 : 0),
+        this.ordinal + (this.completedPrefix || this.written.has(digest) ? 1 : 0),
       ).first<StateRow>(),
     );
     if (!row) return undefined;

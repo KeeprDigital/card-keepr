@@ -14,6 +14,14 @@ export class ReconciliationErrataState {
     );
   }
 
+  get position() {
+    return this.index.position;
+  }
+  resumeAt(position: number) {
+    this.index.resumeAt(position);
+    this.populated = position > 0;
+  }
+
   async merge(erratum: CatalogueErratum): Promise<void> {
     const previous = await this.index.get(erratum.id);
     const merged = mergeCatalogueErrata(previous ? [previous] : [], [erratum])[0]!;
