@@ -1,3 +1,4 @@
+import { normalizedObservationPageStatement } from "./reconciliation-normalized-repository";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
@@ -25,41 +26,95 @@ async function storage<T>(operation: Promise<T>): Promise<T> {
   }
 }
 
-/** Inputs become reusable only after all verification and partition writes complete. */
+type PreparationCursor = {
+  kindIndex: number;
+  partitionCount: number;
+  digest: string;
+  afterObservationId: string;
+  preparedObservations: number;
+  complete: boolean;
+};
+
+/** Reuse immutable normalized envelopes and retain the next exact preparation cursor. */
 export async function retainVerifiedReconciliationInput(
   database: CatalogueStore,
   runId: string,
   input: Record<string, unknown>,
+  yieldAtCheckpoint = false,
 ) {
-  let ordinal = 0;
-  let digest = await sha256Text(canonicalJson({ contract: "card-keepr-reconciliation-input@1", run_id: runId }));
+  const checkpoint = await reconciliationCheckpoint<PreparationCursor>(database, runId, "input_preparation");
+  let ordinal = checkpoint?.value.partitionCount ?? 0;
+  let digest =
+    checkpoint?.value.digest ??
+    (await sha256Text(canonicalJson({ contract: "card-keepr-reconciliation-input@1", run_id: runId })));
+  let checkpointOrdinal = (checkpoint?.ordinal ?? -1) + 1;
+  let afterObservationId = checkpoint?.value.afterObservationId ?? "";
+  let preparedObservations = checkpoint?.value.preparedObservations ?? 0;
   const metadata = Object.fromEntries(Object.entries(input).filter(([, value]) => !recordSequence(value)));
   const groups: [string, Iterable<unknown> | AsyncIterable<unknown>][] = [
     ["$metadata", [{ values: metadata, array_keys: Object.keys(input).filter((key) => recordSequence(input[key])) }]],
   ];
   for (const [kind, value] of Object.entries(input)) if (recordSequence(value)) groups.push([kind, value]);
-  for (const [kind, records] of groups) {
-    const partitioned = async function* () {
-      for await (const record of records)
-        yield await retainPartitionedRecord(database, runId, JSON.parse(JSON.stringify(record)));
+  const save = async (kindIndex: number, complete = false) => {
+    const cursor: PreparationCursor = {
+      kindIndex,
+      partitionCount: ordinal,
+      digest,
+      afterObservationId,
+      preparedObservations,
+      complete,
     };
-    for await (const content of boundedAsyncRecordArrays(partitioned())) {
-      const sha256 = await sha256Text(content);
-      await storage(insertReconciliationInputPartitionStatement(database, runId, ordinal, kind, content, sha256).run());
-      const retained = await storage(
-        reconciliationInputPartitionStatement(database, runId, ordinal).first<{
-          kind: string;
-          content: string;
-          sha256: string;
-        }>(),
-      );
-      if (retained?.kind !== kind || retained.content !== content || retained.sha256 !== sha256)
-        throw new Error("Reconciliation input replay changed its immutable content.");
-      digest = await sha256Text(canonicalJson({ previous: digest, ordinal, kind, sha256 }));
-      ordinal++;
+    await retainReconciliationCheckpoint(database, runId, "input_preparation", checkpointOrdinal, cursor);
+    if (yieldAtCheckpoint)
+      throw new ReconciliationContinuation({ phase: "input_preparation", ordinal: checkpointOrdinal });
+    checkpointOrdinal++;
+  };
+  const retain = async (kind: string, content: string) => {
+    const sha256 = await sha256Text(content);
+    await storage(insertReconciliationInputPartitionStatement(database, runId, ordinal, kind, content, sha256).run());
+    const retained = await storage(
+      reconciliationInputPartitionStatement(database, runId, ordinal).first<{
+        kind: string;
+        content: string;
+        sha256: string;
+      }>(),
+    );
+    if (retained?.kind !== kind || retained.content !== content || retained.sha256 !== sha256)
+      throw new Error("Reconciliation input replay changed its immutable content.");
+    digest = await sha256Text(canonicalJson({ previous: digest, ordinal, kind, sha256 }));
+    ordinal++;
+  };
+  for (let kindIndex = checkpoint?.value.kindIndex ?? 0; kindIndex < groups.length; kindIndex++) {
+    const [kind, records] = groups[kindIndex]!;
+    if (kind === "observations") {
+      for (;;) {
+        const page = await storage(
+          normalizedObservationPageStatement(database, runId, afterObservationId).all<{
+            observation_id: string;
+            content: string;
+            sha256: string;
+          }>(),
+        );
+        if (!page.results.length) break;
+        for (const row of page.results)
+          if ((await sha256Text(row.content)) !== row.sha256)
+            throw new Error("Normalized observation failed integrity verification.");
+        await retain(kind, `[${page.results.map((row) => row.content).join(",")}]`);
+        afterObservationId = page.results.at(-1)!.observation_id;
+        preparedObservations += page.results.length;
+        await save(kindIndex);
+      }
+    } else {
+      const partitioned = async function* () {
+        for await (const record of records)
+          yield await retainPartitionedRecord(database, runId, JSON.parse(JSON.stringify(record)));
+      };
+      for await (const content of boundedAsyncRecordArrays(partitioned())) await retain(kind, content);
     }
+    await save(kindIndex + 1);
   }
   await storage(sealReconciliationInputStatement(database, runId, digest, ordinal).run());
+  await save(groups.length, true);
 }
 
 type InputMetadata = { values: Record<string, unknown>; array_keys: string[] };
@@ -70,6 +125,7 @@ type VerificationCursor = {
   nextRecord: number;
   metadata: InputMetadata | null;
   complete: boolean;
+  verifiedObservations: number;
 };
 
 /** Verification returns after bounded groups and resumes against the exact immutable manifest. */
@@ -91,6 +147,7 @@ export async function readVerifiedReconciliationInput(
     checkpoint?.value.digest ??
     (await sha256Text(canonicalJson({ contract: "card-keepr-reconciliation-input@1", run_id: runId })));
   let metadata = checkpoint?.value.metadata ?? null;
+  let verifiedObservations = checkpoint?.value.verifiedObservations ?? 0;
   let ordinal = checkpoint?.value.nextPartition ?? 0;
   const save = async (nextPartition: number, nextRecord: number, complete: boolean) => {
     const cursor: VerificationCursor = {
@@ -100,6 +157,7 @@ export async function readVerifiedReconciliationInput(
       nextRecord,
       metadata,
       complete,
+      verifiedObservations,
     };
     const checkpointOrdinal = (checkpoint?.ordinal ?? -1) + 1;
     await retainReconciliationCheckpoint(database, runId, "input_verification", checkpointOrdinal, cursor);
@@ -130,6 +188,7 @@ export async function readVerifiedReconciliationInput(
           await save(ordinal, index, false);
         const restored = await restorePartitionedRecord(database, runId, record);
         if (partition.kind === "$metadata") metadata = restored as InputMetadata;
+        if (partition.kind === "observations") verifiedObservations++;
         records[index] = null;
         processed++;
         bytes += size;

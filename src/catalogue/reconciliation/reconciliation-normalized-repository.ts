@@ -76,3 +76,22 @@ export function nextNormalizedCardErratumStatement(
     ORDER BY observation_id LIMIT 1`)
     .bind(runId, digest, after, after);
 }
+
+export function normalizedObservationPageStatement(database: CatalogueStore, runId: string, after: string) {
+  return repositoryStatements(database)
+    .prepare(`WITH RECURSIVE page(observation_id, bytes, records) AS (
+      SELECT observation_id, length(CAST(content AS BLOB)) + 1, 1 FROM reconciliation_normalized_observations
+      WHERE ingestion_run_id = ? AND observation_id = (SELECT MIN(observation_id) FROM reconciliation_normalized_observations
+        WHERE ingestion_run_id = ? AND observation_id > ?)
+      UNION ALL
+      SELECT next.observation_id, page.bytes + length(CAST(next.content AS BLOB)) + 1, page.records + 1
+      FROM page JOIN reconciliation_normalized_observations AS next
+        ON next.ingestion_run_id = ? AND next.observation_id = (SELECT MIN(observation_id) FROM reconciliation_normalized_observations
+          WHERE ingestion_run_id = ? AND observation_id > page.observation_id)
+      WHERE page.records < 500 AND page.bytes + length(CAST(next.content AS BLOB)) + 1 <= 524287
+    )
+    SELECT retained.observation_id, retained.content, retained.sha256 FROM page
+    JOIN reconciliation_normalized_observations AS retained ON retained.ingestion_run_id = ? AND retained.observation_id = page.observation_id
+    WHERE page.bytes <= 524287 ORDER BY retained.observation_id`)
+    .bind(runId, runId, after, runId, runId, runId);
+}

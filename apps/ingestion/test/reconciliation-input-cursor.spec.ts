@@ -159,6 +159,8 @@ test.each([
     let serviceCalls = 0;
     const completedGroups: number[] = [];
     const callsPerGroup: number[] = [];
+    const preparationCalls: number[] = [];
+    const preparationCursors: number[] = [];
     const verificationCalls: number[] = [];
     const verificationCursors: number[] = [];
     const images = new Proxy(testEnv.PRINTING_IMAGES, {
@@ -219,13 +221,21 @@ test.each([
           completedGroups.push(imagesInUnit);
           callsPerGroup.push(serviceCalls);
         }
+        if (JSON.parse(result as string).continuation?.phase === "input_preparation") {
+          preparationCalls.push(serviceCalls);
+          const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+          const checkpoint = (status.checkpoints as { phase: string; cursor: { preparedObservations: number } }[]).find(
+            (row) => row.phase === "input_preparation",
+          );
+          preparationCursors.push(checkpoint?.cursor.preparedObservations ?? -1);
+        }
         if (JSON.parse(result as string).continuation?.phase === "input_verification") {
           verificationCalls.push(serviceCalls);
           const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
-          const checkpoint = (status.checkpoints as { phase: string; cursor: { nextRecord: number } }[]).find(
+          const checkpoint = (status.checkpoints as { phase: string; cursor: { verifiedObservations: number } }[]).find(
             (row) => row.phase === "input_verification",
           );
-          verificationCursors.push(checkpoint!.cursor.nextRecord);
+          verificationCursors.push(checkpoint!.cursor.verifiedObservations);
         }
         expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThan(65536);
         return result;
@@ -249,6 +259,9 @@ test.each([
     expect(completedGroups).toEqual(groups);
     if (requireFrozenMetadata) {
       expect(Math.max(...callsPerGroup)).toBeLessThanOrEqual(100);
+      expect(preparationCalls.length).toBeGreaterThan(0);
+      expect(Math.max(...preparationCalls)).toBeLessThanOrEqual(100);
+      expect(preparationCursors).toContain(scenario === "curated-conflict-fanout-base" ? 32 : 1);
       expect(verificationCalls.length).toBeGreaterThan(0);
       expect(Math.max(...verificationCalls)).toBeLessThanOrEqual(100);
       if (scenario === "curated-conflict-fanout-base") expect(verificationCursors).toContain(8);

@@ -187,8 +187,7 @@ async function prepareVerifiedReconciliationInput(
     printingImages,
     yieldAtCheckpoint,
   );
-  await retainVerifiedReconciliationInput(database, runId, input);
-  if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "input_preparation", ordinal: 0 });
+  await retainVerifiedReconciliationInput(database, runId, input, yieldAtCheckpoint);
 }
 
 async function collectRetainedReconciliationObservation(
