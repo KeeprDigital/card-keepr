@@ -73,12 +73,12 @@ export async function runReconciliationWorkUnits(
           params.generation ?? 0,
           true,
         );
-        return typeof result.continuation === "number"
+        return result.continuation !== undefined
           ? JSON.stringify({ continuation: result.continuation })
           : durableReconciliationResult(params.ingestion_run_id, result);
       },
     );
-    if (typeof (JSON.parse(resultJson) as { continuation?: number }).continuation === "number") continue;
+    if ((JSON.parse(resultJson) as { continuation?: unknown }).continuation !== undefined) continue;
     return resultJson;
   }
 }

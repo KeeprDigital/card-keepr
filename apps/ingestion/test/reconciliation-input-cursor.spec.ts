@@ -155,25 +155,51 @@ test.each([false, true])(
       "normalization-work-units",
     );
     let imagesInUnit = 0;
+    let serviceCalls = 0;
     const completedGroups: number[] = [];
+    const callsPerGroup: number[] = [];
     const images = new Proxy(testEnv.PRINTING_IMAGES, {
       get(target, property) {
         if (property === "put")
           return async (...args: Parameters<R2Bucket["put"]>) => {
             imagesInUnit++;
+            serviceCalls++;
             return target.put(...args);
+          };
+        if (property === "get")
+          return (...args: Parameters<R2Bucket["get"]>) => {
+            serviceCalls++;
+            return target.get(...args);
           };
         const value = Reflect.get(target, property);
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
+    const wrap = (statement: D1PreparedStatement): D1PreparedStatement =>
+      new Proxy(statement, {
+        get(target, property) {
+          if (property === "bind") return (...values: unknown[]) => wrap(target.bind(...values));
+          const value = Reflect.get(target, property);
+          if (["run", "first", "all", "raw"].includes(String(property)))
+            return (...args: unknown[]) => {
+              serviceCalls++;
+              return Reflect.apply(value, target, args);
+            };
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
     const database = new Proxy(testEnv.CATALOGUE_DB, {
       get(target, property) {
         if (property === "prepare")
           return (sql: string) => {
             if (requireFrozenMetadata && completedGroups.length > 0 && sql.includes("FROM source_requests"))
               throw new Error("A returning normalization unit must reopen the frozen request selection.");
-            return target.prepare(sql);
+            return wrap(target.prepare(sql));
+          };
+        if (property === "batch")
+          return (...args: Parameters<D1Database["batch"]>) => {
+            serviceCalls++;
+            return target.batch(...args);
           };
         const value = Reflect.get(target, property);
         return typeof value === "function" ? value.bind(target) : value;
@@ -182,8 +208,12 @@ test.each([false, true])(
     const step = {
       do: async (_name: string, _config: unknown, callback: () => Promise<unknown>) => {
         imagesInUnit = 0;
+        serviceCalls = 0;
         const result = await callback();
-        if (imagesInUnit) completedGroups.push(imagesInUnit);
+        if (imagesInUnit) {
+          completedGroups.push(imagesInUnit);
+          callsPerGroup.push(serviceCalls);
+        }
         expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThan(65536);
         return result;
       },
@@ -204,6 +234,7 @@ test.each([false, true])(
       step,
     );
     expect(completedGroups).toEqual([8, 8, 8, 8]);
+    if (requireFrozenMetadata) expect(Math.max(...callsPerGroup)).toBeLessThanOrEqual(100);
     expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({ state: "sealed" });
   },
 );

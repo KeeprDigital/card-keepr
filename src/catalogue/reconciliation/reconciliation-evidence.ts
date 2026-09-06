@@ -134,8 +134,8 @@ export type NormalizedReconciliationObservation = ReturnType<typeof parseReconci
 };
 
 export class ReconciliationContinuation extends Error {
-  constructor(readonly checkpoint: number) {
-    super("Reconciliation has retained its next normalization cursor.");
+  constructor(readonly checkpoint: { phase: "source_graph" | "normalization"; ordinal: number }) {
+    super("Reconciliation has retained its next work cursor.");
     this.name = "ReconciliationContinuation";
   }
 }
@@ -452,6 +452,7 @@ async function collectRetainedReconciliationObservation(
     }
     await assertClosedRequestGraph(database, runId, selectedEvidence, loadDocument, selectedRequestById);
     await retainReconciliationCheckpoint(database, runId, "source_graph", 0, { inputDigest });
+    if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "source_graph", ordinal: 0 });
   }
   const normalized = await reconciliationCheckpoint<{
     inputDigest: string;
@@ -542,7 +543,8 @@ async function collectRetainedReconciliationObservation(
           complete: false,
           officialSurfaceSeen,
         });
-        if (yieldAtCheckpoint) throw new ReconciliationContinuation(checkpointOrdinal - 1);
+        if (yieldAtCheckpoint)
+          throw new ReconciliationContinuation({ phase: "normalization", ordinal: checkpointOrdinal - 1 });
       }
     }
     await retainReconciliationCheckpoint(database, runId, "normalization", checkpointOrdinal++, {
@@ -554,7 +556,8 @@ async function collectRetainedReconciliationObservation(
       complete: true,
       officialSurfaceSeen,
     });
-    if (yieldAtCheckpoint) throw new ReconciliationContinuation(checkpointOrdinal - 1);
+    if (yieldAtCheckpoint)
+      throw new ReconciliationContinuation({ phase: "normalization", ordinal: checkpointOrdinal - 1 });
   }
   const partitions = {
     async *[Symbol.asyncIterator]() {
