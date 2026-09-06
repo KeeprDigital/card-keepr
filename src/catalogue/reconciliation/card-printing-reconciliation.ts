@@ -1,4 +1,9 @@
-import { assessSourceAdmission, completeSourceAdmission, publisherConfirmation } from "./entity-admission-source";
+import {
+  assessSourceAdmission,
+  completeSourceAdmission,
+  publisherConfirmation,
+  publisherLineage,
+} from "./entity-admission-source";
 import { pinEntityAdmissions, applyPinnedEntityAdmissions } from "./entity-admission-pins";
 import {
   allocateCanonicalIdentity,
@@ -254,11 +259,21 @@ export async function reconcileRetainedCardPrintingEvidence(
             identityKind: sourceCard.official_identity.kind,
             identityValue: sourceCard.official_identity.value,
           });
+    const canConfirmPublisherNumber =
+      sourceCard.official_identity.kind !== "unknown" &&
+      publisherLineage(observation.sourceLineage) &&
+      existing === null &&
+      ![...cards.values()].some(
+        (card) =>
+          card.game === sourceCard.game &&
+          canonicalJson(card.official_identity) === canonicalJson(sourceCard.official_identity),
+      );
     const exactUnnumberedCards =
-      sourceCard.official_identity.kind === "unknown"
+      sourceCard.official_identity.kind === "unknown" || canConfirmPublisherNumber
         ? [...cards.values()].filter(
             (card) =>
               card.game === sourceCard.game &&
+              (!canConfirmPublisherNumber || card.official_identity.kind === "unknown") &&
               card.name === sourceCard.name &&
               card.effective_rules_text === sourceCard.effective_rules_text &&
               canonicalJson(card.game_data) === canonicalJson(sourceCard.game_data),
@@ -350,9 +365,11 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
     }
     // Missing incoming evidence cannot erase an already established publisher number.
-    const proposedCard = unnumberedCard
-      ? { ...sourceCard, official_identity: unnumberedCard.official_identity }
-      : sourceCard;
+    const confirmedPublisherNumber = canConfirmPublisherNumber && unnumberedCard !== undefined;
+    const proposedCard =
+      unnumberedCard && sourceCard.official_identity.kind === "unknown"
+        ? { ...sourceCard, official_identity: unnumberedCard.official_identity }
+        : sourceCard;
     const cardId =
       admission?.decision?.card.id ??
       existing?.id ??
@@ -452,7 +469,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       cardId,
       proposedForComparison,
       observation.sourceLineage,
-      { effectiveRulesText: currentEffectiveAuthority },
+      { effectiveRulesText: currentEffectiveAuthority, confirmedPublisherNumber },
     );
     let acceptedCanonicalCard = acceptedCard;
     try {
@@ -496,6 +513,11 @@ export async function reconcileRetainedCardPrintingEvidence(
       (proposedCard.game !== "digimon" &&
         priorFacts !== undefined &&
         priorFacts !== canonicalFacts &&
+        !(
+          confirmedPublisherNumber &&
+          priorFacts ===
+            canonicalJson({ ...acceptedCanonicalCard, official_identity: { kind: "unknown", value: null } })
+        ) &&
         !retainAsiaAuthority)
     ) {
       diagnostics.push({

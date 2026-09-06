@@ -137,6 +137,7 @@ export async function assessSourceAdmission(
   const identityExceptionConflict =
     admitted &&
     exception?.scope?.includes("identity") === true &&
+    decision!.card.official_identity.kind !== "unknown" &&
     observation.observedCardAndPrinting.card.official_identity.kind !== "unknown" &&
     canonicalJson(decision!.card.official_identity) !==
       canonicalJson(observation.observedCardAndPrinting.card.official_identity);
@@ -189,9 +190,13 @@ export async function completeSourceAdmission(
 
 /** A publisher can confirm only concrete facts actually present in its evidence.
  * This annotation never participates in identity matching or authority selection. */
-export function publisherConfirmation(lineage: string, observed: unknown, accepted: unknown) {
+export function publisherLineage(lineage: string) {
   const registration = sourceLineages.find((source) => source.id === lineage);
-  if (!registration || !sources.find((source) => source.id === registration.source_id)?.publisher_id) return null;
+  return !!registration && !!sources.find((source) => source.id === registration.source_id)?.publisher_id;
+}
+
+export function publisherConfirmation(lineage: string, observed: unknown, accepted: unknown) {
+  if (!publisherLineage(lineage)) return null;
   const fields: string[] = [];
   const visit = (evidence: unknown, value: unknown, path: string) => {
     if (evidence === null || evidence === undefined || value === undefined) return;

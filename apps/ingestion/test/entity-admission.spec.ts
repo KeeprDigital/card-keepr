@@ -269,57 +269,73 @@ test("automation retains explicit owner rejection when later evidence satisfies 
   expect((await get(`/v1/entity-proposals/${proposal.id}`)).document.history).toHaveLength(3);
 });
 
-test("later publisher confirmation keeps the supplemental IDs and selected authority", async () => {
-  await designateSupplemental();
-  const initial = await reconcile(
-    (await collect("/reconciliation/canonical-tabular", "supplemental-first", supplemental)).id,
-  );
-  expect(initial.response.status).toBe(200);
-  await approve(initial.document);
-  const started = await postFixtureEvidence({
-    plans: [
-      {
-        supported_game: "one-piece",
-        source_lineage: "one-piece-en",
-        adapter_version: "fixture-one-piece-json@3",
-        requests: [{ id: "official", url: "https://official-source.invalid/reconciliation/canonical-official" }],
-      },
-      {
-        supported_game: "one-piece",
-        source_lineage: "limitless-one-piece-en",
-        adapter_version: "fixture-one-piece-tabular@1",
-        requests: [{ id: "supplemental", url: "https://official-source.invalid/reconciliation/canonical-tabular" }],
-      },
-    ],
-    idempotency_key: "publisher-confirmation",
-  });
-  expect(started.response.status, JSON.stringify(started.document)).toBe(201);
-  await collectFixtureEvidence(
-    testEnv.CATALOGUE_DB,
-    testEnv.EVIDENCE_OBJECTS,
-    testEnv.OFFICIAL_SOURCE_TRANSPORT,
-    String(started.document.id),
-  );
-  const confirmed = await reconcile(String(started.document.id));
-  expect(confirmed.response.status, JSON.stringify(confirmed.document)).toBe(200);
-  const beforePrinting = (initial.document.printings as { id: string }[])[0]!;
-  expect(confirmed.document.printings).toEqual([expect.objectContaining({ id: beforePrinting.id })]);
-  const mapping = await get(`/v1/reconciliation/identities/${beforePrinting.id}`);
-  expect(mapping.document.mappings).toEqual(
-    expect.arrayContaining([
+test.each(["canonical-tabular", "canonical-tabular-missing-number"])(
+  "later publisher confirmation keeps supplemental IDs and authority: %s",
+  async (scenario) => {
+    await designateSupplemental();
+    const initial = await reconcile(
+      (await collect(`/reconciliation/${scenario}`, "supplemental-first", supplemental)).id,
+    );
+    expect(initial.response.status).toBe(200);
+    if (scenario.endsWith("missing-number")) {
+      expect(initial.document.cards).toEqual([
+        expect.objectContaining({ official_identity: { kind: "unknown", value: null } }),
+      ]);
+    }
+    await approve(initial.document);
+    const started = await postFixtureEvidence({
+      plans: [
+        {
+          supported_game: "one-piece",
+          source_lineage: "one-piece-en",
+          adapter_version: "fixture-one-piece-json@3",
+          requests: [{ id: "official", url: "https://official-source.invalid/reconciliation/canonical-official" }],
+        },
+        {
+          supported_game: "one-piece",
+          source_lineage: "limitless-one-piece-en",
+          adapter_version: "fixture-one-piece-tabular@1",
+          requests: [{ id: "supplemental", url: `https://official-source.invalid/reconciliation/${scenario}` }],
+        },
+      ],
+      idempotency_key: "publisher-confirmation",
+    });
+    expect(started.response.status, JSON.stringify(started.document)).toBe(201);
+    await collectFixtureEvidence(
+      testEnv.CATALOGUE_DB,
+      testEnv.EVIDENCE_OBJECTS,
+      testEnv.OFFICIAL_SOURCE_TRANSPORT,
+      String(started.document.id),
+    );
+    const confirmed = await reconcile(String(started.document.id));
+    expect(confirmed.response.status, JSON.stringify(confirmed.document)).toBe(200);
+    expect(confirmed.document.cards).toEqual([
       expect.objectContaining({
-        source_lineage: "one-piece-en",
-        evidence: expect.objectContaining({
-          publisher_confirmation: expect.objectContaining({ fields: expect.arrayContaining(["printed_rules_text"]) }),
-        }),
+        id: (initial.document.cards as { id: string }[])[0]!.id,
+        official_identity: { kind: "card_number", value: "OP96-001" },
       }),
-    ]),
-  );
-  const authorities = await get("/v1/source-authorities");
-  expect(authorities.document.authorities).toEqual(
-    expect.arrayContaining([expect.objectContaining({ area: "card_facts", source_lineage: "limitless-one-piece-en" })]),
-  );
-});
+    ]);
+    const beforePrinting = (initial.document.printings as { id: string }[])[0]!;
+    expect(confirmed.document.printings).toEqual([expect.objectContaining({ id: beforePrinting.id })]);
+    const mapping = await get(`/v1/reconciliation/identities/${beforePrinting.id}`);
+    expect(mapping.document.mappings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source_lineage: "one-piece-en",
+          evidence: expect.objectContaining({
+            publisher_confirmation: expect.objectContaining({ fields: expect.arrayContaining(["printed_rules_text"]) }),
+          }),
+        }),
+      ]),
+    );
+    const authorities = await get("/v1/source-authorities");
+    expect(authorities.document.authorities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ area: "card_facts", source_lineage: "limitless-one-piece-en" }),
+      ]),
+    );
+  },
+);
 
 test("owner cannot allocate a second numbered Card and can link evidence without changing accepted facts", async () => {
   const initial = await reconcile((await collect("/reconciliation/card-without-printing", "link-target")).id);
@@ -464,4 +480,63 @@ test("manual Printing unknown fields retain actionable raw-value warnings throug
       expect.objectContaining({ code: "unknown_source_field", raw_value: "unmapped mechanic" }),
     ]),
   );
+});
+
+test("admission reconsideration cannot reassign an established Printing to another Card", async () => {
+  const accepted: { proposal: string; card: string }[] = [];
+  for (const name of ["A", "B"]) {
+    const created = await post("/v1/entity-proposals", {
+      game: "one-piece",
+      source_lineage: "owner",
+      reference: `identity-${name}`,
+      content: {
+        card: { ...syntheticCard, name: `Synthetic ${name}` },
+        ...(name === "A"
+          ? {
+              printing: {
+                rarity: { raw: null, normalized: null },
+                printed_rules_text: null,
+                game_data: { profile: "one-piece@1", attributes: { illustration_types: [] } },
+              },
+            }
+          : {}),
+      },
+      evidence: { attestation: `Synthetic inspection of ${name}` },
+      idempotency_key: `identity-create-${name}`,
+    });
+    const admitted = await post(`/v1/entity-proposals/${created.document.id}/decisions`, {
+      action: "admit",
+      expected_generation: "0",
+      rationale: "Establish distinct identity",
+      exception: { scope: ["identity"], attestation: "Synthetic physical identity proof" },
+      idempotency_key: `identity-admit-${name}`,
+    });
+    expect(admitted.response.status).toBe(200);
+    accepted.push({
+      proposal: String(created.document.id),
+      card: (admitted.document.history as { decision: { card: { id: string } } }[])[0]!.decision.card.id,
+    });
+  }
+  await approve(
+    (await reconcile((await collect("/reconciliation/card-without-printing", "identity-publish")).id)).document,
+  );
+  expect(
+    (
+      await post(`/v1/entity-proposals/${accepted[0]!.proposal}/decisions`, {
+        action: "reconsider",
+        expected_generation: "1",
+        rationale: "Review admission evidence",
+        idempotency_key: "identity-reconsider",
+      })
+    ).response.status,
+  ).toBe(200);
+  const reassigned = await post(`/v1/entity-proposals/${accepted[0]!.proposal}/decisions`, {
+    action: "admit",
+    expected_generation: "2",
+    card_id: accepted[1]!.card,
+    rationale: "Attempt identity correction through admission",
+    exception: { scope: ["identity"], attestation: "Synthetic override attempt" },
+    idempotency_key: "identity-reassign",
+  });
+  expect(reassigned.response.status, JSON.stringify(reassigned.document)).toBe(422);
 });

@@ -302,6 +302,17 @@ async function validateAdmission(
         "This Card identity already exists. Link evidence, or identify its Card when admitting a new Printing.",
       );
   }
+  if (
+    previous &&
+    ((input.card_id !== undefined && input.card_id !== previous.card.id) ||
+      (input.printing_id !== undefined && input.printing_id !== previous.printing?.id) ||
+      (previous.printing !== null && printing === null))
+  )
+    throw new AdministrationProblem(
+      422,
+      "admission_identity_correction_required",
+      "Reconsideration must preserve the established Card, Printing and their relationship. Use the identity correction process.",
+    );
   let cardId = input.card_id ?? previous?.card.id;
   const printingId = input.printing_id ?? previous?.printing?.id;
   if (input.action === "link" && !cardId && !printingId)

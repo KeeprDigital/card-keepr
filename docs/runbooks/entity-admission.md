@@ -97,7 +97,10 @@ policy digests bind the Game Profile and source requirements. Changed requiremen
 flag accepted records for reassessment and preserve their IDs and history.
 
 Publisher evidence that matches an established identity retains its ID and adds
-source mappings. `publisher_confirmation.fields` names only concrete matching
+source mappings. An unnumbered Card can receive its publisher number when explicit
+appearance evidence establishes the existing identity; equal text alone remains
+an identity-review candidate. Established numbers and IDs cannot be reassigned
+through admission. `publisher_confirmation.fields` names only concrete matching
 facts from that publisher observation. Missing facts remain unknown, and publisher
 ownership does not replace the owner's Source Authority designation. Neither
 admission evidence nor its history appears in consumer Card/Printing documents.

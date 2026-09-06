@@ -67,7 +67,12 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
     return {
       rows: [
         {
-          cells: [card.official_identity.value, card.name, card.effective_rules_text, card.game_data.attributes],
+          cells: [
+            scenario.endsWith("missing-number") ? null : card.official_identity.value,
+            card.name,
+            card.effective_rules_text,
+            card.game_data.attributes,
+          ],
           evidence,
         },
       ],
