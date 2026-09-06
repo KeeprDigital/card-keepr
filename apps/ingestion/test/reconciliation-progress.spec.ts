@@ -899,3 +899,86 @@ test("oversized warning text stays inspectable through bounded immutable text ch
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(restored));
   expect(Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")).toBe(part.sha256);
 });
+
+test("a retained Printing Image read outage preserves preparation for owner resume", async () => {
+  const { post, testEnv, waitForRunState } = await import("./reconciliation-helpers");
+  const { officialSourceDiscoveryRequests } = await import("../../../src/catalogue/adapters");
+  const { collectFixtureEvidence } = await import("../../../test/support/fixture-evidence-plan");
+  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const started = await post("/v1/ingestion-runs/evidence", {
+    supported_game: "digimon",
+    source_lineage: "digimon-en",
+    adapter_version: "digimon-en@7",
+    idempotency_key: "retained-image-outage",
+    requests: officialSourceDiscoveryRequests("digimon-en").map((request) => ({
+      ...request,
+      headers: { ...request.headers, "user-agent": "card-keepr-artwork-digest-base" },
+    })),
+  });
+  expect(started.response.status).toBe(201);
+  const id = requiredString(started.document, "id");
+  await collectFixtureEvidence(testEnv.CATALOGUE_DB, testEnv.EVIDENCE_OBJECTS, testEnv.OFFICIAL_SOURCE_TRANSPORT, id);
+  await waitForRunState(id, "parsing");
+  let unavailable = true;
+  let failures = 0;
+  const objects = new Proxy(testEnv.EVIDENCE_OBJECTS, {
+    get(target, property) {
+      if (property === "get")
+        return async (...args: Parameters<R2Bucket["get"]>) => {
+          const object = await target.get(...args);
+          if (unavailable && object?.httpMetadata?.contentType?.startsWith("image/")) {
+            failures++;
+            throw new Error("Injected retained image read outage");
+          }
+          return object;
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const step = {
+    do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await callback();
+        } catch (error) {
+          if (attempt >= config.retries.limit) throw error;
+        }
+      }
+    },
+  } as unknown as import("cloudflare:workers").WorkflowStep;
+  const payload = {
+    ingestion_run_id: id,
+    expected_current_revision_id: requiredString(started.document, "expected_current_revision_id"),
+    idempotency_key: "retained-image-outage",
+    observed_at: new Date().toISOString(),
+    generation: 0,
+  };
+  const event = { payload } as import("cloudflare:workers").WorkflowEvent<
+    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+  >;
+  await runReconciliationWorkflow({ ...testEnv, EVIDENCE_OBJECTS: objects }, event, step);
+  expect(failures, JSON.stringify((await get(`/v1/ingestion-runs/${id}/candidate`)).document)).toBe(4);
+  expect((await get(`/v1/ingestion-runs/${id}/reconciliation`)).document).toMatchObject({
+    state: "paused",
+    generation: 1,
+  });
+  expect(
+    (
+      await post(`/v1/ingestion-runs/${id}/reconciliation/resume`, {
+        generation: 1,
+        idempotency_key: "resume-retained-image",
+      })
+    ).response.status,
+  ).toBe(200);
+  unavailable = false;
+  await runReconciliationWorkflow(
+    { ...testEnv, EVIDENCE_OBJECTS: objects },
+    { payload: { ...payload, generation: 1 } } as typeof event,
+    step,
+  );
+  expect((await get(`/v1/ingestion-runs/${id}/reconciliation`)).document).toMatchObject({
+    state: "sealed",
+    generation: 1,
+  });
+});

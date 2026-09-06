@@ -12,7 +12,7 @@ import {
   retainNormalizedObservation,
   stagedNormalizedObservations,
 } from "./reconciliation-normalized";
-import { retainCandidateImage } from "./reconciliation-images";
+import { imageStorage, retainCandidateImage } from "./reconciliation-images";
 import { adapterReconciliationAreas, parsedOfficialArtworkIdentity, requiredSourceAdapter } from "../adapters";
 import { type CatalogueStore, canonicalJson, type SupportedGame, sha256 } from "../shared";
 import {
@@ -1011,11 +1011,11 @@ async function retainedPrintingImage(
   if (row.media_type === null || !row.media_type.startsWith("image/")) {
     throw new Error("Retained Printing Image media type is invalid.");
   }
-  const object = await evidenceObjects.get(row.content_object_key);
+  const object = await imageStorage(() => evidenceObjects.get(row.content_object_key));
   if (object === null || object.size !== row.content_byte_length) {
     throw new Error("Retained Printing Image bytes are unavailable.");
   }
-  const bytes = new Uint8Array(await object.arrayBuffer());
+  const bytes = new Uint8Array(await imageStorage(() => object.arrayBuffer()));
   if ((await sha256(bytes)) !== row.content_digest) {
     throw new Error("Retained Printing Image digest is invalid.");
   }

@@ -10,7 +10,7 @@ export class CandidateImageStorageError extends Error {
   }
 }
 
-async function storageCall<T>(operation: () => Promise<T>): Promise<T> {
+export async function imageStorage<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
   } catch (cause) {
@@ -27,7 +27,7 @@ export async function retainCandidateImage(bucket: R2Bucket, image: Image): Prom
     throw new Error("Captured Printing Image bytes failed verification.");
   }
   const key = `printing-images/${image.content_sha256}`;
-  await storageCall(() =>
+  await imageStorage(() =>
     bucket.put(key, bytes, {
       onlyIf: { etagDoesNotMatch: "*" },
       sha256: image.content_sha256,
@@ -35,11 +35,11 @@ export async function retainCandidateImage(bucket: R2Bucket, image: Image): Prom
       customMetadata: { sha256: image.content_sha256 },
     }),
   );
-  const stored = await storageCall(() => bucket.get(key));
+  const stored = await imageStorage(() => bucket.get(key));
   if (stored === null || stored.size !== image.content_byte_length)
     throw new Error("Retained Printing Image bytes are unavailable.");
   const digest = new crypto.DigestStream("SHA-256");
-  await storageCall(() => stored.body.pipeTo(digest));
+  await imageStorage(() => stored.body.pipeTo(digest));
   const actual = Array.from(new Uint8Array(await digest.digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
   if (actual !== image.content_sha256) throw new Error("Immutable Printing Image object key collision.");
   return metadata;
