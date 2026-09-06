@@ -1,3 +1,4 @@
+import { nextLiveIngestionReservationSql } from "../shared";
 import { sourcesActiveGuardStatement } from "./source-lifecycle-repository";
 import { inspectSourceCoverage } from "./source-coverage";
 import {
@@ -2154,7 +2155,7 @@ async function terminationReplay(
 export async function releaseTerminatedEvidenceRun(database: CatalogueStore, runId: string): Promise<boolean> {
   await repositoryStatements(database)
     .prepare(
-      `UPDATE operation_state SET active_ingestion_run_id = NULL
+      `UPDATE operation_state SET active_ingestion_run_id = ${nextLiveIngestionReservationSql}
        WHERE singleton = 1 AND active_ingestion_run_id = ?1
          AND EXISTS (
            SELECT 1 FROM ingestion_run_current AS current
@@ -2287,7 +2288,7 @@ export async function finalizeEvidenceRun(database: CatalogueStore, runId: strin
         .bind(completedAt, failureCode, runId),
       repositoryStatements(database)
         .prepare(
-          `UPDATE operation_state SET active_ingestion_run_id = NULL
+          `UPDATE operation_state SET active_ingestion_run_id = ${nextLiveIngestionReservationSql}
            WHERE singleton = 1 AND active_ingestion_run_id = ?`,
         )
         .bind(runId),

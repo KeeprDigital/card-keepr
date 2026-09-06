@@ -1,3 +1,4 @@
+import { nextLiveIngestionReservationSql } from "../shared";
 import {
   curatedOwnerMutationGuardStatement,
   curatedTargetAvailabilityGuardStatement,
@@ -361,7 +362,7 @@ export function releaseCuratedRunStatement(
   input: Readonly<{ runId: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`UPDATE operation_state SET active_ingestion_run_id = NULL
+    .prepare(`UPDATE operation_state SET active_ingestion_run_id = ${nextLiveIngestionReservationSql}
          WHERE singleton = 1 AND active_ingestion_run_id = ?`)
     .bind(input.runId);
 }

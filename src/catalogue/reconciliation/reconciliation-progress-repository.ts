@@ -1,4 +1,4 @@
-import { type CatalogueStore, repositoryStatements } from "../shared";
+import { atomicRepositoryStatement, type CatalogueStore, repositoryStatements } from "../shared";
 
 export function createReconciliationOperationStatement(
   database: CatalogueStore,
@@ -6,7 +6,7 @@ export function createReconciliationOperationStatement(
   at: string,
   definitions: string,
 ) {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`INSERT OR IGNORE INTO reconciliation_operations
     (ingestion_run_id, id, state, created_at, deadline, definition_pins_json, observation_cutoff, identity_decision_cutoff, authority_decision_cutoff)
     VALUES (?, ?, 'preparing', ?, ?, ?,
@@ -14,6 +14,25 @@ export function createReconciliationOperationStatement(
       COALESCE((SELECT MAX(rowid) FROM canonical_identity_decisions), 0),
       COALESCE((SELECT MAX(rowid) FROM source_authority_decisions), 0))`)
     .bind(runId, `reconciliation_${runId}`, at, new Date(Date.parse(at) + 604800000).toISOString(), definitions);
+  return atomicRepositoryStatement(database, {
+    statement,
+    before: [
+      repositoryStatements(database)
+        .prepare(`SELECT CASE WHEN
+      NOT EXISTS (SELECT 1 FROM reconciliation_operations WHERE ingestion_run_id = ?)
+      AND EXISTS (SELECT 1 FROM game_candidate_slots AS slot
+        JOIN ingestion_run_selected_games AS game ON game.game = slot.supported_game
+        WHERE game.ingestion_run_id = ? AND slot.ingestion_run_id <> ?)
+      THEN json_extract('{}', 'game_candidate_slot_occupied') ELSE 1 END`)
+        .bind(runId, runId, runId),
+    ],
+    after: [
+      repositoryStatements(database)
+        .prepare(`INSERT INTO game_candidate_slots (supported_game, ingestion_run_id)
+      SELECT game, ingestion_run_id FROM ingestion_run_selected_games WHERE ingestion_run_id = ? AND changes() = 1`)
+        .bind(runId),
+    ],
+  });
 }
 
 export function reconciliationOperationStatement(database: CatalogueStore, runId: string) {
@@ -50,11 +69,27 @@ export function insertReconciliationPartitionStatement(
     records: number;
   },
 ) {
-  return repositoryStatements(database)
+  const statement = repositoryStatements(database)
     .prepare(`INSERT INTO reconciliation_record_partitions
     (ingestion_run_id, ordinal, kind, content, sha256, byte_length, record_count) VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (ingestion_run_id, ordinal) DO NOTHING`)
     .bind(input.runId, input.ordinal, input.kind, input.content, input.sha256, input.bytes, input.records);
+  return atomicRepositoryStatement(database, {
+    statement,
+    before: [
+      repositoryStatements(database)
+        .prepare(`SELECT CASE WHEN EXISTS (
+      SELECT 1 FROM reconciliation_operations WHERE ingestion_run_id = ? AND state = 'preparing'
+    ) THEN 1 ELSE json_extract('{}', 'reconciliation_not_preparing') END`)
+        .bind(input.runId),
+    ],
+    after: [
+      repositoryStatements(database)
+        .prepare(`UPDATE reconciliation_operations
+      SET completed_partitions = completed_partitions + 1 WHERE ingestion_run_id = ? AND changes() = 1`)
+        .bind(input.runId),
+    ],
+  });
 }
 
 export function reconciliationPartitionsStatement(database: CatalogueStore, runId: string, after: number) {

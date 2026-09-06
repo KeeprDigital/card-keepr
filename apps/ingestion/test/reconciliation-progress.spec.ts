@@ -163,4 +163,125 @@ test("collection can continue while the same game's candidate slot stays seriali
     idempotency_key: "release-game-slot",
   });
   expect((await reconcile(second.id)).response.status).toBe(200);
+  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const { testEnv } = await import("./reconciliation-helpers");
+  const firstStatus = await get(`/v1/ingestion-runs/${first.id}/reconciliation`);
+  // An old delivery may initialize again after its slot has a new owner.
+  await runReconciliationWorkflow(
+    testEnv,
+    {
+      payload: {
+        ingestion_run_id: first.id,
+        expected_current_revision_id: first.document.expected_current_revision_id,
+        idempotency_key: "released-slot-replay",
+        observed_at: firstStatus.document.created_at,
+      },
+    } as import("cloudflare:workers").WorkflowEvent<
+      import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+    >,
+    {
+      do: async (_name: string, _config: unknown, callback: () => Promise<string>) => callback(),
+    } as unknown as import("cloudflare:workers").WorkflowStep,
+  );
+  expect((await get(`/v1/ingestion-runs/${second.id}/reconciliation`)).document).toMatchObject({
+    state: "sealed",
+    generation: 0,
+  });
+});
+
+test("a terminal response from an old Workflow poll cannot pause a resumed generation", async () => {
+  const { default: worker } = await import("../src/index");
+  const { testEnv, post } = await import("./reconciliation-helpers");
+  const run = await collect("/reconciliation/base", "stale-workflow-poll");
+  let onStatus = async () => ({ status: "running" });
+  const instance = { status: () => onStatus() } as unknown as WorkflowInstance;
+  const workflow = {
+    create: async () => instance,
+    get: async () => instance,
+  } as unknown as Env["RECONCILIATION_WORKFLOW"];
+  const request = () =>
+    worker.fetch(
+      new Request(`https://card-keepr.invalid/v1/ingestion-runs/${run.id}/reconciliation`, {
+        method: "POST",
+        headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+        body: JSON.stringify({
+          expected_current_revision_id: run.document.expected_current_revision_id,
+          idempotency_key: "stale-poll-start",
+        }),
+      }),
+      { ...testEnv, RECONCILIATION_WORKFLOW: workflow },
+    );
+  expect((await request()).status).toBe(202);
+  onStatus = async () => {
+    onStatus = async () => ({ status: "running" });
+    expect(
+      (
+        await post(`/v1/ingestion-runs/${run.id}/reconciliation/pause`, {
+          generation: 0,
+          idempotency_key: "stale-poll-pause",
+        })
+      ).response.status,
+    ).toBe(200);
+    const response = await worker.fetch(
+      new Request(`https://card-keepr.invalid/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+        method: "POST",
+        headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+        body: JSON.stringify({ generation: 1, idempotency_key: "stale-poll-resume" }),
+      }),
+      { ...testEnv, RECONCILIATION_WORKFLOW: workflow },
+    );
+    expect(response.status).toBe(200);
+    return { status: "errored" };
+  };
+  await request();
+  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+    state: "preparing",
+    generation: 1,
+  });
+});
+
+test("transient image storage failures exhaust bounded retries into a resumable pause", async () => {
+  const { testEnv } = await import("./reconciliation-helpers");
+  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const run = await collect("/reconciliation/base", "image-storage-outage");
+  let attempts = 0;
+  const unavailable = new Proxy(testEnv.PRINTING_IMAGES, {
+    get(target, property) {
+      if (property === "put")
+        return async () => {
+          attempts++;
+          throw new Error("injected R2 transport outage");
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const event = {
+    payload: {
+      ingestion_run_id: run.id,
+      expected_current_revision_id: run.document.expected_current_revision_id,
+      idempotency_key: "image-storage-outage",
+      observed_at: new Date().toISOString(),
+    },
+  } as import("cloudflare:workers").WorkflowEvent<
+    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+  >;
+  const step = {
+    do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await callback();
+        } catch (error) {
+          if (attempt >= config.retries.limit) throw error;
+        }
+      }
+    },
+  } as unknown as import("cloudflare:workers").WorkflowStep;
+  await runReconciliationWorkflow({ ...testEnv, PRINTING_IMAGES: unavailable }, event, step);
+  expect(attempts).toBe(4);
+  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+    state: "paused",
+    generation: 1,
+  });
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
 });

@@ -1,3 +1,8 @@
+import {
+  reserveIngestionCollectionStatement,
+  terminalIngestionReservationEffects,
+  nextLiveIngestionReservationSql,
+} from "./ingestion-reservation-repository";
 import { atomicRepositoryStatement, type CatalogueStore, repositoryStatements } from "./catalogue-store-repository";
 import {
   runCurrentColumns,
@@ -96,7 +101,14 @@ export function runEventStatement(database: CatalogueStore, input: RunEventMutat
       ...(input.before ?? []),
       runCurrentIntegrityGuardStatement(database, event.runId, event.kind === "created"),
     ],
-    after: [...(input.guards ?? []), append, ...chunks, ...claim, ...(input.after ?? [])],
+    after: [
+      ...(input.guards ?? []),
+      append,
+      ...chunks,
+      ...claim,
+      ...(input.after ?? []),
+      ...terminalIngestionReservationEffects(database, event.runId),
+    ],
   });
 }
 
@@ -150,6 +162,7 @@ export function createRunEventStatement(
     statement: current,
     before: [anchor, games],
     guards: input.guards,
+    after: [reserveIngestionCollectionStatement(database, input.runId)],
     candidateJson: input.candidateJson,
     diagnosticsJson: input.diagnosticsJson,
     selectedGamesJson: input.selectedGamesJson,
@@ -208,7 +221,7 @@ export function releaseTerminalRunEventLockStatement(
   activeStatesJson: string,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`UPDATE operation_state SET active_ingestion_run_id = NULL
+    .prepare(`UPDATE operation_state SET active_ingestion_run_id = ${nextLiveIngestionReservationSql}
     WHERE singleton = 1 AND (NOT EXISTS (SELECT 1 FROM ingestion_runs WHERE id = operation_state.active_ingestion_run_id) OR active_ingestion_run_id IN (
       SELECT current.ingestion_run_id FROM ingestion_run_current AS current
       WHERE current.state NOT IN (SELECT value FROM json_each(?)) AND ${verifiedRunCurrentSql}
@@ -239,7 +252,11 @@ export function expireRunEventsStatement(database: CatalogueStore, observedAt: s
     FROM ingestion_run_current AS current
     WHERE current.last_event_id = ? || ':' || current.ingestion_run_id AND changes() > 0`)
     .bind(sweepId);
-  return atomicRepositoryStatement(database, { statement, before: [integrity], after: [append] });
+  return atomicRepositoryStatement(database, {
+    statement,
+    before: [integrity],
+    after: [append, ...terminalIngestionReservationEffects(database)],
+  });
 }
 
 export type RunProjectionMaintenance = Readonly<{ ownerId: string; observedAt: string }>;

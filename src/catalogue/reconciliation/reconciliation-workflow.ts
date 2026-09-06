@@ -176,6 +176,7 @@ async function publicWorkflowRequest(
     const recovered = await recoverTerminalWorkflow(
       database,
       request,
+      generation,
       status.error?.message ?? `The reconciliation Workflow became ${status.status}.`,
     );
     return {
@@ -184,7 +185,8 @@ async function publicWorkflowRequest(
       output: recovered.state === "paused" ? null : recovered,
     };
   }
-  const output = status.status === "complete" ? await workflowOutput(database, request, status.output) : null;
+  const output =
+    status.status === "complete" ? await workflowOutput(database, request, generation, status.output) : null;
   return {
     contract: "card-keepr-reconciliation-workflow@1",
     ingestion_run_id: request.ingestion_run_id,
@@ -199,6 +201,7 @@ async function publicWorkflowRequest(
 async function recoverTerminalWorkflow(
   database: CatalogueStore,
   request: ReconciliationWorkflowRequestRow,
+  generation: number,
   detail: string,
 ): Promise<Record<string, unknown>> {
   const run = await reconciliationWorkflowCandidateDigestStatement(database, request.ingestion_run_id).first<{
@@ -210,21 +213,14 @@ async function recoverTerminalWorkflow(
   if (run.candidate_digest !== null) {
     return retainedReconciliationResult(database, request.ingestion_run_id);
   }
-  const operation = await reconciliationOperationStatement(database, request.ingestion_run_id).first<{
-    generation: number;
-  }>();
-  await pauseFailedReconciliationStatement(
-    database,
-    request.ingestion_run_id,
-    operation?.generation ?? 0,
-    detail,
-  ).run();
+  await pauseFailedReconciliationStatement(database, request.ingestion_run_id, generation, detail).run();
   return { state: "paused", publishable: false, run_id: request.ingestion_run_id };
 }
 
 async function workflowOutput(
   database: CatalogueStore,
   request: ReconciliationWorkflowRequestRow,
+  generation: number,
   value: unknown,
 ): Promise<Record<string, unknown>> {
   if (
@@ -234,20 +230,20 @@ async function workflowOutput(
     !("result_json" in value) ||
     typeof value.result_json !== "string"
   ) {
-    return recoverMalformedCompleteWorkflow(database, request);
+    return recoverMalformedCompleteWorkflow(database, request, generation);
   }
   let reference: unknown;
   try {
     reference = JSON.parse(value.result_json) as unknown;
   } catch {
-    return recoverMalformedCompleteWorkflow(database, request);
+    return recoverMalformedCompleteWorkflow(database, request, generation);
   }
   if (reference === null || typeof reference !== "object" || Array.isArray(reference)) {
-    return recoverMalformedCompleteWorkflow(database, request);
+    return recoverMalformedCompleteWorkflow(database, request, generation);
   }
   const result = reference as Record<string, unknown>;
   if (result.contract !== "card-keepr-reconciliation-workflow-result@1") {
-    return recoverMalformedCompleteWorkflow(database, request);
+    return recoverMalformedCompleteWorkflow(database, request, generation);
   }
   if (result.run_id !== request.ingestion_run_id) {
     throw new Error("The reconciliation Workflow result is invalid.");
@@ -260,7 +256,7 @@ async function workflowOutput(
     return retained;
   }
   if (typeof result.candidate_digest !== "string") {
-    return recoverMalformedCompleteWorkflow(database, request);
+    return recoverMalformedCompleteWorkflow(database, request, generation);
   }
   const retained = await retainedReconciliationResult(database, request.ingestion_run_id);
   if (retained.candidate_digest !== result.candidate_digest) {
@@ -272,8 +268,14 @@ async function workflowOutput(
 function recoverMalformedCompleteWorkflow(
   database: CatalogueStore,
   request: ReconciliationWorkflowRequestRow,
+  generation: number,
 ): Promise<Record<string, unknown>> {
-  return recoverTerminalWorkflow(database, request, "The completed reconciliation Workflow output was unavailable.");
+  return recoverTerminalWorkflow(
+    database,
+    request,
+    generation,
+    "The completed reconciliation Workflow output was unavailable.",
+  );
 }
 
 async function workflowRequest(
