@@ -183,6 +183,22 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
         },
       ],
     };
+  if (scenario === "curated-conflict-fanout-base" || scenario === "curated-conflict-fanout-changed") {
+    return {
+      cards: Array.from({ length: 32 }, (_, index) =>
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP96-${String(index + 1).padStart(3, "0")}`,
+          name: `Synthetic ${scenario.endsWith("changed") ? "changed" : "reviewed"} Card ${index}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `/curated-conflict-fanout/${index}`,
+          lineageMarker: `curated-conflict-fanout-${index}`,
+        }),
+      ),
+    };
+  }
   if (scenario === "curated-draft-source-changed") {
     const observation = printingObservation({
       game: "one-piece",

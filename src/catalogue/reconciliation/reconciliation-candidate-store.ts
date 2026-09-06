@@ -135,7 +135,6 @@ export async function persistBlockedCandidate(
     candidateCatalogueDigest: string;
     observedAt: string;
     failureCode?: string;
-    atomicStatements?: readonly D1PreparedStatement[];
   },
 ): Promise<void> {
   const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
@@ -146,7 +145,6 @@ export async function persistBlockedCandidate(
   const statements = [
     preparationCompleteGuard(database, input.runId, preparationCount),
     beginReconciliationStatement(database, input.runId),
-    ...(input.atomicStatements ?? []),
     blockedCandidateStatement(database, {
       candidatePayload: chunkedPayloadMarker("candidate"),
       candidateDigest: input.candidateDigest,

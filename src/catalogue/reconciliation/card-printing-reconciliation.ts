@@ -32,6 +32,7 @@ import {
 } from "./canonical-identity";
 import {
   CuratedDraftSourceChangeError,
+  CuratedConflictStorageError,
   applyPinnedCuratedRevisionsToDraft,
   stripCuratedRevisionEffects,
   restoreCuratedEntitySourceFields,
@@ -1424,9 +1425,13 @@ export async function reconcileRetainedCardPrintingEvidence(
       plans,
       checkedSourceLineages,
     );
-    const diagnostics = [...error.diagnostics].sort((left, right) =>
-      canonicalJson(left).localeCompare(canonicalJson(right)),
+    const diagnostics = new ReconciliationRecordCollection<Record<string, unknown>>(
+      database,
+      runId,
+      "curated_conflict_diagnostics",
+      false,
     );
+    for await (const diagnostic of error.diagnostics) await diagnostics.push(diagnostic);
     const digestPayload = reconciliationDigestPayload({
       candidate: await official.document(candidate),
       partitions: retained.partitions,
@@ -1453,7 +1458,6 @@ export async function reconcileRetainedCardPrintingEvidence(
       candidateCatalogueDigest,
       observedAt,
       failureCode: "curated_revision_reconfirmation_required",
-      atomicStatements: error.atomicStatements,
     });
     return { run_id: runId, candidate_digest: candidateDigest };
   }
@@ -2068,6 +2072,7 @@ import { ReconciliationNormalizationStorageError } from "./reconciliation-normal
 
 function isStorageOrCapacityFailure(error: unknown): boolean {
   return (
+    error instanceof CuratedConflictStorageError ||
     error instanceof ReconciliationReducerStorageError ||
     error instanceof CandidateImageStorageError ||
     error instanceof ReconciliationInputStorageError ||

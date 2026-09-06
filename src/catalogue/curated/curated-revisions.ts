@@ -1,3 +1,10 @@
+import { materializeCuratedConflictStatements } from "./curated-conflict-preparation-repository";
+import {
+  CuratedConflictPreparation,
+  sourceChangeDetails,
+  sourceChangeDiagnostic,
+  type PendingConflict,
+} from "./curated-conflict-preparation";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import {
@@ -902,10 +909,7 @@ type PinnedDraftRevision = {
 };
 
 export class CuratedDraftSourceChangeError extends Error {
-  constructor(
-    readonly atomicStatements: readonly D1PreparedStatement[],
-    readonly diagnostics: readonly Record<string, unknown>[],
-  ) {
+  constructor(readonly diagnostics: AsyncIterable<Record<string, unknown>>) {
     super("curated_revision_reconfirmation_required");
   }
 }
@@ -924,18 +928,21 @@ export async function applyPinnedCuratedRevisionsToDraft(
   if (!run)
     throw new AdministrationProblem(404, "ingestion_run_not_found", "The requested Ingestion Run does not exist.");
   await stripCuratedDraft(official, JSON.parse(run.selected_games_json) as SupportedGame[]);
-  const conflicts: { row: PinnedDraftRevision; reviewedSourceValue: unknown }[] = [];
+  const conflicts = new CuratedConflictPreparation(database, runId, observedAt);
+  let sourceChanged = false;
   for await (const row of pinnedDraftRevisions(database, runId)) {
     const proposal = structuralProposal(JSON.parse(row.proposal_json));
     const snapshot = await draftProposalSnapshot(official, proposal);
     const reviewedSourceValue = draftReviewedValue(snapshot, proposal);
-    if ((await sha256Text(canonicalJson(reviewedSourceValue))) !== row.reviewed_source_digest)
-      conflicts.push({ row, reviewedSourceValue });
+    if ((await sha256Text(canonicalJson(reviewedSourceValue))) !== row.reviewed_source_digest) {
+      sourceChanged = true;
+      await conflicts.record(row.id, row.reviewed_source_digest, reviewedSourceValue);
+    }
   }
-  if (conflicts.length) {
-    const persistence = await sourceChangePersistence(database, runId, conflicts, observedAt);
-    throw new CuratedDraftSourceChangeError(persistence.statements, persistence.diagnostics);
-  }
+  if (sourceChanged)
+    throw new CuratedDraftSourceChangeError({
+      [Symbol.asyncIterator]: () => conflicts.diagnostics(),
+    });
   for await (const row of pinnedDraftRevisions(database, runId)) {
     const proposal = structuralProposal(JSON.parse(row.proposal_json));
     const reviewedSourceValue = draftReviewedValue(await draftProposalSnapshot(official, proposal), proposal);
@@ -1329,32 +1336,13 @@ async function sourceChangePersistence(
       .curatedRevisionStatusStatement(database, { revisionId: conflict.row.id })
       .first<{ status: string; event_version: number }>();
     if (revision?.status === "reconfirmation_required") continue;
-    const observed = await sha256Text(canonicalJson(conflict.reviewedSourceValue));
     const version = (revision?.event_version ?? 0) + 1;
-    // Preparation is immutable and may precede the terminal transaction by a retry.
-    const conflictId = `crconf_${await sha256Text(
-      canonicalJson({
-        run_id: runId,
-        revision_id: conflict.row.id,
-        previous_source_digest: conflict.row.reviewed_source_digest,
-        observed_source_digest: observed,
-      }),
-    )}`;
-    const details = {
-      conflict_id: conflictId,
-      conflict_digest: await sha256Text(
-        canonicalJson({
-          conflict_id: conflictId,
-          run_id: runId,
-          revision_id: conflict.row.id,
-          previous_source_digest: conflict.row.reviewed_source_digest,
-          observed_source_digest: observed,
-        }),
-      ),
-      run_id: runId,
-      previous_source_digest: conflict.row.reviewed_source_digest,
-      observed_source_digest: observed,
-    };
+    const details = await sourceChangeDetails(
+      runId,
+      conflict.row.id,
+      conflict.row.reviewed_source_digest,
+      conflict.reviewedSourceValue,
+    );
     diagnostics.push(sourceChangeDiagnostic(conflict.row.id, details));
     statements.push(
       curatedStatements.markActiveCuratedSourceChangeStatement(database, {
@@ -1387,24 +1375,6 @@ export class CuratedRevisionSourceChangeError extends Error {
   ) {
     super("curated_revision_reconfirmation_required");
   }
-}
-
-type PendingConflict = {
-  conflict_id: string;
-  conflict_digest: string;
-  run_id: string;
-  previous_source_digest: string;
-  observed_source_digest: string;
-};
-
-function sourceChangeDiagnostic(revisionId: string, conflict: PendingConflict): Record<string, unknown> {
-  return {
-    code: "curated_revision_reconfirmation_required",
-    detail: `Official Source evidence changed for Curated Revision ${revisionId}.`,
-    curated_revision_id: revisionId,
-    conflict_id: conflict.conflict_id,
-    conflict_digest: conflict.conflict_digest,
-  };
 }
 
 type ExistingMutation = {
@@ -1479,6 +1449,7 @@ async function existingRevisionMutation(
       "An active production release blocks Curated Revision mutation.",
     );
   }
+  await database.batch(materializeCuratedConflictStatements(database, revisionId));
   const row = await curatedRevisionStatement(database, revisionId).first<RevisionRow>();
   if (row === null)
     throw new AdministrationProblem(

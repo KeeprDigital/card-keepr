@@ -242,4 +242,42 @@ CREATE TRIGGER reconciliation_sort_batches_no_update BEFORE UPDATE ON reconcilia
 BEGIN SELECT RAISE(ABORT, 'reconciliation_sort_batches_immutable'); END;
 CREATE TRIGGER reconciliation_sort_batches_no_delete BEFORE DELETE ON reconciliation_sort_batches
 BEGIN SELECT RAISE(ABORT, 'reconciliation_sort_batches_audit_retained'); END;
+CREATE TABLE reconciliation_curated_conflicts (
+  ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
+  revision_id TEXT NOT NULL REFERENCES curated_revisions(id),
+  content TEXT NOT NULL CHECK (json_valid(content) AND length(CAST(content AS BLOB)) <= 524288),
+  sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+  PRIMARY KEY (ingestion_run_id, revision_id)
+);
+CREATE TRIGGER reconciliation_curated_conflicts_no_update BEFORE UPDATE ON reconciliation_curated_conflicts
+BEGIN SELECT RAISE(ABORT, 'reconciliation_curated_conflicts_immutable'); END;
+CREATE TRIGGER reconciliation_curated_conflicts_no_delete BEFORE DELETE ON reconciliation_curated_conflicts
+BEGIN SELECT RAISE(ABORT, 'reconciliation_curated_conflicts_audit_retained'); END;
+-- Prepared conflicts become visible through the run's single terminal state flip.
+-- Owner mutation materializes only its target revision before appending a later event.
+CREATE INDEX reconciliation_curated_conflicts_revision ON reconciliation_curated_conflicts (revision_id, ingestion_run_id);
+CREATE VIEW visible_prepared_curated_conflicts AS
+SELECT conflict.revision_id, conflict.content,
+  json_extract(conflict.content, '$.eventVersion') AS event_version
+FROM reconciliation_curated_conflicts AS conflict
+JOIN ingestion_run_current AS run ON run.ingestion_run_id = conflict.ingestion_run_id
+JOIN curated_revisions AS revision ON revision.id = conflict.revision_id
+WHERE run.state = 'failed' AND run.failure_code = 'curated_revision_reconfirmation_required'
+  AND revision.status = 'active'
+  AND json_extract(conflict.content, '$.eventVersion') = revision.event_version + 1;
+CREATE VIEW curated_revision_read AS
+SELECT revision.id, revision.game, revision.target_key, revision.target_kind,
+  revision.effective_from, revision.effective_to, revision.proposal_json, revision.content_digest,
+  revision.reviewed_source_digest, revision.schema_binding_json, revision.author, revision.created_at,
+  CASE WHEN conflict.revision_id IS NULL THEN revision.status ELSE 'reconfirmation_required' END AS status,
+  COALESCE(conflict.event_version, revision.event_version) AS event_version
+FROM curated_revisions AS revision LEFT JOIN visible_prepared_curated_conflicts AS conflict ON conflict.revision_id = revision.id;
+CREATE VIEW curated_revision_event_read AS
+SELECT revision_id, event_version, kind, event_json, created_at, author FROM curated_revision_events
+UNION ALL
+SELECT conflict.revision_id, conflict.event_version, 'source_change_detected',
+  json_extract(conflict.content, '$.details'), json_extract(conflict.content, '$.createdAt'), 'system'
+FROM visible_prepared_curated_conflicts AS conflict
+WHERE NOT EXISTS (SELECT 1 FROM curated_revision_events AS event
+  WHERE event.revision_id = conflict.revision_id AND event.event_version = conflict.event_version);
 UPDATE catalogue_schema_state SET migration_level = 20 WHERE singleton = 1;
