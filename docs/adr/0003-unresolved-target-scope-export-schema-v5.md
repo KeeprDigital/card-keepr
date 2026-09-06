@@ -2,6 +2,8 @@
 
 ## Status
 
+Superseded for the planned pre-Go-Live replacement by [ADR 0014](0014-card-content-without-tournament-eligibility.md): tournament eligibility and its unresolved-scope processing are outside the catalogue. The body below records historical implementation behavior, not a requirement for the replacement contract.
+
 Accepted. The retention of earlier majors applies from Go-Live only (ADR 0008); before Go-Live the export schema is edited in place and earlier majors are deleted.
 
 ## Context

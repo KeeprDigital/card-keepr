@@ -1,5 +1,7 @@
 # Guarded Production Release
 
+> Scope transition: [ADR 0014](../adr/0014-card-content-without-tournament-eligibility.md) removes tournament eligibility from the planned pre-Go-Live contract. The specification handoff must replace legality smoke checks alongside the implementation. Until then, this runbook describes the existing guarded release behavior; the scope decision alone does not disable its checks.
+
 `keepr release production` is the guarded Worker deployment path. Pull
 request and `main` CI run validation and local Wrangler dry-runs only. The
 manual `production-release` workflow is serialized, uses the protected GitHub

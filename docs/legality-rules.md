@@ -1,5 +1,7 @@
 # Legality Rules and contextual status
 
+> Historical implementation documentation. [ADR 0014](adr/0014-card-content-without-tournament-eligibility.md) excludes tournament eligibility from the planned catalogue. The specification handoff must remove the processing, required source coverage, contracts and validation described here together; this page does not authorize bypassing checks in the current implementation. Printed text and publisher-issued Errata remain in scope.
+
 Legality is published as effective-dated `Legality Rule` records. A
 `Legality Status` is never stored: the API derives it for an explicit `Card`,
 date, region, format, and optional event tier from the current

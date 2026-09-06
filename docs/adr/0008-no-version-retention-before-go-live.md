@@ -51,6 +51,13 @@ separately named and earlier majors stay readable (ADRs 0001 to 0003), and
 the baseline is never edited (ADR 0006). The glossary marks the affected
 definitions with "from Go-Live".
 
+Version immutability does not promise cross-version reparse. The owner
+[deferred that capability](https://github.com/KeeprDigital/card-keepr/issues/215#issuecomment-5558885829)
+and selected fresh collection after parser fixes, followed by ordinary review
+and approval. Go-Live does not enable or require cross-version reparse.
+Evidence retention, published history and recovery remain separate obligations;
+this deferral does not authorize deleting retained data.
+
 ## Considered options
 
 - **Keep versioning now so Go-Live needs no change.** Rejected: the cost is

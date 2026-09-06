@@ -2,6 +2,8 @@
 
 ## Status
 
+Legality requirements are superseded for the planned pre-Go-Live replacement by [ADR 0014](0014-card-content-without-tournament-eligibility.md). The body below records the previous implementation decision; unrelated guarded export deletion and recovery protections remain applicable.
+
 Accepted. The retention of earlier majors applies from Go-Live only (ADR 0008); before Go-Live the export schema is edited in place and earlier majors are deleted.
 
 Catalogue Export schema v2 cannot represent membership predicates, release
@@ -52,3 +54,7 @@ navigation evidence. Separately named v1 and v2 manifest and record schemas
 remain checked in for retained verification and decoding of historical export
 artifacts, including evidence for an owner-deleted package; a new v3 manifest
 never references them.
+
+## Amendment: consumer evidence boundary
+
+[ADR 0013](0013-consumer-facts-and-complete-administrative-review.md) supersedes the requirement to expose supporting source or curated provenance in consumer exports. Evidence remains retained for administration and recovery; truthful catalogue facts and explicit unknowns remain in the consumer contract. This is a planning decision for the pre-Go-Live contract replacement, not an implemented schema change.
