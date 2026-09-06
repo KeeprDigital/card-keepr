@@ -1037,6 +1037,12 @@ test("missing-number cross-source evidence reviews the existing Card and Printin
       })
     ).response.status,
   ).toBe(200);
+  const changed = await reconcile(
+    (await collect("/reconciliation/identity-missing-number-tabular-changed", "unknown-cross-changed-artwork", source))
+      .id,
+  );
+  expect(changed.response.status).toBe(409);
+  expect(changed.document.publishable).toBe(false);
   const matched = await reconcile(
     (await collect("/reconciliation/identity-missing-number-tabular", "unknown-cross-retry", source)).id,
   );
@@ -1045,6 +1051,11 @@ test("missing-number cross-source evidence reviews the existing Card and Printin
   expect(requiredFirst(matched.document, "cards").id).toBe(cardId);
   expect(requiredFirst(matched.document, "printings").id).toBe(printingId);
   expect((await approve(matched.document)).response.status).toBe(200);
+  const later = await reconcile(
+    (await collect("/reconciliation/identity-missing-number-tabular", "unknown-cross-later", source)).id,
+  );
+  expect(later.response.status).toBe(200);
+  expect(requiredFirst(later.document, "printings").id).toBe(printingId);
 });
 
 test("equal unknown Card facts and distinct artwork require identity review, not automatic Card equivalence", async () => {

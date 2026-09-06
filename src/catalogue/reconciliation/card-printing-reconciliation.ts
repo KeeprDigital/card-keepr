@@ -298,6 +298,9 @@ export async function reconcileRetainedCardPrintingEvidence(
                   printing,
                   locator: observation.locator,
                   variant_key: observation.variantKey,
+                  artwork_fingerprint: observation.artworkFingerprint,
+                  printed_fields_digest: observation.printedFieldsDigest,
+                  treatment: observation.treatment,
                 },
                 candidates: candidates.map(({ id }) => id).sort(),
                 at: observedAt,
@@ -520,6 +523,8 @@ export async function reconcileRetainedCardPrintingEvidence(
           !hasCrossSourceArtworkEvidence(observation));
       let reviewedPrintingId: string | null = reviewedCardPrintingId;
       if (
+        located === null &&
+        localLocated === undefined &&
         reviewedPrintingId === null &&
         (insufficientCrossSource || matchIds.size > 1) &&
         !diagnostics.some(
@@ -583,6 +588,8 @@ export async function reconcileRetainedCardPrintingEvidence(
             "The retained locator contradicts the Card, Source Lineage, artwork, printed rules, rarity, or treatment of its existing Printing.",
         });
         printingId = locatedId;
+      } else if (located !== null || localLocated !== undefined) {
+        printingId = located?.id ?? localLocated!.printingId;
       } else if (reviewedPrintingId !== null) {
         printingId = reviewedPrintingId;
       } else if (insufficientCrossSource) {
@@ -629,8 +636,6 @@ export async function reconcileRetainedCardPrintingEvidence(
           detail: "The retained evidence has more than one exactly compatible Printing.",
         });
         printingId = [...matchIds].sort()[0]!;
-      } else if (located !== null || localLocated !== undefined) {
-        printingId = located?.id ?? localLocated!.printingId;
       } else if (matchIds.size === 1) {
         printingId = [...matchIds][0]!;
       } else {

@@ -30,12 +30,13 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
         : scenario.endsWith("moved")
           ? "/official/moved-unnumbered-real-card"
           : "/official/unnumbered-real-card",
-      lineageMarker: scenario.endsWith("distinct") ? "different" : "unnumbered-real-card",
+      lineageMarker:
+        scenario.endsWith("distinct") || scenario.endsWith("changed") ? "different" : "unnumbered-real-card",
       name: "Synthetic unnumbered Card",
       cardAttributes: onePieceLeaderAttributes(),
       printingAttributes: { illustration_types: [] },
     });
-    if (scenario.endsWith("tabular")) {
+    if (scenario.includes("tabular")) {
       const { card, ...evidence } = observation;
       return { rows: [{ cells: [null, card.name, card.effective_rules_text, card.game_data.attributes], evidence }] };
     }

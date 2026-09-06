@@ -49,43 +49,43 @@
   },
   "fusion-world-en-card-detail-battle.json": {
     "bytes_sha256": "bb9f3d565ea9939cea9c6e9270581e92102fe44aaa5d945a663555996fa92c06",
-    "observations_sha256": "7166ec22cce06d2b830328d40ac9c31092efc4d989a4af712ed00d0d4872b780"
+    "observations_sha256": "393b5a8314b5816a8bee470100668a42541e6b7a5378c5e309ba20a090bbff21"
   },
   "fusion-world-en-card-detail-energy-marker-p1.json": {
     "bytes_sha256": "34b60738ba29fe2cbae7c8c706249d7b1ecc3eea8fee6c49b635e4fefd272f5e",
-    "observations_sha256": "02bcfbe3220c0aaae7b557ffc4e47791c158d8f810a1cb309fd4587923a502f3"
+    "observations_sha256": "d5bd65f2199c261e70b015f723f0258c57d7ae287c134c3d1f61c4cc10a618bd"
   },
   "fusion-world-en-card-detail-energy-marker.json": {
     "bytes_sha256": "8c168a6c66d3a7a1e8cb054d73d33079d9f92a6f65f1b2cebaa8be0944b2b791",
-    "observations_sha256": "13915494ef36616f9a3760b952c33a0972b108d2d863cd379b64d15bae5a8fb5"
+    "observations_sha256": "4e404ce1b0bf2028bd804d9fde3da263f32b3f87423843dc95592be214ca4059"
   },
   "fusion-world-en-card-detail-errata-leader-p1.json": {
     "bytes_sha256": "2f441fc66a10e81759570f466929ff5a8a709a98a8765c7b4129ff45e28b81ac",
-    "observations_sha256": "a194a3c5b6fb6f405cde2ab79a7f9d3cce34049bc8859a3ef74b166e8b2d4ee7"
+    "observations_sha256": "db42053b7763fef15014c9360f4a45221dbe34ddb9559119db1a7d3c23e03497"
   },
   "fusion-world-en-card-detail-errata-leader.json": {
     "bytes_sha256": "ded74a8aeccf1369248b17148b63868f61c6adcb0e6a8f05e9972348fe052641",
-    "observations_sha256": "c63b3f85dc2a768d8028bb43b0beb7cda1d072d7a365dfdd0f3fc3dd33bbe4fb"
+    "observations_sha256": "1e23892a00021ee9b592102dbd5d013bb449c18f313c46c34c9a9dfa62c26469"
   },
   "fusion-world-en-card-detail-errata-skills.json": {
     "bytes_sha256": "5cadc76613d228eedced2ee0ceef649681bc1b1a904f4aded0bd4a8f8fbaac74",
-    "observations_sha256": "2823c0bc0e4c72b8606bb8ba3384ba2cc3ed3c21997f32d24cb815bb5421cc52"
+    "observations_sha256": "b83bb5bbce0ae5400102fa6bb41bbf86db2434e2bcacacdf38b58401ecfa648b"
   },
   "fusion-world-en-card-detail-errata-traits.json": {
     "bytes_sha256": "6916546f329f04728f2f5d82287bb90a7a1dad2040688d58681bc6429ec0a8a2",
-    "observations_sha256": "e4e3e3fd9ace006f2020ba69096d4d45246beec5d40becb6bd219ebe0e62b95a"
+    "observations_sha256": "4386b28ccdf8e0eeee57b1bc6ed1969dd3870acbd4117f6a511a5e70d87102ea"
   },
   "fusion-world-en-card-detail-leader-p1.json": {
     "bytes_sha256": "ccf9c52bc27be1e4894540a1a6a044fa1d73cf4f6045fba8dd133c58db5ee57b",
-    "observations_sha256": "a500aba33e67fda79d4c54bd521c5e3acf2cc238bfb175ce0b94443dd8bb86a0"
+    "observations_sha256": "57707de7c8a8b3f3471a4f2be886ad224c7a7cc5f78637562ae662c8d24e459b"
   },
   "fusion-world-en-card-detail-leader.json": {
     "bytes_sha256": "ff84c6e23d0d0a38fce3ec280e5f90a85fb192495c3b5eb8e0800ffba0f93577",
-    "observations_sha256": "086d478d3d497a7d3b2590c39c4a17d62faff366a8a9e4937a953c3e90bc7954"
+    "observations_sha256": "947f4ebd457d4f2dddbd9db15ee1388a922ae65a0b1067e631dce545abf5b687"
   },
   "fusion-world-en-card-detail-promo.json": {
     "bytes_sha256": "3c09a0f01875549e5139b304bc5e9da678923e341170d6e772916917f36c9413",
-    "observations_sha256": "122994c49ac91209e7b27bbafc6076df9b11e07b277e136dcf4e2bf0885a0f75"
+    "observations_sha256": "9baa6799ada19dbddc1416259798e7b25f1f3b302ad6e487df2b70b6bd976ba3"
   },
   "fusion-world-en-legality-history-news.json": {
     "bytes_sha256": "354441c04b78573a610ce4841b23338345760658097db2b80025d2d0441e88c1",
