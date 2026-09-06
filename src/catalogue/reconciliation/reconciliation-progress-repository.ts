@@ -42,6 +42,7 @@ export function reconciliationOperationStatement(database: CatalogueStore, runId
     (SELECT count(*) FROM reconciliation_preparation_batches WHERE ingestion_run_id = reconciliation_operations.ingestion_run_id) AS completed_batches,
     (SELECT count(*) FROM reconciliation_input_partitions WHERE ingestion_run_id = reconciliation_operations.ingestion_run_id) AS completed_input_partitions,
     (SELECT count(*) FROM reconciliation_verified_documents WHERE ingestion_run_id = reconciliation_operations.ingestion_run_id) AS completed_documents,
+    (SELECT count(*) FROM reconciliation_reducer_state WHERE ingestion_run_id = reconciliation_operations.ingestion_run_id) AS completed_reducer_records,
     (SELECT count(*) FROM reconciliation_normalized_observations WHERE ingestion_run_id = reconciliation_operations.ingestion_run_id) AS completed_observations,
     EXISTS (SELECT 1 FROM entity_admission_run_pins WHERE ingestion_run_id = reconciliation_operations.ingestion_run_id) AS admission_selection_pinned,
     (SELECT count(*) FROM entity_admission_pinned_decisions WHERE ingestion_run_id = reconciliation_operations.ingestion_run_id) AS admission_decision_count,

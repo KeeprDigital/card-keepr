@@ -73,6 +73,12 @@ document and position are retained separately, so retries can reuse completed
 observations without accepting a duplicate identity from another position or
 document. Completed observations do not repeat Printing Image verification work.
 
+`completed_reducer_records` counts retained versions of local Card facts,
+Digimon authority, Printing facts, compatibility and locator indexes. Replay
+reads only earlier observation versions and its own writes, so retained later
+observations cannot change earlier identity decisions. This counter counts
+individual effects, not completed work units or a resume cursor.
+
 This implementation checkpoint retains the legacy run-level preparation and
 approval adapter. Game manifests are separate, but their preparation and actions
 still run together. The legacy reducers also reconstruct aggregate metadata.

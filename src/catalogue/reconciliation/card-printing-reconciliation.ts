@@ -1,3 +1,4 @@
+import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
 import { ReconciliationInputStorageError } from "./reconciliation-input";
 import { canonicalValueDigest } from "./reconciliation-preparation";
 import { CandidateImageStorageError } from "./reconciliation-images";
@@ -166,7 +167,10 @@ export async function reconcileRetainedCardPrintingEvidence(
   const localGundamCardLineages = new Map<string, Set<"gundam-en-asia" | "gundam-en-us">>();
   const localGundamPrintingProvenance = new Map<string, Set<"gundam-en-asia" | "gundam-en-us">>();
   const localGundamProducts = new Map<string, Set<string>>();
-  const localPrintingCompatibility = new Map<string, PrintingCompatibility>();
+  const localPrintingCompatibility = new ReconciliationReducerIndex<{
+    printingId: string;
+    compatibility: PrintingCompatibility;
+  }>(database, runId, "printing_compatibility", ({ compatibility }) => compatibilityGroup(compatibility));
   const priorCandidate = await candidateAtRevision(
     database,
     run.expected_current_revision_id,
@@ -180,11 +184,23 @@ export async function reconcileRetainedCardPrintingEvidence(
     priorCandidate?.printing_images?.map((image) => [image.id, image]) ?? [],
   );
   const sourceMappings: SourceMapping[] = [];
-  const localCardFacts = new Map<string, string>();
-  const localDigimonCardAuthorities = new Map<string, DigimonCardAuthority>();
-  const localPrintingFacts = new Map<string, Omit<CataloguePrinting, "id" | "card_id">>();
-  const localCompatibility = new Map<string, string>();
-  const localLocators = new Map<string, { compatibility: PrintingCompatibility; printingId: string }>();
+  const localCardFacts = new ReconciliationReducerIndex<string>(database, runId, "card_facts");
+  const localDigimonCardAuthorities = new ReconciliationReducerIndex<DigimonCardAuthority>(
+    database,
+    runId,
+    "digimon_authorities",
+  );
+  const localPrintingFacts = new ReconciliationReducerIndex<Omit<CataloguePrinting, "id" | "card_id">>(
+    database,
+    runId,
+    "printing_facts",
+  );
+  const localCompatibility = new ReconciliationReducerIndex<string>(database, runId, "compatibility");
+  const localLocators = new ReconciliationReducerIndex<{ compatibility: PrintingCompatibility; printingId: string }>(
+    database,
+    runId,
+    "locators",
+  );
   const plans: {
     sourceObservationSetId: string;
     sourceSnapshotId: string;
@@ -238,6 +254,15 @@ export async function reconcileRetainedCardPrintingEvidence(
 
   for await (const observation of retained.observations()) {
     if (observation.kind !== "card_printing") continue;
+    for (const index of [
+      localCardFacts,
+      localDigimonCardAuthorities,
+      localPrintingFacts,
+      localCompatibility,
+      localLocators,
+      localPrintingCompatibility,
+    ])
+      index.beginObservation();
     const sourceCard = observation.observedCardAndPrinting.card;
     for (const checks of [
       ...(sourceCard === null ? [] : [cardCheckTimes]),
@@ -332,7 +357,9 @@ export async function reconcileRetainedCardPrintingEvidence(
         for (const card of exactUnnumberedCards) {
           const expected = compatibilityFor(card.id, observation.sourceLineage, observation);
           const compatible = await compatiblePrintings(database, expected);
-          const local = [...localPrintingCompatibility.values()].filter((value) => isCompatible(value, expected));
+          const local: PrintingCompatibility[] = [];
+          for await (const match of localPrintingCompatibility.matchingBeforeObservation(compatibilityGroup(expected)))
+            if (isCompatible(match.compatibility, expected)) local.push(match.compatibility);
           const located =
             observation.locator === null
               ? null
@@ -517,10 +544,10 @@ export async function reconcileRetainedCardPrintingEvidence(
     }
     let digimonAuthorityConflict: string | null = null;
     if (proposedCard.game === "digimon") {
-      const priorAuthority = localDigimonCardAuthorities.get(cardId);
+      const priorAuthority = await localDigimonCardAuthorities.get(cardId);
       const proposedIsBaseRecord = observation.variantKey === "base";
       if (priorAuthority === undefined) {
-        localDigimonCardAuthorities.set(cardId, {
+        await localDigimonCardAuthorities.set(cardId, {
           card: acceptedCanonicalCard,
           hasBaseRecord: proposedIsBaseRecord,
         });
@@ -532,12 +559,12 @@ export async function reconcileRetainedCardPrintingEvidence(
           digimonAuthorityConflict = resolution.detail;
         } else {
           acceptedCanonicalCard = resolution.authority.card;
-          localDigimonCardAuthorities.set(cardId, resolution.authority);
+          await localDigimonCardAuthorities.set(cardId, resolution.authority);
         }
       }
     }
     const canonicalFacts = canonicalJson(acceptedCanonicalCard);
-    const priorFacts = localCardFacts.get(cardId);
+    const priorFacts = await localCardFacts.get(cardId);
     if (
       publishedConflict !== null ||
       digimonAuthorityConflict !== null ||
@@ -562,7 +589,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           "Retained observations disagree on canonical Card facts and no deterministic authority rule resolves them.",
       });
     } else {
-      localCardFacts.set(cardId, canonicalFacts);
+      await localCardFacts.set(cardId, canonicalFacts);
       cards.set(cardId, { id: cardId, ...acceptedCanonicalCard });
     }
 
@@ -577,7 +604,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
       const compatibilityKey = canonicalJson(compatibility);
       const locatorVariantKey = canonicalJson([observation.sourceLineage, locator, observation.variantKey]);
-      const localLocated = localLocators.get(locatorVariantKey);
+      const localLocated = await localLocators.get(locatorVariantKey);
       const [located, unfilteredDatabaseMatches, appearanceMatches, crossSourceCandidates] = await Promise.all([
         printingAtLocatorVariant(database, observation.sourceLineage, locator, observation.variantKey),
         compatiblePrintings(database, compatibility),
@@ -588,20 +615,22 @@ export async function reconcileRetainedCardPrintingEvidence(
       ]);
       const databaseMatches = unfilteredDatabaseMatches;
       const matchIds = new Set(databaseMatches.map((match) => match.id));
-      const localMatch = localCompatibility.get(compatibilityKey);
+      const localMatch = await localCompatibility.get(compatibilityKey);
       if (localMatch !== undefined) matchIds.add(localMatch);
-      for (const [matchId, matchCompatibility] of localPrintingCompatibility) {
-        if (isCompatible(matchCompatibility, compatibility)) {
-          matchIds.add(matchId);
-        }
+      for await (const match of localPrintingCompatibility.matchingBeforeObservation(
+        compatibilityGroup(compatibility),
+      )) {
+        if (isCompatible(match.compatibility, compatibility)) matchIds.add(match.printingId);
       }
       const unprovenCrossSourceAppearance =
         matchIds.size === 0 && located === null && localLocated === undefined && crossSourceCandidates.length > 0;
       if (unprovenCrossSourceAppearance) crossSourceCandidates.forEach(({ id }) => matchIds.add(id));
-      const crossSourceMatches = [...matchIds].filter((id) => {
-        const matched = databaseMatches.find((match) => match.id === id) ?? localPrintingCompatibility.get(id);
-        return matched && matched.source_lineage !== observation.sourceLineage;
-      });
+      const crossSourceMatches: string[] = [];
+      for (const id of matchIds) {
+        const matched =
+          databaseMatches.find((match) => match.id === id) ?? (await localPrintingCompatibility.get(id))?.compatibility;
+        if (matched && matched.source_lineage !== observation.sourceLineage) crossSourceMatches.push(id);
+      }
       const insufficientCrossSource =
         unprovenCrossSourceAppearance ||
         (observation.supportedGame !== "gundam" &&
@@ -761,9 +790,9 @@ export async function reconcileRetainedCardPrintingEvidence(
           });
         }
       }
-      localCompatibility.set(compatibilityKey, printingId);
-      localPrintingCompatibility.set(printingId, compatibility);
-      localLocators.set(locatorVariantKey, { compatibility, printingId });
+      await localCompatibility.set(compatibilityKey, printingId);
+      await localPrintingCompatibility.set(printingId, { printingId, compatibility });
+      await localLocators.set(locatorVariantKey, { compatibility, printingId });
       if (observation.sourceLineage === "gundam-en-asia" || observation.sourceLineage === "gundam-en-us") {
         addGundamLineage(localGundamPrintingProvenance, printingId, observation.sourceLineage);
         addGundamProducts(localGundamProducts, printingId, observation.memberships.products);
@@ -786,7 +815,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         const { id: _carriedPrintingId, card_id: _carriedCardId, ...authoritativePrinting } = carriedPrinting;
         acceptedPrinting = fillAuthorityGaps(authoritativePrinting, proposedPrinting);
       }
-      const priorPrintingFacts = localPrintingFacts.get(printingId);
+      const priorPrintingFacts = await localPrintingFacts.get(printingId);
       if (
         publishedPrintingConflict !== null ||
         (priorPrintingFacts !== undefined &&
@@ -803,7 +832,7 @@ export async function reconcileRetainedCardPrintingEvidence(
             "Retained observations disagree on canonical Printing facts and no deterministic authority rule resolves them.",
         });
       } else {
-        localPrintingFacts.set(printingId, acceptedPrinting);
+        await localPrintingFacts.set(printingId, acceptedPrinting);
         printings.set(printingId, {
           id: printingId,
           card_id: cardId,
@@ -1295,14 +1324,16 @@ export async function reconcileRetainedCardPrintingEvidence(
     ).values(),
   ].sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right)));
   let candidateCatalogueDigest = await catalogueDataDigest(database, candidate, plans, checkedSourceLineages);
-  const observedCards = candidateCards
-    .filter(
-      (card) =>
-        localCardFacts.has(card.id) ||
-        targetedCardIds.has(card.id) ||
-        admittedEntities.some((entity) => entity.card.id === card.id),
+  const observedCards: CatalogueCard[] = [];
+  for (const card of candidateCards) {
+    if (
+      (await localCardFacts.has(card.id)) ||
+      targetedCardIds.has(card.id) ||
+      admittedEntities.some((entity) => entity.card.id === card.id)
     )
-    .sort((left, right) => left.id.localeCompare(right.id));
+      observedCards.push(card);
+  }
+  observedCards.sort((left, right) => left.id.localeCompare(right.id));
   const observedPrintings = [...printings.values()]
     .filter(
       (printing) =>
@@ -2094,6 +2125,7 @@ import { ReconciliationNormalizationStorageError } from "./reconciliation-normal
 
 function isStorageOrCapacityFailure(error: unknown): boolean {
   return (
+    error instanceof ReconciliationReducerStorageError ||
     error instanceof CandidateImageStorageError ||
     error instanceof ReconciliationInputStorageError ||
     error instanceof ReconciliationTextStorageError ||
@@ -2101,4 +2133,9 @@ function isStorageOrCapacityFailure(error: unknown): boolean {
     error instanceof ReconciliationNormalizationStorageError ||
     (error instanceof Error && error.message.startsWith("reconciliation_capacity_exceeded:"))
   );
+}
+
+function compatibilityGroup(compatibility: PrintingCompatibility): string {
+  const { source_lineage: _lineage, ...fields } = compatibility;
+  return canonicalJson(fields);
 }

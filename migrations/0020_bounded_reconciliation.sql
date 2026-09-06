@@ -200,4 +200,20 @@ CREATE TRIGGER game_candidate_partition_no_update BEFORE UPDATE ON game_candidat
 BEGIN SELECT RAISE(ABORT, 'game_candidate_partition_immutable'); END;
 CREATE TRIGGER game_candidate_partition_no_delete BEFORE DELETE ON game_candidate_partitions
 BEGIN SELECT RAISE(ABORT, 'game_candidate_partition_audit_retained'); END;
+CREATE TABLE reconciliation_reducer_state (
+  ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
+  namespace TEXT NOT NULL,
+  key_digest TEXT NOT NULL CHECK (length(key_digest) = 64),
+  observation_ordinal INTEGER NOT NULL CHECK (observation_ordinal > 0),
+  group_digest TEXT CHECK (group_digest IS NULL OR length(group_digest) = 64),
+  content TEXT NOT NULL CHECK (json_valid(content) AND length(CAST(content AS BLOB)) <= 524288),
+  sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+  PRIMARY KEY (ingestion_run_id, namespace, key_digest, observation_ordinal)
+);
+CREATE INDEX reconciliation_reducer_state_group
+ON reconciliation_reducer_state (ingestion_run_id, namespace, group_digest, key_digest, observation_ordinal);
+CREATE TRIGGER reconciliation_reducer_state_no_update BEFORE UPDATE ON reconciliation_reducer_state
+BEGIN SELECT RAISE(ABORT, 'reconciliation_reducer_state_immutable'); END;
+CREATE TRIGGER reconciliation_reducer_state_no_delete BEFORE DELETE ON reconciliation_reducer_state
+BEGIN SELECT RAISE(ABORT, 'reconciliation_reducer_state_audit_retained'); END;
 UPDATE catalogue_schema_state SET migration_level = 20 WHERE singleton = 1;
