@@ -120,10 +120,6 @@ export async function deployDev(input) {
             ...common,
             revisions: targets.revisions,
             printingImageId: targets.printing_image_id,
-            legalityCardId: targets.legality_card_id,
-            legalityDate: new Date().toISOString().slice(0, 10),
-            legalityFormat: targets.legality_format,
-            legalityRegion: targets.legality_region,
             staleCursor: targets.stale_cursor,
             staleRevisionId: targets.stale_revision_id,
           });
