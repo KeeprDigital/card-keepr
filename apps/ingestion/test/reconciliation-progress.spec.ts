@@ -1015,3 +1015,83 @@ test("a single Card's Erratum budget includes externally retained text", async (
     failure_code: "reconciliation_capacity_exceeded",
   });
 });
+
+test("a published catalogue larger than 1 MiB is streamed into the next candidate without an aggregate prior-payload read", async () => {
+  const { approve, testEnv } = await import("./reconciliation-helpers");
+  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const firstRun = await collect("/reconciliation/prior-candidate-stream", "prior-stream-first");
+  const first = await reconcile(firstRun.id);
+  expect(first.response.status).toBe(200);
+  expect(
+    new TextEncoder().encode(JSON.stringify(first.document.cards) + JSON.stringify(first.document.printings))
+      .byteLength,
+  ).toBeGreaterThan(1024 * 1024);
+  const published = await approve(first.document);
+  expect(published.response.status, JSON.stringify(published.document)).toBe(200);
+  const nextRun = await collect("/reconciliation/prior-candidate-stream", "prior-stream-next");
+  const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
+  let priorReads = 0;
+  const check = (sql: string, values: unknown[]) => {
+    if (sql.includes("FROM reconciliation_payload_chunks") && values.includes(firstRun.id)) {
+      expect(sql).toContain("LIMIT 1");
+      priorReads += 1;
+    }
+  };
+  const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement => {
+    const proxy = new Proxy(statement, {
+      get(target, property) {
+        if (property === "bind") return (...bound: unknown[]) => wrap(target.bind(...bound), sql, bound);
+        const value = Reflect.get(target, property);
+        if (typeof value !== "function") return value;
+        return (...args: unknown[]) => {
+          check(sql, values);
+          return value.apply(target, args);
+        };
+      },
+    });
+    statements.set(proxy, { sql, values });
+    return proxy;
+  };
+  const database = new Proxy(testEnv.CATALOGUE_DB, {
+    get(target, property) {
+      if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
+      if (property === "batch")
+        return (batch: D1PreparedStatement[]) => {
+          for (const statement of batch) {
+            const retained = statements.get(statement);
+            if (retained) check(retained.sql, retained.values);
+          }
+          return target.batch(batch);
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const event = {
+    payload: {
+      ingestion_run_id: nextRun.id,
+      expected_current_revision_id: requiredString(nextRun.document, "expected_current_revision_id"),
+      idempotency_key: "prior-stream-next",
+      observed_at: new Date().toISOString(),
+      generation: 0,
+    },
+  } as import("cloudflare:workers").WorkflowEvent<
+    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+  >;
+  const step = {
+    do: async (_name: string, _config: unknown, callback: () => Promise<string>) => callback(),
+  } as unknown as import("cloudflare:workers").WorkflowStep;
+  await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
+  expect(priorReads).toBeGreaterThan(2);
+  expect((await get(`/v1/ingestion-runs/${nextRun.id}/reconciliation`)).document.state).toBe("sealed");
+  const status = await get(`/v1/ingestion-runs/${nextRun.id}/reconciliation`);
+  const candidateId = (status.document.candidates as { id: string }[])[0]!.id;
+  const page = await get(`/v1/game-candidates/${candidateId}/partitions`);
+  const cards: unknown[] = [];
+  for (const partition of page.document.partitions as { kind: string; ordinal: number }[]) {
+    if (partition.kind !== "cards") continue;
+    const detail = await get(`/v1/game-candidates/${candidateId}/partitions/${partition.ordinal}`);
+    cards.push(...(detail.document.records as unknown[]));
+  }
+  expect(cards).toEqual(first.document.cards);
+});

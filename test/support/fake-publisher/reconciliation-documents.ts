@@ -183,6 +183,23 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
         },
       ],
     };
+  if (scenario === "prior-candidate-stream") {
+    return {
+      cards: Array.from({ length: 64 }, (_, index) =>
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP98-${String(index + 1).padStart(3, "0")}`,
+          name: `Synthetic prior Card ${index}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `/prior-candidate-stream/${index}`,
+          lineageMarker: `prior-candidate-stream-${index}`,
+          printedRulesText: "Synthetic printed text. ".repeat(1000),
+        }),
+      ),
+    };
+  }
   if (scenario === "large-card-content") {
     return {
       cards: [

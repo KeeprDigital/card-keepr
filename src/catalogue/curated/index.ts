@@ -19,6 +19,7 @@ export {
   retireCuratedRevision,
   showCuratedRevision,
   stripCuratedRevisionEffects,
+  restoreCuratedEntitySourceFields,
   supersedeCuratedRevision,
   validateCuratedRevision,
 } from "./curated-revisions";

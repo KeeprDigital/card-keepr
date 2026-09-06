@@ -23,12 +23,16 @@ import {
   type SourceMapping,
   matchingIdentityDecision,
 } from "./canonical-identity";
-import { applyPinnedCuratedRevisions, CuratedRevisionSourceChangeError, stripCuratedRevisionEffects } from "../curated";
+import {
+  applyPinnedCuratedRevisions,
+  CuratedRevisionSourceChangeError,
+  stripCuratedRevisionEffects,
+  restoreCuratedEntitySourceFields,
+} from "../curated";
 import {
   AdministrationProblem,
   guardedCatalogueStore,
   assertIngestionRunTransition,
-  byteBoundedJsonArrays,
   type CatalogueCandidate,
   type CatalogueCard,
   type CatalogueErratum,
@@ -39,7 +43,8 @@ import {
   canonicalJson,
   catalogueCandidateContract,
   type IngestionRunState,
-  retainedPayload,
+  retainedPayloadChunks,
+  streamedObjectMembers,
   type SupportedGame,
 } from "../shared";
 import { type DigimonCardAuthority, reconcileDigimonCardAuthority } from "./digimon-reconciliation";
@@ -168,18 +173,8 @@ export async function reconcileRetainedCardPrintingEvidence(
     printingId: string;
     compatibility: PrintingCompatibility;
   }>(database, runId, "printing_compatibility", ({ compatibility }) => compatibilityGroup(compatibility));
-  const priorCandidate = await candidateAtRevision(
-    database,
-    run.expected_current_revision_id,
-    JSON.parse(run.selected_games_json) as SupportedGame[],
-  );
   const cards = new ReconciliationCardState(database, runId, "cards");
   const priorCards = new ReconciliationCardState(database, runId, "prior_cards");
-  for (const card of priorCandidate?.cards ?? []) {
-    await priorCards.seed(card);
-    await cards.seed(card);
-  }
-  if (priorCandidate) priorCandidate.cards = [];
   const printings = new ReconciliationReducerIndex<CataloguePrinting>(
     database,
     runId,
@@ -187,16 +182,24 @@ export async function reconcileRetainedCardPrintingEvidence(
     (printing) => printing.card_id,
   );
   const priorPrintings = new ReconciliationReducerIndex<CataloguePrinting>(database, runId, "prior_printings");
-  for (const printing of priorCandidate?.printings ?? []) {
-    await priorPrintings.seed(printing.id, printing);
-    await printings.seed(printing.id, printing);
-  }
   const printingImages = new ReconciliationReducerIndex<CataloguePrintingImage>(database, runId, "printing_images");
-  for (const image of priorCandidate?.printing_images ?? []) await printingImages.seed(image.id, image);
-  if (priorCandidate) {
-    priorCandidate.printings = [];
-    priorCandidate.printing_images = [];
-  }
+  const selectedGames = JSON.parse(run.selected_games_json) as SupportedGame[];
+  const priorCandidate = await candidateAtRevision(database, run.expected_current_revision_id, selectedGames, {
+    card: async (card) => {
+      if (selectedGames.includes(card.game)) restoreCuratedEntitySourceFields(card);
+      await priorCards.seed(card);
+      await cards.seed(card);
+    },
+    printing: async (printing) => {
+      const card = await priorCards.get(printing.card_id);
+      if (card && selectedGames.includes(card.game)) restoreCuratedEntitySourceFields(printing);
+      await priorPrintings.seed(printing.id, printing);
+      await printings.seed(printing.id, printing);
+    },
+    image: async (image) => {
+      await printingImages.seed(image.id, image);
+    },
+  });
   const sourceMappings: SourceMapping[] = [];
   const localCardFacts = new ReconciliationReducerIndex<string>(database, runId, "card_facts");
   const localDigimonCardAuthorities = new ReconciliationReducerIndex<DigimonCardAuthority>(
@@ -1591,46 +1594,68 @@ async function candidateAtRevision(
   database: CatalogueStore,
   revisionId: string,
   selectedGames: readonly SupportedGame[],
+  seed: {
+    card: (card: CatalogueCard) => Promise<void>;
+    printing: (printing: CataloguePrinting) => Promise<void>;
+    image: (image: CataloguePrintingImage) => Promise<void>;
+  },
 ): Promise<CatalogueCandidate | null> {
   const row = await candidateAtRevisionStatement(database, revisionId).first<{
     ingestion_run_id: string;
     candidate_json: string;
   }>();
   if (row === null) return null;
-  const candidate = stripCuratedRevisionEffects(
-    JSON.parse(
-      await retainedPayload(database, row.ingestion_run_id, "candidate", row.candidate_json),
-    ) as CatalogueCandidate,
-    selectedGames,
-  );
-  const errata = candidate.errata ?? [];
-  const provenanceByErratum = new Map<string, CatalogueErratum["provenance"][number][]>();
-  for (const idsJson of byteBoundedJsonArrays(errata.map(({ id }) => id))) {
-    const rows = await errataProvenanceByIdsStatement(database, idsJson).all<{
+  const values: Record<string, unknown> = {};
+  // Cards are seeded first even for legacy payloads whose object members were not canonicalized.
+  // The second pass can therefore resolve each Printing's game without retaining all Cards.
+  for (const cardsOnly of [true, false]) {
+    for await (const member of streamedObjectMembers(
+      retainedPayloadChunks(database, row.ingestion_run_id, "candidate", row.candidate_json),
+    )) {
+      if ((member.key === "cards") !== cardsOnly) continue;
+      if (member.kind === "array") {
+        Object.defineProperty(values, member.key, { value: [], writable: true, enumerable: true, configurable: true });
+      } else if (member.key === "cards" && member.array) {
+        await seed.card(member.value as CatalogueCard);
+      } else if (member.key === "printings" && member.array) {
+        await seed.printing(member.value as CataloguePrinting);
+      } else if (member.key === "printing_images" && member.array) {
+        await seed.image(member.value as CataloguePrintingImage);
+      } else if (member.array) {
+        (values[member.key] as unknown[]).push(member.value);
+      } else {
+        Object.defineProperty(values, member.key, {
+          value: member.value,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+      }
+    }
+  }
+  const candidate = stripCuratedRevisionEffects(values as CatalogueCandidate, selectedGames);
+  const errata = [...(candidate.errata ?? [])];
+  for (let index = 0; index < errata.length; index += 1) {
+    const erratum = errata[index]!;
+    const rows = await errataProvenanceByIdsStatement(database, canonicalJson([erratum.id])).all<{
       erratum_id: string;
       source_lineage: string;
       source_observation_id: string;
     }>();
-    for (const provenance of rows.results) {
-      provenanceByErratum.set(provenance.erratum_id, [
-        ...(provenanceByErratum.get(provenance.erratum_id) ?? []),
+    errata[index] = mergeCatalogueErrata(
+      [erratum],
+      [
         {
-          source_lineage: provenance.source_lineage,
-          source_observation_id: provenance.source_observation_id,
+          ...erratum,
+          provenance: rows.results.map((provenance) => ({
+            source_lineage: provenance.source_lineage,
+            source_observation_id: provenance.source_observation_id,
+          })),
         },
-      ]);
-    }
+      ],
+    )[0]!;
   }
-  return {
-    ...candidate,
-    errata: mergeCatalogueErrata(
-      errata,
-      errata.map((erratum) => ({
-        ...erratum,
-        provenance: provenanceByErratum.get(erratum.id) ?? [],
-      })),
-    ),
-  };
+  return { ...candidate, errata };
 }
 
 export async function showReconciledPrinting(

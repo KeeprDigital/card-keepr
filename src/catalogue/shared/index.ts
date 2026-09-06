@@ -109,6 +109,7 @@ export {
   guardedAtomicBatch,
   payloadChunkStatements,
   retainedPayload,
+  retainedPayloadChunks,
 } from "./reconciliation-payload";
 // Game Profile contract helpers, consumed by curated, export,
 // and reconciliation alike.
@@ -146,3 +147,5 @@ export { advancesCollectionProgress, type WorkflowKind, workflowStepName, workfl
 export { nextLiveIngestionReservationSql } from "./ingestion-reservation-repository";
 
 export { persistReconciliationPayloadChunkStatement } from "./reconciliation-payload-repository";
+
+export { streamedObjectMembers } from "./streamed-object-members";

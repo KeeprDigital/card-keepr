@@ -1015,18 +1015,7 @@ export function stripCuratedRevisionEffects(
     ...(candidate.distribution_contexts ?? []).filter((context) => selected === null || selected.has(context.game)),
     ...(candidate.errata ?? []).filter((erratum) => selected === null || selected.has(erratum.game)),
   ] as Record<string, unknown>[];
-  for (const entity of entities) {
-    const provenance = Array.isArray(entity.curated_provenance)
-      ? (entity.curated_provenance as CuratedProvenance[])
-      : [];
-    for (const item of provenance) {
-      const target = item.target;
-      if (target.kind === "field" && typeof target.path === "string") {
-        restoreReviewedField(entity, pointerParts(target.path), item.reviewed_source_value);
-      }
-    }
-    delete entity.curated_provenance;
-  }
+  for (const entity of entities) restoreCuratedEntitySourceFields(entity);
   if (candidate.product_relationships !== undefined) {
     candidate.product_relationships = candidate.product_relationships
       .filter(
@@ -1046,6 +1035,18 @@ export function stripCuratedRevisionEffects(
       });
   }
   return candidate;
+}
+
+/** Restore a freshly decoded entity's reviewed official fields before applying the pinned revisions. */
+export function restoreCuratedEntitySourceFields(entity: Record<string, unknown>): void {
+  const provenance = Array.isArray(entity.curated_provenance) ? (entity.curated_provenance as CuratedProvenance[]) : [];
+  for (const item of provenance) {
+    const target = item.target;
+    if (target.kind === "field" && typeof target.path === "string") {
+      restoreReviewedField(entity, pointerParts(target.path), item.reviewed_source_value);
+    }
+  }
+  delete entity.curated_provenance;
 }
 
 async function curatedRevisionSchemaAvailable(database: CatalogueStore): Promise<boolean> {
