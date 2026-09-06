@@ -1,3 +1,5 @@
+import { entityAdmissionPinStatementsForNewRun } from "./entity-admission-pins";
+import { reconciliationSelectedGamesStatement } from "./reconciliation-progress-repository";
 import {
   failedReconciliationWorkflowStatement,
   releaseFailedReconciliationWorkflowStatement,
@@ -143,8 +145,19 @@ export async function initializeReconciliationProgress(database: CatalogueStore,
       ),
     ),
   });
+  const existing = await reconciliationOperationStatement(database, runId).first<{ definition_pins_json: string }>();
+  if (existing) {
+    assertPinnedDefinitions(existing.definition_pins_json, definitions);
+    return;
+  }
+  const selected = await reconciliationSelectedGamesStatement(database, runId).first<{ games_json: string }>();
+  const admissionPins = await entityAdmissionPinStatementsForNewRun(
+    database,
+    runId,
+    JSON.parse(selected?.games_json ?? "[]") as string[],
+  );
   try {
-    await createReconciliationOperationStatement(database, runId, at, definitions).run();
+    await database.batch([createReconciliationOperationStatement(database, runId, at, definitions), ...admissionPins]);
   } catch (error) {
     if (error instanceof Error && error.message.includes("game_candidate_slot_occupied"))
       throw new AdministrationProblem(
@@ -152,10 +165,15 @@ export async function initializeReconciliationProgress(database: CatalogueStore,
         "game_candidate_slot_occupied",
         "Inspect or finish the existing Catalogue Candidate for this Supported Game first.",
       );
-    throw error;
+    const winner = await reconciliationOperationStatement(database, runId).first<{ definition_pins_json: string }>();
+    if (!winner) throw error;
   }
   const retained = await reconciliationOperationStatement(database, runId).first<{ definition_pins_json: string }>();
-  if (retained?.definition_pins_json !== definitions)
+  assertPinnedDefinitions(retained?.definition_pins_json, definitions);
+}
+
+function assertPinnedDefinitions(retained: string | undefined, definitions: string) {
+  if (retained !== definitions)
     throw new AdministrationProblem(
       409,
       "reconciliation_definition_changed",

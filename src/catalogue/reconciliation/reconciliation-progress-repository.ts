@@ -39,7 +39,10 @@ export function reconciliationOperationStatement(database: CatalogueStore, runId
   return repositoryStatements(database)
     .prepare(`SELECT id AS reconciliation_id, ingestion_run_id,
     state, generation, created_at, deadline, completed_partitions,
-    (SELECT count(*) FROM reconciliation_preparation_batches WHERE ingestion_run_id = reconciliation_operations.ingestion_run_id) AS completed_batches, candidate_digest, manifest_digest, failure_code, definition_pins_json, observation_cutoff, identity_decision_cutoff, authority_decision_cutoff
+    (SELECT count(*) FROM reconciliation_preparation_batches WHERE ingestion_run_id = reconciliation_operations.ingestion_run_id) AS completed_batches,
+    EXISTS (SELECT 1 FROM entity_admission_run_pins WHERE ingestion_run_id = reconciliation_operations.ingestion_run_id) AS admission_selection_pinned,
+    (SELECT count(*) FROM entity_admission_pinned_decisions WHERE ingestion_run_id = reconciliation_operations.ingestion_run_id) AS admission_decision_count,
+    candidate_digest, manifest_digest, failure_code, definition_pins_json, observation_cutoff, identity_decision_cutoff, authority_decision_cutoff
     FROM reconciliation_operations WHERE ingestion_run_id = ?`)
     .bind(runId);
 }
@@ -179,4 +182,12 @@ export function reconciliationPartitionStatement(database: CatalogueStore, runId
     .prepare(`SELECT kind, content, sha256, byte_length, record_count
     FROM reconciliation_record_partitions WHERE ingestion_run_id = ? AND ordinal = ?`)
     .bind(runId, ordinal);
+}
+
+export function reconciliationSelectedGamesStatement(database: CatalogueStore, runId: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT json_group_array(game) AS games_json FROM (
+    SELECT game FROM ingestion_run_selected_games WHERE ingestion_run_id = ? ORDER BY game
+  )`)
+    .bind(runId);
 }

@@ -1,3 +1,4 @@
+import { entityAdmissionPinMetadata } from "./entity-admission-pins";
 import { type CatalogueStore, type CatalogueCandidate, canonicalJson, sha256Text } from "../shared";
 import {
   insertReconciliationPartitionStatement,
@@ -29,6 +30,7 @@ export async function persistCandidatePartitions(
       contract: "card-keepr-sealed-candidate-manifest@1",
       run_id: runId,
       definitions: pins.definition_pins_json,
+      admissions: await entityAdmissionPinMetadata(database, runId),
       observations: pins.observation_cutoff,
       identities: pins.identity_decision_cutoff,
       authorities: pins.authority_decision_cutoff,

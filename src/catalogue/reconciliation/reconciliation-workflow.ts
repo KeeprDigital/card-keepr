@@ -1,6 +1,5 @@
 import { initializeReconciliationProgress } from "./reconciliation-progress";
 import {
-  createReconciliationOperationStatement,
   reconciliationOperationStatement,
   reconciliationRequestForRunStatement,
   pauseFailedReconciliationStatement,
@@ -17,7 +16,7 @@ import {
 } from "../shared";
 import { assertIdentifier } from "../source-evidence";
 
-import { failReconciliationWorkflow, retainedReconciliationResult } from "./reconciliation-candidate-store";
+import { retainedReconciliationResult } from "./reconciliation-candidate-store";
 import {
   createReconciliationWorkflowRequestStatement,
   reconciliationWorkflowCandidateDigestStatement,

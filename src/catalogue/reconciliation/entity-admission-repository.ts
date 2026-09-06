@@ -217,3 +217,10 @@ export function latestAcceptedAdmissionStatement(database: CatalogueStore, id: s
     WHERE proposal_id = ? AND action IN ('admit', 'link') ORDER BY generation DESC LIMIT 1`)
     .bind(id);
 }
+
+export function admissionPinMetadataPageStatement(database: CatalogueStore, run: string, after: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT proposal_id, generation FROM entity_admission_pinned_decisions
+    WHERE ingestion_run_id = ? AND proposal_id > ? ORDER BY proposal_id LIMIT 100`)
+    .bind(run, after);
+}

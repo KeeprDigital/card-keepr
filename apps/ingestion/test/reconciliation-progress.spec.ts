@@ -363,3 +363,51 @@ test("interrupted preparation resumes verified batches before sealing for review
   });
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "awaiting_approval" });
 });
+
+test("operation initialization pins even an empty admission selection before Workflow delivery", async () => {
+  const { default: worker } = await import("../src/index");
+  const { testEnv } = await import("./reconciliation-helpers");
+  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const run = await collect("/reconciliation/base", "early-admission-pin");
+  const instance = { status: async () => ({ status: "running" }) } as unknown as WorkflowInstance;
+  const workflow = {
+    create: async () => instance,
+    get: async () => instance,
+  } as unknown as Env["RECONCILIATION_WORKFLOW"];
+  const response = await worker.fetch(
+    new Request(`https://card-keepr.invalid/v1/ingestion-runs/${run.id}/reconciliation`, {
+      method: "POST",
+      headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+      body: JSON.stringify({
+        expected_current_revision_id: run.document.expected_current_revision_id,
+        idempotency_key: "early-admission-pin",
+      }),
+    }),
+    { ...testEnv, RECONCILIATION_WORKFLOW: workflow },
+  );
+  expect(response.status).toBe(202);
+  const operation = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+  expect(operation.document).toMatchObject({ admission_selection_pinned: 1, admission_decision_count: 0 });
+  await runReconciliationWorkflow(
+    testEnv,
+    {
+      payload: {
+        ingestion_run_id: run.id,
+        expected_current_revision_id: run.document.expected_current_revision_id,
+        idempotency_key: "early-admission-pin",
+        observed_at: operation.document.created_at,
+      },
+    } as import("cloudflare:workers").WorkflowEvent<
+      import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+    >,
+    {
+      do: async (_name: string, _config: unknown, callback: () => Promise<string>) => callback(),
+    } as unknown as import("cloudflare:workers").WorkflowStep,
+  );
+  const sealed = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+  expect(sealed.document).toMatchObject({
+    state: "sealed",
+    admission_selection_pinned: 1,
+    admission_decision_count: 0,
+  });
+});

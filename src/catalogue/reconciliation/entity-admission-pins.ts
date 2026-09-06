@@ -6,9 +6,11 @@ import {
   type CatalogueCard,
   type CataloguePrinting,
   canonicalJson,
+  sha256Text,
 } from "../shared";
 import {
   admissionPinStatement,
+  admissionPinMetadataPageStatement,
   pinAdmissionsStatement,
   pinnedAdmissionsStatement,
   type EntityProposalRow,
@@ -96,5 +98,44 @@ export async function applyPinnedEntityAdmissions(
     }
     if (rows.length < 100) return admitted;
     after = rows.at(-1)!.id;
+  }
+}
+
+/** Compose this with operation creation; retries reuse the retained selection. */
+export async function entityAdmissionPinStatementsForNewRun(
+  database: CatalogueStore,
+  runId: string,
+  games: readonly string[],
+) {
+  const gamesJson = canonicalJson([...new Set(games)].sort());
+  const existing = await admissionPinStatement(database, runId).first<{ games_json: string }>();
+  if (existing) {
+    if (existing.games_json !== gamesJson)
+      throw new AdministrationProblem(
+        409,
+        "admission_pin_conflict",
+        "The run's admission game selection is immutable.",
+      );
+    return [];
+  }
+  return [pinAdmissionsStatement(database, runId, gamesJson, canonicalJson(await sourceAuthorities(database)))];
+}
+
+export async function entityAdmissionPinMetadata(database: CatalogueStore, runId: string) {
+  const pin = await admissionPinStatement(database, runId).first<{ games_json: string; policy_json: string }>();
+  if (!pin) throw new Error("Reconciliation admission pins are unavailable.");
+  let digest = await sha256Text(canonicalJson({ games: pin.games_json, policy: pin.policy_json }));
+  let after = "";
+  let count = 0;
+  for (;;) {
+    const page = (
+      await admissionPinMetadataPageStatement(database, runId, after).all<{ proposal_id: string; generation: number }>()
+    ).results;
+    for (const row of page) {
+      digest = await sha256Text(canonicalJson({ previous: digest, ...row }));
+      after = row.proposal_id;
+      count++;
+    }
+    if (page.length < 100) return { sha256: digest, decision_count: count };
   }
 }

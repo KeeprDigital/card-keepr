@@ -1,10 +1,7 @@
 import { canonicalValueDigest } from "./reconciliation-preparation";
 import { CandidateImageStorageError } from "./reconciliation-images";
 import { initializeReconciliationProgress } from "./reconciliation-progress";
-import {
-  createReconciliationOperationStatement,
-  reconciliationWriterGuard,
-} from "./reconciliation-progress-repository";
+import { reconciliationWriterGuard } from "./reconciliation-progress-repository";
 import {
   assessSourceAdmission,
   completeSourceAdmission,
@@ -36,7 +33,6 @@ import {
   type IngestionRunState,
   retainedPayload,
   type SupportedGame,
-  sha256Text,
 } from "../shared";
 import { type DigimonCardAuthority, reconcileDigimonCardAuthority } from "./digimon-reconciliation";
 import {
@@ -1704,13 +1700,11 @@ async function catalogueDataDigest(
     }
   }
   const catalogueCandidate = semanticCatalogueCandidate(candidate);
-  return sha256Text(
-    canonicalJson({
-      catalogue_data: catalogueCandidate,
-      current_memberships: [...memberships.values()].sort(compareCanonical),
-      withdrawals: [...withdrawals.values()].sort(compareCanonical),
-    }),
-  );
+  return canonicalValueDigest({
+    catalogue_data: catalogueCandidate,
+    current_memberships: [...memberships.values()].sort(compareCanonical),
+    withdrawals: [...withdrawals.values()].sort(compareCanonical),
+  });
 }
 
 function semanticCatalogueCandidate(candidate: CatalogueCandidate): Record<string, unknown> {
