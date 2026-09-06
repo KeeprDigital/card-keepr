@@ -136,15 +136,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   try {
     retained = await retainedReconciliationObservation(database, evidenceObjects, runId, printingImageObjects);
   } catch (error) {
-    if (
-      error instanceof CandidateImageStorageError ||
-      error instanceof ReconciliationInputStorageError ||
-      error instanceof ReconciliationTextStorageError ||
-      error instanceof ReconciliationDocumentStorageError ||
-      error instanceof ReconciliationNormalizationStorageError ||
-      (error instanceof Error && error.message.startsWith("reconciliation_capacity_exceeded:"))
-    )
-      throw error;
+    if (isStorageOrCapacityFailure(error)) throw error;
     const diagnostics: Diagnostic[] = [
       {
         code: "retained_evidence_invalid",
@@ -1131,6 +1123,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
     }
   } catch (error) {
+    if (isStorageOrCapacityFailure(error)) throw error;
     diagnostics.push({
       code: "retained_evidence_invalid",
       source_observation_id: null,
@@ -2098,3 +2091,14 @@ async function requiredActiveParsingRun(database: CatalogueStore, runId: string)
 import { ReconciliationTextStorageError } from "./reconciliation-text";
 import { ReconciliationDocumentStorageError } from "./reconciliation-document";
 import { ReconciliationNormalizationStorageError } from "./reconciliation-normalized";
+
+function isStorageOrCapacityFailure(error: unknown): boolean {
+  return (
+    error instanceof CandidateImageStorageError ||
+    error instanceof ReconciliationInputStorageError ||
+    error instanceof ReconciliationTextStorageError ||
+    error instanceof ReconciliationDocumentStorageError ||
+    error instanceof ReconciliationNormalizationStorageError ||
+    (error instanceof Error && error.message.startsWith("reconciliation_capacity_exceeded:"))
+  );
+}

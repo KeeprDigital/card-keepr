@@ -556,6 +556,53 @@ test("normalization resumes after its last retained observation without repeatin
   });
 });
 
+test("a Product-pass observation read outage pauses rather than terminally rejecting evidence", async () => {
+  const { testEnv, post } = await import("./reconciliation-helpers");
+  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const run = await collect("/reconciliation/base", "product-pass-read-outage");
+  let passes = 0;
+  let failures = 0;
+  let unavailable = true;
+  const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement => new Proxy(statement, {
+    get(target, property) {
+      if (property === "bind") return (...bindings: unknown[]) => wrap(target.bind(...bindings), sql, bindings);
+      if (property === "first") return async (...args: Parameters<D1PreparedStatement["first"]>) => {
+        if (sql.includes("FROM reconciliation_input_partitions") && sql.includes("kind = ?") && values.at(-1) === -1) {
+          passes++;
+          if (unavailable && passes % 4 === 0) { failures++; throw new Error("Injected Product-pass input storage outage"); }
+        }
+        return target.first(...args);
+      };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const database = new Proxy(testEnv.CATALOGUE_DB, {
+    get(target, property) {
+      if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const payload = { ingestion_run_id: run.id, expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"), idempotency_key: "product-pass-read-outage", observed_at: new Date().toISOString(), generation: 0 };
+  const step = {
+    do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+      for (let attempt = 0; ; attempt++) {
+        try { return await callback(); } catch (error) { if (attempt >= config.retries.limit) throw error; }
+      }
+    },
+  } as unknown as import("cloudflare:workers").WorkflowStep;
+  const event = { payload } as import("cloudflare:workers").WorkflowEvent<import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams>;
+  await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
+  expect(failures).toBe(4);
+  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({ state: "paused", generation: 1, candidate_digest: null });
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document.state).toBe("parsing");
+  expect((await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, { generation: 1, idempotency_key: "resume-product-read" })).response.status).toBe(200);
+  unavailable = false;
+  await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, { payload: { ...payload, generation: 1 } } as typeof event, step);
+  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({ state: "sealed", generation: 1 });
+});
+
 test("interrupted preparation resumes verified batches before sealing for review", async () => {
   const { testEnv, post } = await import("./reconciliation-helpers");
   const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
