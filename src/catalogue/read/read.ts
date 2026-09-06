@@ -539,6 +539,19 @@ async function loadVerifiedExportManifest(
   }
   const text = await object.text();
   const manifest = JSON.parse(text) as ExportManifest;
+  // Pre-Go-Live schemas evolve in place. Earlier evidence-bearing exports
+  // remain retained for administration/recovery, but cannot be served as the
+  // current consumer contract (ADR 0008).
+  if (
+    Object.hasOwn(manifest, "source_freshness") ||
+    manifest.components.some(({ name }) => name === "legality-rules")
+  ) {
+    throw new ReadProblem(
+      503,
+      "catalogue_export_unavailable",
+      "This Catalogue Export requires regeneration under the current consumer contract.",
+    );
+  }
   const canonicalManifest = `${canonicalJson(manifest)}\n`;
   const selfDigest = await sha256Text(
     `${canonicalJson({

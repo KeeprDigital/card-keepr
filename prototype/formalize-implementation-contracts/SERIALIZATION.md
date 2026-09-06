@@ -18,6 +18,13 @@ Distribution Contexts, Errata and identity/lifecycle relationships. Supporting
 provenance, source health, admission decisions and tournament eligibility are
 administrative or out of scope and are absent from these packages (ADRs 0013–0014).
 The pre-Go-Live schemas are edited in place; older artifacts must be regenerated.
+Consumer manifest, listing and component reads reject superseded evidence-bearing
+manifests with `503 catalogue_export_unavailable`, including conditional and HEAD
+requests. Their retained objects and guarded deletion remain intact. For an
+existing pre-Go-Live database, use the supported fresh-baseline handoff and replay
+retained evidence through reconciliation, inspection, approval and publication to
+produce the current package; do not overwrite immutable exports or bypass backup
+and deletion guards. This change performs no database cutover or release.
 
 ## Host independence
 

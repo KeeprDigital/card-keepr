@@ -114,7 +114,6 @@ export async function buildCatalogueExport(
     cardEvidence?: Readonly<Record<string, readonly { source: string }[]>>;
     printingEvidence?: Readonly<Record<string, readonly { source: string }[]>>;
   },
-  _sourceFreshness?: readonly SourceFreshness[],
 ): Promise<BuiltCatalogueExport> {
   const recordFactories = await exportRecordFactories(candidate, catalogueRevisionId, lifecycles);
   const components: ExportComponent[] = [];

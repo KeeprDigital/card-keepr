@@ -579,15 +579,6 @@ describe("Errata rules-text lifecycle", () => {
           lifecycle: expect.objectContaining({
             last_observed_revision_id: seedRevisionId,
           }),
-          locator_evidence: {
-            current: [
-              expect.objectContaining({
-                locator: "/official/dedicated-multi/base",
-                current: true,
-              }),
-            ],
-            historical: [],
-          },
         }),
       ]),
     );

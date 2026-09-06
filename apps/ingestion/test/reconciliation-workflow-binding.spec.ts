@@ -1,12 +1,7 @@
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import { expect, test, vi } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
-import {
-  compareSourceFreshness,
-  type SourceFreshnessStorageRow,
-  sourceFreshnessFromStorage,
-  sourceFreshnessKey,
-} from "../../../src/catalogue/read";
+import { sourceFreshnessFromStorage } from "../../../src/catalogue/read";
 import {
   parseReconciliationObservation,
   type ReconciliationWorkflowParams,
@@ -21,7 +16,6 @@ import * as catalogueExportQueries from "./query-helpers/catalogue-export";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
-import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import {
   approve,
   collect,
@@ -788,7 +782,6 @@ test("retained immutable evidence publishes stable identities and warns when ear
     expect.objectContaining({
       kind: "printing-product",
       relationship_value: "product_op01",
-      evidence_category: "derived",
     }),
   );
 
@@ -904,12 +897,10 @@ test("retained immutable evidence publishes stable identities and warns when ear
   expect(await exportComponentRecords(secondRevision, "relationships")).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        source_lineage: "one-piece-en",
         relationship_value: "product_op01",
         lifecycle: expect.objectContaining({ current: false }),
       }),
       expect.objectContaining({
-        source_lineage: "one-piece-en",
         relationship_value: "product_promotion",
         lifecycle: expect.objectContaining({ current: true }),
       }),
@@ -996,17 +987,6 @@ test("retained immutable evidence publishes stable identities and warns when ear
         withdrawn: true,
         withdrawal: {
           revision_id: withdrawalRevision,
-          evidence: {
-            entity: "printing",
-            assertion: "withdrawn",
-            state: "withdrawn",
-            effective_at: "2026-07-01T00:00:00.000Z",
-            evidence: "Official withdrawal notice",
-            source_lineage: "one-piece-en",
-            source_snapshot_id: expect.stringMatching(/^srcsnap_/),
-            source_observation_set_id: expect.stringMatching(/^srcobsset_/),
-            source_observation_id: expect.stringMatching(/^srcobs_/),
-          },
         },
       },
     }),
@@ -1087,8 +1067,8 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
   const approvedAt = "2026-07-29T02:00:00.000Z";
   const reconcileAfter = "2026-07-29T02:05:00.000Z";
   const approvalKey = "approve-reconciliation-interrupted";
-  const cardId = candidate.cards[0]!.id;
-  const printingId = candidate.printings[0]!.id;
+  const _cardId = candidate.cards[0]!.id;
+  const _printingId = candidate.printings[0]!.id;
   const publication = await reconciliationPublication(
     catalogueStore(testEnv.CATALOGUE_DB),
     run.id,
@@ -1096,20 +1076,6 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
     approvedAt,
   );
   if (publication === null) throw new Error("publication plan missing");
-  const priorFreshness = await sourceEvidenceQueries
-    .readSourceFreshnessGameAreaForInterruptedReconciliationPublicationRecoversExactDigestBoundCandidateExport(
-      testEnv.CATALOGUE_DB,
-    )
-    .all<SourceFreshnessStorageRow>();
-  const exactFreshness = new Map(
-    priorFreshness.results
-      .map(sourceFreshnessFromStorage)
-      .filter(({ game }) => candidate.selected_games.includes(game))
-      .map((check) => [sourceFreshnessKey(check), check]),
-  );
-  for (const check of candidate.source_checks ?? []) {
-    exactFreshness.set(sourceFreshnessKey(check), check);
-  }
   const catalogueExport = await buildCatalogueExport(
     candidate,
     persisted?.candidate_catalogue_digest ?? "",
@@ -1125,7 +1091,6 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
       cardEvidence: publication.cardEvidence,
       printingEvidence: publication.printingEvidence,
     },
-    [...exactFreshness.values()].sort(compareSourceFreshness),
   );
   const approval = {
     action: "approved",

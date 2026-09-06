@@ -1078,6 +1078,7 @@
             "cursor_revision_unavailable",
             "catalogue_query_unavailable",
             "catalogue_export_deleted",
+            "catalogue_export_unavailable",
             "range_not_satisfiable",
             "rate_limited",
             "internal_error"
