@@ -1,3 +1,4 @@
+export { MissingObjectError } from "./missing-object-error";
 // Public surface of the `shared` cluster: leaf helpers and domain-type
 // modules every other cluster may import. Nothing here imports another
 // cluster. See ../README.md for the cluster map (issue #96).
@@ -46,6 +47,7 @@ export {
   catalogueStore,
   repositoryStatements,
 } from "./catalogue-store-repository";
+export { consumerContent } from "./consumer-content";
 export type {
   CuratedEvidence,
   CuratedFieldTarget,

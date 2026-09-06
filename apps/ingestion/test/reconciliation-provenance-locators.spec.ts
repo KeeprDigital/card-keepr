@@ -239,7 +239,7 @@ test("sequential selected-game publications retain the complete current catalogu
   const onePiecePublished = await approve(onePiece.document);
   expect(onePiecePublished.response.status).toBe(200);
   const onePieceRevision = requiredString(onePiecePublished.document, "resulting_revision_id");
-  const firstManifest = await exportManifest(onePieceRevision);
+  const _firstManifest = await exportManifest(onePieceRevision);
 
   const fusionRun = await collect("/reconciliation/union-fusion-world", "reconcile-union-fusion-world", {
     game: "fusion-world",
@@ -289,25 +289,12 @@ test("sequential selected-game publications retain the complete current catalogu
     .all<{ printing_id: string }>();
   expect(d1Printings.results.map(({ printing_id }) => printing_id)).toContain(requiredString(onePiecePrinting, "id"));
   expect(await exportComponentRecords(revisionId, "cards")).toHaveLength(d1Cards.results.length);
-  const fusionSnapshot = await sourceEvidenceQueries
+  const _fusionSnapshot = await sourceEvidenceQueries
     .readSourceSnapshotsRetrievedAt(testEnv.CATALOGUE_DB)
     .bind(fusionRun.id)
     .first<{ retrieved_at: string }>();
   const secondManifest = await exportManifest(revisionId);
-  expect(secondManifest.source_freshness).toEqual(
-    expect.arrayContaining([
-      {
-        game: "one-piece",
-        area: "cards-and-printings",
-        checked_at: firstManifest.source_freshness.find(({ game }) => game === "one-piece")?.checked_at,
-      },
-      {
-        game: "fusion-world",
-        area: "cards-and-printings",
-        checked_at: fusionSnapshot?.retrieved_at,
-      },
-    ]),
-  );
+  expect(secondManifest).not.toHaveProperty("source_freshness");
   const products = await exportComponentRecords(revisionId, "products");
   const sharedProducts = products.filter(
     (product) =>
@@ -528,7 +515,6 @@ test("historical locator bindings reactivate only for the same Printing and expo
   expect(await exportComponentRecords(missingRevision, "printings")).toContainEqual(
     expect.objectContaining({
       id: printingId,
-      locator_evidence: stale.document.locators,
     }),
   );
 
@@ -595,16 +581,6 @@ test("historical locator bindings reactivate only for the same Printing and expo
   expect(await exportComponentRecords(missingAgainRevision, "printings")).toContainEqual(
     expect.objectContaining({
       id: printingId,
-      locator_evidence: {
-        current: [],
-        historical: [
-          expect.objectContaining({
-            locator: "/official/locator-binding/stable",
-            current: false,
-            last_missing_revision_id: missingAgainRevision,
-          }),
-        ],
-      },
     }),
   );
 }, 30_000);
@@ -670,7 +646,6 @@ test("locator variant evolution preserves effective-dated suffix history across 
   expect(await exportComponentRecords(reactivatedRevision, "printings")).toContainEqual(
     expect.objectContaining({
       id: printingId,
-      locator_evidence: lifecycle.document.locators,
     }),
   );
 }, 20_000);

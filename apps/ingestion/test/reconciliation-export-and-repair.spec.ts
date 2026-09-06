@@ -1,16 +1,9 @@
 import { expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
-import {
-  canonicalJson,
-  catalogueCandidateContract,
-  catalogueRevisionIdentity,
-  catalogueStore,
-  sha256,
-} from "../../../src/catalogue/shared";
+import { canonicalJson, catalogueCandidateContract, catalogueStore, sha256 } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { EMPTY_CATALOGUE_GZIP_HEX, GZIP_PROFILE_GOLDENS } from "./deterministic-gzip-golden";
 import * as cardSearchQueries from "./query-helpers/card-search";
-import * as ingestionQueries from "./query-helpers/ingestion";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import {
   approve,
@@ -45,6 +38,8 @@ test("streamed catalogue gzip is byte-identical to the checked-in golden bytes",
     "catrev_gzip_golden",
     "2026-07-30T01:02:03.000Z",
   );
+  expect(built.manifest).not.toHaveProperty("source_freshness");
+  expect(built.manifest.components.map(({ name }) => name)).not.toContain("legality-rules");
   const object = built.objects.find(({ contentEncoding }) => contentEncoding === "gzip");
   if (object === undefined) throw new Error("gzip component missing");
   const { readable, completed } = object.body();
@@ -535,195 +530,4 @@ test("publication rejects an over-budget candidate before writing any immutable 
   });
   expect(objectsAfter).toEqual(objectsBefore);
   expect(currentAfter).toEqual(currentBefore);
-});
-
-test("an oversized legality relationship export fails terminally before reservation and replays the problem", async () => {
-  const run = await collect(
-    "/reconciliation/legality-relationship-over-budget",
-    "reconcile-legality-relationship-over-budget",
-    {
-      game: "one-piece",
-      lineage: "one-piece-en",
-      adapter: "fixture-one-piece-json@3",
-    },
-    30_000,
-  );
-  const reconciled = await reconcile(run.id);
-  if (reconciled.response.status !== 200) {
-    throw new Error(JSON.stringify(reconciled.document));
-  }
-  expect(reconciled.document).toMatchObject({
-    state: "awaiting_approval",
-    publishable: true,
-  });
-  const approvalKey = "approve-legality-relationship-over-budget";
-  const approvalRequest = {
-    candidate_digest: requiredString(reconciled.document, "candidate_digest"),
-    expected_current_revision_id: requiredString(reconciled.document, "expected_current_revision_id"),
-    idempotency_key: approvalKey,
-  };
-  const currentBefore = await publishedCatalogueQueries
-    .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
-    .first<{ current_revision_id: string }>();
-  const revisionsBefore = await publishedCatalogueQueries
-    .countCatalogueRevisionsCount(testEnv.CATALOGUE_DB)
-    .first<{ count: number }>();
-  const objectsBefore = (await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort();
-
-  const blocked = await post(`/v1/ingestion-runs/${run.id}/approval`, approvalRequest);
-  expect(blocked.response.status).toBe(422);
-  expect(blocked.document).toMatchObject({
-    code: "catalogue_export_too_large",
-  });
-
-  const storedFailure = await ingestionQueries
-    .readIngestionRunsStateFailureCode(testEnv.CATALOGUE_DB)
-    .bind(run.id)
-    .first<{ state: string; failure_code: string | null }>();
-  expect(storedFailure).toEqual({
-    state: "failed",
-    failure_code: "catalogue_export_too_large",
-  });
-  const shown = await get(`/v1/ingestion-runs/${run.id}`);
-  expect(shown.response.status).toBe(200);
-  expect(shown.document).toMatchObject({
-    state: "failed",
-    failure_code: "catalogue_export_too_large",
-  });
-  const lifecycle = await ingestionQueries
-    .countAdministrationIdempotencyClaims(testEnv.CATALOGUE_DB)
-    .bind(approvalKey, approvalKey)
-    .first<{
-      claims: number;
-      outcomes: number;
-      active_ingestion_run_id: string | null;
-    }>();
-  expect(lifecycle).toEqual({
-    claims: 0,
-    outcomes: 1,
-    active_ingestion_run_id: null,
-  });
-
-  const replay = await post(`/v1/ingestion-runs/${run.id}/approval`, approvalRequest);
-  expect(replay.response.status).toBe(blocked.response.status);
-  expect(replay.document).toMatchObject({
-    code: blocked.document.code,
-    detail: blocked.document.detail,
-    status: blocked.document.status,
-    type: blocked.document.type,
-  });
-  expect((await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort()).toEqual(objectsBefore);
-  expect(await publishedCatalogueQueries.readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB).first()).toEqual(
-    currentBefore,
-  );
-  expect(await publishedCatalogueQueries.countCatalogueRevisionsCount(testEnv.CATALOGUE_DB).first()).toEqual(
-    revisionsBefore,
-  );
-});
-
-test("reserved oversized legality relationship recovery preserves the typed terminal problem", async () => {
-  const run = await collect(
-    "/reconciliation/legality-relationship-over-budget",
-    "reconcile-reserved-legality-relationship-over-budget",
-    {
-      game: "one-piece",
-      lineage: "one-piece-en",
-      adapter: "fixture-one-piece-json@3",
-    },
-    30_000,
-  );
-  const reconciled = await reconcile(run.id);
-  if (reconciled.response.status !== 200) {
-    throw new Error(JSON.stringify(reconciled.document));
-  }
-  const digest = requiredString(reconciled.document, "candidate_digest");
-  const expectedRevision = requiredString(reconciled.document, "expected_current_revision_id");
-  const approvalKey = "approve-reserved-legality-relationship-over-budget";
-  const revisionId = await catalogueRevisionIdentity({
-    runId: run.id,
-    candidateDigest: digest,
-    expectedCurrentRevisionId: expectedRevision,
-  });
-  const approvalRequest = {
-    candidate_digest: digest,
-    expected_current_revision_id: expectedRevision,
-    idempotency_key: approvalKey,
-  };
-  const approval = {
-    action: "approved",
-    approved_at: "2026-07-29T02:00:00.000Z",
-    candidate_digest: digest,
-    expected_current_revision_id: expectedRevision,
-  };
-  await ingestionQueries
-    .setIngestionRunsStateApprovalJson(testEnv.CATALOGUE_DB)
-    .bind(
-      JSON.stringify(approval),
-      approvalKey,
-      JSON.stringify([approval]),
-      JSON.stringify({
-        completed_stages: ["planning", "collecting", "parsing", "reconciling", "awaiting_approval"],
-        current_stage: "publishing",
-      }),
-      revisionId,
-      approval.approved_at,
-      "2026-07-29T02:05:00.000Z",
-      "a".repeat(64),
-      `writer:${revisionId}`,
-      run.id,
-    )
-    .run();
-  const currentBefore = await publishedCatalogueQueries
-    .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
-    .first<{ current_revision_id: string }>();
-  const revisionsBefore = await publishedCatalogueQueries
-    .countCatalogueRevisionsCount(testEnv.CATALOGUE_DB)
-    .first<{ count: number }>();
-  const objectsBefore = (await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort();
-
-  const blocked = await post(`/v1/ingestion-runs/${run.id}/approval`, approvalRequest);
-  expect(blocked.response.status).toBe(422);
-  expect(blocked.document).toMatchObject({
-    code: "catalogue_export_too_large",
-  });
-  const shown = await get(`/v1/ingestion-runs/${run.id}`);
-  expect(shown.document).toMatchObject({
-    state: "failed",
-    failure_code: "catalogue_export_too_large",
-  });
-  const lifecycle = await ingestionQueries
-    .countAdministrationIdempotencyClaimsForReservedOversizedLegalityRelationshipRecoveryPreservesTypedTerminalProblem(
-      testEnv.CATALOGUE_DB,
-    )
-    .bind(approvalKey, approvalKey, run.id, run.id)
-    .first<{
-      claims: number;
-      outcomes: number;
-      active_ingestion_run_id: string | null;
-      cleanup_state: string;
-      cleanup_keys: string;
-    }>();
-  expect(lifecycle).toEqual({
-    claims: 0,
-    outcomes: 1,
-    active_ingestion_run_id: null,
-    cleanup_state: "pending",
-    cleanup_keys: "[]",
-  });
-
-  const replay = await post(`/v1/ingestion-runs/${run.id}/approval`, approvalRequest);
-  expect(replay.response.status).toBe(422);
-  expect(replay.document).toMatchObject({
-    code: blocked.document.code,
-    detail: blocked.document.detail,
-    status: blocked.document.status,
-    type: blocked.document.type,
-  });
-  expect((await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort()).toEqual(objectsBefore);
-  expect(await publishedCatalogueQueries.readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB).first()).toEqual(
-    currentBefore,
-  );
-  expect(await publishedCatalogueQueries.countCatalogueRevisionsCount(testEnv.CATALOGUE_DB).first()).toEqual(
-    revisionsBefore,
-  );
 });

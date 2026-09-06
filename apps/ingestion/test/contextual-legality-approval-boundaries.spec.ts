@@ -8,7 +8,6 @@ import {
   canonicalLegalityEffectInvariantErrors,
   collectFixtureLegality,
   collectFixtureLegalityEvidence,
-  exportedLegalityRule,
   installContextualLegalitySuite,
   reconcile,
   rejectedError,
@@ -75,7 +74,7 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   const retainedRules = first.reconciled.legality_rules as Array<Record<string, unknown>>;
   const retainedLocations = retainedRules.map(
     (rule) =>
-      requiredString(rule, "source_observation_set_id") + ":" + requiredString(rule, "source_observation_pointer"),
+      `${requiredString(rule, "source_observation_set_id")}:${requiredString(rule, "source_observation_pointer")}`,
   );
   expect(new Set(retainedLocations).size).toBe(retainedRules.length);
   const retainedDocuments = new Map<string, Record<string, unknown>>();
@@ -436,21 +435,7 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
     current: true,
     last_missing_revision_id: expect.any(String),
   });
-  const exportRule = await exportedLegalityRule(reappearedRevisionId, "legality_rule_asia_eligible");
-  const canonicalProvenance = {
-    source_lineage: revisionRule.source_lineage,
-    source_observation_id: revisionRule.source_observation_id,
-    source_observation_pointer: revisionRule.source_observation_pointer,
-    source_field_pointers: revisionRule.source_field_pointers,
-  };
-  const exportedProvenance = {
-    source_lineage: exportRule.source_lineage,
-    source_observation_id: (exportRule.source_observation_ids as unknown[])[0],
-    source_observation_pointer: exportRule.source_observation_pointer,
-    source_field_pointers: exportRule.source_field_pointers,
-  };
   expect(reappearedCandidateRule.source_observation_id).not.toBe(revisionRule.source_observation_id);
-  expect(canonicalJson(exportedProvenance)).toBe(canonicalJson(canonicalProvenance));
 });
 
 test.each([
@@ -818,12 +803,6 @@ test("resolved opaque Card identities are canonical before approval and publicat
   expect(JSON.parse(canonicalRule!.direct_card_ids_json)).toEqual(canonicalDirectIds);
   expect(JSON.parse(canonicalRule!.card_ids_json)).toEqual(canonicalCardIds);
   expect(JSON.parse(canonicalRule!.effect_json)).toEqual({
-    type: "prohibited_combination",
-    with_card_ids: canonicalCompanionIds,
-  });
-  const exportedRule = await exportedLegalityRule(revisionId, "legality_rule_asia_resolved_card_order");
-  expect(exportedRule.card_ids).toEqual(canonicalCardIds);
-  expect(exportedRule.effect).toEqual({
     type: "prohibited_combination",
     with_card_ids: canonicalCompanionIds,
   });

@@ -1,5 +1,6 @@
 import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
 import type { CatalogueStore } from "../shared";
+import { consumerContent } from "../shared";
 import {
   canonicalEtag,
   collectionFilter,
@@ -88,7 +89,7 @@ export async function currentPrintingsResponse(
     card_id: row.card_id,
     document: printingData(JSON.parse(row.document_json) as unknown),
   }));
-  const data = selected.slice(0, limit).map(({ document }) => absoluteDocumentLinks(document, base));
+  const data = selected.slice(0, limit).map(({ document }) => absoluteDocumentLinks(consumerContent(document), base));
   const next = page.hasMore
     ? encodeCursor({
         route: printingRoute,

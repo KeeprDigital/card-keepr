@@ -7,7 +7,6 @@ import { apiCapabilities, ingestionCapabilities } from "../src/runtime-capabilit
 import { selectEnvironment } from "./environment.mjs";
 import { runCatalogueCommand } from "./catalogue.mjs";
 import { parseOptions, runtimeUrl, writeCliFailure as writeFailure } from "./command-support.mjs";
-import { runLegalityStatusCommand } from "./contextual-legality.mjs";
 import { runCuratedRevisionCommand } from "./curated-revisions.mjs";
 import { request as httpRequest } from "./lib/http-client.mjs";
 import { requestDocument } from "./lib/json-client.mjs";
@@ -262,7 +261,6 @@ const commands = {
   "source terminate": (args, env, json) => routeCommand("terminateEvidenceCollection", args, env, json),
   "source retry": (args, env, json) => routeCommand("retryEvidenceCollection", args, env, json),
   "snapshot reparse": (args, env, json) => routeCommand("reparseSourceSnapshot", args, env, json),
-  "legality status": runLegalityStatusCommand,
 };
 
 export async function main(arguments_, environment) {
@@ -866,7 +864,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
+        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
     },
     2,
   );

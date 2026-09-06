@@ -1,17 +1,16 @@
-import { catalogueStore } from "../../../src/catalogue/shared";
-import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
-import * as ingestionQueries from "../../ingestion/test/query-helpers/ingestion";
-import * as reconciliationQueries from "../../ingestion/test/query-helpers/reconciliation";
-import * as sourceEvidenceQueries from "../../ingestion/test/query-helpers/source-evidence";
-import * as curatedQueries from "../../ingestion/test/query-helpers/curated";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
 import { productReleasePublicationStatements } from "../../../src/catalogue/reconciliation";
-import { type CatalogueCandidate, catalogueCandidateContract } from "../../../src/catalogue/shared";
+import { type CatalogueCandidate, catalogueCandidateContract, catalogueStore } from "../../../src/catalogue/shared";
+import * as curatedQueries from "../../ingestion/test/query-helpers/curated";
+import * as ingestionQueries from "../../ingestion/test/query-helpers/ingestion";
+import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
+import * as reconciliationQueries from "../../ingestion/test/query-helpers/reconciliation";
+import * as sourceEvidenceQueries from "../../ingestion/test/query-helpers/source-evidence";
 import { apiPublicBase } from "./api-fixtures";
 import { seedPrintingQueryProjection } from "./printing-query-fixtures";
 
@@ -87,7 +86,6 @@ beforeEach(async () => {
         kind: "tournament_pack",
         label: "Championship 2026 Participation Pack",
         product_id: product.id,
-        evidence_category: "derived",
       },
     ],
     relationship_evidence: [],
@@ -274,7 +272,6 @@ test("authenticated Product reads preserve regional precision and announced stat
         {
           kind: "tournament_pack",
           product_id: "product_st15",
-          evidence_category: "derived",
         },
       ],
     },
@@ -572,7 +569,7 @@ test("Printing detail conditional reads bind exact response bytes to one revisio
   }
 });
 
-test("Printing detail validates and binds optional evidence representations", async () => {
+test("Printing detail rejects removed evidence representations", async () => {
   const path = "/v1/printings/printing_st15_event";
   const stored = await publishedCatalogueQueries
     .readRevisionPrintingsDocumentJson(testEnv.CATALOGUE_DB)
@@ -625,37 +622,11 @@ test("Printing detail validates and binds optional evidence representations", as
   }
 
   const base = await api(path);
-  const evidence = await api(`${path}?include=evidence`);
-  const disagreements = await api(`${path}?include=disagreements`);
-  const combined = await api(`${path}?include=disagreements,evidence`);
-  const reordered = await api(`${path}?include=evidence,disagreements`);
   expect(base.status).toBe(200);
-  expect(evidence.status).toBe(200);
-  expect(disagreements.status).toBe(200);
-  expect(combined.status).toBe(200);
-  expect(reordered.status).toBe(200);
   await expect(base.json()).resolves.not.toHaveProperty("included");
-  await expect(evidence.json()).resolves.toMatchObject({
-    included: [{ id: "srcobs_printing_detail" }],
-    provenance: {
-      "/data/rarity": ["srcobs_printing_detail"],
-    },
-  });
-  await expect(disagreements.json()).resolves.toMatchObject({
-    disagreements: [
-      {
-        path: "/data/printed_rules_text",
-        status: "unresolved",
-      },
-    ],
-  });
-  expect(combined.headers.get("etag")).toBe(reordered.headers.get("etag"));
-  expect(await combined.text()).toBe(await reordered.text());
-  expect(base.headers.get("etag")).not.toBe(evidence.headers.get("etag"));
-  const conditional = await api(`${path}?include=evidence`, {
-    "if-none-match": evidence.headers.get("etag")!,
-  });
-  expect(conditional.status).toBe(304);
+  for (const include of ["evidence", "disagreements", "disagreements,evidence", "evidence,disagreements"]) {
+    expect((await api(`${path}?include=${include}`)).status).toBe(400);
+  }
   await publishedCatalogueQueries
     .setRevisionPrintingsDocumentJson(testEnv.CATALOGUE_DB)
     .bind(stored!.document_json)
@@ -686,10 +657,7 @@ test("Product query and include parameters reject invalid public representations
 test("equal Product representation ETags identify byte-identical responses", async () => {
   for (const [firstPath, secondPath] of [
     ["/v1/products?game=one-piece&q=st-15", "/v1/products?q=st-15&game=one-piece"],
-    [
-      "/v1/products/product_st15?include=evidence,disagreements",
-      "/v1/products/product_st15?include=disagreements,evidence",
-    ],
+    ["/v1/products/product_st15", "/v1/products/product_st15"],
   ] as const) {
     const first = await api(firstPath);
     const second = await api(secondPath);
@@ -700,157 +668,26 @@ test("equal Product representation ETags identify byte-identical responses", asy
   }
 });
 
-test("Catalogue status exposes independently checked areas and freshness-sensitive ETags", async () => {
+test("Catalogue status excludes source health and remains conditionally readable", async () => {
   const first = await api("/v1/catalogue");
-  expect(first.status).toBe(200);
-  const firstDocument = await first.json<{
-    data: {
-      current_revision_id: string;
-      last_successful_checks: {
-        game: string;
-        area: string;
-        source_lineage?: string;
-        region?: string;
-        checked_at: string;
-      }[];
-    };
-  }>();
-  expectSchema("CatalogueDocument", firstDocument);
-  expect(firstDocument.data.last_successful_checks).toEqual([
-    {
-      game: "one-piece",
-      area: "cards-and-printings",
-      checked_at: "2026-01-01T01:00:00.000Z",
-    },
-    {
-      game: "one-piece",
-      area: "legality-rules",
-      source_lineage: "one-piece-en",
-      region: "EN-OCEANIA",
-      checked_at: "2026-01-01T03:00:00.000Z",
-    },
-    {
-      game: "one-piece",
-      area: "products-and-releases",
-      checked_at: "2026-01-01T02:00:00.000Z",
-    },
-  ]);
-  const firstEtag = first.headers.get("etag");
-  expect(firstEtag).toMatch(/^".+"$/);
-
+  const document = await first.json();
+  expectSchema("CatalogueDocument", document);
+  expect(document).not.toHaveProperty("data.last_successful_checks");
   await sourceEvidenceQueries.setSourceFreshnessCheckedAt(testEnv.CATALOGUE_DB).run();
-  const changed = await api("/v1/catalogue", {
-    "if-none-match": firstEtag!,
-  });
-  expect(changed.status).toBe(200);
-  expect(changed.headers.get("x-catalogue-revision")).toBe("catrev_products");
-  expect(changed.headers.get("etag")).not.toBe(firstEtag);
-  const changedDocument = await changed.json<{
-    data: { last_successful_checks: { checked_at: string }[] };
-  }>();
-  expect(changedDocument.data.last_successful_checks.at(-1)?.checked_at).toBe("2026-01-02T02:00:00.000Z");
-
-  const unchanged = await api("/v1/catalogue", {
-    "if-none-match": changed.headers.get("etag")!,
-  });
-  expect(unchanged.status).toBe(304);
-  expect(await unchanged.text()).toBe("");
-
-  for (const value of [`W/${changed.headers.get("etag")!}`, `"unrelated", W/${changed.headers.get("etag")!}`, "*"]) {
-    const conditional = await api("/v1/catalogue", {
-      "if-none-match": value,
-    });
+  for (const value of [first.headers.get("etag")!, `W/${first.headers.get("etag")!}`, "*"]) {
+    const conditional = await api("/v1/catalogue", { "if-none-match": value });
     expect(conditional.status).toBe(304);
     expect(await conditional.text()).toBe("");
   }
 });
 
-test("Product detail returns revision-pinned immutable provenance and disagreements", async () => {
-  const unresolved = {
-    data: {
-      type: "product",
-      id: "product_unresolved",
-      game: "one-piece",
-      official_code: "ST-UNRESOLVED",
-      name: null,
-      releases: [
-        {
-          id: "release_st15_oceania",
-          event_key: "oceania-unresolved",
-          region: "EN-OCEANIA",
-          date: { precision: "month", value: "2026-09" },
-          status: null,
-        },
-      ],
-      lifecycle: {
-        first_revision_id: "catrev_products",
-        last_observed_revision_id: "catrev_products",
-        withdrawn: false,
-      },
-      links: { self: "/v1/products/product_unresolved" },
-    },
-    included: [
-      {
-        type: "source_observation",
-        id: "srcobs_product_a",
-        captured_at: "2025-12-15T03:04:05.000Z",
-        source: "one-piece-en",
-      },
-      {
-        type: "source_observation",
-        id: "srcobs_product_b",
-        captured_at: "2025-12-16T04:05:06.000Z",
-        source: "one-piece-en",
-      },
-    ],
-    provenance: {
-      "/data/official_code": ["srcobs_product_a", "srcobs_product_b"],
-      "/data/releases/0/date/value": ["srcobs_product_a"],
-    },
-    disagreements: [
-      {
-        path: "/data/name",
-        status: "unresolved",
-        candidates: [
-          { value: "Starter Deck A", observation_id: "srcobs_product_a" },
-          { value: "Starter Deck B", observation_id: "srcobs_product_b" },
-        ],
-      },
-      {
-        path: "/data/releases/0/status",
-        status: "unresolved",
-        candidates: [
-          { value: "announced", observation_id: "srcobs_product_a" },
-          { value: "released", observation_id: "srcobs_product_b" },
-        ],
-      },
-    ],
-  };
-  await publishedCatalogueQueries
-    .insertRevisionProductsForProductDetailReturnsRevisionPinnedImmutableProvenanceDisagreements(testEnv.CATALOGUE_DB)
-    .bind(JSON.stringify(unresolved))
-    .run();
-
-  try {
-    const response = await api("/v1/products/product_unresolved?include=evidence,disagreements");
-    expect(response.status).toBe(200);
-    const document = await response.json();
-    expectSchema("ProductDocument", document);
-    expect(document).toMatchObject({
-      ...unresolved,
-      data: {
-        ...unresolved.data,
-        links: { self: `${apiPublicBase}/v1/products/product_unresolved` },
-      },
-    });
-  } finally {
-    await publishedCatalogueQueries
-      .deleteRevisionProductsForProductDetailReturnsRevisionPinnedImmutableProvenanceDisagreements(testEnv.CATALOGUE_DB)
-      .run();
+test("Product detail rejects administrative evidence options", async () => {
+  for (const include of ["evidence", "disagreements"]) {
+    expect((await api(`/v1/products/product_st15?include=${include}`)).status).toBe(400);
   }
 });
 
-test("Product evidence projects Curated Revisions onto exact Product and nested Release fields", async () => {
+test("Product and nested Release facts exclude retained Curated Revision evidence", async () => {
   const stored = await publishedCatalogueQueries
     .readRevisionProductsDocumentJson(testEnv.CATALOGUE_DB)
     .first<{ document_json: string }>();
@@ -972,32 +809,18 @@ test("Product evidence projects Curated Revisions onto exact Product and nested 
     expect(base.status).toBe(200);
     await expect(base.json()).resolves.not.toHaveProperty("included");
 
-    const response = await api("/v1/products/product_st15?include=evidence");
+    const response = await api("/v1/products/product_st15");
     expect(response.status).toBe(200);
     const document = await response.json();
     expectSchema("ProductDocument", document);
     expect(document).toMatchObject({
-      included: [
-        { id: "srcobs_product_name" },
-        { id: "srcobs_release_status" },
-        {
-          type: "curated_revision",
-          id: "currev_product_name",
-          captured_at: "2026-01-02T00:00:00.000Z",
-          source: "owner",
-        },
-        {
-          type: "curated_revision",
-          id: "currev_release_status",
-          captured_at: "2026-01-03T00:00:00.000Z",
-          source: "owner",
-        },
-      ],
-      provenance: {
-        "/data/name": ["currev_product_name"],
-        "/data/releases/0/status": ["currev_release_status"],
+      data: {
+        name: "Starter Deck Red Edward Newgate",
+        releases: [{ status: "released" }],
       },
     });
+    expect(JSON.stringify(document)).not.toContain("curated_provenance");
+    expect(document).not.toHaveProperty("provenance");
   } finally {
     await publishedCatalogueQueries
       .setRevisionProductsDocumentJson(testEnv.CATALOGUE_DB)
@@ -1416,3 +1239,20 @@ function expectSchema(definition: string, value: unknown): void {
   expect(validate).toBeDefined();
   expect(validate!(value), JSON.stringify(validate!.errors)).toBe(true);
 }
+
+// Injected storage loss against a synthetic published fixture, not source evidence.
+test("a missing published Printing Image retains a protected missing-object diagnosis", async () => {
+  const logs: string[] = [];
+  vi.spyOn(console, "error").mockImplementation((value) => logs.push(String(value)));
+  await testEnv.PRINTING_IMAGES.delete(
+    "printing-images/46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
+  );
+  const response = await api("/v1/printing-images/printing_image_st15_front/content");
+  expect(response.status).toBe(500);
+  const problem = await response.json<{ request_id: string }>();
+  expect(problem).toMatchObject({ code: "internal_error", detail: "The request could not be completed." });
+  expect(logs.map((line) => JSON.parse(line)).find((event) => event.event === "request.failed")).toMatchObject({
+    request_id: problem.request_id,
+    causes: [{ classification: "missing_object", stack_reference: expect.any(String) }],
+  });
+});

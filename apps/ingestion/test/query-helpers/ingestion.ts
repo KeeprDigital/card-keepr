@@ -30,15 +30,16 @@ export function setOperationStateActiveIngestionRunId(database: D1Database): D1P
 
 export function insertIngestionRunsForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(
   database: D1Database,
+  runId = "run_retained_export",
 ): D1PreparedStatement {
   return bindRunFixtureStatement(database, (...values) => ({
-    id: "run_retained_export",
+    id: runId,
     state: "publishing",
     selected_games_json: '["gundam"]',
     started_at: values[0],
     expected_current_revision_id: "catrev_spine_000",
     linked_run_id: null,
-    idempotency_key: "historical-v1-seed",
+    idempotency_key: `${runId}-seed`,
     candidate_digest: values[1],
     candidate_created_at: values[2],
     approval_deadline: "2099-01-01T00:00:00.000Z",
@@ -53,10 +54,13 @@ export function insertIngestionRunsForAuthenticatedCatalogueExportReadsPreserveR
 
 export function setOperationStateActiveIngestionRunIdForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(
   database: D1Database,
+  runId = "run_retained_export",
 ): D1PreparedStatement {
-  return database.prepare(`UPDATE operation_state
-       SET active_ingestion_run_id = 'run_retained_export'
-       WHERE singleton = 1`);
+  return database
+    .prepare(`UPDATE operation_state
+       SET active_ingestion_run_id = ?
+       WHERE singleton = 1`)
+    .bind(runId);
 }
 
 export function insertCatalogueRevisionsForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(
@@ -65,7 +69,7 @@ export function insertCatalogueRevisionsForAuthenticatedCatalogueExportReadsPres
   return database.prepare(`INSERT INTO catalogue_revisions (
         id, ingestion_run_id, published_at, content_digest,
         expected_previous_revision_id, approved_candidate_digest
-      ) VALUES (?, 'run_retained_export', ?, ?, 'catrev_spine_000', ?)`);
+      ) VALUES (?, ?, ?, ?, 'catrev_spine_000', ?)`);
 }
 
 export function insertIngestionRunsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(

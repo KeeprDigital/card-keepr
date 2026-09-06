@@ -12,27 +12,19 @@ Exports use manifest schema major 5 with the
 `https://card-keepr.invalid/schemas/catalogue-export-manifest@5` manifest
 schema URI. Every component advertises its canonical
 `https://card-keepr.invalid/schemas/catalogue-export-record@5` URI with its
-exact record `$defs` fragment. The `legality-rules` component's
-`LegalityRuleRecord` retains both the Official Source
-identity, the exact normalized discriminated `effect` with every operand,
-source lineage and observation provenance, and rule lifecycle. The lifecycle is
-carried on the rule itself so rules without affected Card IDs remain auditable;
-card-scoped rules additionally retain their `legality-rule-card` relationships.
-The schema also carries discriminated curated targets and evidence, requires
-closed relationship endpoints, and expresses unresolved target scope.
-
-Identifiers that are serialized as provenance are stable products of the
-public idempotent operation. Production Source Evidence run IDs are a
-domain-separated SHA-256 over length-prefixed field labels and the accepted
-idempotency key. Catalogue Revision IDs use a different domain and hash the
-length-prefixed run ID, candidate digest, and expected-current revision ID.
-Each frame is a four-byte unsigned big-endian UTF-8 byte length followed by
-those UTF-8 bytes; the versioned domain is the first frame and the listed
-label/value pairs follow in order.
-Only the digest is exposed; a caller's idempotency key is never embedded in an
-identifier. Replaying the same accepted operation therefore retains the same
-identities and bytes, while reuse of the key for a different request remains a
-conflict.
+exact record `$defs` fragment. Consumers receive accepted card facts and explicit
+unknowns, including Printed and Effective Rules Text, images, Products, Releases,
+Distribution Contexts, Errata and identity/lifecycle relationships. Supporting
+provenance, source health, admission decisions and tournament eligibility are
+administrative or out of scope and are absent from these packages (ADRs 0013–0014).
+The pre-Go-Live schemas are edited in place; older artifacts must be regenerated.
+Consumer manifest, listing and component reads reject superseded evidence-bearing
+manifests with `503 catalogue_export_unavailable`, including conditional and HEAD
+requests. Their retained objects and guarded deletion remain intact. For an
+existing pre-Go-Live database, use the supported fresh-baseline handoff and replay
+retained evidence through reconciliation, inspection, approval and publication to
+produce the current package; do not overwrite immutable exports or bypass backup
+and deletion guards. This change performs no database cutover or release.
 
 ## Host independence
 
@@ -72,8 +64,7 @@ The component order is:
 7. `releases`
 8. `distribution-contexts`
 9. `errata`
-10. `legality-rules`
-11. `relationships`
+10. `relationships`
 
 ## Export schema compatibility
 

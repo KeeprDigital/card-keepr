@@ -1,3 +1,4 @@
+import { MissingObjectError } from "../shared";
 import {
   AdapterParseFailure,
   assertAdapterBinding,
@@ -78,7 +79,8 @@ export async function parseSnapshot(
     return finalizeParseOperation(database, operation.id, snapshot);
   }
   const object = await evidenceObjects.get(snapshot.content_object_key);
-  if (object === null || object.size !== snapshot.content_byte_length) {
+  if (object === null) throw new MissingObjectError();
+  if (object.size !== snapshot.content_byte_length) {
     throw new Error("Source Snapshot bytes are unavailable or truncated");
   }
   const bytes = new Uint8Array(await object.arrayBuffer());
@@ -176,7 +178,8 @@ export async function discoverSnapshotRequests(
   });
   if (adapter.discoverRequests === undefined) return [];
   const object = await evidenceObjects.get(snapshot.content_object_key);
-  if (object === null || object.size !== snapshot.content_byte_length) {
+  if (object === null) throw new MissingObjectError();
+  if (object.size !== snapshot.content_byte_length) {
     throw new Error("Source Snapshot bytes are unavailable or truncated");
   }
   const bytes = new Uint8Array(await object.arrayBuffer());
@@ -283,7 +286,8 @@ async function retainedOfficialDiscoverySurfaces(
   observationSet: ObservationSetRow,
 ): Promise<unknown[][]> {
   const object = await evidenceObjects.get(observationSet.content_object_key);
-  if (object === null || object.size !== observationSet.content_byte_length) {
+  if (object === null) throw new MissingObjectError();
+  if (object.size !== observationSet.content_byte_length) {
     throw new Error("Official Source discovery observations are unavailable.");
   }
   const bytes = new Uint8Array(await object.arrayBuffer());

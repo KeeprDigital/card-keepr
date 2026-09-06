@@ -12,9 +12,8 @@ export {
   cardSearchText,
 } from "./card-search";
 export { ReadProblem } from "./collection-endpoint";
-export { contextualLegalityStatusResponse } from "./legality-status";
-export { type PrintingCollectionFilters, printingCollectionQuery } from "./printing-collection-repository";
 export { currentPrintingsResponse } from "./printing-collection-read";
+export { type PrintingCollectionFilters, printingCollectionQuery } from "./printing-collection-repository";
 export {
   currentProductResponse,
   currentProductsResponse,

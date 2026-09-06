@@ -1,11 +1,3 @@
-import { publishCardSearchChunksStatement } from "../../../src/catalogue/ingestion/publication-commit-repository";
-import { catalogueStore } from "../../../src/catalogue/shared";
-import { inspectCardCollectionQuery } from "../../ingestion/test/query-helpers/collection-query-plans";
-import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
-import * as ingestionQueries from "../../ingestion/test/query-helpers/ingestion";
-import * as catalogueExportQueries from "../../ingestion/test/query-helpers/catalogue-export";
-import * as legalityQueries from "../../ingestion/test/query-helpers/legality";
-import * as cardSearchQueries from "../../ingestion/test/query-helpers/card-search";
 import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
@@ -18,19 +10,27 @@ import {
   reconstructCardSearchAfterD1Restore,
   withCardSearchPreparedForD1Export,
 } from "../../../src/catalogue/backup-recovery";
-import { canonicalJson, deterministicGzip, sha256, sha256Text, utf8 } from "../../../src/catalogue/shared";
+import { publishCardSearchChunksStatement } from "../../../src/catalogue/ingestion/publication-commit-repository";
+import {
+  canonicalJson,
+  catalogueStore,
+  deterministicGzip,
+  sha256,
+  sha256Text,
+  utf8,
+} from "../../../src/catalogue/shared";
+import * as cardSearchQueries from "../../ingestion/test/query-helpers/card-search";
+import * as catalogueExportQueries from "../../ingestion/test/query-helpers/catalogue-export";
+import { inspectCardCollectionQuery } from "../../ingestion/test/query-helpers/collection-query-plans";
+import * as ingestionQueries from "../../ingestion/test/query-helpers/ingestion";
+import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
 import apiWorker from "../src/index";
 import {
   apiCard,
   apiHeaders,
   apiPublicBase,
-  canonicalLegalityRuleStatements,
   cardSearchStatements,
   installApiSuite,
-  legalityRuleFieldPointers,
-  legalitySourceStatements,
-  publishedCardEnvelope,
-  revisionLegalityRuleStatements,
   seedApiRevision,
   testEnv,
 } from "./api-fixtures";
@@ -235,322 +235,309 @@ test("a supplied cursor for an unavailable current revision returns the cursor r
   });
 });
 
-test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact bytes", async () => {
-  const revisionId = "catrev_retained_export";
-  const publishedAt = "2025-01-01T00:00:00.000Z";
-  const candidateDigest = "a".repeat(64);
-  const sourcePointer = "/observations/0/value/legality_rules/0";
-  const legalityRule = {
-    type: "legality_rule",
-    id: "legality_rule_retained_export",
-    official_id: "RULE-RETAINED-EXPORT",
-    game: "gundam",
-    region: "EN-ASIA",
-    format: "standard",
-    event_tier: null,
-    effective_from: "2025-01-01",
-    effective_until: null,
-    unresolved_scope: null,
-    kind: "restricted",
-    effect: { type: "copy_limit", maximum_copies: 1 },
-    card_ids: ["card_retained_export"],
-    official_wording: "Retained decks may contain one copy.",
-    source_lineage: "gundam-en-asia",
-    source_observation_ids: ["srcobs_retained_export"],
-    source_observation_pointer: sourcePointer,
-    source_field_pointers: Object.fromEntries(
-      [
-        "official_wording",
-        "effective_from",
-        "effective_until",
-        "unresolved_scope",
-        "region",
-        "format",
-        "event_tier",
-        "card_numbers",
-        "effect",
-      ].map((field) => [field, `${sourcePointer}/${field}`]),
-    ),
-    lifecycle: {
-      first_revision_id: revisionId,
-      last_observed_revision_id: revisionId,
-      current: true,
-      last_missing_revision_id: null,
-    },
-  };
-  const legalityBytes = utf8(`${canonicalJson(legalityRule)}\n`);
-  const compressedLegalityBytes = deterministicGzip(legalityBytes);
-  const emptyBytes = new Uint8Array();
-  const compressedEmptyBytes = deterministicGzip(emptyBytes);
-  const [legalityDigest, compressedLegalityDigest, emptyDigest, compressedEmptyDigest] = await Promise.all([
-    sha256(legalityBytes),
-    sha256(compressedLegalityBytes),
-    sha256(emptyBytes),
-    sha256(compressedEmptyBytes),
-  ]);
-  const componentDefinitions = [
-    ["supported-games", "SupportedGameRecord", "id:utf8"],
-    ["game-profiles", "GameProfileRecord", "profile:utf8"],
-    ["cards", "CardRecord", "id:utf8"],
-    ["printings", "PrintingRecord", "id:utf8"],
-    ["printing-images", "PrintingImageRecord", "id:utf8"],
-    ["products", "ProductRecord", "id:utf8"],
-    ["releases", "ReleaseRecord", "id:utf8"],
-    ["distribution-contexts", "DistributionContextRecord", "id:utf8"],
-    ["errata", "ErratumRecord", "id:utf8"],
-    ["legality-rules", "LegalityRuleRecord", "id:utf8"],
-    ["relationships", "RelationshipRecord", "id:utf8"],
-  ] as const;
-  const components = componentDefinitions.map(([name, schemaDefinition, order]) => {
-    const containsLegality = name === "legality-rules";
-    return {
-      name,
-      media_type: "application/x-ndjson",
-      compression: "gzip",
-      record_schema: `https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/${schemaDefinition}`,
-      order,
-      records: containsLegality ? 1 : 0,
-      uncompressed_bytes: containsLegality ? legalityBytes.byteLength : 0,
-      content_sha256: containsLegality ? legalityDigest : emptyDigest,
-      compressed_bytes: containsLegality ? compressedLegalityBytes.byteLength : compressedEmptyBytes.byteLength,
-      compressed_sha256: containsLegality ? compressedLegalityDigest : compressedEmptyDigest,
+test.each([false, true])(
+  "authenticated Catalogue Export reads enforce the current contract (superseded: %s)",
+  async (superseded) => {
+    const revisionId = superseded ? "catrev_superseded_export" : "catrev_retained_export";
+    const runId = superseded ? "run_superseded_export" : "run_retained_export";
+    const publishedAt = "2025-01-01T00:00:00.000Z";
+    const candidateDigest = "a".repeat(64);
+    const erratum = {
+      type: "erratum",
+      id: "erratum_retained_export",
+      game: "gundam",
+      target_type: "card",
+      target_id: "card_retained_export",
+      effective_from: "2025-01-01",
+      official_wording: "Corrected card text.",
+      corrected_value: "Corrected card text.",
     };
-  });
-  const manifestWithPlaceholder = {
-    format: "card-keepr-catalogue-export-manifest@5",
-    serialization_profile: "card-keepr-ndjson-gzip@1",
-    export_schema_major: 5,
-    catalogue_revision: {
-      id: revisionId,
-      content_sha256: candidateDigest,
-    },
-    published_at: publishedAt,
-    export_created_at: publishedAt,
-    supported_games: ["gundam"],
-    source_freshness: [
-      {
-        game: "gundam",
-        area: "legality-rules",
-        source_lineage: "gundam-en-asia",
-        region: "EN-ASIA",
-        checked_at: publishedAt,
+    const erratumBytes = utf8(`${canonicalJson(erratum)}\n`);
+    const compressedErratumBytes = deterministicGzip(erratumBytes);
+    const emptyBytes = new Uint8Array();
+    const compressedEmptyBytes = deterministicGzip(emptyBytes);
+    const [erratumDigest, compressedErratumDigest, emptyDigest, compressedEmptyDigest] = await Promise.all([
+      sha256(erratumBytes),
+      sha256(compressedErratumBytes),
+      sha256(emptyBytes),
+      sha256(compressedEmptyBytes),
+    ]);
+    const componentDefinitions = [
+      ["supported-games", "SupportedGameRecord", "id:utf8"],
+      ["game-profiles", "GameProfileRecord", "profile:utf8"],
+      ["cards", "CardRecord", "id:utf8"],
+      ["printings", "PrintingRecord", "id:utf8"],
+      ["printing-images", "PrintingImageRecord", "id:utf8"],
+      ["products", "ProductRecord", "id:utf8"],
+      ["releases", "ReleaseRecord", "id:utf8"],
+      ["distribution-contexts", "DistributionContextRecord", "id:utf8"],
+      ["errata", "ErratumRecord", "id:utf8"],
+      ["relationships", "RelationshipRecord", "id:utf8"],
+    ] as const;
+    const components = componentDefinitions.map(([name, schemaDefinition, order]) => {
+      const containsErratum = name === "errata";
+      return {
+        name,
+        media_type: "application/x-ndjson",
+        compression: "gzip",
+        record_schema: `https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/${schemaDefinition}`,
+        order,
+        records: containsErratum ? 1 : 0,
+        uncompressed_bytes: containsErratum ? erratumBytes.byteLength : 0,
+        content_sha256: containsErratum ? erratumDigest : emptyDigest,
+        compressed_bytes: containsErratum ? compressedErratumBytes.byteLength : compressedEmptyBytes.byteLength,
+        compressed_sha256: containsErratum ? compressedErratumDigest : compressedEmptyDigest,
+      };
+    });
+    const manifestWithPlaceholder = {
+      format: "card-keepr-catalogue-export-manifest@5",
+      serialization_profile: "card-keepr-ndjson-gzip@1",
+      export_schema_major: 5,
+      catalogue_revision: {
+        id: revisionId,
+        content_sha256: candidateDigest,
       },
-    ],
-    components,
-    manifest_sha256: "0".repeat(64),
-  };
-  const manifestDigest = await sha256Text(`${canonicalJson(manifestWithPlaceholder)}\n`);
-  const manifest = {
-    ...manifestWithPlaceholder,
-    manifest_sha256: manifestDigest,
-  };
-  const manifestBytes = utf8(`${canonicalJson(manifest)}\n`);
-  const manifestKey = `catalogue-exports/${revisionId}/manifest.json`;
-  const componentKey = `catalogue-exports/${revisionId}/components/` + `${compressedLegalityDigest}.ndjson.gz`;
+      published_at: publishedAt,
+      export_created_at: publishedAt,
+      supported_games: ["gundam"],
+      ...(superseded ? { source_freshness: [] } : {}),
+      components,
+      manifest_sha256: "0".repeat(64),
+    };
+    const manifestDigest = await sha256Text(`${canonicalJson(manifestWithPlaceholder)}\n`);
+    const manifest = {
+      ...manifestWithPlaceholder,
+      manifest_sha256: manifestDigest,
+    };
+    const manifestBytes = utf8(`${canonicalJson(manifest)}\n`);
+    const manifestKey = `catalogue-exports/${revisionId}/manifest.json`;
+    const componentKey = `catalogue-exports/${revisionId}/components/` + `${compressedErratumDigest}.ndjson.gz`;
 
-  await testEnv.CATALOGUE_EXPORTS.put(manifestKey, manifestBytes, {
-    httpMetadata: { contentType: "application/json" },
-  });
-  await testEnv.CATALOGUE_EXPORTS.put(componentKey, compressedLegalityBytes, {
-    httpMetadata: {
-      contentType: "application/x-ndjson",
-      contentEncoding: "gzip",
-    },
-  });
-  await catalogueStore(testEnv.CATALOGUE_DB).batch([
-    ingestionQueries
-      .insertIngestionRunsForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(testEnv.CATALOGUE_DB)
-      .bind(
-        publishedAt,
-        candidateDigest,
-        publishedAt,
-        JSON.stringify({
-          action: "approved",
-          candidate_digest: candidateDigest,
-          expected_current_revision_id: "catrev_spine_000",
-          approved_at: publishedAt,
-        }),
-      ),
-    ingestionQueries.setOperationStateActiveIngestionRunIdForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(
-      testEnv.CATALOGUE_DB,
-    ),
-    ingestionQueries
-      .insertCatalogueRevisionsForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(testEnv.CATALOGUE_DB)
-      .bind(revisionId, publishedAt, candidateDigest, candidateDigest),
-    catalogueExportQueries.insertCatalogueExports(testEnv.CATALOGUE_DB).bind(revisionId, manifestKey, manifestDigest),
-  ]);
-
-  const authenticatedRequest = (path: string) =>
-    new Request(`https://card-keepr.invalid${path}`, {
-      headers: {
-        authorization: "Bearer vitest-api-key",
-        "cf-connecting-ip": "203.0.113.31",
+    await testEnv.CATALOGUE_EXPORTS.put(manifestKey, manifestBytes, {
+      httpMetadata: { contentType: "application/json" },
+    });
+    await testEnv.CATALOGUE_EXPORTS.put(componentKey, compressedErratumBytes, {
+      httpMetadata: {
+        contentType: "application/x-ndjson",
+        contentEncoding: "gzip",
       },
     });
-  const manifestPath = `/v1/catalogue-exports/${revisionId}`;
-  const firstManifestResponse = await exports.default.fetch(authenticatedRequest(manifestPath));
-  const secondManifestResponse = await exports.default.fetch(authenticatedRequest(manifestPath));
-  expect(firstManifestResponse.status).toBe(200);
-  expect(secondManifestResponse.status).toBe(200);
-  const firstManifestDocument = await firstManifestResponse.json<{
-    data: unknown;
-  }>();
-  const secondManifestDocument = await secondManifestResponse.json<{
-    data: unknown;
-  }>();
-  expect(firstManifestDocument.data).toEqual(manifest);
-  expect(secondManifestDocument.data).toEqual(manifest);
+    await catalogueStore(testEnv.CATALOGUE_DB).batch([
+      ingestionQueries
+        .insertIngestionRunsForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(
+          testEnv.CATALOGUE_DB,
+          runId,
+        )
+        .bind(
+          publishedAt,
+          candidateDigest,
+          publishedAt,
+          JSON.stringify({
+            action: "approved",
+            candidate_digest: candidateDigest,
+            expected_current_revision_id: "catrev_spine_000",
+            approved_at: publishedAt,
+          }),
+        ),
+      ingestionQueries.setOperationStateActiveIngestionRunIdForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(
+        testEnv.CATALOGUE_DB,
+        runId,
+      ),
+      ingestionQueries
+        .insertCatalogueRevisionsForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(testEnv.CATALOGUE_DB)
+        .bind(revisionId, runId, publishedAt, candidateDigest, candidateDigest),
+      catalogueExportQueries.insertCatalogueExports(testEnv.CATALOGUE_DB).bind(revisionId, manifestKey, manifestDigest),
+    ]);
 
-  const ajv = new Ajv2020({ allErrors: true, strict: false });
-  addFormats(ajv);
-  const validateManifest = ajv.compile(exportManifestSchemaV5);
-  expect(validateManifest(firstManifestDocument.data), JSON.stringify(validateManifest.errors)).toBe(true);
-  ajv.addSchema(exportRecordSchemaV5);
-  const validateLegalityRule = ajv.getSchema(`${exportRecordSchemaV5.$id}#/$defs/LegalityRuleRecord`);
-  expect(validateLegalityRule).toBeDefined();
-  expect(validateLegalityRule!(legalityRule), JSON.stringify(validateLegalityRule!.errors)).toBe(true);
-
-  const componentPath = `${manifestPath}/components/legality-rules`;
-  const firstComponentResponse = await exports.default.fetch(authenticatedRequest(componentPath));
-  const secondComponentResponse = await exports.default.fetch(authenticatedRequest(componentPath));
-  expect(firstComponentResponse.status).toBe(200);
-  expect(secondComponentResponse.status).toBe(200);
-  const firstComponentBytes = new Uint8Array(await firstComponentResponse.arrayBuffer());
-  const secondComponentBytes = new Uint8Array(await secondComponentResponse.arrayBuffer());
-  expect(firstComponentBytes).toEqual(compressedLegalityBytes);
-  expect(secondComponentBytes).toEqual(compressedLegalityBytes);
-  const decompressed = new Response(firstComponentBytes).body!.pipeThrough(new DecompressionStream("gzip"));
-  await expect(new Response(decompressed).text()).resolves.toBe(`${canonicalJson(legalityRule)}\n`);
-
-  const componentEtag = `"${compressedLegalityDigest}"`;
-  const headResponse = await exports.default.fetch(
-    new Request(`https://card-keepr.invalid${componentPath}`, {
-      method: "HEAD",
-      headers: {
-        ...apiHeaders("203.0.113.32"),
-        range: "bytes=0-9",
-      },
-    }),
-  );
-  expect(headResponse.status).toBe(200);
-  expect(await headResponse.text()).toBe("");
-  expect(headResponse.headers.get("content-length")).toBe(String(compressedLegalityBytes.byteLength));
-  expect(headResponse.headers.get("content-disposition")).toBe('attachment; filename="legality-rules.ndjson.gz"');
-  expect(headResponse.headers.get("accept-ranges")).toBe("bytes");
-  expect(headResponse.headers.get("etag")).toBe(componentEtag);
-  expect(headResponse.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
-
-  const notModified = await exports.default.fetch(
-    new Request(`https://card-keepr.invalid${componentPath}`, {
-      headers: {
-        ...apiHeaders("203.0.113.33"),
-        "if-none-match": componentEtag,
-      },
-    }),
-  );
-  expect(notModified.status).toBe(304);
-  expect(await notModified.text()).toBe("");
-
-  const partial = await exports.default.fetch(
-    new Request(`https://card-keepr.invalid${componentPath}`, {
-      headers: {
-        ...apiHeaders("203.0.113.34"),
-        range: "bytes=3-11",
-      },
-    }),
-  );
-  expect(partial.status).toBe(206);
-  expect(new Uint8Array(await partial.arrayBuffer())).toEqual(compressedLegalityBytes.slice(3, 12));
-  expect(partial.headers.get("content-range")).toBe(`bytes 3-11/${compressedLegalityBytes.byteLength}`);
-  expect(partial.headers.get("content-length")).toBe("9");
-  expect(partial.headers.get("etag")).toBe(componentEtag);
-
-  await testEnv.CATALOGUE_EXPORTS.put(componentKey, compressedLegalityBytes, { sha256: compressedLegalityDigest });
-  const replacedBodyBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
-    async get(...arguments_) {
-      const object = await testEnv.CATALOGUE_EXPORTS.get(...arguments_);
-      if (arguments_[0] !== componentKey || object === null) return object;
-      return new Proxy(object, {
-        get(target, property) {
-          if (property === "etag") return `${target.etag}-replacement`;
-          const value = Reflect.get(target, property);
-          return typeof value === "function" ? value.bind(target) : value;
+    const authenticatedRequest = (path: string) =>
+      new Request(`https://card-keepr.invalid${path}`, {
+        headers: {
+          authorization: "Bearer vitest-api-key",
+          "cf-connecting-ip": "203.0.113.31",
         },
       });
-    },
-  });
-  const raced = await apiWorker.fetch(
-    new Request(`https://card-keepr.invalid${componentPath}`, {
-      headers: apiHeaders("203.0.113.38"),
-    }),
-    { ...testEnv, CATALOGUE_EXPORTS: replacedBodyBucket },
-  );
-  expect(raced.status).toBe(404);
-  await expect(raced.json()).resolves.toMatchObject({ code: "not_found" });
+    const manifestPath = `/v1/catalogue-exports/${revisionId}`;
+    if (superseded) {
+      for (const [method, path] of [
+        ["GET", manifestPath],
+        ["GET", "/v1/catalogue-exports"],
+        ["GET", `${manifestPath}/components/errata`],
+        ["HEAD", `${manifestPath}/components/errata`],
+      ]) {
+        const response = await exports.default.fetch(
+          new Request(authenticatedRequest(path!), {
+            method,
+            headers: { ...apiHeaders("203.0.113.31"), "if-none-match": `"${manifestDigest}"` },
+          }),
+        );
+        expect(response.status).toBe(503);
+      }
+      return;
+    }
+    const firstManifestResponse = await exports.default.fetch(authenticatedRequest(manifestPath));
+    const secondManifestResponse = await exports.default.fetch(authenticatedRequest(manifestPath));
+    expect(firstManifestResponse.status).toBe(200);
+    expect(secondManifestResponse.status).toBe(200);
+    const firstManifestDocument = await firstManifestResponse.json<{
+      data: unknown;
+    }>();
+    const secondManifestDocument = await secondManifestResponse.json<{
+      data: unknown;
+    }>();
+    expect(firstManifestDocument.data).toEqual(manifest);
+    expect(secondManifestDocument.data).toEqual(manifest);
 
-  const unsatisfiable = await exports.default.fetch(
-    new Request(`https://card-keepr.invalid${componentPath}`, {
-      headers: {
-        ...apiHeaders("203.0.113.35"),
-        range: `bytes=${compressedLegalityBytes.byteLength}-`,
+    const ajv = new Ajv2020({ allErrors: true, strict: false });
+    addFormats(ajv);
+    const validateManifest = ajv.compile(exportManifestSchemaV5);
+    expect(validateManifest(firstManifestDocument.data), JSON.stringify(validateManifest.errors)).toBe(true);
+    ajv.addSchema(exportRecordSchemaV5);
+    const validateErratum = ajv.getSchema(`${exportRecordSchemaV5.$id}#/$defs/ErratumRecord`);
+    expect(validateErratum).toBeDefined();
+    expect(validateErratum!(erratum), JSON.stringify(validateErratum!.errors)).toBe(true);
+
+    const componentPath = `${manifestPath}/components/errata`;
+    const firstComponentResponse = await exports.default.fetch(authenticatedRequest(componentPath));
+    const secondComponentResponse = await exports.default.fetch(authenticatedRequest(componentPath));
+    expect(firstComponentResponse.status).toBe(200);
+    expect(secondComponentResponse.status).toBe(200);
+    const firstComponentBytes = new Uint8Array(await firstComponentResponse.arrayBuffer());
+    const secondComponentBytes = new Uint8Array(await secondComponentResponse.arrayBuffer());
+    expect(firstComponentBytes).toEqual(compressedErratumBytes);
+    expect(secondComponentBytes).toEqual(compressedErratumBytes);
+    const decompressed = new Response(firstComponentBytes).body!.pipeThrough(new DecompressionStream("gzip"));
+    await expect(new Response(decompressed).text()).resolves.toBe(`${canonicalJson(erratum)}\n`);
+
+    const componentEtag = `"${compressedErratumDigest}"`;
+    const headResponse = await exports.default.fetch(
+      new Request(`https://card-keepr.invalid${componentPath}`, {
+        method: "HEAD",
+        headers: {
+          ...apiHeaders("203.0.113.32"),
+          range: "bytes=0-9",
+        },
+      }),
+    );
+    expect(headResponse.status).toBe(200);
+    expect(await headResponse.text()).toBe("");
+    expect(headResponse.headers.get("content-length")).toBe(String(compressedErratumBytes.byteLength));
+    expect(headResponse.headers.get("content-disposition")).toBe('attachment; filename="errata.ndjson.gz"');
+    expect(headResponse.headers.get("accept-ranges")).toBe("bytes");
+    expect(headResponse.headers.get("etag")).toBe(componentEtag);
+    expect(headResponse.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
+
+    const notModified = await exports.default.fetch(
+      new Request(`https://card-keepr.invalid${componentPath}`, {
+        headers: {
+          ...apiHeaders("203.0.113.33"),
+          "if-none-match": componentEtag,
+        },
+      }),
+    );
+    expect(notModified.status).toBe(304);
+    expect(await notModified.text()).toBe("");
+
+    const partial = await exports.default.fetch(
+      new Request(`https://card-keepr.invalid${componentPath}`, {
+        headers: {
+          ...apiHeaders("203.0.113.34"),
+          range: "bytes=3-11",
+        },
+      }),
+    );
+    expect(partial.status).toBe(206);
+    expect(new Uint8Array(await partial.arrayBuffer())).toEqual(compressedErratumBytes.slice(3, 12));
+    expect(partial.headers.get("content-range")).toBe(`bytes 3-11/${compressedErratumBytes.byteLength}`);
+    expect(partial.headers.get("content-length")).toBe("9");
+    expect(partial.headers.get("etag")).toBe(componentEtag);
+
+    await testEnv.CATALOGUE_EXPORTS.put(componentKey, compressedErratumBytes, { sha256: compressedErratumDigest });
+    const replacedBodyBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+      async get(...arguments_) {
+        const object = await testEnv.CATALOGUE_EXPORTS.get(...arguments_);
+        if (arguments_[0] !== componentKey || object === null) return object;
+        return new Proxy(object, {
+          get(target, property) {
+            if (property === "etag") return `${target.etag}-replacement`;
+            const value = Reflect.get(target, property);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
       },
-    }),
-  );
-  expect(unsatisfiable.status).toBe(416);
-  expect(unsatisfiable.headers.get("content-range")).toBe(`bytes */${compressedLegalityBytes.byteLength}`);
-  await expect(unsatisfiable.json()).resolves.toMatchObject({
-    code: "range_not_satisfiable",
-  });
+    });
+    const raced = await apiWorker.fetch(
+      new Request(`https://card-keepr.invalid${componentPath}`, {
+        headers: apiHeaders("203.0.113.38"),
+      }),
+      { ...testEnv, CATALOGUE_EXPORTS: replacedBodyBucket },
+    );
+    expect(raced.status).toBe(404);
+    await expect(raced.json()).resolves.toMatchObject({ code: "not_found" });
 
-  await testEnv.CATALOGUE_EXPORTS.delete(componentKey);
-  const missing = await exports.default.fetch(
-    new Request(`https://card-keepr.invalid${componentPath}`, {
-      headers: {
-        ...apiHeaders("203.0.113.36"),
-        "if-none-match": componentEtag,
-      },
-    }),
-  );
-  expect(missing.status).toBe(404);
-  expect(missing.headers.get("content-type")).toContain("application/problem+json");
-  const missingProblem = await missing.json();
-  expect(missingProblem).toMatchObject({ code: "not_found" });
-  const problemAjv = new Ajv2020({ allErrors: true, strict: false });
-  addFormats(problemAjv);
-  problemAjv.addSchema(apiSchema);
-  const validateProblem = problemAjv.getSchema(`${apiSchema.$id}#/$defs/Problem`)!;
-  expect(validateProblem(missingProblem), JSON.stringify(validateProblem.errors)).toBe(true);
+    const unsatisfiable = await exports.default.fetch(
+      new Request(`https://card-keepr.invalid${componentPath}`, {
+        headers: {
+          ...apiHeaders("203.0.113.35"),
+          range: `bytes=${compressedErratumBytes.byteLength}-`,
+        },
+      }),
+    );
+    expect(unsatisfiable.status).toBe(416);
+    expect(unsatisfiable.headers.get("content-range")).toBe(`bytes */${compressedErratumBytes.byteLength}`);
+    await expect(unsatisfiable.json()).resolves.toMatchObject({
+      code: "range_not_satisfiable",
+    });
 
-  const tamperedBytes = compressedLegalityBytes.slice();
-  const tamperedIndex = tamperedBytes.length - 1;
-  tamperedBytes[tamperedIndex] = tamperedBytes[tamperedIndex]! ^ 0xff;
-  await testEnv.CATALOGUE_EXPORTS.put(componentKey, tamperedBytes);
-  const tampered = await exports.default.fetch(
-    new Request(`https://card-keepr.invalid${componentPath}`, {
-      headers: {
-        ...apiHeaders("203.0.113.37"),
-        "if-none-match": componentEtag,
-      },
-    }),
-  );
-  expect(tampered.status).toBe(404);
-  const tamperedProblem = await tampered.json();
-  expect(tamperedProblem).toMatchObject({ code: "not_found" });
-  expect(validateProblem(tamperedProblem), JSON.stringify(validateProblem.errors)).toBe(true);
+    await testEnv.CATALOGUE_EXPORTS.delete(componentKey);
+    const missing = await exports.default.fetch(
+      new Request(`https://card-keepr.invalid${componentPath}`, {
+        headers: {
+          ...apiHeaders("203.0.113.36"),
+          "if-none-match": componentEtag,
+        },
+      }),
+    );
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get("content-type")).toContain("application/problem+json");
+    const missingProblem = await missing.json();
+    expect(missingProblem).toMatchObject({ code: "not_found" });
+    const problemAjv = new Ajv2020({ allErrors: true, strict: false });
+    addFormats(problemAjv);
+    problemAjv.addSchema(apiSchema);
+    const validateProblem = problemAjv.getSchema(`${apiSchema.$id}#/$defs/Problem`)!;
+    expect(validateProblem(missingProblem), JSON.stringify(validateProblem.errors)).toBe(true);
 
-  await testEnv.CATALOGUE_EXPORTS.put(
-    manifestKey,
-    `${canonicalJson({
-      ...manifest,
-      supported_games: ["one-piece"],
-    })}\n`,
-  );
-  const changedManifest = await exports.default.fetch(authenticatedRequest(manifestPath));
-  expect(changedManifest.status).toBe(500);
-  await expect(changedManifest.json()).resolves.toMatchObject({
-    code: "internal_error",
-  });
-});
+    const tamperedBytes = compressedErratumBytes.slice();
+    const tamperedIndex = tamperedBytes.length - 1;
+    tamperedBytes[tamperedIndex] = tamperedBytes[tamperedIndex]! ^ 0xff;
+    await testEnv.CATALOGUE_EXPORTS.put(componentKey, tamperedBytes);
+    const tampered = await exports.default.fetch(
+      new Request(`https://card-keepr.invalid${componentPath}`, {
+        headers: {
+          ...apiHeaders("203.0.113.37"),
+          "if-none-match": componentEtag,
+        },
+      }),
+    );
+    expect(tampered.status).toBe(404);
+    const tamperedProblem = await tampered.json();
+    expect(tamperedProblem).toMatchObject({ code: "not_found" });
+    expect(validateProblem(tamperedProblem), JSON.stringify(validateProblem.errors)).toBe(true);
+
+    await testEnv.CATALOGUE_EXPORTS.put(
+      manifestKey,
+      `${canonicalJson({
+        ...manifest,
+        supported_games: ["one-piece"],
+      })}\n`,
+    );
+    const changedManifest = await exports.default.fetch(authenticatedRequest(manifestPath));
+    expect(changedManifest.status).toBe(500);
+    await expect(changedManifest.json()).resolves.toMatchObject({
+      code: "internal_error",
+    });
+  },
+);
 
 test("Catalogue Export listing is ordered, bounded, and revision-pinned across pages", async () => {
   await seedCatalogueExportSummary("catrev_export_list_oldest", "run_export_list_oldest", "2026-07-18T00:00:00.000Z");
@@ -769,1170 +756,6 @@ test("a known deleting or deleted Catalogue Export is immediately 410 while an u
   );
 });
 
-test("Legality Status rejects a malformed Card identity before lookup", async () => {
-  for (const cardId of ["card id with spaces", `card_${"x".repeat(196)}`]) {
-    const response = await exports.default.fetch(
-      new Request(
-        `https://card-keepr.invalid/v1/legality-status?card_id=${encodeURIComponent(cardId)}&on=2026-07-30&format=standard&region=EN-ASIA`,
-        {
-          headers: {
-            authorization: "Bearer vitest-api-key",
-            "cf-connecting-ip": "203.0.113.20",
-          },
-        },
-      ),
-    );
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toMatchObject({
-      code: "invalid_parameter",
-      invalid_params: [
-        {
-          name: "card_id",
-          reason: "card_id must be an opaque identity of at most 200 characters.",
-        },
-      ],
-    });
-  }
-});
-
-test("Legality Status rejects unknown, repeated, and duplicated evidence includes", async () => {
-  for (const [query, reason] of [
-    ["include=unknown", "include must be exactly evidence when supplied."],
-    ["include=evidence,evidence", "include must be exactly evidence when supplied."],
-    ["include=evidence&include=evidence", "include must be supplied exactly once."],
-  ]) {
-    const response = await exports.default.fetch(
-      new Request(
-        `https://card-keepr.invalid/v1/legality-status?${query}&card_id=card_any&on=2026-07-30&format=standard&region=EN-ASIA`,
-        {
-          headers: {
-            authorization: "Bearer vitest-api-key",
-            "cf-connecting-ip": "203.0.113.21",
-          },
-        },
-      ),
-    );
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toMatchObject({
-      code: "invalid_parameter",
-      invalid_params: [{ name: "include", reason }],
-    });
-  }
-});
-
-test("Legality Status reports the exact invalid query parameter", async () => {
-  const cases = [
-    ["on=2026-07-30&format=standard", "card_id", "card_id is required."],
-    ["card_id=card_any&format=standard", "on", "on is required."],
-    ["card_id=card_any&on=2026-07-30", "format", "format is required."],
-    ["card_id=card_any&on=2026-02-30&format=standard", "on", "on must be a valid ISO date."],
-    ["card_id=card_any&on=2026-07-30&format=", "format", "format must contain at least one character."],
-    [
-      "card_id=card_any&on=2026-07-30&format=standard&event_tier=",
-      "event_tier",
-      "event_tier must contain at least one character.",
-    ],
-    [
-      "card_id=card_any&on=2026-07-30&format=standard&region=OCEANIA",
-      "region",
-      "region must be EN-OCEANIA, EN-ASIA, or EN-US.",
-    ],
-    ["card_id=card_any&on=2026-07-30&format=standard&unexpected=true", "unexpected", "unexpected is not accepted."],
-    [
-      "card_id=card_any&card_id=card_other&on=2026-07-30&format=standard",
-      "card_id",
-      "card_id must be supplied exactly once.",
-    ],
-  ] as const;
-  let address = 110;
-  for (const [query, name, reason] of cases) {
-    const response = await exports.default.fetch(
-      new Request(`https://card-keepr.invalid/v1/legality-status?${query}`, {
-        headers: apiHeaders(`203.0.113.${address++}`),
-      }),
-    );
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toMatchObject({
-      code: "invalid_parameter",
-      invalid_params: [{ name, reason }],
-    });
-  }
-});
-
-test("Legality Status reports an unnamed query key as a schema-valid Problem", async () => {
-  const response = await exports.default.fetch(
-    new Request("https://card-keepr.invalid/v1/legality-status?=true", { headers: apiHeaders("203.0.113.119") }),
-  );
-  expect(response.status).toBe(400);
-  const problem = await response.json();
-  const ajv = new Ajv2020({ allErrors: true, strict: false });
-  addFormats(ajv);
-  ajv.addSchema(apiSchema);
-  const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`)!;
-  expect(validateProblem(problem), JSON.stringify(validateProblem.errors)).toBe(true);
-  expect(problem).toMatchObject({
-    code: "invalid_parameter",
-    invalid_params: [
-      {
-        name: "query",
-        reason: "query parameter names must be non-empty.",
-      },
-    ],
-  });
-});
-
-test("authenticated Legality Status reads only indexed Card and regional applicability at high cardinality", async () => {
-  const revisionId = "catrev_api_legality_applicability";
-  const runId = "run_api_legality_applicability";
-  const targetCardId = "card_api_legality_applicability";
-  await seedApiRevision({
-    revisionId,
-    runId,
-    cards: [
-      apiCard({
-        id: targetCardId,
-        cardNumber: "OP30-777",
-        name: "Applicability Target",
-      }),
-    ],
-  });
-  await catalogueStore(testEnv.CATALOGUE_DB).batch(
-    legalitySourceStatements({
-      runId,
-      key: "api_legality_applicability",
-      game: "one-piece",
-      profile: "one-piece@1",
-      lineage: "one-piece-en",
-      adapter: "fixture-one-piece-json@3",
-      snapshotId: "srcsnap_api_legality_applicability",
-      observationSetId: "srcobsset_api_legality_applicability",
-    }),
-  );
-  const baseRule = {
-    game: "one-piece",
-    format: "standard",
-    event_tier: null,
-    effective_from: "2026-01-01",
-    effective_until: null,
-    source_lineage: "one-piece-en",
-    source_snapshot_id: "srcsnap_api_legality_applicability",
-    source_observation_set_id: "srcobsset_api_legality_applicability",
-    source_observation_id: "srcobs_api_legality_applicability",
-  };
-  const targetRule = {
-    ...baseRule,
-    id: "legality_rule_api_applicability_target",
-    official_id: "api-applicability-target",
-    region: "EN-OCEANIA",
-    card_ids: [targetCardId],
-    official_wording: "This Card is not legal in the standard format.",
-    effect: { type: "ban" },
-  };
-  const unrelatedCardRules = Array.from({ length: 256 }, (_, index) => ({
-    ...baseRule,
-    id: `legality_rule_api_applicability_card_${index}`,
-    official_id: `api-applicability-card-${index}`,
-    region: "EN-OCEANIA",
-    card_ids: [`card_api_unrelated_${index}`],
-    official_wording: `Unrelated Card rule ${index}.`,
-    effect: { type: "eligible" },
-  }));
-  const unrelatedRegionGlobals = Array.from({ length: 256 }, (_, index) => ({
-    ...baseRule,
-    id: `legality_rule_api_applicability_region_${index}`,
-    official_id: `api-applicability-region-${index}`,
-    region: "EN-US",
-    card_ids: [],
-    official_wording: `Unrelated regional rule ${index}.`,
-    effect: { type: "eligible" },
-  }));
-  const rules = [targetRule, ...unrelatedCardRules, ...unrelatedRegionGlobals];
-  for (let offset = 0; offset < rules.length; offset += 64) {
-    await catalogueStore(testEnv.CATALOGUE_DB).batch(
-      canonicalLegalityRuleStatements(revisionId, rules.slice(offset, offset + 64)),
-    );
-  }
-  for (let offset = 0; offset < rules.length; offset += 64) {
-    await catalogueStore(testEnv.CATALOGUE_DB).batch(
-      revisionLegalityRuleStatements(revisionId, rules.slice(offset, offset + 64)),
-    );
-  }
-  await legalityQueries.dropRevisionLegalityRulesImmutableUpdate(testEnv.CATALOGUE_DB).run();
-  await legalityQueries
-    .setRevisionLegalityRulesDocumentJson(testEnv.CATALOGUE_DB)
-    .bind(revisionId, targetRule.id)
-    .run();
-
-  const response = await exports.default.fetch(
-    new Request(
-      "https://card-keepr.invalid/v1/legality-status" +
-        `?card_id=${targetCardId}` +
-        "&on=2026-07-30&format=standard&region=EN-OCEANIA",
-      { headers: apiHeaders("203.0.113.22") },
-    ),
-  );
-  await legalityQueries.createRevisionLegalityRulesImmutableUpdate(testEnv.CATALOGUE_DB).run();
-  expect(response.status).toBe(200);
-  await expect(response.json()).resolves.toMatchObject({
-    data: [
-      {
-        card_id: targetCardId,
-        region: "EN-OCEANIA",
-        status: "not_legal",
-        rule_ids: [targetRule.id],
-      },
-    ],
-  });
-});
-
-test("authenticated Legality Status gives definitive exclusions precedence while auditing unresolved rules", async () => {
-  const revisionId = "catrev_api_legality_precedence";
-  const runId = "run_api_legality_precedence";
-  const publishedAt = "2026-07-30T00:00:00.000Z";
-  const digest = "c".repeat(64);
-  const cases = [
-    {
-      cardId: "card_precedence_ban",
-      attributes: {},
-      effect: { type: "ban" },
-    },
-    {
-      cardId: "card_precedence_membership",
-      attributes: { traits: ["Principality of Zeon"] },
-      effect: {
-        type: "membership",
-        attribute: "traits",
-        includes_any: ["Earth Federation"],
-      },
-    },
-    {
-      cardId: "card_precedence_rotation",
-      attributes: { block_icon: "2" },
-      effect: { type: "rotation", eligible_blocks: ["1"] },
-    },
-    {
-      cardId: "card_precedence_release",
-      attributes: {},
-      effect: {
-        type: "release_timing",
-        legal_from: "2026-08-01",
-      },
-    },
-  ] as const;
-  const cards = cases.map((testCase) => ({
-    type: "card",
-    id: testCase.cardId,
-    game: "gundam",
-    official_identity: {
-      kind: "card_number",
-      value: `GD-PRECEDENCE-${testCase.cardId}`,
-    },
-    name: `Precedence ${testCase.cardId}`,
-    effective_rules_text: null,
-    game_data: {
-      profile: "gundam@1",
-      attributes: {
-        card_type: "unit",
-        colours: [],
-        level: null,
-        cost: null,
-        block_icon: null,
-        effect_text: null,
-        zone: null,
-        traits: [],
-        link_condition: null,
-        ap: null,
-        hp: null,
-        series_titles: [],
-        ...testCase.attributes,
-      },
-    },
-    printing_ids: [],
-    source_lineages: ["gundam-en-asia"],
-    lifecycle: {
-      first_revision_id: revisionId,
-      last_observed_revision_id: revisionId,
-      withdrawn: false,
-    },
-    links: { self: `/v1/cards/${testCase.cardId}` },
-  }));
-  const rules = cases.flatMap((testCase, index) => [
-    {
-      id: `legality_rule_precedence_${index}_definitive`,
-      official_id: `precedence-${index}-definitive`,
-      game: "gundam",
-      region: "EN-ASIA",
-      format: "standard",
-      event_tier: null,
-      effective_from: "2026-01-01",
-      effective_until: null,
-      card_ids: [testCase.cardId],
-      official_wording: `Definitive exclusion ${index}.`,
-      effect: testCase.effect,
-      source_lineage: "gundam-en-asia",
-      source_snapshot_id: "srcsnap_api_precedence",
-      source_observation_set_id: "srcset_api_precedence",
-      source_observation_id: "srcobs_api_precedence",
-    },
-    {
-      id: `legality_rule_precedence_${index}_unresolved`,
-      official_id: `precedence-${index}-unresolved`,
-      game: "gundam",
-      region: "EN-ASIA",
-      format: "standard",
-      event_tier: null,
-      effective_from: null,
-      effective_until: null,
-      unresolved_scope: {
-        dimensions: ["effective_interval", "event_tier"] as const,
-      },
-      card_ids: [testCase.cardId],
-      official_wording: `Unresolved qualifier ${index}.`,
-      effect: {
-        type: "unresolved",
-        reason: "A separate qualifier is not machine-readable.",
-      },
-      source_lineage: "gundam-en-asia",
-      source_snapshot_id: "srcsnap_api_precedence",
-      source_observation_set_id: "srcset_api_precedence",
-      source_observation_id: "srcobs_api_precedence",
-    },
-    {
-      id: `legality_rule_precedence_${index}_future_tier_uncertainty`,
-      official_id: `precedence-${index}-future-tier-uncertainty`,
-      game: "gundam",
-      region: "EN-ASIA",
-      format: "standard",
-      event_tier: null,
-      effective_from: "2026-08-01",
-      effective_until: null,
-      unresolved_scope: { dimensions: ["event_tier"] as const },
-      card_ids: [testCase.cardId],
-      official_wording: `Future event-tier uncertainty ${index}.`,
-      effect: {
-        type: "unresolved",
-        reason: "The future rule does not identify an event tier.",
-      },
-      source_lineage: "gundam-en-asia",
-      source_snapshot_id: "srcsnap_api_precedence",
-      source_observation_set_id: "srcset_api_precedence",
-      source_observation_id: "srcobs_api_precedence",
-    },
-  ]);
-  await catalogueStore(testEnv.CATALOGUE_DB).batch([
-    ingestionQueries
-      .insertIngestionRunsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(
-        runId,
-        publishedAt,
-        digest,
-        publishedAt,
-        JSON.stringify({
-          action: "approved",
-          candidate_digest: digest,
-          expected_current_revision_id: "catrev_spine_000",
-          approved_at: publishedAt,
-        }),
-      ),
-    ingestionQueries
-      .setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(runId),
-    ...legalitySourceStatements({
-      runId,
-      key: "api_precedence",
-      game: "gundam",
-      profile: "gundam@1",
-      lineage: "gundam-en-asia",
-      adapter: "fixture-gundam-en-asia-json@2",
-      snapshotId: "srcsnap_api_precedence",
-      observationSetId: "srcset_api_precedence",
-    }),
-    ingestionQueries
-      .insertCatalogueRevisionsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(revisionId, runId, publishedAt, digest, digest),
-    ...canonicalLegalityRuleStatements(revisionId, rules),
-    ...cards.map((card) =>
-      publishedCatalogueQueries
-        .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-          testEnv.CATALOGUE_DB,
-        )
-        .bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
-    ),
-    ...revisionLegalityRuleStatements(revisionId, rules),
-    publishedCatalogueQueries
-      .setCatalogueStateCurrentRevisionIdPublishedAt(testEnv.CATALOGUE_DB)
-      .bind(revisionId, publishedAt),
-  ]);
-
-  const legalityAjv = new Ajv2020({ allErrors: true, strict: false });
-  addFormats(legalityAjv);
-  legalityAjv.addSchema(apiSchema);
-  const validateLegalityStatus = legalityAjv.getSchema(`${apiSchema.$id}#/$defs/LegalityStatusDocument`)!;
-
-  for (const [index, testCase] of cases.entries()) {
-    const response = await exports.default.fetch(
-      new Request(
-        "https://card-keepr.invalid/v1/legality-status" +
-          `?card_id=${testCase.cardId}` +
-          "&on=2026-07-30&format=standard&region=EN-ASIA",
-        {
-          headers: {
-            authorization: "Bearer vitest-api-key",
-            "cf-connecting-ip": `203.0.113.${40 + index}`,
-          },
-        },
-      ),
-    );
-    expect(response.status).toBe(200);
-    const body = await response.json<{
-      data: Array<{
-        status: string;
-        rule_ids: string[];
-        unresolved_scope_rule_ids: string[];
-        derivation: string;
-      }>;
-      included?: unknown[];
-      provenance?: Record<string, string[]>;
-    }>();
-    expect(body).not.toHaveProperty("included");
-    expect(body).not.toHaveProperty("provenance");
-    expect(validateLegalityStatus(body), JSON.stringify(validateLegalityStatus.errors)).toBe(true);
-    expect(body.data[0]).toMatchObject({
-      status: "not_legal",
-      rule_ids: [`legality_rule_precedence_${index}_definitive`],
-      unresolved_scope_rule_ids: [`legality_rule_precedence_${index}_unresolved`],
-    });
-    expect(body.data[0]!.derivation).toContain("evaluated not_legal");
-    expect(body.data[0]!.derivation).toContain("evaluated indeterminate");
-    if (index === 0) {
-      const evidenceResponse = await exports.default.fetch(
-        new Request(
-          "https://card-keepr.invalid/v1/legality-status" +
-            `?card_id=${testCase.cardId}` +
-            "&on=2026-07-30&format=standard&region=EN-ASIA&include=evidence",
-          {
-            headers: {
-              authorization: "Bearer vitest-api-key",
-              "cf-connecting-ip": "203.0.113.79",
-            },
-          },
-        ),
-      );
-      expect(evidenceResponse.status).toBe(200);
-      const evidenceBody = await evidenceResponse.json();
-      expect(validateLegalityStatus(evidenceBody), JSON.stringify(validateLegalityStatus.errors)).toBe(true);
-      expect(evidenceBody).toMatchObject({
-        included: [
-          {
-            type: "source_observation",
-            id: "srcobs_api_precedence",
-            captured_at: "2026-07-30T00:00:01.000Z",
-            source: "gundam-en-asia",
-          },
-        ],
-        provenance: {
-          "/data/0/status": ["srcobs_api_precedence"],
-          "/data/0/rule_ids/0": ["srcobs_api_precedence"],
-          "/data/0/unresolved_scope_rule_ids/0": ["srcobs_api_precedence"],
-        },
-      });
-      const etag = response.headers.get("etag");
-      expect(etag).not.toBeNull();
-      const url =
-        "https://card-keepr.invalid/v1/legality-status" +
-        `?card_id=${testCase.cardId}` +
-        "&on=2026-07-30&format=standard&region=EN-ASIA";
-      const validators = [etag!, `W/${etag}`, `"unrelated", W/${etag}`, "*"];
-      const conditional = await Promise.all(
-        validators.map((validator, validatorIndex) =>
-          exports.default.fetch(
-            new Request(url, {
-              headers: {
-                authorization: "Bearer vitest-api-key",
-                "cf-connecting-ip": `203.0.113.${80 + validatorIndex}`,
-                "if-none-match": validator,
-              },
-            }),
-          ),
-        ),
-      );
-      expect(conditional.map(({ status }) => status)).toEqual([304, 304, 304, 304]);
-      for (const matched of conditional) {
-        expect(await matched.text()).toBe("");
-        expect(matched.headers.get("etag")).toBe(etag);
-        expect(matched.headers.get("x-catalogue-revision")).toBe(revisionId);
-      }
-      const nonmatch = await exports.default.fetch(
-        new Request(url, {
-          headers: {
-            authorization: "Bearer vitest-api-key",
-            "cf-connecting-ip": "203.0.113.84",
-            "if-none-match": '"unrelated"',
-          },
-        }),
-      );
-      expect(nonmatch.status).toBe(200);
-      expect(nonmatch.headers.get("etag")).toBe(etag);
-    }
-  }
-
-  const statusUrl =
-    "https://card-keepr.invalid/v1/legality-status" +
-    `?card_id=${cases[0].cardId}` +
-    "&on=2026-07-30&format=standard&region=EN-ASIA";
-  const expectInvalidStoredDocument = async () => {
-    const response = await exports.default.fetch(
-      new Request(statusUrl, {
-        headers: {
-          authorization: "Bearer vitest-api-key",
-          "cf-connecting-ip": "203.0.113.99",
-        },
-      }),
-    );
-    expect(response.status).toBe(500);
-    await expect(response.json()).resolves.toMatchObject({
-      code: "internal_error",
-    });
-  };
-  const originalCard = cards[0]!;
-  const malformedCards = [
-    { id: originalCard.id, game: originalCard.game, game_data: originalCard.game_data },
-    {
-      ...originalCard,
-      game_data: {
-        ...originalCard.game_data,
-        attributes: { ...originalCard.game_data.attributes, traits: {} },
-      },
-    },
-    {
-      ...originalCard,
-      official_identity: { kind: "functional_designation", value: "DON!!" },
-    },
-    {
-      ...originalCard,
-      lifecycle: {
-        ...originalCard.lifecycle,
-        withdrawn: true,
-      },
-    },
-  ];
-  for (const malformed of malformedCards) {
-    await publishedCatalogueQueries
-      .setRevisionCardsDocumentJsonForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(JSON.stringify(publishedCardEnvelope(malformed)), revisionId, originalCard.id)
-      .run();
-    await expectInvalidStoredDocument();
-  }
-  await publishedCatalogueQueries
-    .setRevisionCardsDocumentJsonForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-      testEnv.CATALOGUE_DB,
-    )
-    .bind(JSON.stringify(publishedCardEnvelope(originalCard)), revisionId, originalCard.id)
-    .run();
-
-  const pointer = "/observations/0/value/legality_rules/0";
-  const originalRule = {
-    ...rules[0]!,
-    source_observation_pointer: pointer,
-    source_field_pointers: legalityRuleFieldPointers(pointer),
-    first_revision_id: revisionId,
-    last_observed_revision_id: revisionId,
-    current: true,
-    last_missing_revision_id: null,
-  };
-  await legalityQueries.dropRevisionLegalityRulesImmutableUpdate(testEnv.CATALOGUE_DB).run();
-  const malformedRules = [
-    {
-      ...originalRule,
-      source_field_pointers: {
-        official_wording: `${pointer}/official_wording`,
-      },
-    },
-    { ...originalRule, game: "one-piece" },
-    { ...originalRule, current: false, last_missing_revision_id: null },
-    { ...originalRule, effect: { type: "publisher_extension" } },
-    {
-      ...originalRule,
-      effect: { ...originalRule.effect, publisher_extension: true },
-    },
-    {
-      ...originalRule,
-      effect: {
-        type: "prohibited_combination",
-        with_card_numbers: ["OP01-999"],
-      },
-    },
-  ];
-  for (const malformed of malformedRules) {
-    await legalityQueries
-      .setRevisionLegalityRulesDocumentJsonForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(JSON.stringify(malformed), revisionId, originalRule.id)
-      .run();
-    await expectInvalidStoredDocument();
-  }
-});
-
-test("Legality Status evidence reports the captured_at the publication projected", async () => {
-  // The evidence sidecar reads source_retrieved_at from the revision row
-  // (migration 0004), not source_snapshots: the projected instant here
-  // deliberately differs from the seeded snapshot's retrieved_at
-  // (issue #98).
-  const revisionId = "catrev_api_projected_evidence";
-  const runId = "run_api_projected_evidence";
-  const publishedAt = "2026-07-30T00:00:00.000Z";
-  const digest = "f".repeat(64);
-  const projectedCapturedAt = "2026-07-29T23:59:59.000Z";
-  const card = {
-    type: "card",
-    id: "card_projected_evidence",
-    game: "gundam",
-    official_identity: { kind: "card_number", value: "GD-PROJ-001" },
-    name: "Projected evidence",
-    effective_rules_text: null,
-    game_data: {
-      profile: "gundam@1",
-      attributes: {
-        card_type: "unit",
-        colours: [],
-        level: null,
-        cost: null,
-        block_icon: null,
-        effect_text: null,
-        zone: null,
-        traits: [],
-        link_condition: null,
-        ap: null,
-        hp: null,
-        series_titles: [],
-      },
-    },
-    printing_ids: [],
-    source_lineages: ["gundam-en-asia"],
-    lifecycle: {
-      first_revision_id: revisionId,
-      last_observed_revision_id: revisionId,
-      withdrawn: false,
-    },
-    links: { self: "/v1/cards/card_projected_evidence" },
-  };
-  const rules = [
-    {
-      id: "legality_rule_projected_evidence",
-      official_id: "projected-evidence-ban",
-      game: "gundam",
-      region: "EN-ASIA",
-      format: "standard",
-      event_tier: null,
-      effective_from: "2026-01-01",
-      effective_until: null,
-      card_ids: [card.id],
-      official_wording: "Banned with projected evidence.",
-      effect: { type: "ban" },
-      source_lineage: "gundam-en-asia",
-      source_snapshot_id: "srcsnap_api_projected_evidence",
-      source_observation_set_id: "srcset_api_projected_evidence",
-      source_observation_id: "srcobs_api_projected_evidence",
-      source_retrieved_at: projectedCapturedAt,
-    },
-  ];
-  await catalogueStore(testEnv.CATALOGUE_DB).batch([
-    ingestionQueries
-      .insertIngestionRunsForLegalityStatusEvidenceReportsCapturedAtPublicationProjected(testEnv.CATALOGUE_DB)
-      .bind(
-        runId,
-        publishedAt,
-        digest,
-        publishedAt,
-        JSON.stringify({
-          action: "approved",
-          candidate_digest: digest,
-          expected_current_revision_id: "catrev_spine_000",
-          approved_at: publishedAt,
-        }),
-      ),
-    ingestionQueries
-      .setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(runId),
-    ...legalitySourceStatements({
-      runId,
-      key: "api_projected_evidence",
-      game: "gundam",
-      profile: "gundam@1",
-      lineage: "gundam-en-asia",
-      adapter: "fixture-gundam-en-asia-json@2",
-      snapshotId: "srcsnap_api_projected_evidence",
-      observationSetId: "srcset_api_projected_evidence",
-    }),
-    ingestionQueries
-      .insertCatalogueRevisionsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(revisionId, runId, publishedAt, digest, digest),
-    ...canonicalLegalityRuleStatements(revisionId, rules),
-    publishedCatalogueQueries
-      .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
-    ...revisionLegalityRuleStatements(revisionId, rules),
-    publishedCatalogueQueries
-      .setCatalogueStateCurrentRevisionIdPublishedAt(testEnv.CATALOGUE_DB)
-      .bind(revisionId, publishedAt),
-  ]);
-
-  const response = await exports.default.fetch(
-    new Request(
-      "https://card-keepr.invalid/v1/legality-status" +
-        `?card_id=${card.id}&on=2026-07-30&format=standard&region=EN-ASIA&include=evidence`,
-      {
-        headers: {
-          authorization: "Bearer vitest-api-key",
-          "cf-connecting-ip": "203.0.113.90",
-        },
-      },
-    ),
-  );
-  expect(response.status).toBe(200);
-  await expect(response.json()).resolves.toMatchObject({
-    data: [{ status: "not_legal", rule_ids: ["legality_rule_projected_evidence"] }],
-    included: [
-      {
-        type: "source_observation",
-        id: "srcobs_api_projected_evidence",
-        captured_at: projectedCapturedAt,
-        source: "gundam-en-asia",
-      },
-    ],
-  });
-});
-
-test("an unresolved target-scope rule answers explicitly indeterminate for every overlapping query", async () => {
-  const revisionId = "catrev_api_target_scope";
-  const runId = "run_api_target_scope";
-  const publishedAt = "2026-07-30T00:00:00.000Z";
-  const digest = "e".repeat(64);
-  const cardIds = ["card_scope_enumerated", "card_scope_open", "card_scope_banned"] as const;
-  const cards = cardIds.map((cardId) => ({
-    type: "card",
-    id: cardId,
-    game: "gundam",
-    official_identity: {
-      kind: "card_number",
-      value: `GD-SCOPE-${cardId}`,
-    },
-    name: `Target scope ${cardId}`,
-    effective_rules_text: null,
-    game_data: {
-      profile: "gundam@1",
-      attributes: {
-        card_type: "unit",
-        colours: [],
-        level: null,
-        cost: null,
-        block_icon: null,
-        effect_text: null,
-        zone: null,
-        traits: [],
-        link_condition: null,
-        ap: null,
-        hp: null,
-        series_titles: [],
-      },
-    },
-    printing_ids: [],
-    source_lineages: ["gundam-en-asia"],
-    lifecycle: {
-      first_revision_id: revisionId,
-      last_observed_revision_id: revisionId,
-      withdrawn: false,
-    },
-    links: { self: `/v1/cards/${cardId}` },
-  }));
-  const provenance = {
-    source_lineage: "gundam-en-asia",
-    source_snapshot_id: "srcsnap_api_target_scope",
-    source_observation_set_id: "srcset_api_target_scope",
-    source_observation_id: "srcobs_api_target_scope",
-  } as const;
-  const rules = [
-    {
-      id: "legality_rule_open_predicate",
-      official_id: "target-scope-open-predicate",
-      game: "gundam",
-      region: "EN-ASIA",
-      format: "standard",
-      event_tier: null,
-      effective_from: null,
-      effective_until: null,
-      unresolved_scope: {
-        dimensions: ["effective_interval", "target_scope"] as const,
-      },
-      card_ids: ["card_scope_enumerated"],
-      official_wording: "Every current and future card matching the published description is restricted.",
-      effect: {
-        type: "unresolved",
-        reason: "The published description includes future printings; its complete matching-card scope is not stated.",
-      },
-      ...provenance,
-    },
-    {
-      id: "legality_rule_scope_definitive_ban",
-      official_id: "target-scope-definitive-ban",
-      game: "gundam",
-      region: "EN-ASIA",
-      format: "standard",
-      event_tier: null,
-      effective_from: "2026-01-01",
-      effective_until: null,
-      card_ids: ["card_scope_banned"],
-      official_wording: "Definitive ban alongside the open predicate.",
-      effect: { type: "ban" },
-      ...provenance,
-    },
-  ];
-  await catalogueStore(testEnv.CATALOGUE_DB).batch([
-    ingestionQueries
-      .insertIngestionRunsForUnresolvedTargetScopeRuleAnswersExplicitlyIndeterminateEveryOverlapping(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(
-        runId,
-        publishedAt,
-        digest,
-        publishedAt,
-        JSON.stringify({
-          action: "approved",
-          candidate_digest: digest,
-          expected_current_revision_id: "catrev_spine_000",
-          approved_at: publishedAt,
-        }),
-      ),
-    ingestionQueries
-      .setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(runId),
-    ...legalitySourceStatements({
-      runId,
-      key: "api_target_scope",
-      game: "gundam",
-      profile: "gundam@1",
-      lineage: "gundam-en-asia",
-      adapter: "fixture-gundam-en-asia-json@2",
-      snapshotId: "srcsnap_api_target_scope",
-      observationSetId: "srcset_api_target_scope",
-    }),
-    ingestionQueries
-      .insertCatalogueRevisionsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(revisionId, runId, publishedAt, digest, digest),
-    ...canonicalLegalityRuleStatements(revisionId, rules),
-    ...cards.map((card) =>
-      publishedCatalogueQueries
-        .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-          testEnv.CATALOGUE_DB,
-        )
-        .bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
-    ),
-    ...revisionLegalityRuleStatements(revisionId, rules),
-    publishedCatalogueQueries
-      .setCatalogueStateCurrentRevisionIdPublishedAt(testEnv.CATALOGUE_DB)
-      .bind(revisionId, publishedAt),
-  ]);
-
-  // The target-scope rule materializes one explicit all_cards row alongside
-  // its enumerated Card row.
-  const applicability = await legalityQueries
-    .readRevisionLegalityRuleApplicabilityApplicabilityKindCardId(testEnv.CATALOGUE_DB)
-    .bind(revisionId, "legality_rule_open_predicate")
-    .all();
-  expect(applicability.results).toEqual([
-    { applicability_kind: "all_cards", card_id: "" },
-    { applicability_kind: "card", card_id: "card_scope_enumerated" },
-  ]);
-
-  const status = async (cardId: string, query: string, ip: string) => {
-    const response = await exports.default.fetch(
-      new Request(`https://card-keepr.invalid/v1/legality-status?card_id=${cardId}&on=2026-07-30&${query}`, {
-        headers: {
-          authorization: "Bearer vitest-api-key",
-          "cf-connecting-ip": ip,
-        },
-      }),
-    );
-    expect(response.status).toBe(200);
-    return (
-      await response.json<{
-        data: Array<{
-          status: string;
-          rule_ids: string[];
-          unresolved_scope_rule_ids: string[];
-          derivation: string;
-        }>;
-      }>()
-    ).data[0]!;
-  };
-
-  // A query for a Card outside the enumerated matches overlaps the open
-  // predicate and answers explicitly indeterminate.
-  const open = await status("card_scope_open", "format=standard&region=EN-ASIA", "203.0.113.110");
-  expect(open).toMatchObject({
-    status: "indeterminate",
-    rule_ids: [],
-    unresolved_scope_rule_ids: ["legality_rule_open_predicate"],
-  });
-  expect(open.derivation).toContain("unresolved scope");
-
-  // The enumerated Card answers the same explicit uncertainty.
-  const enumerated = await status("card_scope_enumerated", "format=standard&region=EN-ASIA", "203.0.113.111");
-  expect(enumerated).toMatchObject({
-    status: "indeterminate",
-    unresolved_scope_rule_ids: ["legality_rule_open_predicate"],
-  });
-
-  // A definitive exclusion still decides its Card while the uncertainty
-  // remains in the audit.
-  const banned = await status("card_scope_banned", "format=standard&region=EN-ASIA", "203.0.113.112");
-  expect(banned).toMatchObject({
-    status: "not_legal",
-    rule_ids: ["legality_rule_scope_definitive_ban"],
-    unresolved_scope_rule_ids: ["legality_rule_open_predicate"],
-  });
-  expect(banned.derivation).toContain("evaluated not_legal");
-
-  // A non-overlapping context (different format) answers normally without
-  // the target-scope rule.
-  const otherFormat = await status("card_scope_open", "format=unlimited&region=EN-ASIA", "203.0.113.113");
-  expect(otherFormat).toMatchObject({
-    status: "indeterminate",
-    rule_ids: [],
-    unresolved_scope_rule_ids: [],
-  });
-  expect(otherFormat.derivation).toContain("no effective published Legality Rule");
-
-  // The other lineage's region carries no such rule and answers normally.
-  const otherRegion = await status("card_scope_open", "format=standard&region=EN-US", "203.0.113.114");
-  expect(otherRegion).toMatchObject({
-    status: "indeterminate",
-    rule_ids: [],
-    unresolved_scope_rule_ids: [],
-  });
-});
-
-test("authenticated Legality Status targets the functional DON!! Card and audits unresolved rules", async () => {
-  const revisionId = "catrev_api_don_legality";
-  const runId = "run_api_don_legality";
-  const publishedAt = "2026-07-30T00:00:00.000Z";
-  const digest = "d".repeat(64);
-  const donId = "card_api_functional_don";
-  const companionId = "card_api_don_companion";
-  const cards = [
-    {
-      type: "card",
-      id: donId,
-      game: "one-piece",
-      official_identity: {
-        kind: "functional_designation",
-        value: "DON!!",
-      },
-      game_data: {
-        profile: "one-piece@1",
-        attributes: {
-          card_type: "don",
-          colours: [],
-          cost: null,
-          life: null,
-          battle_attributes: [],
-          power: null,
-          counter: null,
-          traits: [],
-          block_icons: [],
-          effect_text: null,
-          trigger_text: null,
-        },
-      },
-      name: "DON!!",
-      effective_rules_text: null,
-      printing_ids: [],
-      source_lineages: ["one-piece-en"],
-      lifecycle: {
-        first_revision_id: revisionId,
-        last_observed_revision_id: revisionId,
-        withdrawn: false,
-      },
-      links: { self: `/v1/cards/${donId}` },
-    },
-    {
-      type: "card",
-      id: companionId,
-      game: "one-piece",
-      official_identity: { kind: "card_number", value: "OP30-001" },
-      game_data: {
-        profile: "one-piece@1",
-        attributes: {
-          card_type: "leader",
-          colours: ["red"],
-          cost: null,
-          life: 5,
-          battle_attributes: [],
-          power: 5000,
-          counter: null,
-          traits: [],
-          block_icons: [],
-          effect_text: null,
-          trigger_text: null,
-        },
-      },
-      name: "DON companion",
-      effective_rules_text: null,
-      printing_ids: [],
-      source_lineages: ["one-piece-en"],
-      lifecycle: {
-        first_revision_id: revisionId,
-        last_observed_revision_id: revisionId,
-        withdrawn: false,
-      },
-      links: { self: `/v1/cards/${companionId}` },
-    },
-  ];
-  const baseRule = {
-    game: "one-piece",
-    region: "EN-OCEANIA",
-    format: "standard",
-    event_tier: null,
-    effective_from: "2026-01-01",
-    effective_until: null,
-    card_ids: [donId],
-    source_lineage: "one-piece-en",
-    source_snapshot_id: "srcsnap_api_don",
-    source_observation_set_id: "srcobsset_api_don",
-    source_observation_id: "srcobs_api_don",
-  };
-  const rules = [
-    {
-      ...baseRule,
-      id: "legality_rule_api_don_ban",
-      official_id: "api-don-ban",
-      official_wording: "DON!! may not be included in this deck.",
-      effect: { type: "ban" },
-    },
-    {
-      ...baseRule,
-      id: "legality_rule_api_don_copy",
-      official_id: "api-don-copy",
-      official_wording: "Decks may contain one copy of DON!!.",
-      effect: { type: "copy_limit", maximum_copies: 1 },
-    },
-    {
-      ...baseRule,
-      id: "legality_rule_api_don_combination",
-      official_id: "api-don-combination",
-      official_wording: "DON!! and OP30-001 may not be combined.",
-      effect: {
-        type: "prohibited_combination",
-        with_card_ids: [companionId],
-      },
-    },
-    {
-      ...baseRule,
-      id: "legality_rule_api_don_unresolved",
-      official_id: "api-don-unresolved",
-      official_wording: "The side-event scope is not stated.",
-      effect: {
-        type: "unresolved",
-        reason: "The Official Source omitted the side-event scope.",
-      },
-    },
-  ];
-  await catalogueStore(testEnv.CATALOGUE_DB).batch([
-    ingestionQueries
-      .insertIngestionRunsForAuthenticatedLegalityStatusTargetsFunctionalDONCardAuditsUnresolved(testEnv.CATALOGUE_DB)
-      .bind(
-        runId,
-        publishedAt,
-        digest,
-        publishedAt,
-        JSON.stringify({
-          action: "approved",
-          candidate_digest: digest,
-          expected_current_revision_id: "catrev_spine_000",
-          approved_at: publishedAt,
-        }),
-      ),
-    ingestionQueries
-      .setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(runId),
-    ...legalitySourceStatements({
-      runId,
-      key: "api_don",
-      game: "one-piece",
-      profile: "one-piece@1",
-      lineage: "one-piece-en",
-      adapter: "fixture-one-piece-json@3",
-      snapshotId: "srcsnap_api_don",
-      observationSetId: "srcobsset_api_don",
-    }),
-    ingestionQueries
-      .insertCatalogueRevisionsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(revisionId, runId, publishedAt, digest, digest),
-    ...canonicalLegalityRuleStatements(revisionId, rules),
-    ...cards.map((card) =>
-      publishedCatalogueQueries
-        .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-          testEnv.CATALOGUE_DB,
-        )
-        .bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card))),
-    ),
-    ...revisionLegalityRuleStatements(revisionId, rules),
-    publishedCatalogueQueries
-      .setCatalogueStateCurrentRevisionIdPublishedAt(testEnv.CATALOGUE_DB)
-      .bind(revisionId, publishedAt),
-  ]);
-
-  const response = await exports.default.fetch(
-    new Request(
-      `https://card-keepr.invalid/v1/legality-status?card_id=${donId}&on=2026-07-30&format=standard&region=EN-OCEANIA`,
-      {
-        headers: {
-          authorization: "Bearer vitest-api-key",
-          "cf-connecting-ip": "203.0.113.60",
-        },
-      },
-    ),
-  );
-  expect(response.status).toBe(200);
-  const body = await response.json<{
-    data: Array<{ status: string; rule_ids: string[]; derivation: string }>;
-  }>();
-  expect(body.data[0]).toMatchObject({
-    status: "not_legal",
-    rule_ids: [
-      "legality_rule_api_don_ban",
-      "legality_rule_api_don_combination",
-      "legality_rule_api_don_copy",
-      "legality_rule_api_don_unresolved",
-    ],
-  });
-  expect(body.data[0]!.derivation).toContain("legality_rule_api_don_unresolved (unresolved) evaluated indeterminate");
-});
-
 test("the public Printing response validates full Distribution Context objects", async () => {
   const document = {
     type: "printing",
@@ -2042,7 +865,6 @@ test("the public Printing response validates full Distribution Context objects",
         {
           id: "context_event",
           kind: "other",
-          evidence_category: "explicit",
         },
       ],
     },
@@ -2808,7 +1630,7 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
   });
 }, 15_000);
 
-test("Card detail includes revision-pinned Printings, provenance, and disagreements", async () => {
+test("Card detail includes revision-pinned Printings and explicit unknowns without evidence", async () => {
   const card = apiCard({
     id: "card_detail_projection",
     cardNumber: "OP29-703",
@@ -2879,8 +1701,7 @@ test("Card detail includes revision-pinned Printings, provenance, and disagreeme
       .bind("catrev_detail_projection", printing.id, card.id, JSON.stringify(printing)),
   ]);
 
-  const url =
-    "https://card-keepr.invalid/v1/cards/card_detail_projection" + "?include=printings,evidence,disagreements";
+  const url = "https://card-keepr.invalid/v1/cards/card_detail_projection" + "?include=printings";
   const response = await exports.default.fetch(
     new Request(url, {
       headers: apiHeaders("203.0.113.101"),
@@ -2896,36 +1717,12 @@ test("Card detail includes revision-pinned Printings, provenance, and disagreeme
   expect(validate(body), JSON.stringify(validate.errors)).toBe(true);
   expect(body).toMatchObject({
     data: { effective_rules_text: null },
-    included: [
-      { id: printing.id, type: "printing" },
-      { id: evidence.id, type: "source_observation" },
-      { id: otherEvidence.id, type: "source_observation" },
-    ],
-    provenance: {
-      "/data/effective_rules_text": [evidence.id],
-    },
-    disagreements: [
-      {
-        path: "/data/effective_rules_text",
-        status: "unresolved",
-      },
-    ],
+    included: [{ id: printing.id, type: "printing" }],
     meta: { catalogue_revision_id: "catrev_detail_projection" },
   });
   expect((body.data as Record<string, unknown>).effective_rules_text).toBeNull();
-  const includedIds = new Set((body.included as Array<{ id: string }>).map(({ id }) => id));
-  for (const [pointer, observationIds] of Object.entries(body.provenance as Record<string, string[]>)) {
-    const pointedValue = jsonPointerValue(body, pointer);
-    expect(pointedValue).toBeDefined();
-    expect(observationIds.every((id) => includedIds.has(id))).toBe(true);
-  }
-  for (const disagreement of body.disagreements as Array<{
-    path: string;
-    status: string;
-  }>) {
-    if (disagreement.status !== "unresolved") continue;
-    expect(jsonPointerValue(body, disagreement.path)).toBeNull();
-  }
+  expect(body).not.toHaveProperty("provenance");
+  expect(body).not.toHaveProperty("disagreements");
 
   const etag = response.headers.get("etag");
   expect(etag).not.toBeNull();
@@ -3028,34 +1825,7 @@ test("Card cursors continue on an available pinned revision and conflict only af
   });
 });
 
-test("the normative Printing schema excludes SourceBucket from canonical relationship evidence", () => {
-  const ajv = new Ajv2020({ allErrors: true, strict: false });
-  addFormats(ajv);
-  ajv.addSchema(exportManifestSchemaV5);
-  ajv.addSchema(apiSchema);
-  const validate = ajv.getSchema(`${apiSchema.$id}#/$defs/RelationshipEvidence`);
-  expect(validate).toBeDefined();
-  const relationship = {
-    source_lineage: "one-piece-en",
-    relationship_kind: "product",
-    relationship_value: "product_op10",
-    source_observation_ids: ["srcobs_contract_1"],
-    first_revision_id: "catrev_contract",
-    last_observed_revision_id: "catrev_contract",
-    current: true,
-    last_missing_revision_id: null,
-  };
-  expect(validate!(relationship), JSON.stringify(validate!.errors)).toBe(true);
-  expect(
-    validate!({
-      ...relationship,
-      relationship_kind: "source_bucket",
-      relationship_value: "primary-card-list",
-    }),
-  ).toBe(false);
-});
-
-function jsonPointerValue(document: unknown, pointer: string): unknown {
+function _jsonPointerValue(document: unknown, pointer: string): unknown {
   return pointer
     .slice(1)
     .split("/")

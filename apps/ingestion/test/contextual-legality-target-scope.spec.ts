@@ -1,17 +1,16 @@
-import * as legalityQueries from "./query-helpers/legality";
+import { expect, test } from "vitest";
 import { publishLegalityRuleFactsStatement } from "../../../src/catalogue/legality/legality-publication-repository";
 import { catalogueStore } from "../../../src/catalogue/shared";
-import { expect, test } from "vitest";
 import {
   approve,
   collectFixtureLegality,
-  exportedLegalityRule,
   installContextualLegalitySuite,
   rejectedError,
   requiredString,
   revisionLegalityRule,
   testEnv,
 } from "./contextual-legality-helpers";
+import * as legalityQueries from "./query-helpers/legality";
 
 installContextualLegalitySuite();
 
@@ -81,15 +80,6 @@ test("an open-predicate rule publishes with explicit target-scope uncertainty an
       applicability_kind: string;
     }>();
   expect(intervalApplicability.results).toEqual([{ applicability_kind: "card" }]);
-
-  // The schema-major-5 export retains the complete unresolved scope.
-  const exported = await exportedLegalityRule(revisionId, "legality_rule_asia_open_predicate");
-  expect(exported).toMatchObject({
-    kind: "indeterminate",
-    effective_from: null,
-    unresolved_scope: { dimensions: ["effective_interval", "target_scope"] },
-    effect: expect.objectContaining({ type: "unresolved" }),
-  });
 
   // The vocabulary stays fail-closed outside its exact contract: the same
   // retained provenance accepts a well-formed target-scope rule and rejects

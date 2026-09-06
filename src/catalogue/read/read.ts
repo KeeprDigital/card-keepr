@@ -1,7 +1,8 @@
+import { MissingObjectError } from "../shared";
 import { parseCatalogueRevisionId, parsePublicationInstant } from "../../http/catalogue";
 import { ifNoneMatchMatches as ifNoneMatch } from "../../http/conditional-request";
 import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
-import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
+import { type CatalogueStore, canonicalJson, consumerContent, sha256Text } from "../shared";
 import {
   canonicalEtag,
   collectionLimit,
@@ -26,7 +27,6 @@ import type {
 import {
   cardPrintingsStatement,
   catalogueExportStatement,
-  catalogueFreshnessStatement,
   catalogueStatusStatement,
   currentCardStatement,
   currentPrintingStatement,
@@ -34,13 +34,9 @@ import {
   pendingExportComponentDeletionStatement,
   printingImageStatement,
 } from "./published-read-repository";
-import { type SourceFreshnessStorageRow, sourceFreshnessFromStorage } from "./source-freshness";
 
 type DetailEnvelope = {
   data: unknown;
-  included: unknown[];
-  provenance: Record<string, string[]>;
-  disagreements: unknown[];
 };
 
 type ExportManifest = {
@@ -199,25 +195,12 @@ function assertCatalogueExportCollectionParameters(url: URL): void {
 }
 
 export async function currentCatalogueStatus(database: CatalogueStore) {
-  const [state, freshness] = await Promise.all([
-    catalogueStatusStatement(database).first<CatalogueStateRow>(),
-    catalogueFreshnessStatement(database).all<SourceFreshnessStorageRow>(),
-  ]);
+  const state = await catalogueStatusStatement(database).first<CatalogueStateRow>();
   if (state === null) throw new Error("Catalogue state is unavailable");
-  const lastSuccessfulChecks = freshness.results.map((row) => ({
-    ...sourceFreshnessFromStorage(row),
-    checked_at: parsePublicationInstant(row.checked_at),
-  }));
   return {
     revisionId: parseCatalogueRevisionId(state.current_revision_id),
     publishedAt: parsePublicationInstant(state.published_at),
-    lastSuccessfulChecks,
-    etag: await sha256Text(
-      canonicalJson({
-        revision_id: state.current_revision_id,
-        last_successful_checks: lastSuccessfulChecks,
-      }),
-    ),
+    etag: await sha256Text(canonicalJson({ revision_id: state.current_revision_id, published_at: state.published_at })),
   };
 }
 
@@ -233,7 +216,7 @@ export async function currentCardResponse(
   const include = detailIncludeProjection(
     url,
     () => new ReadProblem(400, "invalid_parameter", "Card include projection is invalid."),
-    ["printings", "evidence", "disagreements"],
+    ["printings"],
   );
   const envelope = detailEnvelope(row.document_json);
   const etag = `"card:${cardId}:${row.current_revision_id}:` + `${detailRepresentationKey(include)}"`;
@@ -249,19 +232,14 @@ export async function currentCardResponse(
     : { results: [] as PrintingDocumentRow[] };
   return Response.json(
     {
-      data: absoluteDocumentLinks(envelope.data, base),
-      ...(include.has("printings") || include.has("evidence")
+      data: absoluteDocumentLinks(consumerContent(envelope.data), base),
+      ...(include.has("printings")
         ? {
-            included: [
-              ...printings.results.map(({ document_json }) =>
-                absoluteDocumentLinks(detailEnvelope(document_json).data, base),
-              ),
-              ...(include.has("evidence") ? envelope.included : []),
-            ],
+            included: printings.results.map(({ document_json }) =>
+              absoluteDocumentLinks(consumerContent(detailEnvelope(document_json).data), base),
+            ),
           }
         : {}),
-      ...(include.has("evidence") ? { provenance: envelope.provenance } : {}),
-      ...(include.has("disagreements") ? { disagreements: envelope.disagreements } : {}),
       meta: {
         catalogue_revision_id: row.current_revision_id,
         published_at: row.published_at,
@@ -293,14 +271,7 @@ export async function currentPrintingResponse(
   }
   return Response.json(
     {
-      data: absoluteDocumentLinks(envelope.data, base),
-      ...(include.has("evidence")
-        ? {
-            included: envelope.included,
-            provenance: envelope.provenance,
-          }
-        : {}),
-      ...(include.has("disagreements") ? { disagreements: envelope.disagreements } : {}),
+      data: absoluteDocumentLinks(consumerContent(envelope.data), base),
       meta: {
         catalogue_revision_id: row.current_revision_id,
         published_at: row.published_at,
@@ -351,7 +322,8 @@ export async function printingImageContentResponse(
   const object = isHead
     ? await bucket.head(row.object_key)
     : await bucket.get(row.object_key, range === null ? {} : { range });
-  if (object === null || object.size !== row.content_byte_length) {
+  if (object === null) throw new MissingObjectError();
+  if (object.size !== row.content_byte_length) {
     throw new Error("Published Printing Image content is unavailable.");
   }
   const responseLength = range === null ? row.content_byte_length : range.length;
@@ -378,12 +350,6 @@ function detailEnvelope(documentJson: string): DetailEnvelope {
   const data = value.data !== null && typeof value.data === "object" && !Array.isArray(value.data) ? value.data : value;
   return {
     data,
-    included: Array.isArray(value.included) ? value.included : [],
-    provenance:
-      value.provenance !== null && typeof value.provenance === "object" && !Array.isArray(value.provenance)
-        ? (value.provenance as Record<string, string[]>)
-        : {},
-    disagreements: Array.isArray(value.disagreements) ? value.disagreements : [],
   };
 }
 
@@ -570,11 +536,25 @@ async function loadVerifiedExportManifest(
     throw new ReadProblem(410, "catalogue_export_deleted", "This known Catalogue Export has been deleted.");
   }
   const object = await bucket.get(exportRow.manifest_key);
-  if (object === null || object.size > 1_048_576) {
+  if (object === null) throw new MissingObjectError();
+  if (object.size > 1_048_576) {
     throw new Error("Verified Catalogue Export manifest is unavailable");
   }
   const text = await object.text();
   const manifest = JSON.parse(text) as ExportManifest;
+  // Pre-Go-Live schemas evolve in place. Earlier evidence-bearing exports
+  // remain retained for administration/recovery, but cannot be served as the
+  // current consumer contract (ADR 0008).
+  if (
+    Object.hasOwn(manifest, "source_freshness") ||
+    manifest.components.some(({ name }) => name === "legality-rules")
+  ) {
+    throw new ReadProblem(
+      503,
+      "catalogue_export_unavailable",
+      "This Catalogue Export requires regeneration under the current consumer contract.",
+    );
+  }
   const canonicalManifest = `${canonicalJson(manifest)}\n`;
   const selfDigest = await sha256Text(
     `${canonicalJson({
