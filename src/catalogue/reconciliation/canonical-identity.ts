@@ -1,10 +1,16 @@
-import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
+import {
+  AdministrationProblem,
+  type CatalogueStore,
+  canonicalJson,
+  sha256Text,
+  byteBoundedJsonArrays,
+} from "../shared";
 import {
   allocateIdentityStatement,
   allocatedIdentityStatement,
   identityAllocationStatement,
   identityMappingsStatement,
-  insertSourceMappingStatement,
+  insertSourceMappingsStatement,
   type SourceMapping,
   identityReviewsStatement,
   identityReviewStatement,
@@ -37,9 +43,14 @@ export async function allocateCanonicalIdentity(
   if (!allocated) throw new Error("Canonical identity allocation was not retained.");
   return allocated.entity_id;
 }
-export async function retainSourceMapping(database: CatalogueStore, mapping: SourceMapping) {
-  await insertSourceMappingStatement(database, mapping).run();
+export async function retainSourceMappings(database: CatalogueStore, runId: string, mappings: SourceMapping[]) {
+  for (let index = 0; index < mappings.length; index += 100) {
+    for (const payload of byteBoundedJsonArrays(mappings.slice(index, index + 100))) {
+      await insertSourceMappingsStatement(database, runId, payload).run();
+    }
+  }
 }
+export type { SourceMapping } from "./canonical-identity-repository";
 export async function inspectCanonicalIdentity(database: CatalogueStore, id: string, after = "") {
   const allocation = await identityAllocationStatement(database, id).first<{ entity_kind: string }>();
   const mappings = (
@@ -130,7 +141,7 @@ export async function matchingIdentityDecision(
   },
 ) {
   const evidenceJson = canonicalJson(input.evidence);
-  const id = `identity_review_${await sha256Text(canonicalJson([input.sourceLineage, evidenceJson]))}`;
+  const id = `identity_review_${await sha256Text(canonicalJson([input.sourceLineage, evidenceJson, input.candidates]))}`;
   const decision = await identityDecisionStatement(database, id).first<IdentityDecision>();
   if (decision && input.candidates.includes(decision.printing_id)) return decision.printing_id;
   await insertIdentityReviewStatement(database, {

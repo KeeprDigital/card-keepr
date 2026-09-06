@@ -42,6 +42,17 @@ CREATE TABLE canonical_identity_reviews (
   candidate_printing_ids_json TEXT NOT NULL CHECK (json_valid(candidate_printing_ids_json)),
   created_at TEXT NOT NULL
 );
+CREATE TABLE canonical_identity_review_runs (
+  review_id TEXT NOT NULL REFERENCES canonical_identity_reviews(id),
+  ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
+  source_observation_id TEXT NOT NULL,
+  source_snapshot_id TEXT NOT NULL REFERENCES source_snapshots(id),
+  PRIMARY KEY(review_id, ingestion_run_id)
+);
+CREATE TRIGGER canonical_identity_review_runs_no_update BEFORE UPDATE ON canonical_identity_review_runs
+BEGIN SELECT RAISE(ABORT, 'canonical_identity_review_run_immutable'); END;
+CREATE TRIGGER canonical_identity_review_runs_no_delete BEFORE DELETE ON canonical_identity_review_runs
+BEGIN SELECT RAISE(ABORT, 'canonical_identity_review_run_immutable'); END;
 CREATE TABLE canonical_identity_decisions (
   review_id TEXT PRIMARY KEY REFERENCES canonical_identity_reviews(id),
   printing_id TEXT NOT NULL REFERENCES reconciled_printings(id),

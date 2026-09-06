@@ -31,9 +31,9 @@ export function identityAllocationStatement(database: CatalogueStore, id: string
 export function identityMappingsStatement(database: CatalogueStore, id: string, after: string) {
   return repositoryStatements(database)
     .prepare(
-      `SELECT * FROM canonical_source_mappings WHERE entity_id = ? ORDER BY mapped_at, source_observation_id LIMIT 501`,
+      `SELECT * FROM canonical_source_mappings WHERE entity_id = ? AND source_observation_id > ? ORDER BY source_observation_id LIMIT 101`,
     )
-    .bind(id);
+    .bind(id, after);
 }
 export type SourceMapping = {
   entityId: string;
@@ -48,27 +48,20 @@ export type SourceMapping = {
   evidenceJson: string;
   mappedAt: string;
 };
-export function insertSourceMappingStatement(database: CatalogueStore, mapping: SourceMapping) {
+export function insertSourceMappingsStatement(database: CatalogueStore, runId: string, payload: string) {
   return atomicRepositoryStatement(database, {
     statement: repositoryStatements(database)
       .prepare(`INSERT INTO canonical_source_mappings
       (entity_id, entity_kind, source_observation_id, source_lineage, ingestion_run_id,
        source_snapshot_id, source_observation_set_id, locator, variant_key, evidence_json, mapped_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(entity_id, source_observation_id) DO NOTHING`)
-      .bind(
-        mapping.entityId,
-        mapping.kind,
-        mapping.sourceObservationId,
-        mapping.sourceLineage,
-        mapping.runId,
-        mapping.sourceSnapshotId,
-        mapping.sourceObservationSetId,
-        mapping.locator,
-        mapping.variantKey,
-        mapping.evidenceJson,
-        mapping.mappedAt,
-      ),
-    before: [identityRunGuard(database, mapping.runId)],
+      SELECT json_extract(value, '$.entityId'), json_extract(value, '$.kind'),
+       json_extract(value, '$.sourceObservationId'), json_extract(value, '$.sourceLineage'), ?,
+       json_extract(value, '$.sourceSnapshotId'), json_extract(value, '$.sourceObservationSetId'),
+       json_extract(value, '$.locator'), json_extract(value, '$.variantKey'),
+       json_extract(value, '$.evidenceJson'), json_extract(value, '$.mappedAt')
+      FROM json_each(?) WHERE true ON CONFLICT(entity_id, source_observation_id) DO NOTHING`)
+      .bind(runId, payload),
+    before: [identityRunGuard(database, runId)],
   });
 }
 function identityRunGuard(database: CatalogueStore, run: string) {
@@ -110,6 +103,13 @@ export function insertIdentityReviewStatement(database: CatalogueStore, review: 
         review.created_at,
       ),
     before: [identityRunGuard(database, review.ingestion_run_id)],
+    after: [
+      repositoryStatements(database)
+        .prepare(`INSERT INTO canonical_identity_review_runs
+      (review_id, ingestion_run_id, source_observation_id, source_snapshot_id) VALUES (?, ?, ?, ?)
+      ON CONFLICT(review_id, ingestion_run_id) DO NOTHING`)
+        .bind(review.id, review.ingestion_run_id, review.source_observation_id, review.source_snapshot_id),
+    ],
   });
 }
 export function identityReviewStatement(database: CatalogueStore, id: string) {
@@ -117,7 +117,10 @@ export function identityReviewStatement(database: CatalogueStore, id: string) {
 }
 export function identityReviewsStatement(database: CatalogueStore, run: string, after: string) {
   return repositoryStatements(database)
-    .prepare("SELECT * FROM canonical_identity_reviews WHERE ingestion_run_id = ? AND id > ? ORDER BY id LIMIT 101")
+    .prepare(`SELECT review.id, review.source_lineage, review.evidence_json, review.candidate_printing_ids_json, review.created_at,
+       capture.ingestion_run_id, capture.source_observation_id, capture.source_snapshot_id
+       FROM canonical_identity_reviews AS review JOIN canonical_identity_review_runs AS capture ON capture.review_id = review.id
+       WHERE capture.ingestion_run_id = ? AND review.id > ? ORDER BY review.id LIMIT 101`)
     .bind(run, after);
 }
 export type IdentityDecision = {

@@ -1,4 +1,9 @@
-import { allocateCanonicalIdentity, retainSourceMapping, matchingIdentityDecision } from "./canonical-identity";
+import {
+  allocateCanonicalIdentity,
+  retainSourceMappings,
+  type SourceMapping,
+  matchingIdentityDecision,
+} from "./canonical-identity";
 import { applyPinnedCuratedRevisions, CuratedRevisionSourceChangeError, stripCuratedRevisionEffects } from "../curated";
 import {
   AdministrationProblem,
@@ -151,6 +156,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   const printingImages = new Map<string, CataloguePrintingImage>(
     priorCandidate?.printing_images?.map((image) => [image.id, image]) ?? [],
   );
+  const sourceMappings: SourceMapping[] = [];
   const localCardFacts = new Map<string, string>();
   const localDigimonCardAuthorities = new Map<string, DigimonCardAuthority>();
   const localPrintingFacts = new Map<string, Omit<CataloguePrinting, "id" | "card_id">>();
@@ -200,12 +206,12 @@ export async function reconcileRetainedCardPrintingEvidence(
 
   for (const observation of retained.observations) {
     if (observation.kind !== "card_printing") continue;
-    const proposedCard = observation.observedCardAndPrinting.card;
-    if (proposedCard === null) {
+    const sourceCard = observation.observedCardAndPrinting.card;
+    if (sourceCard === null) {
       sourceWarnings.push(...observation.sourceWarnings);
       continue;
     }
-    if (proposedCard.game !== observation.supportedGame) {
+    if (sourceCard.game !== observation.supportedGame) {
       diagnostics.push({
         code: "retained_evidence_invalid",
         source_observation_id: observation.sourceObservationId,
@@ -216,15 +222,77 @@ export async function reconcileRetainedCardPrintingEvidence(
       continue;
     }
     const existing =
-      proposedCard.official_identity.kind === "unknown"
+      sourceCard.official_identity.kind === "unknown"
         ? null
         : await existingCard(database, {
-            supportedGame: proposedCard.game,
-            identityKind: proposedCard.official_identity.kind,
-            identityValue: proposedCard.official_identity.value,
+            supportedGame: sourceCard.game,
+            identityKind: sourceCard.official_identity.kind,
+            identityValue: sourceCard.official_identity.value,
           });
+    const exactUnnumberedCards =
+      sourceCard.official_identity.kind === "unknown"
+        ? [...cards.values()].filter(
+            (card) =>
+              card.game === sourceCard.game &&
+              card.name === sourceCard.name &&
+              card.effective_rules_text === sourceCard.effective_rules_text &&
+              canonicalJson(card.game_data) === canonicalJson(sourceCard.game_data),
+          )
+        : [];
+    let unnumberedCard = exactUnnumberedCards[0];
+    if (exactUnnumberedCards.length > 1) {
+      const printing = observation.observedCardAndPrinting.printing;
+      const candidates = [...printings.values()].filter(
+        (candidate) =>
+          exactUnnumberedCards.some((card) => card.id === candidate.card_id) &&
+          printing !== null &&
+          printingFactsFormattingEquivalent(
+            {
+              rarity: candidate.rarity,
+              printed_rules_text: candidate.printed_rules_text,
+              game_data: candidate.game_data,
+            },
+            printing,
+          ),
+      );
+      const selected =
+        candidates.length === 0
+          ? null
+          : await matchingIdentityDecision(database, {
+              runId,
+              sourceLineage: observation.sourceLineage,
+              sourceObservationId: observation.sourceObservationId,
+              sourceSnapshotId: observation.sourceSnapshotId,
+              evidence: {
+                card: sourceCard,
+                printing,
+                locator: observation.locator,
+                variant_key: observation.variantKey,
+              },
+              candidates: candidates.map(({ id }) => id).sort(),
+              at: observedAt,
+            });
+      if (selected)
+        unnumberedCard = exactUnnumberedCards.find(
+          (card) => card.id === candidates.find(({ id }) => id === selected)!.card_id,
+        );
+      else
+        diagnostics.push({
+          code: "canonical_card_conflict",
+          source_observation_id: observation.sourceObservationId,
+          locator: observation.locator,
+          matched_printing_ids: candidates.map(({ id }) => id),
+          detail:
+            "Multiple Cards have exactly equal profile facts without a source number; resolve the retained identity review before publication.",
+        });
+    }
+    // Missing incoming evidence cannot erase an already established publisher number.
+    const proposedCard = unnumberedCard
+      ? { ...sourceCard, official_identity: unnumberedCard.official_identity }
+      : sourceCard;
     const cardId =
       existing?.id ??
+      unnumberedCard?.id ??
       (await allocateCanonicalIdentity(
         database,
         "card",
@@ -649,7 +717,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         diagnostics.some((diagnostic) => diagnostic.source_observation_id === observation.sourceObservationId)
       )
         continue;
-      await retainSourceMapping(database, {
+      sourceMappings.push({
         entityId,
         kind,
         runId,
@@ -659,7 +727,11 @@ export async function reconcileRetainedCardPrintingEvidence(
         sourceObservationSetId: observation.sourceObservationSetId,
         locator: observation.locator,
         variantKey: observation.variantKey,
-        evidenceJson: canonicalJson({ card: proposedCard, printing: proposedPrinting, compatibility }),
+        evidenceJson: canonicalJson({
+          card: observation.observedCardAndPrinting.card,
+          printing: proposedPrinting,
+          compatibility,
+        }),
         mappedAt: observedAt,
       });
     }
@@ -1186,6 +1258,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     warnings,
   });
   const candidateDigest = await sha256Text(digestPayloadJson);
+  await retainSourceMappings(database, runId, sourceMappings);
   await persistReviewableCandidate(database, {
     runId,
     partitions: retained.partitions,

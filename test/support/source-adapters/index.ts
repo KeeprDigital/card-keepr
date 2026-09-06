@@ -62,7 +62,8 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
             ...row.evidence,
             card: {
               game: "one-piece",
-              official_identity: { kind: "card_number", value: number },
+              official_identity:
+                number === null ? { kind: "unknown", value: null } : { kind: "card_number", value: number },
               name,
               effective_rules_text: rules,
               game_data: { profile: "one-piece@1", attributes },

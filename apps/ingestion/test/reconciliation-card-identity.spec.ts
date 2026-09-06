@@ -957,6 +957,10 @@ test("equal source-local artwork labels require owner evidence review across sou
   const review = requiredFirst(reviews.document, "reviews");
   expect(review).toMatchObject({ candidate_printing_ids: [printingId], source_lineage: "limitless-one-piece-en" });
   expect(review.evidence).toBeDefined();
+  const repeatedRun = await collect("/reconciliation/canonical-tabular-ambiguous", "review-unresolved-retry", source);
+  expect((await reconcile(repeatedRun.id)).response.status).toBe(409);
+  const repeatedReviews = await get(`/v1/reconciliation/identity-reviews?run_id=${repeatedRun.id}`);
+  expect(repeatedReviews.document.reviews).toHaveLength(1);
   const request = {
     printing_id: printingId,
     rationale: "Owner inspected both retained depictions and established the same issued Printing",
@@ -970,6 +974,75 @@ test("equal source-local artwork labels require owner evidence review across sou
   const retry = await collect("/reconciliation/canonical-tabular-ambiguous", "review-retry", source);
   const matched = await reconcile(retry.id);
   expect(matched.response.status).toBe(200);
+  expect(requiredFirst(matched.document, "printings").id).toBe(printingId);
+  expect((await approve(matched.document)).response.status).toBe(200);
+});
+
+test("missing-number Printing keeps both opaque IDs when its source locator changes", async () => {
+  const original = await reconcile((await collect("/reconciliation/identity-missing-number", "unknown-original")).id);
+  expect(original.response.status).toBe(200);
+  await approve(original.document);
+  const moved = await reconcile((await collect("/reconciliation/identity-missing-number-moved", "unknown-moved")).id);
+  expect(moved.response.status).toBe(200);
+  expect(moved.document.cards).toHaveLength(1);
+  expect(moved.document.printings).toHaveLength(1);
+  expect(requiredFirst(moved.document, "cards").id).toBe(requiredFirst(original.document, "cards").id);
+  expect(requiredFirst(moved.document, "printings").id).toBe(requiredFirst(original.document, "printings").id);
+});
+
+test("owner can traverse all retained source mappings without repeating pages", async () => {
+  const candidate = await reconcile((await collect("/reconciliation/identity-many-mappings", "mapping-pages")).id);
+  expect(candidate.response.status).toBe(200);
+  const id = requiredString(requiredFirst(candidate.document, "printings"), "id");
+  const first = await get(`/v1/reconciliation/identities/${id}`);
+  expect(first.document.mappings).toHaveLength(100);
+  const second = await get(`/v1/reconciliation/identities/${id}?after=${first.document.next_cursor}`);
+  expect(second.document.mappings).toHaveLength(1);
+  expect(second.document.next_cursor).toBeNull();
+});
+
+test("missing-number cross-source evidence reviews the existing Card and Printing instead of creating duplicates", async () => {
+  const first = await reconcile((await collect("/reconciliation/identity-missing-number", "unknown-cross-first")).id);
+  expect(first.response.status).toBe(200);
+  const cardId = requiredString(requiredFirst(first.document, "cards"), "id");
+  const printingId = requiredString(requiredFirst(first.document, "printings"), "id");
+  await approve(first.document);
+  for (const area of ["card_facts", "printing_details"]) {
+    expect(
+      (
+        await post("/v1/source-authorities", {
+          game: "one-piece",
+          locale: "en",
+          release_region: "OCEANIA",
+          area,
+          source_lineage: "limitless-one-piece-en",
+          expected_generation: "0",
+          rationale: "Synthetic missing-number mapping",
+          idempotency_key: `unknown-cross-${area}`,
+        })
+      ).response.status,
+    ).toBe(200);
+  }
+  const source = { game: "one-piece", lineage: "limitless-one-piece-en", adapter: "fixture-one-piece-tabular@1" };
+  const run = await collect("/reconciliation/identity-missing-number-tabular", "unknown-cross-review", source);
+  expect((await reconcile(run.id)).response.status).toBe(409);
+  const review = requiredFirst((await get(`/v1/reconciliation/identity-reviews?run_id=${run.id}`)).document, "reviews");
+  expect(review.candidate_printing_ids).toEqual([printingId]);
+  expect(
+    (
+      await post(`/v1/reconciliation/identity-reviews/${review.id}/resolve`, {
+        printing_id: printingId,
+        rationale: "Reviewed the exact retained Printing evidence",
+        idempotency_key: "unknown-cross-resolve",
+      })
+    ).response.status,
+  ).toBe(200);
+  const matched = await reconcile(
+    (await collect("/reconciliation/identity-missing-number-tabular", "unknown-cross-retry", source)).id,
+  );
+  expect(matched.response.status).toBe(200);
+  expect(matched.document.cards).toHaveLength(1);
+  expect(requiredFirst(matched.document, "cards").id).toBe(cardId);
   expect(requiredFirst(matched.document, "printings").id).toBe(printingId);
   expect((await approve(matched.document)).response.status).toBe(200);
 });

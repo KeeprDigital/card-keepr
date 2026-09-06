@@ -4,17 +4,37 @@ import { createHash } from "node:crypto";
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
 export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
-  if (scenario === "identity-missing-number") {
+  if (scenario === "identity-many-mappings") {
+    return {
+      cards: Array.from({ length: 101 }, (_, index) =>
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP95-001",
+          name: "Synthetic mapping pagination",
+          locator: `/official/mapping/${index}`,
+          lineageMarker: "mapping-pagination",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+        }),
+      ),
+    };
+  }
+  if (scenario.startsWith("identity-missing-number")) {
     const observation = printingObservation({
       game: "one-piece",
       profile: "one-piece@1",
       cardNumber: "OP97-001",
-      locator: "/official/unnumbered-real-card",
+      locator: scenario.endsWith("moved") ? "/official/moved-unnumbered-real-card" : "/official/unnumbered-real-card",
       lineageMarker: "unnumbered-real-card",
       name: "Synthetic unnumbered Card",
       cardAttributes: onePieceLeaderAttributes(),
       printingAttributes: { illustration_types: [] },
     });
+    if (scenario.endsWith("tabular")) {
+      const { card, ...evidence } = observation;
+      return { rows: [{ cells: [null, card.name, card.effective_rules_text, card.game_data.attributes], evidence }] };
+    }
     return {
       cards: [{ ...observation, card: { ...observation.card, official_identity: { kind: "unknown", value: null } } }],
     };
