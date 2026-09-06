@@ -25,8 +25,12 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       game: "one-piece",
       profile: "one-piece@1",
       cardNumber: "OP97-001",
-      locator: scenario.endsWith("moved") ? "/official/moved-unnumbered-real-card" : "/official/unnumbered-real-card",
-      lineageMarker: "unnumbered-real-card",
+      locator: scenario.endsWith("distinct")
+        ? "/official/other-unnumbered-card"
+        : scenario.endsWith("moved")
+          ? "/official/moved-unnumbered-real-card"
+          : "/official/unnumbered-real-card",
+      lineageMarker: scenario.endsWith("distinct") ? "different" : "unnumbered-real-card",
       name: "Synthetic unnumbered Card",
       cardAttributes: onePieceLeaderAttributes(),
       printingAttributes: { illustration_types: [] },

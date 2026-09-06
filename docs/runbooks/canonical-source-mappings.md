@@ -36,7 +36,10 @@ artwork labels for an otherwise plausible existing Printing, evidence remains
 blocked for owner review. Changed URLs and re-encoding alone never establish a
 new issued variant. Canonical unknown numbers use
 `{"kind":"unknown","value":null}`; the internal query sort key is not a
-publisher number.
+publisher number. Equal names, rules and profile fields on an unnumbered incoming
+Card discover possible matches; they do not establish Card equivalence. An
+existing same-Printing mapping or sufficient same-Printing evidence is required,
+otherwise the owner must resolve the retained review before publication.
 
 The new allocation, source mapping, review and decision tables are operational
 D1 data and therefore part of complete D1 backup/recovery. They are not consumer

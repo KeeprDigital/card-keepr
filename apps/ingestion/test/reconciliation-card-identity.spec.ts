@@ -1046,3 +1046,18 @@ test("missing-number cross-source evidence reviews the existing Card and Printin
   expect(requiredFirst(matched.document, "printings").id).toBe(printingId);
   expect((await approve(matched.document)).response.status).toBe(200);
 });
+
+test("equal unknown Card facts and distinct artwork require identity review, not automatic Card equivalence", async () => {
+  const first = await reconcile(
+    (await collect("/reconciliation/identity-missing-number", "unknown-equivalence-first")).id,
+  );
+  await approve(first.document);
+  const distinct = await reconcile(
+    (await collect("/reconciliation/identity-missing-number-distinct", "unknown-equivalence-distinct")).id,
+  );
+  expect(distinct.response.status).toBe(409);
+  expect(distinct.document.publishable).toBe(false);
+  expect(distinct.document.diagnostics).toEqual(
+    expect.arrayContaining([expect.objectContaining({ code: "canonical_card_conflict" })]),
+  );
+});

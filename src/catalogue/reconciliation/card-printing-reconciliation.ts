@@ -239,8 +239,9 @@ export async function reconcileRetainedCardPrintingEvidence(
               canonicalJson(card.game_data) === canonicalJson(sourceCard.game_data),
           )
         : [];
-    let unnumberedCard = exactUnnumberedCards[0];
-    if (exactUnnumberedCards.length > 1) {
+    let unnumberedCard: CatalogueCard | undefined;
+    let reviewedCardPrintingId: string | null = null;
+    if (exactUnnumberedCards.length > 0) {
       const printing = observation.observedCardAndPrinting.printing;
       const candidates = [...printings.values()].filter(
         (candidate) =>
@@ -255,36 +256,70 @@ export async function reconcileRetainedCardPrintingEvidence(
             printing,
           ),
       );
-      const selected =
-        candidates.length === 0
-          ? null
-          : await matchingIdentityDecision(database, {
-              runId,
-              sourceLineage: observation.sourceLineage,
-              sourceObservationId: observation.sourceObservationId,
-              sourceSnapshotId: observation.sourceSnapshotId,
-              evidence: {
-                card: sourceCard,
-                printing,
-                locator: observation.locator,
-                variant_key: observation.variantKey,
-              },
-              candidates: candidates.map(({ id }) => id).sort(),
-              at: observedAt,
-            });
-      if (selected)
-        unnumberedCard = exactUnnumberedCards.find(
-          (card) => card.id === candidates.find(({ id }) => id === selected)!.card_id,
-        );
-      else
-        diagnostics.push({
-          code: "canonical_card_conflict",
-          source_observation_id: observation.sourceObservationId,
-          locator: observation.locator,
-          matched_printing_ids: candidates.map(({ id }) => id),
-          detail:
-            "Multiple Cards have exactly equal profile facts without a source number; resolve the retained identity review before publication.",
-        });
+      const provenCards: CatalogueCard[] = [];
+      if (printing !== null) {
+        for (const card of exactUnnumberedCards) {
+          const expected = compatibilityFor(card.id, observation.sourceLineage, observation);
+          const compatible = await compatiblePrintings(database, expected);
+          const local = [...localPrintingCompatibility.values()].filter((value) => isCompatible(value, expected));
+          const located =
+            observation.locator === null
+              ? null
+              : await printingAtLocatorVariant(
+                  database,
+                  observation.sourceLineage,
+                  observation.locator,
+                  observation.variantKey,
+                );
+          const mapped = located !== null && isCompatible(located, expected);
+          if (
+            mapped ||
+            (observation.artworkIdentityExplicit &&
+              [...compatible, ...local].some(
+                (value) =>
+                  value.source_lineage === observation.sourceLineage || hasCrossSourceArtworkEvidence(observation),
+              ))
+          )
+            provenCards.push(card);
+        }
+      }
+      if (provenCards.length === 1) unnumberedCard = provenCards[0];
+      else {
+        reviewedCardPrintingId =
+          candidates.length === 0
+            ? null
+            : await matchingIdentityDecision(database, {
+                runId,
+                sourceLineage: observation.sourceLineage,
+                sourceObservationId: observation.sourceObservationId,
+                sourceSnapshotId: observation.sourceSnapshotId,
+                evidence: {
+                  card: sourceCard,
+                  printing,
+                  locator: observation.locator,
+                  variant_key: observation.variantKey,
+                },
+                candidates: candidates.map(({ id }) => id).sort(),
+                at: observedAt,
+              });
+        if (reviewedCardPrintingId)
+          unnumberedCard = exactUnnumberedCards.find(
+            (card) => card.id === candidates.find(({ id }) => id === reviewedCardPrintingId)!.card_id,
+          );
+        else {
+          diagnostics.push({
+            code: "canonical_card_conflict",
+            source_observation_id: observation.sourceObservationId,
+            locator: observation.locator,
+            matched_printing_ids: candidates.map(({ id }) => id),
+            detail:
+              "Equal Card facts without a publisher number identify candidates, not equivalence. Resolve the retained identity review before publication.",
+          });
+          // Diagnostic-only provisional association; no mapping is persisted and
+          // the blocked candidate cannot publish.
+          unnumberedCard = exactUnnumberedCards[0];
+        }
+      }
     }
     // Missing incoming evidence cannot erase an already established publisher number.
     const proposedCard = unnumberedCard
@@ -483,8 +518,16 @@ export async function reconcileRetainedCardPrintingEvidence(
         (observation.supportedGame !== "gundam" &&
           crossSourceMatches.length > 0 &&
           !hasCrossSourceArtworkEvidence(observation));
-      let reviewedPrintingId: string | null = null;
-      if (insufficientCrossSource || matchIds.size > 1) {
+      let reviewedPrintingId: string | null = reviewedCardPrintingId;
+      if (
+        reviewedPrintingId === null &&
+        (insufficientCrossSource || matchIds.size > 1) &&
+        !diagnostics.some(
+          (diagnostic) =>
+            diagnostic.source_observation_id === observation.sourceObservationId &&
+            diagnostic.code === "canonical_card_conflict",
+        )
+      ) {
         reviewedPrintingId = await matchingIdentityDecision(database, {
           runId,
           sourceLineage: observation.sourceLineage,
