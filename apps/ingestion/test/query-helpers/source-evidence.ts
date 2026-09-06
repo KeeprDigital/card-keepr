@@ -66,28 +66,6 @@ export function insertSourceObservationSets(database: D1Database): D1PreparedSta
         ?, 2, ?, 1)`);
 }
 
-export function insertLegalityRules(database: D1Database): D1PreparedStatement {
-  return database.prepare(`INSERT INTO legality_rules (
-        id, official_id, supported_game, region, format, event_tier,
-        effective_from, effective_until, unresolved_scope_json, official_wording,
-        effect_json, card_ids_json, direct_card_ids_json, source_lineage,
-        source_snapshot_id, source_observation_set_id,
-        source_observation_id, source_observation_pointer,
-        source_field_pointers_json, first_revision_id,
-        last_observed_revision_id, current, last_missing_revision_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, 1, NULL)`);
-}
-
-export function insertRevisionLegalityRules(database: D1Database): D1PreparedStatement {
-  return database.prepare(`INSERT INTO revision_legality_rules (
-        catalogue_revision_id, legality_rule_id, supported_game,
-        region, format, event_tier, effective_from, effective_until,
-        unresolved_scope_json, card_ids_json, source_retrieved_at,
-        document_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-}
-
 export function insertSourceFreshness(database: D1Database): D1PreparedStatement {
   return database.prepare(`INSERT INTO source_freshness (
          game, area, source_lineage, region, checked_at, ingestion_run_id
@@ -95,9 +73,7 @@ export function insertSourceFreshness(database: D1Database): D1PreparedStatement
          ('one-piece', 'cards-and-printings', '', '',
           '2026-01-01T01:00:00.000Z', 'run_products'),
          ('one-piece', 'products-and-releases', '', '',
-          '2026-01-01T02:00:00.000Z', 'run_products'),
-         ('one-piece', 'legality-rules', 'one-piece-en', 'EN-OCEANIA',
-          '2026-01-01T03:00:00.000Z', 'run_products')`);
+          '2026-01-01T02:00:00.000Z', 'run_products')`);
 }
 
 export function setSourceFreshnessCheckedAt(database: D1Database): D1PreparedStatement {
@@ -201,48 +177,6 @@ export function insertSourceSnapshotsForAuthenticatedReparseRejectsNormalizedFix
 export function countSourceParseOperationsCount(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT COUNT(*) AS count FROM source_parse_operations
      WHERE source_snapshot_id = ?`);
-}
-
-export function insertIngestionEvidencePlansForContextualLegalitySourceChanges(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`INSERT INTO ingestion_evidence_plans (
-           ingestion_run_id, source_lineage, supported_game,
-           game_profile_version, adapter_version, request_plan_json,
-           plan_origin
-         ) VALUES (?, ?, ?, ?, ?, ?, 'production')`);
-}
-
-export function insertSourceRequestsForContextualLegalitySourceChanges(database: D1Database): D1PreparedStatement {
-  return database.prepare(`INSERT INTO source_requests (
-           ingestion_run_id, request_id, sequence_number, method, url,
-           request_headers_json, representation_fingerprint, state,
-           source_snapshot_id
-         ) VALUES (?, 'conditional-worker', 0, 'GET', ?, ?, ?, 'observed', ?)`);
-}
-
-export function insertSourceFetchAttemptsForContextualLegalitySourceChanges(database: D1Database): D1PreparedStatement {
-  return database.prepare(`INSERT INTO source_fetch_attempts (
-           id, ingestion_run_id, request_id, attempt_number,
-           requested_at, completed_at, outcome, http_status,
-           response_headers_json, retry_after_ms, diagnostic
-         ) VALUES (?, ?, 'conditional-worker', 1,
-           '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:01.000Z',
-           'success', 200, '{}', NULL, NULL)`);
-}
-
-export function insertSourceSnapshotsForContextualLegalitySourceChanges(database: D1Database): D1PreparedStatement {
-  return database.prepare(`INSERT INTO source_snapshots (
-           id, ingestion_run_id, request_id, fetch_attempt_id,
-           request_method, request_url, request_headers_json,
-           representation_fingerprint, response_vary_json, retrieved_at,
-           http_status, response_headers_json, media_type, content_digest,
-           content_byte_length, content_object_key, source_lineage,
-           supported_game, game_profile_version, adapter_version,
-           reused_source_snapshot_id
-         ) VALUES (?, ?, 'conditional-worker', ?, 'GET', ?, ?, ?, '[]',
-           '2026-08-01T00:00:01.000Z', 200, '{}', 'text/html', ?, ?, ?,
-           ?, ?, ?, ?, NULL)`);
 }
 
 export function countSourceDiscoveryRequestPlansCount(database: D1Database): D1PreparedStatement {
@@ -396,7 +330,7 @@ export function readSourceSnapshotsId(database: D1Database): D1PreparedStatement
   return database.prepare(`SELECT snapshot.id
      FROM source_snapshots AS snapshot
      WHERE snapshot.ingestion_run_id = ?
-       AND snapshot.request_id = 'fusion-world-en:legality-current'`);
+       AND snapshot.request_id = 'fusion-world-en:products'`);
 }
 
 export function countIngestionEvidencePlansCount(database: D1Database): D1PreparedStatement {
@@ -668,21 +602,6 @@ export function countSourceFetchAttemptsCountForExtendedProductionShapedRunResum
        WHERE ingestion_run_id = ? AND request_id = ?`);
 }
 
-export function insertSourceFreshnessForD1FreshnessScopeRemainsStructuralWhileRegisteredSourceMetadata(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`INSERT INTO source_freshness (
-       game, area, source_lineage, region, checked_at, ingestion_run_id
-     ) VALUES (
-       'gundam', 'legality-rules', 'gundam-en-future', 'EN-FUTURE',
-       '2026-08-02T00:00:00.000Z', 'run_future_legality_scope'
-     )`);
-}
-
-export function deleteSourceFreshness(database: D1Database): D1PreparedStatement {
-  return database.prepare("DELETE FROM source_freshness WHERE ingestion_run_id = 'run_future_legality_scope'");
-}
-
 export function insertSourceRequestsForAppliedD1RequestCopiesOwningRunIdentitiesAreImmutable(
   database: D1Database,
 ): D1PreparedStatement {
@@ -928,74 +847,6 @@ export function insertSourceObservationSetsForFreshD1EnforcesFullLowercaseDigest
          'source-observations/upgraded-legality-guard.json', 1)`);
 }
 
-export function insertLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`INSERT INTO legality_rules (
-         id, official_id, supported_game, region, format, event_tier,
-         effective_from, effective_until, official_wording, effect_json,
-         card_ids_json, direct_card_ids_json, source_lineage, source_snapshot_id,
-         source_observation_set_id, source_observation_id,
-         source_observation_pointer, source_field_pointers_json,
-         first_revision_id, last_observed_revision_id, current,
-         last_missing_revision_id
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-         1, NULL)`);
-}
-
-export function insertRevisionLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRule(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`INSERT INTO revision_legality_rules (
-         catalogue_revision_id, legality_rule_id, supported_game,
-         region, format, event_tier, effective_from, effective_until,
-         card_ids_json, source_retrieved_at, document_json
-       ) VALUES ('catrev_upgraded_legality_guard', ?, ?, ?, ?, ?, ?, ?, ?,
-         '2026-08-01T00:00:01.000Z', ?)`);
-}
-
-export function setLegalityRulesSourceSnapshotId(database: D1Database): D1PreparedStatement {
-  return database.prepare(`UPDATE legality_rules
-       SET source_snapshot_id = 'srcsnap_attacker'
-       WHERE id = ?`);
-}
-
-export function insertLegalityRulesForFreshD1EnforcesFullLowercaseDigestsCanonicalRevisionRuleWithCatrevUpgradedLegalityGuard(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`INSERT INTO legality_rules (
-         id, official_id, supported_game, region, format, event_tier,
-         effective_from, effective_until, official_wording, effect_json,
-         card_ids_json, direct_card_ids_json, source_lineage, source_snapshot_id,
-         source_observation_set_id, source_observation_id,
-         source_observation_pointer, source_field_pointers_json,
-         first_revision_id, last_observed_revision_id, current,
-         last_missing_revision_id
-       ) VALUES ('legality_rule_upgraded_cross_owner', 'cross-owner',
-         'one-piece', 'EN-OCEANIA', 'standard', NULL, '2026-01-01', NULL,
-         'Cross-owner rule.', '{"type":"ban"}', '[]', '[]', 'one-piece-en',
-         'srcsnap_attacker', 'srcobsset_upgraded_legality_guard',
-         'srcobs_attacker', '/observations/0/value/legality_rules/1', '{}',
-         'catrev_upgraded_legality_guard',
-         'catrev_upgraded_legality_guard', 1, NULL)`);
-}
-
-export function readSourceFreshnessCheckedAt(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT checked_at
-       FROM source_freshness
-       WHERE game = 'gundam'
-         AND area = 'legality-rules'
-         AND source_lineage = ?
-         AND ingestion_run_id = ?`);
-}
-
-export function readSourceFreshnessGameArea(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT game, area, source_lineage, region, checked_at, ingestion_run_id
-     FROM source_freshness
-     WHERE game = 'gundam' AND area = 'legality-rules'
-     ORDER BY source_lineage, region`);
-}
-
 export function countSourceSnapshotsCount(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT request_id, COUNT(*) AS count
      FROM source_snapshots WHERE ingestion_run_id = ?
@@ -1230,7 +1081,7 @@ export function readSourceFreshnessGameAreaForInterruptedReconciliationPublicati
   return database.prepare(`SELECT game, area, source_lineage, region, checked_at
      FROM source_freshness
      WHERE area IN (
-       'cards-and-printings', 'products-and-releases', 'legality-rules'
+       'cards-and-printings', 'products-and-releases', 'errata'
      )`);
 }
 
@@ -1369,54 +1220,14 @@ export function insertIngestionEvidencePlansForPublishedEvidenceDiagnosticsExpli
        FROM ingestion_evidence_plans WHERE ingestion_run_id = ?`);
 }
 
-export function readRevisionLegalityRulesSourceRetrievedAtRetrievedAt(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT rule.source_retrieved_at, snapshot.retrieved_at
-     FROM revision_legality_rules AS rule
-     JOIN source_snapshots AS snapshot
-       ON snapshot.id = json_extract(rule.document_json, '$.source_snapshot_id')
-     WHERE rule.catalogue_revision_id = ?`);
-}
-
 export function readSourceObservationSetsIdSourceSnapshotId(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT id, source_snapshot_id
      FROM source_observation_sets
      ORDER BY id`);
 }
 
-export function setLegalityRulesSourceSnapshotIdForTestOwnedDomainEvidencePublishesExactLegalityRulesKeeps(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`UPDATE legality_rules SET source_snapshot_id = ? WHERE id = ?`);
-}
-
-export function insertLegalityRulesForTestOwnedDomainEvidencePublishesExactLegalityRulesKeeps(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`INSERT INTO legality_rules (
-         id, official_id, supported_game, region, format, event_tier,
-         effective_from, effective_until, official_wording, effect_json,
-         card_ids_json, direct_card_ids_json, source_lineage, source_snapshot_id,
-         source_observation_set_id, source_observation_id,
-         source_observation_pointer, source_field_pointers_json,
-         first_revision_id, last_observed_revision_id, current,
-         last_missing_revision_id
-       ) VALUES ('legality_rule_cross_owned', 'cross-owned', ?, ?, ?, ?, ?, ?,
-         ?, ?, ?, ?, ?, ?, ?, 'srcobs_cross_owned',
-         '/observations/0/value/legality_rules/0', ?, ?, ?, 1, NULL)`);
-}
-
 export function readSourceFreshness(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT * FROM source_freshness ORDER BY game, area`);
-}
-
-export function readSourceObservationSetsContentObjectKeyForContextualLegalityApprovalBoundaries(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`SELECT observations.content_object_key
-       FROM source_observation_sets AS observations
-       JOIN source_snapshots AS snapshots
-         ON snapshots.id = observations.source_snapshot_id
-       WHERE snapshots.ingestion_run_id = ?`);
 }
 
 export function readSourceObservationSetsIdParseOperationId(database: D1Database): D1PreparedStatement {
@@ -1426,12 +1237,6 @@ export function readSourceObservationSetsIdParseOperationId(database: D1Database
        JOIN source_snapshots AS snapshots
          ON snapshots.id = observations.source_snapshot_id
        WHERE snapshots.ingestion_run_id = ?`);
-}
-
-export function dropSourceObservationSetsAreImmutableOnUpdateForContextualLegalityApprovalBoundaries(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`DROP TRIGGER IF EXISTS source_observation_sets_are_immutable_on_update`);
 }
 
 export function setSourceObservationSetsContentDigestContentByteLength(database: D1Database): D1PreparedStatement {
@@ -1550,22 +1355,6 @@ export function readSourceParseOperationsStateContentObjectKey(database: D1Datab
   return database.prepare(`SELECT state, content_object_key FROM source_parse_operations
      WHERE source_snapshot_id = ? AND adapter_version = ?
        AND idempotency_key = ?`);
-}
-
-export function insertLegalityRulesForOpenPredicateRulePublishesExplicitTargetScopeUncertaintyAll(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`INSERT INTO legality_rules (
-         id, official_id, supported_game, region, format, event_tier,
-         effective_from, effective_until, unresolved_scope_json,
-         official_wording, effect_json,
-         card_ids_json, direct_card_ids_json, source_lineage,
-         source_snapshot_id, source_observation_set_id,
-         source_observation_id, source_observation_pointer,
-         source_field_pointers_json, first_revision_id,
-         last_observed_revision_id, current, last_missing_revision_id
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-         ?, ?, ?, 1, NULL)`);
 }
 
 export function readIngestionRunCapacityPausesPausedAtOverflowRequestCount(database: D1Database): D1PreparedStatement {

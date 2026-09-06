@@ -1,6 +1,5 @@
 import { adapterReconciliationAreas, parsedOfficialArtworkIdentity, requiredSourceAdapter } from "../adapters";
-import { parseRetainedLegalityRules, type RetainedLegalityRule, regionForLineage } from "../legality";
-import { type CatalogueStore, canonicalJson, type LegalityRegion, type SupportedGame, sha256 } from "../shared";
+import { type CatalogueStore, canonicalJson, type SupportedGame, sha256 } from "../shared";
 import {
   type EvidencePlanRequest,
   evidencePlanForRequest,
@@ -79,13 +78,6 @@ type PriorObservationCountRow = {
   request_id: string;
   source_lineage: string;
   observation_count: number;
-};
-
-export type RetainedLegalityScope = {
-  sourceLineage: string;
-  supportedGame: SupportedGame;
-  region: LegalityRegion;
-  checkedAt: string;
 };
 
 type DiscoveryRequestPlanRow = {
@@ -241,20 +233,6 @@ export async function retainedReconciliationObservation(
     ),
   );
   const observationIds = new Set<string>();
-  const legalityRules: RetainedLegalityRule[] = [];
-  const legalityRulesByIdentity = new Map<
-    string,
-    {
-      rule: RetainedLegalityRule;
-      requestUrl: string;
-      representationFingerprint: string;
-      sourceByteDigest: string;
-    }
-  >();
-  const legalityPublicationDigests = new Map<string, string>();
-  const completeLegalityScopes = new Map<string, RetainedLegalityScope>();
-  const completeLegalityRequestIds = new Set<string>();
-  const completeLegalityRuleCounts = new Map<string, number>();
   const officialSurfaces = new Map<
     string,
     {
@@ -270,7 +248,7 @@ export async function retainedReconciliationObservation(
   for (const [index, document] of documents.entries()) {
     const row = orderedRows[index]!;
     const request = retainedRequests[index]!;
-    for (const [wrappedIndex, wrapped] of document.observations.entries()) {
+    for (const wrapped of document.observations) {
       if (!isRecord(wrapped) || typeof wrapped.id !== "string") {
         throw new Error("Retained Source Observation identity is invalid.");
       }
@@ -293,52 +271,6 @@ export async function retainedReconciliationObservation(
           observationSetId: row.observation_set_id,
           records: wrapped.value.records,
         });
-        continue;
-      }
-      if (isRecord(wrapped.value) && wrapped.value.observation_type === "legality_rules") {
-        if (!completeLegalityScope(wrapped.value)) {
-          throw new Error("The observed Legality Rule stream lacks explicit structurally complete coverage.");
-        }
-        assertRetainedLegalityPublicationIdentity(
-          legalityPublicationDigests,
-          row.source_lineage,
-          request.url,
-          row.snapshot_content_digest,
-        );
-        completeLegalityRequestIds.add(request.request_id);
-        completeLegalityRuleCounts.set(
-          request.request_id,
-          Array.isArray(wrapped.value.legality_rules) ? wrapped.value.legality_rules.length : 0,
-        );
-        const scope: RetainedLegalityScope = {
-          sourceLineage: row.source_lineage,
-          supportedGame: supportedGame(row.supported_game),
-          region: regionForLineage(row.source_lineage),
-          checkedAt: row.retrieved_at,
-        };
-        const prior = completeLegalityScopes.get(row.source_lineage);
-        if (prior === undefined || prior.checkedAt < scope.checkedAt) {
-          completeLegalityScopes.set(row.source_lineage, scope);
-        }
-      }
-      for (const rule of parseRetainedLegalityRules(wrapped.value, {
-        game: supportedGame(row.supported_game),
-        sourceLineage: row.source_lineage,
-        sourceSnapshotId: row.source_snapshot_id,
-        sourceObservationSetId: row.observation_set_id,
-        sourceObservationId: wrapped.id,
-        sourceValuePointer: `/observations/${wrappedIndex}/value`,
-      })) {
-        mergeRetainedLegalityRule(
-          legalityRules,
-          legalityRulesByIdentity,
-          rule,
-          request.url,
-          request.representation_fingerprint,
-          row.snapshot_content_digest,
-        );
-      }
-      if (isRecord(wrapped.value) && wrapped.value.observation_type === "legality_rules") {
         continue;
       }
       const parsed = parseReconciliationObservation(
@@ -369,8 +301,6 @@ export async function retainedReconciliationObservation(
       requests: retainedRequests,
       documents,
       rows: orderedRows,
-      completeLegalityRequestIds,
-      completeLegalityRuleCounts,
       officialSurfaces,
       collectionRequests,
     });
@@ -416,10 +346,6 @@ export async function retainedReconciliationObservation(
       };
     }),
     observations: merged,
-    legalityRules,
-    legalityScopes: [...completeLegalityScopes.values()].sort((left, right) =>
-      left.sourceLineage.localeCompare(right.sourceLineage),
-    ),
   };
 }
 
@@ -455,102 +381,12 @@ async function sourceObservationCountChangeWarnings(
   });
 }
 
-function assertRetainedLegalityPublicationIdentity(
-  publicationDigests: Map<string, string>,
-  sourceLineage: string,
-  requestUrl: string,
-  sourceByteDigest: string,
-): void {
-  const identity = `${sourceLineage}\u0000${requestUrl}`;
-  const priorDigest = publicationDigests.get(identity);
-  if (priorDigest !== undefined && priorDigest !== sourceByteDigest) {
-    throw new Error("Conflicting same-URL Legality publications retain different source representations.");
-  }
-  publicationDigests.set(identity, sourceByteDigest);
-}
-
-function mergeRetainedLegalityRule(
-  rules: RetainedLegalityRule[],
-  byIdentity: Map<
-    string,
-    {
-      rule: RetainedLegalityRule;
-      requestUrl: string;
-      representationFingerprint: string;
-      sourceByteDigest: string;
-    }
-  >,
-  rule: RetainedLegalityRule,
-  requestUrl: string,
-  representationFingerprint: string,
-  sourceByteDigest: string,
-): void {
-  const identity = `${rule.source_lineage}\u0000${rule.official_id}`;
-  const prior = byIdentity.get(identity);
-  if (prior === undefined) {
-    rules.push(rule);
-    byIdentity.set(identity, {
-      rule,
-      requestUrl,
-      representationFingerprint,
-      sourceByteDigest,
-    });
-    return;
-  }
-  const sameUrl = prior.requestUrl === requestUrl;
-  const sameRepresentation =
-    prior.representationFingerprint === representationFingerprint && prior.sourceByteDigest === sourceByteDigest;
-  const sameSemanticRule = retainedLegalitySemantic(prior.rule) === retainedLegalitySemantic(rule);
-  if (!sameUrl || !sameRepresentation || !sameSemanticRule) {
-    throw new Error(
-      `Conflicting Legality Rule identity ${rule.official_id} spans Official Source surfaces (${!sameUrl ? "URL" : !sameRepresentation ? "representation" : "semantics"} mismatch).`,
-    );
-  }
-}
-
-function retainedLegalitySemantic(rule: RetainedLegalityRule): string {
-  const {
-    source_snapshot_id: _snapshot,
-    source_observation_set_id: _set,
-    source_observation_id: _observation,
-    source_observation_pointer: _pointer,
-    source_field_pointers: _fieldPointers,
-    ...semantic
-  } = rule;
-  return canonicalJson(semantic);
-}
-
-function completeLegalityScope(value: Record<string, unknown>): boolean {
-  if (
-    value.observation_type !== "legality_rules" ||
-    !Array.isArray(value.legality_rules) ||
-    !isRecord(value.completeness)
-  ) {
-    return false;
-  }
-  const declared = value.completeness.declared_record_count;
-  const parsed = value.completeness.parsed_record_count;
-  return (
-    value.completeness.structurally_complete === true &&
-    value.completeness.required_surfaces_complete === true &&
-    value.completeness.partitions_complete === true &&
-    Number.isSafeInteger(declared) &&
-    Number(declared) >= 0 &&
-    Number.isSafeInteger(parsed) &&
-    Number(parsed) >= 0 &&
-    declared === parsed &&
-    parsed === value.legality_rules.length
-  );
-}
-
 async function validateOfficialSurfaceCoverage(input: {
   adapter: ReturnType<typeof requiredSourceAdapter>;
   plan: ReturnType<typeof parseEvidencePlans>[number];
   requests: readonly PlannedRequestRow[];
   documents: readonly Awaited<ReturnType<typeof retainedObservationDocument>>[];
   rows: readonly EvidenceRow[];
-  completeLegalityRequestIds: ReadonlySet<string>;
-  completeLegalityRuleCounts: ReadonlyMap<string, number>;
   officialSurfaces: ReadonlyMap<string, { records: unknown[] }>;
   collectionRequests: readonly Record<string, unknown>[];
 }): Promise<void> {
@@ -567,26 +403,6 @@ async function validateOfficialSurfaceCoverage(input: {
     )
   ) {
     throw new Error("Complete Official Source evidence omitted a required live surface.");
-  }
-  for (const surface of requiredSurfaces.filter((surface) => isLegalitySurface(adapter, surface))) {
-    const requestId = `${adapter.sourceLineage}:${surface}`;
-    const requestIndex = requests.findIndex((request) => request.request_id === requestId);
-    if (requestIndex < 0) {
-      throw new Error("Complete Official Source evidence omitted a required live surface.");
-    }
-    const explicitRecords = input.officialSurfaces.get(requestId)?.records;
-    const rawRecords =
-      explicitRecords !== undefined && explicitRecords.length > 0
-        ? explicitRecords
-        : rawOfficialSurfaceRecords(input.documents[requestIndex]!, surface, input.rows[requestIndex]!.source_lineage);
-    if (
-      rawRecords.length > 0 &&
-      (!input.completeLegalityRequestIds.has(requestId) || input.completeLegalityRuleCounts.get(requestId) === 0)
-    ) {
-      throw new Error(
-        `Official Source ${surface} retained non-empty Legality data without an exact, complete Legality Rule parser.`,
-      );
-    }
   }
 }
 
@@ -616,80 +432,6 @@ async function validateLegacyCollectionPlan(
   ) {
     throw new Error("Official Source requests differ from the immutable Collection Plan.");
   }
-}
-
-function isLegalitySurface(adapter: ReturnType<typeof requiredSourceAdapter>, surface: string): boolean {
-  return (
-    /(?:legality|restriction|block-policy|don-rules)/u.test(surface) ||
-    (adapter.listingReconciliation?.releasesSurfaceCarriesLegality === true && surface === "releases")
-  );
-}
-
-function rawOfficialSurfaceRecords(
-  document: Awaited<ReturnType<typeof retainedObservationDocument>>,
-  surface: string,
-  sourceLineage: string,
-): unknown[] {
-  for (const wrapped of document.observations) {
-    if (!isRecord(wrapped) || !isRecord(wrapped.value)) continue;
-    const sidecar = wrapped.value.source_sidecar;
-    if (!isRecord(sidecar) || !isRecord(sidecar.raw)) continue;
-    const surfaces = sidecar.raw.official_surfaces;
-    if (!Array.isArray(surfaces)) continue;
-    for (const retained of surfaces) {
-      if (
-        !isRecord(retained) ||
-        retained.source_lineage !== sourceLineage ||
-        retained.surface !== surface ||
-        !isRecord(retained.document)
-      ) {
-        continue;
-      }
-      if (sourceLineage === "one-piece-en" && surface === "releases") {
-        const releaseTimingEntries = retained.document.release_timing_entries;
-        if (Array.isArray(releaseTimingEntries) && releaseTimingEntries.length > 0) {
-          return releaseTimingEntries;
-        }
-        const publicationEntries = retained.document.publication_entries;
-        if (Array.isArray(publicationEntries) && publicationEntries.length > 0) {
-          return publicationEntries;
-        }
-        const publicationLinks = retained.document.publication_links;
-        return Array.isArray(publicationLinks)
-          ? publicationLinks.filter(
-              (link) =>
-                isRecord(link) &&
-                typeof link.label === "string" &&
-                /\b(?:ban(?:ned)?|block|eligib(?:le|ility)|legal(?:ity)?|limit(?:ed)?|restriction|tournament)\b/iu.test(
-                  link.label,
-                ),
-            )
-          : [];
-      }
-      for (const field of [
-        "entries",
-        "records",
-        "items",
-        "rows",
-        "results",
-        "publication_entries",
-        "publication_links",
-      ]) {
-        const records = retained.document[field];
-        if (Array.isArray(records) && records.length > 0) return records;
-      }
-      for (const partitionOwner of [retained.document, retained.document.events]) {
-        if (!isRecord(partitionOwner) || !Array.isArray(partitionOwner.partitions)) {
-          continue;
-        }
-        const records = partitionOwner.partitions.flatMap((partition) =>
-          isRecord(partition) && Array.isArray(partition.entries) ? partition.entries : [],
-        );
-        if (records.length > 0) return records;
-      }
-    }
-  }
-  return [];
 }
 
 function sourceSurfaceForRequest(

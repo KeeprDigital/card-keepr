@@ -96,7 +96,7 @@ const game = { enum: ["one-piece", "fusion-world", "digimon", "gundam"] };
 const record = { type: "object" };
 const curatedFieldTarget = object({
   kind: { const: "field" },
-  entity_type: { enum: ["card", "printing", "product", "release", "distribution_context", "erratum", "legality_rule"] },
+  entity_type: { enum: ["card", "printing", "product", "release", "distribution_context", "erratum"] },
   entity_id: opaque,
   path: { ...string, pattern: "^/" },
 });
@@ -192,7 +192,6 @@ const candidate = object(
     product_observed_lineages: array(nonempty),
     source_checks: array({}),
     errata: array(erratum),
-    legality_rules: array({}),
   },
   ["contract", "selected_games", "cards", "printings"],
 );

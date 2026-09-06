@@ -29,7 +29,7 @@ the source adapters and public administration/consumer contracts remain real.
 
 `npm run test:acceptance:runtime` runs everything outside that explicit smoke list.
 Eight Worker-backed files now use a programmatic Miniflare combined runtime:
-`catalogue-publication`, `contextual-legality`, `curated-revision-source-changes`,
+`catalogue-publication`, `curated-revision-source-changes`,
 `errata-runtime`, `official-source-adapter-cli-failures`,
 `operational-diagnostics-leak`, `product-catalogue`, and `runtime-health`.
 The remaining contract tests retain their existing Node/SQLite/provider seams.

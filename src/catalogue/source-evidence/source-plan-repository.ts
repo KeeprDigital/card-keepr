@@ -251,10 +251,6 @@ export function retainedSourceEvidenceGuardStatement(
   WHERE source_observation_id = retained.source_observation_id
     AND source_observation_set_id = retained.retained_record_id
 ) AND NOT EXISTS (
-  SELECT 1 FROM legality_rules
-  WHERE source_observation_id = retained.source_observation_id
-    AND id = retained.retained_record_id
-) AND NOT EXISTS (
   SELECT 1
   FROM revision_products AS product,
        json_each(product.document_json, '$.included') AS evidence

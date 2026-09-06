@@ -4,8 +4,8 @@
 // imports nothing from the behaviour modules that reconcile, publish, or
 // read these shapes, so every behaviour module can depend on it without
 // forming an import cycle. The behaviour modules that historically owned
-// these names (`catalogue-candidate`, `legality-rule`, `errata-rules-text`,
-// `product-release-catalogue`, `legality-effect-policy`) re-export them.
+// these names (`catalogue-candidate`, `errata-rules-text`,
+// `product-release-catalogue`) re-export them.
 import type { CuratedProvenanceBearing } from "./curated-provenance";
 
 export const catalogueCandidateContract = "card-keepr-catalogue-candidate@1" as const;
@@ -26,22 +26,13 @@ export type CatalogueCandidate = {
   product_observed_lineages?: readonly string[];
   source_checks?: readonly CatalogueSourceCheck[];
   errata?: readonly CatalogueErratum[];
-  legality_rules?: readonly LegalityRule[];
 };
 
-export type CatalogueSourceCheck =
-  | {
-      game: SupportedGame;
-      area: "cards-and-printings" | "products-and-releases" | "errata";
-      checked_at: string;
-    }
-  | {
-      game: SupportedGame;
-      area: "legality-rules";
-      source_lineage: string;
-      region: LegalityRegion;
-      checked_at: string;
-    };
+export type CatalogueSourceCheck = {
+  game: SupportedGame;
+  area: "cards-and-printings" | "products-and-releases" | "errata";
+  checked_at: string;
+};
 
 export type CatalogueCard = CuratedProvenanceBearing & {
   id: string;
@@ -89,63 +80,6 @@ export type CataloguePrintingImage = {
   object_key: string;
   source_url: string;
   content_base64: string;
-};
-
-// Legality Rules.
-
-export type LegalityRegion = "EN-OCEANIA" | "EN-ASIA" | "EN-US";
-
-export type LegalityRuleSourceFieldPointers = {
-  official_wording: string;
-  effective_from: string;
-  effective_until: string;
-  unresolved_scope: string;
-  region: string;
-  format: string;
-  event_tier: string;
-  card_numbers: string;
-  effect: string;
-};
-
-export type UnresolvedLegalityScopeDimension = "effective_interval" | "event_tier" | "target_scope";
-
-export type UnresolvedLegalityScope = Readonly<{
-  dimensions: readonly UnresolvedLegalityScopeDimension[];
-}>;
-
-export type LegalityRuleEffect =
-  | { type: "eligible" }
-  | { type: "ban" }
-  | { type: "copy_limit"; maximum_copies: number }
-  | { type: "prohibited_combination"; with_card_ids: readonly string[] }
-  | { type: "membership"; attribute: string; includes_any: readonly string[] }
-  | { type: "rotation"; eligible_blocks: readonly string[] }
-  | { type: "release_timing"; legal_from: string }
-  | { type: "unresolved"; reason: string };
-
-export type LegalityRule = CuratedProvenanceBearing & {
-  id: string;
-  official_id: string;
-  game: SupportedGame;
-  region: LegalityRegion;
-  format: string;
-  event_tier: string | null;
-  effective_from: string | null;
-  effective_until: string | null;
-  unresolved_scope: UnresolvedLegalityScope | null;
-  card_ids: readonly string[];
-  official_wording: string;
-  effect: LegalityRuleEffect;
-  source_lineage: string;
-  source_snapshot_id: string;
-  source_observation_set_id: string;
-  source_observation_id: string;
-  source_observation_pointer: string;
-  source_field_pointers: LegalityRuleSourceFieldPointers;
-  first_revision_id?: string;
-  last_observed_revision_id?: string;
-  current?: boolean;
-  last_missing_revision_id?: string | null;
 };
 
 // Errata.

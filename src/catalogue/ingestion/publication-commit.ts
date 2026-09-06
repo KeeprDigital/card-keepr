@@ -1,6 +1,5 @@
 import { publicationBackupDispatchStatements, publicationBackupReservation } from "../backup-recovery";
 import { type BuiltCatalogueExport, distributionContextExportId } from "../export";
-import { legalityPublicationStatements } from "../legality";
 import { cardSearchChunks, cardSearchText } from "../read";
 import {
   type PublicationEvidenceResource,
@@ -447,7 +446,6 @@ export async function commitVerifiedPublication(
       candidateDigest: input.run.candidate_digest,
     }),
     ...(input.reconciliation?.statements ?? []),
-    ...legalityPublicationStatements(database, input.candidate, revisionId),
     ...revisionCardStatements,
     ...revisionCardQueryStatements,
     ...revisionCardSearchChunkStatements,

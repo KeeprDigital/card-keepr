@@ -149,7 +149,7 @@ jq -e '.state == "awaiting_acceptance" and .verification != null' recovery.json
 ```
 
 Verification reconstructs derived data and checks the exact revision, schema,
-counts, and representative catalogue, legality, and Curated Revision evidence
+counts, and representative catalogue and Curated Revision evidence
 against the backup manifest. Inspect the retained verification document and
 failure details; an import finishing successfully is insufficient.
 

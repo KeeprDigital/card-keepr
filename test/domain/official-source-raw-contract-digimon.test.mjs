@@ -1,24 +1,13 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
 import { officialSourceDiscoveryRequests } from "../../src/catalogue/adapters/product-release-source-adapters.ts";
-import {
-  adapterReconciliationAreas,
-  assertAdapterBinding,
-  installedSourceAdapterRegistrations,
-  requiredActiveSourceAdapter,
-  requiredSourceAdapter,
-  sourceAdapterRegistrations,
-} from "../../src/catalogue/adapters/source-adapters.ts";
+import { requiredSourceAdapter } from "../../src/catalogue/adapters/source-adapters.ts";
 import syntheticOfficialSource, {
-  officialBandaiNavigationHeader,
-  officialDiscoveryDefinitions,
-  officialDiscoveryDocument,
   officialPublisherPayloadScript,
   officialRawSurfacePayload,
 } from "../../acceptance/fixtures/synthetic-official-source.mjs";
 import {
   registeredProductionAdapters,
-  retainedLegalityRules,
   restructuredStageDigest,
   retainedRestructuredParse,
   retainedRestructuredRequests,
@@ -173,42 +162,11 @@ test("the synthetic Digimon Worker isolates sequential and concurrent request sc
   assert.doesNotMatch(absent, /Remove the printed effect/u);
 });
 
-test("retained live Digimon policy bytes retain the complete current affected list", () => {
-  const adapter = requiredSourceAdapter("digimon-en@7");
-  const rules = retainedLegalityRules(adapter, "restrictions-current", "digimon-en-policy");
-  assert.equal(rules.length, 55);
-  assert.deepEqual(
-    rules.slice(0, 2).map((rule) => rule.card_numbers),
-    [
-      ["EX2-007", "EX7-064"],
-      ["BT20-037", "BT17-035", "EX8-037"],
-    ],
-  );
-  assert.deepEqual(
-    rules.slice(2, 5).map((rule) => rule.card_numbers[0]),
-    ["BT5-109", "BT2-090", "EX5-065"],
-  );
-  assert.deepEqual(
-    rules.slice(-3).map((rule) => rule.card_numbers[0]),
-    ["BT6-100", "EX1-068", "BT7-072"],
-  );
-  assert.ok(
-    rules.every(
-      (rule) =>
-        rule.effective_from === null &&
-        rule.unresolved_scope.dimensions.join(",") === "effective_interval" &&
-        rule.effect.type === "unresolved",
-    ),
-  );
-});
-
 test("Digimon explicit surfaces deterministically disambiguate shared Product, Release, and policy URLs", async () => {
   const adapter = requiredSourceAdapter("digimon-en@7");
   const cases = [
     ["products", "https://world.digimoncard.com/products/"],
     ["releases", "https://world.digimoncard.com/products/"],
-    ["restrictions-current", "https://world.digimoncard.com/rule/restriction_card/"],
-    ["restrictions-history", "https://world.digimoncard.com/rule/restriction_card/?view=history"],
   ];
   const captured = new Map();
   for (const [surface, url] of [...cases, ...cases.toReversed()]) {
@@ -236,7 +194,6 @@ test("Digimon explicit surfaces deterministically disambiguate shared Product, R
     );
   }
   assert.notDeepEqual(captured.get("products"), captured.get("releases"));
-  assert.notDeepEqual(captured.get("restrictions-current"), captured.get("restrictions-history"));
 });
 
 test("real Digimon and Gundam details close every known profile field and reject malformed numerics", () => {
@@ -550,16 +507,6 @@ test("restructured Digimon rules discovery pins its restriction and errata publi
     requestId: `digimon-en:listing:rules:${restructuredStageDigest}`,
   });
   assert.deepEqual(stageRecordSummaries(observations), [
-    {
-      id: "digimon-en:restrictions-current",
-      surface: "restrictions-current",
-      url: "https://world.digimoncard.com/rule/restriction_card/",
-    },
-    {
-      id: "digimon-en:restrictions-history",
-      surface: "restrictions-history",
-      url: "https://world.digimoncard.com/rule/restriction_card/",
-    },
     {
       id: "digimon-en:errata",
       surface: "errata",

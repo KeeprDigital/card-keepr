@@ -8,7 +8,7 @@ export {
   EvidenceHostWorkflow,
   OfficialSourceTransport,
   ReconciliationWorkflow,
-} from "./contextual-legality-ingestion-harness";
+} from "./retained-evidence-base-harness";
 
 export class EvidenceIngestionWorkflow extends ProductionEvidenceIngestionWorkflow {
   override async run(

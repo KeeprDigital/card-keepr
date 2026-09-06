@@ -8,7 +8,6 @@ import {
   currentPrintingLocatorsStatement,
   reconciliationPartitionLineagesStatement,
   revisionCardDocumentsStatement,
-  revisionLegalityDocumentsStatement,
   revisionPrintingDocumentsStatement,
 } from "./candidate-inspection-repository";
 
@@ -21,28 +20,21 @@ export async function inspectCatalogueCandidate(
     fallbackWarnings: readonly Record<string, unknown>[];
   },
 ) {
-  const [
-    warnings,
-    priorCards,
-    priorPrintings,
-    priorLegalityRules,
-    plans,
-    evidenceLineages,
-    printingLineages,
-    cardLineages,
-  ] = await Promise.all([
-    candidateWarnings(database, input.runId, input.fallbackWarnings),
-    revisionCardDocumentsStatement(database, input.expectedRevisionId).all<{ id: string; document_json: string }>(),
-    revisionPrintingDocumentsStatement(database, input.expectedRevisionId).all<{ id: string; document_json: string }>(),
-    revisionLegalityDocumentsStatement(database, input.expectedRevisionId).all<{ id: string; document_json: string }>(),
-    candidateObservedEntitiesStatement(database, input.runId).all<CandidateObservedEntityRow>(),
-    reconciliationPartitionLineagesStatement(database, input.runId).all<ReconciliationPartitionLineageRow>(),
-    currentPrintingLocatorsStatement(database).all<{ printing_id: string; source_lineage: string }>(),
-    currentCardObservationLineagesStatement(database).all<{ card_id: string; source_lineage: string }>(),
-  ]);
+  const [warnings, priorCards, priorPrintings, plans, evidenceLineages, printingLineages, cardLineages] =
+    await Promise.all([
+      candidateWarnings(database, input.runId, input.fallbackWarnings),
+      revisionCardDocumentsStatement(database, input.expectedRevisionId).all<{ id: string; document_json: string }>(),
+      revisionPrintingDocumentsStatement(database, input.expectedRevisionId).all<{
+        id: string;
+        document_json: string;
+      }>(),
+      candidateObservedEntitiesStatement(database, input.runId).all<CandidateObservedEntityRow>(),
+      reconciliationPartitionLineagesStatement(database, input.runId).all<ReconciliationPartitionLineageRow>(),
+      currentPrintingLocatorsStatement(database).all<{ printing_id: string; source_lineage: string }>(),
+      currentCardObservationLineagesStatement(database).all<{ card_id: string; source_lineage: string }>(),
+    ]);
   const cardsBefore = documentMap(priorCards.results);
   const printingsBefore = documentMap(priorPrintings.results);
-  const legalityRulesBefore = documentMap(priorLegalityRules.results);
   const observedCardIds = new Set(plans.results.map((plan) => plan.card_id));
   const observedPrintingIds = new Set(
     plans.results.flatMap((plan) => (plan.printing_id === null ? [] : [plan.printing_id])),
@@ -80,40 +72,14 @@ export async function inspectCatalogueCandidate(
       })
       .map((printing) => printing.id),
   };
-  const candidateLegalityRules = input.candidate.legality_rules ?? [];
-  const legalityRules = {
-    added: candidateLegalityRules
-      .filter((rule) => !legalityRulesBefore.has(rule.id))
-      .map((rule) => rule.id)
-      .sort(),
-    changed: candidateLegalityRules
-      .filter((rule) => changedLegalityRule(legalityRulesBefore, rule))
-      .map((rule) => rule.id)
-      .sort(),
-    lifecycle: {
-      current: candidateLegalityRules
-        .filter((rule) => rule.current !== false)
-        .map((rule) => rule.id)
-        .sort(),
-      non_current: candidateLegalityRules
-        .filter((rule) => rule.current === false)
-        .map((rule) => rule.id)
-        .sort(),
-    },
-  };
   return {
     summary: {
       cards_added: cards.added.length,
       printings_added: printings.added.length,
-      legality_rules_added: legalityRules.added.length,
-      legality_rules_changed: legalityRules.changed.length,
-      legality_rules_current: legalityRules.lifecycle.current.length,
-      legality_rules_non_current: legalityRules.lifecycle.non_current.length,
       warnings: warnings.length,
     },
     cards,
     printings,
-    legality_rules: legalityRules,
     warnings,
   };
 }
@@ -167,36 +133,6 @@ function changed(prior: ReadonlyMap<string, Record<string, unknown>>, candidate:
       ([key, value]) => key !== "curated_provenance" && canonicalJson(document[key]) !== canonicalJson(value),
     )
   );
-}
-
-function changedLegalityRule(
-  prior: ReadonlyMap<string, Record<string, unknown>>,
-  candidate: Record<string, unknown>,
-): boolean {
-  const document = prior.get(String(candidate.id));
-  return (
-    document !== undefined &&
-    canonicalJson(legalityInspectionDocument(document)) !== canonicalJson(legalityInspectionDocument(candidate))
-  );
-}
-
-function legalityInspectionDocument(rule: Record<string, unknown>): Record<string, unknown> {
-  const {
-    source_lineage: _sourceLineage,
-    source_snapshot_id: _sourceSnapshotId,
-    source_observation_set_id: _sourceObservationSetId,
-    source_observation_id: _sourceObservationId,
-    source_observation_pointer: _sourceObservationPointer,
-    source_field_pointers: _sourceFieldPointers,
-    first_revision_id: _firstRevisionId,
-    last_observed_revision_id: _lastObservedRevisionId,
-    last_missing_revision_id: _lastMissingRevisionId,
-    ...inspectable
-  } = rule;
-  return {
-    ...inspectable,
-    current: rule.current !== false,
-  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -87,12 +87,10 @@ export function parseProductDetail(
       },
     ]);
   }
-  const observation = productOnlyObservation(
-    product,
-    releases,
-    { revision: "captured-by-policy-surface", entries: [] },
-    { revision: "captured-by-policy-surface", entries: [] },
-  );
+  const observation = productOnlyObservation(product, releases, {
+    revision: "captured-by-policy-surface",
+    entries: [],
+  });
   return attachRawSurfaceEvidenceV1(observation, sourceLineage, "product-detail", rawDocument, true, [
     "document_title",
     "Product Code",
@@ -284,11 +282,6 @@ export function parseBandaiProductIndex(html: string, requestUrl: string): Catal
         },
       ]);
     }
-    return productOnlyObservation(
-      product,
-      releases,
-      { revision: "captured-by-policy-surface", entries: [] },
-      { revision: "captured-by-policy-surface", entries: [] },
-    );
+    return productOnlyObservation(product, releases, { revision: "captured-by-policy-surface", entries: [] });
   });
 }

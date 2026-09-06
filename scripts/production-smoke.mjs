@@ -59,15 +59,6 @@ export async function runProductionSmoke(input, fetchImpl = fetch) {
     200,
     input.currentRevisionId,
   );
-  await expectJson(
-    fetchImpl,
-    apiUrl(
-      `/v1/legality-status?card_id=${encodeURIComponent(input.legalityCardId)}&on=${encodeURIComponent(input.legalityDate)}&format=${encodeURIComponent(input.legalityFormat)}&region=${encodeURIComponent(input.legalityRegion)}`,
-    ),
-    authorized,
-    200,
-    input.currentRevisionId,
-  );
   await expectStatus(
     fetchImpl,
     apiUrl(`/v1/printing-images/${encodeURIComponent(input.printingImageId)}/content`),
@@ -182,17 +173,9 @@ function validateInput(input) {
           item.printing_cursor,
         ].some((value) => typeof value !== "string" || value.length === 0),
     ) ||
-    [
-      input.apiUrl,
-      input.apiKey,
-      input.printingImageId,
-      input.legalityCardId,
-      input.legalityDate,
-      input.legalityFormat,
-      input.legalityRegion,
-      input.staleCursor,
-      input.staleRevisionId,
-    ].some((value) => typeof value !== "string" || value.length === 0) ||
+    [input.apiUrl, input.apiKey, input.printingImageId, input.staleCursor, input.staleRevisionId].some(
+      (value) => typeof value !== "string" || value.length === 0,
+    ) ||
     input.revisions.some((item) => item.revision_id === input.staleRevisionId)
   )
     throw new Error("invalid_smoke_input");

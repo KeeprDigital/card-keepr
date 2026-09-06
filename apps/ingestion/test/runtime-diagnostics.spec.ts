@@ -197,10 +197,10 @@ test("production source fixture selection is invariant under retries and reorder
   expect(
     productionSourceFixtureMarker(
       new Headers({
-        "user-agent": "card-keepr-representable-legality-v3; request-role=listing",
+        "user-agent": "card-keepr-card-content-v3; request-role=listing",
       }),
     ),
-  ).toBe("card-keepr-representable-legality-v3");
+  ).toBe("card-keepr-card-content-v3");
   const products = new Headers({
     "user-agent": "card-keepr-products-v3; request-role=surface; request-surface=products",
   });
@@ -217,8 +217,8 @@ test("production source fixture selection is invariant under retries and reorder
   expect(
     productionSourceFixtureMarker(
       new Headers({
-        "user-agent": "card-keepr-representable-legality-v3; request-role=surface",
+        "user-agent": "card-keepr-card-content-v3; request-role=surface",
       }),
     ),
-  ).toBe("card-keepr-representable-legality-v3");
+  ).toBe("card-keepr-card-content-v3");
 });

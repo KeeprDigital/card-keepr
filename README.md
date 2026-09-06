@@ -252,7 +252,7 @@ npm run deploy:dry-run
 ```
 
 `npm test` runs three layers. `test:domain` is plain node Vitest over
-`test/domain/`: parsers, reconciliation identity, legality, export, and
+`test/domain/`: parsers, reconciliation identity, export, and
 contract checks that import `src/catalogue` directly and finish in about a
 second. `test:workers` runs `apps/*/test` inside the Workers pool with D1,
 R2, and Workflows bindings. `test:acceptance` boots real `wrangler`

@@ -2,7 +2,6 @@ import { type BuiltCatalogueExport, buildCatalogueExport } from "../export";
 import { digestBoundCandidatePayload, reconciliationPublication } from "../reconciliation";
 import {
   AdministrationProblem,
-  byteBoundedJsonArrays,
   type CatalogueCandidate,
   CatalogueExportLimitError,
   type CatalogueStore,
@@ -33,7 +32,6 @@ import {
   storeAndVerifyPrintingImages,
 } from "./publication-storage";
 import {
-  candidateLegalityEvidenceStatement,
   catalogueRevisionDigestStatement,
   nextPublicationToReconcileStatement,
 } from "./publication-storage-repository";
@@ -154,7 +152,7 @@ async function reconcileReservedPublication(
     expected_current_revision_id: approval.expected_current_revision_id,
   });
   const reconciliation = await reconciliationPublication(database, run.id, revisionId, publishedAt);
-  const exportCandidate = await candidateWithCanonicalLegalityProvenance(database, candidate);
+  const exportCandidate = candidate;
   const catalogueExport = await buildCatalogueExport(
     exportCandidate,
     requiredCandidateCatalogueDigest(run),
@@ -245,59 +243,6 @@ export function assertRulesClockFresh(
       "An Erratum became applicable after reconciliation; reconcile a fresh candidate before approval.",
     );
   }
-  const crossedLegalityBoundary = (candidate.legality_rules ?? []).some((rule) =>
-    [
-      rule.effective_from,
-      rule.effective_until,
-      rule.effect.type === "release_timing" ? rule.effect.legal_from : null,
-    ].some((boundary) => boundary !== null && boundary > reconciledDate && boundary <= approvalDate),
-  );
-  if (crossedLegalityBoundary) {
-    throw new AdministrationProblem(
-      409,
-      "candidate_legality_stale",
-      "A Legality Rule applicability boundary passed after reconciliation; reconcile a fresh candidate before approval.",
-    );
-  }
-}
-
-type CanonicalLegalityProvenance = {
-  id: string;
-  source_lineage: string;
-  source_snapshot_id: string;
-  source_observation_set_id: string;
-  source_observation_id: string;
-  source_observation_pointer: string;
-  source_field_pointers_json: string;
-};
-
-export async function candidateWithCanonicalLegalityProvenance(
-  database: CatalogueStore,
-  candidate: CatalogueCandidate,
-): Promise<CatalogueCandidate> {
-  const rules = candidate.legality_rules ?? [];
-  if (rules.length === 0) return candidate;
-  const canonical = new Map<string, CanonicalLegalityProvenance>();
-  for (const chunk of byteBoundedJsonArrays(rules.map((rule) => rule.id))) {
-    const rows = await candidateLegalityEvidenceStatement(database, chunk).all<CanonicalLegalityProvenance>();
-    for (const row of rows.results) canonical.set(row.id, row);
-  }
-  return {
-    ...candidate,
-    legality_rules: rules.map((rule) => {
-      const retained = canonical.get(rule.id);
-      if (retained === undefined) return rule;
-      return {
-        ...rule,
-        source_lineage: retained.source_lineage,
-        source_snapshot_id: retained.source_snapshot_id,
-        source_observation_set_id: retained.source_observation_set_id,
-        source_observation_id: retained.source_observation_id,
-        source_observation_pointer: retained.source_observation_pointer,
-        source_field_pointers: JSON.parse(retained.source_field_pointers_json) as typeof rule.source_field_pointers,
-      };
-    }),
-  };
 }
 
 export async function approveRun(
@@ -413,7 +358,7 @@ async function approveRunAttempt(
   });
   const writerToken = publicationWriterToken(revisionId);
   const reconciliation = await reconciliationPublication(database, run.id, revisionId, now);
-  const exportCandidate = await candidateWithCanonicalLegalityProvenance(database, candidate);
+  const exportCandidate = candidate;
   let catalogueExport: BuiltCatalogueExport;
   try {
     catalogueExport = await buildCatalogueExport(

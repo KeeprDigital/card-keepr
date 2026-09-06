@@ -47,12 +47,6 @@ export function corruptProductReleases(database) {
      WHERE catalogue_revision_id = ? AND product_id = ?`);
 }
 
-export function corruptLegalityFieldPointers(database) {
-  return database.prepare(`UPDATE revision_legality_rules
-     SET document_json = json_set(document_json, '$.source_field_pointers', json('{}'))
-     WHERE catalogue_revision_id = ? AND legality_rule_id = ?`);
-}
-
 export function insertRevisionCard(database) {
   return database.prepare(`INSERT INTO revision_cards (
          catalogue_revision_id, card_id, document_json

@@ -1,6 +1,5 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { assertCanonicalLegalityRule } from "../legality";
 import {
   AdministrationProblem,
   type CatalogueCandidate,
@@ -13,7 +12,6 @@ import {
   canonicalProfileAttributes,
   decodeDocument,
   exportedGameProfileSchema,
-  type LegalityRule,
   type ProductRelationship,
   replayByDigest,
   retainedPayload,
@@ -62,7 +60,6 @@ const identityRootsByType: Readonly<Record<string, ReadonlySet<string>>> = {
   release: new Set(["event_key", "product_id", "region"]),
   distribution_context: new Set(["key", "product_id"]),
   erratum: new Set(["target_type", "target_id"]),
-  legality_rule: new Set(["official_id"]),
 };
 const relationshipEndpointPairs: Readonly<Record<string, string>> = {
   "printing-product": "printing->product",
@@ -149,18 +146,7 @@ export async function validateCuratedRevision(
       );
     }
     const assertionValue = (proposal.assertion as { kind: "field"; value: unknown }).value;
-    if (
-      !validCuratedFieldAssertion(
-        proposal.target.entity_type,
-        target,
-        path,
-        assertionValue,
-        fieldSchema,
-        proposal.target.entity_type === "legality_rule"
-          ? await catalogueCardsAtRevision(database, currentRevisionId)
-          : [],
-      )
-    ) {
+    if (!validCuratedFieldAssertion(proposal.target.entity_type, target, path, assertionValue, fieldSchema)) {
       throw new AdministrationProblem(
         422,
         "curated_revision_assertion_type_invalid",
@@ -1032,7 +1018,6 @@ export function stripCuratedRevisionEffects(
       .flatMap((product) => product.releases),
     ...(candidate.distribution_contexts ?? []).filter((context) => selected === null || selected.has(context.game)),
     ...(candidate.errata ?? []).filter((erratum) => selected === null || selected.has(erratum.game)),
-    ...(candidate.legality_rules ?? []).filter((rule) => selected === null || selected.has(rule.game)),
   ] as Record<string, unknown>[];
   for (const entity of entities) {
     const provenance = Array.isArray(entity.curated_provenance)
@@ -1452,9 +1437,6 @@ async function validateSupersedingProposal(
         parts,
         (proposal.assertion as { kind: "field"; value: unknown }).value,
         schema,
-        proposal.target.entity_type === "legality_rule"
-          ? await catalogueCardsAtRevision(database, mutation.currentRevisionId)
-          : [],
       )
     ) {
       throw new AdministrationProblem(
@@ -1653,8 +1635,6 @@ function candidateTarget(candidate: CatalogueCandidate, proposal: Proposal): Rec
   else if (type === "distribution_context")
     found = candidate.distribution_contexts?.find((item) => item.id === id && item.game === proposal.game);
   else if (type === "erratum") found = candidate.errata?.find((item) => item.id === id && item.game === proposal.game);
-  else if (type === "legality_rule")
-    found = candidate.legality_rules?.find((item) => item.id === id && item.game === proposal.game);
   else if (type === "release") {
     found = candidate.products
       ?.filter((product) => product.game === proposal.game)
@@ -2026,27 +2006,6 @@ const sharedCuratableFieldSchemas: Readonly<Record<string, JsonSchema>> = {
   "erratum:/effective_from": nullableDateSchema,
   "erratum:/official_wording": { type: "string", minLength: 1 },
   "erratum:/corrected_value": nullableNonEmptyTextSchema,
-  "legality_rule:/region": { enum: ["EN-OCEANIA", "EN-ASIA", "EN-US"] },
-  "legality_rule:/format": { type: "string", minLength: 1 },
-  "legality_rule:/event_tier": nullableNonEmptyTextSchema,
-  "legality_rule:/effective_from": nullableDateSchema,
-  "legality_rule:/effective_until": nullableDateSchema,
-  "legality_rule:/official_wording": { type: "string", minLength: 1 },
-  "legality_rule:/unresolved_scope": {
-    oneOf: [
-      { type: "null" },
-      {
-        type: "object",
-        additionalProperties: false,
-        required: ["dimensions"],
-        properties: {
-          dimensions: {
-            enum: [["effective_interval"], ["event_tier"], ["effective_interval", "event_tier"]],
-          },
-        },
-      },
-    ],
-  },
 };
 
 function curatedFieldSchema(
@@ -2084,19 +2043,11 @@ function validCuratedFieldAssertion(
   parts: readonly string[],
   assertion: unknown,
   schema: JsonSchema,
-  cards: CatalogueCandidate["cards"],
 ): boolean {
   if (!fieldAjv.compile(schema)(assertion)) return false;
   const modified = structuredClone(target);
   setAt(modified, parts, assertion);
   if (!validCompleteCuratedEntity(entityType, modified)) return false;
-  if (entityType === "legality_rule") {
-    try {
-      assertCanonicalLegalityRule(modified as LegalityRule, cards);
-    } catch {
-      return false;
-    }
-  }
   return true;
 }
 
@@ -2229,14 +2180,6 @@ function validComposedCuratedCandidate(candidate: CatalogueCandidate): boolean {
     )
   )
     return false;
-  try {
-    for (const entity of candidate.legality_rules ?? []) {
-      if (!validCompleteCuratedEntity("legality_rule", entity as unknown as Record<string, unknown>)) return false;
-      assertCanonicalLegalityRule(entity, candidate.cards);
-    }
-  } catch {
-    return false;
-  }
   return (candidate.product_relationships ?? []).every(
     (relationship) =>
       relationshipEndpointPairs[relationship.kind] === `${relationship.from.type}->${relationship.to.type}` &&

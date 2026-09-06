@@ -22,10 +22,6 @@ export {
   type CatalogueSourceCheck,
   catalogueCandidateContract,
   type EvidenceCategory,
-  type LegalityRegion,
-  type LegalityRule,
-  type LegalityRuleEffect,
-  type LegalityRuleSourceFieldPointers,
   type ProductAuthorityClass,
   type ProductDisagreement,
   type ProductEntityReference,
@@ -37,8 +33,6 @@ export {
   type ReleasePrecision,
   type ReleaseStatus,
   type SupportedGame,
-  type UnresolvedLegalityScope,
-  type UnresolvedLegalityScopeDimension,
 } from "./catalogue-candidate-types";
 export {
   atomicRepositoryStatement,
@@ -66,8 +60,6 @@ export {
   maximumCatalogueExportObjectBytes,
   maximumExportComponentBytes,
   maximumExportRecordBytes,
-  maximumLegalityRuleRelationships,
-  maximumLegalityStatusRules,
 } from "./export-limits";
 export {
   catalogueRevisionIdentity,
@@ -117,7 +109,7 @@ export {
   payloadChunkStatements,
   retainedPayload,
 } from "./reconciliation-payload";
-// Game Profile contract helpers, consumed by legality, curated, export,
+// Game Profile contract helpers, consumed by curated, export,
 // and reconciliation alike.
 export {
   canonicalProfileAttributes,
@@ -129,7 +121,6 @@ export {
   requiredProfileContract,
   sourceFieldWarning,
   sourceVocabularyWarning,
-  validateMembershipPredicate,
 } from "./reconciliation-profile";
 export { isReleaseActor, isReleaseDigest, isReleaseHead, isReleaseIdentity } from "./release-input-shapes.mjs";
 export {

@@ -179,9 +179,6 @@ export function validatedPlan(request: Record<string, unknown>, target: Producti
         printing_cursor: string;
       }>;
       printing_image_id: string;
-      legality_card_id: string;
-      legality_format: string;
-      legality_region: string;
       stale_cursor: string;
       stale_revision_id: string;
     };
@@ -204,25 +201,12 @@ export function validatedPlan(request: Record<string, unknown>, target: Producti
 function validSmokeTargets(value: unknown, retainedRevisionIds: readonly string[]): boolean {
   if (
     !isRecord(value) ||
-    !exactKeys(value, [
-      "legality_card_id",
-      "legality_format",
-      "legality_region",
-      "printing_image_id",
-      "revisions",
-      "stale_cursor",
-      "stale_revision_id",
-    ]) ||
+    !exactKeys(value, ["printing_image_id", "revisions", "stale_cursor", "stale_revision_id"]) ||
     !Array.isArray(value.revisions) ||
     value.revisions.length !== 3 ||
-    ![
-      value.printing_image_id,
-      value.legality_card_id,
-      value.legality_format,
-      value.legality_region,
-      value.stale_cursor,
-      value.stale_revision_id,
-    ].every((item) => typeof item === "string" && item.length > 0) ||
+    ![value.printing_image_id, value.stale_cursor, value.stale_revision_id].every(
+      (item) => typeof item === "string" && item.length > 0,
+    ) ||
     retainedRevisionIds.includes(String(value.stale_revision_id))
   )
     return false;

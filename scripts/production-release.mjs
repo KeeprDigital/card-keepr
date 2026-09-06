@@ -376,28 +376,13 @@ function validReleaseEvidence(plan) {
     ) ||
     retained[0].revision_id !== plan.expected_current_revision_id ||
     new Set(retained.map((item) => item.revision_id)).size !== 3 ||
-    !exactKeys(smoke, [
-      "legality_card_id",
-      "legality_format",
-      "legality_region",
-      "printing_image_id",
-      "revisions",
-      "stale_cursor",
-      "stale_revision_id",
-    ]) ||
+    !exactKeys(smoke, ["printing_image_id", "revisions", "stale_cursor", "stale_revision_id"]) ||
     !Array.isArray(smoke.revisions) ||
     smoke.revisions.length !== 3 ||
     retained.some((item) => item.revision_id === smoke.stale_revision_id)
   )
     return false;
-  const strings = [
-    smoke.printing_image_id,
-    smoke.legality_card_id,
-    smoke.legality_format,
-    smoke.legality_region,
-    smoke.stale_cursor,
-    smoke.stale_revision_id,
-  ];
+  const strings = [smoke.printing_image_id, smoke.stale_cursor, smoke.stale_revision_id];
   if (strings.some((item) => typeof item !== "string" || item.length === 0)) return false;
   return smoke.revisions.every(
     (fixture, index) =>

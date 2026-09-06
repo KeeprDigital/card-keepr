@@ -7,8 +7,6 @@
 // Registration facts reconciliation reads about a lineage's listing
 // evidence (ADR 0004: these lived in code-side version lists before).
 export type ListingReconciliationTraits = Readonly<{
-  // The releases surface also carries release-timing Legality Rules.
-  releasesSurfaceCarriesLegality: boolean;
   // Listing observations are publisher pages closed by full locator.
   groupsPublisherPages: boolean;
   // Listing identity is read from listing_identity_evidence rather than

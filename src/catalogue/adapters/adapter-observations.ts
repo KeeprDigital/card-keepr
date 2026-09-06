@@ -83,13 +83,6 @@ export type OfficialErratumObservation = {
   completeness: ObservationCompleteness;
 };
 
-export type LegalityRulesObservation = {
-  observation_type: "legality_rules";
-  legality_rules: readonly Record<string, unknown>[];
-  completeness: ObservationCompleteness;
-  source_sidecar?: Record<string, unknown>;
-};
-
 export type SurfaceEvidenceObservation = {
   observation_type: "official_surface_evidence";
   source_lineage: string;
@@ -108,11 +101,7 @@ export type SurfaceEvidenceObservation = {
 
 // Existing wire shapes discriminate through kind, observation_type, or the
 // product_release_catalogue field. No synthetic tag is added to retained output.
-export type OfficialSourceObservation =
-  | CatalogueObservation
-  | OfficialErratumObservation
-  | LegalityRulesObservation
-  | SurfaceEvidenceObservation;
+export type OfficialSourceObservation = CatalogueObservation | OfficialErratumObservation | SurfaceEvidenceObservation;
 
 export type CardObservation = CatalogueObservation & {
   card: NonNullable<CatalogueObservation["card"]>;

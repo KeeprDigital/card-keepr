@@ -139,8 +139,6 @@ function verificationEvidenceSql(): string {
        WHERE catalogue_revision_id = catalogue.current_revision_id) AS printings,
       (SELECT count(*) FROM revision_products
        WHERE catalogue_revision_id = catalogue.current_revision_id) AS products,
-      (SELECT count(*) FROM revision_legality_rules
-       WHERE catalogue_revision_id = catalogue.current_revision_id) AS legality_rules,
       (SELECT count(*) FROM revision_card_query_documents
        WHERE catalogue_revision_id = catalogue.current_revision_id) AS api_documents,
       (SELECT count(*) FROM revision_card_search_chunks
@@ -164,13 +162,6 @@ function verificationEvidenceSql(): string {
       (SELECT document_json FROM revision_products
        WHERE catalogue_revision_id = catalogue.current_revision_id
        ORDER BY product_id LIMIT 1) AS representative_product_document_json,
-      (SELECT legality_rule_id FROM revision_legality_rules
-       WHERE catalogue_revision_id = catalogue.current_revision_id
-       ORDER BY legality_rule_id LIMIT 1) AS representative_legality_rule_id,
-      (SELECT document_json FROM revision_legality_rules
-       WHERE catalogue_revision_id = catalogue.current_revision_id
-       ORDER BY legality_rule_id LIMIT 1)
-        AS representative_legality_rule_document_json,
       (SELECT sort_identity_value FROM revision_card_query_documents
        WHERE catalogue_revision_id = catalogue.current_revision_id
        ORDER BY sort_game, sort_identity_kind, sort_identity_value, sort_id

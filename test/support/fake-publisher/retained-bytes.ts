@@ -25,10 +25,7 @@ export interface RetainedOfficialSourceFixture {
 // The one routing table from a lineage to the retained discovery-root bytes
 // its production adapter parses. Every layer serves the same capture from
 // here, so a re-captured fixture changes every suite at once.
-export const retainedOfficialDiscoveryFixtures: Record<
-  OfficialLineage,
-  RetainedOfficialSourceFixture
-> = {
+export const retainedOfficialDiscoveryFixtures: Record<OfficialLineage, RetainedOfficialSourceFixture> = {
   "one-piece-en": onePieceDiscovery,
   "fusion-world-en": fusionWorldDiscovery,
   "digimon-en": digimonDiscovery,
@@ -37,18 +34,14 @@ export const retainedOfficialDiscoveryFixtures: Record<
 };
 
 // Decodes without Buffer so the same table serves from workerd and Node.
-export function retainedOfficialDiscoveryBytes(
-  lineage: OfficialLineage,
-): Uint8Array {
-  return Uint8Array.from(
-    atob(retainedOfficialDiscoveryFixtures[lineage].body_base64),
-    (character) => character.charCodeAt(0),
+export function retainedOfficialDiscoveryBytes(lineage: OfficialLineage): Uint8Array {
+  return Uint8Array.from(atob(retainedOfficialDiscoveryFixtures[lineage].body_base64), (character) =>
+    character.charCodeAt(0),
   );
 }
 
-// The retained Fusion World card search links the rules hub as its last
-// navigation entry; the incomplete-discovery scenario rewrites that link to a
-// missing page so discovery observes a publisher gap.
+// Synthetic fault injection removes the retained Product navigation target
+// so discovery observes a gap in required card-content acquisition.
 const incompleteDiscoveryMarker = "card-keepr-incomplete-discovery-v3";
 
 export function retainedOfficialDiscoveryResponse(
@@ -57,20 +50,14 @@ export function retainedOfficialDiscoveryResponse(
   options: { readonly marker?: string | null; readonly etag: string },
 ): Response | null {
   const fixture = retainedOfficialDiscoveryFixtures[lineage];
-  if (
-    request.url !== fixture.source_url ||
-    productionSourceFixtureRole(request.headers) !== "retained-discovery"
-  ) return null;
+  if (request.url !== fixture.source_url || productionSourceFixtureRole(request.headers) !== "retained-discovery")
+    return null;
   const retainedBytes = retainedOfficialDiscoveryBytes(lineage);
   const responseBytes =
-    options.marker === incompleteDiscoveryMarker &&
-      lineage === "fusion-world-en"
+    options.marker === incompleteDiscoveryMarker && lineage === "fusion-world-en"
       ? new TextEncoder().encode(
-        new TextDecoder().decode(retainedBytes).replace(
-          "/fw/en/news/01_31.html",
-          "/fw/en/news/missing.html",
-        ),
-      )
+          new TextDecoder().decode(retainedBytes).replaceAll("/fw/en/products/", "/fw/en/missing/"),
+        )
       : retainedBytes;
   return new Response(responseBytes, {
     headers: {

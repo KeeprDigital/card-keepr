@@ -89,7 +89,6 @@ test("the public run boundary reads and retries an immutable retained candidate"
   const historicalCandidate = {
     contract: "card-keepr-catalogue-candidate@1",
     selected_games: ["one-piece"],
-    legality_rules: [],
     cards: [
       {
         id: "card_01k_first_catalogue_0001",

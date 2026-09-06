@@ -55,52 +55,6 @@ export function retainedOfficialSourceFixture(slug) {
   return { bytes, metadata };
 }
 
-export function retainedLegalityRules(adapter, surface, slug, context = {}) {
-  const fixture = retainedOfficialSourceFixture(slug);
-  const observations = adapter.parseBytes(fixture.bytes, {
-    mediaType: fixture.metadata.content_type,
-    url: fixture.metadata.source_url,
-    requestId: context.requestId ?? `${adapter.sourceLineage}:${surface}`,
-  });
-  return observations.find((observation) => observation.observation_type === "legality_rules")?.legality_rules;
-}
-
-export function fusionLegalityContext(adapter) {
-  return {
-    mediaType: "text/html; charset=utf-8",
-    url: adapter.requestUrlForSurface("legality-current"),
-    requestId: "fusion-world-en:legality-current",
-  };
-}
-
-export const exactFusionLegalityHtml = `
-  <!doctype html><html><head><title>Bandai Dragon Ball Super Card Game Fusion World Restriction Rules</title></head>
-  <body><h1>Restriction Rules</h1><p>2 records</p>
-    <article class="restriction-card"><dl>
-      <dt>Rule Ref</dt><dd>FW-2026-001</dd>
-      <dt>Notice</dt><dd>FB01-001 is banned from standard tournament decks.</dd>
-      <dt>Market</dt><dd>EN-OCEANIA</dd>
-      <dt>Play Format</dt><dd>standard</dd>
-      <dt>Tier</dt><dd>championship</dd>
-      <dt>Active On</dt><dd>2026-07-01</dd>
-      <dt>Expires On</dt><dd>-</dd>
-      <dt>Cards</dt><dd>FB01-001</dd>
-      <dt>Directive</dt><dd>ban</dd>
-    </dl></article>
-    <article class="restriction-card"><dl>
-      <dt>Rule Ref</dt><dd>FW-2026-002</dd>
-      <dt>Notice</dt><dd>FB01-002 is limited to 1 copy in standard decks.</dd>
-      <dt>Market</dt><dd>EN-OCEANIA</dd>
-      <dt>Play Format</dt><dd>standard</dd>
-      <dt>Tier</dt><dd>-</dd>
-      <dt>Active On</dt><dd>2026-07-01</dd>
-      <dt>Expires On</dt><dd>2026-12-01</dd>
-      <dt>Cards</dt><dd>FB01-002</dd>
-      <dt>Directive</dt><dd>copy_limit</dd>
-      <dt>Cap</dt><dd>1</dd>
-    </dl></article>
-  </body></html>`;
-
 export const restructuredStageDigest = "0".repeat(64);
 
 export function retainedRestructuredParse(adapter, slug, context) {
