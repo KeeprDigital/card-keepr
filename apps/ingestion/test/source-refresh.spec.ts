@@ -132,6 +132,17 @@ test("retiring a source is explicit, replayable and cannot retire a designated a
     idempotency_key: "retired-plan",
   });
   expect(startRetired.status).toBe(409);
+  const authority = await administrationRequest("/v1/source-authorities", "POST", {
+    game: "one-piece",
+    locale: "en",
+    release_region: "OCEANIA",
+    area: "card_facts",
+    source_lineage: "limitless-one-piece-en",
+    expected_generation: "0",
+    rationale: "Must not select retired source",
+    idempotency_key: "retired-authority",
+  });
+  expect(authority.status).toBe(409);
   const restored = await administrationRequest("/v1/source-lineages/limitless-one-piece-en/lifecycle", "POST", {
     ...decision,
     state: "active",

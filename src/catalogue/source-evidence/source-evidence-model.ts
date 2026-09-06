@@ -383,11 +383,19 @@ export async function validateEvidencePlans(request: StartEvidenceRunRequest): P
       }
       requestIds.add(sourceRequest.id);
     }
-    if (plans.some((existing) => existing.source_lineage === plan.source_lineage)) {
+    if (
+      plans.some(
+        (existing) =>
+          existing.source_lineage === plan.source_lineage &&
+          (existing.adapter_version !== plan.adapter_version ||
+            existing.participation !== plan.participation ||
+            canonicalJson(existing.coverage) !== canonicalJson(plan.coverage)),
+      )
+    ) {
       throw new AdministrationProblem(
         422,
         "duplicate_source_coverage",
-        "Declare one immutable coverage and participation per Source Lineage in a refresh.",
+        "All plans for one Source Lineage must agree on immutable coverage, adapter and participation.",
       );
     }
     plans.push(plan);

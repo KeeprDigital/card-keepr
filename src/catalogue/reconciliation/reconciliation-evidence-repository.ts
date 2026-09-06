@@ -118,3 +118,36 @@ export function reconciliationObservationCountsStatement(database: CatalogueStor
                 snapshots.source_lineage, snapshots.request_id`)
     .bind(runId);
 }
+
+// A source may verify its already accepted bytes without collecting a different
+// designated authority. Only the latest *selected, published* scope counts:
+// partial optional captures in a published run were never accepted evidence.
+export function unchangedAcceptedSourceStatement(
+  database: CatalogueStore,
+  runId: string,
+  lineage: string,
+  adapterVersion: string,
+) {
+  return repositoryStatements(database)
+    .prepare(`WITH prior_run AS (
+    SELECT partitions.ingestion_run_id FROM reconciliation_evidence_partitions AS partitions
+    JOIN ingestion_run_read AS run ON run.id = partitions.ingestion_run_id
+    WHERE partitions.source_lineage = ?2 AND partitions.adapter_version = ?3 AND run.state = 'published'
+    ORDER BY run.terminal_at DESC, run.id DESC LIMIT 1
+  ), previous AS (
+    SELECT snapshots.request_id, snapshots.content_digest FROM reconciliation_evidence_partitions AS partitions
+    JOIN source_snapshots AS snapshots ON snapshots.id = partitions.source_snapshot_id
+    JOIN source_requests AS requests ON requests.ingestion_run_id = snapshots.ingestion_run_id AND requests.request_id = snapshots.request_id
+    WHERE partitions.ingestion_run_id = (SELECT ingestion_run_id FROM prior_run)
+      AND partitions.source_lineage = ?2 AND partitions.adapter_version = ?3 AND requests.request_role <> 'image'
+  ), current AS (
+    SELECT snapshots.request_id, snapshots.content_digest FROM source_snapshots AS snapshots
+    JOIN source_requests AS requests ON requests.ingestion_run_id = snapshots.ingestion_run_id AND requests.request_id = snapshots.request_id
+      AND requests.source_snapshot_id = snapshots.id
+    WHERE snapshots.ingestion_run_id = ?1 AND snapshots.source_lineage = ?2 AND snapshots.adapter_version = ?3 AND requests.request_role <> 'image'
+  ) SELECT 1 AS unchanged WHERE EXISTS (SELECT 1 FROM current)
+    AND (SELECT COUNT(*) FROM current) = (SELECT COUNT(*) FROM previous)
+    AND NOT EXISTS (SELECT 1 FROM current LEFT JOIN previous USING(request_id)
+      WHERE previous.content_digest IS NULL OR current.content_digest <> previous.content_digest)`)
+    .bind(runId, lineage, adapterVersion);
+}

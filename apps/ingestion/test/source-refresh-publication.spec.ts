@@ -51,6 +51,9 @@ test("official-only and optional-outage refreshes preserve accepted supplemental
   expect(official.state).toBe("awaiting_approval");
   expect((await approve(official.result.document)).document.publication_outcome).toBe("no_change");
   for (const id of printings) expect((await get(`/v1/reconciliation/printings/${id}`)).response.status).toBe(200);
+  const supplemental = await refresh([sourcePlan("limitless-one-piece-en", "new-locator")]);
+  expect(supplemental.state).toBe("awaiting_approval");
+  expect((await approve(supplemental.result.document)).document.publication_outcome).toBe("no_change");
   const outage = await refresh([
     sourcePlan("one-piece-en", "base"),
     sourcePlan("limitless-one-piece-en", "outage", true),
@@ -67,6 +70,8 @@ test("official-only and optional-outage refreshes preserve accepted supplemental
     content_captured_at: string;
   }[];
   expect(checks[0]!.successful_checked_at > checks[0]!.content_captured_at).toBe(true);
+  const competing = await refresh([sourcePlan("limitless-one-piece-en", "base")]);
+  expect(competing.state).toBe("failed");
 }, 30_000);
 
 test("explicit reinstatement preserves the withdrawn Printing identity and attributable history", async () => {
@@ -116,3 +121,36 @@ test("unexplained substantial coverage loss blocks completeness rather than beco
     expect.objectContaining({ coverage: { area: "errata", locale: "en", subset: "complete" }, status: "complete" }),
   ]);
 });
+
+test.each(["revalidated", "reverted"])(
+  "%s content dates follow selected snapshot provenance",
+  async (scenario) => {
+    const selected = sourcePlan("one-piece-en", "base");
+    selected.requests[0]!.url = `https://official-source.invalid/source-refresh-${scenario}`;
+    const captures: { captured: string; retrieved: string; reused: string | null }[] = [];
+    for (let index = 0; index < 3; index++) {
+      const run = await refresh([selected]);
+      expect(run.state).toBe("awaiting_approval");
+      const evidence = (await get(`/v1/ingestion-runs/${run.id}/evidence`)).document;
+      const scope = (evidence.source_coverage as { content_captured_at: string }[])[0]!;
+      const snapshot = (
+        evidence.snapshots as { retrieval: { retrieved_at: string }; reused_source_snapshot_id: string | null }[]
+      )[0]!;
+      captures.push({
+        captured: scope.content_captured_at,
+        retrieved: snapshot.retrieval.retrieved_at,
+        reused: snapshot.reused_source_snapshot_id,
+      });
+      expect((await approve(run.result.document)).response.status).toBe(200);
+    }
+    if (scenario === "revalidated") {
+      expect(captures[2]!.reused).not.toBeNull();
+      expect(captures[2]!.captured).toBe(captures[0]!.retrieved);
+    } else {
+      expect(captures[2]!.reused).toBeNull();
+      expect(captures[2]!.captured).toBe(captures[2]!.retrieved);
+      expect(captures[2]!.captured > captures[0]!.captured).toBe(true);
+    }
+  },
+  30_000,
+);

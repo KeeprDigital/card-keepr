@@ -7,10 +7,12 @@ export function sourceCoverageCountsStatement(database: CatalogueStore, runId: s
     COUNT(*) AS planned_requests,
     SUM(CASE WHEN requests.state = 'observed' THEN 1 ELSE 0 END) AS observed_requests,
     MAX(snapshots.retrieved_at) AS last_capture_at,
-    MIN((SELECT MIN(original.retrieved_at) FROM source_snapshots AS original
-      WHERE original.source_lineage = snapshots.source_lineage AND original.request_url = snapshots.request_url
-        AND original.adapter_version = snapshots.adapter_version AND original.representation_fingerprint = snapshots.representation_fingerprint
-        AND original.content_digest = snapshots.content_digest)) AS content_captured_at,
+    MIN((WITH RECURSIVE provenance(id, retrieved_at, reused_source_snapshot_id) AS (
+      SELECT id, retrieved_at, reused_source_snapshot_id FROM source_snapshots WHERE id = snapshots.id
+      UNION
+      SELECT previous.id, previous.retrieved_at, previous.reused_source_snapshot_id
+        FROM source_snapshots AS previous JOIN provenance ON previous.id = provenance.reused_source_snapshot_id
+    ) SELECT MIN(retrieved_at) FROM provenance)) AS content_captured_at,
     SUM(CASE WHEN snapshots.reused_source_snapshot_id IS NOT NULL THEN 1 ELSE 0 END) AS revalidated_requests
     FROM source_requests AS requests
     LEFT JOIN source_snapshots AS snapshots ON snapshots.id = requests.source_snapshot_id

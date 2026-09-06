@@ -131,6 +131,7 @@ export async function assertSelectedAuthoritiesCollected(
     source_lineage: string;
     adapter_version: string;
   }[],
+  unchangedAcceptedLineages: ReadonlySet<string> = new Set(),
 ) {
   const { authorities } = await sourceAuthorities(database);
   for (const decision of authorities) {
@@ -144,7 +145,11 @@ export async function assertSelectedAuthoritiesCollected(
         adapterReconciliationAreas(requiredSourceAdapter(plan.adapter_version)).includes(area)
       );
     });
-    if (applicable.length > 0 && !applicable.some((plan) => plan.source_lineage === decision.source_lineage)) {
+    if (
+      applicable.length > 0 &&
+      !applicable.some((plan) => plan.source_lineage === decision.source_lineage) &&
+      !applicable.every((plan) => unchangedAcceptedLineages.has(plan.source_lineage))
+    ) {
       throw new Error(
         `Selected Source Authority ${decision.source_lineage} for ${decision.area} (${decision.locale}/${decision.release_region}) is absent. Collect the selected source or explicitly change authority; no fallback is permitted.`,
       );

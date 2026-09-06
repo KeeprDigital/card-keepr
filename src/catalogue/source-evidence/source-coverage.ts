@@ -8,8 +8,13 @@ export async function inspectSourceCoverage(
   run: IngestionEvidenceRow,
   plans: readonly EvidencePlan[],
 ) {
+  const scopes = new Map<string, EvidencePlan>();
+  for (const plan of plans) {
+    const existing = scopes.get(plan.source_lineage);
+    scopes.set(plan.source_lineage, existing ? { ...plan, requests: [...existing.requests, ...plan.requests] } : plan);
+  }
   return Promise.all(
-    plans.map(async (plan) => {
+    [...scopes.values()].map(async (plan) => {
       const counts = await sourceCoverageCountsStatement(database, run.id, plan).first<{
         planned_requests: number;
         observed_requests: number;

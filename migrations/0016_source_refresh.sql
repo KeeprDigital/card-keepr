@@ -15,9 +15,6 @@ CREATE TRIGGER source_lifecycle_decisions_no_update BEFORE UPDATE ON source_life
 BEGIN SELECT RAISE(ABORT, 'source_lifecycle_decision_immutable'); END;
 CREATE TRIGGER source_lifecycle_decisions_no_delete BEFORE DELETE ON source_lifecycle_decisions
 BEGIN SELECT RAISE(ABORT, 'source_lifecycle_decision_immutable'); END;
-CREATE TRIGGER retired_sources_cannot_be_authorities BEFORE INSERT ON source_authority_decisions
-WHEN (SELECT state FROM source_lifecycle_decisions WHERE source_lineage = NEW.source_lineage ORDER BY generation DESC LIMIT 1) = 'retired'
-BEGIN SELECT RAISE(ABORT, 'source_authority_conflict'); END;
 DROP TRIGGER reconciled_withdrawal_assertions_are_immutable_on_update;
 DROP TRIGGER reconciled_withdrawal_assertions_are_immutable_on_delete;
 ALTER TABLE reconciled_withdrawal_assertions RENAME TO prior_withdrawal_assertions;

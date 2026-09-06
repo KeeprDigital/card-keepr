@@ -51,11 +51,21 @@ export function insertAuthorityDecisionStatement(database: CatalogueStore, decis
         (active_ingestion_run_id IS NOT NULL OR recovery_health = 'blocked' OR
           (active_production_release_id IS NOT NULL AND active_production_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))))
         THEN json_extract('{}', 'source_authority_operation_not_idle')
+      WHEN (SELECT state FROM source_lifecycle_decisions WHERE source_lineage = ?
+        ORDER BY generation DESC LIMIT 1) = 'retired'
+        THEN json_extract('{}', 'source_authority_conflict')
       WHEN ? <> 1 + COALESCE((SELECT MAX(generation) FROM source_authority_decisions
         WHERE game = ? AND locale = ? AND release_region = ? AND area = ?), 0)
         THEN json_extract('{}', 'source_authority_generation_mismatch')
       ELSE 1 END`)
-        .bind(decision.generation, decision.game, decision.locale, decision.release_region, decision.area),
+        .bind(
+          decision.source_lineage,
+          decision.generation,
+          decision.game,
+          decision.locale,
+          decision.release_region,
+          decision.area,
+        ),
     ],
   });
 }

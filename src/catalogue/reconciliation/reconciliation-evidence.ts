@@ -10,6 +10,7 @@ import {
   toleratesRequestFailure,
 } from "../source-evidence";
 import {
+  unchangedAcceptedSourceStatement,
   reconciliationCollectionPlansStatement,
   reconciliationEvidencePlanStatement,
   reconciliationObservationCountsStatement,
@@ -137,7 +138,12 @@ export async function retainedReconciliationObservation(
       throw new Error(`Optional Source ${plan.source_lineage} has blocking evidence failure ${request.failure_code}.`);
     }
   }
-  await assertSelectedAuthoritiesCollected(database, selectedPlans);
+  const unchangedAcceptedLineages = new Set<string>();
+  for (const plan of selectedPlans) {
+    if (await unchangedAcceptedSourceStatement(database, runId, plan.source_lineage, plan.adapter_version).first())
+      unchangedAcceptedLineages.add(plan.source_lineage);
+  }
+  await assertSelectedAuthoritiesCollected(database, selectedPlans, unchangedAcceptedLineages);
   const plannedRequests = evidencePlans.flatMap((plan) => plan.requests);
   if (
     plannedRequests.length === 0 ||
