@@ -129,7 +129,7 @@ export class ReconciliationReducerIndex<T> {
   }
 
   /** Draft existence checks verify metadata without hydrating the entity's retained text. */
-  async hasEntity(key: string): Promise<boolean> {
+  async hasEntity(key: string): Promise<boolean | undefined> {
     const digest = await sha256Text(key);
     const row = await storage(
       reducerStateStatement(
@@ -140,7 +140,7 @@ export class ReconciliationReducerIndex<T> {
         this.ordinal + (this.written.has(digest) ? 1 : 0),
       ).first<StateRow>(),
     );
-    if (!row) return false;
+    if (!row) return undefined;
     if ((await sha256Text(row.content)) !== row.sha256) throw new Error("Reducer state failed integrity verification.");
     const envelope = JSON.parse(row.content) as { value: { entity: unknown } };
     return envelope.value.entity !== null;

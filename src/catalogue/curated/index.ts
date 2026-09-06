@@ -4,6 +4,8 @@
 
 export {
   CuratedRevisionSourceChangeError,
+  CuratedDraftSourceChangeError,
+  applyPinnedCuratedRevisionsToDraft,
   applyPinnedCuratedRevisions,
   assertCuratedGamesUnblocked,
   createCuratedRevision,

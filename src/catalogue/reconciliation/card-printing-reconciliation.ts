@@ -1,3 +1,4 @@
+import { applyCuratedCandidateState } from "./reconciliation-curated-state";
 import { ReconciliationCardState } from "./reconciliation-card-state";
 import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
 import { ReconciliationInputStorageError } from "./reconciliation-input";
@@ -24,7 +25,6 @@ import {
   matchingIdentityDecision,
 } from "./canonical-identity";
 import {
-  applyPinnedCuratedRevisions,
   CuratedRevisionSourceChangeError,
   stripCuratedRevisionEffects,
   restoreCuratedEntitySourceFields,
@@ -1404,9 +1404,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     };
   }
   try {
-    candidate = await applyPinnedCuratedRevisions(database, runId, candidate, observedAt, {
-      deferSourceChangeFailure: true,
-    });
+    candidate = await applyCuratedCandidateState(database, runId, candidate, observedAt);
   } catch (error) {
     if (!(error instanceof CuratedRevisionSourceChangeError)) throw error;
     candidate = error.candidate;

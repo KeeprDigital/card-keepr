@@ -49,8 +49,8 @@ export async function applyPinnedIdentityCorrections(
 ) {
   const pin = await correctionDecisionPinMetadata(database, runId);
   if (pin.decision_cutoff === 0) return candidate;
-  const draft = new ReconciliationCandidateState(database, runId, "corrections");
-  await draft.seed(candidate, [
+  const official = new ReconciliationCandidateState(database, runId, "before_corrections");
+  await official.seed(candidate, [
     "cards",
     "printings",
     "printing_images",
@@ -58,6 +58,7 @@ export async function applyPinnedIdentityCorrections(
     "errata",
     "identity_corrections",
   ]);
+  const draft = new ReconciliationCandidateState(database, runId, "corrections", official);
   await applyPinnedIdentityCorrectionsToDraft(database, runId, draft, warnings);
   return draft.candidate(candidate);
 }

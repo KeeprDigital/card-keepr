@@ -601,3 +601,17 @@ export function curatedEntityDocumentStatement(
     .prepare(`SELECT document_json FROM ${table} WHERE catalogue_revision_id = ? AND ${idColumn} = ?`)
     .bind(input.revisionId, input.entityId);
 }
+
+export function nextPinnedCuratedRevisionStatement(
+  database: CatalogueStore,
+  runId: string,
+  after: number,
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(`SELECT pin.ordinal, revision.id, revision.proposal_json,
+    revision.content_digest, pin.reviewed_source_digest
+    FROM ingestion_run_curated_revisions AS pin
+    JOIN curated_revisions AS revision ON revision.id = pin.revision_id
+    WHERE pin.ingestion_run_id = ? AND pin.ordinal > ? ORDER BY pin.ordinal LIMIT 1`)
+    .bind(runId, after);
+}

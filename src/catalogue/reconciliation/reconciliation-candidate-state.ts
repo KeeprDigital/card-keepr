@@ -12,11 +12,13 @@ type EntityRow = { id: string; entity: unknown | null };
 
 /** Entity updates and tombstones share the reducer's immutable replay history. */
 export class ReconciliationCandidateState implements CatalogueDraft {
+  private readonly collections = new Set<CatalogueEntityCollection>();
   private readonly indexes = new Map<CatalogueEntityCollection, ReconciliationReducerIndex<EntityRow>>();
   constructor(
     private readonly database: CatalogueStore,
     private readonly runId: string,
     private readonly phase: string,
+    private readonly base?: ReconciliationCandidateState,
   ) {}
 
   private index(kind: CatalogueEntityCollection): ReconciliationReducerIndex<EntityRow> {
@@ -30,20 +32,49 @@ export class ReconciliationCandidateState implements CatalogueDraft {
 
   async get<K extends CatalogueEntityCollection>(kind: K, id: string): Promise<CatalogueDraftEntity<K> | undefined> {
     const row = await this.index(kind).get(id);
-    return row?.entity == null ? undefined : (row.entity as CatalogueDraftEntity<K>);
+    if (row === undefined) return this.base?.get(kind, id);
+    return row.entity === null ? undefined : (row.entity as CatalogueDraftEntity<K>);
   }
   async has(kind: CatalogueEntityCollection, id: string): Promise<boolean> {
-    return this.index(kind).hasEntity(id);
+    const present = await this.index(kind).hasEntity(id);
+    return present ?? (await this.base?.has(kind, id)) ?? false;
   }
   async set<K extends CatalogueEntityCollection>(kind: K, entity: CatalogueDraftEntity<K>): Promise<void> {
+    this.collections.add(kind);
     await this.index(kind).seed(entity.id, { id: entity.id, entity });
   }
   async delete(kind: CatalogueEntityCollection, id: string): Promise<void> {
+    this.collections.add(kind);
     await this.index(kind).seed(id, { id, entity: null });
   }
   async *values<K extends CatalogueEntityCollection>(kind: K): AsyncGenerator<CatalogueDraftEntity<K>> {
-    for await (const row of this.index(kind).entityValues()) {
-      if (row.entity !== null) yield row.entity as CatalogueDraftEntity<K>;
+    if (!this.base) {
+      for await (const row of this.index(kind).entityValues()) {
+        if (row.entity !== null) yield row.entity as CatalogueDraftEntity<K>;
+      }
+      return;
+    }
+    const inherited = this.base.values(kind)[Symbol.asyncIterator]();
+    const changed = this.index(kind).entityValues();
+    try {
+      let left = await inherited.next();
+      let right = await changed.next();
+      while (!left.done || !right.done) {
+        if (!left.done && (right.done || left.value.id < right.value.id)) {
+          yield left.value;
+          left = await inherited.next();
+        } else if (!right.done && (left.done || right.value.id < left.value.id)) {
+          if (right.value.entity !== null) yield right.value.entity as CatalogueDraftEntity<K>;
+          right = await changed.next();
+        } else {
+          if (!right.done && right.value.entity !== null) yield right.value.entity as CatalogueDraftEntity<K>;
+          left = await inherited.next();
+          right = await changed.next();
+        }
+      }
+    } finally {
+      await inherited.return(undefined);
+      await changed.return(undefined);
     }
   }
 
@@ -51,17 +82,24 @@ export class ReconciliationCandidateState implements CatalogueDraft {
     candidate: CatalogueCandidate,
     kinds: readonly CatalogueEntityCollection[] = catalogueEntityCollections,
   ): Promise<void> {
-    for (const kind of kinds) for (const entity of candidate[kind] ?? []) await this.set(kind, entity);
+    for (const kind of kinds) {
+      this.collections.add(kind);
+      for (const entity of candidate[kind] ?? []) await this.set(kind, entity);
+    }
+  }
+
+  private represents(kind: CatalogueEntityCollection): boolean {
+    return this.collections.has(kind) || this.base?.represents(kind) === true;
   }
 
   /** Legacy aggregate callers can still inspect the completed state during migration to streamed preparation. */
   async candidate(metadata: CatalogueCandidate): Promise<CatalogueCandidate> {
     const result = { ...metadata };
     for (const kind of catalogueEntityCollections) {
-      if (!this.indexes.has(kind)) continue;
+      if (!this.represents(kind)) continue;
       const values = [];
       for await (const entity of this.values(kind)) values.push(entity);
-      if (kind === "identity_corrections" && values.length === 0 && metadata[kind] === undefined) continue;
+      if (values.length === 0 && metadata[kind] === undefined) continue;
       Object.defineProperty(result, kind, { value: values, enumerable: true, writable: true, configurable: true });
     }
     return result;

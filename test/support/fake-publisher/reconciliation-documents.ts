@@ -183,6 +183,20 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
         },
       ],
     };
+  if (scenario === "curated-draft-source-changed") {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP01-001",
+      name: "Changed Official Card name",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+      locator: "/official/base",
+      lineageMarker: "one-piece",
+    });
+    observation.card.effective_rules_text = "Changed Official effective rules";
+    return { cards: [observation] };
+  }
   if (scenario === "product-group-large-text") {
     return {
       cards: Array.from({ length: 2 }, (_, index) => ({
