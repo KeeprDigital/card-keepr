@@ -38,6 +38,7 @@ import {
 } from "../shared";
 import {
   reconciliationOperationStatement,
+  reconciliationOperationHeaderStatement,
   reconciliationPartitionsStatement,
 } from "./reconciliation-progress-repository";
 
@@ -203,7 +204,7 @@ export async function pauseFailedReconciliation(
     pauseFailedReconciliationStatement(database, runId, generation, detail),
     synchronizeGameCandidatePauseStatement(database, runId),
   ]);
-  const current = await reconciliationOperationStatement(database, runId).first<{ state: string }>();
+  const current = await reconciliationOperationHeaderStatement(database, runId).first<{ state: string }>();
   if (!current) throw new Error("The durable reconciliation operation is unavailable.");
   if (current.state === "sealed" || current.state === "failed") return retainedReconciliationResult(database, runId);
   return { state: current.state, publishable: false, run_id: runId };
@@ -218,7 +219,9 @@ export async function initializeReconciliationProgress(database: CatalogueStore,
       ),
     ),
   });
-  const existing = await reconciliationOperationStatement(database, runId).first<{ definition_pins_json: string }>();
+  const existing = await reconciliationOperationHeaderStatement(database, runId).first<{
+    definition_pins_json: string;
+  }>();
   if (existing) {
     assertPinnedDefinitions(existing.definition_pins_json, definitions);
     return;
@@ -243,10 +246,14 @@ export async function initializeReconciliationProgress(database: CatalogueStore,
         "game_candidate_slot_occupied",
         "Inspect or finish the existing Catalogue Candidate for this Supported Game first.",
       );
-    const winner = await reconciliationOperationStatement(database, runId).first<{ definition_pins_json: string }>();
+    const winner = await reconciliationOperationHeaderStatement(database, runId).first<{
+      definition_pins_json: string;
+    }>();
     if (!winner) throw error;
   }
-  const retained = await reconciliationOperationStatement(database, runId).first<{ definition_pins_json: string }>();
+  const retained = await reconciliationOperationHeaderStatement(database, runId).first<{
+    definition_pins_json: string;
+  }>();
   assertPinnedDefinitions(retained?.definition_pins_json, definitions);
 }
 

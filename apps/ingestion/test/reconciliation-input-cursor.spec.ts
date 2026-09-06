@@ -195,6 +195,8 @@ test.each([
       get(target, property) {
         if (property === "prepare")
           return (sql: string) => {
+            if (requireFrozenMetadata && completedGroups.length > 0 && sql.includes("AS completed_reducer_records"))
+              throw new Error("Continuing a work unit must not recount the complete retained candidate.");
             if (requireFrozenMetadata && completedGroups.length > 0 && sql.includes("FROM source_requests"))
               throw new Error("A returning normalization unit must reopen the frozen request selection.");
             return wrap(target.prepare(sql));

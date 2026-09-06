@@ -5,7 +5,7 @@ import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import {
   insertReconciliationPartitionStatement,
   reconciliationPartitionStatement,
-  reconciliationOperationStatement,
+  reconciliationOperationHeaderStatement,
 } from "./reconciliation-progress-repository";
 
 const maximumPartitionBytes = 512 * 1024;
@@ -19,7 +19,7 @@ export async function persistCandidatePartitions(
   warnings: Iterable<unknown> | AsyncIterable<unknown> = [],
 ) {
   let ordinal = 0;
-  const pins = await reconciliationOperationStatement(database, runId).first<{
+  const pins = await reconciliationOperationHeaderStatement(database, runId).first<{
     definition_pins_json: string;
     input_manifest_digest: string;
     observation_cutoff: number;

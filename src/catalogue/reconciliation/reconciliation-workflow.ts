@@ -1,6 +1,6 @@
 import { initializeReconciliationProgress } from "./reconciliation-progress";
 import {
-  reconciliationOperationStatement,
+  reconciliationOperationHeaderStatement,
   reconciliationRequestForRunStatement,
   pauseFailedReconciliationStatement,
 } from "./reconciliation-progress-repository";
@@ -154,7 +154,7 @@ async function publicWorkflowRequest(
   request: ReconciliationWorkflowRequestRow,
   createRequested = false,
 ): Promise<Record<string, unknown>> {
-  const operation = await reconciliationOperationStatement(database, request.ingestion_run_id).first<{
+  const operation = await reconciliationOperationHeaderStatement(database, request.ingestion_run_id).first<{
     state: string;
     generation: number;
   }>();
@@ -225,7 +225,7 @@ async function recoverTerminalWorkflow(
     return retainedReconciliationResult(database, request.ingestion_run_id);
   }
   await pauseFailedReconciliationStatement(database, request.ingestion_run_id, generation, detail).run();
-  const current = await reconciliationOperationStatement(database, request.ingestion_run_id).first<{ state: string }>();
+  const current = await reconciliationOperationHeaderStatement(database, request.ingestion_run_id).first<{ state: string }>();
   if (current?.state === "sealed" || current?.state === "failed")
     return retainedReconciliationResult(database, request.ingestion_run_id);
   if (!current) throw new Error("The durable reconciliation operation is unavailable.");
@@ -265,7 +265,7 @@ async function workflowOutput(
   }
   if (result.result !== null && typeof result.result === "object" && !Array.isArray(result.result)) {
     if (["preparing", "paused", "abandoned"].includes(String((result.result as Record<string, unknown>).state))) {
-      const current = await reconciliationOperationStatement(database, request.ingestion_run_id).first<{
+      const current = await reconciliationOperationHeaderStatement(database, request.ingestion_run_id).first<{
         state: string;
       }>();
       if (!current) throw new Error("The durable reconciliation operation is unavailable.");

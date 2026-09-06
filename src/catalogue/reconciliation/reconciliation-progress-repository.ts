@@ -35,6 +35,14 @@ export function createReconciliationOperationStatement(
   });
 }
 
+export function reconciliationOperationHeaderStatement(database: CatalogueStore, runId: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT state, generation, definition_pins_json, input_manifest_digest,
+      observation_cutoff, identity_decision_cutoff, authority_decision_cutoff, created_at, deadline
+      FROM reconciliation_operations WHERE ingestion_run_id = ?`)
+    .bind(runId);
+}
+
 export function reconciliationOperationStatement(database: CatalogueStore, runId: string) {
   return repositoryStatements(database)
     .prepare(`SELECT id AS reconciliation_id, ingestion_run_id,
