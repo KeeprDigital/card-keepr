@@ -1,0 +1,23 @@
+Age: 1221
+Cache-Control: public,max-age=0,must-revalidate
+Cache-Status: "Next.js"; hit; fwd=stale, "Netlify Durable";
+ fwd=bypass, "Netlify Edge"; fwd=miss; fwd-status=200; stored
+Content-Type: text/html; charset=utf-8
+Date: Sun, 06 Sep 2026 12:18:07 GMT
+Etag: "ftkpm3446d3gkw"
+Netlify-Vary: 
+ query=__nextDataReq|_rsc,header=x-nextjs-data|x-next-debug-logging|next-router-prefetch|next-router-segment-prefetch|next-router-state-tree|next-url|rsc|accept-encoding,cookie=__prerender_bypass|__next_preview_data
+Referrer-Policy: no-referrer-when-downgrade
+Server: Netlify
+Set-Cookie: geo=AU; Path=/
+Set-Cookie: lang=en; Path=/
+Strict-Transport-Security: max-age=31536000
+Vary: Accept-Encoding
+X-Content-Type-Options: nosniff
+X-Cookie-Source: edge
+X-Nextjs-Date: Sun, 06 Sep 2026 12:18:06 GMT
+X-Nf-Request-Id: 01M1VAF2RJPYAP0H4HFSNH0FDA
+X-Powered-By: Next.js
+Connection: close
+Transfer-Encoding: chunked
+

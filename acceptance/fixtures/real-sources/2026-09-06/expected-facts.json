@@ -1,0 +1,79 @@
+{
+  "classification": "expected-observations-from-retained-real-sources",
+  "riftbound": {
+    "ogn-001-298": {
+      "publicCode": "OGN-001/298",
+      "name": "Blazing Scorcher",
+      "collectorNumber": 1,
+      "orientation": "portrait"
+    },
+    "ogn-067-298": {
+      "publicCode": "OGN-067/298",
+      "name": "Blitzcrank, Impassive",
+      "collectorNumber": 67,
+      "orientation": "portrait"
+    },
+    "ogn-066a-298": {
+      "publicCode": "OGN-066a/298",
+      "name": "Ahri, Alluring",
+      "collectorNumber": 66,
+      "orientation": "portrait"
+    },
+    "sfd-227-star-221": {
+      "publicCode": "SFD-227*/221",
+      "name": "Ahri, Inquisitive",
+      "collectorNumber": 227,
+      "orientation": "portrait"
+    },
+    "ogn-141-298": {
+      "publicCode": "OGN-141/298",
+      "name": "Kinkou Monk",
+      "collectorNumber": 141,
+      "orientation": "portrait",
+      "text": {
+        "label": "Ability",
+        "richText": {
+          "type": "html",
+          "body": "<p>When you play me, buff up to two other friendly units. (Each one that doesn't have a buff gets a +1 :rb_might: buff.)</p>"
+        }
+      }
+    },
+    "unl-205-219": {
+      "publicCode": "UNL-205/219",
+      "name": "Abandoned Hall",
+      "collectorNumber": 205,
+      "orientation": "landscape"
+    }
+  },
+  "articles": {
+    "riftbound-errata": {
+      "kinkouNewText": "When you play me, buff up to two other friendly units.",
+      "kinkouOldText": "When you play me, buff two other friendly units.",
+      "englishOnly": "Text only differs for English version of the card"
+    },
+    "riftbound-preview": {
+      "signature": "it has an asterisk in its collector number",
+      "coverageLimit": "For these overnumbered cards to be added to the card gallery, they need to be discovered IRL",
+      "overnumbered": "collector numbers above 298"
+    },
+    "riftbound-products": {
+      "announcedFaces": "5x Alt-Art Double Sided Tokens",
+      "futureRelease": "releasing December 4, 2026",
+      "localeDifference": "this Akali exclusive for the English version"
+    }
+  },
+  "interpretationLimits": [
+    "Gallery record IDs/publicCode are source identifiers, not canonical Card/Printing IDs.",
+    "Kinkou Monk gallery ability is corrected at capture time; the old/new publisher Erratum remains independently retained. Do not infer original Printed Rules Text from the current gallery alone.",
+    "Suffix a, signature *, overnumbering and portrait/landscape must survive source interpretation; finish/reverse face remains unknown where not evidenced.",
+    "Secret Garden token faces are announced in prose, not individually enumerated reverse-face images. December 2026 is a future announced release at capture time.",
+    "Buff XXX in the prior dossier was a supplemental placeholder, not a verified official identifier; it is not fabricated into these real fixtures."
+  ],
+  "visualImageFacts": {
+    "riftbound-image-ogn-141-298": {
+      "method": "Direct visual inspection of retained original; not automated OCR",
+      "printedText": "When you play me, buff two other friendly units.",
+      "finding": "Current gallery text is corrected but this retained source image still depicts old printed wording; official Erratum retains both."
+    }
+  }
+}
