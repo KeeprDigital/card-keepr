@@ -1,8 +1,9 @@
 import { normalizedObservationPageStatement } from "./reconciliation-normalized-repository";
+import { ReconciliationInputSequence } from "./reconciliation-input-sequence";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
-import { boundedAsyncRecordArrays } from "./reconciliation-preparation";
+import { boundedAsyncRecordArrays, boundedRecordArrays } from "./reconciliation-preparation";
 import { retainPartitionedRecord, restorePartitionedRecord } from "./reconciliation-text";
 import {
   insertReconciliationInputPartitionStatement,
@@ -32,6 +33,8 @@ type PreparationCursor = {
   digest: string;
   afterObservationId: string;
   preparedObservations: number;
+  afterMetadataRecord: string | null;
+  completedMetadataScans: number;
   complete: boolean;
 };
 
@@ -50,6 +53,8 @@ export async function retainVerifiedReconciliationInput(
   let checkpointOrdinal = (checkpoint?.ordinal ?? -1) + 1;
   let afterObservationId = checkpoint?.value.afterObservationId ?? "";
   let preparedObservations = checkpoint?.value.preparedObservations ?? 0;
+  let afterMetadataRecord = checkpoint?.value.afterMetadataRecord ?? null;
+  let completedMetadataScans = checkpoint?.value.completedMetadataScans ?? 0;
   const metadata = Object.fromEntries(Object.entries(input).filter(([, value]) => !recordSequence(value)));
   const groups: [string, Iterable<unknown> | AsyncIterable<unknown>][] = [
     ["$metadata", [{ values: metadata, array_keys: Object.keys(input).filter((key) => recordSequence(input[key])) }]],
@@ -62,6 +67,8 @@ export async function retainVerifiedReconciliationInput(
       digest,
       afterObservationId,
       preparedObservations,
+      afterMetadataRecord,
+      completedMetadataScans,
       complete,
     };
     await retainReconciliationCheckpoint(database, runId, "input_preparation", checkpointOrdinal, cursor);
@@ -106,6 +113,26 @@ export async function retainVerifiedReconciliationInput(
         preparedObservations += page.results.length;
         await save(kindIndex);
       }
+    } else if (records instanceof ReconciliationInputSequence) {
+      let scanned = 0;
+      let pending: unknown[] = [];
+      const flush = async () => {
+        for (const content of boundedRecordArrays(pending)) await retain(kind, content);
+        pending = [];
+      };
+      for await (const entry of records.scan(afterMetadataRecord)) {
+        for (const record of entry.records)
+          pending.push(await retainPartitionedRecord(database, runId, JSON.parse(JSON.stringify(record))));
+        afterMetadataRecord = entry.cursor;
+        completedMetadataScans++;
+        if (++scanned === 8) {
+          await flush();
+          await save(kindIndex);
+          scanned = 0;
+        }
+      }
+      await flush();
+      afterMetadataRecord = null;
     } else {
       const partitioned = async function* () {
         for await (const record of records)

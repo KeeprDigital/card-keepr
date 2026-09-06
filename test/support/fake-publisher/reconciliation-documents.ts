@@ -4,6 +4,23 @@ import { createHash } from "node:crypto";
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
 export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
+  if (scenario === "metadata-request-pages") {
+    const index = Number(new URL(requestUrl).searchParams.get("request"));
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP93-${String(index + 1).padStart(3, "0")}`,
+          name: `Synthetic metadata page ${index}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `/official/metadata-page/${index}`,
+          lineageMarker: `metadata-page-${index}`,
+        }),
+      ],
+    };
+  }
   if (scenario === "erratum-target-large-text") {
     return {
       cards: [

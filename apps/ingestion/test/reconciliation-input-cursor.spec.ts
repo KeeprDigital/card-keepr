@@ -151,16 +151,24 @@ test.each([
   { scenario: "curated-conflict-fanout-base", requireFrozenMetadata: false, groups: [8, 8, 8, 8] },
   { scenario: "curated-conflict-fanout-base", requireFrozenMetadata: true, groups: [8, 8, 8, 8] },
   { scenario: "large-card-content", requireFrozenMetadata: true, groups: [1] },
+  { scenario: "metadata-request-pages", requireFrozenMetadata: true, groups: Array(32).fill(1), requestCount: 32 },
 ])(
   "normalization returns bounded work units for $scenario (frozen metadata: $requireFrozenMetadata)",
-  async ({ scenario, requireFrozenMetadata, groups }) => {
-    const run = await collectRequests([{ id: "cards", scenario }], "normalization-work-units");
+  async ({ scenario, requireFrozenMetadata, groups, requestCount = 1 }) => {
+    const run = await collectRequests(
+      Array.from({ length: requestCount }, (_, index) => ({
+        id: `cards-${index}`,
+        scenario: requestCount > 1 ? `${scenario}?request=${index}` : scenario,
+      })),
+      "normalization-work-units",
+    );
     let imagesInUnit = 0;
     let serviceCalls = 0;
     const completedGroups: number[] = [];
     const callsPerGroup: number[] = [];
     const preparationCalls: number[] = [];
     const preparationCursors: number[] = [];
+    const metadataScans: number[] = [];
     const verificationCalls: number[] = [];
     const verificationCursors: number[] = [];
     const images = new Proxy(testEnv.PRINTING_IMAGES, {
@@ -224,10 +232,14 @@ test.each([
         if (JSON.parse(result as string).continuation?.phase === "input_preparation") {
           preparationCalls.push(serviceCalls);
           const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
-          const checkpoint = (status.checkpoints as { phase: string; cursor: { preparedObservations: number } }[]).find(
-            (row) => row.phase === "input_preparation",
-          );
+          const checkpoint = (
+            status.checkpoints as {
+              phase: string;
+              cursor: { preparedObservations: number; completedMetadataScans: number };
+            }[]
+          ).find((row) => row.phase === "input_preparation");
           preparationCursors.push(checkpoint?.cursor.preparedObservations ?? -1);
+          metadataScans.push(checkpoint?.cursor.completedMetadataScans ?? -1);
         }
         if (JSON.parse(result as string).continuation?.phase === "input_verification") {
           verificationCalls.push(serviceCalls);
@@ -256,12 +268,15 @@ test.each([
       >,
       step,
     );
+    const completed = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+    expect(completed, JSON.stringify(completed)).toMatchObject({ state: "sealed" });
     expect(completedGroups).toEqual(groups);
     if (requireFrozenMetadata) {
       expect(Math.max(...callsPerGroup)).toBeLessThanOrEqual(100);
       expect(preparationCalls.length).toBeGreaterThan(0);
       expect(Math.max(...preparationCalls)).toBeLessThanOrEqual(100);
-      expect(preparationCursors).toContain(scenario === "curated-conflict-fanout-base" ? 32 : 1);
+      expect(preparationCursors).toContain(scenario === "curated-conflict-fanout-base" ? 32 : requestCount);
+      if (requestCount === 32) expect(metadataScans).toContain(8);
       expect(verificationCalls.length).toBeGreaterThan(0);
       expect(Math.max(...verificationCalls)).toBeLessThanOrEqual(100);
       if (scenario === "curated-conflict-fanout-base") expect(verificationCursors).toContain(8);

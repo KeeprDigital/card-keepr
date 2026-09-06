@@ -1,3 +1,4 @@
+import { ReconciliationInputSequence } from "./reconciliation-input-sequence";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
 import {
   retainEvidenceSelection,
@@ -316,18 +317,36 @@ async function collectRetainedReconciliationObservation(
     const request = await requestById(id);
     return request !== undefined && isSelected(request) ? request : undefined;
   };
-  const unavailablePrintingImages = {
-    async *[Symbol.asyncIterator]() {
-      for await (const request of requests)
-        if (isToleratedImageFailure(request))
+  type MetadataCursor =
+    | { stage: "requests"; sequenceNumber: number; requestId: string }
+    | { stage: "suffix"; index: number };
+  const metadataSequence = <T>(project: (selection: EvidenceSelection) => Promise<T[]>, suffix: T[] = []) =>
+    new ReconciliationInputSequence<T, MetadataCursor>(async function* (after) {
+      if (after?.stage !== "suffix")
+        for await (const selection of retainedEvidenceSelection<EvidenceSelection>(database, runId, after ?? undefined))
           yield {
+            cursor: {
+              stage: "requests",
+              sequenceNumber: selection.request.sequence_number,
+              requestId: selection.request.request_id,
+            },
+            records: await project(selection),
+          };
+      for (let index = after?.stage === "suffix" ? after.index + 1 : 0; index < suffix.length; index++)
+        yield { cursor: { stage: "suffix", index }, records: [suffix[index]!] };
+    });
+  const unavailablePrintingImages = metadataSequence(async ({ request }) =>
+    isToleratedImageFailure(request)
+      ? [
+          {
             requestId: request.request_id,
             sourceUrl: request.url,
             sourceLineage: evidencePlanForRequest(evidencePlanRow, request.request_id).source_lineage,
             failureCode: request.failure_code ?? printingImageRetriesExhaustedFailureCode,
-          };
-    },
-  };
+          },
+        ]
+      : [],
+  );
   if (!pinned) {
     const selectedSnapshots = new ReconciliationReducerIndex<boolean>(database, runId, "selected_snapshot_ids");
     let requestCount = 0;
@@ -553,35 +572,40 @@ async function collectRetainedReconciliationObservation(
     if (yieldAtCheckpoint)
       throw new ReconciliationContinuation({ phase: "normalization", ordinal: checkpointOrdinal - 1 });
   }
-  const partitions = {
-    async *[Symbol.asyncIterator]() {
-      for await (const { request, row } of selectedEvidence)
-        yield {
-          sequenceNumber: request.sequence_number,
-          requestId: request.request_id,
-          observationSetId: row.observation_set_id,
-          sourceSnapshotId: row.source_snapshot_id,
-          sourceLineage: row.source_lineage,
-          supportedGame: row.supported_game,
-          gameProfileVersion: row.game_profile_version,
-          adapterVersion: row.adapter_version,
-        };
+  const partitions = metadataSequence(async ({ request, row }) =>
+    row === null
+      ? []
+      : [
+          {
+            sequenceNumber: request.sequence_number,
+            requestId: request.request_id,
+            observationSetId: row.observation_set_id,
+            sourceSnapshotId: row.source_snapshot_id,
+            sourceLineage: row.source_lineage,
+            supportedGame: row.supported_game,
+            gameProfileVersion: row.game_profile_version,
+            adapterVersion: row.adapter_version,
+          },
+        ],
+  );
+  const countChangeWarnings = metadataSequence<Record<string, unknown>>(
+    async ({ row }) => {
+      const warnings: Record<string, unknown>[] = [];
+      if (row !== null)
+        for await (const warning of sourceObservationCountChangeWarnings(database, runId, [row]))
+          warnings.push(warning);
+      return warnings;
     },
-  };
-  const countChangeWarnings = {
-    async *[Symbol.asyncIterator]() {
-      yield* sourceObservationCountChangeWarnings(database, runId, orderedRows);
-      for (const plan of evidencePlans)
-        if (omittedLineages.has(plan.source_lineage))
-          yield {
-            code: "optional_source_carried_forward",
-            source_lineage: plan.source_lineage,
-            coverage: plan.coverage,
-            detail:
-              "The optional Source Coverage was not completely checked. Prior accepted facts and their evidence/check dates carry forward; partial captures establish no disappearance.",
-          };
-    },
-  };
+    evidencePlans
+      .filter((plan) => omittedLineages.has(plan.source_lineage))
+      .map((plan) => ({
+        code: "optional_source_carried_forward",
+        source_lineage: plan.source_lineage,
+        coverage: plan.coverage,
+        detail:
+          "The optional Source Coverage was not completely checked. Prior accepted facts and their evidence/check dates carry forward; partial captures establish no disappearance.",
+      })),
+  );
   return {
     observationSetId: first.observation_set_id,
     sourceSnapshotId: first.source_snapshot_id,
