@@ -220,7 +220,6 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
             [
               ["cards", "/fw/en/cardlist/?search=true&category%5B0%5D=583301"],
               ["products", "/fw/en/products/"],
-              ["rules", "/fw/en/news/01_31.html"],
             ] as const
           ).map(([key, resolution]) => ({
             id: `fusion-world-en:discovery-seed:${key}`,
@@ -236,8 +235,8 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
             },
           })),
           completeness: {
-            declared_record_count: 3,
-            parsed_record_count: 3,
+            declared_record_count: 2,
+            parsed_record_count: 2,
             required_surfaces_complete: true,
             partitions_complete: true,
             structurally_complete: true,

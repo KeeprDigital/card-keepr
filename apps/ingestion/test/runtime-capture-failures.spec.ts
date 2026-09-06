@@ -300,8 +300,9 @@ test.each([["cap"], ["pagination"]])(
         state: "failed",
         failure_code: "source_parse_failed",
       });
-      expect(terminal.snapshots).toHaveLength(11);
-      expect(terminal.observation_sets).toHaveLength(10);
+      // Four discovery captures and four accepted card-content surfaces.
+      expect(terminal.snapshots).toHaveLength(8);
+      expect(terminal.observation_sets).toHaveLength(7);
       expect(terminal.snapshots.some((snapshot) => snapshot.request.url === plan.requests[0]!.url)).toBe(true);
       await expect(
         sourceEvidenceQueries

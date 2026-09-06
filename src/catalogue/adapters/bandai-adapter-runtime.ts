@@ -955,15 +955,7 @@ function bandaiSnapshotDecoder(
         throw new AdapterParseFailure("Official Source discovery stages must be captured as text/html.");
       }
       const html = decodeUtf8(bytes, `discovery stage ${discoveryKey}`);
-      const records = bandaiDiscoveryStageRecords(
-        html,
-        context.url,
-        sourceLineage,
-        discoveryKey,
-        requiredSurfaces,
-
-        gameParsers,
-      );
+      const records = bandaiDiscoveryStageRecords(html, context.url, sourceLineage, discoveryKey, requiredSurfaces);
       return [
         {
           observation_type: "official_surface_evidence",
@@ -1501,7 +1493,6 @@ function bandaiDiscoveryStageRecords(
   sourceLineage: string,
   discoveryKey: string,
   requiredSurfaces: readonly string[],
-  gameParsers: GameParsers,
 ): Array<{
   id: string;
   surface: string;

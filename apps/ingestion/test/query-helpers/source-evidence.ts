@@ -73,9 +73,7 @@ export function insertSourceFreshness(database: D1Database): D1PreparedStatement
          ('one-piece', 'cards-and-printings', '', '',
           '2026-01-01T01:00:00.000Z', 'run_products'),
          ('one-piece', 'products-and-releases', '', '',
-          '2026-01-01T02:00:00.000Z', 'run_products'),
-         ('one-piece', 'legality-rules', 'one-piece-en', 'EN-OCEANIA',
-          '2026-01-01T03:00:00.000Z', 'run_products')`);
+          '2026-01-01T02:00:00.000Z', 'run_products')`);
 }
 
 export function setSourceFreshnessCheckedAt(database: D1Database): D1PreparedStatement {
@@ -604,21 +602,6 @@ export function countSourceFetchAttemptsCountForExtendedProductionShapedRunResum
        WHERE ingestion_run_id = ? AND request_id = ?`);
 }
 
-export function insertSourceFreshnessForD1FreshnessScopeRemainsStructuralWhileRegisteredSourceMetadata(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`INSERT INTO source_freshness (
-       game, area, source_lineage, region, checked_at, ingestion_run_id
-     ) VALUES (
-       'gundam', 'legality-rules', 'gundam-en-future', 'EN-FUTURE',
-       '2026-08-02T00:00:00.000Z', 'run_future_legality_scope'
-     )`);
-}
-
-export function deleteSourceFreshness(database: D1Database): D1PreparedStatement {
-  return database.prepare("DELETE FROM source_freshness WHERE ingestion_run_id = 'run_future_legality_scope'");
-}
-
 export function insertSourceRequestsForAppliedD1RequestCopiesOwningRunIdentitiesAreImmutable(
   database: D1Database,
 ): D1PreparedStatement {
@@ -864,22 +847,6 @@ export function insertSourceObservationSetsForFreshD1EnforcesFullLowercaseDigest
          'source-observations/upgraded-legality-guard.json', 1)`);
 }
 
-export function readSourceFreshnessCheckedAt(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT checked_at
-       FROM source_freshness
-       WHERE game = 'gundam'
-         AND area = 'legality-rules'
-         AND source_lineage = ?
-         AND ingestion_run_id = ?`);
-}
-
-export function readSourceFreshnessGameArea(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT game, area, source_lineage, region, checked_at, ingestion_run_id
-     FROM source_freshness
-     WHERE game = 'gundam' AND area = 'legality-rules'
-     ORDER BY source_lineage, region`);
-}
-
 export function countSourceSnapshotsCount(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT request_id, COUNT(*) AS count
      FROM source_snapshots WHERE ingestion_run_id = ?
@@ -1114,7 +1081,7 @@ export function readSourceFreshnessGameAreaForInterruptedReconciliationPublicati
   return database.prepare(`SELECT game, area, source_lineage, region, checked_at
      FROM source_freshness
      WHERE area IN (
-       'cards-and-printings', 'products-and-releases', 'legality-rules'
+       'cards-and-printings', 'products-and-releases', 'errata'
      )`);
 }
 

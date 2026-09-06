@@ -217,10 +217,7 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
       "https://en.onepiece-cardgame.com/cardlist/?series=569116",
       "https://en.onepiece-cardgame.com/products/",
       "https://en.onepiece-cardgame.com/products/",
-      "https://en.onepiece-cardgame.com/news/restriction.html",
-      "https://en.onepiece-cardgame.com/topics/013.php",
       "https://en.onepiece-cardgame.com/rules/errata_card/",
-      "https://en.onepiece-cardgame.com/rules/",
       "https://en.onepiece-cardgame.com/images/OP99-001.png",
     ],
   );

@@ -193,11 +193,7 @@ export function officialBandaiDataset(
     requestUrl,
   )}${publication.hasPart
     .map((part) => officialPublisherPayloadScript(lineage, part.identifier.slice(`${lineage}:`.length), part.payload))
-    .join("")}${
-    sharedRestrictionPage
-      ? `<main><p>0 records</p><article data-publication-empty="true">No published entries.</article></main>`
-      : ""
-  }</html>`;
+    .join("")}</html>`;
 }
 
 function applyGundamCompleteFixture(payload, lineage, surface, requestUrl) {
