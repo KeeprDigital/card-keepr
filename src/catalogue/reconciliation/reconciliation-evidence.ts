@@ -1,3 +1,5 @@
+import { ReconciliationGundamGraph } from "./reconciliation-gundam-graph";
+import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
 import {
   readVerifiedReconciliationInput,
   retainVerifiedReconciliationInput,
@@ -33,6 +35,7 @@ import {
   reconciliationOverflowRequestsStatement,
   reconciliationSnapshotEvidenceStatement,
   reconciliationSourceRequestsStatement,
+  reconciliationSourceRequestStatement,
 } from "./reconciliation-evidence-repository";
 import { parseReconciliationObservation } from "./reconciliation-model";
 
@@ -332,7 +335,16 @@ async function collectRetainedReconciliationObservation(
     }
     await retainedObservationDocument(database, evidenceObjects, runId, row);
   }
-  await assertClosedRequestGraph(retainedRequests, orderedRows, loadDocument);
+  await assertClosedRequestGraph(database, runId, retainedRequests, orderedRows, loadDocument, async (requestId) => {
+    const request = await documentStorage(() =>
+      reconciliationSourceRequestStatement(database, runId, requestId).first<PlannedRequestRow>(),
+    );
+    return request !== null &&
+      !isToleratedImageFailure(request) &&
+      !omittedLineages.has(evidencePlanForRequest(evidencePlanRow, request.request_id).source_lineage)
+      ? request
+      : undefined;
+  });
   const officialSurfaces = new Set<string>();
   const requestsById = new Map(retainedRequests.map((request) => [request.request_id, request]));
   for (let index = 0; index < orderedRows.length; index++) {
@@ -579,163 +591,20 @@ function sourceSurfaceForRequest(
   return current.request_id.slice(prefix.length);
 }
 
-export type GundamListingCollectionGraphInput = Readonly<{
-  requestId: string;
-  requestUrl: string;
-  sourceLineage: string;
-  adapterVersion: string;
-  observations: readonly unknown[];
-}>;
-
-export function validateGundamListingCollectionGraph(inputs: readonly GundamListingCollectionGraphInput[]): {
-  completeRequestIds: string[];
-  collections: {
-    sourceLineage: string;
-    package: string | null;
-    declaredTotal: number;
-    terminalPage: number;
-    fullLocators: string[];
-  }[];
-} {
-  type Page = {
-    requestId: string;
-    sourceLineage: string;
-    package: string | null;
-    page: number;
-    terminal: boolean;
-    declaredTotal: number;
-    fullLocators: string[];
-  };
-  const grouped = new Map<string, Page[]>();
-  for (const input of inputs) {
-    if (requiredSourceAdapter(input.adapterVersion).listingReconciliation?.groupsPublisherPages !== true) continue;
-    const retained = input.observations.flatMap((wrapped) => {
-      const observation = isRecord(wrapped) && isRecord(wrapped.value) ? wrapped.value : wrapped;
-      if (!isRecord(observation) || !isRecord(observation.source_sidecar)) {
-        return [];
-      }
-      const raw = observation.source_sidecar.raw;
-      if (!isRecord(raw) || !Array.isArray(raw.official_surfaces)) return [];
-      return raw.official_surfaces.flatMap((surface) => {
-        if (
-          !isRecord(surface) ||
-          surface.source_lineage !== input.sourceLineage ||
-          surface.surface !== "listing" ||
-          !isRecord(surface.document) ||
-          !("terminal_page" in surface.document)
-        )
-          return [];
-        return [{ observation, document: surface.document }];
-      });
-    });
-    if (retained.length === 0) continue;
-    if (retained.length !== 1) {
-      throw new Error("A Gundam listing request retained duplicate collection proofs.");
-    }
-    const { observation, document } = retained[0]!;
-    const selectedPackage = document.selected_package;
-    const selectedPage = document.selected_page;
-    const declaredTotal = document.declared_total;
-    const fullLocators = document.full_locators;
-    if (
-      (selectedPackage !== null && (typeof selectedPackage !== "string" || selectedPackage.length === 0)) ||
-      !Number.isSafeInteger(selectedPage) ||
-      Number(selectedPage) < 1 ||
-      !Number.isSafeInteger(declaredTotal) ||
-      Number(declaredTotal) < 0 ||
-      !Array.isArray(fullLocators) ||
-      !fullLocators.every((locator) => typeof locator === "string" && locator.length > 0) ||
-      new Set(fullLocators).size !== fullLocators.length ||
-      typeof document.terminal_page !== "boolean"
-    ) {
-      throw new Error("A retained Gundam listing collection proof is invalid.");
-    }
-    const url = new URL(input.requestUrl);
-    const requestedPackages = url.searchParams.getAll("package");
-    const requestedPages = url.searchParams.getAll("page");
-    const requestedPackage = requestedPackages[0] ?? null;
-    const requestedPage = Number.parseInt(requestedPages[0] ?? "1", 10);
-    if (
-      requestedPackages.length > 1 ||
-      requestedPages.length > 1 ||
-      requestedPackage !== selectedPackage ||
-      requestedPage !== selectedPage
-    ) {
-      throw new Error("A retained Gundam listing collection proof conflicts with its request identity.");
-    }
-    const completeness = observation.completeness;
-    const individuallyComplete = document.terminal_page === true && fullLocators.length === declaredTotal;
-    if (
-      !isRecord(completeness) ||
-      completeness.structurally_complete !== true ||
-      completeness.declared_record_count !== declaredTotal ||
-      completeness.parsed_record_count !== fullLocators.length ||
-      completeness.required_surfaces_complete !== individuallyComplete ||
-      completeness.partitions_complete !== individuallyComplete
-    ) {
-      throw new Error("A retained Gundam listing page overstates its individual completeness.");
-    }
-    const key = canonicalJson([input.sourceLineage, selectedPackage]);
-    grouped.set(key, [
-      ...(grouped.get(key) ?? []),
-      {
-        requestId: input.requestId,
-        sourceLineage: input.sourceLineage,
-        package: selectedPackage,
-        page: Number(selectedPage),
-        terminal: document.terminal_page,
-        declaredTotal: Number(declaredTotal),
-        fullLocators: fullLocators as string[],
-      },
-    ]);
-  }
-  const completeRequestIds = new Set<string>();
-  const collections = [...grouped.values()]
-    .map((pages) => {
-      const ordered = [...pages].sort((left, right) => left.page - right.page);
-      const pageNumbers = new Set(ordered.map(({ page }) => page));
-      const terminal = ordered.filter(({ terminal }) => terminal);
-      const lastPage = ordered.at(-1)!.page;
-      if (
-        pageNumbers.size !== ordered.length ||
-        ordered[0]!.page !== 1 ||
-        terminal.length !== 1 ||
-        terminal[0]!.page !== lastPage ||
-        ordered.some(({ page }, index) => page !== index + 1)
-      ) {
-        throw new Error("A retained Gundam listing collection has incomplete page continuity or terminal-page proof.");
-      }
-      const declaredTotals = new Set(ordered.map(({ declaredTotal }) => declaredTotal));
-      if (declaredTotals.size !== 1) {
-        throw new Error("A retained Gundam listing collection disagrees on its publisher total.");
-      }
-      const declaredTotal = ordered[0]!.declaredTotal;
-      const fullLocators = [...new Set(ordered.flatMap(({ fullLocators }) => fullLocators))].sort();
-      if (fullLocators.length !== declaredTotal) {
-        throw new Error("A retained Gundam listing collection does not close its publisher total across pages.");
-      }
-      ordered.forEach(({ requestId }) => completeRequestIds.add(requestId));
-      return {
-        sourceLineage: ordered[0]!.sourceLineage,
-        package: ordered[0]!.package,
-        declaredTotal,
-        terminalPage: lastPage,
-        fullLocators,
-      };
-    })
-    .sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right)));
-  return {
-    completeRequestIds: [...completeRequestIds].sort(),
-    collections,
-  };
-}
+export {
+  validateGundamListingCollectionGraph,
+  type GundamListingCollectionGraphInput,
+} from "./reconciliation-listing-page";
 
 async function assertClosedRequestGraph(
+  database: CatalogueStore,
+  runId: string,
   requests: readonly PlannedRequestRow[],
   rows: readonly EvidenceRow[],
   loadDocument: (index: number) => Promise<Awaited<ReturnType<typeof retainedObservationDocument>>>,
+  requestById: (id: string) => Promise<PlannedRequestRow | undefined>,
 ): Promise<void> {
-  const gundamInputs: GundamListingCollectionGraphInput[] = [];
+  const gundamGraph = new ReconciliationGundamGraph(database, runId);
   for (const [index, request] of requests.entries()) {
     if (requiredSourceAdapter(rows[index]!.adapter_version).listingReconciliation?.groupsPublisherPages !== true)
       continue;
@@ -779,7 +648,7 @@ async function assertClosedRequestGraph(
         : [];
     });
     if (!observations.length) continue;
-    gundamInputs.push({
+    await gundamGraph.add({
       requestId: request.request_id,
       requestUrl: request.url,
       sourceLineage: rows[index]!.source_lineage,
@@ -787,19 +656,22 @@ async function assertClosedRequestGraph(
       observations,
     });
   }
-  const gundamListingGraph = validateGundamListingCollectionGraph(gundamInputs);
-  const aggregateCompleteGundamRequests = new Set(gundamListingGraph.completeRequestIds);
-  const byId = new Map(requests.map((request) => [request.request_id, request]));
+  await gundamGraph.validate();
   const rootSurfaces = new Map<string, Set<string>>();
-  const listingLocators = new Map<
-    string,
-    {
-      requestId: string;
-      semantic: string;
-      canonical: string | null;
-    }
-  >();
-  const listingPages = new Map<string, Set<number>>();
+  const listingLocators = new ReconciliationReducerIndex<{
+    requestId: string;
+    semantic: string;
+    canonical: string | null;
+  }>(database, runId, "listing_locators");
+  const listingPages = new ReconciliationReducerIndex<{
+    id: string;
+    partition: string;
+    first: number;
+    last: number;
+    count: number;
+  }>(database, runId, "listing_page_groups");
+  const pageIdentities = new ReconciliationReducerIndex<boolean>(database, runId, "listing_page_ids");
+  const detailLocators = new ReconciliationReducerIndex<boolean>(database, runId, "listing_detail_locators");
   for (const [index, request] of requests.entries()) {
     const row = rows[index]!;
     const document = await loadDocument(index);
@@ -809,9 +681,13 @@ async function assertClosedRequestGraph(
         document.evidenceSummary.required_surfaces_complete !== true ||
         document.evidenceSummary.partitions_complete !== true ||
         document.evidenceSummary.declared_record_count !== document.evidenceSummary.parsed_record_count) &&
-        !aggregateCompleteGundamRequests.has(request.request_id))
+        !(await gundamGraph.hasCompleteRequest(request.request_id)))
     ) {
       throw new Error(`Source Request ${request.request_id} has incomplete declared/parsed count closure.`);
+    }
+    if (request.request_role === "detail") {
+      const locator = new URL(request.url).searchParams.get("detailSearch");
+      if (locator !== null) await detailLocators.seed(canonicalJson([row.source_lineage, locator]), true);
     }
     const adapter = requiredSourceAdapter(row.adapter_version);
     if (adapter.origin !== "production" || row.plan_origin !== "production") {
@@ -824,6 +700,8 @@ async function assertClosedRequestGraph(
       }
       const surface = request.request_id.slice(prefix.length);
       if (surface !== "discovery") {
+        if (!(adapter.requiredSurfaces ?? []).includes(surface))
+          throw new Error(`Official Source ${row.adapter_version} request graph contains an unexpected root surface.`);
         rootSurfaces.set(row.adapter_version, new Set([...(rootSurfaces.get(row.adapter_version) ?? []), surface]));
       }
       continue;
@@ -831,7 +709,7 @@ async function assertClosedRequestGraph(
     if (request.discovered_from_request_id === null) {
       throw new Error(`Discovered Source Request ${request.request_id} has no parent.`);
     }
-    const parent = byId.get(request.discovered_from_request_id);
+    const parent = await requestById(request.discovered_from_request_id);
     if (parent === undefined) {
       throw new Error(`Discovered Source Request ${request.request_id} does not close over a retained parent.`);
     }
@@ -858,7 +736,7 @@ async function assertClosedRequestGraph(
         const locatorKey = `${row.source_lineage}:${identity.locator}`;
         const semantic = await compatibleListingObservationSemantic(observation.value);
         const canonical = typeof identity.canonical === "string" ? identity.canonical : null;
-        const prior = listingLocators.get(locatorKey);
+        const prior = await listingLocators.get(locatorKey);
         if (prior !== undefined && prior.requestId !== request.request_id) {
           const compatibility = adapter.listingReconciliation?.duplicateLocatorCompatibility ?? "never";
           const compatible =
@@ -871,7 +749,7 @@ async function assertClosedRequestGraph(
             throw new Error(`Official Source leaf partitions overlap at locator ${identity.locator}.`);
           }
         }
-        listingLocators.set(locatorKey, {
+        await listingLocators.seed(locatorKey, {
           requestId: prior?.requestId ?? request.request_id,
           semantic,
           canonical,
@@ -886,30 +764,28 @@ async function assertClosedRequestGraph(
         }
         url.searchParams.delete(pageEntry[0]);
         const key = `${row.source_lineage}:${url.pathname}?${url.searchParams.toString()}`;
-        listingPages.set(key, new Set([...(listingPages.get(key) ?? []), page]));
+        const pageKey = canonicalJson([key, page]);
+        if (!(await pageIdentities.has(pageKey))) {
+          await pageIdentities.seed(pageKey, true);
+          const prior = await listingPages.get(key);
+          await listingPages.seed(key, {
+            id: await canonicalValueDigest(key),
+            partition: key,
+            first: Math.min(prior?.first ?? page, page),
+            last: Math.max(prior?.last ?? page, page),
+            count: (prior?.count ?? 0) + 1,
+          });
+        }
       }
     }
   }
-  for (const collection of gundamListingGraph.collections) {
-    const retainedDetails = new Set(
-      requests.flatMap((request, index) => {
-        if (rows[index]!.source_lineage !== collection.sourceLineage || request.request_role !== "detail") return [];
-        const locator = new URL(request.url).searchParams.get("detailSearch");
-        return locator === null ? [] : [locator];
-      }),
-    );
-    if (collection.fullLocators.some((locator) => !retainedDetails.has(locator))) {
+  for await (const { sourceLineage, locator } of gundamGraph.locators()) {
+    if (!(await detailLocators.has(canonicalJson([sourceLineage, locator]))))
       throw new Error("A complete Gundam listing collection omitted a retained Card detail request.");
-    }
   }
-  for (const [partition, pages] of listingPages) {
-    const ordered = [...pages].sort((left, right) => left - right);
-    const firstPage = ordered[0]!;
-    for (let page = firstPage; page <= ordered.at(-1)!; page += 1) {
-      if (!pages.has(page)) {
-        throw new Error(`Official Source listing partition ${partition} has unfinished page closure.`);
-      }
-    }
+  for await (const group of listingPages.entityValues()) {
+    if (group.last - group.first + 1 !== group.count)
+      throw new Error(`Official Source listing partition ${group.partition} has unfinished page closure.`);
   }
   for (const [adapterVersion, actual] of rootSurfaces) {
     const adapter = requiredSourceAdapter(adapterVersion);

@@ -1568,6 +1568,7 @@ const retainedStateNamespaces = [
   "observed_card_ids",
   "prior_observation_counts",
   "initial_evidence_metadata",
+  "gundam_graph_header",
 ];
 test.each(retainedStateNamespaces)(
   "a %s storage outage resumes retained identities and effective rules text",

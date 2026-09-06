@@ -14,6 +14,22 @@ export function reconciliationSourceRequestsStatement(database: CatalogueStore, 
     .bind(runId);
 }
 
+export function reconciliationSourceRequestStatement(
+  database: CatalogueStore,
+  runId: string,
+  requestId: string,
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(`SELECT request_id, sequence_number, method, url,
+                request_headers_json, representation_fingerprint,
+                request_role,
+                discovered_from_request_id, state, source_snapshot_id,
+                failure_code
+         FROM source_requests
+         WHERE ingestion_run_id = ? AND request_id = ?`)
+    .bind(runId, requestId);
+}
+
 export function reconciliationObservationSetsStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT
