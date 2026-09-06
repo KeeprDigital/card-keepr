@@ -1,3 +1,8 @@
+> Historical evidence-sidecar and tournament-eligibility prototype behavior is
+> superseded by ADRs 0013–0014 and issue #217. The API/export schemas and OpenAPI
+> in this directory are current runtime contracts, updated in place. Historical
+> scenario fixtures and CLI demonstrations are not the consumer specification.
+
 # PROTOTYPE — completed lifecycle, evidence, and export-deletion contracts
 
 This throwaway prototype asks:

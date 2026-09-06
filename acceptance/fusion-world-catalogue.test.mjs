@@ -35,48 +35,46 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   const ingestionConfig = join(directory, "ingestion.wrangler.json");
   const planPath = join(directory, "fusion-world-source-plan.json");
   await Promise.all([
-    writeFile(
-      ingestionEnv,
-      `ADMINISTRATION_KEY=${administrationKey}\nADMINISTRATION_CLOCK_MODE=request\n`,
-      { mode: 0o600 },
-    ),
+    writeFile(ingestionEnv, `ADMINISTRATION_KEY=${administrationKey}\nADMINISTRATION_CLOCK_MODE=request\n`, {
+      mode: 0o600,
+    }),
     writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
     writeFile(
       planPath,
       JSON.stringify({
-        plans: [{
-          supported_game: "fusion-world",
-          source_lineage: "fusion-world-en",
-          adapter_version: "fusion-world-en@9",
-          requests: [{
-            id: "fusion-world-en:discovery",
-            url:
-              "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
-            headers: {
-              accept: "text/html",
-              "user-agent": fixtureMarker,
-            },
-          }],
-        }],
+        plans: [
+          {
+            supported_game: "fusion-world",
+            source_lineage: "fusion-world-en",
+            adapter_version: "fusion-world-en@9",
+            requests: [
+              {
+                id: "fusion-world-en:discovery",
+                url: "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
+                headers: {
+                  accept: "text/html",
+                  "user-agent": fixtureMarker,
+                },
+              },
+            ],
+          },
+        ],
       }),
       { mode: 0o600 },
     ),
   ]);
   await applyMigrations(statePath);
-  const config = JSON.parse(
-    await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"),
-  );
+  const config = JSON.parse(await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
   delete config.$schema;
-  config.main = resolve(
-    root,
-    "acceptance/fixtures/catalogue-publication-ingestion-harness.ts",
-  );
+  config.main = resolve(root, "acceptance/fixtures/catalogue-publication-ingestion-harness.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
   config.ratelimits[0].simple.limit = 300;
-  config.services = [{
-    binding: "OFFICIAL_SOURCE_TRANSPORT",
-    service: "card-keepr-fusion-world-official-source",
-  }];
+  config.services = [
+    {
+      binding: "OFFICIAL_SOURCE_TRANSPORT",
+      service: "card-keepr-fusion-world-official-source",
+    },
+  ];
   await writeFile(ingestionConfig, JSON.stringify(config));
 
   const source = await startWorker({
@@ -102,73 +100,58 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   };
   for (const [index, failureCase] of failClosedCases.entries()) {
     await setPlanMarker(planPath, `${fixtureMarker}-${failureCase}`);
-    const rejectedCollection = await runCli([
-      "source", "collect", "--plan-file", planPath,
-      "--idempotency-key", `fusion-world-issue-32-reject-${index}`, "--json",
-    ], cliEnvironment);
+    const rejectedCollection = await runCli(
+      [
+        "source",
+        "collect",
+        "--plan-file",
+        planPath,
+        "--idempotency-key",
+        `fusion-world-issue-32-reject-${index}`,
+        "--json",
+      ],
+      cliEnvironment,
+    );
     assert.equal(rejectedCollection.code, 0, rejectedCollection.stderr);
     const rejectedRunId = JSON.parse(rejectedCollection.stdout).id;
-    const rejectedResume = await runCli(
-      ["source", "resume", "--run-id", rejectedRunId, "--json"],
-      cliEnvironment,
-    );
+    const rejectedResume = await runCli(["source", "resume", "--run-id", rejectedRunId, "--json"], cliEnvironment);
     assert.equal(rejectedResume.code, 0, rejectedResume.stderr);
-    const rejected = await waitForRunState(
-      rejectedRunId,
-      "failed",
-      cliEnvironment,
-      ingestion,
-      runStateDeadline,
-    );
+    const rejected = await waitForRunState(rejectedRunId, "failed", cliEnvironment, ingestion, runStateDeadline);
     assert.equal(rejected.failure_code, "source_parse_failed", failureCase);
   }
   await setPlanMarker(planPath, fixtureMarker);
-  const collected = await runCli([
-    "source",
-    "collect",
-    "--plan-file",
-    planPath,
-    "--idempotency-key",
-    "fusion-world-issue-32-collect",
-    "--json",
-  ], cliEnvironment);
+  const collected = await runCli(
+    ["source", "collect", "--plan-file", planPath, "--idempotency-key", "fusion-world-issue-32-collect", "--json"],
+    cliEnvironment,
+  );
   assert.equal(collected.code, 0, `${collected.stderr}\n${ingestion.getOutput()}`);
   const runId = JSON.parse(collected.stdout).id;
-  const resumed = await runCli(
-    ["source", "resume", "--run-id", runId, "--json"],
-    cliEnvironment,
-  );
+  const resumed = await runCli(["source", "resume", "--run-id", runId, "--json"], cliEnvironment);
   assert.equal(resumed.code, 0, resumed.stderr);
-  await waitForRunState(
-    runId,
-    "awaiting_approval",
-    cliEnvironment,
-    ingestion,
-    runStateDeadline,
-  );
+  await waitForRunState(runId, "awaiting_approval", cliEnvironment, ingestion, runStateDeadline);
 
-  const inspected = await runCli(
-    ["candidate", "inspect", "--run-id", runId, "--json"],
-    cliEnvironment,
-  );
+  const inspected = await runCli(["candidate", "inspect", "--run-id", runId, "--json"], cliEnvironment);
   assert.equal(inspected.code, 0, inspected.stderr);
   const candidate = JSON.parse(inspected.stdout);
   assert.equal(candidate.diff.summary.cards_added, 2);
   assert.equal(candidate.diff.summary.printings_added, 2);
-  const approved = await runCli([
-    "run",
-    "approve",
-    "--run-id",
-    runId,
-    "--candidate-digest",
-    candidate.candidate_digest,
-    "--expected-current-revision",
-    "catrev_spine_000",
-    "--idempotency-key",
-    "fusion-world-issue-32-approve",
-    "--yes",
-    "--json",
-  ], cliEnvironment);
+  const approved = await runCli(
+    [
+      "run",
+      "approve",
+      "--run-id",
+      runId,
+      "--candidate-digest",
+      candidate.candidate_digest,
+      "--expected-current-revision",
+      "catrev_spine_000",
+      "--idempotency-key",
+      "fusion-world-issue-32-approve",
+      "--yes",
+      "--json",
+    ],
+    cliEnvironment,
+  );
   assert.equal(approved.code, 0, `${approved.stderr}\n${ingestion.getOutput()}`);
   const revisionId = JSON.parse(approved.stdout).resulting_revision_id;
   await stopWorker(ingestion);
@@ -185,56 +168,30 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   const catalogueResponse = await fetch(`${api.url}/v1/catalogue`, { headers });
   assert.equal(catalogueResponse.status, 200);
   const catalogue = await catalogueResponse.json();
-  assert.deepEqual(
-    catalogue.data.last_successful_checks
-      .filter(({ game }) => game === "fusion-world")
-      .map(({ area }) => area),
-    [
-      "cards-and-printings",
-      "legality-rules",
-      "products-and-releases",
-    ],
-    "fusion-world-en@9 publishes no errata area: the live site retired it",
-  );
 
-  const [
-    cards,
-    printings,
-    images,
-    products,
-    releases,
-    errata,
-    legalityRules,
-    distributionContexts,
-    relationships,
-  ] =
-    await Promise.all([
+  assert.equal(Object.hasOwn(catalogue.data, "last_successful_checks"), false);
+
+  const [cards, printings, images, products, releases, errata, distributionContexts, relationships] = await Promise.all(
+    [
       "cards",
       "printings",
       "printing-images",
       "products",
       "releases",
       "errata",
-      "legality-rules",
       "distribution-contexts",
       "relationships",
-    ].map((component) =>
-      exportRecords(api.port, apiKey, revisionId, component)
-    ));
+    ].map((component) => exportRecords(api.port, apiKey, revisionId, component)),
+  );
   assert.equal(cards.length, 2);
   assert.equal(printings.length, 2);
   assert.equal(products.length, 2);
   assert.equal(releases.length, 2);
   assert.equal(errata.length, 0);
-  assert.equal(legalityRules.length, 2);
   assert.equal(distributionContexts.length, 1);
 
-  const card = cards.find(
-    ({ official_identity }) => official_identity.value === "FB99-001",
-  );
-  const energyMarker = cards.find(
-    ({ official_identity }) => official_identity.value === "E-99",
-  );
+  const card = cards.find(({ official_identity }) => official_identity.value === "FB99-001");
+  const energyMarker = cards.find(({ official_identity }) => official_identity.value === "E-99");
   assert.ok(energyMarker, "the Energy Marker publishes as its own Card");
   assert.equal(card.effective_rules_text, "Official front skill");
   assert.deepEqual(card.game_data, {
@@ -268,18 +225,12 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   });
   assert.equal(JSON.stringify(card.game_data).includes("FB99-001_p2"), false);
   const leaderPrinting = printings.find(({ card_id }) => card_id === card.id);
-  const energyMarkerPrinting = printings.find(
-    ({ card_id }) => card_id === energyMarker.id,
-  );
+  const energyMarkerPrinting = printings.find(({ card_id }) => card_id === energyMarker.id);
   assert.equal(leaderPrinting.printed_rules_text, "Official front skill");
-  assert.deepEqual(
-    leaderPrinting.locator_evidence.current.map(({ locator }) => locator),
-    ["FB99-001_p2"],
-  );
-  assert.deepEqual(
-    energyMarkerPrinting.locator_evidence.current.map(({ locator }) => locator),
-    ["E-99"],
-  );
+
+  assert.equal(Object.hasOwn(leaderPrinting, "locator_evidence"), false);
+
+  assert.equal(Object.hasOwn(energyMarkerPrinting, "locator_evidence"), false);
   // fusion-world-en@9 carries an Energy Marker's absent rarity all the way to
   // the export as a null pair, rather than inventing a placeholder or failing;
   // every other family still publishes one.
@@ -294,94 +245,36 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   // reconciliation drops it to an unknown-vocabulary warning and the Card
   // publishes with no profile colour at all.
   assert.deepEqual(energyMarker.game_data.attributes.colours, []);
-  assert.deepEqual(images.map(({ role }) => role).sort(), [
-    "back",
-    "front",
-    "front",
+  assert.deepEqual(images.map(({ role }) => role).sort(), ["back", "front", "front"]);
+  const availableProduct = products.find(({ official_code }) => official_code === "FB-RAW-01");
+  const comingSoonProduct = products.find(({ official_code }) => official_code === "FB-COMING-02");
+  const [cardCollection, printingCollection, productCollection] = await Promise.all([
+    authenticatedApiJson(api.port, apiKey, "/v1/cards"),
+    authenticatedApiJson(api.port, apiKey, "/v1/printings"),
+    authenticatedApiJson(api.port, apiKey, "/v1/products"),
   ]);
-  const availableProduct = products.find(
-    ({ official_code }) => official_code === "FB-RAW-01",
-  );
-  const comingSoonProduct = products.find(
-    ({ official_code }) => official_code === "FB-COMING-02",
-  );
-  const [cardCollection, printingCollection, productCollection, legalityStatus] =
-    await Promise.all([
-      authenticatedApiJson(api.port, apiKey, "/v1/cards"),
-      authenticatedApiJson(api.port, apiKey, "/v1/printings"),
-      authenticatedApiJson(api.port, apiKey, "/v1/products"),
-      authenticatedApiJson(
-        api.port,
-        apiKey,
-        `/v1/legality-status?card_id=${encodeURIComponent(card.id)}` +
-          "&on=2026-08-04&format=standard&region=EN-OCEANIA",
-      ),
-    ]);
-  assert.deepEqual(
-    cardCollection.data.map(({ id }) => id).sort(),
-    cards.map(({ id }) => id).sort(),
-  );
-  assert.deepEqual(
-    printingCollection.data.map(({ id }) => id).sort(),
-    printings.map(({ id }) => id).sort(),
-  );
-  assert.deepEqual(
-    productCollection.data.map(({ id }) => id).sort(),
-    products.map(({ id }) => id).sort(),
-  );
-  assert.deepEqual(
-    legalityStatus.data.map(({ card_id, region, status, rule_ids }) => ({
-      card_id,
-      region,
-      status,
-      rule_ids,
-    })),
-    [{
-      card_id: card.id,
-      region: "EN-OCEANIA",
-      status: "legal",
-      rule_ids: [legalityRules.find(
-        ({ official_id }) => official_id === "fusion-world-current-fb99-001",
-      ).id],
-    }],
-  );
+  assert.deepEqual(cardCollection.data.map(({ id }) => id).sort(), cards.map(({ id }) => id).sort());
+  assert.deepEqual(printingCollection.data.map(({ id }) => id).sort(), printings.map(({ id }) => id).sort());
+  assert.deepEqual(productCollection.data.map(({ id }) => id).sort(), products.map(({ id }) => id).sort());
   assert.equal(availableProduct.name, "Fusion World Raw Product");
-  assert.equal(
-    comingSoonProduct.name,
-    "Fusion World Coming Soon Product",
+  assert.equal(comingSoonProduct.name, "Fusion World Coming Soon Product");
+  assert.ok(
+    releases.some(
+      ({ product_id, region, status }) =>
+        product_id === availableProduct.id && region === "EN-US" && status === "released",
+    ),
   );
-  assert.ok(releases.some(
-    ({ product_id, region, status }) =>
-      product_id === availableProduct.id &&
-      region === "EN-US" &&
-      status === "released",
-  ));
-  assert.ok(releases.some(
-    ({ product_id, region, status }) =>
-      product_id === comingSoonProduct.id &&
-      region === "EN-US" &&
-      status === "announced",
-  ));
-  assert.deepEqual(
-    legalityRules.map(({ official_id }) => official_id).sort(),
-    [
-      "fusion-world-current-fb99-001",
-      "fusion-world-history-fb99-001",
-    ],
+  assert.ok(
+    releases.some(
+      ({ product_id, region, status }) =>
+        product_id === comingSoonProduct.id && region === "EN-US" && status === "announced",
+    ),
   );
-  assert.ok(legalityRules.every(({ card_ids }) =>
-    card_ids.length === 1 && card_ids[0] === card.id
-  ));
-  assert.ok(distributionContexts.some(
-    ({ product_id }) => product_id === comingSoonProduct.id,
-  ));
+  assert.ok(distributionContexts.some(({ product_id }) => product_id === comingSoonProduct.id));
   // fusion-world-en@9 detail pages carry no publisher product code, so a
   // Printing binds to its "Where to get it" source bucket instead of a
   // Product; only the publisher's own Product surfaces relate to Products.
-  assert.deepEqual(
-    [...new Set(relationships.map(({ kind }) => kind))].sort(),
-    ["distribution-context-product", "legality-rule-card"],
-  );
+  assert.deepEqual([...new Set(relationships.map(({ kind }) => kind))].sort(), ["distribution-context-product"]);
 });
 
 async function setPlanMarker(planPath, marker) {
@@ -391,10 +284,9 @@ async function setPlanMarker(planPath, marker) {
 }
 
 async function exportRecords(port, apiKey, revisionId, component) {
-  const response = await fetch(
-    `http://127.0.0.1:${port}/v1/catalogue-exports/${revisionId}/components/${component}`,
-    { headers: { authorization: `Bearer ${apiKey}` } },
-  );
+  const response = await fetch(`http://127.0.0.1:${port}/v1/catalogue-exports/${revisionId}/components/${component}`, {
+    headers: { authorization: `Bearer ${apiKey}` },
+  });
   assert.equal(response.status, 200);
   return gunzipSync(Buffer.from(await response.arrayBuffer()))
     .toString("utf8")

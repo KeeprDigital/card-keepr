@@ -1,5 +1,11 @@
 import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
-import { type CatalogueStore, canonicalJson, gameProfileFilterValue, gameProfileForGame } from "../shared";
+import {
+  type CatalogueStore,
+  canonicalJson,
+  consumerContent,
+  gameProfileFilterValue,
+  gameProfileForGame,
+} from "../shared";
 import {
   type CardRow,
   type CollectionFilters,
@@ -66,7 +72,7 @@ export async function cardCollectionResponse(
 
   const queried = await queryCardPage(database, revision.id, filters, cursor?.after ?? null);
   const serializedRows = queried.rows.map((row) =>
-    JSON.stringify(absoluteDocumentLinks(JSON.parse(row.summary_json), base)),
+    JSON.stringify(absoluteDocumentLinks(consumerContent(JSON.parse(row.summary_json)), base)),
   );
   let count = serializedRows.length;
   let dataBytes =

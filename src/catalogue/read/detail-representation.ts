@@ -1,10 +1,13 @@
-export type DetailInclude = "printings" | "evidence" | "disagreements";
+export type DetailInclude = "printings";
 
 export function detailIncludeProjection(
   url: URL,
   invalid: (message: string) => Error,
-  allowed: readonly DetailInclude[] = ["evidence", "disagreements"],
+  allowed: readonly DetailInclude[] = [],
 ): ReadonlySet<DetailInclude> {
+  if ([...url.searchParams.keys()].some((key) => key !== "include")) {
+    throw invalid("Unsupported detail query parameter.");
+  }
   const rawValues = url.searchParams.getAll("include");
   const values = rawValues.flatMap((value) => value.split(",").filter((item) => item.length > 0));
   const include = new Set(values);

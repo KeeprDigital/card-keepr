@@ -222,7 +222,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   assert.equal(
     multiInspectionResult.code,
     0,
-    `${multiInspectionResult.stdout}\n${multiInspectionResult.stderr}\n` + ingestion.getOutput(),
+    `${multiInspectionResult.stdout}\n${multiInspectionResult.stderr}\n${ingestion.getOutput()}`,
   );
   const multiInspection = JSON.parse(multiInspectionResult.stdout);
   assert.equal(multiInspection.expected_current_revision_id, revisionId);
@@ -288,7 +288,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     ],
     cliEnvironment,
   );
-  assert.equal(carryApproved.code, 0, `${carryApproved.stdout}\n${carryApproved.stderr}\n` + ingestion.getOutput());
+  assert.equal(carryApproved.code, 0, `${carryApproved.stdout}\n${carryApproved.stderr}\n${ingestion.getOutput()}`);
   revisionId = JSON.parse(carryApproved.stdout).resulting_revision_id;
   await stopWorker(ingestion);
 
@@ -303,38 +303,14 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   const catalogueResponse = await fetch(`${api.url}/v1/catalogue`, { headers });
   assert.equal(catalogueResponse.status, 200);
   const catalogueDocument = await catalogueResponse.json();
-  const successfulChecks = catalogueDocument.data.last_successful_checks;
-  assert.deepEqual(
-    successfulChecks.map(({ game, area }) => `${game}:${area}`),
-    [
-      "digimon:cards-and-printings",
-      "digimon:errata",
-      "digimon:legality-rules",
-      "digimon:products-and-releases",
-      "fusion-world:cards-and-printings",
-      // fusion-world-en@9 covers the catalogue only: the publisher retired
-      // its errata surface.
-      "fusion-world:legality-rules",
-      "fusion-world:products-and-releases",
-      "gundam:cards-and-printings",
-      "gundam:errata",
-      "gundam:legality-rules",
-      "gundam:legality-rules",
-      "gundam:products-and-releases",
-      "one-piece:cards-and-printings",
-      "one-piece:errata",
-      "one-piece:legality-rules",
-      "one-piece:products-and-releases",
-    ],
-  );
-  assert.ok(successfulChecks.every(({ checked_at }) => Number.isFinite(Date.parse(checked_at))));
+  assert.equal(Object.hasOwn(catalogueDocument.data, "last_successful_checks"), false);
   const publishedProducts = await exportRecords(api.port, apiKey, revisionId, "products");
   const productOnly = publishedProducts.find(({ official_code }) => official_code === "BT-PRODUCT-ONLY");
   const cardBearing = publishedProducts.find(({ official_code }) => official_code === "BT-CARD-BEARING");
   assert.ok(productOnly);
   assert.ok(cardBearing);
   const productId = productOnly.id;
-  const productResponse = await fetch(`${api.url}/v1/products/${productId}?include=evidence`, { headers });
+  const productResponse = await fetch(`${api.url}/v1/products/${productId}`, { headers });
   assert.equal(productResponse.status, 200);
   const productDocument = await productResponse.json();
   const apiSchema = JSON.parse(
@@ -350,42 +326,17 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   assert.equal(productDocument.data.releases[0].region, "unknown");
   assert.equal(productDocument.data.releases[0].status, "announced");
   assert.equal(productDocument.data.lifecycle.last_observed_revision_id, allFiveRevisionId);
-  assert.match(productDocument.provenance["/data/official_code"][0], /^srcobs_/u);
+
+  assert.equal(Object.hasOwn(productDocument, "provenance"), false);
   const printingResponse = await fetch(`${api.url}/v1/printings/${printingId}`, { headers });
   assert.equal(printingResponse.status, 200);
   const printingDocument = await printingResponse.json();
   assert.equal(printingDocument.data.lifecycle.last_observed_revision_id, allFiveRevisionId);
   assert.equal(printingDocument.data.products.length, 1);
-  assert.deepEqual(
-    {
-      id: printingDocument.data.products[0].id,
-      evidence_category: printingDocument.data.products[0].evidence_category,
-      source_lineage: printingDocument.data.products[0].source_lineage,
-    },
-    {
-      id: cardBearing.id,
-      evidence_category: "explicit",
-      source_lineage: "digimon-en",
-    },
-  );
-  assert.equal(printingDocument.data.products[0].source_observation_ids.length, 1);
-  assert.match(printingDocument.data.products[0].source_observation_ids[0], /^srcobs_/u);
-  assert.equal(printingDocument.data.distribution_contexts.length, 1);
-  assert.deepEqual(
-    {
-      kind: printingDocument.data.distribution_contexts[0].kind,
-      product_id: printingDocument.data.distribution_contexts[0].product_id,
-      evidence_category: printingDocument.data.distribution_contexts[0].evidence_category,
-      source_lineage: printingDocument.data.distribution_contexts[0].source_lineage,
-    },
-    {
-      kind: "tournament_pack",
-      product_id: cardBearing.id,
-      evidence_category: "derived",
-      source_lineage: "digimon-en",
-    },
-  );
-  assert.equal(printingDocument.data.distribution_contexts[0].source_observation_ids.length, 1);
+  assert.equal(printingDocument.data.products[0].id, cardBearing.id);
+  assert.equal(Object.hasOwn(printingDocument.data.products[0], "evidence_category"), false);
+  assert.equal(printingDocument.data.distribution_contexts[0].kind, "tournament_pack");
+  assert.equal(printingDocument.data.distribution_contexts[0].product_id, cardBearing.id);
 
   const [products, releases, contexts, relationships, cards, printings] = await Promise.all(
     ["products", "releases", "distribution-contexts", "relationships", "cards", "printings"].map((component) =>
@@ -414,13 +365,12 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   assert.ok(currentOnePiece, JSON.stringify(products.map(({ name, official_code }) => ({ name, official_code }))));
   assert.equal(currentOnePiece.lifecycle.last_observed_revision_id, revisionId);
   const establishedOnePiece = currentOnePiece;
-  const establishedOnePieceResponse = await fetch(`${api.url}/v1/products/${establishedOnePiece.id}?include=evidence`, {
+  const establishedOnePieceResponse = await fetch(`${api.url}/v1/products/${establishedOnePiece.id}`, {
     headers,
   });
   assert.equal(establishedOnePieceResponse.status, 200);
   const establishedOnePieceDocument = await establishedOnePieceResponse.json();
-  const establishedCodeProvenance = establishedOnePieceDocument.provenance["/data/official_code"];
-  assert.ok(establishedCodeProvenance.length > 0);
+  assert.equal(Object.hasOwn(establishedOnePieceDocument, "provenance"), false);
   assert.equal(products.length, 5);
   assert.equal(releases.length, 5);
   // fusion-world-en@9 Card details name no publisher product code, so the
@@ -459,21 +409,10 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   // One Card per lineage, plus the Fusion World Energy Marker that publishes
   // without a rarity.
   assert.equal(cards.length, 6);
-  assert.ok(
-    relationships.some(
-      ({ kind, evidence_category }) => kind === "distribution-context-product" && evidence_category === "explicit",
-    ),
-  );
+  assert.ok(relationships.some(({ kind }) => kind === "distribution-context-product"));
   for (const projection of [...printingDocument.data.products, ...printingDocument.data.distribution_contexts]) {
     assert.ok(
-      relationships.some(
-        (relationship) =>
-          relationship.from.id === printingId &&
-          relationship.to.id === projection.id &&
-          relationship.evidence_category === projection.evidence_category &&
-          relationship.source_lineage === projection.source_lineage &&
-          JSON.stringify(relationship.source_observation_ids) === JSON.stringify(projection.source_observation_ids),
-      ),
+      relationships.some((relationship) => relationship.from.id === printingId && relationship.to.id === projection.id),
     );
   }
   for (const code of ["OP-RAW-01", "FB-RAW-01", "GD-RAW-01"]) {
@@ -519,28 +458,26 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   const invalidAttribute = await fetch(`${api.url}/v1/cards?game=one-piece&attribute.level=3`, { headers });
   assert.equal(invalidAttribute.status, 400);
   assert.equal((await invalidAttribute.json()).code, "invalid_parameter");
-  assert.deepEqual(onePiecePrinting.source_lineages, ["one-piece-en"]);
-  assert.ok(
-    onePiecePrinting.locator_evidence.current.some(
-      ({ locator, source_lineage }) => locator === "/cards/OP99-001" && source_lineage === "one-piece-en",
-    ),
-  );
+
+  assert.equal(Object.hasOwn(onePiecePrinting, "source_lineages"), false);
+
+  assert.equal(Object.hasOwn(onePiecePrinting, "locator_evidence"), false);
   const gundam = products.find(({ official_code }) => official_code === "GD-RAW-01");
   assert.ok(gundam);
   const gundamCard = cards.find(({ official_identity }) => official_identity?.value === "GD99-001");
-  assert.deepEqual(gundamCard.source_lineages, ["gundam-en-asia", "gundam-en-us"]);
+
+  assert.equal(Object.hasOwn(gundamCard, "source_lineages"), false);
   const gundamPrinting = printings.find(({ card_id }) => card_id === gundamCard.id);
-  assert.deepEqual(gundamPrinting.source_lineages, ["gundam-en-asia", "gundam-en-us"]);
-  const gundamPrintingResponse = await fetch(`${api.url}/v1/printings/${gundamPrinting.id}?include=evidence`, {
+
+  assert.equal(Object.hasOwn(gundamPrinting, "source_lineages"), false);
+  const gundamPrintingResponse = await fetch(`${api.url}/v1/printings/${gundamPrinting.id}`, {
     headers,
   });
   assert.equal(gundamPrintingResponse.status, 200);
   const gundamPrintingDocument = await gundamPrintingResponse.json();
-  assert.deepEqual(gundamPrintingDocument.data.source_lineages, ["gundam-en-asia", "gundam-en-us"]);
-  assert.deepEqual(gundamPrintingDocument.included.map(({ source }) => source).sort(), [
-    "gundam-en-asia",
-    "gundam-en-us",
-  ]);
+
+  assert.equal(Object.hasOwn(gundamPrintingDocument.data, "source_lineages"), false);
+  assert.equal(Object.hasOwn(gundamPrintingDocument, "included"), false);
   assert.deepEqual(
     releases
       .filter(({ product_id }) => product_id === gundam.id)
@@ -607,7 +544,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   assert.equal(
     provenanceApproved.code,
     0,
-    `${provenanceApproved.stdout}\n${provenanceApproved.stderr}\n` + provenanceIngestion.getOutput(),
+    `${provenanceApproved.stdout}\n${provenanceApproved.stderr}\n${provenanceIngestion.getOutput()}`,
   );
   const codeLessRevisionId = JSON.parse(provenanceApproved.stdout).resulting_revision_id;
   await stopWorker(provenanceIngestion);
@@ -628,22 +565,13 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     establishedOnePiece.id,
     "the R2 export keeps the established Product identity across a code-less refresh",
   );
-  const codeLessOnePieceResponse = await fetch(
-    `${provenanceApi.url}/v1/products/${codeLessOnePiece.id}?include=evidence`,
-    { headers },
-  );
+  const codeLessOnePieceResponse = await fetch(`${provenanceApi.url}/v1/products/${codeLessOnePiece.id}`, { headers });
   assert.equal(codeLessOnePieceResponse.status, 200);
   const codeLessOnePieceDocument = await codeLessOnePieceResponse.json();
-  assert.deepEqual(
-    codeLessOnePieceDocument.provenance["/data/official_code"],
-    establishedCodeProvenance,
-    "D1 publication must retain the observation that actually supplied the established code",
-  );
-  assert.notDeepEqual(
-    codeLessOnePieceDocument.provenance["/data/name"],
-    establishedCodeProvenance,
-    "the current code-less observation must not be credited with the carried code",
-  );
+
+  assert.equal(Object.hasOwn(codeLessOnePieceDocument, "provenance"), false);
+
+  assert.equal(Object.hasOwn(codeLessOnePieceDocument, "provenance"), false);
 });
 
 // A run that never reaches its expected state is diagnosed against the

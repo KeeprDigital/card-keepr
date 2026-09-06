@@ -1,21 +1,21 @@
-import { syntheticSourceAdapterMigrations } from "./helpers/synthetic-source-adapters.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { gunzipSync } from "node:zlib";
 import test from "node:test";
+import { gunzipSync } from "node:zlib";
 import {
-  administrationPollInterval,
   administrationDocument,
-  waitForAdministrationDocument,
+  administrationPollInterval,
   runCli,
   startWorker,
   stopWorker,
+  waitForAdministrationDocument,
   waitForHealth,
   waitForRunState,
 } from "./helpers/acceptance-runtime.mjs";
+import { syntheticSourceAdapterMigrations } from "./helpers/synthetic-source-adapters.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -270,8 +270,8 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   const seededPrinting = seedReconciled.printings.find((candidate) => candidate.card_id === seededCard.id);
   assert.notEqual(seededPrinting, undefined);
   const [seededCardRead, seededPrintingRead, seededCardsBytes, seededPrintingsBytes] = await Promise.all([
-    apiJson(runtime.url, `/v1/cards/${seededCard.id}?include=evidence`, apiKey),
-    apiJson(runtime.url, `/v1/printings/${seededPrinting.id}?include=evidence`, apiKey),
+    apiJson(runtime.url, `/v1/cards/${seededCard.id}`, apiKey),
+    apiJson(runtime.url, `/v1/printings/${seededPrinting.id}`, apiKey),
     exportComponent(runtime.url, seededRevision, "cards", apiKey),
     exportComponent(runtime.url, seededRevision, "printings", apiKey),
   ]);
@@ -288,12 +288,9 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   assert.notEqual(seededExportedCard, undefined);
   assert.notEqual(seededExportedPrinting, undefined);
   const seededManifest = await apiJson(runtime.url, `/v1/catalogue-exports/${seededRevision}`, apiKey);
-  const seededCardFreshness = seededManifest.data.source_freshness.find(
-    (check) => check.game === "one-piece" && check.area === "cards-and-printings",
-  );
-  assert.notEqual(seededCardFreshness, undefined);
+  assert.equal(Object.hasOwn(seededManifest.data, "source_freshness"), false);
   assert.equal(
-    seededManifest.data.source_freshness.some((check) => check.game === "one-piece" && check.area === "errata"),
+    seededManifest.data.components.some(({ name }) => name === "legality-rules"),
     false,
   );
 
@@ -374,7 +371,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   assert.equal(oversizedQuery.status, 400);
   assert.equal((await oversizedQuery.json()).code, "invalid_parameter");
 
-  const cardResponse = await fetch(`${runtime.url}/v1/cards/${card.id}` + "?include=printings,evidence,disagreements", {
+  const cardResponse = await fetch(`${runtime.url}/v1/cards/${card.id}?include=printings`, {
     headers: { authorization: `Bearer ${apiKey}` },
   });
   if (cardResponse.status !== 200) {
@@ -387,32 +384,18 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     cardIncluded.some((resource) => resource.type === "printing" && resource.id === printing.id),
     true,
   );
-  const effectiveRulesEvidenceIds = cardRead.provenance["/data/effective_rules_text"];
-  assert.equal(effectiveRulesEvidenceIds.length, 1);
-  const errataEvidence = cardIncluded.find((resource) => resource.id === effectiveRulesEvidenceIds[0]);
-  assert.notEqual(errataEvidence, undefined);
-  assert.equal(errataEvidence.type, "source_observation");
-  const seededCardEvidence = seededCardRead.included.filter((resource) => resource.type === "source_observation");
-  for (const resource of seededCardEvidence) {
-    assert.deepEqual(
-      cardIncluded.find((candidate) => candidate.id === resource.id),
-      resource,
-    );
-  }
-  assert.deepEqual(cardRead.data.source_lineages, seededCardRead.data.source_lineages);
+  assert.equal(Object.hasOwn(cardRead, "provenance"), false);
+  assert.equal(Object.hasOwn(cardRead.data, "source_lineages"), false);
   assert.deepEqual(cardRead.data.lifecycle, seededCardRead.data.lifecycle);
-  assert.deepEqual(cardRead.disagreements, []);
+  assert.equal(Object.hasOwn(cardRead, "disagreements"), false);
   const cardEtag = cardResponse.headers.get("etag");
   assert.notEqual(cardEtag, null);
-  const conditionalCard = await fetch(
-    `${runtime.url}/v1/cards/${card.id}` + "?include=printings,evidence,disagreements",
-    {
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "if-none-match": cardEtag,
-      },
+  const conditionalCard = await fetch(`${runtime.url}/v1/cards/${card.id}?include=printings`, {
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "if-none-match": cardEtag,
     },
-  );
+  });
   const conditionalCardBody = await conditionalCard.text();
   assert.equal(conditionalCard.status, 304, conditionalCardBody);
   assert.equal(conditionalCardBody, "");
@@ -422,25 +405,21 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   const invalidCardIncludeBody = await invalidCardInclude.json();
   assert.equal(invalidCardInclude.status, 400);
   assert.equal(invalidCardIncludeBody.code, "invalid_parameter");
-  const printingRead = await apiJson(runtime.url, `/v1/printings/${printing.id}?include=evidence`, apiKey);
+  const printingRead = await apiJson(runtime.url, `/v1/printings/${printing.id}`, apiKey);
   assert.match(printingRead.data.printed_rules_text, /and trash 2 cards/);
   assert.deepEqual(printingRead.data.lifecycle, seededPrintingRead.data.lifecycle);
-  assert.deepEqual(printingRead.data.locator_evidence, seededPrintingRead.data.locator_evidence);
-  assert.deepEqual(printingRead.data.relationship_evidence, seededPrintingRead.data.relationship_evidence);
-  assert.deepEqual(printingRead.data.source_lineages, seededPrintingRead.data.source_lineages);
+
+  assert.equal(Object.hasOwn(printingRead.data, "locator_evidence"), false);
+
+  assert.equal(Object.hasOwn(printingRead.data, "relationship_evidence"), false);
+
+  assert.equal(Object.hasOwn(printingRead.data, "source_lineages"), false);
   assert.deepEqual(printingRead.included, seededPrintingRead.included);
-  assert.deepEqual(printingRead.provenance, seededPrintingRead.provenance);
+
+  assert.equal(Object.hasOwn(printingRead, "provenance"), false);
   const manifest = await apiJson(runtime.url, `/v1/catalogue-exports/${revisionId}`, apiKey);
   assert.equal(manifest.meta.catalogue_revision_id, revisionId);
-  const preservedCardFreshness = manifest.data.source_freshness.find(
-    (check) => check.game === "one-piece" && check.area === "cards-and-printings",
-  );
-  assert.deepEqual(preservedCardFreshness, seededCardFreshness);
-  const errataFreshness = manifest.data.source_freshness.find(
-    (check) => check.game === "one-piece" && check.area === "errata",
-  );
-  assert.notEqual(errataFreshness, undefined);
-  assert.equal(Date.parse(errataFreshness.checked_at) >= Date.parse(seededManifest.data.published_at), true);
+  assert.equal(Object.hasOwn(manifest.data, "source_freshness"), false);
 
   const [cardsBytes, printingsBytes, errataBytes, relationshipBytes] = await Promise.all([
     exportComponent(runtime.url, revisionId, "cards", apiKey),
@@ -471,7 +450,8 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   assert.equal(exportedCard.id, card.id);
   assert.match(exportedCard.effective_rules_text, /and you may trash 2 cards/);
   assert.deepEqual(exportedCard.lifecycle, seededExportedCard.lifecycle);
-  assert.deepEqual(exportedCard.source_lineages, seededExportedCard.source_lineages);
+
+  assert.equal(Object.hasOwn(exportedCard, "source_lineages"), false);
   assert.equal(exportedErratum.target_id, card.id);
   assert.equal(exportedErratum.target_type, "card");
   assert.equal(exportedErratum.effective_from, null);
@@ -484,17 +464,20 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   assert.equal(exportedPrinting.id, printing.id);
   assert.match(exportedPrinting.printed_rules_text, /and trash 2 cards/);
   assert.deepEqual(exportedPrinting.lifecycle, seededExportedPrinting.lifecycle);
-  assert.deepEqual(exportedPrinting.locator_evidence, seededExportedPrinting.locator_evidence);
-  assert.deepEqual(exportedPrinting.relationship_evidence, seededExportedPrinting.relationship_evidence);
-  assert.deepEqual(exportedPrinting.source_lineages, seededExportedPrinting.source_lineages);
+
+  assert.equal(Object.hasOwn(exportedPrinting, "locator_evidence"), false);
+
+  assert.equal(Object.hasOwn(exportedPrinting, "relationship_evidence"), false);
+
+  assert.equal(Object.hasOwn(exportedPrinting, "source_lineages"), false);
   const erratumRelationship = relationshipBytes
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line))
     .find((candidate) => candidate.kind === "erratum-target" && candidate.from.id === exportedErratum.id);
   assert.equal(erratumRelationship.to.id, card.id);
-  assert.equal(erratumRelationship.source_lineage, "one-piece-en");
-  assert.equal(erratumRelationship.source_observation_ids.length, 1);
+  assert.equal(Object.hasOwn(erratumRelationship, "source_lineage"), false);
+  assert.equal(Object.hasOwn(erratumRelationship, "source_observation_ids"), false);
   assert.doesNotMatch(cardsBytes + printingsBytes + errataBytes + relationshipBytes, /snapshot|raw_payload/i);
 
   const repeatedRun = await collectSource(
@@ -521,10 +504,6 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     .map(({ source_observation_id }) => source_observation_id)
     .sort();
   assert.equal(accumulatedErrataEvidenceIds.length, 2);
-  assert.deepEqual(
-    accumulatedErrataEvidenceIds.filter((id) => effectiveRulesEvidenceIds.includes(id)),
-    effectiveRulesEvidenceIds,
-  );
   const repeatedRevision = await approveCandidate(
     repeatedRun.id,
     "approve-repeated-bandai-errata-html",
@@ -563,9 +542,9 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     runtime,
   );
   assert.notEqual(refreshRevision, repeatedRevision);
-  const refreshedCardRead = await apiJson(runtime.url, `/v1/cards/${card.id}?include=evidence`, apiKey);
+  const refreshedCardRead = await apiJson(runtime.url, `/v1/cards/${card.id}`, apiKey);
   assert.match(refreshedCardRead.data.effective_rules_text, /and you may trash 2 cards/);
-  assert.deepEqual(refreshedCardRead.provenance["/data/effective_rules_text"], accumulatedErrataEvidenceIds);
+  assert.equal(Object.hasOwn(refreshedCardRead, "provenance"), false);
   const refreshedCardsBytes = await exportComponent(runtime.url, refreshRevision, "cards", apiKey);
   const refreshedRelationshipsBytes = await exportComponent(runtime.url, refreshRevision, "relationships", apiKey);
   const refreshedExportedCard = refreshedCardsBytes
@@ -579,7 +558,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     .map((line) => JSON.parse(line))
     .find((candidate) => candidate.kind === "erratum-target" && candidate.from.id === exportedErratum.id);
   assert.equal(refreshedExportedCard.effective_rules_text, exportedCard.effective_rules_text);
-  assert.deepEqual(refreshedErratumRelationship.source_observation_ids, accumulatedErrataEvidenceIds);
+  assert.equal(Object.hasOwn(refreshedErratumRelationship, "source_observation_ids"), false);
 
   const omissionRun = await collectFixtureSource(
     {
@@ -614,14 +593,9 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     cliEnvironment,
     runtime,
   );
-  const carriedCardRead = await apiJson(runtime.url, `/v1/cards/${card.id}?include=evidence`, apiKey);
+  const carriedCardRead = await apiJson(runtime.url, `/v1/cards/${card.id}`, apiKey);
   assert.match(carriedCardRead.data.effective_rules_text, /and you may trash 2 cards/);
-  const carriedEvidenceIds = carriedCardRead.provenance["/data/effective_rules_text"];
-  assert.equal(carriedEvidenceIds.length, accumulatedErrataEvidenceIds.length + 1);
-  assert.deepEqual(
-    carriedEvidenceIds.filter((id) => accumulatedErrataEvidenceIds.includes(id)),
-    accumulatedErrataEvidenceIds,
-  );
+  assert.equal(Object.hasOwn(carriedCardRead, "provenance"), false);
   const carriedCardsBytes = await exportComponent(runtime.url, omissionRevision, "cards", apiKey);
   const carriedExportedCard = carriedCardsBytes
     .trim()
@@ -629,7 +603,8 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     .map((line) => JSON.parse(line))
     .find((candidate) => candidate.id === card.id);
   assert.equal(carriedExportedCard.effective_rules_text, exportedCard.effective_rules_text);
-  assert.deepEqual(carriedExportedCard.source_lineages, exportedCard.source_lineages);
+
+  assert.equal(Object.hasOwn(carriedExportedCard, "source_lineages"), false);
 });
 
 function digimonOfficialPlan() {

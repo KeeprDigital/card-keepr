@@ -1,5 +1,6 @@
 import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
 import type { CatalogueStore } from "../shared";
+import { consumerContent } from "../shared";
 import {
   canonicalEtag,
   collectionFilter,
@@ -17,11 +18,7 @@ import {
 } from "./collection-endpoint";
 import { canonicalDetailSelf, detailIncludeProjection, detailRepresentationKey } from "./detail-representation";
 import type { ProductRow } from "./published-read-repository";
-import {
-  currentProductStatement,
-  productCollectionStatement,
-  productCuratedEvidenceStatement,
-} from "./published-read-repository";
+import { currentProductStatement, productCollectionStatement } from "./published-read-repository";
 
 type ProductOrderValue = {
   id: string;
@@ -36,9 +33,6 @@ export type StoredProductApiProjection = ProductOrderValue & {
 
 type ProductEnvelope = {
   data: StoredProductApiProjection;
-  included: unknown[];
-  provenance: Record<string, string[]>;
-  disagreements: unknown[];
 };
 
 const productRoute = "/v1/products";
@@ -67,14 +61,9 @@ export async function currentProductResponse(
   );
   const conditional = conditionalResponse(request, revisionHeaders(row.current_revision_id, etag));
   if (conditional !== null) return conditional;
-  const evidenceSidecar = include.has("evidence")
-    ? await productEvidenceProjection(database, row.current_revision_id, envelope)
-    : {};
   return Response.json(
     {
-      data: absoluteDocumentLinks(envelope.data, base),
-      ...evidenceSidecar,
-      ...(include.has("disagreements") ? { disagreements: envelope.disagreements } : {}),
+      data: absoluteDocumentLinks(consumerContent(envelope.data), base),
       meta: {
         catalogue_revision_id: row.current_revision_id,
         published_at: row.published_at,
@@ -85,113 +74,6 @@ export async function currentProductResponse(
       headers: revisionHeaders(row.current_revision_id, etag),
     },
   );
-}
-
-async function productEvidenceProjection(
-  database: CatalogueStore,
-  catalogueRevisionId: string,
-  envelope: ProductEnvelope,
-): Promise<{
-  included: unknown[];
-  provenance: Record<string, string[]>;
-}> {
-  const references = curatedRevisionReferences(envelope.data);
-  if (references.length === 0) {
-    return {
-      included: envelope.included,
-      provenance: envelope.provenance,
-    };
-  }
-  const revisionIds = [...new Set(references.map(({ revisionId }) => revisionId))];
-  // Publication projects every Curated Revision the revision carries into
-  // catalogue_curated_provenance with its author and creation instant, so
-  // the evidence sidecar reads the projection, not curated_revisions
-  // (issue #98).
-  const rows = await productCuratedEvidenceStatement(database, {
-    revisionId: catalogueRevisionId,
-    revisionIdsJson: JSON.stringify(revisionIds),
-  }).all<{ id: string; created_at: unknown; author: unknown }>();
-  const rowsById = new Map(
-    rows.results.map((row) => {
-      if (typeof row.created_at !== "string" || typeof row.author !== "string") {
-        throw new Error("A revision-pinned Product references unavailable Curated Revision evidence.");
-      }
-      return [row.id, { id: row.id, created_at: row.created_at, author: row.author }];
-    }),
-  );
-  if (rowsById.size !== revisionIds.length) {
-    throw new Error("A revision-pinned Product references unavailable Curated Revision evidence.");
-  }
-  const provenance = structuredClone(envelope.provenance);
-  for (const { path } of references) {
-    provenance[path] = [
-      ...new Set(references.filter((reference) => reference.path === path).map(({ revisionId }) => revisionId)),
-    ];
-  }
-  return {
-    included: [
-      ...envelope.included,
-      ...revisionIds.map((revisionId) => {
-        const row = rowsById.get(revisionId)!;
-        return {
-          type: "curated_revision",
-          id: row.id,
-          captured_at: row.created_at,
-          source: row.author,
-        };
-      }),
-    ],
-    provenance,
-  };
-}
-
-function curatedRevisionReferences(data: ProductEnvelope["data"]): { path: string; revisionId: string }[] {
-  return [
-    ...curatedFieldReferences(data, "/data", "product", data.id),
-    ...data.releases.flatMap((release, index) =>
-      curatedFieldReferences(release, `/data/releases/${index}`, "release", release.id),
-    ),
-  ];
-}
-
-function curatedFieldReferences(
-  value: Record<string, unknown>,
-  responsePath: string,
-  entityType: "product" | "release",
-  entityId: string,
-): { path: string; revisionId: string }[] {
-  if (!Array.isArray(value.curated_provenance)) return [];
-  return value.curated_provenance.flatMap((item) => {
-    if (item === null || typeof item !== "object" || Array.isArray(item)) {
-      throw new Error("A revision-pinned Product has invalid curated provenance.");
-    }
-    const provenance = item as Record<string, unknown>;
-    const target = provenance.target;
-    if (
-      typeof provenance.curated_revision_id !== "string" ||
-      target === null ||
-      typeof target !== "object" ||
-      Array.isArray(target)
-    ) {
-      throw new Error("A revision-pinned Product has invalid curated provenance.");
-    }
-    const field = target as Record<string, unknown>;
-    if (
-      field.kind !== "field" ||
-      field.entity_type !== entityType ||
-      field.entity_id !== entityId ||
-      typeof field.path !== "string" ||
-      !field.path.startsWith("/")
-    ) {
-      throw new Error("A revision-pinned Product has invalid curated provenance.");
-    }
-    return [
-      {
-        path: `${responsePath}${field.path}`,
-        revisionId: provenance.curated_revision_id,
-      },
-    ];
-  });
 }
 
 export async function currentProductsResponse(
@@ -242,14 +124,14 @@ export async function currentProductsResponse(
     limit,
   );
   const selected = page.rows.map(({ document_json }) => storedProductApiProjection(document_json));
-  const data = selected.slice(0, limit).map((product) => absoluteDocumentLinks(product, base));
+  const data = selected.slice(0, limit).map((product) => absoluteDocumentLinks(consumerContent(product), base));
   const next = page.hasMore
     ? encodeCursor({
         route: productRoute,
         ordering: productOrder,
         revision: revisionId,
         filters,
-        last: orderValue(data.at(-1)!),
+        last: orderValue(selected.slice(0, limit).at(-1)!),
       })
     : null;
   return Response.json(
@@ -320,12 +202,6 @@ function productEnvelope(documentJson: string): ProductEnvelope {
   }
   return {
     data,
-    included: Array.isArray(value.included) ? value.included : [],
-    provenance:
-      value.provenance !== null && typeof value.provenance === "object" && !Array.isArray(value.provenance)
-        ? (value.provenance as Record<string, string[]>)
-        : {},
-    disagreements: Array.isArray(value.disagreements) ? value.disagreements : [],
   };
 }
 

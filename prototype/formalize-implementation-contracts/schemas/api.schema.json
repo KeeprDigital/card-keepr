@@ -13,161 +13,85 @@
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
     },
-    "CuratedEntityReference": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["type", "id"],
-      "properties": {
-        "type": {
-          "enum": ["card", "printing", "product", "release", "distribution_context", "erratum", "legality_rule"]
-        },
-        "id": { "$ref": "#/$defs/OpaqueId" }
-      }
-    },
-    "CuratedFieldTarget": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "entity_type", "entity_id", "path"],
-      "properties": {
-        "kind": { "const": "field" },
-        "entity_type": {
-          "enum": ["card", "printing", "product", "release", "distribution_context", "erratum", "legality_rule"]
-        },
-        "entity_id": { "$ref": "#/$defs/OpaqueId" },
-        "path": { "type": "string", "pattern": "^/" }
-      }
-    },
-    "CuratedRelationshipTarget": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "relationship_kind", "from", "to"],
-      "properties": {
-        "kind": { "const": "relationship" },
-        "relationship_kind": {
-          "enum": ["printing-product", "printing-distribution-context", "distribution-context-product", "product-card"]
-        },
-        "from": { "$ref": "#/$defs/CuratedEntityReference" },
-        "to": { "$ref": "#/$defs/CuratedEntityReference" }
-      },
-      "oneOf": [
-        {
-          "properties": {
-            "relationship_kind": { "const": "printing-product" },
-            "from": { "properties": { "type": { "const": "printing" } } },
-            "to": { "properties": { "type": { "const": "product" } } }
-          }
-        },
-        {
-          "properties": {
-            "relationship_kind": { "const": "printing-distribution-context" },
-            "from": { "properties": { "type": { "const": "printing" } } },
-            "to": { "properties": { "type": { "const": "distribution_context" } } }
-          }
-        },
-        {
-          "properties": {
-            "relationship_kind": { "const": "distribution-context-product" },
-            "from": { "properties": { "type": { "const": "distribution_context" } } },
-            "to": { "properties": { "type": { "const": "product" } } }
-          }
-        },
-        {
-          "properties": {
-            "relationship_kind": { "const": "product-card" },
-            "from": { "properties": { "type": { "const": "product" } } },
-            "to": { "properties": { "type": { "const": "card" } } }
-          }
-        }
-      ]
-    },
-    "CuratedEvidence": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind", "id"],
-          "properties": {
-            "kind": { "const": "source_observation" },
-            "id": { "$ref": "#/$defs/OpaqueId" }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind", "uri", "content_digest"],
-          "properties": {
-            "kind": { "const": "owner_reference" },
-            "uri": { "type": "string", "format": "uri" },
-            "content_digest": { "$ref": "#/$defs/Sha256" }
-          }
-        }
-      ]
-    },
-    "CuratedProvenance": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["curated_revision_id", "content_digest", "target", "rationale", "evidence", "author", "reviewed_source_value"],
-      "properties": {
-        "curated_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "content_digest": { "$ref": "#/$defs/Sha256" },
-        "target": {
-          "oneOf": [
-            { "$ref": "#/$defs/CuratedFieldTarget" },
-            { "$ref": "#/$defs/CuratedRelationshipTarget" }
-          ]
-        },
-        "rationale": { "type": "string", "minLength": 1 },
-        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/CuratedEvidence" } },
-        "author": { "type": "string", "minLength": 1 },
-        "reviewed_source_value": true
-      }
-    },
-    "CuratedProvenanceCollection": {
-      "type": "array",
-      "minItems": 1,
-      "items": { "$ref": "#/$defs/CuratedProvenance" }
-    },
     "Timestamp": {
       "type": "string",
       "format": "date-time",
       "pattern": "Z$"
     },
     "SupportedGame": {
-      "enum": ["one-piece", "fusion-world", "digimon", "gundam"]
+      "enum": [
+        "one-piece",
+        "fusion-world",
+        "digimon",
+        "gundam"
+      ]
     },
     "Region": {
-      "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US"]
+      "enum": [
+        "EN-OCEANIA",
+        "EN-ASIA",
+        "EN-US"
+      ]
     },
     "ReleaseRegion": {
-      "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"]
+      "enum": [
+        "EN-OCEANIA",
+        "EN-ASIA",
+        "EN-US",
+        "unknown"
+      ]
     },
     "Meta": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["catalogue_revision_id", "published_at"],
+      "required": [
+        "catalogue_revision_id",
+        "published_at"
+      ],
       "properties": {
-        "catalogue_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "published_at": { "$ref": "#/$defs/Timestamp" }
+        "catalogue_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "published_at": {
+          "$ref": "#/$defs/Timestamp"
+        }
       }
     },
     "SelfLink": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["self"],
+      "required": [
+        "self"
+      ],
       "properties": {
-        "self": { "type": "string", "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/" }
+        "self": {
+          "type": "string",
+          "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/"
+        }
       }
     },
     "Page": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["limit", "next_cursor"],
+      "required": [
+        "limit",
+        "next_cursor"
+      ],
       "properties": {
-        "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
         "next_cursor": {
           "oneOf": [
-            { "type": "string", "minLength": 1 },
-            { "type": "null" }
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       }
@@ -177,19 +101,34 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "value"],
+          "required": [
+            "kind",
+            "value"
+          ],
           "properties": {
-            "kind": { "const": "card_number" },
-            "value": { "type": "string", "minLength": 1 }
+            "kind": {
+              "const": "card_number"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "value"],
+          "required": [
+            "kind",
+            "value"
+          ],
           "properties": {
-            "kind": { "const": "functional_designation" },
-            "value": { "const": "DON!!" }
+            "kind": {
+              "const": "functional_designation"
+            },
+            "value": {
+              "const": "DON!!"
+            }
           }
         }
       ]
@@ -197,7 +136,10 @@
     "GameData": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "attributes"],
+      "required": [
+        "profile",
+        "attributes"
+      ],
       "properties": {
         "profile": {
           "type": "string",
@@ -212,98 +154,39 @@
     "Lifecycle": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["first_revision_id", "last_observed_revision_id", "withdrawn"],
+      "required": [
+        "first_revision_id",
+        "last_observed_revision_id",
+        "withdrawn"
+      ],
       "properties": {
-        "first_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "last_observed_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "withdrawn": { "type": "boolean" },
+        "first_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "last_observed_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "withdrawn": {
+          "type": "boolean"
+        },
         "withdrawal": {
           "oneOf": [
-            { "type": "null" },
+            {
+              "type": "null"
+            },
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["revision_id", "evidence"],
+              "required": [
+                "revision_id"
+              ],
               "properties": {
-                "revision_id": { "$ref": "#/$defs/OpaqueId" },
-                "evidence": { "type": "object" }
+                "revision_id": {
+                  "$ref": "#/$defs/OpaqueId"
+                }
               }
             }
           ]
-        }
-      }
-    },
-    "RelationshipEvidence": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "source_lineage",
-        "relationship_kind",
-        "relationship_value",
-        "source_observation_ids",
-        "first_revision_id",
-        "last_observed_revision_id",
-        "current",
-        "last_missing_revision_id"
-      ],
-      "properties": {
-        "source_lineage": { "type": "string", "minLength": 1 },
-        "relationship_kind": {
-          "enum": ["product", "distribution_context"]
-        },
-        "relationship_value": { "type": "string", "minLength": 1 },
-        "source_observation_ids": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1 }
-        },
-        "first_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "last_observed_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "current": { "type": "boolean" },
-        "last_missing_revision_id": {
-          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
-        }
-      }
-    },
-    "LocatorEvidence": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "source_lineage",
-        "locator",
-        "variant_key",
-        "first_revision_id",
-        "last_observed_revision_id",
-        "current",
-        "last_missing_revision_id"
-      ],
-      "properties": {
-        "source_lineage": { "type": "string", "minLength": 1 },
-        "locator": { "type": "string", "minLength": 1 },
-        "variant_key": {
-          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
-        },
-        "first_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "last_observed_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "current": { "type": "boolean" },
-        "last_missing_revision_id": {
-          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
-        }
-      }
-    },
-    "LocatorEvidenceCollection": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["current", "historical"],
-      "properties": {
-        "current": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/LocatorEvidence" }
-        },
-        "historical": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/LocatorEvidence" }
         }
       }
     },
@@ -321,20 +204,31 @@
         "links"
       ],
       "properties": {
-        "type": { "const": "card" },
-        "id": { "$ref": "#/$defs/OpaqueId" },
-        "game": { "$ref": "#/$defs/SupportedGame" },
-        "official_identity": { "$ref": "#/$defs/OfficialIdentity" },
-        "name": { "type": "string", "minLength": 1 },
-        "game_data": { "$ref": "#/$defs/GameData" },
-        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
-        "source_lineages": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1 }
+        "type": {
+          "const": "card"
         },
-        "lifecycle": { "$ref": "#/$defs/Lifecycle" },
-        "links": { "$ref": "#/$defs/SelfLink" }
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "game": {
+          "$ref": "#/$defs/SupportedGame"
+        },
+        "official_identity": {
+          "$ref": "#/$defs/OfficialIdentity"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "game_data": {
+          "$ref": "#/$defs/GameData"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/Lifecycle"
+        },
+        "links": {
+          "$ref": "#/$defs/SelfLink"
+        }
       }
     },
     "CardDetail": {
@@ -353,39 +247,76 @@
         "links"
       ],
       "properties": {
-        "type": { "const": "card" },
-        "id": { "$ref": "#/$defs/OpaqueId" },
-        "game": { "$ref": "#/$defs/SupportedGame" },
-        "official_identity": { "$ref": "#/$defs/OfficialIdentity" },
-        "name": { "type": "string", "minLength": 1 },
-        "game_data": { "$ref": "#/$defs/GameData" },
-        "effective_rules_text": {
-          "oneOf": [{ "type": "string" }, { "type": "null" }]
+        "type": {
+          "const": "card"
         },
-        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "game": {
+          "$ref": "#/$defs/SupportedGame"
+        },
+        "official_identity": {
+          "$ref": "#/$defs/OfficialIdentity"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "game_data": {
+          "$ref": "#/$defs/GameData"
+        },
+        "effective_rules_text": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "printing_ids": {
           "type": "array",
-          "items": { "$ref": "#/$defs/OpaqueId" }
+          "items": {
+            "$ref": "#/$defs/OpaqueId"
+          }
         },
-        "source_lineages": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1 }
+        "lifecycle": {
+          "$ref": "#/$defs/Lifecycle"
         },
-        "lifecycle": { "$ref": "#/$defs/Lifecycle" },
-        "links": { "$ref": "#/$defs/SelfLink" }
+        "links": {
+          "$ref": "#/$defs/SelfLink"
+        }
       }
     },
     "Rarity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["normalized", "raw"],
+      "required": [
+        "normalized",
+        "raw"
+      ],
       "properties": {
         "normalized": {
-          "oneOf": [{ "type": "string" }, { "type": "null" }]
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "raw": {
-          "oneOf": [{ "type": "string" }, { "type": "null" }]
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -404,20 +335,49 @@
         "links"
       ],
       "properties": {
-        "type": { "const": "printing_image" },
-        "id": { "$ref": "#/$defs/OpaqueId" },
-        "printing_id": { "$ref": "#/$defs/OpaqueId" },
-        "role": { "enum": ["front", "back", "other"] },
-        "media_type": { "type": "string", "pattern": "^image/" },
-        "width": { "type": "integer", "minimum": 1 },
-        "height": { "type": "integer", "minimum": 1 },
-        "content_sha256": { "$ref": "#/$defs/Sha256" },
+        "type": {
+          "const": "printing_image"
+        },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "printing_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "role": {
+          "enum": [
+            "front",
+            "back",
+            "other"
+          ]
+        },
+        "media_type": {
+          "type": "string",
+          "pattern": "^image/"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "content_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
         "links": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["self", "content"],
+          "required": [
+            "self",
+            "content"
+          ],
           "properties": {
-            "self": { "type": "string", "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/" },
+            "self": {
+              "type": "string",
+              "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/"
+            },
             "content": {
               "type": "string",
               "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/printing-images/[^/]+/content$"
@@ -429,22 +389,38 @@
     "DistributionContext": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind", "label", "product_id", "evidence_category"],
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "product_id"
+      ],
       "properties": {
-        "id": { "$ref": "#/$defs/OpaqueId" },
-        "kind": { "enum": ["product", "tournament_pack", "winner_prize", "promotion", "other"] },
-        "label": { "type": "string", "minLength": 1 },
-        "product_id": {
-          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
         },
-        "evidence_category": { "enum": ["explicit", "derived", "curated"] },
-        "source_lineage": { "type": "string", "minLength": 1 },
-        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
-        "source_observation_ids": {
-          "type": "array",
-          "minItems": 1,
-          "items": { "$ref": "#/$defs/OpaqueId" },
-          "uniqueItems": true
+        "kind": {
+          "enum": [
+            "product",
+            "tournament_pack",
+            "winner_prize",
+            "promotion",
+            "other"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "product_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OpaqueId"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -454,36 +430,46 @@
       "required": [
         "id",
         "official_code",
-        "name",
-        "evidence_category"
+        "name"
       ],
       "properties": {
-        "id": { "$ref": "#/$defs/OpaqueId" },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
         "official_code": {
-          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "name": {
-          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
-        },
-        "evidence_category": { "enum": ["explicit", "derived", "curated"] },
-        "source_lineage": { "type": "string", "minLength": 1 },
-        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
-        "source_observation_ids": {
-          "type": "array",
-          "minItems": 1,
-          "items": { "$ref": "#/$defs/OpaqueId" },
-          "uniqueItems": true
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "oneOf": [
         {
-          "required": ["source_lineage", "source_observation_ids"],
-          "properties": { "evidence_category": { "enum": ["explicit", "derived"] } }
+          "required": [],
+          "properties": {}
         },
         {
-          "required": ["curated_provenance"],
-          "not": { "required": ["source_lineage"] },
-          "properties": { "evidence_category": { "const": "curated" } }
+          "required": [],
+          "not": {
+            "required": []
+          },
+          "properties": {}
         }
       ]
     },
@@ -499,237 +485,201 @@
         "game_data",
         "printing_images",
         "distribution_contexts",
-        "relationship_evidence",
-        "locator_evidence",
         "lifecycle",
         "links"
       ],
       "properties": {
-        "type": { "const": "printing" },
-        "id": { "$ref": "#/$defs/OpaqueId" },
-        "card_id": { "$ref": "#/$defs/OpaqueId" },
-        "rarity": { "$ref": "#/$defs/Rarity" },
+        "type": {
+          "const": "printing"
+        },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "card_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "rarity": {
+          "$ref": "#/$defs/Rarity"
+        },
         "printed_rules_text": {
-          "oneOf": [{ "type": "string" }, { "type": "null" }]
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "game_data": {
-          "oneOf": [{ "$ref": "#/$defs/GameData" }, { "type": "null" }]
+          "oneOf": [
+            {
+              "$ref": "#/$defs/GameData"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
-        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
         "printing_images": {
           "type": "array",
-          "items": { "$ref": "#/$defs/PrintingImage" }
+          "items": {
+            "$ref": "#/$defs/PrintingImage"
+          }
         },
         "products": {
           "type": "array",
-          "items": { "$ref": "#/$defs/PrintingProductProjection" }
+          "items": {
+            "$ref": "#/$defs/PrintingProductProjection"
+          }
         },
         "distribution_contexts": {
           "type": "array",
-          "items": { "$ref": "#/$defs/DistributionContext" }
+          "items": {
+            "$ref": "#/$defs/DistributionContext"
+          }
         },
-        "relationship_evidence": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/RelationshipEvidence" }
+        "lifecycle": {
+          "$ref": "#/$defs/Lifecycle"
         },
-        "locator_evidence": {
-          "$ref": "#/$defs/LocatorEvidenceCollection"
-        },
-        "source_lineages": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1 }
-        },
-        "lifecycle": { "$ref": "#/$defs/Lifecycle" },
-        "links": { "$ref": "#/$defs/SelfLink" }
+        "links": {
+          "$ref": "#/$defs/SelfLink"
+        }
       }
     },
     "ReleaseDate": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["precision", "value"],
+      "required": [
+        "precision",
+        "value"
+      ],
       "properties": {
-        "precision": { "enum": ["day", "month", "quarter", "year", "unknown"] },
+        "precision": {
+          "enum": [
+            "day",
+            "month",
+            "quarter",
+            "year",
+            "unknown"
+          ]
+        },
         "value": {
-          "oneOf": [{ "type": "string" }, { "type": "null" }]
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
     "Release": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "event_key", "region", "date", "status"],
+      "required": [
+        "id",
+        "event_key",
+        "region",
+        "date",
+        "status"
+      ],
       "properties": {
-        "id": { "$ref": "#/$defs/OpaqueId" },
-        "event_key": { "$ref": "#/$defs/OpaqueId" },
-        "region": { "$ref": "#/$defs/ReleaseRegion" },
-        "date": { "$ref": "#/$defs/ReleaseDate" },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "event_key": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "region": {
+          "$ref": "#/$defs/ReleaseRegion"
+        },
+        "date": {
+          "$ref": "#/$defs/ReleaseDate"
+        },
         "status": {
           "oneOf": [
-            { "enum": ["announced", "released"] },
-            { "type": "null" }
+            {
+              "enum": [
+                "announced",
+                "released"
+              ]
+            },
+            {
+              "type": "null"
+            }
           ]
-        },
-        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" }
+        }
       }
     },
     "Product": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "id", "game", "official_code", "name", "releases", "lifecycle", "links"],
+      "required": [
+        "type",
+        "id",
+        "game",
+        "official_code",
+        "name",
+        "releases",
+        "lifecycle",
+        "links"
+      ],
       "properties": {
-        "type": { "const": "product" },
-        "id": { "$ref": "#/$defs/OpaqueId" },
-        "game": { "$ref": "#/$defs/SupportedGame" },
+        "type": {
+          "const": "product"
+        },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "game": {
+          "$ref": "#/$defs/SupportedGame"
+        },
         "official_code": {
-          "oneOf": [{ "type": "string" }, { "type": "null" }]
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "name": {
           "oneOf": [
-            { "type": "string", "minLength": 1 },
-            { "type": "null" }
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "releases": {
           "type": "array",
-          "items": { "$ref": "#/$defs/Release" }
-        },
-        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
-        "lifecycle": { "$ref": "#/$defs/Lifecycle" },
-        "links": { "$ref": "#/$defs/SelfLink" }
-      }
-    },
-    "Provenance": {
-      "type": "object",
-      "propertyNames": { "pattern": "^/" },
-      "additionalProperties": {
-        "type": "array",
-        "minItems": 1,
-        "uniqueItems": true,
-        "items": { "$ref": "#/$defs/OpaqueId" }
-      }
-    },
-    "Disagreement": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["path", "status", "candidates"],
-      "properties": {
-        "path": { "type": "string", "pattern": "^/" },
-        "status": {
-          "enum": ["unresolved", "resolved_by_authority"]
-        },
-        "candidates": {
-          "type": "array",
-          "minItems": 2,
           "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["value", "observation_id"],
-            "properties": {
-              "value": {},
-              "observation_id": { "$ref": "#/$defs/OpaqueId" }
-            }
-          }
-        }
-      }
-    },
-    "Freshness": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["game", "area", "checked_at"],
-          "properties": {
-            "game": { "$ref": "#/$defs/SupportedGame" },
-            "area": {
-              "enum": [
-                "cards-and-printings",
-                "products-and-releases",
-                "errata"
-              ]
-            },
-            "checked_at": { "$ref": "#/$defs/Timestamp" }
+            "$ref": "#/$defs/Release"
           }
         },
-        {
-          "$ref": "#/$defs/OnePieceLegalityFreshness"
+        "lifecycle": {
+          "$ref": "#/$defs/Lifecycle"
         },
-        {
-          "$ref": "#/$defs/FusionWorldLegalityFreshness"
-        },
-        {
-          "$ref": "#/$defs/DigimonLegalityFreshness"
-        },
-        {
-          "$ref": "#/$defs/GundamAsiaLegalityFreshness"
-        },
-        {
-          "$ref": "#/$defs/GundamUsLegalityFreshness"
+        "links": {
+          "$ref": "#/$defs/SelfLink"
         }
-      ]
-    },
-    "OnePieceLegalityFreshness": {
-      "$ref": "#/$defs/ScopedLegalityFreshness",
-      "properties": {
-        "game": { "const": "one-piece" },
-        "source_lineage": { "const": "one-piece-en" },
-        "region": { "const": "EN-OCEANIA" }
-      }
-    },
-    "FusionWorldLegalityFreshness": {
-      "$ref": "#/$defs/ScopedLegalityFreshness",
-      "properties": {
-        "game": { "const": "fusion-world" },
-        "source_lineage": { "const": "fusion-world-en" },
-        "region": { "const": "EN-OCEANIA" }
-      }
-    },
-    "DigimonLegalityFreshness": {
-      "$ref": "#/$defs/ScopedLegalityFreshness",
-      "properties": {
-        "game": { "const": "digimon" },
-        "source_lineage": { "const": "digimon-en" },
-        "region": { "const": "EN-OCEANIA" }
-      }
-    },
-    "GundamAsiaLegalityFreshness": {
-      "$ref": "#/$defs/ScopedLegalityFreshness",
-      "properties": {
-        "game": { "const": "gundam" },
-        "source_lineage": { "const": "gundam-en-asia" },
-        "region": { "const": "EN-ASIA" }
-      }
-    },
-    "GundamUsLegalityFreshness": {
-      "$ref": "#/$defs/ScopedLegalityFreshness",
-      "properties": {
-        "game": { "const": "gundam" },
-        "source_lineage": { "const": "gundam-en-us" },
-        "region": { "const": "EN-US" }
-      }
-    },
-    "ScopedLegalityFreshness": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "game",
-        "area",
-        "source_lineage",
-        "region",
-        "checked_at"
-      ],
-      "properties": {
-        "game": { "$ref": "#/$defs/SupportedGame" },
-        "area": { "const": "legality-rules" },
-        "source_lineage": { "type": "string" },
-        "region": { "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US"] },
-        "checked_at": { "$ref": "#/$defs/Timestamp" }
       }
     },
     "CatalogueDocument": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["data", "meta", "links"],
+      "required": [
+        "data",
+        "meta",
+        "links"
+      ],
       "properties": {
         "data": {
           "type": "object",
@@ -738,16 +688,17 @@
             "type",
             "current_revision_id",
             "published_at",
-            "last_successful_checks",
             "current_export"
           ],
           "properties": {
-            "type": { "const": "catalogue" },
-            "current_revision_id": { "$ref": "#/$defs/OpaqueId" },
-            "published_at": { "$ref": "#/$defs/Timestamp" },
-            "last_successful_checks": {
-              "type": "array",
-              "items": { "$ref": "#/$defs/Freshness" }
+            "type": {
+              "const": "catalogue"
+            },
+            "current_revision_id": {
+              "$ref": "#/$defs/OpaqueId"
+            },
+            "published_at": {
+              "$ref": "#/$defs/Timestamp"
             },
             "current_export": {
               "type": "string",
@@ -755,16 +706,39 @@
             }
           }
         },
-        "meta": { "$ref": "#/$defs/Meta" },
+        "meta": {
+          "$ref": "#/$defs/Meta"
+        },
         "links": {
           "type": "object",
-          "required": ["self", "cards", "printings", "products", "catalogue_exports"],
+          "required": [
+            "self",
+            "cards",
+            "printings",
+            "products",
+            "catalogue_exports"
+          ],
           "properties": {
-            "self": { "type": "string", "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/catalogue$" },
-            "cards": { "type": "string", "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/cards$" },
-            "printings": { "type": "string", "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/printings$" },
-            "products": { "type": "string", "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/products$" },
-            "catalogue_exports": { "type": "string", "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/catalogue-exports$" }
+            "self": {
+              "type": "string",
+              "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/catalogue$"
+            },
+            "cards": {
+              "type": "string",
+              "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/cards$"
+            },
+            "printings": {
+              "type": "string",
+              "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/printings$"
+            },
+            "products": {
+              "type": "string",
+              "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/products$"
+            },
+            "catalogue_exports": {
+              "type": "string",
+              "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/catalogue-exports$"
+            }
           },
           "additionalProperties": false
         }
@@ -774,216 +748,218 @@
       "type": "object",
       "description": "GET /v1/cards query parameters. Every parameter occurs at most once. Filters are ANDed and pinned to the cursor Catalogue Revision. Unknown Product ids, normalized rarities, or attribute values in that revision return invalid_parameter (400), as do malformed or unsupported Game Profile attributes. Product and rarity may match different Printings of the same Card. Attribute equality is typed by the registered Game Profile; scalar arrays use membership and nested object leaves use dotted paths. Null is written null, integers use canonical nonnegative decimal, booleans use true or false, strings are exact and case-sensitive. Attributes require game. Valid filter values with no matching combination return an empty page. All normalized filters are bound to card-keepr-card-cursor@1; changed filters return invalid_cursor (400).",
       "properties": {
-        "q": { "type": "string", "minLength": 1, "maxLength": 500 },
-        "game": { "enum": ["one-piece", "fusion-world", "digimon", "gundam"] },
-        "card_number": { "type": "string", "minLength": 1, "maxLength": 500 },
-        "product_id": { "type": "string", "minLength": 1, "maxLength": 500 },
-        "rarity": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,100}$", "description": "Normalized rarity, case-insensitive; matched against any Printing in the pinned revision." },
-        "limit": { "type": "string", "pattern": "^(100|[1-9][0-9]?)$" },
-        "after": { "type": "string", "maxLength": 16384, "description": "Opaque revision-pinned cursor returned by page.next_cursor." }
+        "q": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "game": {
+          "enum": [
+            "one-piece",
+            "fusion-world",
+            "digimon",
+            "gundam"
+          ]
+        },
+        "card_number": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "product_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "rarity": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,100}$",
+          "description": "Normalized rarity, case-insensitive; matched against any Printing in the pinned revision."
+        },
+        "limit": {
+          "type": "string",
+          "pattern": "^(100|[1-9][0-9]?)$"
+        },
+        "after": {
+          "type": "string",
+          "maxLength": 16384,
+          "description": "Opaque revision-pinned cursor returned by page.next_cursor."
+        }
       },
       "patternProperties": {
-        "^attribute\\.[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$": { "type": "string", "minLength": 1, "maxLength": 500 }
+        "^attribute\\.[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
       },
       "additionalProperties": false,
-      "if": { "not": { "propertyNames": { "enum": ["q", "game", "card_number", "product_id", "rarity", "limit", "after"] } } },
-      "then": { "required": ["game"] }
+      "if": {
+        "not": {
+          "propertyNames": {
+            "enum": [
+              "q",
+              "game",
+              "card_number",
+              "product_id",
+              "rarity",
+              "limit",
+              "after"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "game"
+        ]
+      }
     },
     "CardCollection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["data", "meta", "page", "links"],
+      "required": [
+        "data",
+        "meta",
+        "page",
+        "links"
+      ],
       "properties": {
         "data": {
           "type": "array",
-          "items": { "$ref": "#/$defs/CardSummary" }
+          "items": {
+            "$ref": "#/$defs/CardSummary"
+          }
         },
-        "meta": { "$ref": "#/$defs/Meta" },
-        "page": { "$ref": "#/$defs/Page" },
-        "links": { "$ref": "#/$defs/SelfLink" }
+        "meta": {
+          "$ref": "#/$defs/Meta"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        },
+        "links": {
+          "$ref": "#/$defs/SelfLink"
+        }
       }
     },
     "CardDocument": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["data", "meta", "links"],
-      "dependentRequired": {
-        "provenance": ["included"]
-      },
+      "required": [
+        "data",
+        "meta",
+        "links"
+      ],
       "properties": {
-        "data": { "$ref": "#/$defs/CardDetail" },
+        "data": {
+          "$ref": "#/$defs/CardDetail"
+        },
         "included": {
           "type": "array",
           "items": {
-            "oneOf": [
-              { "$ref": "#/$defs/Printing" },
-              { "$ref": "#/$defs/EvidenceResource" }
-            ]
+            "$ref": "#/$defs/Printing"
           }
         },
-        "provenance": { "$ref": "#/$defs/Provenance" },
-        "disagreements": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/Disagreement" }
+        "meta": {
+          "$ref": "#/$defs/Meta"
         },
-        "meta": { "$ref": "#/$defs/Meta" },
-        "links": { "$ref": "#/$defs/SelfLink" }
+        "links": {
+          "$ref": "#/$defs/SelfLink"
+        }
       }
     },
     "PrintingCollection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["data", "meta", "page", "links"],
+      "required": [
+        "data",
+        "meta",
+        "page",
+        "links"
+      ],
       "properties": {
         "data": {
           "type": "array",
-          "items": { "$ref": "#/$defs/Printing" }
+          "items": {
+            "$ref": "#/$defs/Printing"
+          }
         },
-        "meta": { "$ref": "#/$defs/Meta" },
-        "page": { "$ref": "#/$defs/Page" },
-        "links": { "$ref": "#/$defs/SelfLink" }
+        "meta": {
+          "$ref": "#/$defs/Meta"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        },
+        "links": {
+          "$ref": "#/$defs/SelfLink"
+        }
       }
     },
     "PrintingDocument": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["data", "meta", "links"],
+      "required": [
+        "data",
+        "meta",
+        "links"
+      ],
       "properties": {
-        "data": { "$ref": "#/$defs/Printing" },
-        "included": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/EvidenceResource" }
+        "data": {
+          "$ref": "#/$defs/Printing"
         },
-        "provenance": { "$ref": "#/$defs/Provenance" },
-        "disagreements": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/Disagreement" }
+        "meta": {
+          "$ref": "#/$defs/Meta"
         },
-        "meta": { "$ref": "#/$defs/Meta" },
-        "links": { "$ref": "#/$defs/SelfLink" }
+        "links": {
+          "$ref": "#/$defs/SelfLink"
+        }
       }
     },
     "ProductCollection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["data", "meta", "page", "links"],
+      "required": [
+        "data",
+        "meta",
+        "page",
+        "links"
+      ],
       "properties": {
         "data": {
           "type": "array",
-          "items": { "$ref": "#/$defs/Product" }
+          "items": {
+            "$ref": "#/$defs/Product"
+          }
         },
-        "meta": { "$ref": "#/$defs/Meta" },
-        "page": { "$ref": "#/$defs/Page" },
-        "links": { "$ref": "#/$defs/SelfLink" }
+        "meta": {
+          "$ref": "#/$defs/Meta"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        },
+        "links": {
+          "$ref": "#/$defs/SelfLink"
+        }
       }
     },
     "ProductDocument": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["data", "meta", "links"],
-      "dependentRequired": {
-        "included": ["provenance"],
-        "provenance": ["included"]
-      },
-      "properties": {
-        "data": { "$ref": "#/$defs/Product" },
-        "included": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/EvidenceResource" }
-        },
-        "provenance": {
-          "description": "JSON Pointers may address Product facts or nested Release facts, for example /data/releases/0/date/value.",
-          "$ref": "#/$defs/Provenance"
-        },
-        "disagreements": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/Disagreement" }
-        },
-        "meta": { "$ref": "#/$defs/Meta" },
-        "links": { "$ref": "#/$defs/SelfLink" }
-      }
-    },
-    "EvidenceResource": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["type", "id", "captured_at", "source"],
-      "properties": {
-        "type": { "enum": ["source_observation", "curated_revision"] },
-        "id": { "$ref": "#/$defs/OpaqueId" },
-        "captured_at": { "$ref": "#/$defs/Timestamp" },
-        "source": { "type": "string", "minLength": 1 },
-        "surface": { "type": "string", "minLength": 1 },
-        "request_role": {
-          "enum": ["surface", "listing", "detail", "product_detail", "image"]
-        },
-        "authority_class": {
-          "enum": [
-            "product_detail",
-            "release_schedule",
-            "product_listing",
-            "card_detail",
-            "card_listing",
-            "policy",
-            "unknown"
-          ]
-        }
-      }
-    },
-    "LegalityStatus": {
-      "type": "object",
-      "additionalProperties": false,
       "required": [
-        "card_id",
-        "on",
-        "format",
-        "event_tier",
-        "region",
-        "status",
-        "rule_ids",
-        "unresolved_scope_rule_ids",
-        "derivation"
+        "data",
+        "meta",
+        "links"
       ],
       "properties": {
-        "card_id": { "$ref": "#/$defs/OpaqueId" },
-        "on": { "type": "string", "format": "date" },
-        "format": { "type": "string", "minLength": 1 },
-        "event_tier": {
-          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
-        },
-        "region": { "$ref": "#/$defs/Region" },
-        "status": { "enum": ["legal", "restricted", "not_legal", "indeterminate"] },
-        "rule_ids": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/OpaqueId" }
-        },
-        "unresolved_scope_rule_ids": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/OpaqueId" }
-        },
-        "derivation": { "type": "string", "minLength": 1 }
-      }
-    },
-    "LegalityStatusDocument": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["data", "meta", "links"],
-      "dependentRequired": {
-        "included": ["provenance"],
-        "provenance": ["included"]
-      },
-      "properties": {
         "data": {
-          "type": "array",
-          "minItems": 1,
-          "items": { "$ref": "#/$defs/LegalityStatus" }
+          "$ref": "#/$defs/Product"
         },
-        "included": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/EvidenceResource" }
+        "meta": {
+          "$ref": "#/$defs/Meta"
         },
-        "provenance": { "$ref": "#/$defs/Provenance" },
-        "meta": { "$ref": "#/$defs/Meta" },
-        "links": { "$ref": "#/$defs/SelfLink" }
+        "links": {
+          "$ref": "#/$defs/SelfLink"
+        }
       }
     },
     "CatalogueExportSummary": {
@@ -998,48 +974,99 @@
         "links"
       ],
       "properties": {
-        "type": { "const": "catalogue_export" },
-        "catalogue_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "export_schema_major": { "type": "integer", "minimum": 1 },
-        "published_at": { "$ref": "#/$defs/Timestamp" },
-        "manifest_sha256": { "$ref": "#/$defs/Sha256" },
-        "links": { "$ref": "#/$defs/SelfLink" }
+        "type": {
+          "const": "catalogue_export"
+        },
+        "catalogue_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "export_schema_major": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "published_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "links": {
+          "$ref": "#/$defs/SelfLink"
+        }
       }
     },
     "CatalogueExportCollection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["data", "meta", "page", "links"],
+      "required": [
+        "data",
+        "meta",
+        "page",
+        "links"
+      ],
       "properties": {
         "data": {
           "type": "array",
-          "items": { "$ref": "#/$defs/CatalogueExportSummary" }
+          "items": {
+            "$ref": "#/$defs/CatalogueExportSummary"
+          }
         },
-        "meta": { "$ref": "#/$defs/Meta" },
-        "page": { "$ref": "#/$defs/Page" },
-        "links": { "$ref": "#/$defs/SelfLink" }
+        "meta": {
+          "$ref": "#/$defs/Meta"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        },
+        "links": {
+          "$ref": "#/$defs/SelfLink"
+        }
       }
     },
     "CatalogueExportDocument": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["data", "meta", "links"],
+      "required": [
+        "data",
+        "meta",
+        "links"
+      ],
       "properties": {
         "data": {
           "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@5"
         },
-        "meta": { "$ref": "#/$defs/Meta" },
-        "links": { "$ref": "#/$defs/SelfLink" }
+        "meta": {
+          "$ref": "#/$defs/Meta"
+        },
+        "links": {
+          "$ref": "#/$defs/SelfLink"
+        }
       }
     },
     "Problem": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "title", "status", "code", "detail", "request_id"],
+      "required": [
+        "type",
+        "title",
+        "status",
+        "code",
+        "detail",
+        "request_id"
+      ],
       "properties": {
-        "type": { "type": "string", "format": "uri-reference" },
-        "title": { "type": "string", "minLength": 1 },
-        "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+        "type": {
+          "type": "string",
+          "format": "uri-reference"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "integer",
+          "minimum": 400,
+          "maximum": 599
+        },
         "code": {
           "enum": [
             "authentication_required",
@@ -1051,29 +1078,46 @@
             "cursor_revision_unavailable",
             "catalogue_query_unavailable",
             "catalogue_export_deleted",
-            "invalid_legality_region",
+            "catalogue_export_unavailable",
             "range_not_satisfiable",
             "rate_limited",
             "internal_error"
           ]
         },
-        "detail": { "type": "string", "minLength": 1 },
-        "request_id": { "$ref": "#/$defs/OpaqueId" },
+        "detail": {
+          "type": "string",
+          "minLength": 1
+        },
+        "request_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
         "invalid_params": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["name", "reason"],
+            "required": [
+              "name",
+              "reason"
+            ],
             "properties": {
-              "name": { "type": "string", "minLength": 1 },
-              "reason": { "type": "string", "minLength": 1 }
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         },
         "links": {
           "type": "object",
-          "additionalProperties": { "type": "string", "format": "uri-reference" }
+          "additionalProperties": {
+            "type": "string",
+            "format": "uri-reference"
+          }
         }
       }
     }

@@ -38,7 +38,6 @@ import {
   nextPublicationToReconcileStatement,
 } from "./publication-storage-repository";
 import { approvalInProgress, parseApproval } from "./run-document-codec";
-import { checkedFreshnessAreasForRun, sourceFreshnessForExport } from "./run-freshness";
 import {
   assertRunIsApprovable,
   currentCatalogueState,
@@ -155,18 +154,6 @@ async function reconcileReservedPublication(
     expected_current_revision_id: approval.expected_current_revision_id,
   });
   const reconciliation = await reconciliationPublication(database, run.id, revisionId, publishedAt);
-  const sourceFreshness = await sourceFreshnessForExport(
-    database,
-    candidate.selected_games,
-    await checkedFreshnessAreasForRun(
-      database,
-      parseSelectedGames(run.selected_games_json),
-      run.id,
-      candidate,
-      publishedAt,
-    ),
-    publishedAt,
-  );
   const exportCandidate = await candidateWithCanonicalLegalityProvenance(database, candidate);
   const catalogueExport = await buildCatalogueExport(
     exportCandidate,
@@ -186,7 +173,6 @@ async function reconcileReservedPublication(
           cardEvidence: reconciliation.cardEvidence,
           printingEvidence: reconciliation.printingEvidence,
         },
-    sourceFreshness,
   );
   await assertReservedPublicationOwnsUnpublishedPrefix(database, run.id);
   const exactExport =
@@ -427,12 +413,6 @@ async function approveRunAttempt(
   });
   const writerToken = publicationWriterToken(revisionId);
   const reconciliation = await reconciliationPublication(database, run.id, revisionId, now);
-  const sourceFreshness = await sourceFreshnessForExport(
-    database,
-    candidate.selected_games,
-    await checkedFreshnessAreasForRun(database, parseSelectedGames(run.selected_games_json), run.id, candidate, now),
-    now,
-  );
   const exportCandidate = await candidateWithCanonicalLegalityProvenance(database, candidate);
   let catalogueExport: BuiltCatalogueExport;
   try {
@@ -454,7 +434,6 @@ async function approveRunAttempt(
             cardEvidence: reconciliation.cardEvidence,
             printingEvidence: reconciliation.printingEvidence,
           },
-      sourceFreshness,
     );
     assertBuiltPublicationBudget(catalogueExport);
   } catch (error) {

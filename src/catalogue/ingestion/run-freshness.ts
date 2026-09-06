@@ -1,18 +1,8 @@
 import { adapterReconciliationAreas, requiredSourceAdapter } from "../adapters";
 import type { SourceFreshness } from "../export";
-import {
-  compareSourceFreshness,
-  type SourceFreshnessStorageRow,
-  sourceFreshnessFromStorage,
-  sourceFreshnessKey,
-  sourceFreshnessStorageScope,
-} from "../read";
+import { sourceFreshnessStorageScope } from "../read";
 import type { CatalogueCandidate, CatalogueStore, SupportedGame } from "../shared";
-import {
-  publishedSourceFreshnessStatement,
-  recordSourceFreshnessStatement,
-  runObservationAdaptersStatement,
-} from "./run-freshness-repository";
+import { recordSourceFreshnessStatement, runObservationAdaptersStatement } from "./run-freshness-repository";
 
 export async function freshnessStatementsForRun(
   database: CatalogueStore,
@@ -139,29 +129,4 @@ async function freshnessCoverage(
     if (areas.includes("errata")) errata.add(observed.supported_game);
   }
   return { catalogue, errata };
-}
-
-export async function sourceFreshnessForExport(
-  database: CatalogueStore,
-  catalogueGames: readonly SupportedGame[],
-  refreshedChecks: readonly SourceFreshness[],
-  publishedAt: string,
-): Promise<SourceFreshness[]> {
-  const prior = await publishedSourceFreshnessStatement(database).all<SourceFreshnessStorageRow>();
-  const freshness = new Map<string, SourceFreshness>();
-  for (const row of prior.results) {
-    const check = sourceFreshnessFromStorage(row);
-    if (catalogueGames.includes(check.game)) {
-      freshness.set(sourceFreshnessKey(check), check);
-    }
-  }
-  for (const check of refreshedChecks) {
-    if (catalogueGames.includes(check.game)) {
-      freshness.set(sourceFreshnessKey(check), {
-        ...check,
-        checked_at: check.checked_at.length === 0 ? publishedAt : check.checked_at,
-      });
-    }
-  }
-  return [...freshness.values()].sort(compareSourceFreshness);
 }

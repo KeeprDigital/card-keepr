@@ -49,14 +49,9 @@ written into those tables at publication time by the owning cluster:
   `reconciled_printing_images`; `revision_printing_images` now carries
   `media_type`, `content_sha256`, `content_byte_length`, and `object_key`,
   written by the `ingestion` cluster's publication statements.
-- The Legality Status evidence sidecar (`legality-status.ts`) used to join
-  `source_snapshots` for each rule's capture instant;
-  `revision_legality_rules.source_retrieved_at` now carries it, written by
-  `legality-publication.ts`.
-- Product evidence (`product-release-read.ts`) used to join
-  `curated_revisions` for each Curated Revision's author and creation
-  instant; it now reads them from `catalogue_curated_provenance`, which
-  `curatedPublicationStatements` already projected per revision.
+- Historical Legality Status and Product evidence sidecars used published
+  evidence projections. Issue #217 removes these consumer surfaces under ADRs
+  0013–0014; their retained administrative and recovery evidence remains intact.
 
 Migration 0004 backfills the two new column sets on a populated database
 and adds an `AFTER INSERT` guard on each table that rejects a revision row
@@ -75,7 +70,7 @@ is enumerated, and each is re-exported from the module that defines it.
 | Cluster | Files | Public surface (`index.ts`) |
 | --- | --- | --- |
 | `shared` | `serialization.ts`, `export-compression.ts`, `calendar-date.ts`, `streaming-sha256.ts`, `idempotent-identities.ts`, `administration-problem.ts`, `operational-diagnostics.ts`, `spine-revision.mjs` (+ `.d.mts`), `catalogue-candidate-types.ts`, `ingestion-run-state.ts`, `workflow-driver.ts`, `workflow-steps.ts`, `workflow-progress.ts`, `curated-provenance.ts`, `reconciliation-profile.ts`, `reconciliation-payload.ts`, `export-limits.ts` | Canonical JSON and hashing, deterministic gzip, calendar-date check, streaming SHA-256, idempotent identities, `AdministrationProblem`, operational diagnostics, `SPINE_REVISION_ID`, the Catalogue Candidate contract and its leaf types, Curated Provenance types, Game Profile contract helpers, D1 payload chunking and the guarded atomic batch, export limits, Ingestion Run state and transition contract, Workflow driver and named-step contract |
-| `read` | `read.ts`, `detail-representation.ts`, `card-collection-read.ts`, `printing-collection-read.ts`, `product-release-read.ts`, `legality-status.ts`, `card-search.ts`, `source-freshness.ts` | The api worker's response builders and read problems (cards, printings, products, exports, status, Legality Status), the card-search text and query contract, source-freshness storage helpers |
+| `read` | `read.ts`, `detail-representation.ts`, `card-collection-read.ts`, `printing-collection-read.ts`, `product-release-read.ts`, `card-search.ts`, `source-freshness.ts` | The api worker's response builders and read problems (cards, printings, products, exports, status), the card-search text and query contract, source-freshness storage helpers |
 | `ingestion` | `ingestion.ts`, `candidate-inspection.ts`, `catalogue-revision-retention.ts`, `card-search-materialization.ts`, `card-search-repair-administration.ts`, `production-release.ts` | Ingestion Run administration (`approveRun`, `rejectRun`, `retryRun`, `retryPublicationCleanup`, `showRun`, `inspectCandidate`, `administrationStatus`), Production Release smoke targets, guarded card-search repair, `prepareProductionRelease` |
 | `reconciliation` | `card-printing-reconciliation.ts`, `digimon-reconciliation.ts`, `errata-rules-text.ts`, `reconciliation-candidate-store.ts`, `reconciliation-evidence.ts`, `reconciliation-model.ts`, `reconciliation-observation.ts`, `reconciliation-publication.ts`, `reconciliation-read.ts`, `reconciliation-relationships.ts`, `reconciliation-repository.ts`, `reconciliation-workflow.ts`, `product-release-catalogue.ts`, `product-release-projection.ts`, `product-release-publication.ts`, `publication-lifecycle-types.ts` | Card and Printing reconciliation entry points, the reconciliation Workflow, candidate persistence (`digestBoundCandidatePayload`, `failReconciliationWorkflow`, `retainedReconciliationResult`), the publication plan and its evidence types, observation parsing, Gundam listing-graph validation, erratum export helpers, Product and Release reconciliation, projection, and publication statements |
 | `source-evidence` | `source-evidence.ts`, `source-evidence-batch.ts`, `source-evidence-capture.ts`, `source-evidence-model.ts`, `source-evidence-parsing.ts`, `source-evidence-repository.ts`, `source-evidence-repository-types.ts`, `collection-inspection.ts`, `collection-recovery.ts`, `workflow-progress.ts` | Evidence run administration (start, retry, show, extend capacity, reparse, snapshot and observation-set content), request batch collection, capture and host pacing, Evidence Plan parsing and request failure policy, the evidence repository's run, request, pause, resume, terminate, and Workflow Attempt operations, collection Workflow classification |
@@ -101,10 +96,9 @@ boundary check enforces:
 - `backup-recovery` -> `shared`, `read`, `legality`
 - `ingestion` -> every cluster
 
-The api worker imports `read` and `shared` only; its transitive reach
-into `legality` and `adapters` through `legality-status.ts` and
-`source-freshness.ts` is the read cluster's own dependency, bounded by the
-direction above. The ingestion worker imports everything else.
+The api worker imports `read` and `shared` only. Consumer serialization uses the
+shared card-content projection; source-health and evidence metadata remain
+administrative. The ingestion worker imports the other domain clusters.
 
 ## Edges #97 repointed to keep the cluster graph acyclic
 
@@ -134,12 +128,9 @@ re-exports on `legality-rule.ts`, `legality-effect-policy.ts`,
 
 ## Placement notes
 
-- `card-search.ts` and `source-freshness.ts` sit in `read` because the api
-  serves them; the ingestion side materialises against the same contract,
-  so `ingestion -> read` is an intended edge (as `backup-recovery -> read`
-  already is for verification).
-- `legality-status.ts` sits in `read` because it is an api response; the
-  Legality Rule model it evaluates is `legality`.
+- `card-search.ts` sits in `read` because the API serves it; ingestion
+  materialises against the same contract. The historical `source-freshness.ts`
+  storage helpers remain used by ingestion, while consumer freshness is removed.
 - `reconciliation-profile.ts` and `reconciliation-payload.ts` sit in
   `shared` despite their names: the Game Profile contract is consumed by
   `legality`, `curated`, `export`, and `reconciliation`, and the payload

@@ -6,20 +6,18 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import {
   applyMigrations,
+  waitForRunState as awaitRunState,
   exportRecords,
   runCli,
   startWorker,
   stopWorker,
   waitForHealth,
-  waitForRunState as awaitRunState,
 } from "./fixtures/catalogue-runtime-harness.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
 test("the owner publishes a complete Digimon catalogue consumed through authenticated HTTP", async (t) => {
-  const directory = await mkdtemp(
-    join(tmpdir(), "card-keepr-digimon-boundary-"),
-  );
+  const directory = await mkdtemp(join(tmpdir(), "card-keepr-digimon-boundary-"));
   const statePath = join(directory, "shared-state");
   const administrationKey = randomUUID();
   const apiKey = randomUUID();
@@ -28,30 +26,24 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   const ingestionConfig = join(directory, "ingestion.wrangler.json");
   const planPath = join(directory, "digimon-source-plan.json");
   await Promise.all([
-    writeFile(
-      ingestionEnv,
-      `ADMINISTRATION_KEY=${administrationKey}\nADMINISTRATION_CLOCK_MODE=request\n`,
-      { mode: 0o600 },
-    ),
+    writeFile(ingestionEnv, `ADMINISTRATION_KEY=${administrationKey}\nADMINISTRATION_CLOCK_MODE=request\n`, {
+      mode: 0o600,
+    }),
     writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
-    writeFile(
-      planPath,
-      JSON.stringify(digimonPlan("complete-malicious-root")),
-      { mode: 0o600 },
-    ),
+    writeFile(planPath, JSON.stringify(digimonPlan("complete-malicious-root")), { mode: 0o600 }),
   ]);
   await applyMigrations(statePath);
-  const config = JSON.parse(
-    await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"),
-  );
+  const config = JSON.parse(await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
   delete config.$schema;
   config.main = resolve(root, "apps/ingestion/src/index.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
   config.ratelimits[0].simple.limit = 300;
-  config.services = [{
-    binding: "OFFICIAL_SOURCE_TRANSPORT",
-    service: "card-keepr-synthetic-official-source",
-  }];
+  config.services = [
+    {
+      binding: "OFFICIAL_SOURCE_TRANSPORT",
+      service: "card-keepr-synthetic-official-source",
+    },
+  ];
   await writeFile(ingestionConfig, JSON.stringify(config));
 
   const source = await startWorker({
@@ -65,11 +57,7 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   });
   let api = null;
   t.after(async () => {
-    await Promise.all([
-      stopWorker(source),
-      stopWorker(ingestion),
-      api === null ? Promise.resolve() : stopWorker(api),
-    ]);
+    await Promise.all([stopWorker(source), stopWorker(ingestion), api === null ? Promise.resolve() : stopWorker(api)]);
     await rm(directory, { recursive: true, force: true });
   });
   await Promise.all([
@@ -82,112 +70,59 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   };
 
   const maliciousCollected = await runCli(
-    [
-      "source",
-      "collect",
-      "--plan-file",
-      planPath,
-      "--idempotency-key",
-      "digimon-malicious-root-collect",
-      "--json",
-    ],
+    ["source", "collect", "--plan-file", planPath, "--idempotency-key", "digimon-malicious-root-collect", "--json"],
     cliEnvironment,
   );
   assert.equal(maliciousCollected.code, 0, maliciousCollected.stderr);
   const maliciousRun = JSON.parse(maliciousCollected.stdout);
-  const maliciousResumed = await runCli(
-    ["source", "resume", "--run-id", maliciousRun.id, "--json"],
-    cliEnvironment,
-  );
+  const maliciousResumed = await runCli(["source", "resume", "--run-id", maliciousRun.id, "--json"], cliEnvironment);
   assert.equal(maliciousResumed.code, 0, maliciousResumed.stderr);
-  const failed = await waitForRunState(
-    maliciousRun.id,
-    "failed",
-    cliEnvironment,
-    ingestion,
-  );
+  const failed = await waitForRunState(maliciousRun.id, "failed", cliEnvironment, ingestion);
   assert.equal(failed.failure_code, "source_parse_failed");
   assert.ok(
-    failed.snapshots.some((snapshot) =>
-      snapshot.request.url ===
-        "https://world.digimoncard.com/cards/index.php?search=true" &&
-      !failed.observation_sets.some(
-        ({ source_snapshot_id }) => source_snapshot_id === snapshot.id,
-      )
+    failed.snapshots.some(
+      (snapshot) =>
+        snapshot.request.url === "https://world.digimoncard.com/cards/index.php?search=true" &&
+        !failed.observation_sets.some(({ source_snapshot_id }) => source_snapshot_id === snapshot.id),
     ),
     "malicious root catalogue facts must leave their snapshot unparsed and block approval",
   );
-  await writeFile(
-    planPath,
-    JSON.stringify(digimonPlan("complete-no-errata")),
-    { mode: 0o600 },
-  );
+  await writeFile(planPath, JSON.stringify(digimonPlan("complete-no-errata")), { mode: 0o600 });
   const noErrataCollected = await runCli(
-    [
-      "source",
-      "collect",
-      "--plan-file",
-      planPath,
-      "--idempotency-key",
-      "digimon-no-errata-collect",
-      "--json",
-    ],
+    ["source", "collect", "--plan-file", planPath, "--idempotency-key", "digimon-no-errata-collect", "--json"],
     cliEnvironment,
   );
   assert.equal(noErrataCollected.code, 0, noErrataCollected.stderr);
   const noErrataRun = JSON.parse(noErrataCollected.stdout);
-  const noErrataResumed = await runCli(
-    ["source", "resume", "--run-id", noErrataRun.id, "--json"],
-    cliEnvironment,
-  );
+  const noErrataResumed = await runCli(["source", "resume", "--run-id", noErrataRun.id, "--json"], cliEnvironment);
   assert.equal(noErrataResumed.code, 0, noErrataResumed.stderr);
-  const noErrataFailed = await waitForRunState(
-    noErrataRun.id,
-    "failed",
-    cliEnvironment,
-    ingestion,
-  );
+  const noErrataFailed = await waitForRunState(noErrataRun.id, "failed", cliEnvironment, ingestion);
   assert.equal(
     noErrataFailed.failure_code,
     "printing_reconciliation_blocked",
-    JSON.stringify(noErrataFailed.snapshots.filter((snapshot) =>
-      !noErrataFailed.observation_sets.some(
-        ({ source_snapshot_id }) => source_snapshot_id === snapshot.id,
-      )
-    ).map(({ request }) => request.url)),
+    JSON.stringify(
+      noErrataFailed.snapshots
+        .filter(
+          (snapshot) =>
+            !noErrataFailed.observation_sets.some(({ source_snapshot_id }) => source_snapshot_id === snapshot.id),
+        )
+        .map(({ request }) => request.url),
+    ),
   );
   await writeFile(planPath, JSON.stringify(digimonPlan("complete")), {
     mode: 0o600,
   });
 
   const collected = await runCli(
-    [
-      "source",
-      "collect",
-      "--plan-file",
-      planPath,
-      "--idempotency-key",
-      "digimon-complete-collect",
-      "--json",
-    ],
+    ["source", "collect", "--plan-file", planPath, "--idempotency-key", "digimon-complete-collect", "--json"],
     cliEnvironment,
   );
   assert.equal(collected.code, 0, collected.stderr);
   const run = JSON.parse(collected.stdout);
-  const resumed = await runCli(
-    ["source", "resume", "--run-id", run.id, "--json"],
-    cliEnvironment,
-  );
+  const resumed = await runCli(["source", "resume", "--run-id", run.id, "--json"], cliEnvironment);
   assert.equal(resumed.code, 0, resumed.stderr);
-  const completed = await waitForRunState(
-    run.id,
-    "awaiting_approval",
-    cliEnvironment,
-    ingestion,
-  );
-  const cardListSnapshots = completed.snapshots.filter(({ request }) =>
-    request.url.includes("/cards/index.php")
-  );
+  const completed = await waitForRunState(run.id, "awaiting_approval", cliEnvironment, ingestion);
+  const cardListSnapshots = completed.snapshots.filter(({ request }) => request.url.includes("/cards/index.php"));
   assert.deepEqual(
     cardListSnapshots.map(({ request }) => request.url),
     [
@@ -204,9 +139,7 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     "the retained request order must deterministically close the exact Digimon leaf",
   );
   const observationCount = (snapshot) =>
-    completed.observation_sets.find(
-      ({ source_snapshot_id }) => source_snapshot_id === snapshot.id,
-    )?.observation_count;
+    completed.observation_sets.find(({ source_snapshot_id }) => source_snapshot_id === snapshot.id)?.observation_count;
   assert.deepEqual(
     cardListSnapshots.map(observationCount),
     [1, 1, 0, 1, 1, 3],
@@ -224,25 +157,23 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   );
   assert.equal(exactLeafEvidenceResponse.status, 200);
   const exactLeafEvidence = await exactLeafEvidenceResponse.json();
-  assert.deepEqual(exactLeafEvidence.evidence_summary, {
-    observation_count: 3,
-    declared_record_count: 3,
-    parsed_record_count: 3,
-    required_surfaces_complete: true,
-    partitions_complete: true,
-    structurally_complete: true,
-  }, "the exact leaf summary must count each retained observation once");
-
-  const inspected = await runCli(
-    ["candidate", "inspect", "--run-id", run.id, "--json"],
-    cliEnvironment,
+  assert.deepEqual(
+    exactLeafEvidence.evidence_summary,
+    {
+      observation_count: 3,
+      declared_record_count: 3,
+      parsed_record_count: 3,
+      required_surfaces_complete: true,
+      partitions_complete: true,
+      structurally_complete: true,
+    },
+    "the exact leaf summary must count each retained observation once",
   );
+
+  const inspected = await runCli(["candidate", "inspect", "--run-id", run.id, "--json"], cliEnvironment);
   assert.equal(inspected.code, 0, inspected.stderr);
   const inspection = JSON.parse(inspected.stdout);
-  const replayedInspection = await runCli(
-    ["candidate", "inspect", "--run-id", run.id, "--json"],
-    cliEnvironment,
-  );
+  const replayedInspection = await runCli(["candidate", "inspect", "--run-id", run.id, "--json"], cliEnvironment);
   assert.equal(replayedInspection.code, 0, replayedInspection.stderr);
   const replay = JSON.parse(replayedInspection.stdout);
   assert.equal(
@@ -255,16 +186,12 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   assert.equal(inspection.diff.summary.printings_added, 2);
   assert.ok(
     inspection.diff.warnings.some(
-      ({ code, raw_value }) =>
-        code === "unknown_source_field" &&
-        raw_value === "Retain this future mechanic verbatim",
+      ({ code, raw_value }) => code === "unknown_source_field" && raw_value === "Retain this future mechanic verbatim",
     ),
     "unknown labelled mechanics must remain visible for schema review",
   );
   assert.ok(
-    inspection.diff.warnings.some(
-      ({ code }) => code === "product_relationship_unresolved",
-    ),
+    inspection.diff.warnings.some(({ code }) => code === "product_relationship_unresolved"),
     "a fuzzy Product label must remain unresolved",
   );
 
@@ -285,11 +212,7 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     ],
     cliEnvironment,
   );
-  assert.equal(
-    approved.code,
-    0,
-    `${approved.stdout}\n${approved.stderr}\n${ingestion.getOutput()}`,
-  );
+  assert.equal(approved.code, 0, `${approved.stdout}\n${approved.stderr}\n${ingestion.getOutput()}`);
   const revisionId = JSON.parse(approved.stdout).resulting_revision_id;
   await stopWorker(ingestion);
 
@@ -300,41 +223,20 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   });
   await waitForHealth(`${api.url}/health`, apiKey, api);
   const headers = { authorization: `Bearer ${apiKey}` };
-  const manifestResponse = await fetch(
-    `${api.url}/v1/catalogue-exports/${revisionId}`,
-    { headers },
-  );
+  const manifestResponse = await fetch(`${api.url}/v1/catalogue-exports/${revisionId}`, { headers });
   assert.equal(manifestResponse.status, 200);
   const manifest = await manifestResponse.json();
-  assert.deepEqual(
-    manifest.data.source_freshness
-      .filter(({ game, area }) =>
-        game === "digimon" &&
-        ["cards-and-printings", "errata"].includes(area)
-      )
-      .map(({ area }) => area)
-      .sort(),
-    ["cards-and-printings", "errata"],
-    "the combined adapter must refresh its catalogue and standalone Errata areas",
-  );
-  const cardsResponse = await fetch(
-    `${api.url}/v1/cards?game=digimon&card_number=BT99-001`,
-    { headers },
-  );
+
+  assert.equal(Object.hasOwn(manifest.data, "source_freshness"), false);
+  const cardsResponse = await fetch(`${api.url}/v1/cards?game=digimon&card_number=BT99-001`, { headers });
   assert.equal(cardsResponse.status, 200);
   const cardsDocument = await cardsResponse.json();
   assert.equal(cardsDocument.data.length, 1);
-  const detailResponse = await fetch(
-    `${api.url}/v1/cards/${cardsDocument.data[0].id}?include=printings`,
-    { headers },
-  );
+  const detailResponse = await fetch(`${api.url}/v1/cards/${cardsDocument.data[0].id}?include=printings`, { headers });
   assert.equal(detailResponse.status, 200);
   const detail = await detailResponse.json();
   assert.equal(detail.data.name, "Synthetic Base Digimon");
-  assert.equal(
-    detail.data.effective_rules_text,
-    null,
-  );
+  assert.equal(detail.data.effective_rules_text, null);
   assert.deepEqual(detail.data.game_data, {
     profile: "digimon@1",
     attributes: {
@@ -347,13 +249,15 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
       form: "Mega",
       attribute: "Vaccine",
       traits: ["Synthetic Dragon"],
-      digivolution_requirements: [{
-        index: 1,
-        from_level: 5,
-        colours: ["blue"],
-        cost: 4,
-        raw_condition: "Blue Lv.5: 4",
-      }],
+      digivolution_requirements: [
+        {
+          index: 1,
+          from_level: 5,
+          colours: ["blue"],
+          cost: 4,
+          raw_condition: "Blue Lv.5: 4",
+        },
+      ],
       text_sections: [
         { kind: "effect", text: "Synthetic main effect." },
         { kind: "inherited_effect", text: "Synthetic inherited effect." },
@@ -372,33 +276,21 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
       link_dp: 3000,
     },
   });
-  assert.deepEqual(
-    detail.included.map(({ game_data }) =>
-      game_data.attributes.alternative_art
-    ).sort(),
-    [false, true],
-  );
+  assert.deepEqual(detail.included.map(({ game_data }) => game_data.attributes.alternative_art).sort(), [false, true]);
 
   const [cards, printings, relationships, errata] = await Promise.all(
     ["cards", "printings", "relationships", "errata"].map((component) =>
-      exportRecords(api.port, apiKey, revisionId, component)
+      exportRecords(api.port, apiKey, revisionId, component),
     ),
   );
   assert.equal(cards.length, 1);
   assert.equal(cards[0].game_data.profile, "digimon@1");
   assert.equal(printings.length, 2);
   assert.ok(
-    printings.every(({ printed_rules_text }) =>
-      printed_rules_text === "Synthetic printed rules."
-    ),
+    printings.every(({ printed_rules_text }) => printed_rules_text === "Synthetic printed rules."),
     "explicit removal changes Effective Rules Text without rewriting Printed Rules Text",
   );
-  assert.deepEqual(
-    printings.map(({ game_data }) =>
-      game_data.attributes.alternative_art
-    ).sort(),
-    [false, true],
-  );
+  assert.deepEqual(printings.map(({ game_data }) => game_data.attributes.alternative_art).sort(), [false, true]);
   assert.equal(
     relationships.filter(({ kind }) => kind === "printing-product").length,
     2,
@@ -410,30 +302,36 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
       effective_from,
       corrected_value,
     })),
-    [{
-      target_type: "card",
-      effective_from: "2026-07-01",
-      corrected_value: null,
-    }],
+    [
+      {
+        target_type: "card",
+        effective_from: "2026-07-01",
+        corrected_value: null,
+      },
+    ],
     "the standalone Official Errata surface must publish typed authority",
   );
 });
 
 function digimonPlan(marker) {
   return {
-    plans: [{
-      supported_game: "digimon",
-      source_lineage: "digimon-en",
-      adapter_version: "digimon-en@7",
-      requests: [{
-        id: "digimon-en:discovery",
-        url: "https://world.digimoncard.com/cards/index.php?search=true",
-        headers: {
-          accept: `text/html; card-keepr-digimon-scenario=card-keepr-acceptance-digimon/${marker}`,
-          "user-agent": `card-keepr-acceptance-digimon/${marker}`,
-        },
-      }],
-    }],
+    plans: [
+      {
+        supported_game: "digimon",
+        source_lineage: "digimon-en",
+        adapter_version: "digimon-en@7",
+        requests: [
+          {
+            id: "digimon-en:discovery",
+            url: "https://world.digimoncard.com/cards/index.php?search=true",
+            headers: {
+              accept: `text/html; card-keepr-digimon-scenario=card-keepr-acceptance-digimon/${marker}`,
+              "user-agent": `card-keepr-acceptance-digimon/${marker}`,
+            },
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -445,14 +343,9 @@ async function waitForRunState(runId, expectedState, environment, worker) {
       deadlineMs: 30_000,
     });
   } catch (error) {
-    const inspected = await runCli(
-      ["candidate", "inspect", "--run-id", runId, "--json"],
-      environment,
-    );
+    const inspected = await runCli(["candidate", "inspect", "--run-id", runId, "--json"], environment);
     error.message += `\ncandidate inspection: ${JSON.stringify(
-      inspected.code === 0
-        ? JSON.parse(inspected.stdout)
-        : { code: inspected.code, stdout: inspected.stdout },
+      inspected.code === 0 ? JSON.parse(inspected.stdout) : { code: inspected.code, stdout: inspected.stdout },
     )}`;
     throw error;
   }
