@@ -1,0 +1,10 @@
+{
+  "classification": "synthetic-admission-scenarios",
+  "purpose": "Replay inputs for future admission implementation. No real supplemental-only rules-level Card was verified. These scenarios are neither source captures nor claims of existing cards, and must never be published as real Catalogue Data.",
+  "cases": [
+    {"id":"supplemental-only-card", "source":"synthetic-supplemental", "sourceRecordId":"SYNTHETIC-CARD-ONLY", "publisherNumber":"SYNTHETIC-001", "name":"Synthetic admission test card", "officialEvidence":[], "expected":"Entity Proposal pending sufficient real-card evidence or explicit owner attestation; do not invent publisher confirmation."},
+    {"id":"missing-identifier", "source":"synthetic-supplemental", "sourceRecordId":"SYNTHETIC-UNNUMBERED", "publisherNumber":null, "name":"Synthetic unnumbered admission test", "expected":"Preserve missing number; assess under the Game Profile rather than manufacture a publisher identifier."},
+    {"id":"later-confirmation", "initialSourceRecordId":"SYNTHETIC-CARD-ONLY", "laterSource":"synthetic-official", "laterSourceRecordId":"SYNTHETIC-CONFIRMATION", "expected":"After evidence-backed admission, later matching publisher confirmation attaches to the existing Card and Printing IDs."},
+    {"id":"same-field-conflict", "sourceRecordId":"SYNTHETIC-CARD-ONLY", "field":"rulesText", "claims":[{"source":"synthetic-supplemental","value":"Synthetic value A"},{"source":"synthetic-official","value":"Synthetic value B"}], "expected":"Retain both claims and flag the conflict under selected authority; neither recency nor publisher ownership silently resolves it."}
+  ]
+}

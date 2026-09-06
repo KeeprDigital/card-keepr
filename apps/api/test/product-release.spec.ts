@@ -2,7 +2,7 @@ import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
 import { productReleasePublicationStatements } from "../../../src/catalogue/reconciliation";
 import { type CatalogueCandidate, catalogueCandidateContract, catalogueStore } from "../../../src/catalogue/shared";
@@ -1239,3 +1239,20 @@ function expectSchema(definition: string, value: unknown): void {
   expect(validate).toBeDefined();
   expect(validate!(value), JSON.stringify(validate!.errors)).toBe(true);
 }
+
+// Injected storage loss against a synthetic published fixture, not source evidence.
+test("a missing published Printing Image retains a protected missing-object diagnosis", async () => {
+  const logs: string[] = [];
+  vi.spyOn(console, "error").mockImplementation((value) => logs.push(String(value)));
+  await testEnv.PRINTING_IMAGES.delete(
+    "printing-images/46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
+  );
+  const response = await api("/v1/printing-images/printing_image_st15_front/content");
+  expect(response.status).toBe(500);
+  const problem = await response.json<{ request_id: string }>();
+  expect(problem).toMatchObject({ code: "internal_error", detail: "The request could not be completed." });
+  expect(logs.map((line) => JSON.parse(line)).find((event) => event.event === "request.failed")).toMatchObject({
+    request_id: problem.request_id,
+    causes: [{ classification: "missing_object", stack_reference: expect.any(String) }],
+  });
+});

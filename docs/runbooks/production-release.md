@@ -104,17 +104,30 @@ Release.
 ## Production Release behavior
 
 Before checkout, the workflow resolves `expected_head_sha` through the
-GitHub API with its own read-only token (issue #75): the value must be a
-full 40-character commit id, `main` must contain it (compare status
-`identical` or `behind`), and every `ci.yml` job must have a successful
-latest check run for the resolved CI commit. `ci` runs on pull requests and
-pushes to `main`. The release workflow currently resolves the pull request that
-merged into a merge commit and requires the check runs of its head commit;
-otherwise it checks the requested SHA itself. The list of required jobs lives in
-the workflow step's `REQUIRED_CI_JOBS` and the contract test keeps it equal to the
-`ci.yml` job ids. A missing, pending, or unsuccessful required check fails the
-gate. The production environment's branch policy and exact owner confirmation
-also apply; required reviewers are unavailable on the current billing plan.
+GitHub API with its own read-only token: the value must be a full
+40-character commit id, `main` must contain it (compare status `identical` or
+`behind`), and every expected `ci.yml` check must have exactly one successful
+latest GitHub Actions check run on that exact commit (issue #235). A green
+PR head cannot authorize its merge commit. `ci` runs on pull requests and
+pushes to `main`; a newer merge never substitutes the requested commit.
+
+The workflow step's `REQUIRED_CI_CHECKS` lists exact check names, including
+every ingestion and acceptance matrix shard. The contract test expands the
+`ci.yml` matrices and keeps that list complete. The gate reads all check-run
+pages and rejects missing, pending, failed, skipped, cancelled, duplicate or
+wrong-SHA evidence. API failures also stop progression before checkout or
+mutation. Target, binding, schema, recovery and serialized release guards
+continue to apply after this gate.
+
+Local validation is useful implementation evidence but never authorizes a
+Production Release in place of exact-commit CI. If a required run has no
+executed steps, inspect its job annotations to distinguish runner/account
+allowance failures from failing application tests. Restore runner availability
+through the owner before obtaining fresh required checks on the selected SHA;
+do not change billing or bypass the gate automatically. A failed infrastructure
+run is unavailable CI evidence, not a successful local or remote test run.
+The production environment's branch policy and exact owner confirmation also
+apply; required reviewers are unavailable on the current billing plan.
 
 `migrations/` is one schema baseline (`0001_baseline.sql`, schema level 1,
 ADR 0006) followed by guarded forward migrations. An empty database is

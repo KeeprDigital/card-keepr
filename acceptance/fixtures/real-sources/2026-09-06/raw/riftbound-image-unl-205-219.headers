@@ -1,0 +1,27 @@
+Content-Type: image/png
+Content-Length: 889238
+sanity-inflight-limit: 200
+sanity-inflight-current: 0
+x-sanity-asset-storage: gcs-default
+Content-Security-Policy: script-src 'none'
+x-content-type-options: nosniff
+Last-Modified: Tue, 24 Mar 2026 01:04:07 GMT
+xkey: dataset-dsfx7636-game_data_live
+xkey: 
+ dataset-dsfx7636-game_data_live-asset-7447b04d1e78192509e89e5ff3556368ea5c471a
+xkey: project-dsfx7636-game_data_live
+Cache-Tag: 
+ dataset-dsfx7636-game_data_live,dataset-dsfx7636-game_data_live-asset-7447b04d1e78192509e89e5ff3556368ea5c471a,project-dsfx7636-game_data_live
+traceparent: 00-0427c91c36c931f082fd9688b4d0115b-b8274f24248dba2e-01
+sanity-gateway: k8s-gcp-as-s1-prod-ing-01
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+X-Varnish-Age: 0
+Accept-Ranges: bytes
+Cache-Control: public, max-age=31099661, s-maxage=2592000
+Date: Sun, 06 Sep 2026 12:19:52 GMT
+Alt-Svc: h3=":443"; ma=93600,h3-29=":443"; ma=93600
+Connection: close
+Akamai-Request-BC: 
+ [a=123.253.149.63,b=153930259,c=g,n=AU_VIC_MELBOURNE,o=4764],[c=c,n=AU_VIC_MELBOURNE,o=20940]
+Akamai-GRN: 0.3f95fd7b.1788697192.92cca13
+

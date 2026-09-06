@@ -1,8 +1,10 @@
+import { logProtectedFailure } from "../../../src/http/protected-failure";
 import { problemResponse, typedProblem } from "../../../src/http/problem";
 
-export function apiProblemResponse(error: unknown, requestId: string): Response {
+export async function apiProblemResponse(error: unknown, requestId: string): Promise<Response> {
   const problem = typedProblem(error);
-  if (problem === null)
+  if (problem === null) {
+    await logProtectedFailure("api", requestId, error);
     return problemResponse({
       requestId,
       status: 500,
@@ -10,5 +12,6 @@ export function apiProblemResponse(error: unknown, requestId: string): Response 
       title: "Internal server error",
       detail: "The request could not be completed.",
     });
+  }
   return problemResponse({ requestId, ...problem, title: problem.title ?? "Request failed" });
 }
