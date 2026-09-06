@@ -1556,3 +1556,108 @@ test("persistent curated edits retain Release ownership and official relationshi
     expect((await approve(candidate.document)).response.status).toBe(200);
   }
 });
+
+test.each(["current_errata", "prior_errata"])(
+  "a %s storage outage resumes the retained Erratum and effective rules text",
+  async (namespace) => {
+    const { testEnv, post, approve } = await import("./reconciliation-helpers");
+    const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+    const seed = await reconcile(
+      (await collect("/reconciliation/errata-card-rules-text", `errata-state-seed-${namespace}`)).id,
+    );
+    expect((await approve(seed.document)).response.status).toBe(200);
+    const run = await collect("/reconciliation/errata-card-rules-text", `errata-state-next-${namespace}`);
+    const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
+    let unavailable = true;
+    let failures = 0;
+    const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement => {
+      const proxy = new Proxy(statement, {
+        get(target, property) {
+          if (property === "bind") return (...bound: unknown[]) => wrap(target.bind(...bound), sql, bound);
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      statements.set(proxy, { sql, values });
+      return proxy;
+    };
+    const database = new Proxy(testEnv.CATALOGUE_DB, {
+      get(target, property) {
+        if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
+        if (property === "batch")
+          return (batch: D1PreparedStatement[]) => {
+            if (
+              unavailable &&
+              batch.some((statement) => {
+                const entry = statements.get(statement);
+                return (
+                  entry?.sql.includes("INSERT INTO reconciliation_reducer_state") && entry.values.includes(namespace)
+                );
+              })
+            ) {
+              failures++;
+              throw new Error("Injected retained Erratum storage outage");
+            }
+            return target.batch(batch);
+          };
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const payload = {
+      ingestion_run_id: run.id,
+      expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
+      idempotency_key: "errata-state-outage",
+      observed_at: new Date().toISOString(),
+      generation: 0,
+    };
+    const event = { payload } as import("cloudflare:workers").WorkflowEvent<
+      import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+    >;
+    const step = {
+      do: async (_name: string, _config: unknown, callback: () => Promise<string>) => {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            return await callback();
+          } catch (error) {
+            if (attempt === 3) throw error;
+          }
+        }
+      },
+    } as unknown as import("cloudflare:workers").WorkflowStep;
+    await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
+    expect(failures).toBe(4);
+    expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+      state: "paused",
+      generation: 1,
+    });
+    expect(
+      (
+        await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+          generation: 1,
+          idempotency_key: "resume-errata-state",
+        })
+      ).response.status,
+    ).toBe(200);
+    unavailable = false;
+    await runReconciliationWorkflow(
+      { ...testEnv, CATALOGUE_DB: database },
+      { payload: { ...payload, generation: 1 } } as typeof event,
+      step,
+    );
+    const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+    expect(status.document.state).toBe("sealed");
+    const candidateId = (status.document.candidates as { id: string }[])[0]!.id;
+    const page = await get(`/v1/game-candidates/${candidateId}/partitions`);
+    const records: Record<string, Record<string, unknown>[]> = { cards: [], printings: [], errata: [] };
+    for (const partition of page.document.partitions as { kind: string; ordinal: number }[]) {
+      if (!(partition.kind in records)) continue;
+      const detail = await get(`/v1/game-candidates/${candidateId}/partitions/${partition.ordinal}`);
+      records[partition.kind]!.push(...(detail.document.records as Record<string, unknown>[]));
+    }
+    expect(records.cards).toEqual(seed.document.cards);
+    expect(records.printings).toEqual(seed.document.printings);
+    expect(records.errata!.map(({ id }) => id)).toEqual((seed.document.errata as { id: string }[]).map(({ id }) => id));
+    expect(records.cards![0]).toMatchObject({ effective_rules_text: "[On Play] Draw 2 cards, then discard 1 card." });
+  },
+);

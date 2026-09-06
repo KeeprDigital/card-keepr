@@ -1,3 +1,4 @@
+import { ReconciliationErrataState } from "./reconciliation-errata-state";
 import { ReconciliationCandidateState } from "./reconciliation-candidate-state";
 import { ReconciliationCardState } from "./reconciliation-card-state";
 import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
@@ -188,6 +189,15 @@ export async function reconcileRetainedCardPrintingEvidence(
   const priorPrintings = new ReconciliationReducerIndex<CataloguePrinting>(database, runId, "prior_printings");
   const printingImages = new ReconciliationReducerIndex<CataloguePrintingImage>(database, runId, "printing_images");
   const selectedGames = JSON.parse(run.selected_games_json) as SupportedGame[];
+  const priorErrata = new ReconciliationErrataState(database, runId, "prior_errata");
+  const currentErrata = new ReconciliationErrataState(database, runId, "current_errata");
+  const observedErrata = new ReconciliationErrataState(database, runId, "observed_errata");
+  const retainObservedErrata = async (records: readonly CatalogueErratum[]) => {
+    for (const record of records) {
+      await observedErrata.merge(record);
+      await currentErrata.merge(record);
+    }
+  };
   const priorProducts = new ReconciliationCandidateState(database, runId, "prior_products");
   const priorCandidate = await candidateAtRevision(database, run.expected_current_revision_id, selectedGames, {
     card: async (card) => {
@@ -223,6 +233,31 @@ export async function reconcileRetainedCardPrintingEvidence(
         if (reviewed === "present" || reviewed === "absent") relationship.observed = reviewed === "present";
       }
       await priorProducts.set("product_relationships", relationship);
+    },
+    erratum: async (erratum) => {
+      if (selectedGames.includes(erratum.game)) restoreCuratedEntitySourceFields(erratum);
+      let provenance: D1Result<{ source_lineage: string; source_observation_id: string; total: number }>;
+      try {
+        provenance = await errataProvenanceByIdsStatement(database, canonicalJson([erratum.id])).all();
+      } catch (cause) {
+        throw new ReconciliationReducerStorageError(cause);
+      }
+      if ((provenance.results[0]?.total ?? 0) > 500)
+        throw new Error("reconciliation_capacity_exceeded: one Erratum has too many provenance records.");
+      const restored = mergeCatalogueErrata(
+        [erratum],
+        [
+          {
+            ...erratum,
+            provenance: provenance.results.map(({ source_lineage, source_observation_id }) => ({
+              source_lineage,
+              source_observation_id,
+            })),
+          },
+        ],
+      )[0]!;
+      await priorErrata.merge(restored);
+      await currentErrata.merge(restored);
     },
   });
   const sourceMappings: SourceMapping[] = [];
@@ -278,9 +313,8 @@ export async function reconcileRetainedCardPrintingEvidence(
   const correctedCardIdentity = await pinnedCardIdentityResolver(database, runId);
   await pinEntityAdmissions(database, runId, JSON.parse(run.selected_games_json) as string[]);
   const admittedEntities = await applyPinnedEntityAdmissions(database, runId, cards, printings, sourceWarnings);
-  const observedErrata: CatalogueErratum[] = [];
-  const targetedCardIds = new Set<string>();
-  const targetedPrintingIds = new Set<string>();
+  const targetedCardIds = new ReconciliationReducerIndex<boolean>(database, runId, "erratum_target_cards");
+  const targetedPrintingIds = new ReconciliationReducerIndex<boolean>(database, runId, "erratum_target_printings");
   const cardCheckTimes = new Map<SupportedGame, string>();
   const productCheckTimes = new Map<SupportedGame, string>();
   const productGames = new Set<SupportedGame>();
@@ -520,7 +554,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         ),
       ])
     ).flat();
-    observedErrata.push(...currentCardErrata);
+    await retainObservedErrata(currentCardErrata);
     const currentEffectiveAuthority = currentCardErrata.some(
       (erratum) => erratum.effective_from === null || erratum.effective_from <= observedAt.slice(0, 10),
     );
@@ -556,7 +590,11 @@ export async function reconcileRetainedCardPrintingEvidence(
       ...proposedCard,
       effective_rules_text: currentEffectiveAuthority
         ? proposedCard.effective_rules_text
-        : deriveEffectiveRulesText({ id: cardId, ...proposedCard }, priorCandidate?.errata ?? [], observedAt),
+        : deriveEffectiveRulesText(
+            { id: cardId, ...proposedCard },
+            await priorErrata.forCard(proposedCard.game, cardId),
+            observedAt,
+          ),
     };
     const publishedConflict = await canonicalCardConflict(
       database,
@@ -571,11 +609,12 @@ export async function reconcileRetainedCardPrintingEvidence(
         ...acceptedCard,
         effective_rules_text: deriveEffectiveRulesText(
           { id: cardId, ...acceptedCard },
-          mergeCatalogueErrata(priorCandidate?.errata ?? [], observedErrata),
+          await currentErrata.forCard(acceptedCard.game, cardId),
           observedAt,
         ),
       };
-    } catch {
+    } catch (error) {
+      if (isStorageOrCapacityFailure(error)) throw error;
       // Final candidate derivation below is the single diagnostic authority.
     }
     let digimonAuthorityConflict: string | null = null;
@@ -1002,17 +1041,18 @@ export async function reconcileRetainedCardPrintingEvidence(
             },
     });
     try {
-      observedErrata.push(
-        ...(await identifyRulesTextErrata({
+      await retainObservedErrata(
+        await identifyRulesTextErrata({
           game: proposedCard.game,
           cardId,
           printingId,
           sourceLineage: observation.sourceLineage,
           sourceObservationId: observation.sourceObservationId,
           errata: observation.errata.filter((erratum) => erratum.targetType === "printing"),
-        })),
+        }),
       );
     } catch (error) {
+      if (isStorageOrCapacityFailure(error)) throw error;
       diagnostics.push({
         code: "retained_evidence_invalid",
         source_observation_id: observation.sourceObservationId,
@@ -1058,7 +1098,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       continue;
     }
     const card = (await priorCards.get(matchingCards[0]!.id)) ?? (await cards.get(matchingCards[0]!.id))!;
-    targetedCardIds.add(card.id);
+    await targetedCardIds.seed(card.id, true);
     let targetPrintingId: string | null = null;
     if (observation.target.type === "printing") {
       const located = await printingsAtLocator(database, observation.sourceLineage, observation.target.locator);
@@ -1081,11 +1121,11 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
       const publishedPrinting = publishedPrintings[0]!;
       targetPrintingId = publishedPrinting.id;
-      targetedPrintingIds.add(publishedPrinting.id);
+      await targetedPrintingIds.seed(publishedPrinting.id, true);
     }
     try {
-      observedErrata.push(
-        ...(await identifyRulesTextErrata({
+      await retainObservedErrata(
+        await identifyRulesTextErrata({
           game: observation.game,
           cardId: card.id,
           printingId: targetPrintingId,
@@ -1099,7 +1139,7 @@ export async function reconcileRetainedCardPrintingEvidence(
               correctedValue: observation.correctedRulesText,
             },
           ],
-        })),
+        }),
       );
       plans.push({
         sourceObservationSetId: observation.sourceObservationSetId,
@@ -1122,6 +1162,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         withdrawal: null,
       });
     } catch (error) {
+      if (isStorageOrCapacityFailure(error)) throw error;
       diagnostics.push({
         code: "retained_evidence_invalid",
         source_observation_id: observation.sourceObservationId,
@@ -1188,9 +1229,9 @@ export async function reconcileRetainedCardPrintingEvidence(
       detail: error instanceof Error ? error.message : "Retained Product evidence is invalid.",
     });
   }
-  const errata = mergeCatalogueErrata(priorCandidate?.errata ?? [], observedErrata);
   const official = new ReconciliationCandidateState(database, runId, "before_curated", productCatalogue.draft);
   for await (const card of cards.values()) {
+    const cardErrata = await currentErrata.forCard(card.game, card.id);
     await official.set(
       "cards",
       omitUndefinedValues(
@@ -1199,7 +1240,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           try {
             return {
               ...card,
-              effective_rules_text: deriveEffectiveRulesText(card, errata, observedAt),
+              effective_rules_text: deriveEffectiveRulesText(card, cardErrata, observedAt),
             };
           } catch (error) {
             const conflictPlans = plans.filter((plan) => plan.cardId === card.id);
@@ -1259,11 +1300,12 @@ export async function reconcileRetainedCardPrintingEvidence(
           checked_at,
         })),
     ],
-    errata,
+    errata: [],
   };
 
   candidate = omitUndefinedValues(candidate) as CatalogueCandidate;
-  await official.seed(candidate, ["errata", "identity_corrections"]);
+  await official.seed(candidate, ["identity_corrections"]);
+  for await (const erratum of currentErrata.values()) await official.set("errata", erratum);
   const cardPrintingPlans = plans.filter((plan) => plan.observationKind === "card_printing");
   const groupedMemberships = mergedPlanMemberships(cardPrintingPlans);
   const errataOnlyEvidence = retained.evidencePlans.every(
@@ -1334,11 +1376,25 @@ export async function reconcileRetainedCardPrintingEvidence(
       ),
     )
   ).flat();
-  const erratumWarnings = errataOnlyEvidence
-    ? [...new Set(retained.partitions.map(({ sourceLineage }) => sourceLineage))].flatMap((sourceLineage) =>
-        erratumDisappearanceWarnings(priorCandidate?.errata ?? [], observedErrata, sourceLineage),
-      )
-    : [];
+  const erratumWarnings: Record<string, unknown>[] = [];
+  if (errataOnlyEvidence) {
+    const lineages = new Set(retained.partitions.map(({ sourceLineage }) => sourceLineage));
+    for (const sourceLineage of lineages)
+      for await (const erratum of priorErrata.values()) {
+        if (
+          (await observedErrata.has(erratum.id)) ||
+          !erratum.provenance.some((item) => item.source_lineage === sourceLineage)
+        )
+          continue;
+        erratumWarnings.push({
+          code: "erratum_not_observed",
+          erratum_id: erratum.id,
+          source_lineage: sourceLineage,
+          detail:
+            "The previously published Erratum was not present in this complete Official Errata observation; it was retained without advancing its last-observed revision.",
+        });
+      }
+  }
   const warnings = [
     ...new Map(
       [
@@ -1357,7 +1413,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   for await (const card of official.values("cards")) {
     if (
       (await localCardFacts.has(card.id)) ||
-      targetedCardIds.has(card.id) ||
+      (await targetedCardIds.has(card.id)) ||
       admittedEntities.some((entity) => entity.card.id === card.id)
     )
       observedCards.push({ id: card.id });
@@ -1367,7 +1423,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   for await (const printing of official.values("printings")) {
     if (
       plans.some((plan) => plan.observationKind === "card_printing" && plan.printingId === printing.id) ||
-      targetedPrintingIds.has(printing.id) ||
+      (await targetedPrintingIds.has(printing.id)) ||
       admittedEntities.some((entity) => entity.printing?.id === printing.id)
     )
       observedPrintings.push({ id: printing.id });
@@ -1499,27 +1555,6 @@ function fillAuthorityGaps<T>(authority: T, fallback: T): T {
   ) as T;
 }
 
-function erratumDisappearanceWarnings(
-  priorErrata: readonly CatalogueErratum[],
-  observedErrata: readonly CatalogueErratum[],
-  sourceLineage: string,
-): Record<string, unknown>[] {
-  const observedIds = new Set(observedErrata.map((erratum) => erratum.id));
-  return priorErrata
-    .filter(
-      (erratum) =>
-        !observedIds.has(erratum.id) &&
-        erratum.provenance.some((provenance) => provenance.source_lineage === sourceLineage),
-    )
-    .map((erratum) => ({
-      code: "erratum_not_observed",
-      erratum_id: erratum.id,
-      source_lineage: sourceLineage,
-      detail:
-        "The previously published Erratum was not present in this complete Official Errata observation; it was retained without advancing its last-observed revision.",
-    }));
-}
-
 async function finalizedReconciliationResult(
   database: CatalogueStore,
   runId: string,
@@ -1576,6 +1611,7 @@ async function candidateAtRevision(
     product: (product: CatalogueProduct) => Promise<void>;
     context: (context: CatalogueDistributionContext) => Promise<void>;
     relationship: (relationship: ProductRelationship) => Promise<void>;
+    erratum: (erratum: CatalogueErratum) => Promise<void>;
   },
 ): Promise<CatalogueCandidate | null> {
   const row = await candidateAtRevisionStatement(database, revisionId).first<{
@@ -1605,6 +1641,8 @@ async function candidateAtRevision(
         await seed.context(member.value as CatalogueDistributionContext);
       } else if (member.key === "product_relationships" && member.array) {
         await seed.relationship(member.value as ProductRelationship);
+      } else if (member.key === "errata" && member.array) {
+        await seed.erratum(member.value as CatalogueErratum);
       } else if (member.array) {
         (values[member.key] as unknown[]).push(member.value);
       } else {
@@ -1618,28 +1656,7 @@ async function candidateAtRevision(
     }
   }
   const candidate = stripCuratedRevisionEffects(values as CatalogueCandidate, selectedGames);
-  const errata = [...(candidate.errata ?? [])];
-  for (let index = 0; index < errata.length; index += 1) {
-    const erratum = errata[index]!;
-    const rows = await errataProvenanceByIdsStatement(database, canonicalJson([erratum.id])).all<{
-      erratum_id: string;
-      source_lineage: string;
-      source_observation_id: string;
-    }>();
-    errata[index] = mergeCatalogueErrata(
-      [erratum],
-      [
-        {
-          ...erratum,
-          provenance: rows.results.map((provenance) => ({
-            source_lineage: provenance.source_lineage,
-            source_observation_id: provenance.source_observation_id,
-          })),
-        },
-      ],
-    )[0]!;
-  }
-  return { ...candidate, errata };
+  return candidate;
 }
 
 export async function showReconciledPrinting(

@@ -18,10 +18,10 @@ export function candidateAtRevisionStatement(database: CatalogueStore, revisionI
 
 export function errataProvenanceByIdsStatement(database: CatalogueStore, erratumIdsJson: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT erratum_id, source_lineage, source_observation_id
+    .prepare(`SELECT erratum_id, source_lineage, source_observation_id, count(*) OVER () AS total
          FROM erratum_provenance
          WHERE erratum_id IN (SELECT value FROM json_each(?))
-         ORDER BY erratum_id, source_lineage, source_observation_id`)
+         ORDER BY erratum_id, source_lineage, source_observation_id LIMIT 500`)
     .bind(erratumIdsJson);
 }
 
