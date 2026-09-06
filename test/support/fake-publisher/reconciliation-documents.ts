@@ -90,6 +90,22 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
     });
     return { cards: [source] };
   }
+  if (scenario === "source-refresh-supplemental") {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP02-002",
+          name: "Synthetic supplemental Card",
+          locator: "/supplemental/independent-card",
+          lineageMarker: "different",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+        }),
+      ],
+    };
+  }
   if (scenario === "source-refresh-empty-errata") return { cards: [] };
   if (scenario === "large-card-content") {
     return {

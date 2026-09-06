@@ -40,7 +40,7 @@ async function refresh(plans: ReturnType<typeof sourcePlan>[]) {
 test("official-only and optional-outage refreshes preserve accepted supplemental Printings and their check dates", async () => {
   const initial = await refresh([
     sourcePlan("one-piece-en", "base"),
-    sourcePlan("limitless-one-piece-en", "new-locator"),
+    sourcePlan("limitless-one-piece-en", "source-refresh-supplemental"),
   ]);
   expect(initial.state).toBe("awaiting_approval");
   const printings = (initial.result.document.diff as { printings: { added: string[] } }).printings.added;
@@ -51,7 +51,7 @@ test("official-only and optional-outage refreshes preserve accepted supplemental
   expect(official.state).toBe("awaiting_approval");
   expect((await approve(official.result.document)).document.publication_outcome).toBe("no_change");
   for (const id of printings) expect((await get(`/v1/reconciliation/printings/${id}`)).response.status).toBe(200);
-  const supplemental = await refresh([sourcePlan("limitless-one-piece-en", "new-locator")]);
+  const supplemental = await refresh([sourcePlan("limitless-one-piece-en", "source-refresh-supplemental")]);
   expect(supplemental.state).toBe("awaiting_approval");
   expect((await approve(supplemental.result.document)).document.publication_outcome).toBe("no_change");
   const outage = await refresh([

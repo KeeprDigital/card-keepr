@@ -56,3 +56,7 @@ Limitless base pair was visually reviewed: matching printed markings and artwork
 with distinct PNG/WebP representations. That is evidence supporting an owner
 mapping decision, not a generic image-byte equality rule or complete-game claim.
 Supplemental-only admission and correction/merge/split actions are outside #221.
+
+Oversized mapping evidence retains a content digest and immutable observation,
+observation-set and snapshot references. The original source evidence stays in
+retained storage; semantic compatibility remains inline for subsequent matching.
