@@ -68,6 +68,11 @@ retry/resume. This counter does not assert complete Source Coverage: the verifie
 input manifest remains unavailable until the request graph, required surfaces,
 count closure and normalized observations have all passed their checks.
 
+`completed_observations` counts immutable normalized observations. Their original
+document and position are retained separately, so retries can reuse completed
+observations without accepting a duplicate identity from another position or
+document. Completed observations do not repeat Printing Image verification work.
+
 This implementation checkpoint retains the legacy run-level preparation and
 approval adapter. Game manifests are separate, but their preparation and actions
 still run together. The legacy reducers also reconstruct aggregate metadata.

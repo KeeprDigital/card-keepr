@@ -478,6 +478,84 @@ test("verified source documents survive a later read outage and resume without r
   });
 });
 
+test("normalization resumes after its last retained observation without repeating image work", async () => {
+  const { testEnv, post } = await import("./reconciliation-helpers");
+  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const run = await collect("/reconciliation/deterministic-forward", "normalized-observation-resume");
+  let firstKey: string | null = null;
+  let firstWrites = 0;
+  let failedWrites = 0;
+  let resumed = false;
+  const images = new Proxy(testEnv.PRINTING_IMAGES, {
+    get(target, property) {
+      if (property === "put")
+        return async (...args: Parameters<R2Bucket["put"]>) => {
+          firstKey ??= args[0];
+          if (args[0] === firstKey) {
+            firstWrites++;
+            if (resumed) throw new Error("Completed observation must not repeat image work.");
+          } else if (!resumed) {
+            failedWrites++;
+            throw new Error("Injected second observation image outage");
+          }
+          return target.put(...args);
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const payload = {
+    ingestion_run_id: run.id,
+    expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
+    idempotency_key: "normalized-observation-resume",
+    observed_at: new Date().toISOString(),
+    generation: 0,
+  };
+  const step = {
+    do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await callback();
+        } catch (error) {
+          if (attempt >= config.retries.limit) throw error;
+        }
+      }
+    },
+  } as unknown as import("cloudflare:workers").WorkflowStep;
+  const event = { payload } as import("cloudflare:workers").WorkflowEvent<
+    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+  >;
+  await runReconciliationWorkflow({ ...testEnv, PRINTING_IMAGES: images }, event, step);
+  expect(firstWrites).toBe(1);
+  expect(failedWrites).toBe(4);
+  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+    state: "paused",
+    completed_observations: 1,
+  });
+  expect(
+    (
+      await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+        generation: 1,
+        idempotency_key: "resume-normalization",
+      })
+    ).response.status,
+  ).toBe(200);
+  resumed = true;
+  await runReconciliationWorkflow(
+    { ...testEnv, PRINTING_IMAGES: images },
+    { payload: { ...payload, generation: 1 } } as typeof event,
+    step,
+  );
+  expect(firstWrites).toBe(1);
+  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+    state: "sealed",
+    completed_observations: 2,
+  });
+  expect((await get(`/v1/ingestion-runs/${run.id}/candidate`)).document).toMatchObject({
+    diff: { summary: { cards_added: 1, printings_added: 2 } },
+  });
+});
+
 test("interrupted preparation resumes verified batches before sealing for review", async () => {
   const { testEnv, post } = await import("./reconciliation-helpers");
   const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");

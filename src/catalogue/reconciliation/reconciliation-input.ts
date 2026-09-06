@@ -31,14 +31,15 @@ export async function retainVerifiedReconciliationInput(
 ) {
   let ordinal = 0;
   let digest = await sha256Text(canonicalJson({ contract: "card-keepr-reconciliation-input@1", run_id: runId }));
-  const metadata = Object.fromEntries(Object.entries(input).filter(([, value]) => !Array.isArray(value)));
-  const groups: [string, Iterable<unknown>][] = [
-    ["$metadata", [{ values: metadata, array_keys: Object.keys(input).filter((key) => Array.isArray(input[key])) }]],
+  const metadata = Object.fromEntries(Object.entries(input).filter(([, value]) => !recordSequence(value)));
+  const groups: [string, Iterable<unknown> | AsyncIterable<unknown>][] = [
+    ["$metadata", [{ values: metadata, array_keys: Object.keys(input).filter((key) => recordSequence(input[key])) }]],
   ];
-  for (const [kind, value] of Object.entries(input)) if (Array.isArray(value)) groups.push([kind, value]);
+  for (const [kind, value] of Object.entries(input)) if (recordSequence(value)) groups.push([kind, value]);
   for (const [kind, records] of groups) {
     const partitioned = async function* () {
-      for (const record of withoutUndefined(records)) yield await retainPartitionedRecord(database, runId, record);
+      for await (const record of records)
+        yield await retainPartitionedRecord(database, runId, JSON.parse(JSON.stringify(record)));
     };
     for await (const content of boundedAsyncRecordArrays(partitioned())) {
       const sha256 = await sha256Text(content);
@@ -126,6 +127,11 @@ export async function* verifiedReconciliationObservations<T>(
   }
 }
 
-function* withoutUndefined(records: Iterable<unknown>): Generator<unknown> {
-  for (const record of records) yield JSON.parse(JSON.stringify(record));
+function recordSequence(value: unknown): value is Iterable<unknown> | AsyncIterable<unknown> {
+  return (
+    Array.isArray(value) ||
+    (value !== null &&
+      typeof value === "object" &&
+      typeof (value as AsyncIterable<unknown>)[Symbol.asyncIterator] === "function")
+  );
 }

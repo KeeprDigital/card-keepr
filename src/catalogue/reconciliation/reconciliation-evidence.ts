@@ -5,6 +5,12 @@ import {
 } from "./reconciliation-input";
 import { documentStorage, readVerifiedSourceDocument, retainVerifiedSourceDocument } from "./reconciliation-document";
 import { canonicalValueDigest } from "./reconciliation-preparation";
+import {
+  claimObservationOrigin,
+  hasNormalizedObservation,
+  retainNormalizedObservation,
+  stagedNormalizedObservations,
+} from "./reconciliation-normalized";
 import { retainCandidateImage } from "./reconciliation-images";
 import { adapterReconciliationAreas, parsedOfficialArtworkIdentity, requiredSourceAdapter } from "../adapters";
 import { type CatalogueStore, canonicalJson, type SupportedGame, sha256 } from "../shared";
@@ -106,9 +112,16 @@ type DiscoveryRequestPlanRow = {
 
 const maximumAggregateReconciliationBytes = 32 * 1024 * 1024;
 
-export type NormalizedReconciliationObservation = Awaited<
-  ReturnType<typeof collectRetainedReconciliationObservation>
->["observations"][number];
+export type NormalizedReconciliationObservation = ReturnType<typeof parseReconciliationObservation> & {
+  sourceObservationSetId: string;
+  sourceSnapshotId: string;
+  sourceCapturedAt: string;
+  sourceLineage: string;
+  sourceRequestRole: PlannedRequestRow["request_role"];
+  sourceSurface: string | undefined;
+  supportedGame: SupportedGame;
+  structurallyComplete: true;
+};
 
 export async function retainedReconciliationObservation(
   database: CatalogueStore,
@@ -309,22 +322,17 @@ async function collectRetainedReconciliationObservation(
   }
   await assertClosedRequestGraph(retainedRequests, orderedRows, loadDocument);
   const retainedImages = new Map(printingImageSnapshots.results.map((row) => [row.request_url, row]));
-  const observationIds = new Set<string>();
   const officialSurfaces = new Set<string>();
   const requestsById = new Map(retainedRequests.map((request) => [request.request_id, request]));
-  const merged = [];
   for (let index = 0; index < orderedRows.length; index++) {
     const document = await loadDocument(index);
     const row = orderedRows[index]!;
     const request = retainedRequests[index]!;
-    for (const wrapped of document.observations) {
+    for (const [sourceOrdinal, wrapped] of document.observations.entries()) {
       if (!isRecord(wrapped) || typeof wrapped.id !== "string") {
         throw new Error("Retained Source Observation identity is invalid.");
       }
-      if (observationIds.has(wrapped.id)) {
-        throw new Error(`Duplicate Source Observation ${wrapped.id} spans planned requests.`);
-      }
-      observationIds.add(wrapped.id);
+      await claimObservationOrigin(database, runId, wrapped.id, row.observation_set_id, sourceOrdinal);
       if (isRecord(wrapped.value) && wrapped.value.observation_type === "official_surface_evidence") {
         if (
           typeof wrapped.value.surface !== "string" ||
@@ -336,6 +344,7 @@ async function collectRetainedReconciliationObservation(
         officialSurfaces.add(request.request_id);
         continue;
       }
+      if (await hasNormalizedObservation(database, runId, wrapped.id)) continue;
       let parsed = parseReconciliationObservation(
         wrapped.id,
         await attachRetainedPrintingImages(
@@ -353,7 +362,7 @@ async function collectRetainedReconciliationObservation(
       const adapter = requiredSourceAdapter(row.adapter_version);
       const sourceSurface = sourceSurfaceForRequest(request, requestsById, row);
       assertObservationAuthority(parsed, adapter, sourceSurface);
-      merged.push({
+      await retainNormalizedObservation(database, runId, wrapped.id, {
         ...parsed,
         sourceObservationSetId: row.observation_set_id,
         sourceSnapshotId: row.source_snapshot_id,
@@ -366,7 +375,6 @@ async function collectRetainedReconciliationObservation(
       });
     }
   }
-  merged.sort((left, right) => left.sourceObservationId.localeCompare(right.sourceObservationId));
   for (const plan of selectedPlans) {
     await validateOfficialSurfaceCoverage({
       adapter: requiredSourceAdapter(plan.adapter_version),
@@ -425,7 +433,7 @@ async function collectRetainedReconciliationObservation(
         ),
       };
     }),
-    observations: merged,
+    observations: stagedNormalizedObservations<NormalizedReconciliationObservation>(database, runId),
   };
 }
 

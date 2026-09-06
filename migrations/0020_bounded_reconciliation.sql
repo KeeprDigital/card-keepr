@@ -93,6 +93,29 @@ BEGIN SELECT RAISE(ABORT, 'reconciliation_input_immutable'); END;
 CREATE TRIGGER reconciliation_input_no_delete BEFORE DELETE ON reconciliation_input_partitions
 BEGIN SELECT RAISE(ABORT, 'reconciliation_input_audit_retained'); END;
 CREATE INDEX reconciliation_input_kind_cursor ON reconciliation_input_partitions(ingestion_run_id, kind, ordinal);
+CREATE TABLE reconciliation_observation_origins (
+  ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
+  observation_id TEXT NOT NULL,
+  observation_set_id TEXT NOT NULL,
+  source_ordinal INTEGER NOT NULL CHECK (source_ordinal >= 0),
+  PRIMARY KEY (ingestion_run_id, observation_id)
+);
+CREATE TRIGGER reconciliation_observation_origin_no_update BEFORE UPDATE ON reconciliation_observation_origins
+BEGIN SELECT RAISE(ABORT, 'reconciliation_observation_origin_immutable'); END;
+CREATE TRIGGER reconciliation_observation_origin_no_delete BEFORE DELETE ON reconciliation_observation_origins
+BEGIN SELECT RAISE(ABORT, 'reconciliation_observation_origin_audit_retained'); END;
+CREATE TABLE reconciliation_normalized_observations (
+  ingestion_run_id TEXT NOT NULL,
+  observation_id TEXT NOT NULL,
+  content TEXT NOT NULL CHECK (json_valid(content) AND length(CAST(content AS BLOB)) <= 524288),
+  sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+  PRIMARY KEY (ingestion_run_id, observation_id),
+  FOREIGN KEY (ingestion_run_id, observation_id) REFERENCES reconciliation_observation_origins(ingestion_run_id, observation_id)
+);
+CREATE TRIGGER reconciliation_normalized_no_update BEFORE UPDATE ON reconciliation_normalized_observations
+BEGIN SELECT RAISE(ABORT, 'reconciliation_normalized_observation_immutable'); END;
+CREATE TRIGGER reconciliation_normalized_no_delete BEFORE DELETE ON reconciliation_normalized_observations
+BEGIN SELECT RAISE(ABORT, 'reconciliation_normalized_observation_audit_retained'); END;
 CREATE TABLE game_candidates (
   id TEXT PRIMARY KEY,
   ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),

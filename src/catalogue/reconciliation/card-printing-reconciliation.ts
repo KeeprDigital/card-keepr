@@ -141,6 +141,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       error instanceof ReconciliationInputStorageError ||
       error instanceof ReconciliationTextStorageError ||
       error instanceof ReconciliationDocumentStorageError ||
+      error instanceof ReconciliationNormalizationStorageError ||
       (error instanceof Error && error.message.startsWith("reconciliation_capacity_exceeded:"))
     )
       throw error;
@@ -2096,3 +2097,4 @@ async function requiredActiveParsingRun(database: CatalogueStore, runId: string)
 }
 import { ReconciliationTextStorageError } from "./reconciliation-text";
 import { ReconciliationDocumentStorageError } from "./reconciliation-document";
+import { ReconciliationNormalizationStorageError } from "./reconciliation-normalized";
