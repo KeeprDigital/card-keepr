@@ -29,7 +29,6 @@ test("Catalogue Export relationship records carry closed endpoints", async () =>
     ["distribution-context-product", "distribution_context", "product"],
     ["product-card", "product", "card"],
     ["erratum-target", "erratum", "printing"],
-    ["legality-rule-card", "legality_rule", "card"],
   ];
   for (const [kind, from, to] of endpointCases) {
     assert.equal(
@@ -39,9 +38,6 @@ test("Catalogue Export relationship records carry closed endpoints", async () =>
         kind,
         from: { type: from, id: "from_1" },
         to: { type: to, id: "to_1" },
-        evidence_category: "explicit",
-        source_lineage: "official-source",
-        source_observation_ids: ["srcobs_1"],
         relationship_value: "value",
         lifecycle: {
           first_revision_id: "catrev_1",
@@ -61,9 +57,6 @@ test("Catalogue Export relationship records carry closed endpoints", async () =>
       kind: "product-card",
       from: { type: "printing", id: "from_1" },
       to: { type: "card", id: "to_1" },
-      evidence_category: "explicit",
-      source_lineage: "official-source",
-      source_observation_ids: ["srcobs_1"],
       relationship_value: "value",
       lifecycle: {
         first_revision_id: "catrev_1",
@@ -72,100 +65,6 @@ test("Catalogue Export relationship records carry closed endpoints", async () =>
         last_missing_revision_id: null,
       },
     }),
-    false,
-  );
-});
-
-test("unresolved target-scope exports use schema major 5", async () => {
-  const [record, manifest] = await Promise.all(
-    ["catalogue-export-record-v5.schema.json", "catalogue-export-manifest-v5.schema.json"].map((name) =>
-      readFile(resolve(root, "prototype/formalize-implementation-contracts/schemas", name), "utf8").then(JSON.parse),
-    ),
-  );
-  assert.equal(record.$id.endsWith("catalogue-export-record@5"), true);
-  assert.equal(manifest.$id.endsWith("catalogue-export-manifest@5"), true);
-  assert.equal(manifest.properties.export_schema_major.const, 5);
-  assert.ok(
-    manifest.$defs.CardsComponent.allOf[1].properties.record_schema.const.includes("catalogue-export-record@5"),
-  );
-
-  const ajv = new Ajv2020({ allErrors: true, strict: false });
-  addFormats(ajv);
-  ajv.addSchema(record);
-  const validateRule = ajv.getSchema(`${record.$id}#/$defs/LegalityRuleRecord`);
-  const rule = (overrides) => ({
-    type: "legality_rule",
-    id: "legality_rule_target_scope",
-    official_id: "target-scope-1",
-    game: "gundam",
-    region: "EN-ASIA",
-    format: "standard",
-    event_tier: null,
-    effective_from: null,
-    effective_until: null,
-    unresolved_scope: {
-      dimensions: ["effective_interval", "target_scope"],
-    },
-    kind: "indeterminate",
-    effect: {
-      type: "unresolved",
-      reason: "The published description includes future printings.",
-    },
-    card_ids: ["card_enumerated"],
-    official_wording: "Open predicate wording.",
-    source_lineage: "gundam-en-asia",
-    source_observation_ids: ["srcobs_1"],
-    source_observation_pointer: "/observations/0/value/legality_rules/0",
-    source_field_pointers: Object.fromEntries(
-      [
-        "official_wording",
-        "effective_from",
-        "effective_until",
-        "unresolved_scope",
-        "region",
-        "format",
-        "event_tier",
-        "card_numbers",
-        "effect",
-      ].map((field) => [field, `/observations/0/value/legality_rules/0/${field}`]),
-    ),
-    lifecycle: {
-      first_revision_id: "catrev_1",
-      last_observed_revision_id: "catrev_1",
-      current: true,
-      last_missing_revision_id: null,
-    },
-    ...overrides,
-  });
-  assert.equal(validateRule(rule({})), true, ajv.errorsText(validateRule.errors));
-  assert.equal(
-    validateRule(
-      rule({
-        unresolved_scope: { dimensions: ["target_scope"] },
-        effective_from: "2026-01-01",
-      }),
-    ),
-    true,
-    ajv.errorsText(validateRule.errors),
-  );
-  // Non-canonical order, invented dates, and empty targets stay rejected.
-  assert.equal(
-    validateRule(
-      rule({
-        unresolved_scope: { dimensions: ["target_scope", "effective_interval"] },
-      }),
-    ),
-    false,
-  );
-  assert.equal(validateRule(rule({ effective_from: "2026-01-01" })), false);
-  assert.equal(validateRule(rule({ card_ids: [] })), false);
-  assert.equal(
-    validateRule(
-      rule({
-        kind: "eligible",
-        effect: { type: "eligible" },
-      }),
-    ),
     false,
   );
 });
@@ -179,63 +78,11 @@ test("Product detail documents invalid include requests", async () => {
   });
 });
 
-test("Legality Status documents and validates base and evidence representations", async () => {
-  const [openapi, schema] = await Promise.all([
-    readFile(resolve(root, "prototype/formalize-implementation-contracts/openapi.json"), "utf8").then(JSON.parse),
-    readFile(resolve(root, "prototype/formalize-implementation-contracts/schemas/api.schema.json"), "utf8").then(
-      JSON.parse,
-    ),
-  ]);
-  const include = openapi.paths["/legality-status"].get.parameters.find((parameter) => parameter.name === "include");
-  assert.deepEqual(include?.schema, { type: "string", enum: ["evidence"] });
-
-  const ajv = new Ajv2020({ allErrors: true, strict: false });
-  addFormats(ajv);
-  ajv.addSchema(schema);
-  const validate = ajv.getSchema(`${schema.$id}#/$defs/LegalityStatusDocument`);
-  const base = {
-    data: [
-      {
-        card_id: "card_test",
-        on: "2026-08-01",
-        format: "standard",
-        event_tier: null,
-        region: "EN-ASIA",
-        status: "not_legal",
-        rule_ids: ["legality_rule_test"],
-        unresolved_scope_rule_ids: [],
-        derivation: "Derived from one exact rule.",
-      },
-    ],
-    meta: {
-      catalogue_revision_id: "catrev_test",
-      published_at: "2026-08-01T00:00:00.000Z",
-    },
-    links: {
-      self: "/v1/legality-status?card_id=card_test&on=2026-08-01&format=standard&region=EN-ASIA",
-    },
-  };
-  assert.equal(validate(base), true, JSON.stringify(validate.errors));
-  const emptyEventTier = structuredClone(base);
-  emptyEventTier.data[0].event_tier = "";
-  assert.equal(validate(emptyEventTier), false);
-  const evidence = {
-    ...base,
-    included: [
-      {
-        type: "source_observation",
-        id: "srcobs_test",
-        captured_at: "2026-07-31T00:00:00.000Z",
-        source: "gundam-en-asia",
-      },
-    ],
-    provenance: {
-      "/data/0/status": ["srcobs_test"],
-      "/data/0/rule_ids/0": ["srcobs_test"],
-      "/data/0/derivation": ["srcobs_test"],
-    },
-  };
-  assert.equal(validate(evidence), true, JSON.stringify(validate.errors));
+test("consumer OpenAPI omits eligibility routes", async () => {
+  const openapi = JSON.parse(
+    await readFile(resolve(root, "prototype/formalize-implementation-contracts/openapi.json"), "utf8"),
+  );
+  assert.equal(Object.hasOwn(openapi.paths, "/legality-status"), false);
 });
 
 test("Card browsing documents and validates collection, detail, and problem representations", async () => {
@@ -306,7 +153,7 @@ test("Card browsing documents and validates collection, detail, and problem repr
       provenance: { "/data/effective_rules_text": ["srcobs_test"] },
     }),
     false,
-    "provenance must identify resources in included",
+    "consumer provenance is not supported",
   );
 
   assert.equal(
@@ -324,7 +171,7 @@ test("Card browsing documents and validates collection, detail, and problem repr
   );
 });
 
-test("the Catalogue Export schema carries typed Product, Release, and Legality projections", async () => {
+test("the Catalogue Export schema carries typed Product and Release facts without evidence projections", async () => {
   const [api, exportSchema, exportManifest] = await Promise.all(
     ["api.schema.json", "catalogue-export-record-v5.schema.json", "catalogue-export-manifest-v5.schema.json"].map(
       async (name) =>
@@ -336,8 +183,8 @@ test("the Catalogue Export schema carries typed Product, Release, and Legality p
   assert.deepEqual(api.$defs.Product.properties.name.oneOf, [{ type: "string", minLength: 1 }, { type: "null" }]);
   assert.equal(api.$defs.Release.required.includes("event_key"), true);
   assert.equal(api.$defs.Release.required.includes("status"), true);
-  assert.equal(api.$defs.PrintingProductProjection.properties.source_observation_ids.minItems, 1);
-  assert.equal(api.$defs.DistributionContext.properties.source_observation_ids.minItems, 1);
+  assert.equal(Object.hasOwn(api.$defs.PrintingProductProjection.properties, "source_observation_ids"), false);
+  assert.equal(Object.hasOwn(api.$defs.DistributionContext.properties, "source_observation_ids"), false);
   assert.equal(exportSchema.$defs.PrintingRecord.required.includes("products"), false);
   assert.equal(exportSchema.$defs.PrintingRecord.required.includes("distribution_contexts"), false);
   assert.equal(exportSchema.$defs.ProductRecord.properties.name.$ref, "#/$defs/NullableText");
@@ -353,7 +200,7 @@ test("the Catalogue Export schema carries typed Product, Release, and Legality p
     ),
   );
   for (const definition of ["PrintingProductProjection", "PrintingDistributionContextProjection"]) {
-    assert.equal(exportSchema.$defs[definition].properties.source_observation_ids.minItems, 1);
+    assert.equal(Object.hasOwn(exportSchema.$defs[definition].properties, "source_observation_ids"), false);
   }
 });
 

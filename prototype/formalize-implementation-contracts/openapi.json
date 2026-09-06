@@ -16,90 +16,169 @@
       "description": "Production base; deployment supplies the real hostname."
     }
   ],
-  "security": [{ "apiBearer": [] }],
+  "security": [
+    {
+      "apiBearer": []
+    }
+  ],
   "tags": [
-    { "name": "Catalogue", "description": "Current Catalogue Revision and freshness." },
-    { "name": "Cards", "description": "Rules-level Cards and their game-specific facts." },
-    { "name": "Printings", "description": "Officially distinguished Printings and immutable Printing Images." },
-    { "name": "Products", "description": "Official Products and region-scoped Releases." },
-    { "name": "Legality", "description": "Contextual, region-scoped Legality Status derivation." },
-    { "name": "Catalogue Exports", "description": "Immutable offline packages for Catalogue Revisions." }
+    {
+      "name": "Catalogue",
+      "description": "Current Catalogue Revision."
+    },
+    {
+      "name": "Cards",
+      "description": "Rules-level Cards and their game-specific facts."
+    },
+    {
+      "name": "Printings",
+      "description": "Officially distinguished Printings and immutable Printing Images."
+    },
+    {
+      "name": "Products",
+      "description": "Official Products and region-scoped Releases."
+    },
+    {
+      "name": "Catalogue Exports",
+      "description": "Immutable offline packages for Catalogue Revisions."
+    }
   ],
   "paths": {
     "/catalogue": {
       "get": {
         "operationId": "getCatalogue",
-        "tags": ["Catalogue"],
-        "summary": "Get the current Catalogue Revision and per-area freshness",
+        "tags": [
+          "Catalogue"
+        ],
+        "summary": "Get the current Catalogue Revision",
         "responses": {
           "200": {
-            "description": "Current catalogue status. Its ETag may change when a no-change Ingestion Run advances freshness.",
+            "description": "Current published catalogue status, without administrative source health.",
             "headers": {
-              "ETag": { "$ref": "#/components/headers/ETag" },
-              "X-Catalogue-Revision": { "$ref": "#/components/headers/CatalogueRevision" }
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "X-Catalogue-Revision": {
+                "$ref": "#/components/headers/CatalogueRevision"
+              }
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/api.schema.json#/$defs/CatalogueDocument" }
+                "schema": {
+                  "$ref": "./schemas/api.schema.json#/$defs/CatalogueDocument"
+                }
               }
             }
           },
-          "304": { "$ref": "#/components/responses/NotModified" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/ForbiddenOrigin" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/cards": {
       "get": {
         "operationId": "listCards",
-        "tags": ["Cards"],
+        "tags": [
+          "Cards"
+        ],
         "summary": "Browse, search, and filter Cards",
         "description": "Order is Supported Game, official identity kind, official identity value, then opaque Card identity. q is an exact case-insensitive Unicode substring search over official identity value, name, and Effective Rules Text without crossing field boundaries.",
         "parameters": [
-          { "$ref": "#/components/parameters/Search" },
-          { "$ref": "#/components/parameters/Game" },
+          {
+            "$ref": "#/components/parameters/Search"
+          },
+          {
+            "$ref": "#/components/parameters/Game"
+          },
           {
             "name": "card_number",
             "in": "query",
             "description": "Exact numbered-card identity within game. It never matches the generic DON!! Card.",
-            "schema": { "type": "string", "minLength": 1 }
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
           },
-          { "$ref": "#/components/parameters/Limit" },
-          { "$ref": "#/components/parameters/After" },
-          { "$ref": "#/components/parameters/IfNoneMatch" }
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/After"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
         ],
         "responses": {
           "200": {
             "description": "Cursor-paginated Card summaries.",
             "headers": {
-              "ETag": { "$ref": "#/components/headers/ETag" },
-              "X-Catalogue-Revision": { "$ref": "#/components/headers/CatalogueRevision" }
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "X-Catalogue-Revision": {
+                "$ref": "#/components/headers/CatalogueRevision"
+              }
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/api.schema.json#/$defs/CardCollection" }
+                "schema": {
+                  "$ref": "./schemas/api.schema.json#/$defs/CardCollection"
+                }
               }
             }
           },
-          "304": { "$ref": "#/components/responses/NotModified" },
-          "400": { "$ref": "#/components/responses/InvalidRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/ForbiddenOrigin" },
-          "409": { "$ref": "#/components/responses/CursorUnavailable" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "503": { "$ref": "#/components/responses/CatalogueQueryUnavailable" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "409": {
+            "$ref": "#/components/responses/CursorUnavailable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/CatalogueQueryUnavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/cards/{card_id}": {
-      "parameters": [{ "$ref": "#/components/parameters/CardId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CardId"
+        }
+      ],
       "get": {
         "operationId": "getCard",
-        "tags": ["Cards"],
+        "tags": [
+          "Cards"
+        ],
         "summary": "Get one Card",
         "parameters": [
           {
@@ -111,388 +190,554 @@
             "schema": {
               "type": "array",
               "uniqueItems": true,
-              "items": { "enum": ["printings", "evidence", "disagreements"] }
+              "items": {
+                "enum": [
+                  "printings"
+                ]
+              }
             }
           },
-          { "$ref": "#/components/parameters/IfNoneMatch" }
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
         ],
         "responses": {
           "200": {
             "description": "Card detail. Unresolved canonical values remain null.",
             "headers": {
-              "ETag": { "$ref": "#/components/headers/ETag" },
-              "X-Catalogue-Revision": { "$ref": "#/components/headers/CatalogueRevision" }
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "X-Catalogue-Revision": {
+                "$ref": "#/components/headers/CatalogueRevision"
+              }
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/api.schema.json#/$defs/CardDocument" }
+                "schema": {
+                  "$ref": "./schemas/api.schema.json#/$defs/CardDocument"
+                }
               }
             }
           },
-          "304": { "$ref": "#/components/responses/NotModified" },
-          "400": { "$ref": "#/components/responses/InvalidRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/ForbiddenOrigin" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/printings": {
       "get": {
         "operationId": "listPrintings",
-        "tags": ["Printings"],
+        "tags": [
+          "Printings"
+        ],
         "summary": "Browse and filter Printings",
         "description": "Every supplied constraint must be satisfied by the same Printing. Order is Card identity then opaque Printing identity.",
         "parameters": [
           {
             "name": "card_id",
             "in": "query",
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/OpaqueId" }
+            "schema": {
+              "$ref": "./schemas/api.schema.json#/$defs/OpaqueId"
+            }
           },
-          { "$ref": "#/components/parameters/Game" },
+          {
+            "$ref": "#/components/parameters/Game"
+          },
           {
             "name": "rarity",
             "in": "query",
-            "schema": { "type": "string", "minLength": 1 }
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
           },
           {
             "name": "product_id",
             "in": "query",
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/OpaqueId" }
+            "schema": {
+              "$ref": "./schemas/api.schema.json#/$defs/OpaqueId"
+            }
           },
           {
             "name": "release_region",
             "in": "query",
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/ReleaseRegion" }
+            "schema": {
+              "$ref": "./schemas/api.schema.json#/$defs/ReleaseRegion"
+            }
           },
-          { "$ref": "#/components/parameters/Limit" },
-          { "$ref": "#/components/parameters/After" },
-          { "$ref": "#/components/parameters/IfNoneMatch" }
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/After"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
         ],
         "responses": {
           "200": {
             "description": "Cursor-paginated Printings.",
             "headers": {
-              "ETag": { "$ref": "#/components/headers/ETag" },
-              "X-Catalogue-Revision": { "$ref": "#/components/headers/CatalogueRevision" }
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "X-Catalogue-Revision": {
+                "$ref": "#/components/headers/CatalogueRevision"
+              }
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/api.schema.json#/$defs/PrintingCollection" }
+                "schema": {
+                  "$ref": "./schemas/api.schema.json#/$defs/PrintingCollection"
+                }
               }
             }
           },
-          "304": { "$ref": "#/components/responses/NotModified" },
-          "400": { "$ref": "#/components/responses/InvalidRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/ForbiddenOrigin" },
-          "409": { "$ref": "#/components/responses/CursorUnavailable" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "409": {
+            "$ref": "#/components/responses/CursorUnavailable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/printings/{printing_id}": {
-      "parameters": [{ "$ref": "#/components/parameters/PrintingId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PrintingId"
+        }
+      ],
       "get": {
         "operationId": "getPrinting",
-        "tags": ["Printings"],
+        "tags": [
+          "Printings"
+        ],
         "summary": "Get one Printing",
         "parameters": [
           {
-            "name": "include",
-            "in": "query",
-            "style": "form",
-            "explode": false,
-            "schema": {
-              "type": "array",
-              "uniqueItems": true,
-              "items": { "enum": ["evidence", "disagreements"] }
-            }
-          },
-          { "$ref": "#/components/parameters/IfNoneMatch" }
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
         ],
         "responses": {
           "200": {
             "description": "Printing detail, its Printing Images, and Distribution Contexts.",
             "headers": {
-              "ETag": { "$ref": "#/components/headers/ETag" },
-              "X-Catalogue-Revision": { "$ref": "#/components/headers/CatalogueRevision" }
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "X-Catalogue-Revision": {
+                "$ref": "#/components/headers/CatalogueRevision"
+              }
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/api.schema.json#/$defs/PrintingDocument" }
+                "schema": {
+                  "$ref": "./schemas/api.schema.json#/$defs/PrintingDocument"
+                }
               }
             }
           },
-          "304": { "$ref": "#/components/responses/NotModified" },
-          "400": { "$ref": "#/components/responses/InvalidRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/ForbiddenOrigin" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/printing-images/{image_id}/content": {
-      "parameters": [{ "$ref": "#/components/parameters/ImageId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ImageId"
+        }
+      ],
       "get": {
         "operationId": "getPrintingImageContent",
-        "tags": ["Printings"],
+        "tags": [
+          "Printings"
+        ],
         "summary": "Stream immutable authenticated Printing Image bytes",
         "parameters": [
-          { "$ref": "#/components/parameters/Range" },
-          { "$ref": "#/components/parameters/IfNoneMatch" }
+          {
+            "$ref": "#/components/parameters/Range"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
         ],
         "responses": {
-          "200": { "$ref": "#/components/responses/ImmutableBinary" },
-          "206": { "$ref": "#/components/responses/PartialBinary" },
-          "304": { "$ref": "#/components/responses/NotModified" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/ForbiddenOrigin" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "416": { "$ref": "#/components/responses/RangeNotSatisfiable" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "200": {
+            "$ref": "#/components/responses/ImmutableBinary"
+          },
+          "206": {
+            "$ref": "#/components/responses/PartialBinary"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "416": {
+            "$ref": "#/components/responses/RangeNotSatisfiable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       },
       "head": {
         "operationId": "headPrintingImageContent",
-        "tags": ["Printings"],
+        "tags": [
+          "Printings"
+        ],
         "summary": "Read immutable Printing Image metadata without a body",
         "responses": {
-          "200": { "$ref": "#/components/responses/ImmutableBinaryHead" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/ForbiddenOrigin" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "200": {
+            "$ref": "#/components/responses/ImmutableBinaryHead"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/products": {
       "get": {
         "operationId": "listProducts",
-        "tags": ["Products"],
+        "tags": [
+          "Products"
+        ],
         "summary": "Browse and search Products",
         "description": "Order is Supported Game, official Product code with null last, name, then opaque Product identity.",
         "parameters": [
-          { "$ref": "#/components/parameters/Search" },
-          { "$ref": "#/components/parameters/Game" },
+          {
+            "$ref": "#/components/parameters/Search"
+          },
+          {
+            "$ref": "#/components/parameters/Game"
+          },
           {
             "name": "release_region",
             "in": "query",
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/ReleaseRegion" }
+            "schema": {
+              "$ref": "./schemas/api.schema.json#/$defs/ReleaseRegion"
+            }
           },
-          { "$ref": "#/components/parameters/Limit" },
-          { "$ref": "#/components/parameters/After" },
-          { "$ref": "#/components/parameters/IfNoneMatch" }
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/After"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
         ],
         "responses": {
           "200": {
             "description": "Cursor-paginated Products and their regional Releases.",
             "headers": {
-              "ETag": { "$ref": "#/components/headers/ETag" },
-              "X-Catalogue-Revision": { "$ref": "#/components/headers/CatalogueRevision" }
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "X-Catalogue-Revision": {
+                "$ref": "#/components/headers/CatalogueRevision"
+              }
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/api.schema.json#/$defs/ProductCollection" }
+                "schema": {
+                  "$ref": "./schemas/api.schema.json#/$defs/ProductCollection"
+                }
               }
             }
           },
-          "304": { "$ref": "#/components/responses/NotModified" },
-          "400": { "$ref": "#/components/responses/InvalidRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/ForbiddenOrigin" },
-          "409": { "$ref": "#/components/responses/CursorUnavailable" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "409": {
+            "$ref": "#/components/responses/CursorUnavailable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/products/{product_id}": {
-      "parameters": [{ "$ref": "#/components/parameters/ProductId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProductId"
+        }
+      ],
       "get": {
         "operationId": "getProduct",
-        "tags": ["Products"],
+        "tags": [
+          "Products"
+        ],
         "summary": "Get one Product and its regional Releases",
         "parameters": [
           {
-            "name": "include",
-            "in": "query",
-            "description": "Optional evidence resources, field-level provenance, and unresolved Product or nested Release disagreements. Unknown values fail with invalid_parameter.",
-            "style": "form",
-            "explode": false,
-            "schema": {
-              "type": "array",
-              "uniqueItems": true,
-              "items": { "enum": ["evidence", "disagreements"] }
-            }
-          },
-          { "$ref": "#/components/parameters/IfNoneMatch" }
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
         ],
         "responses": {
           "200": {
             "description": "Product detail.",
             "headers": {
-              "ETag": { "$ref": "#/components/headers/ETag" },
-              "X-Catalogue-Revision": { "$ref": "#/components/headers/CatalogueRevision" }
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "X-Catalogue-Revision": {
+                "$ref": "#/components/headers/CatalogueRevision"
+              }
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/api.schema.json#/$defs/ProductDocument" }
+                "schema": {
+                  "$ref": "./schemas/api.schema.json#/$defs/ProductDocument"
+                }
               }
             }
           },
-          "304": { "$ref": "#/components/responses/NotModified" },
-          "400": { "$ref": "#/components/responses/InvalidRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/ForbiddenOrigin" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "500": { "$ref": "#/components/responses/InternalError" }
-        }
-      }
-    },
-    "/legality-status": {
-      "get": {
-        "operationId": "getLegalityStatus",
-        "tags": ["Legality"],
-        "summary": "Derive regional Legality Status for one Card and context",
-        "description": "With region, data has exactly one item. Without region, data has every applicable regional result separately. A Gundam Card accepts EN-ASIA or EN-US only; EN-OCEANIA returns invalid_legality_region and no synthetic result.",
-        "parameters": [
-          {
-            "name": "card_id",
-            "in": "query",
-            "required": true,
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/OpaqueId" }
+          "304": {
+            "$ref": "#/components/responses/NotModified"
           },
-          {
-            "name": "on",
-            "in": "query",
-            "required": true,
-            "schema": { "type": "string", "format": "date" }
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
           },
-          {
-            "name": "format",
-            "in": "query",
-            "required": true,
-            "schema": { "type": "string", "minLength": 1 }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           },
-          {
-            "name": "event_tier",
-            "in": "query",
-            "schema": { "type": "string", "minLength": 1 }
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
           },
-          {
-            "name": "region",
-            "in": "query",
-            "description": "Optional comparison scope. Omission never collapses regional results.",
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/Region" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
-          {
-            "name": "include",
-            "in": "query",
-            "description": "Set to evidence to include supporting Source Observation resources and response-field provenance.",
-            "schema": { "type": "string", "enum": ["evidence"] }
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           },
-          { "$ref": "#/components/parameters/IfNoneMatch" }
-        ],
-        "responses": {
-          "200": {
-            "description": "One or more separate contextual Legality Status derivations.",
-            "headers": {
-              "ETag": { "$ref": "#/components/headers/ETag" },
-              "X-Catalogue-Revision": { "$ref": "#/components/headers/CatalogueRevision" }
-            },
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "./schemas/api.schema.json#/$defs/LegalityStatusDocument" }
-              }
-            }
-          },
-          "304": { "$ref": "#/components/responses/NotModified" },
-          "400": { "$ref": "#/components/responses/InvalidRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/ForbiddenOrigin" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "422": { "$ref": "#/components/responses/InvalidLegalityRegion" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/catalogue-exports": {
       "get": {
         "operationId": "listCatalogueExports",
-        "tags": ["Catalogue Exports"],
+        "tags": [
+          "Catalogue Exports"
+        ],
         "summary": "List verified retained Catalogue Exports",
         "description": "Order is descending publication time then descending opaque Catalogue Revision identity. Unverified exports never appear.",
         "parameters": [
-          { "$ref": "#/components/parameters/Limit" },
-          { "$ref": "#/components/parameters/After" },
-          { "$ref": "#/components/parameters/IfNoneMatch" }
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/After"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
         ],
         "responses": {
           "200": {
             "description": "Cursor-paginated verified Catalogue Exports.",
             "headers": {
-              "ETag": { "$ref": "#/components/headers/ETag" },
-              "X-Catalogue-Revision": { "$ref": "#/components/headers/CatalogueRevision" }
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "X-Catalogue-Revision": {
+                "$ref": "#/components/headers/CatalogueRevision"
+              }
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/api.schema.json#/$defs/CatalogueExportCollection" }
+                "schema": {
+                  "$ref": "./schemas/api.schema.json#/$defs/CatalogueExportCollection"
+                }
               }
             }
           },
-          "304": { "$ref": "#/components/responses/NotModified" },
-          "400": { "$ref": "#/components/responses/InvalidRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/ForbiddenOrigin" },
-          "409": { "$ref": "#/components/responses/CursorUnavailable" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "409": {
+            "$ref": "#/components/responses/CursorUnavailable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/catalogue-exports/{catalogue_revision_id}": {
-      "parameters": [{ "$ref": "#/components/parameters/CatalogueRevisionId" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CatalogueRevisionId"
+        }
+      ],
       "get": {
         "operationId": "getCatalogueExport",
-        "tags": ["Catalogue Exports"],
+        "tags": [
+          "Catalogue Exports"
+        ],
         "summary": "Get one verified immutable Catalogue Export manifest",
-        "parameters": [{ "$ref": "#/components/parameters/IfNoneMatch" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Verified manifest and authenticated immutable component links.",
             "headers": {
-              "ETag": { "$ref": "#/components/headers/ETag" },
-              "X-Catalogue-Revision": { "$ref": "#/components/headers/CatalogueRevision" }
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "X-Catalogue-Revision": {
+                "$ref": "#/components/headers/CatalogueRevision"
+              }
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/api.schema.json#/$defs/CatalogueExportDocument" }
+                "schema": {
+                  "$ref": "./schemas/api.schema.json#/$defs/CatalogueExportDocument"
+                }
               }
             }
           },
-          "304": { "$ref": "#/components/responses/NotModified" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/ForbiddenOrigin" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "410": { "$ref": "#/components/responses/CatalogueExportDeleted" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "410": {
+            "$ref": "#/components/responses/CatalogueExportDeleted"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/catalogue-exports/{catalogue_revision_id}/components/{component}": {
       "parameters": [
-        { "$ref": "#/components/parameters/CatalogueRevisionId" },
+        {
+          "$ref": "#/components/parameters/CatalogueRevisionId"
+        },
         {
           "name": "component",
           "in": "path",
@@ -508,7 +753,6 @@
               "releases",
               "distribution-contexts",
               "errata",
-              "legality-rules",
               "relationships"
             ]
           }
@@ -516,37 +760,79 @@
       ],
       "get": {
         "operationId": "getCatalogueExportComponent",
-        "tags": ["Catalogue Exports"],
+        "tags": [
+          "Catalogue Exports"
+        ],
         "summary": "Stream one immutable gzip NDJSON component",
         "parameters": [
-          { "$ref": "#/components/parameters/Range" },
-          { "$ref": "#/components/parameters/IfNoneMatch" }
+          {
+            "$ref": "#/components/parameters/Range"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
         ],
         "responses": {
-          "200": { "$ref": "#/components/responses/ImmutableBinary" },
-          "206": { "$ref": "#/components/responses/PartialBinary" },
-          "304": { "$ref": "#/components/responses/NotModified" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/ForbiddenOrigin" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "410": { "$ref": "#/components/responses/CatalogueExportDeleted" },
-          "416": { "$ref": "#/components/responses/RangeNotSatisfiable" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "200": {
+            "$ref": "#/components/responses/ImmutableBinary"
+          },
+          "206": {
+            "$ref": "#/components/responses/PartialBinary"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "410": {
+            "$ref": "#/components/responses/CatalogueExportDeleted"
+          },
+          "416": {
+            "$ref": "#/components/responses/RangeNotSatisfiable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       },
       "head": {
         "operationId": "headCatalogueExportComponent",
-        "tags": ["Catalogue Exports"],
+        "tags": [
+          "Catalogue Exports"
+        ],
         "summary": "Read immutable component metadata without a body",
         "responses": {
-          "200": { "$ref": "#/components/responses/ImmutableBinaryHead" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/ForbiddenOrigin" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "410": { "$ref": "#/components/responses/CatalogueExportDeleted" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "200": {
+            "$ref": "#/components/responses/ImmutableBinaryHead"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "410": {
+            "$ref": "#/components/responses/CatalogueExportDeleted"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     }
@@ -564,108 +850,162 @@
       "Search": {
         "name": "q",
         "in": "query",
-        "schema": { "type": "string", "minLength": 1, "maxLength": 500 }
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
       },
       "Game": {
         "name": "game",
         "in": "query",
-        "schema": { "$ref": "./schemas/api.schema.json#/$defs/SupportedGame" }
+        "schema": {
+          "$ref": "./schemas/api.schema.json#/$defs/SupportedGame"
+        }
       },
       "Limit": {
         "name": "limit",
         "in": "query",
-        "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 50
+        }
       },
       "After": {
         "name": "after",
         "in": "query",
         "description": "Opaque cursor pinning route, normalized filters, order, limit, and Catalogue Revision.",
-        "schema": { "type": "string", "minLength": 1 }
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        }
       },
       "IfNoneMatch": {
         "name": "If-None-Match",
         "in": "header",
-        "schema": { "type": "string" }
+        "schema": {
+          "type": "string"
+        }
       },
       "Range": {
         "name": "Range",
         "in": "header",
         "description": "One RFC 9110 bytes range. Multiple ranges are not supported.",
-        "schema": { "type": "string", "pattern": "^bytes=" }
+        "schema": {
+          "type": "string",
+          "pattern": "^bytes="
+        }
       },
       "CardId": {
         "name": "card_id",
         "in": "path",
         "required": true,
-        "schema": { "$ref": "./schemas/api.schema.json#/$defs/OpaqueId" }
+        "schema": {
+          "$ref": "./schemas/api.schema.json#/$defs/OpaqueId"
+        }
       },
       "PrintingId": {
         "name": "printing_id",
         "in": "path",
         "required": true,
-        "schema": { "$ref": "./schemas/api.schema.json#/$defs/OpaqueId" }
+        "schema": {
+          "$ref": "./schemas/api.schema.json#/$defs/OpaqueId"
+        }
       },
       "ImageId": {
         "name": "image_id",
         "in": "path",
         "required": true,
-        "schema": { "$ref": "./schemas/api.schema.json#/$defs/OpaqueId" }
+        "schema": {
+          "$ref": "./schemas/api.schema.json#/$defs/OpaqueId"
+        }
       },
       "ProductId": {
         "name": "product_id",
         "in": "path",
         "required": true,
-        "schema": { "$ref": "./schemas/api.schema.json#/$defs/OpaqueId" }
+        "schema": {
+          "$ref": "./schemas/api.schema.json#/$defs/OpaqueId"
+        }
       },
       "CatalogueRevisionId": {
         "name": "catalogue_revision_id",
         "in": "path",
         "required": true,
-        "schema": { "$ref": "./schemas/api.schema.json#/$defs/OpaqueId" }
+        "schema": {
+          "$ref": "./schemas/api.schema.json#/$defs/OpaqueId"
+        }
       }
     },
     "headers": {
       "ETag": {
         "description": "Strong ETag for immutable bytes; resource-representation ETag for JSON.",
-        "schema": { "type": "string" }
+        "schema": {
+          "type": "string"
+        }
       },
       "CatalogueRevision": {
         "description": "Opaque Catalogue Revision used by this response.",
-        "schema": { "$ref": "./schemas/api.schema.json#/$defs/OpaqueId" }
+        "schema": {
+          "$ref": "./schemas/api.schema.json#/$defs/OpaqueId"
+        }
       },
       "RetryAfter": {
         "description": "Seconds until the client may retry.",
-        "schema": { "type": "integer", "minimum": 1 }
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
       },
       "AcceptRanges": {
-        "schema": { "const": "bytes" }
+        "schema": {
+          "const": "bytes"
+        }
       },
       "ContentRange": {
-        "schema": { "type": "string", "pattern": "^bytes " }
+        "schema": {
+          "type": "string",
+          "pattern": "^bytes "
+        }
       },
       "CacheControlPrivateImmutable": {
-        "schema": { "const": "private, max-age=31536000, immutable" }
+        "schema": {
+          "const": "private, max-age=31536000, immutable"
+        }
       },
       "ContentLength": {
-        "schema": { "type": "integer", "minimum": 0 }
+        "schema": {
+          "type": "integer",
+          "minimum": 0
+        }
       },
       "ContentDisposition": {
-        "schema": { "type": "string" }
+        "schema": {
+          "type": "string"
+        }
       }
     },
     "responses": {
       "NotModified": {
         "description": "The authenticated representation has not changed.",
         "headers": {
-          "ETag": { "$ref": "#/components/headers/ETag" },
-          "X-Catalogue-Revision": { "$ref": "#/components/headers/CatalogueRevision" }
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "X-Catalogue-Revision": {
+            "$ref": "#/components/headers/CatalogueRevision"
+          }
         }
       },
       "InvalidRequest": {
         "description": "Invalid parameter or cursor.",
         "content": {
           "application/problem+json": {
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/Problem" }
+            "schema": {
+              "$ref": "./schemas/api.schema.json#/$defs/Problem"
+            }
           }
         }
       },
@@ -673,7 +1013,9 @@
         "description": "Missing or invalid API traffic-gate key.",
         "content": {
           "application/problem+json": {
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/Problem" }
+            "schema": {
+              "$ref": "./schemas/api.schema.json#/$defs/Problem"
+            }
           }
         }
       },
@@ -681,7 +1023,9 @@
         "description": "A browser Origin is not on the exact environment allowlist.",
         "content": {
           "application/problem+json": {
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/Problem" }
+            "schema": {
+              "$ref": "./schemas/api.schema.json#/$defs/Problem"
+            }
           }
         }
       },
@@ -689,7 +1033,9 @@
         "description": "The opaque identity is unknown or the immutable object is unavailable.",
         "content": {
           "application/problem+json": {
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/Problem" }
+            "schema": {
+              "$ref": "./schemas/api.schema.json#/$defs/Problem"
+            }
           }
         }
       },
@@ -697,7 +1043,9 @@
         "description": "The named Catalogue Revision exists, but its Catalogue Export was explicitly deleted by guarded owner maintenance. Audit and recovery evidence remain retained.",
         "content": {
           "application/problem+json": {
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/Problem" }
+            "schema": {
+              "$ref": "./schemas/api.schema.json#/$defs/Problem"
+            }
           }
         }
       },
@@ -705,26 +1053,24 @@
         "description": "The cursor's pinned Catalogue Revision is no longer hot-queryable. The problem includes a fresh collection link.",
         "content": {
           "application/problem+json": {
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/Problem" }
-          }
-        }
-      },
-      "InvalidLegalityRegion": {
-        "description": "The region is not supported for this Card. In particular, Gundam never synthesizes EN-OCEANIA.",
-        "content": {
-          "application/problem+json": {
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/Problem" }
+            "schema": {
+              "$ref": "./schemas/api.schema.json#/$defs/Problem"
+            }
           }
         }
       },
       "RateLimited": {
         "description": "Per-IP abuse circuit breaker.",
         "headers": {
-          "Retry-After": { "$ref": "#/components/headers/RetryAfter" }
+          "Retry-After": {
+            "$ref": "#/components/headers/RetryAfter"
+          }
         },
         "content": {
           "application/problem+json": {
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/Problem" }
+            "schema": {
+              "$ref": "./schemas/api.schema.json#/$defs/Problem"
+            }
           }
         }
       },
@@ -732,7 +1078,9 @@
         "description": "The current Catalogue Revision does not yet have a complete bounded Card query projection.",
         "content": {
           "application/problem+json": {
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/Problem" }
+            "schema": {
+              "$ref": "./schemas/api.schema.json#/$defs/Problem"
+            }
           }
         }
       },
@@ -740,58 +1088,104 @@
         "description": "Unexpected server failure with a safe request identity.",
         "content": {
           "application/problem+json": {
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/Problem" }
+            "schema": {
+              "$ref": "./schemas/api.schema.json#/$defs/Problem"
+            }
           }
         }
       },
       "ImmutableBinary": {
         "description": "Complete immutable authenticated bytes. Private client caching only.",
         "headers": {
-          "ETag": { "$ref": "#/components/headers/ETag" },
-          "X-Catalogue-Revision": { "$ref": "#/components/headers/CatalogueRevision" },
-          "Accept-Ranges": { "$ref": "#/components/headers/AcceptRanges" },
-          "Cache-Control": { "$ref": "#/components/headers/CacheControlPrivateImmutable" },
-          "Content-Length": { "$ref": "#/components/headers/ContentLength" },
-          "Content-Disposition": { "$ref": "#/components/headers/ContentDisposition" }
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "X-Catalogue-Revision": {
+            "$ref": "#/components/headers/CatalogueRevision"
+          },
+          "Accept-Ranges": {
+            "$ref": "#/components/headers/AcceptRanges"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControlPrivateImmutable"
+          },
+          "Content-Length": {
+            "$ref": "#/components/headers/ContentLength"
+          },
+          "Content-Disposition": {
+            "$ref": "#/components/headers/ContentDisposition"
+          }
         },
         "content": {
           "application/octet-stream": {
-            "schema": { "type": "string", "format": "binary" }
+            "schema": {
+              "type": "string",
+              "format": "binary"
+            }
           }
         }
       },
       "PartialBinary": {
         "description": "One satisfiable immutable byte range.",
         "headers": {
-          "ETag": { "$ref": "#/components/headers/ETag" },
-          "X-Catalogue-Revision": { "$ref": "#/components/headers/CatalogueRevision" },
-          "Accept-Ranges": { "$ref": "#/components/headers/AcceptRanges" },
-          "Content-Range": { "$ref": "#/components/headers/ContentRange" },
-          "Cache-Control": { "$ref": "#/components/headers/CacheControlPrivateImmutable" },
-          "Content-Length": { "$ref": "#/components/headers/ContentLength" }
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "X-Catalogue-Revision": {
+            "$ref": "#/components/headers/CatalogueRevision"
+          },
+          "Accept-Ranges": {
+            "$ref": "#/components/headers/AcceptRanges"
+          },
+          "Content-Range": {
+            "$ref": "#/components/headers/ContentRange"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControlPrivateImmutable"
+          },
+          "Content-Length": {
+            "$ref": "#/components/headers/ContentLength"
+          }
         },
         "content": {
           "application/octet-stream": {
-            "schema": { "type": "string", "format": "binary" }
+            "schema": {
+              "type": "string",
+              "format": "binary"
+            }
           }
         }
       },
       "ImmutableBinaryHead": {
         "description": "Immutable object metadata with no response body.",
         "headers": {
-          "ETag": { "$ref": "#/components/headers/ETag" },
-          "X-Catalogue-Revision": { "$ref": "#/components/headers/CatalogueRevision" },
-          "Accept-Ranges": { "$ref": "#/components/headers/AcceptRanges" },
-          "Cache-Control": { "$ref": "#/components/headers/CacheControlPrivateImmutable" },
-          "Content-Length": { "$ref": "#/components/headers/ContentLength" },
-          "Content-Disposition": { "$ref": "#/components/headers/ContentDisposition" }
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "X-Catalogue-Revision": {
+            "$ref": "#/components/headers/CatalogueRevision"
+          },
+          "Accept-Ranges": {
+            "$ref": "#/components/headers/AcceptRanges"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControlPrivateImmutable"
+          },
+          "Content-Length": {
+            "$ref": "#/components/headers/ContentLength"
+          },
+          "Content-Disposition": {
+            "$ref": "#/components/headers/ContentDisposition"
+          }
         }
       },
       "RangeNotSatisfiable": {
         "description": "The requested byte range is invalid or outside the immutable object.",
         "content": {
           "application/problem+json": {
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/Problem" }
+            "schema": {
+              "$ref": "./schemas/api.schema.json#/$defs/Problem"
+            }
           }
         }
       }

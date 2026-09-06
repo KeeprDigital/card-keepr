@@ -61,15 +61,7 @@ test("a complete Product fixture publishes separated release and distribution re
     date: { precision: "month", value: "2026-09" },
     status: "announced",
   });
-  expect((await exportManifest(revisionId)).source_freshness).toEqual(
-    expect.arrayContaining([
-      {
-        game: "one-piece",
-        area: "products-and-releases",
-        checked_at: expect.any(String),
-      },
-    ]),
-  );
+  expect(await exportManifest(revisionId)).not.toHaveProperty("source_freshness");
   const context = contexts.find(
     (entry) => entry.product_id === productId && entry.label === "Championship 2026 Participation Pack",
   );
@@ -94,7 +86,6 @@ test("a complete Product fixture publishes separated release and distribution re
     expect.objectContaining({
       from: { type: "printing", id: expect.any(String) },
       to: { type: "product", id: productId },
-      evidence_category: "explicit",
     }),
   );
   if (productRelationship === undefined) {
@@ -129,7 +120,6 @@ test("a complete Product fixture publishes separated release and distribution re
       expect.objectContaining({
         from: { type: "printing", id: printingId },
         to: { type: "distribution_context", id: contextId },
-        evidence_category: "derived",
       }),
     ]),
   );

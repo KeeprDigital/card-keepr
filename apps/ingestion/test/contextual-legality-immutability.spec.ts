@@ -15,7 +15,6 @@ import {
   canonicalLegalityCardIdInvariantErrors,
   canonicalLegalityEffectInvariantErrors,
   canonicalLegalityScopeInvariantErrors,
-  exportedLegalityRule,
   exportedManifest,
   installContextualLegalitySuite,
   officialAdapterUrl,
@@ -740,27 +739,10 @@ test("legality freshness remains independent across partial regional refreshes",
     current: false,
     source_lineage: "gundam-en-asia",
   });
-  expect((await exportedManifest(retiredAsia.revisionId)).source_freshness).toEqual(
-    expect.arrayContaining([
-      {
-        game: "gundam",
-        area: "legality-rules",
-        source_lineage: "gundam-en-asia",
-        region: "EN-ASIA",
-        checked_at: retiredAsia.checkedAt,
-      },
-      {
-        game: "gundam",
-        area: "legality-rules",
-        source_lineage: "gundam-en-us",
-        region: "EN-US",
-        checked_at: us.checkedAt,
-      },
-    ]),
-  );
+  expect(await exportedManifest(retiredAsia.revisionId)).not.toHaveProperty("source_freshness");
 }, 90_000);
 
-test("a versioned production adapter derives and exports an exact representable Legality Rule", async () => {
+test("a versioned production adapter retains an exact representable internal Legality Rule", async () => {
   const seeded = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
@@ -821,7 +803,7 @@ test("a versioned production adapter derives and exports an exact representable 
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
 
-  expect(await exportedLegalityRule(revisionId, "fw_production_eligible")).toMatchObject({
+  expect(await revisionLegalityRule(revisionId, "fw_production_eligible")).toMatchObject({
     official_wording: "FB01-001 is eligible 'as printed' – publisher–confirmed &#39;literal&#39;.",
     region: "EN-OCEANIA",
     format: "standard",
@@ -1028,7 +1010,7 @@ test("authenticated parsing retains staged live Fusion policy root and detail ob
   ).toBe(true);
 }, 90_000);
 
-test("the One Piece production release surface publishes release timing through the export seam", async () => {
+test("the One Piece production release surface retains release timing internally pending eligibility processing removal", async () => {
   const seeded = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
@@ -1077,7 +1059,7 @@ test("the One Piece production release surface publishes release timing through 
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
 
-  expect(await exportedLegalityRule(revisionId, "OP-RELEASE-2026-001")).toMatchObject({
+  expect(await revisionLegalityRule(revisionId, "OP-RELEASE-2026-001")).toMatchObject({
     game: "one-piece",
     official_wording: "OP01-001 becomes legal for standard tournament play on 2026-09-04.",
     effect: { type: "release_timing", legal_from: "2026-09-04" },

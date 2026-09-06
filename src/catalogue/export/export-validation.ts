@@ -22,7 +22,6 @@ const componentValidators = new Map<string, ValidateFunction>(
     "ReleaseRecord",
     "DistributionContextRecord",
     "ErratumRecord",
-    "LegalityRuleRecord",
     "RelationshipRecord",
   ].map((definition) => {
     const uri = `${recordSchema.$id}#/$defs/${definition}`;

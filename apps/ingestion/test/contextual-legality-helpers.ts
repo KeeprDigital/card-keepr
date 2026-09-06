@@ -260,14 +260,6 @@ export async function revisionLegalityRule(
   return retained === null ? undefined : (JSON.parse(retained.document_json) as Record<string, unknown>);
 }
 
-export async function exportedLegalityRule(revisionId: string, officialId: string): Promise<Record<string, unknown>> {
-  const rule = (await exportedComponentRecords(revisionId, "legality-rules")).find(
-    (entry) => entry.official_id === officialId,
-  );
-  if (rule === undefined) throw new Error("Exported Legality Rule is absent");
-  return rule;
-}
-
 export async function exportedManifest(revisionId: string): Promise<{
   source_freshness: Array<Record<string, unknown>>;
 }> {

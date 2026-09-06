@@ -45,26 +45,20 @@ test("accepted typed Product relationships persist without code/name namespace c
       expect.objectContaining({
         kind: "printing-product",
         to: { type: "product", id: coded?.id },
-        evidence_category: "explicit",
-        source_lineage: "one-piece-en",
-        source_observation_ids: [expect.stringMatching(/^srcobs_/)],
       }),
       expect.objectContaining({
         kind: "printing-distribution-context",
         to: { type: "distribution_context", id: context?.id },
-        evidence_category: "derived",
       }),
       expect.objectContaining({
         kind: "distribution-context-product",
         from: { type: "distribution_context", id: context?.id },
         to: { type: "product", id: coded?.id },
-        evidence_category: "explicit",
       }),
       expect.objectContaining({
         kind: "product-card",
         from: { type: "product", id: named?.id },
         to: { type: "card", id: expect.any(String) },
-        evidence_category: "derived",
       }),
     ]),
   );
@@ -138,10 +132,6 @@ test("standalone Product lifecycle survives rename, disappearance, and explicit 
       withdrawn: true,
       withdrawal: {
         revision_id: withdrawnRevision,
-        evidence: expect.objectContaining({
-          assertion: "withdrawn",
-          source_observation_id: expect.stringMatching(/^srcobs_/),
-        }),
       },
     },
   });
@@ -558,14 +548,7 @@ test("Product freshness is emitted only for an actually checked Product surface"
   const noCheckRun = await collect("/reconciliation/base", "product-freshness-no-check");
   const noCheckCandidate = await reconcile(noCheckRun.id);
   const noCheckRevision = requiredString((await approve(noCheckCandidate.document)).document, "resulting_revision_id");
-  const carriedFreshness = (await exportManifest(noCheckRevision)).source_freshness.find(
-    ({ game, area }) => game === "one-piece" && area === "products-and-releases",
-  );
-  expect(carriedFreshness).toEqual(
-    (await exportManifest(checkedRevision)).source_freshness.find(
-      ({ game, area }) => game === "one-piece" && area === "products-and-releases",
-    ),
-  );
+  expect(await exportManifest(noCheckRevision)).not.toHaveProperty("source_freshness");
   expect(await exportComponentRecords(noCheckRevision, "products")).toContainEqual(
     expect.objectContaining({
       official_code: "ST-STANDALONE",
@@ -637,7 +620,6 @@ test("Product-only Official Source surfaces reconcile without fabricating a Card
       kind: "distribution-context-product",
       from: expect.objectContaining({ type: "distribution_context" }),
       to: expect.objectContaining({ type: "product" }),
-      evidence_category: "explicit",
       relationship_value: "ST-PRODUCT-ONLY",
     }),
   );

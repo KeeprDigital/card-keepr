@@ -2,7 +2,6 @@ import { catalogueResponse } from "../../http/catalogue";
 import { type RouteContext, route } from "../../http/routes";
 import type { CatalogueStore } from "../shared";
 import { cardCollectionResponse } from "./card-collection-read";
-import { contextualLegalityStatusResponse } from "./legality-status";
 import { currentPrintingsResponse } from "./printing-collection-read";
 import { currentProductResponse, currentProductsResponse } from "./product-release-read";
 import {
@@ -30,9 +29,6 @@ export const catalogueRoutes = [
   ),
   route<Context>("GET", "/v1/cards/:card", async ({ env, request, base }, params) =>
     currentCardResponse(env.CATALOGUE_DB, params.card!, request, base),
-  ),
-  route<Context>("GET", "/v1/legality-status", async ({ env, request, base }) =>
-    contextualLegalityStatusResponse(request, env.CATALOGUE_DB, base),
   ),
   route<Context>("GET", "/v1/printings", async ({ env, request, base }) =>
     currentPrintingsResponse(env.CATALOGUE_DB, request, base),

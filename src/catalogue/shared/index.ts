@@ -46,6 +46,7 @@ export {
   catalogueStore,
   repositoryStatements,
 } from "./catalogue-store-repository";
+export { consumerContent } from "./consumer-content";
 export type {
   CuratedEvidence,
   CuratedFieldTarget,

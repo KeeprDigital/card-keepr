@@ -15,11 +15,6 @@ export type PublicationInstant = string & {
 type CatalogueStatus = {
   revisionId: CatalogueRevisionId;
   publishedAt: PublicationInstant;
-  lastSuccessfulChecks: readonly {
-    game: "one-piece" | "fusion-world" | "digimon" | "gundam";
-    area: "cards-and-printings" | "products-and-releases" | "legality-rules" | "errata";
-    checked_at: PublicationInstant;
-  }[];
   etag: string;
 };
 
@@ -53,7 +48,6 @@ export function catalogueResponse(status: CatalogueStatus, base: PublicBase, req
         type: "catalogue",
         current_revision_id: status.revisionId,
         published_at: status.publishedAt,
-        last_successful_checks: status.lastSuccessfulChecks,
         current_export: currentExport,
       },
       meta: {

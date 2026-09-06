@@ -1,30 +1,30 @@
 import {
+  erratumTargetLifecycleKey,
+  exportErratum,
+  type LocatorEvidenceCollection,
+  type NormalizedLifecycle,
+  type RelationshipEvidence,
+  typedPrintingProjections,
+} from "../reconciliation";
+import {
   type CatalogueCandidate,
+  CatalogueExportLimitError,
   type CatalogueSourceCheck,
-  type SupportedGame,
-  exportedGameProfileSchema,
   canonicalJson,
   compareUtf8,
-  sha256,
-  sha256Text,
-  utf8,
-  CatalogueExportLimitError,
+  consumerContent,
+  deterministicGzipStream,
+  exportedGameProfileSchema,
   maximumCatalogueExportBytes,
   maximumCatalogueExportObjectBytes,
   maximumExportComponentBytes,
   maximumExportRecordBytes,
-  deterministicGzipStream,
+  type SupportedGame,
+  sha256,
+  sha256Text,
+  utf8,
 } from "../shared";
-import {
-  type NormalizedLifecycle,
-  type LocatorEvidenceCollection,
-  type RelationshipEvidence,
-  typedPrintingProjections,
-  erratumTargetLifecycleKey,
-  exportErratum,
-} from "../reconciliation";
 import { verifyComponentExportRecord, verifyExportManifest } from "./export-validation";
-import { legalityRuleExportRecords, legalityRuleRelationshipRecords } from "../legality";
 
 const componentDefinitions = [
   ["supported-games", "SupportedGameRecord", "id:utf8", 5],
@@ -36,7 +36,6 @@ const componentDefinitions = [
   ["releases", "ReleaseRecord", "id:utf8", 5],
   ["distribution-contexts", "DistributionContextRecord", "id:utf8", 5],
   ["errata", "ErratumRecord", "id:utf8", 5],
-  ["legality-rules", "LegalityRuleRecord", "id:utf8", 5],
   ["relationships", "RelationshipRecord", "id:utf8", 5],
 ] as const;
 
@@ -72,7 +71,6 @@ type CatalogueExportManifest = {
   published_at: string;
   export_created_at: string;
   supported_games: readonly SupportedGame[];
-  source_freshness: readonly SourceFreshness[];
   components: readonly ExportComponent[];
   manifest_sha256: string;
 };
@@ -116,7 +114,7 @@ export async function buildCatalogueExport(
     cardEvidence?: Readonly<Record<string, readonly { source: string }[]>>;
     printingEvidence?: Readonly<Record<string, readonly { source: string }[]>>;
   },
-  sourceFreshness?: readonly SourceFreshness[],
+  _sourceFreshness?: readonly SourceFreshness[],
 ): Promise<BuiltCatalogueExport> {
   const recordFactories = await exportRecordFactories(candidate, catalogueRevisionId, lifecycles);
   const components: ExportComponent[] = [];
@@ -177,29 +175,6 @@ export async function buildCatalogueExport(
     published_at: publishedAt,
     export_created_at: publishedAt,
     supported_games: candidate.selected_games,
-    source_freshness:
-      sourceFreshness === undefined
-        ? candidate.selected_games.flatMap((game) => [
-            ...((candidate.card_observed_games ?? candidate.selected_games).includes(game)
-              ? [
-                  {
-                    game,
-                    area: "cards-and-printings" as const,
-                    checked_at: publishedAt,
-                  },
-                ]
-              : []),
-            ...(candidate.product_observed_games?.includes(game)
-              ? [
-                  {
-                    game,
-                    area: "products-and-releases" as const,
-                    checked_at: publishedAt,
-                  },
-                ]
-              : []),
-          ])
-        : [...sourceFreshness],
     components,
     manifest_sha256: "0".repeat(64),
   };
@@ -237,7 +212,9 @@ type ExportRecordFactory = () => Iterable<unknown>;
 function orderedExportRecords(records: ExportRecordFactory, order: "id:utf8" | "profile:utf8"): ExportRecordFactory {
   const field = order === "id:utf8" ? "id" : "profile";
   return () =>
-    [...records()].sort((left, right) => compareUtf8(exportOrderValue(left, field), exportOrderValue(right, field)));
+    [...records()]
+      .map(consumerContent)
+      .sort((left, right) => compareUtf8(exportOrderValue(left, field), exportOrderValue(right, field)));
 }
 
 function exportOrderValue(value: unknown, field: "id" | "profile"): string {
@@ -482,7 +459,6 @@ async function exportRecordFactories(
         ...curatedProvenanceProjection(context),
       })),
   ]);
-  const legalityRelationships = await legalityRuleRelationshipRecords(candidate, revisionId);
   return {
     "supported-games": () =>
       candidate.selected_games.map((game) => ({
@@ -555,7 +531,6 @@ async function exportRecordFactories(
           ...curatedProvenanceProjection(erratum),
         }))
         .sort((left, right) => compareUtf8(left.id, right.id)),
-    "legality-rules": () => legalityRuleExportRecords(candidate, revisionId),
     relationships: () =>
       uniqueById([
         ...identifiedRelationships
@@ -635,7 +610,6 @@ async function exportRecordFactories(
             },
           };
         }),
-        ...legalityRelationships,
       ]),
   };
 }

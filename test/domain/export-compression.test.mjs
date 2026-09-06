@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { deterministicGzip, deterministicGzipStream } from "../../src/catalogue/shared/export-compression.ts";
 import {
   verifyComponentExportRecord,
   verifyExportManifest,
   verifyExportRecord,
 } from "../../src/catalogue/export/export-validation.ts";
+import { deterministicGzip, deterministicGzipStream } from "../../src/catalogue/shared/export-compression.ts";
 
 const goldenInput = new TextEncoder().encode('{"id":"golden"}\n');
 const goldenHex = "1f8b08000000000002ffab56ca4c51b2524acfcf4949cd53aae50200cc28fff510000000";
@@ -44,132 +44,15 @@ test("component export validation rejects a valid record from the wrong componen
   );
 });
 
-test("Legality Rule component validation enforces effect and contextual scope invariants", () => {
-  const uri = "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/LegalityRuleRecord";
-  const pointer = "/observations/0/value/legality_rules/0";
-  const base = {
-    type: "legality_rule",
-    id: "rule_schema_contract",
-    official_id: "RULE-SCHEMA-CONTRACT",
-    game: "fusion-world",
-    region: "EN-OCEANIA",
-    format: "standard",
-    event_tier: null,
-    effective_from: "2026-01-01",
-    effective_until: null,
-    unresolved_scope: null,
-    kind: "eligible",
-    effect: { type: "eligible" },
-    card_ids: ["card_schema_contract"],
-    official_wording: "FB01-001 is eligible for Standard play.",
-    source_lineage: "fusion-world-en",
-    source_observation_ids: ["srcobs_schema_contract"],
-    source_observation_pointer: pointer,
-    source_field_pointers: Object.fromEntries(
-      [
-        "official_wording",
-        "effective_from",
-        "effective_until",
-        "unresolved_scope",
-        "region",
-        "format",
-        "event_tier",
-        "card_numbers",
-        "effect",
-      ].map((field) => [field, `${pointer}/${field}`]),
-    ),
-    lifecycle: {
-      first_revision_id: "catrev_schema_contract",
-      last_observed_revision_id: "catrev_schema_contract",
-      current: true,
-      last_missing_revision_id: null,
-    },
-  };
-  const effectKinds = [
-    [{ type: "eligible" }, "eligible"],
-    [{ type: "ban" }, "not_legal"],
-    [{ type: "copy_limit", maximum_copies: 1 }, "restricted"],
-    [{ type: "prohibited_combination", with_card_ids: ["card_companion"] }, "combination"],
-    [{ type: "membership", attribute: "traits", includes_any: ["Saiyan"] }, "conditional"],
-    [{ type: "rotation", eligible_blocks: ["01"] }, "rotation"],
-    [{ type: "release_timing", legal_from: "2026-02-01" }, "release"],
-    [{ type: "unresolved", reason: "Publisher context is unclear." }, "indeterminate"],
-  ];
-  for (const [effect, kind] of effectKinds) {
-    assert.doesNotThrow(
-      () =>
-        verifyComponentExportRecord(uri, {
-          ...base,
-          kind,
-          effect,
-        }),
-      `${effect.type} / ${kind}`,
-    );
-    assert.throws(
-      () =>
-        verifyComponentExportRecord(uri, {
-          ...base,
-          kind: kind === "eligible" ? "restricted" : "eligible",
-          effect,
-        }),
-      /component record failed schema verification/u,
-      `${effect.type} mismatch`,
-    );
-  }
-
-  const invalid = [
-    { ...base, effective_from: null },
-    {
-      ...base,
-      unresolved_scope: { dimensions: ["effective_interval"] },
-    },
-    {
-      ...base,
-      kind: "indeterminate",
-      effect: { type: "unresolved", reason: "Unknown interval." },
-      unresolved_scope: { dimensions: ["effective_interval"] },
-      effective_from: "2026-01-01",
-    },
-    {
-      ...base,
-      kind: "indeterminate",
-      effect: { type: "unresolved", reason: "Unknown interval." },
-      unresolved_scope: { dimensions: ["effective_interval"] },
-      effective_from: null,
-      effective_until: "2026-02-01",
-    },
-    {
-      ...base,
-      kind: "indeterminate",
-      effect: { type: "unresolved", reason: "Unknown tier." },
-      unresolved_scope: { dimensions: ["event_tier"] },
-      event_tier: "championship",
-    },
-    {
-      ...base,
-      kind: "indeterminate",
-      effect: { type: "unresolved", reason: "Unknown interval." },
-      unresolved_scope: { dimensions: ["effective_interval"] },
-      effective_from: null,
-      card_ids: [],
-    },
-    {
-      ...base,
-      kind: "combination",
-      effect: { type: "prohibited_combination", with_card_ids: ["card_companion"] },
-      card_ids: [],
-    },
-    {
-      ...base,
-      kind: "indeterminate",
-      effect: { type: "unresolved", reason: "Unknown context." },
-      unresolved_scope: { dimensions: ["event_tier", "effective_interval"] },
-      effective_from: null,
-    },
-  ];
-  for (const record of invalid) {
-    assert.throws(() => verifyComponentExportRecord(uri, record), /component record failed schema verification/u);
-  }
+test("eligibility records are not a consumer export component", () => {
+  assert.throws(
+    () =>
+      verifyComponentExportRecord(
+        "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/LegalityRuleRecord",
+        { type: "legality_rule", id: "removed" },
+      ),
+    /unresolved record_schema/u,
+  );
 });
 
 const recordSchemaUri = "https://card-keepr.invalid/schemas/catalogue-export-record@5";
@@ -209,7 +92,6 @@ test("manifest components reference their bytes by name and carry no URL", () =>
     ["releases", "ReleaseRecord", "id:utf8"],
     ["distribution-contexts", "DistributionContextRecord", "id:utf8"],
     ["errata", "ErratumRecord", "id:utf8"],
-    ["legality-rules", "LegalityRuleRecord", "id:utf8"],
     ["relationships", "RelationshipRecord", "id:utf8"],
   ].map(([name, definition, order]) => ({
     name,
@@ -231,7 +113,6 @@ test("manifest components reference their bytes by name and carry no URL", () =>
     published_at: "2026-09-04T00:00:00.000Z",
     export_created_at: "2026-09-04T00:00:00.000Z",
     supported_games: ["one-piece"],
-    source_freshness: [],
     components,
     manifest_sha256: "e".repeat(64),
   };
@@ -264,23 +145,7 @@ test("export validation rejects any record that embeds an API link", () => {
     id: "product_1",
     game: "one-piece",
     official_code: "OP01",
-    name: "Romance Dawn",
-    curated_provenance: [
-      {
-        curated_revision_id: "currev_1",
-        content_digest: "f".repeat(64),
-        target: {
-          kind: "field",
-          entity_type: "product",
-          entity_id: "product_1",
-          path: "/name",
-        },
-        rationale: "Official name confirmed.",
-        evidence: [{ kind: "owner_reference", uri, content_digest: "0".repeat(64) }],
-        author: "owner",
-        reviewed_source_value: "Romance Dawn",
-      },
-    ],
+    name: uri,
     lifecycle: {
       first_revision_id: "catrev_1",
       last_observed_revision_id: "catrev_1",
