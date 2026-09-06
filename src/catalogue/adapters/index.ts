@@ -10,7 +10,6 @@ export {
   assertOfficialSourceUrl,
   globalEmergencySourceRequestCeiling,
   installedSourceAdapterRegistrations,
-  registeredLegalitySourceScope,
   requiredActiveSourceAdapter,
   requiredOfficialSourceContract,
   requiredSourceAdapter,
@@ -20,7 +19,6 @@ export {
 } from "./source-adapters";
 export type { ListingReconciliationTraits } from "./source-adapter-registration-types";
 export {
-  requiredLegalityRegionsForGame,
   requiredOfficialSourceScope,
   type OfficialSourceScope,
 } from "./official-source-scope";
@@ -30,6 +28,5 @@ export {
   type OfficialArtworkIdentity,
 } from "./official-artwork-identity";
 export { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html";
-export { officialLegalityRulesObservation } from "./official-legality-source-adapters";
 
 export { AdapterParseFailure } from "./adapter-parse-failure";

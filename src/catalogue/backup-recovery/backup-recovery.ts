@@ -1,4 +1,3 @@
-import { parseStoredLegalityRule } from "../legality";
 import { storedProductApiProjection } from "../read";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, StreamingSha256, sha256Text } from "../shared";
 import { backupDispatchStatus } from "./backup-dispatch";
@@ -71,7 +70,6 @@ export type CatalogueVerificationEvidence = Readonly<{
   cards: number;
   printings: number;
   products: number;
-  legality_rules: number;
   api_documents: number;
   search_chunks: number;
   provenance: number;
@@ -79,9 +77,7 @@ export type CatalogueVerificationEvidence = Readonly<{
   representative_card_id: string | null;
   representative_printing_id: string | null;
   representative_product_id: string | null;
-  representative_legality_rule_id: string | null;
   representative_product_digest?: string | null;
-  representative_legality_rule_digest?: string | null;
   representative_search_text: string | null;
   representative_curated_revision_id: string | null;
   representative_curated_revision_digest: string | null;
@@ -90,7 +86,6 @@ export type CatalogueVerificationEvidence = Readonly<{
 
 export type CatalogueRepresentativeDocuments = Readonly<{
   representative_product_document_json: string | null;
-  representative_legality_rule_document_json: string | null;
 }>;
 
 export type RestoredCatalogueVerification = Readonly<{
@@ -735,7 +730,6 @@ async function captureCatalogueVerificationEvidenceWithDocuments(
     cards: row.cards,
     printings: row.printings,
     products: row.products,
-    legality_rules: row.legality_rules,
     api_documents: row.api_documents,
     search_chunks: row.search_chunks,
     provenance: row.provenance,
@@ -743,11 +737,7 @@ async function captureCatalogueVerificationEvidenceWithDocuments(
     representative_card_id: row.representative_card_id,
     representative_printing_id: row.representative_printing_id,
     representative_product_id: row.representative_product_id,
-    representative_legality_rule_id: row.representative_legality_rule_id,
     representative_product_digest: await representativeDocumentDigest(row.representative_product_document_json),
-    representative_legality_rule_digest: await representativeDocumentDigest(
-      row.representative_legality_rule_document_json,
-    ),
     representative_search_text: row.representative_search_text,
     representative_curated_revision_id: row.representative_curated_revision_id,
     representative_curated_revision_digest: row.representative_curated_revision_digest,
@@ -757,7 +747,6 @@ async function captureCatalogueVerificationEvidenceWithDocuments(
     expected,
     representativeDocuments: {
       representative_product_document_json: row.representative_product_document_json,
-      representative_legality_rule_document_json: row.representative_legality_rule_document_json,
     },
   };
 }
@@ -808,7 +797,6 @@ async function verifyRestoredCatalogueQueries(
     row.cards === expected.cards &&
     row.printings === expected.printings &&
     row.products === expected.products &&
-    row.legality_rules === expected.legality_rules &&
     row.api_documents === expected.api_documents &&
     row.search_chunks === expected.search_chunks &&
     row.provenance === expected.provenance &&
@@ -816,7 +804,6 @@ async function verifyRestoredCatalogueQueries(
     row.representative_card_id === expected.representative_card_id &&
     row.representative_printing_id === expected.representative_printing_id &&
     row.representative_product_id === expected.representative_product_id &&
-    row.representative_legality_rule_id === expected.representative_legality_rule_id &&
     row.representative_curated_revision_id === expected.representative_curated_revision_id &&
     row.representative_curated_revision_digest === expected.representative_curated_revision_digest &&
     row.publication_ingestion_run_id === expected.publication_ingestion_run_id;
@@ -836,7 +823,7 @@ async function verifyRestoredCatalogueQueries(
       ? expected.representative_printing_id === null
       : typeof expected.representative_printing_id === "string" && expected.representative_printing_id.length > 0;
   const nonVacuous =
-    expected.cards + expected.products + expected.legality_rules > 0 &&
+    expected.cards + expected.products > 0 &&
     expected.audit_rows > 0 &&
     cardEvidence &&
     printingEvidence &&
@@ -845,10 +832,6 @@ async function verifyRestoredCatalogueQueries(
     (expected.products === 0
       ? expected.representative_product_id === null
       : typeof expected.representative_product_id === "string" && expected.representative_product_id.length > 0) &&
-    (expected.legality_rules === 0
-      ? expected.representative_legality_rule_id === null
-      : typeof expected.representative_legality_rule_id === "string" &&
-        expected.representative_legality_rule_id.length > 0) &&
     (expected.provenance === 0
       ? expected.representative_curated_revision_id === null && expected.representative_curated_revision_digest === null
       : typeof expected.representative_curated_revision_id === "string" &&
@@ -871,12 +854,7 @@ async function validRepresentativeDocuments(
 ): Promise<boolean> {
   if (row === undefined) return false;
   const productDocument = nullableDocumentJson(row.representative_product_document_json);
-  const legalityRuleDocument = nullableDocumentJson(row.representative_legality_rule_document_json);
-  if (
-    sourceDocuments !== undefined &&
-    (productDocument !== sourceDocuments.representative_product_document_json ||
-      legalityRuleDocument !== sourceDocuments.representative_legality_rule_document_json)
-  )
+  if (sourceDocuments !== undefined && productDocument !== sourceDocuments.representative_product_document_json)
     return false;
   if (expected.representative_product_id === null) {
     if (productDocument !== null) return false;
@@ -884,16 +862,8 @@ async function validRepresentativeDocuments(
     if (productDocument === null) return false;
     if (storedProductApiProjection(productDocument).id !== expected.representative_product_id) return false;
   }
-  if (expected.representative_legality_rule_id === null) {
-    if (legalityRuleDocument !== null) return false;
-  } else {
-    if (legalityRuleDocument === null) return false;
-    if (parseStoredLegalityRule(legalityRuleDocument).id !== expected.representative_legality_rule_id) return false;
-  }
-  return (
-    (await representativeDigestMatches(expected, "representative_product_digest", productDocument)) &&
-    (await representativeDigestMatches(expected, "representative_legality_rule_digest", legalityRuleDocument))
-  );
+
+  return representativeDigestMatches(expected, "representative_product_digest", productDocument);
 }
 
 function nullableDocumentJson(value: unknown): string | null {
@@ -906,7 +876,7 @@ function nullableDocumentJson(value: unknown): string | null {
 
 async function representativeDigestMatches(
   expected: CatalogueVerificationEvidence,
-  key: "representative_product_digest" | "representative_legality_rule_digest",
+  key: "representative_product_digest",
   documentJson: string | null,
 ): Promise<boolean> {
   if (!Object.hasOwn(expected, key)) return true;

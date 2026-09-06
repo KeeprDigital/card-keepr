@@ -45,7 +45,7 @@ export function publishedSourceFreshnessStatement(database: CatalogueStore): D1P
        FROM source_freshness
        WHERE area IN (
          'cards-and-printings', 'products-and-releases',
-         'legality-rules', 'errata'
+         'errata'
        )
        ORDER BY game, area, source_lineage, region`);
 }

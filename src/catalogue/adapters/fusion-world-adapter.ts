@@ -16,7 +16,6 @@ import {
   productMapKey,
   productOnlyObservation,
   requiredHtmlMatch,
-  stageRecord,
   textValues,
 } from "./adapter-html";
 import {
@@ -63,20 +62,17 @@ const definition: RawAdapterDefinition = {
   reconciliationAreas: ["catalogue"],
   inheritDiscoveryRequestHeaders: false,
   listingReconciliation: {
-    releasesSurfaceCarriesLegality: false,
     groupsPublisherPages: false,
     strictListingIdentity: true,
     duplicateLocatorCompatibility: "canonical",
   },
-  requiredSurfaces: ["card-search", "products", "releases", "legality-current", "legality-history"],
+  requiredSurfaces: ["card-search", "products", "releases"],
   urls: {
     // /fw/en/cardlist/ 302s to its default category leaf; further
     // categories are enumerated from the "Filter by series" facet.
     "card-search": "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
     products: "https://www.dbs-cardgame.com/fw/en/products/",
     releases: "https://www.dbs-cardgame.com/fw/en/products/",
-    "legality-current": "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
-    "legality-history": "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
   },
   // Issue #63: request capacity is a policy of each exact Source Adapter
   // Version, declared in src/catalogue/adapters/source-adapters.ts and the
@@ -88,7 +84,6 @@ const definition: RawAdapterDefinition = {
     catalogueComplete: true,
     completeDigimonCatalogue: false,
     optionalCardFields: true,
-    unresolvedLegalityScopes: false,
     liveShapes: true,
   },
 };
@@ -110,9 +105,6 @@ export const fusionWorldAdapter = createBandaiAdapter(
       surface === "errata" ? fusionWorldOfficialErrataObservations(document) : [],
     productIndex: parseFusionWorldLiveProductIndex,
     validateProductCoverage: requireFusionWorldLiveProductStatusCoverage,
-    policyDiscovery: fusionPolicyDiscovery,
-    surfaceUrl: (surface, url) =>
-      (surface !== "legality-current" && surface !== "legality-history") || exactFusionPolicySurfaceUrl(surface, url),
     cardDetail: parseFusionWorldCardDetailV6,
   },
 );
@@ -552,7 +544,6 @@ function parseFusionWorldCardDetailByContract(
     [],
     new Map(),
     { revision: "captured-by-policy-surface", entries: [] },
-    { revision: "captured-by-policy-surface", entries: [] },
     "fusion-world",
   );
   const document = {
@@ -892,54 +883,7 @@ function parseFusionWorldLiveProductIndex(
         status: entry.status,
       },
     ]);
-    return productOnlyObservation(
-      entry.product,
-      releases,
-      { revision: "captured-by-policy-surface", entries: [] },
-      { revision: "captured-by-policy-surface", entries: [] },
-    );
-  });
-}
-
-function exactFusionPolicyStageRecords(html: string, requestUrl: string): Array<ReturnType<typeof stageRecord>> | null {
-  const retainedCurrent = html.match(
-    /<a class="commonBtn" target="" href="([^"]+)">Banned\/Restricted Cards from Effective March 2026<\/a>/u,
-  );
-  const syntheticCurrent = html.match(/<a href="([^"]+)">Current banned and limited cards<\/a>/u);
-  const historyMarker = '<p class="xxSmallTitle">Application history of banned/restricted cards</p>';
-  const historyStart = html.indexOf(historyMarker);
-  const retainedHistory =
-    historyStart < 0
-      ? null
-      : html
-          .slice(historyStart + historyMarker.length)
-          .match(/<a class="commonBtn" target="" href="([^"]+)">(Effective March 2026)<\/a>/u);
-  const syntheticHistory = html.match(/<a href="([^"]+)">(Previous restriction history)<\/a>/u);
-  const current = retainedCurrent ?? syntheticCurrent;
-  const history = retainedHistory ?? syntheticHistory;
-  if (current === null && history === null) return null;
-  if (current === null) {
-    throw new AdapterParseFailure("Fusion World current policy discovery is incomplete.");
-  }
-  if (history === null) {
-    throw new AdapterParseFailure("Fusion World policy history discovery is incomplete.");
-  }
-  return (
-    [
-      ["legality-current", current[1]!, "banned/restricted cards from effective march 2026"],
-      ["legality-history", history[1]!, history[2]!.toLocaleLowerCase()],
-    ] as const
-  ).map(([surface, resolution, label]) => {
-    const url = adapterUrl(resolution, requestUrl);
-    if (!exactFusionPolicySurfaceUrl(surface, url)) {
-      throw new AdapterParseFailure("Fusion World policy discovery does not match its exact retained publication URL.");
-    }
-    return stageRecord("fusion-world-en", surface, url.href, {
-      kind: "publisher_navigation",
-      label,
-      url: requestUrl,
-      resolution,
-    });
+    return productOnlyObservation(entry.product, releases, { revision: "captured-by-policy-surface", entries: [] });
   });
 }
 
@@ -952,39 +896,3 @@ const fusionLiveProductSections = [
   { id: "available", heading: "AVAILABLE NOW", status: "released" },
   { id: "comingsoon", heading: "COMING SOON", status: "announced" },
 ] as const;
-
-function fusionPolicyDiscovery(html: string, url: string) {
-  const records = exactFusionPolicyStageRecords(html, url);
-  if (records === null) return null;
-  return {
-    records,
-    consumesLink: (label: string, resolved: URL): boolean => {
-      if (
-        !/histor|previous|past|effective|restriction|banned|limited|official rules/iu.test(
-          `${label} ${resolved.pathname} ${resolved.search}`,
-        )
-      )
-        return false;
-      const retainedArchive = new Map([
-        ["effective december 2025", "https://www.dbs-cardgame.com/fw/en/news/01_332.html"],
-        ["effective july 2025", "https://www.dbs-cardgame.com/fw/en/news/01_239.html"],
-        ["effective july 2024", "https://www.dbs-cardgame.com/fw/en/news/01_65.html"],
-      ]);
-      const exactRequired = records.some(({ url }) => url === resolved.href);
-      if (exactRequired || retainedArchive.get(label.toLocaleLowerCase()) === resolved.href) {
-        return true;
-      }
-      throw new AdapterParseFailure("Fusion World policy discovery contains an unrecognized sibling publication.");
-    },
-  };
-}
-
-function exactFusionPolicySurfaceUrl(surface: string, url: URL): boolean {
-  const exact =
-    surface === "legality-current"
-      ? ["https://www.dbs-cardgame.com/fw/en/news/01_305.html"]
-      : surface === "legality-history"
-        ? ["https://www.dbs-cardgame.com/fw/en/news/01_399.html"]
-        : [];
-  return exact.includes(url.href);
-}

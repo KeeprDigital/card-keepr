@@ -37,7 +37,7 @@ export class CatalogueBackupWorkflow extends WorkflowEntrypoint<
   ): Promise<{ result_json: string }> {
     return {
       result_json: JSON.stringify({
-        contract: "card-keepr-contextual-legality-backup-harness@1",
+        contract: "card-keepr-retained-evidence-backup-harness@1",
         idempotency_key: event.payload.idempotency_key,
         ok: true,
       }),

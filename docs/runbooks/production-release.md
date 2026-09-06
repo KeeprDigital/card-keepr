@@ -1,6 +1,6 @@
 # Guarded Production Release
 
-> Scope transition: [ADR 0014](../adr/0014-card-content-without-tournament-eligibility.md) removes tournament eligibility from the planned pre-Go-Live contract. The specification handoff must replace legality smoke checks alongside the implementation. Until then, this runbook describes the existing guarded release behavior; the scope decision alone does not disable its checks.
+> Card-content scope: [ADR 0014](../adr/0014-card-content-without-tournament-eligibility.md) excludes tournament eligibility. Release smoke requires Card, Printing, image, retained export and stale-cursor targets; it does not acquire or test tournament policy. Printed Rules Text and publisher Errata remain in scope.
 
 `keepr release production` is the guarded Worker deployment path. Pull
 request and `main` CI run validation and local Wrangler dry-runs only. The
@@ -150,8 +150,7 @@ checked-in forward migrations, uploads tagged immutable Worker versions,
 verifies that each uploaded version binds exactly the checked-in vars,
 bindings, and expected secrets, activates the API and ingestion pair,
 deploys both Workers' route triggers, observes the resulting binding, and
-runs black-box readiness/liveness/auth/revision/Card/Printing/search/Legality
-Status/export/image checks against `API_BASE_URL`. The readiness check
+runs black-box readiness/liveness/auth/revision/Card/Printing/search/export/image checks against `API_BASE_URL`. The readiness check
 (`/health`, issue #144) proves the activated version's D1, R2, Workflow, and
 version bindings from inside the Worker: a `degraded` document answers `503`
 and fails the smoke, so a release that activated with a broken binding never

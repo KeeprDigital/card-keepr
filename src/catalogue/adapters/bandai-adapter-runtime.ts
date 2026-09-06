@@ -48,12 +48,6 @@ import type { CatalogueObservation, OfficialSourceObservation } from "./adapter-
 import { AdapterParseFailure, adapterUrl, withAdapterParseFailure } from "./adapter-parse-failure";
 import { parseBandaiProductIndex } from "./adapter-product-html";
 import { officialArtworkFingerprint } from "./official-artwork-identity.ts";
-import { liveOfficialLegalityDocument } from "./official-legality-live-html.ts";
-import {
-  officialLegalityRulesHtmlObservation,
-  officialLegalityRulesObservation,
-  officialLiveLegalityRulesObservation,
-} from "./official-legality-source-adapters.ts";
 import { officialUrl } from "./official-source-authority";
 import { onePieceRecordingMemberships } from "./one-piece-source-adapter.ts";
 
@@ -67,22 +61,9 @@ export type GameParsers = {
     sourceLineage: string,
   ) => readonly OfficialSourceObservation[];
   unmappedFields?: (surface: string, document: Record<string, unknown>) => readonly { path: string; value: unknown }[];
-  rulesHub?: (
-    html: string,
-    sourceLineage: string,
-    surface: string,
-    url: string,
-  ) => readonly OfficialSourceObservation[];
   packagesRoot?: (html: string, sourceLineage: string, surface: string, url: string) => CatalogueObservation;
   productIndex?: (html: string, sourceLineage: string, url: string) => CatalogueObservation[];
   validateProductCoverage?: (html: string) => void;
-  policyDiscovery?: (
-    html: string,
-    url: string,
-  ) => {
-    records: Array<ReturnType<typeof stageRecord>>;
-    consumesLink: (label: string, url: URL) => boolean;
-  } | null;
 
   cardDetail?: (html: string, sourceLineage: string, requestUrl: string) => CatalogueObservation;
   errataArticle?: (html: string, sourceLineage: string, requestUrl: string) => readonly OfficialSourceObservation[];
@@ -775,14 +756,6 @@ function discoveredHtmlRole(
 ): "listing" | "detail" | "product_detail" | null {
   const target = `${url.pathname}${url.search}`;
   if (
-    format === "gundam" &&
-    initialSurface === "legality" &&
-    /\/(?:asia-en|en)\/news\/01_279\.html$/u.test(url.pathname)
-  ) {
-    return "detail";
-  }
-  if (initialSurface === "legality") return null;
-  if (
     catalogueComplete &&
     format === "gundam" &&
     (initialSurface === "errata" || /^\/(?:asia-en|en)\/news\/$/u.test(url.pathname))
@@ -988,7 +961,7 @@ function bandaiSnapshotDecoder(
         sourceLineage,
         discoveryKey,
         requiredSurfaces,
-        profile.unresolvedLegalityScopes === true,
+
         gameParsers,
       );
       return [
@@ -1052,67 +1025,13 @@ function bandaiSnapshotDecoder(
         sourceLineage,
         structuredSurface,
         structuredPayload,
-        true,
         profile.expandedOnePieceCatalogue === true,
         profile.catalogueComplete === true,
-        profile.unresolvedLegalityScopes === true,
+
         normalizeSurface,
         gameParsers,
       );
-      if (isLegalityRuleSurface(game, surface)) {
-        assertStructuredAndVisibleLegalityMatch(
-          html,
-          game,
-          sourceLineage,
-          surface,
-          observations,
-          profile.unresolvedLegalityScopes === true,
-        );
-        if (containsUnmodeledDedicatedPolicyContent(html, sourceLineage, surface)) {
-          throw new AdapterParseFailure(
-            `Official Source ${surface} retained non-empty Legality data without an exact, complete Legality Rule parser.`,
-          );
-        }
-      }
       return observations;
-    }
-    const legalityParseOptions = {
-      unresolvedTargetScope: profile.unresolvedLegalityScopes === true,
-      fusionRestrictionLift: profile.liveShapes === true,
-    };
-    const liveLegality = liveOfficialLegalityDocument(
-      game,
-      sourceLineage,
-      surface,
-      context.url,
-      html,
-      legalityParseOptions,
-    );
-    const isPlannedFusionPolicyRoot =
-      sourceLineage === "fusion-world-en" &&
-      dynamicRole === null &&
-      (surface === "legality-current" || surface === "legality-history");
-    // The issue-58 Gundam generation plans the news publication directly as
-    // its legality surface instead of discovering it from the rules hub.
-    const isPlannedGundamPolicyRoot =
-      profile.unresolvedLegalityScopes === true &&
-      format === "gundam" &&
-      dynamicRole === null &&
-      surface === "legality";
-    if (liveLegality !== null && (dynamicRole !== null || isPlannedFusionPolicyRoot || isPlannedGundamPolicyRoot)) {
-      return [
-        attachRawSurfaceEvidenceV1(
-          officialLiveLegalityRulesObservation(game, sourceLineage, liveLegality.document, {
-            allowUnresolvedTargetScope: legalityParseOptions.unresolvedTargetScope,
-            allowRestrictionLift: legalityParseOptions.fusionRestrictionLift,
-          }),
-          sourceLineage,
-          liveLegality.surface,
-          liveLegality.document,
-          true,
-          Object.keys(liveLegality.document),
-        ),
-      ];
     }
     if (dynamicRole === "detail") {
       if (
@@ -1139,17 +1058,6 @@ function bandaiSnapshotDecoder(
     }
     if (dynamicRole === "product_detail") {
       return [gameParsers.productDetail(html, sourceLineage, context.url)];
-    }
-    if (profile.expandedOnePieceCatalogue === true && surface === "don-rules") {
-      if (profile.unresolvedLegalityScopes === true && dynamicRole === null) {
-        // Issue #58: the live rules hub publishes navigation and rule
-        // documents but no DON!! Card facts. The surface is retained as
-        // exact coverage evidence with a structurally complete empty
-        // Legality Rule observation; no comprehensive DON!! Printing claim
-        // is made, and absence never proves zero Printings.
-        return gameParsers.rulesHub!(html, sourceLineage, surface, context.url);
-      }
-      throw new AdapterParseFailure("One Piece DON!! Card facts require explicit snapshot evidence.");
     }
     const isOnePieceRecordingLeaf =
       profile.expandedOnePieceCatalogue === true &&
@@ -1201,43 +1109,12 @@ function bandaiSnapshotDecoder(
                 ? "products"
                 : surface,
               context.url,
-              isLegalityPolicySurface(surface),
+              false,
               profile.catalogueComplete === true,
               profile.liveShapes === true,
               gameParsers,
             );
-    const liveLegalityDocument = liveLegality?.document ?? null;
-    const legalityObservation = isLegalityRuleSurface(game, surface)
-      ? liveLegalityDocument === null
-        ? (officialLegalityRulesHtmlObservation(game, sourceLineage, html, {
-            allowUnresolvedTargetScope: legalityParseOptions.unresolvedTargetScope,
-            allowRestrictionLift: legalityParseOptions.fusionRestrictionLift,
-          }) ?? null)
-        : officialLiveLegalityRulesObservation(game, sourceLineage, liveLegalityDocument, {
-            allowUnresolvedTargetScope: legalityParseOptions.unresolvedTargetScope,
-            allowRestrictionLift: legalityParseOptions.fusionRestrictionLift,
-          })
-      : null;
-    if (
-      isLegalityRuleSurface(game, surface) &&
-      liveLegalityDocument === null &&
-      containsUnparsedLegalityPublication(
-        html,
-        sourceLineage,
-        parsed.retainedDocument,
-        isLegalityPolicySurface(surface),
-        legalityObservation !== null && Array.isArray(legalityObservation.legality_rules)
-          ? legalityObservation.legality_rules.length
-          : 0,
-      )
-    ) {
-      throw new AdapterParseFailure(
-        `Official Source ${surface} retained non-empty Legality data without an exact, complete Legality Rule parser.`,
-      );
-    }
-    const observations =
-      legalityObservation === null ? parsed.observations : [...parsed.observations, legalityObservation];
-    return observations.map((observation, index) =>
+    return parsed.observations.map((observation, index) =>
       attachRawSurfaceEvidenceV1(
         observation,
         sourceLineage,
@@ -1248,139 +1125,6 @@ function bandaiSnapshotDecoder(
       ),
     );
   };
-}
-
-function containsUnparsedLegalityPublication(
-  html: string,
-  sourceLineage: string,
-  document: Readonly<Record<string, unknown>>,
-  dedicatedPolicySurface: boolean,
-  parsedRuleCount: number,
-): boolean {
-  const links = Array.isArray(document.publication_links) ? document.publication_links : [];
-  const entries = Array.isArray(document.publication_entries) ? document.publication_entries : [];
-  const options = Array.isArray(document.discovered_options) ? document.discovered_options : [];
-  const unmatchedEntries = [...entries];
-  const exactRuleEntries = [...html.matchAll(/<article\b([^>]*)>([\s\S]*?)<\/article>/giu)]
-    .filter((match) => /(?:^|\s)restriction-card(?:\s|$)/u.test(htmlAttribute(match[1]!, "class") ?? ""))
-    .map((match) => htmlText(match[2]!));
-  if (exactRuleEntries.length !== parsedRuleCount) return true;
-  for (const exactRuleEntry of exactRuleEntries) {
-    const retainedIndex = unmatchedEntries.findIndex((entry) => entry === exactRuleEntry);
-    if (retainedIndex === -1) return true;
-    unmatchedEntries.splice(retainedIndex, 1);
-  }
-  if (dedicatedPolicySurface) {
-    return containsUnmodeledDedicatedPolicyContent(html, sourceLineage);
-  }
-  return [...links, ...options, ...unmatchedEntries, htmlText(html)]
-    .map(publicationText)
-    .some((text) =>
-      /\b(?:ban(?:ned)?|block(?:ed)?|eligib(?:le|ility)|forbid(?:den)?|legal(?:ity)?|limit(?:ed)?|prohibit(?:ed)?|restriction|rotation|suspend(?:ed)?|unless)\b|\bmay (?:no longer|not) be (?:included|used)\b|\b(?:if|when) your\b|\bduring [^.]*events?\b|\bonly at\b|\bno more than \d+ cop(?:y|ies)\b/iu.test(
-        text,
-      ),
-    );
-}
-
-function containsUnmodeledDedicatedPolicyContent(
-  html: string,
-  sourceLineage?: string,
-  consumedPublisherSurface?: string,
-): boolean {
-  let residual = html.replace(/<article\b([^>]*)>[\s\S]*?<\/article>/giu, (article, attributes: string) =>
-    /(?:^|\s)restriction-card(?:\s|$)/u.test(htmlAttribute(attributes, "class") ?? "") ? "" : article,
-  );
-  if (sourceLineage !== undefined && consumedPublisherSurface !== undefined) {
-    const consumedPublisherScriptId = publisherPayloadScriptId(sourceLineage, consumedPublisherSurface);
-    residual = residual.replace(/<script\b([^>]*)>[\s\S]*?<\/script>/giu, (script, attributes: string) => {
-      const id = htmlAttribute(attributes, "id");
-      return hasExactHtmlAttributes(attributes, ["id", "type"]) &&
-        htmlAttribute(attributes, "type") === "application/json" &&
-        id === consumedPublisherScriptId
-        ? ""
-        : script;
-    });
-  }
-  if (/<script\b/iu.test(residual)) return true;
-  residual = residual
-    .replace(/<!doctype\s+html\s*>/giu, "")
-    .replace(/<title\b[^>]*>([\s\S]*?)<\/title>/giu, (title, body: string) =>
-      isKnownLegalityPublisherTitle(htmlText(body)) ? "" : title,
-    )
-    .replace(/<h1\b[^>]*>([\s\S]*?)<\/h1>/giu, (heading, body: string) =>
-      htmlText(body) === "Restriction Rules" ? "" : heading,
-    )
-    .replace(/<p\b[^>]*>([\s\S]*?)<\/p>/giu, (paragraph, body: string) =>
-      /^\d+\s+records?$/iu.test(htmlText(body)) ? "" : paragraph,
-    )
-    .replace(/<article\b([^>]*)>([\s\S]*?)<\/article>/giu, (article, attributes: string, body: string) =>
-      htmlAttribute(attributes, "data-publication-empty") === "true" &&
-      /^No (?:restrictions are currently published|published entries)\.$/iu.test(htmlText(body))
-        ? ""
-        : article,
-    );
-  return htmlText(residual).length > 0;
-}
-
-function assertStructuredAndVisibleLegalityMatch(
-  html: string,
-  game: ProductSourceGame,
-  sourceLineage: string,
-  surface: string,
-  structuredObservations: readonly unknown[],
-  unresolvedLegalityScopes = false,
-): void {
-  const hasVisibleArticles = [...html.matchAll(/<article\b([^>]*)>[\s\S]*?<\/article>/giu)].some((match) =>
-    /(?:^|\s)restriction-card(?:\s|$)/u.test(htmlAttribute(match[1]!, "class") ?? ""),
-  );
-  const hasVisibleTotal = />\s*\d+\s+(?:records?|results?|items?)\s*</iu.test(html);
-  if (!hasVisibleArticles && !hasVisibleTotal) return;
-
-  let visibleObservation: Record<string, unknown> | null;
-  try {
-    visibleObservation = officialLegalityRulesHtmlObservation(game, sourceLineage, html, {
-      allowUnresolvedTargetScope: unresolvedLegalityScopes,
-    });
-  } catch {
-    throwStructuredVisibleLegalityMismatch(surface);
-  }
-  if (visibleObservation === null) {
-    throwStructuredVisibleLegalityMismatch(surface);
-  }
-  const structuredObservation = structuredObservations.find(
-    (observation) => isPlainRecord(observation) && observation.observation_type === "legality_rules",
-  );
-  if (!isPlainRecord(structuredObservation)) {
-    throwStructuredVisibleLegalityMismatch(surface);
-  }
-  const canonicalPublication = (observation: Record<string, unknown>): unknown => ({
-    completeness: requiredRecord(observation.completeness, "Official Legality completeness"),
-    rules: requiredArray(observation.legality_rules, "Official Legality rules")
-      .map((rule) => requiredRecord(rule, "Official Legality rule"))
-      .sort((left, right) =>
-        requiredText(left.id, "Official Legality identity").localeCompare(
-          requiredText(right.id, "Official Legality identity"),
-        ),
-      ),
-  });
-  if (
-    JSON.stringify(stableValue(canonicalPublication(structuredObservation))) !==
-    JSON.stringify(stableValue(canonicalPublication(visibleObservation)))
-  ) {
-    throwStructuredVisibleLegalityMismatch(surface);
-  }
-}
-
-function throwStructuredVisibleLegalityMismatch(surface: string): never {
-  throw new AdapterParseFailure(
-    `Official Source ${surface} retained non-empty Legality data without an exact, complete Legality Rule parser.`,
-  );
-}
-
-function isKnownLegalityPublisherTitle(title: string): boolean {
-  return /^(?:BANDAI Official publication|Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication|BANDAI CARD PRODUCT RELEASE RULE RESTRICTION publication|BANDAI (?:one-piece|fusion-world|digimon|gundam) CARD PRODUCT RELEASE RULE ERRATA RESTRICTION|BANDAI DRAGON BALL CARD RULE RESTRICTION(?: HISTORY)?|BANDAI ONE PIECE CARD RELEASE publication|Bandai Dragon Ball(?: Super Card Game)? Fusion World Restriction Rules)$/iu.test(
-    title,
-  );
 }
 
 function hasExactHtmlAttributes(attributes: string, expected: readonly string[]): boolean {
@@ -1452,13 +1196,7 @@ function knownPublisherNavigationLinks(sourceLineage: string): Set<string> {
   const labelsBySurface: Readonly<Record<string, string>> = {
     "card-list": "card list",
     packages: "find cards",
-    restrictions: "restriction cards",
-    "block-policy": "block policy",
     errata: sourceLineage.startsWith("gundam-") ? "errata and corrections" : "errata cards",
-    "legality-current": "current banned and limited cards",
-    "legality-history": "previous restriction history",
-    "restrictions-current": "current restriction cards",
-    "restrictions-history": "previous restriction history",
   };
   const allowed = new Set<string>();
   for (const seed of [...publisherNavigationSeeds(sourceLineage), ...bandaiDiscoverySeeds(sourceLineage)]) {
@@ -1763,7 +1501,6 @@ function bandaiDiscoveryStageRecords(
   sourceLineage: string,
   discoveryKey: string,
   requiredSurfaces: readonly string[],
-  unresolvedLegalityScopes = false,
   gameParsers: GameParsers,
 ): Array<{
   id: string;
@@ -1778,7 +1515,7 @@ function bandaiDiscoveryStageRecords(
     resolution: string;
   };
 }> {
-  const seed = bandaiDiscoverySeeds(sourceLineage, unresolvedLegalityScopes).find(({ id }) => id === discoveryKey);
+  const seed = bandaiDiscoverySeeds(sourceLineage).find(({ id }) => id === discoveryKey);
   if (seed === undefined) {
     throw new AdapterParseFailure(`Official Source discovery uses unknown stage vocabulary: ${discoveryKey}.`);
   }
@@ -1805,11 +1542,6 @@ function bandaiDiscoveryStageRecords(
     }
   }
   const stageHtml = stripKnownPublisherNavigation(html, sourceLineage, current.href, "header-only");
-  const policyDiscovery =
-    discoveryKey === "rules" ? (gameParsers.policyDiscovery?.(stageHtml, current.href) ?? null) : null;
-  for (const record of policyDiscovery?.records ?? []) {
-    records.set(record.surface, record);
-  }
   for (const match of stageHtml.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/giu)) {
     const href = htmlAttribute(match[1]!, "href");
     if (href === null) continue;
@@ -1822,7 +1554,6 @@ function bandaiDiscoveryStageRecords(
     }
     resolved.hash = "";
     if (!officialUrl(sourceLineage, resolved, "document")) continue;
-    if (policyDiscovery?.consumesLink(label, resolved)) continue;
     // Each promised surface is pinned to the exact URL its seed resolution
     // names; label heuristics never create records.
     const surfaces = Object.entries(seed.resolutions)
@@ -1830,9 +1561,6 @@ function bandaiDiscoveryStageRecords(
       .map(([surface]) => surface);
     for (const surface of surfaces) {
       if (!requiredSurfaces.includes(surface)) continue;
-      if (policyDiscovery?.records.some((record) => record.surface === surface)) {
-        continue;
-      }
       if (records.has(surface)) {
         // Live publisher pages repeat their navigation for desktop and
         // mobile; an identical repeated link is tolerated while a
@@ -1888,27 +1616,10 @@ function assertDiscoveryStageSurface(html: string, discoveryKey: string, surface
 // surface pinned to its exact resolution: the publisher header grammar
 // captured before the 2026-08 site restructure, patched with the live
 // resolutions by restructuredDiscoverySeed.
-function bandaiDiscoverySeeds(
-  sourceLineage: string,
-  unresolvedLegalityScopes = false,
-): ReadonlyArray<{
-  id: string;
-  label: string;
-  url: string;
-  resolutions: Readonly<Record<string, string>>;
-}> {
-  const restructuredSeeds = publisherNavigationSeeds(sourceLineage).map((seed) =>
-    restructuredDiscoverySeed(sourceLineage, seed),
-  );
-  if (!unresolvedLegalityScopes) return restructuredSeeds;
-  return restructuredSeeds.map((seed) =>
-    sourceLineage.startsWith("gundam-") && seed.id === "rules"
-      ? // Issue #58: the rules hub proves the linked current banned and
-        // restricted publication, which the plan captures directly as the
-        // legality surface.
-        { ...seed, resolutions: { legality: "../news/01_279.html" } }
-      : seed,
-  );
+function bandaiDiscoverySeeds(sourceLineage: string) {
+  return publisherNavigationSeeds(sourceLineage)
+    .map((seed) => restructuredDiscoverySeed(sourceLineage, seed))
+    .filter((seed) => Object.keys(seed.resolutions).length > 0);
 }
 
 // The pre-restructure publisher navigation grammar. Live pages still link
@@ -1945,10 +1656,7 @@ function publisherNavigationSeeds(sourceLineage: string): ReadonlyArray<{
             label: "rules",
             url: "https://en.onepiece-cardgame.com/rules/",
             resolutions: {
-              restrictions: "restriction/",
-              "block-policy": "block_icon/",
               errata: "errata_card/",
-              "don-rules": "",
             },
           },
         ]
@@ -1971,8 +1679,6 @@ function publisherNavigationSeeds(sourceLineage: string): ReadonlyArray<{
               label: "rules",
               url: "https://www.dbs-cardgame.com/fw/en/news/01_31.html",
               resolutions: {
-                "legality-current": "../rules/banned-limited-cards/",
-                "legality-history": "../rules/banned-limited-cards/",
                 errata: "../rules/errata-card/",
               },
             },
@@ -1996,8 +1702,6 @@ function publisherNavigationSeeds(sourceLineage: string): ReadonlyArray<{
                 label: "rules",
                 url: "https://world.digimoncard.com/rule/",
                 resolutions: {
-                  "restrictions-current": "restriction_card/",
-                  "restrictions-history": "restriction_card/",
                   errata: "errata_card/",
                 },
               },
@@ -2023,7 +1727,7 @@ function publisherNavigationSeeds(sourceLineage: string): ReadonlyArray<{
                     id: "rules",
                     label: "rules",
                     url: `${root}rules/`,
-                    resolutions: { legality: "" },
+                    resolutions: {},
                   },
                   {
                     id: "news",
@@ -2070,10 +1774,7 @@ function restructuredDiscoverySeed(
     return {
       ...seed,
       resolutions: {
-        restrictions: "../news/restriction.html",
-        "block-policy": "../topics/013.php",
         errata: "errata_card/",
-        "don-rules": "",
       },
     };
   }
@@ -2550,7 +2251,6 @@ function parseBandaiCardDetailFrozenV1(
     products,
     new Map(),
     { revision: "captured-by-policy-surface", entries: [] },
-    { revision: "captured-by-policy-surface", entries: [] },
     format === "one-piece"
       ? "one-piece"
       : format === "fusion-world"
@@ -2987,10 +2687,8 @@ function normalizedSurfaceObservationsV2(
   sourceLineage: string,
   surface: string,
   rawDocument: Record<string, unknown>,
-  legalityAware: boolean,
   expandedOnePieceCatalogue = false,
   catalogueComplete = false,
-  unresolvedLegalityScopes = false,
   normalizeSurface: SurfaceNormalizer,
   gameParsers: GameParsers,
 ): OfficialSourceObservation[] {
@@ -3002,27 +2700,11 @@ function normalizedSurfaceObservationsV2(
   } else if (surface === "products") {
     observations = parseRawProductsSurfaceV2(document);
   } else if (surface === "releases") {
-    observations = [
-      ...parseRawReleasesSurfaceV2(document),
-      ...(legalityAware && isLegalityRuleSurface(game, surface)
-        ? [
-            officialLegalityRulesObservation(game, sourceLineage, document, {
-              allowUnresolvedTargetScope: unresolvedLegalityScopes,
-            }),
-          ]
-        : []),
-    ];
+    observations = parseRawReleasesSurfaceV2(document);
   } else {
     observations = [
       rawCoverageObservationV2(document, surface),
       ...gameParsers.structuredObservations(surface, document, sourceLineage),
-      ...(legalityAware && isLegalityPolicySurface(surface)
-        ? [
-            officialLegalityRulesObservation(game, sourceLineage, document, {
-              allowUnresolvedTargetScope: unresolvedLegalityScopes,
-            }),
-          ]
-        : []),
     ];
   }
   return observations.map((observation, index) => {
@@ -3039,14 +2721,6 @@ function normalizedSurfaceObservationsV2(
           normalized.unmappedOptionalFields,
         );
   });
-}
-
-function isLegalityPolicySurface(surface: string): boolean {
-  return /(?:legality|restriction|block-policy|don-rules)/u.test(surface);
-}
-
-function isLegalityRuleSurface(game: ProductSourceGame, surface: string): boolean {
-  return isLegalityPolicySurface(surface) || (game === "one-piece" && surface === "releases");
 }
 
 function normalizeLineageSurface(
@@ -3129,10 +2803,6 @@ function parseRawDiscoverySurfaceByContract(
         [keys.details]: details,
         [keys.products]: cardProducts,
         [keys.releases]: releases,
-        [keys.legality]: {
-          revision: "captured-by-required-policy-surfaces",
-          entries: [],
-        },
         [keys.errata]: {
           revision: "captured-by-required-policy-surfaces",
           entries: [],
@@ -3177,7 +2847,7 @@ function parseRawProductsSurfaceFrozenV1(surface: Record<string, unknown>): Cata
   return products.map((product) => {
     const classification = productNonCardClassification(product);
     return classification === null
-      ? productOnlyObservation(product, releasesByCode, policy, policy)
+      ? productOnlyObservation(product, releasesByCode, policy)
       : nonCardProductObservation(product, classification);
   });
 }
@@ -3210,7 +2880,7 @@ function parseRawReleasesSurfaceFrozenV1(surface: Record<string, unknown>): Cata
   };
   return [
     ...[...products.entries()].map(([key, product]) =>
-      productOnlyObservation(product, new Map([[key, releases.get(key) ?? []]]), policy, policy),
+      productOnlyObservation(product, new Map([[key, releases.get(key) ?? []]]), policy),
     ),
     ...[...nonCardProducts.values()].map((product) =>
       nonCardProductObservation(product, productNonCardClassification(product)!),
@@ -3461,7 +3131,6 @@ const surfaceKeys = {
     details: "card_pages",
     products: "product_catalog",
     releases: "release_schedule",
-    legality: "rules_restrictions",
     errata: "correction_notices",
   },
   "fusion-world": {
@@ -3469,7 +3138,6 @@ const surfaceKeys = {
     details: "detail_pages",
     products: "products",
     releases: "releases",
-    legality: "banned_limited",
     errata: "errata_notices",
   },
   digimon: {
@@ -3477,7 +3145,6 @@ const surfaceKeys = {
     details: "card_details",
     products: "product_index",
     releases: "release_calendar",
-    legality: "restricted_cards",
     errata: "errata_notices",
   },
   gundam: {
@@ -3485,7 +3152,6 @@ const surfaceKeys = {
     details: "card_details",
     products: "product_list",
     releases: "release_list",
-    legality: "regulation",
     errata: "errata",
   },
 } as const;
@@ -3506,7 +3172,6 @@ function parseOfficialDiscoveryFrozenV1(
   const releases = requiredArray(root[keys.releases], `Official ${keys.releases}`).map((value) =>
     requiredRecord(value, "Official Release"),
   );
-  const legality = requiredSurface(root[keys.legality], keys.legality);
   const errata = requiredSurface(root[keys.errata], keys.errata);
   const entries = requiredArray(listing.entries, "Official listing entries").map((value) =>
     requiredRecord(value, "Official listing entry"),
@@ -3569,7 +3234,6 @@ function parseOfficialDiscoveryFrozenV1(
       detail,
       productReferences.map((reference) => productsByReference.get(reference)!),
       releasesByReference,
-      legality,
       errata,
       game,
     );
@@ -3577,7 +3241,7 @@ function parseOfficialDiscoveryFrozenV1(
   observations.push(
     ...products
       .filter((product) => !observedProductReferences.has(productMapKey(product)))
-      .map((product) => productOnlyObservation(product, releasesByReference, legality, errata)),
+      .map((product) => productOnlyObservation(product, releasesByReference, errata)),
   );
   return observations;
 }
@@ -3615,7 +3279,7 @@ function nonCardProductObservation(
       ],
       relationships: [],
     },
-    source_sidecar: sourceSidecar(null, [product], policy, policy),
+    source_sidecar: sourceSidecar(null, [product], policy),
   };
 }
 

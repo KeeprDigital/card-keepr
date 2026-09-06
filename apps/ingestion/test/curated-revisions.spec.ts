@@ -153,68 +153,6 @@ beforeEach(async () => {
         ],
       },
     ],
-    legality_rules: [
-      {
-        id: `legality_rule_${sequence}`,
-        official_id: `official_rule_${sequence}`,
-        game: "one-piece",
-        region: "EN-OCEANIA",
-        format: "standard",
-        event_tier: null,
-        effective_from: "2026-08-05",
-        effective_until: null,
-        unresolved_scope: null,
-        card_ids: [card.id],
-        official_wording: "This card is eligible.",
-        effect: { type: "eligible" },
-        source_lineage: "one-piece-en",
-        source_snapshot_id: `snapshot_${sequence}`,
-        source_observation_set_id: `set_${sequence}`,
-        source_observation_id: `srcobs_legality_${sequence}`,
-        source_observation_pointer: "/observations/0/value/legality_rules/0",
-        source_field_pointers: {
-          official_wording: "/observations/0/value/legality_rules/0/official_wording",
-          effective_from: "/observations/0/value/legality_rules/0/effective_from",
-          effective_until: "/observations/0/value/legality_rules/0/effective_until",
-          unresolved_scope: "/observations/0/value/legality_rules/0/unresolved_scope",
-          region: "/observations/0/value/legality_rules/0/region",
-          format: "/observations/0/value/legality_rules/0/format",
-          event_tier: "/observations/0/value/legality_rules/0/event_tier",
-          card_numbers: "/observations/0/value/legality_rules/0/card_numbers",
-          effect: "/observations/0/value/legality_rules/0/effect",
-        },
-      },
-      {
-        id: `legality_rule_gundam_${sequence}`,
-        official_id: `official_rule_gundam_${sequence}`,
-        game: "gundam",
-        region: "EN-ASIA",
-        format: "standard",
-        event_tier: null,
-        effective_from: "2026-08-05",
-        effective_until: null,
-        unresolved_scope: null,
-        card_ids: [],
-        official_wording: "This Gundam rule is eligible.",
-        effect: { type: "eligible" },
-        source_lineage: "gundam-en-asia",
-        source_snapshot_id: `snapshot_gundam_${sequence}`,
-        source_observation_set_id: `set_gundam_${sequence}`,
-        source_observation_id: `srcobs_gundam_${sequence}`,
-        source_observation_pointer: "/observations/0/value/legality_rules/0",
-        source_field_pointers: {
-          official_wording: "/observations/0/value/legality_rules/0/official_wording",
-          effective_from: "/observations/0/value/legality_rules/0/effective_from",
-          effective_until: "/observations/0/value/legality_rules/0/effective_until",
-          unresolved_scope: "/observations/0/value/legality_rules/0/unresolved_scope",
-          region: "/observations/0/value/legality_rules/0/region",
-          format: "/observations/0/value/legality_rules/0/format",
-          event_tier: "/observations/0/value/legality_rules/0/event_tier",
-          card_numbers: "/observations/0/value/legality_rules/0/card_numbers",
-          effect: "/observations/0/value/legality_rules/0/effect",
-        },
-      },
-    ],
   };
   await ingestionQueries.setOperationStateActiveIngestionRunIdActiveProductionReleaseId(env.CATALOGUE_DB).run();
   await curatedQueries.setCuratedRevisionsStatusEventVersion(env.CATALOGUE_DB).run();
@@ -679,7 +617,7 @@ test("validation uses the pinned shared and Game Profile schemas", async () => {
   });
   expect(invalidNullControl.status).toBe(422);
   await expect(invalidNullControl.json()).resolves.toMatchObject({
-    code: "curated_revision_assertion_type_invalid",
+    code: "curated_revision_target_invalid",
   });
 });
 
@@ -1000,7 +938,6 @@ test("candidate inspection exposes the exact pinned set and every curated effect
     distribution_contexts: Record<string, unknown>[];
     product_relationships: Record<string, unknown>[];
     errata: Record<string, unknown>[];
-    legality_rules: Record<string, unknown>[];
   };
   const definitions = [
     {
@@ -1062,16 +999,6 @@ test("candidate inspection exposes the exact pinned set and every curated effect
       },
       assertion: { kind: "field" as const, value: "Inspected erratum wording." },
       sourceValue: "Official erratum wording.",
-    },
-    {
-      target: {
-        kind: "field" as const,
-        entity_type: "legality_rule" as const,
-        entity_id: `legality_rule_${sequence}`,
-        path: "/official_wording",
-      },
-      assertion: { kind: "field" as const, value: "Inspected legality wording." },
-      sourceValue: "This card is eligible.",
     },
     {
       target: {
@@ -1258,161 +1185,6 @@ test("prepared runs strip prior effects, reapply exact pins, and persist the rea
     revision_ids_json: JSON.stringify([revision.curated_revision_id]),
     set_digest: await sha256Text(canonicalJson([revision.curated_revision_id])),
   });
-});
-
-test("pinned assertions hard-fail when companion-field drift makes the composed candidate invalid", async () => {
-  const legalityProposal = {
-    game: "one-piece" as const,
-    target: {
-      kind: "field" as const,
-      entity_type: "legality_rule" as const,
-      entity_id: `legality_rule_${sequence}`,
-      path: "/event_tier",
-    },
-    assertion: { kind: "field" as const, value: "regional" },
-    rationale: "The owner reviewed the event tier.",
-    evidence: [
-      {
-        kind: "owner_reference" as const,
-        uri: "https://owner.example/review/event-tier",
-        content_digest: "d".repeat(64),
-      },
-    ],
-    effective_interval: { from: null, to: null },
-    reviewed_source_digest: await sha256Text(canonicalJson(null)),
-    supersedes_revision_id: null,
-  };
-  const created = await createCuratedRevision(
-    catalogueStore(env.CATALOGUE_DB),
-    {
-      environment: "production",
-      expected_current_revision_id: currentRevision,
-      proposal: legalityProposal,
-      proposal_digest: await sha256Text(canonicalJson(legalityProposal)),
-      idempotency_key: `companion-drift-${sequence}`,
-    },
-    now,
-  );
-  const runId = `run_companion_drift_${sequence}`;
-  await insertParsingRun(runId);
-  await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), runId, now);
-  const officialRule = {
-    ...(
-      JSON.parse(
-        (await ingestionQueries
-          .readIngestionRunsCandidateJsonForCandidateInspectionExposesExactPinnedSetEveryCuratedEffect(env.CATALOGUE_DB)
-          .bind(`curated-seed-${sequence}`)
-          .first<{ candidate_json: string }>())!.candidate_json,
-      ) as { legality_rules: Record<string, unknown>[] }
-    ).legality_rules[0]!,
-    event_tier: null,
-    effective_from: "2026-08-05",
-    effective_until: null,
-    unresolved_scope: { dimensions: ["event_tier"] },
-    effect: { type: "unresolved" },
-  };
-  await expect(
-    applyPinnedCuratedRevisions(
-      catalogueStore(env.CATALOGUE_DB),
-      runId,
-      {
-        contract: "card-keepr-catalogue-candidate@1",
-        selected_games: ["one-piece"],
-        cards: [card],
-        printings: [],
-        legality_rules: [officialRule as never],
-      },
-      now,
-    ),
-  ).rejects.toThrow("curated_revision_composed_candidate_invalid");
-  const run = await ingestionQueries
-    .readIngestionRunsStateFailureCode(env.CATALOGUE_DB)
-    .bind(runId)
-    .first<{ state: string; failure_code: string | null }>();
-  expect(run).toEqual({
-    state: "failed",
-    failure_code: "curated_revision_composed_candidate_invalid",
-  });
-  expect(created.document.status).toBe("active");
-});
-
-test("Legality Rule curation preserves registered regional authority", async () => {
-  const invalidRegion = {
-    game: "gundam" as const,
-    target: {
-      kind: "field" as const,
-      entity_type: "legality_rule" as const,
-      entity_id: `legality_rule_gundam_${sequence}`,
-      path: "/region",
-    },
-    assertion: { kind: "field" as const, value: "EN-OCEANIA" },
-    rationale: "Try to move an Asia authority rule to Oceania.",
-    evidence: [
-      {
-        kind: "owner_reference" as const,
-        uri: "https://owner.example/review/gundam-region",
-        content_digest: "e".repeat(64),
-      },
-    ],
-    effective_interval: { from: null, to: null },
-    reviewed_source_digest: await sha256Text(canonicalJson("EN-ASIA")),
-    supersedes_revision_id: null,
-  };
-  const authored = await adminRequest("/admin/v1/curated-revisions/validate", {
-    proposal: invalidRegion,
-    catalogue_revision_id: currentRevision,
-  });
-  expect(authored.status).toBe(422);
-  await expect(authored.json()).resolves.toMatchObject({
-    code: "curated_revision_assertion_type_invalid",
-  });
-
-  const wordingProposal = {
-    ...invalidRegion,
-    target: { ...invalidRegion.target, path: "/official_wording" },
-    assertion: {
-      kind: "field" as const,
-      value: "Owner-reviewed Gundam wording.",
-    },
-    reviewed_source_digest: await sha256Text(canonicalJson("This Gundam rule is eligible.")),
-  };
-  const created = await createCuratedRevision(
-    catalogueStore(env.CATALOGUE_DB),
-    {
-      environment: "production",
-      expected_current_revision_id: currentRevision,
-      proposal: wordingProposal,
-      proposal_digest: await sha256Text(canonicalJson(wordingProposal)),
-      idempotency_key: `gundam-authority-${sequence}`,
-    },
-    now,
-  );
-  const runId = `run_gundam_authority_${sequence}`;
-  await insertParsingRun(runId, ["gundam"]);
-  await pinCuratedRevisionsForRun(catalogueStore(env.CATALOGUE_DB), runId, now);
-  const stored = await ingestionQueries
-    .readIngestionRunsCandidateJsonForCandidateInspectionExposesExactPinnedSetEveryCuratedEffect(env.CATALOGUE_DB)
-    .bind(`curated-seed-${sequence}`)
-    .first<{ candidate_json: string }>();
-  const official = JSON.parse(stored!.candidate_json) as {
-    legality_rules: Record<string, unknown>[];
-  };
-  const gundamRule = official.legality_rules.find((rule) => rule.id === `legality_rule_gundam_${sequence}`)!;
-  await expect(
-    applyPinnedCuratedRevisions(
-      catalogueStore(env.CATALOGUE_DB),
-      runId,
-      {
-        contract: "card-keepr-catalogue-candidate@1",
-        selected_games: ["gundam"],
-        cards: [],
-        printings: [],
-        legality_rules: [{ ...gundamRule, region: "EN-OCEANIA" } as never],
-      },
-      now,
-    ),
-  ).rejects.toThrow("curated_revision_composed_candidate_invalid");
-  expect(created.document.status).toBe("active");
 });
 
 test("a prepared retry persists its failed run and every source-change conflict", async () => {

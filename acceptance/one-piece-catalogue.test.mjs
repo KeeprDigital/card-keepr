@@ -87,6 +87,7 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
     ["one-piece-en:discovery"],
     "the immutable Evidence Plan remains the single discovery request",
   );
+  assert.ok(ready.snapshots.every(({ request }) => !/restriction|topics\/013/.test(request.url)));
   assert.ok(ready.snapshots.some(({ request }) => new URL(request.url).searchParams.get("series") === "2201"));
   assert.ok(ready.snapshots.some(({ request }) => new URL(request.url).searchParams.get("series") === "2202"));
   for (const [recording, expectedCount] of [
@@ -103,7 +104,7 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
   const inspected = await runCli(["candidate", "inspect", "--run-id", run.id, "--json"], cliEnvironment);
   assert.equal(inspected.code, 0, inspected.stderr);
   const candidate = JSON.parse(inspected.stdout);
-  assert.equal(candidate.diff.summary.cards_added, 3);
+  assert.equal(candidate.diff.summary.cards_added, 2);
   assert.equal(candidate.diff.summary.printings_added, 2);
   assert.ok(
     candidate.diff.warnings.some(
@@ -177,7 +178,7 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
       exportRecords(api.port, apiKey, revisionId, component),
     ),
   );
-  assert.equal(cards.length, 3);
+  assert.equal(cards.length, 2);
   assert.equal(printings.length, 2);
   assert.equal(images.length, 2);
   assert.equal(products.length, 1);
@@ -204,16 +205,9 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
   assert.equal(leader.effective_rules_text, "Give up to 2 rested DON!! cards to this Leader.");
   assert.equal(errata[0].target_id, leader.id);
   assert.equal(errata[0].corrected_value, "Give up to 2 rested DON!! cards to this Leader.");
-  const don = cards.find(({ official_identity }) => official_identity.kind === "functional_designation");
-  assert.deepEqual(don.official_identity, {
-    kind: "functional_designation",
-    value: "DON!!",
-  });
-  assert.equal(don.game_data.attributes.card_type, "don");
-  assert.equal(
-    printings.some(({ card_id }) => card_id === don.id),
-    false,
-    "the generic DON!! Card makes no comprehensive Printing promise",
+  assert.ok(
+    cards.every(({ official_identity }) => official_identity.kind === "card_number"),
+    "policy-only DON hub data does not invent a Card outside collected card content",
   );
 
   const leaderPrinting = printings.find(({ card_id }) => card_id === leader.id);

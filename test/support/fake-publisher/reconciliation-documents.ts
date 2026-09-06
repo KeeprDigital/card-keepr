@@ -1,21 +1,87 @@
 import { createHash } from "node:crypto";
-import {
-  contextualLegalityFixtureDocument,
-  contextualLegalitySourceDocument,
-  onePiecePolicySourceDocument,
-} from "../../../apps/ingestion/test/contextual-legality-fixture.ts";
 
 // Synthetic reconciliation source documents served from
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
-export function reconciliationSourceDocument(
-  scenario: string,
-  surface: string,
-  requestUrl: string,
-) {
-  if (
-    /^observation-count-(?:100|124|149)$/u.test(scenario)
-  ) {
+export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
+  if (scenario === "large-card-content") {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP98-999",
+          name: "Synthetic large card content",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: "/large-card-content",
+          lineageMarker: "large-card-content",
+          printedRulesText: "Synthetic printed text. ".repeat(60_000),
+        }),
+      ],
+    };
+  }
+  if (scenario === "profile-don-card") {
+    return {
+      cards: [
+        {
+          card: {
+            game: "one-piece",
+            official_identity: {
+              kind: "functional_designation",
+              value: "DON!!",
+            },
+            name: "DON!!",
+            effective_rules_text: "Your turn +1000 power.",
+            game_data: {
+              profile: "one-piece@1",
+              attributes: {
+                card_type: "don",
+                colours: [],
+                cost: null,
+                life: null,
+                battle_attributes: [],
+                power: null,
+                counter: null,
+                traits: [],
+                block_icons: [],
+                effect_text: "Your turn +1000 power.",
+                trigger_text: null,
+              },
+            },
+          },
+          completeness: completeEvidence(),
+          memberships: {
+            products: [],
+            distribution_contexts: [],
+            source_buckets: ["don-rules"],
+          },
+        },
+        {
+          card: {
+            game: "one-piece",
+            official_identity: {
+              kind: "card_number",
+              value: "OP30-001",
+            },
+            name: "DON!! combination companion",
+            effective_rules_text: "Official effective rules.",
+            game_data: {
+              profile: "one-piece@1",
+              attributes: onePieceLeaderAttributes(),
+            },
+          },
+          completeness: completeEvidence(),
+          memberships: {
+            products: [],
+            distribution_contexts: [],
+            source_buckets: ["card-list"],
+          },
+        },
+      ],
+    };
+  }
+  if (/^observation-count-(?:100|124|149)$/u.test(scenario)) {
     const count = Number(scenario.slice("observation-count-".length));
     return {
       cards: Array.from({ length: count }, (_, index) =>
@@ -28,171 +94,14 @@ export function reconciliationSourceDocument(
           printingAttributes: { illustration_types: [] },
           locator: `/official/count-sentinel-${index + 1}`,
           lineageMarker: `count-sentinel-${index + 1}`,
-        })
+        }),
       ),
     };
-  }
-  if (scenario === "contextual-legality-one-piece-policy") {
-    return onePiecePolicySourceDocument(surface, requestUrl);
-  }
-  if (scenario === "contextual-legality-cross-game-envelope") {
-    return contextualLegalitySourceDocument("EN-ASIA", surface, requestUrl);
-  }
-  if (scenario.startsWith("contextual-legality-representative-")) {
-    return representativeRawSourceDocument(
-      officialGame(requestUrl),
-      surface,
-      requestUrl,
-    );
-  }
-  if (scenario === "contextual-legality-empty-oceania") {
-    return emptyOfficialCatalogueDocument(
-      "EN-OCEANIA",
-      surface,
-      requestUrl,
-    );
-  }
-  if (scenario === "contextual-legality-empty-one-piece") {
-    return emptyOfficialCatalogueDocument(
-      "EN-OCEANIA",
-      surface,
-      requestUrl,
-      "complete",
-      "one-piece",
-    );
-  }
-  if (scenario === "contextual-legality-empty-asia") {
-    return emptyOfficialCatalogueDocument("EN-ASIA", surface, requestUrl);
-  }
-  if (scenario === "contextual-legality-empty-us") {
-    return emptyOfficialCatalogueDocument("EN-US", surface, requestUrl);
-  }
-  if (scenario === "contextual-legality-missing-rules") {
-    return emptyOfficialCatalogueDocument(
-      "EN-ASIA",
-      surface,
-      requestUrl,
-      "missing",
-    );
-  }
-  if (scenario === "contextual-legality-false-empty-rules") {
-    return emptyOfficialCatalogueDocument(
-      "EN-ASIA",
-      surface,
-      requestUrl,
-      "false-empty",
-    );
-  }
-  if (scenario === "contextual-legality-incomplete-discovery") {
-    return emptyOfficialCatalogueDocument(
-      "EN-ASIA",
-      surface,
-      requestUrl,
-      "complete",
-      "gundam",
-      undefined,
-      "missing",
-    );
-  }
-  if (
-    scenario === "contextual-legality-unknown-rule-wording" ||
-    scenario === "contextual-legality-ordering-fixture-wording" ||
-    scenario === "contextual-legality-serialization-golden-wording" ||
-    scenario === "contextual-legality-mismatched-rule-wording" ||
-    scenario === "contextual-legality-foreign-image-authority"
-  ) {
-    const document = contextualLegalitySourceDocument(
-      "EN-ASIA",
-      surface,
-      requestUrl,
-    ) as {
-      gundam: {
-        results: Record<string, unknown>[];
-      };
-    };
-    const first = document.gundam.results[0];
-    if (
-      first !== undefined &&
-      surface === "legality_rules" &&
-      scenario === "contextual-legality-unknown-rule-wording"
-    ) {
-      first.text = "Opaque publisher marker XQZ-30.";
-    }
-    if (
-      first !== undefined &&
-      surface === "legality_rules" &&
-      scenario === "contextual-legality-ordering-fixture-wording"
-    ) {
-      first.text = "This is an ordering fixture.";
-    }
-    if (
-      first !== undefined &&
-      surface === "legality_rules" &&
-      scenario === "contextual-legality-serialization-golden-wording"
-    ) {
-      first.text = "Café serialization golden.";
-    }
-    if (
-      first !== undefined &&
-      surface === "legality_rules" &&
-      scenario === "contextual-legality-mismatched-rule-wording"
-    ) {
-      first.text = "This card is banned and may not be included.";
-    }
-    if (
-      first !== undefined &&
-      surface === "legality_card_details" &&
-      scenario === "contextual-legality-foreign-image-authority"
-    ) {
-      first.image_url = "https://attacker.example/images/GD30-001.png";
-    }
-    return document;
-  }
-  if (scenario === "contextual-legality-asia") {
-    return contextualLegalitySourceDocument(
-      "EN-ASIA",
-      surface,
-      requestUrl,
-    );
-  }
-  if (scenario === "contextual-legality-domain") {
-    const fixtureUrl = new URL(requestUrl);
-    const rules = fixtureUrl.searchParams.get("rules");
-    return contextualLegalityFixtureDocument(
-      "EN-ASIA",
-      rules === "omitted" || rules === "empty" ||
-          rules === "release-only" ||
-          rules === "omit-event-tier" ||
-          rules === "omit-effective-until" ||
-          rules === "resolved-card-order" ||
-          rules === "operand-overlap" ||
-          rules === "open-predicate"
-        ? rules
-        : "current",
-      fixtureUrl.searchParams.get("semantics") === "changed"
-        ? "changed"
-        : "current",
-    );
-  }
-  if (scenario === "contextual-legality-domain-us") {
-    const rules = new URL(requestUrl).searchParams.get("rules");
-    return contextualLegalityFixtureDocument(
-      "EN-US",
-      rules === "omitted" || rules === "empty" ? rules : "current",
-    );
-  }
-  if (scenario === "contextual-legality-us") {
-    return contextualLegalitySourceDocument(
-      "EN-US",
-      surface,
-      requestUrl,
-    );
   }
   if (scenario === "complete-empty-lineage") {
     return { cards: [] };
   }
-  const searchRepairRetention =
-    /^search-repair-retention-([1-5])$/.exec(scenario);
+  const searchRepairRetention = /^search-repair-retention-([1-5])$/.exec(scenario);
   if (searchRepairRetention !== null) {
     const sequence = searchRepairRetention[1]!;
     return {
@@ -222,20 +131,14 @@ export function reconciliationSourceDocument(
       game: "one-piece",
       profile: "one-piece@1",
       cardNumber: isLongitudinal ? "OP29-006" : "OP29-001",
-      name: isLongitudinal
-        ? "Longitudinal Errata Rules Card"
-        : "Errata Rules Card",
+      name: isLongitudinal ? "Longitudinal Errata Rules Card" : "Errata Rules Card",
       cardAttributes: {
         ...onePieceLeaderAttributes(),
         effect_text: "[On Play] Draw 1 card.",
       },
       printingAttributes: { illustration_types: [] },
-      locator: isLongitudinal
-        ? "/official/errata/OP29-006"
-        : "/official/errata/OP29-001",
-      lineageMarker: isLongitudinal
-        ? "errata-card-rules-text-longitudinal"
-        : "errata-card-rules-text",
+      locator: isLongitudinal ? "/official/errata/OP29-006" : "/official/errata/OP29-001",
+      lineageMarker: isLongitudinal ? "errata-card-rules-text-longitudinal" : "errata-card-rules-text",
       printedRulesText: "[On Play] Draw 1 card.",
     });
     return {
@@ -252,31 +155,24 @@ export function reconciliationSourceDocument(
               field: "effective_rules_text",
               target_type: "card",
               effective_from: "2026-07-01",
-              official_wording:
-                isSecondVersion
-                  ? isLongitudinal
-                    ? 'For the longitudinal Card, replace the corrected "discard 1 card" with "discard 2 cards".'
-                    : 'Replace the corrected "discard 1 card" with "discard 2 cards".'
-                  : isLongitudinal
-                    ? 'For the longitudinal Card, replace "Draw 1 card" with "Draw 2 cards, then discard 1 card".'
+              official_wording: isSecondVersion
+                ? isLongitudinal
+                  ? 'For the longitudinal Card, replace the corrected "discard 1 card" with "discard 2 cards".'
+                  : 'Replace the corrected "discard 1 card" with "discard 2 cards".'
+                : isLongitudinal
+                  ? 'For the longitudinal Card, replace "Draw 1 card" with "Draw 2 cards, then discard 1 card".'
                   : 'Replace "Draw 1 card" with "Draw 2 cards, then discard 1 card".',
-              corrected_value:
-                isSecondVersion
-                  ? "[On Play] Draw 2 cards, then discard 2 cards."
-                  : "[On Play] Draw 2 cards, then discard 1 card.",
-              ...(isSecondVersion
-                ? { effective_from: "2026-07-15" }
-                : {}),
+              corrected_value: isSecondVersion
+                ? "[On Play] Draw 2 cards, then discard 2 cards."
+                : "[On Play] Draw 2 cards, then discard 1 card.",
+              ...(isSecondVersion ? { effective_from: "2026-07-15" } : {}),
             },
           ],
         },
       ],
     };
   }
-  if (
-    scenario === "gundam-errata-cross-lineage-asia" ||
-    scenario === "gundam-errata-cross-lineage-us"
-  ) {
+  if (scenario === "gundam-errata-cross-lineage-asia" || scenario === "gundam-errata-cross-lineage-us") {
     const observation = printingObservation({
       game: "gundam",
       profile: "gundam@1",
@@ -308,27 +204,28 @@ export function reconciliationSourceDocument(
       },
     });
     return {
-      cards: [{
-        ...observation,
-        card: {
-          ...observation.card,
-          effective_rules_text: "Printed cross-lineage rules.",
+      cards: [
+        {
+          ...observation,
+          card: {
+            ...observation.card,
+            effective_rules_text: "Printed cross-lineage rules.",
+          },
+          errata: [
+            {
+              authority: "official_errata",
+              field: "effective_rules_text",
+              target_type: "card",
+              effective_from: "2026-07-01",
+              official_wording: "Use corrected cross-lineage rules.",
+              corrected_value: "Corrected cross-lineage rules.",
+            },
+          ],
         },
-        errata: [{
-          authority: "official_errata",
-          field: "effective_rules_text",
-          target_type: "card",
-          effective_from: "2026-07-01",
-          official_wording: "Use corrected cross-lineage rules.",
-          corrected_value: "Corrected cross-lineage rules.",
-        }],
-      }],
+      ],
     };
   }
-  if (
-    scenario === "gundam-current-run-errata-asia" ||
-    scenario === "gundam-current-run-errata-us"
-  ) {
+  if (scenario === "gundam-current-run-errata-asia" || scenario === "gundam-current-run-errata-us") {
     const isUs = scenario.endsWith("-us");
     const observation = printingObservation({
       game: "gundam",
@@ -361,28 +258,29 @@ export function reconciliationSourceDocument(
       },
     });
     return {
-      cards: [{
-        ...observation,
-        card: {
-          ...observation.card,
-          effective_rules_text: isUs
-            ? "Superseded US source rules."
-            : "Superseded Asia source rules.",
+      cards: [
+        {
+          ...observation,
+          card: {
+            ...observation.card,
+            effective_rules_text: isUs ? "Superseded US source rules." : "Superseded Asia source rules.",
+          },
+          ...(isUs
+            ? {
+                errata: [
+                  {
+                    authority: "official_errata",
+                    field: "effective_rules_text",
+                    target_type: "card",
+                    effective_from: "2026-07-01",
+                    official_wording: "Use the authoritative current Card wording.",
+                    corrected_value: "Authoritative current Card wording.",
+                  },
+                ],
+              }
+            : {}),
         },
-        ...(isUs
-          ? {
-              errata: [{
-                authority: "official_errata",
-                field: "effective_rules_text",
-                target_type: "card",
-                effective_from: "2026-07-01",
-                official_wording:
-                  "Use the authoritative current Card wording.",
-                corrected_value: "Authoritative current Card wording.",
-              }],
-            }
-          : {}),
-      }],
+      ],
     };
   }
   if (scenario === "errata-future-boundary") {
@@ -398,21 +296,25 @@ export function reconciliationSourceDocument(
       printedRulesText: "Rules before the future Erratum.",
     });
     return {
-      cards: [{
-        ...observation,
-        card: {
-          ...observation.card,
-          effective_rules_text: "Rules before the future Erratum.",
+      cards: [
+        {
+          ...observation,
+          card: {
+            ...observation.card,
+            effective_rules_text: "Rules before the future Erratum.",
+          },
+          errata: [
+            {
+              authority: "official_errata",
+              field: "effective_rules_text",
+              target_type: "card",
+              effective_from: "2026-08-01",
+              official_wording: "Use rules after the future boundary.",
+              corrected_value: "Rules after the future boundary.",
+            },
+          ],
         },
-        errata: [{
-          authority: "official_errata",
-          field: "effective_rules_text",
-          target_type: "card",
-          effective_from: "2026-08-01",
-          official_wording: "Use rules after the future boundary.",
-          corrected_value: "Rules after the future boundary.",
-        }],
-      }],
+      ],
     };
   }
   if (scenario === "errata-effective-scope") {
@@ -452,8 +354,7 @@ export function reconciliationSourceDocument(
               field: "effective_rules_text",
               target_type: "printing",
               effective_from: "2026-07-01",
-              official_wording:
-                "Correction applies to this Printing only.",
+              official_wording: "Correction applies to this Printing only.",
               corrected_value: "Printing-scoped corrected wording.",
             },
           ],
@@ -461,21 +362,12 @@ export function reconciliationSourceDocument(
       ],
     };
   }
-  if (
-    scenario === "errata-conflicting-effective-text" ||
-    scenario === "errata-null-effective-text"
-  ) {
+  if (scenario === "errata-conflicting-effective-text" || scenario === "errata-null-effective-text") {
     const observation = printingObservation({
       game: "one-piece",
       profile: "one-piece@1",
-      cardNumber:
-        scenario === "errata-null-effective-text"
-          ? "OP29-004"
-          : "OP29-005",
-      name:
-        scenario === "errata-null-effective-text"
-          ? "Removed Rules Text Card"
-          : "Conflicting Errata Card",
+      cardNumber: scenario === "errata-null-effective-text" ? "OP29-004" : "OP29-005",
+      name: scenario === "errata-null-effective-text" ? "Removed Rules Text Card" : "Conflicting Errata Card",
       cardAttributes: {
         ...onePieceLeaderAttributes(),
         effect_text: "Printed and observed rules text.",
@@ -504,8 +396,7 @@ export function reconciliationSourceDocument(
               ? [
                   {
                     ...baseErratum,
-                    official_wording:
-                      "Remove the rules text from this Card.",
+                    official_wording: "Remove the rules text from this Card.",
                     corrected_value: null,
                   },
                 ]
@@ -546,8 +437,7 @@ export function reconciliationSourceDocument(
               field: "effective_rules_text",
               target_type: "card",
               effective_from: "2026-07-01",
-              official_wording:
-                "Apply the updated timing described in the accompanying diagram.",
+              official_wording: "Apply the updated timing described in the accompanying diagram.",
               corrected_value: {
                 timing: "after the unspecified diagram event",
               },
@@ -569,18 +459,22 @@ export function reconciliationSourceDocument(
       lineageMarker: "errata-extra-property",
     });
     return {
-      cards: [{
-        ...observation,
-        errata: [{
-          authority: "official_errata",
-          field: "effective_rules_text",
-          target_type: "card",
-          effective_from: "2026-07-01",
-          official_wording: "Use the exact corrected wording.",
-          corrected_value: "Exact corrected wording.",
-          editorial_note: "This undeclared field is not authoritative.",
-        }],
-      }],
+      cards: [
+        {
+          ...observation,
+          errata: [
+            {
+              authority: "official_errata",
+              field: "effective_rules_text",
+              target_type: "card",
+              effective_from: "2026-07-01",
+              official_wording: "Use the exact corrected wording.",
+              corrected_value: "Exact corrected wording.",
+              editorial_note: "This undeclared field is not authoritative.",
+            },
+          ],
+        },
+      ],
     };
   }
   if (scenario === "scale-1001-cards") {
@@ -620,50 +514,6 @@ export function reconciliationSourceDocument(
       })),
     };
   }
-  if (scenario === "legality-relationship-over-budget") {
-    const cardNumbers = Array.from(
-      { length: 1_001 },
-      (_, index) => `OP31-${String(index + 1).padStart(4, "0")}`,
-    );
-    return {
-      cards: cardNumbers.map((cardNumber, index) => ({
-        card: {
-          game: "one-piece",
-          official_identity: {
-            kind: "card_number",
-            value: cardNumber,
-          },
-          name: `Relationship scale ${index + 1}`,
-          effective_rules_text: null,
-          game_data: {
-            profile: "one-piece@1",
-            attributes: onePieceLeaderAttributes(),
-          },
-        },
-        completeness: completeEvidence(),
-        memberships: {
-          products: [],
-          distribution_contexts: [],
-          source_buckets: [],
-        },
-      })),
-      legality_completeness: completeEvidence(17),
-      legality_rules: Array.from({ length: 17 }, (_, index) => ({
-        id: `relationship-scale-${String(index + 1).padStart(2, "0")}`,
-        game: "one-piece",
-        region: "EN-OCEANIA",
-        format: "standard",
-        event_tier: null,
-        effective_from: "2026-01-01",
-        effective_until: null,
-        unresolved_scope: null,
-        card_numbers: cardNumbers,
-        official_wording: `Relationship scale rule ${index + 1}.`,
-        effect: { type: "ban" },
-        representable: true,
-      })),
-    };
-  }
   if (scenario === "export-component-over-budget") {
     return {
       cards: Array.from({ length: 26 }, (_, index) =>
@@ -682,7 +532,7 @@ export function reconciliationSourceDocument(
             distribution_contexts: [],
             source_buckets: ["export-budget"],
           },
-        })
+        }),
       ),
     };
   }
@@ -764,55 +614,52 @@ export function reconciliationSourceDocument(
     scenario === "dedicated-card-nonparallel-erratum"
   ) {
     const nonParallelCard = scenario === "dedicated-card-nonparallel-erratum";
-    const locator = scenario === "dedicated-printing-erratum"
-      ? "/official/dedicated-multi/base"
-      : scenario === "dedicated-printing-erratum-ambiguous"
-        ? "/official/multi/shared"
-        : "/official/multi/missing";
+    const locator =
+      scenario === "dedicated-printing-erratum"
+        ? "/official/dedicated-multi/base"
+        : scenario === "dedicated-printing-erratum-ambiguous"
+          ? "/official/multi/shared"
+          : "/official/multi/missing";
     return {
-      cards: [{
-        kind: "official_erratum",
-        game: "one-piece",
-        target: nonParallelCard
-          ? {
-              type: "card",
-              official_identity: {
-                kind: "card_number",
-                value: "OP05-006",
+      cards: [
+        {
+          kind: "official_erratum",
+          game: "one-piece",
+          target: nonParallelCard
+            ? {
+                type: "card",
+                official_identity: {
+                  kind: "card_number",
+                  value: "OP05-006",
+                },
+              }
+            : {
+                type: "printing",
+                official_identity: {
+                  kind: "card_number",
+                  value: scenario === "dedicated-printing-erratum" ? "OP05-006" : "OP05-005",
+                },
+                locator,
               },
-            }
-          : {
-              type: "printing",
-              official_identity: {
-                kind: "card_number",
-                value: scenario === "dedicated-printing-erratum"
-                  ? "OP05-006"
-                  : "OP05-005",
-              },
-              locator,
-            },
-        published_on: "2026-07-31",
-        effective_from: null,
-        observed_printed_rules_text: "Official printed rules",
-        corrected_rules_text: "Printing-scoped corrected rules",
-        official_wording:
-          "Before: Official printed rules\nAfter: Printing-scoped corrected rules",
-        applies_to_parallel_printings: false,
-        source: {
-          fragment: "#errata_fixture_printing",
-          display_name: scenario === "dedicated-printing-erratum" ||
-              nonParallelCard
-            ? "OP05-006 Dedicated Printing Erratum Card"
-            : "OP05-005 Multiple Printing Card",
-          image_url:
-            `https://en.onepiece-cardgame.com/images/rules/cards/${
+          published_on: "2026-07-31",
+          effective_from: null,
+          observed_printed_rules_text: "Official printed rules",
+          corrected_rules_text: "Printing-scoped corrected rules",
+          official_wording: "Before: Official printed rules\nAfter: Printing-scoped corrected rules",
+          applies_to_parallel_printings: false,
+          source: {
+            fragment: "#errata_fixture_printing",
+            display_name:
               scenario === "dedicated-printing-erratum" || nonParallelCard
-                ? "OP05-006"
-                : "OP05-005"
+                ? "OP05-006 Dedicated Printing Erratum Card"
+                : "OP05-005 Multiple Printing Card",
+            image_url: `https://en.onepiece-cardgame.com/images/rules/cards/${
+              scenario === "dedicated-printing-erratum" || nonParallelCard ? "OP05-006" : "OP05-005"
             }.png`,
+          },
+          completeness: completeEvidence(),
         },
-        completeness: completeEvidence(),
-      }],
+      ],
     };
   }
   if (
@@ -826,9 +673,7 @@ export function reconciliationSourceDocument(
       game: "one-piece",
       profile: "one-piece@1",
       cardNumber: dedicated ? "OP05-006" : "OP05-005",
-      name: dedicated
-        ? "Dedicated Printing Erratum Card"
-        : "Multiple Printing Card",
+      name: dedicated ? "Dedicated Printing Erratum Card" : "Multiple Printing Card",
       cardAttributes: onePieceLeaderAttributes(),
       printingAttributes: { illustration_types: [] },
       locator: sharedLocator
@@ -855,10 +700,7 @@ export function reconciliationSourceDocument(
             artwork_fingerprint: `sha256:${"d".repeat(64)}`,
             novelty_basis: {
               ...base.identity_evidence.novelty_basis,
-              source_url:
-                `https://official-source.invalid/images/${
-                  dedicated ? "OP05-006" : "OP05-005"
-                }-alt.png`,
+              source_url: `https://official-source.invalid/images/${dedicated ? "OP05-006" : "OP05-005"}-alt.png`,
               artwork_fingerprint: `sha256:${"d".repeat(64)}`,
             },
           },
@@ -876,17 +718,11 @@ export function reconciliationSourceDocument(
       ],
     };
   }
-  if (
-    scenario === "product-lifecycle-first" ||
-    scenario === "product-lifecycle-multiple"
-  ) {
+  if (scenario === "product-lifecycle-first" || scenario === "product-lifecycle-multiple") {
     const base = printingObservation({
       game: "one-piece",
       profile: "one-piece@1",
-      cardNumber:
-        scenario === "product-lifecycle-first"
-          ? "OP11-011"
-          : "OP12-012",
+      cardNumber: scenario === "product-lifecycle-first" ? "OP11-011" : "OP12-012",
       name: "Product lifecycle Card",
       cardAttributes: onePieceLeaderAttributes(),
       printingAttributes: { illustration_types: [] },
@@ -912,8 +748,7 @@ export function reconciliationSourceDocument(
             artwork_fingerprint: `sha256:${"f".repeat(64)}`,
             novelty_basis: {
               ...base.identity_evidence.novelty_basis,
-              source_url:
-                "https://official-source.invalid/images/OP12-012-alt.png",
+              source_url: "https://official-source.invalid/images/OP12-012-alt.png",
               artwork_fingerprint: `sha256:${"f".repeat(64)}`,
             },
           },
@@ -931,10 +766,7 @@ export function reconciliationSourceDocument(
       ],
     };
   }
-  if (
-    scenario === "deterministic-forward" ||
-    scenario === "deterministic-reverse"
-  ) {
+  if (scenario === "deterministic-forward" || scenario === "deterministic-reverse") {
     const base = printingObservation({
       game: "one-piece",
       profile: "one-piece@1",
@@ -953,8 +785,7 @@ export function reconciliationSourceDocument(
         artwork_fingerprint: `sha256:${"e".repeat(64)}`,
         novelty_basis: {
           ...base.identity_evidence.novelty_basis,
-          source_url:
-            "https://official-source.invalid/images/OP10-010-alt.png",
+          source_url: "https://official-source.invalid/images/OP10-010-alt.png",
           artwork_fingerprint: `sha256:${"e".repeat(64)}`,
         },
       },
@@ -970,10 +801,7 @@ export function reconciliationSourceDocument(
       },
     };
     return {
-      cards:
-        scenario === "deterministic-forward"
-          ? [base, alternate]
-          : [alternate, base],
+      cards: scenario === "deterministic-forward" ? [base, alternate] : [alternate, base],
     };
   }
   if (
@@ -987,12 +815,8 @@ export function reconciliationSourceDocument(
         printingObservation({
           game: "fusion-world",
           profile: "fusion-world@1",
-          cardNumber:
-            scenario === "union-fusion-world" ? "FB99-999" : "FB01-001",
-          name:
-            scenario === "union-fusion-world"
-              ? "Union Son Goku"
-              : "Son Goku",
+          cardNumber: scenario === "union-fusion-world" ? "FB99-999" : "FB01-001",
+          name: scenario === "union-fusion-world" ? "Union Son Goku" : "Son Goku",
           cardAttributes: {
             card_type: "battle",
             colours: ["red"],
@@ -1001,9 +825,7 @@ export function reconciliationSourceDocument(
               {
                 colour: "red",
                 count: 1,
-                ...(scenario === "profile-nested-unknown"
-                  ? { new_metric: "retained raw" }
-                  : {}),
+                ...(scenario === "profile-nested-unknown" ? { new_metric: "retained raw" } : {}),
               },
             ],
             power: 10000,
@@ -1013,17 +835,13 @@ export function reconciliationSourceDocument(
               {
                 kind: "ordinary",
                 text: "Official skill",
-                ...(scenario === "profile-nested-unknown"
-                  ? { new_label: "retained raw" }
-                  : {}),
+                ...(scenario === "profile-nested-unknown" ? { new_label: "retained raw" } : {}),
               },
             ],
           },
           printingAttributes: {},
           locator:
-            scenario === "union-fusion-world"
-              ? "/official/fusion-world/FB99-999"
-              : "/official/fusion-world/FB01-001",
+            scenario === "union-fusion-world" ? "/official/fusion-world/FB99-999" : "/official/fusion-world/FB01-001",
           lineageMarker: "fusion-world",
         }),
       ],
@@ -1066,39 +884,35 @@ export function reconciliationSourceDocument(
       lineageMarker: "fusion-leader-images",
     });
     return {
-      cards: [{
-        ...observation,
-        appearance_evidence: {
-          images: [
-            {
-              role: "front",
-              source_url:
-                "https://www.dbs-cardgame.com/fw/images/FB01-001-front.webp",
-              artwork_fingerprint:
-                observation.identity_evidence.artwork_fingerprint,
-              media_type: "image/webp",
-              width: 744,
-              height: 1039,
-              content_sha256:
-                "46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
-              content_base64: "ZnVzaW9uLWZyb250LWltYWdl",
-            },
-            {
-              role: "back",
-              source_url:
-                "https://www.dbs-cardgame.com/fw/images/FB01-001-back.webp",
-              artwork_fingerprint:
-                observation.identity_evidence.artwork_fingerprint,
-              media_type: "image/webp",
-              width: 744,
-              height: 1039,
-              content_sha256:
-                "eed832d958fc4054fffb3027319dcd914448475c226ce55ae8053a442ed1b2cf",
-              content_base64: "ZnVzaW9uLWJhY2staW1hZ2U=",
-            },
-          ],
+      cards: [
+        {
+          ...observation,
+          appearance_evidence: {
+            images: [
+              {
+                role: "front",
+                source_url: "https://www.dbs-cardgame.com/fw/images/FB01-001-front.webp",
+                artwork_fingerprint: observation.identity_evidence.artwork_fingerprint,
+                media_type: "image/webp",
+                width: 744,
+                height: 1039,
+                content_sha256: "46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
+                content_base64: "ZnVzaW9uLWZyb250LWltYWdl",
+              },
+              {
+                role: "back",
+                source_url: "https://www.dbs-cardgame.com/fw/images/FB01-001-back.webp",
+                artwork_fingerprint: observation.identity_evidence.artwork_fingerprint,
+                media_type: "image/webp",
+                width: 744,
+                height: 1039,
+                content_sha256: "eed832d958fc4054fffb3027319dcd914448475c226ce55ae8053a442ed1b2cf",
+                content_base64: "ZnVzaW9uLWJhY2staW1hZ2U=",
+              },
+            ],
+          },
         },
-      }],
+      ],
     };
   }
   if (scenario === "profile-digimon") {
@@ -1174,13 +988,8 @@ export function reconciliationSourceDocument(
         printingObservation({
           game: "gundam",
           profile: "gundam@1",
-          cardNumber: scenario.startsWith("gundam-mirror-")
-            ? "GD95-001"
-            : "GD99-001",
-          name:
-            scenario === "gundam-card-conflict"
-              ? "Contradictory US name"
-              : "Cross-locale Gundam",
+          cardNumber: scenario.startsWith("gundam-mirror-") ? "GD95-001" : "GD99-001",
+          name: scenario === "gundam-card-conflict" ? "Contradictory US name" : "Cross-locale Gundam",
           cardAttributes: {
             card_type: "unit",
             colours: ["blue"],
@@ -1197,10 +1006,7 @@ export function reconciliationSourceDocument(
           },
           printingAttributes: { alternate_art: false },
           locator: `/official/gundam/${scenario}`,
-          variantKey:
-            scenario === "gundam-cross-variant-conflict"
-              ? "alternate"
-              : "base",
+          variantKey: scenario === "gundam-cross-variant-conflict" ? "alternate" : "base",
           lineageMarker: "gundam-cross",
           memberships:
             scenario === "gundam-cross-us-empty"
@@ -1210,18 +1016,11 @@ export function reconciliationSourceDocument(
                   source_buckets: [],
                 }
               : {
-                  products: [
-                    scenario === "gundam-cross-product-conflict"
-                      ? "product_gd99_other"
-                      : "product_gd99",
-                  ],
+                  products: [scenario === "gundam-cross-product-conflict" ? "product_gd99_other" : "product_gd99"],
                   distribution_contexts: [],
                   source_buckets: ["gundam-card-list"],
                 },
-          printedFieldsMarker:
-            scenario === "gundam-cross-conflict"
-              ? "conflicting"
-              : "shared",
+          printedFieldsMarker: scenario === "gundam-cross-conflict" ? "conflicting" : "shared",
         }),
       ],
     };
@@ -1261,132 +1060,6 @@ export function reconciliationSourceDocument(
             distribution_contexts: [],
             source_buckets: ["don-rules"],
           },
-        },
-      ],
-    };
-  }
-  if (scenario === "profile-don-legality") {
-    return {
-      legality_completeness: completeEvidence(4),
-      cards: [
-        {
-          card: {
-            game: "one-piece",
-            official_identity: {
-              kind: "functional_designation",
-              value: "DON!!",
-            },
-            name: "DON!!",
-            effective_rules_text: "Your turn +1000 power.",
-            game_data: {
-              profile: "one-piece@1",
-              attributes: {
-                card_type: "don",
-                colours: [],
-                cost: null,
-                life: null,
-                battle_attributes: [],
-                power: null,
-                counter: null,
-                traits: [],
-                block_icons: [],
-                effect_text: "Your turn +1000 power.",
-                trigger_text: null,
-              },
-            },
-          },
-          completeness: completeEvidence(),
-          memberships: {
-            products: [],
-            distribution_contexts: [],
-            source_buckets: ["don-rules"],
-          },
-        },
-        {
-          card: {
-            game: "one-piece",
-            official_identity: {
-              kind: "card_number",
-              value: "OP30-001",
-            },
-            name: "DON!! combination companion",
-            effective_rules_text: "Official effective rules.",
-            game_data: {
-              profile: "one-piece@1",
-              attributes: onePieceLeaderAttributes(),
-            },
-          },
-          completeness: completeEvidence(),
-          memberships: {
-            products: [],
-            distribution_contexts: [],
-            source_buckets: ["card-list"],
-          },
-        },
-      ],
-      legality_rules: [
-        {
-          id: "don-ban",
-          game: "one-piece",
-          region: "EN-OCEANIA",
-          format: "standard",
-          event_tier: null,
-          effective_from: "2026-01-01",
-          effective_until: null,
-          unresolved_scope: null,
-          card_numbers: ["DON!!"],
-          official_wording: "DON!! may not be included in a deck.",
-          effect: { type: "ban" },
-          representable: true,
-        },
-        {
-          id: "don-copy-limit",
-          game: "one-piece",
-          region: "EN-OCEANIA",
-          format: "standard",
-          event_tier: null,
-          effective_from: "2026-01-01",
-          effective_until: null,
-          unresolved_scope: null,
-          card_numbers: ["DON!!"],
-          official_wording: "Decks may contain one copy of DON!!.",
-          effect: { type: "copy_limit", maximum_copies: 1 },
-          representable: true,
-        },
-        {
-          id: "don-combination",
-          game: "one-piece",
-          region: "EN-OCEANIA",
-          format: "standard",
-          event_tier: null,
-          effective_from: "2026-01-01",
-          effective_until: null,
-          unresolved_scope: null,
-          card_numbers: ["DON!!"],
-          official_wording:
-            "DON!! and OP30-001 may not be included in the same deck.",
-          effect: {
-            type: "prohibited_combination",
-            with_card_numbers: ["OP30-001"],
-          },
-          representable: true,
-        },
-        {
-          id: "don-unresolved",
-          game: "one-piece",
-          region: "EN-OCEANIA",
-          format: "standard",
-          event_tier: null,
-          effective_from: "2026-01-01",
-          effective_until: null,
-          unresolved_scope: null,
-          card_numbers: ["DON!!"],
-          official_wording: "The secondary DON!! scope is unresolved.",
-          effect: {
-            type: "unresolved",
-            reason: "The notice omits the secondary event scope.",
-          },
-          representable: true,
         },
       ],
     };
@@ -1568,8 +1241,7 @@ export function reconciliationSourceDocument(
   const canonical = scenario.startsWith("canonical");
   const incompleteAppearance = scenario === "incomplete-appearance";
   const setCountMismatch = scenario === "set-count-mismatch";
-  const productReleaseCatalogue =
-    productReleaseCatalogueForScenario(scenario);
+  const productReleaseCatalogue = productReleaseCatalogueForScenario(scenario);
   if (
     scenario === "gundam-product-asia" ||
     scenario === "gundam-product-us" ||
@@ -1602,9 +1274,7 @@ export function reconciliationSourceDocument(
             variantKey: "base",
             lineageMarker: "gundam-product",
           }),
-          ...(productReleaseCatalogue === undefined
-            ? {}
-            : { product_release_catalogue: productReleaseCatalogue }),
+          ...(productReleaseCatalogue === undefined ? {} : { product_release_catalogue: productReleaseCatalogue }),
         },
       ],
     };
@@ -1638,9 +1308,7 @@ export function reconciliationSourceDocument(
             locator: "/official/digimon/product-unknown-region",
             lineageMarker: "digimon-product",
           }),
-          ...(productReleaseCatalogue === undefined
-            ? {}
-            : { product_release_catalogue: productReleaseCatalogue }),
+          ...(productReleaseCatalogue === undefined ? {} : { product_release_catalogue: productReleaseCatalogue }),
         },
       ],
     };
@@ -1679,10 +1347,7 @@ export function reconciliationSourceDocument(
       ],
     };
   }
-  if (
-    scenario === "withdrawn-longitudinal" ||
-    scenario === "withdrawn-longitudinal-corroboration"
-  ) {
+  if (scenario === "withdrawn-longitudinal" || scenario === "withdrawn-longitudinal-corroboration") {
     return {
       cards: [
         {
@@ -1776,18 +1441,13 @@ export function reconciliationSourceDocument(
           name: "Evidence-only evolution",
           cardAttributes: onePieceLeaderAttributes(),
           printingAttributes: { illustration_types: [] },
-          locator:
-            scenario === "semantic-evidence-base"
-              ? "/official/evidence/base"
-              : "/official/evidence/relocated",
+          locator: scenario === "semantic-evidence-base" ? "/official/evidence/base" : "/official/evidence/relocated",
           lineageMarker: "semantic-evidence",
           memberships: {
             products: ["product_op10"],
             distribution_contexts: [],
             source_buckets: [
-              scenario === "semantic-evidence-source-bucket"
-                ? "secondary-card-list"
-                : "primary-card-list",
+              scenario === "semantic-evidence-source-bucket" ? "secondary-card-list" : "primary-card-list",
             ],
           },
         }),
@@ -1797,37 +1457,29 @@ export function reconciliationSourceDocument(
   if (scenario.startsWith("gundam-printing-")) {
     const formatting = scenario.includes("-format-");
     const usSurface = scenario.includes("-us-");
-    const historicalProductConflict =
-      scenario.endsWith("-disappearance-us-product-conflict");
-    const printingAuthorityConflict =
-      scenario.endsWith("-disappearance-us-printing-conflict");
+    const historicalProductConflict = scenario.endsWith("-disappearance-us-product-conflict");
+    const printingAuthorityConflict = scenario.endsWith("-disappearance-us-printing-conflict");
     const substantiveConflict =
       (scenario.includes("-conflict-") && usSurface) ||
       printingAuthorityConflict ||
       scenario.endsWith("-disappearance-asia-conflict");
-    const authorityAfterDisappearance =
-      scenario.endsWith("-disappearance-us-conflict");
-    const reverseAuthorityConflict =
-      scenario.endsWith("-disappearance-asia-conflict");
-    const cardNumber =
-      scenario.includes("-lifecycle-primary-")
-        ? "GD90-001"
-        : scenario.includes("-lifecycle-reverse-")
-          ? "GD89-001"
-          : authorityAfterDisappearance || printingAuthorityConflict ||
-          historicalProductConflict
-            ? "GD94-001"
-            : reverseAuthorityConflict
-              ? "GD91-001"
-              : formatting
-                ? scenario.endsWith("-asia-first") ||
-                  scenario.endsWith("-us-second")
-                  ? "GD94-001"
-                  : "GD93-001"
-                : scenario.endsWith("-asia-first") ||
-                    scenario.endsWith("-us-second")
-                  ? "GD92-001"
-                  : "GD91-001";
+    const authorityAfterDisappearance = scenario.endsWith("-disappearance-us-conflict");
+    const reverseAuthorityConflict = scenario.endsWith("-disappearance-asia-conflict");
+    const cardNumber = scenario.includes("-lifecycle-primary-")
+      ? "GD90-001"
+      : scenario.includes("-lifecycle-reverse-")
+        ? "GD89-001"
+        : authorityAfterDisappearance || printingAuthorityConflict || historicalProductConflict
+          ? "GD94-001"
+          : reverseAuthorityConflict
+            ? "GD91-001"
+            : formatting
+              ? scenario.endsWith("-asia-first") || scenario.endsWith("-us-second")
+                ? "GD94-001"
+                : "GD93-001"
+              : scenario.endsWith("-asia-first") || scenario.endsWith("-us-second")
+                ? "GD92-001"
+                : "GD91-001";
     return {
       cards: [
         printingObservation({
@@ -1869,18 +1521,16 @@ export function reconciliationSourceDocument(
               : formatting && usSurface
                 ? "  Official   printed rules  "
                 : "Official printed rules",
-          rarityRaw: substantiveConflict
-            ? "Leader Rare"
-            : formatting && usSurface
-              ? "  L  "
-              : "L",
+          rarityRaw: substantiveConflict ? "Leader Rare" : formatting && usSurface ? "  L  " : "L",
           locator: `/official/gundam/${scenario}`,
           variantKey: "base",
           lineageMarker: `gundam-printing-${cardNumber}`,
           memberships: {
-            products: [historicalProductConflict
-              ? `product_${cardNumber.slice(0, 4).toLowerCase()}_other`
-              : `product_${cardNumber.slice(0, 4).toLowerCase()}`],
+            products: [
+              historicalProductConflict
+                ? `product_${cardNumber.slice(0, 4).toLowerCase()}_other`
+                : `product_${cardNumber.slice(0, 4).toLowerCase()}`,
+            ],
             distribution_contexts: [],
             source_buckets: ["gundam-card-list"],
           },
@@ -1926,24 +1576,13 @@ export function reconciliationSourceDocument(
           game: "one-piece",
           profile: "one-piece@1",
           cardNumber: variantScenario ? "OP12-002" : "OP12-001",
-          name: variantScenario
-            ? "Historical locator variant"
-            : "Historical locator binding",
+          name: variantScenario ? "Historical locator variant" : "Historical locator binding",
           cardAttributes: onePieceLeaderAttributes(),
           printingAttributes: { illustration_types: [] },
-          locator: variantScenario
-            ? "/official/locator-variant/stable"
-            : "/official/locator-binding/stable",
+          locator: variantScenario ? "/official/locator-variant/stable" : "/official/locator-binding/stable",
           variantKey:
-            scenario === "locator-variant-v1"
-              ? "suffix-a"
-              : scenario === "locator-variant-v2"
-                ? "suffix-b"
-                : undefined,
-          lineageMarker:
-            scenario === "locator-binding-incompatible"
-              ? "different"
-              : "locator-binding",
+            scenario === "locator-variant-v1" ? "suffix-a" : scenario === "locator-variant-v2" ? "suffix-b" : undefined,
+          lineageMarker: scenario === "locator-binding-incompatible" ? "different" : "locator-binding",
           memberships: {
             products: ["product_op12"],
             distribution_contexts: [],
@@ -1962,22 +1601,14 @@ export function reconciliationSourceDocument(
     scenario === "gundam-conflict-asia-first" ||
     scenario === "gundam-conflict-us-second"
   ) {
-    const conflictPairOne =
-      scenario === "gundam-conflict-us-first" ||
-      scenario === "gundam-conflict-asia-second";
-    const conflictPairTwo =
-      scenario === "gundam-conflict-asia-first" ||
-      scenario === "gundam-conflict-us-second";
+    const conflictPairOne = scenario === "gundam-conflict-us-first" || scenario === "gundam-conflict-asia-second";
+    const conflictPairTwo = scenario === "gundam-conflict-asia-first" || scenario === "gundam-conflict-us-second";
     return {
       cards: [
         printingObservation({
           game: "gundam",
           profile: "gundam@1",
-          cardNumber: conflictPairOne
-            ? "GD97-001"
-            : conflictPairTwo
-              ? "GD96-001"
-              : "GD98-001",
+          cardNumber: conflictPairOne ? "GD97-001" : conflictPairTwo ? "GD96-001" : "GD98-001",
           name:
             scenario === "gundam-authority-asia"
               ? "Formatting equivalent name"
@@ -1985,8 +1616,7 @@ export function reconciliationSourceDocument(
                 ? "Later contradictory US name"
                 : scenario === "gundam-authority-us"
                   ? "  Formatting   equivalent name  "
-                  : scenario === "gundam-conflict-asia-second" ||
-                      scenario === "gundam-conflict-us-second"
+                  : scenario === "gundam-conflict-asia-second" || scenario === "gundam-conflict-us-second"
                     ? "Substantive conflicting name"
                     : "Initial canonical name",
           cardAttributes: {
@@ -2008,13 +1638,7 @@ export function reconciliationSourceDocument(
           variantKey: "base",
           lineageMarker: "gundam-authority",
           memberships: {
-            products: [
-              conflictPairOne
-                ? "product_gd97"
-                : conflictPairTwo
-                  ? "product_gd96"
-                  : "product_gd98",
-            ],
+            products: [conflictPairOne ? "product_gd97" : conflictPairTwo ? "product_gd96" : "product_gd98"],
             distribution_contexts: [],
             source_buckets: ["gundam-card-list"],
           },
@@ -2035,10 +1659,9 @@ export function reconciliationSourceDocument(
               ? "OP07-007"
               : scenario === "repeatable"
                 ? "OP04-004"
-              : scenario === "not-demonstrably-novel" ||
-                  incompleteAppearance
-                ? "OP08-008"
-                : "OP01-001",
+                : scenario === "not-demonstrably-novel" || incompleteAppearance
+                  ? "OP08-008"
+                  : "OP01-001",
           name:
             scenario === "canonical-name-conflict"
               ? "Unsupported replacement name"
@@ -2049,9 +1672,7 @@ export function reconciliationSourceDocument(
                   : "Monkey.D.Luffy",
           cardAttributes: onePieceLeaderAttributes(),
           printingAttributes: {
-            illustration_types: unknownVocabulary
-              ? ["etched-future"]
-              : [],
+            illustration_types: unknownVocabulary ? ["etched-future"] : [],
           },
           locator: conflict
             ? "/official/conflict"
@@ -2060,53 +1681,38 @@ export function reconciliationSourceDocument(
               : newLocator
                 ? "/official/renamed"
                 : `/official/${scenario}`,
-          lineageMarker:
-            scenario === "not-demonstrably-novel" ||
-            incompleteAppearance
-              ? "different"
-              : "one-piece",
-          demonstrablyNovel:
-            scenario !== "not-demonstrably-novel",
+          lineageMarker: scenario === "not-demonstrably-novel" || incompleteAppearance ? "different" : "one-piece",
+          demonstrablyNovel: scenario !== "not-demonstrably-novel",
           includeAppearance: !incompleteAppearance,
-          treatment:
-            scenario === "conflict-changed"
-              ? "parallel-foil"
-              : "standard",
+          treatment: scenario === "conflict-changed" ? "parallel-foil" : "standard",
           memberships: newLocator
             ? {
                 products: ["product_promotion"],
                 distribution_contexts: ["context_event"],
                 source_buckets: ["promotion-list"],
               }
-            : scenario === "product-identity-inferred" ||
-                scenario === "product-identity-typed"
+            : scenario === "product-identity-inferred" || scenario === "product-identity-typed"
               ? {
                   products: ["IDENTITY-INFERRED"],
                   distribution_contexts: [],
                   source_buckets: ["identity-product-list"],
                 }
-            : scenario === "product-release" ||
-                scenario === "product-release-multiple-events"
-              ? {
-                  products: ["ST-15"],
-                  distribution_contexts: ["championship-2026-pack"],
-                  source_buckets: ["starter-deck-card-list"],
-                }
-            : scenario === "product-typed-relationships" ||
-                scenario === "product-typed-relationships-changed"
-              ? {
-                  products: ["CODE-X"],
-                  distribution_contexts: ["typed-context"],
-                  source_buckets: ["typed-source-bucket"],
-                }
-            : undefined,
+              : scenario === "product-release" || scenario === "product-release-multiple-events"
+                ? {
+                    products: ["ST-15"],
+                    distribution_contexts: ["championship-2026-pack"],
+                    source_buckets: ["starter-deck-card-list"],
+                  }
+                : scenario === "product-typed-relationships" || scenario === "product-typed-relationships-changed"
+                  ? {
+                      products: ["CODE-X"],
+                      distribution_contexts: ["typed-context"],
+                      source_buckets: ["typed-source-bucket"],
+                    }
+                  : undefined,
         }),
-        ...(productReleaseCatalogue === undefined
-          ? {}
-          : { product_release_catalogue: productReleaseCatalogue }),
-        ...(unknownVocabulary
-          ? { new_official_label: "Bandai-added-value" }
-          : {}),
+        ...(productReleaseCatalogue === undefined ? {} : { product_release_catalogue: productReleaseCatalogue }),
+        ...(unknownVocabulary ? { new_official_label: "Bandai-added-value" } : {}),
         ...(setCountMismatch
           ? {
               completeness: {
@@ -2130,17 +1736,12 @@ export function reconciliationSourceDocument(
   };
 }
 
-function productReleaseCatalogueForScenario(
-  scenario: string,
-): Record<string, unknown> | undefined {
+function productReleaseCatalogueForScenario(scenario: string): Record<string, unknown> | undefined {
   const officialReference = (value: string) => ({
     kind: "official_code",
     value,
   });
-  if (
-    scenario === "product-release" ||
-    scenario === "product-release-multiple-events"
-  ) {
+  if (scenario === "product-release" || scenario === "product-release-multiple-events") {
     return {
       products: [
         {
@@ -2155,12 +1756,14 @@ function productReleaseCatalogueForScenario(
               status: "announced",
             },
             ...(scenario === "product-release-multiple-events"
-              ? [{
-                  event_key: "oceania-retail-release",
-                  region: "EN-OCEANIA",
-                  date: { precision: "day", value: "2026-09-18" },
-                  status: "released",
-                }]
+              ? [
+                  {
+                    event_key: "oceania-retail-release",
+                    region: "EN-OCEANIA",
+                    date: { precision: "day", value: "2026-09-18" },
+                    status: "released",
+                  },
+                ]
               : []),
           ],
         },
@@ -2214,9 +1817,7 @@ function productReleaseCatalogueForScenario(
           releases: [
             {
               region: "EN-OCEANIA",
-              date: second
-                ? { precision: "day", value: "2026-10-17" }
-                : { precision: "month", value: "2026-10" },
+              date: second ? { precision: "day", value: "2026-10-17" } : { precision: "month", value: "2026-10" },
               status: second ? "released" : "announced",
             },
           ],
@@ -2226,10 +1827,7 @@ function productReleaseCatalogueForScenario(
       relationships: [],
     };
   }
-  if (
-    scenario === "product-context-conflict-a" ||
-    scenario === "product-context-conflict-b"
-  ) {
+  if (scenario === "product-context-conflict-a" || scenario === "product-context-conflict-b") {
     const second = scenario.endsWith("-b");
     return {
       products: [
@@ -2244,9 +1842,7 @@ function productReleaseCatalogueForScenario(
         {
           key: "same-context-key",
           kind: second ? "tournament_pack" : "promotion",
-          label: second
-            ? "Conflicting Tournament Context"
-            : "Conflicting Promotion Context",
+          label: second ? "Conflicting Tournament Context" : "Conflicting Promotion Context",
           product_reference: officialReference("ST-CONTEXT-CONFLICT"),
           evidence_category: "explicit",
         },
@@ -2254,10 +1850,7 @@ function productReleaseCatalogueForScenario(
       relationships: [],
     };
   }
-  if (
-    scenario === "product-typed-relationships" ||
-    scenario === "product-typed-relationships-changed"
-  ) {
+  if (scenario === "product-typed-relationships" || scenario === "product-typed-relationships-changed") {
     return {
       products: [
         {
@@ -2304,13 +1897,15 @@ function productReleaseCatalogueForScenario(
         },
         ...(scenario === "product-typed-relationships-changed"
           ? []
-          : [{
-              kind: "product-card",
-              product_reference: { kind: "name", value: "CODE-X" },
-              card_reference: { kind: "current_card" },
-              evidence_category: "derived",
-              resolution: "deterministic",
-            }]),
+          : [
+              {
+                kind: "product-card",
+                product_reference: { kind: "name", value: "CODE-X" },
+                card_reference: { kind: "current_card" },
+                evidence_category: "derived",
+                resolution: "deterministic",
+              },
+            ]),
       ],
     };
   }
@@ -2324,10 +1919,7 @@ function productReleaseCatalogueForScenario(
         {
           reference: officialReference("ST-STANDALONE"),
           official_code: "ST-STANDALONE",
-          name:
-            scenario === "product-standalone-v1"
-              ? "Standalone Product"
-              : "Renamed Standalone Product",
+          name: scenario === "product-standalone-v1" ? "Standalone Product" : "Renamed Standalone Product",
           releases: [],
           ...(scenario === "product-standalone-withdrawn"
             ? {
@@ -2359,16 +1951,13 @@ function productReleaseCatalogueForScenario(
         ? "Renamed Identity Product"
         : scenario.startsWith("product-identity-rename")
           ? "Original Identity Product"
-          : scenario.startsWith("product-identity-distinct-code") ||
-              scenario === "product-identity-ambiguous-name"
+          : scenario.startsWith("product-identity-distinct-code") || scenario === "product-identity-ambiguous-name"
             ? "Same-name Distinct-code Product"
-          : scenario === "product-identity-name" ||
-              scenario === "product-identity-coded"
-            ? "Name-to-code Identity Product"
-            : "Inferred-to-typed Identity Product";
+            : scenario === "product-identity-name" || scenario === "product-identity-coded"
+              ? "Name-to-code Identity Product"
+              : "Inferred-to-typed Identity Product";
     const officialCode =
-      scenario === "product-identity-name" ||
-      scenario === "product-identity-ambiguous-name"
+      scenario === "product-identity-name" || scenario === "product-identity-ambiguous-name"
         ? null
         : scenario.startsWith("product-identity-rename")
           ? "IDENTITY-RENAME"
@@ -2376,16 +1965,13 @@ function productReleaseCatalogueForScenario(
             ? "IDENTITY-DISTINCT-A"
             : scenario === "product-identity-distinct-code-b"
               ? "IDENTITY-DISTINCT-B"
-          : scenario === "product-identity-coded"
-            ? "IDENTITY-NAME-CODE"
-            : "IDENTITY-INFERRED";
+              : scenario === "product-identity-coded"
+                ? "IDENTITY-NAME-CODE"
+                : "IDENTITY-INFERRED";
     return {
       products: [
         {
-          reference:
-            officialCode === null
-              ? { kind: "name", value: name }
-              : officialReference(officialCode),
+          reference: officialCode === null ? { kind: "name", value: name } : officialReference(officialCode),
           official_code: officialCode,
           name,
           releases: [],
@@ -2395,10 +1981,7 @@ function productReleaseCatalogueForScenario(
       relationships: [
         {
           kind: "product-card",
-          product_reference:
-            officialCode === null
-              ? { kind: "name", value: name }
-              : officialReference(officialCode),
+          product_reference: officialCode === null ? { kind: "name", value: name } : officialReference(officialCode),
           card_reference: { kind: "current_card" },
           evidence_category: "explicit",
           resolution: "explicit",
@@ -2435,10 +2018,7 @@ function productReleaseCatalogueForScenario(
       ],
     };
   }
-  if (
-    scenario === "product-explicit-derived" ||
-    scenario === "product-deterministic-explicit"
-  ) {
+  if (scenario === "product-explicit-derived" || scenario === "product-deterministic-explicit") {
     const explicitResolution = scenario === "product-explicit-derived";
     return {
       products: [
@@ -2468,8 +2048,7 @@ function productReleaseCatalogueForScenario(
     };
   }
   if (scenario === "gundam-product-asia" || scenario === "gundam-product-us") {
-    const region =
-      scenario === "gundam-product-asia" ? "EN-ASIA" : "EN-US";
+    const region = scenario === "gundam-product-asia" ? "EN-ASIA" : "EN-US";
     return {
       products: [
         {
@@ -2512,375 +2091,6 @@ function productReleaseCatalogueForScenario(
   return undefined;
 }
 
-function emptyOfficialCatalogueDocument(
-  partition: "EN-OCEANIA" | "EN-ASIA" | "EN-US",
-  surface: string,
-  requestUrl: string,
-  legalityVariant: "complete" | "missing" | "false-empty" =
-    "complete",
-  game: "one-piece" | "fusion-world" | "digimon" | "gundam" =
-    officialGame(requestUrl),
-  omittedSurface?: string,
-  discoveryVariant?: "missing",
-) {
-  if (
-    (legalityVariant === "missing" && surface === "legality_rules") ||
-    surface === omittedSurface
-  ) {
-    return rawOfficialEnvelope(
-      game,
-      partition,
-      "not-a-required-surface",
-      [],
-    );
-  }
-  if (
-    legalityVariant === "false-empty" &&
-    surface === "legality_rules"
-  ) {
-    return rawOfficialEnvelope(game, partition, surface, [], 1);
-  }
-  const requiredSurfaces = [
-    "discovery",
-    "legality_card_details",
-    "legality_rules",
-    "legality_history",
-    ...(game === "one-piece"
-      ? ["block_policy", "release_timing", "don_rules"]
-      : []),
-  ];
-  const records = officialSurfaceRecords({
-    discoveryVariant,
-    game,
-    requestUrl,
-    requiredSurfaces,
-    surface,
-  });
-  return rawOfficialEnvelope(game, partition, surface, records);
-}
-
-function officialSurfaceRecords(input: {
-  discoveryVariant?: "missing";
-  game: "one-piece" | "fusion-world" | "digimon" | "gundam";
-  requestUrl: string;
-  requiredSurfaces: string[];
-  surface: string;
-}): unknown[] {
-  if (input.surface === "discovery") {
-    return input.requiredSurfaces
-      .filter((name) => name !== "discovery")
-      .filter(
-        (name) =>
-          input.discoveryVariant !== "missing" ||
-            name !== "legality_history",
-      )
-      .map((name) => rawDiscoveryRecord(
-        input.game,
-        name,
-        officialSurfaceUrl(input.requestUrl, name),
-      ));
-  }
-  if (input.surface !== "legality_card_details" && input.surface !== "legality_rules") {
-    return [emptyPartitionRawRule(input.game, input.surface, input.requestUrl)];
-  }
-  return [];
-}
-
-function officialGame(
-  requestUrl: string,
-): "one-piece" | "fusion-world" | "digimon" | "gundam" {
-  const hostname = new URL(requestUrl).hostname;
-  if (hostname === "en.onepiece-cardgame.com") return "one-piece";
-  if (hostname === "www.dbs-cardgame.com") return "fusion-world";
-  if (hostname === "world.digimoncard.com") return "digimon";
-  return "gundam";
-}
-
-function rawDiscoveryRecord(
-  game: "one-piece" | "fusion-world" | "digimon" | "gundam",
-  surface: string,
-  url: string,
-): Record<string, unknown> {
-  if (game === "one-piece") return { key: surface, area: surface, href: url };
-  if (game === "fusion-world") {
-    return { request: surface, section: surface, url };
-  }
-  if (game === "digimon") return { request_id: surface, feed: surface, link: url };
-  return { request_key: surface, endpoint: surface, href: url };
-}
-
-function rawOfficialEnvelope(
-  game: "one-piece" | "fusion-world" | "digimon" | "gundam",
-  partition: "EN-OCEANIA" | "EN-ASIA" | "EN-US",
-  surface: string,
-  records: readonly unknown[],
-  count = records.length,
-): Record<string, unknown> {
-  if (game === "one-piece") {
-    return { one_piece: { area: surface, locale: partition, total: count, entries: records } };
-  }
-  if (game === "fusion-world") {
-    return { fusion_world: { section: surface, territory: partition, result_count: count, items: records } };
-  }
-  if (game === "digimon") {
-    return { digimon: { feed: surface, language: partition, count, rows: records } };
-  }
-  return { gundam: { endpoint: surface, locale: partition, hits: count, results: records } };
-}
-
-function representativeRawSourceDocument(
-  game: "one-piece" | "fusion-world" | "digimon" | "gundam",
-  surface: string,
-  requestUrl: string,
-): Record<string, unknown> {
-  const partition = game === "gundam" ? "EN-ASIA" : "EN-OCEANIA";
-  const requiredSurfaces = [
-    "discovery",
-    "legality_card_details",
-    "legality_rules",
-    "legality_history",
-  ];
-  const records = surface === "discovery"
-    ? requiredSurfaces
-        .filter((name) => name !== "discovery")
-        .map((name) => rawDiscoveryRecord(
-          game,
-          name,
-          officialSurfaceUrl(requestUrl, name),
-        ))
-    : surface === "legality_card_details"
-      ? [representativeRawCard(game, requestUrl)]
-      : surface === "legality_rules"
-        ? [representativeRawNotice(game, requestUrl)]
-        : [emptyPartitionRawRule(game, surface, requestUrl)];
-  return rawOfficialEnvelope(game, partition, surface, records);
-}
-
-function representativeRawCard(
-  game: "one-piece" | "fusion-world" | "digimon" | "gundam",
-  requestUrl: string,
-): Record<string, unknown> {
-  const base = new URL(requestUrl);
-  if (game === "fusion-world") {
-    return {
-      source_url: requestUrl,
-      card_number: "FB30-001",
-      name: "Representative Fusion Card",
-      "Card Type": "Battle",
-      Color: ["Red"],
-      Cost: "1",
-      "Specified Cost": ["red:1"],
-      Power: "5000",
-      "Combo Power": "10000",
-      "Special Traits": ["Saiyan"],
-      Skills: "Official Fusion World skill.",
-      Rarity: "R",
-      variant_suffix: null,
-      image_urls: [`${base.origin}/fw/en/images/FB30-001.png`],
-    };
-  }
-  if (game === "digimon") {
-    return {
-      popup_id: "BT30-001-base",
-      source_url: requestUrl,
-      card_number: "BT30-001",
-      name: "Representative Digimon",
-      cardcategory: "Digimon",
-      Color: ["Red"],
-      Lv: "3",
-      "Play Cost": "3",
-      "Use Cost": null,
-      DP: "2000",
-      Form: "Rookie",
-      Attribute: "Vaccine",
-      Type: ["Reptile"],
-      "Digivolution Cost": "2",
-      Effect: "Official Digimon effect.",
-      "Inherited Effect": null,
-      "Security Effect": null,
-      "DUAL Color": [],
-      "DUAL Cost": null,
-      "Link DP": null,
-      Rarity: "C",
-      "Alternative Art": "no",
-      image_url: `${base.origin}/images/BT30-001.png`,
-    };
-  }
-  throw new Error(`No representative raw Card fixture for ${game}.`);
-}
-
-function representativeRawNotice(
-  game: "one-piece" | "fusion-world" | "digimon" | "gundam",
-  requestUrl: string,
-): Record<string, unknown> {
-  if (game === "fusion-world") {
-    return {
-      rule_ref: "fw_representative_eligible",
-      canonical_url: requestUrl,
-      notice: "FB30-001 is eligible for Standard tournament play.",
-      market: "EN-OCEANIA",
-      play_format: "standard",
-      tier: null,
-      active_on: "2026-01-01",
-      expires_on: null,
-      cards: ["FB30-001"],
-      directive: "eligible",
-      cap: null,
-      paired_cards: [],
-      filter_field: null,
-      filter_values: [],
-      blocks: [],
-      tournament_legal_date: null,
-      ambiguity: null,
-    };
-  }
-  if (game === "digimon") {
-    return {
-      restriction_id: "digimon_representative_eligible",
-      link: requestUrl,
-      body: "BT30-001 is eligible for Standard tournament play.",
-      language_scope: "EN-OCEANIA",
-      ruleset: "standard",
-      tournament_level: null,
-      applies_from: "2026-01-01",
-      applies_until: null,
-      card_ids: ["BT30-001"],
-      status_code: "eligible",
-      deck_limit: null,
-      prohibited_with: [],
-      membership_field: null,
-      membership_terms: [],
-      permitted_blocks: [],
-      sale_eligible_on: null,
-      clarification: null,
-    };
-  }
-  throw new Error(`No representative raw notice fixture for ${game}.`);
-}
-
-function emptyPartitionRawRule(
-  game: "one-piece" | "fusion-world" | "digimon" | "gundam",
-  surface: string,
-  requestUrl: string,
-): Record<string, unknown> {
-  const id = `${game}_${surface}_representative`;
-  const effect = surface === "block_policy"
-    ? {
-        code: "rotation",
-        wording: "Only cards bearing Block 4 are eligible after rotation.",
-        blocks: ["4"],
-      }
-    : surface === "release_timing"
-      ? {
-          code: "release",
-          wording: "Cards become legal for tournament play on 1 August 2026.",
-          legalFrom: "2026-08-01",
-        }
-      : surface === "don_rules"
-        ? {
-            code: "membership",
-            wording: "Cards with the DON!! trait are eligible under this membership rule.",
-            membershipAttribute: "traits",
-            membershipValues: ["DON!!"],
-          }
-        : {
-            code: "ban",
-            wording: "The historical notice states these cards were banned from play.",
-            effectiveUntil: "2025-06-01",
-          };
-  if (game === "one-piece") {
-    return {
-      notice_no: id,
-      source_url: requestUrl,
-      published_text: effect.wording,
-      territory: "EN-OCEANIA",
-      format_name: "standard",
-      event_class: null,
-      start_date: "2025-01-01",
-      end_date: effect.effectiveUntil ?? null,
-      card_numbers: [],
-      restriction_code: effect.code,
-      maximum_copies: null,
-      related_cards: [],
-      membership_attribute: effect.membershipAttribute ?? null,
-      membership_values: effect.membershipValues ?? [],
-      eligible_blocks: effect.blocks ?? [],
-      legal_from: effect.legalFrom ?? null,
-      unresolved_reason: null,
-    };
-  }
-  if (game === "fusion-world") {
-    return {
-      rule_ref: id,
-      canonical_url: requestUrl,
-      notice: effect.wording,
-      market: "EN-OCEANIA",
-      play_format: "standard",
-      tier: null,
-      active_on: "2025-01-01",
-      expires_on: effect.effectiveUntil ?? null,
-      cards: [],
-      directive: effect.code,
-      cap: null,
-      paired_cards: [],
-      filter_field: effect.membershipAttribute ?? null,
-      filter_values: effect.membershipValues ?? [],
-      blocks: effect.blocks ?? [],
-      tournament_legal_date: effect.legalFrom ?? null,
-      ambiguity: null,
-    };
-  }
-  if (game === "digimon") {
-    return {
-      restriction_id: id,
-      link: requestUrl,
-      body: effect.wording,
-      language_scope: "EN-OCEANIA",
-      ruleset: "standard",
-      tournament_level: null,
-      applies_from: "2025-01-01",
-      applies_until: effect.effectiveUntil ?? null,
-      card_ids: [],
-      status_code: effect.code,
-      deck_limit: null,
-      prohibited_with: [],
-      membership_field: effect.membershipAttribute ?? null,
-      membership_terms: effect.membershipValues ?? [],
-      permitted_blocks: effect.blocks ?? [],
-      sale_eligible_on: effect.legalFrom ?? null,
-      clarification: null,
-    };
-  }
-  const region = new URL(requestUrl).pathname.startsWith("/en/")
-    ? "EN-US"
-    : "EN-ASIA";
-  return {
-    news_id: id,
-    url: requestUrl,
-    text: effect.wording,
-    region,
-    format: "standard",
-    event_tier: null,
-    effective_date: "2025-01-01",
-    end_date: effect.effectiveUntil ?? null,
-    card_numbers: [],
-    ruling: effect.code,
-    copy_limit: null,
-    companion_cards: [],
-    attribute: effect.membershipAttribute ?? null,
-    values: effect.membershipValues ?? [],
-    legal_blocks: effect.blocks ?? [],
-    legal_from: effect.legalFrom ?? null,
-    reason: null,
-  };
-}
-
-function officialSurfaceUrl(requestUrl: string, surface: string): string {
-  const url = new URL(requestUrl);
-  url.searchParams.set("surface", surface);
-  return url.href;
-}
-
 function printingObservation(input: {
   game: string;
   profile: string;
@@ -2903,9 +2113,7 @@ function printingObservation(input: {
     source_buckets: string[];
   };
 }) {
-  const artworkFingerprint = `sha256:${
-    input.lineageMarker === "different" ? "c".repeat(64) : "a".repeat(64)
-  }`;
+  const artworkFingerprint = `sha256:${input.lineageMarker === "different" ? "c".repeat(64) : "a".repeat(64)}`;
   return {
     card: {
       game: input.game,
@@ -2925,8 +2133,7 @@ function printingObservation(input: {
         raw: input.rarityRaw ?? "L",
         normalized: "leader",
       },
-      printed_rules_text:
-        input.printedRulesText ?? "Official printed rules",
+      printed_rules_text: input.printedRulesText ?? "Official printed rules",
       game_data: {
         profile: input.profile,
         attributes: input.printingAttributes,
@@ -2938,11 +2145,7 @@ function printingObservation(input: {
         ? {}
         : { variant_key: input.variantKey ?? "base" }),
       artwork_fingerprint: artworkFingerprint,
-      printed_fields_digest: `sha256:${
-        input.printedFieldsMarker === "conflicting"
-          ? "d".repeat(64)
-          : "b".repeat(64)
-      }`,
+      printed_fields_digest: `sha256:${input.printedFieldsMarker === "conflicting" ? "d".repeat(64) : "b".repeat(64)}`,
       treatment: input.treatment ?? "standard",
       demonstrably_novel: input.demonstrablyNovel ?? true,
       novelty_basis: {
@@ -2965,12 +2168,11 @@ function printingObservation(input: {
             ],
           },
     completeness: completeEvidence(),
-    memberships:
-      input.memberships ?? {
-        products: ["product_op01"],
-        distribution_contexts: [],
-        source_buckets: ["main-list"],
-      },
+    memberships: input.memberships ?? {
+      products: ["product_op01"],
+      distribution_contexts: [],
+      source_buckets: ["main-list"],
+    },
   };
 }
 

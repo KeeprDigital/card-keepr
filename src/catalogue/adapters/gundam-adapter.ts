@@ -62,38 +62,26 @@ const definitions: readonly RawAdapterDefinition[] = [
     reconciliationAreas: ["catalogue", "errata"] as const,
     inheritDiscoveryRequestHeaders: true,
     listingReconciliation: {
-      releasesSurfaceCarriesLegality: false,
       groupsPublisherPages: true,
       strictListingIdentity: false,
       duplicateLocatorCompatibility: "never" as const,
     },
-    requiredSurfaces: ["packages", "products", "releases", "legality", "errata"],
+    requiredSurfaces: ["packages", "products", "releases", "errata"],
     urls: {
       packages: `https://www.gundam-gcg.com/${locale}/cards/index.php`,
       products: `https://www.gundam-gcg.com/${locale}/products/list.php`,
       releases: `https://www.gundam-gcg.com/${locale}/products/list.php`,
-      legality: `https://www.gundam-gcg.com/${locale}/rules/`,
       // The live news hub filters through subcategory tabs; errata and
       // correction articles are published under the NEWS tab.
       errata: `https://www.gundam-gcg.com/${locale}/news/?subcategory=news&tag=all&page=1`,
     },
-    // Issue #58: the Gundam adapters pin their legality surface to the
-    // live news/01_279.html publication and represent its compound
-    // open-predicate policy as explicit unresolved rules (including one
-    // with an unresolved target_scope dimension).
     version: {
       adapterVersion: `${sourceLineage}@7`,
       parserContract: `${sourceLineage}-restructured-complete-catalogue@6`,
-      urls: {
-        // The rules hub publishes navigation only; the current banned and
-        // restricted list is the linked news publication.
-        legality: `https://www.gundam-gcg.com/${locale}/news/01_279.html`,
-      },
       expandedOnePieceCatalogue: false,
       catalogueComplete: true,
       completeDigimonCatalogue: false,
       optionalCardFields: false,
-      unresolvedLegalityScopes: true,
       liveShapes: false,
     },
   })),
@@ -329,7 +317,6 @@ function parseGundamCardDetailHtmlV4(html: string, sourceLineage: string, reques
     detail,
     products,
     new Map(),
-    { revision: "captured-by-policy-surface", entries: [] },
     { revision: "captured-by-policy-surface", entries: [] },
     "gundam",
   );

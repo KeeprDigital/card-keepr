@@ -1,6 +1,6 @@
 export type CuratedFieldTarget = Readonly<{
   kind: "field";
-  entity_type: "card" | "printing" | "product" | "release" | "distribution_context" | "erratum" | "legality_rule";
+  entity_type: "card" | "printing" | "product" | "release" | "distribution_context" | "erratum";
   entity_id: string;
   path: string;
 }>;

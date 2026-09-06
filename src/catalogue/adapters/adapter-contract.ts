@@ -38,7 +38,7 @@ export type OfficialRawAdapterContract = {
 };
 
 // Parser behaviour flags that discriminate the live Source Adapter Versions.
-// Every live version is legality-aware, reads the 2026-08 restructured Bandai
+// Every live version reads the 2026-08 restructured Bandai
 // sites, and parses the live product detail pages; those former flags are
 // no longer modelled because no live version takes the other branch.
 export type LiveContractFlags = {
@@ -53,12 +53,9 @@ export type LiveContractFlags = {
   // Fusion World Energy Markers publish no rarity block and Digimon Q&A
   // answers nest Related Cards.
   optionalCardFields: boolean;
-  // Issue #58: compound open-predicate policies parse into explicit
-  // unresolved rules and the One Piece don-rules hub is coverage evidence.
-  unresolvedLegalityScopes: boolean;
-  // The five live Fusion World page shapes retained by the third full-scale
+  // The live Fusion World page shapes retained by the third full-scale
   // production run (anchored product status sections, Errata Applied
-  // annotations, season-precision releases, the legality-history lift).
+  // annotations and season-precision releases).
   liveShapes: boolean;
 };
 
