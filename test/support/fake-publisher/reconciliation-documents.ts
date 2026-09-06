@@ -90,6 +90,7 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
     });
     return { cards: [source] };
   }
+  if (scenario === "source-refresh-empty-errata") return { cards: [] };
   if (scenario === "large-card-content") {
     return {
       cards: [
@@ -1807,13 +1808,14 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
               },
             }
           : {}),
-        ...(scenario === "withdrawn"
+        ...(["withdrawn", "reinstated"].includes(scenario)
           ? {
               withdrawal: {
                 entity: "printing",
-                state: "withdrawn",
-                effective_at: "2026-07-01T00:00:00.000Z",
-                evidence: "Official withdrawal notice",
+                state: scenario === "reinstated" ? "reinstated" : "withdrawn",
+                effective_at: scenario === "reinstated" ? "2026-08-01T00:00:00.000Z" : "2026-07-01T00:00:00.000Z",
+                evidence:
+                  scenario === "reinstated" ? "Explicit publisher reinstatement notice" : "Official withdrawal notice",
               },
             }
           : {}),

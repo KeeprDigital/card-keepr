@@ -1,5 +1,5 @@
-SELECT CASE WHEN (SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1) = 15
-  THEN 1 ELSE json_extract('schema_level_mismatch_expected_15', '$') END;
+SELECT CASE WHEN (SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1) = 16
+  THEN 1 ELSE json_extract('schema_level_mismatch_expected_16', '$') END;
 
 -- Allocation keys locate a prior decision; entity IDs contain no source facts.
 -- These operational records are included in the complete D1 backup/restore.
@@ -82,4 +82,4 @@ CREATE INDEX revision_card_query_documents_by_order ON revision_card_query_docum
   catalogue_revision_id, sort_game, sort_identity_kind, sort_identity_value, sort_id);
 CREATE INDEX revision_card_query_documents_by_identity ON revision_card_query_documents(
   catalogue_revision_id, sort_identity_kind, sort_identity_value, sort_game, sort_id);
-UPDATE catalogue_schema_state SET migration_level = 16 WHERE singleton = 1;
+UPDATE catalogue_schema_state SET migration_level = 17 WHERE singleton = 1;

@@ -31,6 +31,8 @@ export function requiredEvidencePlans(
   supported_game: string;
   source_lineage: string;
   adapter_version: string;
+  participation?: string;
+  subset?: string;
   requests: ReturnType<typeof requiredSourceRequests>;
 }[] {
   const value = body[field];
@@ -42,8 +44,17 @@ export function requiredEvidencePlans(
       throw new AdministrationRequestProblem(422, "invalid_parameter", `${field}[${index}] must be an object.`);
     }
     const plan = item as Record<string, unknown>;
-    assertOnlyFields(plan, ["supported_game", "source_lineage", "adapter_version", "requests"]);
+    assertOnlyFields(plan, [
+      "supported_game",
+      "source_lineage",
+      "adapter_version",
+      "requests",
+      "participation",
+      "subset",
+    ]);
     return {
+      ...(plan.participation === undefined ? {} : { participation: requiredString(plan, "participation") }),
+      ...(plan.subset === undefined ? {} : { subset: requiredString(plan, "subset") }),
       supported_game: requiredString(plan, "supported_game"),
       source_lineage: requiredString(plan, "source_lineage"),
       adapter_version: requiredString(plan, "adapter_version"),

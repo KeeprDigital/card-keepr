@@ -89,7 +89,7 @@ export type ParsedReconciliationObservation = ParsedCardPrintingObservation | Pa
 
 export type Withdrawal = Readonly<{
   entity: "card" | "printing" | "card_and_printing";
-  state: "withdrawn";
+  state: "withdrawn" | "reinstated";
   effective_at: string;
   evidence: string;
 }>;
@@ -654,7 +654,7 @@ function parseWithdrawal(value: unknown, hasPrinting: boolean): Withdrawal | nul
   if (!hasPrinting && record.entity !== "card") {
     throw new Error("A Card-only observation cannot withdraw a Printing.");
   }
-  if (record.state !== "withdrawn") {
+  if (record.state !== "withdrawn" && record.state !== "reinstated") {
     throw new Error("withdrawal.state is invalid.");
   }
   const effectiveAt = requiredString(record.effective_at, "withdrawal.effective_at");
@@ -666,7 +666,7 @@ function parseWithdrawal(value: unknown, hasPrinting: boolean): Withdrawal | nul
   }
   return {
     entity: record.entity,
-    state: "withdrawn",
+    state: record.state,
     effective_at: effectiveAt,
     evidence: requiredString(record.evidence, "withdrawal.evidence"),
   };

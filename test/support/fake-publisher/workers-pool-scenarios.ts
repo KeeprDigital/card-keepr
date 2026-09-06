@@ -709,6 +709,19 @@ export const workersPoolSyntheticHostScenario: PublisherScenario = async (contex
       status: 404,
     });
   }
+  if (url.pathname === "/source-refresh-revalidated" || url.pathname === "/source-refresh-reverted") {
+    const previous = request.headers.get("if-none-match");
+    if (url.pathname === "/source-refresh-revalidated" && previous === '"refresh-A"')
+      return new Response(null, { status: 304, headers: { etag: '"refresh-A"' } });
+    const document = reconciliationSourceDocument("base", "discovery", url.href);
+    const changed = url.pathname === "/source-refresh-reverted" && previous === '"refresh-A"';
+    if (changed) {
+      for (const observation of document.cards ?? []) {
+        if ("card" in observation && observation.card) observation.card.name = "Changed publisher name";
+      }
+    }
+    return Response.json(document, { headers: { etag: changed ? '"refresh-B"' : '"refresh-A"' } });
+  }
   if (url.pathname === "/cards") {
     return new Response('{"cards":[{"card_number":"OP01-001","name":"Roronoa Zoro"}]}', {
       headers: {

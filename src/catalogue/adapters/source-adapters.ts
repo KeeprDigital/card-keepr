@@ -22,6 +22,7 @@ export type SourceAdapterRegistration = Readonly<{
   parserContract: string;
   maximumSnapshotBytes: number;
   requestCapacity: number;
+  coverageLossThreshold?: Readonly<{ absolute: number; fraction: number }>;
   origin: "production";
   requestSurface: Readonly<{ kind: "credential-free-https" }> | Readonly<{ kind: "exact-url"; url: string }>;
   reconciliationCapability: "catalogue" | "errata" | "unavailable";
@@ -191,6 +192,7 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
     Object.freeze({
       ...adapter,
       requestCapacity: sourceRequestCapacity(adapter.adapterVersion),
+      coverageLossThreshold: { absolute: 25, fraction: 0.2 },
     }),
   ),
 );

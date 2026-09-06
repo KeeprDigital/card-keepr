@@ -254,14 +254,14 @@ export function publishReconciledCardsStatement(
          ON CONFLICT (id) DO UPDATE SET
            last_observed_revision_id = excluded.last_observed_revision_id,
            withdrawn = CASE
-             WHEN reconciled_cards.withdrawn = 0 AND excluded.withdrawn = 1
-             THEN 1 ELSE reconciled_cards.withdrawn END,
+             WHEN reconciled_cards.withdrawn <> excluded.withdrawn
+             THEN excluded.withdrawn ELSE reconciled_cards.withdrawn END,
            withdrawal_revision_id = CASE
-             WHEN reconciled_cards.withdrawn = 0 AND excluded.withdrawn = 1
+             WHEN reconciled_cards.withdrawn <> excluded.withdrawn
              THEN excluded.withdrawal_revision_id
              ELSE reconciled_cards.withdrawal_revision_id END,
            withdrawal_evidence_json = CASE
-             WHEN reconciled_cards.withdrawn = 0 AND excluded.withdrawn = 1
+             WHEN reconciled_cards.withdrawn <> excluded.withdrawn
              THEN excluded.withdrawal_evidence_json
              ELSE reconciled_cards.withdrawal_evidence_json END`)
     .bind(input.revisionId, input.payload);
@@ -311,17 +311,14 @@ export function publishReconciledPrintingsStatement(
          ON CONFLICT (id) DO UPDATE SET
            last_observed_revision_id = excluded.last_observed_revision_id,
            withdrawn = CASE
-             WHEN reconciled_printings.withdrawn = 0
-                  AND excluded.withdrawn = 1
-             THEN 1 ELSE reconciled_printings.withdrawn END,
+             WHEN reconciled_printings.withdrawn <> excluded.withdrawn
+             THEN excluded.withdrawn ELSE reconciled_printings.withdrawn END,
            withdrawal_revision_id = CASE
-             WHEN reconciled_printings.withdrawn = 0
-                  AND excluded.withdrawn = 1
+             WHEN reconciled_printings.withdrawn <> excluded.withdrawn
              THEN excluded.withdrawal_revision_id
              ELSE reconciled_printings.withdrawal_revision_id END,
            withdrawal_evidence_json = CASE
-             WHEN reconciled_printings.withdrawn = 0
-                  AND excluded.withdrawn = 1
+             WHEN reconciled_printings.withdrawn <> excluded.withdrawn
              THEN excluded.withdrawal_evidence_json
              ELSE reconciled_printings.withdrawal_evidence_json END`)
     .bind(input.revisionId, input.payload);

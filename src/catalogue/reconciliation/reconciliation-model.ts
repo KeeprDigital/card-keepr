@@ -21,7 +21,7 @@ export type {
 } from "./reconciliation-observation";
 
 export type ProvenancedWithdrawal = Withdrawal & {
-  assertion: "withdrawn";
+  assertion: "withdrawn" | "reinstated";
   source_lineage: string;
   source_snapshot_id: string;
   source_observation_set_id: string;
