@@ -18,9 +18,7 @@
     "message": "Authentication error",
     "credential_has_billing_read": false
   },
-  "github_environments": [
-    "production"
-  ],
+  "github_environments": ["production"],
   "ci": {
     "run_id": "34033467488",
     "head_sha": "dc8a2a37dc87b18bc8b06e258f83ff686b9ca1c7",
@@ -33,6 +31,7 @@
   "remaining_prerequisites": [
     "refresh inventory immediately before provisioning",
     "fresh exact-commit successful CI",
+    "explicit owner architecture decision for account-wide provider token authority versus separate dev account",
     "separate dev secret files and deployment credential",
     "dev GitHub environment and scoped vars/secrets",
     "proxied dev DNS placeholder"
@@ -82,5 +81,12 @@
     "free_worker_script_limit": 100,
     "r2_buckets_after_dev": 11,
     "usable_workload_capacity_measured": false
+  },
+  "credential_scope": {
+    "deployment_token_configured": false,
+    "provider_permissions": "D1 Edit and Workers Scripts Edit are account-scoped; dev token naming is not resource scoping",
+    "shared_account_includes_production": true,
+    "owner_architecture_decision": "pending; live credential configuration blocked",
+    "source": "https://developers.cloudflare.com/fundamentals/api/reference/permissions/"
   }
 }

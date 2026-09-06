@@ -12,6 +12,18 @@ in this repository. Checkout pins the triggering run's full SHA. It never resolv
 `main` again as the deployment revision, never triggers staging, and never cancels
 an active dev deployment. CI itself remains non-mutating.
 
+GitHub documents `workflow_run`'s `GITHUB_SHA` as the last commit on the default
+branch, while `github.event.workflow_run.head_sha` identifies the triggering CI
+commit. These can differ. The job intentionally skips a stale completion when
+they differ; preparation independently requires the requested commit to equal
+both signed OIDC `sha` and `workflow_sha`. It never substitutes newer main or
+uses earlier CI to validate a newer commit. The next successful CI completion for
+the current main commit starts its own deployment. To retry while main is
+unchanged, rerun CI for that exact commit. An older commit cannot be deployed by
+rerunning CI after main has advanced. See GitHub's
+[event semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)
+and [OIDC claims](https://docs.github.com/en/actions/reference/security/oidc).
+
 The dev ingestion Worker exposes `POST /v1/dev-deployments` under its `/ingest`
 mount. Production and staging return 404. It accepts no administration key. A
 GitHub OIDC JWT must verify against GitHub's fixed JWKS URL with RS256, the dev
@@ -54,10 +66,16 @@ resets data, accepts a recovery, or approves a Catalogue Candidate.
 
 Secrets must be independently issued for dev, with minimum provider-supported
 permissions. No production credential is copied. No administration credential is
-stored in Actions. Some Cloudflare D1 management permissions are account-scoped:
-separate token values do not create a provider-enforced database security boundary.
-The exact namespace/binding guards remain necessary; a separate account is needed
-if isolation against a compromised account-scoped credential is required.
+stored in Actions. Cloudflare's
+[permissions reference](https://developers.cloudflare.com/fundamentals/api/reference/permissions/)
+defines D1 Edit and Workers Scripts Edit at account scope. A separate token on the
+existing shared account therefore has provider authority over production resources
+too; its name does not enforce a dev-only boundary. Application namespace/binding
+checks constrain this executor's requests, but cannot contain a compromised token.
+Before configuring live credentials, the owner must explicitly choose and accept
+shared-account authority or provide a separate dev account/bounded provider service.
+That architecture decision is currently pending; live credential configuration is
+blocked. No such token has been created or stored by this implementation.
 
 Dev uses `card-keepr-api-dev` and `card-keepr-ingestion-dev`, one catalogue D1 and
 one `card-keepr-disposable-verification-dev`, four `-dev` R2 buckets, four `-dev`
@@ -73,6 +91,13 @@ silently supply production bindings. Scratch deletion uses exact returned names,
 never an account-wide filter result or a configured/prior ID alone. Stale IDs may
 be absent after a previous successful cleanup; they do not authorize deletion of
 another namespace. Replacement databases are never scratch.
+
+Provisioning checks each exact dev Workflow name through the provider API and
+refuses any occupied name. Deployment repeats these lookups before mutation,
+version upload, activation and trigger updates, allowing only absent names or
+the expected dev ingestion script and class. Provider failures stop the operation.
+These observations cannot lock the provider namespace against concurrent actors;
+they do not replace the credential authority decision above.
 
 ## Capacity and first installation
 

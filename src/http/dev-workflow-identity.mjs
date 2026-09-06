@@ -87,6 +87,8 @@ export async function verifyDevWorkflow(token, githubToken, intent, now = Date.n
     denied();
   if (
     Object.keys(intent).sort().join("|") !== "ci_run_id|head_sha" ||
+    intent.head_sha !== claims.sha ||
+    intent.head_sha !== claims.workflow_sha ||
     !/^[0-9a-f]{40}$/u.test(intent.head_sha ?? "") ||
     !/^\d+$/u.test(intent.ci_run_id ?? "")
   )

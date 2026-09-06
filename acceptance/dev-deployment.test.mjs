@@ -93,7 +93,7 @@ async function fixture(t, sha = "a".repeat(40)) {
     CATALOGUE_D1_DATABASE_ID: "00000000-0000-0000-0000-000000000001",
     DISPOSABLE_D1_DATABASE_ID: "00000000-0000-0000-0000-000000000002",
   };
-  const call = async (overrides = {}, environment = env) => {
+  const call = async (overrides = {}, environment = env, intent = { head_sha: sha, ci_run_id: "123" }) => {
     const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
     const message = `${encode({ alg: "RS256", typ: "JWT", kid: "synthetic" })}.${encode({ ...claims, ...overrides })}`;
     const signature = Buffer.from(
@@ -103,7 +103,7 @@ async function fixture(t, sha = "a".repeat(40)) {
       new Request(devAudience, {
         method: "POST",
         headers: { authorization: `Bearer ${message}.${signature}`, "x-github-token": "synthetic-github-token" },
-        body: JSON.stringify({ head_sha: sha, ci_run_id: "123" }),
+        body: JSON.stringify(intent),
       }),
       environment,
     );
@@ -193,4 +193,21 @@ test("owner first install uses the canonical preparation transaction on an unuse
   assert.equal(JSON.parse(prepared.prepared_plan_json).expected_head_sha, head);
   assert.equal(prepared.environment, "dev");
   await assert.rejects(prepareFirstDevInstall(input), /first_install_requires_unused_dev_baseline/u);
+});
+
+test("a signed dev run cannot substitute another independently passing main commit", async (t) => {
+  const { call, env, checks } = await fixture(t);
+  const older = "b".repeat(40);
+  for (const check of checks) check.head_sha = older;
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    const response = await original(url, options);
+    if (String(url).endsWith("/actions/runs/123"))
+      return Response.json({ ...(await response.json()), head_sha: older });
+    return response;
+  };
+  await assert.rejects(
+    call({}, env, { head_sha: older, ci_run_id: "123" }),
+    (error) => error.code === "invalid_dev_workflow_attestation",
+  );
 });

@@ -6,6 +6,7 @@ import { verifyDevCapacity } from "./dev-capacity.mjs";
 import { devConfigurations } from "./dev-environment.mjs";
 import { verifyDevCommit } from "../src/http/dev-workflow-identity.mjs";
 import { environmentNames } from "../src/http/environment-target.mjs";
+import { verifyDevWorkflows } from "./dev-workflows.mjs";
 
 /** Provision only new dev resources; never adopt, delete or reset an existing target. */
 export async function provisionDev(environment, evidence, apply = false) {
@@ -56,6 +57,7 @@ export async function provisionDev(environment, evidence, apply = false) {
   )
     throw new Error("dev_resources_already_exist_review_receipt");
   const plan = { ...checked, names, observed_at: new Date().toISOString(), created: [] };
+  await verifyDevWorkflows(environment, { mustBeAbsent: true });
   if (!apply) return plan;
   const secretFiles = [environment.DEV_API_SECRETS_FILE, environment.DEV_INGESTION_SECRETS_FILE];
   const expectedSecrets = [

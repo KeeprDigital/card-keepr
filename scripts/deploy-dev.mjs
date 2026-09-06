@@ -14,6 +14,7 @@ import {
   observeCatalogueBindings,
 } from "./production-release-provider.mjs";
 import { runBootstrapSmoke, runProductionSmoke } from "./production-smoke.mjs";
+import { verifyDevWorkflows } from "./dev-workflows.mjs";
 
 /** Shared guarded executor for initial installation and automatic dev updates. */
 export async function deployDev(input) {
@@ -23,6 +24,7 @@ export async function deployDev(input) {
   if (head !== environment.EXPECTED_HEAD_SHA) throw new Error("dev_checkout_mismatch");
   await verifyDevCommit(environment.GH_TOKEN, { head_sha: head, ci_run_id: environment.CI_RUN_ID });
   await verifyProductionTarget(environment);
+  await verifyDevWorkflows(environment);
   const directory = await mkdtemp(join(tmpdir(), "keepr-dev-release-"));
   await validateDispatchAndWriteSql(environment, directory);
   const sql = (name) =>
@@ -56,6 +58,7 @@ export async function deployDev(input) {
       { name: "card-keepr-api-dev", app: "api" },
       { name: "card-keepr-ingestion-dev", app: "ingestion" },
     ];
+    await verifyDevWorkflows(environment);
     for (const worker of workers) {
       const config = `apps/${worker.app}/wrangler.dev.json`;
       const tag = `release-${environment.RELEASE_ID}-${worker.app}`;
@@ -77,6 +80,7 @@ export async function deployDev(input) {
         RELEASE_WORKER_CONFIG: config,
       });
     }
+    await verifyDevWorkflows(environment);
     requireResult(await sql("deploying"), "transitioned");
     for (const worker of workers) {
       const config = `apps/${worker.app}/wrangler.dev.json`;
@@ -90,6 +94,7 @@ export async function deployDev(input) {
         `release-${environment.RELEASE_ID}-${worker.app}@100%`,
       ]);
     }
+    await verifyDevWorkflows(environment);
     for (const worker of workers)
       await wrangler(["triggers", "deploy", "--config", `apps/${worker.app}/wrangler.dev.json`]);
     const binding = await observeCatalogueBindings(environment);
