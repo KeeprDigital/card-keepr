@@ -18,9 +18,9 @@ export class ReconciliationInputStorageError extends Error {
     this.name = "ReconciliationInputStorageError";
   }
 }
-async function storage<T>(operation: Promise<T>): Promise<T> {
+async function storage<T>(operation: () => Promise<T>): Promise<T> {
   try {
-    return await operation;
+    return await operation();
   } catch (cause) {
     throw new ReconciliationInputStorageError(cause);
   }
@@ -71,8 +71,10 @@ export async function retainVerifiedReconciliationInput(
   };
   const retain = async (kind: string, content: string) => {
     const sha256 = await sha256Text(content);
-    await storage(insertReconciliationInputPartitionStatement(database, runId, ordinal, kind, content, sha256).run());
-    const retained = await storage(
+    await storage(() =>
+      insertReconciliationInputPartitionStatement(database, runId, ordinal, kind, content, sha256).run(),
+    );
+    const retained = await storage(() =>
       reconciliationInputPartitionStatement(database, runId, ordinal).first<{
         kind: string;
         content: string;
@@ -88,7 +90,7 @@ export async function retainVerifiedReconciliationInput(
     const [kind, records] = groups[kindIndex]!;
     if (kind === "observations") {
       for (;;) {
-        const page = await storage(
+        const page = await storage(() =>
           normalizedObservationPageStatement(database, runId, afterObservationId).all<{
             observation_id: string;
             content: string;
@@ -113,7 +115,7 @@ export async function retainVerifiedReconciliationInput(
     }
     await save(kindIndex + 1);
   }
-  await storage(sealReconciliationInputStatement(database, runId, digest, ordinal).run());
+  await storage(() => sealReconciliationInputStatement(database, runId, digest, ordinal).run());
   await save(groups.length, true);
 }
 
@@ -134,7 +136,7 @@ export async function readVerifiedReconciliationInput(
   runId: string,
   yieldAtCheckpoint = false,
 ): Promise<Record<string, unknown> | null> {
-  const manifest = await storage(
+  const manifest = await storage(() =>
     reconciliationInputManifestStatement(database, runId).first<{ input_manifest_digest: string | null }>(),
   );
   if (!manifest?.input_manifest_digest) return null;
@@ -165,7 +167,7 @@ export async function readVerifiedReconciliationInput(
   };
   if (!checkpoint?.value.complete) {
     for (; ; ordinal++) {
-      const partition = await storage(
+      const partition = await storage(() =>
         reconciliationInputPartitionStatement(database, runId, ordinal).first<{
           kind: string;
           content: string;
@@ -217,7 +219,7 @@ export async function* verifiedReconciliationRecords<T>(
 ): AsyncGenerator<T> {
   let after = -1;
   for (;;) {
-    const partition = await storage(
+    const partition = await storage(() =>
       nextReconciliationInputKindStatement(database, runId, kind, after).first<{
         ordinal: number;
         content: string;

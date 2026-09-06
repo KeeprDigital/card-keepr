@@ -1570,6 +1570,7 @@ const retainedStateNamespaces = [
   "initial_evidence_metadata",
   "gundam_graph_header",
   "immutable_request_ids",
+  "input_observation_page",
 ];
 test.each(retainedStateNamespaces)(
   "a %s storage outage resumes retained identities and effective rules text",
@@ -1611,7 +1612,18 @@ test.each(retainedStateNamespaces)(
     };
     const database = new Proxy(testEnv.CATALOGUE_DB, {
       get(target, property) {
-        if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
+        if (property === "prepare")
+          return (sql: string) => {
+            if (
+              unavailable &&
+              namespace === "input_observation_page" &&
+              sql.includes("WITH RECURSIVE page(observation_id")
+            ) {
+              failures++;
+              throw new Error("Injected synchronous input page storage outage");
+            }
+            return wrap(target.prepare(sql), sql);
+          };
         if (property === "batch")
           return (batch: D1PreparedStatement[]) => {
             if (
