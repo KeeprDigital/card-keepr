@@ -55,6 +55,7 @@ export {
   assertIdentifier,
   type EvidenceHostWorkflowParams,
   type EvidenceParentWorkflowParams,
+  isOptionalSourceOutage,
   type EvidencePlan,
   type EvidencePlanRequest,
   type OfficialSourceCollectionPlan,

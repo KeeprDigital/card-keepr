@@ -230,13 +230,15 @@ export const documentSchemas = {
   stringRecord,
   evidencePlan: object(
     {
+      participation: { enum: ["required", "optional"] },
+      coverage: object({ locale: { const: "en" }, area: string, subset: { const: "complete" } }),
       supported_game: string,
       source_lineage: string,
       game_profile_version: string,
       adapter_version: string,
       requests: array(evidenceRequest),
     },
-    undefined,
+    ["supported_game", "source_lineage", "game_profile_version", "adapter_version", "requests"],
     true,
   ),
 };

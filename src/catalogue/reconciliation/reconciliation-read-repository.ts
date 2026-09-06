@@ -37,14 +37,14 @@ export function currentPrintingMembershipsStatement(database: CatalogueStore): D
 export function currentCardWithdrawalEvidenceStatement(database: CatalogueStore): D1PreparedStatement {
   return repositoryStatements(database).prepare(`SELECT id, withdrawal_evidence_json
            FROM reconciled_cards
-           WHERE withdrawn = 1
+           WHERE withdrawal_evidence_json IS NOT NULL
            ORDER BY id`);
 }
 
 export function currentPrintingWithdrawalEvidenceStatement(database: CatalogueStore): D1PreparedStatement {
   return repositoryStatements(database).prepare(`SELECT id, withdrawal_evidence_json
            FROM reconciled_printings
-           WHERE withdrawn = 1
+           WHERE withdrawal_evidence_json IS NOT NULL
            ORDER BY id`);
 }
 

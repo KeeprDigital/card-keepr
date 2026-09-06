@@ -22,6 +22,20 @@ const parseCardSourceDocument = (document: unknown): readonly unknown[] => {
 export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[] = Object.freeze(
   [
     {
+      adapterVersion: "fixture-one-piece-refresh-errata@1",
+      sourceLineage: "one-piece-en",
+      supportedGame: "one-piece",
+      gameProfileVersion: "one-piece@1",
+      parserContract: "synthetic-official-errata-fixture@1",
+      maximumSnapshotBytes: 1024 * 1024,
+      origin: "production" as const,
+      requestSurface: { kind: "credential-free-https" as const },
+      reconciliationCapability: "errata" as const,
+      requiredSurfaces: ["errata"],
+      requestUrlForSurface: () => "https://official-source.invalid/reconciliation/source-refresh-empty-errata",
+      parse: parseCardSourceDocument,
+    },
+    {
       adapterVersion: "fixture-one-piece-official-errata-json@1",
       sourceLineage: "one-piece-en",
       supportedGame: "one-piece",
@@ -76,6 +90,13 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
     // behaviours (byte cap, request capacity), not versions. Every fixture
     // shares the card-content parser contract.
     ...[
+      {
+        adapterVersion: "fixture-limitless-json@1",
+        sourceLineage: "limitless-one-piece-en",
+        supportedGame: "one-piece",
+        gameProfileVersion: "one-piece@1",
+        parserContract: "synthetic-fixture-card-document@2",
+      },
       {
         adapterVersion: "fixture-one-piece-json@3",
         sourceLineage: "one-piece-en",
@@ -137,6 +158,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
   ].map((adapter) =>
     Object.freeze({
       ...adapter,
+      coverageLossThreshold: { absolute: 25, fraction: 0.2 },
       requestCapacity: adapter.adapterVersion === "fixture-fusion-world-json-large@1" ? 15_000 : 5_000,
     }),
   ),
