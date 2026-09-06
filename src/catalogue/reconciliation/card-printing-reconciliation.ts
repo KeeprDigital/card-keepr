@@ -39,8 +39,10 @@ import {
   type CatalogueErratum,
   type CataloguePrinting,
   type CataloguePrintingImage,
+  type CatalogueProduct,
+  type CatalogueDistributionContext,
+  type ProductRelationship,
   type CatalogueStore,
-  type CuratedProvenance,
   canonicalJson,
   catalogueCandidateContract,
   type IngestionRunState,
@@ -56,7 +58,7 @@ import {
   identifyRulesTextErrata,
   mergeCatalogueErrata,
 } from "./errata-rules-text";
-import { type ProductReleaseEvidenceInput, type reconcileProductReleaseCatalogue } from "./product-release-catalogue";
+import { type ProductReleaseEvidenceInput } from "./product-release-catalogue";
 import { reconcileProductReleaseState } from "./product-release-state";
 import {
   failReconciliation,
@@ -186,6 +188,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   const priorPrintings = new ReconciliationReducerIndex<CataloguePrinting>(database, runId, "prior_printings");
   const printingImages = new ReconciliationReducerIndex<CataloguePrintingImage>(database, runId, "printing_images");
   const selectedGames = JSON.parse(run.selected_games_json) as SupportedGame[];
+  const priorProducts = new ReconciliationCandidateState(database, runId, "prior_products");
   const priorCandidate = await candidateAtRevision(database, run.expected_current_revision_id, selectedGames, {
     card: async (card) => {
       if (selectedGames.includes(card.game)) restoreCuratedEntitySourceFields(card);
@@ -200,6 +203,26 @@ export async function reconcileRetainedCardPrintingEvidence(
     },
     image: async (image) => {
       await printingImages.seed(image.id, image);
+    },
+    product: async (product) => {
+      if (selectedGames.includes(product.game)) {
+        restoreCuratedEntitySourceFields(product);
+        for (const release of product.releases) restoreCuratedEntitySourceFields(release);
+      }
+      await priorProducts.set("products", product);
+    },
+    context: async (context) => {
+      if (selectedGames.includes(context.game)) restoreCuratedEntitySourceFields(context);
+      await priorProducts.set("distribution_contexts", context);
+    },
+    relationship: async (relationship) => {
+      if (selectedGames.includes(relationship.game)) {
+        if (relationship.evidence_category === "curated") return;
+        const reviewed = relationship.curated_provenance?.at(-1)?.reviewed_source_value;
+        delete relationship.curated_provenance;
+        if (reviewed === "present" || reviewed === "absent") relationship.observed = reviewed === "present";
+      }
+      await priorProducts.set("product_relationships", relationship);
     },
   });
   const sourceMappings: SourceMapping[] = [];
@@ -1114,11 +1137,9 @@ export async function reconcileRetainedCardPrintingEvidence(
     ...(await publishedWithdrawalConflictDiagnostics(database, plans)),
   );
 
-  let productCatalogue: Awaited<ReturnType<typeof reconcileProductReleaseCatalogue>> = {
-    products: [...(priorCandidate?.products ?? [])],
-    observedProducts: [],
-    distribution_contexts: [...(priorCandidate?.distribution_contexts ?? [])],
-    product_relationships: [...(priorCandidate?.product_relationships ?? [])],
+  let productCatalogue = {
+    draft: priorProducts,
+    observedProducts: [] as { id: string }[],
     productSurfaceObserved: false,
     warnings: [] as Record<string, unknown>[],
   };
@@ -1145,12 +1166,10 @@ export async function reconcileRetainedCardPrintingEvidence(
           };
         }
       }
-      const reconciled = await reconcileProductReleaseState(database, runId, productCatalogue, inputs(), game);
+      const reconciled = await reconcileProductReleaseState(database, runId, productCatalogue.draft, inputs(), game);
       productCatalogue = {
-        products: reconciled.products,
+        draft: reconciled.draft,
         observedProducts: [...productCatalogue.observedProducts, ...reconciled.observedProducts],
-        distribution_contexts: reconciled.distribution_contexts,
-        product_relationships: reconciled.product_relationships,
         productSurfaceObserved: productCatalogue.productSurfaceObserved || reconciled.productSurfaceObserved,
         warnings: [...productCatalogue.warnings, ...reconciled.warnings],
       };
@@ -1170,7 +1189,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     });
   }
   const errata = mergeCatalogueErrata(priorCandidate?.errata ?? [], observedErrata);
-  const official = new ReconciliationCandidateState(database, runId, "before_curated");
+  const official = new ReconciliationCandidateState(database, runId, "before_curated", productCatalogue.draft);
   for await (const card of cards.values()) {
     await official.set(
       "cards",
@@ -1218,19 +1237,9 @@ export async function reconcileRetainedCardPrintingEvidence(
     cards: [],
     printings: [],
     printing_images: [],
-    products: productCatalogue.products.map((product) => ({
-      ...omitUndefinedCuratedProvenance(product),
-      releases: product.releases.map(omitUndefinedCuratedProvenance),
-    })),
-    distribution_contexts: productCatalogue.distribution_contexts.map(omitUndefinedCuratedProvenance),
-    product_relationships: productCatalogue.product_relationships.map((relationship) => {
-      const sanitized = omitUndefinedCuratedProvenance(relationship);
-      const { source_lineage: lineage, ...facts } = sanitized;
-      return {
-        ...facts,
-        ...(lineage === undefined ? {} : { source_lineage: lineage }),
-      };
-    }),
+    products: [],
+    distribution_contexts: [],
+    product_relationships: [],
     card_observed_games: [...cardCheckTimes.keys()].sort(),
     product_observed_games: [...observedProductGames].sort(),
     product_observed_lineages: [...observedProductLineages].sort(),
@@ -1254,13 +1263,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   };
 
   candidate = omitUndefinedValues(candidate) as CatalogueCandidate;
-  await official.seed(candidate, [
-    "products",
-    "distribution_contexts",
-    "product_relationships",
-    "errata",
-    "identity_corrections",
-  ]);
+  await official.seed(candidate, ["errata", "identity_corrections"]);
   const cardPrintingPlans = plans.filter((plan) => plan.observationKind === "card_printing");
   const groupedMemberships = mergedPlanMemberships(cardPrintingPlans);
   const errataOnlyEvidence = retained.evidencePlans.every(
@@ -1570,6 +1573,9 @@ async function candidateAtRevision(
     card: (card: CatalogueCard) => Promise<void>;
     printing: (printing: CataloguePrinting) => Promise<void>;
     image: (image: CataloguePrintingImage) => Promise<void>;
+    product: (product: CatalogueProduct) => Promise<void>;
+    context: (context: CatalogueDistributionContext) => Promise<void>;
+    relationship: (relationship: ProductRelationship) => Promise<void>;
   },
 ): Promise<CatalogueCandidate | null> {
   const row = await candidateAtRevisionStatement(database, revisionId).first<{
@@ -1593,6 +1599,12 @@ async function candidateAtRevision(
         await seed.printing(member.value as CataloguePrinting);
       } else if (member.key === "printing_images" && member.array) {
         await seed.image(member.value as CataloguePrintingImage);
+      } else if (member.key === "products" && member.array) {
+        await seed.product(member.value as CatalogueProduct);
+      } else if (member.key === "distribution_contexts" && member.array) {
+        await seed.context(member.value as CatalogueDistributionContext);
+      } else if (member.key === "product_relationships" && member.array) {
+        await seed.relationship(member.value as ProductRelationship);
       } else if (member.array) {
         (values[member.key] as unknown[]).push(member.value);
       } else {
@@ -1880,18 +1892,6 @@ function semanticCatalogueCandidate(candidate: CatalogueCandidate): Record<strin
     ),
     errata: (candidate.errata ?? []).map((erratum) => JSON.parse(canonicalErratum(erratum))),
   };
-}
-
-function omitUndefinedCuratedProvenance<
-  T extends {
-    curated_provenance?: readonly CuratedProvenance[];
-  },
->(value: T): T {
-  const { curated_provenance: provenance, ...facts } = value;
-  return {
-    ...facts,
-    ...(Array.isArray(provenance) ? { curated_provenance: provenance } : {}),
-  } as T;
 }
 
 function omitUndefinedValues(value: unknown): unknown {

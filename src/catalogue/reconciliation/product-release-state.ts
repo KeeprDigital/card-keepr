@@ -6,11 +6,11 @@ import {
   type ProductSourceObservation,
   type SupportedGame,
 } from "../shared";
+import { ReconciliationCandidateState } from "./reconciliation-candidate-state";
 import { canonicalValueChunks } from "./reconciliation-preparation";
 import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
 import {
   type ProductReleaseEvidenceInput,
-  type reconcileProductReleaseCatalogue,
   aggregateContexts,
   aggregateRelationships,
   normalizedProductName,
@@ -26,10 +26,11 @@ type ProductGroup = { id: string; observations: ProductSourceObservation[] };
 export async function reconcileProductReleaseState(
   database: CatalogueStore,
   runId: string,
-  prior: Parameters<typeof reconcileProductReleaseCatalogue>[0],
+  prior: ReconciliationCandidateState,
   inputs: AsyncIterable<ProductReleaseEvidenceInput>,
   game: SupportedGame,
-): Promise<Awaited<ReturnType<typeof reconcileProductReleaseCatalogue>> & { checkedLineages: string[] }> {
+) {
+  const result = new ReconciliationCandidateState(database, runId, `product_result_${game}`, prior);
   const index = <T>(name: string, group?: (value: T) => string) =>
     new ReconciliationReducerIndex<T>(database, runId, `${name}_${game}`, group);
   const names = index<CatalogueProduct>("prior_product_names", (product) => normalizedProductName(product.name) ?? "");
@@ -39,15 +40,15 @@ export async function reconcileProductReleaseState(
   const groups = index<ProductGroup>("product_observations");
   const contexts = index<CatalogueDistributionContext>("product_contexts");
   const relationships = index<ProductRelationship>("product_relationships");
-  for (const product of prior?.products ?? []) {
+  for await (const product of prior.values("products")) {
     if (product.game !== game) continue;
     await names.seed(product.id, product);
     await codes.seed(product.id, product);
   }
   names.beginObservation();
   codes.beginObservation();
-  for (const context of prior?.distribution_contexts ?? []) await priorContexts.seed(context.id, context);
-  for (const relationship of prior?.product_relationships ?? [])
+  for await (const context of prior.values("distribution_contexts")) await priorContexts.seed(context.id, context);
+  for await (const relationship of prior.values("product_relationships"))
     await priorRelationships.seed(relationship.id, relationship);
   const checkedLineages = new Set<string>();
   const warnings: Record<string, unknown>[] = [];
@@ -92,11 +93,9 @@ export async function reconcileProductReleaseState(
     }
   }
   const productSurfaceObserved = checkedLineages.size > 0;
-  const products: CatalogueProduct[] = [];
-  const observedProducts: CatalogueProduct[] = [];
-  for (const product of prior?.products ?? []) {
+  const observedProducts: { id: string }[] = [];
+  for await (const product of prior.values("products")) {
     if (product.game !== game) {
-      products.push(product);
       continue;
     }
     const current = await groups.get(product.id);
@@ -107,9 +106,9 @@ export async function reconcileProductReleaseState(
     ];
     await assertProductGroupBudget(observations);
     const resolved = observations.length > 0 ? resolveProduct(observations, game) : product;
-    const result = { ...resolved, observed: current !== undefined };
-    products.push(result);
-    if (current) observedProducts.push(result);
+    const productResult = { ...resolved, observed: current !== undefined };
+    await result.set("products", productResult);
+    if (current) observedProducts.push({ id: productResult.id });
     else if (productSurfaceObserved && retained.some(({ evidence }) => checkedLineages.has(evidence.source))) {
       warnings.push({
         code: "product_not_observed",
@@ -126,11 +125,10 @@ export async function reconcileProductReleaseState(
   for await (const group of groups.latestValues()) {
     if (await names.has(group.id)) continue;
     const product = resolveProduct(group.observations, game);
-    products.push(product);
-    observedProducts.push(product);
+    await result.set("products", product);
+    observedProducts.push({ id: product.id });
   }
-  const distributionContexts: CatalogueDistributionContext[] = [];
-  for (const context of prior?.distribution_contexts ?? []) {
+  for await (const context of prior.values("distribution_contexts")) {
     let preserved = context;
     if (context.game === game && productSurfaceObserved && context.source_lineages !== undefined) {
       const lineages = context.source_lineages.filter((lineage) => !checkedLineages.has(lineage));
@@ -138,23 +136,26 @@ export async function reconcileProductReleaseState(
     }
     const current = await contexts.get(context.id);
     const merged = aggregateContexts(current ? [preserved, current] : [preserved])[0]!;
-    distributionContexts.push({
+    await result.set("distribution_contexts", {
       ...merged,
       observed: current !== undefined || (merged.source_lineages?.length ?? 0) > 0,
     });
   }
   for await (const context of contexts.latestValues()) {
-    if (!(await priorContexts.has(context.id))) distributionContexts.push({ ...context, observed: true });
+    if (!(await priorContexts.has(context.id)))
+      await result.set("distribution_contexts", { ...context, observed: true });
   }
-  const productRelationships: ProductRelationship[] = [];
-  for (const relationship of prior?.product_relationships ?? []) {
+  for await (const relationship of prior.values("product_relationships")) {
     const current = await relationships.get(relationship.id);
     if (current) {
-      productRelationships.push(current);
+      await result.set("product_relationships", current);
       continue;
     }
-    if (relationship.evidence_category === "curated") continue;
-    productRelationships.push({
+    if (relationship.evidence_category === "curated") {
+      await result.delete("product_relationships", relationship.id);
+      continue;
+    }
+    await result.set("product_relationships", {
       ...relationship,
       observed:
         relationship.game === game &&
@@ -166,14 +167,12 @@ export async function reconcileProductReleaseState(
     });
   }
   for await (const relationship of relationships.latestValues()) {
-    if (!(await priorRelationships.has(relationship.id))) productRelationships.push(relationship);
+    if (!(await priorRelationships.has(relationship.id))) await result.set("product_relationships", relationship);
   }
   const byId = (left: { id: string }, right: { id: string }) => left.id.localeCompare(right.id);
   return {
-    products: products.sort(byId),
+    draft: result,
     observedProducts: observedProducts.sort(byId),
-    distribution_contexts: distributionContexts.sort(byId),
-    product_relationships: productRelationships.sort(byId),
     productSurfaceObserved,
     warnings,
     checkedLineages: [...checkedLineages],
