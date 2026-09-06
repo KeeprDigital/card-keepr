@@ -38,6 +38,31 @@ async function refresh(plans: ReturnType<typeof sourcePlan>[]) {
 }
 
 test("official-only and optional-outage refreshes preserve accepted supplemental Printings and their check dates", async () => {
+  const intake = await refresh([
+    sourcePlan("one-piece-en", "base"),
+    sourcePlan("limitless-one-piece-en", "source-refresh-supplemental"),
+  ]);
+  // A supplemental source that is not designated authority requires owner admission.
+  expect(
+    (
+      await administrationRequest(`/v1/ingestion-runs/${intake.id}/rejection`, "POST", {
+        candidate_digest: intake.result.document.candidate_digest,
+        idempotency_key: "inspect-supplemental-intake",
+      })
+    ).status,
+  ).toBe(200);
+  const proposals = await get("/v1/entity-proposals?game=one-piece");
+  const proposal = (proposals.document.proposals as { id: string }[])[0]!;
+  expect(
+    (
+      await administrationRequest(`/v1/entity-proposals/${proposal.id}/decisions`, "POST", {
+        action: "admit",
+        expected_generation: "0",
+        rationale: "Owner reviewed retained synthetic supplemental evidence",
+        idempotency_key: "admit-supplemental-refresh-fixture",
+      })
+    ).status,
+  ).toBe(200);
   const initial = await refresh([
     sourcePlan("one-piece-en", "base"),
     sourcePlan("limitless-one-piece-en", "source-refresh-supplemental"),
