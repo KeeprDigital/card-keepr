@@ -54,8 +54,9 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
     envFile: ingestionEnv,
     statePath,
   });
+  let api;
   t.after(async () => {
-    await Promise.all([stopWorker(source), stopWorker(ingestion)]);
+    await Promise.all([stopWorker(source), stopWorker(ingestion), ...(api ? [stopWorker(api)] : [])]);
     await rm(directory, { recursive: true, force: true });
   });
   await Promise.all([
@@ -165,12 +166,11 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
   const revisionId = JSON.parse(errataApproved.stdout).resulting_revision_id;
   await stopWorker(ingestion);
 
-  const api = await startWorker({
+  api = await startWorker({
     config: "apps/api/wrangler.jsonc",
     envFile: apiEnv,
     statePath,
   });
-  t.after(() => stopWorker(api));
   await waitForHealth(`${api.url}/health`, apiKey, api);
   const [cards, printings, images, products, releases, errata] = await Promise.all(
     ["cards", "printings", "printing-images", "products", "releases", "errata"].map((component) =>
