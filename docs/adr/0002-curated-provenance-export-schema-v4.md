@@ -33,3 +33,7 @@ objects. Consumers must support major 4 before reading newly published exports,
 while retained historical evidence remains verifiable against the original
 major-3 schema bytes even if an authorized deletion has retired the package's
 R2 objects.
+
+## Amendment: consumer evidence boundary
+
+[ADR 0013](0013-consumer-facts-and-complete-administrative-review.md) supersedes the requirement to expose supporting source or curated provenance in consumer exports. Evidence remains retained for administration and recovery; truthful catalogue facts and explicit unknowns remain in the consumer contract. This is a planning decision for the pre-Go-Live contract replacement, not an implemented schema change.

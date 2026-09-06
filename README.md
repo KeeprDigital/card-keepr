@@ -1,5 +1,7 @@
 # Card Keepr
 
+The planned pre-Go-Live scope excludes tournament eligibility, ban lists, FAQs and rulings, while retaining printed card text and publisher corrections; see [ADR 0014](docs/adr/0014-card-content-without-tournament-eligibility.md). Legality behavior and tests described below still exist in the current implementation and are scheduled for removal through the specification handoff.
+
 Card Keepr is a private catalogue service for Bandai Catalogue Data. This first
 production spine runs two separately configured Cloudflare Workers:
 

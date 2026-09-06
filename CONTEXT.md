@@ -1,19 +1,23 @@
 # Card Catalogue
 
-Card Keepr describes Bandai card games and their published cards in a form that can be consumed consistently across personal applications.
+Card Keepr describes real cards across publishers and sources in a form that can be consumed consistently across personal applications.
 
 ## Language
 
 **Supported Game**:
-A Bandai card game included in the catalogue. The initial set is One Piece Card Game, Dragon Ball Super Card Game Fusion World, Digimon Card Game, and Gundam Card Game.
+A card game included in the catalogue, regardless of publisher.
 _Avoid_: Franchise, title
 
+**Publisher**:
+An organization that publishes a Supported Game. A Source operator or distribution partner is not necessarily its Publisher.
+_Avoid_: Source, Source Authority
+
 **Catalogue Consumer**:
-An application or automation owned by the catalogue’s owner that reads card data. Third-party users and anonymous public clients are not Catalogue Consumers.
+An application or automation owned by the catalogue’s owner that reads card data, including catalogue and inventory management systems that reference individual Printings. Third-party users and anonymous public clients are not Catalogue Consumers.
 _Avoid_: Customer, public API user
 
 **Supported Locale**:
-An English-language edition represented by Bandai’s official English or Oceania catalogue sources. Non-English editions are outside the initial catalogue.
+An English-language edition represented in the catalogue, independently of its Source, release region or play format. Non-English editions are outside the initial catalogue.
 _Avoid_: Translation
 
 **Catalogue Data**:
@@ -21,19 +25,31 @@ Published facts about Supported Games, their cards, and related official release
 _Avoid_: Collection data, inventory
 
 **Game Profile**:
-A versioned schema for rules-relevant, game-specific Catalogue Data that does not expose an Official Source’s presentation or scraper shape.
+A shared schema defining the shape and meaning of a Supported Game’s rules-relevant Catalogue Data independently of any Source’s presentation; all sources for the game map to the applicable profile. Its definitions evolve with game content and field meanings, with one definition edited in place before Go-Live and explicitly versioned definitions from Go-Live.
 _Avoid_: Source schema, adapter payload
 
+**Source**:
+An identifiable origin of evidence about real cards, including publisher publications, supplemental catalogues and owner-supplied evidence. Its origin is distinct from its authority over Catalogue Data.
+_Avoid_: Canonical fact, authority
+
 **Official Source**:
-A Bandai-owned publication from which Catalogue Data is obtained. It is the catalogue’s normal authority.
+A publisher-owned publication from which evidence about its cards is obtained. Official ownership does not automatically supersede a selected Source Authority.
 _Avoid_: Community database, marketplace listing
 
+**Source Authority**:
+An owner-designated Source for a Supported Game’s card facts, printing details or corrected card content within the applicable locale and release region. Designation is separate from publisher confirmation and remains in effect until the owner explicitly changes it.
+_Avoid_: Official Source, trust score, contributor
+
 **Source Lineage**:
-The stable identity of one Official Source across dated captures and compatible Source Adapter Versions. It distinguishes independently published regional or game sources without treating each URL or response as a new source.
+The stable identity of one Source across dated captures and compatible Source Adapter Versions. It distinguishes independently published regional or game sources without treating each URL or response as a new source.
 _Avoid_: Request URL, Source Snapshot, hostname
 
+**Source Coverage**:
+The declared area of a Source represented by a check, including its applicable Supported Game, locale and any bounded subset. Completeness establishes that this declared scope was successfully checked at a stated time, not that every real Card or Printing in the game is represented.
+_Avoid_: Game completeness, all cards
+
 **Source Adapter Version**:
-A parser contract registered to exactly one Source Lineage, Supported Game, and Game Profile. From Go-Live it is immutable and a new version may reparse retained Source Snapshots without changing their captured bytes; before Go-Live each Source Lineage has exactly one, edited in place.
+A parser contract registered to exactly one Source Lineage, Supported Game, and Game Profile. From Go-Live it is immutable and advances by registration; before Go-Live each Source Lineage has exactly one, edited in place.
 _Avoid_: Generic parser name, mutable scraper, Source schema
 
 **Go-Live**:
@@ -49,7 +65,7 @@ The bound each exact Source Adapter Version owns on the unique source request id
 _Avoid_: Cloudflare platform limit, mutable quota, rate limit
 
 **Capacity Pause**:
-The non-terminal paused condition an Ingestion Run enters when admitting a dynamically discovered request batch would exceed its Request Capacity. Every retained observation, pending Source Request, the single active-run reservation, and the run identity survive unchanged, and the run cannot parse, reconcile, await approval, or publish until the owner acts. It records nothing as failed and is distinct from a Cloudflare Workflow instance's own paused status.
+The non-terminal paused condition an Ingestion Run enters when admitting a dynamically discovered request batch would exceed its Request Capacity. Every retained observation, pending Source Request, the run's collection reservation, and the run identity survive unchanged, and the run cannot parse, reconcile, await approval, or publish until the owner acts. It records nothing as failed and is distinct from a Cloudflare Workflow instance's own paused status.
 _Avoid_: Failed run, cancelled run, Workflow instance pause
 
 **Capacity Extension**:
@@ -69,7 +85,7 @@ The non-terminal paused condition an Ingestion Run enters when its collection Wo
 _Avoid_: Failed run, Capacity Pause, Retry Pause, Workflow instance pause
 
 **Collection Termination**:
-The owner's explicit, idempotent decision to abandon a paused Ingestion Run. It is the only path from paused to terminal: the run keeps every retained observation, pause record, and Workflow Attempt as audit evidence, can never resume, extend capacity, parse, reconcile, or publish, and releases the single active-run reservation so a new Ingestion Run may start.
+The owner's explicit, idempotent decision to abandon a paused Ingestion Run. It is the only path from paused to terminal: the run keeps every retained observation, pause record, and Workflow Attempt as audit evidence, can never resume, extend capacity, parse, reconcile, or publish, and releases that run's collection reservation.
 _Avoid_: Cancelled run, deleted run, Workflow instance termination, linked retry
 
 **Curated Revision**:
@@ -77,27 +93,31 @@ An immutable owner-authored correction or supplement applied exceptionally durin
 _Avoid_: Silent override, scrape fix, Curated Revision Proposal
 
 **Curated Revision Proposal**:
-The owner-authored request for a Curated Revision: the Supported Game, the exact field or relationship it targets, the asserted value or presence, the rationale, the retained evidence it cites, its effective interval, and the Official Source state the owner reviewed. It is validated against the current Catalogue Revision and becomes a Curated Revision only when created exactly as validated; it is never edited in place and is not itself part of any Catalogue Revision.
+The owner-authored request for a Curated Revision: the Supported Game, the exact field or relationship it targets, the asserted value or presence, the rationale, the retained evidence it cites, its effective interval, and the Official Source state the owner reviewed. It is validated against that game's current Game Catalogue Revision and becomes a Curated Revision only when created exactly as validated; it is never edited in place and is not itself part of any Catalogue Revision.
 _Avoid_: Curated Revision, patch, override, Catalogue Candidate
 
 **Card**:
-A rules-level game piece normally identified within a Supported Game by its official card number. The unnumbered One Piece DON!! Card is identified by its official functional designation. A Card may have multiple Printings.
-_Avoid_: Artwork variant, physical copy
+A rules-level game piece representing a real card, with equivalence defined by its Supported Game's Game Profile rather than functional similarity or publisher number alone. A Card may have multiple Printings; original or custom creations are excluded regardless of how a record enters the catalogue.
+_Avoid_: Artwork variant, physical copy, custom card
+
+**Entity Proposal**:
+A retained proposal to add a real Card or Printing, holding its evidence and unresolved admission or identity questions outside published Catalogue Data. It may be admitted once sufficiently established, linked to an existing entity, or rejected with a recorded reason.
+_Avoid_: Catalogue Candidate, Curated Revision Proposal, published Card
 
 **DON!! Card**:
 The unnumbered rules-level resource Card used by One Piece Card Game. Its differing official artworks and treatments are Printings, not distinct Cards.
 _Avoid_: DON!! Card Number, physical copy
 
 **Printing**:
-A particular officially distinguished appearance or treatment of a Card, such as alternate artwork, foil treatment, promotional treatment, or reprint. Distribution through another Product or event does not alone create a Printing.
+A distinct issued appearance, treatment or printed-content version of a Card, including established differences in artwork, foil, stamps, printed text or faces/backs. Ordinary manufacturing variation, a changed source image alone, or distribution through another Product or event does not alone create a Printing.
 _Avoid_: Card, owned copy
 
 **Printing Image**:
-An Official Source image depicting a specific role or face of a Printing. One Printing may have multiple Printing Images.
-_Avoid_: Card identity, user-uploaded scan
+An evidence-bearing image from a Source depicting a specific role or face of a Printing. One Printing may have multiple Printing Images.
+_Avoid_: Card identity
 
 **Source Snapshot**:
-A dated, unmodified observation captured from an Official Source. It preserves what Bandai published independently of normalized Catalogue Data.
+A dated, unmodified observation captured from a Source. It preserves the source evidence independently of normalized Catalogue Data.
 _Avoid_: Catalogue export, database backup
 
 **Source Observation**:
@@ -121,19 +141,23 @@ One owner-initiated attempt to capture Source Snapshots and reconcile them into 
 _Avoid_: Automatic refresh, API request
 
 **Catalogue Candidate**:
-The complete, immutable next version of Catalogue Data that one Ingestion Run's reconciliation puts forward for its selected Supported Games, bound to the exact Catalogue Revision it expects to succeed. It is inspected, approved, or rejected only as a whole and exactly as reconciled, it expires unapproved after a bounded window, and no other path turns it into a Catalogue Revision.
+The complete, immutable next version of Catalogue Data proposed for one Supported Game from selected retained evidence, bound to the exact Game Catalogue Revision it expects to succeed. It is inspected, approved, or rejected only as a whole and exactly as reconciled; its seven-day publication deadline remains in force after approval.
 _Avoid_: Candidate printing, draft revision, staged catalogue, Curated Revision Proposal, search result
 
 **Reconciliation Context**:
-The immutable binding between one Ingestion Run's reconciliation outcome and the retained evidence it was derived from: the Source Snapshots, Source Observation Sets, and Source Lineages that reconciliation read. It keeps a Catalogue Candidate, or a blocked reconciliation, inspectable after the fact and every reconciliation warning attributable to its evidence.
+The immutable binding between a reconciliation outcome and the retained evidence it was derived from: the selected Source Snapshots, Source Observation Sets, Source Lineages and their Ingestion Runs. It keeps a Catalogue Candidate, or a blocked reconciliation, inspectable after the fact and every reconciliation warning attributable to its evidence.
 _Avoid_: Reconciliation Clock, Source Observation Set, Catalogue Candidate, Evidence Plan
 
+**Game Catalogue Revision**:
+An atomically published version of one Supported Game's Catalogue Data, produced from its exact approved Catalogue Candidate. Other Supported Games can advance independently without changing this version.
+_Avoid_: Game Profile, Catalogue Candidate
+
 **Catalogue Revision**:
-An atomically published version of current Catalogue Data produced by a successful Ingestion Run across its selected Supported Games; data for unselected Supported Games carries forward unchanged.
+A consistent published composition of Game Catalogue Revisions. Each game advances independently, while a Catalogue Revision identifies the exact versions viewed or exported together.
 _Avoid_: Curated Revision, Source Snapshot, database version
 
 **Catalogue Export**:
-An immutable machine-readable package of normalized Catalogue Data for one Catalogue Revision, intended for offline use by Catalogue Consumers.
+An immutable machine-readable package of accepted Catalogue Data and explicit unknowns for one Catalogue Revision, intended for offline use by Catalogue Consumers. Supporting evidence and admission history are administrative records, not part of the Catalogue Export.
 _Avoid_: Source Snapshot, database backup, live API response
 
 **Backup Attempt**:
@@ -174,9 +198,10 @@ A region-scoped availability event for a Product, expressed with the precision B
 _Avoid_: Product, Distribution Context
 
 **Production Release**:
-One serialized, owner-dispatched deployment of compatible Card Keepr schema and
-Worker versions through the guarded production workflow. It is operational and
-must not be shortened to Release, which is a Product availability event.
+One serialized deployment of compatible Card Keepr schema and Worker versions
+promoted from an owner-initiated staging release attempt after validation and
+production guards pass. It is operational and must not be shortened to Release,
+which is a Product availability event.
 _Avoid_: Release, ordinary CI, unguarded deployment
 
 **Spine Revision**:
@@ -206,25 +231,13 @@ The rules text known to appear on a physical Printing.
 _Avoid_: Effective Rules Text, source page text
 
 **Effective Rules Text**:
-The current official rules-level text for a Card after applicable Errata.
+The publisher-corrected rules-level text for a Card represented by the retained Source Observations selected for its published version. It is distinct from the original printed text and does not imply continuous monitoring or scheduled activation of corrections.
 _Avoid_: Printed Rules Text, silently corrected text
 
 **Erratum**:
-An official, effective-dated correction to published Card or Printing facts that preserves the facts it supersedes.
+An official correction to Card or Printing facts that preserves the original facts and its supporting evidence. Any published dates remain evidence about that correction, not a promise of scheduled catalogue updates.
 _Avoid_: Curated Revision, silent overwrite
 
 **Reconciliation Clock**:
-The authenticated reconciliation request time used to decide which effective-dated official facts apply to a Catalogue Candidate. A Catalogue Candidate cannot cross an applicability date while awaiting approval.
+The recorded time of a Catalogue Candidate's reconciliation, distinct from the capture times of its selected Source Snapshots. Passing a correction's stated applicability date does not change or invalidate the retained facts proposed by that candidate.
 _Avoid_: Publication time, wall clock
-
-**Legality Rule**:
-An effective-dated official assertion governing Card eligibility, copy limits, combinations, or release and rotation constraints within a stated play context.
-_Avoid_: Ruling, boolean legal flag
-
-**Legality Status**:
-A Card’s eligibility in organized play for a particular date and context, derived from applicable Legality Rules.
-_Avoid_: Ruling, format guide
-
-**Unresolved Target Scope**:
-The explicit declaration that an official rule's affected-Card set is an open publisher predicate: enumerated known matches are retained as Cards while unenumerated (including future) printings remain in scope, so every overlapping Legality Status query answers indeterminate rather than silently omitting the rule.
-_Avoid_: Compiled pair list, global ban

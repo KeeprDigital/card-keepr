@@ -1,0 +1,7 @@
+# Stage software separately from Catalogue publication
+
+Accepted through [Decide validation, contract revisions, and specification handoff](https://github.com/KeeprDigital/card-keepr/issues/215#issuecomment-5558986254), which holds the complete release, validation and retention decision. Dev receives passing merges automatically; the owner manually selects an exact commit for staging, and successful staging validation promotes that same commit automatically through production guards without a second routine approval. Isolated environments and proportionate staging validation are required before Go-Live because Catalogue Consumers need a reliable path for software changes.
+
+Staging rehearses software with its own data; production Catalogue Candidates retain their own inspection and approval. This avoids transferring staging evidence or overwriting production history as part of a software release, while allowing routine production refreshes without staging and accepting some repeated parsing when validating software. Credential separation, migration compatibility, release serialization and recovery guards remain requirements; failed checks stop promotion.
+
+This replaces automatic-staging-on-merge and deferred-environment-rollout proposals. The [replacement specification](https://github.com/KeeprDigital/card-keepr/issues/216) commissions implementation; this ADR does not deploy environments or claim the existing release workflow already behaves this way.

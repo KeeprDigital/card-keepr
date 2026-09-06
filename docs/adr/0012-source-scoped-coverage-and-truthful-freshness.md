@@ -1,0 +1,5 @@
+# Coverage and freshness belong to declared source scopes
+
+Accepted 6 September 2026 through [Decide source-scoped coverage, freshness, and withdrawal](https://github.com/KeeprDigital/card-keepr/issues/212#issuecomment-5557581630), which holds the complete policy. Refreshes may select a Source or an independently verifiable subset, carrying forward accepted facts outside that scope with their actual evidence and verification dates; completeness describes the declared Source Coverage, not every real card in a game.
+
+This replaces the full-game-only refresh assumption. Required-source failures and incomplete required capture block the planned refresh, while optional-source outages can permit internally consistent publication with explicit freshness warnings. The additional scope and check history avoids treating selective refresh as deletion or publication time as fresh evidence: disappearance, explicit withdrawal and source retirement preserve identity and history under their respective review rules. This is a planning decision, not an implemented selective-refresh workflow.
