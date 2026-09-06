@@ -12,6 +12,21 @@ import { requestDocument } from "./lib/json-client.mjs";
 import { runProductionReleaseCommand } from "./production-release.mjs";
 
 const commandRoutes = {
+  sourceRegistry: { path: "/v1/source-registry" },
+  sourceAuthorities: { path: "/v1/source-authorities" },
+  selectSourceAuthority: {
+    path: "/v1/source-authorities",
+    fields: {
+      game: "game",
+      locale: "locale",
+      release_region: "release-region",
+      area: "area",
+      source_lineage: "source-lineage",
+      expected_generation: "expected-generation",
+      rationale: "rationale",
+      idempotency_key: "idempotency-key",
+    },
+  },
   reconcileRun: {
     path: "/v1/ingestion-runs/{run-id}/reconciliation",
     fields: {
@@ -248,6 +263,9 @@ const commands = {
   "recovery verify": (args, env, json) => routeCommand("verifyRecovery", args, env, json),
   "recovery accept": (args, env, json) => routeCommand("acceptRecovery", args, env, json),
   "source collect": collectSource,
+  "source registry": (args, env, json) => routeCommand("sourceRegistry", args, env, json),
+  "source authorities": (args, env, json) => routeCommand("sourceAuthorities", args, env, json),
+  "source designate": (args, env, json) => routeCommand("selectSourceAuthority", args, env, json),
   "source show": (args, env, json) => routeCommand("showSourceEvidence", args, env, json),
   "source pause": (args, env, json) => routeCommand("pauseEvidenceCollection", args, env, json),
   "source resume": (args, env, json) => routeCommand("resumeEvidenceCollection", args, env, json),
@@ -846,7 +864,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
+        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
     },
     2,
   );

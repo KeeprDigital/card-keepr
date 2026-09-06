@@ -33,6 +33,44 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       reconciliationCapability: "errata" as const,
       parse: parseCardSourceDocument,
     },
+    {
+      adapterVersion: "fixture-one-piece-tabular@1",
+      sourceLineage: "limitless-one-piece-en",
+      supportedGame: "one-piece",
+      gameProfileVersion: "one-piece@1",
+      parserContract: "synthetic-tabular-presentation@1",
+      maximumSnapshotBytes: 1024 * 1024,
+      origin: "production" as const,
+      requestSurface: { kind: "credential-free-https" as const },
+      reconciliationCapability: "catalogue" as const,
+      // Synthetic presentation, not a Limitless parser. The source uses positional
+      // cells for card facts, while the other fixture uses nested named fields.
+      parse: (document: unknown) => {
+        if (
+          typeof document !== "object" ||
+          document === null ||
+          !("rows" in document) ||
+          !Array.isArray(document.rows)
+        ) {
+          throw new Error("Tabular source requires rows.");
+        }
+        return document.rows.map((row: { cells: unknown[]; evidence: Record<string, unknown> }) => {
+          if (!Array.isArray(row.cells) || row.cells.length !== 4)
+            throw new Error("Tabular source requires four card cells.");
+          const [number, name, rules, attributes] = row.cells;
+          return {
+            ...row.evidence,
+            card: {
+              game: "one-piece",
+              official_identity: { kind: "card_number", value: number },
+              name,
+              effective_rules_text: rules,
+              game_data: { profile: "one-piece@1", attributes },
+            },
+          };
+        });
+      },
+    },
     // Before Go-Live (ADR 0008) each Source Lineage keeps one synthetic
     // fixture adapter; the -capped and -large fixtures are distinct
     // behaviours (byte cap, request capacity), not versions. Every fixture

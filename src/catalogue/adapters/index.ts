@@ -30,3 +30,5 @@ export {
 export { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html";
 
 export { AdapterParseFailure } from "./adapter-parse-failure";
+
+export { publishers, sources, sourceLineages, gameProfileRegistrations } from "./source-registry";

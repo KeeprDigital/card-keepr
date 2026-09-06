@@ -1,3 +1,5 @@
+import { sourceAuthorities, selectSourceAuthority } from "./source-authority";
+import { publishers, sources, sourceLineages, gameProfileRegistrations, sourceAdapterRegistrations } from "../adapters";
 import {
   assertOnlyFields,
   readAdministrationBody,
@@ -31,6 +33,48 @@ type Environment = {
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const sourceEvidenceRoutes = [
+  route<Context>("GET", "/v1/source-authorities", async ({ env }) =>
+    Response.json(await sourceAuthorities(env.CATALOGUE_DB)),
+  ),
+  route<Context>("POST", "/v1/source-authorities", async ({ request, env, observedAt }) => {
+    const body = await readAdministrationBody(request);
+    const fields = [
+      "game",
+      "locale",
+      "release_region",
+      "area",
+      "source_lineage",
+      "expected_generation",
+      "rationale",
+      "idempotency_key",
+    ];
+    assertOnlyFields(body, fields);
+    const input = Object.fromEntries(fields.map((field) => [field, requiredString(body, field)]));
+    return Response.json(await selectSourceAuthority(env.CATALOGUE_DB, input, observedAt));
+  }),
+  route<Context>("GET", "/v1/source-registry", async () =>
+    Response.json({
+      publishers,
+      sources,
+      lineages: sourceLineages,
+      profiles: gameProfileRegistrations(),
+      adapters: sourceAdapterRegistrations.map(
+        ({ adapterVersion, sourceLineage, supportedGame, gameProfileVersion, parserContract, requestSurface }) => ({
+          adapter_version: adapterVersion,
+          source_lineage: sourceLineage,
+          game: supportedGame,
+          game_profile: gameProfileVersion,
+          parser_contract: parserContract,
+          transport_permission: requestSurface,
+        }),
+      ),
+      definitions: {
+        before_go_live: "edit_in_place",
+        after_go_live: "immutable_versions",
+        correction: "fresh_collection",
+      },
+    }),
+  ),
   route<Context>("POST", "/v1/ingestion-runs/evidence", async ({ request, env, requestId }) => {
     const body = await readAdministrationBody(request);
     if (body.plans !== undefined) {

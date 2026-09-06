@@ -58,3 +58,9 @@ and Curated Revision flows, exact server dispatch bytes, read-only previews,
 idempotency conflicts, and D1 rejection of changed plan bytes or digests before
 lease acquisition. The obsolete fixture `run start` command is removed with #94;
 production collection continues through `source collect`.
+
+## Source administration
+
+`keepr source registry`, `keepr source authorities`, and `keepr source designate`
+inspect shared game/source registrations and explicitly select scoped Source
+Authority. See [the request and replay contract](../docs/contracts/source-authority.md).

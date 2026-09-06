@@ -1,4 +1,5 @@
-import { AdministrationProblem } from "../shared";
+import { sourceLineages } from "./source-registry";
+import { AdministrationProblem, gameProfileForGame } from "../shared";
 import { AdapterParseFailure, adapterUrl } from "./adapter-parse-failure";
 import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.ts";
 import { officialRawAdapterContracts } from "./product-release-source-adapters.ts";
@@ -226,6 +227,7 @@ const activeAdapters = new Map<string, SourceAdapterRegistration>(
 export function registerSourceAdapters(registrations: readonly SourceAdapterRegistration[]): void {
   const registered = new Set(installedAdapters.keys());
   for (const adapter of registrations) {
+    assertAdapterBinding(adapter, adapter);
     if (registered.has(adapter.adapterVersion))
       throw new Error(`Source Adapter Version ${adapter.adapterVersion} is already registered.`);
     if (
@@ -284,6 +286,8 @@ export function assertAdapterBinding(
   },
 ): void {
   if (
+    !sourceLineages.some((lineage) => lineage.id === adapter.sourceLineage && lineage.game === adapter.supportedGame) ||
+    gameProfileForGame(adapter.supportedGame) !== adapter.gameProfileVersion ||
     adapter.sourceLineage !== input.sourceLineage ||
     adapter.supportedGame !== input.supportedGame ||
     (input.gameProfileVersion !== undefined && adapter.gameProfileVersion !== input.gameProfileVersion)
