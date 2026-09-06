@@ -64,6 +64,7 @@ export async function startOrObserveReconciliationWorkflow(
   const run = await reconciliationWorkflowRunStatement(database, input.ingestion_run_id).first<{
     id: string;
     state: IngestionRunState;
+    selected_games_json: string;
     expected_current_revision_id: string;
     current_revision_id: string;
     active_ingestion_run_id: string | null;
@@ -114,6 +115,7 @@ export async function startOrObserveReconciliationWorkflow(
   };
   const workflowParamsJson = canonicalJson(workflowParams);
   const insertion = await createReconciliationWorkflowRequestStatement(database, {
+    games: JSON.parse(run.selected_games_json) as string[],
     idempotencyKey: input.idempotency_key,
     runId: input.ingestion_run_id,
     expectedRevisionId: input.expected_current_revision_id,

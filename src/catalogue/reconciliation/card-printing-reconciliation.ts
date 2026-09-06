@@ -1,3 +1,4 @@
+import { pinCorrectionDecisions, applyPinnedIdentityCorrections } from "./identity-correction-pins";
 import {
   assessSourceAdmission,
   completeSourceAdmission,
@@ -200,6 +201,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         "The Official Source did not serve this Printing Image within its bounded transport retries; the Printing is published without it and a later Ingestion Run can collect it.",
     })),
   ];
+  await pinCorrectionDecisions(database, runId, JSON.parse(run.selected_games_json) as string[]);
   await pinEntityAdmissions(database, runId, JSON.parse(run.selected_games_json) as string[]);
   const admittedEntities = await applyPinnedEntityAdmissions(database, runId, cards, printings, sourceWarnings);
   const observedErrata: CatalogueErratum[] = [];
@@ -1132,6 +1134,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         ...retained.partitions.map(({ supportedGame }) => supportedGame as SupportedGame),
       ]),
     ].sort(),
+    ...(priorCandidate?.identity_corrections ? { identity_corrections: priorCandidate.identity_corrections } : {}),
     cards: candidateCards,
     printings: [...printings.values()].sort((left, right) => left.id.localeCompare(right.id)),
     printing_images: [...printingImages.values()].sort((left, right) => left.id.localeCompare(right.id)),
@@ -1374,6 +1377,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       warnings,
     };
   }
+  candidate = await applyPinnedIdentityCorrections(database, runId, candidate, warnings);
   candidateCatalogueDigest = await catalogueDataDigest(database, candidate, plans, checkedSourceLineages);
   const digestPayloadJson = reconciliationDigestPayload({
     candidate,
@@ -1703,6 +1707,7 @@ function semanticCatalogueCandidate(candidate: CatalogueCandidate): Record<strin
   return {
     contract: candidate.contract,
     selected_games: candidate.selected_games,
+    ...(candidate.identity_corrections ? { identity_corrections: candidate.identity_corrections } : {}),
     cards: candidate.cards,
     printings: candidate.printings,
     printing_images: (candidate.printing_images ?? []).map((image) => ({

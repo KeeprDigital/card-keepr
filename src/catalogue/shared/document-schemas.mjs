@@ -182,6 +182,15 @@ const candidate = object(
   {
     contract: { const: "card-keepr-catalogue-candidate@1" },
     selected_games: selectedGames,
+    identity_corrections: array(
+      object({
+        id: opaque,
+        game,
+        entity_kind: { enum: ["card", "printing"] },
+        action: { enum: ["merge", "split"] },
+        replacement_ids: array(opaque, { minItems: 1 }),
+      }),
+    ),
     cards: array(card),
     printings: array(printing),
     printing_images: {},

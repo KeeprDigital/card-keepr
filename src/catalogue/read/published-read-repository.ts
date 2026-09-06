@@ -294,3 +294,12 @@ export type RuleRow = {
   // before migration 0004 whose snapshot had already gone.
   source_retrieved_at: string | null;
 };
+
+export function publishedIdentityCorrectionStatement(database: CatalogueStore, id: string, kind: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT c.document_json, s.current_revision_id, r.published_at
+    FROM catalogue_state s JOIN catalogue_revisions r ON r.id = s.current_revision_id
+    JOIN revision_identity_corrections c ON c.catalogue_revision_id = s.current_revision_id
+    WHERE s.singleton = 1 AND c.entity_id = ? AND c.entity_kind = ?`)
+    .bind(id, kind);
+}

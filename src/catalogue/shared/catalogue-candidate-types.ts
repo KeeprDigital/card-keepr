@@ -26,6 +26,13 @@ export type CatalogueCandidate = {
   product_observed_lineages?: readonly string[];
   source_checks?: readonly CatalogueSourceCheck[];
   errata?: readonly CatalogueErratum[];
+  identity_corrections?: readonly {
+    id: string;
+    game: SupportedGame;
+    entity_kind: "card" | "printing";
+    action: "merge" | "split";
+    replacement_ids: readonly string[];
+  }[];
 };
 
 export type CatalogueSourceCheck = {
