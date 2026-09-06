@@ -5,10 +5,15 @@ import {
   type CatalogueStore,
   type CataloguePrinting,
   canonicalProfileAttributes,
+  type ProfileWarning,
+  sourceFieldWarning,
   canonicalJson,
 } from "../shared";
 import { sourceLineages } from "../adapters";
 import {
+  latestProposalIntakeStatement,
+  latestAcceptedAdmissionStatement,
+  type AdmissionIdentityAllocation,
   proposalSourceEvidenceStatement,
   admissionCardIdentityStatement,
   admissionEntityStatement,
@@ -87,13 +92,17 @@ export async function inspectEntityProposal(database: CatalogueStore, id: string
     throw new AdministrationProblem(404, "entity_proposal_not_found", "Inspect a retained Entity Proposal.");
   const history = (await proposalHistoryStatement(database, id, after).all<AdmissionDecisionRow>()).results;
   const latest = await latestAdmissionStatement(database, id).first<AdmissionDecisionRow>();
+  const revision = await latestProposalIntakeStatement(database, id).first<{ decision_json: string }>();
+  const initialIntake = { content: JSON.parse(proposal.content_json), evidence: JSON.parse(proposal.evidence_json) };
+  const intake = revision ? JSON.parse(revision.decision_json) : initialIntake;
   return {
     id,
     game: proposal.game,
     source_lineage: proposal.source_lineage,
     reference: proposal.reference,
-    content: JSON.parse(proposal.content_json),
-    evidence: JSON.parse(proposal.evidence_json),
+    content: intake.content,
+    evidence: intake.evidence,
+    initial_intake: initialIntake,
     status:
       latest?.action === "reconsider" || !latest ? "unresolved" : latest.action === "reject" ? "rejected" : "admitted",
     generation: latest?.generation ?? 0,
@@ -114,6 +123,8 @@ export async function decideEntityProposal(
     exception?: unknown;
     card_id?: string;
     printing_id?: string;
+    content?: unknown;
+    evidence?: unknown;
   },
   at: string,
 ) {
@@ -128,27 +139,55 @@ export async function decideEntityProposal(
     !/^(0|[1-9]\d*)$/.test(input.expected_generation) ||
     Number(input.expected_generation) !== proposal.generation ||
     !["admit", "link", "reject", "reconsider"].includes(input.action) ||
-    proposal.status === "admitted" ||
-    (input.action === "reconsider" && proposal.status !== "rejected")
+    (proposal.status === "admitted" && input.action !== "reconsider")
   )
     throw conflict();
   let decision: Record<string, unknown> = {};
+  let allocations: AdmissionIdentityAllocation[] = [];
+  if (input.action === "reconsider") {
+    const content = input.content ?? proposal.content;
+    const evidence = input.evidence ?? proposal.evidence;
+    if (
+      !record(content) ||
+      !record(evidence) ||
+      new TextEncoder().encode(canonicalJson({ content, evidence })).byteLength > 64 * 1024
+    )
+      throw new AdministrationProblem(
+        422,
+        "proposal_document_invalid",
+        "Reconsideration retains a complete intake object of at most 64 KiB.",
+      );
+    decision = { content, evidence };
+  } else if (input.content !== undefined || input.evidence !== undefined) {
+    throw new AdministrationProblem(
+      422,
+      "admission_intake_requires_reconsideration",
+      "Append revised intake through an explicit reconsideration before admitting it.",
+    );
+  }
   if (input.action === "admit" || input.action === "link") {
     if (proposal.status === "rejected") throw conflict();
-    decision = await validateAdmission(database, proposal, input);
+    const validated = await validateAdmission(database, proposal, input);
+    decision = validated.decision;
+    allocations = validated.allocations;
   }
   try {
-    await insertAdmissionDecisionStatement(database, {
-      proposal_id: id,
-      generation: proposal.generation + 1,
-      action: input.action,
-      actor: "owner",
-      rationale: input.rationale,
-      decision_json: canonicalJson(decision),
-      idempotency_key: input.idempotency_key,
-      request_json: requestJson,
-      decided_at: at,
-    }).run();
+    await insertAdmissionDecisionStatement(
+      database,
+      {
+        proposal_id: id,
+        generation: proposal.generation + 1,
+        action: input.action,
+        actor: "owner",
+        rationale: input.rationale,
+        decision_json: canonicalJson(decision),
+        idempotency_key: input.idempotency_key,
+        request_json: requestJson,
+        decided_at: at,
+      },
+      undefined,
+      allocations,
+    ).run();
   } catch {
     throw conflict();
   }
@@ -197,6 +236,7 @@ async function validateAdmission(
       "Retain the owner's evidence of a real Card, or a scoped source-evidence exception with personal attestation.",
     );
   let parsed: ReturnType<typeof parseReconciliationObservation>;
+  const printingWarnings: ProfileWarning[] = [];
   try {
     const { printing: rawPrinting, ...cardContent } = proposal.content;
     parsed = parseReconciliationObservation(proposal.id, {
@@ -218,6 +258,7 @@ async function validateAdmission(
         proposal.id,
         rawPrinting,
         parsed.observedCardAndPrinting.card.game_data.profile,
+        printingWarnings,
       );
       parsed = { ...parsed, observedCardAndPrinting: { ...parsed.observedCardAndPrinting, printing } };
     }
@@ -235,7 +276,20 @@ async function validateAdmission(
     );
   }
   const { card, printing } = parsed.observedCardAndPrinting;
-  if (card!.official_identity.kind !== "unknown" && input.action === "admit" && !input.card_id) {
+  const previousRow = await latestAcceptedAdmissionStatement(database, proposal.id).first<AdmissionDecisionRow>();
+  const previous = previousRow
+    ? (JSON.parse(previousRow.decision_json) as {
+        card: { id: string; official_identity: unknown };
+        printing: { id: string } | null;
+      })
+    : null;
+  if (previous && canonicalJson(previous.card.official_identity) !== canonicalJson(card!.official_identity))
+    throw new AdministrationProblem(
+      422,
+      "admission_identity_correction_required",
+      "An established identity cannot change through admission reconsideration. Use the identity correction process.",
+    );
+  if (card!.official_identity.kind !== "unknown" && input.action === "admit" && !input.card_id && !previous) {
     const matches = (
       await admissionCardIdentityStatement(database, proposal.game, canonicalJson(card!.official_identity)).all<{
         id: string;
@@ -248,8 +302,8 @@ async function validateAdmission(
         "This Card identity already exists. Link evidence, or identify its Card when admitting a new Printing.",
       );
   }
-  let cardId = input.card_id;
-  const printingId = input.printing_id;
+  let cardId = input.card_id ?? previous?.card.id;
+  const printingId = input.printing_id ?? previous?.printing?.id;
   if (input.action === "link" && !cardId && !printingId)
     throw new AdministrationProblem(422, "admission_link_required", "Link to an existing Card or Printing ID.");
   if (printingId && !printing)
@@ -258,8 +312,8 @@ async function validateAdmission(
       "admission_link_invalid",
       "Linking a Printing requires its valid required structure and identified Card.",
     );
-  if (printingId) {
-    const existing = await admissionEntityStatement(database, "printing", printingId).first<{
+  if (input.printing_id) {
+    const existing = await admissionEntityStatement(database, "printing", printingId!).first<{
       document_json: string;
     }>();
     if (!existing)
@@ -274,8 +328,8 @@ async function validateAdmission(
       throw new AdministrationProblem(422, "admission_link_invalid", "The Printing's Card relationship must agree.");
     cardId = target.card_id;
   }
-  if (cardId) {
-    const existing = await admissionEntityStatement(database, "card", cardId).first<{ document_json: string }>();
+  if (input.card_id || input.printing_id) {
+    const existing = await admissionEntityStatement(database, "card", cardId!).first<{ document_json: string }>();
     if (!existing)
       throw new AdministrationProblem(
         422,
@@ -296,24 +350,46 @@ async function validateAdmission(
       );
   }
   cardId ??= `card_${crypto.randomUUID().replaceAll("-", "")}`;
-  return {
+  const decision = {
     card: { ...card, id: cardId },
     printing: printing
       ? { ...printing, id: printingId ?? `printing_${crypto.randomUUID().replaceAll("-", "")}`, card_id: cardId }
       : null,
     exception: exception ?? null,
-    warnings: parsed.sourceWarnings,
+    warnings: [...parsed.sourceWarnings, ...printingWarnings],
     policy_digest: await admissionPolicyDigest(proposal.source_lineage, card!.game_data.profile),
     publisher_confirmed_fields: [],
-    new_card: !input.card_id && !input.printing_id,
+    new_card: !input.card_id && !input.printing_id && !previous,
     linked: input.action === "link",
   };
+  const allocations: AdmissionIdentityAllocation[] = [];
+  if (decision.new_card)
+    allocations.push({
+      kind: "card",
+      id: cardId,
+      key: canonicalJson([
+        "card",
+        card!.official_identity.kind === "unknown" ? ["owner", proposal.id] : [card!.game, card!.official_identity],
+      ]),
+    });
+  if (decision.printing && !printingId)
+    allocations.push({
+      kind: "printing",
+      id: decision.printing.id,
+      key: canonicalJson(["printing", ["owner", proposal.id]]),
+    });
+  return { decision, allocations };
 }
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function validatePrinting(id: string, value: unknown, profile: string): Omit<CataloguePrinting, "id" | "card_id"> {
+function validatePrinting(
+  id: string,
+  value: unknown,
+  profile: string,
+  warnings: ProfileWarning[],
+): Omit<CataloguePrinting, "id" | "card_id"> {
   if (
     !record(value) ||
     !record(value.rarity) ||
@@ -322,6 +398,15 @@ function validatePrinting(id: string, value: unknown, profile: string): Omit<Cat
     !record(value.game_data.attributes)
   )
     throw new Error("Printing requires rarity and the Card's Game Profile structure.");
+  for (const [object, known, path] of [
+    [value, ["rarity", "printed_rules_text", "game_data"], "printing"],
+    [value.rarity, ["raw", "normalized"], "printing.rarity"],
+    [value.game_data, ["profile", "attributes"], "printing.game_data"],
+  ] as const) {
+    for (const [field, raw] of Object.entries(object))
+      if (!(known as readonly string[]).includes(field))
+        warnings.push(sourceFieldWarning(id, profile, `${path}.${field}`, raw));
+  }
   const nullableText = (value: unknown) => {
     if (value === null || typeof value === "string") return value;
     throw new Error("Printing text and rarity must be strings or explicit unknown nulls.");
@@ -331,7 +416,7 @@ function validatePrinting(id: string, value: unknown, profile: string): Omit<Cat
     printed_rules_text: nullableText(value.printed_rules_text),
     game_data: {
       profile: profile as NonNullable<CataloguePrinting["game_data"]>["profile"],
-      attributes: canonicalProfileAttributes(id, profile, "printing", value.game_data.attributes, []),
+      attributes: canonicalProfileAttributes(id, profile, "printing", value.game_data.attributes, warnings),
     },
   };
 }

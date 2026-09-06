@@ -226,6 +226,17 @@ export async function reconcileRetainedCardPrintingEvidence(
       continue;
     }
     const admission = await assessSourceAdmission(database, runId, observation, observedAt);
+    if (admission?.identityExceptionConflict) {
+      diagnostics.push({
+        code: "canonical_card_conflict",
+        source_observation_id: observation.sourceObservationId,
+        locator: observation.locator,
+        matched_printing_ids: admission.decision?.printing ? [admission.decision.printing.id] : [],
+        detail:
+          "New source evidence contradicts the identity established by an owner admission exception. Resolve the identity conflict before publication.",
+      });
+      continue;
+    }
     if (admission && !admission.permitted) {
       sourceWarnings.push({
         code: "entity_proposal_excluded",

@@ -352,3 +352,116 @@ test("owner cannot allocate a second numbered Card and can link evidence without
   const history = linked.document.history as { decision: { card: { id: string }; linked: boolean } }[];
   expect(history[0]!.decision).toMatchObject({ card: { id }, linked: true });
 });
+
+test("owner appends corrected intake on reconsideration while retaining the original incomplete proposal", async () => {
+  const created = await post("/v1/entity-proposals", {
+    game: "one-piece",
+    source_lineage: "owner",
+    reference: "incomplete-then-complete",
+    content: { card: { name: "Incomplete" } },
+    evidence: {},
+    idempotency_key: "incomplete-create",
+  });
+  const amended = await post(`/v1/entity-proposals/${created.document.id}/decisions`, {
+    action: "reconsider",
+    expected_generation: "0",
+    rationale: "New personal inspection supplies required structure",
+    content: { card: syntheticCard },
+    evidence: { attestation: "Synthetic new personal inspection" },
+    idempotency_key: "complete-intake",
+  });
+  expect(amended.response.status, JSON.stringify(amended.document)).toBe(200);
+  expect(amended.document.content).toMatchObject({ card: { name: "Synthetic owner card" } });
+  expect(amended.document.initial_intake).toMatchObject({ content: { card: { name: "Incomplete" } } });
+  const admitted = await post(`/v1/entity-proposals/${created.document.id}/decisions`, {
+    action: "admit",
+    expected_generation: "1",
+    rationale: "Required evidence now established",
+    idempotency_key: "complete-admit",
+  });
+  expect(admitted.response.status, JSON.stringify(admitted.document)).toBe(200);
+  expect(admitted.document.history).toHaveLength(2);
+});
+
+test("owner reaffirms admission without ID churn and unrelated Printing metadata does not invalidate the attestation", async () => {
+  await designateSupplemental();
+  const initial = await reconcile(
+    (await collect("/reconciliation/canonical-tabular", "reaffirm-initial", supplemental)).id,
+  );
+  await approve(initial.document);
+  const proposals = await get("/v1/entity-proposals?game=one-piece");
+  const id = (proposals.document.proposals as { id: string }[])[0]!.id;
+  expect(
+    (
+      await post(`/v1/entity-proposals/${id}/decisions`, {
+        action: "reconsider",
+        expected_generation: "1",
+        rationale: "Owner supplies personal inspection",
+        evidence: { attestation: "Synthetic new personal evidence" },
+        idempotency_key: "reaffirm-reconsider",
+      })
+    ).response.status,
+  ).toBe(200);
+  const reaffirmed = await post(`/v1/entity-proposals/${id}/decisions`, {
+    action: "admit",
+    expected_generation: "2",
+    rationale: "Reaffirm the established physical identity",
+    exception: { scope: ["identity"], attestation: "Synthetic personal inspection of same identity" },
+    idempotency_key: "reaffirm-admit",
+  });
+  expect(reaffirmed.response.status, JSON.stringify(reaffirmed.document)).toBe(200);
+  const printing = (initial.document.printings as { id: string }[])[0]!;
+  expect((reaffirmed.document.history as { decision: unknown }[])[2]!.decision).toMatchObject({
+    printing: { id: printing.id },
+  });
+  const updated = await reconcile(
+    (await collect("/reconciliation/canonical-tabular-unrelated", "unrelated-metadata", supplemental)).id,
+  );
+  expect(updated.response.status, JSON.stringify(updated.document)).toBe(200);
+  expect(updated.document.printings).toEqual([
+    expect.objectContaining({
+      id: printing.id,
+      game_data: { profile: "one-piece@1", attributes: { illustration_types: ["original"] } },
+    }),
+  ]);
+});
+
+test("manual Printing unknown fields retain actionable raw-value warnings through candidate inspection", async () => {
+  const proposal = await post("/v1/entity-proposals", {
+    game: "one-piece",
+    source_lineage: "owner",
+    reference: "unknown-printing-mechanics",
+    content: {
+      card: syntheticCard,
+      printing: {
+        rarity: { raw: null, normalized: null },
+        printed_rules_text: null,
+        future_finish: "unmapped finish",
+        game_data: {
+          profile: "one-piece@1",
+          attributes: { illustration_types: [], future_mechanic: "unmapped mechanic" },
+        },
+      },
+    },
+    evidence: { attestation: "Synthetic inspected Printing" },
+    idempotency_key: "unknown-printing-create",
+  });
+  const admitted = await post(`/v1/entity-proposals/${proposal.document.id}/decisions`, {
+    action: "admit",
+    expected_generation: "0",
+    rationale: "Retain optional unknowns",
+    exception: { scope: ["identity"], attestation: "Synthetic physical identity established" },
+    idempotency_key: "unknown-printing-admit",
+  });
+  expect(admitted.response.status).toBe(200);
+  const candidate = await reconcile(
+    (await collect("/reconciliation/card-without-printing", "unknown-printing-candidate")).id,
+  );
+  expect(candidate.response.status).toBe(200);
+  expect(candidate.document.warnings).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "unknown_source_field", raw_value: "unmapped finish" }),
+      expect.objectContaining({ code: "unknown_source_field", raw_value: "unmapped mechanic" }),
+    ]),
+  );
+});

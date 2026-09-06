@@ -133,18 +133,21 @@ export async function assessSourceAdmission(
       : null;
   const admitted = latest?.action === "admit" || latest?.action === "link";
   const rejected = latest?.action === "reject";
-  const exceptionChanged =
+  const exception = decision?.exception as { scope?: string[] } | null | undefined;
+  const identityExceptionConflict =
     admitted &&
-    latest?.actor === "owner" &&
-    proposal.content_json !== canonicalJson(observation.observedCardAndPrinting);
+    exception?.scope?.includes("identity") === true &&
+    observation.observedCardAndPrinting.card.official_identity.kind !== "unknown" &&
+    canonicalJson(decision!.card.official_identity) !==
+      canonicalJson(observation.observedCardAndPrinting.card.official_identity);
   const permitted =
-    (admitted && !exceptionChanged) ||
+    admitted ||
     (!admitted &&
       !rejected &&
       policy.automatic &&
       (observation.observedCardAndPrinting.printing === null ||
         (observation.demonstrablyNovel && observation.noveltyProofComplete && observation.artworkIdentityExplicit)));
-  return { proposal, latest, policy, permitted, rejected, decision, exceptionChanged };
+  return { proposal, latest, policy, permitted, rejected, decision, identityExceptionConflict };
 }
 export async function completeSourceAdmission(
   database: CatalogueStore,

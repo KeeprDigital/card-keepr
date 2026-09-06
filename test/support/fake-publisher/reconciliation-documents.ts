@@ -62,6 +62,7 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       image.artwork_fingerprint = source.identity_evidence.artwork_fingerprint;
     });
     if (scenario.endsWith("unresolved")) source.identity_evidence.demonstrably_novel = false;
+    if (scenario.endsWith("unrelated")) source.printing.game_data.attributes.illustration_types = ["original"];
     const { card, ...evidence } = source;
     return {
       rows: [

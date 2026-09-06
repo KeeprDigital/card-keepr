@@ -55,10 +55,16 @@ Use only the necessary exception scopes. Manual Printing identity requires a
 specific identity attestation unless retained source evidence already establishes
 its novel appearance. Exceptions cannot waive required game structure or an
 identified Card relationship. They apply to the immutable proposal content;
-changed source content requires reassessment rather than extending an old
-exception silently. Existing entity corrections remain Curated Revisions.
+an incoming contradiction of the attested identity blocks publication. Unrelated
+optional source changes do not invalidate the attestation. Existing entity corrections remain Curated Revisions.
 
-Decisions and intake are immutable. Repeating a key with different content or
+The initial intake and every decision are immutable. `reconsider` may append
+new `content` and `evidence` objects in its decision file; admission binds to that
+exact retained intake revision. Inspection preserves `initial_intake` and the
+complete decision history. Reconsideration and re-admission of an established
+entity preserve its canonical IDs; changing an established identity requires the
+identity correction process, and changing its selected facts uses Curated Revisions.
+Repeating a key with different content or
 using a stale generation fails. Reconsidering an owner rejection requires an
 explicit owner decision; automated refreshes retain the rejection. Owner mutations
 require collection, recovery and release operations to be idle. Inspection pages

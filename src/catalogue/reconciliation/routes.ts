@@ -69,6 +69,8 @@ export const reconciliationRoutes = [
       "exception",
       "card_id",
       "printing_id",
+      "content",
+      "evidence",
     ]);
     return Response.json(
       await decideEntityProposal(
@@ -76,6 +78,8 @@ export const reconciliationRoutes = [
         params.proposal!,
         {
           ...(body.exception === undefined ? {} : { exception: body.exception }),
+          ...(body.content === undefined ? {} : { content: body.content }),
+          ...(body.evidence === undefined ? {} : { evidence: body.evidence }),
           ...(body.card_id === undefined ? {} : { card_id: requiredString(body, "card_id") }),
           ...(body.printing_id === undefined ? {} : { printing_id: requiredString(body, "printing_id") }),
           action: requiredString(body, "action"),

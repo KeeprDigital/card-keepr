@@ -56,33 +56,19 @@ export function insertProposalStatement(database: CatalogueStore, row: EntityPro
     before: [run ? identityRunGuard(database, run) : admissionIdleGuard(database)],
   });
 }
-export function insertAdmissionDecisionStatement(database: CatalogueStore, row: AdmissionDecisionRow, run?: string) {
-  const decision = JSON.parse(row.decision_json);
-  const allocation =
-    row.actor === "owner" && row.action === "admit" && decision.new_card === true
-      ? [
-          repositoryStatements(database)
-            .prepare(`INSERT INTO canonical_identity_allocations
-      (allocation_key, entity_id, entity_kind, allocated_at) VALUES (?, ?, 'card', ?)`)
-            .bind(
-              canonicalJson([
-                "card",
-                decision.card.official_identity.kind === "unknown"
-                  ? ["owner", row.proposal_id]
-                  : [decision.card.game, decision.card.official_identity],
-              ]),
-              decision.card.id,
-              row.decided_at,
-            ),
-        ]
-      : [];
-  if (row.actor === "owner" && row.action === "admit" && decision.printing)
-    allocation.push(
-      repositoryStatements(database)
-        .prepare(`INSERT INTO canonical_identity_allocations
-      (allocation_key, entity_id, entity_kind, allocated_at) VALUES (?, ?, 'printing', ?)`)
-        .bind(canonicalJson(["printing", ["owner", row.proposal_id]]), decision.printing.id, row.decided_at),
-    );
+export type AdmissionIdentityAllocation = { key: string; id: string; kind: "card" | "printing" };
+export function insertAdmissionDecisionStatement(
+  database: CatalogueStore,
+  row: AdmissionDecisionRow,
+  run?: string,
+  allocations: readonly AdmissionIdentityAllocation[] = [],
+) {
+  const allocation = allocations.map((item) =>
+    repositoryStatements(database)
+      .prepare(`INSERT INTO canonical_identity_allocations
+    (allocation_key, entity_id, entity_kind, allocated_at) VALUES (?, ?, ?, ?)`)
+      .bind(item.key, item.id, item.kind, row.decided_at),
+  );
   return atomicRepositoryStatement(database, {
     statement: repositoryStatements(database)
       .prepare(`INSERT INTO entity_admission_decisions
@@ -216,4 +202,18 @@ export function proposalSourceEvidenceStatement(database: CatalogueStore, id: st
     FROM entity_proposal_source_evidence WHERE proposal_id = ? AND source_observation_id > ?
     ORDER BY source_observation_id LIMIT 101`)
     .bind(id, after);
+}
+
+export function latestProposalIntakeStatement(database: CatalogueStore, id: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT decision_json FROM entity_admission_decisions
+    WHERE proposal_id = ? AND action = 'reconsider' AND json_type(decision_json, '$.content') = 'object'
+    ORDER BY generation DESC LIMIT 1`)
+    .bind(id);
+}
+export function latestAcceptedAdmissionStatement(database: CatalogueStore, id: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT * FROM entity_admission_decisions
+    WHERE proposal_id = ? AND action IN ('admit', 'link') ORDER BY generation DESC LIMIT 1`)
+    .bind(id);
 }
