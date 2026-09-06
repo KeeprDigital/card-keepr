@@ -1,3 +1,4 @@
+import type { ReconciliationRecordSink } from "./reconciliation-record-collection";
 import { admissionPolicyDigest } from "./entity-admission-source";
 import { sourceAuthorities } from "../source-evidence";
 import {
@@ -51,7 +52,7 @@ export async function applyPinnedEntityAdmissions(
   runId: string,
   cards: AdmissionEntityIndex<CatalogueCard>,
   printings: AdmissionEntityIndex<CataloguePrinting>,
-  warnings: Record<string, unknown>[],
+  warnings: ReconciliationRecordSink<Record<string, unknown>>,
 ) {
   let after = "";
   const admitted: AdmittedEntity[] = [];
@@ -69,7 +70,7 @@ export async function applyPinnedEntityAdmissions(
       cards.beginObservation?.();
       printings.beginObservation?.();
       if (row.action !== "admit" && row.action !== "link") {
-        warnings.push({
+        await warnings.push({
           code: "entity_proposal_excluded",
           proposal_id: row.id,
           generation: row.generation,
@@ -79,7 +80,7 @@ export async function applyPinnedEntityAdmissions(
       }
       const decision = JSON.parse(row.decision_json!) as AdmittedEntity & { policy_digest?: string };
       if (decision.policy_digest !== (await admissionPolicyDigest(row.source_lineage, decision.card.game_data.profile)))
-        warnings.push({
+        await warnings.push({
           code: "entity_admission_reassessment_required",
           proposal_id: row.id,
           generation: row.generation,
@@ -91,7 +92,7 @@ export async function applyPinnedEntityAdmissions(
           await printings.set(decision.printing.id, decision.printing);
       }
       admitted.push(decision);
-      warnings.push(
+      await warnings.push(
         {
           code: "entity_admission",
           proposal_id: row.id,

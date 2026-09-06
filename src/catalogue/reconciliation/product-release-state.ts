@@ -1,3 +1,4 @@
+import type { ReconciliationRecordSink } from "./reconciliation-record-collection";
 import {
   type CatalogueStore,
   type CatalogueProduct,
@@ -29,6 +30,7 @@ export async function reconcileProductReleaseState(
   prior: ReconciliationCandidateState,
   inputs: AsyncIterable<ProductReleaseEvidenceInput>,
   game: SupportedGame,
+  warnings: ReconciliationRecordSink<Record<string, unknown>>,
 ) {
   const result = new ReconciliationCandidateState(database, runId, `product_result_${game}`, prior);
   const index = <T>(name: string, group?: (value: T) => string) =>
@@ -51,7 +53,6 @@ export async function reconcileProductReleaseState(
   for await (const relationship of prior.values("product_relationships"))
     await priorRelationships.seed(relationship.id, relationship);
   const checkedLineages = new Set<string>();
-  const warnings: Record<string, unknown>[] = [];
   for await (const input of inputs) {
     if (input.value !== undefined) checkedLineages.add(input.sourceLineage);
     const parsed = await parseProductReleaseObservation(input, game);
@@ -74,7 +75,7 @@ export async function reconcileProductReleaseState(
       },
       game,
     );
-    warnings.push(...observation.warnings);
+    await warnings.push(...observation.warnings);
     for (const product of observation.products) {
       const previous = await groups.get(product.id);
       const observations = [...(previous?.observations ?? []), product];
@@ -110,7 +111,7 @@ export async function reconcileProductReleaseState(
     await result.set("products", productResult);
     if (current) observedProducts.push({ id: productResult.id });
     else if (productSurfaceObserved && retained.some(({ evidence }) => checkedLineages.has(evidence.source))) {
-      warnings.push({
+      await warnings.push({
         code: "product_not_observed",
         game: product.game,
         product_id: product.id,
@@ -174,7 +175,6 @@ export async function reconcileProductReleaseState(
     draft: result,
     observedProducts: observedProducts.sort(byId),
     productSurfaceObserved,
-    warnings,
     checkedLineages: [...checkedLineages],
   };
 }

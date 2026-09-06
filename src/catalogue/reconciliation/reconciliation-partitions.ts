@@ -16,7 +16,7 @@ export async function persistCandidatePartitions(
   database: CatalogueStore,
   runId: string,
   candidate: Record<string, unknown>,
-  warnings: readonly unknown[] = [],
+  warnings: Iterable<unknown> | AsyncIterable<unknown> = [],
 ) {
   let ordinal = 0;
   const pins = await reconciliationOperationStatement(database, runId).first<{

@@ -1,3 +1,4 @@
+import type { ReconciliationRecordSink } from "./reconciliation-record-collection";
 import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
 import type { IdentityCorrectionProposal } from "./identity-corrections";
 import {
@@ -44,14 +45,14 @@ export async function applyPinnedIdentityCorrectionsToDraft(
   database: CatalogueStore,
   runId: string,
   draft: CatalogueDraft,
-  warnings: Record<string, unknown>[],
+  warnings: ReconciliationRecordSink<Record<string, unknown>>,
 ): Promise<void> {
   if ((await correctionDecisionPinMetadata(database, runId)).decision_cutoff === 0) return;
   const correctedCardIdentity = await pinnedCardIdentityResolver(database, runId);
   for await (const row of pinnedCorrectionRows(database, runId)) {
     const decision = JSON.parse(row.request_json) as IdentityCorrectionProposal;
     if (decision.action === "assign") {
-      warnings.push({
+      await warnings.push({
         code: "identity_assignment",
         correction_id: row.id,
         printing_assignments: decision.printing_assignments,
@@ -83,7 +84,7 @@ export async function applyPinnedIdentityCorrectionsToDraft(
         if (resolved !== printing.card_id) await draft.set("printings", { ...printing, card_id: resolved });
         else {
           await draft.delete("printings", printing.id);
-          warnings.push({
+          await warnings.push({
             code: "identity_correction_exclusion",
             detail: `Printing ${printing.id} has no reviewed split assignment and is excluded pending owner review.`,
             printing_id: printing.id,
@@ -119,7 +120,7 @@ export async function applyPinnedIdentityCorrectionsToDraft(
       excludedErrata.push(erratum.id);
       await draft.delete("errata", erratum.id);
     }
-    warnings.push({
+    await warnings.push({
       code: "identity_correction",
       correction_id: row.id,
       detail: `Reviewed ${decision.action}: retired identities retain consumer replacement links.`,

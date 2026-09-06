@@ -81,28 +81,14 @@ export function activeParsingRunStatement(database: CatalogueStore, runId: strin
 
 export function printingRelationshipsForLineageStatement(
   database: CatalogueStore,
-  input: Readonly<{ printingId: string; sourceLineage: string }>,
+  input: Readonly<{ printingId: string; sourceLineage: string; afterKind: string; afterValue: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT source_lineage, source_observation_id,
-              relationship_kind, relationship_value,
-              membership.first_revision_id,
-              membership.last_observed_revision_id,
-              first_revision.published_at AS first_revision_order,
-              last_revision.published_at AS last_observed_revision_order,
-              current, last_missing_revision_id
-       FROM reconciled_printing_memberships AS membership
-       JOIN catalogue_revisions AS first_revision
-         ON first_revision.id = membership.first_revision_id
-       JOIN catalogue_revisions AS last_revision
-         ON last_revision.id = membership.last_observed_revision_id
-       WHERE printing_id = ? AND source_lineage = ? AND current = 1
-       ORDER BY relationship_kind, relationship_value,
-                first_revision.published_at, membership.first_revision_id,
-                last_revision.published_at,
-                membership.last_observed_revision_id,
-                source_observation_id`)
-    .bind(input.printingId, input.sourceLineage);
+    .prepare(`SELECT DISTINCT relationship_kind, relationship_value
+    FROM reconciled_printing_memberships WHERE printing_id = ? AND source_lineage = ? AND current = 1
+      AND (relationship_kind, relationship_value) > (?, ?)
+    ORDER BY relationship_kind, relationship_value LIMIT 1`)
+    .bind(input.printingId, input.sourceLineage, input.afterKind, input.afterValue);
 }
 
 export function disappearedPrintingsStatement(

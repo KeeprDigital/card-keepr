@@ -1,3 +1,4 @@
+import { ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
 import type { CatalogueStore } from "../shared";
 import type { Memberships } from "./reconciliation-model";
 import type { LocatorEvidence, LocatorEvidenceCollection } from "./reconciliation-publication";
@@ -18,27 +19,39 @@ import type { ReconciledPrintingRow } from "./reconciliation-repository";
 
 type MembershipRow = RelationshipEvidenceRow;
 
-export async function relationshipDisappearanceWarnings(
+export async function* relationshipDisappearanceWarnings(
   database: CatalogueStore,
   printingId: string,
   sourceLineage: string,
   memberships: Memberships,
-): Promise<Record<string, unknown>[]> {
-  const existing = await printingRelationshipsForLineageStatement(database, {
-    printingId: printingId,
-    sourceLineage: sourceLineage,
-  }).all<MembershipRow>();
+): AsyncGenerator<Record<string, unknown>> {
   const current = new Set(membershipEntries(memberships).map(membershipKey));
-  const disappeared = new Map(
-    existing.results.filter((row) => !current.has(membershipKey(row))).map((row) => [membershipKey(row), row]),
-  );
-  return [...disappeared.values()].map((row) => ({
-    code: "relationship_not_observed",
-    printing_id: printingId,
-    relationship_kind: row.relationship_kind,
-    relationship_value: row.relationship_value,
-    detail: "The relationship was not observed in this complete run; it remains historical and is not withdrawn.",
-  }));
+  let afterKind = "",
+    afterValue = "";
+  for (;;) {
+    let row: Pick<MembershipRow, "relationship_kind" | "relationship_value"> | null;
+    try {
+      row = await printingRelationshipsForLineageStatement(database, {
+        printingId,
+        sourceLineage,
+        afterKind,
+        afterValue,
+      }).first<Pick<MembershipRow, "relationship_kind" | "relationship_value">>();
+    } catch (cause) {
+      throw new ReconciliationReducerStorageError(cause);
+    }
+    if (!row) return;
+    afterKind = row.relationship_kind;
+    afterValue = row.relationship_value;
+    if (!current.has(membershipKey(row)))
+      yield {
+        code: "relationship_not_observed",
+        printing_id: printingId,
+        relationship_kind: row.relationship_kind,
+        relationship_value: row.relationship_value,
+        detail: "The relationship was not observed in this complete run; it remains historical and is not withdrawn.",
+      };
+  }
 }
 
 export async function printingDisappearanceWarnings(

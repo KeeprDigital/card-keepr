@@ -1,3 +1,4 @@
+import { ReconciliationRecordCollection } from "./reconciliation-record-collection";
 import { ReconciliationSortedRecords } from "./reconciliation-sorted-records";
 import { ReconciliationPlanState, type ObservationPlan } from "./reconciliation-plan-state";
 import { ReconciliationRecordLog } from "./reconciliation-record-log";
@@ -159,7 +160,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     return blockedResult(database, runId, diagnostics, observedAt);
   }
 
-  const diagnostics: Diagnostic[] = [];
+  const diagnostics = new ReconciliationRecordCollection<Diagnostic>(database, runId, "diagnostic_records", false);
   const localGundamCardLineages = new ReconciliationReducerIndex<("gundam-en-asia" | "gundam-en-us")[]>(
     database,
     runId,
@@ -279,7 +280,12 @@ export async function reconcileRetainedCardPrintingEvidence(
     "locators",
   );
   const plans = new ReconciliationPlanState(database, runId);
-  const sourceWarnings: Record<string, unknown>[] = [
+  const sourceWarnings = new ReconciliationRecordCollection<Record<string, unknown>>(
+    database,
+    runId,
+    "warning_records",
+  );
+  await sourceWarnings.push(
     ...retained.countChangeWarnings,
     // A Printing Image whose transport retries were exhausted never blocks
     // publication: the candidate carries the gap explicitly so the owner can
@@ -293,7 +299,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       detail:
         "The Official Source did not serve this Printing Image within its bounded transport retries; the Printing is published without it and a later Ingestion Run can collect it.",
     })),
-  ];
+  );
   await pinCorrectionDecisions(database, runId, JSON.parse(run.selected_games_json) as string[]);
   const correctedCardIdentity = await pinnedCardIdentityResolver(database, runId);
   await pinEntityAdmissions(database, runId, JSON.parse(run.selected_games_json) as string[]);
@@ -331,11 +337,11 @@ export async function reconcileRetainedCardPrintingEvidence(
         checks.set(observation.supportedGame, observation.sourceCapturedAt);
     }
     if (sourceCard === null) {
-      sourceWarnings.push(...observation.sourceWarnings);
+      await sourceWarnings.push(...observation.sourceWarnings);
       continue;
     }
     if (sourceCard.game !== observation.supportedGame) {
-      diagnostics.push({
+      await diagnostics.push({
         code: "retained_evidence_invalid",
         source_observation_id: observation.sourceObservationId,
         locator: observation.locator,
@@ -346,7 +352,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     }
     const admission = await assessSourceAdmission(database, runId, observation, observedAt);
     if (admission?.identityExceptionConflict) {
-      diagnostics.push({
+      await diagnostics.push({
         code: "canonical_card_conflict",
         source_observation_id: observation.sourceObservationId,
         locator: observation.locator,
@@ -357,7 +363,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       continue;
     }
     if (admission && !admission.permitted) {
-      sourceWarnings.push({
+      await sourceWarnings.push({
         code: "entity_proposal_excluded",
         game: observation.supportedGame,
         proposal_id: admission.proposal.id,
@@ -469,7 +475,7 @@ export async function reconcileRetainedCardPrintingEvidence(
             (card) => card.id === candidates.find(({ id }) => id === reviewedCardPrintingId)!.card_id,
           );
         else {
-          diagnostics.push({
+          await diagnostics.push({
             code: "canonical_card_conflict",
             source_observation_id: observation.sourceObservationId,
             locator: observation.locator,
@@ -547,7 +553,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       proposedCard.official_identity.kind === "functional_designation" &&
       proposedCard.official_identity.value === "DON!!"
     ) {
-      sourceWarnings.push({
+      await sourceWarnings.push({
         code: "printing_coverage_incomplete",
         card_id: cardId,
         detail:
@@ -638,7 +644,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         ) &&
         !retainAsiaAuthority)
     ) {
-      diagnostics.push({
+      await diagnostics.push({
         code: "canonical_card_conflict",
         source_observation_id: observation.sourceObservationId,
         locator: observation.locator,
@@ -702,11 +708,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         localLocated === undefined &&
         reviewedPrintingId === null &&
         (insufficientCrossSource || matchIds.size > 1) &&
-        !diagnostics.some(
-          (diagnostic) =>
-            diagnostic.source_observation_id === observation.sourceObservationId &&
-            diagnostic.code === "canonical_card_conflict",
-        )
+        !(await diagnostics.hasObservation(observation.sourceObservationId, "canonical_card_conflict"))
       ) {
         reviewedPrintingId = await matchingIdentityDecision(database, {
           runId,
@@ -767,7 +769,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           ));
       if (locatedConflict) {
         const locatedId = located?.id ?? localLocated!.printingId;
-        diagnostics.push({
+        await diagnostics.push({
           code: "printing_match_contradictory",
           source_observation_id: observation.sourceObservationId,
           locator,
@@ -782,7 +784,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         printingId = reviewedPrintingId;
       } else if (insufficientCrossSource) {
         printingId = [...matchIds].sort()[0]!;
-        diagnostics.push({
+        await diagnostics.push({
           code: "printing_match_insufficient_evidence",
           source_observation_id: observation.sourceObservationId,
           locator,
@@ -792,7 +794,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         });
       } else if (missingProductCorroboration) {
         printingId = [...uncorroboratedCrossLocaleMatches].sort()[0]!;
-        diagnostics.push({
+        await diagnostics.push({
           code: "printing_match_insufficient_evidence",
           source_observation_id: observation.sourceObservationId,
           locator,
@@ -807,7 +809,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         matchIds.size > 0
       ) {
         printingId = [...matchIds].sort()[0]!;
-        diagnostics.push({
+        await diagnostics.push({
           code: "printing_match_insufficient_evidence",
           source_observation_id: observation.sourceObservationId,
           locator,
@@ -816,7 +818,7 @@ export async function reconcileRetainedCardPrintingEvidence(
             "A new Printing locator without an explicit Official Source artwork identity cannot be matched to an existing compatible Printing.",
         });
       } else if (matchIds.size > 1) {
-        diagnostics.push({
+        await diagnostics.push({
           code: "printing_match_ambiguous",
           source_observation_id: observation.sourceObservationId,
           locator,
@@ -829,7 +831,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       } else {
         printingId = await allocateCanonicalIdentity(database, "printing", compatibility, runId, observedAt);
         if (appearanceMatches.length > 0) {
-          diagnostics.push({
+          await diagnostics.push({
             code: "printing_match_contradictory",
             source_observation_id: observation.sourceObservationId,
             locator,
@@ -842,7 +844,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           !observation.structurallyComplete ||
           !observation.noveltyProofComplete
         ) {
-          diagnostics.push({
+          await diagnostics.push({
             code: "printing_match_insufficient_evidence",
             source_observation_id: observation.sourceObservationId,
             locator,
@@ -886,7 +888,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           !retainAsiaPrintingAuthority &&
           !printingFactsFormattingEquivalent(priorPrintingFacts, acceptedPrinting))
       ) {
-        diagnostics.push({
+        await diagnostics.push({
           code: "printing_match_contradictory",
           source_observation_id: observation.sourceObservationId,
           locator,
@@ -918,7 +920,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         };
         const existingImage = pendingImages.get(id) ?? (await printingImages.get(id));
         if (existingImage !== undefined && !printingImageEvidenceEquivalent(existingImage, observedImage)) {
-          diagnostics.push({
+          await diagnostics.push({
             code: "retained_evidence_invalid",
             source_observation_id: observation.sourceObservationId,
             locator,
@@ -942,7 +944,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
       for (const [id, image] of pendingImages) await printingImages.set(id, image);
     } else if (!observation.structurallyComplete) {
-      diagnostics.push({
+      await diagnostics.push({
         code: "printing_match_insufficient_evidence",
         source_observation_id: observation.sourceObservationId,
         locator: null,
@@ -950,7 +952,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         detail: "The Card-only retained observation is not structurally complete.",
       });
     }
-    if (admission && !diagnostics.some((d) => d.source_observation_id === observation.sourceObservationId)) {
+    if (admission && !(await diagnostics.hasObservation(observation.sourceObservationId))) {
       await completeSourceAdmission(
         database,
         runId,
@@ -959,7 +961,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         printingId ? (await printings.get(printingId))! : null,
         observedAt,
       );
-      sourceWarnings.push({
+      await sourceWarnings.push({
         code: "entity_admission",
         proposal_id: admission.proposal.id,
         card_id: cardId,
@@ -971,11 +973,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       ["card", cardId],
       ["printing", printingId],
     ] as const) {
-      if (
-        entityId === null ||
-        diagnostics.some((diagnostic) => diagnostic.source_observation_id === observation.sourceObservationId)
-      )
-        continue;
+      if (entityId === null || (await diagnostics.hasObservation(observation.sourceObservationId))) continue;
       const mapping: SourceMapping = {
         entityId,
         kind,
@@ -1039,7 +1037,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       );
     } catch (error) {
       if (isStorageOrCapacityFailure(error)) throw error;
-      diagnostics.push({
+      await diagnostics.push({
         code: "retained_evidence_invalid",
         source_observation_id: observation.sourceObservationId,
         locator: observation.locator,
@@ -1047,13 +1045,13 @@ export async function reconcileRetainedCardPrintingEvidence(
         detail: error instanceof ErratumRulesTextError ? error.message : "Retained Erratum evidence is invalid.",
       });
     }
-    sourceWarnings.push(...observation.sourceWarnings);
+    await sourceWarnings.push(...observation.sourceWarnings);
   }
 
   for await (const observation of retained.observations()) {
     if (observation.kind !== "official_erratum") continue;
     if (observation.target.type === "card" && !observation.appliesToParallelPrintings) {
-      diagnostics.push({
+      await diagnostics.push({
         code: "retained_evidence_invalid",
         source_observation_id: observation.sourceObservationId,
         locator: observation.sourceFragment,
@@ -1071,7 +1069,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       ).values(),
     ];
     if (matchingCards.length !== 1) {
-      diagnostics.push({
+      await diagnostics.push({
         code: "retained_evidence_invalid",
         source_observation_id: observation.sourceObservationId,
         locator: observation.sourceFragment,
@@ -1095,7 +1093,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
       const publishedPrintings = [...publishedById.values()];
       if (publishedPrintings.length !== 1) {
-        diagnostics.push({
+        await diagnostics.push({
           code: "retained_evidence_invalid",
           source_observation_id: observation.sourceObservationId,
           locator: observation.target.locator,
@@ -1149,7 +1147,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       });
     } catch (error) {
       if (isStorageOrCapacityFailure(error)) throw error;
-      diagnostics.push({
+      await diagnostics.push({
         code: "retained_evidence_invalid",
         source_observation_id: observation.sourceObservationId,
         locator: observation.sourceFragment,
@@ -1159,16 +1157,15 @@ export async function reconcileRetainedCardPrintingEvidence(
     }
   }
 
-  diagnostics.push(
-    ...(await withdrawalConflictDiagnostics(database, runId, plans)),
-    ...(await publishedWithdrawalConflictDiagnostics(database, plans)),
-  );
+  for await (const diagnostic of withdrawalConflictDiagnostics(database, runId, plans))
+    await diagnostics.push(diagnostic);
+  for await (const diagnostic of publishedWithdrawalConflictDiagnostics(database, plans))
+    await diagnostics.push(diagnostic);
 
   let productCatalogue = {
     draft: priorProducts,
     observedProducts: [] as { id: string }[],
     productSurfaceObserved: false,
-    warnings: [] as Record<string, unknown>[],
   };
   const observedProductGames = new Set<SupportedGame>();
   const observedProductLineages = new Set<string>();
@@ -1192,12 +1189,18 @@ export async function reconcileRetainedCardPrintingEvidence(
           };
         }
       }
-      const reconciled = await reconcileProductReleaseState(database, runId, productCatalogue.draft, inputs(), game);
+      const reconciled = await reconcileProductReleaseState(
+        database,
+        runId,
+        productCatalogue.draft,
+        inputs(),
+        game,
+        sourceWarnings,
+      );
       productCatalogue = {
         draft: reconciled.draft,
         observedProducts: [...productCatalogue.observedProducts, ...reconciled.observedProducts],
         productSurfaceObserved: productCatalogue.productSurfaceObserved || reconciled.productSurfaceObserved,
-        warnings: [...productCatalogue.warnings, ...reconciled.warnings],
       };
       if (reconciled.productSurfaceObserved) {
         observedProductGames.add(game);
@@ -1206,7 +1209,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     }
   } catch (error) {
     if (isStorageOrCapacityFailure(error)) throw error;
-    diagnostics.push({
+    await diagnostics.push({
       code: "retained_evidence_invalid",
       source_observation_id: null,
       locator: null,
@@ -1229,7 +1232,7 @@ export async function reconcileRetainedCardPrintingEvidence(
             };
           } catch (error) {
             const conflictPlans = await plans.forCard(card.id);
-            diagnostics.push({
+            await diagnostics.push({
               code: "canonical_card_conflict",
               source_observation_id: conflictPlans[0]?.sourceObservationId ?? null,
               locator: conflictPlans[0]?.locator ?? null,
@@ -1294,15 +1297,12 @@ export async function reconcileRetainedCardPrintingEvidence(
   const errataOnlyEvidence = retained.evidencePlans.every(
     ({ reconciliationCapability }) => reconciliationCapability === "errata",
   );
-  const relationshipWarnings: Record<string, unknown>[] = [];
   for await (const { printingId, sourceLineage, memberships } of plans.memberships())
-    relationshipWarnings.push(
-      ...(await relationshipDisappearanceWarnings(database, printingId, sourceLineage, memberships)),
-    );
+    for await (const warning of relationshipDisappearanceWarnings(database, printingId, sourceLineage, memberships))
+      await sourceWarnings.push(warning);
   const checkedSourceLineages = errataOnlyEvidence
     ? []
     : [...new Set(retained.partitions.map(({ sourceLineage }) => sourceLineage))].sort();
-  const gundamLineageWarnings: Record<string, unknown>[] = [];
   const addLineageWarning = async (printingId: string) => {
     const lineages = new Set(
       (await gundamPrintingLineages(database, printingId))
@@ -1311,7 +1311,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     );
     for (const lineage of (await localGundamPrintingProvenance.get(printingId)) ?? []) lineages.add(lineage);
     if (lineages.size === 1)
-      gundamLineageWarnings.push({
+      await sourceWarnings.push({
         code: "single_locale_gundam_printing",
         printing_id: printingId,
         source_lineage: [...lineages][0]!,
@@ -1331,13 +1331,10 @@ export async function reconcileRetainedCardPrintingEvidence(
       if (!alreadyVisited) await addLineageWarning(printingId);
     }
   }
-  const disappearanceWarnings: Record<string, unknown>[] = [];
-  const cardWarnings: Record<string, unknown>[] = [];
   for (const lineage of checkedSourceLineages) {
-    for await (const warning of plans.disappearanceWarnings("printing", lineage)) disappearanceWarnings.push(warning);
-    for await (const warning of plans.disappearanceWarnings("card", lineage)) cardWarnings.push(warning);
+    for await (const warning of plans.disappearanceWarnings("printing", lineage)) await sourceWarnings.push(warning);
+    for await (const warning of plans.disappearanceWarnings("card", lineage)) await sourceWarnings.push(warning);
   }
-  const erratumWarnings: Record<string, unknown>[] = [];
   if (errataOnlyEvidence) {
     const lineages = new Set(retained.partitions.map(({ sourceLineage }) => sourceLineage));
     for (const sourceLineage of lineages)
@@ -1347,7 +1344,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           !erratum.provenance.some((item) => item.source_lineage === sourceLineage)
         )
           continue;
-        erratumWarnings.push({
+        await sourceWarnings.push({
           code: "erratum_not_observed",
           erratum_id: erratum.id,
           source_lineage: sourceLineage,
@@ -1356,19 +1353,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         });
       }
   }
-  const warnings = [
-    ...new Map(
-      [
-        ...sourceWarnings,
-        ...gundamLineageWarnings,
-        ...relationshipWarnings,
-        ...disappearanceWarnings,
-        ...cardWarnings,
-        ...productCatalogue.warnings,
-        ...erratumWarnings,
-      ].map((warning) => [canonicalJson(warning), warning]),
-    ).values(),
-  ].sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right)));
+  const warnings = sourceWarnings;
   let candidateCatalogueDigest: string;
   const observedCards: { id: string }[] = [];
   for await (const card of official.values("cards")) {
@@ -1398,9 +1383,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       plans,
       checkedSourceLineages,
     );
-    const stableDiagnostics = [...diagnostics].sort((left, right) =>
-      canonicalJson(left).localeCompare(canonicalJson(right)),
-    );
+    const stableDiagnostics = diagnostics;
     const digestPayload = reconciliationDigestPayload({
       candidate: await official.document(candidate),
       partitions: retained.partitions,
@@ -1562,8 +1545,8 @@ function reconciliationDigestPayload(input: {
   observedCards: readonly { id: string }[];
   observedPrintings: readonly { id: string }[];
   observedProducts: readonly { id: string }[];
-  diagnostics: readonly Record<string, unknown>[];
-  warnings: readonly Record<string, unknown>[];
+  diagnostics: Iterable<Record<string, unknown>> | AsyncIterable<Record<string, unknown>>;
+  warnings: Iterable<Record<string, unknown>> | AsyncIterable<Record<string, unknown>>;
 }): Record<string, unknown> {
   return {
     catalogue_data: input.candidate,
@@ -1922,11 +1905,10 @@ function omitUndefinedValues(value: unknown): unknown {
   return value;
 }
 
-async function publishedWithdrawalConflictDiagnostics(
+async function* publishedWithdrawalConflictDiagnostics(
   database: CatalogueStore,
   plans: AsyncIterable<ObservationPlan>,
-): Promise<Diagnostic[]> {
-  const diagnostics: Diagnostic[] = [];
+): AsyncGenerator<Diagnostic> {
   for await (const plan of plans) {
     const withdrawal = plan.withdrawal;
     if (withdrawal === null) continue;
@@ -1957,25 +1939,24 @@ async function publishedWithdrawalConflictDiagnostics(
       const transition =
         latest !== null && latest.state !== withdrawal.state && withdrawal.effective_at > latest.effective_at;
       if ((latest === null && withdrawal.state === "reinstated") || (latest !== null && !repeated && !transition)) {
-        diagnostics.push({
+        yield {
           code: "withdrawal_evidence_conflict",
           source_observation_id: plan.sourceObservationId,
           locator: null,
           matched_printing_ids: target.entityType === "printing" ? [target.entityId] : [],
           detail:
             "The explicit withdrawal assertion conflicts with the published withdrawal history for this identity.",
-        });
+        };
       }
     }
   }
-  return diagnostics.sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right)));
 }
 
-async function withdrawalConflictDiagnostics(
+async function* withdrawalConflictDiagnostics(
   database: CatalogueStore,
   runId: string,
   plans: AsyncIterable<ObservationPlan>,
-): Promise<Diagnostic[]> {
+): AsyncGenerator<Diagnostic> {
   const assertions = new ReconciliationReducerIndex<{
     id: string;
     semantic: string;
@@ -2007,19 +1988,17 @@ async function withdrawalConflictDiagnostics(
       });
     }
   }
-  const diagnostics: Diagnostic[] = [];
   for await (const assertion of assertions.entityValues()) {
     if (!assertion.conflict) continue;
-    diagnostics.push({
+    yield {
       code: "withdrawal_evidence_conflict",
       source_observation_id: assertion.observationId,
       locator: null,
       matched_printing_ids: assertion.id.startsWith("printing:") ? [assertion.id.slice("printing:".length)] : [],
       detail:
         "Retained explicit withdrawal assertions conflict for the same entity and cannot be deterministically reconciled.",
-    });
+    };
   }
-  return diagnostics;
 }
 
 async function addGundamProducts(

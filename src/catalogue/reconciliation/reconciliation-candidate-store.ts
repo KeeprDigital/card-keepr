@@ -82,7 +82,9 @@ export async function persistReviewableCandidate(
     runId: string;
     partitions: readonly EvidencePartitionInput[];
     plans: AsyncIterable<ObservationPlan>;
-    warnings: readonly (ReconciliationWarning | Record<string, unknown>)[];
+    warnings:
+      | Iterable<ReconciliationWarning | Record<string, unknown>>
+      | AsyncIterable<ReconciliationWarning | Record<string, unknown>>;
     candidate: Record<string, unknown>;
     draft: CatalogueDraft;
     digestPayload: Record<string, unknown>;
@@ -93,7 +95,7 @@ export async function persistReviewableCandidate(
 ): Promise<void> {
   const manifest = await persistCandidatePartitions(database, input.runId, input.candidate, input.warnings);
   const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
-  const runWarnings = boundedRunWarnings(input.warnings);
+  const runWarnings = await boundedRunWarnings(input.warnings);
   const preparationCount = await stageCandidatePreparation(database, input);
   const gameSeals = await prepareGameCandidateManifests(
     database,
@@ -126,7 +128,7 @@ export async function persistBlockedCandidate(
     runId: string;
     partitions: readonly EvidencePartitionInput[];
     plans: AsyncIterable<ObservationPlan>;
-    diagnostics: readonly Record<string, unknown>[];
+    diagnostics: Iterable<Record<string, unknown>> | AsyncIterable<Record<string, unknown>>;
     candidate: Record<string, unknown>;
     draft: CatalogueDraft;
     digestPayload: Record<string, unknown>;
@@ -138,7 +140,7 @@ export async function persistBlockedCandidate(
   },
 ): Promise<void> {
   const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
-  const runDiagnostics = boundedRunWarnings(input.diagnostics.map(publicRunDiagnostic));
+  const runDiagnostics = await boundedRunWarnings(input.diagnostics);
   const failureCode = input.failureCode ?? "printing_reconciliation_blocked";
   await persistCandidatePartitions(database, input.runId, input.candidate, input.diagnostics);
   const preparationCount = await stageCandidatePreparation(database, input);
@@ -480,21 +482,29 @@ function recordArray(value: unknown): value is Record<string, unknown>[] {
 }
 
 /** Run summaries stay bounded; the complete warnings remain in inspectable partitions. */
-function boundedRunWarnings(warnings: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+async function boundedRunWarnings(
+  warnings: Iterable<Record<string, unknown>> | AsyncIterable<Record<string, unknown>>,
+): Promise<Record<string, unknown>[]> {
   const summary: Record<string, unknown>[] = [];
-  let bytes = 2;
-  for (const warning of warnings) {
+  let bytes = 2,
+    total = 0,
+    truncated = false;
+  for await (const warning of warnings) {
+    total++;
+    if (truncated) continue;
     const value = publicRunDiagnostic(warning);
     const length = new TextEncoder().encode(canonicalJson(value)).byteLength;
-    if (summary.length === 100 || bytes + length > 65536) {
-      summary.push({
-        code: "candidate_warnings_partitioned",
-        detail: `Inspect the candidate warning partitions for all ${warnings.length} warnings.`,
-      });
-      break;
+    if (summary.length === 100 || bytes + length > 65024) {
+      truncated = true;
+      continue;
     }
     summary.push(value);
     bytes += length + 1;
   }
+  if (truncated)
+    summary.push({
+      code: "candidate_warnings_partitioned",
+      detail: `Inspect the candidate warning partitions for all ${total} warnings.`,
+    });
   return summary;
 }
