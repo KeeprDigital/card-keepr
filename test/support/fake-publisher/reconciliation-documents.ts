@@ -624,6 +624,25 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       ],
     };
   }
+  if (scenario === "capacity-high-degree-observation") {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP94-998",
+          name: "Synthetic high degree record",
+          locator: "capacity-high-degree",
+          lineageMarker: "capacity-high-degree",
+          cardAttributes: {
+            ...onePieceLeaderAttributes(),
+            traits: Array.from({ length: 40000 }, (_, index) => `Synthetic trait ${String(index).padStart(8, "0")}`),
+          },
+          printingAttributes: { illustration_types: [] },
+        }),
+      ],
+    };
+  }
   if (scenario === "scale-warning-partitions") {
     return {
       cards: Array.from({ length: 64 }, (_, index) => ({

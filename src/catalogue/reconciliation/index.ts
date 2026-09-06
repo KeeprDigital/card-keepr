@@ -70,3 +70,4 @@ export {
   correctionPinStatementsForNewRun,
   correctionDecisionPinMetadata,
 } from "./identity-correction-pins";
+export { restorePartitionedRecord } from "./reconciliation-text";

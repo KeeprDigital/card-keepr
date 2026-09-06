@@ -3,6 +3,66 @@ import { collect, get, installReconciliationSuite, reconcile, requiredString } f
 
 installReconciliationSuite();
 
+test("one collection exposes separate sealed game manifests containing only each game's records", async () => {
+  const { administrationRequest, resumeCollection, waitForEvidenceRun } = await import("./runtime-helpers");
+  const started = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
+    idempotency_key: "separate-game-manifests",
+    plans: [
+      {
+        supported_game: "one-piece",
+        source_lineage: "one-piece-en",
+        adapter_version: "fixture-one-piece-json@3",
+        requests: [{ id: "one-piece-en:discovery", url: "https://official-source.invalid/reconciliation/base" }],
+      },
+      {
+        supported_game: "fusion-world",
+        source_lineage: "fusion-world-en",
+        adapter_version: "fixture-fusion-world-json@2",
+        requests: [
+          {
+            id: "fusion-world-en:discovery",
+            url: "https://official-source.invalid/reconciliation/profile-fusion-world",
+          },
+        ],
+      },
+    ],
+  });
+  expect(started.status).toBe(201);
+  const { id } = await started.json<{ id: string }>();
+  await resumeCollection(id);
+  await waitForEvidenceRun(id, "awaiting_approval");
+  const status = await get(`/v1/ingestion-runs/${id}/reconciliation`);
+  const candidates = status.document.candidates as { id: string; supported_game: string; manifest_digest: string }[];
+  expect(candidates.map((candidate) => candidate.supported_game)).toEqual(["fusion-world", "one-piece"]);
+  expect(new Set(candidates.map((candidate) => candidate.manifest_digest)).size).toBe(2);
+  for (const candidate of candidates) {
+    const header = await get(`/v1/game-candidates/${candidate.id}`);
+    expect(header.response.status).toBe(200);
+    expect(header.document).toMatchObject({ state: "sealed", deadline: status.document.deadline });
+    const page = await get(`/v1/game-candidates/${candidate.id}/partitions`);
+    expect(page.response.status).toBe(200);
+    const records: Record<string, Record<string, unknown>[]> = {};
+    for (const partition of page.document.partitions as { kind: string; ordinal: number }[]) {
+      const detail = await get(`/v1/game-candidates/${candidate.id}/partitions/${partition.ordinal}`);
+      expect(detail.response.status).toBe(200);
+      records[partition.kind] = detail.document.records as Record<string, unknown>[];
+    }
+    expect(records.cards!.length).toBeGreaterThan(0);
+    expect(records.cards!.every((card) => card.game === candidate.supported_game)).toBe(true);
+    expect(records.printings!.length).toBeGreaterThan(0);
+    expect(records.printings!.every((printing) => records.cards!.some((card) => card.id === printing.card_id))).toBe(
+      true,
+    );
+    expect(records.printing_images!.length).toBeGreaterThan(0);
+    expect(
+      records.printing_images!.every((image) =>
+        records.printings!.some((printing) => printing.id === image.printing_id),
+      ),
+    ).toBe(true);
+    expect(records.selected_games).toEqual([candidate.supported_game]);
+  }
+});
+
 test("owner can inspect the durable reconciliation identity and sealed progress independently of Workflow history", async () => {
   const run = await collect("/reconciliation/base", "durable-reconciliation-status");
   const result = await reconcile(run.id);
@@ -22,6 +82,17 @@ test("owner can inspect the durable reconciliation identity and sealed progress 
   expect(
     Date.parse(requiredString(status.document, "deadline")) - Date.parse(requiredString(status.document, "created_at")),
   ).toBe(604800000);
+  expect(status.document.candidates).toEqual([
+    expect.objectContaining({
+      id: expect.any(String),
+      ingestion_run_id: run.id,
+      supported_game: "one-piece",
+      expected_game_revision_id: run.document.expected_current_revision_id,
+      state: "sealed",
+      deadline: status.document.deadline,
+      manifest_digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+    }),
+  ]);
 });
 
 test("sealed candidate records have independently inspectable integrity-bound partitions", async () => {
@@ -503,8 +574,8 @@ test("a completed Workflow that paused durable work reports paused without requi
   });
 });
 
-test("an indivisible oversized metadata record produces an explicit terminal capacity result", async () => {
-  const run = await collect("/reconciliation/capacity-single-observation", "explicit-capacity-result");
+test("a high degree metadata record produces an explicit terminal capacity result", async () => {
+  const run = await collect("/reconciliation/capacity-high-degree-observation", "explicit-capacity-result");
   const result = await reconcile(run.id);
   expect(result.response.status).toBe(409);
   expect(result.document).toMatchObject({
@@ -515,4 +586,33 @@ test("an indivisible oversized metadata record produces an explicit terminal cap
     state: "failed",
     failure_code: "reconciliation_capacity_exceeded",
   });
+});
+
+test("oversized warning text stays inspectable through bounded immutable text chunks", async () => {
+  const run = await collect("/reconciliation/capacity-single-observation", "partitioned-warning-text");
+  expect((await reconcile(run.id)).response.status).toBe(200);
+  const page = await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions`);
+  const partition = (page.document.partitions as { ordinal: number; kind: string }[]).find(
+    (record) => record.kind === "warnings",
+  )!;
+  const detail = await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${partition.ordinal}`);
+  const parts = detail.document.text_parts as {
+    path: string[];
+    sha256: string;
+    chunks: number;
+    byte_length: number;
+  }[][];
+  const part = parts.flat().find((reference) => reference.byte_length > 600000)!;
+  expect(part).toBeDefined();
+  let restored = "";
+  for (let ordinal = 0; ordinal < part.chunks; ordinal++) {
+    const chunk = await get(`/v1/ingestion-runs/${run.id}/reconciliation/text/${part.sha256}/${ordinal}`);
+    expect(chunk.response.status).toBe(200);
+    const content = requiredString(chunk.document, "content");
+    expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(131072);
+    restored += content;
+  }
+  expect(new TextEncoder().encode(restored).byteLength).toBe(part.byte_length);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(restored));
+  expect(Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")).toBe(part.sha256);
 });

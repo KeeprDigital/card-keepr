@@ -1,4 +1,5 @@
 import { boundedRecordArrays, canonicalValueChunks, prepareCandidateBatch } from "./reconciliation-preparation";
+import { prepareGameCandidateManifests } from "./game-candidate";
 import { preparationCompleteGuard } from "./reconciliation-preparation-repository";
 import { persistCandidatePartitions } from "./reconciliation-partitions";
 import { sealReconciliationOperationStatement } from "./reconciliation-progress-repository";
@@ -100,8 +101,16 @@ export async function persistReviewableCandidate(
   const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
   const runWarnings = boundedRunWarnings(input.warnings);
   const preparationCount = await stageCandidatePreparation(database, input);
+  const gameSeals = await prepareGameCandidateManifests(
+    database,
+    input.runId,
+    input.candidate,
+    manifest.digest,
+    input.partitions,
+  );
   const statements = [
     preparationCompleteGuard(database, input.runId, preparationCount),
+    ...gameSeals,
     beginReconciliationStatement(database, input.runId),
     sealReconciliationOperationStatement(database, input.runId, input.candidateDigest, manifest.digest, manifest.count),
     reviewableCandidateStatement(database, {

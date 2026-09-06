@@ -92,4 +92,62 @@ CREATE TRIGGER reconciliation_input_no_update BEFORE UPDATE ON reconciliation_in
 BEGIN SELECT RAISE(ABORT, 'reconciliation_input_immutable'); END;
 CREATE TRIGGER reconciliation_input_no_delete BEFORE DELETE ON reconciliation_input_partitions
 BEGIN SELECT RAISE(ABORT, 'reconciliation_input_audit_retained'); END;
+CREATE TABLE game_candidates (
+  id TEXT PRIMARY KEY,
+  ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
+  supported_game TEXT NOT NULL,
+  expected_game_revision_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  deadline TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('preparing', 'paused', 'sealed', 'failed', 'abandoned', 'rejected', 'expired', 'published')),
+  generation INTEGER NOT NULL CHECK (generation >= 0),
+  manifest_digest TEXT CHECK (manifest_digest IS NULL OR length(manifest_digest) = 64),
+  preparation_manifest_digest TEXT CHECK (preparation_manifest_digest IS NULL OR length(preparation_manifest_digest) = 64),
+  partition_count INTEGER NOT NULL DEFAULT 0 CHECK (partition_count >= 0),
+  UNIQUE (ingestion_run_id, supported_game)
+);
+CREATE TABLE reconciliation_text_chunks (
+  ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
+  sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  content TEXT NOT NULL CHECK (length(CAST(content AS BLOB)) <= 131072),
+  PRIMARY KEY (ingestion_run_id, sha256, ordinal)
+);
+CREATE TRIGGER reconciliation_text_no_update BEFORE UPDATE ON reconciliation_text_chunks
+BEGIN SELECT RAISE(ABORT, 'reconciliation_text_immutable'); END;
+CREATE TRIGGER reconciliation_text_no_delete BEFORE DELETE ON reconciliation_text_chunks
+BEGIN SELECT RAISE(ABORT, 'reconciliation_text_audit_retained'); END;
+CREATE TRIGGER game_candidate_identity_immutable BEFORE UPDATE ON game_candidates
+WHEN NEW.id <> OLD.id OR NEW.ingestion_run_id <> OLD.ingestion_run_id OR NEW.supported_game <> OLD.supported_game
+  OR NEW.expected_game_revision_id <> OLD.expected_game_revision_id OR NEW.created_at <> OLD.created_at OR NEW.deadline <> OLD.deadline
+  OR (OLD.manifest_digest IS NOT NULL AND (NEW.manifest_digest IS NOT OLD.manifest_digest OR NEW.partition_count <> OLD.partition_count
+    OR NEW.preparation_manifest_digest IS NOT OLD.preparation_manifest_digest))
+BEGIN SELECT RAISE(ABORT, 'game_candidate_identity_immutable'); END;
+CREATE TRIGGER game_candidate_no_delete BEFORE DELETE ON game_candidates
+BEGIN SELECT RAISE(ABORT, 'game_candidate_audit_retained'); END;
+CREATE TABLE game_candidate_entity_scopes (
+  ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
+  kind TEXT NOT NULL CHECK (kind IN ('cards', 'printings')),
+  id TEXT NOT NULL,
+  supported_game TEXT NOT NULL,
+  PRIMARY KEY (ingestion_run_id, kind, id)
+);
+CREATE TRIGGER game_candidate_scope_no_update BEFORE UPDATE ON game_candidate_entity_scopes
+BEGIN SELECT RAISE(ABORT, 'game_candidate_scope_immutable'); END;
+CREATE TRIGGER game_candidate_scope_no_delete BEFORE DELETE ON game_candidate_entity_scopes
+BEGIN SELECT RAISE(ABORT, 'game_candidate_scope_audit_retained'); END;
+CREATE TABLE game_candidate_partitions (
+  candidate_id TEXT NOT NULL REFERENCES game_candidates(id),
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  kind TEXT NOT NULL,
+  content TEXT NOT NULL CHECK (json_valid(content) AND json_type(content) = 'array'),
+  sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+  byte_length INTEGER NOT NULL CHECK (byte_length BETWEEN 2 AND 524288 AND length(CAST(content AS BLOB)) = byte_length),
+  record_count INTEGER NOT NULL CHECK (record_count BETWEEN 0 AND 500 AND json_array_length(content) = record_count),
+  PRIMARY KEY (candidate_id, ordinal)
+);
+CREATE TRIGGER game_candidate_partition_no_update BEFORE UPDATE ON game_candidate_partitions
+BEGIN SELECT RAISE(ABORT, 'game_candidate_partition_immutable'); END;
+CREATE TRIGGER game_candidate_partition_no_delete BEFORE DELETE ON game_candidate_partitions
+BEGIN SELECT RAISE(ABORT, 'game_candidate_partition_audit_retained'); END;
 UPDATE catalogue_schema_state SET migration_level = 20 WHERE singleton = 1;

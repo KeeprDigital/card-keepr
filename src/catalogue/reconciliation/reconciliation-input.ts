@@ -1,5 +1,6 @@
 import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
-import { boundedRecordArrays } from "./reconciliation-preparation";
+import { boundedAsyncRecordArrays } from "./reconciliation-preparation";
+import { retainPartitionedRecord, restorePartitionedRecord } from "./reconciliation-text";
 import {
   insertReconciliationInputPartitionStatement,
   reconciliationInputManifestStatement,
@@ -35,7 +36,10 @@ export async function retainVerifiedReconciliationInput(
   ];
   for (const [kind, value] of Object.entries(input)) if (Array.isArray(value)) groups.push([kind, value]);
   for (const [kind, records] of groups) {
-    for (const content of boundedRecordArrays(withoutUndefined(records))) {
+    const partitioned = async function* () {
+      for (const record of withoutUndefined(records)) yield await retainPartitionedRecord(database, runId, record);
+    };
+    for await (const content of boundedAsyncRecordArrays(partitioned())) {
       const sha256 = await sha256Text(content);
       await storage(insertReconciliationInputPartitionStatement(database, runId, ordinal, kind, content, sha256).run());
       const retained = await storage(
@@ -76,7 +80,9 @@ export async function readVerifiedReconciliationInput(
     if (!partition) break;
     if ((await sha256Text(partition.content)) !== partition.sha256)
       throw new Error("Retained reconciliation input partition failed integrity verification.");
-    const records = JSON.parse(partition.content) as unknown[];
+    const records: unknown[] = [];
+    for (const record of JSON.parse(partition.content))
+      records.push(await restorePartitionedRecord(database, runId, record));
     if (partition.kind === "$metadata") {
       const metadata = records[0] as { values: Record<string, unknown>; array_keys: string[] };
       Object.assign(result, metadata.values);

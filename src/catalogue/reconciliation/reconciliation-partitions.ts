@@ -1,5 +1,6 @@
 import { correctionDecisionPinMetadata } from "./identity-correction-pins";
 import { entityAdmissionPinMetadata } from "./entity-admission-pins";
+import { retainPartitionedRecord } from "./reconciliation-text";
 import { type CatalogueStore, type CatalogueCandidate, canonicalJson, sha256Text } from "../shared";
 import {
   insertReconciliationPartitionStatement,
@@ -80,7 +81,7 @@ export async function persistCandidatePartitions(
       bytes = 2;
     };
     for (const record of records) {
-      const encoded = canonicalJson(record);
+      const encoded = canonicalJson(await retainPartitionedRecord(database, runId, record));
       const length = new TextEncoder().encode(encoded).byteLength;
       if (length + 2 > maximumPartitionBytes)
         throw new Error("reconciliation_capacity_exceeded: one metadata record exceeds 512 KiB.");

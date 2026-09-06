@@ -1,4 +1,5 @@
 import { type CatalogueCandidate, type CatalogueStore, canonicalJson } from "../shared";
+import { restorePartitionedRecord } from "../reconciliation";
 import {
   type CandidateObservedEntityRow,
   type ReconciliationPartitionLineageRow,
@@ -120,7 +121,8 @@ async function candidateWarnings(
         content: string;
       }>();
       if (!partition) return warnings;
-      warnings.push(...(JSON.parse(partition.content) as Record<string, unknown>[]));
+      for (const record of JSON.parse(partition.content))
+        warnings.push((await restorePartitionedRecord(database, runId, record)) as Record<string, unknown>);
       after = partition.ordinal;
     }
   }

@@ -20,6 +20,11 @@ export function terminalIngestionReservationEffects(database: CatalogueStore, ru
     WHERE state IN ('failed', 'rejected', 'expired', 'published') AND (? IS NULL OR ingestion_run_id = ?)`;
   return [
     repositoryStatements(database)
+      .prepare(`UPDATE game_candidates SET state = (
+      SELECT state FROM ingestion_run_current WHERE ingestion_run_id = game_candidates.ingestion_run_id
+    ) WHERE state <> 'abandoned' AND ingestion_run_id IN (${terminal})`)
+      .bind(runId ?? null, runId ?? null),
+    repositoryStatements(database)
       .prepare(`DELETE FROM game_candidate_slots
       WHERE ingestion_run_id IN (${terminal})`)
       .bind(runId ?? null, runId ?? null),

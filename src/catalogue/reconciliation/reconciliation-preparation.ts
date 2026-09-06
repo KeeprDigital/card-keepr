@@ -49,7 +49,22 @@ export function* canonicalValueChunks(value: unknown): Generator<string> {
 }
 
 function* canonicalParts(value: unknown): Generator<string> {
-  if (Array.isArray(value)) {
+  if (typeof value === "string") {
+    yield '"';
+    const normalized = value.normalize("NFC");
+    for (let offset = 0; offset < normalized.length; ) {
+      let end = Math.min(offset + 32768, normalized.length);
+      if (
+        end < normalized.length &&
+        normalized.charCodeAt(end - 1) >= 0xd800 &&
+        normalized.charCodeAt(end - 1) <= 0xdbff
+      )
+        end--;
+      yield JSON.stringify(normalized.slice(offset, end)).slice(1, -1);
+      offset = end;
+    }
+    yield '"';
+  } else if (Array.isArray(value)) {
     yield "[";
     for (let index = 0; index < value.length; index++) {
       if (index) yield ",";
@@ -73,6 +88,25 @@ export function* boundedRecordArrays<T>(records: Iterable<T>): Generator<string>
   let parts: string[] = [];
   let bytes = 2;
   for (const record of records) {
+    const encoded = canonicalJson(record);
+    const length = new TextEncoder().encode(encoded).byteLength;
+    if (length + 2 > 524288)
+      throw new Error("reconciliation_capacity_exceeded: one preparation record exceeds 512 KiB.");
+    if (parts.length === 500 || bytes + length + (parts.length ? 1 : 0) > 524288) {
+      yield `[${parts.join(",")}]`;
+      parts = [];
+      bytes = 2;
+    }
+    bytes += length + (parts.length ? 1 : 0);
+    parts.push(encoded);
+  }
+  if (parts.length) yield `[${parts.join(",")}]`;
+}
+
+export async function* boundedAsyncRecordArrays(records: AsyncIterable<unknown>): AsyncGenerator<string> {
+  let parts: string[] = [];
+  let bytes = 2;
+  for await (const record of records) {
     const encoded = canonicalJson(record);
     const length = new TextEncoder().encode(encoded).byteLength;
     if (length + 2 > 524288)

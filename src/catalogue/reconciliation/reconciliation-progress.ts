@@ -1,3 +1,8 @@
+import {
+  createGameCandidateIdentitiesStatement,
+  gameCandidatesForRunStatement,
+  synchronizeGameCandidatePauseStatement,
+} from "./game-candidate-repository";
 import { correctionPinStatementsForNewRun } from "./identity-correction-pins";
 import { failReconciliationWorkflow, retainedReconciliationResult } from "./reconciliation-candidate-store";
 import {
@@ -23,7 +28,13 @@ import {
   reconciliationActionUpdate,
   retainReconciliationAction,
 } from "./reconciliation-progress-repository";
-import { AdministrationProblem, canonicalJson, type CatalogueStore, guardedCatalogueStore } from "../shared";
+import {
+  AdministrationProblem,
+  canonicalJson,
+  type CatalogueStore,
+  guardedCatalogueStore,
+  sha256Text,
+} from "../shared";
 import {
   reconciliationOperationStatement,
   reconciliationPartitionsStatement,
@@ -43,7 +54,11 @@ export async function inspectReconciliationProgress(
       "reconciliation_not_found",
       "No reconciliation has started for this Ingestion Run.",
     );
-  return { contract: "card-keepr-reconciliation-status@1", ...operation };
+  return {
+    contract: "card-keepr-reconciliation-status@1",
+    ...operation,
+    candidates: (await gameCandidatesForRunStatement(database, runId).all()).results,
+  };
 }
 
 export async function inspectReconciliationPartitions(database: CatalogueStore, runId: string, after: string | null) {
@@ -108,11 +123,21 @@ export async function changeReconciliationProgress(
     ...current,
     state: action === "resume" ? "preparing" : action === "pause" ? "paused" : "abandoned",
     generation: input.generation + (action === "resume" ? 0 : 1),
+    candidates: (current.candidates as Record<string, unknown>[]).map((candidate) =>
+      candidate.state === "preparing" || candidate.state === "paused"
+        ? {
+            ...candidate,
+            state: action === "resume" ? "preparing" : action === "pause" ? "paused" : "abandoned",
+            generation: input.generation + (action === "resume" ? 0 : 1),
+          }
+        : candidate,
+    ),
   };
   try {
     await database.batch([
       reconciliationActionGuard(database, runId, action, input.generation),
       reconciliationActionUpdate(database, runId, action, input.generation),
+      synchronizeGameCandidatePauseStatement(database, runId),
       ...(action === "abandon"
         ? [
             failedReconciliationWorkflowStatement(database, {
@@ -160,7 +185,10 @@ export async function pauseFailedReconciliation(
     const scoped = guardedCatalogueStore(base, () => reconciliationWriterGuard(base, runId, generation));
     return failReconciliationWorkflow(scoped, runId, new Date().toISOString(), detail);
   }
-  await pauseFailedReconciliationStatement(database, runId, generation, detail).run();
+  await database.batch([
+    pauseFailedReconciliationStatement(database, runId, generation, detail),
+    synchronizeGameCandidatePauseStatement(database, runId),
+  ]);
   const current = await reconciliationOperationStatement(database, runId).first<{ state: string }>();
   if (!current) throw new Error("The durable reconciliation operation is unavailable.");
   if (current.state === "sealed" || current.state === "failed") return retainedReconciliationResult(database, runId);
@@ -192,6 +220,7 @@ export async function initializeReconciliationProgress(database: CatalogueStore,
       createReconciliationOperationStatement(database, runId, at, definitions),
       ...admissionPins,
       ...correctionPinStatementsForNewRun(database, runId, JSON.parse(selected?.games_json ?? "[]") as string[]),
+      createGameCandidateIdentitiesStatement(database, runId),
     ]);
   } catch (error) {
     if (error instanceof Error && error.message.includes("game_candidate_slot_occupied"))
@@ -226,7 +255,13 @@ export async function inspectReconciliationPartition(database: CatalogueStore, r
   }>();
   if (!row)
     throw new AdministrationProblem(404, "partition_not_found", "This reconciliation partition is unavailable.");
-  return { kind: row.kind, sha256: row.sha256, records: JSON.parse(row.content) };
+  const envelopes = JSON.parse(row.content) as { value: unknown; text_parts: unknown[] }[];
+  return {
+    kind: row.kind,
+    sha256: row.sha256,
+    records: envelopes.map((record) => record.value),
+    text_parts: envelopes.map((record) => record.text_parts),
+  };
 }
 
 export async function inspectReconciliationInputs(database: CatalogueStore, runId: string, after: string | null) {
@@ -262,6 +297,34 @@ export async function inspectReconciliationInput(database: CatalogueStore, runId
     ordinal: Number(ordinal),
     kind: partition.kind,
     sha256: partition.sha256,
-    records: JSON.parse(partition.content) as unknown[],
+    records: (JSON.parse(partition.content) as { value: unknown }[]).map((record) => record.value),
+    text_parts: (JSON.parse(partition.content) as { text_parts: unknown[] }[]).map((record) => record.text_parts),
   };
 }
+
+export async function inspectReconciliationText(
+  database: CatalogueStore,
+  runId: string,
+  digest: string,
+  ordinal: string,
+) {
+  if (!/^[a-f0-9]{64}$/.test(digest) || !/^\d+$/.test(ordinal) || !Number.isSafeInteger(Number(ordinal)))
+    throw new AdministrationProblem(
+      422,
+      "invalid_text_reference",
+      "Use the digest and ordinal from a retained text reference.",
+    );
+  const chunk = await reconciliationTextStatement(database, runId, digest, Number(ordinal)).first<{
+    content: string;
+  }>();
+  if (!chunk) throw new AdministrationProblem(404, "text_chunk_not_found", "This retained text chunk does not exist.");
+  return {
+    contract: "card-keepr-reconciliation-text-chunk@1",
+    ingestion_run_id: runId,
+    text_sha256: digest,
+    ordinal: Number(ordinal),
+    content: chunk.content,
+    sha256: await sha256Text(chunk.content),
+  };
+}
+import { reconciliationTextStatement } from "./reconciliation-text-repository";
