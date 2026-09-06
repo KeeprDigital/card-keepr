@@ -156,3 +156,20 @@ test("128 synthetic images of 100 KiB reconcile and publish as immutable referen
   expect(JSON.stringify(images)).not.toContain("content_base64");
   expect((await approve(candidate.document)).response.status).toBe(200);
 }, 60000);
+
+test("warning-heavy evidence seals bounded warning partitions without copying all warnings into each plan", async () => {
+  const { get } = await import("./reconciliation-helpers");
+  const run = await collect("/reconciliation/scale-warning-partitions", "warning-partition-budget");
+  const result = await reconcile(run.id);
+  expect(result.response.status, JSON.stringify(result.document)).toBe(200);
+  const page = await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions`);
+  const warnings = (page.document.partitions as { kind: string; byte_length: number; record_count: number }[]).filter(
+    (row) => row.kind === "warnings",
+  );
+  expect(warnings.length).toBeGreaterThan(1);
+  expect(warnings.reduce((sum, row) => sum + row.byte_length, 0)).toBeGreaterThan(524288);
+  expect(warnings.every((row) => row.byte_length <= 524288)).toBe(true);
+  const runStatus = await get(`/v1/ingestion-runs/${run.id}`);
+  expect(JSON.stringify(runStatus.document).length).toBeLessThan(70000);
+  expect((await approve(result.document)).response.status).toBe(200);
+});

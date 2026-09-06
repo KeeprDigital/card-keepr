@@ -1,5 +1,7 @@
 import {
   changeReconciliationProgress,
+  inspectReconciliationInputs,
+  inspectReconciliationInput,
   inspectReconciliationPartitions,
   inspectReconciliationPartition,
   inspectReconciliationProgress,
@@ -25,6 +27,14 @@ type Environment = {
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const reconciliationRoutes = [
+  route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation/inputs", async ({ env, request }, params) =>
+    Response.json(
+      await inspectReconciliationInputs(env.CATALOGUE_DB, params.run!, new URL(request.url).searchParams.get("after")),
+    ),
+  ),
+  route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation/inputs/:ordinal", async ({ env }, params) =>
+    Response.json(await inspectReconciliationInput(env.CATALOGUE_DB, params.run!, params.ordinal!)),
+  ),
   route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation/partitions/:ordinal", async ({ env }, params) =>
     Response.json(await inspectReconciliationPartition(env.CATALOGUE_DB, params.run!, params.ordinal!)),
   ),

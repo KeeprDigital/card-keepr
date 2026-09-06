@@ -1,3 +1,7 @@
+import {
+  reconciliationInputPartitionStatement,
+  reconciliationInputPartitionsStatement,
+} from "./reconciliation-input-repository";
 import { entityAdmissionPinStatementsForNewRun } from "./entity-admission-pins";
 import { reconciliationSelectedGamesStatement } from "./reconciliation-progress-repository";
 import {
@@ -117,6 +121,13 @@ export async function changeReconciliationProgress(
       retainReconciliationAction(database, runId, input.idempotency_key, request, canonicalJson(result)),
     ]);
   } catch {
+    const winner = await reconciliationActionStatement(database, input.idempotency_key).first<{
+      request_json: string;
+      result_json: string;
+    }>();
+    if (winner?.request_json === request) return JSON.parse(winner.result_json) as Record<string, unknown>;
+    if (winner)
+      throw new AdministrationProblem(409, "idempotency_conflict", "This key binds another reconciliation action.");
     throw new AdministrationProblem(
       409,
       "reconciliation_generation_conflict",
@@ -192,4 +203,41 @@ export async function inspectReconciliationPartition(database: CatalogueStore, r
   if (!row)
     throw new AdministrationProblem(404, "partition_not_found", "This reconciliation partition is unavailable.");
   return { kind: row.kind, sha256: row.sha256, records: JSON.parse(row.content) };
+}
+
+export async function inspectReconciliationInputs(database: CatalogueStore, runId: string, after: string | null) {
+  const cursor = after === null ? -1 : Number(after);
+  if (!Number.isSafeInteger(cursor) || cursor < -1)
+    throw new AdministrationProblem(422, "invalid_cursor", "Use the returned input cursor.");
+  const operation = await inspectReconciliationProgress(database, runId);
+  const partitions = (await reconciliationInputPartitionsStatement(database, runId, cursor).all<{ ordinal: number }>())
+    .results;
+  return {
+    contract: "card-keepr-reconciliation-input-partitions@1",
+    ingestion_run_id: runId,
+    verified: operation.input_manifest_digest !== null,
+    manifest_digest: operation.input_manifest_digest,
+    partitions,
+    next_cursor: partitions.length === 100 ? String(partitions.at(-1)!.ordinal) : null,
+  };
+}
+
+export async function inspectReconciliationInput(database: CatalogueStore, runId: string, ordinal: string) {
+  if (!/^\d+$/.test(ordinal) || !Number.isSafeInteger(Number(ordinal)))
+    throw new AdministrationProblem(422, "invalid_cursor", "Use a retained input ordinal.");
+  const partition = await reconciliationInputPartitionStatement(database, runId, Number(ordinal)).first<{
+    kind: string;
+    content: string;
+    sha256: string;
+  }>();
+  if (!partition)
+    throw new AdministrationProblem(404, "input_partition_not_found", "The requested input partition does not exist.");
+  return {
+    contract: "card-keepr-reconciliation-input-partition@1",
+    ingestion_run_id: runId,
+    ordinal: Number(ordinal),
+    kind: partition.kind,
+    sha256: partition.sha256,
+    records: JSON.parse(partition.content) as unknown[],
+  };
 }

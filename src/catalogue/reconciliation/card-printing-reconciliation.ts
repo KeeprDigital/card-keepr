@@ -1,3 +1,4 @@
+import { ReconciliationInputStorageError } from "./reconciliation-input";
 import { canonicalValueDigest } from "./reconciliation-preparation";
 import { CandidateImageStorageError } from "./reconciliation-images";
 import { initializeReconciliationProgress } from "./reconciliation-progress";
@@ -130,7 +131,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   try {
     retained = await retainedReconciliationObservation(database, evidenceObjects, runId, printingImageObjects);
   } catch (error) {
-    if (error instanceof CandidateImageStorageError) throw error;
+    if (error instanceof CandidateImageStorageError || error instanceof ReconciliationInputStorageError) throw error;
     const diagnostics: Diagnostic[] = [
       {
         code: "retained_evidence_invalid",

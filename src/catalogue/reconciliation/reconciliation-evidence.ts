@@ -1,3 +1,4 @@
+import { readVerifiedReconciliationInput, retainVerifiedReconciliationInput } from "./reconciliation-input";
 import { retainCandidateImage } from "./reconciliation-images";
 import { adapterReconciliationAreas, parsedOfficialArtworkIdentity, requiredSourceAdapter } from "../adapters";
 import { type CatalogueStore, canonicalJson, type SupportedGame, sha256 } from "../shared";
@@ -100,6 +101,19 @@ type DiscoveryRequestPlanRow = {
 const maximumAggregateReconciliationBytes = 32 * 1024 * 1024;
 
 export async function retainedReconciliationObservation(
+  database: CatalogueStore,
+  evidenceObjects: R2Bucket,
+  runId: string,
+  printingImages: R2Bucket,
+) {
+  const retained = await readVerifiedReconciliationInput(database, runId);
+  if (retained) return retained as Awaited<ReturnType<typeof collectRetainedReconciliationObservation>>;
+  const input = await collectRetainedReconciliationObservation(database, evidenceObjects, runId, printingImages);
+  await retainVerifiedReconciliationInput(database, runId, input);
+  return input;
+}
+
+async function collectRetainedReconciliationObservation(
   database: CatalogueStore,
   evidenceObjects: R2Bucket,
   runId: string,

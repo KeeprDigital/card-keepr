@@ -22,6 +22,7 @@ CREATE TABLE reconciliation_operations (
   completed_partitions INTEGER NOT NULL DEFAULT 0 CHECK (completed_partitions >= 0),
   candidate_digest TEXT,
   manifest_digest TEXT,
+  input_manifest_digest TEXT,
   definition_pins_json TEXT NOT NULL CHECK (json_valid(definition_pins_json)),
   observation_cutoff INTEGER NOT NULL,
   identity_decision_cutoff INTEGER NOT NULL,
@@ -36,6 +37,9 @@ WHEN NEW.id <> OLD.id OR NEW.ingestion_run_id <> OLD.ingestion_run_id
   OR NEW.identity_decision_cutoff <> OLD.identity_decision_cutoff
   OR NEW.authority_decision_cutoff <> OLD.authority_decision_cutoff
 BEGIN SELECT RAISE(ABORT, 'reconciliation_operation_identity_immutable'); END;
+CREATE TRIGGER reconciliation_verified_input_immutable BEFORE UPDATE ON reconciliation_operations
+WHEN OLD.input_manifest_digest IS NOT NULL AND NEW.input_manifest_digest IS NOT OLD.input_manifest_digest
+BEGIN SELECT RAISE(ABORT, 'reconciliation_verified_input_immutable'); END;
 CREATE TRIGGER reconciliation_operation_no_delete BEFORE DELETE ON reconciliation_operations
 BEGIN SELECT RAISE(ABORT, 'reconciliation_operation_audit_retained'); END;
 CREATE TABLE reconciliation_record_partitions (
@@ -75,4 +79,17 @@ CREATE TRIGGER reconciliation_preparation_no_update BEFORE UPDATE ON reconciliat
 BEGIN SELECT RAISE(ABORT, 'reconciliation_preparation_immutable'); END;
 CREATE TRIGGER reconciliation_preparation_no_delete BEFORE DELETE ON reconciliation_preparation_batches
 BEGIN SELECT RAISE(ABORT, 'reconciliation_preparation_audit_retained'); END;
+CREATE TABLE reconciliation_input_partitions (
+  ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  kind TEXT NOT NULL,
+  content TEXT NOT NULL CHECK (json_valid(content) AND json_type(content) = 'array'
+    AND length(CAST(content AS BLOB)) <= 524288 AND json_array_length(content) <= 500),
+  sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+  PRIMARY KEY (ingestion_run_id, ordinal)
+);
+CREATE TRIGGER reconciliation_input_no_update BEFORE UPDATE ON reconciliation_input_partitions
+BEGIN SELECT RAISE(ABORT, 'reconciliation_input_immutable'); END;
+CREATE TRIGGER reconciliation_input_no_delete BEFORE DELETE ON reconciliation_input_partitions
+BEGIN SELECT RAISE(ABORT, 'reconciliation_input_audit_retained'); END;
 UPDATE catalogue_schema_state SET migration_level = 19 WHERE singleton = 1;

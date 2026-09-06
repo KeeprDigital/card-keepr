@@ -587,6 +587,23 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       ],
     };
   }
+  if (scenario === "scale-warning-partitions") {
+    return {
+      cards: Array.from({ length: 64 }, (_, index) => ({
+        ...printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP94-${String(index + 1).padStart(3, "0")}`,
+          name: `Synthetic warning Card ${index}`,
+          locator: `warning-${index}`,
+          lineageMarker: `warning-${index}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+        }),
+        [`unrecognized_${index}_${"x".repeat(9000)}`]: "Synthetic undeclared source field",
+      })),
+    };
+  }
   if (scenario.startsWith("scale-128-images-")) {
     return {
       cards: Array.from({ length: 8 }, (_, offset) => {

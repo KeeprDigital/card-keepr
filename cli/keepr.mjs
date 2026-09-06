@@ -50,6 +50,11 @@ const commandRoutes = {
     path: "/v1/ingestion-runs/{run-id}/reconciliation/partitions?after={after}",
     optional: ["after"],
   },
+  reconciliationInputs: {
+    path: "/v1/ingestion-runs/{run-id}/reconciliation/inputs?after={after}",
+    optional: ["after"],
+  },
+  reconciliationInput: { path: "/v1/ingestion-runs/{run-id}/reconciliation/inputs/{ordinal}" },
   reconciliationPartition: { path: "/v1/ingestion-runs/{run-id}/reconciliation/partitions/{ordinal}" },
   ...Object.fromEntries(
     ["pause", "resume", "abandon"].map((action) => [
@@ -292,6 +297,8 @@ const commands = {
   "run retry": (args, env, json) => routeCommand("retryRun", args, env, json),
   "run cleanup": (args, env, json) => routeCommand("cleanupRun", args, env, json),
   "reconciliation status": (args, env, json) => routeCommand("reconciliationStatus", args, env, json),
+  "reconciliation inputs": (args, env, json) => routeCommand("reconciliationInputs", args, env, json),
+  "reconciliation input": (args, env, json) => routeCommand("reconciliationInput", args, env, json),
   "reconciliation partitions": (args, env, json) => routeCommand("reconciliationPartitions", args, env, json),
   "reconciliation partition": (args, env, json) => routeCommand("reconciliationPartition", args, env, json),
   ...Object.fromEntries(
@@ -918,7 +925,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr entity-proposal list | entity-proposal inspect | entity-proposal create | entity-proposal admit | entity-proposal link | entity-proposal reject | entity-proposal reconsider | identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | reconciliation status | reconciliation partitions | reconciliation partition | reconciliation pause | reconciliation resume | reconciliation abandon | run approve | run reject | run retry | run cleanup | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
+        "Usage: keepr entity-proposal list | entity-proposal inspect | entity-proposal create | entity-proposal admit | entity-proposal link | entity-proposal reject | entity-proposal reconsider | identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | reconciliation status | reconciliation inputs | reconciliation input | reconciliation partitions | reconciliation partition | reconciliation pause | reconciliation resume | reconciliation abandon | run approve | run reject | run retry | run cleanup | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
     },
     2,
   );

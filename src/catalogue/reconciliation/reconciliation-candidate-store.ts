@@ -96,13 +96,10 @@ export async function persistReviewableCandidate(
     observedAt: string;
   },
 ): Promise<void> {
-  const manifest = await persistCandidatePartitions(database, input.runId, input.candidate);
+  const manifest = await persistCandidatePartitions(database, input.runId, input.candidate, input.warnings);
   const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
-  const runWarnings = input.warnings.map((warning) => ({
-    code: String(warning.code),
-    detail: String(warning.detail),
-  }));
-  const preparationCount = await stageCandidatePreparation(database, input, canonicalJson(input.warnings));
+  const runWarnings = boundedRunWarnings(input.warnings);
+  const preparationCount = await stageCandidatePreparation(database, input);
   const statements = [
     preparationCompleteGuard(database, input.runId, preparationCount),
     beginReconciliationStatement(database, input.runId),
@@ -151,10 +148,10 @@ export async function persistBlockedCandidate(
   },
 ): Promise<void> {
   const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
-  const runDiagnostics = input.diagnostics.map(publicRunDiagnostic);
+  const runDiagnostics = boundedRunWarnings(input.diagnostics.map(publicRunDiagnostic));
   const failureCode = input.failureCode ?? "printing_reconciliation_blocked";
-  await persistCandidatePartitions(database, input.runId, input.candidate);
-  const preparationCount = await stageCandidatePreparation(database, input, canonicalJson(input.diagnostics));
+  await persistCandidatePartitions(database, input.runId, input.candidate, input.diagnostics);
+  const preparationCount = await stageCandidatePreparation(database, input);
   const statements = [
     preparationCompleteGuard(database, input.runId, preparationCount),
     beginReconciliationStatement(database, input.runId),
@@ -271,8 +268,8 @@ async function stageCandidatePreparation(
     plans: readonly CandidatePlanInput[];
     partitions: readonly EvidencePartitionInput[];
   },
-  warningsJson: string,
 ): Promise<number> {
+  const warningsJson = canonicalJson({ reconciliation_warning_partitions: true });
   let ordinal = 0;
   const prepare = async (kind: string, content: string, statement: D1PreparedStatement) => {
     await prepareCandidateBatch(database, input.runId, ordinal, kind, content, [statement]);
@@ -485,4 +482,24 @@ function recordArray(value: unknown): value is Record<string, unknown>[] {
   return (
     Array.isArray(value) && value.every((item) => item !== null && typeof item === "object" && !Array.isArray(item))
   );
+}
+
+/** Run summaries stay bounded; the complete warnings remain in inspectable partitions. */
+function boundedRunWarnings(warnings: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+  const summary: Record<string, unknown>[] = [];
+  let bytes = 2;
+  for (const warning of warnings) {
+    const value = publicRunDiagnostic(warning);
+    const length = new TextEncoder().encode(canonicalJson(value)).byteLength;
+    if (summary.length === 100 || bytes + length > 65536) {
+      summary.push({
+        code: "candidate_warnings_partitioned",
+        detail: `Inspect the candidate warning partitions for all ${warnings.length} warnings.`,
+      });
+      break;
+    }
+    summary.push(value);
+    bytes += length + 1;
+  }
+  return summary;
 }

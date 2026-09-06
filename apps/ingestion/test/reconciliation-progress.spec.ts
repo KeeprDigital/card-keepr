@@ -96,10 +96,13 @@ test("owner pause fences the prior generation and exact resume preserves identit
     idempotency_key: "pause-start",
   });
   const before = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
-  const paused = await request(`/v1/ingestion-runs/${run.id}/reconciliation/pause`, {
-    generation: 0,
-    idempotency_key: "pause-once",
-  });
+  const pauseRequest = () =>
+    request(`/v1/ingestion-runs/${run.id}/reconciliation/pause`, {
+      generation: 0,
+      idempotency_key: "pause-once",
+    });
+  const [paused, concurrentPause] = await Promise.all([pauseRequest(), pauseRequest()]);
+  expect(concurrentPause).toEqual(paused);
   expect(paused.status).toBe(200);
   expect(paused.document).toMatchObject({ state: "paused", generation: 1 });
   const resumeBody = { generation: 1, idempotency_key: "resume-once" };
@@ -345,6 +348,15 @@ test("interrupted preparation resumes verified batches before sealing for review
     completed_batches: 2,
     candidate_digest: null,
   });
+  const inputs = await get(`/v1/ingestion-runs/${run.id}/reconciliation/inputs`);
+  expect(inputs.document).toMatchObject({ verified: true, manifest_digest: expect.stringMatching(/^[a-f0-9]{64}$/) });
+  const partitions = inputs.document.partitions as { ordinal: number; kind: string; byte_length: number }[];
+  expect(partitions.every((partition) => partition.byte_length <= 524288)).toBe(true);
+  const observations = partitions.find((partition) => partition.kind === "observations")!;
+  const inputPage = await get(`/v1/ingestion-runs/${run.id}/reconciliation/inputs/${observations.ordinal}`);
+  expect(inputPage.response.status).toBe(200);
+  expect(JSON.stringify(inputPage.document)).not.toContain("content_base64");
+
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
   expect(
     (
@@ -354,7 +366,21 @@ test("interrupted preparation resumes verified batches before sealing for review
       })
     ).response.status,
   ).toBe(200);
-  await runReconciliationWorkflow(testEnv, { payload: { ...payload, generation: 1 } } as typeof event, step);
+  const unavailableEvidence = new Proxy(testEnv.EVIDENCE_OBJECTS, {
+    get(target, property) {
+      if (property === "get")
+        return async () => {
+          throw new Error("Verified inputs must be reused without rereading evidence objects.");
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  await runReconciliationWorkflow(
+    { ...testEnv, EVIDENCE_OBJECTS: unavailableEvidence },
+    { payload: { ...payload, generation: 1 } } as typeof event,
+    step,
+  );
   expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
     state: "sealed",
     generation: 1,

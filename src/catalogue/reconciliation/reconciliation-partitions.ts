@@ -14,10 +14,12 @@ export async function persistCandidatePartitions(
   database: CatalogueStore,
   runId: string,
   candidate: CatalogueCandidate,
+  warnings: readonly unknown[] = [],
 ) {
   let ordinal = 0;
   const pins = await reconciliationOperationStatement(database, runId).first<{
     definition_pins_json: string;
+    input_manifest_digest: string;
     observation_cutoff: number;
     identity_decision_cutoff: number;
     authority_decision_cutoff: number;
@@ -30,6 +32,7 @@ export async function persistCandidatePartitions(
       contract: "card-keepr-sealed-candidate-manifest@1",
       run_id: runId,
       definitions: pins.definition_pins_json,
+      input_manifest: pins.input_manifest_digest,
       admissions: await entityAdmissionPinMetadata(database, runId),
       observations: pins.observation_cutoff,
       identities: pins.identity_decision_cutoff,
@@ -38,7 +41,7 @@ export async function persistCandidatePartitions(
       deadline: pins.deadline,
     }),
   );
-  for (const [kind, records] of Object.entries(candidate)) {
+  for (const [kind, records] of Object.entries({ ...candidate, warnings })) {
     if (!Array.isArray(records)) continue;
     let parts: string[] = [];
     let bytes = 2;
