@@ -162,24 +162,20 @@ export class ReconciliationReducerIndex<T> {
     if (new TextEncoder().encode(content).byteLength > 524288)
       throw new Error("reconciliation_capacity_exceeded: one reducer fact exceeds 512 KiB.");
     const sha256 = await sha256Text(content);
-    const previous = await storage(
-      exactReducerStateStatement(this.database, this.runId, this.namespace, digest, this.ordinal).first<StateRow>(),
+    const inserted = await storage(
+      retainReducerStateStatement(
+        this.database,
+        this.runId,
+        this.namespace,
+        digest,
+        this.ordinal,
+        content,
+        sha256,
+        this.group ? await sha256Text(this.group(value)) : null,
+      ).first<StateRow>(),
     );
-    if (!previous)
-      await storage(
-        retainReducerStateStatement(
-          this.database,
-          this.runId,
-          this.namespace,
-          digest,
-          this.ordinal,
-          content,
-          sha256,
-          this.group ? await sha256Text(this.group(value)) : null,
-        ).run(),
-      );
     const retained =
-      previous ??
+      inserted ??
       (await storage(
         exactReducerStateStatement(this.database, this.runId, this.namespace, digest, this.ordinal).first<StateRow>(),
       ));

@@ -1,10 +1,5 @@
-import {
-  AdministrationProblem,
-  type CatalogueStore,
-  canonicalJson,
-  sha256Text,
-  byteBoundedJsonArrays,
-} from "../shared";
+import { boundedAsyncRecordArrays } from "./reconciliation-preparation";
+import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import {
   allocateIdentityStatement,
   allocatedIdentityStatement,
@@ -43,26 +38,30 @@ export async function allocateCanonicalIdentity(
   if (!allocated) throw new Error("Canonical identity allocation was not retained.");
   return allocated.entity_id;
 }
-export async function retainSourceMappings(database: CatalogueStore, runId: string, mappings: SourceMapping[]) {
-  for (const mapping of mappings) {
-    if (new TextEncoder().encode(mapping.evidenceJson).byteLength > 128 * 1024) {
-      const evidence = JSON.parse(mapping.evidenceJson);
-      mapping.evidenceJson = canonicalJson({
-        compatibility: evidence.compatibility,
-        retained_evidence: {
-          source_observation_id: mapping.sourceObservationId,
-          source_observation_set_id: mapping.sourceObservationSetId,
-          source_snapshot_id: mapping.sourceSnapshotId,
-          content_digest: await sha256Text(mapping.evidenceJson),
-        },
-      });
-    }
-  }
-  for (let index = 0; index < mappings.length; index += 100) {
-    for (const payload of byteBoundedJsonArrays(mappings.slice(index, index + 100))) {
-      await insertSourceMappingsStatement(database, runId, payload).run();
-    }
-  }
+export async function boundedSourceMapping(mapping: SourceMapping): Promise<SourceMapping> {
+  if (new TextEncoder().encode(mapping.evidenceJson).byteLength <= 128 * 1024) return mapping;
+  const evidence = JSON.parse(mapping.evidenceJson);
+  return {
+    ...mapping,
+    evidenceJson: canonicalJson({
+      compatibility: evidence.compatibility,
+      retained_evidence: {
+        source_observation_id: mapping.sourceObservationId,
+        source_observation_set_id: mapping.sourceObservationSetId,
+        source_snapshot_id: mapping.sourceSnapshotId,
+        content_digest: await sha256Text(mapping.evidenceJson),
+      },
+    }),
+  };
+}
+
+export async function retainSourceMappings(
+  database: CatalogueStore,
+  runId: string,
+  mappings: AsyncIterable<SourceMapping>,
+) {
+  for await (const payload of boundedAsyncRecordArrays(mappings, 100))
+    await insertSourceMappingsStatement(database, runId, payload).run();
 }
 export type { SourceMapping } from "./canonical-identity-repository";
 export async function inspectCanonicalIdentity(database: CatalogueStore, id: string, after = "") {

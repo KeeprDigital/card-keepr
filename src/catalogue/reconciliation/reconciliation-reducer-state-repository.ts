@@ -27,7 +27,7 @@ export function retainReducerStateStatement(
   return repositoryStatements(database)
     .prepare(`INSERT INTO reconciliation_reducer_state
     (ingestion_run_id, namespace, key_digest, observation_ordinal, content, sha256, group_digest)
-    VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`)
+    VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING content, sha256`)
     .bind(runId, namespace, key, ordinal, content, sha256, groupDigest);
 }
 

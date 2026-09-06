@@ -41,7 +41,7 @@ export async function prepareGameCandidateManifests(
       for await (const record of candidate.values(kind))
         yield "game" in record ? { id: record.id, game: record.game } : { id: record.id, card_id: record.card_id };
     }
-    for await (const content of boundedAsyncRecordArrays(scopes()))
+    for await (const content of boundedAsyncRecordArrays(scopes(), 100))
       await retainGameEntityScopesStatement(database, runId, kind, content).run();
   }
 

@@ -104,7 +104,12 @@ export function* boundedRecordArrays<T>(records: Iterable<T>): Generator<string>
   if (parts.length) yield `[${parts.join(",")}]`;
 }
 
-export async function* boundedAsyncRecordArrays(records: AsyncIterable<unknown>): AsyncGenerator<string> {
+export async function* boundedAsyncRecordArrays(
+  records: AsyncIterable<unknown>,
+  maximumRecords = 500,
+): AsyncGenerator<string> {
+  if (!Number.isInteger(maximumRecords) || maximumRecords < 1 || maximumRecords > 500)
+    throw new Error("Invalid preparation record bound.");
   let parts: string[] = [];
   let bytes = 2;
   for await (const record of records) {
@@ -112,7 +117,7 @@ export async function* boundedAsyncRecordArrays(records: AsyncIterable<unknown>)
     const length = new TextEncoder().encode(encoded).byteLength;
     if (length + 2 > 524288)
       throw new Error("reconciliation_capacity_exceeded: one preparation record exceeds 512 KiB.");
-    if (parts.length === 500 || bytes + length + (parts.length ? 1 : 0) > 524288) {
+    if (parts.length === maximumRecords || bytes + length + (parts.length ? 1 : 0) > 524288) {
       yield `[${parts.join(",")}]`;
       parts = [];
       bytes = 2;

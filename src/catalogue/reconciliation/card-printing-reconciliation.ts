@@ -1,3 +1,4 @@
+import { ReconciliationRecordLog } from "./reconciliation-record-log";
 import { ReconciliationErrataState } from "./reconciliation-errata-state";
 import { ReconciliationCandidateState } from "./reconciliation-candidate-state";
 import { ReconciliationCardState } from "./reconciliation-card-state";
@@ -22,6 +23,7 @@ import { pinEntityAdmissions, applyPinnedEntityAdmissions } from "./entity-admis
 import {
   allocateCanonicalIdentity,
   retainSourceMappings,
+  boundedSourceMapping,
   type SourceMapping,
   matchingIdentityDecision,
 } from "./canonical-identity";
@@ -234,6 +236,9 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
       await priorProducts.set("product_relationships", relationship);
     },
+    correction: async (correction) => {
+      await priorProducts.set("identity_corrections", correction);
+    },
     erratum: async (erratum) => {
       if (selectedGames.includes(erratum.game)) restoreCuratedEntitySourceFields(erratum);
       let provenance: D1Result<{ source_lineage: string; source_observation_id: string; total: number }>;
@@ -260,7 +265,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       await currentErrata.merge(restored);
     },
   });
-  const sourceMappings: SourceMapping[] = [];
+  const sourceMappings = new ReconciliationRecordLog<SourceMapping>(database, runId, "source_mappings");
   const localCardFacts = new ReconciliationReducerIndex<string>(database, runId, "card_facts");
   const localDigimonCardAuthorities = new ReconciliationReducerIndex<DigimonCardAuthority>(
     database,
@@ -991,7 +996,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         diagnostics.some((diagnostic) => diagnostic.source_observation_id === observation.sourceObservationId)
       )
         continue;
-      sourceMappings.push({
+      const mapping: SourceMapping = {
         entityId,
         kind,
         runId,
@@ -1012,7 +1017,8 @@ export async function reconcileRetainedCardPrintingEvidence(
           ),
         }),
         mappedAt: observedAt,
-      });
+      };
+      await sourceMappings.append(await boundedSourceMapping(mapping));
     }
     plans.push({
       sourceObservationSetId: observation.sourceObservationSetId,
@@ -1517,7 +1523,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     warnings,
   });
   const candidateDigest = await canonicalStreamValueDigest(digestPayload);
-  await retainSourceMappings(database, runId, sourceMappings);
+  await retainSourceMappings(database, runId, sourceMappings.records());
   await persistReviewableCandidate(database, {
     runId,
     partitions: retained.partitions,
@@ -1612,6 +1618,7 @@ async function candidateAtRevision(
     context: (context: CatalogueDistributionContext) => Promise<void>;
     relationship: (relationship: ProductRelationship) => Promise<void>;
     erratum: (erratum: CatalogueErratum) => Promise<void>;
+    correction: (correction: NonNullable<CatalogueCandidate["identity_corrections"]>[number]) => Promise<void>;
   },
 ): Promise<CatalogueCandidate | null> {
   const row = await candidateAtRevisionStatement(database, revisionId).first<{
@@ -1641,6 +1648,8 @@ async function candidateAtRevision(
         await seed.context(member.value as CatalogueDistributionContext);
       } else if (member.key === "product_relationships" && member.array) {
         await seed.relationship(member.value as ProductRelationship);
+      } else if (member.key === "identity_corrections" && member.array) {
+        await seed.correction(member.value as NonNullable<CatalogueCandidate["identity_corrections"]>[number]);
       } else if (member.key === "errata" && member.array) {
         await seed.erratum(member.value as CatalogueErratum);
       } else if (member.array) {
