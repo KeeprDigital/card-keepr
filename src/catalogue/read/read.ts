@@ -29,6 +29,7 @@ import {
   catalogueExportStatement,
   catalogueStatusStatement,
   currentCardStatement,
+  publishedIdentityCorrectionStatement,
   currentPrintingStatement,
   exportCollectionStatement,
   pendingExportComponentDeletionStatement,
@@ -211,7 +212,7 @@ export async function currentCardResponse(
   base: PublicBase,
 ): Promise<Response | null> {
   const row = await currentCardStatement(database, cardId).first<RevisionDocumentRow>();
-  if (row === null) return null;
+  if (row === null) return identityCorrectionResponse(database, cardId, "card", request, base);
   const url = new URL(request.url);
   const include = detailIncludeProjection(
     url,
@@ -257,7 +258,7 @@ export async function currentPrintingResponse(
   base: PublicBase,
 ): Promise<Response | null> {
   const row = await currentPrintingStatement(database, printingId).first<RevisionDocumentRow>();
-  if (row === null) return null;
+  if (row === null) return identityCorrectionResponse(database, printingId, "printing", request, base);
   const url = new URL(request.url);
   const include = detailIncludeProjection(
     url,
@@ -590,4 +591,32 @@ function parseRange(header: string | null, size: number): { offset: number; leng
   if (offset >= size || requestedEnd < offset) return "unsatisfiable";
   const end = Math.min(requestedEnd, size - 1);
   return { offset, length: end - offset + 1 };
+}
+
+async function identityCorrectionResponse(
+  database: CatalogueStore,
+  id: string,
+  kind: "card" | "printing",
+  request: Request,
+  base: PublicBase,
+) {
+  const row = await publishedIdentityCorrectionStatement(database, id, kind).first<RevisionDocumentRow>();
+  if (!row) return null;
+  const correction = JSON.parse(row.document_json) as { action: "merge" | "split"; replacement_ids: string[] };
+  const route = kind === "card" ? "cards" : "printings";
+  const replacements = correction.replacement_ids.map((id) =>
+    publicUrl(base, `/v1/${route}/${encodeURIComponent(id)}`),
+  );
+  const document = {
+    data: {
+      type: "identity_correction",
+      ...correction,
+      links: correction.action === "merge" ? { survivor: replacements[0] } : { replacements },
+    },
+    meta: { catalogue_revision_id: row.current_revision_id, published_at: row.published_at },
+    links: { self: publicUrl(base, `/v1/${route}/${encodeURIComponent(id)}`) },
+  };
+  const headers = revisionHeaders(row.current_revision_id, await canonicalEtag(document));
+  const conditional = conditionalResponse(request, headers);
+  return conditional ?? Response.json(document, { headers });
 }

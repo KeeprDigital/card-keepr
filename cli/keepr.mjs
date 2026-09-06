@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { runIdentityCorrectionCommand } from "./identity-corrections.mjs";
 import { runEntityProposalCommand } from "./entity-proposals.mjs";
 
 import { readFile } from "node:fs/promises";
@@ -328,6 +329,8 @@ export async function main(arguments_, environment) {
     return runCatalogueCommand(arguments_.slice(1), environment, json);
   }
 
+  if (arguments_[0] === "identity-correction")
+    return runIdentityCorrectionCommand(arguments_.slice(1), environment, json);
   if (arguments_[0] === "entity-proposal") return runEntityProposalCommand(arguments_.slice(1), environment, json);
 
   if (arguments_[0] === "curated-revision") {
@@ -893,7 +896,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr entity-proposal list | entity-proposal inspect | entity-proposal create | entity-proposal admit | entity-proposal link | entity-proposal reject | entity-proposal reconsider | identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
+        "Usage: keepr identity-correction validate | identity-correction create | identity-correction inspect | identity-correction list | entity-proposal list | entity-proposal inspect | entity-proposal create | entity-proposal admit | entity-proposal link | entity-proposal reject | entity-proposal reconsider | identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
     },
     2,
   );

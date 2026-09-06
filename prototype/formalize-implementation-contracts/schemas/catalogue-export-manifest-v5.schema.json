@@ -58,7 +58,7 @@
     "components": {
       "type": "array",
       "minItems": 10,
-      "maxItems": 10,
+      "maxItems": 11,
       "uniqueItems": true,
       "prefixItems": [
         {
@@ -90,6 +90,9 @@
         },
         {
           "$ref": "#/$defs/RelationshipsComponent"
+        },
+        {
+          "$ref": "#/$defs/IdentityCorrectionsComponent"
         }
       ],
       "items": false
@@ -379,6 +382,27 @@
             },
             "record_schema": {
               "const": "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/RelationshipRecord"
+            },
+            "order": {
+              "const": "id:utf8"
+            }
+          }
+        }
+      ]
+    },
+    "IdentityCorrectionsComponent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Component"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "const": "identity-corrections"
+            },
+            "record_schema": {
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/IdentityCorrectionRecord"
             },
             "order": {
               "const": "id:utf8"

@@ -1,3 +1,4 @@
+import { publishCorrectionStatements } from "./identity-correction-repository";
 import { requiredSourceAdapter } from "../adapters";
 import { curatedPublicationStatements } from "../curated";
 import {
@@ -135,15 +136,18 @@ export async function reconciliationPublication(
   const cards = new Map(candidate.cards.map((card) => [card.id, card]));
   const printings = new Map(candidate.printings.map((printing) => [printing.id, printing]));
   const cardPlans = groupedPlans(
-    plans.filter((plan) => plan.observation_kind === "card_printing"),
+    plans.filter((plan) => plan.observation_kind === "card_printing" && cards.has(plan.card_id)),
     (plan) => plan.card_id,
   );
   const cardEvidencePlans = groupedPlans(
-    plans.filter((plan) => plan.observation_kind === "card_printing"),
+    plans.filter((plan) => plan.observation_kind === "card_printing" && cards.has(plan.card_id)),
     (plan) => plan.card_id,
   );
   const printingPlans = groupedPlans(
-    plans.filter((plan) => plan.observation_kind === "card_printing" && plan.printing_id !== null),
+    plans.filter(
+      (plan) =>
+        plan.observation_kind === "card_printing" && plan.printing_id !== null && printings.has(plan.printing_id),
+    ),
     (plan) => plan.printing_id!,
   );
   const [existingCards, existingPrintings, existingMemberships, existingLocators] = await Promise.all([
@@ -352,6 +356,7 @@ export async function reconciliationPublication(
     revisionId,
   );
   result.statements.push(
+    ...publishCorrectionStatements(database, revisionId, candidate.identity_corrections ?? []),
     ...publicationStatements(database, publicationRows, plans, revisionId),
     ...errataPublicationStatements(database, candidate.errata ?? [], observedProvenance, revisionId),
     ...(await curatedPublicationStatements(database, runId, revisionId)),
