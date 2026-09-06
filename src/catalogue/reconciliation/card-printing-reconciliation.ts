@@ -1,3 +1,4 @@
+import { ReconciliationPlanState, type ObservationPlan } from "./reconciliation-plan-state";
 import { ReconciliationRecordLog } from "./reconciliation-record-log";
 import { ReconciliationErrataState } from "./reconciliation-errata-state";
 import { ReconciliationCandidateState } from "./reconciliation-candidate-state";
@@ -74,16 +75,9 @@ import {
   compatibilityFor,
   hasCrossSourceArtworkEvidence,
   isCompatible,
-  type Memberships,
   type PrintingCompatibility,
-  type ProvenancedWithdrawal,
 } from "./reconciliation-model";
-import {
-  cardDisappearanceWarnings,
-  printingDisappearanceWarnings,
-  publicReconciledPrinting,
-  relationshipDisappearanceWarnings,
-} from "./reconciliation-read";
+import { publicReconciledPrinting, relationshipDisappearanceWarnings } from "./reconciliation-read";
 import {
   activeParsingRunStatement,
   candidateAtRevisionStatement,
@@ -283,22 +277,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     runId,
     "locators",
   );
-  const plans: {
-    sourceObservationSetId: string;
-    sourceSnapshotId: string;
-    sourceObservationId: string;
-    sourceLineage: string;
-    supportedGame: SupportedGame;
-    observationKind: "card_printing" | "official_erratum";
-    cardId: string;
-    printingId: string | null;
-    locator: string | null;
-    variantKey: string | null;
-    compatibility: PrintingCompatibility | null;
-    memberships: Memberships;
-    withdrawal: ProvenancedWithdrawal | null;
-    sourceCardFactsJson: string | null;
-  }[] = [];
+  const plans = new ReconciliationPlanState(database, runId);
   const sourceWarnings: Record<string, unknown>[] = [
     ...retained.countChangeWarnings,
     // A Printing Image whose transport retries were exhausted never blocks
@@ -1020,7 +999,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       };
       await sourceMappings.append(await boundedSourceMapping(mapping));
     }
-    plans.push({
+    await plans.append({
       sourceObservationSetId: observation.sourceObservationSetId,
       sourceSnapshotId: observation.sourceSnapshotId,
       sourceObservationId: observation.sourceObservationId,
@@ -1147,7 +1126,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           ],
         }),
       );
-      plans.push({
+      await plans.append({
         sourceObservationSetId: observation.sourceObservationSetId,
         sourceSnapshotId: observation.sourceSnapshotId,
         sourceObservationId: observation.sourceObservationId,
@@ -1180,7 +1159,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
 
   diagnostics.push(
-    ...withdrawalConflictDiagnostics(plans),
+    ...(await withdrawalConflictDiagnostics(plans)),
     ...(await publishedWithdrawalConflictDiagnostics(database, plans)),
   );
 
@@ -1193,12 +1172,11 @@ export async function reconcileRetainedCardPrintingEvidence(
   const observedProductGames = new Set<SupportedGame>();
   const observedProductLineages = new Set<string>();
   try {
-    const plansByObservationId = new Map(plans.map((plan) => [plan.sourceObservationId, plan]));
     for (const game of productGames) {
       async function* inputs(): AsyncGenerator<ProductReleaseEvidenceInput> {
         for await (const observation of retained.observations()) {
           if (observation.kind !== "card_printing" || observation.supportedGame !== game) continue;
-          const plan = plansByObservationId.get(observation.sourceObservationId);
+          const plan = await plans.get(observation.sourceObservationId);
           yield {
             value: observation.productReleaseValue,
             sourceObservationId: observation.sourceObservationId,
@@ -1241,7 +1219,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     await official.set(
       "cards",
       omitUndefinedValues(
-        ((card: CatalogueCard) => {
+        await (async (card: CatalogueCard) => {
           if (!retained.partitions.some(({ supportedGame }) => supportedGame === card.game)) return card;
           try {
             return {
@@ -1249,7 +1227,7 @@ export async function reconcileRetainedCardPrintingEvidence(
               effective_rules_text: deriveEffectiveRulesText(card, cardErrata, observedAt),
             };
           } catch (error) {
-            const conflictPlans = plans.filter((plan) => plan.cardId === card.id);
+            const conflictPlans = await plans.forCard(card.id);
             diagnostics.push({
               code: "canonical_card_conflict",
               source_observation_id: conflictPlans[0]?.sourceObservationId ?? null,
@@ -1312,18 +1290,14 @@ export async function reconcileRetainedCardPrintingEvidence(
   candidate = omitUndefinedValues(candidate) as CatalogueCandidate;
   await official.seed(candidate, ["identity_corrections"]);
   for await (const erratum of currentErrata.values()) await official.set("errata", erratum);
-  const cardPrintingPlans = plans.filter((plan) => plan.observationKind === "card_printing");
-  const groupedMemberships = mergedPlanMemberships(cardPrintingPlans);
   const errataOnlyEvidence = retained.evidencePlans.every(
     ({ reconciliationCapability }) => reconciliationCapability === "errata",
   );
-  const relationshipWarnings = (
-    await Promise.all(
-      groupedMemberships.map(({ printingId, sourceLineage, memberships }) =>
-        relationshipDisappearanceWarnings(database, printingId, sourceLineage, memberships),
-      ),
-    )
-  ).flat();
+  const relationshipWarnings: Record<string, unknown>[] = [];
+  for await (const { printingId, sourceLineage, memberships } of plans.memberships())
+    relationshipWarnings.push(
+      ...(await relationshipDisappearanceWarnings(database, printingId, sourceLineage, memberships)),
+    );
   const checkedSourceLineages = errataOnlyEvidence
     ? []
     : [...new Set(retained.partitions.map(({ sourceLineage }) => sourceLineage))].sort();
@@ -1356,32 +1330,12 @@ export async function reconcileRetainedCardPrintingEvidence(
       if (!alreadyVisited) await addLineageWarning(printingId);
     }
   }
-  const plansByLineage = checkedSourceLineages.map(
-    (sourceLineage) =>
-      [sourceLineage, cardPrintingPlans.filter((plan) => plan.sourceLineage === sourceLineage)] as const,
-  );
-  const disappearanceWarnings = (
-    await Promise.all(
-      plansByLineage.map(([lineage, lineagePlans]) =>
-        printingDisappearanceWarnings(
-          database,
-          lineage,
-          lineagePlans.flatMap((plan) => (plan.printingId === null ? [] : [plan.printingId])),
-        ),
-      ),
-    )
-  ).flat();
-  const cardWarnings = (
-    await Promise.all(
-      plansByLineage.map(([lineage, lineagePlans]) =>
-        cardDisappearanceWarnings(
-          database,
-          lineage,
-          lineagePlans.map((plan) => plan.cardId),
-        ),
-      ),
-    )
-  ).flat();
+  const disappearanceWarnings: Record<string, unknown>[] = [];
+  const cardWarnings: Record<string, unknown>[] = [];
+  for (const lineage of checkedSourceLineages) {
+    for await (const warning of plans.disappearanceWarnings("printing", lineage)) disappearanceWarnings.push(warning);
+    for await (const warning of plans.disappearanceWarnings("card", lineage)) cardWarnings.push(warning);
+  }
   const erratumWarnings: Record<string, unknown>[] = [];
   if (errataOnlyEvidence) {
     const lineages = new Set(retained.partitions.map(({ sourceLineage }) => sourceLineage));
@@ -1428,7 +1382,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   const observedPrintings: { id: string }[] = [];
   for await (const printing of official.values("printings")) {
     if (
-      plans.some((plan) => plan.observationKind === "card_printing" && plan.printingId === printing.id) ||
+      (await plans.hasObserved("printing", printing.id)) ||
       (await targetedPrintingIds.has(printing.id)) ||
       admittedEntities.some((entity) => entity.printing?.id === printing.id)
     )
@@ -1686,37 +1640,15 @@ export async function showReconciledPrinting(
   };
 }
 
-function digestObservationPlans(
-  plans: readonly {
-    sourceObservationId: string;
-    sourceLineage: string;
-    supportedGame: SupportedGame;
-    observationKind: "card_printing" | "official_erratum";
-    cardId: string;
-    printingId: string | null;
-    locator: string | null;
-    variantKey: string | null;
-    compatibility: PrintingCompatibility | null;
-    memberships: Memberships;
-    withdrawal: ProvenancedWithdrawal | null;
-  }[],
-): Record<string, unknown>[] {
-  return [...plans].sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right)));
+function digestObservationPlans(plans: AsyncIterable<ObservationPlan>): AsyncIterable<ObservationPlan> {
+  return plans;
 }
 
 async function catalogueDataDigest(
   database: CatalogueStore,
   draft: ReconciliationCandidateState,
   candidate: CatalogueCandidate,
-  plans: readonly {
-    cardId: string;
-    printingId: string | null;
-    sourceLineage: string;
-    locator: string | null;
-    variantKey: string | null;
-    memberships: Memberships;
-    withdrawal: ProvenancedWithdrawal | null;
-  }[],
+  plans: AsyncIterable<ObservationPlan>,
   checkedSourceLineages: readonly string[],
 ): Promise<string> {
   const [storedMemberships, storedCards, storedPrintings] = await Promise.all([
@@ -1770,7 +1702,7 @@ async function catalogueDataDigest(
       withdrawals.set(`${entityType}:${row.id}`, semantic);
     }
   }
-  for (const plan of plans) {
+  for await (const plan of plans) {
     if (plan.printingId !== null) {
       for (const membership of [
         ...plan.memberships.products.map((value) => ({
@@ -1932,28 +1864,16 @@ function omitUndefinedValues(value: unknown): unknown {
   return value;
 }
 
-function _groupPlansByLineage<T extends { sourceLineage: string }>(plans: readonly T[]): [string, T[]][] {
-  const grouped = new Map<string, T[]>();
-  for (const plan of plans) {
-    grouped.set(plan.sourceLineage, [...(grouped.get(plan.sourceLineage) ?? []), plan]);
-  }
-  return [...grouped].sort(([left], [right]) => left.localeCompare(right));
-}
 function compareCanonical(left: Record<string, unknown>, right: Record<string, unknown>): number {
   return canonicalJson(left).localeCompare(canonicalJson(right));
 }
 
 async function publishedWithdrawalConflictDiagnostics(
   database: CatalogueStore,
-  plans: readonly {
-    sourceObservationId: string;
-    cardId: string;
-    printingId: string | null;
-    withdrawal: ProvenancedWithdrawal | null;
-  }[],
+  plans: AsyncIterable<ObservationPlan>,
 ): Promise<Diagnostic[]> {
   const diagnostics: Diagnostic[] = [];
-  for (const plan of plans) {
+  for await (const plan of plans) {
     const withdrawal = plan.withdrawal;
     if (withdrawal === null) continue;
     const targets = [
@@ -2000,16 +1920,9 @@ async function publishedWithdrawalConflictDiagnostics(
   return diagnostics.sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right)));
 }
 
-function withdrawalConflictDiagnostics(
-  plans: readonly {
-    sourceObservationId: string;
-    cardId: string;
-    printingId: string | null;
-    withdrawal: ProvenancedWithdrawal | null;
-  }[],
-): Diagnostic[] {
+async function withdrawalConflictDiagnostics(plans: AsyncIterable<ObservationPlan>): Promise<Diagnostic[]> {
   const assertions = new Map<string, { semantics: Set<string>; observationIds: Set<string> }>();
-  for (const plan of plans) {
+  for await (const plan of plans) {
     const withdrawal = plan.withdrawal;
     if (withdrawal === null) continue;
     const targets = [
@@ -2044,53 +1957,6 @@ function withdrawalConflictDiagnostics(
       detail:
         "Retained explicit withdrawal assertions conflict for the same entity and cannot be deterministically reconciled.",
     }));
-}
-
-function mergedPlanMemberships(
-  plans: readonly {
-    printingId: string | null;
-    sourceLineage: string;
-    memberships: Memberships;
-  }[],
-): {
-  printingId: string;
-  sourceLineage: string;
-  memberships: Memberships;
-}[] {
-  const grouped = new Map<
-    string,
-    {
-      printingId: string;
-      sourceLineage: string;
-      products: Set<string>;
-      distributionContexts: Set<string>;
-      sourceBuckets: Set<string>;
-    }
-  >();
-  for (const plan of plans) {
-    if (plan.printingId === null) continue;
-    const key = canonicalJson([plan.sourceLineage, plan.printingId]);
-    const membership = grouped.get(key) ?? {
-      printingId: plan.printingId,
-      sourceLineage: plan.sourceLineage,
-      products: new Set<string>(),
-      distributionContexts: new Set<string>(),
-      sourceBuckets: new Set<string>(),
-    };
-    plan.memberships.products.forEach((value) => membership.products.add(value));
-    plan.memberships.distribution_contexts.forEach((value) => membership.distributionContexts.add(value));
-    plan.memberships.source_buckets.forEach((value) => membership.sourceBuckets.add(value));
-    grouped.set(key, membership);
-  }
-  return [...grouped.values()].map((membership) => ({
-    sourceLineage: membership.sourceLineage,
-    printingId: membership.printingId,
-    memberships: {
-      products: [...membership.products].sort(),
-      distribution_contexts: [...membership.distributionContexts].sort(),
-      source_buckets: [...membership.sourceBuckets].sort(),
-    },
-  }));
 }
 
 async function addGundamProducts(

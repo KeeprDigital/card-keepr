@@ -1,4 +1,10 @@
-import { boundedRecordArrays, canonicalStreamValueChunks, prepareCandidateBatch } from "./reconciliation-preparation";
+import type { ObservationPlan } from "./reconciliation-plan-state";
+import {
+  boundedAsyncRecordArrays,
+  boundedRecordArrays,
+  canonicalStreamValueChunks,
+  prepareCandidateBatch,
+} from "./reconciliation-preparation";
 import { prepareGameCandidateManifests } from "./game-candidate";
 import { preparationCompleteGuard } from "./reconciliation-preparation-repository";
 import { persistCandidatePartitions } from "./reconciliation-partitions";
@@ -75,21 +81,7 @@ export async function persistReviewableCandidate(
   input: {
     runId: string;
     partitions: readonly EvidencePartitionInput[];
-    plans: readonly {
-      sourceObservationSetId: string;
-      sourceSnapshotId: string;
-      sourceObservationId: string;
-      sourceLineage: string;
-      observationKind: "card_printing" | "official_erratum";
-      cardId: string;
-      printingId: string | null;
-      locator: string | null;
-      variantKey: string | null;
-      compatibility: PrintingCompatibility | null;
-      memberships: Memberships;
-      withdrawal: ProvenancedWithdrawal | null;
-      sourceCardFactsJson: string | null;
-    }[];
+    plans: AsyncIterable<ObservationPlan>;
     warnings: readonly (ReconciliationWarning | Record<string, unknown>)[];
     candidate: Record<string, unknown>;
     draft: CatalogueDraft;
@@ -133,21 +125,7 @@ export async function persistBlockedCandidate(
   input: {
     runId: string;
     partitions: readonly EvidencePartitionInput[];
-    plans: readonly {
-      sourceObservationSetId: string;
-      sourceSnapshotId: string;
-      sourceObservationId: string;
-      sourceLineage: string;
-      observationKind: "card_printing" | "official_erratum";
-      cardId: string;
-      printingId: string | null;
-      locator: string | null;
-      variantKey: string | null;
-      compatibility: PrintingCompatibility | null;
-      memberships: Memberships;
-      withdrawal: ProvenancedWithdrawal | null;
-      sourceCardFactsJson: string | null;
-    }[];
+    plans: AsyncIterable<ObservationPlan>;
     diagnostics: readonly Record<string, unknown>[];
     candidate: Record<string, unknown>;
     draft: CatalogueDraft;
@@ -280,7 +258,7 @@ async function stageCandidatePreparation(
     candidate: Record<string, unknown>;
     draft: CatalogueDraft;
     digestPayload: Record<string, unknown>;
-    plans: readonly CandidatePlanInput[];
+    plans: AsyncIterable<CandidatePlanInput>;
     partitions: readonly EvidencePartitionInput[];
   },
 ): Promise<number> {
@@ -316,7 +294,7 @@ async function stageCandidatePreparation(
       index++;
     }
   }
-  for (const content of boundedRecordArrays(candidatePlanRows(input.plans))) {
+  for await (const content of boundedAsyncRecordArrays(candidatePlanRows(input.plans))) {
     await prepare(
       "plans",
       canonicalJson({ content, warnings: warningsJson }),
@@ -326,8 +304,8 @@ async function stageCandidatePreparation(
   return ordinal;
 }
 
-function* candidatePlanRows(plans: readonly CandidatePlanInput[]) {
-  for (const plan of plans)
+async function* candidatePlanRows(plans: AsyncIterable<CandidatePlanInput>) {
+  for await (const plan of plans)
     yield {
       observation_set_id: plan.sourceObservationSetId,
       snapshot_id: plan.sourceSnapshotId,

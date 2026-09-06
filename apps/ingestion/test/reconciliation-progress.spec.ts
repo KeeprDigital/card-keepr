@@ -1557,7 +1557,7 @@ test("persistent curated edits retain Release ownership and official relationshi
   }
 });
 
-test.each(["current_errata", "prior_errata", "source_mappings"])(
+test.each(["current_errata", "prior_errata", "source_mappings", "observation_plans"])(
   "a %s storage outage resumes retained identities and effective rules text",
   async (namespace) => {
     const { testEnv, post, approve } = await import("./reconciliation-helpers");
