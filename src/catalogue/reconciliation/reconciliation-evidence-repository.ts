@@ -49,6 +49,7 @@ export function reconciliationObservationSetsStatement(database: CatalogueStore,
            ON plan.ingestion_run_id = snapshots.ingestion_run_id
          WHERE snapshots.ingestion_run_id = ?
            AND parse.intent = 'collection'
+           AND observations.rowid <= (SELECT observation_cutoff FROM reconciliation_operations WHERE ingestion_run_id = snapshots.ingestion_run_id)
          ORDER BY snapshots.request_id, observations.id`)
     .bind(runId);
 }

@@ -1,3 +1,5 @@
+import { persistCandidatePartitions } from "./reconciliation-partitions";
+import { sealReconciliationOperationStatement } from "./reconciliation-progress-repository";
 import {
   byteBoundedJsonArrays,
   type CatalogueCandidate,
@@ -93,6 +95,7 @@ export async function persistReviewableCandidate(
     observedAt: string;
   },
 ): Promise<void> {
+  const manifest = await persistCandidatePartitions(database, input.runId, input.candidate);
   const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
   const runWarnings = input.warnings.map((warning) => ({
     code: String(warning.code),
@@ -108,6 +111,7 @@ export async function persistReviewableCandidate(
     ...payloadChunkStatements(database, input.runId, "digest", input.digestPayloadJson),
     beginReconciliationStatement(database, input.runId),
     ...candidatePlanInsertionStatements(database, input.runId, input.plans, canonicalJson(input.warnings)),
+    sealReconciliationOperationStatement(database, input.runId, input.candidateDigest, manifest.digest, manifest.count),
     reviewableCandidateStatement(database, {
       candidatePayload: chunkedPayloadMarker("candidate"),
       candidateDigest: input.candidateDigest,

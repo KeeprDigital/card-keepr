@@ -44,6 +44,22 @@ const commandRoutes = {
       idempotency_key: "idempotency-key",
     },
   },
+  reconciliationStatus: { path: "/v1/ingestion-runs/{run-id}/reconciliation" },
+  reconciliationPartitions: {
+    path: "/v1/ingestion-runs/{run-id}/reconciliation/partitions?after={after}",
+    optional: ["after"],
+  },
+  reconciliationPartition: { path: "/v1/ingestion-runs/{run-id}/reconciliation/partitions/{ordinal}" },
+  ...Object.fromEntries(
+    ["pause", "resume", "abandon"].map((action) => [
+      `reconciliation-${action}`,
+      {
+        path: `/v1/ingestion-runs/{run-id}/reconciliation/${action}`,
+        fields: { generation: "generation", idempotency_key: "idempotency-key" },
+        production: `Reconciliation ${action}`,
+      },
+    ]),
+  ),
   reconcileRun: {
     path: "/v1/ingestion-runs/{run-id}/reconciliation",
     fields: {
@@ -274,6 +290,15 @@ const commands = {
   "run reject": (args, env, json) => routeCommand("rejectRun", args, env, json),
   "run retry": (args, env, json) => routeCommand("retryRun", args, env, json),
   "run cleanup": (args, env, json) => routeCommand("cleanupRun", args, env, json),
+  "reconciliation status": (args, env, json) => routeCommand("reconciliationStatus", args, env, json),
+  "reconciliation partitions": (args, env, json) => routeCommand("reconciliationPartitions", args, env, json),
+  "reconciliation partition": (args, env, json) => routeCommand("reconciliationPartition", args, env, json),
+  ...Object.fromEntries(
+    ["pause", "resume", "abandon"].map((action) => [
+      `reconciliation ${action}`,
+      (args, env, json) => routeCommand(`reconciliation-${action}`, args, env, json),
+    ]),
+  ),
   "run reconcile": (args, env, json) => routeCommand("reconcileRun", args, env, json),
   "backup create": (args, env, json) => routeCommand("createBackup", args, env, json),
   "backup status": backupStatus,
@@ -890,7 +915,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
+        "Usage: keepr identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | reconciliation status | reconciliation partitions | reconciliation partition | reconciliation pause | reconciliation resume | reconciliation abandon | run approve | run reject | run retry | run cleanup | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
     },
     2,
   );

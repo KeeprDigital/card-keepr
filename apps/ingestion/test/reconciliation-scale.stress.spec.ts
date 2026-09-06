@@ -133,3 +133,26 @@ test("a Product-heavy export publishes bounded verified R2 components", async ()
     expect(stored?.checksums.sha256).toBeDefined();
   }
 }, 120_000);
+
+test("128 synthetic images of 100 KiB reconcile and publish as immutable references", async () => {
+  const { collectRequests } = await import("./reconciliation-helpers");
+  const run = await collectRequests(
+    Array.from({ length: 16 }, (_, index) => ({ id: `images-${index}`, scenario: `scale-128-images-${index}` })),
+    "bounded-128-images",
+  );
+  const candidate = await reconcile(run.id, {}, 30000);
+  expect(candidate.response.status).toBe(200);
+  const { get } = await import("./reconciliation-helpers");
+  const manifest = await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions`);
+  const partitions = manifest.document.partitions as { ordinal: number; kind: string; byte_length: number }[];
+  expect(partitions.reduce((sum, partition) => sum + partition.byte_length, 0)).toBeLessThan(1024 * 1024);
+  const images = [];
+  for (const partition of partitions.filter((partition) => partition.kind === "printing_images")) {
+    const detail = await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${partition.ordinal}`);
+    images.push(...(detail.document.records as { content_byte_length: number; object_key: string }[]));
+  }
+  expect(images).toHaveLength(128);
+  expect(images.reduce((sum, image) => sum + image.content_byte_length, 0)).toBe(13107200);
+  expect(JSON.stringify(images)).not.toContain("content_base64");
+  expect((await approve(candidate.document)).response.status).toBe(200);
+}, 60000);

@@ -1,6 +1,7 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import {
-  failReconciliationWorkflow,
+  pauseFailedReconciliation,
+  initializeReconciliationProgress,
   type ReconciliationWorkflowParams,
   reconcileRetainedCardPrintingEvidence,
 } from "../../../src/catalogue/reconciliation";
@@ -27,6 +28,11 @@ export async function runReconciliationWorkflow(
   step: WorkflowStep,
 ): Promise<{ result_json: string }> {
   ({ env, step } = observeOperationalWorkflow(step, event, env));
+  await initializeReconciliationProgress(
+    catalogueStore(env.CATALOGUE_DB),
+    event.payload.ingestion_run_id,
+    event.payload.observed_at,
+  );
   let reconciliationResultJson: string;
   try {
     reconciliationResultJson = await step.do(workflowSteps.reconciliation.reconcile, reconciliationStep, async () => {
@@ -35,15 +41,17 @@ export async function runReconciliationWorkflow(
         env.EVIDENCE_OBJECTS,
         event.payload.ingestion_run_id,
         event.payload.observed_at,
+        env.PRINTING_IMAGES,
+        event.payload.generation ?? 0,
       );
       return durableReconciliationResult(event.payload.ingestion_run_id, result);
     });
   } catch (error) {
     reconciliationResultJson = await step.do(workflowSteps.reconciliation.failure, reconciliationStep, async () => {
-      const result = await failReconciliationWorkflow(
+      const result = await pauseFailedReconciliation(
         catalogueStore(env.CATALOGUE_DB),
         event.payload.ingestion_run_id,
-        event.payload.observed_at,
+        event.payload.generation ?? 0,
         error instanceof Error ? error.message : "The reconciliation Workflow exhausted its retries.",
       );
       return durableReconciliationResult(event.payload.ingestion_run_id, result);

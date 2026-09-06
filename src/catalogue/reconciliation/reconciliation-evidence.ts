@@ -1,3 +1,4 @@
+import { retainCandidateImage } from "./reconciliation-images";
 import { adapterReconciliationAreas, parsedOfficialArtworkIdentity, requiredSourceAdapter } from "../adapters";
 import { type CatalogueStore, canonicalJson, type SupportedGame, sha256 } from "../shared";
 import {
@@ -102,6 +103,7 @@ export async function retainedReconciliationObservation(
   database: CatalogueStore,
   evidenceObjects: R2Bucket,
   runId: string,
+  printingImages: R2Bucket,
 ) {
   const [requests, observations, printingImageSnapshots, collectionPlans, evidencePlanRow, discoveryRequestPlans] =
     await Promise.all([
@@ -143,7 +145,7 @@ export async function retainedReconciliationObservation(
     if (await unchangedAcceptedSourceStatement(database, runId, plan.source_lineage, plan.adapter_version).first())
       unchangedAcceptedLineages.add(plan.source_lineage);
   }
-  await assertSelectedAuthoritiesCollected(database, selectedPlans, unchangedAcceptedLineages);
+  await assertSelectedAuthoritiesCollected(database, selectedPlans, unchangedAcceptedLineages, runId);
   const plannedRequests = evidencePlans.flatMap((plan) => plan.requests);
   if (
     plannedRequests.length === 0 ||
@@ -264,13 +266,7 @@ export async function retainedReconciliationObservation(
     documents.push(await retainedObservationDocument(evidenceObjects, row));
   }
   assertClosedRequestGraph(retainedRequests, orderedRows, documents);
-  const retainedImages = new Map(
-    await Promise.all(
-      printingImageSnapshots.results.map(
-        async (row) => [row.request_url, await retainedPrintingImage(evidenceObjects, row)] as const,
-      ),
-    ),
-  );
+  const retainedImages = new Map(printingImageSnapshots.results.map((row) => [row.request_url, row]));
   const observationIds = new Set<string>();
   const officialSurfaces = new Map<
     string,
@@ -312,10 +308,20 @@ export async function retainedReconciliationObservation(
         });
         continue;
       }
-      const parsed = parseReconciliationObservation(
+      let parsed = parseReconciliationObservation(
         wrapped.id,
-        await attachRetainedPrintingImages(wrapped.value, retainedImages, row.plan_origin === "production"),
+        await attachRetainedPrintingImages(
+          wrapped.value,
+          retainedImages,
+          evidenceObjects,
+          row.plan_origin === "production",
+        ),
       );
+      if (parsed.kind === "card_printing") {
+        const references = [];
+        for (const image of parsed.printingImages) references.push(await retainCandidateImage(printingImages, image));
+        parsed = { ...parsed, printingImages: references };
+      }
       const adapter = requiredSourceAdapter(row.adapter_version);
       const sourceSurface = sourceSurfaceForRequest(request, requestsById, row);
       assertObservationAuthority(parsed, adapter, sourceSurface);
@@ -838,26 +844,24 @@ function compatibleListingObservationSemantic(observation: Record<string, unknow
 
 async function attachRetainedPrintingImages(
   value: unknown,
-  images: ReadonlyMap<
-    string,
-    {
-      media_type: string;
-      width: number;
-      height: number;
-      content_sha256: string;
-      content_base64: string;
-    }
-  >,
+  images: ReadonlyMap<string, PrintingImageSnapshotRow>,
+  evidenceObjects: R2Bucket,
   allowVerifiedNovelty: boolean,
 ): Promise<unknown> {
   if (!isRecord(value) || !isRecord(value.appearance_evidence)) return value;
   const declared = value.appearance_evidence.images;
   if (!Array.isArray(declared)) return value;
-  const retainedImages = declared.map((item) => {
-    if (!isRecord(item) || typeof item.source_url !== "string") return item;
+  const retainedImages = [];
+  for (const item of declared) {
+    if (!isRecord(item) || typeof item.source_url !== "string") {
+      retainedImages.push(item);
+      continue;
+    }
     const retained = images.get(item.source_url);
-    return retained === undefined ? item : { ...item, ...retained };
-  });
+    retainedImages.push(
+      retained === undefined ? item : { ...item, ...(await retainedPrintingImage(evidenceObjects, retained)) },
+    );
+  }
   const complete =
     retainedImages.length > 0 &&
     retainedImages.every(

@@ -4,7 +4,7 @@ import { type CatalogueStore, repositoryStatements } from "../shared";
 export function reconciliationWorkflowRunStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT run.id, run.state, run.expected_current_revision_id,
-              state.current_revision_id, operation.active_ingestion_run_id,
+              state.current_revision_id, (SELECT ingestion_run_id FROM ingestion_collection_reservations WHERE ingestion_run_id = run.id) AS active_ingestion_run_id,
               operation.recovery_health
        FROM ingestion_run_read AS run
        CROSS JOIN catalogue_state AS state

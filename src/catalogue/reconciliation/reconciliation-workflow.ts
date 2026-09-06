@@ -1,3 +1,10 @@
+import { initializeReconciliationProgress } from "./reconciliation-progress";
+import {
+  createReconciliationOperationStatement,
+  reconciliationOperationStatement,
+  reconciliationRequestForRunStatement,
+  pauseFailedReconciliationStatement,
+} from "./reconciliation-progress-repository";
 import {
   AdministrationProblem,
   assertIngestionRunTransition,
@@ -23,6 +30,7 @@ export type ReconciliationWorkflowParams = Readonly<{
   expected_current_revision_id: string;
   idempotency_key: string;
   observed_at: string;
+  generation?: number;
 }>;
 
 type ReconciliationWorkflowRequestRow = {
@@ -113,6 +121,7 @@ export async function startOrObserveReconciliationWorkflow(
     observed_at: observedAt,
   };
   const workflowParamsJson = canonicalJson(workflowParams);
+  await initializeReconciliationProgress(database, input.ingestion_run_id, observedAt);
   const insertion = await createReconciliationWorkflowRequestStatement(database, {
     idempotencyKey: input.idempotency_key,
     runId: input.ingestion_run_id,
@@ -144,23 +153,35 @@ async function publicWorkflowRequest(
   request: ReconciliationWorkflowRequestRow,
   createRequested = false,
 ): Promise<Record<string, unknown>> {
-  const createParams = storedWorkflowParams(request);
+  const operation = await reconciliationOperationStatement(database, request.ingestion_run_id).first<{
+    state: string;
+    generation: number;
+  }>();
+  const envelope = {
+    contract: "card-keepr-reconciliation-workflow@1",
+    ingestion_run_id: request.ingestion_run_id,
+    expected_current_revision_id: request.expected_current_revision_id,
+    idempotency_key: request.idempotency_key,
+    workflow_instance_id: request.workflow_instance_id,
+  };
+  if (operation?.state === "paused" || operation?.state === "abandoned")
+    return { ...envelope, status: operation.state, output: null };
+  const generation = operation?.generation ?? 0;
+  const createParams = { ...storedWorkflowParams(request), ...(generation > 0 ? { generation } : {}) };
+  if (generation > 0) request = { ...request, workflow_instance_id: `${request.workflow_instance_id}-g${generation}` };
   const driver = workflowDriver(workflow);
   let { status } = await driver.ensure(request.workflow_instance_id, createParams, { createRequested });
   if (status.status === "paused") status = await driver.resume(request.workflow_instance_id);
   if (status.status === "errored" || status.status === "terminated") {
+    const recovered = await recoverTerminalWorkflow(
+      database,
+      request,
+      status.error?.message ?? `The reconciliation Workflow became ${status.status}.`,
+    );
     return {
-      contract: "card-keepr-reconciliation-workflow@1",
-      ingestion_run_id: request.ingestion_run_id,
-      expected_current_revision_id: request.expected_current_revision_id,
-      idempotency_key: request.idempotency_key,
-      workflow_instance_id: request.workflow_instance_id,
-      status: "complete",
-      output: await recoverTerminalWorkflow(
-        database,
-        request,
-        status.error?.message ?? `The reconciliation Workflow became ${status.status}.`,
-      ),
+      ...envelope,
+      status: recovered.state === "paused" ? "paused" : "complete",
+      output: recovered.state === "paused" ? null : recovered,
     };
   }
   const output = status.status === "complete" ? await workflowOutput(database, request, status.output) : null;
@@ -189,7 +210,16 @@ async function recoverTerminalWorkflow(
   if (run.candidate_digest !== null) {
     return retainedReconciliationResult(database, request.ingestion_run_id);
   }
-  return failReconciliationWorkflow(database, request.ingestion_run_id, request.observed_at, detail);
+  const operation = await reconciliationOperationStatement(database, request.ingestion_run_id).first<{
+    generation: number;
+  }>();
+  await pauseFailedReconciliationStatement(
+    database,
+    request.ingestion_run_id,
+    operation?.generation ?? 0,
+    detail,
+  ).run();
+  return { state: "paused", publishable: false, run_id: request.ingestion_run_id };
 }
 
 async function workflowOutput(
@@ -277,4 +307,13 @@ async function assertExactReplay(stored: ReconciliationWorkflowRequestRow, reque
     requestDigest: requestJson,
     conflictDetail: "The reconciliation idempotency key is already bound to another request.",
   });
+}
+
+export async function resumeReconciliationWorkflow(
+  database: CatalogueStore,
+  workflow: Workflow<ReconciliationWorkflowParams>,
+  runId: string,
+) {
+  const request = await reconciliationRequestForRunStatement(database, runId).first<ReconciliationWorkflowRequestRow>();
+  if (request) await publicWorkflowRequest(database, workflow, request, true);
 }

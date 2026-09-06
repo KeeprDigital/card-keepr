@@ -80,7 +80,7 @@ export type CataloguePrintingImage = {
   content_byte_length: number;
   object_key: string;
   source_url: string;
-  content_base64: string;
+  content_base64?: string;
 };
 
 // Errata.

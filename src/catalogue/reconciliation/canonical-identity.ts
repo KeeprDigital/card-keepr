@@ -156,7 +156,7 @@ export async function matchingIdentityDecision(
 ) {
   const evidenceJson = canonicalJson(input.evidence);
   const id = `identity_review_${await sha256Text(canonicalJson([input.sourceLineage, evidenceJson, input.candidates]))}`;
-  const decision = await identityDecisionStatement(database, id).first<IdentityDecision>();
+  const decision = await identityDecisionStatement(database, id, input.runId).first<IdentityDecision>();
   if (decision && input.candidates.includes(decision.printing_id)) return decision.printing_id;
   await insertIdentityReviewStatement(database, {
     id,

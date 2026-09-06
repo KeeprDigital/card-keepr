@@ -39,6 +39,7 @@ export {
   type CatalogueStore,
   catalogueEnvironment,
   catalogueStore,
+  guardedCatalogueStore,
   repositoryStatements,
 } from "./catalogue-store-repository";
 export { consumerContent } from "./consumer-content";

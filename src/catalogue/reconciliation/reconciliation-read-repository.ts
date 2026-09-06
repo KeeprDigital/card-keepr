@@ -64,7 +64,7 @@ export function activeParsingRunStatement(database: CatalogueStore, runId: strin
   return repositoryStatements(database)
     .prepare(`SELECT run.id, run.state, run.selected_games_json,
               run.expected_current_revision_id,
-              operation.active_ingestion_run_id,
+              (SELECT ingestion_run_id FROM ingestion_collection_reservations WHERE ingestion_run_id = run.id) AS active_ingestion_run_id,
               operation.recovery_health
        FROM ingestion_run_read AS run
        JOIN operation_state AS operation ON operation.singleton = 1

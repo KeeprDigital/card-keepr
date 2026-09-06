@@ -287,6 +287,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
                 this.env.EVIDENCE_OBJECTS,
                 runId,
                 run.collection_completed_at ?? new Date().toISOString(),
+                this.env.PRINTING_IMAGES,
               );
               return durableReconciliationResult(runId, result);
             },

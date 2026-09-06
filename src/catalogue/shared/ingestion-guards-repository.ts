@@ -34,7 +34,7 @@ export function runTransitionGuardStatement(
       ))
     )) THEN json_extract('{}', 'illegal_ingestion_transition')
     WHEN NOT EXISTS (SELECT 1 FROM run WHERE
-      EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND active_ingestion_run_id = run.id)
+      EXISTS (SELECT 1 FROM ingestion_collection_reservations WHERE ingestion_run_id = run.id)
       OR (? = 1 AND state = 'failed' AND failure_code IN (
         'publication_abandoned', 'publication_precondition_failed', 'export_verification_failed'
       ))
@@ -73,7 +73,7 @@ export function runStartGuardStatement(database: CatalogueStore): D1PreparedStat
   return repositoryStatements(database).prepare(`SELECT CASE
     WHEN changes() = 0 THEN 1
     WHEN EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND (
-      active_ingestion_run_id IS NOT NULL OR (
+      (
         active_production_release_id IS NOT NULL
         AND active_production_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
       )

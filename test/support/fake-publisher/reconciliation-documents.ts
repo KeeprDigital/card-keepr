@@ -580,6 +580,27 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       ],
     };
   }
+  if (scenario.startsWith("scale-128-images-")) {
+    return {
+      cards: Array.from({ length: 8 }, (_, offset) => {
+        const index = Number(scenario.slice("scale-128-images-".length)) * 8 + offset;
+        const observation = printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP95-${String(index + 1).padStart(3, "0")}`,
+          name: `Synthetic image capacity Card ${index + 1}`,
+          locator: `image-capacity-${index}`,
+          lineageMarker: `image-capacity-${index}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+        });
+        const bytes = Buffer.from(deterministicNoise(index + 1, 100 * 1024));
+        observation.appearance_evidence.images[0]!.content_base64 = bytes.toString("base64");
+        observation.appearance_evidence.images[0]!.content_sha256 = createHash("sha256").update(bytes).digest("hex");
+        return observation;
+      }),
+    };
+  }
   if (scenario === "scale-1001-cards") {
     return {
       cards: Array.from({ length: 1_001 }, (_, index) => ({

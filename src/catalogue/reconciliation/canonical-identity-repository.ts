@@ -68,7 +68,7 @@ function identityRunGuard(database: CatalogueStore, run: string) {
   return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN EXISTS (
     SELECT 1 FROM operation_state AS operation JOIN ingestion_run_current AS run
-      ON run.ingestion_run_id = operation.active_ingestion_run_id
+      ON EXISTS (SELECT 1 FROM ingestion_collection_reservations WHERE ingestion_run_id = run.ingestion_run_id)
     WHERE operation.singleton = 1 AND run.ingestion_run_id = ?
       AND run.state IN ('parsing', 'reconciling') AND operation.recovery_health <> 'blocked'
       AND (operation.active_production_release_id IS NULL OR operation.active_production_release_expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
@@ -131,10 +131,11 @@ export type IdentityDecision = {
   request_json: string;
   decided_at: string;
 };
-export function identityDecisionStatement(database: CatalogueStore, id: string) {
+export function identityDecisionStatement(database: CatalogueStore, id: string, runId?: string) {
   return repositoryStatements(database)
-    .prepare("SELECT * FROM canonical_identity_decisions WHERE review_id = ?")
-    .bind(id);
+    .prepare(`SELECT * FROM canonical_identity_decisions WHERE review_id = ?
+      AND (? IS NULL OR rowid <= (SELECT identity_decision_cutoff FROM reconciliation_operations WHERE ingestion_run_id = ?))`)
+    .bind(id, runId ?? null, runId ?? null);
 }
 export function insertIdentityDecisionStatement(database: CatalogueStore, decision: IdentityDecision) {
   return atomicRepositoryStatement(database, {

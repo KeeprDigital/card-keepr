@@ -1,3 +1,8 @@
+import { initializeReconciliationProgress } from "./reconciliation-progress";
+import {
+  createReconciliationOperationStatement,
+  reconciliationWriterGuard,
+} from "./reconciliation-progress-repository";
 import {
   allocateCanonicalIdentity,
   retainSourceMappings,
@@ -7,6 +12,7 @@ import {
 import { applyPinnedCuratedRevisions, CuratedRevisionSourceChangeError, stripCuratedRevisionEffects } from "../curated";
 import {
   AdministrationProblem,
+  guardedCatalogueStore,
   assertIngestionRunTransition,
   byteBoundedJsonArrays,
   type CatalogueCandidate,
@@ -106,13 +112,18 @@ export async function reconcileRetainedCardPrintingEvidence(
   evidenceObjects: R2Bucket,
   runId: string,
   observedAt: string,
+  printingImageObjects: R2Bucket,
+  generation = 0,
 ): Promise<Record<string, unknown>> {
   const replay = await finalizedReconciliationResult(database, runId);
   if (replay !== null) return replay;
   const run = await requiredActiveParsingRun(database, runId);
+  await initializeReconciliationProgress(database, runId, observedAt);
+  const base = database;
+  database = guardedCatalogueStore(base, () => reconciliationWriterGuard(base, runId, generation));
   let retained: Awaited<ReturnType<typeof retainedReconciliationObservation>>;
   try {
-    retained = await retainedReconciliationObservation(database, evidenceObjects, runId);
+    retained = await retainedReconciliationObservation(database, evidenceObjects, runId, printingImageObjects);
   } catch (error) {
     const diagnostics: Diagnostic[] = [
       {
