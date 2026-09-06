@@ -136,7 +136,10 @@ export async function printingsAtLocator(
   return rows.results;
 }
 
-export async function gundamPrintingLineages(database: CatalogueStore): Promise<
+export async function gundamPrintingLineages(
+  database: CatalogueStore,
+  printingId: string,
+): Promise<
   {
     printing_id: string;
     source_lineage: "gundam-en-asia" | "gundam-en-us";
@@ -147,10 +150,11 @@ export async function gundamPrintingLineages(database: CatalogueStore): Promise<
     .prepare(
       `SELECT printing_id, source_lineage, MAX(current) AS current
        FROM reconciled_printing_locators
-       WHERE source_lineage IN ('gundam-en-asia', 'gundam-en-us')
+       WHERE printing_id = ? AND source_lineage IN ('gundam-en-asia', 'gundam-en-us')
        GROUP BY printing_id, source_lineage
        ORDER BY printing_id, source_lineage`,
     )
+    .bind(printingId)
     .all<{
       printing_id: string;
       source_lineage: "gundam-en-asia" | "gundam-en-us";
@@ -159,7 +163,10 @@ export async function gundamPrintingLineages(database: CatalogueStore): Promise<
   return rows.results;
 }
 
-export async function gundamCardLineages(database: CatalogueStore): Promise<
+export async function gundamCardLineages(
+  database: CatalogueStore,
+  cardId: string,
+): Promise<
   {
     card_id: string;
     source_lineage: "gundam-en-asia" | "gundam-en-us";
@@ -170,10 +177,11 @@ export async function gundamCardLineages(database: CatalogueStore): Promise<
     .prepare(
       `SELECT card_id, source_lineage, MAX(current) AS current
        FROM reconciled_card_observations
-       WHERE source_lineage IN ('gundam-en-asia', 'gundam-en-us')
+       WHERE card_id = ? AND source_lineage IN ('gundam-en-asia', 'gundam-en-us')
        GROUP BY card_id, source_lineage
        ORDER BY card_id, source_lineage`,
     )
+    .bind(cardId)
     .all<{
       card_id: string;
       source_lineage: "gundam-en-asia" | "gundam-en-us";
@@ -182,24 +190,19 @@ export async function gundamCardLineages(database: CatalogueStore): Promise<
   return rows.results;
 }
 
-export async function gundamPrintingProductMemberships(database: CatalogueStore): Promise<
-  {
-    printing_id: string;
-    relationship_value: string;
-  }[]
-> {
-  const rows = await repositoryStatements(database)
-    .prepare(
-      `SELECT DISTINCT printing_id, relationship_value
-       FROM reconciled_printing_memberships
-       WHERE relationship_kind = 'product'
-       ORDER BY printing_id, relationship_value`,
-    )
-    .all<{
-      printing_id: string;
-      relationship_value: string;
-    }>();
-  return rows.results;
+export async function gundamPrintingHasProductMembership(
+  database: CatalogueStore,
+  printingId: string,
+  products: readonly string[],
+): Promise<boolean> {
+  const row = await repositoryStatements(database)
+    .prepare(`SELECT 1
+    FROM reconciled_printing_memberships
+    WHERE printing_id = ? AND relationship_kind = 'product'
+      AND relationship_value IN (SELECT value FROM json_each(?)) LIMIT 1`)
+    .bind(printingId, canonicalJson(products))
+    .first();
+  return row !== null;
 }
 
 export async function hasPrintingLocatorFromLineage(
@@ -427,4 +430,25 @@ export async function crossSourcePrintingCandidates(
       )
       .all<ReconciledPrintingRow>()
   ).results;
+}
+
+export async function* gundamAffectedPrintingIds(database: CatalogueStore, checkedLineages: readonly string[]) {
+  let after = "";
+  for (;;) {
+    const rows = (
+      await repositoryStatements(database)
+        .prepare(`SELECT DISTINCT printing_id
+      FROM reconciled_printing_locators
+      WHERE printing_id > ? AND current = 1 AND source_lineage IN ('gundam-en-asia', 'gundam-en-us')
+        AND source_lineage IN (SELECT value FROM json_each(?))
+      ORDER BY printing_id LIMIT 100`)
+        .bind(after, canonicalJson(checkedLineages))
+        .all<{ printing_id: string }>()
+    ).results;
+    for (const row of rows) {
+      yield row.printing_id;
+      after = row.printing_id;
+    }
+    if (rows.length < 100) return;
+  }
 }

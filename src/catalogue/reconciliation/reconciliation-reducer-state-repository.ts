@@ -64,3 +64,23 @@ export function nextReducerGroupStateStatement(
     ORDER BY state.key_digest LIMIT 1`)
     .bind(runId, namespace, groupDigest, after, before, before);
 }
+
+export function nextLatestReducerStateStatement(
+  database: CatalogueStore,
+  runId: string,
+  namespace: string,
+  through: number,
+  after: string,
+) {
+  return repositoryStatements(database)
+    .prepare(`SELECT state.key_digest, state.content, state.sha256
+    FROM reconciliation_reducer_state state
+    WHERE state.ingestion_run_id = ? AND state.namespace = ?
+      AND state.key_digest > ? AND state.observation_ordinal <= ?
+      AND NOT EXISTS (SELECT 1 FROM reconciliation_reducer_state later
+        WHERE later.ingestion_run_id = state.ingestion_run_id AND later.namespace = state.namespace
+          AND later.key_digest = state.key_digest AND later.observation_ordinal > state.observation_ordinal
+          AND later.observation_ordinal <= ?)
+    ORDER BY state.key_digest LIMIT 1`)
+    .bind(runId, namespace, after, through, through);
+}

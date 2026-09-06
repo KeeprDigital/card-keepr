@@ -1,6 +1,7 @@
 import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { retainPartitionedRecord, restorePartitionedRecord } from "./reconciliation-text";
 import {
+  nextLatestReducerStateStatement,
   nextReducerGroupStateStatement,
   exactReducerStateStatement,
   reducerStateStatement,
@@ -76,6 +77,23 @@ export class ReconciliationReducerIndex<T> {
       bytes += new TextEncoder().encode(row.content).byteLength;
       if (++count > 500 || bytes > 1048576)
         throw new Error("reconciliation_capacity_exceeded: one identity match has too many candidates.");
+      if ((await sha256Text(row.content)) !== row.sha256)
+        throw new Error("Reducer state failed integrity verification.");
+      yield (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T;
+      after = row.key_digest;
+    }
+  }
+
+  /** Iterate the completed observation prefix without rebuilding its complete index. */
+  async *latestValues(): AsyncGenerator<T> {
+    let after = "";
+    for (;;) {
+      const row: (StateRow & { key_digest: string }) | null = await storage(
+        nextLatestReducerStateStatement(this.database, this.runId, this.namespace, this.ordinal, after).first<
+          StateRow & { key_digest: string }
+        >(),
+      );
+      if (!row) return;
       if ((await sha256Text(row.content)) !== row.sha256)
         throw new Error("Reducer state failed integrity verification.");
       yield (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T;
