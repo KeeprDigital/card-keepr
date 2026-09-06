@@ -130,14 +130,15 @@ The owner-only first installation is outside the administration CLI:
    no routes, and no data/service/Workflow bindings. Shells are needed because the
    first `versions upload` requires an existing script. They cannot serve or
    mutate catalogue data. The new, still-unbound catalogue receives the baseline.
-4. Set `DEV_CATALOGUE_DATABASE_ID` and `DEV_DISPOSABLE_DATABASE_ID` from the receipt,
+4. Configure the proxied dev DNS placeholder before authenticated smoke checks.
+   Set `DEV_CATALOGUE_DATABASE_ID` and `DEV_DISPOSABLE_DATABASE_ID` from the receipt,
    and `API_TRAFFIC_TOKEN` to the dev API key. Run
    `node scripts/dev-first-install.mjs`. It rechecks CI, exact provider names/IDs,
    and an unused dev baseline (no catalogue revisions, runs or administration
    ledger). The same server plan validator and atomic preparation transaction run
    through the documented D1 batch query API; no ledger is copied or hand-written.
    The shared guarded executor performs the application installation.
-5. Configure the GitHub dev environment and DNS, then retain successful first
+5. Configure the GitHub dev environment, then retain successful first
    installation and subsequent automatic-merge deployment evidence. After partial
    first-install failure, inspect the retained fence/preparation; the tool refuses
    to overwrite the used baseline. Do not reset it to retry.
