@@ -379,7 +379,7 @@ test.each(["lookup", "application"])(
     const original = await admitSyntheticPrinting("lookup-source");
     const replacement = await admitSyntheticPrinting("lookup-replacement");
     const seed = await approve(
-      (await reconcile((await collect("/reconciliation/card-without-printing", "lookup-seed")).id)).document,
+      (await reconcile((await collect("/reconciliation/product-typed-relationships", "lookup-seed")).id)).document,
     );
     expect(seed.response.status).toBe(200);
     const proposal = {
@@ -404,7 +404,7 @@ test.each(["lookup", "application"])(
         })
       ).response.status,
     ).toBe(201);
-    const run = await collect("/reconciliation/card-without-printing", "lookup-next");
+    const run = await collect("/reconciliation/product-typed-relationships", "lookup-next");
     const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
     let unavailable = true;
     let failures = 0;
@@ -499,6 +499,13 @@ test.each(["lookup", "application"])(
     });
     expect(published.response.status, JSON.stringify(published.document)).toBe(200);
     const printings = await exportComponentRecords(String(published.document.resulting_revision_id), "printings");
+    for (const component of ["products", "distribution-contexts", "relationships"] as const) {
+      const before = await exportComponentRecords(String(seed.document.resulting_revision_id), component);
+      const after = await exportComponentRecords(String(published.document.resulting_revision_id), component);
+      expect(before.length).toBeGreaterThan(0);
+      expect(after.map(({ id }) => id).sort()).toEqual(before.map(({ id }) => id).sort());
+    }
+
     expect(printings).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: original.printing.id, card_id: replacement.card.id })]),
     );

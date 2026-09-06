@@ -58,7 +58,7 @@ export class ReconciliationCandidateState implements CatalogueDraft {
   async candidate(metadata: CatalogueCandidate): Promise<CatalogueCandidate> {
     const result = { ...metadata };
     for (const kind of catalogueEntityCollections) {
-      if (metadata[kind] === undefined && !this.indexes.has(kind)) continue;
+      if (!this.indexes.has(kind)) continue;
       const values = [];
       for await (const entity of this.values(kind)) values.push(entity);
       if (kind === "identity_corrections" && values.length === 0 && metadata[kind] === undefined) continue;
