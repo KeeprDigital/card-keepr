@@ -4,6 +4,41 @@ import { createHash } from "node:crypto";
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
 export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
+  if (scenario === "card-only-work-units") {
+    return {
+      cards: Array.from({ length: 32 }, (_, index) => ({
+        card: {
+          game: "one-piece",
+          official_identity: { kind: "card_number", value: `OP92-${String(index + 1).padStart(3, "0")}` },
+          name: `Synthetic Card without Printing ${index}`,
+          effective_rules_text: "Official rules without an appearance.",
+          game_data: { profile: "one-piece@1", attributes: onePieceLeaderAttributes() },
+        },
+        completeness: completeEvidence(),
+        memberships: { products: [], distribution_contexts: [], source_buckets: [] },
+        product_release_catalogue: {
+          products: [
+            {
+              reference: { kind: "official_code", value: `WU-${index}` },
+              official_code: `WU-${index}`,
+              name: `Synthetic Product ${index} ${"Source product text. ".repeat(200)}`,
+              releases: [{ region: "EN-OCEANIA", date: { precision: "month", value: "2026-12" }, status: "announced" }],
+            },
+          ],
+          distribution_contexts: [
+            {
+              key: `work-unit-context-${index}`,
+              kind: "promotion",
+              label: `Synthetic Context ${index} ${"Source context text. ".repeat(200)}`,
+              product_reference: { kind: "official_code", value: `WU-${index}` },
+              evidence_category: "explicit",
+            },
+          ],
+          relationships: [],
+        },
+      })),
+    };
+  }
   if (scenario === "metadata-request-pages") {
     const index = Number(new URL(requestUrl).searchParams.get("request"));
     return {

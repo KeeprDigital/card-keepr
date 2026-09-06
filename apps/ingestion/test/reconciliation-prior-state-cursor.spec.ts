@@ -20,7 +20,15 @@ test.each([
     expectedCards: 40,
     count: 32,
     name: "Synthetic reviewed Card 0",
-    interrupt: true,
+    interrupt: "prior_state",
+  },
+  {
+    base: "curated-conflict-fanout-base",
+    changed: "prior-state-carry-forward",
+    expectedCards: 40,
+    count: 32,
+    name: "Synthetic reviewed Card 0",
+    interrupt: "official_reduction",
   },
   {
     base: "prior-state-text-pages",
@@ -31,7 +39,7 @@ test.each([
   },
 ])(
   "prior Cards from $base resume through durable returning groups",
-  async ({ base, changed, count, expectedCards, name, interrupt = false }) => {
+  async ({ base, changed, count, expectedCards, name, interrupt = "" }) => {
     const prior = await collect(`/reconciliation/${base}`, "prior-state-base");
     const accepted = await reconcile(prior.id);
     expect(accepted.response.status).toBe(200);
@@ -76,13 +84,13 @@ test.each([
                 const entry = statements.get(statement);
                 return (
                   entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
-                  entry.values.includes("prior_cards")
+                  entry.values.includes(interrupt === "prior_state" ? "prior_cards" : "card_facts")
                 );
               }) &&
               ++priorWrites === 2
             ) {
               failures++;
-              throw new Error("Injected prior-state storage outage after an uncheckpointed Card write.");
+              throw new Error("Injected reducer storage outage after an uncheckpointed Card write.");
             }
             return target.batch(...args);
           };
@@ -113,8 +121,15 @@ test.each([
             }[]
           ).find((row) => row.phase === "prior_state");
           restoredCards.push(checkpoint!.cursor.seededCards);
-          if (checkpoint!.cursor.seededCards > 0) armed = true;
+          if (interrupt === "prior_state" && checkpoint!.cursor.seededCards > 0) armed = true;
           if (checkpoint!.cursor.member) chunkPositions.push(checkpoint!.cursor.member.chunkIndex);
+        }
+        if (interrupt === "official_reduction" && JSON.parse(result).continuation?.phase === "official_reduction") {
+          const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+          const checkpoint = (
+            status.checkpoints as { phase: string; cursor: { processedObservations: number } }[]
+          ).find((row) => row.phase === "official_reduction");
+          if (checkpoint!.cursor.processedObservations > 0) armed = true;
         }
         expect(new TextEncoder().encode(result).byteLength).toBeLessThan(65536);
         return result;

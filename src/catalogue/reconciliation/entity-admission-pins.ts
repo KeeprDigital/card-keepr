@@ -54,6 +54,7 @@ export async function applyPinnedEntityAdmissions(
   cards: AdmissionEntityIndex<CatalogueCard>,
   printings: AdmissionEntityIndex<CataloguePrinting>,
   warnings: ReconciliationRecordSink<Record<string, unknown>>,
+  cursor?: { cards: number; printings: number },
 ) {
   let after = "";
   const admittedCards = new ReconciliationReducerIndex<boolean>(database, runId, "admitted_card_ids");
@@ -61,9 +62,19 @@ export async function applyPinnedEntityAdmissions(
   let cardCount = 0,
     printingCount = 0;
   const admitted = {
+    get cursor() {
+      return { cards: cardCount, printings: printingCount };
+    },
     hasCard: (id: string) => (cardCount === 0 ? false : admittedCards.has(id)),
     hasPrinting: (id: string) => (printingCount === 0 ? false : admittedPrintings.has(id)),
   };
+  if (cursor) {
+    admittedCards.resumeAt(cursor.cards);
+    admittedPrintings.resumeAt(cursor.printings);
+    cardCount = cursor.cards;
+    printingCount = cursor.printings;
+    return admitted;
+  }
   while (true) {
     const rows = (
       await pinnedAdmissionsStatement(database, runId, after).all<

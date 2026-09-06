@@ -12,6 +12,17 @@ export class ReconciliationRecordLog<T> {
     this.index = new ReconciliationReducerIndex(database, runId, namespace);
   }
 
+  async checkpoint(): Promise<number> {
+    await this.flush();
+    return this.ordinal;
+  }
+  resumeAt(position: number) {
+    this.index.resumeAt(position);
+    this.ordinal = position;
+    this.pending = [];
+    this.bytes = 2;
+  }
+
   async append(record: T): Promise<void> {
     const bytes = new TextEncoder().encode(canonicalJson(record)).byteLength;
     // Leave room for the retained batch envelope inside the 512 KiB metadata limit.

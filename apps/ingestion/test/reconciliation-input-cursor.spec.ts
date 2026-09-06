@@ -151,10 +151,17 @@ test.each([
   { scenario: "curated-conflict-fanout-base", requireFrozenMetadata: false, groups: [8, 8, 8, 8] },
   { scenario: "curated-conflict-fanout-base", requireFrozenMetadata: true, groups: [8, 8, 8, 8] },
   { scenario: "large-card-content", requireFrozenMetadata: true, groups: [1] },
+  { scenario: "card-only-work-units", requireFrozenMetadata: true, groups: [], expectedObservations: 32 },
   { scenario: "metadata-request-pages", requireFrozenMetadata: true, groups: Array(32).fill(1), requestCount: 32 },
 ])(
   "normalization returns bounded work units for $scenario (frozen metadata: $requireFrozenMetadata)",
-  async ({ scenario, requireFrozenMetadata, groups, requestCount = 1 }) => {
+  async ({
+    scenario,
+    requireFrozenMetadata,
+    groups,
+    requestCount = 1,
+    expectedObservations = scenario === "curated-conflict-fanout-base" ? 32 : requestCount,
+  }) => {
     const run = await collectRequests(
       Array.from({ length: requestCount }, (_, index) => ({
         id: `cards-${index}`,
@@ -171,6 +178,8 @@ test.each([
     const metadataScans: number[] = [];
     const verificationCalls: number[] = [];
     const verificationCursors: number[] = [];
+    const reductionCalls: number[] = [];
+    const reductionCursors: number[] = [];
     const images = new Proxy(testEnv.PRINTING_IMAGES, {
       get(target, property) {
         if (property === "put")
@@ -249,6 +258,14 @@ test.each([
           );
           verificationCursors.push(checkpoint!.cursor.verifiedObservations);
         }
+        if (JSON.parse(result as string).continuation?.phase === "official_reduction") {
+          reductionCalls.push(serviceCalls);
+          const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+          const checkpoint = (
+            status.checkpoints as { phase: string; cursor: { processedObservations: number } }[]
+          ).find((row) => row.phase === "official_reduction");
+          reductionCursors.push(checkpoint!.cursor.processedObservations);
+        }
         expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThan(65536);
         return result;
       },
@@ -277,8 +294,14 @@ test.each([
       expect(Math.max(...callsPerGroup)).toBeLessThanOrEqual(100);
       expect(preparationCalls.length).toBeGreaterThan(0);
       expect(Math.max(...preparationCalls)).toBeLessThanOrEqual(100);
-      expect(preparationCursors).toContain(scenario === "curated-conflict-fanout-base" ? 32 : requestCount);
+      expect(preparationCursors).toContain(expectedObservations);
       if (requestCount === 32) expect(metadataScans).toContain(8);
+      expect(reductionCalls.length).toBeGreaterThan(0);
+      expect(Math.max(...reductionCalls)).toBeLessThanOrEqual(100);
+      expect(reductionCursors).toContain(expectedObservations);
+      if (scenario === "card-only-work-units") expect(reductionCalls.length).toBeLessThanOrEqual(10);
+      if (scenario === "curated-conflict-fanout-base")
+        expect(reductionCursors.some((count) => count > 0 && count < 32)).toBe(true);
       expect(verificationCalls.length).toBeGreaterThan(0);
       expect(Math.max(...verificationCalls)).toBeLessThanOrEqual(100);
       if (scenario === "curated-conflict-fanout-base") expect(verificationCursors).toContain(8);

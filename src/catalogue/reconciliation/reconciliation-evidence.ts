@@ -146,8 +146,24 @@ export async function retainedReconciliationObservation(
   runId: string,
   printingImages: R2Bucket,
   yieldAtCheckpoint = false,
+  snapshot?: Record<string, unknown>,
 ) {
-  let retained = await readVerifiedReconciliationInput(database, runId, yieldAtCheckpoint);
+  let retained = snapshot
+    ? {
+        ...snapshot,
+        ...Object.fromEntries(
+          ["countChangeWarnings", "unavailablePrintingImages", "partitions"].map((kind) => [
+            kind,
+            { [Symbol.asyncIterator]: () => verifiedReconciliationRecords(database, runId, kind) },
+          ]),
+        ),
+        evidencePlans: {
+          async *[Symbol.asyncIterator]() {
+            yield* snapshot.evidencePlans as unknown[];
+          },
+        },
+      }
+    : await readVerifiedReconciliationInput(database, runId, yieldAtCheckpoint);
   if (!retained) {
     await prepareVerifiedReconciliationInput(database, evidenceObjects, runId, printingImages, yieldAtCheckpoint);
     retained = await readVerifiedReconciliationInput(database, runId, yieldAtCheckpoint);

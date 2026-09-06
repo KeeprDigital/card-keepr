@@ -35,6 +35,12 @@ export class ReconciliationPlanState implements AsyncIterable<ObservationPlan> {
   ) {
     this.index = new ReconciliationReducerIndex(database, runId, "observation_plans", (value) => value.plan.cardId);
   }
+  get position() {
+    return this.index.position;
+  }
+  resumeAt(position: number) {
+    this.index.resumeAt(position);
+  }
   async append(plan: ObservationPlan) {
     await this.index.seed(plan.sourceObservationId, { id: plan.sourceObservationId, plan });
   }

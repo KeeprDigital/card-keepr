@@ -579,7 +579,7 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
                 values.at(-1) === -1
               ) {
                 passes++;
-                if (unavailable && passes % 3 === 0) {
+                if (unavailable && passes === 2) {
                   failures++;
                   throw new Error("Injected Product-pass input storage outage");
                 }
@@ -612,6 +612,8 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
     const step = {
       do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
         for (let attempt = 0; ; attempt++) {
+          // The completed Card pass returns separately; each remaining attempt reads Errata, then Products.
+          passes = 0;
           try {
             return await callback();
           } catch (error) {

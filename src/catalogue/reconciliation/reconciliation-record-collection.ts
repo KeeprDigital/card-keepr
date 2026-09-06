@@ -21,6 +21,14 @@ export class ReconciliationRecordCollection<T extends Record<string, unknown>>
       String(value.source_observation_id ?? ""),
     );
   }
+  get cursor() {
+    return { position: this.index.position, count: this.count };
+  }
+  resumeAt(cursor: { position: number; count: number }) {
+    this.index.resumeAt(cursor.position);
+    this.count = cursor.count;
+    this.sorted = undefined;
+  }
   async push(...records: T[]): Promise<void> {
     if (this.sorted) throw new Error("Cannot append to sealed reconciliation records.");
     for (const value of records) {

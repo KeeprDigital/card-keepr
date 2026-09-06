@@ -239,12 +239,23 @@ export async function readVerifiedReconciliationInput(
 }
 
 /** Re-open the immutable verified sequence without retaining the complete observation array. */
+export type ReconciliationInputRecordCursor = { partition: number; record: number };
+
 export async function* verifiedReconciliationRecords<T>(
   database: CatalogueStore,
   runId: string,
   kind: string,
 ): AsyncGenerator<T> {
-  let after = -1;
+  for await (const entry of verifiedReconciliationRecordEntries<T>(database, runId, kind)) yield entry.value;
+}
+
+export async function* verifiedReconciliationRecordEntries<T>(
+  database: CatalogueStore,
+  runId: string,
+  kind: string,
+  cursor: ReconciliationInputRecordCursor | null = null,
+): AsyncGenerator<{ value: T; cursor: ReconciliationInputRecordCursor; byteLength: number }> {
+  let after = cursor ? cursor.partition - 1 : -1;
   for (;;) {
     const partition = await storage(() =>
       nextReconciliationInputKindStatement(database, runId, kind, after).first<{
@@ -256,8 +267,18 @@ export async function* verifiedReconciliationRecords<T>(
     if (!partition) return;
     if ((await sha256Text(partition.content)) !== partition.sha256)
       throw new Error("Retained observation partition failed integrity verification.");
-    for (const record of JSON.parse(partition.content))
-      yield (await restorePartitionedRecord(database, runId, record)) as T;
+    const records = JSON.parse(partition.content);
+    for (let index = partition.ordinal === cursor?.partition ? cursor.record : 0; index < records.length; index++)
+      yield {
+        value: (await restorePartitionedRecord(database, runId, records[index])) as T,
+        byteLength:
+          new TextEncoder().encode(canonicalJson(records[index])).byteLength +
+          records[index].text_parts.reduce(
+            (total: number, part: { byte_length: number }) => total + part.byte_length,
+            0,
+          ),
+        cursor: { partition: partition.ordinal, record: index + 1 },
+      };
     after = partition.ordinal;
   }
 }
