@@ -226,4 +226,20 @@ CREATE INDEX reconciliation_plan_card ON reconciliation_reducer_state
 (ingestion_run_id, namespace, json_extract(content, '$.value.plan.cardId'), observation_ordinal);
 CREATE INDEX reconciliation_plan_printing ON reconciliation_reducer_state
 (ingestion_run_id, namespace, json_extract(content, '$.value.plan.printingId'), observation_ordinal);
+CREATE INDEX reconciliation_reducer_insertion_cursor ON reconciliation_reducer_state
+(ingestion_run_id, namespace, observation_ordinal);
+CREATE TABLE reconciliation_sort_batches (
+  ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
+  namespace TEXT NOT NULL,
+  pass INTEGER NOT NULL CHECK (pass >= 0),
+  run_ordinal INTEGER NOT NULL CHECK (run_ordinal >= 0),
+  batch_ordinal INTEGER NOT NULL CHECK (batch_ordinal >= 0),
+  content TEXT NOT NULL CHECK (json_valid(content) AND length(CAST(content AS BLOB)) <= 524288),
+  sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+  PRIMARY KEY (ingestion_run_id, namespace, pass, run_ordinal, batch_ordinal)
+);
+CREATE TRIGGER reconciliation_sort_batches_no_update BEFORE UPDATE ON reconciliation_sort_batches
+BEGIN SELECT RAISE(ABORT, 'reconciliation_sort_batches_immutable'); END;
+CREATE TRIGGER reconciliation_sort_batches_no_delete BEFORE DELETE ON reconciliation_sort_batches
+BEGIN SELECT RAISE(ABORT, 'reconciliation_sort_batches_audit_retained'); END;
 UPDATE catalogue_schema_state SET migration_level = 20 WHERE singleton = 1;

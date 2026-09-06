@@ -1557,7 +1557,7 @@ test("persistent curated edits retain Release ownership and official relationshi
   }
 });
 
-test.each(["current_errata", "prior_errata", "source_mappings", "observation_plans"])(
+test.each(["current_errata", "prior_errata", "source_mappings", "observation_plans", "semantic_memberships"])(
   "a %s storage outage resumes retained identities and effective rules text",
   async (namespace) => {
     const { testEnv, post, approve } = await import("./reconciliation-helpers");
@@ -1591,7 +1591,9 @@ test.each(["current_errata", "prior_errata", "source_mappings", "observation_pla
               batch.some((statement) => {
                 const entry = statements.get(statement);
                 return (
-                  entry?.sql.includes("INSERT INTO reconciliation_reducer_state") && entry.values.includes(namespace)
+                  (entry?.sql.includes("INSERT INTO reconciliation_reducer_state") ||
+                    entry?.sql.includes("INSERT INTO reconciliation_sort_batches")) &&
+                  entry.values.includes(namespace)
                 );
               })
             ) {

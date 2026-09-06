@@ -133,3 +133,29 @@ export function nextReducerEntityStateStatement(
     SELECT content, sha256, entity_id FROM bounded WHERE retained_bytes <= 524288 ORDER BY entity_id`)
     .bind(runId, namespace, ordinal, after, ordinal);
 }
+
+export function nextReducerInsertionStateStatement(
+  database: CatalogueStore,
+  runId: string,
+  namespace: string,
+  through: number,
+  after: number,
+) {
+  return repositoryStatements(database)
+    .prepare(`WITH candidates AS (
+    SELECT first.observation_ordinal AS first_ordinal, latest.content, latest.sha256
+    FROM reconciliation_reducer_state AS first
+    JOIN reconciliation_reducer_state AS latest ON latest.ingestion_run_id = first.ingestion_run_id
+      AND latest.namespace = first.namespace AND latest.key_digest = first.key_digest
+    WHERE first.ingestion_run_id = ? AND first.namespace = ? AND first.observation_ordinal > ?
+      AND first.observation_ordinal <= ? AND latest.observation_ordinal <= ?
+      AND NOT EXISTS (SELECT 1 FROM reconciliation_reducer_state older WHERE older.ingestion_run_id = first.ingestion_run_id
+        AND older.namespace = first.namespace AND older.key_digest = first.key_digest AND older.observation_ordinal < first.observation_ordinal)
+      AND NOT EXISTS (SELECT 1 FROM reconciliation_reducer_state newer WHERE newer.ingestion_run_id = latest.ingestion_run_id
+        AND newer.namespace = latest.namespace AND newer.key_digest = latest.key_digest AND newer.observation_ordinal > latest.observation_ordinal
+        AND newer.observation_ordinal <= ?)
+    ORDER BY first.observation_ordinal LIMIT 16), bounded AS (
+      SELECT *, sum(length(CAST(content AS BLOB))) OVER (ORDER BY first_ordinal) AS bytes FROM candidates)
+    SELECT content, sha256, first_ordinal FROM bounded WHERE bytes <= 524288 ORDER BY first_ordinal`)
+    .bind(runId, namespace, after, through, through, through);
+}

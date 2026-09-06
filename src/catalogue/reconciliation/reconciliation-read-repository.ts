@@ -25,27 +25,34 @@ export function errataProvenanceByIdsStatement(database: CatalogueStore, erratum
     .bind(erratumIdsJson);
 }
 
-export function currentPrintingMembershipsStatement(database: CatalogueStore): D1PreparedStatement {
-  return repositoryStatements(database).prepare(`SELECT printing_id, source_lineage, relationship_kind,
-                  relationship_value
-           FROM reconciled_printing_memberships
-           WHERE current = 1
-           ORDER BY printing_id, source_lineage,
-                    relationship_kind, relationship_value`);
+export function currentPrintingMembershipsStatement(
+  database: CatalogueStore,
+  after: readonly string[],
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(`WITH candidates AS (
+    SELECT DISTINCT printing_id, source_lineage, relationship_kind, relationship_value
+    FROM reconciled_printing_memberships WHERE current = 1
+      AND (printing_id, source_lineage, relationship_kind, relationship_value) > (?, ?, ?, ?)
+    ORDER BY printing_id, source_lineage, relationship_kind, relationship_value LIMIT 100),
+    bounded AS (SELECT *, row_number() OVER (ORDER BY printing_id, source_lineage, relationship_kind, relationship_value) AS ordinal,
+      sum(length(CAST(printing_id || source_lineage || relationship_kind || relationship_value AS BLOB)) + 128)
+      OVER (ORDER BY printing_id, source_lineage, relationship_kind, relationship_value) AS bytes FROM candidates)
+    SELECT printing_id, source_lineage, relationship_kind, relationship_value FROM bounded
+    WHERE bytes <= 524288 OR ordinal = 1 ORDER BY printing_id, source_lineage, relationship_kind, relationship_value`)
+    .bind(...after);
 }
 
-export function currentCardWithdrawalEvidenceStatement(database: CatalogueStore): D1PreparedStatement {
-  return repositoryStatements(database).prepare(`SELECT id, withdrawal_evidence_json
-           FROM reconciled_cards
-           WHERE withdrawal_evidence_json IS NOT NULL
-           ORDER BY id`);
-}
-
-export function currentPrintingWithdrawalEvidenceStatement(database: CatalogueStore): D1PreparedStatement {
-  return repositoryStatements(database).prepare(`SELECT id, withdrawal_evidence_json
-           FROM reconciled_printings
-           WHERE withdrawal_evidence_json IS NOT NULL
-           ORDER BY id`);
+export function currentWithdrawalEvidenceStatement(
+  database: CatalogueStore,
+  kind: "card" | "printing",
+  after: string,
+): D1PreparedStatement {
+  const table = kind === "card" ? "reconciled_cards" : "reconciled_printings";
+  return repositoryStatements(database)
+    .prepare(`SELECT id, withdrawal_evidence_json FROM ${table}
+    WHERE withdrawal_evidence_json IS NOT NULL AND id > ? ORDER BY id LIMIT 1`)
+    .bind(after);
 }
 
 export function publishedWithdrawalAssertionsStatement(
@@ -56,7 +63,7 @@ export function publishedWithdrawalAssertionsStatement(
     .prepare(`SELECT assertion, state, effective_at
            FROM reconciled_withdrawal_assertions
            WHERE entity_type = ? AND entity_id = ?
-           ORDER BY published_catalogue_revision_id, source_observation_id`)
+           ORDER BY effective_at DESC, published_catalogue_revision_id, source_observation_id LIMIT 1`)
     .bind(input.entityType, input.entityId);
 }
 

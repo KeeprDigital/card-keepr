@@ -2,6 +2,7 @@ import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { retainPartitionedRecord, restorePartitionedRecord } from "./reconciliation-text";
 import {
   nextLatestReducerStateStatement,
+  nextReducerInsertionStateStatement,
   nextReducerEntityStateStatement,
   nextReducerGroupStateStatement,
   exactReducerStateStatement,
@@ -108,6 +109,25 @@ export class ReconciliationReducerIndex<T> {
         throw new Error("Reducer state failed integrity verification.");
       yield (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T;
       after = row.key_digest;
+    }
+  }
+
+  /** Stable first-insertion order for maps populated exclusively through seed(). */
+  async *insertionValues(): AsyncGenerator<T> {
+    let after = 0;
+    for (;;) {
+      const page = await storage(
+        nextReducerInsertionStateStatement(this.database, this.runId, this.namespace, this.ordinal, after).all<
+          StateRow & { first_ordinal: number }
+        >(),
+      );
+      if (!page.results.length) return;
+      for (const row of page.results) {
+        if ((await sha256Text(row.content)) !== row.sha256)
+          throw new Error("Reducer state failed integrity verification.");
+        yield (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T;
+        after = row.first_ordinal;
+      }
     }
   }
 

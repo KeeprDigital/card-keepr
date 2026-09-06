@@ -1,3 +1,4 @@
+import { ReconciliationSortedRecords } from "./reconciliation-sorted-records";
 import { ReconciliationPlanState, type ObservationPlan } from "./reconciliation-plan-state";
 import { ReconciliationRecordLog } from "./reconciliation-record-log";
 import { ReconciliationErrataState } from "./reconciliation-errata-state";
@@ -48,6 +49,7 @@ import {
   type ProductRelationship,
   type CatalogueStore,
   canonicalJson,
+  sha256Text,
   catalogueCandidateContract,
   type IngestionRunState,
   retainedPayloadChunks,
@@ -81,9 +83,8 @@ import { publicReconciledPrinting, relationshipDisappearanceWarnings } from "./r
 import {
   activeParsingRunStatement,
   candidateAtRevisionStatement,
-  currentCardWithdrawalEvidenceStatement,
+  currentWithdrawalEvidenceStatement,
   currentPrintingMembershipsStatement,
-  currentPrintingWithdrawalEvidenceStatement,
   errataProvenanceByIdsStatement,
   publishedWithdrawalAssertionsStatement,
   reconciliationRunStateStatement,
@@ -1159,7 +1160,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
 
   diagnostics.push(
-    ...(await withdrawalConflictDiagnostics(plans)),
+    ...(await withdrawalConflictDiagnostics(database, runId, plans)),
     ...(await publishedWithdrawalConflictDiagnostics(database, plans)),
   );
 
@@ -1389,7 +1390,14 @@ export async function reconcileRetainedCardPrintingEvidence(
       observedPrintings.push({ id: printing.id });
   }
   if (diagnostics.length > 0) {
-    candidateCatalogueDigest = await catalogueDataDigest(database, official, candidate, plans, checkedSourceLineages);
+    candidateCatalogueDigest = await catalogueDataDigest(
+      database,
+      runId,
+      official,
+      candidate,
+      plans,
+      checkedSourceLineages,
+    );
     const stableDiagnostics = [...diagnostics].sort((left, right) =>
       canonicalJson(left).localeCompare(canonicalJson(right)),
     );
@@ -1426,7 +1434,14 @@ export async function reconcileRetainedCardPrintingEvidence(
     await applyPinnedCuratedRevisionsToDraft(database, runId, official, curated, observedAt);
   } catch (error) {
     if (!(error instanceof CuratedDraftSourceChangeError)) throw error;
-    candidateCatalogueDigest = await catalogueDataDigest(database, official, candidate, plans, checkedSourceLineages);
+    candidateCatalogueDigest = await catalogueDataDigest(
+      database,
+      runId,
+      official,
+      candidate,
+      plans,
+      checkedSourceLineages,
+    );
     const diagnostics = [...error.diagnostics].sort((left, right) =>
       canonicalJson(left).localeCompare(canonicalJson(right)),
     );
@@ -1462,7 +1477,14 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
   const corrected = new ReconciliationCandidateState(database, runId, "corrections", curated);
   await applyPinnedIdentityCorrectionsToDraft(database, runId, corrected, warnings);
-  candidateCatalogueDigest = await catalogueDataDigest(database, corrected, candidate, plans, checkedSourceLineages);
+  candidateCatalogueDigest = await catalogueDataDigest(
+    database,
+    runId,
+    corrected,
+    candidate,
+    plans,
+    checkedSourceLineages,
+  );
   const digestPayload = reconciliationDigestPayload({
     candidate: await corrected.document(candidate),
     partitions: retained.partitions,
@@ -1646,60 +1668,81 @@ function digestObservationPlans(plans: AsyncIterable<ObservationPlan>): AsyncIte
 
 async function catalogueDataDigest(
   database: CatalogueStore,
+  runId: string,
   draft: ReconciliationCandidateState,
   candidate: CatalogueCandidate,
   plans: AsyncIterable<ObservationPlan>,
   checkedSourceLineages: readonly string[],
 ): Promise<string> {
-  const [storedMemberships, storedCards, storedPrintings] = await Promise.all([
-    currentPrintingMembershipsStatement(database).all<{
-      printing_id: string;
-      source_lineage: string;
-      relationship_kind: string;
-      relationship_value: string;
-    }>(),
-    currentCardWithdrawalEvidenceStatement(database).all<{ id: string; withdrawal_evidence_json: string | null }>(),
-    currentPrintingWithdrawalEvidenceStatement(database).all<{ id: string; withdrawal_evidence_json: string | null }>(),
-  ]);
-  const memberships = new Map<string, Record<string, unknown>>();
+  const memberships = new ReconciliationReducerIndex<{ id: string; value: Record<string, unknown> }>(
+    database,
+    runId,
+    "semantic_membership_values",
+  );
+  const withdrawals = new ReconciliationReducerIndex<{ id: string; value: Record<string, unknown> }>(
+    database,
+    runId,
+    "semantic_withdrawal_values",
+  );
+  const addMembership = async (value: Record<string, unknown>) => {
+    const id = await sha256Text(canonicalJson(value));
+    await memberships.seed(id, { id, value });
+  };
   const observedSourceLineages = new Set(checkedSourceLineages);
-  for (const row of storedMemberships.results) {
-    if (
-      !(await draft.has("printings", row.printing_id)) ||
-      observedSourceLineages.has(row.source_lineage) ||
-      row.relationship_kind === "source_bucket"
-    ) {
-      continue;
+  let afterMembership = ["", "", "", ""];
+  for (;;) {
+    let rows: { printing_id: string; source_lineage: string; relationship_kind: string; relationship_value: string }[];
+    try {
+      rows = (
+        await currentPrintingMembershipsStatement(database, afterMembership).all<{
+          printing_id: string;
+          source_lineage: string;
+          relationship_kind: string;
+          relationship_value: string;
+        }>()
+      ).results;
+    } catch (cause) {
+      throw new ReconciliationReducerStorageError(cause);
     }
-    const semantic = {
-      printing_id: row.printing_id,
-      source_lineage: row.source_lineage,
-      relationship_kind: row.relationship_kind,
-      relationship_value: row.relationship_value,
-    };
-    memberships.set(canonicalJson(semantic), semantic);
-  }
-  const withdrawals = new Map<string, Record<string, unknown>>();
-  for (const [entityType, rows] of [
-    ["card", storedCards.results],
-    ["printing", storedPrintings.results],
-  ] as const) {
+    if (!rows.length) break;
     for (const row of rows) {
+      afterMembership = [row.printing_id, row.source_lineage, row.relationship_kind, row.relationship_value];
       if (
-        !(await draft.has(entityType === "card" ? "cards" : "printings", row.id)) ||
-        row.withdrawal_evidence_json === null
-      ) {
+        !(await draft.has("printings", row.printing_id)) ||
+        observedSourceLineages.has(row.source_lineage) ||
+        row.relationship_kind === "source_bucket"
+      )
         continue;
+      await addMembership(row);
+    }
+  }
+  for (const entityType of ["card", "printing"] as const) {
+    let after = "";
+    for (;;) {
+      let row: { id: string; withdrawal_evidence_json: string } | null;
+      try {
+        row = await currentWithdrawalEvidenceStatement(database, entityType, after).first<{
+          id: string;
+          withdrawal_evidence_json: string;
+        }>();
+      } catch (cause) {
+        throw new ReconciliationReducerStorageError(cause);
       }
+      if (!row) break;
+      after = row.id;
+      if (!(await draft.has(entityType === "card" ? "cards" : "printings", row.id))) continue;
       const evidence = JSON.parse(row.withdrawal_evidence_json) as Record<string, unknown>;
-      const semantic = {
-        entity_type: entityType,
-        entity_id: row.id,
-        assertion: evidence.assertion,
-        state: evidence.state,
-        effective_at: evidence.effective_at,
-      };
-      withdrawals.set(`${entityType}:${row.id}`, semantic);
+      const id = `${entityType}:${row.id}`;
+      await withdrawals.seed(id, {
+        id,
+        value: {
+          entity_type: entityType,
+          entity_id: row.id,
+          assertion: evidence.assertion,
+          state: evidence.state,
+          effective_at: evidence.effective_at,
+        },
+      });
     }
   }
   for await (const plan of plans) {
@@ -1720,7 +1763,7 @@ async function catalogueDataDigest(
           relationship_kind: membership.kind,
           relationship_value: membership.value,
         };
-        memberships.set(canonicalJson(semantic), semantic);
+        await addMembership(semantic);
       }
     }
     if (plan.withdrawal === null) continue;
@@ -1734,20 +1777,35 @@ async function catalogueDataDigest(
         : []),
     ];
     for (const target of targets) {
-      withdrawals.set(`${target.entityType}:${target.entityId}`, {
-        entity_type: target.entityType,
-        entity_id: target.entityId,
-        assertion: plan.withdrawal.assertion,
-        state: plan.withdrawal.state,
-        effective_at: plan.withdrawal.effective_at,
+      await withdrawals.seed(`${target.entityType}:${target.entityId}`, {
+        id: `${target.entityType}:${target.entityId}`,
+        value: {
+          entity_type: target.entityType,
+          entity_id: target.entityId,
+          assertion: plan.withdrawal.assertion,
+          state: plan.withdrawal.state,
+          effective_at: plan.withdrawal.effective_at,
+        },
       });
     }
   }
+  const sortedMemberships = new ReconciliationSortedRecords<Record<string, unknown>>(
+    database,
+    runId,
+    "semantic_memberships",
+  );
+  const sortedWithdrawals = new ReconciliationSortedRecords<Record<string, unknown>>(
+    database,
+    runId,
+    "semantic_withdrawals",
+  );
+  for await (const { value } of memberships.insertionValues()) await sortedMemberships.append(value);
+  for await (const { value } of withdrawals.insertionValues()) await sortedWithdrawals.append(value);
   const catalogueCandidate = await semanticDraftDocument(draft, candidate);
   return canonicalStreamValueDigest({
     catalogue_data: catalogueCandidate,
-    current_memberships: [...memberships.values()].sort(compareCanonical),
-    withdrawals: [...withdrawals.values()].sort(compareCanonical),
+    current_memberships: sortedMemberships,
+    withdrawals: sortedWithdrawals,
   });
 }
 
@@ -1864,10 +1922,6 @@ function omitUndefinedValues(value: unknown): unknown {
   return value;
 }
 
-function compareCanonical(left: Record<string, unknown>, right: Record<string, unknown>): number {
-  return canonicalJson(left).localeCompare(canonicalJson(right));
-}
-
 async function publishedWithdrawalConflictDiagnostics(
   database: CatalogueStore,
   plans: AsyncIterable<ObservationPlan>,
@@ -1885,27 +1939,24 @@ async function publishedWithdrawalConflictDiagnostics(
         : []),
     ];
     for (const target of targets) {
-      const prior = await publishedWithdrawalAssertionsStatement(database, {
-        entityType: target.entityType,
-        entityId: target.entityId,
-      }).all<{
-        assertion: string;
-        state: string;
-        effective_at: string;
-      }>();
+      let latest: { assertion: string; state: string; effective_at: string } | null;
+      try {
+        latest = await publishedWithdrawalAssertionsStatement(database, {
+          entityType: target.entityType,
+          entityId: target.entityId,
+        }).first<{ assertion: string; state: string; effective_at: string }>();
+      } catch (cause) {
+        throw new ReconciliationReducerStorageError(cause);
+      }
       const proposedSemantic = canonicalJson({
         assertion: withdrawal.assertion,
         state: withdrawal.state,
         effective_at: withdrawal.effective_at,
       });
-      const latest = [...prior.results].sort((left, right) => right.effective_at.localeCompare(left.effective_at))[0];
-      const repeated = latest !== undefined && canonicalJson(latest) === proposedSemantic;
+      const repeated = latest !== null && canonicalJson(latest) === proposedSemantic;
       const transition =
-        latest !== undefined && latest.state !== withdrawal.state && withdrawal.effective_at > latest.effective_at;
-      if (
-        (latest === undefined && withdrawal.state === "reinstated") ||
-        (latest !== undefined && !repeated && !transition)
-      ) {
+        latest !== null && latest.state !== withdrawal.state && withdrawal.effective_at > latest.effective_at;
+      if ((latest === null && withdrawal.state === "reinstated") || (latest !== null && !repeated && !transition)) {
         diagnostics.push({
           code: "withdrawal_evidence_conflict",
           source_observation_id: plan.sourceObservationId,
@@ -1920,8 +1971,17 @@ async function publishedWithdrawalConflictDiagnostics(
   return diagnostics.sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right)));
 }
 
-async function withdrawalConflictDiagnostics(plans: AsyncIterable<ObservationPlan>): Promise<Diagnostic[]> {
-  const assertions = new Map<string, { semantics: Set<string>; observationIds: Set<string> }>();
+async function withdrawalConflictDiagnostics(
+  database: CatalogueStore,
+  runId: string,
+  plans: AsyncIterable<ObservationPlan>,
+): Promise<Diagnostic[]> {
+  const assertions = new ReconciliationReducerIndex<{
+    id: string;
+    semantic: string;
+    observationId: string;
+    conflict: boolean;
+  }>(database, runId, "withdrawal_assertion_groups");
   for await (const plan of plans) {
     const withdrawal = plan.withdrawal;
     if (withdrawal === null) continue;
@@ -1932,31 +1992,34 @@ async function withdrawalConflictDiagnostics(plans: AsyncIterable<ObservationPla
         : []),
     ];
     for (const target of targets) {
-      const grouped = assertions.get(target) ?? {
-        semantics: new Set<string>(),
-        observationIds: new Set<string>(),
-      };
-      grouped.semantics.add(
-        canonicalJson({
-          assertion: withdrawal.assertion,
-          state: withdrawal.state,
-          effective_at: withdrawal.effective_at,
-        }),
-      );
-      grouped.observationIds.add(plan.sourceObservationId);
-      assertions.set(target, grouped);
+      const semantic = canonicalJson({
+        assertion: withdrawal.assertion,
+        state: withdrawal.state,
+        effective_at: withdrawal.effective_at,
+      });
+      const prior = await assertions.get(target);
+      await assertions.seed(target, {
+        id: target,
+        semantic: prior?.semantic ?? semantic,
+        observationId:
+          prior && prior.observationId < plan.sourceObservationId ? prior.observationId : plan.sourceObservationId,
+        conflict: (prior?.conflict ?? false) || (prior !== undefined && prior.semantic !== semantic),
+      });
     }
   }
-  return [...assertions]
-    .filter(([, assertion]) => assertion.semantics.size > 1)
-    .map(([target, assertion]) => ({
-      code: "withdrawal_evidence_conflict" as const,
-      source_observation_id: [...assertion.observationIds].sort()[0] ?? null,
+  const diagnostics: Diagnostic[] = [];
+  for await (const assertion of assertions.entityValues()) {
+    if (!assertion.conflict) continue;
+    diagnostics.push({
+      code: "withdrawal_evidence_conflict",
+      source_observation_id: assertion.observationId,
       locator: null,
-      matched_printing_ids: target.startsWith("printing:") ? [target.slice("printing:".length)] : [],
+      matched_printing_ids: assertion.id.startsWith("printing:") ? [assertion.id.slice("printing:".length)] : [],
       detail:
         "Retained explicit withdrawal assertions conflict for the same entity and cannot be deterministically reconciled.",
-    }));
+    });
+  }
+  return diagnostics;
 }
 
 async function addGundamProducts(
