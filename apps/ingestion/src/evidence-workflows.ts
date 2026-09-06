@@ -1,6 +1,5 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
-import { reconcileRetainedCardPrintingEvidence } from "../../../src/catalogue/reconciliation";
 import {
   type CatalogueStore,
   canonicalJson,
@@ -34,7 +33,7 @@ import {
 } from "../../../src/catalogue/source-evidence";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 import { fenceCollectionWorkflow, isSupersededCollectionWorkflow } from "./collection-workflow-fence";
-import { durableReconciliationResult } from "./reconciliation-workflow";
+import { runReconciliationWorkUnits } from "./reconciliation-workflow";
 
 const deterministicDatabaseStep = {
   retries: { limit: 3, delay: 250, backoff: "exponential" as const },
@@ -278,19 +277,11 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
           run.plan_origin === "production" &&
           requiredSourceAdapter(run.adapter_version).reconciliationCapability === "catalogue"
         ) {
-          const reconciliationResultJson = await step.do(
+          const reconciliationResultJson = await runReconciliationWorkUnits(
+            this.env,
+            step,
+            { ingestion_run_id: runId, observed_at: run.collection_completed_at ?? new Date().toISOString() },
             workflowSteps.parent.reconcile,
-            deterministicDatabaseStep,
-            async () => {
-              const result = await reconcileRetainedCardPrintingEvidence(
-                catalogueStore(this.env.CATALOGUE_DB),
-                this.env.EVIDENCE_OBJECTS,
-                runId,
-                run.collection_completed_at ?? new Date().toISOString(),
-                this.env.PRINTING_IMAGES,
-              );
-              return durableReconciliationResult(runId, result);
-            },
           );
           return {
             ingestion_run_id: runId,

@@ -74,7 +74,11 @@ import {
   persistReviewableCandidate,
   retainedReconciliationResult,
 } from "./reconciliation-candidate-store";
-import { retainedReconciliationObservation, type NormalizedReconciliationObservation } from "./reconciliation-evidence";
+import {
+  ReconciliationContinuation,
+  retainedReconciliationObservation,
+  type NormalizedReconciliationObservation,
+} from "./reconciliation-evidence";
 import {
   compatibilityFor,
   hasCrossSourceArtworkEvidence,
@@ -137,6 +141,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   observedAt: string,
   printingImageObjects: R2Bucket,
   generation = 0,
+  yieldAtCheckpoint = false,
 ): Promise<Record<string, unknown>> {
   const replay = await finalizedReconciliationResult(database, runId);
   if (replay !== null) return replay;
@@ -146,8 +151,15 @@ export async function reconcileRetainedCardPrintingEvidence(
   database = guardedCatalogueStore(base, () => reconciliationWriterGuard(base, runId, generation));
   let retained: Awaited<ReturnType<typeof retainedReconciliationObservation>>;
   try {
-    retained = await retainedReconciliationObservation(database, evidenceObjects, runId, printingImageObjects);
+    retained = await retainedReconciliationObservation(
+      database,
+      evidenceObjects,
+      runId,
+      printingImageObjects,
+      yieldAtCheckpoint,
+    );
   } catch (error) {
+    if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
     if (isStorageOrCapacityFailure(error)) throw error;
     const diagnostics: Diagnostic[] = [
       {

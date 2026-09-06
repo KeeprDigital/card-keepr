@@ -35,17 +35,7 @@ export async function runReconciliationWorkflow(
   );
   let reconciliationResultJson: string;
   try {
-    reconciliationResultJson = await step.do(workflowSteps.reconciliation.reconcile, reconciliationStep, async () => {
-      const result = await reconcileRetainedCardPrintingEvidence(
-        catalogueStore(env.CATALOGUE_DB),
-        env.EVIDENCE_OBJECTS,
-        event.payload.ingestion_run_id,
-        event.payload.observed_at,
-        env.PRINTING_IMAGES,
-        event.payload.generation ?? 0,
-      );
-      return durableReconciliationResult(event.payload.ingestion_run_id, result);
-    });
+    reconciliationResultJson = await runReconciliationWorkUnits(env, step, event.payload);
   } catch (error) {
     reconciliationResultJson = await step.do(workflowSteps.reconciliation.failure, reconciliationStep, async () => {
       const result = await pauseFailedReconciliation(
@@ -60,6 +50,37 @@ export async function runReconciliationWorkflow(
   return {
     result_json: reconciliationResultJson,
   };
+}
+
+/** Each successful callback returns either the next durable cursor or the terminal reference. */
+export async function runReconciliationWorkUnits(
+  env: Env,
+  step: WorkflowStep,
+  params: Pick<ReconciliationWorkflowParams, "ingestion_run_id" | "observed_at" | "generation">,
+  stepName: string = workflowSteps.reconciliation.reconcile,
+): Promise<string> {
+  for (let unit = 0; ; unit++) {
+    const resultJson = await step.do(
+      unit === 0 ? stepName : `${stepName}-unit-${unit}`,
+      reconciliationStep,
+      async () => {
+        const result = await reconcileRetainedCardPrintingEvidence(
+          catalogueStore(env.CATALOGUE_DB),
+          env.EVIDENCE_OBJECTS,
+          params.ingestion_run_id,
+          params.observed_at,
+          env.PRINTING_IMAGES,
+          params.generation ?? 0,
+          true,
+        );
+        return typeof result.continuation === "number"
+          ? JSON.stringify({ continuation: result.continuation })
+          : durableReconciliationResult(params.ingestion_run_id, result);
+      },
+    );
+    if (typeof (JSON.parse(resultJson) as { continuation?: number }).continuation === "number") continue;
+    return resultJson;
+  }
 }
 
 export function durableReconciliationResult(runId: string, result: Record<string, unknown>): string {

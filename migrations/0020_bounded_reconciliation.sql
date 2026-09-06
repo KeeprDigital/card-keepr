@@ -292,4 +292,16 @@ CREATE TRIGGER reconciliation_checkpoints_no_update BEFORE UPDATE ON reconciliat
 BEGIN SELECT RAISE(ABORT, 'reconciliation_checkpoint_immutable'); END;
 CREATE TRIGGER reconciliation_checkpoints_no_delete BEFORE DELETE ON reconciliation_checkpoints
 BEGIN SELECT RAISE(ABORT, 'reconciliation_checkpoint_audit_retained'); END;
+CREATE TABLE reconciliation_source_observations (
+  ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
+  observation_set_id TEXT NOT NULL,
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  content TEXT NOT NULL CHECK (json_valid(content) AND length(CAST(content AS BLOB)) <= 524288),
+  sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+  PRIMARY KEY (ingestion_run_id, observation_set_id, ordinal)
+);
+CREATE TRIGGER reconciliation_source_observations_no_update BEFORE UPDATE ON reconciliation_source_observations
+BEGIN SELECT RAISE(ABORT, 'reconciliation_source_observation_immutable'); END;
+CREATE TRIGGER reconciliation_source_observations_no_delete BEFORE DELETE ON reconciliation_source_observations
+BEGIN SELECT RAISE(ABORT, 'reconciliation_source_observation_audit_retained'); END;
 UPDATE catalogue_schema_state SET migration_level = 20 WHERE singleton = 1;

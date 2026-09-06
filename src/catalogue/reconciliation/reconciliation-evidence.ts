@@ -1,3 +1,4 @@
+import { retainSourceObservations, readSourceObservation } from "./reconciliation-source-observation";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationGundamGraph } from "./reconciliation-gundam-graph";
 import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
@@ -125,6 +126,13 @@ export type NormalizedReconciliationObservation = ReturnType<typeof parseReconci
   structurallyComplete: true;
 };
 
+export class ReconciliationContinuation extends Error {
+  constructor(readonly checkpoint: number) {
+    super("Reconciliation has retained its next normalization cursor.");
+    this.name = "ReconciliationContinuation";
+  }
+}
+
 type CollectedReconciliationInput = Awaited<ReturnType<typeof collectRetainedReconciliationObservation>>;
 type SequenceElement<T> = T extends Iterable<infer U> | AsyncIterable<infer U> ? U : never;
 type MetadataSequence = "partitions" | "countChangeWarnings" | "unavailablePrintingImages" | "evidencePlans";
@@ -134,10 +142,11 @@ export async function retainedReconciliationObservation(
   evidenceObjects: R2Bucket,
   runId: string,
   printingImages: R2Bucket,
+  yieldAtCheckpoint = false,
 ) {
   let retained = await readVerifiedReconciliationInput(database, runId);
   if (!retained) {
-    await prepareVerifiedReconciliationInput(database, evidenceObjects, runId, printingImages);
+    await prepareVerifiedReconciliationInput(database, evidenceObjects, runId, printingImages, yieldAtCheckpoint);
     retained = await readVerifiedReconciliationInput(database, runId);
   }
   if (!retained) throw new Error("The verified reconciliation input is unavailable.");
@@ -168,8 +177,15 @@ async function prepareVerifiedReconciliationInput(
   evidenceObjects: R2Bucket,
   runId: string,
   printingImages: R2Bucket,
+  yieldAtCheckpoint = false,
 ) {
-  const input = await collectRetainedReconciliationObservation(database, evidenceObjects, runId, printingImages);
+  const input = await collectRetainedReconciliationObservation(
+    database,
+    evidenceObjects,
+    runId,
+    printingImages,
+    yieldAtCheckpoint,
+  );
   await retainVerifiedReconciliationInput(database, runId, input);
 }
 
@@ -178,6 +194,7 @@ async function collectRetainedReconciliationObservation(
   evidenceObjects: R2Bucket,
   runId: string,
   printingImages: R2Bucket,
+  yieldAtCheckpoint = false,
 ) {
   const evidencePlanRow = await documentStorage(() =>
     reconciliationEvidencePlanStatement(database, runId).first<EvidencePlanRow>(),
@@ -365,7 +382,8 @@ async function collectRetainedReconciliationObservation(
       const adapter = requiredSourceAdapter(row.adapter_version);
       if (row.content_byte_length > adapter.maximumSnapshotBytes)
         throw new Error(`Retained Source Observation Set ${row.observation_set_id} exceeds its adapter byte limit.`);
-      await loadDocument(row);
+      const document = await loadDocument(row);
+      await retainSourceObservations(database, runId, row.observation_set_id, document.observations);
     }
     await assertClosedRequestGraph(database, runId, selectedEvidence, loadDocument, selectedRequestById);
     await retainReconciliationCheckpoint(database, runId, "source_graph", 0, { inputDigest });
@@ -383,7 +401,6 @@ async function collectRetainedReconciliationObservation(
     throw new Error("Normalization checkpoint provenance changed.");
   let checkpointOrdinal = (normalized?.ordinal ?? -1) + 1;
   for await (const { request, row } of evidenceAfter(normalized?.value)) {
-    const document = await loadDocument(row);
     const continuingDocument = normalized?.value.requestId === request.request_id && !normalized.value.complete;
     let officialSurfaceSeen = continuingDocument ? normalized!.value.officialSurfaceSeen : false;
     const sourceSurface = await sourceSurfaceForRequest(request, selectedRequestById, row);
@@ -445,9 +462,12 @@ async function collectRetainedReconciliationObservation(
       );
     };
     const startOrdinal = continuingDocument ? normalized!.value.nextObservationOrdinal : 0;
-    for (let sourceOrdinal = startOrdinal; sourceOrdinal < document.observations.length; sourceOrdinal++) {
-      await normalize(document.observations[sourceOrdinal], sourceOrdinal);
-      if ((sourceOrdinal + 1) % 8 === 0 && sourceOrdinal + 1 < document.observations.length)
+    for (let sourceOrdinal = startOrdinal; sourceOrdinal < row.observation_count; sourceOrdinal++) {
+      await normalize(
+        await readSourceObservation(database, runId, row.observation_set_id, sourceOrdinal),
+        sourceOrdinal,
+      );
+      if ((sourceOrdinal + 1) % 8 === 0 && sourceOrdinal + 1 < row.observation_count) {
         await retainReconciliationCheckpoint(database, runId, "normalization", checkpointOrdinal++, {
           inputDigest,
           sequenceNumber: request.sequence_number,
@@ -457,16 +477,19 @@ async function collectRetainedReconciliationObservation(
           complete: false,
           officialSurfaceSeen,
         });
+        if (yieldAtCheckpoint) throw new ReconciliationContinuation(checkpointOrdinal - 1);
+      }
     }
     await retainReconciliationCheckpoint(database, runId, "normalization", checkpointOrdinal++, {
       inputDigest,
       sequenceNumber: request.sequence_number,
       requestId: request.request_id,
       observationSetId: row.observation_set_id,
-      nextObservationOrdinal: document.observations.length,
+      nextObservationOrdinal: row.observation_count,
       complete: true,
       officialSurfaceSeen,
     });
+    if (yieldAtCheckpoint) throw new ReconciliationContinuation(checkpointOrdinal - 1);
   }
   for (const plan of selectedPlans)
     await validateOfficialSurfaceCoverage({
