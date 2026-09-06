@@ -113,12 +113,15 @@ export async function* normalizedCardErrata<T>(
       }>(),
     );
     if (!row) return;
-    bytes += new TextEncoder().encode(row.content).byteLength;
+    const envelope = JSON.parse(row.content);
+    bytes +=
+      new TextEncoder().encode(row.content).byteLength +
+      envelope.text_parts.reduce((total: number, part: { byte_length: number }) => total + part.byte_length, 0);
     if (++count > 500 || bytes > 1048576)
       throw new Error("reconciliation_capacity_exceeded: one Card has too many Erratum records.");
     if ((await sha256Text(row.content)) !== row.sha256)
       throw new Error("Normalized Erratum failed integrity verification.");
-    yield (await restorePartitionedRecord(database, runId, JSON.parse(row.content))) as T;
+    yield (await restorePartitionedRecord(database, runId, envelope)) as T;
     after = row.observation_id;
   }
 }

@@ -982,3 +982,36 @@ test("a retained Printing Image read outage preserves preparation for owner resu
     generation: 1,
   });
 });
+
+test("a single Card's Erratum budget includes externally retained text", async () => {
+  const { post, testEnv, waitForRunState } = await import("./reconciliation-helpers");
+  const { collectFixtureEvidence } = await import("../../../test/support/fixture-evidence-plan");
+  const started = await post("/v1/ingestion-runs/evidence", {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "fixture-one-piece-erratum-target@1",
+    idempotency_key: "erratum-target-text-budget",
+    requests: [
+      {
+        id: "one-piece-en:errata",
+        method: "GET",
+        url: "https://official-source.invalid/reconciliation/erratum-target-large-text",
+        headers: { accept: "application/json" },
+      },
+    ],
+  });
+  expect(started.response.status).toBe(201);
+  const id = requiredString(started.document, "id");
+  await collectFixtureEvidence(testEnv.CATALOGUE_DB, testEnv.EVIDENCE_OBJECTS, testEnv.OFFICIAL_SOURCE_TRANSPORT, id);
+  await waitForRunState(id, "parsing");
+  const result = await reconcile(id);
+  expect(result.response.status).toBe(409);
+  expect(result.document).toMatchObject({
+    state: "failed",
+    diagnostics: expect.arrayContaining([expect.objectContaining({ code: "reconciliation_capacity_exceeded" })]),
+  });
+  expect((await get(`/v1/ingestion-runs/${id}/reconciliation`)).document).toMatchObject({
+    state: "failed",
+    failure_code: "reconciliation_capacity_exceeded",
+  });
+});

@@ -4,6 +4,39 @@ import { createHash } from "node:crypto";
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
 export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
+  if (scenario === "erratum-target-large-text") {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP01-001",
+          name: "Synthetic Erratum target",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: "/official/erratum-target",
+          lineageMarker: "erratum-target",
+        }),
+        ...Array.from({ length: 2 }, (_, index) => ({
+          kind: "official_erratum",
+          game: "one-piece",
+          target: { type: "card", official_identity: { kind: "card_number", value: "OP01-001" } },
+          published_on: "2026-07-31",
+          effective_from: null,
+          observed_printed_rules_text: "Official printed rules",
+          corrected_rules_text: "Official effective rules",
+          official_wording: "Synthetic wording. ".repeat(35000),
+          applies_to_parallel_printings: true,
+          source: {
+            fragment: `#large_erratum_${index}`,
+            display_name: "OP01-001 Synthetic Erratum target",
+            image_url: "https://en.onepiece-cardgame.com/images/rules/cards/OP01-001.png",
+          },
+          completeness: completeEvidence(),
+        })),
+      ],
+    };
+  }
   if (scenario.startsWith("identity-correction-")) {
     return {
       cards: [
