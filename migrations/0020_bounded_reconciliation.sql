@@ -1,5 +1,5 @@
-SELECT CASE WHEN (SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1) = 18
-  THEN 1 ELSE json_extract('schema_level_mismatch_expected_18', '$') END;
+SELECT CASE WHEN (SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1) = 19
+  THEN 1 ELSE json_extract('schema_level_mismatch_expected_19', '$') END;
 
 -- A retained reservation belongs to each run; the legacy singleton is only
 -- the first live reservation used by conservative release/recovery idle gates.
@@ -92,4 +92,4 @@ CREATE TRIGGER reconciliation_input_no_update BEFORE UPDATE ON reconciliation_in
 BEGIN SELECT RAISE(ABORT, 'reconciliation_input_immutable'); END;
 CREATE TRIGGER reconciliation_input_no_delete BEFORE DELETE ON reconciliation_input_partitions
 BEGIN SELECT RAISE(ABORT, 'reconciliation_input_audit_retained'); END;
-UPDATE catalogue_schema_state SET migration_level = 19 WHERE singleton = 1;
+UPDATE catalogue_schema_state SET migration_level = 20 WHERE singleton = 1;

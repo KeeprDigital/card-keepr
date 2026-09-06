@@ -1,3 +1,4 @@
+import { correctionDecisionPinMetadata } from "./identity-correction-pins";
 import { entityAdmissionPinMetadata } from "./entity-admission-pins";
 import { type CatalogueStore, type CatalogueCandidate, canonicalJson, sha256Text } from "../shared";
 import {
@@ -34,6 +35,7 @@ export async function persistCandidatePartitions(
       definitions: pins.definition_pins_json,
       input_manifest: pins.input_manifest_digest,
       admissions: await entityAdmissionPinMetadata(database, runId),
+      corrections: await correctionDecisionPinMetadata(database, runId),
       observations: pins.observation_cutoff,
       identities: pins.identity_decision_cutoff,
       authorities: pins.authority_decision_cutoff,

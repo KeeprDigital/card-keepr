@@ -32,6 +32,9 @@
     },
     {
       "$ref": "#/$defs/RelationshipRecord"
+    },
+    {
+      "$ref": "#/$defs/IdentityCorrectionRecord"
     }
   ],
   "$defs": {
@@ -927,6 +930,49 @@
           ]
         }
       ]
+    },
+    "IdentityCorrectionRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "game",
+        "entity_kind",
+        "action",
+        "replacement_ids"
+      ],
+      "properties": {
+        "type": {
+          "const": "identity_correction"
+        },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "game": {
+          "$ref": "#/$defs/SupportedGame"
+        },
+        "entity_kind": {
+          "enum": [
+            "card",
+            "printing"
+          ]
+        },
+        "action": {
+          "enum": [
+            "merge",
+            "split"
+          ]
+        },
+        "replacement_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/OpaqueId"
+          }
+        }
+      }
     }
   }
 }

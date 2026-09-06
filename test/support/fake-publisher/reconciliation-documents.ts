@@ -4,6 +4,24 @@ import { createHash } from "node:crypto";
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
 export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
+  if (scenario.startsWith("identity-correction-")) {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: scenario.startsWith("identity-correction-renumbered") ? "OP94-002" : "OP94-001",
+          name: "Synthetic corrected identity",
+          locator:
+            scenario === "identity-correction-discovered" ? "/official/correction/new" : "/official/correction/stable",
+          lineageMarker:
+            scenario === "identity-correction-discovered" || scenario.endsWith("contradictory") ? "different" : "same",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+        }),
+      ],
+    };
+  }
   if (scenario === "identity-many-mappings") {
     return {
       cards: Array.from({ length: 101 }, (_, index) =>

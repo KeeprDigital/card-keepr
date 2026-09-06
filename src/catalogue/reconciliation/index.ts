@@ -64,3 +64,9 @@ export {
 export { reconciliationRoutes } from "./routes";
 
 export { pinEntityAdmissions } from "./entity-admission-pins";
+
+export {
+  pinCorrectionDecisions,
+  correctionPinStatementsForNewRun,
+  correctionDecisionPinMetadata,
+} from "./identity-correction-pins";

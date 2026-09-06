@@ -6,6 +6,12 @@ import {
   inspectReconciliationPartition,
   inspectReconciliationProgress,
 } from "./reconciliation-progress";
+import {
+  validateIdentityCorrection,
+  createIdentityCorrection,
+  inspectIdentityCorrection,
+  listIdentityCorrections,
+} from "./identity-corrections";
 import { inspectProposalSourceEvidence } from "./entity-admission";
 import {
   listEntityProposals,
@@ -72,6 +78,24 @@ export const reconciliationRoutes = [
   }),
   route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation", async ({ env }, params) => {
     return Response.json(await inspectReconciliationProgress(env.CATALOGUE_DB, params.run!));
+  }),
+  route<Context>("POST", "/v1/identity-corrections/validate", async ({ request, env }) =>
+    Response.json(await validateIdentityCorrection(env.CATALOGUE_DB, await readAdministrationBody(request))),
+  ),
+  route<Context>("POST", "/v1/identity-corrections", async ({ request, env, observedAt }) =>
+    Response.json(await createIdentityCorrection(env.CATALOGUE_DB, await readAdministrationBody(request), observedAt), {
+      status: 201,
+    }),
+  ),
+  route<Context>("GET", "/v1/identity-corrections/:correction", async ({ env }, params) =>
+    Response.json(await inspectIdentityCorrection(env.CATALOGUE_DB, params.correction!)),
+  ),
+  route<Context>("GET", "/v1/identity-corrections", async ({ env, request }) => {
+    const query = new URL(request.url).searchParams;
+    const after = Number(query.get("after") ?? "0");
+    if (!Number.isSafeInteger(after) || after < 0)
+      throw new AdministrationProblem(422, "correction_cursor_invalid", "Use a non-negative sequence.");
+    return Response.json(await listIdentityCorrections(env.CATALOGUE_DB, query.get("game") ?? "", after));
   }),
   route<Context>("GET", "/v1/entity-proposals", async ({ request, env }) => {
     const query = new URL(request.url).searchParams;

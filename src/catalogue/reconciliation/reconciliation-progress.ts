@@ -1,3 +1,4 @@
+import { correctionPinStatementsForNewRun } from "./identity-correction-pins";
 import { failReconciliationWorkflow, retainedReconciliationResult } from "./reconciliation-candidate-store";
 import {
   reconciliationInputPartitionStatement,
@@ -187,7 +188,11 @@ export async function initializeReconciliationProgress(database: CatalogueStore,
     JSON.parse(selected?.games_json ?? "[]") as string[],
   );
   try {
-    await database.batch([createReconciliationOperationStatement(database, runId, at, definitions), ...admissionPins]);
+    await database.batch([
+      createReconciliationOperationStatement(database, runId, at, definitions),
+      ...admissionPins,
+      ...correctionPinStatementsForNewRun(database, runId, JSON.parse(selected?.games_json ?? "[]") as string[]),
+    ]);
   } catch (error) {
     if (error instanceof Error && error.message.includes("game_candidate_slot_occupied"))
       throw new AdministrationProblem(
