@@ -1,3 +1,5 @@
+import { ReconciliationContinuation } from "./reconciliation-continuation";
+import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { boundedAsyncRecordArrays } from "./reconciliation-preparation";
 import { retainPartitionedRecord, restorePartitionedRecord } from "./reconciliation-text";
@@ -60,45 +62,91 @@ export async function retainVerifiedReconciliationInput(
   await storage(sealReconciliationInputStatement(database, runId, digest, ordinal).run());
 }
 
-/** Verify the manifest without rebuilding any retained record collection. */
+type InputMetadata = { values: Record<string, unknown>; array_keys: string[] };
+type VerificationCursor = {
+  manifestDigest: string;
+  digest: string;
+  nextPartition: number;
+  nextRecord: number;
+  metadata: InputMetadata | null;
+  complete: boolean;
+};
+
+/** Verification returns after bounded groups and resumes against the exact immutable manifest. */
 export async function readVerifiedReconciliationInput(
   database: CatalogueStore,
   runId: string,
+  yieldAtCheckpoint = false,
 ): Promise<Record<string, unknown> | null> {
   const manifest = await storage(
     reconciliationInputManifestStatement(database, runId).first<{ input_manifest_digest: string | null }>(),
   );
   if (!manifest?.input_manifest_digest) return null;
-  let digest = await sha256Text(canonicalJson({ contract: "card-keepr-reconciliation-input@1", run_id: runId }));
-  const result: Record<string, unknown> = {};
-  for (let ordinal = 0; ; ordinal++) {
-    const partition = await storage(
-      reconciliationInputPartitionStatement(database, runId, ordinal).first<{
-        kind: string;
-        content: string;
-        sha256: string;
-      }>(),
-    );
-    if (!partition) break;
-    if ((await sha256Text(partition.content)) !== partition.sha256)
-      throw new Error("Retained reconciliation input partition failed integrity verification.");
-    for (const record of JSON.parse(partition.content)) {
-      // Verify every retained text reference before exposing the stream, retaining only one restored record.
-      const restored = await restorePartitionedRecord(database, runId, record);
-      if (partition.kind !== "$metadata") continue;
-      const metadata = restored as { values: Record<string, unknown>; array_keys: string[] };
-      Object.assign(result, metadata.values);
-      for (const kind of metadata.array_keys)
-        result[kind] = {
-          [Symbol.asyncIterator]: () => verifiedReconciliationRecords(database, runId, kind),
-        };
+  const checkpoint = yieldAtCheckpoint
+    ? await reconciliationCheckpoint<VerificationCursor>(database, runId, "input_verification")
+    : null;
+  if (checkpoint && checkpoint.value.manifestDigest !== manifest.input_manifest_digest)
+    throw new Error("Retained reconciliation input manifest changed during verification.");
+  let digest =
+    checkpoint?.value.digest ??
+    (await sha256Text(canonicalJson({ contract: "card-keepr-reconciliation-input@1", run_id: runId })));
+  let metadata = checkpoint?.value.metadata ?? null;
+  let ordinal = checkpoint?.value.nextPartition ?? 0;
+  const save = async (nextPartition: number, nextRecord: number, complete: boolean) => {
+    const cursor: VerificationCursor = {
+      manifestDigest: manifest.input_manifest_digest!,
+      digest,
+      nextPartition,
+      nextRecord,
+      metadata,
+      complete,
+    };
+    const checkpointOrdinal = (checkpoint?.ordinal ?? -1) + 1;
+    await retainReconciliationCheckpoint(database, runId, "input_verification", checkpointOrdinal, cursor);
+    throw new ReconciliationContinuation({ phase: "input_verification", ordinal: checkpointOrdinal });
+  };
+  if (!checkpoint?.value.complete) {
+    for (; ; ordinal++) {
+      const partition = await storage(
+        reconciliationInputPartitionStatement(database, runId, ordinal).first<{
+          kind: string;
+          content: string;
+          sha256: string;
+        }>(),
+      );
+      if (!partition) break;
+      if ((await sha256Text(partition.content)) !== partition.sha256)
+        throw new Error("Retained reconciliation input partition failed integrity verification.");
+      const records = JSON.parse(partition.content) as (Parameters<typeof restorePartitionedRecord>[2] | null)[];
+      let processed = 0;
+      let bytes = 0;
+      const start = ordinal === checkpoint?.value.nextPartition ? checkpoint.value.nextRecord : 0;
+      for (let index = start; index < records.length; index++) {
+        const record = records[index]!;
+        const size =
+          new TextEncoder().encode(canonicalJson(record)).byteLength +
+          record.text_parts.reduce((sum, part) => sum + part.byte_length, 0);
+        if (yieldAtCheckpoint && processed > 0 && (processed === 8 || bytes + size > 512000))
+          await save(ordinal, index, false);
+        const restored = await restorePartitionedRecord(database, runId, record);
+        if (partition.kind === "$metadata") metadata = restored as InputMetadata;
+        records[index] = null;
+        processed++;
+        bytes += size;
+      }
+      digest = await sha256Text(
+        canonicalJson({ previous: digest, ordinal, kind: partition.kind, sha256: partition.sha256 }),
+      );
+      if (yieldAtCheckpoint) await save(ordinal + 1, 0, false);
     }
-    digest = await sha256Text(
-      canonicalJson({ previous: digest, ordinal, kind: partition.kind, sha256: partition.sha256 }),
-    );
+    if (digest !== manifest.input_manifest_digest)
+      throw new Error("Retained reconciliation input manifest failed verification.");
+    if (yieldAtCheckpoint) await save(ordinal, 0, true);
   }
-  if (digest !== manifest.input_manifest_digest)
-    throw new Error("Retained reconciliation input manifest failed verification.");
+  if (!metadata) throw new Error("Retained reconciliation input metadata is unavailable.");
+  const result = { ...metadata.values };
+  for (const kind of metadata.array_keys)
+    result[kind] = { [Symbol.asyncIterator]: () => verifiedReconciliationRecords(database, runId, kind) };
   return result;
 }
 

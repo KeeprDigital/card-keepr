@@ -1,3 +1,4 @@
+import { ReconciliationContinuation } from "./reconciliation-continuation";
 import {
   retainEvidenceSelection,
   retainedEvidenceSelection,
@@ -133,13 +134,6 @@ export type NormalizedReconciliationObservation = ReturnType<typeof parseReconci
   structurallyComplete: true;
 };
 
-export class ReconciliationContinuation extends Error {
-  constructor(readonly checkpoint: { phase: "source_graph" | "normalization"; ordinal: number }) {
-    super("Reconciliation has retained its next work cursor.");
-    this.name = "ReconciliationContinuation";
-  }
-}
-
 type CollectedReconciliationInput = Awaited<ReturnType<typeof collectRetainedReconciliationObservation>>;
 type SequenceElement<T> = T extends Iterable<infer U> | AsyncIterable<infer U> ? U : never;
 type MetadataSequence = "partitions" | "countChangeWarnings" | "unavailablePrintingImages" | "evidencePlans";
@@ -151,10 +145,10 @@ export async function retainedReconciliationObservation(
   printingImages: R2Bucket,
   yieldAtCheckpoint = false,
 ) {
-  let retained = await readVerifiedReconciliationInput(database, runId);
+  let retained = await readVerifiedReconciliationInput(database, runId, yieldAtCheckpoint);
   if (!retained) {
     await prepareVerifiedReconciliationInput(database, evidenceObjects, runId, printingImages, yieldAtCheckpoint);
-    retained = await readVerifiedReconciliationInput(database, runId);
+    retained = await readVerifiedReconciliationInput(database, runId, yieldAtCheckpoint);
   }
   if (!retained) throw new Error("The verified reconciliation input is unavailable.");
   return {
@@ -194,6 +188,7 @@ async function prepareVerifiedReconciliationInput(
     yieldAtCheckpoint,
   );
   await retainVerifiedReconciliationInput(database, runId, input);
+  if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "input_preparation", ordinal: 0 });
 }
 
 async function collectRetainedReconciliationObservation(

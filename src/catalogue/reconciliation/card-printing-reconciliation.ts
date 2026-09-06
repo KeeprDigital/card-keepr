@@ -1,3 +1,4 @@
+import { ReconciliationContinuation } from "./reconciliation-continuation";
 import { ReconciliationRecordCollection } from "./reconciliation-record-collection";
 import { ReconciliationSortedRecords } from "./reconciliation-sorted-records";
 import { ReconciliationPlanState, type ObservationPlan } from "./reconciliation-plan-state";
@@ -74,11 +75,7 @@ import {
   persistReviewableCandidate,
   retainedReconciliationResult,
 } from "./reconciliation-candidate-store";
-import {
-  ReconciliationContinuation,
-  retainedReconciliationObservation,
-  type NormalizedReconciliationObservation,
-} from "./reconciliation-evidence";
+import { retainedReconciliationObservation, type NormalizedReconciliationObservation } from "./reconciliation-evidence";
 import {
   compatibilityFor,
   hasCrossSourceArtworkEvidence,

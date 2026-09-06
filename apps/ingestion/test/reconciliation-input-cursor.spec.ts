@@ -159,6 +159,8 @@ test.each([
     let serviceCalls = 0;
     const completedGroups: number[] = [];
     const callsPerGroup: number[] = [];
+    const verificationCalls: number[] = [];
+    const verificationCursors: number[] = [];
     const images = new Proxy(testEnv.PRINTING_IMAGES, {
       get(target, property) {
         if (property === "put")
@@ -215,6 +217,14 @@ test.each([
           completedGroups.push(imagesInUnit);
           callsPerGroup.push(serviceCalls);
         }
+        if (JSON.parse(result as string).continuation?.phase === "input_verification") {
+          verificationCalls.push(serviceCalls);
+          const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+          const checkpoint = (status.checkpoints as { phase: string; cursor: { nextRecord: number } }[]).find(
+            (row) => row.phase === "input_verification",
+          );
+          verificationCursors.push(checkpoint!.cursor.nextRecord);
+        }
         expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThan(65536);
         return result;
       },
@@ -235,7 +245,12 @@ test.each([
       step,
     );
     expect(completedGroups).toEqual(groups);
-    if (requireFrozenMetadata) expect(Math.max(...callsPerGroup)).toBeLessThanOrEqual(100);
+    if (requireFrozenMetadata) {
+      expect(Math.max(...callsPerGroup)).toBeLessThanOrEqual(100);
+      expect(verificationCalls.length).toBeGreaterThan(0);
+      expect(Math.max(...verificationCalls)).toBeLessThanOrEqual(100);
+      if (scenario === "curated-conflict-fanout-base") expect(verificationCursors).toContain(8);
+    }
     expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({ state: "sealed" });
   },
 );
