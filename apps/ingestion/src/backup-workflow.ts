@@ -1,3 +1,4 @@
+import { environmentNames } from "../../../src/http/environment-target.mjs";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import {
   type CatalogueBackupWorkflowParams,
@@ -40,6 +41,7 @@ export async function runCatalogueBackupWorkflow(
           cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
           catalogueDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
           disposableDatabaseId: env.DISPOSABLE_D1_DATABASE_ID,
+          disposableDatabaseName: environmentNames(env.KEEPR_ENVIRONMENT).disposable,
           exportToken: env.D1_EXPORT_TOKEN,
           verificationToken: env.D1_VERIFICATION_TOKEN,
           failedAttemptId: params.failed_attempt_id,

@@ -201,13 +201,14 @@ export async function createCuratedRevision(
   database: CatalogueStore,
   input: Record<string, unknown>,
   observedAt: string,
+  targetEnvironment = "production",
 ): Promise<{ created: boolean; document: MutationResult }> {
   onlyFields(input, ["environment", "expected_current_revision_id", "proposal", "proposal_digest", "idempotency_key"]);
   const idempotencyKey = requiredString(input.idempotency_key, "idempotency_key");
   const requestDigest = await sha256Text(canonicalJson(input));
   const replay = await idempotencyReplay(database, idempotencyKey, requestDigest);
   if (replay !== null) return replay;
-  if (input.environment !== "production") {
+  if (input.environment !== targetEnvironment) {
     throw new AdministrationProblem(
       422,
       "production_target_required",
@@ -311,6 +312,7 @@ export async function reaffirmCuratedRevision(
   revisionId: string,
   input: Record<string, unknown>,
   observedAt: string,
+  targetEnvironment = "production",
 ): Promise<{ created: boolean; document: MutationResult }> {
   onlyFields(input, [
     "environment",
@@ -320,7 +322,7 @@ export async function reaffirmCuratedRevision(
     "rationale",
     "idempotency_key",
   ]);
-  const mutation = await existingRevisionMutation(database, revisionId, input, observedAt);
+  const mutation = await existingRevisionMutation(database, revisionId, input, observedAt, targetEnvironment);
   if (mutation.replay !== null) return mutation.replay;
   if (mutation.row.status !== "reconfirmation_required" || mutation.conflict === null) {
     throw new AdministrationProblem(
@@ -368,6 +370,7 @@ export async function retireCuratedRevision(
   revisionId: string,
   input: Record<string, unknown>,
   observedAt: string,
+  targetEnvironment = "production",
 ): Promise<{ created: boolean; document: MutationResult }> {
   onlyFields(input, [
     "environment",
@@ -378,7 +381,7 @@ export async function retireCuratedRevision(
     "idempotency_key",
   ]);
   requiredOwnField(input, "conflict_digest");
-  const mutation = await existingRevisionMutation(database, revisionId, input, observedAt);
+  const mutation = await existingRevisionMutation(database, revisionId, input, observedAt, targetEnvironment);
   if (mutation.replay !== null) return mutation.replay;
   assertConflictBinding(mutation.conflict, input.conflict_digest);
   const rationale = requiredString(input.rationale, "rationale");
@@ -411,6 +414,7 @@ export async function supersedeCuratedRevision(
   revisionId: string,
   input: Record<string, unknown>,
   observedAt: string,
+  targetEnvironment = "production",
 ): Promise<{ created: boolean; document: MutationResult }> {
   onlyFields(input, [
     "environment",
@@ -423,7 +427,7 @@ export async function supersedeCuratedRevision(
     "idempotency_key",
   ]);
   requiredOwnField(input, "conflict_digest");
-  const mutation = await existingRevisionMutation(database, revisionId, input, observedAt);
+  const mutation = await existingRevisionMutation(database, revisionId, input, observedAt, targetEnvironment);
   if (mutation.replay !== null) return mutation.replay;
   assertConflictBinding(mutation.conflict, input.conflict_digest);
   requiredString(input.rationale, "rationale");
@@ -1185,6 +1189,7 @@ async function existingRevisionMutation(
   revisionId: string,
   input: Record<string, unknown>,
   observedAt: string,
+  targetEnvironment = "production",
 ): Promise<ExistingMutation> {
   const idempotencyKey = requiredString(input.idempotency_key, "idempotency_key");
   const requestDigest = await sha256Text(canonicalJson({ revision_id: revisionId, ...input }));
@@ -1200,7 +1205,7 @@ async function existingRevisionMutation(
       operationId: replay.document.operation_id,
     };
   }
-  if (input.environment !== "production") {
+  if (input.environment !== targetEnvironment) {
     throw new AdministrationProblem(
       422,
       "production_target_required",

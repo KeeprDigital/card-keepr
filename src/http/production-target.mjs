@@ -1,23 +1,25 @@
+import { environmentNames } from "./environment-target.mjs";
+
 export function validatedProductionTarget(value) {
+  return validatedEnvironmentTarget(value, "production");
+}
+
+export function validatedEnvironmentTarget(value, environment) {
+  const names = environmentNames(environment);
   if (
     value === null ||
     typeof value !== "object" ||
     Array.isArray(value) ||
     !sameKeys(value, ["cloudflare_account_id", "worker_scripts", "d1_databases", "r2_buckets"]) ||
     !/^[0-9a-f]{32}$/.test(value.cloudflare_account_id ?? "") ||
-    !sameStringArray(value.worker_scripts, ["card-keepr-api", "card-keepr-ingestion"]) ||
-    !sameStringArray(value.r2_buckets, [
-      "card-keepr-evidence",
-      "card-keepr-printing-images",
-      "card-keepr-catalogue-exports",
-      "card-keepr-backups",
-    ]) ||
+    !sameStringArray(value.worker_scripts, names.workers) ||
+    !sameStringArray(value.r2_buckets, names.buckets) ||
     !Array.isArray(value.d1_databases) ||
     value.d1_databases.length !== 2
   ) {
     return null;
   }
-  const expectedDatabaseNames = ["card-keepr-catalogue", "card-keepr-disposable-verification"];
+  const expectedDatabaseNames = [names.catalogue, names.disposable];
   for (const [index, database] of value.d1_databases.entries()) {
     if (
       database === null ||

@@ -12,6 +12,7 @@ import {
 } from "./curated-revisions";
 
 type Environment = {
+  KEEPR_ENVIRONMENT?: string;
   CATALOGUE_DB: CatalogueStore;
 };
 type Context = RouteContext<Environment> & { observedAt: string };
@@ -45,7 +46,12 @@ export const curatedRoutes = [
     );
   }),
   route<Context>("POST", "/admin/v1/curated-revisions", async ({ request, env, observedAt }) => {
-    const result = await createCuratedRevision(env.CATALOGUE_DB, await readAdministrationBody(request), observedAt);
+    const result = await createCuratedRevision(
+      env.CATALOGUE_DB,
+      await readAdministrationBody(request),
+      observedAt,
+      env.KEEPR_ENVIRONMENT,
+    );
     return Response.json(result.document, {
       status: result.created ? 201 : 200,
     });
@@ -59,10 +65,10 @@ export const curatedRoutes = [
         const body = await readAdministrationBody(request);
         const result =
           operation === "reaffirm"
-            ? await reaffirmCuratedRevision(env.CATALOGUE_DB, revisionId, body, observedAt)
+            ? await reaffirmCuratedRevision(env.CATALOGUE_DB, revisionId, body, observedAt, env.KEEPR_ENVIRONMENT)
             : operation === "supersede"
-              ? await supersedeCuratedRevision(env.CATALOGUE_DB, revisionId, body, observedAt)
-              : await retireCuratedRevision(env.CATALOGUE_DB, revisionId, body, observedAt);
+              ? await supersedeCuratedRevision(env.CATALOGUE_DB, revisionId, body, observedAt, env.KEEPR_ENVIRONMENT)
+              : await retireCuratedRevision(env.CATALOGUE_DB, revisionId, body, observedAt, env.KEEPR_ENVIRONMENT);
         return Response.json(result.document, {
           status: result.created && operation === "supersede" ? 201 : 200,
         });

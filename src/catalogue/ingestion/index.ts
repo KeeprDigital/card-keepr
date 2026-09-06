@@ -26,3 +26,5 @@ export type {
   RetryPublicationCleanupRequest,
   RetryRunRequest,
 } from "./run-types";
+
+export { handleDevDeployment } from "./dev-deployment";

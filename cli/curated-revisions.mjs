@@ -112,7 +112,7 @@ async function create(arguments_, environment, json) {
     "/admin/v1/curated-revisions",
     "POST",
     {
-      environment: "production",
+      environment: environment.KEEPR_TARGET ?? "production",
       expected_current_revision_id: expected,
       proposal: proposalRead.value,
       proposal_digest: digest,
@@ -181,7 +181,7 @@ async function lifecycle(operation, arguments_, environment, json) {
     `/admin/v1/curated-revisions/${encodeURIComponent(revisionId)}/${operation}`,
     "POST",
     {
-      environment: "production",
+      environment: environment.KEEPR_TARGET ?? "production",
       expected_current_revision_id: expected,
       expected_event_version: eventVersion,
       conflict_digest: conflictDigest,
@@ -196,7 +196,7 @@ async function lifecycle(operation, arguments_, environment, json) {
 }
 
 async function mutationContext(operation, options, environment, json, binding) {
-  if (options.values["--environment"] !== "production") {
+  if (options.values["--environment"] !== (environment.KEEPR_TARGET ?? "production")) {
     return writeCliFailure(
       json,
       {

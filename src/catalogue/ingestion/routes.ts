@@ -1,4 +1,5 @@
-import { validatedProductionTarget } from "../../http/production-target.mjs";
+import { environmentNames } from "../../http/environment-target.mjs";
+import { validatedEnvironmentTarget } from "../../http/production-target.mjs";
 import { resolveAdministrationTarget } from "./administration-target";
 import {
   administrationResultStatus,
@@ -31,6 +32,7 @@ type Environment = Parameters<typeof evidenceInspectionOptions>[0] & {
   CATALOGUE_EXPORTS: R2Bucket;
   CLOUDFLARE_ACCOUNT_ID: string;
   DISPOSABLE_D1_DATABASE_ID: string;
+  KEEPR_ENVIRONMENT?: string;
   PRINTING_IMAGES: R2Bucket;
   BACKUPS: R2Bucket;
 };
@@ -42,6 +44,12 @@ type Context = RouteContext<Environment> & { observedAt: string; publicationBack
 
 export const ingestionRoutes = [
   route<Context>("POST", "/v1/production-releases", async ({ request, env, observedAt }) => {
+    if ((env.KEEPR_ENVIRONMENT ?? "production") !== "production")
+      throw new AdministrationProblem(
+        422,
+        "production_target_required",
+        "Production Release is unavailable on this environment.",
+      );
     const body = await readAdministrationBody(request);
     return Response.json(
       await resolveProductionRelease(env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, body, productionTarget(env), observedAt),
@@ -206,20 +214,19 @@ export const ingestionRoutes = [
 ];
 
 function productionTarget(env: Environment) {
-  const target = validatedProductionTarget({
-    cloudflare_account_id: env.CLOUDFLARE_ACCOUNT_ID,
-    worker_scripts: ["card-keepr-api", "card-keepr-ingestion"],
-    d1_databases: [
-      { name: "card-keepr-catalogue", id: env.CATALOGUE_D1_DATABASE_ID },
-      { name: "card-keepr-disposable-verification", id: env.DISPOSABLE_D1_DATABASE_ID },
-    ],
-    r2_buckets: [
-      "card-keepr-evidence",
-      "card-keepr-printing-images",
-      "card-keepr-catalogue-exports",
-      "card-keepr-backups",
-    ],
-  });
+  const names = environmentNames(env.KEEPR_ENVIRONMENT);
+  const target = validatedEnvironmentTarget(
+    {
+      cloudflare_account_id: env.CLOUDFLARE_ACCOUNT_ID,
+      worker_scripts: names.workers,
+      d1_databases: [
+        { name: names.catalogue, id: env.CATALOGUE_D1_DATABASE_ID },
+        { name: names.disposable, id: env.DISPOSABLE_D1_DATABASE_ID },
+      ],
+      r2_buckets: names.buckets,
+    },
+    names.environment,
+  );
   if (target === null)
     throw new AdministrationProblem(
       500,

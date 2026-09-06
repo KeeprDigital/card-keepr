@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { safeDiagnosticCount, safeDiagnosticReference, safeMachineCode } from "../src/http/diagnostic-display.mjs";
 import { apiCapabilities, ingestionCapabilities } from "../src/runtime-capabilities.mjs";
+import { selectEnvironment } from "./environment.mjs";
 import { runCatalogueCommand } from "./catalogue.mjs";
 import { parseOptions, runtimeUrl, writeCliFailure as writeFailure } from "./command-support.mjs";
 import { runLegalityStatusCommand } from "./contextual-legality.mjs";
@@ -201,8 +202,11 @@ async function routeCommand(name, arguments_, environment, json) {
     Object.entries(definition.choices ?? {}).some(([field, choices]) => !choices.includes(value(field)))
   )
     return usageFailure(json);
-  if (definition.production && value("environment") !== "production")
-    return productionTargetFailure(json, `${definition.production} requires --environment production.`);
+  if (definition.production && value("environment") !== (environment.KEEPR_TARGET ?? "production"))
+    return productionTargetFailure(
+      json,
+      `${definition.production} requires --environment ${environment.KEEPR_TARGET ?? "production"}.`,
+    );
   const mapped = (fields) =>
     Object.fromEntries(
       Object.entries(fields ?? {})
@@ -212,7 +216,10 @@ async function routeCommand(name, arguments_, environment, json) {
   const body =
     definition.fields === undefined
       ? undefined
-      : { ...(definition.bodyEnvironment ? { environment: "production" } : {}), ...mapped(definition.fields) };
+      : {
+          ...(definition.bodyEnvironment ? { environment: environment.KEEPR_TARGET ?? "production" } : {}),
+          ...mapped(definition.fields),
+        };
   if (definition.production) {
     const resolved = await resolveTarget(environment, json, mapped(definition.query));
     if (typeof resolved === "number") return resolved;
@@ -260,6 +267,17 @@ const commands = {
 
 export async function main(arguments_, environment) {
   const json = arguments_.includes("--json");
+  try {
+    ({ arguments_, environment } = selectEnvironment(arguments_, environment));
+  } catch (error) {
+    return writeFailure(json, { code: "configuration_error", detail: error.message }, 2);
+  }
+  if (environment.KEEPR_TARGET && arguments_[0] === "release" && environment.KEEPR_TARGET !== "production")
+    return writeFailure(
+      json,
+      { code: "production_target_required", detail: "Production Release cannot use a nonproduction target." },
+      2,
+    );
   if (arguments_[0] === "health") {
     if (arguments_.slice(1).some((option) => option !== "--json")) {
       return usageFailure(json);
@@ -449,7 +467,7 @@ async function retryBackup(arguments_, environment, json) {
     !options.flags.has("--yes")
   )
     return usageFailure(json);
-  if (target !== "production") {
+  if (target !== (environment.KEEPR_TARGET ?? "production")) {
     return productionTargetFailure(json, "Catalogue backup retry requires --environment production.");
   }
   const resolved = await resolveProductionStatus(environment, json, expected);
@@ -554,7 +572,7 @@ async function catalogueExportDeletion(action, arguments_, environment, json) {
     ];
     if (options.error !== null || required.some((name) => values[name] === undefined) || !options.flags.has("--yes"))
       return usageFailure(json);
-    if (values["--environment"] !== "production") {
+    if (values["--environment"] !== (environment.KEEPR_TARGET ?? "production")) {
       return productionTargetFailure(json, "Catalogue Export deletion requires --environment production.");
     }
     const resolved = await resolveProductionStatus(environment, json, values["--expected-current-revision"]);
@@ -605,7 +623,7 @@ async function catalogueExportDeletion(action, arguments_, environment, json) {
     ];
     if (options.error !== null || required.some((name) => values[name] === undefined) || !options.flags.has("--yes"))
       return usageFailure(json);
-    if (values["--environment"] !== "production") {
+    if (values["--environment"] !== (environment.KEEPR_TARGET ?? "production")) {
       return productionTargetFailure(json, "Catalogue Export deletion retry requires --environment production.");
     }
     const resolved = await resolveProductionStatus(environment, json, values["--expected-current-revision"]);

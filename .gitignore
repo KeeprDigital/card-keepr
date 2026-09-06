@@ -10,3 +10,6 @@ coverage/
 !.env.example
 
 .artifacts/
+
+# Generated isolated dev configs contain observed resource identities.
+apps/*/wrangler.dev.json

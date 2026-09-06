@@ -1,3 +1,4 @@
+import { handleDevDeployment } from "../../../src/catalogue/ingestion";
 import { administrationPresentation } from "../../../src/http/administration-presentation.mjs";
 import { backupRecoveryRoutes, enforceRecoveryRestoreGuard } from "../../../src/catalogue/backup-recovery";
 import { curatedRoutes } from "../../../src/catalogue/curated";
@@ -56,6 +57,9 @@ async function handleIngestionRequest(
   try {
     const rateLimited = await rateLimitFailure(request, env.ADMINISTRATION_RATE_LIMIT, requestId);
     if (rateLimited !== null) return rateLimited;
+
+    if (new URL(request.url).pathname === "/v1/dev-deployments")
+      return await handleDevDeployment(request, catalogueEnvironment(env));
 
     const authenticationFailure = await authenticateBearer(
       request,

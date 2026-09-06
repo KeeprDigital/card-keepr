@@ -37,6 +37,7 @@ export type D1BackupProvider = Readonly<{
     input: Readonly<{
       accountId: string;
       configuredDatabaseId: string;
+      disposableDatabaseName?: string;
       token: string;
       attemptId: string;
       previousDatabaseId: string | null;
@@ -111,6 +112,7 @@ type BackupInput = Readonly<{
   cloudflareAccountId: string;
   catalogueDatabaseId: string;
   disposableDatabaseId: string;
+  disposableDatabaseName?: string;
   exportToken: string;
   verificationToken: string;
   failedAttemptId?: string;
@@ -566,6 +568,7 @@ export async function createVerifiedCatalogueBackup(
       const prepared = await provider.prepareRestoreTarget({
         accountId: input.cloudflareAccountId,
         configuredDatabaseId: input.disposableDatabaseId,
+        disposableDatabaseName: input.disposableDatabaseName,
         token: input.verificationToken,
         attemptId: input.idempotencyKey,
         previousDatabaseId: disposableDatabaseId,
@@ -959,9 +962,13 @@ export const cloudflareD1BackupProvider: D1BackupProvider = {
   },
 
   async prepareRestoreTarget(input) {
+    const name = input.disposableDatabaseName ?? "card-keepr-disposable-verification";
+    if (!/^card-keepr-disposable-verification(?:-dev|-staging)?$/u.test(name)) {
+      throw new Error("Disposable D1 namespace is invalid.");
+    }
     const collectionPath = `/accounts/${encodeURIComponent(input.accountId)}/d1/database`;
     const listed = await cloudflareD1ManagementRequest(
-      `${collectionPath}?name=${encodeURIComponent("card-keepr-disposable-verification")}`,
+      `${collectionPath}?name=${encodeURIComponent(name)}`,
       input.token,
       "GET",
     );
@@ -970,21 +977,17 @@ export const cloudflareD1BackupProvider: D1BackupProvider = {
     }
     const databaseIds = new Set<string>();
     for (const entry of listed) {
-      if (isRecord(entry) && typeof entry.uuid === "string") {
+      if (isRecord(entry) && entry.name === name && typeof entry.uuid === "string") {
         databaseIds.add(entry.uuid);
       }
     }
-    if (input.previousDatabaseId !== null) {
-      databaseIds.add(input.previousDatabaseId);
-    }
-    if (input.generation === 1) {
-      databaseIds.add(input.configuredDatabaseId);
-    }
+    // Configured/prior IDs are hints, never deletion authority. Every deletion
+    // must be present in the provider inventory under this exact namespace.
     for (const databaseId of databaseIds) {
       await deleteCloudflareD1Database(input.accountId, databaseId, input.token);
     }
     const created = await cloudflareD1ManagementRequest(collectionPath, input.token, "POST", {
-      name: "card-keepr-disposable-verification",
+      name,
     });
     if (!isRecord(created)) {
       throw new Error("Disposable D1 database creation response is invalid.");

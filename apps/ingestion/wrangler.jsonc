@@ -15,7 +15,8 @@
     "SOURCE_HOST_PACING_INTERVAL_MS": "500",
     "CLOUDFLARE_ACCOUNT_ID": "3ec389380c7b82e6a172e6f351d4aad9",
     "CATALOGUE_D1_DATABASE_ID": "2469f888-1530-4bef-bc58-17dc298bb598",
-    "DISPOSABLE_D1_DATABASE_ID": "cd5807b4-cde9-44ea-8a37-e650d1182ee8"
+    "DISPOSABLE_D1_DATABASE_ID": "cd5807b4-cde9-44ea-8a37-e650d1182ee8",
+    "KEEPR_ENVIRONMENT": "production"
   },
   "placement": {
     "mode": "smart"

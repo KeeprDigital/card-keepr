@@ -11,6 +11,7 @@ import {
 } from "./recovery";
 
 type Environment = {
+  KEEPR_ENVIRONMENT?: string;
   BACKUPS: R2Bucket;
   CATALOGUE_BACKUP_WORKFLOW: Parameters<typeof startOrObserveCatalogueBackupWorkflow>[1];
   CATALOGUE_D1_DATABASE_ID: string;
@@ -75,7 +76,7 @@ export const backupRecoveryRoutes = [
       "idempotency_key",
       "linked_operation_id",
     ]);
-    if (requiredString(body, "environment") !== "production") {
+    if (requiredString(body, "environment") !== (env.KEEPR_ENVIRONMENT ?? "production")) {
       throw new AdministrationProblem(
         422,
         "production_target_required",
