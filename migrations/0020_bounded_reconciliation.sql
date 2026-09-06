@@ -280,4 +280,16 @@ SELECT conflict.revision_id, conflict.event_version, 'source_change_detected',
 FROM visible_prepared_curated_conflicts AS conflict
 WHERE NOT EXISTS (SELECT 1 FROM curated_revision_events AS event
   WHERE event.revision_id = conflict.revision_id AND event.event_version = conflict.event_version);
+CREATE TABLE reconciliation_checkpoints (
+  ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
+  phase TEXT NOT NULL CHECK (phase IN ('source_graph', 'normalization')),
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  content TEXT NOT NULL CHECK (json_valid(content) AND length(CAST(content AS BLOB)) <= 65536),
+  sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+  PRIMARY KEY (ingestion_run_id, phase, ordinal)
+);
+CREATE TRIGGER reconciliation_checkpoints_no_update BEFORE UPDATE ON reconciliation_checkpoints
+BEGIN SELECT RAISE(ABORT, 'reconciliation_checkpoint_immutable'); END;
+CREATE TRIGGER reconciliation_checkpoints_no_delete BEFORE DELETE ON reconciliation_checkpoints
+BEGIN SELECT RAISE(ABORT, 'reconciliation_checkpoint_audit_retained'); END;
 UPDATE catalogue_schema_state SET migration_level = 20 WHERE singleton = 1;

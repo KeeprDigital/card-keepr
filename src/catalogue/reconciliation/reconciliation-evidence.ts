@@ -1,3 +1,4 @@
+import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationGundamGraph } from "./reconciliation-gundam-graph";
 import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
 import {
@@ -310,51 +311,69 @@ async function collectRetainedReconciliationObservation(
         `Unplanned Source Observation Set ${row.observation_set_id} cannot participate in reconciliation.`,
       );
   }
-  const selectedEvidence = {
-    async *[Symbol.asyncIterator]() {
-      for await (const request of requests) {
-        if (!isSelected(request)) continue;
-        const rows = evidenceRows(database, runId, request.source_snapshot_id!);
-        const first = await rows.next();
-        if (first.done || !(await rows.next()).done)
-          throw new Error(
-            `Planned Source Request ${request.request_id} requires exactly one collection Source Observation Set.`,
-          );
-        const row = first.value;
-        const plan = evidencePlanForRequest(evidencePlanRow, row.request_id);
-        if (
-          row.request_id !== request.request_id ||
-          row.snapshot_request_method !== request.method ||
-          row.snapshot_request_url !== request.url ||
-          row.snapshot_representation_fingerprint !== request.representation_fingerprint
-        )
-          throw new Error("Retained Source Snapshot provenance differs from its immutable Source Request.");
-        if (
-          row.source_lineage !== plan.source_lineage ||
-          row.supported_game !== plan.supported_game ||
-          row.game_profile_version !== plan.game_profile_version ||
-          row.adapter_version !== plan.adapter_version
-        )
-          throw new Error("Retained Source Observation Set provenance is inconsistent with its Evidence Plan.");
-        yield { request, row };
-      }
-    },
+  const evidenceAfter = async function* (after?: { sequenceNumber: number; requestId: string }) {
+    for await (const request of sourceRequests(database, runId, after?.sequenceNumber, after?.requestId)) {
+      if (!isSelected(request)) continue;
+      const rows = evidenceRows(database, runId, request.source_snapshot_id!);
+      const first = await rows.next();
+      if (first.done || !(await rows.next()).done)
+        throw new Error(
+          `Planned Source Request ${request.request_id} requires exactly one collection Source Observation Set.`,
+        );
+      const row = first.value;
+      const plan = evidencePlanForRequest(evidencePlanRow, row.request_id);
+      if (
+        row.request_id !== request.request_id ||
+        row.snapshot_request_method !== request.method ||
+        row.snapshot_request_url !== request.url ||
+        row.snapshot_representation_fingerprint !== request.representation_fingerprint
+      )
+        throw new Error("Retained Source Snapshot provenance differs from its immutable Source Request.");
+      if (
+        row.source_lineage !== plan.source_lineage ||
+        row.supported_game !== plan.supported_game ||
+        row.game_profile_version !== plan.game_profile_version ||
+        row.adapter_version !== plan.adapter_version
+      )
+        throw new Error("Retained Source Observation Set provenance is inconsistent with its Evidence Plan.");
+      yield { request, row };
+    }
   };
+  const selectedEvidence = { [Symbol.asyncIterator]: () => evidenceAfter() };
   const orderedRows = {
     async *[Symbol.asyncIterator]() {
       for await (const { row } of selectedEvidence) yield row;
     },
   };
   const first = (await orderedRows[Symbol.asyncIterator]().next()).value!;
+  let inputDigest = await canonicalValueDigest({ evidencePlanRow, omittedLineages: [...omittedLineages] });
+  for await (const evidence of selectedEvidence)
+    inputDigest = await canonicalValueDigest({ previous: inputDigest, evidence });
+  const graph = await reconciliationCheckpoint<{ inputDigest: string }>(database, runId, "source_graph");
   const loadDocument = (row: EvidenceRow) => retainedObservationDocument(database, evidenceObjects, runId, row);
-  for await (const row of orderedRows) {
-    const adapter = requiredSourceAdapter(row.adapter_version);
-    if (row.content_byte_length > adapter.maximumSnapshotBytes)
-      throw new Error(`Retained Source Observation Set ${row.observation_set_id} exceeds its adapter byte limit.`);
-    await loadDocument(row);
+  if (graph) {
+    if (graph.value.inputDigest !== inputDigest)
+      throw new Error("Verified Source graph checkpoint provenance changed.");
+  } else {
+    for await (const row of orderedRows) {
+      const adapter = requiredSourceAdapter(row.adapter_version);
+      if (row.content_byte_length > adapter.maximumSnapshotBytes)
+        throw new Error(`Retained Source Observation Set ${row.observation_set_id} exceeds its adapter byte limit.`);
+      await loadDocument(row);
+    }
+    await assertClosedRequestGraph(database, runId, selectedEvidence, loadDocument, selectedRequestById);
+    await retainReconciliationCheckpoint(database, runId, "source_graph", 0, { inputDigest });
   }
-  await assertClosedRequestGraph(database, runId, selectedEvidence, loadDocument, selectedRequestById);
-  for await (const { request, row } of selectedEvidence) {
+  const normalized = await reconciliationCheckpoint<{
+    inputDigest: string;
+    sequenceNumber: number;
+    requestId: string;
+    observationSetId: string;
+  }>(database, runId, "normalization");
+  if (normalized && normalized.value.inputDigest !== inputDigest)
+    throw new Error("Normalization checkpoint provenance changed.");
+  let checkpointOrdinal = (normalized?.ordinal ?? -1) + 1;
+  for await (const { request, row } of evidenceAfter(normalized?.value)) {
     const document = await loadDocument(row);
     let officialSurfaceSeen = false;
     const sourceSurface = await sourceSurfaceForRequest(request, selectedRequestById, row);
@@ -415,6 +434,12 @@ async function collectRetainedReconciliationObservation(
           : null,
       );
     }
+    await retainReconciliationCheckpoint(database, runId, "normalization", checkpointOrdinal++, {
+      inputDigest,
+      sequenceNumber: request.sequence_number,
+      requestId: request.request_id,
+      observationSetId: row.observation_set_id,
+    });
   }
   for (const plan of selectedPlans)
     await validateOfficialSurfaceCoverage({
@@ -1003,9 +1028,12 @@ function assertObservationAuthority(
   }
 }
 
-async function* sourceRequests(database: CatalogueStore, runId: string): AsyncGenerator<PlannedRequestRow> {
-  let sequence = -1,
-    id = "";
+async function* sourceRequests(
+  database: CatalogueStore,
+  runId: string,
+  sequence = -1,
+  id = "",
+): AsyncGenerator<PlannedRequestRow> {
   while (true) {
     const row = await documentStorage(() =>
       reconciliationSourceRequestsStatement(database, runId, sequence, id).first<PlannedRequestRow>(),

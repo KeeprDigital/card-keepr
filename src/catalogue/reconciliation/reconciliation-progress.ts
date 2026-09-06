@@ -1,3 +1,4 @@
+import { reconciliationCheckpointsStatement } from "./reconciliation-checkpoint-repository";
 import {
   createGameCandidateIdentitiesStatement,
   gameCandidatesForRunStatement,
@@ -58,6 +59,19 @@ export async function inspectReconciliationProgress(
     contract: "card-keepr-reconciliation-status@1",
     ...operation,
     candidates: (await gameCandidatesForRunStatement(database, runId).all()).results,
+    checkpoints: (
+      await reconciliationCheckpointsStatement(database, runId).all<{
+        phase: string;
+        ordinal: number;
+        content: string;
+        sha256: string;
+      }>()
+    ).results.map((row) => ({
+      phase: row.phase,
+      ordinal: row.ordinal,
+      cursor: JSON.parse(row.content),
+      sha256: row.sha256,
+    })),
   };
 }
 
