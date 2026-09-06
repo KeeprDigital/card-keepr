@@ -1,5 +1,9 @@
 import { type CatalogueStore, sha256Text } from "../shared";
-import { reconciliationTextStatement, retainReconciliationTextStatement } from "./reconciliation-text-repository";
+import {
+  reconciliationTextPageStatement,
+  reconciliationTextStatement,
+  retainReconciliationTextStatement,
+} from "./reconciliation-text-repository";
 
 type TextPart = { path: (string | number)[]; sha256: string; chunks: number; byte_length: number };
 type RecordEnvelope = { contract: "card-keepr-partitioned-record@1"; value: unknown; text_parts: TextPart[] };
@@ -10,9 +14,9 @@ export class ReconciliationTextStorageError extends Error {
     this.name = "ReconciliationTextStorageError";
   }
 }
-async function textStorage<T>(operation: Promise<T>): Promise<T> {
+async function textStorage<T>(operation: Promise<T> | (() => Promise<T>)): Promise<T> {
   try {
-    return await operation;
+    return await (typeof operation === "function" ? operation() : operation);
   } catch (cause) {
     throw new ReconciliationTextStorageError(cause);
   }
@@ -30,6 +34,24 @@ export async function retainPartitionedRecord(
       const normalized = value.normalize("NFC");
       const sha256 = await sha256Text(normalized);
       let ordinal = 0;
+      let pending: { ordinal: number; content: string }[] = [];
+      let pendingBytes = 0;
+      const flush = async () => {
+        if (!pending.length) return;
+        const results = await textStorage(() =>
+          database.batch<{ content: string }>(
+            pending.flatMap((chunk) => [
+              retainReconciliationTextStatement(database, runId, sha256, chunk.ordinal, chunk.content),
+              reconciliationTextStatement(database, runId, sha256, chunk.ordinal),
+            ]),
+          ),
+        );
+        for (const [index, chunk] of pending.entries())
+          if (results[index * 2 + 1]?.results[0]?.content !== chunk.content)
+            throw new Error("Retained text replay changed its immutable content.");
+        pending = [];
+        pendingBytes = 0;
+      };
       for (let offset = 0; offset < normalized.length; ) {
         let end = Math.min(offset + 32768, normalized.length);
         if (
@@ -39,14 +61,14 @@ export async function retainPartitionedRecord(
         )
           end--;
         const content = normalized.slice(offset, end);
-        await textStorage(retainReconciliationTextStatement(database, runId, sha256, ordinal, content).run());
-        const retained = await textStorage(
-          reconciliationTextStatement(database, runId, sha256, ordinal).first<{ content: string }>(),
-        );
-        if (retained?.content !== content) throw new Error("Retained text replay changed its immutable content.");
+        const bytes = new TextEncoder().encode(JSON.stringify(content)).byteLength;
+        if (pending.length === 16 || pendingBytes + bytes > 512000) await flush();
+        pending.push({ ordinal, content });
+        pendingBytes += bytes;
         ordinal++;
         offset = end;
       }
+      await flush();
       textParts.push({ path, sha256, chunks: ordinal, byte_length: new TextEncoder().encode(normalized).byteLength });
       return null;
     }
@@ -79,12 +101,19 @@ export async function restorePartitionedRecord(
   let value = envelope.value;
   for (const part of envelope.text_parts) {
     let text = "";
-    for (let ordinal = 0; ordinal < part.chunks; ordinal++) {
-      const chunk = await textStorage(
-        reconciliationTextStatement(database, runId, part.sha256, ordinal).first<{ content: string }>(),
+    for (let ordinal = 0; ordinal < part.chunks; ) {
+      const page = await textStorage(() =>
+        reconciliationTextPageStatement(database, runId, part.sha256, ordinal, part.chunks).all<{
+          ordinal: number;
+          content: string;
+        }>(),
       );
-      if (!chunk) throw new Error("Retained text chunk is unavailable.");
-      text += chunk.content;
+      if (!page.results.length) throw new Error("Retained text chunk is unavailable.");
+      for (const chunk of page.results) {
+        if (chunk.ordinal !== ordinal) throw new Error("Retained text chunk is unavailable.");
+        text += chunk.content;
+        ordinal++;
+      }
     }
     if ((await sha256Text(text)) !== part.sha256 || new TextEncoder().encode(text).byteLength !== part.byte_length)
       throw new Error("Retained text failed integrity verification.");

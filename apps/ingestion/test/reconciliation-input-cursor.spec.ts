@@ -147,13 +147,14 @@ test.each([
   },
 );
 
-test.each([false, true])(
-  "normalization returns control between observation groups (frozen metadata: %s)",
-  async (requireFrozenMetadata) => {
-    const run = await collectRequests(
-      [{ id: "cards", scenario: "curated-conflict-fanout-base" }],
-      "normalization-work-units",
-    );
+test.each([
+  { scenario: "curated-conflict-fanout-base", requireFrozenMetadata: false, groups: [8, 8, 8, 8] },
+  { scenario: "curated-conflict-fanout-base", requireFrozenMetadata: true, groups: [8, 8, 8, 8] },
+  { scenario: "large-card-content", requireFrozenMetadata: true, groups: [1] },
+])(
+  "normalization returns bounded work units for $scenario (frozen metadata: $requireFrozenMetadata)",
+  async ({ scenario, requireFrozenMetadata, groups }) => {
+    const run = await collectRequests([{ id: "cards", scenario }], "normalization-work-units");
     let imagesInUnit = 0;
     let serviceCalls = 0;
     const completedGroups: number[] = [];
@@ -233,7 +234,7 @@ test.each([false, true])(
       >,
       step,
     );
-    expect(completedGroups).toEqual([8, 8, 8, 8]);
+    expect(completedGroups).toEqual(groups);
     if (requireFrozenMetadata) expect(Math.max(...callsPerGroup)).toBeLessThanOrEqual(100);
     expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({ state: "sealed" });
   },
