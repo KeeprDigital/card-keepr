@@ -105,8 +105,8 @@ test("production release is manual, serialized, versioned, and owns all producti
 test("the release SHA is resolved through the GitHub API before checkout and ci stays in step with it", () => {
   // Issue #75: expected_head_sha is verified before any other step with the
   // workflow's own read-only token: full commit id, contained in main, and a
-  // successful latest ci check run for every ci.yml job (resolved through
-  // the merged pull request when the SHA is a merge commit on main).
+  // successful latest check run for every expected ci.yml job and shard on
+  // that same commit, including an actual merge commit.
   const release = readFileSync(".github/workflows/production-release.yml", "utf8");
   const ci = readFileSync(".github/workflows/ci.yml", "utf8");
   const steps = release
@@ -120,29 +120,35 @@ test("the release SHA is resolved through the GitHub API before checkout and ci 
   assert.match(gate, /grep -Eq '\^\[0-9a-f\]\{40\}\$'/u);
   assert.match(gate, /compare\/main\.\.\.\$\{EXPECTED_HEAD_SHA\}/u);
   assert.match(gate, /identical\|behind\) ;;/u);
-  assert.match(
-    gate,
-    /commits\/\$\{EXPECTED_HEAD_SHA\}\/pulls[^\n]*merged_at != null[^\n]*base\.ref == \\"main\\"[^\n]*merge_commit_sha == \\"\$\{EXPECTED_HEAD_SHA\}\\"/u,
-  );
-  assert.match(gate, /commits\/\$\{ci_sha\}\/check-runs\?filter=latest/u);
+  assert.doesNotMatch(gate, /\/pulls|ci_sha/u);
+  assert.match(gate, /commits\/\$\{EXPECTED_HEAD_SHA\}\/check-runs\?filter=latest/u);
+  assert.match(gate, /--paginate --slurp/u);
   assert.match(gate, /app\.slug == "github-actions"/u);
   assert.match(gate, /status != "completed" or \.conclusion != "success"/u);
   assert.doesNotMatch(gate, /secrets\./u);
-  // The workflow token reads checks and pull requests and writes nothing.
-  assert.match(release, /permissions:\n {6}contents: read\n {6}checks: read\n {6}pull-requests: read\n/u);
+  // The workflow token reads contents and checks and writes nothing.
+  assert.match(release, /permissions:\n {6}contents: read\n {6}checks: read\n/u);
   assert.doesNotMatch(release, /:\s*write\b/u);
-  // Every ci.yml job is a required check of the release gate, and nothing
-  // else is: adding or renaming a ci job updates REQUIRED_CI_JOBS.
-  const required = gate
-    .match(/REQUIRED_CI_JOBS: ([^\n]+)/u)[1]
-    .trim()
-    .split(/\s+/u)
-    .sort();
-  const ciJobs = (ci.split("\njobs:\n")[1].match(/^ {2}[\w-]+:$/gmu) ?? [])
-    .map((line) => line.trim().slice(0, -1))
-    .sort();
-  assert.deepEqual(required, ciJobs);
-  assert.ok(ciJobs.includes("lint"));
+  // Expand each actual matrix so a newly added shard cannot silently become
+  // optional. These checks deliberately support only the current shard shape;
+  // a different matrix requires an explicit contract update.
+  const required = JSON.parse(gate.match(/REQUIRED_CI_CHECKS: '([^\n]+)'/u)[1]).sort();
+  const jobs = ci.split("\njobs:\n")[1];
+  const ciChecks = [];
+  for (const match of jobs.matchAll(/^ {2}([\w-]+):\n([\s\S]*?)(?=^ {2}[\w-]+:|$(?![\s\S]))/gmu)) {
+    const [, name, body] = match;
+    if (body.includes("matrix:")) {
+      const matrix = body.split("      matrix:\n")[1].split(/\n {4}\S/u)[0];
+      const shard = matrix.match(/^ {8}shard: \[([0-9, ]+)\]$/mu);
+      assert.ok(shard, `${name}: update the release gate for the new matrix shape`);
+      assert.equal((matrix.match(/^ {8}[\w-]+:/gmu) ?? []).length, 1);
+      ciChecks.push(...shard[1].split(",").map((value) => `${name} (${value.trim()})`));
+    } else {
+      ciChecks.push(name);
+    }
+  }
+  assert.deepEqual(required, ciChecks.sort());
+  assert.ok(ciChecks.includes("lint"));
   // ci cancels a superseded run of the same pull request.
   assert.match(
     ci,
