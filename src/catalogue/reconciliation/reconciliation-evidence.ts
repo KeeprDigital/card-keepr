@@ -1,3 +1,8 @@
+import {
+  retainEvidenceSelection,
+  retainedEvidenceSelection,
+  retainedEvidenceSelectionRequest,
+} from "./reconciliation-selection";
 import { retainSourceObservations, readSourceObservation } from "./reconciliation-source-observation";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationGundamGraph } from "./reconciliation-gundam-graph";
@@ -83,6 +88,8 @@ type EvidenceRow = {
   snapshot_request_headers_json: string;
   snapshot_representation_fingerprint: string;
 };
+
+type EvidenceSelection = { request: PlannedRequestRow; row: EvidenceRow | null };
 
 type PrintingImageSnapshotRow = {
   request_url: string;
@@ -199,40 +206,59 @@ async function collectRetainedReconciliationObservation(
   const evidencePlanRow = await documentStorage(() =>
     reconciliationEvidencePlanStatement(database, runId).first<EvidencePlanRow>(),
   );
-  const requests = { [Symbol.asyncIterator]: () => sourceRequests(database, runId) };
+  const pinned = await reconciliationCheckpoint<{ inputDigest: string; omittedLineages: string[] }>(
+    database,
+    runId,
+    "input_selection",
+  );
+  const requests = {
+    async *[Symbol.asyncIterator]() {
+      if (pinned) {
+        for await (const selection of retainedEvidenceSelection<EvidenceSelection>(database, runId))
+          yield selection.request;
+      } else yield* sourceRequests(database, runId);
+    },
+  };
   if (evidencePlanRow === null || (await requests[Symbol.asyncIterator]().next()).done) {
     throw new Error("Reconciliation requires complete coverage of every planned Source Request.");
   }
   const evidencePlans = parseEvidencePlans(evidencePlanRow.request_plan_json);
-  const omittedLineages = new Set<string>();
-  for await (const request of requests) {
-    const plan = evidencePlanForRequest(evidencePlanRow, request.request_id);
-    if (request.state === "failed" && isOptionalSourceOutage(plan, request.failure_code))
-      omittedLineages.add(plan.source_lineage);
-  }
+  const omittedLineages = new Set<string>(pinned?.value.omittedLineages);
+  if (!pinned)
+    for await (const request of requests) {
+      const plan = evidencePlanForRequest(evidencePlanRow, request.request_id);
+      if (request.state === "failed" && isOptionalSourceOutage(plan, request.failure_code))
+        omittedLineages.add(plan.source_lineage);
+    }
   const selectedPlans = evidencePlans.filter((plan) => !omittedLineages.has(plan.source_lineage));
   // Optional transport failure never excuses a parser/identity/retained-byte failure.
-  for await (const request of requests) {
-    const plan = evidencePlanForRequest(evidencePlanRow, request.request_id);
-    if (
-      request.state === "failed" &&
-      omittedLineages.has(plan.source_lineage) &&
-      !isOptionalSourceOutage(plan, request.failure_code) &&
-      !toleratesRequestFailure(request.request_role, request.failure_code)
-    ) {
-      throw new Error(`Optional Source ${plan.source_lineage} has blocking evidence failure ${request.failure_code}.`);
+  if (!pinned)
+    for await (const request of requests) {
+      const plan = evidencePlanForRequest(evidencePlanRow, request.request_id);
+      if (
+        request.state === "failed" &&
+        omittedLineages.has(plan.source_lineage) &&
+        !isOptionalSourceOutage(plan, request.failure_code) &&
+        !toleratesRequestFailure(request.request_role, request.failure_code)
+      ) {
+        throw new Error(
+          `Optional Source ${plan.source_lineage} has blocking evidence failure ${request.failure_code}.`,
+        );
+      }
     }
-  }
   const unchangedAcceptedLineages = new Set<string>();
-  for (const plan of selectedPlans) {
-    if (await unchangedAcceptedSourceStatement(database, runId, plan.source_lineage, plan.adapter_version).first())
-      unchangedAcceptedLineages.add(plan.source_lineage);
-  }
-  await assertSelectedAuthoritiesCollected(database, selectedPlans, unchangedAcceptedLineages, runId);
+  if (!pinned)
+    for (const plan of selectedPlans) {
+      if (await unchangedAcceptedSourceStatement(database, runId, plan.source_lineage, plan.adapter_version).first())
+        unchangedAcceptedLineages.add(plan.source_lineage);
+    }
+  if (!pinned) await assertSelectedAuthoritiesCollected(database, selectedPlans, unchangedAcceptedLineages, runId);
   const requestById = async (id: string) =>
-    (await documentStorage(() =>
-      reconciliationSourceRequestStatement(database, runId, id).first<PlannedRequestRow>(),
-    )) ?? undefined;
+    pinned
+      ? (await retainedEvidenceSelectionRequest<EvidenceSelection>(database, runId, id))?.request
+      : ((await documentStorage(() =>
+          reconciliationSourceRequestStatement(database, runId, id).first<PlannedRequestRow>(),
+        )) ?? undefined);
   const immutableRequestIds = new ReconciliationReducerIndex<boolean>(database, runId, "immutable_request_ids");
   let immutableCount = 0;
   const claimRequest = async (id: string) => {
@@ -241,48 +267,52 @@ async function collectRetainedReconciliationObservation(
     immutableCount++;
   };
   let rootRequestCount = 0;
-  for (const plan of evidencePlans)
-    for (const planned of plan.requests) {
-      rootRequestCount++;
-      const request = await requestById(planned.id);
-      if (!samePlannedRequest(request, planned, request?.sequence_number ?? -1))
-        throw new Error("Operational Source Requests differ from the immutable Evidence Plan.");
-      await claimRequest(planned.id);
-    }
-  if (!rootRequestCount) throw new Error("Operational Source Requests differ from the immutable Evidence Plan.");
+  if (!pinned)
+    for (const plan of evidencePlans)
+      for (const planned of plan.requests) {
+        rootRequestCount++;
+        const request = await requestById(planned.id);
+        if (!samePlannedRequest(request, planned, request?.sequence_number ?? -1))
+          throw new Error("Operational Source Requests differ from the immutable Evidence Plan.");
+        await claimRequest(planned.id);
+      }
+  if (!pinned && !rootRequestCount)
+    throw new Error("Operational Source Requests differ from the immutable Evidence Plan.");
   const collectionSurfaces = new ReconciliationReducerIndex<boolean>(database, runId, "collection_request_ids");
-  for await (const collectionPlan of collectionPlans(database, runId)) {
-    for await (const planned of retainedCollectionRequests(database, runId, collectionPlan)) {
-      const id = planned.id as string;
-      await claimRequest(id);
-      await collectionSurfaces.seed(id, true);
-      if (!omittedLineages.has(collectionPlan.source_lineage)) {
-        const request = await requestById(id);
-        if (
-          !samePlannedRequest(request, planned, request?.sequence_number ?? -1) ||
-          request === undefined ||
-          (request.state === "failed" && toleratesRequestFailure(request.request_role, request.failure_code)) ||
-          omittedLineages.has(evidencePlanForRequest(evidencePlanRow, id).source_lineage)
-        )
-          throw new Error("Official Source requests differ from the immutable Collection Plan.");
+  if (!pinned)
+    for await (const collectionPlan of collectionPlans(database, runId)) {
+      for await (const planned of retainedCollectionRequests(database, runId, collectionPlan)) {
+        const id = planned.id as string;
+        await claimRequest(id);
+        await collectionSurfaces.seed(id, true);
+        if (!omittedLineages.has(collectionPlan.source_lineage)) {
+          const request = await requestById(id);
+          if (
+            !samePlannedRequest(request, planned, request?.sequence_number ?? -1) ||
+            request === undefined ||
+            (request.state === "failed" && toleratesRequestFailure(request.request_role, request.failure_code)) ||
+            omittedLineages.has(evidencePlanForRequest(evidencePlanRow, id).source_lineage)
+          )
+            throw new Error("Official Source requests differ from the immutable Collection Plan.");
+        }
       }
     }
-  }
-  for await (const planned of discoveryRequests(database, runId)) {
-    await claimRequest(planned.request_id);
-    const request = await requestById(planned.request_id);
-    if (
-      request === undefined ||
-      request.sequence_number !== planned.sequence_number ||
-      request.method !== planned.method ||
-      request.url !== planned.url ||
-      request.request_headers_json !== planned.request_headers_json ||
-      request.representation_fingerprint !== planned.representation_fingerprint ||
-      request.request_role !== planned.request_role ||
-      request.discovered_from_request_id !== planned.parent_request_id
-    )
-      throw new Error("Operational Source Requests differ from their immutable request plans.");
-  }
+  if (!pinned)
+    for await (const planned of discoveryRequests(database, runId)) {
+      await claimRequest(planned.request_id);
+      const request = await requestById(planned.request_id);
+      if (
+        request === undefined ||
+        request.sequence_number !== planned.sequence_number ||
+        request.method !== planned.method ||
+        request.url !== planned.url ||
+        request.request_headers_json !== planned.request_headers_json ||
+        request.representation_fingerprint !== planned.representation_fingerprint ||
+        request.request_role !== planned.request_role ||
+        request.discovered_from_request_id !== planned.parent_request_id
+      )
+        throw new Error("Operational Source Requests differ from their immutable request plans.");
+    }
   const isToleratedImageFailure = (request: PlannedRequestRow): boolean =>
     request.state === "failed" && toleratesRequestFailure(request.request_role, request.failure_code);
   const isSelected = (request: PlannedRequestRow) =>
@@ -304,31 +334,38 @@ async function collectRetainedReconciliationObservation(
           };
     },
   };
-  const selectedSnapshots = new ReconciliationReducerIndex<boolean>(database, runId, "selected_snapshot_ids");
-  let requestCount = 0;
-  let selectedCount = 0;
-  for await (const request of requests) {
-    requestCount++;
-    if (!(await immutableRequestIds.has(request.request_id)))
+  if (!pinned) {
+    const selectedSnapshots = new ReconciliationReducerIndex<boolean>(database, runId, "selected_snapshot_ids");
+    let requestCount = 0;
+    let selectedCount = 0;
+    for await (const request of requests) {
+      requestCount++;
+      if (!(await immutableRequestIds.has(request.request_id)))
+        throw new Error("Operational Source Requests differ from their immutable request plans.");
+      if (!isSelected(request)) continue;
+      selectedCount++;
+      if (request.state !== "observed" || request.source_snapshot_id === null)
+        throw new Error(`Planned Source Request ${request.request_id} has no observed Source Snapshot.`);
+      if (await selectedSnapshots.has(request.source_snapshot_id))
+        throw new Error("Planned Source Requests selected a duplicate Source Snapshot.");
+      await selectedSnapshots.seed(request.source_snapshot_id, true);
+    }
+    if (requestCount !== immutableCount || rootRequestCount > requestCount)
       throw new Error("Operational Source Requests differ from their immutable request plans.");
-    if (!isSelected(request)) continue;
-    selectedCount++;
-    if (request.state !== "observed" || request.source_snapshot_id === null)
-      throw new Error(`Planned Source Request ${request.request_id} has no observed Source Snapshot.`);
-    if (await selectedSnapshots.has(request.source_snapshot_id))
-      throw new Error("Planned Source Requests selected a duplicate Source Snapshot.");
-    await selectedSnapshots.seed(request.source_snapshot_id, true);
-  }
-  if (requestCount !== immutableCount || rootRequestCount > requestCount)
-    throw new Error("Operational Source Requests differ from their immutable request plans.");
-  if (!selectedCount) throw new Error("No independently complete Source Coverage remains in this refresh.");
-  for await (const row of evidenceRows(database, runId)) {
-    if (!omittedLineages.has(row.source_lineage) && !(await selectedSnapshots.has(row.source_snapshot_id)))
-      throw new Error(
-        `Unplanned Source Observation Set ${row.observation_set_id} cannot participate in reconciliation.`,
-      );
+    if (!selectedCount) throw new Error("No independently complete Source Coverage remains in this refresh.");
+    for await (const row of evidenceRows(database, runId)) {
+      if (!omittedLineages.has(row.source_lineage) && !(await selectedSnapshots.has(row.source_snapshot_id)))
+        throw new Error(
+          `Unplanned Source Observation Set ${row.observation_set_id} cannot participate in reconciliation.`,
+        );
+    }
   }
   const evidenceAfter = async function* (after?: { sequenceNumber: number; requestId: string; complete?: boolean }) {
+    if (pinned) {
+      for await (const selection of retainedEvidenceSelection<EvidenceSelection>(database, runId, after))
+        if (selection.row !== null) yield { request: selection.request, row: selection.row };
+      return;
+    }
     for await (const request of sourceRequests(
       database,
       runId,
@@ -369,9 +406,37 @@ async function collectRetainedReconciliationObservation(
     },
   };
   const first = (await orderedRows[Symbol.asyncIterator]().next()).value!;
-  let inputDigest = await canonicalValueDigest({ evidencePlanRow, omittedLineages: [...omittedLineages] });
-  for await (const evidence of selectedEvidence)
-    inputDigest = await canonicalValueDigest({ previous: inputDigest, evidence });
+  let inputDigest =
+    pinned?.value.inputDigest ??
+    (await canonicalValueDigest({ evidencePlanRow, omittedLineages: [...omittedLineages] }));
+  if (!pinned) {
+    for await (const evidence of selectedEvidence) {
+      inputDigest = await canonicalValueDigest({ previous: inputDigest, evidence });
+      await retainEvidenceSelection(
+        database,
+        runId,
+        evidence.request.request_id,
+        evidence.request.sequence_number,
+        evidence,
+      );
+    }
+    for await (const request of requests)
+      if (!isSelected(request))
+        await retainEvidenceSelection(database, runId, request.request_id, request.sequence_number, {
+          request,
+          row: null,
+        });
+    for (const plan of selectedPlans)
+      await validateOfficialSurfaceCoverage({
+        adapter: requiredSourceAdapter(plan.adapter_version),
+        plan,
+        hasCollectionRequest: (id) => collectionSurfaces.has(id),
+      });
+    await retainReconciliationCheckpoint(database, runId, "input_selection", 0, {
+      inputDigest,
+      omittedLineages: [...omittedLineages],
+    });
+  }
   const graph = await reconciliationCheckpoint<{ inputDigest: string }>(database, runId, "source_graph");
   const loadDocument = (row: EvidenceRow) => retainedObservationDocument(database, evidenceObjects, runId, row);
   if (graph) {
@@ -491,12 +556,6 @@ async function collectRetainedReconciliationObservation(
     });
     if (yieldAtCheckpoint) throw new ReconciliationContinuation(checkpointOrdinal - 1);
   }
-  for (const plan of selectedPlans)
-    await validateOfficialSurfaceCoverage({
-      adapter: requiredSourceAdapter(plan.adapter_version),
-      plan,
-      hasCollectionRequest: (id) => collectionSurfaces.has(id),
-    });
   const partitions = {
     async *[Symbol.asyncIterator]() {
       for await (const { request, row } of selectedEvidence)

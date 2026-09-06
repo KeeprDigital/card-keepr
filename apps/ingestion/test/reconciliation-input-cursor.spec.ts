@@ -147,48 +147,63 @@ test.each([
   },
 );
 
-test("normalization returns control between observation groups before sealing the owner candidate", async () => {
-  const run = await collectRequests(
-    [{ id: "cards", scenario: "curated-conflict-fanout-base" }],
-    "normalization-work-units",
-  );
-  let imagesInUnit = 0;
-  const completedGroups: number[] = [];
-  const images = new Proxy(testEnv.PRINTING_IMAGES, {
-    get(target, property) {
-      if (property === "put")
-        return async (...args: Parameters<R2Bucket["put"]>) => {
-          imagesInUnit++;
-          return target.put(...args);
-        };
-      const value = Reflect.get(target, property);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
-  const step = {
-    do: async (_name: string, _config: unknown, callback: () => Promise<unknown>) => {
-      imagesInUnit = 0;
-      const result = await callback();
-      if (imagesInUnit) completedGroups.push(imagesInUnit);
-      expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThan(65536);
-      return result;
-    },
-  } as unknown as import("cloudflare:workers").WorkflowStep;
-  await runReconciliationWorkflow(
-    { ...testEnv, PRINTING_IMAGES: images },
-    {
-      payload: {
-        ingestion_run_id: run.id,
-        expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
-        idempotency_key: "normalization-work-units",
-        observed_at: new Date().toISOString(),
-        generation: 0,
+test.each([false, true])(
+  "normalization returns control between observation groups (frozen metadata: %s)",
+  async (requireFrozenMetadata) => {
+    const run = await collectRequests(
+      [{ id: "cards", scenario: "curated-conflict-fanout-base" }],
+      "normalization-work-units",
+    );
+    let imagesInUnit = 0;
+    const completedGroups: number[] = [];
+    const images = new Proxy(testEnv.PRINTING_IMAGES, {
+      get(target, property) {
+        if (property === "put")
+          return async (...args: Parameters<R2Bucket["put"]>) => {
+            imagesInUnit++;
+            return target.put(...args);
+          };
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
       },
-    } as import("cloudflare:workers").WorkflowEvent<
-      import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
-    >,
-    step,
-  );
-  expect(completedGroups).toEqual([8, 8, 8, 8]);
-  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({ state: "sealed" });
-});
+    });
+    const database = new Proxy(testEnv.CATALOGUE_DB, {
+      get(target, property) {
+        if (property === "prepare")
+          return (sql: string) => {
+            if (requireFrozenMetadata && completedGroups.length > 0 && sql.includes("FROM source_requests"))
+              throw new Error("A returning normalization unit must reopen the frozen request selection.");
+            return target.prepare(sql);
+          };
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const step = {
+      do: async (_name: string, _config: unknown, callback: () => Promise<unknown>) => {
+        imagesInUnit = 0;
+        const result = await callback();
+        if (imagesInUnit) completedGroups.push(imagesInUnit);
+        expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThan(65536);
+        return result;
+      },
+    } as unknown as import("cloudflare:workers").WorkflowStep;
+    await runReconciliationWorkflow(
+      { ...testEnv, CATALOGUE_DB: database, PRINTING_IMAGES: images },
+      {
+        payload: {
+          ingestion_run_id: run.id,
+          expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
+          idempotency_key: "normalization-work-units",
+          observed_at: new Date().toISOString(),
+          generation: 0,
+        },
+      } as import("cloudflare:workers").WorkflowEvent<
+        import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+      >,
+      step,
+    );
+    expect(completedGroups).toEqual([8, 8, 8, 8]);
+    expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({ state: "sealed" });
+  },
+);

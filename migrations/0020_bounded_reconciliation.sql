@@ -282,7 +282,7 @@ WHERE NOT EXISTS (SELECT 1 FROM curated_revision_events AS event
   WHERE event.revision_id = conflict.revision_id AND event.event_version = conflict.event_version);
 CREATE TABLE reconciliation_checkpoints (
   ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
-  phase TEXT NOT NULL CHECK (phase IN ('source_graph', 'normalization')),
+  phase TEXT NOT NULL CHECK (phase IN ('source_graph', 'normalization', 'input_selection')),
   ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
   content TEXT NOT NULL CHECK (json_valid(content) AND length(CAST(content AS BLOB)) <= 65536),
   sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
@@ -304,4 +304,17 @@ CREATE TRIGGER reconciliation_source_observations_no_update BEFORE UPDATE ON rec
 BEGIN SELECT RAISE(ABORT, 'reconciliation_source_observation_immutable'); END;
 CREATE TRIGGER reconciliation_source_observations_no_delete BEFORE DELETE ON reconciliation_source_observations
 BEGIN SELECT RAISE(ABORT, 'reconciliation_source_observation_audit_retained'); END;
+CREATE TABLE reconciliation_evidence_selection (
+  ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
+  request_id TEXT NOT NULL,
+  sequence_number INTEGER NOT NULL,
+  content TEXT NOT NULL CHECK (json_valid(content) AND length(CAST(content AS BLOB)) <= 65536),
+  sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+  PRIMARY KEY (ingestion_run_id, request_id),
+  UNIQUE (ingestion_run_id, sequence_number, request_id)
+);
+CREATE TRIGGER reconciliation_evidence_selection_no_update BEFORE UPDATE ON reconciliation_evidence_selection
+BEGIN SELECT RAISE(ABORT, 'reconciliation_evidence_selection_immutable'); END;
+CREATE TRIGGER reconciliation_evidence_selection_no_delete BEFORE DELETE ON reconciliation_evidence_selection
+BEGIN SELECT RAISE(ABORT, 'reconciliation_evidence_selection_audit_retained'); END;
 UPDATE catalogue_schema_state SET migration_level = 20 WHERE singleton = 1;
