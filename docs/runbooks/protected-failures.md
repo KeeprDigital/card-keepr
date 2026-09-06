@@ -15,7 +15,7 @@ objects carry the explicit marker; an ordinary requested resource's expected
 404 remains its existing problem. Size/digest failures are not labelled missing.
 
 A stack reference is a SHA-256 fingerprint of up to eight V8 frames from the
-first 8 KiB of the stack. Compare fingerprints to group recurring failure sites
+first 8,192 characters of the stack. Compare fingerprints to group recurring failure sites
 within the same deployed revision, then reproduce against that exact revision
 and inspect its source. The fingerprint cannot reconstruct a stack and may change
 between builds. Missing/unreadable stacks have a null reference.

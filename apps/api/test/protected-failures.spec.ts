@@ -93,3 +93,25 @@ test("injected cyclic and oversized causes remain bounded and omit arbitrary err
   ])
     expect(logs.join("\n") + body).not.toContain(secret);
 });
+
+test("an injected undefined throw still retains an unexpected failure classification", async () => {
+  const logs: string[] = [];
+  vi.spyOn(console, "error").mockImplementation((value) => logs.push(String(value)));
+  const database = new Proxy(testEnv.CATALOGUE_DB, {
+    get(target, property, receiver) {
+      if (property === "prepare")
+        return () => {
+          throw undefined;
+        };
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  const response = await apiWorker.fetch(
+    new Request("https://card-keepr.invalid/v1/catalogue", {
+      headers: { authorization: "Bearer vitest-api-key" },
+    }),
+    { ...testEnv, CATALOGUE_DB: database },
+  );
+  expect(response.status).toBe(500);
+  expect(JSON.parse(logs[0]!).causes).toEqual([{ classification: "unexpected_error", stack_reference: null }]);
+});

@@ -15,10 +15,11 @@ export async function logProtectedFailure(
   const seen = new Set<unknown>();
   let current = error;
   try {
-    while (current !== undefined && causes.length < 4 && !seen.has(current)) {
+    while (causes.length < 4 && !seen.has(current)) {
       seen.add(current);
       causes.push({ classification: classify(current), stack_reference: await stackReference(current) });
       current = ownValue(current, "cause");
+      if (current === undefined) break;
     }
     console.error(
       JSON.stringify({
