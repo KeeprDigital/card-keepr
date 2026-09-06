@@ -1,4 +1,11 @@
 import {
+  assessSourceAdmission,
+  completeSourceAdmission,
+  publisherConfirmation,
+  publisherLineage,
+} from "./entity-admission-source";
+import { pinEntityAdmissions, applyPinnedEntityAdmissions } from "./entity-admission-pins";
+import {
   allocateCanonicalIdentity,
   retainSourceMappings,
   type SourceMapping,
@@ -193,6 +200,8 @@ export async function reconcileRetainedCardPrintingEvidence(
         "The Official Source did not serve this Printing Image within its bounded transport retries; the Printing is published without it and a later Ingestion Run can collect it.",
     })),
   ];
+  await pinEntityAdmissions(database, runId, JSON.parse(run.selected_games_json) as string[]);
+  const admittedEntities = await applyPinnedEntityAdmissions(database, runId, cards, printings, sourceWarnings);
   const observedErrata: CatalogueErratum[] = [];
   const targetedCardIds = new Set<string>();
   const targetedPrintingIds = new Set<string>();
@@ -221,6 +230,27 @@ export async function reconcileRetainedCardPrintingEvidence(
       });
       continue;
     }
+    const admission = await assessSourceAdmission(database, runId, observation, observedAt);
+    if (admission?.identityExceptionConflict) {
+      diagnostics.push({
+        code: "canonical_card_conflict",
+        source_observation_id: observation.sourceObservationId,
+        locator: observation.locator,
+        matched_printing_ids: admission.decision?.printing ? [admission.decision.printing.id] : [],
+        detail:
+          "New source evidence contradicts the identity established by an owner admission exception. Resolve the identity conflict before publication.",
+      });
+      continue;
+    }
+    if (admission && !admission.permitted) {
+      sourceWarnings.push({
+        code: "entity_proposal_excluded",
+        proposal_id: admission.proposal.id,
+        source_observation_id: observation.sourceObservationId,
+        detail: `Entity Proposal ${admission.proposal.id} is ${admission.rejected ? "owner-rejected" : "unresolved"}; its Card and Printing observation is isolated from this candidate.`,
+      });
+      continue;
+    }
     const existing =
       sourceCard.official_identity.kind === "unknown"
         ? null
@@ -229,11 +259,21 @@ export async function reconcileRetainedCardPrintingEvidence(
             identityKind: sourceCard.official_identity.kind,
             identityValue: sourceCard.official_identity.value,
           });
+    const canConfirmPublisherNumber =
+      sourceCard.official_identity.kind !== "unknown" &&
+      publisherLineage(observation.sourceLineage) &&
+      existing === null &&
+      ![...cards.values()].some(
+        (card) =>
+          card.game === sourceCard.game &&
+          canonicalJson(card.official_identity) === canonicalJson(sourceCard.official_identity),
+      );
     const exactUnnumberedCards =
-      sourceCard.official_identity.kind === "unknown"
+      sourceCard.official_identity.kind === "unknown" || canConfirmPublisherNumber
         ? [...cards.values()].filter(
             (card) =>
               card.game === sourceCard.game &&
+              (!canConfirmPublisherNumber || card.official_identity.kind === "unknown") &&
               card.name === sourceCard.name &&
               card.effective_rules_text === sourceCard.effective_rules_text &&
               canonicalJson(card.game_data) === canonicalJson(sourceCard.game_data),
@@ -325,11 +365,21 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
     }
     // Missing incoming evidence cannot erase an already established publisher number.
-    const proposedCard = unnumberedCard
-      ? { ...sourceCard, official_identity: unnumberedCard.official_identity }
-      : sourceCard;
+    const confirmedPublisherNumber = canConfirmPublisherNumber && unnumberedCard !== undefined;
+    const proposedCard =
+      unnumberedCard && sourceCard.official_identity.kind === "unknown"
+        ? { ...sourceCard, official_identity: unnumberedCard.official_identity }
+        : sourceCard;
     const cardId =
+      admission?.decision?.card.id ??
       existing?.id ??
+      (sourceCard.official_identity.kind === "unknown"
+        ? undefined
+        : [...cards.values()].find(
+            (card) =>
+              card.game === sourceCard.game &&
+              canonicalJson(card.official_identity) === canonicalJson(sourceCard.official_identity),
+          )?.id) ??
       unnumberedCard?.id ??
       (await allocateCanonicalIdentity(
         database,
@@ -419,7 +469,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       cardId,
       proposedForComparison,
       observation.sourceLineage,
-      { effectiveRulesText: currentEffectiveAuthority },
+      { effectiveRulesText: currentEffectiveAuthority, confirmedPublisherNumber },
     );
     let acceptedCanonicalCard = acceptedCard;
     try {
@@ -463,6 +513,11 @@ export async function reconcileRetainedCardPrintingEvidence(
       (proposedCard.game !== "digimon" &&
         priorFacts !== undefined &&
         priorFacts !== canonicalFacts &&
+        !(
+          confirmedPublisherNumber &&
+          priorFacts ===
+            canonicalJson({ ...acceptedCanonicalCard, official_identity: { kind: "unknown", value: null } })
+        ) &&
         !retainAsiaAuthority)
     ) {
       diagnostics.push({
@@ -521,7 +576,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         (observation.supportedGame !== "gundam" &&
           crossSourceMatches.length > 0 &&
           !hasCrossSourceArtworkEvidence(observation));
-      let reviewedPrintingId: string | null = reviewedCardPrintingId;
+      let reviewedPrintingId: string | null = admission?.decision?.printing?.id ?? reviewedCardPrintingId;
       if (
         located === null &&
         localLocated === undefined &&
@@ -756,6 +811,23 @@ export async function reconcileRetainedCardPrintingEvidence(
         detail: "The Card-only retained observation is not structurally complete.",
       });
     }
+    if (admission && !diagnostics.some((d) => d.source_observation_id === observation.sourceObservationId)) {
+      await completeSourceAdmission(
+        database,
+        runId,
+        admission,
+        cards.get(cardId)!,
+        printingId ? printings.get(printingId)! : null,
+        observedAt,
+      );
+      sourceWarnings.push({
+        code: "entity_admission",
+        proposal_id: admission.proposal.id,
+        card_id: cardId,
+        printing_id: printingId,
+        detail: `Entity Proposal ${admission.proposal.id} admitted; source evidence and authority remain separate from publisher confirmation.`,
+      });
+    }
     for (const [kind, entityId] of [
       ["card", cardId],
       ["printing", printingId],
@@ -779,6 +851,11 @@ export async function reconcileRetainedCardPrintingEvidence(
           card: observation.observedCardAndPrinting.card,
           printing: proposedPrinting,
           compatibility,
+          publisher_confirmation: publisherConfirmation(
+            observation.sourceLineage,
+            kind === "card" ? observation.observedCardAndPrinting.card : proposedPrinting,
+            kind === "card" ? cards.get(cardId) : printingId ? printings.get(printingId) : null,
+          ),
         }),
         mappedAt: observedAt,
       });
@@ -1181,13 +1258,19 @@ export async function reconcileRetainedCardPrintingEvidence(
   ].sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right)));
   let candidateCatalogueDigest = await catalogueDataDigest(database, candidate, plans, checkedSourceLineages);
   const observedCards = candidateCards
-    .filter((card) => localCardFacts.has(card.id) || targetedCardIds.has(card.id))
+    .filter(
+      (card) =>
+        localCardFacts.has(card.id) ||
+        targetedCardIds.has(card.id) ||
+        admittedEntities.some((entity) => entity.card.id === card.id),
+    )
     .sort((left, right) => left.id.localeCompare(right.id));
   const observedPrintings = [...printings.values()]
     .filter(
       (printing) =>
         plans.some((plan) => plan.observationKind === "card_printing" && plan.printingId === printing.id) ||
-        targetedPrintingIds.has(printing.id),
+        targetedPrintingIds.has(printing.id) ||
+        admittedEntities.some((entity) => entity.printing?.id === printing.id),
     )
     .sort((left, right) => left.id.localeCompare(right.id));
   if (diagnostics.length > 0) {
