@@ -77,7 +77,8 @@ function* canonicalParts(value: unknown): Generator<string> {
     for (const key of Object.keys(value).sort(compareUtf8)) {
       if (!first) yield ",";
       first = false;
-      yield `${canonicalJson(key)}:`;
+      yield* canonicalParts(key);
+      yield ":";
       yield* canonicalParts((value as Record<string, unknown>)[key]);
     }
     yield "}";

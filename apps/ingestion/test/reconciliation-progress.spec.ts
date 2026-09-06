@@ -395,6 +395,89 @@ test("transient image storage failures exhaust bounded retries into a resumable 
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
 });
 
+test("verified source documents survive a later read outage and resume without rereading completed documents", async () => {
+  const { testEnv, collectRequests, post } = await import("./reconciliation-helpers");
+  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const run = await collectRequests(
+    [
+      { id: "first", scenario: "base" },
+      { id: "second", scenario: "base" },
+    ],
+    "verified-document-resume",
+  );
+  let firstKey: string | null = null;
+  let firstReads = 0;
+  let failedReads = 0;
+  let resumed = false;
+  const bucket = new Proxy(testEnv.EVIDENCE_OBJECTS, {
+    get(target, property) {
+      if (property === "get")
+        return async (key: string) => {
+          if (key.startsWith("source-observations/")) {
+            firstKey ??= key;
+            if (key === firstKey) {
+              firstReads++;
+              if (resumed) throw new Error("Completed document must be reused from durable verification.");
+            } else if (!resumed) {
+              failedReads++;
+              throw new Error("Injected source document transport outage");
+            }
+          }
+          return target.get(key);
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const payload = {
+    ingestion_run_id: run.id,
+    expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
+    idempotency_key: "verified-document-resume",
+    observed_at: new Date().toISOString(),
+    generation: 0,
+  };
+  const step = {
+    do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await callback();
+        } catch (error) {
+          if (attempt >= config.retries.limit) throw error;
+        }
+      }
+    },
+  } as unknown as import("cloudflare:workers").WorkflowStep;
+  const event = { payload } as import("cloudflare:workers").WorkflowEvent<
+    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+  >;
+  await runReconciliationWorkflow({ ...testEnv, EVIDENCE_OBJECTS: bucket }, event, step);
+  expect(firstReads).toBe(1);
+  expect(failedReads).toBe(4);
+  const paused = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+  expect(paused.document).toMatchObject({ state: "paused", generation: 1, completed_documents: 1 });
+  expect(
+    (
+      await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+        generation: 1,
+        idempotency_key: "resume-verified-documents",
+      })
+    ).response.status,
+  ).toBe(200);
+  resumed = true;
+  await runReconciliationWorkflow(
+    { ...testEnv, EVIDENCE_OBJECTS: bucket },
+    { payload: { ...payload, generation: 1 } } as typeof event,
+    step,
+  );
+  expect(firstReads).toBe(1);
+  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+    state: "sealed",
+    generation: 1,
+    deadline: paused.document.deadline,
+    completed_documents: 2,
+  });
+});
+
 test("interrupted preparation resumes verified batches before sealing for review", async () => {
   const { testEnv, post } = await import("./reconciliation-helpers");
   const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");

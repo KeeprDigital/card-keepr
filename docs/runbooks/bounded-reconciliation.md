@@ -62,6 +62,12 @@ action. Exact replay returns the retained result. Pause fences the previous
 writer; resume keeps the original identity and deadline. A candidate past its
 original deadline cannot resume. Abandon releases its preparation reservation.
 
+`completed_documents` counts source documents whose retained bytes and provenance
+have passed verification. A later document outage preserves those artifacts for
+retry/resume. This counter does not assert complete Source Coverage: the verified
+input manifest remains unavailable until the request graph, required surfaces,
+count closure and normalized observations have all passed their checks.
+
 This implementation checkpoint retains the legacy run-level preparation and
 approval adapter. Game manifests are separate, but their preparation and actions
 still run together. The legacy reducers also reconstruct aggregate metadata.

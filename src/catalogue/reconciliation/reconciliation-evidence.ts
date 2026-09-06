@@ -1,4 +1,6 @@
 import { readVerifiedReconciliationInput, retainVerifiedReconciliationInput } from "./reconciliation-input";
+import { documentStorage, readVerifiedSourceDocument, retainVerifiedSourceDocument } from "./reconciliation-document";
+import { canonicalValueDigest } from "./reconciliation-preparation";
 import { retainCandidateImage } from "./reconciliation-images";
 import { adapterReconciliationAreas, parsedOfficialArtworkIdentity, requiredSourceAdapter } from "../adapters";
 import { type CatalogueStore, canonicalJson, type SupportedGame, sha256 } from "../shared";
@@ -271,30 +273,23 @@ async function collectRetainedReconciliationObservation(
   if (aggregateBytes > maximumAggregateReconciliationBytes) {
     throw new Error("Retained Source Observation Sets exceed the aggregate reconciliation byte budget.");
   }
-  const documents: Awaited<ReturnType<typeof retainedObservationDocument>>[] = [];
+  const loadDocument = (index: number) =>
+    retainedObservationDocument(database, evidenceObjects, runId, orderedRows[index]!);
   for (const row of orderedRows) {
     const adapter = requiredSourceAdapter(row.adapter_version);
     if (row.content_byte_length > adapter.maximumSnapshotBytes) {
       throw new Error(`Retained Source Observation Set ${row.observation_set_id} exceeds its adapter byte limit.`);
     }
-    documents.push(await retainedObservationDocument(evidenceObjects, row));
+    await retainedObservationDocument(database, evidenceObjects, runId, row);
   }
-  assertClosedRequestGraph(retainedRequests, orderedRows, documents);
+  await assertClosedRequestGraph(retainedRequests, orderedRows, loadDocument);
   const retainedImages = new Map(printingImageSnapshots.results.map((row) => [row.request_url, row]));
   const observationIds = new Set<string>();
-  const officialSurfaces = new Map<
-    string,
-    {
-      surface: string;
-      requestId: string;
-      requestUrl: string;
-      observationSetId: string;
-      records: unknown[];
-    }
-  >();
+  const officialSurfaces = new Set<string>();
   const requestsById = new Map(retainedRequests.map((request) => [request.request_id, request]));
   const merged = [];
-  for (const [index, document] of documents.entries()) {
+  for (let index = 0; index < orderedRows.length; index++) {
+    const document = await loadDocument(index);
     const row = orderedRows[index]!;
     const request = retainedRequests[index]!;
     for (const wrapped of document.observations) {
@@ -313,13 +308,7 @@ async function collectRetainedReconciliationObservation(
         ) {
           throw new Error("Retained Official Source surface evidence is invalid or duplicated.");
         }
-        officialSurfaces.set(request.request_id, {
-          surface: wrapped.value.surface,
-          requestId: request.request_id,
-          requestUrl: request.url,
-          observationSetId: row.observation_set_id,
-          records: wrapped.value.records,
-        });
+        officialSurfaces.add(request.request_id);
         continue;
       }
       let parsed = parseReconciliationObservation(
@@ -357,10 +346,6 @@ async function collectRetainedReconciliationObservation(
     await validateOfficialSurfaceCoverage({
       adapter: requiredSourceAdapter(plan.adapter_version),
       plan,
-      requests: retainedRequests,
-      documents,
-      rows: orderedRows,
-      officialSurfaces,
       collectionRequests,
     });
   }
@@ -464,13 +449,9 @@ async function sourceObservationCountChangeWarnings(
 async function validateOfficialSurfaceCoverage(input: {
   adapter: ReturnType<typeof requiredSourceAdapter>;
   plan: ReturnType<typeof parseEvidencePlans>[number];
-  requests: readonly PlannedRequestRow[];
-  documents: readonly Awaited<ReturnType<typeof retainedObservationDocument>>[];
-  rows: readonly EvidenceRow[];
-  officialSurfaces: ReadonlyMap<string, { records: unknown[] }>;
   collectionRequests: readonly Record<string, unknown>[];
 }): Promise<void> {
-  const { adapter, plan, requests } = input;
+  const { adapter, plan } = input;
   if (adapter.origin !== "production" || adapter.reconciliationCapability !== "catalogue") {
     return;
   }
@@ -690,30 +671,64 @@ export function validateGundamListingCollectionGraph(inputs: readonly GundamList
   };
 }
 
-function assertClosedRequestGraph(
+async function assertClosedRequestGraph(
   requests: readonly PlannedRequestRow[],
   rows: readonly EvidenceRow[],
-  documents: readonly {
-    observations: unknown[];
-    evidenceSummary: {
-      observation_count: number;
-      declared_record_count: number;
-      parsed_record_count: number;
-      structurally_complete: boolean;
-      required_surfaces_complete: boolean;
-      partitions_complete: boolean;
-    };
-  }[],
-): void {
-  const gundamListingGraph = validateGundamListingCollectionGraph(
-    requests.map((request, index) => ({
+  loadDocument: (index: number) => Promise<Awaited<ReturnType<typeof retainedObservationDocument>>>,
+): Promise<void> {
+  const gundamInputs: GundamListingCollectionGraphInput[] = [];
+  for (const [index, request] of requests.entries()) {
+    if (requiredSourceAdapter(rows[index]!.adapter_version).listingReconciliation?.groupsPublisherPages !== true)
+      continue;
+    const document = await loadDocument(index);
+    const observations = document.observations.flatMap((wrapped) => {
+      const observation = isRecord(wrapped) && isRecord(wrapped.value) ? wrapped.value : wrapped;
+      if (
+        !isRecord(observation) ||
+        !isRecord(observation.source_sidecar) ||
+        !isRecord(observation.source_sidecar.raw) ||
+        !Array.isArray(observation.source_sidecar.raw.official_surfaces)
+      )
+        return [];
+      const surfaces = observation.source_sidecar.raw.official_surfaces.flatMap((surface) => {
+        if (
+          !isRecord(surface) ||
+          surface.source_lineage !== rows[index]!.source_lineage ||
+          surface.surface !== "listing" ||
+          !isRecord(surface.document) ||
+          !("terminal_page" in surface.document)
+        )
+          return [];
+        const { selected_package, selected_page, declared_total, full_locators, terminal_page } = surface.document;
+        return [
+          {
+            source_lineage: surface.source_lineage,
+            surface: surface.surface,
+            document: { selected_package, selected_page, declared_total, full_locators, terminal_page },
+          },
+        ];
+      });
+      return surfaces.length
+        ? [
+            {
+              value: {
+                completeness: observation.completeness,
+                source_sidecar: { raw: { official_surfaces: surfaces } },
+              },
+            },
+          ]
+        : [];
+    });
+    if (!observations.length) continue;
+    gundamInputs.push({
       requestId: request.request_id,
       requestUrl: request.url,
       sourceLineage: rows[index]!.source_lineage,
       adapterVersion: rows[index]!.adapter_version,
-      observations: documents[index]!.observations,
-    })),
-  );
+      observations,
+    });
+  }
+  const gundamListingGraph = validateGundamListingCollectionGraph(gundamInputs);
   const aggregateCompleteGundamRequests = new Set(gundamListingGraph.completeRequestIds);
   const byId = new Map(requests.map((request) => [request.request_id, request]));
   const rootSurfaces = new Map<string, Set<string>>();
@@ -726,9 +741,9 @@ function assertClosedRequestGraph(
     }
   >();
   const listingPages = new Map<string, Set<number>>();
-  requests.forEach((request, index) => {
+  for (const [index, request] of requests.entries()) {
     const row = rows[index]!;
-    const document = documents[index]!;
+    const document = await loadDocument(index);
     if (
       document.evidenceSummary.observation_count !== document.observations.length ||
       ((document.evidenceSummary.structurally_complete !== true ||
@@ -752,7 +767,7 @@ function assertClosedRequestGraph(
       if (surface !== "discovery") {
         rootSurfaces.set(row.adapter_version, new Set([...(rootSurfaces.get(row.adapter_version) ?? []), surface]));
       }
-      return;
+      continue;
     }
     if (request.discovered_from_request_id === null) {
       throw new Error(`Discovered Source Request ${request.request_id} has no parent.`);
@@ -782,7 +797,7 @@ function assertClosedRequestGraph(
           continue;
         }
         const locatorKey = `${row.source_lineage}:${identity.locator}`;
-        const semantic = compatibleListingObservationSemantic(observation.value);
+        const semantic = await compatibleListingObservationSemantic(observation.value);
         const canonical = typeof identity.canonical === "string" ? identity.canonical : null;
         const prior = listingLocators.get(locatorKey);
         if (prior !== undefined && prior.requestId !== request.request_id) {
@@ -815,7 +830,7 @@ function assertClosedRequestGraph(
         listingPages.set(key, new Set([...(listingPages.get(key) ?? []), page]));
       }
     }
-  });
+  }
   for (const collection of gundamListingGraph.collections) {
     const retainedDetails = new Set(
       requests.flatMap((request, index) => {
@@ -851,9 +866,9 @@ function assertClosedRequestGraph(
   }
 }
 
-function compatibleListingObservationSemantic(observation: Record<string, unknown>): string {
+function compatibleListingObservationSemantic(observation: Record<string, unknown>): Promise<string> {
   const { memberships: _memberships, source_sidecar: _sourceSidecar, ...semantic } = observation;
-  return canonicalJson(semantic);
+  return canonicalValueDigest(semantic);
 }
 
 async function attachRetainedPrintingImages(
@@ -1125,6 +1140,24 @@ function samePlannedRequest(
 }
 
 async function retainedObservationDocument(
+  database: CatalogueStore,
+  evidenceObjects: R2Bucket,
+  runId: string,
+  row: EvidenceRow,
+): Promise<Awaited<ReturnType<typeof readRetainedObservationDocument>>> {
+  const identity = {
+    runId,
+    observationSetId: row.observation_set_id,
+    provenanceDigest: await canonicalValueDigest(row),
+  };
+  const retained = await readVerifiedSourceDocument(database, identity);
+  if (retained) return retained as Awaited<ReturnType<typeof readRetainedObservationDocument>>;
+  const document = await readRetainedObservationDocument(evidenceObjects, row);
+  await retainVerifiedSourceDocument(database, identity, document);
+  return document;
+}
+
+async function readRetainedObservationDocument(
   evidenceObjects: R2Bucket,
   row: EvidenceRow,
 ): Promise<{
@@ -1138,11 +1171,11 @@ async function retainedObservationDocument(
     partitions_complete: boolean;
   };
 }> {
-  const object = await evidenceObjects.get(row.content_object_key);
+  const object = await documentStorage(evidenceObjects.get(row.content_object_key));
   if (object === null || object.size !== row.content_byte_length) {
     throw new Error("Retained Source Observation Set bytes are unavailable.");
   }
-  const bytes = new Uint8Array(await object.arrayBuffer());
+  const bytes = new Uint8Array(await documentStorage(object.arrayBuffer()));
   if ((await sha256(bytes)) !== row.content_digest) {
     throw new Error("Retained Source Observation Set digest is invalid.");
   }

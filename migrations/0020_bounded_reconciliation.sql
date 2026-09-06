@@ -106,6 +106,32 @@ CREATE TABLE game_candidates (
   partition_count INTEGER NOT NULL DEFAULT 0 CHECK (partition_count >= 0),
   UNIQUE (ingestion_run_id, supported_game)
 );
+CREATE TABLE reconciliation_verified_documents (
+  ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
+  observation_set_id TEXT NOT NULL,
+  provenance_digest TEXT NOT NULL CHECK (length(provenance_digest) = 64),
+  manifest_digest TEXT NOT NULL CHECK (length(manifest_digest) = 64),
+  partition_count INTEGER NOT NULL CHECK (partition_count > 0),
+  PRIMARY KEY (ingestion_run_id, observation_set_id)
+);
+CREATE TRIGGER reconciliation_document_no_update BEFORE UPDATE ON reconciliation_verified_documents
+BEGIN SELECT RAISE(ABORT, 'reconciliation_document_immutable'); END;
+CREATE TRIGGER reconciliation_document_no_delete BEFORE DELETE ON reconciliation_verified_documents
+BEGIN SELECT RAISE(ABORT, 'reconciliation_document_audit_retained'); END;
+CREATE TABLE reconciliation_document_partitions (
+  ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
+  observation_set_id TEXT NOT NULL,
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  kind TEXT NOT NULL CHECK (kind = 'document'),
+  content TEXT NOT NULL CHECK (json_valid(content) AND json_type(content) = 'array'
+    AND length(CAST(content AS BLOB)) <= 524288 AND json_array_length(content) <= 500),
+  sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+  PRIMARY KEY (ingestion_run_id, observation_set_id, ordinal)
+);
+CREATE TRIGGER reconciliation_document_partition_no_update BEFORE UPDATE ON reconciliation_document_partitions
+BEGIN SELECT RAISE(ABORT, 'reconciliation_document_partition_immutable'); END;
+CREATE TRIGGER reconciliation_document_partition_no_delete BEFORE DELETE ON reconciliation_document_partitions
+BEGIN SELECT RAISE(ABORT, 'reconciliation_document_partition_audit_retained'); END;
 CREATE TABLE reconciliation_text_chunks (
   ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
   sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
