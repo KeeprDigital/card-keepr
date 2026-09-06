@@ -7,12 +7,25 @@ import {
   insertAuthorityDecisionStatement,
 } from "./source-authority-repository";
 
+export type AuthoritySelectionRequest = {
+  game: string;
+  locale: string;
+  release_region: string;
+  area: string;
+  source_lineage: string;
+  expected_generation: string;
+  rationale: string;
+  idempotency_key: string;
+};
+// Deliberate initial designations, independent of ownership and source naming.
+// Adding another publisher source does not change this policy.
+const initialAuthorityLineages = ["one-piece-en", "fusion-world-en", "digimon-en", "gundam-en-asia", "gundam-en-us"];
 const areas = ["card_facts", "printing_details", "corrected_card_content"] as const;
 export async function sourceAuthorities(database: CatalogueStore) {
   const decisions = (await authorityDecisionsStatement(database).all<AuthorityDecision>()).results;
   return {
     authorities: sourceLineages
-      .filter(({ source_id }) => source_id.startsWith("bandai-"))
+      .filter(({ id }) => initialAuthorityLineages.includes(id))
       .flatMap((lineage) =>
         areas.map((area) => {
           const selected = decisions.find(
@@ -41,16 +54,17 @@ export async function sourceAuthorities(database: CatalogueStore) {
 
 export async function selectSourceAuthority(
   database: CatalogueStore,
-  input: Record<string, string>,
+  input: AuthoritySelectionRequest,
   observedAt: string,
 ) {
   const generation = Number(input.expected_generation);
+  const area = areas.find((area) => area === input.area);
   const lineage = sourceLineages.find(({ id }) => id === input.source_lineage);
   if (
     !/^\d+$/u.test(input.expected_generation ?? "") ||
     !Number.isSafeInteger(generation) ||
     generation >= Number.MAX_SAFE_INTEGER ||
-    !areas.some((area) => area === input.area) ||
+    area === undefined ||
     !lineage ||
     lineage.game !== input.game ||
     lineage.locale !== input.locale ||
@@ -63,24 +77,24 @@ export async function selectSourceAuthority(
     );
   }
   const requestJson = canonicalJson(input);
-  const replay = await authorityReplayStatement(database, input.idempotency_key!).first<AuthorityDecision>();
+  const replay = await authorityReplayStatement(database, input.idempotency_key).first<AuthorityDecision>();
   if (replay) return replayDecision(replay, requestJson);
   const decision: AuthorityDecision = {
-    idempotency_key: input.idempotency_key!,
+    idempotency_key: input.idempotency_key,
     game: lineage.game,
     locale: lineage.locale,
     release_region: lineage.release_region,
-    area: input.area!,
+    area,
     source_lineage: lineage.id,
     generation: generation + 1,
-    rationale: input.rationale!,
+    rationale: input.rationale,
     request_json: requestJson,
     decided_at: observedAt,
   };
   try {
     await insertAuthorityDecisionStatement(database, decision).run();
   } catch (error) {
-    const raced = await authorityReplayStatement(database, input.idempotency_key!).first<AuthorityDecision>();
+    const raced = await authorityReplayStatement(database, input.idempotency_key).first<AuthorityDecision>();
     if (raced) return replayDecision(raced, requestJson);
     const message = error instanceof Error ? error.message : "";
     if (/source_authority_(?:generation_mismatch|operation_not_idle)|UNIQUE constraint/u.test(message)) {

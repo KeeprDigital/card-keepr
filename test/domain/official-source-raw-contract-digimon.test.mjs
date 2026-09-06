@@ -570,7 +570,7 @@ test("Digimon retains an unfamiliar optional HTML mechanic without weakening req
   const html = fixture.bytes.toString("utf8");
   const changed = html.replace(
     '<div class="cardInfoCol">',
-    '<div class="cardInfoCol"><dl><dt>Future Mechanic</dt><dd>Uninterpreted mechanic</dd></dl>',
+    '<div class="cardInfoCol"><dl><dt>Future Mechanic</dt><dd>Uninterpreted mechanic</dd></dl><dl><dt>level</dt><dd>Source-only level label</dd></dl>',
   );
   assert.notEqual(changed, html);
   const context = {
@@ -580,7 +580,16 @@ test("Digimon retains an unfamiliar optional HTML mechanic without weakening req
   };
   const observations = adapter.parseBytes(Buffer.from(changed), context);
   assert.equal(observations.length, 24);
-  assert.equal(observations[0].card.game_data.attributes["Future Mechanic"], "Uninterpreted mechanic");
+  const sidecar = observations[0].source_sidecar;
+  const optional = sidecar.raw.official_surfaces.find(({ document }) => document.optional_fields)?.document
+    .optional_fields;
+  assert.deepEqual(optional, { "Future Mechanic": "Uninterpreted mechanic", level: "Source-only level label" });
+  assert.ok(
+    sidecar.unmapped_optional_fields.some(
+      ({ path, value }) => path.endsWith("optional_fields.level") && value === "Source-only level label",
+    ),
+  );
+  assert.equal(typeof observations[0].card.game_data.attributes.level, "number");
   assert.throws(
     () => adapter.parseBytes(Buffer.from(changed.replace("cardTitleList", "missingTitleList")), context),
     /title|structur/iu,

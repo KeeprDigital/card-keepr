@@ -450,7 +450,6 @@ function parseDigimonCardListPopupHtmlByContract(
         title: "name",
         rules: "Effect",
         attributes: {
-          ...unknownFields,
           card_type: cardType,
           colours: colourValues(field("Color")),
           level,
@@ -492,6 +491,7 @@ function parseDigimonCardListPopupHtmlByContract(
         publisher_level: levelValue,
         leaf_cardcategory: leafPublisherCardType,
         card_qa: retainedQa.entries,
+        ...(Object.keys(unknownFields).length === 0 ? {} : { optional_fields: unknownFields }),
       },
       true,
       ["popup_id", "publisher_card_type", "publisher_level", "leaf_cardcategory"],

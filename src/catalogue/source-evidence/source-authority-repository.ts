@@ -1,11 +1,12 @@
-import { type CatalogueStore, atomicRepositoryStatement, repositoryStatements } from "../shared";
+import { type CatalogueStore, type SupportedGame, atomicRepositoryStatement, repositoryStatements } from "../shared";
 
+export type AuthorityArea = "card_facts" | "printing_details" | "corrected_card_content";
 export type AuthorityDecision = {
   idempotency_key: string;
-  game: string;
-  locale: string;
-  release_region: string;
-  area: string;
+  game: SupportedGame;
+  locale: "en";
+  release_region: "OCEANIA" | "ASIA" | "US";
+  area: AuthorityArea;
   source_lineage: string;
   generation: number;
   rationale: string;

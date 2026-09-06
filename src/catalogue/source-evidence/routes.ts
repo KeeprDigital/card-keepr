@@ -49,7 +49,16 @@ export const sourceEvidenceRoutes = [
       "idempotency_key",
     ];
     assertOnlyFields(body, fields);
-    const input = Object.fromEntries(fields.map((field) => [field, requiredString(body, field)]));
+    const input = {
+      game: requiredString(body, "game"),
+      locale: requiredString(body, "locale"),
+      release_region: requiredString(body, "release_region"),
+      area: requiredString(body, "area"),
+      source_lineage: requiredString(body, "source_lineage"),
+      expected_generation: requiredString(body, "expected_generation"),
+      rationale: requiredString(body, "rationale"),
+      idempotency_key: requiredString(body, "idempotency_key"),
+    };
     return Response.json(await selectSourceAuthority(env.CATALOGUE_DB, input, observedAt));
   }),
   route<Context>("GET", "/v1/source-registry", async () =>
