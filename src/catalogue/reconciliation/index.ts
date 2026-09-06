@@ -62,3 +62,5 @@ export {
 } from "./product-release-publication";
 
 export { reconciliationRoutes } from "./routes";
+
+export { pinEntityAdmissions } from "./entity-admission-pins";

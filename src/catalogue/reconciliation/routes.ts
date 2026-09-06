@@ -4,10 +4,17 @@ import {
   inspectReconciliationPartition,
   inspectReconciliationProgress,
 } from "./reconciliation-progress";
+import { inspectProposalSourceEvidence } from "./entity-admission";
+import {
+  listEntityProposals,
+  createEntityProposal,
+  inspectEntityProposal,
+  decideEntityProposal,
+} from "./entity-admission";
 import { inspectCanonicalIdentity, inspectIdentityReviews, resolveIdentityReview } from "./canonical-identity";
 import { assertOnlyFields, readAdministrationBody, requiredString } from "../../http/administration";
 import { type RouteContext, route } from "../../http/routes";
-import type { CatalogueStore } from "../shared";
+import { AdministrationProblem, type CatalogueStore } from "../shared";
 import { showReconciledPrinting } from "./card-printing-reconciliation";
 import { resumeReconciliationWorkflow, startOrObserveReconciliationWorkflow } from "./reconciliation-workflow";
 
@@ -45,6 +52,78 @@ export const reconciliationRoutes = [
   }),
   route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation", async ({ env }, params) => {
     return Response.json(await inspectReconciliationProgress(env.CATALOGUE_DB, params.run!));
+  }),
+  route<Context>("GET", "/v1/entity-proposals", async ({ request, env }) => {
+    const query = new URL(request.url).searchParams;
+    return Response.json(
+      await listEntityProposals(env.CATALOGUE_DB, query.get("game") ?? "", query.get("after") ?? ""),
+    );
+  }),
+  route<Context>("POST", "/v1/entity-proposals", async ({ request, env, observedAt }) => {
+    const body = await readAdministrationBody(request);
+    assertOnlyFields(body, ["game", "source_lineage", "reference", "content", "evidence", "idempotency_key"]);
+    return Response.json(
+      await createEntityProposal(
+        env.CATALOGUE_DB,
+        {
+          game: requiredString(body, "game"),
+          source_lineage: requiredString(body, "source_lineage"),
+          reference: requiredString(body, "reference"),
+          content: body.content,
+          evidence: body.evidence,
+          idempotency_key: requiredString(body, "idempotency_key"),
+        },
+        observedAt,
+      ),
+      { status: 201 },
+    );
+  }),
+  route<Context>("GET", "/v1/entity-proposals/:proposal", async ({ env, request }, params) => {
+    const after = new URL(request.url).searchParams.get("after_generation") ?? "0";
+    if (!/^(0|[1-9]\d*)$/.test(after) || !Number.isSafeInteger(Number(after)))
+      throw new AdministrationProblem(422, "admission_cursor_invalid", "Use a non-negative history generation.");
+    return Response.json(await inspectEntityProposal(env.CATALOGUE_DB, params.proposal!, Number(after)));
+  }),
+  route<Context>("GET", "/v1/entity-proposals/:proposal/evidence", async ({ env, request }, params) =>
+    Response.json(
+      await inspectProposalSourceEvidence(
+        env.CATALOGUE_DB,
+        params.proposal!,
+        new URL(request.url).searchParams.get("after") ?? "",
+      ),
+    ),
+  ),
+  route<Context>("POST", "/v1/entity-proposals/:proposal/decisions", async ({ request, env, observedAt }, params) => {
+    const body = await readAdministrationBody(request);
+    assertOnlyFields(body, [
+      "action",
+      "expected_generation",
+      "rationale",
+      "idempotency_key",
+      "exception",
+      "card_id",
+      "printing_id",
+      "content",
+      "evidence",
+    ]);
+    return Response.json(
+      await decideEntityProposal(
+        env.CATALOGUE_DB,
+        params.proposal!,
+        {
+          ...(body.exception === undefined ? {} : { exception: body.exception }),
+          ...(body.content === undefined ? {} : { content: body.content }),
+          ...(body.evidence === undefined ? {} : { evidence: body.evidence }),
+          ...(body.card_id === undefined ? {} : { card_id: requiredString(body, "card_id") }),
+          ...(body.printing_id === undefined ? {} : { printing_id: requiredString(body, "printing_id") }),
+          action: requiredString(body, "action"),
+          expected_generation: requiredString(body, "expected_generation"),
+          rationale: requiredString(body, "rationale"),
+          idempotency_key: requiredString(body, "idempotency_key"),
+        },
+        observedAt,
+      ),
+    );
   }),
   route<Context>("GET", "/v1/reconciliation/identity-reviews", async ({ request, env }) => {
     const query = new URL(request.url).searchParams;

@@ -64,7 +64,7 @@ export function insertSourceMappingsStatement(database: CatalogueStore, runId: s
     before: [identityRunGuard(database, runId)],
   });
 }
-function identityRunGuard(database: CatalogueStore, run: string) {
+export function identityRunGuard(database: CatalogueStore, run: string) {
   return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN EXISTS (
     SELECT 1 FROM operation_state AS operation JOIN ingestion_run_current AS run

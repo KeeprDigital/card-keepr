@@ -224,7 +224,7 @@ export async function canonicalCardConflict(
   cardId: string,
   proposed: Omit<CatalogueCard, "id">,
   sourceLineage: string,
-  authority: { effectiveRulesText: boolean } = {
+  authority: { effectiveRulesText: boolean; confirmedPublisherNumber?: boolean } = {
     effectiveRulesText: false,
   },
 ): Promise<string | null> {
@@ -242,7 +242,11 @@ export async function canonicalCardConflict(
   const current = revisionDocumentData(row.document_json);
   const currentCanonical = {
     game: current.game,
-    official_identity: current.official_identity,
+    official_identity:
+      authority.confirmedPublisherNumber &&
+      canonicalJson(current.official_identity) === canonicalJson({ kind: "unknown", value: null })
+        ? proposed.official_identity
+        : current.official_identity,
     name: current.name,
     game_data: current.game_data,
     ...(authority.effectiveRulesText ? {} : { effective_rules_text: current.effective_rules_text }),

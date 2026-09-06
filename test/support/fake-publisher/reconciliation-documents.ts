@@ -55,17 +55,24 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       cardAttributes: onePieceLeaderAttributes(),
       printingAttributes: { illustration_types: [] },
     });
-    if (!scenario.endsWith("ambiguous"))
+    if (!scenario.endsWith("ambiguous") && !scenario.endsWith("unresolved"))
       source.identity_evidence.artwork_fingerprint =
         'official-artwork:{"official_card_identity":"OP96-001","roles":["front"],"artwork_id":"publisher-appearance-1"}';
     source.appearance_evidence.images.forEach((image) => {
       image.artwork_fingerprint = source.identity_evidence.artwork_fingerprint;
     });
+    if (scenario.endsWith("unresolved")) source.identity_evidence.demonstrably_novel = false;
+    if (scenario.endsWith("unrelated")) source.printing.game_data.attributes.illustration_types = ["original"];
     const { card, ...evidence } = source;
     return {
       rows: [
         {
-          cells: [card.official_identity.value, card.name, card.effective_rules_text, card.game_data.attributes],
+          cells: [
+            scenario.endsWith("missing-number") ? null : card.official_identity.value,
+            card.name,
+            card.effective_rules_text,
+            card.game_data.attributes,
+          ],
           evidence,
         },
       ],
