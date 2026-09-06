@@ -171,15 +171,13 @@ async function collectRetainedReconciliationObservation(
   runId: string,
   printingImages: R2Bucket,
 ) {
-  const [requests, observations, printingImageSnapshots, collectionPlans, evidencePlanRow, discoveryRequestPlans] =
-    await Promise.all([
-      reconciliationSourceRequestsStatement(database, runId).all<PlannedRequestRow>(),
-      reconciliationObservationSetsStatement(database, runId).all<EvidenceRow>(),
-      reconciliationSnapshotEvidenceStatement(database, runId).all<PrintingImageSnapshotRow>(),
-      reconciliationCollectionPlansStatement(database, runId).all<CollectionPlanRow>(),
-      reconciliationEvidencePlanStatement(database, runId).first<EvidencePlanRow>(),
-      reconciliationOverflowRequestsStatement(database, runId).all<DiscoveryRequestPlanRow>(),
-    ]);
+  const [requests, observations, collectionPlans, evidencePlanRow, discoveryRequestPlans] = await Promise.all([
+    reconciliationSourceRequestsStatement(database, runId).all<PlannedRequestRow>(),
+    reconciliationObservationSetsStatement(database, runId).all<EvidenceRow>(),
+    reconciliationCollectionPlansStatement(database, runId).all<CollectionPlanRow>(),
+    reconciliationEvidencePlanStatement(database, runId).first<EvidencePlanRow>(),
+    reconciliationOverflowRequestsStatement(database, runId).all<DiscoveryRequestPlanRow>(),
+  ]);
   if (requests.results.length === 0 || evidencePlanRow === null) {
     throw new Error("Reconciliation requires complete coverage of every planned Source Request.");
   }
@@ -333,7 +331,6 @@ async function collectRetainedReconciliationObservation(
     await retainedObservationDocument(database, evidenceObjects, runId, row);
   }
   await assertClosedRequestGraph(retainedRequests, orderedRows, loadDocument);
-  const retainedImages = new Map(printingImageSnapshots.results.map((row) => [row.request_url, row]));
   const officialSurfaces = new Set<string>();
   const requestsById = new Map(retainedRequests.map((request) => [request.request_id, request]));
   for (let index = 0; index < orderedRows.length; index++) {
@@ -361,7 +358,15 @@ async function collectRetainedReconciliationObservation(
         wrapped.id,
         await attachRetainedPrintingImages(
           wrapped.value,
-          retainedImages,
+          async (url) =>
+            imageStorage(() =>
+              reconciliationSnapshotEvidenceStatement(
+                database,
+                runId,
+                url,
+                row.source_lineage,
+              ).first<PrintingImageSnapshotRow>(),
+            ),
           evidenceObjects,
           row.plan_origin === "production",
         ),
@@ -926,7 +931,7 @@ function compatibleListingObservationSemantic(observation: Record<string, unknow
 
 async function attachRetainedPrintingImages(
   value: unknown,
-  images: ReadonlyMap<string, PrintingImageSnapshotRow>,
+  imageAtUrl: (url: string) => Promise<PrintingImageSnapshotRow | null>,
   evidenceObjects: R2Bucket,
   allowVerifiedNovelty: boolean,
 ): Promise<unknown> {
@@ -939,9 +944,9 @@ async function attachRetainedPrintingImages(
       retainedImages.push(item);
       continue;
     }
-    const retained = images.get(item.source_url);
+    const retained = await imageAtUrl(item.source_url);
     retainedImages.push(
-      retained === undefined ? item : { ...item, ...(await retainedPrintingImage(evidenceObjects, retained)) },
+      retained === null ? item : { ...item, ...(await retainedPrintingImage(evidenceObjects, retained)) },
     );
   }
   const complete =

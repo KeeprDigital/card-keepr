@@ -219,4 +219,5 @@ CREATE TRIGGER reconciliation_reducer_state_no_update BEFORE UPDATE ON reconcili
 BEGIN SELECT RAISE(ABORT, 'reconciliation_reducer_state_immutable'); END;
 CREATE TRIGGER reconciliation_reducer_state_no_delete BEFORE DELETE ON reconciliation_reducer_state
 BEGIN SELECT RAISE(ABORT, 'reconciliation_reducer_state_audit_retained'); END;
+CREATE INDEX reconciliation_source_image_lookup ON source_snapshots (ingestion_run_id, source_lineage, request_url);
 UPDATE catalogue_schema_state SET migration_level = 20 WHERE singleton = 1;

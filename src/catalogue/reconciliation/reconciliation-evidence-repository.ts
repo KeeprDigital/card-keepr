@@ -54,7 +54,12 @@ export function reconciliationObservationSetsStatement(database: CatalogueStore,
     .bind(runId);
 }
 
-export function reconciliationSnapshotEvidenceStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+export function reconciliationSnapshotEvidenceStatement(
+  database: CatalogueStore,
+  runId: string,
+  sourceUrl: string,
+  sourceLineage: string,
+): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT
           snapshot.request_url,
@@ -66,11 +71,12 @@ export function reconciliationSnapshotEvidenceStatement(database: CatalogueStore
          JOIN source_requests AS request
            ON request.ingestion_run_id = snapshot.ingestion_run_id
           AND request.request_id = snapshot.request_id
-         WHERE snapshot.ingestion_run_id = ?
+         WHERE snapshot.ingestion_run_id = ? AND snapshot.request_url = ? AND snapshot.source_lineage = ?
+           AND request.source_snapshot_id = snapshot.id
            AND request.request_role = 'image'
            AND request.state = 'observed'
-         ORDER BY snapshot.request_url`)
-    .bind(runId);
+         ORDER BY snapshot.rowid DESC LIMIT 1`)
+    .bind(runId, sourceUrl, sourceLineage);
 }
 
 export function reconciliationCollectionPlansStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
