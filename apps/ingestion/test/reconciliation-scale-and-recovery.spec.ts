@@ -64,22 +64,18 @@ test("every planned request contributes exactly one provenance-bound observation
   });
 });
 
-test("aggregate reconciliation size is rejected before any retained object is read", async () => {
-  const run = await collectRequests(
-    [
-      { id: "aggregate-a", scenario: "base" },
-      { id: "aggregate-b", scenario: "new-locator" },
-      { id: "aggregate-c", scenario: "base" },
-    ],
-    "aggregate-budget-before-object-read",
-  );
+test("one Source document above its adapter limit is rejected before its retained object is read", async () => {
+  const run = await collect("/reconciliation/base", "document-budget-before-object-read");
   const retained = await sourceEvidenceQueries
     .readSourceObservationSetsContentObjectKey(testEnv.CATALOGUE_DB)
     .bind(run.id)
     .all<{ content_object_key: string }>();
-  expect(retained.results).toHaveLength(3);
+  expect(retained.results).toHaveLength(1);
   await sourceEvidenceQueries.dropSourceObservationSetsAreImmutableOnUpdate(testEnv.CATALOGUE_DB).run();
-  await sourceEvidenceQueries.setSourceObservationSetsContentByteLength(testEnv.CATALOGUE_DB).bind(run.id).run();
+  await sourceEvidenceQueries
+    .setSourceObservationSetsContentByteLength(testEnv.CATALOGUE_DB)
+    .bind(17 * 1024 * 1024, run.id)
+    .run();
   await sourceEvidenceQueries.createSourceObservationSetsAreImmutableOnUpdate(testEnv.CATALOGUE_DB).run();
   await testEnv.EVIDENCE_OBJECTS.delete(retained.results[0]!.content_object_key);
 
@@ -91,7 +87,7 @@ test("aggregate reconciliation size is rejected before any retained object is re
     diagnostics: [
       expect.objectContaining({
         code: "retained_evidence_invalid",
-        detail: expect.stringContaining("aggregate reconciliation byte budget"),
+        detail: expect.stringContaining("exceeds its adapter byte limit"),
       }),
     ],
   });

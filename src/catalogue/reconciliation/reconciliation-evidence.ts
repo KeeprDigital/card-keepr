@@ -113,8 +113,6 @@ type DiscoveryRequestPlanRow = {
   request_role: Exclude<PlannedRequestRow["request_role"], "surface">;
 };
 
-const maximumAggregateReconciliationBytes = 32 * 1024 * 1024;
-
 export type NormalizedReconciliationObservation = ReturnType<typeof parseReconciliationObservation> & {
   sourceObservationSetId: string;
   sourceSnapshotId: string;
@@ -348,11 +346,6 @@ async function collectRetainedReconciliationObservation(
     },
   };
   const first = (await orderedRows[Symbol.asyncIterator]().next()).value!;
-  let aggregateBytes = 0;
-  for await (const row of orderedRows) aggregateBytes += row.content_byte_length;
-  if (aggregateBytes > maximumAggregateReconciliationBytes) {
-    throw new Error("Retained Source Observation Sets exceed the aggregate reconciliation byte budget.");
-  }
   const loadDocument = (row: EvidenceRow) => retainedObservationDocument(database, evidenceObjects, runId, row);
   for await (const row of orderedRows) {
     const adapter = requiredSourceAdapter(row.adapter_version);

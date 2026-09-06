@@ -243,6 +243,24 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       ),
     };
   }
+  if (/^bounded-evidence-volume-[0-8]$/u.test(scenario)) {
+    const index = Number(scenario.at(-1));
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP97-${String(index + 1).padStart(3, "0")}`,
+          name: `Synthetic bounded evidence Card ${index}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `/${scenario}`,
+          lineageMarker: scenario,
+          printedRulesText: "Synthetic source text. ".repeat(180_000),
+        }),
+      ],
+    };
+  }
   if (scenario === "large-card-content") {
     return {
       cards: [
