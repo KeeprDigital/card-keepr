@@ -1,5 +1,4 @@
 import { applyPinnedCuratedRevisions, CuratedRevisionSourceChangeError, stripCuratedRevisionEffects } from "../curated";
-import { legalityRulesForCandidate, normalizedLegalityRuleLifecycle, resolveLegalityRuleCards } from "../legality";
 import {
   AdministrationProblem,
   assertIngestionRunTransition,
@@ -811,39 +810,6 @@ export async function reconcileRetainedCardPrintingEvidence(
       detail: error instanceof Error ? error.message : "Retained Product evidence is invalid.",
     });
   }
-  let resolvedLegalityRules: Awaited<ReturnType<typeof resolveLegalityRuleCards>> = [];
-  let candidateLegalityRules = priorCandidate?.legality_rules ?? [];
-  if (retained.legalityScopes.length > 0) {
-    try {
-      resolvedLegalityRules = await resolveLegalityRuleCards(retained.legalityRules, [...cards.values()]);
-      for (const scope of retained.legalityScopes) {
-        candidateLegalityRules = legalityRulesForCandidate(
-          priorCandidate === null
-            ? {
-                contract: catalogueCandidateContract,
-                selected_games: [],
-                cards: [],
-                printings: [],
-                legality_rules: candidateLegalityRules,
-              }
-            : {
-                ...priorCandidate,
-                legality_rules: candidateLegalityRules,
-              },
-          scope.sourceLineage,
-          resolvedLegalityRules.filter((rule) => rule.source_lineage === scope.sourceLineage),
-        );
-      }
-    } catch (error) {
-      diagnostics.push({
-        code: "retained_evidence_invalid",
-        source_observation_id: null,
-        locator: null,
-        matched_printing_ids: [],
-        detail: error instanceof Error ? error.message : "Retained Legality Rule evidence is invalid.",
-      });
-    }
-  }
   const cardSurfaceObservations = cardPrintingObservations.filter(
     (observation) => observation.observedCardAndPrinting.card !== null,
   );
@@ -913,16 +879,8 @@ export async function reconcileRetainedCardPrintingEvidence(
         area: "products-and-releases" as const,
         checked_at: latestCapture(observations),
       })),
-      ...retained.legalityScopes.map((scope) => ({
-        game: scope.supportedGame,
-        area: "legality-rules" as const,
-        source_lineage: scope.sourceLineage,
-        region: scope.region,
-        checked_at: scope.checkedAt,
-      })),
     ],
     errata,
-    legality_rules: candidateLegalityRules,
   };
   candidate = omitUndefinedValues(candidate) as CatalogueCandidate;
   const cardPrintingPlans = plans.filter((plan) => plan.observationKind === "card_printing");
@@ -1067,7 +1025,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       printings: observedPrintings,
       products: productCatalogue.observedProducts,
       errata,
-      legality_rules: resolvedLegalityRules,
+
       diagnostics: stableDiagnostics,
       warnings,
     };
@@ -1122,7 +1080,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       printings: observedPrintings,
       products: productCatalogue.observedProducts,
       errata: candidate.errata ?? [],
-      legality_rules: candidate.legality_rules ?? [],
+
       diagnostics,
       warnings,
     };
@@ -1165,7 +1123,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     printings: observedPrintings,
     products: productCatalogue.observedProducts,
     errata,
-    legality_rules: candidateLegalityRules,
+
     diagnostics: [],
     warnings,
   };
@@ -1297,10 +1255,6 @@ async function candidateAtRevision(
         provenance: provenanceByErratum.get(erratum.id) ?? [],
       })),
     ),
-    legality_rules: (candidate.legality_rules ?? []).map((rule) => ({
-      ...rule,
-      ...normalizedLegalityRuleLifecycle(rule, revisionId),
-    })),
   };
 }
 
@@ -1519,21 +1473,6 @@ function semanticCatalogueCandidate(candidate: CatalogueCandidate): Record<strin
       }),
     ),
     errata: (candidate.errata ?? []).map((erratum) => JSON.parse(canonicalErratum(erratum))),
-    legality_rules: (candidate.legality_rules ?? []).map((rule) => {
-      const {
-        source_lineage: _sourceLineage,
-        source_snapshot_id: _sourceSnapshotId,
-        source_observation_set_id: _sourceObservationSetId,
-        source_observation_id: _sourceObservationId,
-        source_observation_pointer: _sourceObservationPointer,
-        source_field_pointers: _sourceFieldPointers,
-        first_revision_id: _firstRevisionId,
-        last_observed_revision_id: _lastObservedRevisionId,
-        last_missing_revision_id: _lastMissingRevisionId,
-        ...semanticRule
-      } = rule;
-      return semanticRule;
-    }),
   };
 }
 

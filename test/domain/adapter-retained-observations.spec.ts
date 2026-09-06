@@ -19,7 +19,8 @@ function fragmentUrl(filename: string, lineage: string): string {
 }
 
 test("every retained fixture preserves its registered adapter observations and discovery", async () => {
-  // Captured from 8e5cb5c before #109. Hash the serialized output itself;
+  // Card-content observations updated for #218; retained raw-byte digests are unchanged.
+  // Hash the serialized output itself;
   // canonicalizing it would hide an observable property-order change.
   const result: Record<string, unknown> = {};
   const full: Record<string, unknown> = {};

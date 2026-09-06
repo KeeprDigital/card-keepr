@@ -74,9 +74,8 @@ is enumerated, and each is re-exported from the module that defines it.
 | `ingestion` | `ingestion.ts`, `candidate-inspection.ts`, `catalogue-revision-retention.ts`, `card-search-materialization.ts`, `card-search-repair-administration.ts`, `production-release.ts` | Ingestion Run administration (`approveRun`, `rejectRun`, `retryRun`, `retryPublicationCleanup`, `showRun`, `inspectCandidate`, `administrationStatus`), Production Release smoke targets, guarded card-search repair, `prepareProductionRelease` |
 | `reconciliation` | `card-printing-reconciliation.ts`, `digimon-reconciliation.ts`, `errata-rules-text.ts`, `reconciliation-candidate-store.ts`, `reconciliation-evidence.ts`, `reconciliation-model.ts`, `reconciliation-observation.ts`, `reconciliation-publication.ts`, `reconciliation-read.ts`, `reconciliation-relationships.ts`, `reconciliation-repository.ts`, `reconciliation-workflow.ts`, `product-release-catalogue.ts`, `product-release-projection.ts`, `product-release-publication.ts`, `publication-lifecycle-types.ts` | Card and Printing reconciliation entry points, the reconciliation Workflow, candidate persistence (`digestBoundCandidatePayload`, `failReconciliationWorkflow`, `retainedReconciliationResult`), the publication plan and its evidence types, observation parsing, Gundam listing-graph validation, erratum export helpers, Product and Release reconciliation, projection, and publication statements |
 | `source-evidence` | `source-evidence.ts`, `source-evidence-batch.ts`, `source-evidence-capture.ts`, `source-evidence-model.ts`, `source-evidence-parsing.ts`, `source-evidence-repository.ts`, `source-evidence-repository-types.ts`, `collection-inspection.ts`, `collection-recovery.ts`, `workflow-progress.ts` | Evidence run administration (start, retry, show, extend capacity, reparse, snapshot and observation-set content), request batch collection, capture and host pacing, Evidence Plan parsing and request failure policy, the evidence repository's run, request, pause, resume, terminate, and Workflow Attempt operations, collection Workflow classification |
-| `adapters` | `source-adapters.ts`, `source-adapter-registration-types.ts`, `product-release-source-adapters.ts`, `one-piece-source-adapter.ts`, `one-piece-official-errata-html.ts`, `official-artwork-identity.ts`, `official-legality-live-html.ts`, `official-legality-source-adapters.ts`, `official-source-field-coverage.ts`, `official-source-release-normalization.ts`, `official-source-scope.ts` | Source Adapter Version registrations and lookups, adapter binding and request-surface assertions, the Official Source scope, discovery requests, official artwork identity, the One Piece errata parser, the official legality-rules observation |
+| `adapters` | `source-adapters.ts`, `source-adapter-registration-types.ts`, `product-release-source-adapters.ts`, `one-piece-source-adapter.ts`, `one-piece-official-errata-html.ts`, `official-artwork-identity.ts`, `official-source-field-coverage.ts`, `official-source-release-normalization.ts`, `official-source-scope.ts` | Source Adapter Version registrations and lookups, adapter binding and request-surface assertions, the Official Source scope, discovery requests, official artwork identity, the One Piece errata parser, card-content observations |
 | `curated` | `curated-revisions.ts` | Curated Revision administration (validate, create, reaffirm, retire, supersede, list, show), run pinning and application, curated publication statements |
-| `legality` | `legality-rule.ts`, `legality-rule-lifecycle.ts`, `legality-effect-policy.ts`, `legality-export.ts`, `legality-publication.ts`, `stored-legality-documents.ts` | Legality Rule canonicalisation, retained-rule parsing, card resolution, lifecycle, effect evaluation, export records, publication statements, stored-document parsers |
 | `backup-recovery` | `backup-recovery.ts`, `backup-workflow.ts`, `recovery.ts`, `card-search-recovery.ts`, `card-search-recovery-statements.ts` | Backup Attempt creation, status, and verification, the backup Workflow, Catalogue Recovery (begin, inspect, verify, accept, restore guard), the D1 providers, card-search export and restore reconstruction |
 | `export` | `export.ts`, `export-validation.ts`, `catalogue-export-deletion.ts` | `buildCatalogueExport` and its types, export record and manifest verification, Catalogue Export deletion |
 
@@ -87,13 +86,12 @@ clusters, read as "may import from", is the `allowedImports` table the
 boundary check enforces:
 
 - `adapters` -> `shared`
-- `legality` -> `shared`, `adapters`
-- `read` -> `shared`, `legality`, `adapters`
-- `curated` -> `shared`, `legality`
+- `read` -> `shared`, `adapters`
+- `curated` -> `shared`
 - `source-evidence` -> `shared`, `adapters`, `curated`
-- `reconciliation` -> `shared`, `adapters`, `legality`, `curated`, `source-evidence`
-- `export` -> `shared`, `legality`, `reconciliation`
-- `backup-recovery` -> `shared`, `read`, `legality`
+- `reconciliation` -> `shared`, `adapters`, `curated`, `source-evidence`
+- `export` -> `shared`, `reconciliation`
+- `backup-recovery` -> `shared`, `read`
 - `ingestion` -> every cluster
 
 The api worker imports `read` and `shared` only. Consumer serialization uses the
@@ -114,14 +112,10 @@ the direction above. Each was a compatibility re-export whose real owner is
 - `curated-revisions.ts` imports `type ProductRelationship` from
   `./product-release-catalogue`; the type is defined in
   `catalogue-candidate-types.ts` (`shared`).
-- `source-freshness.ts` imports `type LegalityRegion` from
-  `./legality-rule`; the type is defined in `catalogue-candidate-types.ts`
-  (`shared`).
 
 The other compatibility re-exports (`catalogue-candidate.ts`, the
 `ListingReconciliationTraits` re-export on `source-adapters.ts`, the type
-re-exports on `legality-rule.ts`, `legality-effect-policy.ts`,
-`product-release-catalogue.ts`, `errata-rules-text.ts`,
+re-exports on `product-release-catalogue.ts`, `errata-rules-text.ts`,
 `reconciliation-publication.ts`, and `source-evidence-repository.ts`,
 `AdministrationProblem` on `ingestion.ts`, and `deterministicGzip` on
 `serialization.ts`) were removed by #98 once nothing imported them.
@@ -133,7 +127,7 @@ re-exports on `legality-rule.ts`, `legality-effect-policy.ts`,
   storage helpers remain used by ingestion, while consumer freshness is removed.
 - `reconciliation-profile.ts` and `reconciliation-payload.ts` sit in
   `shared` despite their names: the Game Profile contract is consumed by
-  `legality`, `curated`, `export`, and `reconciliation`, and the payload
+  `curated`, `export`, and `reconciliation`, and the payload
   chunking by every cluster that writes publication statements. They kept
   their names when they moved.
 - `curated-provenance.ts` sits in `shared` because
@@ -142,9 +136,7 @@ re-exports on `legality-rule.ts`, `legality-effect-policy.ts`,
 - `collection-recovery.ts` is collection Workflow recovery (Workflow Pause,
   Workflow Attempt), so it belongs to `source-evidence`, not to
   `backup-recovery`, which is Backup Attempt and Catalogue Recovery.
-- `official-legality-*.ts` and `official-source-scope.ts` are Official
-  Source parsers and scope registration, so they belong to `adapters`, not
-  `legality`.
+- `official-source-scope.ts` declares Official Source scope in `adapters`.
 
 ## Aggregate repositories (#103 expand, #104 migrate)
 
@@ -195,8 +187,7 @@ execution uses the same transaction path. Expanded batches above 900 statements
 are rejected before any write.
 
 The level-10 schema had 175 triggers and 98 tables. Level 11 has 103 triggers,
-all protecting immutable rows or fields, and 95 tables. The unconditional
-Legality Card-ID update prohibition remains an immutability guard. Export
+all protecting immutable rows or fields, and 95 tables. Export
 Deletion identity protection is retained separately from its former state guard.
 The two transition audit tables, short-search terms, and legacy lease columns
 are removed. Run progress and resume identity use retained run/attempt facts;
@@ -204,7 +195,7 @@ release transfer uses the prepared request, idempotency result, state, and lease
 Short search uses existing indexed chunks. Search repair now names its progress
 `repair_chunk_offset`; partial cursors restart safely during migration.
 
-Search FTS rows, archived query cleanup, Legality applicability, and retained
+Search FTS rows, archived query cleanup, and retained
 source evidence are explicit atomic repository effects. Tests remove the old
 trigger family before exercising real repository rejection and rollback paths.
 Bulk writers guard byte-bounded groups rather than adding one query per row.

@@ -1,8 +1,6 @@
 import type { RawAdapterDefinition } from "./adapter-contract";
 import {
-  attachRawSurfaceEvidenceV1,
   cardObservation,
-  completeObservation,
   decodeHtmlText,
   exactOnePieceSourceDate,
   firstLabelValue,
@@ -30,18 +28,13 @@ import {
   requiredText,
   stableValue,
 } from "./adapter-normalization";
-import type { OfficialErratumObservation, OfficialSourceObservation } from "./adapter-observations";
+import type { OfficialErratumObservation } from "./adapter-observations";
 import { AdapterParseFailure, adapterUrl } from "./adapter-parse-failure";
 import { parseProductDetail } from "./adapter-product-html";
 import { createBandaiAdapter } from "./bandai-adapter-runtime";
 import { officialArtworkFingerprint } from "./official-artwork-identity";
-import { officialLegalityRulesObservation } from "./official-legality-source-adapters";
 import { officialSourceAuthorities, officialUrl } from "./official-source-authority";
-import {
-  normalizedOnePieceRarity,
-  normalizeOnePieceCardPage,
-  onePieceDonCardObservation,
-} from "./one-piece-source-adapter";
+import { normalizedOnePieceRarity, normalizeOnePieceCardPage } from "./one-piece-source-adapter";
 
 const productRelease = productReleaseNormalizers({
   gameLabel: "One Piece",
@@ -58,12 +51,11 @@ const definition: RawAdapterDefinition = {
   reconciliationAreas: ["catalogue", "errata"],
   inheritDiscoveryRequestHeaders: false,
   listingReconciliation: {
-    releasesSurfaceCarriesLegality: true,
     groupsPublisherPages: false,
     strictListingIdentity: false,
     duplicateLocatorCompatibility: "semantic",
   },
-  requiredSurfaces: ["card-list", "products", "releases", "restrictions", "block-policy", "errata", "don-rules"],
+  requiredSurfaces: ["card-list", "products", "releases", "errata"],
   urls: {
     // /cardlist/ 302s to ./?series=<latest>; the discovery root pins the
     // live redirect target, and remaining Recordings are enumerated from
@@ -73,10 +65,7 @@ const definition: RawAdapterDefinition = {
     releases: "https://en.onepiece-cardgame.com/products/",
     // /rules/restriction/ 302s to the news publication and
     // /rules/block_icon/ is gone; the rules hub links these live pages.
-    restrictions: "https://en.onepiece-cardgame.com/news/restriction.html",
-    "block-policy": "https://en.onepiece-cardgame.com/topics/013.php",
     errata: "https://en.onepiece-cardgame.com/rules/errata_card/",
-    "don-rules": "https://en.onepiece-cardgame.com/rules/",
   },
   version: {
     adapterVersion: "one-piece-en@6",
@@ -85,13 +74,12 @@ const definition: RawAdapterDefinition = {
     catalogueComplete: false,
     completeDigimonCatalogue: false,
     optionalCardFields: false,
-    unresolvedLegalityScopes: true,
     liveShapes: false,
   },
 };
 export const onePieceAdapter = createBandaiAdapter(
   definition,
-  (_lineage, surface, raw) => normalizeOnePieceSurface(surface, raw, true, true),
+  (_lineage, surface, raw) => normalizeOnePieceSurface(surface, raw, true),
   {
     productDetail: (html, lineage, url) =>
       parseProductDetail(
@@ -104,13 +92,8 @@ export const onePieceAdapter = createBandaiAdapter(
         url,
       ),
     structuredObservations: (surface, document) =>
-      surface === "errata"
-        ? onePieceOfficialErrataObservations(document.entries)
-        : surface === "don-rules" && document.don_card !== undefined
-          ? [onePieceDonCardObservation(document.don_card)]
-          : [],
+      surface === "errata" ? onePieceOfficialErrataObservations(document.entries) : [],
     unmappedFields: onePieceUnmappedOptionalFields,
-    rulesHub: parseOnePieceDonRulesHubCoverageV1,
     inlineCardList: (html, url) => parseOnePieceBandaiCardListV1(html, url, true),
   },
 );
@@ -119,7 +102,6 @@ function normalizeOnePieceSurface(
   surface: string,
   raw: Record<string, unknown>,
   expandedOnePieceCatalogue = false,
-  unresolvedLegalityScopes = false,
 ): NormalizedSurfaceBody {
   if (surface === "card-list") {
     if (raw.page !== "card-list") {
@@ -156,36 +138,17 @@ function normalizeOnePieceSurface(
     return normalizedSurfaceBody(
       {
         ...normalizedPartitions(normalizePartitionEntries(raw.events, productRelease.releaseEntry), "release-event"),
-        entries: requiredArray(raw.release_timing_entries, "One Piece release-timing entries"),
       },
-      ["publication", "events", "release_timing_entries"],
+      ["publication", "events"],
     );
   }
-  if (!expandedOnePieceCatalogue) {
-    return normalizedSurfaceBody(normalizedPolicy(raw, `one-piece-${surface}`), [
-      "publication",
-      "revision",
-      "declared_record_count",
-      "partition",
-      "entries",
-    ]);
-  }
-  const policy = normalizedPolicy(raw, `one-piece-${surface}`, surface === "don-rules" ? ["don_card"] : []);
-  // The issue-58 contract accepts don-rules coverage without a DON!! payload
-  // fact; when the publisher does demonstrate one it is still normalized
-  // exactly. Earlier generations keep requiring the payload.
-  const hasDonCard = surface === "don-rules" && (!unresolvedLegalityScopes || raw.don_card !== undefined);
-  return normalizedSurfaceBody(
-    {
-      ...policy,
-      ...(hasDonCard
-        ? {
-            don_card: requiredRecord(raw.don_card, "One Piece DON!! rules Card"),
-          }
-        : {}),
-    },
-    ["publication", "revision", "declared_record_count", "partition", "entries", ...(hasDonCard ? ["don_card"] : [])],
-  );
+  return normalizedSurfaceBody(normalizedPolicy(raw, `one-piece-${surface}`), [
+    "publication",
+    "revision",
+    "declared_record_count",
+    "partition",
+    "entries",
+  ]);
 }
 
 function exactOnePieceLeaves(value: unknown): string[] {
@@ -453,7 +416,6 @@ function parseOnePieceBandaiCardListV1(
       [],
       new Map(),
       { revision: "captured-by-policy-surface", entries: [] },
-      { revision: "captured-by-policy-surface", entries: [] },
       "one-piece",
     );
     return !expandedOnePieceCatalogue || recording === null
@@ -650,79 +612,6 @@ function onePieceOfficialErrataObservations(value: unknown): OfficialErratumObse
       },
     };
   });
-}
-
-/**
- * Issue #58: the live One Piece /rules/ hub publishes rule PDFs and links
- * to the separately captured restriction, block-policy, and errata
- * publications, but no DON!! Card facts. The don-rules surface retains the
- * hub as exact coverage evidence: the page identity and its pinned policy
- * links are verified, every navigation link is retained explicitly, and a
- * structurally complete empty Legality Rule observation records that the
- * surface publishes zero rules. No comprehensive DON!! Printing claim is
- * made; if the hub starts publishing DON!! content the parse fails closed.
- */
-function parseOnePieceDonRulesHubCoverageV1(
-  html: string,
-  sourceLineage: string,
-  surface: string,
-  requestUrl: string,
-): OfficialSourceObservation[] {
-  const title = htmlText(html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1] ?? "");
-  if (title !== "RULES｜ONE PIECE CARD GAME - Official Web Site") {
-    throw new AdapterParseFailure("One Piece rules hub identity is unavailable.");
-  }
-  const visibleText = htmlText(
-    html.replace(/<script\b[\s\S]*?<\/script>/giu, " ").replace(/<style\b[\s\S]*?<\/style>/giu, " "),
-  );
-  if (/DON!!/u.test(visibleText) || /(?<![\p{L}\p{N}])DON(?![\p{L}\p{N}])/u.test(visibleText)) {
-    throw new AdapterParseFailure(
-      "One Piece rules hub publishes DON!! content this Source Adapter Version cannot represent.",
-    );
-  }
-  const navigationLinks = [...html.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/giu)].flatMap(
-    (match) => {
-      const label = htmlText(match[2]!);
-      if (label.length === 0) return [];
-      let resolved: string;
-      try {
-        resolved = adapterUrl(decodeHtmlText(match[1]!), requestUrl).href;
-      } catch {
-        throw new AdapterParseFailure("One Piece rules hub navigation link is invalid.");
-      }
-      return [{ label, url: resolved }];
-    },
-  );
-  for (const [pinnedSurface, pinnedUrl] of [
-    ["restrictions", "https://en.onepiece-cardgame.com/news/restriction.html"],
-    ["block-policy", "https://en.onepiece-cardgame.com/topics/013.php"],
-    ["errata", "https://en.onepiece-cardgame.com/rules/errata_card/"],
-  ] as const) {
-    if (!navigationLinks.some(({ url }) => url === pinnedUrl)) {
-      throw new AdapterParseFailure(`One Piece rules hub no longer links its pinned ${pinnedSurface} publication.`);
-    }
-  }
-  const retainedDocument = {
-    source_lineage: sourceLineage,
-    surface,
-    url: requestUrl,
-    document_title: title,
-    navigation_links: navigationLinks,
-  };
-  const consumedFields = ["source_lineage", "surface", "url", "document_title", "navigation_links"];
-  return [
-    {
-      completeness: completeObservation(navigationLinks.length, navigationLinks.length),
-      product_release_catalogue: {
-        products: [],
-        distribution_contexts: [],
-        relationships: [],
-      },
-    },
-    officialLegalityRulesObservation("one-piece", sourceLineage, { entries: [], declared_record_count: 0 }),
-  ].map((observation, index) =>
-    attachRawSurfaceEvidenceV1(observation, sourceLineage, surface, retainedDocument, index === 0, consumedFields),
-  );
 }
 
 function onePieceUnmappedOptionalFields(

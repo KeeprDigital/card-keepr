@@ -41,7 +41,6 @@ test("recovery keeps legacy backup manifests without representative document dig
   const provider = recoveryProvider({
     reconstructAndVerify: async (input) => {
       expect(Object.hasOwn(input.expected, "representative_product_digest")).toBe(false);
-      expect(Object.hasOwn(input.expected, "representative_legality_rule_digest")).toBe(false);
       return completeVerification;
     },
   });
@@ -83,10 +82,7 @@ test("recovery rejects invalid representative document digests present in a back
   const retained = await testEnv.BACKUPS.get(manifestKey);
   if (retained === null) throw new Error("Recovery manifest is unavailable.");
   const manifest = await retained.json<Record<string, unknown>>();
-  const invalidDigests = [
-    ["representative_product_digest", "A".repeat(64)],
-    ["representative_legality_rule_digest", "a".repeat(63)],
-  ] as const;
+  const invalidDigests = [["representative_product_digest", "A".repeat(64)]] as const;
   for (const [key, invalidDigest] of invalidDigests) {
     const mutated = structuredClone(manifest) as {
       expected_evidence: Record<string, unknown>;
@@ -895,7 +891,6 @@ async function retainVerifiedBackup(attemptId: string, bookmark: string, schemaM
         cards: 1,
         printings: 1,
         products: 1,
-        legality_rules: 1,
         api_documents: 1,
         search_chunks: 1,
         provenance: 0,
@@ -903,7 +898,6 @@ async function retainVerifiedBackup(attemptId: string, bookmark: string, schemaM
         representative_card_id: "card_recovery",
         representative_printing_id: "printing_recovery",
         representative_product_id: "product_recovery",
-        representative_legality_rule_id: "rule_recovery",
         representative_search_text: "recovery",
         representative_curated_revision_id: null,
         representative_curated_revision_digest: null,

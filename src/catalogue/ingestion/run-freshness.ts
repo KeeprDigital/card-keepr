@@ -86,20 +86,8 @@ function checkedFreshnessAreas(
         : []),
     ];
   });
-  const selectedGames = new Set(games);
-  return [
-    ...generalChecks,
-    ...capturedChecks.filter(
-      (
-        check,
-      ): check is Extract<
-        SourceFreshness,
-        {
-          area: "legality-rules";
-        }
-      > => check.area === "legality-rules" && selectedGames.has(check.game),
-    ),
-  ];
+
+  return generalChecks;
 }
 
 async function freshnessCoverage(

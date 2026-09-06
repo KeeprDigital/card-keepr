@@ -16,13 +16,11 @@ function gundamAccessoryLocale(lineage) {
 
 export function gundamAccessoryDetailResponse(lineage, url) {
   if (!lineage.startsWith("gundam-")) return null;
-  if (
-    url.pathname !== `${gundamAccessoryLocale(lineage)}${gundamAccessoryPath}`
-  ) return null;
+  if (url.pathname !== `${gundamAccessoryLocale(lineage)}${gundamAccessoryPath}`) return null;
   return new Response(
-    `<html><title>${gundamAccessoryTitle} | GUNDAM CARD GAME Official Website</title>${
-      officialBandaiNavigationHeader(lineage)
-    }<main>
+    `<html><title>${gundamAccessoryTitle} | GUNDAM CARD GAME Official Website</title>${officialBandaiNavigationHeader(
+      lineage,
+    )}<main>
       <h2 class="mvColTitle">${gundamAccessoryTitle}</h2>
       <p>A card case set that publishes no Cards.</p>
     </main></html>`,
@@ -40,10 +38,9 @@ function gundamProductListingLinks(lineage, requestUrl) {
     !lineage.startsWith("gundam-") ||
     requestUrl === undefined ||
     !/\/products\/list\.php$/u.test(requestUrl.pathname)
-  ) return "";
-  return `<main><a href="${gundamAccessoryLocale(lineage)}${
-    gundamAccessoryPath
-  }">${gundamAccessoryTitle}</a></main>`;
+  )
+    return "";
+  return `<main><a href="${gundamAccessoryLocale(lineage)}${gundamAccessoryPath}">${gundamAccessoryTitle}</a></main>`;
 }
 
 export function digimonPartitionResponse(url, marker) {
@@ -51,7 +48,8 @@ export function digimonPartitionResponse(url, marker) {
     url.hostname !== "world.digimoncard.com" ||
     url.pathname !== "/cards/index.php" ||
     !url.searchParams.has("category")
-  ) return null;
+  )
+    return null;
   if (!marker?.startsWith("card-keepr-acceptance-digimon/complete")) {
     return null;
   }
@@ -61,26 +59,15 @@ export function digimonPartitionResponse(url, marker) {
     url.searchParams.get("colour") === "blue" &&
     marker?.startsWith("card-keepr-acceptance-digimon/complete")
   ) {
-    const leafMarker = marker?.startsWith(
-        "card-keepr-acceptance-digimon/complete"
-      )
+    const leafMarker = marker?.startsWith("card-keepr-acceptance-digimon/complete")
       ? marker
       : "card-keepr-acceptance-digimon/complete";
-    return new Response(
-      officialBandaiDataset(
-        "digimon-en",
-        leafMarker,
-        false,
-        url,
-        "card-list",
-      ),
-      {
-        headers: {
-          "content-type": "text/html; charset=utf-8",
-          etag: `"digimon-complete-leaf-${url.searchParams.toString()}"`,
-        },
+    return new Response(officialBandaiDataset("digimon-en", leafMarker, false, url, "card-list"), {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        etag: `"digimon-complete-leaf-${url.searchParams.toString()}"`,
       },
-    );
+    });
   }
   return new Response(
     `<html><title>BANDAI DIGIMON CARD LIST</title>
@@ -94,7 +81,6 @@ export function digimonPartitionResponse(url, marker) {
     },
   );
 }
-
 
 const officialLineageNavigationLinks = {
   "one-piece-en": [
@@ -126,16 +112,11 @@ const officialLineageNavigationLinks = {
   ],
 };
 
-export function officialBandaiNavigationHeader(
-  lineage,
-  { omitLast = false } = {},
-) {
+export function officialBandaiNavigationHeader(lineage, { omitLast = false } = {}) {
   const links = omitLast
     ? officialLineageNavigationLinks[lineage].slice(0, -1)
     : officialLineageNavigationLinks[lineage];
-  return `<header><nav>${links.map(([label, href]) =>
-    `<a href="${href}">${label}</a>`
-  ).join("")}</nav></header>`;
+  return `<header><nav>${links.map(([label, href]) => `<a href="${href}">${label}</a>`).join("")}</nav></header>`;
 }
 
 export function officialBandaiDataset(
@@ -145,122 +126,92 @@ export function officialBandaiDataset(
   requestUrl,
   requestSurface = null,
 ) {
-  // The live Digimon adapter (digimon-en@7) pins its current and
-  // historical restriction publications to one live URL, so that page must
-  // retain identical bytes whichever surface asked for it — it therefore
-  // publishes no surface-specific payload. The ?view=history variant is
-  // retained as a distinct publication for tests that need separate bytes.
-  const sharedRestrictionPage = lineage === "digimon-en" &&
-    requestUrl?.pathname === "/rule/restriction_card/" &&
-    !requestUrl.searchParams.has("view");
-  const surface = sharedRestrictionPage
-    ? null
-    : officialFixtureSurface(lineage, requestUrl, requestSurface);
+  const surface = officialFixtureSurface(lineage, requestUrl, requestSurface);
   const publication = {
     "@context": "https://schema.org",
     "@type": "Dataset",
     publisher: { "@type": "Organization", name: "Bandai" },
-    hasPart: surface === null ? [] : [surface].map((surface) => {
-      const payload = officialRawSurfacePayload(`/${lineage}/${surface}`);
-      if (lineage === "one-piece-en" && surface === "card-list") {
-        payload.card_pages.forEach((card) => {
-          delete card.artwork_fingerprint;
-          delete card.printed_fields_digest;
-        });
-      }
-      if (lineage === "one-piece-en" && surface === "don-rules") {
-        payload.don_card = {
-          functional_designation: "DON!!",
-          name: "DON!! Card",
-          Category: "DON!! Card",
-          Effect: "A rules-level resource Card.",
-        };
-      }
-      applyDigimonCompleteFixture(
-        payload,
-        lineage,
-        surface,
-        parserSignal,
-        requestUrl,
-      );
-      applyGundamCompleteFixture(
-        payload,
-        lineage,
-        surface,
-        requestUrl,
-      );
-      if (
-        lineage === "one-piece-en" &&
-        codeLessProduct
-      ) {
-        makeOnePieceProductCodeLess(surface, payload);
-      }
-      if (surface === "card-list") {
-        if (parserSignal?.endsWith("/cap")) {
-          payload.page_info.cap_signal = "Too many search results";
-        }
-        if (parserSignal?.endsWith("/pagination")) {
-          payload.page_info.partitions[0].pages = 2;
-          payload.page_info.partitions[0].has_next = true;
-        }
-        if (parserSignal?.endsWith("/nullability")) {
-          payload.card_pages[0].Cost = "1";
-        }
-      }
-      return {
-        "@type": "Dataset",
-        identifier: `${lineage}:${surface}`,
-        payload,
-      };
-    }),
+    hasPart:
+      surface === null
+        ? []
+        : [surface].map((surface) => {
+            const payload = officialRawSurfacePayload(`/${lineage}/${surface}`);
+            if (lineage === "one-piece-en" && surface === "card-list") {
+              payload.card_pages.forEach((card) => {
+                delete card.artwork_fingerprint;
+                delete card.printed_fields_digest;
+              });
+            }
+            if (lineage === "one-piece-en" && surface === "don-rules") {
+              payload.don_card = {
+                functional_designation: "DON!!",
+                name: "DON!! Card",
+                Category: "DON!! Card",
+                Effect: "A rules-level resource Card.",
+              };
+            }
+            applyDigimonCompleteFixture(payload, lineage, surface, parserSignal, requestUrl);
+            applyGundamCompleteFixture(payload, lineage, surface, requestUrl);
+            if (lineage === "one-piece-en" && codeLessProduct) {
+              makeOnePieceProductCodeLess(surface, payload);
+            }
+            if (surface === "card-list") {
+              if (parserSignal?.endsWith("/cap")) {
+                payload.page_info.cap_signal = "Too many search results";
+              }
+              if (parserSignal?.endsWith("/pagination")) {
+                payload.page_info.partitions[0].pages = 2;
+                payload.page_info.partitions[0].has_next = true;
+              }
+              if (parserSignal?.endsWith("/nullability")) {
+                payload.card_pages[0].Cost = "1";
+              }
+            }
+            return {
+              "@type": "Dataset",
+              identifier: `${lineage}:${surface}`,
+              payload,
+            };
+          }),
   };
-  const supportedGame = lineage === "one-piece-en"
-    ? "one-piece"
-    : lineage === "fusion-world-en"
-      ? "fusion-world"
-      : lineage === "digimon-en"
-        ? "digimon"
-        : "gundam";
-  return `<html><title>BANDAI ${supportedGame} CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title>${
-    officialBandaiNavigationHeader(lineage)
-  }${officialBandaiStageNavigation(lineage, requestUrl)}${
-    gundamProductListingLinks(lineage, requestUrl)
-  }${
-    digimonCompleteDiscoveryFacets(lineage, surface, parserSignal)
-  }${
-    gundamCompleteDiscoveryFacets(lineage, surface, requestUrl)
-  }${
-    publication.hasPart.map((part) => officialPublisherPayloadScript(
-      lineage,
-      part.identifier.slice(`${lineage}:`.length),
-      part.payload,
-    )).join("")
-  }${
-    sharedRestrictionPage
-      ? `<main><p>0 records</p><article data-publication-empty="true">No published entries.</article></main>`
-      : ""
-  }</html>`;
+  const supportedGame =
+    lineage === "one-piece-en"
+      ? "one-piece"
+      : lineage === "fusion-world-en"
+        ? "fusion-world"
+        : lineage === "digimon-en"
+          ? "digimon"
+          : "gundam";
+  return `<html><title>BANDAI ${supportedGame} CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title>${officialBandaiNavigationHeader(
+    lineage,
+  )}${officialBandaiStageNavigation(lineage, requestUrl)}${gundamProductListingLinks(
+    lineage,
+    requestUrl,
+  )}${digimonCompleteDiscoveryFacets(lineage, surface, parserSignal)}${gundamCompleteDiscoveryFacets(
+    lineage,
+    surface,
+    requestUrl,
+  )}${publication.hasPart
+    .map((part) => officialPublisherPayloadScript(lineage, part.identifier.slice(`${lineage}:`.length), part.payload))
+    .join("")}</html>`;
 }
 
-function applyGundamCompleteFixture(
-  payload,
-  lineage,
-  surface,
-  requestUrl,
-) {
+function applyGundamCompleteFixture(payload, lineage, surface, requestUrl) {
   if (!lineage.startsWith("gundam-") || surface !== "packages") return;
   payload.package_options = [{ value: "all", label: "All packages" }];
   if (!requestUrl.searchParams.has("package")) {
     payload.result = {
       cap_signal: null,
-      partitions: [{
-        bucket: "package=all",
-        page: 1,
-        pages: 1,
-        total: 0,
-        has_next: false,
-        entries: [],
-      }],
+      partitions: [
+        {
+          bucket: "package=all",
+          page: 1,
+          pages: 1,
+          total: 0,
+          has_next: false,
+          entries: [],
+        },
+      ],
     };
     payload.card_details = [];
     payload.products = [];
@@ -286,13 +237,7 @@ function gundamCompleteDiscoveryFacets(lineage, surface, requestUrl) {
   </form>`;
 }
 
-function applyDigimonCompleteFixture(
-  payload,
-  lineage,
-  surface,
-  marker,
-  requestUrl,
-) {
+function applyDigimonCompleteFixture(payload, lineage, surface, marker, requestUrl) {
   if (lineage !== "digimon-en") return;
   if (surface === "card-list") {
     for (const detail of payload.card_popups ?? []) {
@@ -303,21 +248,24 @@ function applyDigimonCompleteFixture(
       }
     }
   }
-  const exactLeaf = requestUrl.searchParams.has("category") &&
+  const exactLeaf =
+    requestUrl.searchParams.has("category") &&
     requestUrl.searchParams.has("cardcategory") &&
     requestUrl.searchParams.has("colour");
   if (!marker?.startsWith("card-keepr-acceptance-digimon/complete")) {
     if (surface === "card-list" && !exactLeaf) {
       payload.result = {
         cap_signal: null,
-        partitions: [{
-          bucket: "category=all&cardcategory=digimon&colour=blue",
-          page: 1,
-          pages: 1,
-          total: 0,
-          has_next: false,
-          entries: [],
-        }],
+        partitions: [
+          {
+            bucket: "category=all&cardcategory=digimon&colour=blue",
+            page: 1,
+            pages: 1,
+            total: 0,
+            has_next: false,
+            entries: [],
+          },
+        ],
       };
       payload.card_popups = [];
       payload.products = [];
@@ -325,32 +273,24 @@ function applyDigimonCompleteFixture(
     }
     return;
   }
-  if (
-    surface === "restrictions-current" &&
-    marker.endsWith("-unrepresentable-rules")
-  ) {
-    payload.future_rule_semantics = {
-      directive: "A player chooses a future publisher-defined action.",
-    };
-    return;
-  }
   if (surface === "errata") {
     if (marker.endsWith("-no-errata")) return;
     payload.declared_record_count = 1;
     payload.partition.total = 1;
-    payload.entries = [{
-      card_number: "BT99-001",
-      published_on: "2026-07-01",
-      effective_from: "2026-07-01",
-      observed_printed_rules_text: "Synthetic main effect.",
-      corrected_rules_text: null,
-      official_wording: "Remove the printed effect from this Card.",
-      applies_to_parallel_printings: true,
-      source_fragment: "#BT99-001",
-      display_name: "BT99-001 Erratum",
-      image_url:
-        "https://world.digimoncard.com/images/BT99-001-standard.png",
-    }];
+    payload.entries = [
+      {
+        card_number: "BT99-001",
+        published_on: "2026-07-01",
+        effective_from: "2026-07-01",
+        observed_printed_rules_text: "Synthetic main effect.",
+        corrected_rules_text: null,
+        official_wording: "Remove the printed effect from this Card.",
+        applies_to_parallel_printings: true,
+        source_fragment: "#BT99-001",
+        display_name: "BT99-001 Erratum",
+        image_url: "https://world.digimoncard.com/images/BT99-001-standard.png",
+      },
+    ];
     return;
   }
   if (surface !== "card-list") return;
@@ -358,22 +298,22 @@ function applyDigimonCompleteFixture(
     if (marker.endsWith("-malicious-root")) return;
     payload.version_options = [{ value: "booster", label: "Booster" }];
     payload.filters = {
-      category: marker.endsWith("-missing-category")
-        ? ["booster", "starter"]
-        : ["booster"],
+      category: marker.endsWith("-missing-category") ? ["booster", "starter"] : ["booster"],
       cardcategory: ["digimon"],
       colour: ["blue"],
     };
     payload.result = {
       cap_signal: null,
-      partitions: [{
-        bucket: "category=booster&cardcategory=digimon&colour=blue",
-        page: 1,
-        pages: 1,
-        total: 0,
-        has_next: false,
-        entries: [],
-      }],
+      partitions: [
+        {
+          bucket: "category=booster&cardcategory=digimon&colour=blue",
+          page: 1,
+          pages: 1,
+          total: 0,
+          has_next: false,
+          entries: [],
+        },
+      ],
     };
     payload.card_popups = [];
     payload.products = [];
@@ -394,13 +334,15 @@ function applyDigimonCompleteFixture(
     Form: "Mega",
     Attribute: "Vaccine",
     Type: ["Synthetic Dragon"],
-    "Digivolution Cost": [{
-      index: 1,
-      from_level: 5,
-      colours: ["blue"],
-      cost: 4,
-      raw_condition: "Blue Lv.5: 4",
-    }],
+    "Digivolution Cost": [
+      {
+        index: 1,
+        from_level: 5,
+        colours: ["blue"],
+        cost: 4,
+        raw_condition: "Blue Lv.5: 4",
+      },
+    ],
     text_sections: [
       { kind: "effect", text: "Synthetic main effect." },
       {
@@ -423,11 +365,9 @@ function applyDigimonCompleteFixture(
     Effect: "Synthetic main effect.",
     printed_rules: "Synthetic printed rules.",
     variant: "base",
-    image_url:
-      "https://world.digimoncard.com/images/BT99-001-standard.png",
+    image_url: "https://world.digimoncard.com/images/BT99-001-standard.png",
     fuzzy_product_labels: ["Possible future Product name"],
-    "[Synthetic Future Mechanic]":
-      "Retain this future mechanic verbatim",
+    "[Synthetic Future Mechanic]": "Retain this future mechanic verbatim",
   });
   base.printing = {
     rarity: "R",
@@ -438,8 +378,7 @@ function applyDigimonCompleteFixture(
     popup_id: "/cards/BT99-001_p1",
     name: "Synthetic Alternate-art Presentation",
     variant: "alternate-art-1",
-    image_url:
-      "https://world.digimoncard.com/images/BT99-001-alternate-1.png",
+    image_url: "https://world.digimoncard.com/images/BT99-001-alternate-1.png",
   });
   alternate.Effect = "Corrected synthetic main effect.";
   alternate.text_sections[0] = {
@@ -450,40 +389,32 @@ function applyDigimonCompleteFixture(
   if (marker.endsWith("-canonical-conflict")) alternate.DP = 11000;
   payload.version_options = [{ value: "booster", label: "Booster" }];
   payload.filters = {
-    category: marker.endsWith("-missing-category")
-      ? ["booster", "starter"]
-      : ["booster"],
+    category: marker.endsWith("-missing-category") ? ["booster", "starter"] : ["booster"],
     cardcategory: ["digimon"],
     colour: ["blue"],
   };
   payload.result = {
     cap_signal: null,
-    partitions: [{
-      bucket: "category=booster&cardcategory=digimon&colour=blue",
-      page: 1,
-      pages: 1,
-      total: 2,
-      has_next: false,
-      entries: [
-        { number: "BT99-001", detail: "/cards/BT99-001" },
-        { number: "BT99-001", detail: "/cards/BT99-001_p1" },
-      ],
-    }],
+    partitions: [
+      {
+        bucket: "category=booster&cardcategory=digimon&colour=blue",
+        page: 1,
+        pages: 1,
+        total: 2,
+        has_next: false,
+        entries: [
+          { number: "BT99-001", detail: "/cards/BT99-001" },
+          { number: "BT99-001", detail: "/cards/BT99-001_p1" },
+        ],
+      },
+    ],
   };
   payload.card_popups = [base, alternate];
 }
 
 function digimonCompleteDiscoveryFacets(lineage, surface, marker) {
-  if (
-    lineage !== "digimon-en" ||
-    surface !== "card-list" ||
-    marker === null
-  ) return "";
-  const category = marker.startsWith(
-      "card-keepr-acceptance-digimon/complete"
-    )
-    ? "booster"
-    : "all";
+  if (lineage !== "digimon-en" || surface !== "card-list" || marker === null) return "";
+  const category = marker.startsWith("card-keepr-acceptance-digimon/complete") ? "booster" : "all";
   return `<form aria-label="Digimon Card List filters">
     <select name="category"><option value="${category}">${category}</option></select>
     <select name="cardcategory"><option value="digimon">Digimon</option></select>
@@ -507,56 +438,31 @@ function officialFixtureSurface(lineage, requestUrl, requestSurface) {
   }
   if (lineage === "one-piece-en") {
     if (requestUrl.pathname === "/cardlist/") return "card-list";
-    if (requestUrl.pathname === "/rules/restriction/") return "restrictions";
-    if (requestUrl.pathname === "/news/restriction.html") return "restrictions";
-    if (requestUrl.pathname === "/rules/block_icon/") return "block-policy";
-    if (requestUrl.pathname === "/topics/013.php") return "block-policy";
     if (requestUrl.pathname === "/rules/errata_card/") return "errata";
-    if (requestUrl.pathname === "/rules/") return "don-rules";
   } else if (lineage === "fusion-world-en") {
     if (requestUrl.pathname === "/fw/en/cardlist/") return "card-search";
-    if (requestUrl.pathname === "/fw/en/rules/banned-limited-cards/") {
-      return requestUrl.searchParams.get("view") === "history"
-        ? "legality-history"
-        : "legality-current";
-    }
     if (requestUrl.pathname === "/fw/en/rules/errata-card/") return "errata";
   } else if (lineage === "digimon-en") {
     if (requestUrl.pathname === "/cards/index.php") return "card-list";
-    if (requestUrl.pathname === "/rule/restriction_card/") {
-      return requestUrl.searchParams.get("view") === "history"
-        ? "restrictions-history"
-        : "restrictions-current";
-    }
     if (requestUrl.pathname === "/rule/errata_card/") return "errata";
-  } else if (lineage.startsWith("gundam-")) {
-    if (/\/cards\/index\.php$/u.test(requestUrl.pathname)) return "packages";
-    if (/\/rules\/$/u.test(requestUrl.pathname)) return "legality";
-    // Issue #58: the @7 generation captures the linked current
-    // banned/restricted publication directly as its legality surface.
-    if (/\/news\/01_279\.html$/u.test(requestUrl.pathname)) return "legality";
-    if (
-      /\/news\/$/u.test(requestUrl.pathname) &&
-      (requestUrl.searchParams.get("subcategory") === "rules" ||
-        requestUrl.searchParams.get("subcategory") === "news")
-    ) return "errata";
-  }
-  return null;
+  } else return null;
 }
 
 export function officialPublisherPayloadScript(lineage, surface, payload) {
-  const prefix = lineage === "one-piece-en"
-    ? "one-piece-card-game"
-    : lineage === "fusion-world-en"
-      ? "fusion-world-card-game"
-      : lineage === "digimon-en"
-        ? "digimon-card-game"
-        : lineage === "gundam-en-asia"
-          ? "gundam-card-game-asia"
-          : "gundam-card-game-us";
-  return `<script type="application/json" id="${prefix}-${surface}-data">${
-    JSON.stringify(payload).replaceAll("<", "\\u003c")
-  }</script>`;
+  const prefix =
+    lineage === "one-piece-en"
+      ? "one-piece-card-game"
+      : lineage === "fusion-world-en"
+        ? "fusion-world-card-game"
+        : lineage === "digimon-en"
+          ? "digimon-card-game"
+          : lineage === "gundam-en-asia"
+            ? "gundam-card-game-asia"
+            : "gundam-card-game-us";
+  return `<script type="application/json" id="${prefix}-${surface}-data">${JSON.stringify(payload).replaceAll(
+    "<",
+    "\\u003c",
+  )}</script>`;
 }
 
 function officialBandaiStageNavigation(lineage, requestUrl) {
@@ -875,22 +781,14 @@ const rawDiscoveryKeys = {
 };
 
 export function officialRawSurfacePayload(pathname) {
-  const match = pathname.match(
-    /^\/(one-piece-en|fusion-world-en|digimon-en|gundam-en-asia|gundam-en-us)\/([^/]+)$/u,
-  );
+  const match = pathname.match(/^\/(one-piece-en|fusion-world-en|digimon-en|gundam-en-asia|gundam-en-us)\/([^/]+)$/u);
   if (match === null) return null;
   const [, lineage, surface] = match;
   const definitionPath = rawLineageDefinitions[lineage];
   const keys = rawDiscoveryKeys[lineage];
-  const document = officialDiscoveryDocument(
-    officialDiscoveryDefinitions[definitionPath],
-  );
-  const products = document[keys.products].map((product) =>
-    upstreamProduct(lineage, product)
-  );
-  const releases = document[keys.releases].map((release, index) =>
-    upstreamRelease(lineage, release, index)
-  );
+  const document = officialDiscoveryDocument(officialDiscoveryDefinitions[definitionPath]);
+  const products = document[keys.products].map((product) => upstreamProduct(lineage, product));
+  const releases = document[keys.releases].map((release, index) => upstreamRelease(lineage, release, index));
   if (["card-list", "card-search", "packages"].includes(surface)) {
     const discoveryBucket =
       lineage === "one-piece-en"
@@ -902,27 +800,30 @@ export function officialRawSurfacePayload(pathname) {
             : "package=all";
     const partitionResult = {
       cap_signal: null,
-      partitions: [{
-        bucket: discoveryBucket,
-        page: 1,
-        pages: 1,
-        total: document[keys.listing].entries.length,
-        has_next: false,
-        entries: document[keys.listing].entries,
-      }, ...(lineage === "fusion-world-en"
-        ? [{
-            bucket: "card_type=battle&colour=red&cost=1",
-            page: 1,
-            pages: 1,
-            total: 0,
-            has_next: false,
-            entries: [],
-          }]
-        : [])],
+      partitions: [
+        {
+          bucket: discoveryBucket,
+          page: 1,
+          pages: 1,
+          total: document[keys.listing].entries.length,
+          has_next: false,
+          entries: document[keys.listing].entries,
+        },
+        ...(lineage === "fusion-world-en"
+          ? [
+              {
+                bucket: "card_type=battle&colour=red&cost=1",
+                page: 1,
+                pages: 1,
+                total: 0,
+                has_next: false,
+                entries: [],
+              },
+            ]
+          : []),
+      ],
     };
-    const details = document[keys.details].map((detail) =>
-      upstreamDetail(lineage, detail)
-    );
+    const details = document[keys.details].map((detail) => upstreamDetail(lineage, detail));
     if (lineage === "one-piece-en") {
       return {
         page: "card-list",
@@ -979,14 +880,16 @@ export function officialRawSurfacePayload(pathname) {
   if (surface === "products") {
     const result = {
       cap_signal: null,
-      partitions: [{
-        bucket: "all-products",
-        page: 1,
-        pages: 1,
-        total: document[keys.products].length,
-        has_next: false,
-        entries: products,
-      }],
+      partitions: [
+        {
+          bucket: "all-products",
+          page: 1,
+          pages: 1,
+          total: document[keys.products].length,
+          has_next: false,
+          entries: products,
+        },
+      ],
     };
     if (lineage === "one-piece-en") {
       return {
@@ -1030,10 +933,7 @@ export function officialRawSurfacePayload(pathname) {
   }
   if (surface === "releases") {
     const products = new Map(
-      document[keys.products].map((product) => [
-        product.code,
-        upstreamProduct(lineage, product),
-      ]),
+      document[keys.products].map((product) => [product.code, upstreamProduct(lineage, product)]),
     );
     const entries = document[keys.releases].map((release, index) => ({
       product: products.get(release.code),
@@ -1041,20 +941,21 @@ export function officialRawSurfacePayload(pathname) {
     }));
     const events = {
       cap_signal: null,
-      partitions: [{
-        bucket: "all-releases",
-        page: 1,
-        pages: 1,
-        total: entries.length,
-        has_next: false,
-        entries,
-      }],
+      partitions: [
+        {
+          bucket: "all-releases",
+          page: 1,
+          pages: 1,
+          total: entries.length,
+          has_next: false,
+          entries,
+        },
+      ],
     };
     if (lineage === "one-piece-en") {
       return {
         publication: "release-schedule",
         events,
-        release_timing_entries: [],
       };
     }
     if (lineage === "fusion-world-en") {
@@ -1071,9 +972,7 @@ export function officialRawSurfacePayload(pathname) {
   }
   return {
     publication: policyPublication(lineage, surface),
-    ...(lineage.startsWith("gundam-")
-      ? { locale: lineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US" }
-      : {}),
+    ...(lineage.startsWith("gundam-") ? { locale: lineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US" } : {}),
     revision: "2026-07",
     declared_record_count: 0,
     partition: { page: 1, pages: 1, total: 0, has_next: false },
@@ -1083,15 +982,9 @@ export function officialRawSurfacePayload(pathname) {
 
 function upstreamProduct(lineage, product) {
   const rest = {
-    ...(product.campaign_note === undefined
-      ? {}
-      : { campaign_note: product.campaign_note }),
-    ...(product.distribution === undefined
-      ? {}
-      : { distribution: product.distribution }),
-    ...(product.vendor_metadata === undefined
-      ? {}
-      : { vendor_metadata: product.vendor_metadata }),
+    ...(product.campaign_note === undefined ? {} : { campaign_note: product.campaign_note }),
+    ...(product.distribution === undefined ? {} : { distribution: product.distribution }),
+    ...(product.vendor_metadata === undefined ? {} : { vendor_metadata: product.vendor_metadata }),
   };
   if (lineage === "one-piece-en") {
     return {
@@ -1122,8 +1015,7 @@ function upstreamProduct(lineage, product) {
 }
 
 function upstreamRelease(lineage, release, index) {
-  const eventId =
-    release.event_key ?? `${release.code}-${release.region}-${index + 1}`;
+  const eventId = release.event_key ?? `${release.code}-${release.region}-${index + 1}`;
   const rest = {
     region: release.region,
     precision: release.precision,
@@ -1159,9 +1051,7 @@ function upstreamDetail(lineage, detail) {
   const shared = {
     profile: detail.profile,
     product_codes: detail.product_codes,
-    ...(detail.product_names === undefined
-      ? {}
-      : { product_names: detail.product_names }),
+    ...(detail.product_names === undefined ? {} : { product_names: detail.product_names }),
     distribution: detail.distribution,
     ...(detail.printing === undefined
       ? {}
@@ -1171,8 +1061,7 @@ function upstreamDetail(lineage, detail) {
             ...(lineage === "one-piece-en"
               ? {}
               : {
-                  normalized_rarity:
-                    detail.printing.normalizedRarity ?? null,
+                  normalized_rarity: detail.printing.normalizedRarity ?? null,
                 }),
             attributes: detail.printing.attributes,
           },
@@ -1218,9 +1107,7 @@ function upstreamDetail(lineage, detail) {
       special_traits: attributes.traits,
       skills: attributes.skills,
       skills_text: detail.rules,
-      ...(attributes.leader_faces === undefined
-        ? {}
-        : { leader_faces: attributes.leader_faces }),
+      ...(attributes.leader_faces === undefined ? {} : { leader_faces: attributes.leader_faces }),
       image_urls: leader
         ? [
             { role: "front", url: image },
@@ -1231,9 +1118,7 @@ function upstreamDetail(lineage, detail) {
           ]
         : [{ role: "front", url: image }],
       product_codes: detail.product_codes,
-      ...(detail.product_names === undefined
-        ? {}
-        : { product_names: detail.product_names }),
+      ...(detail.product_names === undefined ? {} : { product_names: detail.product_names }),
       distribution: detail.distribution,
       ...(detail.printing === undefined
         ? {}
@@ -1308,9 +1193,7 @@ function officialImageUrl(lineage, original) {
 }
 
 export function onePixelPng() {
-  const binary = atob(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-  );
+  const binary = atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
@@ -1349,15 +1232,17 @@ export function officialDiscoveryDocument(input) {
   const releases = [
     ...(input.region === null
       ? []
-      : [{
-          code: input.productCode,
-          region: input.region,
-          precision: "day",
-          date: "2026-12-01",
-          status: "released",
-        }]),
+      : [
+          {
+            code: input.productCode,
+            region: input.region,
+            precision: "day",
+            date: "2026-12-01",
+            status: "released",
+          },
+        ]),
     ...input.extraProducts.flatMap((item) =>
-      item.release === undefined ? [] : [{ code: item.code, ...item.release }]
+      item.release === undefined ? [] : [{ code: item.code, ...item.release }],
     ),
   ];
   const detail = {
@@ -1377,33 +1262,25 @@ export function officialDiscoveryDocument(input) {
         value: input.productCode,
       },
     },
-    image:
-      `https://synthetic-source.invalid/images/${input.number}.png`,
+    image: `https://synthetic-source.invalid/images/${input.number}.png`,
     ...(input.printing === null
       ? {}
       : {
           printing: input.printing,
           printed_rules: "Official printed rules",
           variant: "base",
-          artwork_fingerprint: `official-artwork:${
-            JSON.stringify({
-              official_card_identity:
-                input.number.normalize("NFC").trim().toUpperCase(),
-              roles:
-                input.format === "fusion-world" &&
-                  input.attributes.card_type === "leader"
-                  ? ["back", "front"]
-                  : ["front"],
-              artwork_id:
-                input.artworkId === undefined
-                  ? `${input.game}-${input.number}-standard`
-                    .normalize("NFC")
-                    .toLocaleLowerCase()
-                  : input.artworkId,
-            })
-          }`,
-          printed_fields_digest:
-            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          artwork_fingerprint: `official-artwork:${JSON.stringify({
+            official_card_identity: input.number.normalize("NFC").trim().toUpperCase(),
+            roles:
+              input.format === "fusion-world" && input.attributes.card_type === "leader"
+                ? ["back", "front"]
+                : ["front"],
+            artwork_id:
+              input.artworkId === undefined
+                ? `${input.game}-${input.number}-standard`.normalize("NFC").toLocaleLowerCase()
+                : input.artworkId,
+          })}`,
+          printed_fields_digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         }),
   };
   const listing = {
@@ -1419,7 +1296,6 @@ export function officialDiscoveryDocument(input) {
     details: [detail],
     products,
     releases,
-    legality: { revision: "2026-07", entries: [] },
     errata: { revision: "2026-07", entries: [] },
   };
   if (input.format === "one-piece") {
@@ -1429,7 +1305,6 @@ export function officialDiscoveryDocument(input) {
       card_pages: [detail],
       product_catalog: products,
       release_schedule: releases,
-      rules_restrictions: shared.legality,
       correction_notices: shared.errata,
     };
   }
@@ -1440,7 +1315,6 @@ export function officialDiscoveryDocument(input) {
       detail_pages: [detail],
       products,
       releases,
-      banned_limited: shared.legality,
       errata_notices: shared.errata,
     };
   }
@@ -1451,7 +1325,6 @@ export function officialDiscoveryDocument(input) {
       card_details: [detail],
       product_index: products,
       release_calendar: releases,
-      restricted_cards: shared.legality,
       errata_notices: shared.errata,
     };
   }
@@ -1461,7 +1334,6 @@ export function officialDiscoveryDocument(input) {
     card_details: [detail],
     product_list: products,
     release_list: releases,
-    regulation: shared.legality,
     errata: shared.errata,
   };
 }

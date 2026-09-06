@@ -1,24 +1,10 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import {
-  adapterReconciliationAreas,
-  assertAdapterBinding,
-  installedSourceAdapterRegistrations,
-  requiredActiveSourceAdapter,
-  requiredSourceAdapter,
-  sourceAdapterRegistrations,
-} from "../../src/catalogue/adapters/source-adapters.ts";
-import syntheticOfficialSource, {
-  officialBandaiNavigationHeader,
-  officialDiscoveryDefinitions,
-  officialDiscoveryDocument,
-  officialPublisherPayloadScript,
-  officialRawSurfacePayload,
-} from "../../acceptance/fixtures/synthetic-official-source.mjs";
+import { requiredSourceAdapter } from "../../src/catalogue/adapters/source-adapters.ts";
+import { officialPublisherPayloadScript } from "../../acceptance/fixtures/synthetic-official-source.mjs";
 import {
   retainedOfficialSourceFixture,
-  retainedLegalityRules,
   restructuredStageDigest,
   retainedRestructuredParse,
   retainedRestructuredRequests,
@@ -86,58 +72,6 @@ test("the live Gundam adapters close package leaves by full locator", () => {
       () => parseRegisteredSurface(current, "packages", unknownRarity),
       /Gundam rarity.*Experimental Rare/iu,
     );
-  }
-});
-
-test("issue-58 Gundam adapters parse the retained compound policy into explicit unresolved rules", () => {
-  const openPredicateReason =
-    'The published description "a Unit card that is Lv.2 with cost 1, 2 AP, and 2 HP, and without effects" includes future printings; its complete matching-card scope and effective interval are not stated.';
-  for (const descriptor of [
-    {
-      adapter: "gundam-en-asia@7",
-      slug: "gundam-en-asia-policy-detail",
-      lineage: "gundam-en-asia",
-      region: "EN-ASIA",
-    },
-    {
-      adapter: "gundam-en-us@7",
-      slug: "gundam-en-us-policy-detail",
-      lineage: "gundam-en-us",
-      region: "EN-US",
-    },
-  ]) {
-    const adapter = requiredSourceAdapter(descriptor.adapter);
-    assert.equal(
-      adapter.requestUrlForSurface("legality"),
-      retainedOfficialSourceFixture(descriptor.slug).metadata.source_url,
-    );
-    const rules = retainedLegalityRules(adapter, "legality", descriptor.slug, {
-      requestId: `${descriptor.lineage}:legality`,
-    });
-    assert.equal(rules.length, 5);
-    assert.ok(
-      rules.every(
-        (rule) =>
-          rule.region === descriptor.region &&
-          rule.effective_from === null &&
-          rule.effect.type === "unresolved" &&
-          rule.unresolved_scope.dimensions.includes("effective_interval"),
-      ),
-    );
-    assert.deepEqual(
-      rules.slice(0, 4).map((rule) => rule.card_numbers),
-      [["GD01-020"], ["ST02-016"], ["ST01-010", "ST05-010"], ["GD01-008", "GD05-015"]],
-    );
-    const openPredicate = rules[4];
-    assert.equal(openPredicate.id, "01_279-current-open-predicate");
-    assert.deepEqual(openPredicate.unresolved_scope, {
-      dimensions: ["effective_interval", "target_scope"],
-    });
-    assert.equal(openPredicate.card_numbers.length, 20);
-    assert.equal(openPredicate.card_numbers[0], "GD01-035");
-    assert.equal(openPredicate.card_numbers.at(-1), "ST10-005");
-    assert.equal(openPredicate.effect.reason, openPredicateReason);
-    assert.match(openPredicate.official_wording, /^All combinations of cards that match the above description/u);
   }
 });
 

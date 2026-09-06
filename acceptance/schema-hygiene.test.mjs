@@ -538,3 +538,37 @@ async function readMigrations() {
     })),
   );
 }
+
+test("prelaunch eligibility removal retains evidence anchors and rejects policy freshness", async () => {
+  const migrations = await readMigrations();
+  const database = new DatabaseSync(":memory:");
+  for (const migration of migrations.filter(({ level }) => level < 14)) database.exec(migration.sql);
+  // An existing immutable retention anchor remains historical evidence even
+  // after its derived policy table is retired. No source evidence is deleted.
+  database.exec(
+    "INSERT INTO retained_source_observation_evidence VALUES ('old_observation', 'legality_rules', 'old_policy')",
+  );
+  const migration = migrations.find(({ level }) => level === 14);
+  assert.ok(migration);
+  database.exec(migration.sql);
+  assert.deepEqual(
+    database.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name LIKE '%legality%'").all(),
+    [],
+  );
+  assert.equal(
+    database
+      .prepare(
+        "SELECT retained_record_id FROM retained_source_observation_evidence WHERE source_observation_id='old_observation'",
+      )
+      .get().retained_record_id,
+    "old_policy",
+  );
+  assert.throws(
+    () =>
+      database.exec(
+        "INSERT INTO source_freshness VALUES ('one-piece', 'legality-rules', '', '', '2026-09-06', 'no-run')",
+      ),
+    /CHECK constraint/u,
+  );
+  database.close();
+});

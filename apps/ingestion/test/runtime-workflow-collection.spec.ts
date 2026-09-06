@@ -220,7 +220,6 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
             [
               ["cards", "/fw/en/cardlist/?search=true&category%5B0%5D=583301"],
               ["products", "/fw/en/products/"],
-              ["rules", "/fw/en/news/01_31.html"],
             ] as const
           ).map(([key, resolution]) => ({
             id: `fusion-world-en:discovery-seed:${key}`,
@@ -236,8 +235,8 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
             },
           })),
           completeness: {
-            declared_record_count: 3,
-            parsed_record_count: 3,
+            declared_record_count: 2,
+            parsed_record_count: 2,
             required_surfaces_complete: true,
             partitions_complete: true,
             structurally_complete: true,
@@ -275,43 +274,11 @@ test("incomplete retained production discovery blocks collection and publication
   expect(candidate.status).toBe(409);
 }, 15_000);
 
-test("notice-link-only production legality evidence fails closed before stale rules can carry forward", async () => {
-  const marker = "card-keepr-notice-link-only-legality-v3";
-  const created = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
-    supported_game: "fusion-world",
-    source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@9",
-    idempotency_key: "source_parent_notice_only_legality_001",
-    requests: officialSourceDiscoveryRequests("fusion-world-en").map((request) => ({
-      ...request,
-      headers: { ...request.headers, "user-agent": marker },
-    })),
-  });
-  expect(created.status).toBe(201);
-  const run = await created.json<CollectionDocument>();
-  const terminal = await resumeCollection(run.id, 12_000);
-  expect(terminal).toMatchObject({
-    state: "failed",
-    failure_code: "source_parse_failed",
-  });
-  const candidate = await administrationRequest(`/v1/ingestion-runs/${run.id}/candidate`, "GET");
-  expect(candidate.status).toBe(409);
-}, 15_000);
-
-test("the parent Workflow keeps a greater-than-1-MiB legality candidate in D1 and replays only a bounded reference", async () => {
-  const marker = "card-keepr-large-legality-workflow-v3";
-  const created = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
-    supported_game: "fusion-world",
-    source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@9",
-    idempotency_key: "source_parent_large_legality_001",
-    requests: officialSourceDiscoveryRequests("fusion-world-en").map((request) => ({
-      ...request,
-      headers: { ...request.headers, "user-agent": marker },
-    })),
-  });
-  expect(created.status).toBe(201);
-  const run = await created.json<CollectionDocument>();
+test("the parent Workflow keeps a greater-than-1-MiB card-content candidate in D1 and replays only a bounded reference", async () => {
+  const run = await createCollection(
+    "large-card-content-workflow",
+    "https://official-source.invalid/reconciliation/large-card-content",
+  );
   const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(resumed.status).toBe(202);
   const accepted = await resumed.json<{ workflow: { id: string } }>();
@@ -346,8 +313,8 @@ test("the parent Workflow keeps a greater-than-1-MiB legality candidate in D1 an
   expect(candidate).toMatchObject({
     diff: {
       summary: {
-        legality_rules_added: 4_000,
-        legality_rules_current: 4_000,
+        cards_added: 1,
+        printings_added: 1,
       },
     },
   });

@@ -406,9 +406,9 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   assert.ok(products.every(({ releases: value }) => value === undefined));
   assert.ok(releases.some((release) => release.product_id === productId && release.region === "unknown"));
   assert.ok(contexts.some((context) => context.product_id === productId));
-  // One Card per lineage, plus the Fusion World Energy Marker that publishes
-  // without a rarity.
-  assert.equal(cards.length, 6);
+  // Four game Cards plus the Fusion World Energy Marker; the two Gundam
+  // lineages converge on the same Card.
+  assert.equal(cards.length, 5);
   assert.ok(relationships.some(({ kind }) => kind === "distribution-context-product"));
   for (const projection of [...printingDocument.data.products, ...printingDocument.data.distribution_contexts]) {
     assert.ok(

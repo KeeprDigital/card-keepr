@@ -45,8 +45,8 @@ test("DON!! accepts explicit known Printing evidence while retaining incomplete-
   await approve(reconciled.document);
 });
 
-test("unnumbered DON!! receives direct and combination Legality Rules through publication", async () => {
-  const run = await collect("/reconciliation/profile-don-legality", "reconcile-don-legality", {
+test("unnumbered DON!! card content survives collection and publication", async () => {
+  const run = await collect("/reconciliation/profile-don-card", "reconcile-don-card", {
     game: "one-piece",
     lineage: "one-piece-en",
     adapter: "fixture-one-piece-json@3",
@@ -61,20 +61,10 @@ test("unnumbered DON!! receives direct and combination Legality Rules through pu
   );
   const companion = cards.find((card) => (card.official_identity as Record<string, unknown>).value === "OP30-001");
   if (don === undefined || companion === undefined) {
-    throw new Error("DON!! legality fixture cards are absent");
+    throw new Error("DON!! card fixture cards are absent");
   }
-  const donId = requiredString(don, "id");
-  const companionId = requiredString(companion, "id");
-  const rules = reconciled.document.legality_rules as Array<Record<string, unknown>>;
-  for (const officialId of ["don-ban", "don-copy-limit", "don-combination"]) {
-    expect(rules.find((rule) => rule.official_id === officialId)).toMatchObject({ card_ids: [donId] });
-  }
-  expect(rules.find((rule) => rule.official_id === "don-combination")).toMatchObject({
-    effect: {
-      type: "prohibited_combination",
-      with_card_ids: [companionId],
-    },
-  });
+  expect(don.official_identity).toEqual({ kind: "functional_designation", value: "DON!!" });
+  expect(reconciled.document).not.toHaveProperty("legality_rules");
 
   const published = await approve(reconciled.document);
   expect(published.response.status).toBe(200);

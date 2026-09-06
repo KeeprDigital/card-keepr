@@ -293,31 +293,6 @@ export function exportedGameProfileSchema(profile: string) {
   };
 }
 
-export function validateMembershipPredicate(profile: string, attribute: string, includesAny: readonly string[]): void {
-  const schema = requiredProfileContract(profile).card.properties[attribute];
-  if (schema === undefined) {
-    throw new Error(`Legality Rule membership attribute ${attribute} is not defined by ${profile}.`);
-  }
-  const vocabulary = membershipVocabulary(schema);
-  if (vocabulary === undefined) {
-    throw new Error(`Legality Rule membership attribute ${attribute} cannot be represented by ${profile}.`);
-  }
-  if (vocabulary === null) return;
-  const invalid = includesAny.find((value) => !vocabulary.includes(value));
-  if (invalid !== undefined) {
-    throw new Error(`Legality Rule membership value ${invalid} is not defined for ${profile} attribute ${attribute}.`);
-  }
-}
-
-function membershipVocabulary(schema: Schema): readonly string[] | null | undefined {
-  if (schema.kind === "string") return null;
-  if (schema.kind === "enum") return schema.values;
-  if (schema.kind === "array") {
-    return membershipVocabulary(schema.items);
-  }
-  return undefined;
-}
-
 function exportedSchema(schema: Schema): Record<string, unknown> {
   if (schema.kind === "string") {
     return {

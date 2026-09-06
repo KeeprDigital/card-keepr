@@ -5,11 +5,11 @@ Each Supported Game has one adapter module: `one-piece-adapter.ts`,
 Gundam applies the same parser to its two locale contracts. A game module
 owns its active registration, field table, structured-surface normalization,
 inline Card or Card detail HTML parser, Erratum grammar, and game-specific
-Product and policy parsing. Its exported adapter exposes
+Product and correction parsing. Its exported adapter exposes
 `parse(surface, bytes)` and request discovery alongside registration facts.
 `surface` binds the request URL, request identity, and retained media type;
 parsing returns the `OfficialSourceObservation` union and performs no I/O.
-The existing wire shapes distinguish Catalogue, Official Erratum, Legality Rule,
+The existing wire shapes distinguish Catalogue, Official Erratum,
 and surface-evidence observations; canonical builders check those shapes without
 adding new fields to retained output.
 

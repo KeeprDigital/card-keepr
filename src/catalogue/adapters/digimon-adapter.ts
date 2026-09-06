@@ -48,18 +48,15 @@ const definition: RawAdapterDefinition = {
   reconciliationAreas: ["catalogue", "errata"],
   inheritDiscoveryRequestHeaders: true,
   listingReconciliation: {
-    releasesSurfaceCarriesLegality: false,
     groupsPublisherPages: false,
     strictListingIdentity: false,
     duplicateLocatorCompatibility: "never",
   },
-  requiredSurfaces: ["card-list", "products", "releases", "restrictions-current", "restrictions-history", "errata"],
+  requiredSurfaces: ["card-list", "products", "releases", "errata"],
   urls: {
     "card-list": "https://world.digimoncard.com/cards/index.php?search=true",
     products: "https://world.digimoncard.com/products/",
     releases: "https://world.digimoncard.com/products/",
-    "restrictions-current": "https://world.digimoncard.com/rule/restriction_card/",
-    "restrictions-history": "https://world.digimoncard.com/rule/restriction_card/",
     errata: "https://world.digimoncard.com/rule/errata_card/",
   },
   version: {
@@ -69,7 +66,6 @@ const definition: RawAdapterDefinition = {
     catalogueComplete: false,
     completeDigimonCatalogue: true,
     optionalCardFields: true,
-    unresolvedLegalityScopes: false,
     liveShapes: false,
   },
 };
@@ -478,7 +474,6 @@ function parseDigimonCardListPopupHtmlByContract(
       detail,
       [],
       new Map(),
-      { revision: "captured-by-policy-surface", entries: [] },
       { revision: "captured-by-policy-surface", entries: [] },
       "digimon",
     );

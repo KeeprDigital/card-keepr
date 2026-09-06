@@ -39,7 +39,6 @@ export {
 } from "./retained-bytes.ts";
 export {
   productionOfficialStageResponse,
-  productionRepresentableFusionLegalityResponse,
   productionSourceFixtureIsProductDetail,
   productionSourceFixtureMarker,
   productionSourceFixtureRole,
@@ -67,9 +66,7 @@ export interface FakePublisherOptions {
   readonly scenarios: readonly PublisherScenario[];
 }
 
-export function createFakePublisher(
-  options: FakePublisherOptions,
-): FakePublisher {
+export function createFakePublisher(options: FakePublisherOptions): FakePublisher {
   const failures = createFailureInjection();
   return {
     async fetch(request) {

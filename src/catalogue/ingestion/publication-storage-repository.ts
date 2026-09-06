@@ -162,16 +162,6 @@ export function nextPublicationToReconcileStatement(database: CatalogueStore, ob
     .bind(observedAt);
 }
 
-export function candidateLegalityEvidenceStatement(database: CatalogueStore, ruleIdsJson: string): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`SELECT id, source_lineage, source_snapshot_id,
-              source_observation_set_id, source_observation_id,
-              source_observation_pointer, source_field_pointers_json
-       FROM legality_rules
-       WHERE id IN (SELECT value FROM json_each(?))`)
-    .bind(ruleIdsJson);
-}
-
 export function catalogueRevisionDigestStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT content_digest

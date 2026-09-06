@@ -2,7 +2,6 @@ import { test } from "vitest";
 import assert from "node:assert/strict";
 import { officialSourceDiscoveryRequests } from "../../src/catalogue/adapters/product-release-source-adapters.ts";
 import {
-  adapterReconciliationAreas,
   assertAdapterBinding,
   installedSourceAdapterRegistrations,
   requiredActiveSourceAdapter,
@@ -11,8 +10,6 @@ import {
 } from "../../src/catalogue/adapters/source-adapters.ts";
 import syntheticOfficialSource, {
   officialBandaiNavigationHeader,
-  officialDiscoveryDefinitions,
-  officialDiscoveryDocument,
   officialPublisherPayloadScript,
   officialRawSurfacePayload,
 } from "../../acceptance/fixtures/synthetic-official-source.mjs";
@@ -20,25 +17,22 @@ import {
   productionAdapterVersions,
   registeredProductionAdapters,
   retainedOfficialSourceFixture,
-  fusionLegalityContext,
-  exactFusionLegalityHtml,
   restructuredStageDigest,
   exactMessage,
   fusionLiveShapeAdapter,
-  fusionProductListingFixtures,
   fusionErrataDetailFixtures,
   rawSurfacePayload,
   parseRegisteredSurface,
 } from "./official-source-raw-contract-shared.mjs";
 
 const expectedSurfaces = {
-  "one-piece-en": ["card-list", "products", "releases", "restrictions", "block-policy", "errata", "don-rules"],
+  "one-piece-en": ["card-list", "products", "releases", "errata"],
   // The restructured Fusion World EN contract drops "errata": the publisher
   // retired /fw/en/rules/errata-card/ and publishes no replacement.
-  "fusion-world-en": ["card-search", "products", "releases", "legality-current", "legality-history"],
-  "digimon-en": ["card-list", "products", "releases", "restrictions-current", "restrictions-history", "errata"],
-  "gundam-en-asia": ["packages", "products", "releases", "legality", "errata"],
-  "gundam-en-us": ["packages", "products", "releases", "legality", "errata"],
+  "fusion-world-en": ["card-search", "products", "releases"],
+  "digimon-en": ["card-list", "products", "releases", "errata"],
+  "gundam-en-asia": ["packages", "products", "releases", "errata"],
+  "gundam-en-us": ["packages", "products", "releases", "errata"],
 };
 
 const expectedSurfaceUrls = {
@@ -46,40 +40,29 @@ const expectedSurfaceUrls = {
     "card-list": "https://en.onepiece-cardgame.com/cardlist/?series=569116",
     products: "https://en.onepiece-cardgame.com/products/",
     releases: "https://en.onepiece-cardgame.com/products/",
-    restrictions: "https://en.onepiece-cardgame.com/news/restriction.html",
-    "block-policy": "https://en.onepiece-cardgame.com/topics/013.php",
     errata: "https://en.onepiece-cardgame.com/rules/errata_card/",
-    "don-rules": "https://en.onepiece-cardgame.com/rules/",
   },
   "fusion-world-en": {
     "card-search": "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
     products: "https://www.dbs-cardgame.com/fw/en/products/",
     releases: "https://www.dbs-cardgame.com/fw/en/products/",
-    "legality-current": "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
-    "legality-history": "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
   },
   "digimon-en": {
     "card-list": "https://world.digimoncard.com/cards/index.php?search=true",
     products: "https://world.digimoncard.com/products/",
     releases: "https://world.digimoncard.com/products/",
-    "restrictions-current": "https://world.digimoncard.com/rule/restriction_card/",
-    "restrictions-history": "https://world.digimoncard.com/rule/restriction_card/",
     errata: "https://world.digimoncard.com/rule/errata_card/",
   },
   "gundam-en-asia": {
     packages: "https://www.gundam-gcg.com/asia-en/cards/index.php",
     products: "https://www.gundam-gcg.com/asia-en/products/list.php",
     releases: "https://www.gundam-gcg.com/asia-en/products/list.php",
-    // Issue #58: the plan captures the linked current banned/restricted
-    // publication directly; the /rules/ hub remains a discovery stage.
-    legality: "https://www.gundam-gcg.com/asia-en/news/01_279.html",
     errata: "https://www.gundam-gcg.com/asia-en/news/?subcategory=news&tag=all&page=1",
   },
   "gundam-en-us": {
     packages: "https://www.gundam-gcg.com/en/cards/index.php",
     products: "https://www.gundam-gcg.com/en/products/list.php",
     releases: "https://www.gundam-gcg.com/en/products/list.php",
-    legality: "https://www.gundam-gcg.com/en/news/01_279.html",
     errata: "https://www.gundam-gcg.com/en/news/?subcategory=news&tag=all&page=1",
   },
 };
@@ -95,7 +78,6 @@ const expectedDiscoveryLinks = {
   "fusion-world-en": [
     ["CARDS", "/fw/en/cardlist/?search=true&category%5B0%5D=583301"],
     ["ALL PRODUCTS", "/fw/en/products/"],
-    ["RULES", "/fw/en/news/01_31.html"],
   ],
   "digimon-en": [
     ["CARD LIST", "/cards/index.php?search=true"],
@@ -105,23 +87,21 @@ const expectedDiscoveryLinks = {
   "gundam-en-asia": [
     ["FIND CARDS", "/asia-en/cards/"],
     ["PRODUCT LIST", "/asia-en/products/list.php"],
-    ["RULES", "/asia-en/rules/"],
     ["NEWS", "/asia-en/news/"],
   ],
   "gundam-en-us": [
     ["FIND CARDS", "/en/cards/"],
     ["PRODUCT LIST", "/en/products/list.php"],
-    ["RULES", "/en/rules/"],
     ["NEWS", "/en/news/"],
   ],
 };
 
 const expectedDiscoveryKeys = {
   "one-piece-en": ["cards", "products", "rules"],
-  "fusion-world-en": ["cards", "products", "rules"],
+  "fusion-world-en": ["cards", "products"],
   "digimon-en": ["cards", "products", "rules"],
-  "gundam-en-asia": ["cards", "products", "rules", "news"],
-  "gundam-en-us": ["cards", "products", "rules", "news"],
+  "gundam-en-asia": ["cards", "products", "news"],
+  "gundam-en-us": ["cards", "products", "news"],
 };
 
 function discoveryHtml(sourceLineage, mutate = (entries) => entries) {
@@ -153,159 +133,6 @@ const retainedDiscoveryFixtures = {
   "gundam-en-asia": "gundam-en-asia-discovery",
   "gundam-en-us": "gundam-en-us-discovery",
 };
-
-test("retained live policy roots schedule the exact current detail publications", () => {
-  const fusion = requiredSourceAdapter("fusion-world-en@9");
-  const fusionRoot = retainedOfficialSourceFixture("fusion-world-en-policy-live");
-  const fusionEvidence = fusion.parseBytes(fusionRoot.bytes, {
-    mediaType: fusionRoot.metadata.content_type,
-    url: fusionRoot.metadata.source_url,
-    requestId: `fusion-world-en:listing:rules:${"c".repeat(64)}`,
-  });
-  assert.equal(
-    fusionEvidence[0].records.find((record) => record.surface === "legality-current")?.url,
-    "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
-  );
-
-  for (const descriptor of [
-    { adapter: "gundam-en-asia@7", slug: "gundam-en-asia-policy", locale: "asia-en" },
-    { adapter: "gundam-en-us@7", slug: "gundam-en-us-policy", locale: "en" },
-  ]) {
-    const adapter = requiredSourceAdapter(descriptor.adapter);
-    const fixture = retainedOfficialSourceFixture(descriptor.slug);
-    const requests = adapter.discoverRequests(fixture.bytes, {
-      mediaType: fixture.metadata.content_type,
-      url: fixture.metadata.source_url,
-      requestId: `${adapter.sourceLineage}:legality`,
-    });
-    assert.deepEqual(
-      requests.filter((request) => request.role !== "image"),
-      [
-        {
-          role: "detail",
-          url: `https://www.gundam-gcg.com/${descriptor.locale}/news/01_279.html`,
-          headers: {
-            accept: "text/html",
-            "user-agent": "card-keepr-official-source/1; request-role=detail",
-          },
-        },
-      ],
-    );
-    assert.deepEqual(
-      requests.filter((request) => request.url === `https://www.gundam-gcg.com/${descriptor.locale}/news/01_279.html`),
-      [
-        {
-          role: "detail",
-          url: `https://www.gundam-gcg.com/${descriptor.locale}/news/01_279.html`,
-          headers: {
-            accept: "text/html",
-            "user-agent": "card-keepr-official-source/1; request-role=detail",
-          },
-        },
-      ],
-    );
-  }
-});
-
-test("retained live policy parsers reject tag-agnostic residual conditions", () => {
-  const cases = [
-    {
-      adapter: "one-piece-en@6",
-      slug: "one-piece-en-policy",
-      surface: "restrictions",
-      requestId: "one-piece-en:restrictions",
-      wording: "The following card(s) cannot be included in any deck.",
-    },
-    {
-      adapter: "fusion-world-en@9",
-      slug: "fusion-world-en-policy-detail",
-      surface: "detail",
-      requestId: `fusion-world-en:detail:${"d".repeat(64)}`,
-      wording: "No copies of the card are permitted in the deck.",
-    },
-    {
-      adapter: "digimon-en@7",
-      slug: "digimon-en-policy",
-      surface: "restrictions-current",
-      requestId: "digimon-en:restrictions-current",
-      wording: "Restricted Cards (1) - Decks can only include one copy of these cards.",
-    },
-    {
-      adapter: "gundam-en-us@7",
-      slug: "gundam-en-us-policy-detail",
-      surface: "detail",
-      requestId: `gundam-en-us:detail:${"e".repeat(64)}`,
-      wording: "No copies of the card are permitted in the deck.",
-    },
-  ];
-  for (const descriptor of cases) {
-    const adapter = requiredSourceAdapter(descriptor.adapter);
-    const fixture = retainedOfficialSourceFixture(descriptor.slug);
-    const mutated = Buffer.from(
-      fixture.bytes
-        .toString("utf8")
-        .replaceAll(descriptor.wording, `${descriptor.wording} Unless the publisher grants an exception.`),
-    );
-    assert.throws(
-      () =>
-        adapter.parseBytes(mutated, {
-          mediaType: fixture.metadata.content_type,
-          url: fixture.metadata.source_url,
-          requestId: descriptor.requestId,
-        }),
-      /exact|incomplete|unavailable|unparsed|semantics|structure/iu,
-      descriptor.adapter,
-    );
-  }
-});
-
-test("retained live policy parsers reject separate unconsumed conditions", () => {
-  const cases = [
-    {
-      adapter: "one-piece-en@6",
-      slug: "one-piece-en-policy",
-      requestId: "one-piece-en:restrictions",
-      anchor: "The following card(s) cannot be included in any deck.",
-    },
-    {
-      adapter: "fusion-world-en@9",
-      slug: "fusion-world-en-policy-detail",
-      requestId: `fusion-world-en:detail:${"c".repeat(64)}`,
-      anchor: "No copies of the card are permitted in the deck.",
-    },
-    {
-      adapter: "digimon-en@7",
-      slug: "digimon-en-policy",
-      requestId: "digimon-en:restrictions-current",
-      anchor: "Restricted Cards (1) - Decks can only include one copy of these cards.",
-    },
-    {
-      adapter: "gundam-en-us@7",
-      slug: "gundam-en-us-policy-detail",
-      requestId: `gundam-en-us:detail:${"d".repeat(64)}`,
-      anchor: "No copies of the card are permitted in the deck.",
-    },
-  ];
-  for (const descriptor of cases) {
-    const adapter = requiredSourceAdapter(descriptor.adapter);
-    const fixture = retainedOfficialSourceFixture(descriptor.slug);
-    const mutated = Buffer.from(
-      fixture.bytes
-        .toString("utf8")
-        .replaceAll(descriptor.anchor, `${descriptor.anchor}</p><p>Except when the publisher grants an exception.`),
-    );
-    assert.throws(
-      () =>
-        adapter.parseBytes(mutated, {
-          mediaType: fixture.metadata.content_type,
-          url: fixture.metadata.source_url,
-          requestId: descriptor.requestId,
-        }),
-      /condition|exact|incomplete|unparsed|semantics|structure/iu,
-      descriptor.adapter,
-    );
-  }
-});
 
 test("retained live discovery bytes derive every production surface family", () => {
   for (const adapter of registeredProductionAdapters()) {
@@ -633,15 +460,6 @@ test("every installed adapter version carries its parser and unknown versions ar
     assert.throws(() => requiredSourceAdapter(unknown), isAdministrationProblem("adapter_not_supported"), unknown);
     assert.ok(!productionAdapterVersions.includes(unknown));
   }
-});
-
-test("known navigation labels cannot hide an unrecognized publisher URL", () => {
-  const current = requiredSourceAdapter("fusion-world-en@9");
-  const html = exactFusionLegalityHtml.replace("</body>", `<main><a href="/new-restriction/">Rules</a></main></body>`);
-  assert.throws(
-    () => current.parseBytes(new TextEncoder().encode(html), fusionLegalityContext(current)),
-    /exact, complete Legality Rule parser|navigation/iu,
-  );
 });
 
 test("production decoders accept real Bandai-shaped HTML without a Keepr payload wrapper", () => {
@@ -1700,10 +1518,7 @@ test("restructured discovery stages and listing leaves fail closed on missing pu
   };
 
   const onePiece = requiredSourceAdapter("one-piece-en@6");
-  for (const [surface, pinned] of [
-    ["restrictions", "/news/restriction.html"],
-    ["block-policy", "/topics/013.php"],
-  ]) {
+  for (const [surface, pinned] of [["errata", "./errata_card/"]]) {
     const unpinned = mutate("one-piece-en-rules-hub", (html) => html.replaceAll(pinned, "/news/unrelated-notice.html"));
     assert.throws(
       () =>

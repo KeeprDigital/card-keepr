@@ -329,9 +329,6 @@ function smokeTargets() {
   return {
     revisions,
     printing_image_id: "image-1",
-    legality_card_id: "card-0",
-    legality_format: "standard",
-    legality_region: "EN-OCEANIA",
     stale_cursor: Buffer.from(JSON.stringify({ revision_id: "catrev-archived" })).toString("base64"),
     stale_revision_id: "catrev-archived",
   };

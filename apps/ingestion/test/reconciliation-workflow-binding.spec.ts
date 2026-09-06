@@ -39,16 +39,16 @@ installReconciliationSuite();
 // the reconciliation instant take their decision on the same clock.
 const reconciledAt = "2026-07-31T01:00:00.000Z";
 
-test("registered Source metadata rejects unowned stored Legality freshness scopes", () => {
+test("stored Source freshness rejects removed eligibility areas", () => {
   expect(() =>
     sourceFreshnessFromStorage({
       game: "gundam",
       area: "legality-rules",
-      source_lineage: "gundam-en-future",
-      region: "EN-ASIA",
+      source_lineage: "",
+      region: "",
       checked_at: "2026-08-02T00:00:00.000Z",
     }),
-  ).toThrow(/registered ownership/);
+  ).toThrow(/freshness scope is invalid/);
 });
 
 test("retained Gundam Official Errata crosses the reconciliation boundary", () => {

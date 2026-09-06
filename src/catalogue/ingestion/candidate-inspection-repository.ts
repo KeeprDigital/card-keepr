@@ -17,14 +17,6 @@ export function revisionPrintingDocumentsStatement(database: CatalogueStore, rev
     .bind(revisionId);
 }
 
-export function revisionLegalityDocumentsStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`SELECT legality_rule_id AS id, document_json
-         FROM revision_legality_rules
-         WHERE catalogue_revision_id = ?`)
-    .bind(revisionId);
-}
-
 export type CandidateObservedEntityRow = { card_id: string; printing_id: string | null };
 export type ReconciliationPartitionLineageRow = { source_lineage: string };
 

@@ -332,7 +332,6 @@ export function cardObservation(
   detail: Record<string, unknown>,
   products: Record<string, unknown>[],
   releasesByCode: Map<string, Record<string, unknown>[]>,
-  legality: Record<string, unknown>,
   errata: Record<string, unknown>,
   game: ProductSourceGame,
 ): CardObservation {
@@ -500,7 +499,7 @@ export function cardObservation(
           ],
       relationships,
     },
-    source_sidecar: sourceSidecar(detail, products, legality, errata),
+    source_sidecar: sourceSidecar(detail, products, errata),
   };
 }
 
@@ -528,7 +527,6 @@ export function catalogue(products: Record<string, unknown>[], releasesByCode: M
 export function sourceSidecar(
   detail: Record<string, unknown> | null,
   products: Record<string, unknown>[],
-  legality: Record<string, unknown>,
   errata: Record<string, unknown>,
 ) {
   const productFieldCoverage = products.flatMap((product, index) => {
@@ -542,7 +540,7 @@ export function sourceSidecar(
     return [{ consumed, unmapped }];
   });
   return {
-    raw: { detail, products, legality, errata },
+    raw: { detail, products, errata },
     consumed_fields: [
       "detail.number",
       "detail.title",
@@ -647,7 +645,6 @@ export function stageRecord(
 export function productOnlyObservation(
   product: Record<string, unknown>,
   releasesByCode: Map<string, Record<string, unknown>[]>,
-  legality: Record<string, unknown>,
   errata: Record<string, unknown>,
 ): CatalogueObservation {
   const distribution =
@@ -682,7 +679,7 @@ export function productOnlyObservation(
               },
             ],
     },
-    source_sidecar: sourceSidecar(null, [product], legality, errata),
+    source_sidecar: sourceSidecar(null, [product], errata),
   };
 }
 

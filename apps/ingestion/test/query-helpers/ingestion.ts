@@ -72,66 +72,11 @@ export function insertCatalogueRevisionsForAuthenticatedCatalogueExportReadsPres
       ) VALUES (?, ?, ?, ?, 'catrev_spine_000', ?)`);
 }
 
-export function insertIngestionRunsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-  database: D1Database,
-): D1PreparedStatement {
-  return bindRunFixtureStatement(database, (...values) => ({
-    id: values[0],
-    state: "publishing",
-    selected_games_json: '["gundam"]',
-    started_at: values[1],
-    expected_current_revision_id: "catrev_spine_000",
-    linked_run_id: null,
-    idempotency_key: "api-legality-precedence-seed",
-    candidate_digest: values[2],
-    candidate_created_at: values[3],
-    approval_deadline: "2099-01-01T00:00:00.000Z",
-    approval_json: values[4],
-    published_revision_id: null,
-    export_manifest_digest: null,
-    terminal_at: null,
-    candidate_json: "{}",
-    approval_idempotency_key: null,
-  }));
-}
-
 export function setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
   database: D1Database,
 ): D1PreparedStatement {
   return database.prepare(`UPDATE operation_state SET active_ingestion_run_id = ?
        WHERE singleton = 1`);
-}
-
-export function insertCatalogueRevisionsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`INSERT INTO catalogue_revisions (
-        id, ingestion_run_id, published_at, content_digest,
-        expected_previous_revision_id, approved_candidate_digest
-      ) VALUES (?, ?, ?, ?, 'catrev_spine_000', ?)`);
-}
-
-export function insertIngestionRunsForLegalityStatusEvidenceReportsCapturedAtPublicationProjected(
-  database: D1Database,
-): D1PreparedStatement {
-  return bindRunFixtureStatement(database, (...values) => ({
-    id: values[0],
-    state: "publishing",
-    selected_games_json: '["gundam"]',
-    started_at: values[1],
-    expected_current_revision_id: "catrev_spine_000",
-    linked_run_id: null,
-    idempotency_key: "api-legality-projected-evidence-seed",
-    candidate_digest: values[2],
-    candidate_created_at: values[3],
-    approval_deadline: "2099-01-01T00:00:00.000Z",
-    approval_json: values[4],
-    published_revision_id: null,
-    export_manifest_digest: null,
-    terminal_at: null,
-    candidate_json: "{}",
-    approval_idempotency_key: null,
-  }));
 }
 
 export function insertIngestionRunsForUnresolvedTargetScopeRuleAnswersExplicitlyIndeterminateEveryOverlapping(
@@ -145,29 +90,6 @@ export function insertIngestionRunsForUnresolvedTargetScopeRuleAnswersExplicitly
     expected_current_revision_id: "catrev_spine_000",
     linked_run_id: null,
     idempotency_key: "api-legality-target-scope-seed",
-    candidate_digest: values[2],
-    candidate_created_at: values[3],
-    approval_deadline: "2099-01-01T00:00:00.000Z",
-    approval_json: values[4],
-    published_revision_id: null,
-    export_manifest_digest: null,
-    terminal_at: null,
-    candidate_json: "{}",
-    approval_idempotency_key: null,
-  }));
-}
-
-export function insertIngestionRunsForAuthenticatedLegalityStatusTargetsFunctionalDONCardAuditsUnresolved(
-  database: D1Database,
-): D1PreparedStatement {
-  return bindRunFixtureStatement(database, (...values) => ({
-    id: values[0],
-    state: "publishing",
-    selected_games_json: '["one-piece"]',
-    started_at: values[1],
-    expected_current_revision_id: "catrev_spine_000",
-    linked_run_id: null,
-    idempotency_key: "api-don-seed",
     candidate_digest: values[2],
     candidate_created_at: values[3],
     approval_deadline: "2099-01-01T00:00:00.000Z",
@@ -474,19 +396,6 @@ export function insertIngestionRunsForAuthenticatedReparseRejectsNormalizedFixtu
     expected_current_revision_id: "catrev_spine_000",
     linked_run_id: null,
     idempotency_key: values[1],
-    candidate_json: "{}",
-  }));
-}
-
-export function insertIngestionRunsForContextualLegalitySourceChanges(database: D1Database): D1PreparedStatement {
-  return bindRunFixtureStatement(database, (...values) => ({
-    id: values[0],
-    state: "parsing",
-    selected_games_json: values[1],
-    started_at: "2026-08-01T00:00:00.000Z",
-    expected_current_revision_id: "catrev_spine_000",
-    linked_run_id: null,
-    idempotency_key: values[2],
     candidate_json: "{}",
   }));
 }
@@ -1010,24 +919,6 @@ export function countAdministrationIdempotencyClaims(database: D1Database): D1Pr
           AND outcome = 'problem') AS outcomes,
        (SELECT active_ingestion_run_id FROM operation_state
         WHERE singleton = 1) AS active_ingestion_run_id`);
-}
-
-export function countAdministrationIdempotencyClaimsForReservedOversizedLegalityRelationshipRecoveryPreservesTypedTerminalProblem(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`SELECT
-       (SELECT COUNT(*) FROM administration_idempotency_claims
-        WHERE idempotency_key = ?) AS claims,
-       (SELECT COUNT(*) FROM administration_idempotency
-        WHERE idempotency_key = ?
-          AND operation = 'approve_ingestion_run'
-          AND outcome = 'problem' AND http_status = 422) AS outcomes,
-       (SELECT active_ingestion_run_id FROM operation_state
-        WHERE singleton = 1) AS active_ingestion_run_id,
-       (SELECT state FROM ingestion_publication_cleanup
-        WHERE ingestion_run_id = ?) AS cleanup_state,
-       (SELECT object_keys_json FROM ingestion_publication_cleanup
-        WHERE ingestion_run_id = ?) AS cleanup_keys`);
 }
 
 export function setOperationStateActiveIngestionRunIdActiveProductionReleaseId(

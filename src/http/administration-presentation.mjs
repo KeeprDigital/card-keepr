@@ -499,8 +499,7 @@ function formatStatus(document) {
     lines.push("  none");
   } else {
     for (const item of freshness) {
-      const scope = item.area === "legality-rules" ? `/${item.source_lineage}/${item.region}` : "";
-      lines.push(`  ${item.game}/${item.area}${scope}: ${item.checked_at} (${item.ingestion_run_id})`);
+      lines.push(`  ${item.game}/${item.area}: ${item.checked_at} (${item.ingestion_run_id})`);
     }
   }
   const recentRuns = Array.isArray(document.recent_runs) ? document.recent_runs : [];

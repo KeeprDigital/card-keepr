@@ -2,10 +2,7 @@ import { expect, test } from "vitest";
 import { AdapterParseFailure } from "../../src/catalogue/adapters/adapter-parse-failure";
 import { requiredOfficialSourceScope } from "../../src/catalogue/adapters/official-source-scope";
 import { officialSourceDiscoveryRequests } from "../../src/catalogue/adapters/product-release-source-adapters";
-import {
-  registeredLegalitySourceScope,
-  sourceAdapterRegistrations,
-} from "../../src/catalogue/adapters/source-adapters";
+import { sourceAdapterRegistrations } from "../../src/catalogue/adapters/source-adapters";
 
 const adapters = sourceAdapterRegistrations.filter(
   (adapter) => adapter.origin === "production" && adapter.parseBytes !== undefined,
@@ -33,9 +30,6 @@ test("a raw adapter classifies an invalid source URL as a parse failure", () => 
 });
 
 test("registration invariants remain distinct from malformed publisher bytes", () => {
-  expect(() => registeredLegalitySourceScope("missing-lineage")).toThrow(
-    expect.objectContaining({ category: "configuration" }),
-  );
   const adapter = adapters.find((adapter) => adapter.reconciliationCapability === "catalogue")!;
   expect(() =>
     adapter.parseBytes!(new Uint8Array([0xff]), {

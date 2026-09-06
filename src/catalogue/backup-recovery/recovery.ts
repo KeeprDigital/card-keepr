@@ -1118,13 +1118,12 @@ function validVerificationEvidence(value: unknown): value is CatalogueVerificati
     "cards",
     "printings",
     "products",
-    "legality_rules",
     "api_documents",
     "search_chunks",
     "provenance",
     "audit_rows",
   ].every((key) => Number.isSafeInteger(evidence[key]) && Number(evidence[key]) >= 0);
-  const validRepresentativeDigests = ["representative_product_digest", "representative_legality_rule_digest"].every(
+  const validRepresentativeDigests = ["representative_product_digest"].every(
     (key) =>
       !Object.hasOwn(evidence, key) ||
       evidence[key] === null ||

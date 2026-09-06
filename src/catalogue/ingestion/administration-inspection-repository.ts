@@ -139,12 +139,9 @@ export function archivedQueryRevisionStatement(database: CatalogueStore): D1Prep
 
 export function smokeTargetExtrasStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT
-       (SELECT image_id FROM revision_printing_images WHERE catalogue_revision_id=? ORDER BY image_id LIMIT 1) AS printing_image_id,
-       (SELECT json_extract(card_ids_json,'$[0]') FROM revision_legality_rules WHERE catalogue_revision_id=? AND json_array_length(card_ids_json)>0 ORDER BY legality_rule_id LIMIT 1) AS legality_card_id,
-       (SELECT format FROM revision_legality_rules WHERE catalogue_revision_id=? AND json_array_length(card_ids_json)>0 ORDER BY legality_rule_id LIMIT 1) AS legality_format,
-       (SELECT region FROM revision_legality_rules WHERE catalogue_revision_id=? AND json_array_length(card_ids_json)>0 ORDER BY legality_rule_id LIMIT 1) AS legality_region`)
-    .bind(revisionId, revisionId, revisionId, revisionId);
+    .prepare(`SELECT image_id AS printing_image_id FROM revision_printing_images
+      WHERE catalogue_revision_id=? ORDER BY image_id LIMIT 1`)
+    .bind(revisionId);
 }
 
 export function registeredRevisionIdsStatement(database: CatalogueStore, ids: readonly string[]): D1PreparedStatement {

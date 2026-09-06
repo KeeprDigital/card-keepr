@@ -352,7 +352,7 @@ test("new collection rejects an unregistered adapter version while retained snap
     .readSourceSnapshotsId(testEnv.CATALOGUE_DB)
     .bind(runId)
     .first<{ id: string }>();
-  if (snapshot === null) throw new Error("Retained legality snapshot is absent");
+  if (snapshot === null) throw new Error("Retained Product snapshot is absent");
   const reparsed = await post(`/v1/source-snapshots/${snapshot.id}/observations`, {
     adapter_version: "fusion-world-en@9",
     idempotency_key: "capturing-adapter-retained-reparse",

@@ -30,7 +30,7 @@ function lineageUrls(locale) {
     discovery: `${base}/cards/index.php`,
     packageLeaf: `${base}/cards/?package=all`,
     // The gundam-en-*@7 collection walks the publisher's navigation from the
-    // card search root (the cards hub, the product listing, the rules hub,
+    // card search root (the cards hub, the product listing,
     // and the news hub), then captures each surface: a URL that serves
     // several surfaces is a distinct Source Request per surface, so the
     // cards hub is retained as a navigation stage and as the packages
@@ -43,9 +43,7 @@ function lineageUrls(locale) {
       `${base}/products/list.php`,
       `${base}/products/list.php`,
       `${base}/products/list.php`,
-      `${base}/rules/`,
       `${base}/news/`,
-      `${base}/news/01_279.html`,
       `${base}/news/?subcategory=news&tag=all&page=1`,
       `${base}/cards/?package=all`,
       `${base}/products/deck-case02.html`,
