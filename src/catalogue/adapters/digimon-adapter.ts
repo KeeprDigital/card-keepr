@@ -345,10 +345,11 @@ function parseDigimonCardListPopupHtmlByContract(
       "[Link Effect]",
       "Notes",
     ]);
-    const unknownLabel = pairs.find(({ label }) => !allowedLabels.has(label) && !/^Digivolve Cost \d+$/u.test(label));
-    if (unknownLabel !== undefined) {
-      throw new AdapterParseFailure(`Official Digimon Card List contains unknown field ${unknownLabel.label}.`);
-    }
+    const unknownFields = Object.fromEntries(
+      pairs
+        .filter(({ label }) => !allowedLabels.has(label) && !/^Digivolve Cost \d+$/u.test(label))
+        .map(({ label, value }) => [label, value]),
+    );
     const duplicatedLabel = pairs.find(
       ({ label }, pairIndex) => pairs.findIndex((pair) => pair.label === label) !== pairIndex,
     );
@@ -490,6 +491,7 @@ function parseDigimonCardListPopupHtmlByContract(
         publisher_level: levelValue,
         leaf_cardcategory: leafPublisherCardType,
         card_qa: retainedQa.entries,
+        ...(Object.keys(unknownFields).length === 0 ? {} : { optional_fields: unknownFields }),
       },
       true,
       ["popup_id", "publisher_card_type", "publisher_level", "leaf_cardcategory"],

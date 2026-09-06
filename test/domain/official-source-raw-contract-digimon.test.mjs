@@ -8,6 +8,7 @@ import syntheticOfficialSource, {
 } from "../../acceptance/fixtures/synthetic-official-source.mjs";
 import {
   registeredProductionAdapters,
+  retainedOfficialSourceFixture,
   restructuredStageDigest,
   retainedRestructuredParse,
   retainedRestructuredRequests,
@@ -560,4 +561,37 @@ test("retained live Digimon product pages map region-scoped and code-less releas
       ],
     },
   ]);
+});
+
+// Injected optional-field regression over retained real HTML; not new source evidence.
+test("Digimon retains an unfamiliar optional HTML mechanic without weakening required structure", () => {
+  const adapter = requiredSourceAdapter("digimon-en@7");
+  const fixture = retainedOfficialSourceFixture("digimon-en-card-list-bt01-leaf");
+  const html = fixture.bytes.toString("utf8");
+  const changed = html.replace(
+    '<div class="cardInfoCol">',
+    '<div class="cardInfoCol"><dl><dt>Future Mechanic</dt><dd>Uninterpreted mechanic</dd></dl><dl><dt>level</dt><dd>Source-only level label</dd></dl>',
+  );
+  assert.notEqual(changed, html);
+  const context = {
+    mediaType: "text/html",
+    url: fixture.metadata.source_url,
+    requestId: `digimon-en:listing:${restructuredStageDigest}`,
+  };
+  const observations = adapter.parseBytes(Buffer.from(changed), context);
+  assert.equal(observations.length, 24);
+  const sidecar = observations[0].source_sidecar;
+  const optional = sidecar.raw.official_surfaces.find(({ document }) => document.optional_fields)?.document
+    .optional_fields;
+  assert.deepEqual(optional, { "Future Mechanic": "Uninterpreted mechanic", level: "Source-only level label" });
+  assert.ok(
+    sidecar.unmapped_optional_fields.some(
+      ({ path, value }) => path.endsWith("optional_fields.level") && value === "Source-only level label",
+    ),
+  );
+  assert.equal(typeof observations[0].card.game_data.attributes.level, "number");
+  assert.throws(
+    () => adapter.parseBytes(Buffer.from(changed.replace("cardTitleList", "missingTitleList")), context),
+    /title|structur/iu,
+  );
 });

@@ -1,6 +1,7 @@
 import { adapterReconciliationAreas, parsedOfficialArtworkIdentity, requiredSourceAdapter } from "../adapters";
 import { type CatalogueStore, canonicalJson, type SupportedGame, sha256 } from "../shared";
 import {
+  assertSelectedAuthoritiesCollected,
   type EvidencePlanRequest,
   evidencePlanForRequest,
   parseEvidencePlans,
@@ -112,6 +113,7 @@ export async function retainedReconciliationObservation(
     throw new Error("Reconciliation requires complete coverage of every planned Source Request.");
   }
   const evidencePlans = parseEvidencePlans(evidencePlanRow.request_plan_json);
+  await assertSelectedAuthoritiesCollected(database, evidencePlans);
   const plannedRequests = evidencePlans.flatMap((plan) => plan.requests);
   if (
     plannedRequests.length === 0 ||

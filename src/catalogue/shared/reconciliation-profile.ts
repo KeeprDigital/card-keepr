@@ -467,7 +467,7 @@ export function sourceFieldWarning(
     path,
     raw_value: rawSourceValue(raw),
     detail:
-      "The unknown Official Source field remains retained Source Observation evidence and was not added to the Game Profile.",
+      "The unknown Source field remains retained Source Observation evidence. Review the named field and raw value; update the adapter for presentation changes or the Game Profile for changed meaning, then collect fresh evidence.",
   };
 }
 

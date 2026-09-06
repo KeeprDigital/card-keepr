@@ -30,8 +30,12 @@ Shared mechanisms stay below the game modules:
 - `bandai-adapter-runtime.ts` applies request/surface routing, discovery,
   completeness checks, and evidence attachment. It receives each game's
   normalization, Card, Product, Erratum, and policy parsing functions.
-- `official-source-authority.ts` is the common exact URL authority used by
-  both registration and parsing; it is not a second adapter registry.
+- `official-source-authority.ts` is the common exact URL transport permission used by
+  registration and parsing. It does not designate Source Authority.
+- `source-registry.ts` registers Publisher ownership and English regional
+  Source Lineages independently of transport. Shared game schemas remain in
+  `shared/reconciliation-profile.ts`; owner authority administration lives in
+  `source-evidence/source-authority.ts`.
 
 `AdapterParseFailure` distinguishes `source-contract` failures from
 `configuration` failures. Source-contract failures cover explicit grammar
