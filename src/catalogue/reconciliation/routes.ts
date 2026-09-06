@@ -39,17 +39,27 @@ export const reconciliationRoutes = [
     Response.json(await inspectReconciliationPartition(env.CATALOGUE_DB, params.run!, params.ordinal!)),
   ),
   ...(["pause", "resume", "abandon"] as const).map((action) =>
-    route<Context>("POST", `/v1/ingestion-runs/:run/reconciliation/${action}`, async ({ env, request }, params) => {
-      const body = await readAdministrationBody(request);
-      assertOnlyFields(body, ["generation", "idempotency_key"]);
-      const result = await changeReconciliationProgress(env.CATALOGUE_DB, params.run!, action, {
-        generation: Number(body.generation),
-        idempotency_key: requiredString(body, "idempotency_key"),
-      });
-      if (action === "resume")
-        await resumeReconciliationWorkflow(env.CATALOGUE_DB, env.RECONCILIATION_WORKFLOW, params.run!);
-      return Response.json(result);
-    }),
+    route<Context>(
+      "POST",
+      `/v1/ingestion-runs/:run/reconciliation/${action}`,
+      async ({ env, request, observedAt }, params) => {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, ["generation", "idempotency_key"]);
+        const result = await changeReconciliationProgress(
+          env.CATALOGUE_DB,
+          params.run!,
+          action,
+          {
+            generation: Number(body.generation),
+            idempotency_key: requiredString(body, "idempotency_key"),
+          },
+          observedAt,
+        );
+        if (action === "resume")
+          await resumeReconciliationWorkflow(env.CATALOGUE_DB, env.RECONCILIATION_WORKFLOW, params.run!);
+        return Response.json(result);
+      },
+    ),
   ),
   route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation/partitions", async ({ env, request }, params) => {
     return Response.json(

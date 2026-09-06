@@ -437,3 +437,68 @@ test("operation initialization pins even an empty admission selection before Wor
     admission_decision_count: 0,
   });
 });
+
+test("a completed Workflow that paused durable work reports paused without requiring a sealed candidate", async () => {
+  const { default: worker } = await import("../src/index");
+  const { testEnv, post } = await import("./reconciliation-helpers");
+  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const run = await collect("/reconciliation/base", "workflow-complete-paused");
+  const unavailable = new Proxy(testEnv.PRINTING_IMAGES, {
+    get(target, property) {
+      if (property === "put")
+        return async () => {
+          throw new Error("injected R2 exhaustion");
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const step = {
+    do: async (_name: string, _config: unknown, callback: () => Promise<string>) => callback(),
+  } as unknown as import("cloudflare:workers").WorkflowStep;
+  let instance: WorkflowInstance;
+  const workflow = {
+    create: async ({
+      params,
+    }: {
+      params: import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams;
+    }) => {
+      const output = await runReconciliationWorkflow(
+        { ...testEnv, PRINTING_IMAGES: unavailable },
+        { payload: params } as import("cloudflare:workers").WorkflowEvent<typeof params>,
+        step,
+      );
+      instance = { status: async () => ({ status: "complete", output }) } as unknown as WorkflowInstance;
+      return instance;
+    },
+    get: async () => instance,
+  } as unknown as Env["RECONCILIATION_WORKFLOW"];
+  const response = await worker.fetch(
+    new Request(`https://card-keepr.invalid/v1/ingestion-runs/${run.id}/reconciliation`, {
+      method: "POST",
+      headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+      body: JSON.stringify({
+        expected_current_revision_id: run.document.expected_current_revision_id,
+        idempotency_key: "workflow-complete-paused",
+      }),
+    }),
+    { ...testEnv, RECONCILIATION_WORKFLOW: workflow },
+  );
+  expect(await response.json()).toMatchObject({ status: "paused", output: null });
+  const operation = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+  const expired = await post(
+    `/v1/ingestion-runs/${run.id}/reconciliation/resume`,
+    {
+      generation: 1,
+      idempotency_key: "resume-after-original-deadline",
+    },
+    { "x-keepr-test-now": new Date(Date.parse(String(operation.document.deadline)) + 1).toISOString() },
+  );
+  expect(expired.response.status).toBe(409);
+  expect(expired.document).toMatchObject({ code: "reconciliation_deadline_expired" });
+  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+    state: "paused",
+    generation: 1,
+    deadline: operation.document.deadline,
+  });
+});

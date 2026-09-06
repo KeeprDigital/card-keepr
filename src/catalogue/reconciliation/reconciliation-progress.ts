@@ -1,3 +1,4 @@
+import { retainedReconciliationResult } from "./reconciliation-candidate-store";
 import {
   reconciliationInputPartitionStatement,
   reconciliationInputPartitionsStatement,
@@ -78,6 +79,7 @@ export async function changeReconciliationProgress(
   runId: string,
   action: "pause" | "resume" | "abandon",
   input: { generation: number; idempotency_key: string },
+  observedAt = new Date().toISOString(),
 ) {
   if (!Number.isSafeInteger(input.generation) || input.generation < 0)
     throw new AdministrationProblem(422, "invalid_generation", "Use the generation returned by status.");
@@ -92,6 +94,12 @@ export async function changeReconciliationProgress(
     return JSON.parse(replay.result_json) as Record<string, unknown>;
   }
   const current = await inspectReconciliationProgress(database, runId);
+  if (action === "resume" && Date.parse(String(current.deadline)) <= Date.parse(observedAt))
+    throw new AdministrationProblem(
+      409,
+      "reconciliation_deadline_expired",
+      "This candidate's original seven-day deadline has passed; abandon it and create a fresh candidate.",
+    );
   const result = {
     ...current,
     state: action === "resume" ? "preparing" : action === "pause" ? "paused" : "abandoned",
@@ -105,7 +113,7 @@ export async function changeReconciliationProgress(
         ? [
             failedReconciliationWorkflowStatement(database, {
               runId,
-              terminalAt: new Date().toISOString(),
+              terminalAt: observedAt,
               failureCode: "reconciliation_abandoned",
               diagnosticsJson: canonicalJson([
                 { code: "reconciliation_abandoned", detail: "The owner abandoned this paused reconciliation." },
@@ -144,7 +152,10 @@ export async function pauseFailedReconciliation(
   detail: string,
 ) {
   await pauseFailedReconciliationStatement(database, runId, generation, detail).run();
-  return { state: "paused", publishable: false, run_id: runId };
+  const current = await reconciliationOperationStatement(database, runId).first<{ state: string }>();
+  if (!current) throw new Error("The durable reconciliation operation is unavailable.");
+  if (current.state === "sealed" || current.state === "failed") return retainedReconciliationResult(database, runId);
+  return { state: current.state, publishable: false, run_id: runId };
 }
 
 export async function initializeReconciliationProgress(database: CatalogueStore, runId: string, at: string) {

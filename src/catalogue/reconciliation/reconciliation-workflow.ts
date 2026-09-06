@@ -180,13 +180,7 @@ async function publicWorkflowRequest(
     );
     return {
       ...envelope,
-      status:
-        recovered.state === "preparing"
-          ? "running"
-          : recovered.state === "paused" || recovered.state === "abandoned"
-            ? recovered.state
-            : "complete",
-      output: ["preparing", "paused", "abandoned"].includes(String(recovered.state)) ? null : recovered,
+      ...durableOutputStatus(recovered),
     };
   }
   const output =
@@ -197,8 +191,19 @@ async function publicWorkflowRequest(
     expected_current_revision_id: request.expected_current_revision_id,
     idempotency_key: request.idempotency_key,
     workflow_instance_id: request.workflow_instance_id,
-    status: status.status,
-    output,
+    ...(output === null ? { status: status.status, output: null } : durableOutputStatus(output)),
+  };
+}
+
+function durableOutputStatus(result: Record<string, unknown>) {
+  return {
+    status:
+      result.state === "preparing"
+        ? "running"
+        : result.state === "paused" || result.state === "abandoned"
+          ? result.state
+          : "complete",
+    output: ["preparing", "paused", "abandoned"].includes(String(result.state)) ? null : result,
   };
 }
 
@@ -257,6 +262,15 @@ async function workflowOutput(
     throw new Error("The reconciliation Workflow result is invalid.");
   }
   if (result.result !== null && typeof result.result === "object" && !Array.isArray(result.result)) {
+    if (["preparing", "paused", "abandoned"].includes(String((result.result as Record<string, unknown>).state))) {
+      const current = await reconciliationOperationStatement(database, request.ingestion_run_id).first<{
+        state: string;
+      }>();
+      if (!current) throw new Error("The durable reconciliation operation is unavailable.");
+      if (["preparing", "paused", "abandoned"].includes(current.state))
+        return { state: current.state, run_id: request.ingestion_run_id, publishable: false };
+      return retainedReconciliationResult(database, request.ingestion_run_id);
+    }
     const retained = await retainedReconciliationResult(database, request.ingestion_run_id);
     if (canonicalJson(retained) !== canonicalJson(result.result as Record<string, unknown>)) {
       throw new Error("The reconciliation Workflow result does not bind the retained reconciliation.");
