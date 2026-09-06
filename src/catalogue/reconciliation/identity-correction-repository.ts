@@ -114,7 +114,17 @@ export function publishCorrectionStatements(
     repositoryStatements(database)
       .prepare(`INSERT INTO revision_identity_corrections
     (catalogue_revision_id, entity_id, entity_kind, document_json)
-    SELECT ?, json_extract(value, '$.id'), json_extract(value, '$.entity_kind'), value FROM json_each(?)`)
-      .bind(revision, payload),
+    SELECT ?, json_extract(incoming.value, '$.id'), json_extract(incoming.value, '$.entity_kind'), incoming.value FROM json_each(?) incoming
+    WHERE NOT EXISTS (SELECT 1 FROM revision_identity_corrections existing WHERE existing.catalogue_revision_id = ?
+      AND existing.entity_id = json_extract(incoming.value, '$.id') AND existing.document_json = incoming.value)`)
+      .bind(revision, payload, revision),
   );
+}
+
+export function correctionPrintingMappingStatement(database: CatalogueStore, id: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT source_observation_id, source_snapshot_id, evidence_json
+    FROM canonical_source_mappings WHERE entity_id = ? AND entity_kind = 'printing'
+    ORDER BY mapped_at DESC, rowid DESC LIMIT 1`)
+    .bind(id);
 }

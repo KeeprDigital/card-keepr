@@ -11,7 +11,7 @@ unknown number remains the separate evidence-matching flow.
 
 Write a proposal JSON object containing:
 
-- `game`, `entity_kind` (`card` or `printing`), and `action` (`merge` or `split`).
+- `game`, `entity_kind` (`card` or `printing`), and `action` (`merge`, `split`, or `assign`).
 - `source_ids` to retire and `replacement_ids`: one survivor for a merge, at
   least two replacements for a split of one conflated identity.
 - `printing_assignments`: `{}` except for a Card split, where every affected
@@ -27,6 +27,20 @@ add its exact `review_digest` and a unique `idempotency_key` to the proposal. Ru
 Validation binds the published revision, reviewed entities, relationships and
 preceding decision sequence. Concurrent changes require revalidation. Collection,
 release and recovery guards remain in force.
+
+A later Printing discovered under a split Card is excluded and named in candidate
+warnings until the owner assigns it. Submit an `assign` proposal with
+`entity_kind: card`, the split Card in `source_ids`, one of its replacement Cards
+in `replacement_ids`, and one to 100 retained Printing IDs in
+`printing_assignments`. Validate and create it in the same way. This appends a
+new decision backed by the retained source mappings; it never edits the original
+split or chooses which variant a consumer-owned copy represents. Reconcile and
+approve again to publish those same Printing IDs under the selected Card.
+
+One merge/split review accepts at most 100 IDs on either side and 1,000 affected
+Printing relationships, with at most 64 KiB of proposal input and 256 KiB of
+retained review data. Larger reviews fail explicitly before recording a decision.
+These are review guards, not measured complete-game ingestion capacity.
 
 Use `identity-correction inspect --correction-id ID` for the complete retained
 decision, or `identity-correction list --game GAME [--after SEQUENCE]` to traverse

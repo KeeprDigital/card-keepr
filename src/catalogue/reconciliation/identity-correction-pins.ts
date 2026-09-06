@@ -1,3 +1,4 @@
+import type { IdentityCorrectionProposal } from "./identity-corrections";
 import {
   AdministrationProblem,
   type CatalogueCandidate,
@@ -19,6 +20,7 @@ export async function pinCorrectionDecisions(database: CatalogueStore, runId: st
   if (!existing) {
     try {
       await database.batch(correctionPinStatementsForNewRun(database, runId, games));
+      existing = await correctionPinStatement(database, runId).first<{ games_json: string; decision_cutoff: number }>();
     } catch (error) {
       existing = await correctionPinStatement(database, runId).first<{ games_json: string; decision_cutoff: number }>();
       if (!existing) throw error;
@@ -43,6 +45,7 @@ export async function applyPinnedIdentityCorrections(
   warnings: Record<string, unknown>[],
 ) {
   await correctionDecisionPinMetadata(database, runId);
+  const correctedCardIdentity = await pinnedCardIdentityResolver(database, runId);
   const cards = new Map(candidate.cards.map((c) => [c.id, c]));
   const printings = new Map(candidate.printings.map((p) => [p.id, p]));
   const corrections = new Map((candidate.identity_corrections ?? []).map((c) => [c.id, c]));
@@ -53,14 +56,16 @@ export async function applyPinnedIdentityCorrections(
   while (true) {
     const rows = (await pinnedCorrectionsStatement(database, runId, after).all<CorrectionRow>()).results;
     for (const row of rows) {
-      const decision = JSON.parse(row.request_json) as {
-        game: string;
-        entity_kind: "card" | "printing";
-        action: "merge" | "split";
-        source_ids: string[];
-        replacement_ids: string[];
-        printing_assignments: Record<string, string>;
-      };
+      const decision = JSON.parse(row.request_json) as IdentityCorrectionProposal;
+      if (decision.action === "assign") {
+        warnings.push({
+          code: "identity_assignment",
+          correction_id: row.id,
+          printing_assignments: decision.printing_assignments,
+          detail: "Owner assigned retained Printings to a reviewed replacement Card without changing Printing IDs.",
+        });
+        continue;
+      }
       const retired = new Set(decision.source_ids);
       // Replaying a retained correction suppresses any re-observed old alias;
       // the historical source mapping remains attached to that original ID.
@@ -78,7 +83,8 @@ export async function applyPinnedIdentityCorrections(
       if (decision.entity_kind === "card") {
         for (const [id, printing] of printings) {
           if (!retired.has(printing.card_id)) continue;
-          const target = decision.action === "merge" ? decision.replacement_ids[0]! : decision.printing_assignments[id];
+          const resolved = correctedCardIdentity(printing.card_id, id);
+          const target = resolved === printing.card_id ? undefined : resolved;
           if (target) printings.set(id, { ...printing, card_id: target });
           else {
             printings.delete(id);
@@ -138,5 +144,38 @@ export async function applyPinnedIdentityCorrections(
     ...(corrections.size
       ? { identity_corrections: [...corrections.values()].sort((a, b) => a.id.localeCompare(b.id)) }
       : {}),
+  };
+}
+
+// Identity corrections only relax the Card association explicitly reviewed by
+// the owner. Artwork, printed content, rarity and treatment still must agree.
+export async function pinnedCardIdentityResolver(database: CatalogueStore, runId: string) {
+  await correctionDecisionPinMetadata(database, runId);
+  const merges = new Map<string, string>();
+  const assignments = new Map<string, string>();
+  let after = 0;
+  while (true) {
+    const rows = (await pinnedCorrectionsStatement(database, runId, after).all<CorrectionRow>()).results;
+    for (const row of rows) {
+      const decision = JSON.parse(row.request_json) as IdentityCorrectionProposal;
+      if (decision.entity_kind !== "card") continue;
+      if (decision.action === "merge")
+        for (const id of decision.source_ids) merges.set(id, decision.replacement_ids[0]!);
+      for (const source of decision.source_ids)
+        for (const [printing, target] of Object.entries(decision.printing_assignments))
+          assignments.set(canonicalJson([source, printing]), target);
+    }
+    if (rows.length < 100) break;
+    after = rows.at(-1)!.sequence;
+  }
+  return (cardId: string, printingId: string) => {
+    let resolved = cardId;
+    for (let depth = 0; ; depth++) {
+      const next = assignments.get(canonicalJson([resolved, printingId])) ?? merges.get(resolved);
+      if (!next || next === resolved) break;
+      if (depth > merges.size + assignments.size) throw new Error("Retained identity correction cycle.");
+      resolved = next;
+    }
+    return resolved;
   };
 }

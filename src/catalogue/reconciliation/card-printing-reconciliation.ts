@@ -1,4 +1,8 @@
-import { pinCorrectionDecisions, applyPinnedIdentityCorrections } from "./identity-correction-pins";
+import {
+  pinCorrectionDecisions,
+  applyPinnedIdentityCorrections,
+  pinnedCardIdentityResolver,
+} from "./identity-correction-pins";
 import {
   assessSourceAdmission,
   completeSourceAdmission,
@@ -202,6 +206,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     })),
   ];
   await pinCorrectionDecisions(database, runId, JSON.parse(run.selected_games_json) as string[]);
+  const correctedCardIdentity = await pinnedCardIdentityResolver(database, runId);
   await pinEntityAdmissions(database, runId, JSON.parse(run.selected_games_json) as string[]);
   const admittedEntities = await applyPinnedEntityAdmissions(database, runId, cards, printings, sourceWarnings);
   const observedErrata: CatalogueErratum[] = [];
@@ -632,8 +637,19 @@ export async function reconcileRetainedCardPrintingEvidence(
       uncorroboratedCrossLocaleMatches.forEach((matchId) => matchIds.delete(matchId));
       const missingProductCorroboration = uncorroboratedCrossLocaleMatches.length > 0 && matchIds.size === 0;
       const locatedConflict =
-        (located !== null && !isCompatible(located, compatibility)) ||
-        (localLocated !== undefined && !isCompatible(localLocated.compatibility, compatibility));
+        (located !== null &&
+          !isCompatible(
+            { ...located, card_id: correctedCardIdentity(located.card_id, located.id) },
+            { ...compatibility, card_id: correctedCardIdentity(compatibility.card_id, located.id) },
+          )) ||
+        (localLocated !== undefined &&
+          !isCompatible(
+            {
+              ...localLocated.compatibility,
+              card_id: correctedCardIdentity(localLocated.compatibility.card_id, localLocated.printingId),
+            },
+            { ...compatibility, card_id: correctedCardIdentity(compatibility.card_id, localLocated.printingId) },
+          ));
       if (locatedConflict) {
         const locatedId = located?.id ?? localLocated!.printingId;
         diagnostics.push({

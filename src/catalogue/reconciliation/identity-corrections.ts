@@ -1,6 +1,7 @@
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import {
   correctionStatement,
+  correctionPrintingMappingStatement,
   correctionReplayStatement,
   correctionStateStatement,
   correctionEntityStatement,
@@ -10,10 +11,10 @@ import {
   type CorrectionRow,
 } from "./identity-correction-repository";
 
-type Proposal = {
+export type IdentityCorrectionProposal = {
   game: string;
   entity_kind: "card" | "printing";
-  action: "merge" | "split";
+  action: "merge" | "split" | "assign";
   source_ids: string[];
   replacement_ids: string[];
   printing_assignments: Record<string, string>;
@@ -24,7 +25,7 @@ type Proposal = {
 function invalid(detail: string): never {
   throw new AdministrationProblem(422, "identity_correction_invalid", detail);
 }
-function proposal(value: Record<string, unknown>): Proposal {
+function proposal(value: Record<string, unknown>): IdentityCorrectionProposal {
   const fields = [
     "game",
     "entity_kind",
@@ -40,9 +41,9 @@ function proposal(value: Record<string, unknown>): Proposal {
   if (
     !["one-piece", "fusion-world", "digimon", "gundam"].includes(String(value.game)) ||
     !["card", "printing"].includes(String(value.entity_kind)) ||
-    !["merge", "split"].includes(String(value.action))
+    !["merge", "split", "assign"].includes(String(value.action))
   )
-    invalid("Select a Supported Game, Card or Printing, and merge or split.");
+    invalid("Select a Supported Game, Card or Printing, and merge, split or assign.");
   for (const key of ["source_ids", "replacement_ids"] as const) {
     const ids = value[key];
     if (
@@ -58,7 +59,7 @@ function proposal(value: Record<string, unknown>): Proposal {
     targets = value.replacement_ids as string[];
   if (
     sources.some((id) => targets.includes(id)) ||
-    (value.action === "merge" ? targets.length !== 1 : sources.length !== 1 || targets.length < 2)
+    (value.action === "split" ? sources.length !== 1 || targets.length < 2 : targets.length !== 1)
   )
     invalid(
       "A merge has one survivor; a split has one conflated identity and at least two replacements, with no self-reference.",
@@ -86,7 +87,7 @@ function proposal(value: Record<string, unknown>): Proposal {
     );
   if (new TextEncoder().encode(canonicalJson(value)).byteLength > 64 * 1024)
     invalid("One correction is limited to 64 KiB.");
-  return value as Proposal;
+  return value as IdentityCorrectionProposal;
 }
 export async function validateIdentityCorrection(database: CatalogueStore, value: Record<string, unknown>) {
   const input = proposal(value);
@@ -100,6 +101,7 @@ export async function validateIdentityCorrection(database: CatalogueStore, value
       "current_revision_mismatch",
       "Review the current published Catalogue Revision.",
     );
+  if (input.action === "assign") return validateIdentityAssignment(database, input, state);
   const entities: Record<string, Record<string, unknown>> = {};
   for (const id of [...input.source_ids, ...input.replacement_ids]) {
     const row = await correctionEntityStatement(database, input.entity_kind, id, state.current_revision_id).first<{
@@ -127,7 +129,7 @@ export async function validateIdentityCorrection(database: CatalogueStore, value
   while (true) {
     const rows = (await correctionHistoryStatement(database, input.game, after).all<CorrectionRow>()).results;
     for (const row of rows) {
-      const earlier = JSON.parse(row.request_json) as Proposal;
+      const earlier = JSON.parse(row.request_json) as IdentityCorrectionProposal;
       if ([...input.source_ids, ...input.replacement_ids].some((id) => earlier.source_ids.includes(id)))
         invalid(
           "An identity already retired by a retained decision cannot be selected again; inspect its survivor or replacements.",
@@ -239,4 +241,74 @@ export async function listIdentityCorrections(database: CatalogueStore, game: st
     })),
     next_cursor: rows.length === 100 ? rows.at(-1)!.sequence : null,
   };
+}
+
+async function validateIdentityAssignment(
+  database: CatalogueStore,
+  input: IdentityCorrectionProposal,
+  state: { current_revision_id: string; decision_cutoff: number },
+) {
+  if (
+    input.entity_kind !== "card" ||
+    input.source_ids.length !== 1 ||
+    Object.keys(input.printing_assignments).length === 0 ||
+    Object.keys(input.printing_assignments).length > 100
+  )
+    invalid("Assign one to 100 retained Printings from one split Card to a reviewed replacement Card.");
+  let split: CorrectionRow | undefined,
+    after = 0;
+  while (true) {
+    const rows = (await correctionHistoryStatement(database, input.game, after).all<CorrectionRow>()).results;
+    split =
+      rows.find((row) => {
+        const prior = JSON.parse(row.request_json) as IdentityCorrectionProposal;
+        return (
+          prior.action === "split" &&
+          prior.entity_kind === "card" &&
+          prior.source_ids[0] === input.source_ids[0] &&
+          prior.replacement_ids.includes(input.replacement_ids[0]!)
+        );
+      }) ?? split;
+    if (rows.length < 100) break;
+    after = rows.at(-1)!.sequence;
+  }
+  if (!split) invalid("An assignment must name a retained Card split and one of its replacements.");
+  const targetRow = await correctionEntityStatement(
+    database,
+    "card",
+    input.replacement_ids[0]!,
+    state.current_revision_id,
+  ).first<{ document_json: string }>();
+  if (!targetRow) invalid("The replacement Card must exist in the current published revision.");
+  const targetEnvelope = JSON.parse(targetRow.document_json);
+  const target = targetEnvelope.data ?? targetEnvelope;
+  if (target.game !== input.game) invalid("The replacement must belong to the same Supported Game.");
+  const evidence = [];
+  for (const printingId of Object.keys(input.printing_assignments)) {
+    const mapping = await correctionPrintingMappingStatement(database, printingId).first<{
+      source_observation_id: string;
+      source_snapshot_id: string;
+      evidence_json: string;
+    }>();
+    if (!mapping) invalid("Review a retained source mapping for each assigned Printing.");
+    const observed = JSON.parse(mapping.evidence_json);
+    if (observed.compatibility?.card_id !== input.source_ids[0])
+      invalid("Every assigned Printing must have retained evidence associating it with the split Card.");
+    evidence.push({
+      printing_id: printingId,
+      source_observation_id: mapping.source_observation_id,
+      source_snapshot_id: mapping.source_snapshot_id,
+      evidence: observed,
+    });
+  }
+  const reviewed = {
+    proposal: input,
+    split_id: split.id,
+    target,
+    assignment_evidence: evidence,
+    decision_cutoff: state.decision_cutoff,
+  };
+  if (new TextEncoder().encode(canonicalJson(reviewed)).byteLength > 256 * 1024)
+    invalid("The reviewed evidence exceeds the 256 KiB correction record bound.");
+  return { valid: true, review_digest: await sha256Text(canonicalJson(reviewed)), reviewed };
 }
