@@ -706,16 +706,16 @@ export async function reconcileRetainedCardPrintingEvidence(
       const locatedConflict =
         (located !== null &&
           !isCompatible(
-            { ...located, card_id: correctedCardIdentity(located.card_id, located.id) },
-            { ...compatibility, card_id: correctedCardIdentity(compatibility.card_id, located.id) },
+            { ...located, card_id: await correctedCardIdentity(located.card_id, located.id) },
+            { ...compatibility, card_id: await correctedCardIdentity(compatibility.card_id, located.id) },
           )) ||
         (localLocated !== undefined &&
           !isCompatible(
             {
               ...localLocated.compatibility,
-              card_id: correctedCardIdentity(localLocated.compatibility.card_id, localLocated.printingId),
+              card_id: await correctedCardIdentity(localLocated.compatibility.card_id, localLocated.printingId),
             },
-            { ...compatibility, card_id: correctedCardIdentity(compatibility.card_id, localLocated.printingId) },
+            { ...compatibility, card_id: await correctedCardIdentity(compatibility.card_id, localLocated.printingId) },
           ));
       if (locatedConflict) {
         const locatedId = located?.id ?? localLocated!.printingId;

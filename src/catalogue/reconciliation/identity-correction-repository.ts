@@ -102,7 +102,7 @@ export function pinnedCorrectionsStatement(database: CatalogueStore, runId: stri
   return repositoryStatements(database)
     .prepare(`SELECT d.* FROM identity_correction_decisions d JOIN identity_correction_run_pins p
     ON d.sequence <= p.decision_cutoff AND d.game IN (SELECT value FROM json_each(p.games_json))
-    WHERE p.ingestion_run_id = ? AND d.sequence > ? ORDER BY d.sequence LIMIT 100`)
+    WHERE p.ingestion_run_id = ? AND d.sequence > ? ORDER BY d.sequence LIMIT 1`)
     .bind(runId, after);
 }
 export function publishCorrectionStatements(
