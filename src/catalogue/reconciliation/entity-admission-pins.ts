@@ -1,3 +1,4 @@
+import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
 import type { ReconciliationRecordSink } from "./reconciliation-record-collection";
 import { admissionPolicyDigest } from "./entity-admission-source";
 import { sourceAuthorities } from "../source-evidence";
@@ -55,7 +56,14 @@ export async function applyPinnedEntityAdmissions(
   warnings: ReconciliationRecordSink<Record<string, unknown>>,
 ) {
   let after = "";
-  const admitted: AdmittedEntity[] = [];
+  const admittedCards = new ReconciliationReducerIndex<boolean>(database, runId, "admitted_card_ids");
+  const admittedPrintings = new ReconciliationReducerIndex<boolean>(database, runId, "admitted_printing_ids");
+  let cardCount = 0,
+    printingCount = 0;
+  const admitted = {
+    hasCard: (id: string) => (cardCount === 0 ? false : admittedCards.has(id)),
+    hasPrinting: (id: string) => (printingCount === 0 ? false : admittedPrintings.has(id)),
+  };
   while (true) {
     const rows = (
       await pinnedAdmissionsStatement(database, runId, after).all<
@@ -91,7 +99,12 @@ export async function applyPinnedEntityAdmissions(
         if (decision.printing && !(await printings.has(decision.printing.id)))
           await printings.set(decision.printing.id, decision.printing);
       }
-      admitted.push(decision);
+      await admittedCards.seed(decision.card.id, true);
+      cardCount++;
+      if (decision.printing) {
+        await admittedPrintings.seed(decision.printing.id, true);
+        printingCount++;
+      }
       await warnings.push(
         {
           code: "entity_admission",
@@ -104,7 +117,7 @@ export async function applyPinnedEntityAdmissions(
         ...decision.warnings,
       );
     }
-    if (rows.length < 100) return admitted;
+    if (rows.length === 0) return admitted;
     after = rows.at(-1)!.id;
   }
 }

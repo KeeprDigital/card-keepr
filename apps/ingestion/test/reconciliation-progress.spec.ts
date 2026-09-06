@@ -1564,6 +1564,7 @@ const retainedStateNamespaces = [
   "observation_plans",
   "semantic_memberships",
   "warning_records_sorted",
+  "observed_card_ids",
 ];
 test.each(retainedStateNamespaces)(
   "a %s storage outage resumes retained identities and effective rules text",

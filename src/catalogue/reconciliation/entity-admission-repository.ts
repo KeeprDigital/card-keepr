@@ -133,10 +133,10 @@ export function pinAdmissionsStatement(database: CatalogueStore, run: string, ga
 }
 export function pinnedAdmissionsStatement(database: CatalogueStore, run: string, after: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT p.*, d.decision_json, d.action, pin.generation
+    .prepare(`SELECT p.id, p.source_lineage, d.decision_json, d.action, pin.generation
     FROM entity_admission_pinned_decisions pin JOIN entity_proposals p ON p.id = pin.proposal_id
     LEFT JOIN entity_admission_decisions d ON d.proposal_id = p.id AND d.generation = pin.generation
-    WHERE pin.ingestion_run_id = ? AND p.id > ? ORDER BY p.id LIMIT 100`)
+    WHERE pin.ingestion_run_id = ? AND p.id > ? ORDER BY p.id LIMIT 1`)
     .bind(run, after);
 }
 

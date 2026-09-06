@@ -1,3 +1,4 @@
+import { ReconciliationSortedRecords } from "./reconciliation-sorted-records";
 import type { ReconciliationRecordSink } from "./reconciliation-record-collection";
 import {
   type CatalogueStore,
@@ -94,7 +95,7 @@ export async function reconcileProductReleaseState(
     }
   }
   const productSurfaceObserved = checkedLineages.size > 0;
-  const observedProducts: { id: string }[] = [];
+  const observedProducts = new ReconciliationSortedRecords<string>(database, runId, `observed_products_${game}`);
   for await (const product of prior.values("products")) {
     if (product.game !== game) {
       continue;
@@ -109,7 +110,7 @@ export async function reconcileProductReleaseState(
     const resolved = observations.length > 0 ? resolveProduct(observations, game) : product;
     const productResult = { ...resolved, observed: current !== undefined };
     await result.set("products", productResult);
-    if (current) observedProducts.push({ id: productResult.id });
+    if (current) await observedProducts.append(productResult.id);
     else if (productSurfaceObserved && retained.some(({ evidence }) => checkedLineages.has(evidence.source))) {
       await warnings.push({
         code: "product_not_observed",
@@ -127,7 +128,7 @@ export async function reconcileProductReleaseState(
     if (await names.has(group.id)) continue;
     const product = resolveProduct(group.observations, game);
     await result.set("products", product);
-    observedProducts.push({ id: product.id });
+    await observedProducts.append(product.id);
   }
   for await (const context of prior.values("distribution_contexts")) {
     let preserved = context;
@@ -170,10 +171,9 @@ export async function reconcileProductReleaseState(
   for await (const relationship of relationships.latestValues()) {
     if (!(await priorRelationships.has(relationship.id))) await result.set("product_relationships", relationship);
   }
-  const byId = (left: { id: string }, right: { id: string }) => left.id.localeCompare(right.id);
   return {
     draft: result,
-    observedProducts: observedProducts.sort(byId),
+    observedProducts,
     productSurfaceObserved,
     checkedLineages: [...checkedLineages],
   };

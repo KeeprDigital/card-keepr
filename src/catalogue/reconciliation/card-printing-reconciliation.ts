@@ -1164,8 +1164,13 @@ export async function reconcileRetainedCardPrintingEvidence(
 
   let productCatalogue = {
     draft: priorProducts,
-    observedProducts: [] as { id: string }[],
     productSurfaceObserved: false,
+  };
+  const observedProductGroups = new Map<SupportedGame, AsyncIterable<string>>();
+  const observedProducts = {
+    async *[Symbol.asyncIterator]() {
+      for (const records of observedProductGroups.values()) yield* records;
+    },
   };
   const observedProductGames = new Set<SupportedGame>();
   const observedProductLineages = new Set<string>();
@@ -1199,9 +1204,9 @@ export async function reconcileRetainedCardPrintingEvidence(
       );
       productCatalogue = {
         draft: reconciled.draft,
-        observedProducts: [...productCatalogue.observedProducts, ...reconciled.observedProducts],
         productSurfaceObserved: productCatalogue.productSurfaceObserved || reconciled.productSurfaceObserved,
       };
+      observedProductGroups.set(game, reconciled.observedProducts);
       if (reconciled.productSurfaceObserved) {
         observedProductGames.add(game);
         for (const sourceLineage of reconciled.checkedLineages) observedProductLineages.add(sourceLineage);
@@ -1355,24 +1360,24 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
   const warnings = sourceWarnings;
   let candidateCatalogueDigest: string;
-  const observedCards: { id: string }[] = [];
+  const observedCards = new ReconciliationSortedRecords<string>(database, runId, "observed_card_ids");
   for await (const card of official.values("cards")) {
     if (
       (await localCardFacts.has(card.id)) ||
       (await targetedCardIds.has(card.id)) ||
-      admittedEntities.some((entity) => entity.card.id === card.id)
+      (await admittedEntities.hasCard(card.id))
     )
-      observedCards.push({ id: card.id });
+      await observedCards.append(card.id);
   }
-  observedCards.sort((left, right) => left.id.localeCompare(right.id));
-  const observedPrintings: { id: string }[] = [];
+  const observedPrintingIds = new ReconciliationRecordLog<string>(database, runId, "observed_printing_ids");
+  const observedPrintings = { [Symbol.asyncIterator]: () => observedPrintingIds.records() };
   for await (const printing of official.values("printings")) {
     if (
       (await plans.hasObserved("printing", printing.id)) ||
       (await targetedPrintingIds.has(printing.id)) ||
-      admittedEntities.some((entity) => entity.printing?.id === printing.id)
+      (await admittedEntities.hasPrinting(printing.id))
     )
-      observedPrintings.push({ id: printing.id });
+      await observedPrintingIds.append(printing.id);
   }
   if (diagnostics.length > 0) {
     candidateCatalogueDigest = await catalogueDataDigest(
@@ -1393,7 +1398,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       sourceObservationSetId: retained.observationSetId,
       observedCards,
       observedPrintings,
-      observedProducts: productCatalogue.observedProducts,
+      observedProducts,
       diagnostics: stableDiagnostics,
       warnings,
     });
@@ -1437,7 +1442,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       sourceObservationSetId: retained.observationSetId,
       observedCards,
       observedPrintings,
-      observedProducts: productCatalogue.observedProducts,
+      observedProducts,
       diagnostics,
       warnings,
     });
@@ -1477,7 +1482,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     sourceObservationSetId: retained.observationSetId,
     observedCards,
     observedPrintings,
-    observedProducts: productCatalogue.observedProducts,
+    observedProducts,
     diagnostics: [],
     warnings,
   });
@@ -1542,9 +1547,9 @@ function reconciliationDigestPayload(input: {
   state: "awaiting_approval" | "failed";
   publishable: boolean;
   sourceObservationSetId: string;
-  observedCards: readonly { id: string }[];
-  observedPrintings: readonly { id: string }[];
-  observedProducts: readonly { id: string }[];
+  observedCards: AsyncIterable<string>;
+  observedPrintings: AsyncIterable<string>;
+  observedProducts: AsyncIterable<string>;
   diagnostics: Iterable<Record<string, unknown>> | AsyncIterable<Record<string, unknown>>;
   warnings: Iterable<Record<string, unknown>> | AsyncIterable<Record<string, unknown>>;
 }): Record<string, unknown> {
@@ -1556,9 +1561,9 @@ function reconciliationDigestPayload(input: {
       state: input.state,
       publishable: input.publishable,
       source_observation_set_id: input.sourceObservationSetId,
-      observed_card_ids: input.observedCards.map(({ id }) => id),
-      observed_printing_ids: input.observedPrintings.map(({ id }) => id),
-      observed_product_ids: input.observedProducts.map(({ id }) => id),
+      observed_card_ids: input.observedCards,
+      observed_printing_ids: input.observedPrintings,
+      observed_product_ids: input.observedProducts,
       diagnostics: input.diagnostics,
       warnings: input.warnings,
     },
