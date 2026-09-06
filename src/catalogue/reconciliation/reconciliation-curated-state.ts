@@ -1,8 +1,6 @@
 import { type CatalogueStore, type CatalogueCandidate } from "../shared";
 import {
-  applyPinnedCuratedRevisions,
   applyPinnedCuratedRevisionsToDraft,
-  curatedRevisionSetForRun,
   CuratedDraftSourceChangeError,
   CuratedRevisionSourceChangeError,
 } from "../curated";
@@ -14,10 +12,6 @@ export async function applyCuratedCandidateState(
   candidate: CatalogueCandidate,
   observedAt: string,
 ): Promise<CatalogueCandidate> {
-  const pins = await curatedRevisionSetForRun(database, runId);
-  // The legacy aggregate caller still owns validation when there are no curated edits.
-  if (!pins?.revision_ids.length)
-    return applyPinnedCuratedRevisions(database, runId, candidate, observedAt, { deferSourceChangeFailure: true });
   const official = new ReconciliationCandidateState(database, runId, "before_curated");
   await official.seed(candidate);
   const result = new ReconciliationCandidateState(database, runId, "curated", official);

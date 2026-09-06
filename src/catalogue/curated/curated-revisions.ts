@@ -1331,7 +1331,15 @@ async function sourceChangePersistence(
     if (revision?.status === "reconfirmation_required") continue;
     const observed = await sha256Text(canonicalJson(conflict.reviewedSourceValue));
     const version = (revision?.event_version ?? 0) + 1;
-    const conflictId = `crconf_${crypto.randomUUID()}`;
+    // Preparation is immutable and may precede the terminal transaction by a retry.
+    const conflictId = `crconf_${await sha256Text(
+      canonicalJson({
+        run_id: runId,
+        revision_id: conflict.row.id,
+        previous_source_digest: conflict.row.reviewed_source_digest,
+        observed_source_digest: observed,
+      }),
+    )}`;
     const details = {
       conflict_id: conflictId,
       conflict_digest: await sha256Text(

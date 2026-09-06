@@ -636,10 +636,18 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
       { payload: { ...payload, generation: 1 } } as typeof event,
       step,
     );
+    const sealed = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+    expect(sealed).toMatchObject({ state: "sealed", generation: 1 });
+    expect(Number(sealed.completed_reducer_records)).toBeGreaterThan(Number(paused.completed_reducer_records));
+    await runReconciliationWorkflow(
+      { ...testEnv, CATALOGUE_DB: database },
+      { payload: { ...payload, generation: 1 } } as typeof event,
+      step,
+    );
     expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
       state: "sealed",
       generation: 1,
-      completed_reducer_records: paused.completed_reducer_records,
+      completed_reducer_records: sealed.completed_reducer_records,
     });
   },
 );
@@ -1364,9 +1372,80 @@ test("persistent curated comparison records every changed source field before fa
     revisions.push(requiredString(created.document, "curated_revision_id"));
   }
   const run = await collect("/reconciliation/curated-draft-source-changed", "curated-conflicts-next");
-  const result = await reconcile(run.id);
-  expect(result.response.status, JSON.stringify(result.document)).toBe(409);
-  expect(result.document.diagnostics).toHaveLength(2);
+  const { testEnv } = await import("./reconciliation-helpers");
+  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const sqlByStatement = new WeakMap<object, string>();
+  const wrap = (statement: D1PreparedStatement, sql: string): D1PreparedStatement => {
+    const proxy = new Proxy(statement, {
+      get(target, property) {
+        if (property === "bind") return (...values: unknown[]) => wrap(target.bind(...values), sql);
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    sqlByStatement.set(proxy, sql);
+    return proxy;
+  };
+  let interruptions = 0;
+  const database = new Proxy(testEnv.CATALOGUE_DB, {
+    get(target, property) {
+      if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
+      if (property === "batch")
+        return (statements: D1PreparedStatement[]) => {
+          if (
+            interruptions === 0 &&
+            statements.some((statement) =>
+              sqlByStatement.get(statement)?.includes("reconciliation_preparation_incomplete"),
+            )
+          ) {
+            interruptions++;
+            throw new Error("Injected interruption after source-conflict preparation");
+          }
+          return target.batch(statements);
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const event = {
+    payload: {
+      ingestion_run_id: run.id,
+      expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
+      idempotency_key: "curated-conflicts-next",
+      observed_at: new Date().toISOString(),
+      generation: 0,
+    },
+  } as import("cloudflare:workers").WorkflowEvent<
+    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+  >;
+  const step = {
+    do: async (_name: string, _config: unknown, callback: () => Promise<string>) => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await callback();
+        } catch (error) {
+          if (attempt === 3) throw error;
+        }
+      }
+    },
+  } as unknown as import("cloudflare:workers").WorkflowStep;
+  await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
+  expect(interruptions).toBe(1);
+  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({ state: "failed" });
+  const shownRun = await get(`/v1/ingestion-runs/${run.id}`);
+  expect(shownRun.document).toMatchObject({
+    state: "failed",
+    failure_code: "curated_revision_reconfirmation_required",
+  });
+  const page = await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions`);
+  const warningPartition = (page.document.partitions as { kind: string; ordinal: number }[]).find(
+    ({ kind }) => kind === "warnings",
+  )!;
+  const detail = await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${warningPartition.ordinal}`);
+  expect(detail.document.records).toEqual([
+    expect.objectContaining({ code: "curated_revision_reconfirmation_required" }),
+    expect.objectContaining({ code: "curated_revision_reconfirmation_required" }),
+  ]);
   for (const revision of revisions) {
     const shown = await get(`/admin/v1/curated-revisions/${revision}`);
     expect(shown.document).toMatchObject({
