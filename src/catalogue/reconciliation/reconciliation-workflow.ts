@@ -181,8 +181,13 @@ async function publicWorkflowRequest(
     );
     return {
       ...envelope,
-      status: recovered.state === "paused" ? "paused" : "complete",
-      output: recovered.state === "paused" ? null : recovered,
+      status:
+        recovered.state === "preparing"
+          ? "running"
+          : recovered.state === "paused" || recovered.state === "abandoned"
+            ? recovered.state
+            : "complete",
+      output: ["preparing", "paused", "abandoned"].includes(String(recovered.state)) ? null : recovered,
     };
   }
   const output =
@@ -214,7 +219,11 @@ async function recoverTerminalWorkflow(
     return retainedReconciliationResult(database, request.ingestion_run_id);
   }
   await pauseFailedReconciliationStatement(database, request.ingestion_run_id, generation, detail).run();
-  return { state: "paused", publishable: false, run_id: request.ingestion_run_id };
+  const current = await reconciliationOperationStatement(database, request.ingestion_run_id).first<{ state: string }>();
+  if (current?.state === "sealed" || current?.state === "failed")
+    return retainedReconciliationResult(database, request.ingestion_run_id);
+  if (!current) throw new Error("The durable reconciliation operation is unavailable.");
+  return { state: current.state, publishable: false, run_id: request.ingestion_run_id };
 }
 
 async function workflowOutput(

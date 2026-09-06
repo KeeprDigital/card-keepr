@@ -233,7 +233,8 @@ test("a terminal response from an old Workflow poll cannot pause a resumed gener
     expect(response.status).toBe(200);
     return { status: "errored" };
   };
-  await request();
+  const staleResponse = await request();
+  expect(await staleResponse.json()).toMatchObject({ status: "running", output: null });
   expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
     state: "preparing",
     generation: 1,
@@ -284,4 +285,81 @@ test("transient image storage failures exhaust bounded retries into a resumable 
     generation: 1,
   });
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
+});
+
+test("interrupted preparation resumes verified batches before sealing for review", async () => {
+  const { testEnv, post } = await import("./reconciliation-helpers");
+  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const run = await collect("/reconciliation/base", "preparation-interruption");
+  const sqlByStatement = new WeakMap<object, string>();
+  const wrap = (statement: D1PreparedStatement, sql: string): D1PreparedStatement => {
+    const proxy = new Proxy(statement, {
+      get(target, property) {
+        if (property === "bind") return (...values: unknown[]) => wrap(target.bind(...values), sql);
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    sqlByStatement.set(proxy, sql);
+    return proxy;
+  };
+  let preparationBatches = 0;
+  const database = new Proxy(testEnv.CATALOGUE_DB, {
+    get(target, property) {
+      if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
+      if (property === "batch")
+        return async (statements: D1PreparedStatement[]) => {
+          if (
+            statements.some((statement) =>
+              sqlByStatement.get(statement)?.includes("INSERT INTO reconciliation_preparation_batches"),
+            )
+          ) {
+            preparationBatches++;
+            if (preparationBatches === 3) throw new Error("injected bounded preparation interruption");
+          }
+          return target.batch(statements);
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const payload = {
+    ingestion_run_id: run.id,
+    expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
+    idempotency_key: "preparation-interruption",
+    observed_at: new Date().toISOString(),
+    generation: 0,
+  };
+  const event = { payload } as import("cloudflare:workers").WorkflowEvent<
+    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+  >;
+  const step = {
+    do: async (_name: string, _config: unknown, callback: () => Promise<string>) => callback(),
+  } as unknown as import("cloudflare:workers").WorkflowStep;
+  await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
+  expect(preparationBatches).toBe(3);
+  const paused = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+  expect(paused.document).toMatchObject({
+    state: "paused",
+    generation: 1,
+    completed_batches: 2,
+    candidate_digest: null,
+  });
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
+  expect(
+    (
+      await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+        generation: 1,
+        idempotency_key: "preparation-resume",
+      })
+    ).response.status,
+  ).toBe(200);
+  await runReconciliationWorkflow(testEnv, { payload: { ...payload, generation: 1 } } as typeof event, step);
+  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+    state: "sealed",
+    generation: 1,
+    deadline: paused.document.deadline,
+    completed_batches: expect.any(Number),
+  });
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "awaiting_approval" });
 });

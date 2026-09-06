@@ -1,13 +1,14 @@
+import { boundedRecordArrays, canonicalValueChunks, prepareCandidateBatch } from "./reconciliation-preparation";
+import { preparationCompleteGuard } from "./reconciliation-preparation-repository";
 import { persistCandidatePartitions } from "./reconciliation-partitions";
 import { sealReconciliationOperationStatement } from "./reconciliation-progress-repository";
 import {
-  byteBoundedJsonArrays,
+  persistReconciliationPayloadChunkStatement,
   type CatalogueCandidate,
   type CatalogueStore,
   canonicalJson,
   chunkedPayloadMarker,
   guardedAtomicBatch,
-  payloadChunkStatements,
   retainedPayload,
 } from "../shared";
 import type {
@@ -89,7 +90,7 @@ export async function persistReviewableCandidate(
     }[];
     warnings: readonly (ReconciliationWarning | Record<string, unknown>)[];
     candidate: CatalogueCandidate;
-    digestPayloadJson: string;
+    digestPayload: Record<string, unknown>;
     candidateDigest: string;
     candidateCatalogueDigest: string;
     observedAt: string;
@@ -101,16 +102,10 @@ export async function persistReviewableCandidate(
     code: String(warning.code),
     detail: String(warning.detail),
   }));
+  const preparationCount = await stageCandidatePreparation(database, input, canonicalJson(input.warnings));
   const statements = [
-    createReconciliationContextStatement(database, {
-      runId: input.runId,
-      digestPayload: chunkedPayloadMarker("digest"),
-    }),
-    ...evidencePartitionStatements(database, input.runId, input.partitions),
-    ...payloadChunkStatements(database, input.runId, "candidate", canonicalJson(input.candidate)),
-    ...payloadChunkStatements(database, input.runId, "digest", input.digestPayloadJson),
+    preparationCompleteGuard(database, input.runId, preparationCount),
     beginReconciliationStatement(database, input.runId),
-    ...candidatePlanInsertionStatements(database, input.runId, input.plans, canonicalJson(input.warnings)),
     sealReconciliationOperationStatement(database, input.runId, input.candidateDigest, manifest.digest, manifest.count),
     reviewableCandidateStatement(database, {
       candidatePayload: chunkedPayloadMarker("candidate"),
@@ -147,7 +142,7 @@ export async function persistBlockedCandidate(
     }[];
     diagnostics: readonly Record<string, unknown>[];
     candidate: CatalogueCandidate;
-    digestPayloadJson: string;
+    digestPayload: Record<string, unknown>;
     candidateDigest: string;
     candidateCatalogueDigest: string;
     observedAt: string;
@@ -158,16 +153,11 @@ export async function persistBlockedCandidate(
   const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
   const runDiagnostics = input.diagnostics.map(publicRunDiagnostic);
   const failureCode = input.failureCode ?? "printing_reconciliation_blocked";
+  await persistCandidatePartitions(database, input.runId, input.candidate);
+  const preparationCount = await stageCandidatePreparation(database, input, canonicalJson(input.diagnostics));
   const statements = [
-    createReconciliationContextStatement(database, {
-      runId: input.runId,
-      digestPayload: chunkedPayloadMarker("digest"),
-    }),
-    ...evidencePartitionStatements(database, input.runId, input.partitions),
-    ...payloadChunkStatements(database, input.runId, "candidate", canonicalJson(input.candidate)),
-    ...payloadChunkStatements(database, input.runId, "digest", input.digestPayloadJson),
+    preparationCompleteGuard(database, input.runId, preparationCount),
     beginReconciliationStatement(database, input.runId),
-    ...candidatePlanInsertionStatements(database, input.runId, input.plans, canonicalJson(input.diagnostics)),
     ...(input.atomicStatements ?? []),
     blockedCandidateStatement(database, {
       candidatePayload: chunkedPayloadMarker("candidate"),
@@ -272,50 +262,87 @@ type CandidatePlanInput = {
   sourceCardFactsJson: string | null;
 };
 
-function candidatePlanInsertionStatements(
+async function stageCandidatePreparation(
   database: CatalogueStore,
-  runId: string,
-  plans: readonly CandidatePlanInput[],
+  input: {
+    runId: string;
+    candidate: CatalogueCandidate;
+    digestPayload: Record<string, unknown>;
+    plans: readonly CandidatePlanInput[];
+    partitions: readonly EvidencePartitionInput[];
+  },
   warningsJson: string,
-): D1PreparedStatement[] {
-  const rows = plans.map((plan) => ({
-    observation_set_id: plan.sourceObservationSetId,
-    snapshot_id: plan.sourceSnapshotId,
-    observation_id: plan.sourceObservationId,
-    source_lineage: plan.sourceLineage,
-    observation_kind: plan.observationKind,
-    card_id: plan.cardId,
-    printing_id: plan.printingId,
-    locator: plan.locator,
-    variant_key: plan.variantKey,
-    compatibility_json: plan.compatibility === null ? null : canonicalJson(plan.compatibility),
-    memberships_json: canonicalJson(plan.memberships),
-    withdrawal_json: plan.withdrawal === null ? null : canonicalJson(plan.withdrawal),
-    source_card_facts_json: plan.sourceCardFactsJson,
-  }));
-  return byteBoundedJsonArrays(rows).map((chunk) =>
-    candidatePlansStatement(database, { runId: runId, warningsJson: warningsJson, plansJson: chunk }),
+): Promise<number> {
+  let ordinal = 0;
+  const prepare = async (kind: string, content: string, statement: D1PreparedStatement) => {
+    await prepareCandidateBatch(database, input.runId, ordinal, kind, content, [statement]);
+    ordinal++;
+  };
+  const marker = chunkedPayloadMarker("digest");
+  await prepare(
+    "context",
+    marker,
+    createReconciliationContextStatement(database, { runId: input.runId, digestPayload: marker }),
   );
+  for (const content of boundedRecordArrays(evidencePartitionRows(input.partitions))) {
+    await prepare(
+      "evidence",
+      content,
+      evidencePartitionsStatement(database, { runId: input.runId, partitionsJson: content }),
+    );
+  }
+  for (const kind of ["candidate", "digest"] as const) {
+    let index = 0;
+    for (const content of canonicalValueChunks(kind === "candidate" ? input.candidate : input.digestPayload)) {
+      await prepare(
+        kind,
+        content,
+        persistReconciliationPayloadChunkStatement(database, { runId: input.runId, kind, index, content }),
+      );
+      index++;
+    }
+  }
+  for (const content of boundedRecordArrays(candidatePlanRows(input.plans))) {
+    await prepare(
+      "plans",
+      canonicalJson({ content, warnings: warningsJson }),
+      candidatePlansStatement(database, { runId: input.runId, plansJson: content, warningsJson }),
+    );
+  }
+  return ordinal;
 }
 
-function evidencePartitionStatements(
-  database: CatalogueStore,
-  runId: string,
-  partitions: readonly EvidencePartitionInput[],
-): D1PreparedStatement[] {
-  const rows = partitions.map((partition) => ({
-    sequence_number: partition.sequenceNumber,
-    request_id: partition.requestId,
-    observation_set_id: partition.observationSetId,
-    snapshot_id: partition.sourceSnapshotId,
-    source_lineage: partition.sourceLineage,
-    supported_game: partition.supportedGame,
-    profile_version: partition.gameProfileVersion,
-    adapter_version: partition.adapterVersion,
-  }));
-  return byteBoundedJsonArrays(rows).map((chunk) =>
-    evidencePartitionsStatement(database, { runId: runId, partitionsJson: chunk }),
-  );
+function* candidatePlanRows(plans: readonly CandidatePlanInput[]) {
+  for (const plan of plans)
+    yield {
+      observation_set_id: plan.sourceObservationSetId,
+      snapshot_id: plan.sourceSnapshotId,
+      observation_id: plan.sourceObservationId,
+      source_lineage: plan.sourceLineage,
+      observation_kind: plan.observationKind,
+      card_id: plan.cardId,
+      printing_id: plan.printingId,
+      locator: plan.locator,
+      variant_key: plan.variantKey,
+      compatibility_json: plan.compatibility === null ? null : canonicalJson(plan.compatibility),
+      memberships_json: canonicalJson(plan.memberships),
+      withdrawal_json: plan.withdrawal === null ? null : canonicalJson(plan.withdrawal),
+      source_card_facts_json: plan.sourceCardFactsJson,
+    };
+}
+
+function* evidencePartitionRows(partitions: readonly EvidencePartitionInput[]) {
+  for (const partition of partitions)
+    yield {
+      sequence_number: partition.sequenceNumber,
+      request_id: partition.requestId,
+      observation_set_id: partition.observationSetId,
+      snapshot_id: partition.sourceSnapshotId,
+      source_lineage: partition.sourceLineage,
+      supported_game: partition.supportedGame,
+      profile_version: partition.gameProfileVersion,
+      adapter_version: partition.adapterVersion,
+    };
 }
 
 export async function reconciliationCandidatePlans(

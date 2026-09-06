@@ -144,3 +144,5 @@ export { observeWorkflowProgress, type WorkflowProgress } from "./workflow-progr
 export { advancesCollectionProgress, type WorkflowKind, workflowStepName, workflowSteps } from "./workflow-steps";
 
 export { nextLiveIngestionReservationSql } from "./ingestion-reservation-repository";
+
+export { persistReconciliationPayloadChunkStatement } from "./reconciliation-payload-repository";

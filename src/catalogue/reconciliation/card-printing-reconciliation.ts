@@ -1,3 +1,4 @@
+import { canonicalValueDigest } from "./reconciliation-preparation";
 import { CandidateImageStorageError } from "./reconciliation-images";
 import { initializeReconciliationProgress } from "./reconciliation-progress";
 import {
@@ -1207,7 +1208,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     const stableDiagnostics = [...diagnostics].sort((left, right) =>
       canonicalJson(left).localeCompare(canonicalJson(right)),
     );
-    const digestPayloadJson = reconciliationDigestPayload({
+    const digestPayload = reconciliationDigestPayload({
       candidate,
       partitions: retained.partitions,
       plans,
@@ -1220,14 +1221,14 @@ export async function reconcileRetainedCardPrintingEvidence(
       diagnostics: stableDiagnostics,
       warnings,
     });
-    const candidateDigest = await sha256Text(digestPayloadJson);
+    const candidateDigest = await canonicalValueDigest(digestPayload);
     await persistBlockedCandidate(database, {
       runId,
       partitions: retained.partitions,
       plans,
       diagnostics: stableDiagnostics,
       candidate,
-      digestPayloadJson,
+      digestPayload,
       candidateDigest,
       candidateCatalogueDigest,
       observedAt,
@@ -1260,7 +1261,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     const diagnostics = [...error.diagnostics].sort((left, right) =>
       canonicalJson(left).localeCompare(canonicalJson(right)),
     );
-    const digestPayloadJson = reconciliationDigestPayload({
+    const digestPayload = reconciliationDigestPayload({
       candidate,
       partitions: retained.partitions,
       plans,
@@ -1273,14 +1274,14 @@ export async function reconcileRetainedCardPrintingEvidence(
       diagnostics,
       warnings,
     });
-    const candidateDigest = await sha256Text(digestPayloadJson);
+    const candidateDigest = await canonicalValueDigest(digestPayload);
     await persistBlockedCandidate(database, {
       runId,
       partitions: retained.partitions,
       plans,
       diagnostics,
       candidate,
-      digestPayloadJson,
+      digestPayload,
       candidateDigest,
       candidateCatalogueDigest,
       observedAt,
@@ -1305,7 +1306,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     };
   }
   candidateCatalogueDigest = await catalogueDataDigest(database, candidate, plans, checkedSourceLineages);
-  const digestPayloadJson = reconciliationDigestPayload({
+  const digestPayload = reconciliationDigestPayload({
     candidate,
     partitions: retained.partitions,
     plans,
@@ -1318,7 +1319,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     diagnostics: [],
     warnings,
   });
-  const candidateDigest = await sha256Text(digestPayloadJson);
+  const candidateDigest = await canonicalValueDigest(digestPayload);
   await retainSourceMappings(database, runId, sourceMappings);
   await persistReviewableCandidate(database, {
     runId,
@@ -1326,7 +1327,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     plans,
     warnings,
     candidate,
-    digestPayloadJson,
+    digestPayload,
     candidateDigest,
     candidateCatalogueDigest,
     observedAt,
@@ -1414,8 +1415,8 @@ function reconciliationDigestPayload(input: {
   observedProducts: readonly { id: string }[];
   diagnostics: readonly Record<string, unknown>[];
   warnings: readonly Record<string, unknown>[];
-}): string {
-  return canonicalJson({
+}): Record<string, unknown> {
+  return {
     catalogue_data: input.candidate,
     evidence_partitions: input.partitions,
     observation_plans: digestObservationPlans(input.plans),
@@ -1429,7 +1430,7 @@ function reconciliationDigestPayload(input: {
       diagnostics: input.diagnostics,
       warnings: input.warnings,
     },
-  });
+  };
 }
 
 async function candidateAtRevision(

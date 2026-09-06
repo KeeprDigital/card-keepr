@@ -38,7 +38,8 @@ export function createReconciliationOperationStatement(
 export function reconciliationOperationStatement(database: CatalogueStore, runId: string) {
   return repositoryStatements(database)
     .prepare(`SELECT id AS reconciliation_id, ingestion_run_id,
-    state, generation, created_at, deadline, completed_partitions, candidate_digest, manifest_digest, failure_code, definition_pins_json, observation_cutoff, identity_decision_cutoff, authority_decision_cutoff
+    state, generation, created_at, deadline, completed_partitions,
+    (SELECT count(*) FROM reconciliation_preparation_batches WHERE ingestion_run_id = reconciliation_operations.ingestion_run_id) AS completed_batches, candidate_digest, manifest_digest, failure_code, definition_pins_json, observation_cutoff, identity_decision_cutoff, authority_decision_cutoff
     FROM reconciliation_operations WHERE ingestion_run_id = ?`)
     .bind(runId);
 }
