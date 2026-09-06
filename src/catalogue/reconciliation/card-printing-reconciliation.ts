@@ -55,7 +55,8 @@ import {
   identifyRulesTextErrata,
   mergeCatalogueErrata,
 } from "./errata-rules-text";
-import { reconcileProductReleaseCatalogue } from "./product-release-catalogue";
+import { type ProductReleaseEvidenceInput, type reconcileProductReleaseCatalogue } from "./product-release-catalogue";
+import { reconcileProductReleaseState } from "./product-release-state";
 import {
   failReconciliation,
   persistBlockedCandidate,
@@ -258,9 +259,11 @@ export async function reconcileRetainedCardPrintingEvidence(
   const targetedPrintingIds = new Set<string>();
   const cardCheckTimes = new Map<SupportedGame, string>();
   const productCheckTimes = new Map<SupportedGame, string>();
+  const productGames = new Set<SupportedGame>();
   type RetainedObservation = NormalizedReconciliationObservation;
   for await (const observation of retained.observations()) {
     if (observation.kind !== "card_printing") continue;
+    productGames.add(observation.supportedGame);
     for (const index of [
       cards,
       printings,
@@ -1122,30 +1125,26 @@ export async function reconcileRetainedCardPrintingEvidence(
   const observedProductLineages = new Set<string>();
   try {
     const plansByObservationId = new Map(plans.map((plan) => [plan.sourceObservationId, plan]));
-    const observationsByGame = new Map<
-      SupportedGame,
-      Array<Parameters<typeof reconcileProductReleaseCatalogue>[1][number]>
-    >();
-    for await (const observation of retained.observations()) {
-      if (observation.kind !== "card_printing") continue;
-      const plan = plansByObservationId.get(observation.sourceObservationId);
-      const gameObservations = observationsByGame.get(observation.supportedGame) ?? [];
-      gameObservations.push({
-        value: observation.productReleaseValue,
-        sourceObservationId: observation.sourceObservationId,
-        sourceObservationSetId: observation.sourceObservationSetId,
-        sourceSnapshotId: observation.sourceSnapshotId,
-        sourceLineage: observation.sourceLineage,
-        sourceSurface: observation.sourceSurface,
-        requestRole: observation.sourceRequestRole,
-        capturedAt: observation.sourceCapturedAt,
-        currentCardId: plan?.cardId ?? null,
-        currentPrintingId: plan?.printingId ?? null,
-      });
-      observationsByGame.set(observation.supportedGame, gameObservations);
-    }
-    for (const [game, gameObservations] of observationsByGame) {
-      const reconciled = await reconcileProductReleaseCatalogue(productCatalogue, gameObservations, game);
+    for (const game of productGames) {
+      async function* inputs(): AsyncGenerator<ProductReleaseEvidenceInput> {
+        for await (const observation of retained.observations()) {
+          if (observation.kind !== "card_printing" || observation.supportedGame !== game) continue;
+          const plan = plansByObservationId.get(observation.sourceObservationId);
+          yield {
+            value: observation.productReleaseValue,
+            sourceObservationId: observation.sourceObservationId,
+            sourceObservationSetId: observation.sourceObservationSetId,
+            sourceSnapshotId: observation.sourceSnapshotId,
+            sourceLineage: observation.sourceLineage,
+            sourceSurface: observation.sourceSurface,
+            requestRole: observation.sourceRequestRole,
+            capturedAt: observation.sourceCapturedAt,
+            currentCardId: plan?.cardId ?? null,
+            currentPrintingId: plan?.printingId ?? null,
+          };
+        }
+      }
+      const reconciled = await reconcileProductReleaseState(database, runId, productCatalogue, inputs(), game);
       productCatalogue = {
         products: reconciled.products,
         observedProducts: [...productCatalogue.observedProducts, ...reconciled.observedProducts],
@@ -1156,9 +1155,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       };
       if (reconciled.productSurfaceObserved) {
         observedProductGames.add(game);
-        gameObservations
-          .filter(({ value }) => value !== undefined)
-          .forEach(({ sourceLineage }) => observedProductLineages.add(sourceLineage));
+        for (const sourceLineage of reconciled.checkedLineages) observedProductLineages.add(sourceLineage);
       }
     }
   } catch (error) {

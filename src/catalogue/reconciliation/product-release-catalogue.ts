@@ -163,9 +163,9 @@ export async function reconcileProductReleaseCatalogue(
   };
 }
 
-async function preservePublishedProductIdentity(
+export async function preservePublishedProductIdentity(
   observation: ParsedObservation,
-  priorProducts: readonly CatalogueProduct[],
+  priorProducts: readonly CatalogueProduct[] | ((product: ObservedProduct) => Promise<readonly CatalogueProduct[]>),
   game: SupportedGame,
 ): Promise<ParsedObservation> {
   const replacements = new Map<
@@ -178,7 +178,10 @@ async function preservePublishedProductIdentity(
   >();
   const warnings: Record<string, unknown>[] = [];
   for (const product of observation.products) {
-    const gameProducts = priorProducts.filter((prior) => prior.game === game);
+    const gameProducts =
+      typeof priorProducts === "function"
+        ? await priorProducts(product)
+        : priorProducts.filter((prior) => prior.game === game);
     const nameMatches = gameProducts.filter(
       (prior) => normalizedProductName(prior.name) === normalizedProductName(product.name),
     );
@@ -263,11 +266,11 @@ async function preservePublishedProductIdentity(
   };
 }
 
-function normalizedProductName(value: string | null): string | null {
+export function normalizedProductName(value: string | null): string | null {
   return value === null ? null : value.normalize("NFC").trim().toLocaleLowerCase();
 }
 
-async function parseProductReleaseObservation(
+export async function parseProductReleaseObservation(
   input: ProductReleaseEvidenceInput,
   game: SupportedGame,
 ): Promise<ParsedObservation> {
@@ -440,7 +443,7 @@ function resolveObservedProducts(observations: readonly ObservedProduct[], game:
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 
-function resolveProduct(observations: readonly ObservedProduct[], game: SupportedGame): CatalogueProduct {
+export function resolveProduct(observations: readonly ObservedProduct[], game: SupportedGame): CatalogueProduct {
   const first = observations[0]!;
   const included = uniqueById(
     observations.flatMap(({ evidence, carriedOfficialCode }) => [
@@ -554,7 +557,7 @@ function resolveProduct(observations: readonly ObservedProduct[], game: Supporte
   };
 }
 
-function sourceObservationsForProduct(product: CatalogueProduct): ProductSourceObservation[] {
+export function sourceObservationsForProduct(product: CatalogueProduct): ProductSourceObservation[] {
   if (product.source_observations !== undefined) {
     return product.source_observations;
   }
@@ -575,7 +578,7 @@ function sourceObservationsForProduct(product: CatalogueProduct): ProductSourceO
   }));
 }
 
-function aggregateContexts(contexts: readonly CatalogueDistributionContext[]): CatalogueDistributionContext[] {
+export function aggregateContexts(contexts: readonly CatalogueDistributionContext[]): CatalogueDistributionContext[] {
   const grouped = new Map<string, CatalogueDistributionContext[]>();
   for (const context of contexts) {
     grouped.set(context.id, [...(grouped.get(context.id) ?? []), context]);
@@ -679,7 +682,7 @@ function productAuthorityRank(authority: ProductAuthorityClass): number {
   }[authority];
 }
 
-function aggregateRelationships(relationships: readonly ProductRelationship[]): ProductRelationship[] {
+export function aggregateRelationships(relationships: readonly ProductRelationship[]): ProductRelationship[] {
   const grouped = new Map<string, ProductRelationship[]>();
   for (const relationship of relationships) {
     grouped.set(relationship.id, [...(grouped.get(relationship.id) ?? []), relationship]);

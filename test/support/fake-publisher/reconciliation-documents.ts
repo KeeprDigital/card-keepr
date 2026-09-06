@@ -183,6 +183,35 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
         },
       ],
     };
+  if (scenario === "product-group-large-text") {
+    return {
+      cards: Array.from({ length: 2 }, (_, index) => ({
+        ...printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP97-001",
+          name: "Synthetic Product evidence Card",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `/product-group-large-text/${index}`,
+          lineageMarker: "product-group-large-text",
+        }),
+        product_release_catalogue: {
+          products: [
+            {
+              reference: { kind: "official_code", value: "GROUP-1" },
+              official_code: "GROUP-1",
+              name: "Synthetic name. ".repeat(40000),
+              releases: [],
+              withdrawal: null,
+            },
+          ],
+          distribution_contexts: [],
+          relationships: [],
+        },
+      })),
+    };
+  }
   if (scenario === "prior-candidate-stream") {
     return {
       cards: Array.from({ length: 64 }, (_, index) =>
