@@ -503,6 +503,7 @@ function exactDate(value: unknown, name: string): string {
 
 function parseOfficialIdentity(value: unknown, game: SupportedGame): CatalogueCard["official_identity"] {
   const identity = requiredRecord(value, "card.official_identity");
+  if (identity.kind === "unknown" && identity.value === null) return { kind: "unknown", value: null };
   if (identity.kind === "functional_designation" && identity.value === "DON!!" && game === "one-piece") {
     return { kind: "functional_designation", value: "DON!!" };
   }

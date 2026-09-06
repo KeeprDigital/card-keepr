@@ -130,6 +130,22 @@
               "const": "DON!!"
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "unknown"
+            },
+            "value": {
+              "type": "null"
+            }
+          }
         }
       ]
     },

@@ -141,6 +141,7 @@ const card = object(
     game,
     official_identity: {
       anyOf: [
+        object({ kind: { const: "unknown" }, value: { type: "null" } }),
         object({ kind: { const: "card_number" }, value: nonempty }),
         object({ kind: { const: "functional_designation" }, value: { const: "DON!!" } }),
       ],

@@ -323,6 +323,19 @@ test("the parent Workflow keeps a greater-than-1-MiB card-content candidate in D
     .bind(run.id)
     .first<{ candidate_bytes: number }>();
   expect(persisted?.candidate_bytes).toBeGreaterThan(1_048_576);
+  const printingId = (candidate.diff as { printings: { added: string[] } }).printings.added[0]!;
+  const mappingResponse = await administrationRequest(`/v1/reconciliation/identities/${printingId}`, "GET");
+  expect(mappingResponse.status).toBe(200);
+  const mapping = await mappingResponse.json<{ mappings: { evidence: Record<string, unknown> }[] }>();
+  expect(mapping.mappings[0]!.evidence).toMatchObject({
+    retained_evidence: {
+      source_observation_id: expect.any(String),
+      source_observation_set_id: expect.any(String),
+      source_snapshot_id: expect.any(String),
+      content_digest: expect.stringMatching(/^[a-f0-9]{64}$/u),
+    },
+  });
+  expect(new TextEncoder().encode(JSON.stringify(mapping)).byteLength).toBeLessThan(524_288);
 
   await assertBoundedOutput(true);
 

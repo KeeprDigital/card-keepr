@@ -134,7 +134,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   assert.equal(inspected.code, 0, inspected.stderr);
   const candidate = JSON.parse(inspected.stdout);
   assert.equal(candidate.diff.summary.cards_added, 2);
-  assert.equal(candidate.diff.summary.printings_added, 2);
+  assert.equal(candidate.diff.summary.printings_added, 3);
   const approved = await runCli(
     [
       "run",
@@ -184,7 +184,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     ].map((component) => exportRecords(api.port, apiKey, revisionId, component)),
   );
   assert.equal(cards.length, 2);
-  assert.equal(printings.length, 2);
+  assert.equal(printings.length, 3);
   assert.equal(products.length, 2);
   assert.equal(releases.length, 2);
   assert.equal(errata.length, 0);
@@ -224,6 +224,9 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     },
   });
   assert.equal(JSON.stringify(card.game_data).includes("FB99-001_p2"), false);
+  const leaderPrintings = printings.filter(({ card_id }) => card_id === card.id);
+  assert.equal(leaderPrintings.length, 2, "synthetic base and alternate retain distinct consumer identities");
+  assert.equal(new Set(leaderPrintings.map(({ id }) => id)).size, 2);
   const leaderPrinting = printings.find(({ card_id }) => card_id === card.id);
   const energyMarkerPrinting = printings.find(({ card_id }) => card_id === energyMarker.id);
   assert.equal(leaderPrinting.printed_rules_text, "Official front skill");
@@ -245,7 +248,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   // reconciliation drops it to an unknown-vocabulary warning and the Card
   // publishes with no profile colour at all.
   assert.deepEqual(energyMarker.game_data.attributes.colours, []);
-  assert.deepEqual(images.map(({ role }) => role).sort(), ["back", "front", "front"]);
+  assert.deepEqual(images.map(({ role }) => role).sort(), ["back", "back", "front", "front", "front"]);
   const availableProduct = products.find(({ official_code }) => official_code === "FB-RAW-01");
   const comingSoonProduct = products.find(({ official_code }) => official_code === "FB-COMING-02");
   const [cardCollection, printingCollection, productCollection] = await Promise.all([

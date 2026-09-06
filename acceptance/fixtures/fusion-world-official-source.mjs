@@ -118,6 +118,7 @@ function fusionWorldCardSearchPage(url, marker) {
   const conflicting = marker === `${fixtureMarker}-conflicting-locator` &&
     category === selectedCategory;
   const entries = [
+    listingEntry("FB99-001", "", "Fusion Leader"),
     listingEntry("FB99-001", "_p2", "Fusion Leader"),
     unvariantListingEntry(energyMarkerNumber, "Energy Marker"),
     ...(conflicting
@@ -136,7 +137,7 @@ function fusionWorldCardSearchPage(url, marker) {
     <main>
       ${capped ? "<p>More than 1,000 results were capped</p>" : ""}
       <div class="resultCol" id="cardResult">
-        <div class="resultTxt">Result<span class="num">2</span>cards</div>
+        <div class="resultTxt">Result<span class="num">3</span>cards</div>
         <div class="cardCol"><ul>${entries.join("")}</ul></div>
       </div>
     </main>
@@ -162,7 +163,7 @@ function categoryFacet(categories, active) {
 }
 
 function listingEntry(cardNumber, variant, name, altCardNumber = cardNumber) {
-  return `<li class="cardItem"><a href="javascript:void(0);" data-fancybox="cards" data-type="iframe" data-src="detail.php?card_no=${cardNumber}&amp;p=${variant}" class="cardStr"><img class="lazy" src="../../images/cards/card/noimage.webp" data-src="../../images/cards/card/en/${cardNumber}_f${variant}.webp" alt="${altCardNumber} ${name}"></a></li>`;
+  return `<li class="cardItem"><a href="javascript:void(0);" data-fancybox="cards" data-type="iframe" data-src="detail.php?card_no=${cardNumber}${variant ? `&amp;p=${variant}` : ""}" class="cardStr"><img class="lazy" src="../../images/cards/card/noimage.webp" data-src="../../images/cards/card/en/${cardNumber}_f${variant}.webp" alt="${altCardNumber} ${name}"></a></li>`;
 }
 
 function unvariantListingEntry(cardNumber, name) {

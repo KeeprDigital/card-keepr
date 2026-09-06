@@ -4,6 +4,108 @@ import { createHash } from "node:crypto";
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
 export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
+  if (scenario === "identity-many-mappings") {
+    return {
+      cards: Array.from({ length: 101 }, (_, index) =>
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP95-001",
+          name: "Synthetic mapping pagination",
+          locator: `/official/mapping/${index}`,
+          lineageMarker: "mapping-pagination",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+        }),
+      ),
+    };
+  }
+  if (scenario.startsWith("identity-missing-number")) {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP97-001",
+      locator: scenario.endsWith("distinct")
+        ? "/official/other-unnumbered-card"
+        : scenario.endsWith("moved")
+          ? "/official/moved-unnumbered-real-card"
+          : "/official/unnumbered-real-card",
+      lineageMarker:
+        scenario.endsWith("distinct") || scenario.endsWith("changed") ? "different" : "unnumbered-real-card",
+      name: "Synthetic unnumbered Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+    });
+    if (scenario.includes("tabular")) {
+      const { card, ...evidence } = observation;
+      return { rows: [{ cells: [null, card.name, card.effective_rules_text, card.game_data.attributes], evidence }] };
+    }
+    return {
+      cards: [{ ...observation, card: { ...observation.card, official_identity: { kind: "unknown", value: null } } }],
+    };
+  }
+  if (scenario.startsWith("canonical-tabular")) {
+    const source = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      locator: "/supplemental/independent-id",
+      lineageMarker: "canonical-cross-source",
+      cardNumber: "OP96-001",
+      name: "Synthetic exact cross-source Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+    });
+    if (!scenario.endsWith("ambiguous"))
+      source.identity_evidence.artwork_fingerprint =
+        'official-artwork:{"official_card_identity":"OP96-001","roles":["front"],"artwork_id":"publisher-appearance-1"}';
+    source.appearance_evidence.images.forEach((image) => {
+      image.artwork_fingerprint = source.identity_evidence.artwork_fingerprint;
+    });
+    const { card, ...evidence } = source;
+    return {
+      rows: [
+        {
+          cells: [card.official_identity.value, card.name, card.effective_rules_text, card.game_data.attributes],
+          evidence,
+        },
+      ],
+    };
+  }
+  if (scenario.startsWith("canonical-official")) {
+    const source = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      locator: "/official/unrelated-id",
+      lineageMarker: "canonical-cross-source",
+      cardNumber: "OP96-001",
+      name: "Synthetic exact cross-source Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+    });
+    if (!scenario.endsWith("ambiguous"))
+      source.identity_evidence.artwork_fingerprint =
+        'official-artwork:{"official_card_identity":"OP96-001","roles":["front"],"artwork_id":"publisher-appearance-1"}';
+    source.appearance_evidence.images.forEach((image) => {
+      image.artwork_fingerprint = source.identity_evidence.artwork_fingerprint;
+    });
+    return { cards: [source] };
+  }
+  if (scenario === "source-refresh-supplemental") {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP02-002",
+          name: "Synthetic supplemental Card",
+          locator: "/supplemental/independent-card",
+          lineageMarker: "different",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+        }),
+      ],
+    };
+  }
   if (scenario === "source-refresh-empty-errata") return { cards: [] };
   if (scenario === "large-card-content") {
     return {

@@ -12,6 +12,13 @@ import { requestDocument } from "./lib/json-client.mjs";
 import { runProductionReleaseCommand } from "./production-release.mjs";
 
 const commandRoutes = {
+  identityInspect: { path: "/v1/reconciliation/identities/{identity-id}?after={after}", optional: ["after"] },
+  identityReviews: { path: "/v1/reconciliation/identity-reviews?run_id={run-id}&after={after}", optional: ["after"] },
+  identityResolve: {
+    path: "/v1/reconciliation/identity-reviews/{review-id}/resolve",
+    yes: true,
+    fields: { printing_id: "printing-id", rationale: "rationale", idempotency_key: "idempotency-key" },
+  },
   sourceLifecycle: { path: "/v1/source-lineages/{lineage}/lifecycle" },
   decideSourceLifecycle: {
     path: "/v1/source-lineages/{lineage}/lifecycle",
@@ -246,7 +253,7 @@ async function routeCommand(name, arguments_, environment, json) {
     const confirmed = confirmProductionTarget(json, confirmation, value("confirm"));
     if (confirmed !== 0) return confirmed;
   }
-  const pathname = definition.path.replace(/\{([^}]+)\}/g, (_, field) => encodeURIComponent(value(field)));
+  const pathname = definition.path.replace(/\{([^}]+)\}/g, (_, field) => encodeURIComponent(value(field) ?? ""));
   return administrationRequest(
     environment,
     json,
@@ -257,6 +264,9 @@ async function routeCommand(name, arguments_, environment, json) {
 }
 
 const commands = {
+  "identity inspect": (args, env, json) => routeCommand("identityInspect", args, env, json),
+  "identity reviews": (args, env, json) => routeCommand("identityReviews", args, env, json),
+  "identity resolve": (args, env, json) => routeCommand("identityResolve", args, env, json),
   "release production": runProductionReleaseCommand,
   "run show": (args, env, json) => routeCommand("showRun", args, env, json),
   "candidate inspect": (args, env, json) => routeCommand("inspectCandidate", args, env, json),
@@ -880,7 +890,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
+        "Usage: keepr identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
     },
     2,
   );

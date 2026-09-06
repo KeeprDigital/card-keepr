@@ -491,7 +491,7 @@ function parseFusionWorldCardDetailByContract(
   const artworkFingerprint = officialArtworkFingerprint(
     cardNumber,
     imageEvidence.map(({ role }) => role),
-    null,
+    identity.variant,
   );
   // The face whose displayed Skills text carries the publisher's errata
   // annotation publishes its effective text. `rules` always reads the front

@@ -1,5 +1,5 @@
 type SearchableCard = Readonly<{
-  official_identity: Readonly<{ value: string }>;
+  official_identity: Readonly<{ value: string | null }>;
   name: string;
   effective_rules_text?: string | null;
 }>;
@@ -21,7 +21,7 @@ const chunkStride = maximumChunkCodePoints - maximumNormalizedQueryCodePoints + 
 
 export function cardSearchText(card: SearchableCard): string {
   return JSON.stringify([
-    normalizeSearchText(card.official_identity.value),
+    normalizeSearchText(card.official_identity.value ?? ""),
     normalizeSearchText(card.name),
     normalizeSearchText(card.effective_rules_text ?? ""),
   ]);
