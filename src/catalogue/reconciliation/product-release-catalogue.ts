@@ -151,6 +151,7 @@ export async function reconcileProductReleaseCatalogue(
       ...observations.flatMap(({ warnings }) => warnings),
       ...disappearedProducts.map((product) => ({
         code: "product_not_observed",
+        game: product.game,
         product_id: product.id,
         source_lineages: sourceObservationsForProduct(product)
           .map(({ evidence }) => evidence.source)
@@ -363,6 +364,7 @@ async function parseProductReleaseObservation(
     if (resolution === "warning") {
       warnings.push({
         code: "product_relationship_unresolved",
+        game,
         relationship_kind: kind,
         relationship_value: reference?.value ?? optionalText(relationship.context_key) ?? "unresolved",
         detail: "An ambiguous or fuzzy Product relationship remains unresolved and was not made canonical.",

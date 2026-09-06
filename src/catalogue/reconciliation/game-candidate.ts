@@ -20,6 +20,7 @@ import {
   scopedGamePartitionStatement,
   sealGameCandidateStatement,
 } from "./game-candidate-repository";
+import { sourceAdapterRegistrations } from "../adapters";
 
 type GameCandidate = {
   id: string;
@@ -68,11 +69,12 @@ export async function prepareGameCandidateManifests(
       }),
     );
     const scopedLineages = canonicalJson([
-      ...new Set(
-        lineages
-          .filter((lineage) => lineage.supportedGame === header.supported_game)
-          .map((lineage) => lineage.sourceLineage),
-      ),
+      ...new Map(
+        [...sourceAdapterRegistrations, ...lineages].map(({ sourceLineage, supportedGame }) => [
+          sourceLineage,
+          { sourceLineage, supportedGame },
+        ]),
+      ).values(),
     ]);
     let after = -1;
     let ordinal = 0;
@@ -86,48 +88,50 @@ export async function prepareGameCandidateManifests(
           content: string;
         }>();
         if (!source) throw new Error("The retained candidate partition is unavailable.");
-        const rows = (
-          await scopedGamePartitionStatement(
+        for (const kind of partition.kind === "warnings" ? ["warnings", "shared_warnings"] : [partition.kind]) {
+          const rows = (
+            await scopedGamePartitionStatement(
+              database,
+              runId,
+              header.supported_game,
+              kind,
+              source.content,
+              scopedLineages,
+            ).all<{ value: string; type: string }>()
+          ).results;
+          const records = rows.map((row) =>
+            row.type === "object" || row.type === "array" ? (JSON.parse(row.value) as unknown) : row.value,
+          );
+          if (!records.length) continue;
+          const content = canonicalJson(records);
+          const sha256 = await sha256Text(content);
+          await insertGameCandidatePartitionStatement(
             database,
-            runId,
-            header.supported_game,
-            partition.kind,
-            source.content,
-            scopedLineages,
-          ).all<{ value: string; type: string }>()
-        ).results;
-        const records = rows.map((row) =>
-          row.type === "object" || row.type === "array" ? (JSON.parse(row.value) as unknown) : row.value,
-        );
-        if (!records.length) continue;
-        const content = canonicalJson(records);
-        const sha256 = await sha256Text(content);
-        await insertGameCandidatePartitionStatement(
-          database,
-          header.id,
-          ordinal,
-          partition.kind,
-          content,
-          sha256,
-          records.length,
-        ).run();
-        const retained = await gameCandidatePartitionStatement(database, header.id, ordinal).first<{
-          content: string;
-          kind: string;
-        }>();
-        if (retained?.content !== content || retained.kind !== partition.kind)
-          throw new Error("Game candidate partition replay differs from its immutable content.");
-        digest = await sha256Text(
-          canonicalJson({
-            previous: digest,
+            header.id,
             ordinal,
-            kind: partition.kind,
+            kind,
+            content,
             sha256,
-            record_count: records.length,
-            byte_length: new TextEncoder().encode(content).byteLength,
-          }),
-        );
-        ordinal++;
+            records.length,
+          ).run();
+          const retained = await gameCandidatePartitionStatement(database, header.id, ordinal).first<{
+            content: string;
+            kind: string;
+          }>();
+          if (retained?.content !== content || retained.kind !== kind)
+            throw new Error("Game candidate partition replay differs from its immutable content.");
+          digest = await sha256Text(
+            canonicalJson({
+              previous: digest,
+              ordinal,
+              kind,
+              sha256,
+              record_count: records.length,
+              byte_length: new TextEncoder().encode(content).byteLength,
+            }),
+          );
+          ordinal++;
+        }
       }
       after = page.at(-1)!.ordinal;
     }

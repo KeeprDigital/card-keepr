@@ -3,6 +3,33 @@ import { collect, get, installReconciliationSuite, reconcile, requiredString } f
 
 installReconciliationSuite();
 
+test("game predecessor follows pinned ancestry despite publication clock skew", async () => {
+  const { post } = await import("./reconciliation-helpers");
+  const revisions: string[] = [];
+  const now = Date.now();
+  for (const [index, scenario] of ["query-hot-window-1", "query-hot-window-2"].entries()) {
+    const run = await collect(`/reconciliation/${scenario}`, `game-predecessor-${index}`);
+    const result = await reconcile(run.id);
+    expect(result.response.status).toBe(200);
+    const published = await post(
+      `/v1/ingestion-runs/${run.id}/approval`,
+      {
+        candidate_digest: result.document.candidate_digest,
+        expected_current_revision_id: result.document.expected_current_revision_id,
+        idempotency_key: `game-predecessor-approve-${index}`,
+      },
+      { "x-keepr-test-now": new Date(now + (2 - index) * 60000).toISOString() },
+    );
+    expect(published.response.status).toBe(200);
+    revisions.push(requiredString(published.document, "resulting_revision_id"));
+  }
+  expect(revisions[0]).not.toBe(revisions[1]);
+  const next = await collect("/reconciliation/query-hot-window-3", "game-predecessor-next");
+  expect((await reconcile(next.id)).response.status).toBe(200);
+  const status = await get(`/v1/ingestion-runs/${next.id}/reconciliation`);
+  expect(status.document.candidates).toEqual([expect.objectContaining({ expected_game_revision_id: revisions[1] })]);
+});
+
 test("one collection exposes separate sealed game manifests containing only each game's records", async () => {
   const { administrationRequest, resumeCollection, waitForEvidenceRun } = await import("./runtime-helpers");
   const started = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
@@ -12,7 +39,9 @@ test("one collection exposes separate sealed game manifests containing only each
         supported_game: "one-piece",
         source_lineage: "one-piece-en",
         adapter_version: "fixture-one-piece-json@3",
-        requests: [{ id: "one-piece-en:discovery", url: "https://official-source.invalid/reconciliation/base" }],
+        requests: [
+          { id: "one-piece-en:discovery", url: "https://official-source.invalid/reconciliation/game-scoped-warning" },
+        ],
       },
       {
         supported_game: "fusion-world",
@@ -60,6 +89,11 @@ test("one collection exposes separate sealed game manifests containing only each
       ),
     ).toBe(true);
     expect(records.selected_games).toEqual([candidate.supported_game]);
+    if (candidate.supported_game === "one-piece")
+      expect(records.warnings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: "unknown_source_field" })]),
+      );
+    else expect(records.warnings ?? []).toEqual([]);
   }
 });
 

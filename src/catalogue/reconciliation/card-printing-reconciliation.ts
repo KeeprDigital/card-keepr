@@ -269,6 +269,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     if (admission && !admission.permitted) {
       sourceWarnings.push({
         code: "entity_proposal_excluded",
+        game: observation.supportedGame,
         proposal_id: admission.proposal.id,
         source_observation_id: observation.sourceObservationId,
         detail: `Entity Proposal ${admission.proposal.id} is ${admission.rejected ? "owner-rejected" : "unresolved"}; its Card and Printing observation is isolated from this candidate.`,

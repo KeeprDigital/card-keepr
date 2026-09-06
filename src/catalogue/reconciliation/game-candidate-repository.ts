@@ -3,16 +3,23 @@ import { type CatalogueStore, repositoryStatements } from "../shared";
 /** Collection provenance is distinct from the identity of each proposed game revision. */
 export function createGameCandidateIdentitiesStatement(database: CatalogueStore, runId: string) {
   return repositoryStatements(database)
-    .prepare(`INSERT INTO game_candidates
+    .prepare(`WITH RECURSIVE ancestry(id, ingestion_run_id, previous_id, distance) AS (
+      SELECT revision.id, revision.ingestion_run_id, revision.expected_previous_revision_id, 0
+      FROM catalogue_revisions AS revision JOIN ingestion_runs AS run ON run.expected_current_revision_id = revision.id
+      WHERE run.id = ?
+      UNION ALL
+      SELECT revision.id, revision.ingestion_run_id, revision.expected_previous_revision_id, ancestry.distance + 1
+      FROM catalogue_revisions AS revision JOIN ancestry ON ancestry.previous_id = revision.id
+    ) INSERT INTO game_candidates
     (id, ingestion_run_id, supported_game, expected_game_revision_id, created_at, deadline, state, generation)
     SELECT 'candidate_' || games.ingestion_run_id || '_' || games.game, games.ingestion_run_id, games.game,
-      COALESCE((SELECT revision.id FROM catalogue_revisions AS revision
+      COALESCE((SELECT revision.id FROM ancestry AS revision
         JOIN ingestion_run_selected_games AS previous ON previous.ingestion_run_id = revision.ingestion_run_id
-        WHERE previous.game = games.game ORDER BY revision.published_at DESC, revision.id DESC LIMIT 1), 'catrev_spine_000'),
+        WHERE previous.game = games.game ORDER BY revision.distance LIMIT 1), 'catrev_spine_000'),
       operation.created_at, operation.deadline, 'preparing', operation.generation
     FROM ingestion_run_selected_games AS games JOIN reconciliation_operations AS operation ON operation.ingestion_run_id = games.ingestion_run_id
     WHERE games.ingestion_run_id = ? ON CONFLICT (id) DO NOTHING`)
-    .bind(runId);
+    .bind(runId, runId);
 }
 
 export function gameCandidatesForRunStatement(database: CatalogueStore, runId: string) {
@@ -67,28 +74,33 @@ export function scopedGamePartitionStatement(
   content: string,
   lineages: string,
 ) {
+  const warningGame = `COALESCE(json_extract(record.value, '$.value.game'), json_extract(record.value, '$.value.supported_game'),
+    CASE WHEN instr(json_extract(record.value, '$.value.profile'), '@') > 0 THEN
+      substr(json_extract(record.value, '$.value.profile'), 1, instr(json_extract(record.value, '$.value.profile'), '@') - 1) END,
+    (SELECT scope.supported_game FROM game_candidate_entity_scopes AS scope WHERE scope.ingestion_run_id = ?2
+      AND ((scope.kind = 'cards' AND scope.id = json_extract(record.value, '$.value.card_id'))
+        OR (scope.kind = 'printings' AND scope.id = json_extract(record.value, '$.value.printing_id'))) LIMIT 1),
+    (SELECT proposal.game FROM entity_proposals AS proposal WHERE proposal.id = json_extract(record.value, '$.value.proposal_id')),
+    (SELECT json_extract(lineage.value, '$.supportedGame') FROM json_each(?4) AS lineage
+      WHERE json_extract(lineage.value, '$.sourceLineage') = json_extract(record.value, '$.value.source_lineage') LIMIT 1))`;
   const predicate =
     kind === "printings" || kind === "printing_images"
-      ? `EXISTS (SELECT 1 FROM game_candidate_entity_scopes AS scope WHERE scope.ingestion_run_id = ?
-        AND scope.kind = 'printings' AND scope.id = json_extract(record.value, '${kind === "printings" ? "$.value.id" : "$.value.printing_id"}') AND scope.supported_game = ?)`
+      ? `EXISTS (SELECT 1 FROM game_candidate_entity_scopes AS scope WHERE scope.ingestion_run_id = ?2
+        AND scope.kind = 'printings' AND scope.id = json_extract(record.value, '${kind === "printings" ? "$.value.id" : "$.value.printing_id"}') AND scope.supported_game = ?3)`
       : kind === "selected_games" || kind === "card_observed_games" || kind === "product_observed_games"
-        ? "json_extract(record.value, '$.value') = ?"
+        ? "json_extract(record.value, '$.value') = ?3"
         : kind === "product_observed_lineages"
-          ? "json_extract(record.value, '$.value') IN (SELECT value FROM json_each(?))"
+          ? "json_extract(record.value, '$.value') IN (SELECT json_extract(value, '$.sourceLineage') FROM json_each(?4) WHERE json_extract(value, '$.supportedGame') = ?3)"
           : kind === "warnings"
-            ? "1"
-            : "json_extract(record.value, '$.value.game') = ?";
-  const bindings =
-    kind === "printings" || kind === "printing_images"
-      ? [content, runId, game]
-      : kind === "warnings"
-        ? [content]
-        : [content, kind === "product_observed_lineages" ? lineages : game];
+            ? `${warningGame} = ?3`
+            : kind === "shared_warnings"
+              ? `${warningGame} IS NULL`
+              : "json_extract(record.value, '$.value.game') = ?3";
   return repositoryStatements(database)
     .prepare(
-      `SELECT record.value, record.type FROM json_each(?) AS record WHERE ${predicate} ORDER BY CAST(record.key AS INTEGER)`,
+      `SELECT record.value, record.type FROM json_each(?1) AS record WHERE ?2 IS NOT NULL AND ?3 IS NOT NULL AND ?4 IS NOT NULL AND ${predicate} ORDER BY CAST(record.key AS INTEGER)`,
     )
-    .bind(...bindings);
+    .bind(content, runId, game, lineages);
 }
 
 export function insertGameCandidatePartitionStatement(

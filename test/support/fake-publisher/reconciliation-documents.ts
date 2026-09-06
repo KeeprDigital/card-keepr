@@ -132,6 +132,24 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
     };
   }
   if (scenario === "source-refresh-empty-errata") return { cards: [] };
+  if (scenario === "game-scoped-warning")
+    return {
+      cards: [
+        {
+          ...printingObservation({
+            game: "one-piece",
+            profile: "one-piece@1",
+            cardNumber: "OP94-997",
+            name: "Game scoped warning",
+            locator: "game-scoped-warning",
+            lineageMarker: "game-scoped-warning",
+            cardAttributes: onePieceLeaderAttributes(),
+            printingAttributes: { illustration_types: [] },
+          }),
+          unknown_game_field: "Synthetic game-specific source warning",
+        },
+      ],
+    };
   if (scenario === "large-card-content") {
     return {
       cards: [

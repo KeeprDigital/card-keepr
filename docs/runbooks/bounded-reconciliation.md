@@ -20,8 +20,11 @@ Each game manifest binds its candidate identity, collection provenance, Supporte
 Game, expected predecessor, deadline, preparation manifest and ordered partition
 hashes. The preparation manifest binds the verified input and pinned definitions,
 admission decisions and identity corrections. `expected_game_revision_id`
-currently identifies the latest legacy Catalogue Revision that selected this
-game; final Game Catalogue Revision publication is the #228 integration boundary.
+currently identifies the nearest ancestor of the run's pinned Catalogue Revision
+that selected this game; final Game Catalogue Revision publication is the #228
+integration boundary. Attributable warnings belong only to that game's `warnings`
+partitions. Diagnostics without game attribution are explicitly retained as
+`shared_warnings` in each selected game's manifest.
 
 ## Large text and partition integrity
 
