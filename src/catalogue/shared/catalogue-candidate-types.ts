@@ -38,6 +38,7 @@ export type CatalogueCard = CuratedProvenanceBearing & {
   id: string;
   game: SupportedGame;
   official_identity:
+    | { kind: "unknown"; value: null }
     | {
         kind: "card_number";
         value: string;

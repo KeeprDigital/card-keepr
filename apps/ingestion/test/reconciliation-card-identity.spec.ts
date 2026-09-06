@@ -399,7 +399,7 @@ test("Gundam Printing identity is independent of locale observation order when E
   });
   const us = await reconcile(usRun.id);
   const printingId = requiredString(requiredFirst(us.document, "printings"), "id");
-  expect(printingId).toBe("printing_133c063736fd275c675f6db014416609");
+  expect(printingId).toMatch(/^printing_[a-f0-9]{32}$/);
   await approve(us.document);
 
   const asiaRun = await collect("/reconciliation/gundam-mirror-asia", "stable-id-en-asia-second", {
@@ -854,3 +854,122 @@ test("Gundam cross-locale formatting normalizes while substantive shared-fact co
     });
   }
 }, 30_000);
+
+// Synthetic source fixture exercises the authenticated administration boundary.
+test("opaque identities retain inspectable source mappings before and after publication", async () => {
+  const run = await collect("/reconciliation/base", "opaque-mapping");
+  const candidate = await reconcile(run.id);
+  expect(candidate.response.status).toBe(200);
+  const printing = requiredFirst(candidate.document, "printings");
+  const mapped = await get(`/v1/reconciliation/identities/${printing.id}`);
+  expect(mapped.response.status).toBe(200);
+  expect(mapped.document).toMatchObject({
+    id: printing.id,
+    kind: "printing",
+    allocation: "opaque",
+    mappings: [expect.objectContaining({ source_lineage: "one-piece-en", ingestion_run_id: run.id })],
+  });
+  await approve(candidate.document);
+  const refreshedRun = await collect("/reconciliation/new-locator", "opaque-mapping-refresh");
+  const refreshed = await reconcile(refreshedRun.id);
+  expect(refreshed.response.status).toBe(200);
+  expect(requiredFirst(refreshed.document, "printings").id).toBe(printing.id);
+  const history = await get(`/v1/reconciliation/identities/${printing.id}`);
+  expect(history.response.status).toBe(200);
+  expect((history.document.mappings as unknown[]).length).toBeGreaterThan(1);
+});
+
+test("synthetic exact cross-source evidence retains one consumer Printing after an explicit authority change", async () => {
+  const initial = await reconcile((await collect("/reconciliation/canonical-official", "cross-official")).id);
+  expect(initial.response.status).toBe(200);
+  const printing = requiredFirst(initial.document, "printings");
+  await approve(initial.document);
+  for (const area of ["card_facts", "printing_details"]) {
+    const designated = await post("/v1/source-authorities", {
+      game: "one-piece",
+      locale: "en",
+      release_region: "OCEANIA",
+      area,
+      source_lineage: "limitless-one-piece-en",
+      expected_generation: "0",
+      rationale: "Synthetic cross-source matching test",
+      idempotency_key: `cross-${area}`,
+    });
+    expect(designated.response.status).toBe(200);
+  }
+  const other = await collect("/reconciliation/canonical-tabular", "cross-tabular", {
+    game: "one-piece",
+    lineage: "limitless-one-piece-en",
+    adapter: "fixture-one-piece-tabular@1",
+  });
+  const matched = await reconcile(other.id);
+  expect(matched.response.status).toBe(200);
+  expect(matched.document.printings).toHaveLength(1);
+  expect(requiredFirst(matched.document, "printings").id).toBe(printing.id);
+  const published = await approve(matched.document);
+  expect(published.response.status).toBe(200);
+  const exported = await exportComponentRecords(
+    requiredString(published.document, "resulting_revision_id"),
+    "printings",
+  );
+  expect(exported).toHaveLength(1);
+  expect(exported[0]).toMatchObject({ id: printing.id });
+});
+
+test("synthetic missing publisher number stays unknown through candidate and consumer export", async () => {
+  const run = await collect("/reconciliation/identity-missing-number", "missing-number");
+  const candidate = await reconcile(run.id);
+  expect(candidate.response.status).toBe(200);
+  expect(requiredFirst(candidate.document, "cards").official_identity).toEqual({ kind: "unknown", value: null });
+  const published = await approve(candidate.document);
+  expect(published.response.status, JSON.stringify(published.document)).toBe(200);
+  const cards = await exportComponentRecords(requiredString(published.document, "resulting_revision_id"), "cards");
+  expect(cards[0]).toMatchObject({ official_identity: { kind: "unknown", value: null } });
+});
+
+test("equal source-local artwork labels require owner evidence review across sources", async () => {
+  const first = await reconcile((await collect("/reconciliation/canonical-official-ambiguous", "review-official")).id);
+  expect(first.response.status).toBe(200);
+  const printingId = requiredString(requiredFirst(first.document, "printings"), "id");
+  await approve(first.document);
+  for (const area of ["card_facts", "printing_details"]) {
+    expect(
+      (
+        await post("/v1/source-authorities", {
+          game: "one-piece",
+          locale: "en",
+          release_region: "OCEANIA",
+          area,
+          source_lineage: "limitless-one-piece-en",
+          expected_generation: "0",
+          rationale: "Synthetic review test",
+          idempotency_key: `review-${area}`,
+        })
+      ).response.status,
+    ).toBe(200);
+  }
+  const source = { game: "one-piece", lineage: "limitless-one-piece-en", adapter: "fixture-one-piece-tabular@1" };
+  const run = await collect("/reconciliation/canonical-tabular-ambiguous", "review-ambiguous", source);
+  const blocked = await reconcile(run.id);
+  expect(blocked.response.status).toBe(409);
+  const reviews = await get(`/v1/reconciliation/identity-reviews?run_id=${run.id}`);
+  expect(reviews.response.status).toBe(200);
+  const review = requiredFirst(reviews.document, "reviews");
+  expect(review).toMatchObject({ candidate_printing_ids: [printingId], source_lineage: "limitless-one-piece-en" });
+  expect(review.evidence).toBeDefined();
+  const request = {
+    printing_id: printingId,
+    rationale: "Owner inspected both retained depictions and established the same issued Printing",
+    idempotency_key: "resolve-identity",
+  };
+  const resolved = await post(`/v1/reconciliation/identity-reviews/${review.id}/resolve`, request);
+  expect(resolved.response.status).toBe(200);
+  expect((await post(`/v1/reconciliation/identity-reviews/${review.id}/resolve`, request)).document).toEqual(
+    resolved.document,
+  );
+  const retry = await collect("/reconciliation/canonical-tabular-ambiguous", "review-retry", source);
+  const matched = await reconcile(retry.id);
+  expect(matched.response.status).toBe(200);
+  expect(requiredFirst(matched.document, "printings").id).toBe(printingId);
+  expect((await approve(matched.document)).response.status).toBe(200);
+});

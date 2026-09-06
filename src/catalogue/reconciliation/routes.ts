@@ -1,3 +1,4 @@
+import { inspectCanonicalIdentity, inspectIdentityReviews, resolveIdentityReview } from "./canonical-identity";
 import { assertOnlyFields, readAdministrationBody, requiredString } from "../../http/administration";
 import { type RouteContext, route } from "../../http/routes";
 import type { CatalogueStore } from "../shared";
@@ -11,6 +12,41 @@ type Environment = {
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const reconciliationRoutes = [
+  route<Context>("GET", "/v1/reconciliation/identity-reviews", async ({ request, env }) => {
+    const query = new URL(request.url).searchParams;
+    return Response.json(
+      await inspectIdentityReviews(env.CATALOGUE_DB, query.get("run_id") ?? "", query.get("after") ?? ""),
+    );
+  }),
+  route<Context>(
+    "POST",
+    "/v1/reconciliation/identity-reviews/:review/resolve",
+    async ({ request, env, observedAt }, params) => {
+      const body = await readAdministrationBody(request);
+      assertOnlyFields(body, ["printing_id", "rationale", "idempotency_key"]);
+      return Response.json(
+        await resolveIdentityReview(
+          env.CATALOGUE_DB,
+          params.review!,
+          {
+            printing_id: requiredString(body, "printing_id"),
+            rationale: requiredString(body, "rationale"),
+            idempotency_key: requiredString(body, "idempotency_key"),
+          },
+          observedAt,
+        ),
+      );
+    },
+  ),
+  route<Context>("GET", "/v1/reconciliation/identities/:identity", async ({ env, request }, params) => {
+    return Response.json(
+      await inspectCanonicalIdentity(
+        env.CATALOGUE_DB,
+        params.identity!,
+        new URL(request.url).searchParams.get("after") ?? "",
+      ),
+    );
+  }),
   route<Context>("POST", "/v1/ingestion-runs/:run/reconciliation", async ({ request, env, observedAt }, params) => {
     const body = await readAdministrationBody(request);
     assertOnlyFields(body, ["expected_current_revision_id", "idempotency_key"]);

@@ -5,7 +5,7 @@ import {
   canonicalJson,
   repositoryStatements,
 } from "../shared";
-import { compatibilityFields, isGundamEnglishLineage, type PrintingCompatibility } from "./reconciliation-model";
+import { type PrintingCompatibility } from "./reconciliation-model";
 
 export type ReconciledCardRow = {
   id: string;
@@ -27,8 +27,6 @@ export type ReconciledPrintingRow = PrintingCompatibility & {
   withdrawal_revision_id: string | null;
   withdrawal_evidence_json: string | null;
 };
-
-const compatibilityPredicate = compatibilityFields.map((field) => `${field} IS ?`).join(" AND ");
 
 export async function existingCard(
   database: CatalogueStore,
@@ -53,32 +51,16 @@ export async function compatiblePrintings(
   database: CatalogueStore,
   compatibility: PrintingCompatibility,
 ): Promise<ReconciledPrintingRow[]> {
-  const crossLocale = isGundamEnglishLineage(compatibility.source_lineage);
   const result = await repositoryStatements(database)
-    .prepare(
-      crossLocale
-        ? `SELECT * FROM reconciled_printings
-           WHERE card_id IS ?
-             AND source_lineage IN ('gundam-en-asia', 'gundam-en-us')
-             AND artwork_fingerprint IS ?
-             AND printed_fields_digest IS ?
-             AND rarity_normalized IS ?
-             AND treatment IS ?
-           ORDER BY id`
-        : `SELECT * FROM reconciled_printings
-           WHERE ${compatibilityPredicate}
-           ORDER BY id`,
-    )
+    .prepare(`SELECT * FROM reconciled_printings
+      WHERE card_id IS ? AND artwork_fingerprint IS ? AND printed_fields_digest IS ?
+        AND rarity_normalized IS ? AND treatment IS ? ORDER BY id`)
     .bind(
-      ...(crossLocale
-        ? [
-            compatibility.card_id,
-            compatibility.artwork_fingerprint,
-            compatibility.printed_fields_digest,
-            compatibility.rarity_normalized,
-            compatibility.treatment,
-          ]
-        : compatibilityValues(compatibility)),
+      compatibility.card_id,
+      compatibility.artwork_fingerprint,
+      compatibility.printed_fields_digest,
+      compatibility.rarity_normalized,
+      compatibility.treatment,
     )
     .all<ReconciledPrintingRow>();
   return result.results;
@@ -109,18 +91,26 @@ export async function printingAtLocatorVariant(
 ): Promise<ReconciledPrintingRow | null> {
   const row = await repositoryStatements(database)
     .prepare(
-      `SELECT printing.*
+      `SELECT printing.*, mapping.evidence_json AS mapped_evidence_json
        FROM reconciled_printing_locators AS locator
        JOIN reconciled_printings AS printing
          ON printing.id = locator.printing_id
+       LEFT JOIN canonical_source_mappings AS mapping
+         ON mapping.entity_id = printing.id AND mapping.source_lineage = locator.source_lineage
+         AND mapping.locator = locator.locator AND mapping.variant_key IS locator.variant_key
+         AND EXISTS (SELECT 1 FROM ingestion_run_current AS run WHERE run.ingestion_run_id = mapping.ingestion_run_id AND run.state = 'published')
        WHERE locator.source_lineage = ?
          AND locator.locator = ?
          AND locator.variant_identity = ?
        ORDER BY locator.current DESC,
-                locator.last_observed_revision_id DESC`,
+                locator.last_observed_revision_id DESC, mapping.mapped_at DESC`,
     )
     .bind(sourceLineage, locator, variantKey ?? "")
-    .first<ReconciledPrintingRow>();
+    .first<ReconciledPrintingRow & { mapped_evidence_json: string | null }>();
+  if (row?.mapped_evidence_json) {
+    const evidence = JSON.parse(row.mapped_evidence_json) as { compatibility: PrintingCompatibility };
+    return { ...row, ...evidence.compatibility };
+  }
   return row ?? null;
 }
 
@@ -389,10 +379,6 @@ function revisionDocumentData(documentJson: string): Record<string, unknown> {
   return document;
 }
 
-function compatibilityValues(compatibility: PrintingCompatibility): (string | null)[] {
-  return compatibilityFields.map((field) => compatibility[field]);
-}
-
 export type ReconciliationTerminalResultRow = { result_json: string };
 
 export function terminalResultInsertion(
@@ -417,4 +403,24 @@ export function terminalResultStatement(database: CatalogueStore, runId: string)
        WHERE ingestion_run_id = ?`,
     )
     .bind(runId);
+}
+
+export async function crossSourcePrintingCandidates(
+  database: CatalogueStore,
+  compatibility: PrintingCompatibility,
+): Promise<ReconciledPrintingRow[]> {
+  return (
+    await repositoryStatements(database)
+      .prepare(`SELECT * FROM reconciled_printings
+    WHERE card_id = ? AND source_lineage <> ? AND printed_fields_digest = ?
+      AND rarity_normalized IS ? AND treatment IS ? ORDER BY id`)
+      .bind(
+        compatibility.card_id,
+        compatibility.source_lineage,
+        compatibility.printed_fields_digest,
+        compatibility.rarity_normalized,
+        compatibility.treatment,
+      )
+      .all<ReconciledPrintingRow>()
+  ).results;
 }

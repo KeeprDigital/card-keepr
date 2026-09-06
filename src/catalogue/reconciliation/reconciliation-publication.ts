@@ -848,7 +848,8 @@ function cardPersistenceRow(
     id: plan.card_id,
     supported_game: card.game,
     official_identity_kind: card.official_identity.kind,
-    official_identity_value: card.official_identity.value,
+    // Unknown numbers are keyed internally by opaque Card ID, never projected as numbers.
+    official_identity_value: card.official_identity.value ?? card.id,
     first_revision_id: existing?.first_revision_id ?? revisionId,
     withdrawn: withdraw ? 1 : 0,
     withdrawal_revision_id: lifecycle.revisionId,

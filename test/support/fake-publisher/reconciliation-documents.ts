@@ -4,6 +4,67 @@ import { createHash } from "node:crypto";
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
 export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
+  if (scenario === "identity-missing-number") {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP97-001",
+      locator: "/official/unnumbered-real-card",
+      lineageMarker: "unnumbered-real-card",
+      name: "Synthetic unnumbered Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+    });
+    return {
+      cards: [{ ...observation, card: { ...observation.card, official_identity: { kind: "unknown", value: null } } }],
+    };
+  }
+  if (scenario.startsWith("canonical-tabular")) {
+    const source = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      locator: "/supplemental/independent-id",
+      lineageMarker: "canonical-cross-source",
+      cardNumber: "OP96-001",
+      name: "Synthetic exact cross-source Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+    });
+    if (!scenario.endsWith("ambiguous"))
+      source.identity_evidence.artwork_fingerprint =
+        'official-artwork:{"official_card_identity":"OP96-001","roles":["front"],"artwork_id":"publisher-appearance-1"}';
+    source.appearance_evidence.images.forEach((image) => {
+      image.artwork_fingerprint = source.identity_evidence.artwork_fingerprint;
+    });
+    const { card, ...evidence } = source;
+    return {
+      rows: [
+        {
+          cells: [card.official_identity.value, card.name, card.effective_rules_text, card.game_data.attributes],
+          evidence,
+        },
+      ],
+    };
+  }
+  if (scenario.startsWith("canonical-official")) {
+    const source = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      locator: "/official/unrelated-id",
+      lineageMarker: "canonical-cross-source",
+      cardNumber: "OP96-001",
+      name: "Synthetic exact cross-source Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+    });
+    if (!scenario.endsWith("ambiguous"))
+      source.identity_evidence.artwork_fingerprint =
+        'official-artwork:{"official_card_identity":"OP96-001","roles":["front"],"artwork_id":"publisher-appearance-1"}';
+    source.appearance_evidence.images.forEach((image) => {
+      image.artwork_fingerprint = source.identity_evidence.artwork_fingerprint;
+    });
+    return { cards: [source] };
+  }
   if (scenario === "large-card-content") {
     return {
       cards: [
