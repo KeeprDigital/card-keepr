@@ -1,4 +1,5 @@
 import {
+  sourceLineages,
   assertAdapterBinding,
   assertAdapterRequestSurface,
   assertOfficialSourceUrl,
@@ -111,6 +112,15 @@ export function toleratesRequestFailure(role: SourceRequestRole, failureCode: st
   return role === "image" && failureCode !== null && toleratedPrintingImageFailureCodes.includes(failureCode);
 }
 
+// Only source availability failures may omit an optional scope. Parser, identity,
+// storage-integrity and request-contract failures remain blocking.
+export function isOptionalSourceOutage(plan: EvidencePlan, failureCode: string | null): boolean {
+  return (
+    plan.participation === "optional" &&
+    (failureCode === "source_request_rejected" || failureCode === "optional_source_unavailable")
+  );
+}
+
 const allowedRequestHeaders = new Set(["accept", "accept-language", "user-agent"]);
 const maximumOfficialSourceUrlBytes = 2_048;
 const maximumOfficialSourceHeadersBytes = 2_048;
@@ -137,7 +147,11 @@ export type OfficialSourceCollectionPlan = {
   requests: OfficialSourceCollectionRequest[];
 };
 
+export type SourceCoverage = { locale: "en"; area: string; subset: "complete" };
+
 export type EvidencePlan = {
+  participation?: "required" | "optional";
+  coverage?: SourceCoverage;
   supported_game: string;
   source_lineage: string;
   game_profile_version: string;
@@ -146,6 +160,8 @@ export type EvidencePlan = {
 };
 
 export type EvidencePlanInput = {
+  participation?: string;
+  subset?: string;
   supported_game: string;
   source_lineage: string;
   adapter_version: string;
@@ -191,6 +207,20 @@ export async function validateEvidencePlan(request: EvidencePlanInput & { idempo
   assertIdentifier(request.adapter_version, "adapter_version");
   assertIdentifier(request.idempotency_key, "idempotency_key");
   const adapter = requiredActiveSourceAdapter(request.adapter_version);
+  if (request.participation !== undefined && !["required", "optional"].includes(request.participation)) {
+    throw new AdministrationProblem(
+      422,
+      "invalid_participation",
+      "Participation must be required or optional before collection.",
+    );
+  }
+  if (request.subset !== undefined && request.subset !== "complete") {
+    throw new AdministrationProblem(
+      422,
+      "unsupported_source_subset",
+      "This adapter proves only its complete declared area. Select an independently complete adapter; arbitrary page subsets are not permitted.",
+    );
+  }
   assertAdapterBinding(adapter, {
     sourceLineage: request.source_lineage,
     supportedGame: request.supported_game,
@@ -299,6 +329,12 @@ export async function validateEvidencePlan(request: EvidencePlanInput & { idempo
   return {
     adapter,
     plan: {
+      participation: request.participation === "optional" ? "optional" : "required",
+      coverage: {
+        locale: sourceLineages.find(({ id }) => id === adapter.sourceLineage)?.locale ?? "en",
+        area: adapter.reconciliationCapability,
+        subset: "complete",
+      },
       supported_game: adapter.supportedGame,
       source_lineage: adapter.sourceLineage,
       game_profile_version: adapter.gameProfileVersion,
@@ -346,6 +382,13 @@ export async function validateEvidencePlans(request: StartEvidenceRunRequest): P
         );
       }
       requestIds.add(sourceRequest.id);
+    }
+    if (plans.some((existing) => existing.source_lineage === plan.source_lineage)) {
+      throw new AdministrationProblem(
+        422,
+        "duplicate_source_coverage",
+        "Declare one immutable coverage and participation per Source Lineage in a refresh.",
+      );
     }
     plans.push(plan);
   }
@@ -522,6 +565,12 @@ export function parseEvidencePlan(json: string): EvidencePlan {
     "Stored ingestion evidence plan is invalid",
   );
   return {
+    participation: value.participation ?? "required",
+    coverage: value.coverage ?? {
+      locale: "en",
+      area: requiredActiveSourceAdapter(value.adapter_version).reconciliationCapability,
+      subset: "complete",
+    },
     supported_game: value.supported_game,
     source_lineage: value.source_lineage,
     game_profile_version: value.game_profile_version,

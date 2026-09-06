@@ -1,3 +1,5 @@
+import { sourcesActiveGuardStatement } from "./source-lifecycle-repository";
+import { inspectSourceCoverage } from "./source-coverage";
 import {
   AdministrationProblem,
   administrationOutcomeGuardStatement,
@@ -54,6 +56,7 @@ import {
   workflowAttemptRecord,
 } from "./collection-recovery";
 import {
+  isOptionalSourceOutage,
   assertBoundedOfficialSourceRequest,
   assertIdentifier,
   defaultSourceHostPacingIntervalMilliseconds,
@@ -130,6 +133,10 @@ export async function startEvidenceRun(
   if (catalogue === null) throw new Error("Catalogue state is unavailable");
   assertRecoveryAvailable(catalogue.recovery_health);
   const statements: D1PreparedStatement[] = [
+    sourcesActiveGuardStatement(
+      database,
+      plans.map((plan) => plan.source_lineage),
+    ),
     ingestionRunInsertStatement(database, {
       runId,
       supportedGames: [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
@@ -171,6 +178,12 @@ export async function startEvidenceRun(
     if (concurrent !== null && sameEvidencePlanIntent(concurrent.request_plan_json, planJson)) {
       return showEvidenceRun(database, concurrent.id);
     }
+    if (errorMessage(error).includes("source_retired"))
+      throw new AdministrationProblem(
+        409,
+        "source_retired",
+        "A retired Source cannot be checked. Explicitly revise its lifecycle and start a new refresh plan.",
+      );
     await throwIfRecoveryBlocked(database);
     await throwIfAnotherRunActive(database);
     if (errorMessage(error).includes("active_ingestion_run")) {
@@ -243,6 +256,10 @@ export async function retryEvidenceRun(
   const startedAt = new Date().toISOString();
   try {
     await database.batch([
+      sourcesActiveGuardStatement(
+        database,
+        plans.map((plan) => plan.source_lineage),
+      ),
       ingestionRunInsertStatement(database, {
         runId,
         supportedGames: [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
@@ -278,6 +295,12 @@ export async function retryEvidenceRun(
         .bind(runId),
     ]);
   } catch (error) {
+    if (errorMessage(error).includes("source_retired"))
+      throw new AdministrationProblem(
+        409,
+        "source_retired",
+        "A retired Source cannot be checked. Explicitly revise its lifecycle and start a new refresh plan.",
+      );
     await throwIfRecoveryBlocked(database);
     await throwIfAnotherRunActive(database);
     if (errorMessage(error).includes("active_ingestion_run")) {
@@ -2196,18 +2219,31 @@ export async function finalizeEvidenceRun(database: CatalogueStore, runId: strin
   // file) is recorded on its own request, reported by inspection, and
   // carried into reconciliation as an explicit gap, but it never fails the
   // run. Every other failed request is missing catalogue facts.
+  const run = await requiredEvidenceRun(database, runId);
+  const failedRequests = await repositoryStatements(database)
+    .prepare("SELECT request_id, failure_code FROM source_requests WHERE ingestion_run_id = ? AND state = 'failed'")
+    .bind(runId)
+    .all<{ request_id: string; failure_code: string | null }>();
+  const optionalOutageIds = JSON.stringify(
+    failedRequests.results
+      .filter((request) =>
+        isOptionalSourceOutage(evidencePlanForRequest(run, request.request_id), request.failure_code),
+      )
+      .map(({ request_id }) => request_id),
+  );
   const toleratedImageCodes = JSON.stringify(toleratedPrintingImageFailureCodes);
   const counts = await repositoryStatements(database)
     .prepare(
       `SELECT
         SUM(CASE WHEN state IN ('pending', 'captured') THEN 1 ELSE 0 END) AS active,
         SUM(CASE WHEN state = 'failed'
+                  AND request_id NOT IN (SELECT value FROM json_each(?3))
                   AND NOT (request_role = 'image'
                     AND failure_code IN (SELECT value FROM json_each(?2)))
                  THEN 1 ELSE 0 END) AS failed
        FROM source_requests WHERE ingestion_run_id = ?1`,
     )
-    .bind(runId, toleratedImageCodes)
+    .bind(runId, toleratedImageCodes, optionalOutageIds)
     .first<{ active: number | null; failed: number | null }>();
   if (counts === null || (counts.active ?? 0) > 0) return;
   const completedAt = new Date().toISOString();
@@ -2351,6 +2387,7 @@ export async function showEvidenceRun(
     state: run.state,
     selected_games: JSON.parse(run.selected_games_json),
     evidence_plans: evidencePlans,
+    source_coverage: await inspectSourceCoverage(database, run, evidencePlans),
     ...(evidencePlans.length === 1
       ? {
           supported_game: run.supported_game,

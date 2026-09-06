@@ -1,3 +1,4 @@
+import { sourceLifecycleHistory, decideSourceLifecycle } from "./source-lifecycle";
 import { sourceAuthorities, selectSourceAuthority } from "./source-authority";
 import { publishers, sources, sourceLineages, gameProfileRegistrations, sourceAdapterRegistrations } from "../adapters";
 import {
@@ -33,6 +34,26 @@ type Environment = {
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const sourceEvidenceRoutes = [
+  route<Context>("GET", "/v1/source-lineages/:lineage/lifecycle", async ({ env }, params) =>
+    Response.json(await sourceLifecycleHistory(env.CATALOGUE_DB, params.lineage!)),
+  ),
+  route<Context>("POST", "/v1/source-lineages/:lineage/lifecycle", async ({ request, env, observedAt }, params) => {
+    const body = await readAdministrationBody(request);
+    assertOnlyFields(body, ["state", "expected_generation", "rationale", "idempotency_key"]);
+    return Response.json(
+      await decideSourceLifecycle(
+        env.CATALOGUE_DB,
+        params.lineage!,
+        {
+          state: requiredString(body, "state"),
+          expected_generation: requiredString(body, "expected_generation"),
+          rationale: requiredString(body, "rationale"),
+          idempotency_key: requiredString(body, "idempotency_key"),
+        },
+        observedAt,
+      ),
+    );
+  }),
   route<Context>("GET", "/v1/source-authorities", async ({ env }) =>
     Response.json(await sourceAuthorities(env.CATALOGUE_DB)),
   ),
@@ -61,20 +82,30 @@ export const sourceEvidenceRoutes = [
     };
     return Response.json(await selectSourceAuthority(env.CATALOGUE_DB, input, observedAt));
   }),
-  route<Context>("GET", "/v1/source-registry", async () =>
+  route<Context>("GET", "/v1/source-registry", async ({ env }) =>
     Response.json({
       publishers,
       sources,
       lineages: sourceLineages,
+      lifecycle: await Promise.all(sourceLineages.map(({ id }) => sourceLifecycleHistory(env.CATALOGUE_DB, id))),
       profiles: gameProfileRegistrations(),
       adapters: sourceAdapterRegistrations.map(
-        ({ adapterVersion, sourceLineage, supportedGame, gameProfileVersion, parserContract, requestSurface }) => ({
+        ({
+          adapterVersion,
+          sourceLineage,
+          supportedGame,
+          gameProfileVersion,
+          parserContract,
+          requestSurface,
+          reconciliationCapability,
+        }) => ({
           adapter_version: adapterVersion,
           source_lineage: sourceLineage,
           game: supportedGame,
           game_profile: gameProfileVersion,
           parser_contract: parserContract,
           transport_permission: requestSurface,
+          coverage: { locale: "en", area: reconciliationCapability, subset: "complete" },
         }),
       ),
       definitions: {
@@ -97,9 +128,19 @@ export const sourceEvidenceRoutes = [
         { status: 201 },
       );
     }
-    assertOnlyFields(body, ["supported_game", "source_lineage", "adapter_version", "idempotency_key", "requests"]);
+    assertOnlyFields(body, [
+      "supported_game",
+      "source_lineage",
+      "adapter_version",
+      "idempotency_key",
+      "requests",
+      "participation",
+      "subset",
+    ]);
     return Response.json(
       await startEvidenceRun(env.CATALOGUE_DB, {
+        ...(body.participation === undefined ? {} : { participation: requiredString(body, "participation") }),
+        ...(body.subset === undefined ? {} : { subset: requiredString(body, "subset") }),
         supported_game: requiredString(body, "supported_game"),
         source_lineage: requiredString(body, "source_lineage"),
         adapter_version: requiredString(body, "adapter_version"),

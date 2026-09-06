@@ -1078,6 +1078,16 @@ function recoverableExhaustion(
   classification: RetryExhaustionFacts["failure_classification"],
   httpStatus: number | null,
 ): { statements: D1PreparedStatement[]; failure_code: string | null } {
+  if (
+    classification !== "storage_failure" &&
+    request.request_role !== "image" &&
+    evidencePlanForRequest(run, request.request_id).participation === "optional"
+  ) {
+    return {
+      statements: [failRequestStatement(database, request, "optional_source_unavailable")],
+      failure_code: "optional_source_unavailable",
+    };
+  }
   const policy = transportPolicyForRole(request.request_role);
   if (classification !== "storage_failure" && policy.on_transport_exhaustion === "fail_request") {
     const failureCode = requestFailureCode(request.request_role, "retries_exhausted");

@@ -103,7 +103,7 @@ export function reconciliationOverflowRequestsStatement(database: CatalogueStore
 
 export function reconciliationObservationCountsStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT snapshots.request_id, snapshots.source_lineage,
+    .prepare(`SELECT snapshots.request_id, snapshots.source_lineage, observations.adapter_version,
               observations.observation_count
        FROM catalogue_revisions AS prior_revision
        JOIN source_snapshots AS snapshots

@@ -97,7 +97,7 @@ export async function selectSourceAuthority(
     const raced = await authorityReplayStatement(database, input.idempotency_key).first<AuthorityDecision>();
     if (raced) return replayDecision(raced, requestJson);
     const message = error instanceof Error ? error.message : "";
-    if (/source_authority_(?:generation_mismatch|operation_not_idle)|UNIQUE constraint/u.test(message)) {
+    if (/source_authority_(?:generation_mismatch|operation_not_idle|conflict)|UNIQUE constraint/u.test(message)) {
       throw new AdministrationProblem(
         409,
         "source_authority_conflict",
@@ -121,9 +121,9 @@ function publicDecision({ request_json: _request, idempotency_key: _key, ...deci
   return decision;
 }
 
-/** Until source-scoped carry-forward is implemented, a refresh cannot silently
- * substitute another source for an explicitly selected authority in its scope.
- * Acquisition remains permitted so contradictory evidence can still be retained. */
+/** Newly collected competing facts require the designated authority in their
+ * area. Unselected and incomplete optional scopes contribute no new facts;
+ * their accepted candidate facts carry forward without transferring authority. */
 export async function assertSelectedAuthoritiesCollected(
   database: CatalogueStore,
   plans: readonly {

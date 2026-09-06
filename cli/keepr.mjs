@@ -12,6 +12,16 @@ import { requestDocument } from "./lib/json-client.mjs";
 import { runProductionReleaseCommand } from "./production-release.mjs";
 
 const commandRoutes = {
+  sourceLifecycle: { path: "/v1/source-lineages/{lineage}/lifecycle" },
+  decideSourceLifecycle: {
+    path: "/v1/source-lineages/{lineage}/lifecycle",
+    fields: {
+      state: "state",
+      expected_generation: "expected-generation",
+      rationale: "rationale",
+      idempotency_key: "idempotency-key",
+    },
+  },
   sourceRegistry: { path: "/v1/source-registry" },
   sourceAuthorities: { path: "/v1/source-authorities" },
   selectSourceAuthority: {
@@ -264,6 +274,8 @@ const commands = {
   "recovery accept": (args, env, json) => routeCommand("acceptRecovery", args, env, json),
   "source collect": collectSource,
   "source registry": (args, env, json) => routeCommand("sourceRegistry", args, env, json),
+  "source lifecycle": (args, env, json) => routeCommand("sourceLifecycle", args, env, json),
+  "source set-lifecycle": (args, env, json) => routeCommand("decideSourceLifecycle", args, env, json),
   "source authorities": (args, env, json) => routeCommand("sourceAuthorities", args, env, json),
   "source designate": (args, env, json) => routeCommand("selectSourceAuthority", args, env, json),
   "source show": (args, env, json) => routeCommand("showSourceEvidence", args, env, json),
@@ -665,6 +677,8 @@ async function collectSource(arguments_, environment, json) {
     "--request-id",
     "--url",
     "--plan-file",
+    "--participation",
+    "--subset",
     "--idempotency-key",
   ]);
   const planFile = options.values["--plan-file"];
@@ -673,7 +687,7 @@ async function collectSource(arguments_, environment, json) {
     options.error === null &&
     planFile !== undefined &&
     idempotencyKey !== undefined &&
-    ["--game", "--lineage", "--adapter", "--request-id", "--url"].every(
+    ["--game", "--lineage", "--adapter", "--request-id", "--url", "--participation", "--subset"].every(
       (option) => options.values[option] === undefined,
     )
   ) {
@@ -714,6 +728,8 @@ async function collectSource(arguments_, environment, json) {
     return usageFailure(json);
   }
   return administrationRequest(environment, json, "/v1/ingestion-runs/evidence", "POST", {
+    ...(options.values["--participation"] === undefined ? {} : { participation: options.values["--participation"] }),
+    ...(options.values["--subset"] === undefined ? {} : { subset: options.values["--subset"] }),
     supported_game: game,
     source_lineage: lineage,
     adapter_version: adapter,

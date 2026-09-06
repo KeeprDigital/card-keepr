@@ -596,7 +596,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           ? null
           : {
               ...observation.withdrawal,
-              assertion: "withdrawn",
+              assertion: observation.withdrawal.state,
               source_lineage: observation.sourceLineage,
               source_snapshot_id: observation.sourceSnapshotId,
               source_observation_set_id: observation.sourceObservationSetId,
@@ -1563,15 +1563,13 @@ async function publishedWithdrawalConflictDiagnostics(
         state: withdrawal.state,
         effective_at: withdrawal.effective_at,
       });
+      const latest = [...prior.results].sort((left, right) => right.effective_at.localeCompare(left.effective_at))[0];
+      const repeated = latest !== undefined && canonicalJson(latest) === proposedSemantic;
+      const transition =
+        latest !== undefined && latest.state !== withdrawal.state && withdrawal.effective_at > latest.effective_at;
       if (
-        prior.results.some(
-          (row) =>
-            canonicalJson({
-              assertion: row.assertion,
-              state: row.state,
-              effective_at: row.effective_at,
-            }) !== proposedSemantic,
-        )
+        (latest === undefined && withdrawal.state === "reinstated") ||
+        (latest !== undefined && !repeated && !transition)
       ) {
         diagnostics.push({
           code: "withdrawal_evidence_conflict",
