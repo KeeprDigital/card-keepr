@@ -51,3 +51,14 @@ export function reconciliationInputPartitionsStatement(database: CatalogueStore,
     FROM reconciliation_input_partitions WHERE ingestion_run_id = ? AND ordinal > ? ORDER BY ordinal LIMIT 100`)
     .bind(runId, after);
 }
+export function nextReconciliationInputKindStatement(
+  database: CatalogueStore,
+  runId: string,
+  kind: string,
+  after: number,
+) {
+  return repositoryStatements(database)
+    .prepare(`SELECT ordinal, content, sha256 FROM reconciliation_input_partitions
+    WHERE ingestion_run_id = ? AND kind = ? AND ordinal > ? ORDER BY ordinal LIMIT 1`)
+    .bind(runId, kind, after);
+}

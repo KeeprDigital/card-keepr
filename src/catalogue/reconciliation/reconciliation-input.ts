@@ -6,6 +6,7 @@ import {
   reconciliationInputManifestStatement,
   reconciliationInputPartitionStatement,
   sealReconciliationInputStatement,
+  nextReconciliationInputKindStatement,
 } from "./reconciliation-input-repository";
 
 export class ReconciliationInputStorageError extends Error {
@@ -81,12 +82,14 @@ export async function readVerifiedReconciliationInput(
     if ((await sha256Text(partition.content)) !== partition.sha256)
       throw new Error("Retained reconciliation input partition failed integrity verification.");
     const records: unknown[] = [];
-    for (const record of JSON.parse(partition.content))
-      records.push(await restorePartitionedRecord(database, runId, record));
+    for (const record of JSON.parse(partition.content)) {
+      const restored = await restorePartitionedRecord(database, runId, record);
+      if (partition.kind !== "observations") records.push(restored);
+    }
     if (partition.kind === "$metadata") {
       const metadata = records[0] as { values: Record<string, unknown>; array_keys: string[] };
       Object.assign(result, metadata.values);
-      for (const key of metadata.array_keys) result[key] = [];
+      for (const key of metadata.array_keys) if (key !== "observations") result[key] = [];
     } else {
       const values = (result[partition.kind] ??= []) as unknown[];
       values.push(...records);
@@ -98,6 +101,29 @@ export async function readVerifiedReconciliationInput(
   if (digest !== manifest.input_manifest_digest)
     throw new Error("Retained reconciliation input manifest failed verification.");
   return result;
+}
+
+/** Re-open the immutable verified sequence without retaining the complete observation array. */
+export async function* verifiedReconciliationObservations<T>(
+  database: CatalogueStore,
+  runId: string,
+): AsyncGenerator<T> {
+  let after = -1;
+  for (;;) {
+    const partition = await storage(
+      nextReconciliationInputKindStatement(database, runId, "observations", after).first<{
+        ordinal: number;
+        content: string;
+        sha256: string;
+      }>(),
+    );
+    if (!partition) return;
+    if ((await sha256Text(partition.content)) !== partition.sha256)
+      throw new Error("Retained observation partition failed integrity verification.");
+    for (const record of JSON.parse(partition.content))
+      yield (await restorePartitionedRecord(database, runId, record)) as T;
+    after = partition.ordinal;
+  }
 }
 
 function* withoutUndefined(records: Iterable<unknown>): Generator<unknown> {

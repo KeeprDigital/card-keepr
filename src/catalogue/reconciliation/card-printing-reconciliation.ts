@@ -55,7 +55,7 @@ import {
   persistReviewableCandidate,
   retainedReconciliationResult,
 } from "./reconciliation-candidate-store";
-import { retainedReconciliationObservation } from "./reconciliation-evidence";
+import { retainedReconciliationObservation, type NormalizedReconciliationObservation } from "./reconciliation-evidence";
 import {
   compatibilityFor,
   hasCrossSourceArtworkEvidence,
@@ -230,17 +230,29 @@ export async function reconcileRetainedCardPrintingEvidence(
   const observedErrata: CatalogueErratum[] = [];
   const targetedCardIds = new Set<string>();
   const targetedPrintingIds = new Set<string>();
-  type RetainedObservation = (typeof retained.observations)[number];
-  const standaloneCardErrata = retained.observations.filter(
-    (observation): observation is Extract<RetainedObservation, { kind: "official_erratum" }> =>
+  const cardCheckTimes = new Map<SupportedGame, string>();
+  const productCheckTimes = new Map<SupportedGame, string>();
+  type RetainedObservation = NormalizedReconciliationObservation;
+  const standaloneCardErrata: Extract<RetainedObservation, { kind: "official_erratum" }>[] = [];
+  for await (const observation of retained.observations()) {
+    if (
       observation.kind === "official_erratum" &&
       observation.target.type === "card" &&
-      observation.appliesToParallelPrintings,
-  );
+      observation.appliesToParallelPrintings
+    )
+      standaloneCardErrata.push(observation);
+  }
 
-  for (const observation of retained.observations) {
+  for await (const observation of retained.observations()) {
     if (observation.kind !== "card_printing") continue;
     const sourceCard = observation.observedCardAndPrinting.card;
+    for (const checks of [
+      ...(sourceCard === null ? [] : [cardCheckTimes]),
+      ...(observation.productReleaseValue === undefined ? [] : [productCheckTimes]),
+    ]) {
+      if ((checks.get(observation.supportedGame) ?? "") < observation.sourceCapturedAt)
+        checks.set(observation.supportedGame, observation.sourceCapturedAt);
+    }
     if (sourceCard === null) {
       sourceWarnings.push(...observation.sourceWarnings);
       continue;
@@ -946,7 +958,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     sourceWarnings.push(...observation.sourceWarnings);
   }
 
-  for (const observation of retained.observations) {
+  for await (const observation of retained.observations()) {
     if (observation.kind !== "official_erratum") continue;
     if (observation.target.type === "card" && !observation.appliesToParallelPrintings) {
       diagnostics.push({
@@ -1076,36 +1088,32 @@ export async function reconcileRetainedCardPrintingEvidence(
   };
   const observedProductGames = new Set<SupportedGame>();
   const observedProductLineages = new Set<string>();
-  const cardPrintingObservations = retained.observations.filter((observation) => observation.kind === "card_printing");
   try {
     const plansByObservationId = new Map(plans.map((plan) => [plan.sourceObservationId, plan]));
-    const observationsByGame = new Map<SupportedGame, typeof cardPrintingObservations>();
-    for (const observation of cardPrintingObservations) {
-      observationsByGame.set(observation.supportedGame, [
-        ...(observationsByGame.get(observation.supportedGame) ?? []),
-        observation,
-      ]);
+    const observationsByGame = new Map<
+      SupportedGame,
+      Array<Parameters<typeof reconcileProductReleaseCatalogue>[1][number]>
+    >();
+    for await (const observation of retained.observations()) {
+      if (observation.kind !== "card_printing") continue;
+      const plan = plansByObservationId.get(observation.sourceObservationId);
+      const gameObservations = observationsByGame.get(observation.supportedGame) ?? [];
+      gameObservations.push({
+        value: observation.productReleaseValue,
+        sourceObservationId: observation.sourceObservationId,
+        sourceObservationSetId: observation.sourceObservationSetId,
+        sourceSnapshotId: observation.sourceSnapshotId,
+        sourceLineage: observation.sourceLineage,
+        sourceSurface: observation.sourceSurface,
+        requestRole: observation.sourceRequestRole,
+        capturedAt: observation.sourceCapturedAt,
+        currentCardId: plan?.cardId ?? null,
+        currentPrintingId: plan?.printingId ?? null,
+      });
+      observationsByGame.set(observation.supportedGame, gameObservations);
     }
     for (const [game, gameObservations] of observationsByGame) {
-      const reconciled = await reconcileProductReleaseCatalogue(
-        productCatalogue,
-        gameObservations.map((observation) => {
-          const plan = plansByObservationId.get(observation.sourceObservationId);
-          return {
-            value: observation.productReleaseValue,
-            sourceObservationId: observation.sourceObservationId,
-            sourceObservationSetId: observation.sourceObservationSetId,
-            sourceSnapshotId: observation.sourceSnapshotId,
-            sourceLineage: observation.sourceLineage,
-            sourceSurface: observation.sourceSurface,
-            requestRole: observation.sourceRequestRole,
-            capturedAt: observation.sourceCapturedAt,
-            currentCardId: plan?.cardId ?? null,
-            currentPrintingId: plan?.printingId ?? null,
-          };
-        }),
-        game,
-      );
+      const reconciled = await reconcileProductReleaseCatalogue(productCatalogue, gameObservations, game);
       productCatalogue = {
         products: reconciled.products,
         observedProducts: [...productCatalogue.observedProducts, ...reconciled.observedProducts],
@@ -1117,7 +1125,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       if (reconciled.productSurfaceObserved) {
         observedProductGames.add(game);
         gameObservations
-          .filter(({ productReleaseValue }) => productReleaseValue !== undefined)
+          .filter(({ value }) => value !== undefined)
           .forEach(({ sourceLineage }) => observedProductLineages.add(sourceLineage));
       }
     }
@@ -1130,12 +1138,6 @@ export async function reconcileRetainedCardPrintingEvidence(
       detail: error instanceof Error ? error.message : "Retained Product evidence is invalid.",
     });
   }
-  const cardSurfaceObservations = cardPrintingObservations.filter(
-    (observation) => observation.observedCardAndPrinting.card !== null,
-  );
-  const productSurfaceObservations = cardPrintingObservations.filter(
-    (observation) => observation.productReleaseValue !== undefined,
-  );
   const errata = mergeCatalogueErrata(priorCandidate?.errata ?? [], observedErrata);
   const candidateCards = [...cards.values()]
     .map((card) => {
@@ -1186,20 +1188,24 @@ export async function reconcileRetainedCardPrintingEvidence(
         ...(lineage === undefined ? {} : { source_lineage: lineage }),
       };
     }),
-    card_observed_games: [...new Set(cardSurfaceObservations.map(({ supportedGame }) => supportedGame))].sort(),
+    card_observed_games: [...cardCheckTimes.keys()].sort(),
     product_observed_games: [...observedProductGames].sort(),
     product_observed_lineages: [...observedProductLineages].sort(),
     source_checks: [
-      ...groupObservationsByGame(cardSurfaceObservations).map(([game, observations]) => ({
-        game,
-        area: "cards-and-printings" as const,
-        checked_at: latestCapture(observations),
-      })),
-      ...groupObservationsByGame(productSurfaceObservations).map(([game, observations]) => ({
-        game,
-        area: "products-and-releases" as const,
-        checked_at: latestCapture(observations),
-      })),
+      ...[...cardCheckTimes]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([game, checked_at]) => ({
+          game,
+          area: "cards-and-printings" as const,
+          checked_at,
+        })),
+      ...[...productCheckTimes]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([game, checked_at]) => ({
+          game,
+          area: "products-and-releases" as const,
+          checked_at,
+        })),
     ],
     errata,
   };
@@ -1826,23 +1832,6 @@ function omitUndefinedValues(value: unknown): unknown {
     );
   }
   return value;
-}
-
-function latestCapture(observations: readonly { sourceCapturedAt: string }[]): string {
-  return observations
-    .map(({ sourceCapturedAt }) => sourceCapturedAt)
-    .sort()
-    .at(-1)!;
-}
-
-function groupObservationsByGame<T extends { supportedGame: SupportedGame }>(
-  observations: readonly T[],
-): [SupportedGame, T[]][] {
-  const grouped = new Map<SupportedGame, T[]>();
-  for (const observation of observations) {
-    grouped.set(observation.supportedGame, [...(grouped.get(observation.supportedGame) ?? []), observation]);
-  }
-  return [...grouped].sort(([left], [right]) => left.localeCompare(right));
 }
 
 function _groupPlansByLineage<T extends { sourceLineage: string }>(plans: readonly T[]): [string, T[]][] {

@@ -92,6 +92,7 @@ CREATE TRIGGER reconciliation_input_no_update BEFORE UPDATE ON reconciliation_in
 BEGIN SELECT RAISE(ABORT, 'reconciliation_input_immutable'); END;
 CREATE TRIGGER reconciliation_input_no_delete BEFORE DELETE ON reconciliation_input_partitions
 BEGIN SELECT RAISE(ABORT, 'reconciliation_input_audit_retained'); END;
+CREATE INDEX reconciliation_input_kind_cursor ON reconciliation_input_partitions(ingestion_run_id, kind, ordinal);
 CREATE TABLE game_candidates (
   id TEXT PRIMARY KEY,
   ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),

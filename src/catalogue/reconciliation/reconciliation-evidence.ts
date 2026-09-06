@@ -1,4 +1,8 @@
-import { readVerifiedReconciliationInput, retainVerifiedReconciliationInput } from "./reconciliation-input";
+import {
+  readVerifiedReconciliationInput,
+  retainVerifiedReconciliationInput,
+  verifiedReconciliationObservations,
+} from "./reconciliation-input";
 import { documentStorage, readVerifiedSourceDocument, retainVerifiedSourceDocument } from "./reconciliation-document";
 import { canonicalValueDigest } from "./reconciliation-preparation";
 import { retainCandidateImage } from "./reconciliation-images";
@@ -102,17 +106,38 @@ type DiscoveryRequestPlanRow = {
 
 const maximumAggregateReconciliationBytes = 32 * 1024 * 1024;
 
+export type NormalizedReconciliationObservation = Awaited<
+  ReturnType<typeof collectRetainedReconciliationObservation>
+>["observations"][number];
+
 export async function retainedReconciliationObservation(
   database: CatalogueStore,
   evidenceObjects: R2Bucket,
   runId: string,
   printingImages: R2Bucket,
 ) {
-  const retained = await readVerifiedReconciliationInput(database, runId);
-  if (retained) return retained as Awaited<ReturnType<typeof collectRetainedReconciliationObservation>>;
+  let retained = await readVerifiedReconciliationInput(database, runId);
+  if (!retained) {
+    await prepareVerifiedReconciliationInput(database, evidenceObjects, runId, printingImages);
+    retained = await readVerifiedReconciliationInput(database, runId);
+  }
+  if (!retained) throw new Error("The verified reconciliation input is unavailable.");
+  return {
+    ...retained,
+    observations: () => verifiedReconciliationObservations<NormalizedReconciliationObservation>(database, runId),
+  } as Omit<Awaited<ReturnType<typeof collectRetainedReconciliationObservation>>, "observations"> & {
+    observations: () => AsyncGenerator<NormalizedReconciliationObservation>;
+  };
+}
+
+async function prepareVerifiedReconciliationInput(
+  database: CatalogueStore,
+  evidenceObjects: R2Bucket,
+  runId: string,
+  printingImages: R2Bucket,
+) {
   const input = await collectRetainedReconciliationObservation(database, evidenceObjects, runId, printingImages);
   await retainVerifiedReconciliationInput(database, runId, input);
-  return input;
 }
 
 async function collectRetainedReconciliationObservation(
