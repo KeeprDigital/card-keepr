@@ -64,7 +64,7 @@ export async function startPublicationPreparation(
         input.manifest_digest,
         input.generation,
         "publication_dispatch_retry_exhausted",
-        { sequence: status.sequence },
+        { sequence: Number(receipt.sequence) },
       );
     }
   }

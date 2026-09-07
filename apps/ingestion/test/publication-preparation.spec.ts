@@ -696,3 +696,30 @@ test("an exhausted stale Workflow cannot pause a newer owner's sequence", async 
   expect((await get(path)).document).toEqual(newer);
   await finish(path, intent, newer!);
 });
+
+test("a lost old start replay cannot pause newer work when its original dispatch fails", async () => {
+  const candidate = await sealedCandidate();
+  const path = `/v1/game-candidates/${candidate.id}/publication-preparation`;
+  const queued = {
+    create: async () => ({ status: async () => ({ status: "queued" }) }),
+  } as unknown as Env["RECONCILIATION_WORKFLOW"];
+  const intent = {
+    manifest_digest: candidate.manifest_digest,
+    generation: 0,
+    sequence: 0,
+    idempotency_key: "old-start-replay",
+  };
+  await advanceWith({ ...testEnv, RECONCILIATION_WORKFLOW: queued }, `${path}/start`, intent);
+  const newer = (await post(path, { ...intent, sequence: 1, idempotency_key: "newer-start-work" })).document;
+  const unavailable = {
+    create: async () => {
+      throw new Error("Injected old dispatch outage");
+    },
+    get: async () => {
+      throw new Error("Injected old dispatch lookup outage");
+    },
+  } as unknown as Env["RECONCILIATION_WORKFLOW"];
+  await advanceWith({ ...testEnv, RECONCILIATION_WORKFLOW: unavailable }, `${path}/start`, intent);
+  expect((await get(path)).document).toEqual(newer);
+  await finish(path, intent, newer);
+});
