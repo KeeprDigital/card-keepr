@@ -45,7 +45,7 @@ CREATE TABLE fresh_baseline_corrections (
 CREATE TRIGGER fresh_baseline_correction_chain BEFORE INSERT ON fresh_baseline_corrections
 WHEN NEW.state<>0 OR NEW.execution_id IS NOT NULL OR NEW.generation<>(SELECT COALESCE(MAX(generation),0)+1 FROM fresh_baseline_corrections WHERE handoff_dispatch_digest=NEW.handoff_dispatch_digest)
  OR NEW.previous_correction_digest IS NOT (SELECT correction_digest FROM fresh_baseline_corrections WHERE handoff_dispatch_digest=NEW.handoff_dispatch_digest ORDER BY generation DESC LIMIT 1)
- OR NOT EXISTS(SELECT 1 FROM fresh_baseline_handoffs WHERE dispatch_digest=NEW.handoff_dispatch_digest AND phase BETWEEN 4 AND 6)
+ OR NOT EXISTS(SELECT 1 FROM fresh_baseline_handoffs WHERE dispatch_digest=NEW.handoff_dispatch_digest AND (phase BETWEEN 4 AND 6 OR (role='destination' AND phase=3)))
 BEGIN SELECT RAISE(ABORT,'fresh_baseline_correction_predecessor_changed'); END;
 CREATE TRIGGER fresh_baseline_correction_immutable BEFORE UPDATE ON fresh_baseline_corrections
 WHEN NEW.correction_digest<>OLD.correction_digest OR NEW.handoff_dispatch_digest<>OLD.handoff_dispatch_digest
@@ -72,7 +72,7 @@ CREATE TRIGGER fresh_baseline_correction_fence BEFORE UPDATE ON fresh_baseline_h
 WHEN EXISTS(SELECT 1 FROM fresh_baseline_corrections WHERE handoff_dispatch_digest=OLD.dispatch_digest)
  AND NOT EXISTS(SELECT 1 FROM fresh_baseline_corrections WHERE handoff_dispatch_digest=OLD.dispatch_digest
  AND generation=(SELECT MAX(generation) FROM fresh_baseline_corrections WHERE handoff_dispatch_digest=OLD.dispatch_digest)
- AND execution_id=NEW.execution_id AND (NEW.phase=OLD.phase OR state=2))
+ AND execution_id=NEW.execution_id AND (NEW.phase=OLD.phase OR state=2 OR (OLD.role='destination' AND OLD.phase=3 AND NEW.phase=4 AND state=1)))
 BEGIN SELECT RAISE(ABORT,'fresh_baseline_correction_superseded'); END;
 CREATE TRIGGER fresh_baseline_retained BEFORE DELETE ON fresh_baseline_handoffs
 BEGIN SELECT RAISE(ABORT,'fresh_baseline_authority_retained'); END;

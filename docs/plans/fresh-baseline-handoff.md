@@ -59,8 +59,10 @@ quarantines any transferred destination first, then reopens the source. Any
 activation intent requires roll-forward instead. A cancelled destination is never
 reused. A corrected SHA/destination before activation requires cancellation and a
 new owner-confirmed preparation; after activation, the same confirmed execution
-can resume, while a different-SHA repair requires a separately reviewed protocol
-extension rather than an undocumented bypass.
+can resume. A different-SHA repair uses a separately confirmed correction
+linked to the same approved D1 pair. Its immutable predecessor chain revokes
+superseded execution and records dual version intent and observation before
+acceptance; the operator procedure documents its command and limits.
 
 See [the operator procedure](../runbooks/fresh-baseline-handoff.md) for the supported
 commands, local proof scope and remaining live gates.

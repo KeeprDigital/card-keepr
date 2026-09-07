@@ -29,7 +29,7 @@ import {
   smokeTargetPrintingsStatement,
   smokeTargetSearchMatchStatement,
 } from "./administration-inspection-repository";
-import { freshBaselineHandoffStatement } from "./fresh-baseline-repository";
+import { freshBaselineHandoffStatement, latestFreshBaselineCorrectionStatement } from "./fresh-baseline-repository";
 import { inspectCatalogueCandidate } from "./candidate-inspection";
 import { repairableCatalogueRevisionWindow } from "./catalogue-revision-retention";
 import { SPINE_REVISION_ID } from "./production-release";
@@ -117,6 +117,16 @@ export async function administrationStatus(
     retained_database_id: string;
     verification_json: string;
   }>();
+  const correction =
+    handoff === null
+      ? null
+      : await latestFreshBaselineCorrectionStatement(database, handoff.dispatch_digest).first<{
+          request_json: string;
+          evidence_json: string;
+          state: number;
+          generation: number;
+          correction_digest: string;
+        }>();
   const activeProductionRelease = await activeProductionReleaseStatement(database).first<Record<string, unknown>>();
   const productionTargetDigest = await sha256Text(canonicalJson(productionTarget));
   const retention = retainedEvidence.results.map((row) => ({
@@ -156,6 +166,14 @@ export async function administrationStatus(
             request: JSON.parse(handoff.request_json),
             evidence: JSON.parse(handoff.evidence_json),
             mutation_blocked: handoffBlocked,
+            correction:
+              correction === null
+                ? null
+                : {
+                    ...correction,
+                    request: JSON.parse(correction.request_json),
+                    evidence: JSON.parse(correction.evidence_json),
+                  },
           },
     active_production_release: activeProductionRelease,
     release_preflight: {

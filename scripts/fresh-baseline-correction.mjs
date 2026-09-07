@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { handoffPlan } from "./fresh-baseline-handoff.mjs";
+import { handoffPlan, activationIntent } from "./fresh-baseline-handoff.mjs";
 const q = (value) => (value === null ? "NULL" : `'${String(value).replaceAll("'", "''")}'`);
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const assert = (condition) =>
@@ -135,6 +135,11 @@ export async function runFreshBaselineCorrection(environment, adapter) {
       else if (JSON.stringify(JSON.parse(row.evidence_json)[0]) !== JSON.stringify(evidence))
         throw new Error("fresh_baseline_correction_intent_changed");
     }
+  }
+  const destinationHandoff = await adapter.read("destination");
+  if (destinationHandoff.phase === 3) {
+    if (initialSource.phase !== 4) throw new Error("fresh_baseline_correction_predecessor_invalid");
+    await adapter.advance("destination", 3, activationIntent(initialSource));
   }
   source = await latest("source");
   destination = await latest("destination");

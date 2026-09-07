@@ -483,7 +483,29 @@ test("correction resumes every persisted boundary and revokes a superseded repai
       /activation_failed/,
     );
     const second = await approveCorrection(f, "destination", "repair_second", "c");
+    assert.throws(() => f.execute(f.destination, correctionPhaseSql(first, 1, { stale: true })), /owner_changed/);
     await assert.rejects(runFreshBaselineCorrection(first, correctionAdapter(f, first)), /chain_invalid|superseded/);
     assert.equal((await runFreshBaselineCorrection(second, correctionAdapter(f, second))).state, "handoff_accepted");
   });
+});
+
+test("a separately approved correction repairs source intent with destination still transferred", async (t) => {
+  const f = await setup(t);
+  await assert.rejects(
+    runFreshBaselineRelease(f.environment, {
+      ...f.adapter,
+      advance: async (role, from, evidence) => {
+        await f.adapter.advance(role, from, evidence);
+        if (role === "source" && from === 3) throw new Error("lost_source_intent_response");
+      },
+    }),
+    /lost_source_intent_response/,
+  );
+  assert.equal(f.read("source").phase, 4);
+  assert.equal(f.read("destination").phase, 3);
+  const environment = await approveCorrection(f, "source", "split_repair", "b");
+  assert.equal(
+    (await runFreshBaselineCorrection(environment, correctionAdapter(f, environment))).state,
+    "handoff_accepted",
+  );
 });

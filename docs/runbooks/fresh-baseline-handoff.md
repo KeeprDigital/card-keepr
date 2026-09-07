@@ -91,8 +91,19 @@ release ID and preparation key. Never reuse a quarantined destination.
 After phase 4, failure or ambiguous activation requires the same exact guarded
 roll-forward and new binding observation. Neither a generic failure handler nor
 lease cleanup may reopen either database. A code defect requiring a different
-SHA after activation is a genuine repair blocker: obtain a reviewed, separately
-confirmed correction protocol; do not manually rewrite the stored request.
+SHA after activation uses the same original command arguments plus
+`--correct-handoff-sha <new-exact-sha> --correction-key <new-key>`. Review and repeat
+the newly returned exact confirmation. The command keeps the original source,
+destination, baseline digest and release ID, and records a separate immutable
+approval linked to its predecessor. Status exposes the latest correction and its
+evidence. Approval immediately fences superseded execution on the approving
+side; the runner reconciles the chain on both databases before activating either
+Worker. Each repair records both new version intents, observes both live versions,
+bindings and routes, and runs authenticated smoke before acceptance. A source
+intent with destination still transferred is recoverable by the same protocol.
+Retries reuse the correction key and exact SHA. The chain allows at most 100
+approvals; a completed handoff does not accept new corrections. Changing the D1
+pair after activation is outside this command. Do not rewrite stored requests.
 Source retirement is permanent; retained source deletion is outside this command.
 
 ## Local proof and live evidence
