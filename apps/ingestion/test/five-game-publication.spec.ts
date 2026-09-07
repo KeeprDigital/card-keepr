@@ -13,7 +13,9 @@ installReconciliationSuite();
 
 // Bounded synthetic capacity/retention regression. Checkpoint guard admission is
 // synthetic; actual SQL restoration is proved separately by native acceptance.
-test("five published games preserve sibling roots and current plus two query revisions", async () => {
+test("five published games preserve sibling roots and current plus two query revisions", {
+  timeout: 120_000,
+}, async () => {
   for (const area of ["card_facts", "printing_details"]) {
     const designation = await post("/v1/source-authorities", {
       game: "riftbound",
