@@ -31,23 +31,45 @@ export class ReconciliationGundamGraph {
     this.locatorIndex = new ReconciliationReducerIndex(database, runId, "gundam_graph_locators");
     this.header = new ReconciliationReducerIndex(database, runId, "gundam_graph_header");
   }
-  async add(input: GundamListingCollectionGraphInput): Promise<void> {
+  get cursor() {
+    return {
+      collections: this.collections.position,
+      pages: this.pages.position,
+      requests: this.requests.position,
+      locators: this.locatorIndex.position,
+      header: this.header.position,
+      requestCount: this.requestCount,
+      validated: this.validated,
+    };
+  }
+  resumeAt(cursor: ReconciliationGundamGraph["cursor"]) {
+    this.collections.resumeAt(cursor.collections);
+    this.pages.resumeAt(cursor.pages);
+    this.requests.resumeAt(cursor.requests);
+    this.locatorIndex.resumeAt(cursor.locators);
+    this.header.resumeAt(cursor.header);
+    this.requestCount = cursor.requestCount;
+    this.validated = cursor.validated;
+  }
+  async add(input: GundamListingCollectionGraphInput, progress = { nextLocator: 0, added: 0 }) {
     if (this.validated) throw new Error("Cannot append to a validated Gundam listing graph.");
     const page = gundamListingPage(input);
-    if (!page) return;
+    if (!page) return null;
     const id = await sha256Text(canonicalJson([page.sourceLineage, page.package]));
     const prior = await this.collections.get(id);
     const pageKey = canonicalJson([id, page.page]);
-    const duplicatePage = await this.pages.has(pageKey);
-    await this.pages.seed(pageKey, true);
-    let locators = prior?.locators ?? 0;
-    for (const locator of page.fullLocators) {
+    const end = Math.min(progress.nextLocator + 8, page.fullLocators.length);
+    for (; progress.nextLocator < end; progress.nextLocator++) {
+      const locator = page.fullLocators[progress.nextLocator]!;
       const key = await sha256Text(canonicalJson([id, locator]));
       if (!(await this.locatorIndex.has(key))) {
         await this.locatorIndex.seed(key, { id: key, sourceLineage: page.sourceLineage, locator });
-        locators++;
+        progress.added++;
       }
     }
+    if (progress.nextLocator < page.fullLocators.length) return progress;
+    const duplicatePage = await this.pages.has(pageKey);
+    await this.pages.seed(pageKey, true);
     await this.collections.seed(id, {
       id,
       first: Math.min(prior?.first ?? page.page, page.page),
@@ -59,13 +81,14 @@ export class ReconciliationGundamGraph {
       declaredTotal: prior?.declaredTotal ?? page.declaredTotal,
       totalMismatch:
         (prior?.totalMismatch ?? false) || (prior !== undefined && prior.declaredTotal !== page.declaredTotal),
-      locators,
+      locators: (prior?.locators ?? 0) + progress.added,
     });
     await this.requests.seed(page.requestId, true);
     this.requestCount++;
+    return null;
   }
-  async validate(): Promise<void> {
-    for await (const group of this.collections.entityValues()) {
+  async *validateGroups(after = "") {
+    for await (const group of this.collections.entityValues(after)) {
       if (
         group.first !== 1 ||
         group.pages !== group.last ||
@@ -78,7 +101,10 @@ export class ReconciliationGundamGraph {
         throw new Error("A retained Gundam listing collection disagrees on its publisher total.");
       if (group.locators !== group.declaredTotal)
         throw new Error("A retained Gundam listing collection does not close its publisher total across pages.");
+      yield group.id;
     }
+  }
+  async completeValidation() {
     await this.header.seed("validated", true);
     this.validated = true;
   }
@@ -86,7 +112,7 @@ export class ReconciliationGundamGraph {
     if (!this.validated) throw new Error("The Gundam listing graph is not validated.");
     return this.requestCount > 0 && (await this.requests.has(id));
   }
-  locators() {
-    return this.locatorIndex.entityValues();
+  locators(after = "") {
+    return this.locatorIndex.entityValues(after);
   }
 }

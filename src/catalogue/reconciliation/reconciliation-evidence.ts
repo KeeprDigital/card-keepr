@@ -7,7 +7,7 @@ import {
 } from "./reconciliation-selection";
 import { readSourceObservation } from "./reconciliation-source-observation";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
-import { ReconciliationGundamGraph } from "./reconciliation-gundam-graph";
+import { assertClosedRequestGraph } from "./reconciliation-source-graph";
 import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
 import {
   readVerifiedReconciliationInput,
@@ -485,7 +485,15 @@ async function collectRetainedReconciliationObservation(
       validateObservationDocument,
       yieldAtCheckpoint,
     );
-    await assertClosedRequestGraph(database, runId, selectedEvidence, loadDocument, selectedRequestById);
+    await assertClosedRequestGraph(
+      database,
+      runId,
+      inputDigest,
+      evidenceAfter,
+      loadDocument,
+      selectedRequestById,
+      yieldAtCheckpoint,
+    );
     await retainReconciliationCheckpoint(database, runId, "source_graph", 0, { inputDigest });
     if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "source_graph", ordinal: 0 });
   }
@@ -749,217 +757,6 @@ export {
   validateGundamListingCollectionGraph,
   type GundamListingCollectionGraphInput,
 } from "./reconciliation-listing-page";
-
-async function assertClosedRequestGraph(
-  database: CatalogueStore,
-  runId: string,
-  evidence: AsyncIterable<{ request: PlannedRequestRow; row: EvidenceRow }>,
-  loadDocument: (row: EvidenceRow) => Promise<Awaited<ReturnType<typeof retainedObservationDocument>>>,
-  requestById: (id: string) => Promise<PlannedRequestRow | undefined>,
-): Promise<void> {
-  const gundamGraph = new ReconciliationGundamGraph(database, runId);
-  for await (const { request, row } of evidence) {
-    if (requiredSourceAdapter(row.adapter_version).listingReconciliation?.groupsPublisherPages !== true) continue;
-    const document = await loadDocument(row);
-    const observations: {
-      value: { completeness: unknown; source_sidecar: { raw: { official_surfaces: unknown[] } } };
-    }[] = [];
-    let metadataBytes = 0;
-    for await (const wrapped of document.observations) {
-      const observation = isRecord(wrapped) && isRecord(wrapped.value) ? wrapped.value : wrapped;
-      if (
-        !isRecord(observation) ||
-        !isRecord(observation.source_sidecar) ||
-        !isRecord(observation.source_sidecar.raw) ||
-        !Array.isArray(observation.source_sidecar.raw.official_surfaces)
-      )
-        continue;
-      const surfaces = observation.source_sidecar.raw.official_surfaces.flatMap((surface) => {
-        if (
-          !isRecord(surface) ||
-          surface.source_lineage !== row.source_lineage ||
-          surface.surface !== "listing" ||
-          !isRecord(surface.document) ||
-          !("terminal_page" in surface.document)
-        )
-          return [];
-        const { selected_package, selected_page, declared_total, full_locators, terminal_page } = surface.document;
-        return [
-          {
-            source_lineage: surface.source_lineage,
-            surface: surface.surface,
-            document: { selected_package, selected_page, declared_total, full_locators, terminal_page },
-          },
-        ];
-      });
-      if (surfaces.length) {
-        const value = {
-          completeness: observation.completeness,
-          source_sidecar: { raw: { official_surfaces: surfaces } },
-        };
-        metadataBytes += new TextEncoder().encode(canonicalJson(value)).byteLength;
-        if (observations.length === 500 || metadataBytes > 512000)
-          throw new Error("reconciliation_capacity_exceeded: one Gundam listing request has too much graph metadata.");
-        observations.push({ value });
-      }
-    }
-    if (!observations.length) continue;
-    await gundamGraph.add({
-      requestId: request.request_id,
-      requestUrl: request.url,
-      sourceLineage: row.source_lineage,
-      adapterVersion: row.adapter_version,
-      observations,
-    });
-  }
-  await gundamGraph.validate();
-  const rootSurfaces = new Map<string, Set<string>>();
-  const listingLocators = new ReconciliationReducerIndex<{
-    requestId: string;
-    semantic: string;
-    canonical: string | null;
-  }>(database, runId, "listing_locators");
-  const listingPages = new ReconciliationReducerIndex<{
-    id: string;
-    partition: string;
-    first: number;
-    last: number;
-    count: number;
-  }>(database, runId, "listing_page_groups");
-  const pageIdentities = new ReconciliationReducerIndex<boolean>(database, runId, "listing_page_ids");
-  const detailLocators = new ReconciliationReducerIndex<boolean>(database, runId, "listing_detail_locators");
-  for await (const { request, row } of evidence) {
-    const document = await loadDocument(row);
-    if (
-      document.evidenceSummary.observation_count !== document.observationCount ||
-      ((document.evidenceSummary.structurally_complete !== true ||
-        document.evidenceSummary.required_surfaces_complete !== true ||
-        document.evidenceSummary.partitions_complete !== true ||
-        document.evidenceSummary.declared_record_count !== document.evidenceSummary.parsed_record_count) &&
-        !(await gundamGraph.hasCompleteRequest(request.request_id)))
-    ) {
-      throw new Error(`Source Request ${request.request_id} has incomplete declared/parsed count closure.`);
-    }
-    if (request.request_role === "detail") {
-      const locator = new URL(request.url).searchParams.get("detailSearch");
-      if (locator !== null) await detailLocators.seed(canonicalJson([row.source_lineage, locator]), true);
-    }
-    const adapter = requiredSourceAdapter(row.adapter_version);
-    if (adapter.origin !== "production" || row.plan_origin !== "production") {
-      throw new Error(`Source Request ${request.request_id} has mismatched graph authority.`);
-    }
-    if (request.request_role === "surface") {
-      const prefix = `${row.source_lineage}:`;
-      if (request.discovered_from_request_id !== null || !request.request_id.startsWith(prefix)) {
-        throw new Error("Root Source Request graph identity is invalid.");
-      }
-      const surface = request.request_id.slice(prefix.length);
-      if (surface !== "discovery") {
-        if (!(adapter.requiredSurfaces ?? []).includes(surface))
-          throw new Error(`Official Source ${row.adapter_version} request graph contains an unexpected root surface.`);
-        rootSurfaces.set(row.adapter_version, new Set([...(rootSurfaces.get(row.adapter_version) ?? []), surface]));
-      }
-      continue;
-    }
-    if (request.discovered_from_request_id === null) {
-      throw new Error(`Discovered Source Request ${request.request_id} has no parent.`);
-    }
-    const parent = await requestById(request.discovered_from_request_id);
-    if (parent === undefined) {
-      throw new Error(`Discovered Source Request ${request.request_id} does not close over a retained parent.`);
-    }
-    if (request.request_role === "image" && document.observationCount !== 0) {
-      throw new Error("Printing Image requests cannot invent catalogue facts.");
-    }
-    if (
-      (request.request_role === "detail" || request.request_role === "product_detail") &&
-      document.observationCount === 0
-    ) {
-      throw new Error(`Required ${request.request_role} request ${request.request_id} parsed no retained detail.`);
-    }
-    if (request.request_role === "listing") {
-      for await (const observation of document.observations) {
-        if (!isRecord(observation) || !isRecord(observation.value)) continue;
-        const strictListingIdentity =
-          adapter.listingReconciliation?.strictListingIdentity === true
-            ? observation.value.listing_identity_evidence
-            : undefined;
-        const identity = strictListingIdentity ?? observation.value.identity_evidence;
-        if (!isRecord(identity) || typeof identity.locator !== "string") {
-          continue;
-        }
-        const locatorKey = `${row.source_lineage}:${identity.locator}`;
-        const semantic = await compatibleListingObservationSemantic(observation.value);
-        const canonical = typeof identity.canonical === "string" ? identity.canonical : null;
-        const prior = await listingLocators.get(locatorKey);
-        if (prior !== undefined && prior.requestId !== request.request_id) {
-          const compatibility = adapter.listingReconciliation?.duplicateLocatorCompatibility ?? "never";
-          const compatible =
-            compatibility === "semantic"
-              ? prior.semantic === semantic
-              : compatibility === "canonical"
-                ? prior.canonical === canonical
-                : false;
-          if (!compatible) {
-            throw new Error(`Official Source leaf partitions overlap at locator ${identity.locator}.`);
-          }
-        }
-        await listingLocators.seed(locatorKey, {
-          requestId: prior?.requestId ?? request.request_id,
-          semantic,
-          canonical,
-        });
-      }
-      const url = new URL(request.url);
-      const pageEntry = [...url.searchParams.entries()].find(([key]) => /^(?:page|paged|offset)$/u.test(key));
-      if (pageEntry !== undefined) {
-        const page = Number.parseInt(pageEntry[1], 10);
-        if (!Number.isInteger(page) || page < 0) {
-          throw new Error("Official Source listing page identity is invalid.");
-        }
-        url.searchParams.delete(pageEntry[0]);
-        const key = `${row.source_lineage}:${url.pathname}?${url.searchParams.toString()}`;
-        const pageKey = canonicalJson([key, page]);
-        if (!(await pageIdentities.has(pageKey))) {
-          await pageIdentities.seed(pageKey, true);
-          const prior = await listingPages.get(key);
-          await listingPages.seed(key, {
-            id: await canonicalValueDigest(key),
-            partition: key,
-            first: Math.min(prior?.first ?? page, page),
-            last: Math.max(prior?.last ?? page, page),
-            count: (prior?.count ?? 0) + 1,
-          });
-        }
-      }
-    }
-  }
-  for await (const { sourceLineage, locator } of gundamGraph.locators()) {
-    if (!(await detailLocators.has(canonicalJson([sourceLineage, locator]))))
-      throw new Error("A complete Gundam listing collection omitted a retained Card detail request.");
-  }
-  for await (const group of listingPages.entityValues()) {
-    if (group.last - group.first + 1 !== group.count)
-      throw new Error(`Official Source listing partition ${group.partition} has unfinished page closure.`);
-  }
-  for (const [adapterVersion, actual] of rootSurfaces) {
-    const adapter = requiredSourceAdapter(adapterVersion);
-    if (adapter.origin !== "production" || adapter.reconciliationCapability === "unavailable") {
-      throw new Error(`Official Source ${adapterVersion} has invalid production coverage authority.`);
-    }
-    const expected = new Set(adapter.requiredSurfaces ?? []);
-    if (actual.size !== expected.size || [...expected].some((surface) => !actual.has(surface))) {
-      throw new Error(
-        `Official Source ${adapterVersion} request graph does not close over every required root surface.`,
-      );
-    }
-  }
-}
-
-function compatibleListingObservationSemantic(observation: Record<string, unknown>): Promise<string> {
-  const { memberships: _memberships, source_sidecar: _sourceSidecar, ...semantic } = observation;
-  return canonicalValueDigest(semantic);
-}
 
 async function attachRetainedPrintingImages(
   value: unknown,

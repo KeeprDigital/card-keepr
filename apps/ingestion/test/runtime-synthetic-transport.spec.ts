@@ -205,3 +205,42 @@ test("synthetic paginated Gundam transport requires its scenario marker", async 
   expect(markedDetail).toContain("Paginated GD02-001");
   expect(markedImage.headers.get("content-type")).toBe("image/png");
 });
+
+test("synthetic Gundam graph resumes within a listing page's locator group", async () => {
+  const sourceLineage = "gundam-en-asia";
+  const response = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
+    supported_game: "gundam",
+    source_lineage: sourceLineage,
+    adapter_version: "gundam-en-asia@7",
+    idempotency_key: "gundam-bounded-page",
+    requests: officialSourceDiscoveryRequests(sourceLineage).map((request) => ({
+      ...request,
+      headers: { ...request.headers, "user-agent": "card-keepr-gundam-pagination-bounded" },
+    })),
+  });
+  expect(response.status).toBe(201);
+  const run = await response.json<CollectionDocument>();
+  const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
+  expect(resumed.status).toBe(202);
+  await resumed.body?.cancel();
+  expect(await waitForEvidenceRun(run.id, "awaiting_approval", 90_000)).toMatchObject({
+    state: "awaiting_approval",
+    failure_code: null,
+  });
+  const candidate = await administrationRequest(`/v1/ingestion-runs/${run.id}/candidate`, "GET");
+  expect(candidate.status).toBe(200);
+  expect(await candidate.json()).toMatchObject({ diff: { summary: { cards_added: 12, printings_added: 12 } } });
+  const checkpoints = await env.CATALOGUE_DB.prepare(`SELECT content FROM reconciliation_checkpoints
+    WHERE ingestion_run_id = ? AND phase = 'graph_validation' ORDER BY ordinal`)
+    .bind(run.id)
+    .all<{ content: string }>();
+  expect(checkpoints.results.map(({ content }) => JSON.parse(content))).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ pageProgress: { nextLocator: 8, added: 8 } }),
+      expect.objectContaining({
+        stage: "complete",
+        positions: expect.objectContaining({ gundam: expect.objectContaining({ validated: true, locators: 12 }) }),
+      }),
+    ]),
+  );
+}, 120_000);

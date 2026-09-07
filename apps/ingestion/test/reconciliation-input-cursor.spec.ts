@@ -174,6 +174,8 @@ test.each([
     let serviceCalls = 0;
     const completedGroups: number[] = [];
     const callsPerGroup: number[] = [];
+    const graphCalls: number[] = [];
+    const graphCursors: number[] = [];
     const preparationCalls: number[] = [];
     const preparationCursors: number[] = [];
     const metadataScans: number[] = [];
@@ -248,6 +250,14 @@ test.each([
           completedGroups.push(imagesInUnit);
           callsPerGroup.push(serviceCalls);
         }
+        if (JSON.parse(result as string).continuation?.phase === "graph_validation") {
+          graphCalls.push(serviceCalls);
+          const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+          const checkpoint = (status.checkpoints as { phase: string; cursor: { processedRequests: number } }[]).find(
+            ({ phase }) => phase === "graph_validation",
+          )!;
+          graphCursors.push(checkpoint.cursor.processedRequests);
+        }
         if (JSON.parse(result as string).continuation?.phase === "input_preparation") {
           preparationCalls.push(serviceCalls);
           const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
@@ -312,6 +322,9 @@ test.each([
     }
     expect(completedGroups).toEqual(groups);
     if (requireFrozenMetadata) {
+      expect(graphCalls.length).toBeGreaterThan(0);
+      expect(Math.max(...graphCalls)).toBeLessThanOrEqual(100);
+      if (requestCount === 32) expect(graphCursors.some((count) => count > 0 && count < 32)).toBe(true);
       expect(Math.max(...callsPerGroup)).toBeLessThanOrEqual(100);
       expect(preparationCalls.length).toBeGreaterThan(0);
       expect(Math.max(...preparationCalls)).toBeLessThanOrEqual(100);
