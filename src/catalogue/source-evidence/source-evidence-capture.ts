@@ -1,3 +1,8 @@
+import {
+  beginEvidenceObjectWrite,
+  completeEvidenceObjectWrite,
+  retainEvidenceMultipart,
+} from "./evidence-cleanup-repository";
 import { createHash } from "node:crypto";
 import { requiredSourceAdapter } from "../adapters";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256, utf8 } from "../shared";
@@ -447,12 +452,24 @@ export async function capturePreparedAttempt(
     attemptId: operation.attempt_id,
   }).run();
   operation = await requiredCaptureOperation(database, operation.attempt_id);
+  const writeToken = crypto.randomUUID();
+  await beginEvidenceObjectWrite(
+    database,
+    writeToken,
+    run.id,
+    operation.content_object_key,
+    new Date().toISOString(),
+  ).run();
   try {
     const content = await streamSnapshotToR2(
       evidenceObjects,
       operation.content_object_key,
       response,
       requiredSourceAdapter(evidencePlan.adapter_version).maximumSnapshotBytes,
+      async (upload) => {
+        await retainEvidenceMultipart(database, writeToken, upload).run();
+      },
+      writeToken,
     );
     await uploadedCaptureContentStatement(database, {
       digest: content.digest,
@@ -492,6 +509,8 @@ export async function capturePreparedAttempt(
       headers: responseHeaders,
       diagnostic: failure.message,
     });
+  } finally {
+    await completeEvidenceObjectWrite(database, writeToken, new Date().toISOString()).run();
   }
 }
 
@@ -735,9 +754,12 @@ async function streamSnapshotToR2(
   objectKey: string,
   response: Response,
   maximumBytes: number,
+  retainMultipart: (uploadId: string) => Promise<void>,
+  writeToken: string,
 ): Promise<{ byteLength: number; digest: string }> {
   const hash = createHash("sha256");
   const metadata = {
+    customMetadata: { cleanup_writer_token: writeToken },
     httpMetadata: {
       contentType: response.headers.get("content-type") ?? "application/octet-stream",
       cacheControl: "private, max-age=31536000, immutable",
@@ -828,6 +850,12 @@ async function streamSnapshotToR2(
   let multipart: R2MultipartUpload;
   try {
     multipart = await bucket.createMultipartUpload(objectKey, metadata);
+    try {
+      await retainMultipart(multipart.uploadId);
+    } catch (error) {
+      await multipart.abort();
+      throw error;
+    }
   } catch (error) {
     throw new CapturePersistenceError(
       "storage_failure",

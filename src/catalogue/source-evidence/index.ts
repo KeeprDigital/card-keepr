@@ -102,3 +102,14 @@ export { recordIngestionWorkflowProgress } from "./workflow-progress";
 export { retainedSourceEvidenceGuardStatement } from "./source-plan-repository";
 
 export { assertSelectedAuthoritiesCollected, sourceAuthorities } from "./source-authority";
+
+export {
+  beginEvidenceCleanup,
+  inspectEvidenceCleanup,
+  advanceEvidenceCleanup,
+  inspectEvidenceCleanupResults,
+  resumeEvidenceCleanup,
+} from "./evidence-cleanup";
+
+export { beginStagingCleanup, advanceStagingCleanup } from "./staging-cleanup";
+export { retainEvidenceObjectReferenceStatement } from "./evidence-cleanup-repository";

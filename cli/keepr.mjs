@@ -14,6 +14,25 @@ import { requestDocument } from "./lib/json-client.mjs";
 import { runProductionReleaseCommand } from "./production-release.mjs";
 
 const commandRoutes = {
+  stagingCleanupStart: {
+    path: "/v1/reconciliation-operations/{preparation-id}/evidence-cleanup",
+    fields: { idempotency_key: "idempotency-key", retention_days: "retention-days" },
+    optional: ["retention-days"],
+    integers: ["retention_days"],
+  },
+  evidenceCleanupStart: {
+    path: "/v1/ingestion-runs/{run-id}/evidence-cleanup",
+    fields: { idempotency_key: "idempotency-key", retention_days: "retention-days" },
+    optional: ["retention-days"],
+    integers: ["retention_days"],
+  },
+  evidenceCleanupStatus: { path: "/v1/evidence-cleanups/{cleanup-id}" },
+  evidenceCleanupObjects: { path: "/v1/evidence-cleanups/{cleanup-id}/objects?after={after}", optional: ["after"] },
+  evidenceCleanupRetry: {
+    path: "/v1/evidence-cleanups/{cleanup-id}/retry",
+    fields: { expected_generation: "expected-generation" },
+    integers: ["expected_generation"],
+  },
   publicationOperationResume: {
     path: "/v1/publications/{operation-id}/resume",
     fields: { generation: "generation", idempotency_key: "idempotency-key" },
@@ -325,6 +344,12 @@ async function routeCommand(name, arguments_, environment, json) {
     definition.fields === undefined
       ? undefined
       : { ...(definition.bodyEnvironment ? { environment: "production" } : {}), ...mapped(definition.fields) };
+  for (const field of definition.integers ?? []) {
+    if (body?.[field] === undefined) continue;
+    if (!/^(0|[1-9]\d*)$/.test(body[field]) || !Number.isSafeInteger(Number(body[field])))
+      return writeFailure(json, { code: "invalid_parameter", detail: `${field} must be a canonical integer.` }, 2);
+    body[field] = Number(body[field]);
+  }
   if (definition.production) {
     const resolved = await resolveTarget(environment, json, mapped(definition.query));
     if (typeof resolved === "number") return resolved;
@@ -354,6 +379,11 @@ const commands = {
   "run approve": (args, env, json) => routeCommand("approveRun", args, env, json),
   "run reject": (args, env, json) => routeCommand("rejectRun", args, env, json),
   "run retry": (args, env, json) => routeCommand("retryRun", args, env, json),
+  "staging-cleanup start": (args, env, json) => routeCommand("stagingCleanupStart", args, env, json),
+  "evidence-cleanup start": (args, env, json) => routeCommand("evidenceCleanupStart", args, env, json),
+  "evidence-cleanup status": (args, env, json) => routeCommand("evidenceCleanupStatus", args, env, json),
+  "evidence-cleanup objects": (args, env, json) => routeCommand("evidenceCleanupObjects", args, env, json),
+  "evidence-cleanup retry": (args, env, json) => routeCommand("evidenceCleanupRetry", args, env, json),
   "run cleanup": (args, env, json) => routeCommand("cleanupRun", args, env, json),
   "reconciliation status": (args, env, json) => routeCommand("reconciliationStatus", args, env, json),
   "reconciliation text": (args, env, json) => routeCommand("reconciliationText", args, env, json),
@@ -1000,7 +1030,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr identity-correction validate | identity-correction create | identity-correction inspect | identity-correction list | entity-proposal list | entity-proposal inspect | entity-proposal create | entity-proposal admit | entity-proposal link | entity-proposal reject | entity-proposal reconsider | identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | game-candidate list | game-candidate show | game-candidate inspect | game-candidate evidence | game-candidate partitions | game-candidate partition | reconciliation status | reconciliation text | reconciliation inputs | reconciliation input | reconciliation partitions | reconciliation partition | reconciliation pause | reconciliation resume | reconciliation abandon | run approve | run reject | run retry | run cleanup | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
+        "Usage: keepr identity-correction validate | identity-correction create | identity-correction inspect | identity-correction list | entity-proposal list | entity-proposal inspect | entity-proposal create | entity-proposal admit | entity-proposal link | entity-proposal reject | entity-proposal reconsider | identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | game-candidate list | game-candidate show | game-candidate inspect | game-candidate evidence | game-candidate partitions | game-candidate partition | reconciliation status | reconciliation text | reconciliation inputs | reconciliation input | reconciliation partitions | reconciliation partition | reconciliation pause | reconciliation resume | reconciliation abandon | run approve | run reject | run retry | run cleanup | evidence-cleanup start | evidence-cleanup status | evidence-cleanup objects | evidence-cleanup retry | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
     },
     2,
   );

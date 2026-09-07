@@ -170,3 +170,4 @@ export {
   publicationBackupReservationStatement,
   publishedCompositionStatement,
 } from "./publication-composition-repository";
+export { trackedStagingBucket } from "./staging-object-storage";

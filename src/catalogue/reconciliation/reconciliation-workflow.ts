@@ -27,6 +27,7 @@ import {
 export type ReconciliationWorkflowParams = Readonly<{
   ingestion_run_id: string;
   preparation_id?: string;
+  evidence_cleanup?: { id: string; generation: number; shard: number };
   expected_current_revision_id: string;
   idempotency_key: string;
   observed_at: string;

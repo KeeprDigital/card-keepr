@@ -230,3 +230,9 @@ replays retrieval, publication, backup, or Workflow operations. Level 12 require
 an empty pre-Go-Live run dataset: release preflight reports regeneration required
 before claiming that migration, and the migration independently rejects existing
 runs. Production recreation remains an explicit operational action.
+
+Unused terminal capture and positively inventoried preparation objects are managed
+through the owner cleanup intents described in [evidence cleanup](../../docs/runbooks/evidence-cleanup.md).
+`source-evidence/evidence-cleanup.ts` and `staging-cleanup.ts` own bounded progress;
+`shared/staging-object-storage.ts` records exact binding/key write incarnations.
+Guarded Catalogue Export deletion retains its distinct package scope.

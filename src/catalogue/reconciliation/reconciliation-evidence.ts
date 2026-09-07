@@ -1,3 +1,4 @@
+import { trackedStagingBucket } from "../shared";
 import { prepareSourceSelection } from "./reconciliation-source-selection";
 import type {
   PlannedRequestRow,
@@ -275,7 +276,10 @@ async function collectRetainedReconciliationObservation(
       );
       if (parsed.kind === "card_printing") {
         const references = [];
-        for (const image of parsed.printingImages) references.push(await retainCandidateImage(printingImages, image));
+        for (const image of parsed.printingImages)
+          references.push(
+            await retainCandidateImage(trackedStagingBucket(database, printingImages, "PRINTING_IMAGES", runId), image),
+          );
         parsed = { ...parsed, printingImages: references };
       }
       const adapter = requiredSourceAdapter(row.adapter_version);

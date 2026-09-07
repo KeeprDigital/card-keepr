@@ -1,3 +1,4 @@
+import { beginEvidenceObjectWrite, completeEvidenceObjectWrite } from "./evidence-cleanup-repository";
 import { MissingObjectError } from "../shared";
 import {
   AdapterParseFailure,
@@ -142,7 +143,19 @@ export async function parseSnapshot(
     };
     const observationBytes = utf8(canonicalJson(observationDocument));
     const digest = await sha256(observationBytes);
-    await putImmutableBytes(evidenceObjects, operation.content_object_key, observationBytes, digest);
+    const writeToken = crypto.randomUUID();
+    await beginEvidenceObjectWrite(
+      database,
+      writeToken,
+      snapshot.ingestion_run_id,
+      operation.content_object_key,
+      new Date().toISOString(),
+    ).run();
+    try {
+      await putImmutableBytes(evidenceObjects, operation.content_object_key, observationBytes, digest, writeToken);
+    } finally {
+      await completeEvidenceObjectWrite(database, writeToken, new Date().toISOString()).run();
+    }
     await uploadedParseStatement(database, {
       digest: digest,
       byteLength: observationBytes.byteLength,
@@ -437,7 +450,13 @@ async function requiredObservationSet(database: CatalogueStore, operationId: str
   return stored;
 }
 
-async function putImmutableBytes(bucket: R2Bucket, key: string, bytes: Uint8Array, digest: string): Promise<void> {
+async function putImmutableBytes(
+  bucket: R2Bucket,
+  key: string,
+  bytes: Uint8Array,
+  digest: string,
+  writeToken: string,
+): Promise<void> {
   const existing = await bucket.head(key);
   if (existing !== null) {
     assertMatchingObject(existing, bytes, digest);
@@ -449,7 +468,7 @@ async function putImmutableBytes(bucket: R2Bucket, key: string, bytes: Uint8Arra
       contentType: "application/json",
       cacheControl: "private, max-age=31536000, immutable",
     },
-    customMetadata: { sha256: digest },
+    customMetadata: { sha256: digest, cleanup_writer_token: writeToken },
   });
   if (stored !== null) return;
   const concurrent = await bucket.head(key);
