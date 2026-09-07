@@ -1,3 +1,11 @@
+import { startPublicationPreparation } from "./publication-preparation-dispatch";
+import {
+  advancePublicationPreparation,
+  inspectPublicationPreparation,
+  inspectPublicationArtifacts,
+  composePublicationArtifacts,
+  inspectPreparedQuery,
+} from "./publication-preparation";
 import {
   inspectGameCandidate,
   inspectGameCandidatePartitions,
@@ -37,11 +45,68 @@ import { resumeReconciliationWorkflow, startOrObserveReconciliationWorkflow } fr
 
 type Environment = {
   CATALOGUE_DB: CatalogueStore;
+  PRINTING_IMAGES: R2Bucket;
+  CATALOGUE_EXPORTS: R2Bucket;
   RECONCILIATION_WORKFLOW: Parameters<typeof startOrObserveReconciliationWorkflow>[1];
 };
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const reconciliationRoutes = [
+  route<Context>(
+    "GET",
+    "/v1/game-candidates/:candidate/publication-preparation/query",
+    async ({ env, request }, params) =>
+      Response.json(await inspectPreparedQuery(env.CATALOGUE_DB, params.candidate!, new URL(request.url).searchParams)),
+  ),
+  route<Context>("POST", "/v1/publication-compositions", async ({ env, request }) => {
+    const body = await readAdministrationBody(request);
+    assertOnlyFields(body, ["candidate_ids"]);
+    return Response.json(await composePublicationArtifacts(env, body.candidate_ids));
+  }),
+  route<Context>("GET", "/v1/game-candidates/:candidate/publication-preparation", async ({ env }, params) =>
+    Response.json(await inspectPublicationPreparation(env.CATALOGUE_DB, params.candidate!)),
+  ),
+  route<Context>(
+    "GET",
+    "/v1/game-candidates/:candidate/publication-preparation/artifacts",
+    async ({ env, request }, params) =>
+      Response.json(
+        await inspectPublicationArtifacts(
+          env.CATALOGUE_DB,
+          params.candidate!,
+          new URL(request.url).searchParams.get("after"),
+        ),
+      ),
+  ),
+  ...(["", "/start", "/resume"] as const).map((suffix) =>
+    route<Context>(
+      "POST",
+      `/v1/game-candidates/:candidate/publication-preparation${suffix}`,
+      async ({ env, request, observedAt }, params) => {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, ["manifest_digest", "generation", "sequence", "idempotency_key", "resume"]);
+        return Response.json(
+          await (suffix ? startPublicationPreparation : advancePublicationPreparation)(
+            env,
+            params.candidate!,
+            {
+              manifest_digest: requiredString(body, "manifest_digest"),
+              generation: Number(body.generation),
+              sequence: Number(body.sequence),
+              idempotency_key: requiredString(body, "idempotency_key"),
+              ...(suffix === "/resume"
+                ? { resume: true }
+                : body.resume === undefined
+                  ? {}
+                  : { resume: body.resume === true }),
+            },
+            observedAt,
+          ),
+          { status: suffix ? 202 : 200 },
+        );
+      },
+    ),
+  ),
   route<Context>("GET", "/v1/game-candidates/:candidate/progress", async ({ env }, params) =>
     Response.json(await inspectGameCandidateProgress(env.CATALOGUE_DB, params.candidate!)),
   ),
