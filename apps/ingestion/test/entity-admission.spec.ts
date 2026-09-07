@@ -1,3 +1,12 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { assessSourceAdmission } from "../../../src/catalogue/reconciliation/entity-admission-source";
+import {
+  insertAdmissionDecisionStatement,
+  proposalHistoryStatement,
+} from "../../../src/catalogue/reconciliation/entity-admission-repository";
+import { initializeReconciliationProgress } from "../../../src/catalogue/reconciliation/reconciliation-progress";
+import { parseReconciliationObservation } from "../../../src/catalogue/reconciliation/reconciliation-observation";
+import { reconciliationSourceDocument } from "../../../test/support/fake-publisher/reconciliation-documents";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { expect, test } from "vitest";
 import { retainLegacyAdmissionPin, retainLegacyAdmissionSelection } from "./query-helpers/legacy-decision-pins";
@@ -762,3 +771,82 @@ test("admission reconsideration cannot reassign an established Printing to anoth
   });
   expect(reassigned.response.status, JSON.stringify(reassigned.document)).toBe(422);
 });
+
+test.each([
+  { actor: "automation", action: "admit", hasPrinting: true, permitted: false },
+  { actor: "owner", action: "admit", hasPrinting: false, permitted: false },
+  { actor: "owner", action: "link", hasPrinting: false, permitted: false },
+  { actor: "owner", action: "admit", hasPrinting: true, permitted: true },
+  { actor: "owner", action: "link", hasPrinting: true, permitted: true },
+])(
+  "owner Printing review respects retained $actor $action (Printing: $hasPrinting)",
+  async ({ actor, action, hasPrinting, permitted }) => {
+    await designateSupplemental();
+    const run = await collect("/reconciliation/canonical-tabular", "owner-printing-policy", supplemental);
+    const db = catalogueStore(testEnv.CATALOGUE_DB);
+    const at = new Date().toISOString();
+    await initializeReconciliationProgress(db, run.id, at);
+    const snapshot = (run.document.snapshots as { id: string }[])[0];
+    expect(snapshot).toBeDefined();
+    const document = reconciliationSourceDocument(
+      "inspection-base",
+      "cards",
+      "https://official-source.invalid/reconciliation/inspection-base",
+    );
+    const parsed = parseReconciliationObservation("review-observation", document.cards![0]);
+    if (
+      parsed.kind !== "card_printing" ||
+      !parsed.observedCardAndPrinting.card ||
+      !parsed.observedCardAndPrinting.printing
+    )
+      throw new Error("Expected synthetic Card and Printing");
+    const observation = {
+      ...parsed,
+      sourceLineage: supplemental.lineage,
+      sourceSnapshotId: snapshot!.id,
+      sourceObservationSetId: "synthetic-set",
+      demonstrablyNovel: true,
+      noveltyProofComplete: true,
+      artworkIdentityExplicit: true,
+    };
+    const required = { printingAdmission: "owner_review" as const };
+    const initial = await assessSourceAdmission(db, run.id, observation, at, required);
+    expect(initial?.policy.automatic).toBe(true);
+    expect(initial?.permitted).toBe(false);
+    expect((await assessSourceAdmission(db, run.id, observation, at))?.permitted).toBe(true);
+    const decision = {
+      card: { ...parsed.observedCardAndPrinting.card, id: "reviewed-card" },
+      printing: hasPrinting
+        ? { ...parsed.observedCardAndPrinting.printing, id: "reviewed-printing", card_id: "reviewed-card" }
+        : null,
+    };
+    await insertAdmissionDecisionStatement(
+      db,
+      {
+        proposal_id: initial!.proposal.id,
+        generation: 1,
+        actor,
+        action,
+        rationale: "Retained decision before stricter Printing review",
+        decision_json: JSON.stringify(decision),
+        idempotency_key: "retained-review-decision",
+        request_json: "{}",
+        decided_at: at,
+      },
+      run.id,
+    ).run();
+    const assessed = await assessSourceAdmission(db, run.id, observation, at, required);
+    expect(assessed?.permitted).toBe(permitted);
+    expect(assessed?.decision).toEqual(decision);
+    expect((await assessSourceAdmission(db, run.id, observation, at))?.permitted).toBe(true);
+    const cardOnly = {
+      ...observation,
+      observedCardAndPrinting: { ...observation.observedCardAndPrinting, printing: null },
+    };
+    expect((await assessSourceAdmission(db, run.id, cardOnly, at, required))?.permitted).toBe(true);
+    const history = await proposalHistoryStatement(db, initial!.proposal.id).all();
+    expect(history.results).toEqual([
+      expect.objectContaining({ actor, action, decision_json: JSON.stringify(decision) }),
+    ]);
+  },
+);

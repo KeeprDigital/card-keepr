@@ -81,8 +81,15 @@ export async function assessSourceAdmission(
   run: string,
   observation: SourceObservation,
   at: string,
+  requirements: { printingAdmission: "owner_review" | "source_qualification" } = {
+    printingAdmission: "source_qualification",
+  },
 ) {
-  if (!supplementalLineage(observation.sourceLineage) || !observation.observedCardAndPrinting.card) return null;
+  if (!observation.observedCardAndPrinting.card) return null;
+  const supplemental = supplementalLineage(observation.sourceLineage);
+  const ownerReviewRequired =
+    requirements.printingAdmission === "owner_review" && observation.observedCardAndPrinting.printing !== null;
+  if (!supplemental && !ownerReviewRequired) return null;
   const reference = canonicalJson([
     observation.locator ?? observation.observedCardAndPrinting.card.official_identity,
     observation.variantKey,
@@ -151,8 +158,9 @@ export async function assessSourceAdmission(
     canonicalJson(decision!.card.official_identity) !==
       canonicalJson(observation.observedCardAndPrinting.card.official_identity);
   const permitted =
-    admitted ||
+    (admitted && (!ownerReviewRequired || (latest?.actor === "owner" && decision?.printing != null))) ||
     (!admitted &&
+      !ownerReviewRequired &&
       !rejected &&
       policy.automatic &&
       (observation.observedCardAndPrinting.printing === null ||

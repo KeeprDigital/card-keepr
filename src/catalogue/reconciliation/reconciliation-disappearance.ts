@@ -1,3 +1,6 @@
+import { checkedPrintingLineages, type CheckedCardScope } from "./scoped-disappearance";
+import type { CataloguePrinting } from "../shared";
+import type { ReconciliationCardState } from "./reconciliation-card-state";
 import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
@@ -19,6 +22,8 @@ type Group = {
   bytes: number;
 };
 type Stage =
+  | "scoped_printings"
+  | "scoped_cards"
   | "memberships"
   | "relationships"
   | "gundam_published"
@@ -34,6 +39,7 @@ type Cursor = {
   relationshipKind: string;
   relationshipValue: string;
   groups: number;
+  scopedCards?: number;
   warnings: { position: number; count: number };
   processedRecords: number;
 };
@@ -44,6 +50,11 @@ export async function prepareDisappearanceWarnings(
   runId: string,
   sources: {
     plans: ReconciliationPlanState;
+    cardScopes?: {
+      scopes: readonly CheckedCardScope[];
+      priorCards: ReconciliationCardState;
+      priorPrintings: ReconciliationReducerIndex<CataloguePrinting>;
+    };
     hasPrintings: boolean;
     checkedLineages: readonly string[];
     errataLineages: readonly string[];
@@ -60,7 +71,14 @@ export async function prepareDisappearanceWarnings(
 ) {
   const checkpoint = await reconciliationCheckpoint<Cursor>(database, runId, "disappearance_warnings");
   const groups = new ReconciliationReducerIndex<Group>(database, runId, "disappearance_memberships");
-  let stage: Stage = checkpoint?.value.stage ?? (sources.hasPrintings ? "memberships" : "relationships");
+  const scopedCards = new ReconciliationReducerIndex<{ id: string; lineage: string }>(
+    database,
+    runId,
+    "scoped_prior_cards",
+  );
+  const firstUnscopedStage = sources.hasPrintings ? "memberships" : "relationships";
+  let stage: Stage =
+    checkpoint?.value.stage ?? (sources.cardScopes?.scopes.length ? "scoped_printings" : firstUnscopedStage);
   let after = checkpoint?.value.after ?? "";
   let lineage = checkpoint?.value.lineage ?? 0;
   let relationshipKind = checkpoint?.value.relationshipKind ?? "";
@@ -69,6 +87,7 @@ export async function prepareDisappearanceWarnings(
   let ordinal = (checkpoint?.ordinal ?? -1) + 1;
   if (checkpoint) {
     groups.resumeAt(checkpoint.value.groups);
+    scopedCards.resumeAt(checkpoint.value.scopedCards ?? 0);
     warnings.resumeAt(checkpoint.value.warnings);
     if (stage === "complete") return;
   }
@@ -80,6 +99,7 @@ export async function prepareDisappearanceWarnings(
       relationshipKind,
       relationshipValue,
       groups: groups.position,
+      scopedCards: scopedCards.position,
       warnings: warnings.cursor,
       processedRecords,
     } satisfies Cursor);
@@ -107,6 +127,42 @@ export async function prepareDisappearanceWarnings(
     records = 0;
     bytes = 0;
   };
+  const warnScoped = async (kind: "card" | "printing", id: string, sourceLineage: string) => {
+    if (!(await sources.plans.hasObserved(kind, id, sourceLineage)))
+      await warnings.push({
+        code: "record_not_observed",
+        [`${kind}_id`]: id,
+        source_lineage: sourceLineage,
+        detail: `The ${kind === "card" ? "Card" : "Printing"} was not observed within the declared Card scope; it remains historical and is not withdrawn.`,
+      });
+  };
+  if (stage === "scoped_printings") {
+    if (!sources.cardScopes) throw new Error("Pinned Card scope is unavailable during disappearance resume.");
+    const { scopes, priorCards, priorPrintings } = sources.cardScopes;
+    for await (const printing of priorPrintings.entityValues(after)) {
+      const card = await priorCards.get(printing.card_id);
+      for (const sourceLineage of checkedPrintingLineages(card, printing, scopes)) {
+        await scopedCards.seed(await sha256Text(canonicalJson([printing.card_id, sourceLineage])), {
+          id: printing.card_id,
+          lineage: sourceLineage,
+        });
+        await warnScoped("printing", printing.id, sourceLineage);
+      }
+      after = printing.id;
+      processedRecords++;
+      await save();
+    }
+    await finish("scoped_cards");
+  }
+  if (stage === "scoped_cards") {
+    for await (const entry of scopedCards.latestEntries(after)) {
+      await warnScoped("card", entry.value.id, entry.value.lineage);
+      after = entry.key;
+      processedRecords++;
+      await save();
+    }
+    await finish(firstUnscopedStage);
+  }
   if (stage === "memberships") {
     for await (const plan of sources.plans.values(after)) {
       await budget(plan);
