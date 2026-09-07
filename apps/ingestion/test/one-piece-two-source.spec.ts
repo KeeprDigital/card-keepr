@@ -42,3 +42,19 @@ test("owner can select concrete Limitless P-001 coverage bound to the same One P
     evidence_plans: [{ game_profile_version: "one-piece@1", coverage: { subset: "p-001-catalogue" } }],
   });
 });
+
+test("owner separately declares the catalogue search and retained event corroboration", async () => {
+  const response = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
+    ...bounded,
+    subset: "p-001-catalogue-and-corroboration",
+    idempotency_key: "p001-corroboration",
+    requests: [
+      ...bounded.requests,
+      {
+        id: "one-piece-en:store-championship-p001",
+        url: "https://en.onepiece-cardgame.com/events/2023/championship/store_championship_wave1.php",
+      },
+    ],
+  });
+  expect(response.status).toBe(201);
+});

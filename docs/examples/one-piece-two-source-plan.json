@@ -1,0 +1,34 @@
+{
+  "plans": [
+    {
+      "supported_game": "one-piece",
+      "source_lineage": "one-piece-en",
+      "adapter_version": "one-piece-en@6",
+      "subset": "p-001-catalogue-and-corroboration",
+      "participation": "required",
+      "requests": [
+        {
+          "id": "one-piece-en:p-001-catalogue",
+          "url": "https://en.onepiece-cardgame.com/cardlist/?freewords=P-001"
+        },
+        {
+          "id": "one-piece-en:store-championship-p001",
+          "url": "https://en.onepiece-cardgame.com/events/2023/championship/store_championship_wave1.php"
+        }
+      ]
+    },
+    {
+      "supported_game": "one-piece",
+      "source_lineage": "limitless-one-piece-en",
+      "adapter_version": "limitless-one-piece-en@1",
+      "subset": "p-001-catalogue",
+      "participation": "required",
+      "requests": [
+        {
+          "id": "limitless-one-piece-en:p-001-catalogue",
+          "url": "https://onepiece.limitlesstcg.com/cards/en/P-001"
+        }
+      ]
+    }
+  ]
+}
