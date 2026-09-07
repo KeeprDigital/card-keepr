@@ -9,6 +9,7 @@ import {
 } from "./reconciliation-progress-repository";
 import {
   gameCandidatesForPreparationStatement,
+  gameCandidatesForCollectionStatement,
   gameCandidateStatement,
   gameCandidatePartitionsStatement,
   gameCandidatePartitionStatement,
@@ -18,6 +19,7 @@ import {
   sealGameCandidateStatement,
 } from "./game-candidate-repository";
 import { sourceAdapterRegistrations } from "../adapters";
+import { newestReconciliationCheckpointStatement } from "./reconciliation-checkpoint-repository";
 
 type GameCandidate = {
   id: string;
@@ -223,6 +225,28 @@ export async function inspectGameCandidate(database: CatalogueStore, candidateId
     contract: "card-keepr-game-candidate@1",
     ...identity,
     outcome: terminal_result_json ? JSON.parse(terminal_result_json) : null,
+  };
+}
+
+export async function listCollectionGameCandidates(database: CatalogueStore, runId: string, after: string | null) {
+  if (after !== null && !/^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,199}$/.test(after))
+    throw new AdministrationProblem(422, "invalid_cursor", "Use the returned candidate cursor.");
+  const rows = (await gameCandidatesForCollectionStatement(database, runId, after ?? "").all<{ id: string }>()).results;
+  return {
+    contract: "card-keepr-collection-game-candidates@1",
+    ingestion_run_id: runId,
+    candidates: rows.slice(0, 100),
+    next_cursor: rows.length > 100 ? rows[99]!.id : null,
+  };
+}
+
+export async function inspectGameCandidateProgress(database: CatalogueStore, candidateId: string) {
+  const candidate = await inspectGameCandidate(database, candidateId);
+  return {
+    contract: "card-keepr-game-preparation-progress@1",
+    preparation_id: candidate.preparation_id,
+    candidate,
+    checkpoint: await newestReconciliationCheckpointStatement(database, candidate.preparation_id).first(),
   };
 }
 

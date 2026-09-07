@@ -18,53 +18,113 @@ import {
 
 installReconciliationSuite();
 
-test("preparation checks its game predecessor independently of another game's publication", async () => {
-  const seed = await collect("/reconciliation/base", "native-predecessor-seed");
-  const published = await approve((await reconcile(seed.id)).document);
-  expect(published.response.status).toBe(200);
-  const revision = requiredString(published.document, "resulting_revision_id");
-  const onePiece = await collect("/reconciliation/base", "native-predecessor-next");
-  const stale = await post("/v1/game-candidates", {
-    ingestion_run_id: onePiece.id,
-    supported_game: "one-piece",
-    expected_game_revision_id: "catrev_spine_000",
-    idempotency_key: "native-stale-predecessor",
-  });
-  expect(stale.response.status).toBe(409);
-  expect(stale.document).toMatchObject({ code: "game_revision_mismatch" });
-  const current = await post("/v1/game-candidates", {
-    ingestion_run_id: onePiece.id,
-    supported_game: "one-piece",
-    expected_game_revision_id: revision,
-    idempotency_key: "native-current-predecessor",
-  });
-  expect(current.response.status, JSON.stringify(current.document)).toBe(201);
-  const fusion = await collect("/reconciliation/profile-fusion-world", "native-unrelated-predecessor", {
-    game: "fusion-world",
-    lineage: "fusion-world-en",
-    adapter: "fixture-fusion-world-json@2",
-  });
-  const unrelated = await post("/v1/game-candidates", {
-    ingestion_run_id: fusion.id,
-    supported_game: "fusion-world",
-    expected_game_revision_id: "catrev_spine_000",
-    idempotency_key: "native-unrelated-game",
-  });
-  expect(unrelated.response.status, JSON.stringify(unrelated.document)).toBe(201);
-  for (const candidate of [current, unrelated]) {
-    const id = requiredString(candidate.document, "id");
-    const deadline = Date.now() + 15000;
-    let status = (await get(`/v1/game-candidates/${id}`)).document;
-    while (status.state === "preparing" && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 25));
-      status = (await get(`/v1/game-candidates/${id}`)).document;
-    }
-    expect(status, JSON.stringify(status)).toMatchObject({
-      state: "sealed",
-      expected_game_revision_id: candidate.document.expected_game_revision_id,
+test.each(["base", "large-card-content"])(
+  "preparation of %s checks its game predecessor independently of another game's publication",
+  async (fixture) => {
+    const seed = await collect("/reconciliation/base", "native-predecessor-seed");
+    const published = await approve((await reconcile(seed.id)).document);
+    expect(published.response.status).toBe(200);
+    const revision = requiredString(published.document, "resulting_revision_id");
+    const onePiece = await collect(`/reconciliation/${fixture}`, "native-predecessor-next");
+    const stale = await post("/v1/game-candidates", {
+      ingestion_run_id: onePiece.id,
+      supported_game: "one-piece",
+      expected_game_revision_id: "catrev_spine_000",
+      idempotency_key: "native-stale-predecessor",
     });
-  }
-});
+    expect(stale.response.status).toBe(409);
+    expect(stale.document).toMatchObject({ code: "game_revision_mismatch" });
+    const current = await post("/v1/game-candidates", {
+      ingestion_run_id: onePiece.id,
+      supported_game: "one-piece",
+      expected_game_revision_id: revision,
+      idempotency_key: "native-current-predecessor",
+    });
+    expect(current.response.status, JSON.stringify(current.document)).toBe(201);
+    const fusion = await collect("/reconciliation/profile-fusion-world", "native-unrelated-predecessor", {
+      game: "fusion-world",
+      lineage: "fusion-world-en",
+      adapter: "fixture-fusion-world-json@2",
+    });
+    const unrelated = await post("/v1/game-candidates", {
+      ingestion_run_id: fusion.id,
+      supported_game: "fusion-world",
+      expected_game_revision_id: "catrev_spine_000",
+      idempotency_key: "native-unrelated-game",
+    });
+    expect(unrelated.response.status, JSON.stringify(unrelated.document)).toBe(201);
+    for (const candidate of [current, unrelated]) {
+      const id = requiredString(candidate.document, "id");
+      const deadline = Date.now() + 15000;
+      let status = (await get(`/v1/game-candidates/${id}`)).document;
+      while (status.state === "preparing" && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        status = (await get(`/v1/game-candidates/${id}`)).document;
+      }
+      expect(status, JSON.stringify(status)).toMatchObject({
+        state: "sealed",
+        expected_game_revision_id: candidate.document.expected_game_revision_id,
+      });
+      const progress = await get(`/v1/game-candidates/${id}/progress`);
+      expect(progress.response.status).toBe(200);
+      expect(progress.document).toMatchObject({
+        preparation_id: id,
+        candidate: { id, state: "sealed" },
+        checkpoint: {
+          phase: expect.any(String),
+          ordinal: expect.any(Number),
+          sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+      });
+      expect(new TextEncoder().encode(JSON.stringify(progress.document)).byteLength).toBeLessThan(65536);
+      if (candidate === current && fixture === "large-card-content") {
+        const partitions = (await get(`/v1/game-candidates/${id}/partitions`)).document.partitions as {
+          ordinal: number;
+          kind: string;
+        }[];
+        let inspectedLargeText = false;
+        for (const partition of partitions.filter((part) => part.kind === "printings")) {
+          const content = (await get(`/v1/game-candidates/${id}/partitions/${partition.ordinal}`)).document;
+          const parts = (content.text_parts as { sha256: string; chunks: number; byte_length: number }[][]).flat();
+          for (const part of parts.filter((part) => part.byte_length > 1048576)) {
+            const chunks: string[] = [];
+            for (let ordinal = 0; ordinal < part.chunks; ordinal++) {
+              const chunk = await get(`/v1/game-candidates/${id}/text/${part.sha256}/${ordinal}`);
+              expect(chunk.response.status).toBe(200);
+              expect(chunk.document).toMatchObject({ ingestion_run_id: onePiece.id, preparation_id: id });
+              chunks.push(String(chunk.document.content));
+            }
+            expect(chunks.join("")).toBe("Synthetic printed text. ".repeat(60000));
+            expect(await sha256Text(chunks.join(""))).toBe(part.sha256);
+            inspectedLargeText = true;
+          }
+        }
+        expect(inspectedLargeText).toBe(true);
+        const replayed = await runReconciliationWorkflow(
+          testEnv,
+          {
+            instanceId: "native-large-text-replay",
+            payload: {
+              ingestion_run_id: onePiece.id,
+              preparation_id: id,
+              expected_current_revision_id: revision,
+              idempotency_key: "native-current-predecessor",
+              observed_at: String(current.document.created_at),
+              generation: 0,
+            },
+          } as import("cloudflare:workers").WorkflowEvent<ReconciliationWorkflowParams>,
+          {
+            do: async (_name: string, _config: unknown, callback: () => Promise<string>) => callback(),
+          } as unknown as import("cloudflare:workers").WorkflowStep,
+        );
+        expect(new TextEncoder().encode(JSON.stringify(replayed)).byteLength).toBeLessThan(524288);
+        expect(JSON.stringify(replayed)).not.toContain("Synthetic printed text.");
+        expect((await get(`/v1/game-candidates/${id}`)).document).toEqual(status);
+      }
+    }
+  },
+  30000,
+);
 
 test.each([
   ["capacity-high-degree-observation", "reconciliation_capacity_exceeded"],

@@ -1,4 +1,10 @@
-import { inspectGameCandidate, inspectGameCandidatePartitions, inspectGameCandidatePartition } from "./game-candidate";
+import {
+  inspectGameCandidate,
+  inspectGameCandidatePartitions,
+  inspectGameCandidatePartition,
+  listCollectionGameCandidates,
+  inspectGameCandidateProgress,
+} from "./game-candidate";
 import { createGameReconciliation, changeGameReconciliation } from "./game-reconciliation";
 import {
   changeReconciliationProgress,
@@ -36,6 +42,28 @@ type Environment = {
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const reconciliationRoutes = [
+  route<Context>("GET", "/v1/game-candidates/:candidate/progress", async ({ env }, params) =>
+    Response.json(await inspectGameCandidateProgress(env.CATALOGUE_DB, params.candidate!)),
+  ),
+  route<Context>("GET", "/v1/ingestion-runs/:run/game-candidates", async ({ env, request }, params) =>
+    Response.json(
+      await listCollectionGameCandidates(env.CATALOGUE_DB, params.run!, new URL(request.url).searchParams.get("after")),
+    ),
+  ),
+  route<Context>("GET", "/v1/game-candidates/:candidate/text/:digest/:ordinal", async ({ env }, params) => {
+    const candidate = await inspectGameCandidate(env.CATALOGUE_DB, params.candidate!);
+    const text = await inspectReconciliationText(
+      env.CATALOGUE_DB,
+      candidate.preparation_id,
+      params.digest!,
+      params.ordinal!,
+    );
+    return Response.json({
+      ...text,
+      ingestion_run_id: candidate.ingestion_run_id,
+      preparation_id: candidate.preparation_id,
+    });
+  }),
   route<Context>("GET", "/v1/game-candidates/:candidate/inputs", async ({ env, request }, params) => {
     const candidate = await inspectGameCandidate(env.CATALOGUE_DB, params.candidate!);
     const inputs = await inspectReconciliationInputs(

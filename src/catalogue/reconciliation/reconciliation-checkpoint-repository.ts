@@ -1,5 +1,12 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 
+export function newestReconciliationCheckpointStatement(database: CatalogueStore, preparationId: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT phase, ordinal, sha256, length(CAST(content AS BLOB)) AS byte_length
+      FROM reconciliation_checkpoints WHERE preparation_id = ? ORDER BY rowid DESC LIMIT 1`)
+    .bind(preparationId);
+}
+
 export function latestReconciliationCheckpointStatement(
   database: CatalogueStore,
   preparationId: string,

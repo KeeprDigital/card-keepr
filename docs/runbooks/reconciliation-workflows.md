@@ -18,8 +18,8 @@ adapter uses its retained run key as the preparation ID.
 Dispatch retries recover that same identity through the Workflow driver. An
 instance that has dispatched its successor returns; it never polls the chain.
 
-The root can be the collection parent or an explicitly requested reconciliation
-Workflow. It waits once for the `reconciliation-terminal` event. The final shard
+The root is a native reconciliation Workflow, or the collection parent for the
+legacy single-game adapter. It waits once for the `reconciliation-terminal` event. The final shard
 sends only the terminal reference to that root. The wait uses the operation's
 original deadline. Restarting a root reads retained dispatch progress, while a
 sealed operation immediately returns its retained digest reference. A Workflow
@@ -32,7 +32,8 @@ generation as a substitute for the owner resume action.
 Independent owner operations start with `POST /v1/game-candidates`, supplying the
 retained `ingestion_run_id`, `supported_game`, `expected_game_revision_id`, and an
 `idempotency_key`. Inspect the returned candidate ID directly, including its
-`inputs` and `partitions` pages. Collection provenance remains the real Ingestion
+`progress`, `inputs`, and `partitions` pages. Large text remains in the bounded
+`text/:digest/:ordinal` chunks referenced by each partition. Collection provenance remains the real Ingestion
 Run ID; preparation artifacts and Workflow dispatch belong to `preparation_id`.
 The `pause`, `resume`, and `abandon` candidate routes accept the inspected
 generation and an action idempotency key. A paused candidate retains its game
@@ -46,10 +47,34 @@ run and preparation. Legacy references keep their existing contract.
 Follow-on preparation stages should return durable progress at each bounded work
 unit and use this continuation protocol. They must not put an unbounded loop into
 the collection parent, wait on every descendant, or send candidate records through
-Workflow parameters or events. The automatic collection path still uses the
-legacy run adapter. Its production multi-game dispatch, native terminal handling,
-and resource acceptance remain required integration work for issue #225 before
-downstream issues #226 and #227 proceed.
+Workflow parameters or events.
+
+The collection parent dispatches one native Workflow per game for multi-game
+collections and for single-game adapters with a retained `officialSourceContract`.
+These raw production source contracts therefore use native preparation. The
+single-game registration contract without an Official Source Contract retains
+legacy run/candidate compatibility; this is a contract distinction, independent
+of the environment or adapter name. Its existing large-candidate parent/restart
+contract remains supported. Native preparation is separately verified with the
+same existing large printed-text fixture.
+
+Each native dispatch uses one durable callback. It retains the original request
+and game predecessor before dispatch, and a parent restart reuses that identity.
+The parent returns bounded preparation identities without waiting for completion.
+An occupied game slot returns a blocked result while other games still dispatch.
+Native creation releases the completed collection's reservation atomically after
+pinning. Preparation failure leaves source collection evidence intact.
+
+List a collection's native preparations through
+`GET /v1/ingestion-runs/:run/game-candidates?after=...` or
+`keepr game-candidate list --run-id ...`. Pages contain at most 100 compact
+candidate headers and a continuation cursor, including retained failed and
+abandoned candidates. Inspect each candidate's durable progress directly; no
+Workflow platform access is required.
+
+Runtime resource enforcement and the remaining acceptance checks are still
+required for #225 before downstream #226/#227 proceed. Those issues must consume
+the sealed candidate and its retained preparation ownership through this protocol.
 
 Native mapping evidence is retained in `reconciliation_source_mappings`, keyed by
 preparation, entity, and Source Observation. It keeps the real collection ID as

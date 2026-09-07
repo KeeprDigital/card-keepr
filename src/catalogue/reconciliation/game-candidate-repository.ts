@@ -28,6 +28,17 @@ export function gameCandidatesForPreparationStatement(database: CatalogueStore, 
     .bind(runId);
 }
 
+export function gameCandidatesForCollectionStatement(database: CatalogueStore, runId: string, after: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT candidate.id, candidate.preparation_id, candidate.ingestion_run_id, candidate.supported_game,
+      candidate.expected_game_revision_id, candidate.created_at, candidate.deadline, candidate.state, candidate.generation,
+      candidate.manifest_digest, candidate.partition_count, operation.failure_code
+      FROM game_candidates AS candidate JOIN reconciliation_operations AS operation ON operation.id = candidate.preparation_id
+      WHERE candidate.ingestion_run_id = ? AND candidate.id > ? AND operation.supported_game IS NOT NULL
+      ORDER BY candidate.id LIMIT 101`)
+    .bind(runId, after);
+}
+
 export function gameCandidateStatement(database: CatalogueStore, candidateId: string) {
   return repositoryStatements(database)
     .prepare(`SELECT candidate.*, operation.failure_code, operation.terminal_result_json FROM game_candidates AS candidate

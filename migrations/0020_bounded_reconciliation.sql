@@ -344,6 +344,7 @@ CREATE TRIGGER reconciliation_text_no_update BEFORE UPDATE ON reconciliation_tex
 BEGIN SELECT RAISE(ABORT, 'reconciliation_text_immutable'); END;
 CREATE TRIGGER reconciliation_text_no_delete BEFORE DELETE ON reconciliation_text_chunks
 BEGIN SELECT RAISE(ABORT, 'reconciliation_text_audit_retained'); END;
+CREATE INDEX game_candidates_collection_page ON game_candidates(ingestion_run_id, id);
 CREATE TRIGGER game_candidate_identity_immutable BEFORE UPDATE ON game_candidates
 WHEN NEW.id <> OLD.id OR NEW.preparation_id <> OLD.preparation_id OR NEW.supported_game <> OLD.supported_game
   OR NEW.ingestion_run_id <> OLD.ingestion_run_id
@@ -465,6 +466,7 @@ CREATE TABLE reconciliation_checkpoints (
   sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
   PRIMARY KEY (preparation_id, phase, ordinal)
 );
+CREATE INDEX reconciliation_checkpoints_recent ON reconciliation_checkpoints(preparation_id);
 CREATE TRIGGER reconciliation_checkpoints_no_update BEFORE UPDATE ON reconciliation_checkpoints
 BEGIN SELECT RAISE(ABORT, 'reconciliation_checkpoint_immutable'); END;
 CREATE TRIGGER reconciliation_checkpoints_no_delete BEFORE DELETE ON reconciliation_checkpoints

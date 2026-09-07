@@ -279,7 +279,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
           requiredSourceAdapter(run.adapter_version).reconciliationCapability === "catalogue"
         ) {
           const games = JSON.parse(run.selected_games_json) as string[];
-          if (games.length > 1) {
+          if (games.length > 1 || requiredSourceAdapter(run.adapter_version).officialSourceContract) {
             if (games.length > 4) throw new Error("Collection selected too many Supported Games.");
             const preparations: Awaited<ReturnType<typeof prepareCollectedGame>>[] = [];
             for (const game of [...games].sort()) {
