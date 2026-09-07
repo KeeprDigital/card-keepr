@@ -507,13 +507,35 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     .map(({ source_observation_id }) => source_observation_id)
     .sort();
   assert.equal(accumulatedErrataEvidenceIds.length, 2);
-  const repeatedRevision = await approveCandidate(
-    repeatedRun.id,
+  const repeatedPublication = await publishNativeCollection(
+    repeatedCandidate,
     "approve-repeated-bandai-errata-html",
     cliEnvironment,
     runtime,
+    20_000,
   );
-  assert.equal(repeatedRevision, revisionId);
+  const repeatedRevision = repeatedPublication.resulting_revision_id;
+  assert.notEqual(repeatedRevision, revisionId);
+  const approvedCandidate = repeatedCandidate.candidates[0];
+  const approvalReplay = await fetch(`${runtime.url}/v1/publications`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${administrationKey}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      candidate_id: approvedCandidate.id,
+      manifest_digest: approvedCandidate.manifest_digest,
+      expected_game_revision_id: approvedCandidate.expected_game_revision_id,
+      generation: approvedCandidate.generation,
+      idempotency_key: "approve-repeated-bandai-errata-html-one-piece",
+    }),
+  });
+  assert.equal(approvalReplay.status, 202);
+  const replayedPublication = await approvalReplay.json();
+  assert.equal(replayedPublication.id, repeatedPublication.id);
+  assert.equal(replayedPublication.deadline, approvedCandidate.deadline);
+  const repeatedStatus = await apiJson(runtime.url, `/v1/publications/${replayedPublication.id}`, administrationKey);
+  assert.equal(repeatedStatus.resulting_revision_id, repeatedRevision);
+  assert.equal(repeatedStatus.backup_attempt_id, repeatedPublication.backup_attempt_id);
+  assert.equal(await exportComponent(runtime.url, revisionId, "errata", apiKey), errataBytes);
 
   const refreshRun = await collectFixtureSource(
     {
@@ -726,7 +748,29 @@ async function resumeAndWait(runId, environment, runtime) {
     });
     assert.equal(response.status, 201, await response.clone().text());
   }
-  return waitForNativeCollection(runId, "sealed", environment, runtime, { deadlineMs: 20_000 });
+  try {
+    return await waitForNativeCollection(runId, "sealed", environment, runtime, { deadlineMs: 20_000 });
+  } catch (error) {
+    const collection = await (
+      await fetch(`${runtime.url}/v1/ingestion-runs/${runId}/game-candidates`, { headers })
+    ).json();
+    const diagnostics = [];
+    for (const candidate of collection.candidates) {
+      const partitions = await (
+        await fetch(`${runtime.url}/v1/game-candidates/${candidate.id}/partitions`, { headers })
+      ).json();
+      for (const partition of partitions.partitions.filter((p) => ["warnings", "shared_warnings"].includes(p.kind)))
+        diagnostics.push(
+          await (
+            await fetch(`${runtime.url}/v1/game-candidates/${candidate.id}/partitions/${partition.ordinal}`, {
+              headers,
+            })
+          ).json(),
+        );
+    }
+    error.message = `${JSON.stringify(diagnostics)}\n${error.message}`;
+    throw error;
+  }
 }
 
 async function reconcileAndWait(runId, expectedRevision, _idempotencyKey, environment, runtime) {

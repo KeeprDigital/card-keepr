@@ -65,6 +65,13 @@ export type CatalogueCard = CuratedProvenanceBearing & {
 export type CataloguePrinting = CuratedProvenanceBearing & {
   id: string;
   card_id: string;
+  /** Private, manifest-bound source identities retained across native refreshes. */
+  locator_evidence?: readonly {
+    source_lineage: string;
+    locator: string;
+    variant_key: string | null;
+    source_observation_id: string;
+  }[];
   rarity: {
     normalized: string | null;
     raw: string | null;

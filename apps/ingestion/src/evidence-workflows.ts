@@ -1,6 +1,6 @@
 import { snapshotRecoveryWait } from "./snapshot-recovery-wait";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
-import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
+import { installedSourceAdapterRegistrations, requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import {
   type CatalogueStore,
   canonicalJson,
@@ -277,7 +277,11 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
         if (
           run.state === "parsing" &&
           run.plan_origin === "production" &&
-          requiredSourceAdapter(run.adapter_version).reconciliationCapability !== "unavailable"
+          (requiredSourceAdapter(run.adapter_version).reconciliationCapability === "catalogue" ||
+            installedSourceAdapterRegistrations.some(
+              (adapter) =>
+                adapter.adapterVersion === run.adapter_version && adapter.reconciliationCapability === "errata",
+            ))
         ) {
           return await this.prepareCollectedEvidence(event, step, run);
         }

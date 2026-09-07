@@ -1,3 +1,4 @@
+import { nativePrintingsAtLocator, retainPrintingLocator } from "./native-printing-locators";
 import {
   nativePreparationFailureCode,
   type NativePreparationGuardState,
@@ -253,7 +254,12 @@ export async function reconcileRetainedCardPrintingEvidence(
     "printings",
     (printing) => printing.card_id,
   );
-  const priorPrintings = new ReconciliationReducerIndex<CataloguePrinting>(database, runId, "prior_printings");
+  const priorPrintings = new ReconciliationReducerIndex<CataloguePrinting>(
+    database,
+    runId,
+    "prior_printings",
+    (printing) => printing.card_id,
+  );
   const printingImages = new ReconciliationReducerIndex<CataloguePrintingImage>(database, runId, "printing_images");
   const selectedGames = JSON.parse(run.selected_games_json) as SupportedGame[];
   const priorErrata = new ReconciliationErrataState(database, runId, "prior_errata");
@@ -1200,6 +1206,16 @@ export async function reconcileRetainedCardPrintingEvidence(
               id: printingId,
               card_id: cardId,
               ...acceptedPrinting,
+              ...(run.supported_game !== null
+                ? {
+                    locator_evidence: retainPrintingLocator(await printings.get(printingId), {
+                      source_lineage: observation.sourceLineage,
+                      locator,
+                      variant_key: observation.variantKey,
+                      source_observation_id: observation.sourceObservationId,
+                    }),
+                  }
+                : {}),
             });
           }
           if (observation.printingImages.length > 500)
@@ -1446,7 +1462,19 @@ export async function reconcileRetainedCardPrintingEvidence(
           await targetedCardIds.seed(card.id, true);
           let targetPrintingId: string | null = null;
           if (observation.target.type === "printing") {
-            const located = await printingsAtLocator(database, observation.sourceLineage, observation.target.locator);
+            const located =
+              (await nativePrintingsAtLocator(
+                database,
+                {
+                  preparationId: runId,
+                  revision: run.expected_current_revision_id,
+                  game: observation.game,
+                  cardId: card.id,
+                  through: priorPrintings.position,
+                },
+                observation.sourceLineage,
+                observation.target.locator,
+              )) ?? (await printingsAtLocator(database, observation.sourceLineage, observation.target.locator));
             const publishedById = new Map<string, CataloguePrinting>();
             for (const locatedPrinting of located) {
               const published = await priorPrintings.get(locatedPrinting.id);
