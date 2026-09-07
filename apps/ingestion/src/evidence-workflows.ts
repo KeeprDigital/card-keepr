@@ -281,7 +281,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
           const games = JSON.parse(run.selected_games_json) as string[];
           if (games.length > 1) {
             if (games.length > 4) throw new Error("Collection selected too many Supported Games.");
-            const preparations: { id: string; supported_game: string }[] = [];
+            const preparations: Awaited<ReturnType<typeof prepareCollectedGame>>[] = [];
             for (const game of [...games].sort()) {
               const prepared = await step.do(
                 workflowStepName(workflowSteps.parent.prepareGame, { game }),

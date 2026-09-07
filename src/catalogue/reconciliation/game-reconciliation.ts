@@ -52,8 +52,14 @@ export async function prepareCollectedGame(
       idempotency_key: key,
     };
   }
-  const { document } = await createGameReconciliation(database, workflow, input, at);
-  return { id: String(document.id), supported_game: game };
+  try {
+    const { document } = await createGameReconciliation(database, workflow, input, at);
+    return { id: String(document.id), supported_game: game };
+  } catch (error) {
+    if (error instanceof AdministrationProblem && error.code === "game_candidate_slot_occupied")
+      return { supported_game: game, state: "blocked" as const, code: error.code };
+    throw error;
+  }
 }
 
 export async function createGameReconciliation(
