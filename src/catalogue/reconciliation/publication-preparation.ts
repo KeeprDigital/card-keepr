@@ -1,3 +1,10 @@
+import { logProtectedFailure } from "../../http/protected-failure";
+import {
+  normalizeCardSearchText,
+  maximumNormalizedSearchQueryCodePoints,
+  maximumSearchChunkCodePoints,
+  searchChunkStride,
+} from "../shared";
 import {
   AdministrationProblem,
   canonicalJson,
@@ -161,6 +168,7 @@ export async function advancePublicationPreparation(
           state.state = "failed";
           state.failure_code = error.code;
         } else {
+          await logProtectedFailure("ingestion", `publication-${id}-${state.sequence}`, error);
           state.failures++;
           state.failure_code = "publication_storage_retry";
           if (state.failures >= 3) {
@@ -277,6 +285,17 @@ async function prepareUnit(
       ).all<ArtifactReference>()
     ).results;
     if (!refs.length) {
+      if (cursor.level === 0 && cursor.node === 0) {
+        const empty = await retainPublicationObject(
+          env.CATALOGUE_EXPORTS,
+          canonicalJson({ contract: "card-keepr-publication-composition-node@1", level: 0, children: [] }),
+        );
+        statements.push(
+          repository.retainPublicationNode(db, id, 0, 0, empty.object_key, empty.sha256, empty.byte_length),
+        );
+        cursor.node = 1;
+        return;
+      }
       if (cursor.node === 1) {
         const root = (await repository.publicationNodes(db, id, cursor.level, -1).all<ArtifactReference>()).results[0]!;
         const sealed = await retainPublicationObject(
@@ -462,7 +481,7 @@ async function prepareUnit(
           cursor.chunk - 1,
         ).first<{ content: string }>();
         if (!prior) throw new PublicationIntegrityError("publication_text_corrupt");
-        previous = [...prior.content].slice(-9216).join("");
+        previous = [...prior.content].slice(-maximumNormalizedSearchQueryCodePoints).join("");
       }
       text = previous + source.content;
     } else {
@@ -472,10 +491,10 @@ async function prepareUnit(
       text = typeof source === "string" ? source : "";
     }
     // Same normalization and 9-Ki-scalar overlap as the accepted card search contract.
-    const points = [...text.normalize("NFKC").toLocaleLowerCase("und").normalize("NFKC")];
+    const points = [...normalizeCardSearchText(text)];
     if (points.length > 768000) throw new PublicationIntegrityError("publication_capacity_exceeded");
     const offset = cursor.search_offset ?? 0;
-    const chunk = points.slice(offset, offset + 12288).join("");
+    const chunk = points.slice(offset, offset + maximumSearchChunkCodePoints).join("");
     const content = canonicalJson({
       contract: "card-keepr-game-search-chunk@1",
       card_id: value.id,
@@ -489,7 +508,7 @@ async function prepareUnit(
     );
     artifact("search", ref);
     cursor.search_ordinal = (cursor.search_ordinal ?? 0) + 1;
-    if (offset + 12288 >= points.length) {
+    if (offset + maximumSearchChunkCodePoints >= points.length) {
       cursor.search_offset = 0;
       cursor.chunk++;
       if (!part || cursor.chunk === part.chunks) {
@@ -497,7 +516,7 @@ async function prepareUnit(
         cursor.chunk = 0;
         cursor.search_ordinal = 0;
       }
-    } else cursor.search_offset = offset + 3073;
+    } else cursor.search_offset = offset + searchChunkStride;
     return;
   }
   const content = canonicalJson({
@@ -535,7 +554,9 @@ async function prepareUnit(
     statements.push(
       repository.retainPublicationProjection(db, id, state.artifact_count, partition.kind, projection, ref.sha256),
     );
-    statements.push(repository.retainPublicationQueryDocument(db, id, partition.kind, String(value.id), content));
+    statements.push(
+      repository.retainPublicationQueryDocument(db, id, partition.kind, String(value.id), state.artifact_count),
+    );
     artifact("query_search", ref);
   }
   cursor.record++;
@@ -631,7 +652,7 @@ export async function inspectPreparedQuery(db: CatalogueStore, id: string, query
       "invalid_prepared_query",
       "Select a catalogue kind and an at-most-500-character Card search.",
     );
-  const search = raw === null ? null : raw.normalize("NFKC").toLocaleLowerCase("und").normalize("NFKC");
+  const search = raw === null ? null : normalizeCardSearchText(raw);
   const rows = (
     await repository
       .publicationQueryDocuments(db, id, kind, after, search)

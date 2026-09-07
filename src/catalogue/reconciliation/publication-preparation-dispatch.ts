@@ -1,6 +1,11 @@
+import { logProtectedFailure } from "../../http/protected-failure";
 import { type CatalogueStore, sha256Text, workflowDriver } from "../shared";
 import type { ReconciliationWorkflowParams } from "./reconciliation-workflow";
-import { advancePublicationPreparation, inspectPublicationPreparation } from "./publication-preparation";
+import {
+  advancePublicationPreparation,
+  inspectPublicationPreparation,
+  pausePublicationWorkflow,
+} from "./publication-preparation";
 import type { PublicationPreparationIntent } from "./publication-preparation-types";
 
 export type PublicationPreparationWorkflow = {
@@ -33,7 +38,7 @@ export async function startPublicationPreparation(
   const receipt = await advancePublicationPreparation(env, id, input, at);
   const status = await inspectPublicationPreparation(env.CATALOGUE_DB, id);
   if (status.state !== "preparing") return { preparation: status, workflow: null };
-  const workflow = await dispatchPublicationPreparation(env.RECONCILIATION_WORKFLOW, {
+  const params: ReconciliationWorkflowParams = {
     ingestion_run_id: status.ingestion_run_id,
     preparation_id: status.preparation_id,
     expected_current_revision_id: status.expected_game_revision_id,
@@ -45,6 +50,22 @@ export async function startPublicationPreparation(
       generation: input.generation,
       first_sequence: Number(receipt.sequence),
     },
-  });
-  return { preparation: status, workflow: { id: workflow.id, status: workflow.status.status } };
+  };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const workflow = await dispatchPublicationPreparation(env.RECONCILIATION_WORKFLOW, params);
+      return { preparation: status, workflow: { id: workflow.id, status: workflow.status.status } };
+    } catch (error) {
+      if (attempt < 2) continue;
+      await logProtectedFailure("ingestion", `publication-dispatch-${id}`, error);
+      await pausePublicationWorkflow(
+        env,
+        id,
+        input.manifest_digest,
+        input.generation,
+        "publication_dispatch_retry_exhausted",
+      );
+    }
+  }
+  return { preparation: await inspectPublicationPreparation(env.CATALOGUE_DB, id), workflow: null };
 }

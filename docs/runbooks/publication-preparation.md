@@ -99,10 +99,12 @@ keepr publication-preparation resume --candidate-id CANDIDATE \
 Resume starts another bounded retry allowance at the retained cursor and cannot
 renew the original deadline. Missing/corrupt image, partition, text or manifest
 failures are terminal with distinct codes; they are not transient retry pauses.
-A Workflow budget pause is likewise explicit. If the control plane loses or
-errors a Workflow outside a work unit, a fresh start at the current sequence
-opens a deterministic successor without deleting old work. Repeated exact starts
-observe the original identity; they do not silently restart an errored instance.
+Workflow step/transaction or successor-dispatch retry exhaustion likewise
+retains `publication_workflow_retry_exhausted`; initial dispatch has a three-attempt
+bound and retains `publication_dispatch_retry_exhausted`. A Workflow budget pause
+is explicit. Resume uses the retained cursor and opens a deterministic successor
+without deleting old work. Repeated exact starts observe the original identity;
+they do not silently restart an errored instance.
 
 Every artifact-committing transaction rechecks the sealed candidate's owned slot,
 generation, manifest, expected game head, current deadline, and global recovery

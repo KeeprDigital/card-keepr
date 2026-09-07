@@ -12,7 +12,10 @@ export async function retainPublicationObject(bucket: R2Bucket, content: string,
     await bucket.put(key, content, {
       onlyIf: { etagDoesNotMatch: "*" },
       sha256,
-      httpMetadata: { contentType: "application/json", cacheControl: "private, max-age=31536000, immutable" },
+      httpMetadata: {
+        contentType: key.startsWith("publication-text/") ? "text/plain; charset=utf-8" : "application/json",
+        cacheControl: "private, max-age=31536000, immutable",
+      },
     });
   }
   await verifyPublicationObject(bucket, key, sha256, bytes);

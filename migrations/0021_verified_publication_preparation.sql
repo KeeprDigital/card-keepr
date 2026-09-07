@@ -91,8 +91,9 @@ CREATE TABLE publication_query_documents (
   candidate_id TEXT NOT NULL REFERENCES publication_preparations(candidate_id),
   kind TEXT NOT NULL,
   entity_id TEXT NOT NULL,
-  content TEXT NOT NULL CHECK(json_valid(content) AND length(CAST(content AS BLOB)) <= 524288),
-  PRIMARY KEY(candidate_id,kind,entity_id)
+  batch_ordinal INTEGER NOT NULL,
+  PRIMARY KEY(candidate_id,kind,entity_id),
+  FOREIGN KEY(candidate_id,batch_ordinal) REFERENCES publication_projection_batches(candidate_id,ordinal)
 );
 CREATE TABLE publication_search_chunks (
   candidate_id TEXT NOT NULL REFERENCES publication_preparations(candidate_id),
@@ -103,11 +104,6 @@ CREATE TABLE publication_search_chunks (
   PRIMARY KEY(candidate_id,card_id,field,ordinal)
 );
 CREATE VIRTUAL TABLE publication_search_fts USING fts5(candidate_token, candidate_id UNINDEXED, card_id UNINDEXED, search_text, tokenize='trigram case_sensitive 1');
-CREATE TRIGGER publication_search_insert AFTER INSERT ON publication_search_chunks
-BEGIN
-  INSERT INTO publication_search_fts(rowid,candidate_token,candidate_id,card_id,search_text)
-    VALUES (NEW.rowid,'|' || NEW.candidate_id || '|',NEW.candidate_id,NEW.card_id,NEW.search_text);
-END;
 CREATE TRIGGER publication_query_documents_no_update BEFORE UPDATE ON publication_query_documents
 BEGIN SELECT RAISE(ABORT,'publication_query_document_immutable'); END;
 CREATE TRIGGER publication_query_documents_no_delete BEFORE DELETE ON publication_query_documents

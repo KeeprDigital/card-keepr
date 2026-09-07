@@ -1,3 +1,4 @@
+import { logProtectedFailure } from "../../../src/http/protected-failure";
 import type { WorkflowStep } from "cloudflare:workers";
 import {
   advancePublicationPreparation,
@@ -16,6 +17,55 @@ export async function runPublicationPreparationWorkflow(
   step: WorkflowStep,
   params: ReconciliationWorkflowParams,
 ) {
+  try {
+    return await runShard(env, step, params);
+  } catch (error) {
+    await logProtectedFailure(
+      "ingestion",
+      `publication-${params.publication_preparation!.candidate_id}-${params.publication_preparation!.first_sequence}`,
+      error,
+    );
+    const output = await step.do(
+      "retain publication retry pause",
+      { retries: { limit: 3, delay: 250, backoff: "exponential" }, timeout: "1 minute" },
+      async () => {
+        const work = params.publication_preparation!;
+        const environment = catalogueEnvironment(env);
+        try {
+          await pausePublicationWorkflow(
+            environment,
+            work.candidate_id,
+            work.manifest_digest,
+            work.generation,
+            "publication_workflow_retry_exhausted",
+          );
+        } catch (error) {
+          const state = await inspectPublicationPreparation(environment.CATALOGUE_DB, work.candidate_id);
+          const code =
+            error instanceof Error
+              ? ["publication_ownership_conflict", "publication_deadline_expired", "game_revision_mismatch"].find(
+                  (code) => error.message.includes(code),
+                )
+              : undefined;
+          if (code)
+            await retainPublicationFence(
+              environment,
+              work.candidate_id,
+              work.manifest_digest,
+              work.generation,
+              state.sequence,
+              code,
+            );
+          else throw error;
+        }
+        return JSON.stringify(await inspectPublicationPreparation(environment.CATALOGUE_DB, work.candidate_id));
+      },
+    );
+    return { result_json: output };
+  }
+}
+
+async function runShard(env: Env, step: WorkflowStep, params: ReconciliationWorkflowParams) {
   const work = params.publication_preparation!;
   let last: Record<string, unknown> = {};
   for (let unit = 0; unit < 16; unit++) {

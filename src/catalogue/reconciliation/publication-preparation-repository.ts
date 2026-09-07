@@ -1,4 +1,4 @@
-import { type CatalogueStore, repositoryStatements } from "../shared";
+import { atomicRepositoryStatement, type CatalogueStore, repositoryStatements } from "../shared";
 import type { PreparationState } from "./publication-preparation-types";
 
 export function publicationPreparationStatement(db: CatalogueStore, id: string) {
@@ -141,11 +141,11 @@ export function retainPublicationQueryDocument(
   id: string,
   kind: string,
   entityId: string,
-  content: string,
+  ordinal: number,
 ) {
   return repositoryStatements(db)
     .prepare(`INSERT INTO publication_query_documents VALUES (?,?,?,?)`)
-    .bind(id, kind, entityId, content);
+    .bind(id, kind, entityId, ordinal);
 }
 export function retainPublicationSearchChunk(
   db: CatalogueStore,
@@ -155,9 +155,18 @@ export function retainPublicationSearchChunk(
   ordinal: number,
   text: string,
 ) {
-  return repositoryStatements(db)
-    .prepare(`INSERT INTO publication_search_chunks VALUES (?,?,?,?,?)`)
-    .bind(id, cardId, field, ordinal, text);
+  return atomicRepositoryStatement(db, {
+    statement: repositoryStatements(db)
+      .prepare(`INSERT INTO publication_search_chunks VALUES (?,?,?,?,?)`)
+      .bind(id, cardId, field, ordinal, text),
+    after: [
+      repositoryStatements(db)
+        .prepare(`INSERT INTO publication_search_fts(rowid,candidate_token,candidate_id,card_id,search_text)
+      SELECT rowid,'|' || candidate_id || '|',candidate_id,card_id,search_text FROM publication_search_chunks
+      WHERE candidate_id=? AND card_id=? AND field=? AND ordinal=?`)
+        .bind(id, cardId, field, ordinal),
+    ],
+  });
 }
 export function publicationQueryDocuments(
   db: CatalogueStore,
@@ -177,7 +186,8 @@ export function publicationQueryDocuments(
   return repositoryStatements(db)
     .prepare(`SELECT entity_id,content FROM (SELECT document.entity_id,document.content,
     SUM(length(CAST(document.content AS BLOB))) OVER (ORDER BY document.entity_id) AS bytes
-    FROM (SELECT document.entity_id,document.content FROM publication_query_documents document
+    FROM (SELECT document.entity_id,json_extract(batch.content,'$.records[0]') AS content FROM publication_query_documents document
+      JOIN publication_projection_batches batch ON batch.candidate_id=document.candidate_id AND batch.ordinal=document.batch_ordinal
       WHERE document.candidate_id=?1 AND document.kind=?2 AND document.entity_id>?3 AND ${predicate}
       ORDER BY document.entity_id LIMIT 32) document) WHERE bytes<=524288`)
     .bind(...(search === null ? [id, kind, after] : [id, kind, after, query]));
