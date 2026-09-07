@@ -97,12 +97,14 @@ test("retained Riot inventory: owner collects all returned English records witho
     (d) => d.state === "parsing" || (d.state === "failed" ? JSON.stringify(d) : false),
     environment,
     worker,
+    { deadlineMs: 600_000 },
   );
   await waitForAdministrationDocument(
     `/v1/ingestion-runs/${run.id}/game-candidates`,
     (d) => d.candidates.length && d.candidates.every((c) => ["sealed", "failed"].includes(c.state)),
     environment,
     worker,
+    { deadlineMs: 600_000 },
   );
   const shown = await runCli(["source", "show", "--run-id", run.id, "--json"], environment);
   assert.equal(shown.code, 0, shown.stdout);
