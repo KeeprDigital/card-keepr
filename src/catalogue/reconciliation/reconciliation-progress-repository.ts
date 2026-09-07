@@ -116,14 +116,20 @@ export function reconciliationPartitionsStatement(database: CatalogueStore, runI
     .bind(runId, after);
 }
 
-export function reconciliationWriterGuard(database: CatalogueStore, runId: string, generation: number) {
+export function reconciliationWriterGuard(
+  database: CatalogueStore,
+  runId: string,
+  generation: number,
+  terminalFailure = false,
+) {
   return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN EXISTS (
     SELECT 1 FROM reconciliation_operations AS reconciliation CROSS JOIN operation_state AS operation
     WHERE reconciliation.id = ? AND reconciliation.generation = ? AND reconciliation.state = 'preparing'
+      AND (reconciliation.supported_game IS NULL OR ? = 1 OR reconciliation.deadline > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
       AND operation.singleton = 1 AND operation.recovery_health <> 'blocked'
   ) THEN 1 ELSE json_extract('{}', 'reconciliation_writer_fenced') END`)
-    .bind(runId, generation);
+    .bind(runId, generation, terminalFailure ? 1 : 0);
 }
 
 export function reconciliationActionStatement(database: CatalogueStore, key: string) {

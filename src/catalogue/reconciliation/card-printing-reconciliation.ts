@@ -1,4 +1,8 @@
-import { independentGamePreparationResult, type NativeOperationResult } from "./game-reconciliation-outcome";
+import {
+  failIndependentGamePreparation,
+  independentGamePreparationResult,
+  type NativeOperationResult,
+} from "./game-reconciliation-outcome";
 import {
   type CanonicalRecordSource,
   canonicalRecordSource,
@@ -1820,8 +1824,22 @@ async function finalizedReconciliationResult(
   runId: string,
   generation: number,
 ): Promise<Record<string, unknown> | null> {
-  const row = await reconciliationRunStateStatement(database, runId).first<NativeOperationResult>();
-  if (row?.supported_game) return independentGamePreparationResult(runId, row, generation);
+  const row = await reconciliationRunStateStatement(database, runId).first<
+    NativeOperationResult & { deadline: string | null }
+  >();
+  if (row?.supported_game) {
+    const terminal = independentGamePreparationResult(runId, row, generation);
+    if (terminal) return terminal;
+    if (Date.parse(row.deadline!) <= Date.now()) {
+      const scoped = guardedCatalogueStore(database, () =>
+        reconciliationWriterGuard(database, runId, generation, true),
+      );
+      return failIndependentGamePreparation(scoped, runId, "reconciliation_deadline_expired", [
+        { code: "reconciliation_deadline_expired", detail: "The original preparation deadline expired." },
+      ]);
+    }
+    return null;
+  }
   return row !== null && (row.state === "awaiting_approval" || row.state === "failed")
     ? row.candidate_digest
       ? { run_id: runId, candidate_digest: row.candidate_digest }

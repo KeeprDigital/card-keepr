@@ -201,17 +201,31 @@ export async function pauseFailedReconciliation(
   generation: number,
   detail: string,
 ) {
-  if (detail.startsWith("reconciliation_capacity_exceeded:")) {
-    const base = database;
-    const scoped = guardedCatalogueStore(base, () => reconciliationWriterGuard(base, runId, generation));
-    const operation = await reconciliationOperationHeaderStatement(database, runId).first<NativeOperationResult>();
-    if (operation?.supported_game) {
-      const terminal = independentGamePreparationResult(runId, operation, generation);
-      if (terminal) return terminal;
-      return (await failIndependentGamePreparation(scoped, runId, "reconciliation_capacity_exceeded", [
-        { code: "reconciliation_capacity_exceeded", detail },
+  const operation = await reconciliationOperationHeaderStatement(database, runId).first<
+    NativeOperationResult & { deadline: string }
+  >();
+  if (operation?.supported_game) {
+    const terminal = independentGamePreparationResult(runId, operation, generation);
+    if (terminal) return terminal;
+    const code =
+      Date.parse(operation.deadline) <= Date.now()
+        ? "reconciliation_deadline_expired"
+        : detail.startsWith("reconciliation_capacity_exceeded:")
+          ? "reconciliation_capacity_exceeded"
+          : null;
+    if (code) {
+      const scoped = guardedCatalogueStore(database, () =>
+        reconciliationWriterGuard(database, runId, generation, true),
+      );
+      return (await failIndependentGamePreparation(scoped, runId, code, [
+        {
+          code,
+          detail: code === "reconciliation_deadline_expired" ? "The original preparation deadline expired." : detail,
+        },
       ]))!;
     }
+  } else if (detail.startsWith("reconciliation_capacity_exceeded:")) {
+    const scoped = guardedCatalogueStore(database, () => reconciliationWriterGuard(database, runId, generation));
     return failReconciliationWorkflow(scoped, runId, new Date().toISOString(), detail);
   }
   const paused = await database.batch([

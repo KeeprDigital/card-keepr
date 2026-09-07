@@ -360,3 +360,30 @@ test("a native source change retains reconfirmable curated diagnostics without f
   expect(reaffirmed.response.status).toBe(409);
   expect(reaffirmed.document).toMatchObject({ code: "active_ingestion_run" });
 });
+
+test("a delayed native worker fails at its original deadline without sealing or renewing its intent", async () => {
+  const run = await collect("/reconciliation/base", "expired-native-evidence");
+  const createdAt = new Date(Date.now() - 8 * 86400000).toISOString();
+  const intent = {
+    ingestion_run_id: run.id,
+    supported_game: "one-piece",
+    expected_game_revision_id: "catrev_spine_000",
+    idempotency_key: "expired-native-intent",
+  };
+  const created = await post("/v1/game-candidates", intent, { "x-keepr-test-now": createdAt });
+  expect(created.response.status).toBe(201);
+  const id = requiredString(created.document, "id");
+  let candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  const deadline = Date.now() + 15000;
+  while (candidate.state === "preparing" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  }
+  expect(candidate, JSON.stringify(candidate)).toMatchObject({
+    state: "failed",
+    failure_code: "reconciliation_deadline_expired",
+    deadline: new Date(Date.parse(createdAt) + 7 * 86400000).toISOString(),
+  });
+  expect((await post("/v1/game-candidates", intent)).document).toEqual(candidate);
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
+});
