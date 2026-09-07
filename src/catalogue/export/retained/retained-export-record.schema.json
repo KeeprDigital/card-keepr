@@ -49,7 +49,7 @@
       "pattern": "^[a-f0-9]{64}$"
     },
     "SupportedGame": {
-      "enum": ["one-piece", "fusion-world", "digimon", "gundam"]
+      "enum": ["one-piece", "fusion-world", "digimon", "gundam", "riftbound"]
     },
     "Locale": {
       "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"]

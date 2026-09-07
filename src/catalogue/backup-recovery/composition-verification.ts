@@ -25,7 +25,7 @@ export async function captureCompositionSnapshot(
     typeof state.migration_level !== "number" ||
     typeof state.members !== "number" ||
     state.members < 1 ||
-    state.members > 4 ||
+    state.members > 5 ||
     Number(state.cards) + Number(state.products) < 1 ||
     state.missing_search !== 0 ||
     state.missing_lifecycle !== 0 ||

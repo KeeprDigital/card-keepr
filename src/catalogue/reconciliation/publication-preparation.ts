@@ -597,14 +597,14 @@ export async function composePublicationArtifacts(env: Environment, ids: unknown
   if (
     !Array.isArray(ids) ||
     ids.length < 1 ||
-    ids.length > 4 ||
+    ids.length > 5 ||
     ids.some((id) => typeof id !== "string") ||
     new Set(ids).size !== ids.length
   )
     throw new AdministrationProblem(
       422,
       "invalid_publication_composition",
-      "Select one verified candidate per game, at most four.",
+      "Select one verified candidate per game, at most five.",
     );
   const games: { supported_game: string; candidate_id: string; root_digest: string; public_root_digest?: string }[] =
     [];

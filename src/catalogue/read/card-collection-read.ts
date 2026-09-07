@@ -180,7 +180,7 @@ function parseFilters(url: URL): CollectionFilters {
   const rawGame = collectionFilter(url, "game");
   const game = normalizedFilter(rawGame);
   if (rawGame !== null && game === null) throw invalidParameter("game", "game must contain at least one character.");
-  if (game !== null && !["one-piece", "fusion-world", "digimon", "gundam"].includes(game))
+  if (game !== null && !["one-piece", "fusion-world", "digimon", "gundam", "riftbound"].includes(game))
     throw invalidParameter("game", "game is not a Supported Game.");
   const rawCardNumber = collectionFilter(url, "card_number");
   const cardNumber = collectionFilterValue(normalizedFilter(rawCardNumber), "card_number");

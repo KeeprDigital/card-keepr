@@ -42,7 +42,7 @@ export async function createEntityProposal(
   at: string,
 ) {
   if (
-    !["one-piece", "fusion-world", "digimon", "gundam"].includes(input.game) ||
+    !["one-piece", "fusion-world", "digimon", "gundam", "riftbound"].includes(input.game) ||
     (input.source_lineage !== "owner" &&
       !sourceLineages.some((s) => s.id === input.source_lineage && s.game === input.game))
   )

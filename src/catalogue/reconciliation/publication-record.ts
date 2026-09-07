@@ -14,6 +14,7 @@ export async function publicationRecord(kind: string, envelope: PublicationEnvel
       "fusion-world": "Dragon Ball Super Card Game Fusion World",
       digimon: "Digimon Card Game",
       gundam: "Gundam Card Game",
+      riftbound: "Riftbound",
     };
     return {
       kind: subrecord === 0 ? "supported_games" : "game_profiles",
@@ -24,7 +25,8 @@ export async function publicationRecord(kind: string, envelope: PublicationEnvel
                 id: `game_${game.replaceAll("-", "_")}`,
                 key: game,
                 name: names[game],
-                supported_locales: game === "gundam" ? ["EN-ASIA", "EN-US"] : ["EN-OCEANIA"],
+                supported_locales:
+                  game === "gundam" ? ["EN-ASIA", "EN-US"] : game === "riftbound" ? ["EN-US"] : ["EN-OCEANIA"],
                 game_profile: `${game}@1`,
               }
             : { id: `${game}@1`, profile: `${game}@1`, game, schema: exportedGameProfileSchema(`${game}@1`) },

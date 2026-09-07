@@ -71,7 +71,7 @@ export async function compositionExportResponse(
   if (
     cursor &&
     (cursor.revision_id !== revisionId ||
-      !["one-piece", "fusion-world", "digimon", "gundam"].includes(cursor.game ?? "") ||
+      !["one-piece", "fusion-world", "digimon", "gundam", "riftbound"].includes(cursor.game ?? "") ||
       !Number.isSafeInteger(cursor.ordinal) ||
       cursor.ordinal! < 0)
   )

@@ -35,7 +35,7 @@ import {
   type CuratedRevisionRow as RevisionRow,
 } from "./curated-repository";
 
-const games = new Set(["one-piece", "fusion-world", "digimon", "gundam"]);
+const games = new Set(["one-piece", "fusion-world", "digimon", "gundam", "riftbound"]);
 const forbiddenRoots = new Set([
   "id",
   "game",

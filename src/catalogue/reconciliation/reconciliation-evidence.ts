@@ -765,7 +765,7 @@ function validEvidenceSummary(value: unknown, observed: number, observationCount
 }
 
 function supportedGame(value: string): SupportedGame {
-  if (value !== "one-piece" && value !== "fusion-world" && value !== "digimon" && value !== "gundam") {
+  if (value !== "one-piece" && value !== "fusion-world" && value !== "digimon" && value !== "gundam" && value !== "riftbound") {
     throw new Error("Retained Source Observation Set game is unsupported.");
   }
   return value;

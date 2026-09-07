@@ -14,6 +14,6 @@ export function nativeDeletionPublicRoots(db: CatalogueStore, revision: string) 
   return repositoryStatements(db)
     .prepare(`SELECT m.supported_game,m.candidate_id,p.root_digest,p.root_object_key,p.root_bytes
  FROM catalogue_composition_games m JOIN publication_export_preparations p ON p.candidate_id=m.candidate_id AND p.state='verified'
- WHERE m.catalogue_revision_id=? ORDER BY m.supported_game LIMIT 4`)
+ WHERE m.catalogue_revision_id=? ORDER BY m.supported_game LIMIT 5`)
     .bind(revision);
 }

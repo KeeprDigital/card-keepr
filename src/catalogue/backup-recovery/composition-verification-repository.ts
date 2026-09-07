@@ -133,6 +133,6 @@ export function compositionArtifactRootsStatement(db: CatalogueStore, revisionId
  LEFT JOIN verified_publication_compositions v ON v.sha256=r.content_digest
  LEFT JOIN publication_export_preparations p ON p.candidate_id=m.candidate_id
  LEFT JOIN game_publication_operations o ON o.id=p.publication_operation_id
- WHERE m.catalogue_revision_id=? ORDER BY m.supported_game LIMIT 4`)
+ WHERE m.catalogue_revision_id=? ORDER BY m.supported_game LIMIT 5`)
     .bind(revisionId);
 }

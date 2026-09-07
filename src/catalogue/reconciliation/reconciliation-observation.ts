@@ -516,8 +516,9 @@ function parseOfficialIdentity(value: unknown, game: SupportedGame): CatalogueCa
   ) {
     throw new Error("Retained Card official card number is invalid.");
   }
-  const canonical = identity.value.toUpperCase();
+  const canonical = game === "riftbound" ? identity.value : identity.value.toUpperCase();
   const acceptedNumberPatterns: Record<SupportedGame, RegExp> = {
+    riftbound: /^[A-Z]{3}-(?:[0-9]+[a-z*]?\/[0-9]+|(?:T|R)[0-9]+|SP[0-9]+\/[0-9]+)$/,
     "one-piece": /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
     "fusion-world": /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
     digimon: /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,

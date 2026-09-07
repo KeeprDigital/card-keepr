@@ -71,7 +71,7 @@ export async function createGameReconciliation(
   at: string,
 ) {
   for (const [field, value] of Object.entries(input)) assertIdentifier(value, field);
-  if (!["one-piece", "fusion-world", "digimon", "gundam"].includes(input.supported_game))
+  if (!["one-piece", "fusion-world", "digimon", "gundam", "riftbound"].includes(input.supported_game))
     throw new AdministrationProblem(422, "unsupported_game", "Select a Supported Game.");
   const requestJson = canonicalJson(input);
   const replay = await gamePreparationRequestStatement(database, input.idempotency_key).first<RequestRow>();

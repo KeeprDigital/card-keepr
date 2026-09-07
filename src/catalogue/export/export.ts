@@ -671,6 +671,13 @@ export async function distributionContextExportId(
 
 function supportedGameExport(game: SupportedGame) {
   const definitions = {
+    riftbound: {
+      id: "game_riftbound",
+      key: "riftbound",
+      name: "Riftbound",
+      supported_locales: ["EN-US"],
+      game_profile: "riftbound@1",
+    },
     "one-piece": {
       id: "game_one_piece",
       key: "one-piece",

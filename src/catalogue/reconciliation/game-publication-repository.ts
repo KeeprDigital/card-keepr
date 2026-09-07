@@ -68,7 +68,7 @@ export function publicationCompositionHead(db: CatalogueStore) {
 export function compositionGamesStatement(db: CatalogueStore, revision: string) {
   return repositoryStatements(db)
     .prepare(`SELECT supported_game,candidate_id,game_revision_id,root_digest
- FROM catalogue_composition_games WHERE catalogue_revision_id=? ORDER BY supported_game LIMIT 4`)
+ FROM catalogue_composition_games WHERE catalogue_revision_id=? ORDER BY supported_game LIMIT 5`)
     .bind(revision);
 }
 export function publicationCheckpointStatement(db: CatalogueStore, revision: string) {
@@ -162,7 +162,7 @@ export function publicationSwitchGuard(
     .bind(input.id, input.generation, input.predecessor, input.composition, input.at, input.clockOffsetMs ?? 0);
 }
 
-/** Four members and fixed metadata only. No entity rows enter this transaction. */
+/** Five members and fixed metadata only. No entity rows enter this transaction. */
 export function publicationSwitchStatements(
   db: CatalogueStore,
   input: {

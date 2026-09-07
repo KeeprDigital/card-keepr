@@ -59,6 +59,55 @@ const digimonText = object(["kind", "text"], {
 });
 
 const profileContracts: Readonly<Record<string, ProfileContract>> = {
+  "riftbound@1": {
+    game: "riftbound",
+    card: object(
+      [
+        "card_types",
+        "supertypes",
+        "domains",
+        "energy",
+        "power",
+        "might",
+        "might_bonus",
+        "tags",
+        "ability_text",
+        "effect_text",
+      ],
+      {
+        card_types: array(enumeration(["spell", "battlefield", "unit", "gear", "legend", "rune"]), true),
+        supertypes: array(enumeration(["champion", "signature", "token"]), true),
+        domains: array(enumeration(["fury", "calm", "mind", "body", "chaos", "order", "colorless"]), true),
+        energy: nullableInteger,
+        power: nullableInteger,
+        might: nullableInteger,
+        might_bonus: nullableInteger,
+        tags: strings,
+        ability_text: nullableText,
+        effect_text: nullableText,
+      },
+    ),
+    printing: object(
+      ["public_code", "collector_number", "set_code", "orientation", "reverse_face", "finish", "artists"],
+      {
+        public_code: nullableText,
+        collector_number: nullableInteger,
+        set_code: string(false, 1),
+        orientation: nullableText,
+        reverse_face: nullableText,
+        finish: nullableText,
+        artists: strings,
+      },
+    ),
+    validateCard(value) {
+      if (
+        !Array.isArray(value.card_types) ||
+        !Array.isArray(value.supertypes) ||
+        (value.card_types.length === 0 && !value.supertypes.includes("token"))
+      )
+        throw new Error("Riftbound requires a card type or an explicit token supertype.");
+    },
+  },
   "one-piece@1": {
     game: "one-piece",
     card: object(
