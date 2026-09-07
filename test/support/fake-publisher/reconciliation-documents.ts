@@ -356,18 +356,29 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
     if (scenario.endsWith("unresolved")) source.identity_evidence.demonstrably_novel = false;
     if (scenario.endsWith("unrelated")) source.printing.game_data.attributes.illustration_types = ["original"];
     const { card, ...evidence } = source;
-    return {
-      rows: [
-        {
-          cells: [
-            scenario.endsWith("missing-number") ? null : card.official_identity.value,
-            card.name,
-            card.effective_rules_text,
-            card.game_data.attributes,
-          ],
-          evidence,
-        },
+    const row = {
+      cells: [
+        scenario.endsWith("missing-number") ? null : card.official_identity.value,
+        card.name,
+        card.effective_rules_text,
+        card.game_data.attributes,
       ],
+      evidence,
+    };
+    return {
+      rows: scenario.endsWith("many-alternates")
+        ? Array.from({ length: 10 }, (_, index) => {
+            const alternate = structuredClone(row);
+            alternate.evidence.identity_evidence.locator = `/supplemental/alternate-${index}`;
+            const artwork = `official-artwork:{"official_card_identity":"OP96-001","roles":["front"],"artwork_id":"synthetic-shared-art"}`;
+            alternate.evidence.identity_evidence.artwork_fingerprint = artwork;
+            alternate.evidence.identity_evidence.novelty_basis.artwork_fingerprint = artwork;
+            alternate.evidence.appearance_evidence.images.forEach((image) => {
+              image.artwork_fingerprint = artwork;
+            });
+            return alternate;
+          })
+        : [row],
     };
   }
   if (scenario.startsWith("canonical-official")) {
