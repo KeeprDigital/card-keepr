@@ -144,6 +144,7 @@ type OfficialReductionCursor = {
   productGames: SupportedGame[];
   after: ReconciliationInputRecordCursor | null;
   processedObservations: number;
+  pendingSourceWarning: number | null;
   dedicatedErrata: number;
   hasWithdrawals: boolean;
   complete: boolean;
@@ -418,6 +419,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
   let reductionOrdinal = (reduction?.ordinal ?? -1) + 1;
   let processedObservations = reduction?.value.processedObservations ?? 0;
+  let pendingSourceWarning = reduction?.value.pendingSourceWarning ?? null;
   let dedicatedErrata = reduction?.value.dedicatedErrata ?? 0;
   let hasWithdrawals = reduction?.value.hasWithdrawals ?? false;
   const saveReduction = async (
@@ -449,6 +451,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       productGames: [...productGames],
       after,
       processedObservations,
+      pendingSourceWarning,
       dedicatedErrata,
       hasWithdrawals,
       complete,
@@ -476,18 +479,22 @@ export async function reconcileRetainedCardPrintingEvidence(
       after,
     )) {
       const work =
-        observation.kind === "card_printing" && observation.observedCardAndPrinting.card !== null
-          ? observation.observedCardAndPrinting.printing === null
-            ? 2
-            : 6
-          : 1;
+        observation.kind === "card_printing" && observation.sourceWarnings.length > 1
+          ? 12
+          : observation.kind === "card_printing" && observation.observedCardAndPrinting.card !== null
+            ? observation.observedCardAndPrinting.printing === null
+              ? 2
+              : 6
+            : 1;
       if (inUnit > 0 && (inUnit + work > 12 || bytes + byteLength > 512000)) {
         const next = await saveReduction(after, false);
         if (yieldAtCheckpoint) return next;
         inUnit = 0;
         bytes = 0;
       }
+      const resumingWarnings = pendingSourceWarning !== null;
       observationUnit: {
+        if (resumingWarnings) break observationUnit;
         if (observation.kind !== "card_printing") break observationUnit;
         productGames.add(observation.supportedGame);
         for (const index of [
@@ -514,7 +521,7 @@ export async function reconcileRetainedCardPrintingEvidence(
             checks.set(observation.supportedGame, observation.sourceCapturedAt);
         }
         if (sourceCard === null) {
-          await sourceWarnings.push(...observation.sourceWarnings);
+          pendingSourceWarning = 0;
           break observationUnit;
         }
         if (sourceCard.game !== observation.supportedGame) {
@@ -1233,7 +1240,30 @@ export async function reconcileRetainedCardPrintingEvidence(
             detail: error instanceof ErratumRulesTextError ? error.message : "Retained Erratum evidence is invalid.",
           });
         }
-        await sourceWarnings.push(...observation.sourceWarnings);
+        pendingSourceWarning = 0;
+      }
+      if (pendingSourceWarning !== null && observation.kind === "card_printing") {
+        if (!resumingWarnings && observation.sourceWarnings.length > 8) {
+          const next = await saveReduction(after, false);
+          if (yieldAtCheckpoint) return next;
+        }
+        let warningCount = 0;
+        let warningBytes = 0;
+        while (pendingSourceWarning < observation.sourceWarnings.length) {
+          const warning = observation.sourceWarnings[pendingSourceWarning]!;
+          const size = new TextEncoder().encode(canonicalJson(warning)).byteLength;
+          if (warningCount > 0 && (warningCount === 8 || warningBytes + size > 512000)) {
+            const next = await saveReduction(after, false);
+            if (yieldAtCheckpoint) return next;
+            warningCount = 0;
+            warningBytes = 0;
+          }
+          await sourceWarnings.push(warning);
+          pendingSourceWarning++;
+          warningCount++;
+          warningBytes += size;
+        }
+        pendingSourceWarning = null;
       }
       processedObservations++;
       if (observation.kind === "official_erratum") dedicatedErrata++;

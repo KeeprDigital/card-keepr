@@ -889,6 +889,30 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       ],
     };
   }
+  if (scenario === "single-card-warning-work-units") {
+    return {
+      cards: [
+        {
+          ...printingObservation({
+            game: "one-piece",
+            profile: "one-piece@1",
+            cardNumber: "OP93-001",
+            name: "Synthetic Card with many source warnings",
+            locator: "many-warnings",
+            lineageMarker: "many-warnings",
+            cardAttributes: onePieceLeaderAttributes(),
+            printingAttributes: { illustration_types: [] },
+          }),
+          ...Object.fromEntries(
+            Array.from({ length: 64 }, (_, index) => [
+              `unrecognized_${index}_${"x".repeat(100)}`,
+              "Synthetic undeclared source field",
+            ]),
+          ),
+        },
+      ],
+    };
+  }
   if (scenario === "scale-warning-partitions") {
     return {
       cards: Array.from({ length: 64 }, (_, index) => ({

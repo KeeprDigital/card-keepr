@@ -55,6 +55,14 @@ test.each([
     interrupt: "official_assembly",
   },
   {
+    base: "single-card-warning-work-units",
+    changed: "single-card-warning-work-units",
+    expectedCards: 1,
+    count: 1,
+    name: "Synthetic Card with many source warnings",
+    interrupt: "source_warnings",
+  },
+  {
     base: "prior-state-text-pages",
     changed: "prior-state-text-pages",
     expectedCards: 32,
@@ -83,6 +91,8 @@ test.each([
     const errataCalls: number[] = [];
     const withdrawalCursors: number[] = [];
     const withdrawalCalls: number[] = [];
+    const sourceWarningCursors: number[] = [];
+    const sourceWarningCalls: number[] = [];
     const assembledCards: number[] = [];
     const assemblyCalls: number[] = [];
     const restoredCards: number[] = [];
@@ -133,7 +143,9 @@ test.each([
                           ? "withdrawal_assertion_groups"
                           : interrupt === "official_assembly"
                             ? "candidate_before_curated_cards"
-                            : "card_facts",
+                            : interrupt === "source_warnings"
+                              ? "warning_records"
+                              : "card_facts",
                   )
                 );
               }) &&
@@ -180,6 +192,17 @@ test.each([
             status.checkpoints as { phase: string; cursor: { processedObservations: number } }[]
           ).find((row) => row.phase === "official_reduction");
           if (checkpoint!.cursor.processedObservations > 0) armed = true;
+        }
+        if (interrupt === "source_warnings" && JSON.parse(result).continuation?.phase === "official_reduction") {
+          sourceWarningCalls.push(calls);
+          const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+          const checkpoint = (
+            status.checkpoints as { phase: string; cursor: { pendingSourceWarning: number | null } }[]
+          ).find((row) => row.phase === "official_reduction")!;
+          if (checkpoint.cursor.pendingSourceWarning !== null) {
+            sourceWarningCursors.push(checkpoint.cursor.pendingSourceWarning);
+            if (checkpoint.cursor.pendingSourceWarning >= 8) armed = true;
+          }
         }
         if (JSON.parse(result).continuation?.phase === "official_errata") {
           errataCalls.push(calls);
@@ -259,6 +282,15 @@ test.each([
     const detail = await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${cards.ordinal}`);
     expect(detail.document.records).toHaveLength(expectedCards);
     expect(detail.document.records).toEqual(expect.arrayContaining([expect.objectContaining({ name })]));
+    if (interrupt === "source_warnings") {
+      expect(sourceWarningCursors).toContain(8);
+      expect(sourceWarningCursors).toContain(56);
+      expect(Math.max(...sourceWarningCalls)).toBeLessThanOrEqual(100);
+      const warnings = (page.document.partitions as { kind: string; record_count: number }[]).filter(
+        ({ kind }) => kind === "warnings",
+      );
+      expect(warnings.reduce((sum, part) => sum + part.record_count, 0)).toBeGreaterThanOrEqual(64);
+    }
     if (interrupt === "official_assembly") {
       expect(assembledCards.some((count) => count > 0 && count < 40)).toBe(true);
       expect(assembledCards).toContain(40);

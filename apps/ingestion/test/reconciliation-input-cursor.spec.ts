@@ -151,6 +151,7 @@ test.each([
   { scenario: "curated-conflict-fanout-base", requireFrozenMetadata: false, groups: [8, 8, 8, 8] },
   { scenario: "curated-conflict-fanout-base", requireFrozenMetadata: true, groups: [8, 8, 8, 8] },
   { scenario: "large-card-content", requireFrozenMetadata: true, groups: [1] },
+  { scenario: "single-card-warning-work-units", requireFrozenMetadata: true, groups: [1] },
   { scenario: "card-only-work-units", requireFrozenMetadata: true, groups: [], expectedObservations: 32 },
   { scenario: "metadata-request-pages", requireFrozenMetadata: true, groups: Array(32).fill(1), requestCount: 32 },
 ])(
@@ -300,6 +301,15 @@ test.each([
     expect(completed, JSON.stringify({ state: completed.state, failure_code: completed.failure_code })).toMatchObject({
       state: "sealed",
     });
+    if (scenario === "single-card-warning-work-units") {
+      const page = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions`)).document;
+      const warnings = (page.partitions as { kind: string; record_count: number; byte_length: number }[]).filter(
+        ({ kind }) => kind === "warnings",
+      );
+      expect(warnings.reduce((sum, part) => sum + part.record_count, 0)).toBeGreaterThanOrEqual(64);
+      expect(warnings.length).toBeGreaterThan(0);
+      expect(warnings.every(({ byte_length }) => byte_length <= 524288)).toBe(true);
+    }
     expect(completedGroups).toEqual(groups);
     if (requireFrozenMetadata) {
       expect(Math.max(...callsPerGroup)).toBeLessThanOrEqual(100);
