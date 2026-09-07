@@ -231,3 +231,32 @@ attempt from supplying completion evidence through the available owner path.
 There is no claim that a production Workflow has this limitation. No ledger or
 Workflow metadata was altered. A fresh corrected native journey is required;
 continued polling or another retry identity is not a substitute.
+
+## Fresh publication and verified backup; consumer rate-limit failure
+
+Frozen commit `b8e863e` ran a fresh journey with all resume settings absent. In
+707.34 seconds it collected all 1,197 requests, verified 14 retained bodies and
+1,229 observations, admitted the 36 reviewed entities, and published
+`catrev_1b329ff9-7bee-4814-af43-7f1f57d07776`. Its actual 105,526,484-byte SQL
+backup completed import verification, with manifest SHA-256
+`b683474520db80db10bb4b95e6dc42196d11235d63dcb17a3a354aac52c1f9c9`.
+
+The first authenticated public export download completed its page/component,
+byte-count and digest checks, and its six Printing IDs and explicit unknown
+finish/reverse-face assertions passed. The next call redundantly downloaded the
+same complete package to select Errata and received HTTP 429 on a component.
+The shipped API allows 300 catalogue requests per 60 seconds and reports
+`retry-after: 60` on rate-limit rejection. With 130 components and 33 pages, two
+back-to-back package downloads exceed that limit. No Curated Revision, fresh
+Origins collection or restore consumer assertions had run. All runtimes stopped;
+this fresh state's terminal verified backup remains usable for continuation.
+
+The fixture now caches a fully byte-verified immutable package by API address,
+credential and revision for the current journey, selecting each record kind
+from that package. It clears the cache before the restored API boot so those
+bytes must be downloaded and verified again. Necessary export requests are
+paced 250 ms apart; production limits are unchanged. A local HTTP regression
+covers pacing, package reuse, explicit cache clearing, and rejection of HTTP429;
+a failed download is not cached as success. The retained-published path also
+recognizes a verified backup and proceeds without allocating or resuming a
+backup attempt. The remaining consumer and restore assertions still await proof.

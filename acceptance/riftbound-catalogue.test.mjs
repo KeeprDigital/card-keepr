@@ -4,6 +4,7 @@ import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { nativeExportReader } from "./helpers/native-export-reader.mjs";
 import { acceptedBackupRetry, resumeExistingBackupAttempt } from "./helpers/native-backup-retry.mjs";
 import { riftboundReplayTransport } from "./helpers/riftbound-replay-transport.mjs";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
@@ -19,7 +20,6 @@ import {
   paceNativeRequest,
   nativeCheckpointTransport,
   publishNativeCollection,
-  nativeExportRecords,
 } from "./helpers/native-catalogue-runtime.mjs";
 
 async function runCli(args, environment, options) {
@@ -31,6 +31,8 @@ async function runCli(args, environment, options) {
 // replayed locally; collection, parsing and all owner operations are shipped code.
 test("retained Riot catalogue: owner reviews, publishes and restores English inventory, Errata and Products", async (t) => {
   const startedAt = performance.now();
+  const exportReader = nativeExportReader(250);
+  const nativeExportRecords = exportReader.records;
   const resumeDirectory = process.env.KEEPR_RIFTBOUND_RESUME_DIRECTORY;
   const resumeRunId = process.env.KEEPR_RIFTBOUND_RESUME_RUN_ID;
   const resumePublicationId = process.env.KEEPR_RIFTBOUND_RESUME_PUBLICATION_ID;
@@ -359,77 +361,83 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
       worker,
     );
     const failed = await cli(["backup", "status", "--attempt-id", publication.backup_attempt_id]);
-    assert.equal(failed.state, "failed");
-    const idempotency = "riftbound-signed-transport-backup-retry";
-    await paceNativeRequest(environment);
-    const statusResponse = await fetch(
-      `${worker.url}/v1/status?${new URLSearchParams({ expected_current_revision_id: publication.resulting_revision_id })}`,
-      { headers: { authorization: `Bearer ${key}` } },
-    );
-    assert.equal(statusResponse.status, 200);
-    const status = await statusResponse.json();
-    const binding = {
-      production_target: status.resolved_target.production_target,
-      expected_current_revision_id: publication.resulting_revision_id,
-      idempotency_key: idempotency,
-      failed_attempt_id: failed.idempotency_key,
-      failed_attempt_digest: failed.attempt_digest,
-    };
-    await paceNativeRequest(environment);
-    const existingRetry = await fetch(`${worker.url}/v1/backups/${idempotency}`, {
-      headers: { authorization: `Bearer ${key}` },
-    });
-    assert.ok([200, 404].includes(existingRetry.status));
-    if (existingRetry.status === 404) {
-      const retry = await runCli(
-        [
-          "backup",
-          "retry",
-          "--expected-current-revision",
-          publication.resulting_revision_id,
-          "--idempotency-key",
-          idempotency,
-          "--failed-attempt-id",
-          failed.idempotency_key,
-          "--failed-attempt-digest",
-          failed.attempt_digest,
-          "--environment",
-          "production",
-          "--confirm",
-          JSON.stringify(binding),
-          "--yes",
-          "--json",
-        ],
-        environment,
+    if (failed.state !== "verified") {
+      assert.equal(failed.state, "failed");
+      const idempotency = "riftbound-signed-transport-backup-retry";
+      await paceNativeRequest(environment);
+      const statusResponse = await fetch(
+        `${worker.url}/v1/status?${new URLSearchParams({ expected_current_revision_id: publication.resulting_revision_id })}`,
+        { headers: { authorization: `Bearer ${key}` } },
       );
-      acceptedBackupRetry(retry, idempotency);
-    } else {
-      const existing = await existingRetry.json();
-      const { production_target: _target, ...expectedResume } = binding;
-      await resumeExistingBackupAttempt(existing, expectedResume, async (resume) => {
-        await paceNativeRequest(environment);
-        const resumed = await fetch(`${worker.url}${resume.path}`, {
-          method: resume.method,
-          headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-          body: JSON.stringify(resume.body),
-        });
-        assert.ok([200, 202].includes(resumed.status), await resumed.clone().text());
-        return acceptedBackupRetry(
-          { code: resumed.status === 202 ? 10 : 0, stdout: await resumed.text(), stderr: "" },
-          idempotency,
-        );
+      assert.equal(statusResponse.status, 200);
+      const status = await statusResponse.json();
+      const binding = {
+        production_target: status.resolved_target.production_target,
+        expected_current_revision_id: publication.resulting_revision_id,
+        idempotency_key: idempotency,
+        failed_attempt_id: failed.idempotency_key,
+        failed_attempt_digest: failed.attempt_digest,
+      };
+      await paceNativeRequest(environment);
+      const existingRetry = await fetch(`${worker.url}/v1/backups/${idempotency}`, {
+        headers: { authorization: `Bearer ${key}` },
       });
+      assert.ok([200, 404].includes(existingRetry.status));
+      if (existingRetry.status === 404) {
+        const retry = await runCli(
+          [
+            "backup",
+            "retry",
+            "--expected-current-revision",
+            publication.resulting_revision_id,
+            "--idempotency-key",
+            idempotency,
+            "--failed-attempt-id",
+            failed.idempotency_key,
+            "--failed-attempt-digest",
+            failed.attempt_digest,
+            "--environment",
+            "production",
+            "--confirm",
+            JSON.stringify(binding),
+            "--yes",
+            "--json",
+          ],
+          environment,
+        );
+        acceptedBackupRetry(retry, idempotency);
+      } else {
+        const existing = await existingRetry.json();
+        const { production_target: _target, ...expectedResume } = binding;
+        await resumeExistingBackupAttempt(existing, expectedResume, async (resume) => {
+          await paceNativeRequest(environment);
+          const resumed = await fetch(`${worker.url}${resume.path}`, {
+            method: resume.method,
+            headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+            body: JSON.stringify(resume.body),
+          });
+          assert.ok([200, 202].includes(resumed.status), await resumed.clone().text());
+          return acceptedBackupRetry(
+            { code: resumed.status === 202 ? 10 : 0, stdout: await resumed.text(), stderr: "" },
+            idempotency,
+          );
+        });
+      }
+      const backup = await waitForAdministrationDocument(
+        `/v1/backups/${idempotency}`,
+        (d) => d.state === "verified" || (d.state === "failed" ? JSON.stringify(d) : false),
+        environment,
+        worker,
+        { deadlineMs: 120_000 },
+      );
+      assert.equal(backup.catalogue_revision_id, publication.resulting_revision_id);
+      assert.equal(backup.linked_attempt_id, failed.idempotency_key);
+      t.diagnostic(`Verified supported backup retry for existing publication ${publication.id}`);
+    } else {
+      assert.equal(failed.catalogue_revision_id, publication.resulting_revision_id);
+      assert.match(failed.manifest_sha256, /^[a-f0-9]{64}$/);
+      t.diagnostic(`Reusing verified backup for published revision ${publication.resulting_revision_id}`);
     }
-    const backup = await waitForAdministrationDocument(
-      `/v1/backups/${idempotency}`,
-      (d) => d.state === "verified" || (d.state === "failed" ? JSON.stringify(d) : false),
-      environment,
-      worker,
-      { deadlineMs: 120_000 },
-    );
-    assert.equal(backup.catalogue_revision_id, publication.resulting_revision_id);
-    assert.equal(backup.linked_attempt_id, failed.idempotency_key);
-    t.diagnostic(`Verified supported backup retry for existing publication ${publication.id}`);
   } else {
     const prepared = await cli([
       "game-candidate",
@@ -683,6 +691,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   await stopWorker(api);
   await stopWorker(worker);
   const restoredState = await verifiedBackupApiState(statePath, directory);
+  exportReader.clear();
   api = await startWorker({
     config: "apps/api/wrangler.jsonc",
     statePath: restoredState,

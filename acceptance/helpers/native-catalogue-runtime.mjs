@@ -226,12 +226,19 @@ export async function nativeExportRecords(baseUrl, apiKey, revisionId, kind) {
     );
   return (await exportLoads.get(key)).filter((entry) => entry.kind === kind).map((entry) => entry.value);
 }
-async function loadNativeExport(baseUrl, apiKey, revisionId) {
+export async function loadNativeExport(baseUrl, apiKey, revisionId, requestIntervalMs = 0) {
+  const get = async (url, options) => {
+    await paceNativeRequest({
+      KEEPR_INGESTION_URL: baseUrl,
+      KEEPR_NATIVE_REQUEST_INTERVAL_MS: String(requestIntervalMs),
+    });
+    return fetch(url, options);
+  };
   const records = [],
     headers = { authorization: `Bearer ${apiKey}` };
   let after = null;
   do {
-    const response = await fetch(
+    const response = await get(
       `${baseUrl}/v1/catalogue-exports/${revisionId}${after ? `?after=${encodeURIComponent(after)}` : ""}`,
       { headers },
     );
@@ -239,7 +246,7 @@ async function loadNativeExport(baseUrl, apiKey, revisionId) {
     const index = await response.json();
     assert.equal(index.data.export_schema_major, 5);
     for (const component of index.data.components) {
-      const content = await fetch(index.links.components[component.name], { headers });
+      const content = await get(index.links.components[component.name], { headers });
       assert.equal(content.status, 200);
       const bytes = Buffer.from(await content.arrayBuffer()),
         raw = gunzipSync(bytes);
