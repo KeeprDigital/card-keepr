@@ -490,7 +490,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     worker,
     { deadlineMs: 600_000 },
   );
-  const finalPublication = await publishNativeCollection(
+  let finalPublication = await publishNativeCollection(
     { candidates: [refreshedCandidate] },
     "riftbound-image-facts",
     environment,
@@ -508,12 +508,69 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     finalPrintings.find((p) => p.id === admittedPrintings.get("ogn-141-298")).printed_rules_text,
     printedMonk,
   );
-  const cards = await nativeExportRecords(api.url, apiKey, finalPublication.resulting_revision_id, "cards");
+  let cards = await nativeExportRecords(api.url, apiKey, finalPublication.resulting_revision_id, "cards");
   assert.deepEqual(cards.find((c) => c.id === admittedCards.get("Ahri, Inquisitive")).game_data.attributes.tags, [
     "Ahri",
     "Ionia",
   ]);
   assert.match(cards.find((c) => c.id === admittedCards.get("Kinkou Monk")).effective_rules_text, /buff up to two/);
+  // A new scoped source check exercises cross-run identity and evidence pins,
+  // while the complete gallery's untouched Printings must remain available.
+  const errataCapture = previous.captures.find((c) => c.id === "riftbound-errata");
+  await writeFile(
+    planPath,
+    JSON.stringify({
+      plans: [
+        {
+          supported_game: "riftbound",
+          source_lineage: "riftbound-en",
+          adapter_version: "riftbound-en@1",
+          subset: "origins-errata",
+          requests: [{ id: "riftbound-en:errata", url: errataCapture.url }],
+        },
+      ],
+    }),
+  );
+  const fresh = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "fresh-origins-check"]);
+  assert.notEqual(fresh.id, run.id);
+  await cli(["source", "resume", "--run-id", fresh.id]);
+  const freshCollection = await waitForAdministrationDocument(
+    `/v1/ingestion-runs/${fresh.id}/game-candidates`,
+    (d) =>
+      d.candidates.some((c) => c.state === "failed")
+        ? JSON.stringify(d)
+        : d.candidates.length === 1 && d.candidates[0].state === "sealed",
+    environment,
+    worker,
+    { deadlineMs: 120_000 },
+  );
+  const freshCandidate = await cli(["game-candidate", "show", "--candidate-id", freshCollection.candidates[0].id]);
+  finalPublication = await publishNativeCollection(
+    { candidates: [freshCandidate] },
+    "fresh-origins-publication",
+    environment,
+    worker,
+    120_000,
+  );
+  const freshPrintings = await nativeExportRecords(
+    api.url,
+    apiKey,
+    finalPublication.resulting_revision_id,
+    "printings",
+  );
+  assert.deepEqual(freshPrintings, finalPrintings);
+  const freshCards = await nativeExportRecords(api.url, apiKey, finalPublication.resulting_revision_id, "cards");
+  assert.deepEqual(freshCards.map((c) => c.id).sort(), cards.map((c) => c.id).sort());
+  cards = freshCards;
+  const freshEvidence = await cli(["source", "show", "--run-id", fresh.id]);
+  assert.deepEqual(freshEvidence.evidence_plans[0].coverage, {
+    locale: "en",
+    area: "errata",
+    subset: "origins-errata",
+  });
+  assert.equal(freshEvidence.snapshots.length, 1);
+  assert.equal(freshEvidence.snapshots[0].content.digest, errataCapture.sha256);
+  assert.ok(!evidence.snapshots.some((s) => s.id === freshEvidence.snapshots[0].id));
   const restoredEvidence = await cli(["source", "show", "--run-id", run.id]);
   await stopWorker(api);
   await stopWorker(worker);
@@ -556,6 +613,13 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   const evidenceAfterRestore = JSON.parse(shownAfterRestore.stdout);
   assert.deepEqual(evidenceAfterRestore.snapshots, restoredEvidence.snapshots);
   assert.deepEqual(evidenceAfterRestore.observation_sets, restoredEvidence.observation_sets);
+  const freshAfterRestore = await runCli(["source", "show", "--run-id", fresh.id, "--json"], {
+    ...environment,
+    KEEPR_INGESTION_URL: restoredAdmin.url,
+  });
+  assert.equal(freshAfterRestore.code, 0, freshAfterRestore.stdout + freshAfterRestore.stderr);
+  assert.deepEqual(JSON.parse(freshAfterRestore.stdout).snapshots, freshEvidence.snapshots);
+  assert.deepEqual(JSON.parse(freshAfterRestore.stdout).observation_sets, freshEvidence.observation_sets);
   t.diagnostic(
     JSON.stringify({
       retained_snapshots: 14,
