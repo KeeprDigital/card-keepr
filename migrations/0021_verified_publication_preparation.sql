@@ -1,6 +1,6 @@
 -- #227: private preparation only; no published pointer or consumer table changes.
 SELECT CASE WHEN (SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1) = 20
-  THEN 1 ELSE json_extract('{}', 'publication_preparation_requires_schema20') END;
+  THEN 1 ELSE json_extract('schema_level_mismatch_expected_20', '$') END;
 CREATE TABLE publication_preparations (
   candidate_id TEXT PRIMARY KEY REFERENCES game_candidates(id),
   manifest_digest TEXT NOT NULL,
