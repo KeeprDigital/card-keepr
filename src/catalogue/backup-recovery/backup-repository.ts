@@ -18,6 +18,8 @@ export type BackupAttemptEvidenceRow = Readonly<{
   disposable_database_id: string | null;
   restore_generation: number;
   restore_phase: string | null;
+  publication_operation_id: string | null;
+  publication_ingestion_run_id: string | null;
 }>;
 
 export function backupAttemptEvidenceStatement(database: CatalogueStore, idempotencyKey: string): D1PreparedStatement {
@@ -27,7 +29,7 @@ export function backupAttemptEvidenceStatement(database: CatalogueStore, idempot
             object_key, d1_bookmark, content_sha256, export_bytes,
             failure_code, failure_detail, started_at, completed_at,
             linked_attempt_id, manifest_sha256, disposable_database_id,
-            restore_generation, restore_phase
+            restore_generation, restore_phase, publication_operation_id, publication_ingestion_run_id
      FROM catalogue_backup_attempts WHERE idempotency_key = ?`,
     )
     .bind(idempotencyKey);
@@ -145,8 +147,10 @@ export function insertPendingBackupStatement(
   return repositoryStatements(database)
     .prepare(`INSERT OR IGNORE INTO catalogue_backup_attempts (
        idempotency_key, request_json, owner_token, catalogue_revision_id,
-       state, object_key, started_at, linked_attempt_id
-     ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`)
+       state, object_key, started_at, linked_attempt_id, publication_operation_id, publication_ingestion_run_id
+     ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?,
+       (SELECT publication_operation_id FROM catalogue_revisions WHERE id = ?),
+       (SELECT ingestion_run_id FROM catalogue_revisions WHERE id = ? AND publication_operation_id IS NOT NULL))`)
     .bind(
       input.idempotencyKey,
       input.requestJson,
@@ -155,6 +159,8 @@ export function insertPendingBackupStatement(
       input.objectKey,
       input.observedAt,
       input.linkedAttemptId,
+      input.expectedCurrentRevisionId,
+      input.expectedCurrentRevisionId,
     );
 }
 
@@ -163,7 +169,7 @@ export function backupAttemptWithRetentionStatement(
   input: Readonly<{ idempotencyKey: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT request_json, state, catalogue_revision_id, object_key,
+    .prepare(`SELECT request_json, owner_token, publication_operation_id, state, catalogue_revision_id, object_key,
             d1_bookmark, failure_code, failure_detail, manifest_key,
             content_sha256, manifest_sha256, export_bytes,
             schema_migration_level, linked_attempt_id,
@@ -190,7 +196,7 @@ export function linkedBackupAttemptStatement(
 export function backupOperationStateStatement(database: CatalogueStore): D1PreparedStatement {
   return repositoryStatements(database).prepare(`SELECT catalogue.current_revision_id,
             operation.active_ingestion_run_id,
-            operation.recovery_health
+            operation.recovery_health, operation.active_recovery_id, operation.recovery_restore_guard
      FROM catalogue_state AS catalogue
      JOIN operation_state AS operation ON operation.singleton = 1
      WHERE catalogue.singleton = 1`);
@@ -231,8 +237,9 @@ export function startBackupExportStatement(
 
 export function reserveBackupOperationStatement(
   database: CatalogueStore,
-  input: Readonly<{ publicationOwned: 0 | 1 }>,
+  input: Readonly<{ publicationOwned: 0 | 1; native?: boolean }>,
 ): D1PreparedStatement {
+  if (input.native) return repositoryStatements(database).prepare("SELECT 1");
   return repositoryStatements(database)
     .prepare(`UPDATE operation_state
            SET recovery_health = CASE WHEN ? = 1 THEN 'degraded' ELSE 'blocked' END
@@ -247,8 +254,10 @@ export function blockBackupRestoreStatement(database: CatalogueStore): D1Prepare
            WHERE singleton = 1 AND recovery_restore_guard = 'clear'`);
 }
 
-export function clearBackupRestoreStatement(database: CatalogueStore): D1PreparedStatement {
-  return repositoryStatements(database).prepare(`UPDATE operation_state SET recovery_restore_guard = 'clear'
+export function clearBackupRestoreStatement(database: CatalogueStore, native = false): D1PreparedStatement {
+  return repositoryStatements(
+    database,
+  ).prepare(`UPDATE operation_state SET recovery_restore_guard = 'clear'${native ? ", recovery_health = 'healthy'" : ""}
              WHERE singleton = 1 AND recovery_restore_guard = 'blocked'
                AND active_recovery_id IS NULL`);
 }
@@ -443,4 +452,32 @@ export function backupSchemaMigrationLevelStatement(database: CatalogueStore): D
   return repositoryStatements(database).prepare(
     "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
   );
+}
+
+export function fenceCompositionSnapshotStatement(database: CatalogueStore): D1PreparedStatement {
+  return repositoryStatements(database).prepare(`UPDATE operation_state SET recovery_health='blocked'
+    WHERE singleton=1 AND active_recovery_id IS NULL AND recovery_restore_guard='blocked'`);
+}
+
+export function nativeBackupRevisionStatement(database: CatalogueStore, revision: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT publication_operation_id,id AS catalogue_revision_id,
+    content_digest AS composition_digest FROM catalogue_revisions WHERE id=? AND publication_operation_id IS NOT NULL`)
+    .bind(revision);
+}
+
+export function catalogueMutationFenceStatement(database: CatalogueStore) {
+  return repositoryStatements(database).prepare(`SELECT recovery_health,recovery_restore_guard,active_recovery_id
+    FROM operation_state WHERE singleton=1`);
+}
+
+export function nativeBackupSnapshotFenceStatement(database: CatalogueStore, id: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT b.owner_token,o.active_recovery_id,o.recovery_restore_guard,
+    f.owner_token AS search_owner_token,f.state AS search_state
+    FROM catalogue_backup_attempts b JOIN operation_state o ON o.singleton=1 JOIN card_search_fts_state f ON f.singleton=1
+    WHERE b.idempotency_key=? AND b.publication_operation_id IS NOT NULL AND b.state='exporting'
+    AND NOT EXISTS(SELECT 1 FROM catalogue_backup_attempts other WHERE other.idempotency_key<>b.idempotency_key
+      AND other.state IN ('exporting','restoring_verification','verifying'))`)
+    .bind(id);
 }

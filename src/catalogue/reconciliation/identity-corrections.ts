@@ -103,6 +103,7 @@ export async function validateIdentityCorrection(database: CatalogueStore, value
     );
   if (input.action === "assign") return validateIdentityAssignment(database, input, state);
   const entities: Record<string, Record<string, unknown>> = {};
+  let reviewedEntityBytes = 0;
   for (const id of [...input.source_ids, ...input.replacement_ids]) {
     const row = await correctionEntityStatement(database, input.entity_kind, id, state.current_revision_id).first<{
       document_json: string;
@@ -111,6 +112,8 @@ export async function validateIdentityCorrection(database: CatalogueStore, value
       invalid(
         "Every source and replacement must exist in the reviewed published revision. Admit new replacements separately first.",
       );
+    reviewedEntityBytes += new TextEncoder().encode(row.document_json).byteLength;
+    if (reviewedEntityBytes > 256 * 1024) invalid("The reviewed evidence exceeds the 256 KiB correction record bound.");
     const envelope = JSON.parse(row.document_json);
     const entity = envelope.data ?? envelope;
     let game = entity.game;

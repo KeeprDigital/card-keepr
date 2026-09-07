@@ -1,3 +1,4 @@
+import { snapshotRecoveryWait } from "./snapshot-recovery-wait";
 import { runGamePublicationWorkflow } from "./game-publication-workflow";
 import { runPublicationPreparationWorkflow } from "./publication-preparation-workflow";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
@@ -33,6 +34,7 @@ export async function runReconciliationWorkflow(
   event: Readonly<WorkflowEvent<ReconciliationWorkflowParams>>,
   step: WorkflowStep,
 ): Promise<{ result_json: string }> {
+  step = snapshotRecoveryWait(env, step);
   ({ env, step } = observeOperationalWorkflow(step, event, env));
   ({ env, step } = boundedReconciliationResources(env, step));
   if (event.payload.publication) return runGamePublicationWorkflow(env, step, event.payload.publication);
