@@ -79,6 +79,7 @@ test("retained Riot inventory: owner collects all returned English records witho
           supported_game: "riftbound",
           source_lineage: "riftbound-en",
           adapter_version: "riftbound-en@1",
+          coverage: { locale: "en", area: "catalogue", subset: "public-english-inventory" },
           requests: [{ id: "riftbound-en:catalogue", url: current.captures[0].url }],
         },
       ],

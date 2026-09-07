@@ -1433,7 +1433,7 @@ export async function reconcileRetainedCardPrintingEvidence(
             await diagnostics.push({
               code: "retained_evidence_invalid",
               source_observation_id: observation.sourceObservationId,
-              locator: observation.sourceFragment,
+              locator: observation.sourceLocator,
               matched_printing_ids: [],
               detail: "A non-parallel Official Erratum must target exactly one Printing.",
             });
@@ -1451,7 +1451,7 @@ export async function reconcileRetainedCardPrintingEvidence(
             await diagnostics.push({
               code: "retained_evidence_invalid",
               source_observation_id: observation.sourceObservationId,
-              locator: observation.sourceFragment,
+              locator: observation.sourceLocator,
               matched_printing_ids: [],
               detail:
                 matchingCards.length === 0
@@ -1541,7 +1541,7 @@ export async function reconcileRetainedCardPrintingEvidence(
             await diagnostics.push({
               code: "retained_evidence_invalid",
               source_observation_id: observation.sourceObservationId,
-              locator: observation.sourceFragment,
+              locator: observation.sourceLocator,
               matched_printing_ids: [],
               detail: error instanceof Error ? error.message : "Retained Official Erratum evidence is invalid.",
             });

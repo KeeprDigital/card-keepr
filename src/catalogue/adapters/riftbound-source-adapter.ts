@@ -1,7 +1,10 @@
 import { decodeHTML } from "entities";
+import { createHash } from "node:crypto";
 import { officialArtworkFingerprint } from "./official-artwork-identity";
 import { AdapterParseFailure } from "./adapter-parse-failure";
 import type { SourceAdapterRegistration } from "./source-adapters";
+import { riftboundOriginsErrata, riftboundOriginsErrataUrl } from "./riftbound-errata";
+import { riftboundAnnouncedProducts, riftboundProductsUrl } from "./riftbound-products";
 
 const inventoryOrigin = "https://content.publishing.riotgames.com";
 const inventoryPath = "/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards";
@@ -17,14 +20,21 @@ export const riftboundSourceAdapterRegistration = {
   origin: "production",
   requestSurface: { kind: "credential-free-https" },
   reconciliationCapability: "catalogue",
-  reconciliationAreas: ["catalogue"],
+  reconciliationAreas: ["catalogue", "errata"],
   officialSourceContract: {
     supportedGame: "riftbound",
     partition: "EN-US",
     origin: inventoryOrigin,
     documentPathnamePrefixes: [inventoryPath],
+    documentAuthorities: [
+      { origin: inventoryOrigin, pathnamePrefixes: [inventoryPath] },
+      {
+        origin: "https://playriftbound.com",
+        pathnamePrefixes: [new URL(riftboundOriginsErrataUrl).pathname, new URL(riftboundProductsUrl).pathname],
+      },
+    ],
     imagePathnamePrefixes: ["/sanity/images/dsfx7636/game_data_live/"],
-    requiredSurfaces: ["catalogue"],
+    requiredSurfaces: ["catalogue", "errata", "products"],
   },
   listingReconciliation: {
     groupsPublisherPages: false,
@@ -33,6 +43,8 @@ export const riftboundSourceAdapterRegistration = {
   },
   parseBytes(bytes, context) {
     if (context.mediaType?.startsWith("image/")) return [];
+    if (context.url === riftboundOriginsErrataUrl) return riftboundOriginsErrata(bytes, context.url);
+    if (context.url === riftboundProductsUrl) return riftboundAnnouncedProducts(bytes, context.url);
     const { cards, metadata } = inventory(bytes, context.url);
     const ids = new Set<string>();
     return cards.map((value) => {
@@ -43,24 +55,62 @@ export const riftboundSourceAdapterRegistration = {
       return observation(card, cards.length, metadata);
     });
   },
-  requiredSurfaces: ["catalogue"],
+  requiredSurfaces: ["catalogue", "errata", "products"],
+  coverageContracts: {
+    "public-english-inventory": {
+      description:
+        "All records returned by the linked public English gallery pages; upstream total discrepancy remains explicit.",
+      requiredSurfaces: ["catalogue"],
+      requestUrlForSurface: inventorySurfaceUrl,
+    },
+    "origins-errata": {
+      description: "All 31 named corrections in the registered Origins Errata article.",
+      requiredSurfaces: ["errata"],
+      requestUrlForSurface(surface) {
+        if (surface !== "errata") throw new AdapterParseFailure("Unknown Riftbound Errata surface.");
+        return riftboundOriginsErrataUrl;
+      },
+    },
+    "announced-products-2027": {
+      description:
+        "The nine principal Product announcements in Products and Sets into 2027, including the named Proving Grounds subsection; dates retain published precision and regions remain unknown.",
+      requiredSurfaces: ["products"],
+      requestUrlForSurface(surface) {
+        if (surface !== "products") throw new AdapterParseFailure("Unknown Riftbound Product surface.");
+        return riftboundProductsUrl;
+      },
+    },
+  },
   requestUrlForSurface(surface) {
-    if (surface !== "catalogue") throw new AdapterParseFailure("Unknown Riftbound surface.");
-    return `${inventoryOrigin}${inventoryPath}?locale=en_US&from=0&limit=200`;
+    if (surface === "products") return riftboundProductsUrl;
+    return surface === "errata" ? riftboundOriginsErrataUrl : inventorySurfaceUrl(surface);
   },
   discoverRequests(bytes, context) {
     if (context.mediaType?.startsWith("image/")) return [];
+    if (context.url === riftboundOriginsErrataUrl) {
+      riftboundOriginsErrata(bytes, context.url);
+      return [];
+    }
+    if (context.url === riftboundProductsUrl) {
+      riftboundAnnouncedProducts(bytes, context.url);
+      return [];
+    }
     const { cards, next } = inventory(bytes, context.url);
     return [
       ...(next === null ? [] : [{ role: "listing" as const, url: next, headers: { accept: "application/json" } }]),
       ...cards.map((value) => ({
         role: "image" as const,
-        url: text(record(record(value).cardImage).url),
+        url: publisherImageUrl(record(record(value).cardImage).url).href,
         headers: {},
       })),
     ];
   },
 } satisfies SourceAdapterRegistration;
+
+function inventorySurfaceUrl(surface: string) {
+  if (surface !== "catalogue") throw new AdapterParseFailure("Unknown Riftbound inventory surface.");
+  return `${inventoryOrigin}${inventoryPath}?locale=en_US&from=0&limit=200`;
+}
 
 function inventory(bytes: Uint8Array, sourceUrl: string) {
   const url = new URL(sourceUrl);
@@ -115,12 +165,7 @@ function observation(card: Record<string, unknown>, count: number, metadata: Rec
   const set = record(record(card.set).value);
   const types = record(card.cardType);
   const image = record(card.cardImage);
-  const imageUrl = new URL(text(image.url));
-  if (
-    imageUrl.origin !== "https://cmsassets.rgpub.io" ||
-    !imageUrl.pathname.startsWith("/sanity/images/dsfx7636/game_data_live/")
-  )
-    throw new AdapterParseFailure("Riftbound card image is outside the registered publisher image authority.");
+  const imageUrl = publisherImageUrl(image.url);
   const ability = richText(card.text);
   const effect = richText(card.effect);
   const attributes = {
@@ -176,7 +221,9 @@ function observation(card: Record<string, unknown>, count: number, metadata: Rec
       locator: id,
       variant_key: id,
       artwork_fingerprint: fingerprint,
-      printed_fields_digest: `riot-gallery-record:${id}`,
+      printed_fields_digest: createHash("sha256")
+        .update(JSON.stringify({ printed_rules_text: null, ...printingAttributes }))
+        .digest("hex"),
       treatment: null,
     },
     appearance_evidence: { images: [{ role: "front", source_url: imageUrl.href, artwork_fingerprint: fingerprint }] },
@@ -185,9 +232,75 @@ function observation(card: Record<string, unknown>, count: number, metadata: Rec
     source_sidecar: {
       publisher_record_json: JSON.stringify(card),
       pagination_metadata: metadata,
-      unmapped_optional_fields: [],
+      unmapped_optional_fields: unmappedFields(card),
     },
   };
+}
+function publisherImageUrl(value: unknown) {
+  const url = new URL(text(value));
+  if (
+    url.origin !== "https://cmsassets.rgpub.io" ||
+    !url.pathname.startsWith("/sanity/images/dsfx7636/game_data_live/") ||
+    url.username ||
+    url.password ||
+    url.hash
+  )
+    throw new AdapterParseFailure("Riftbound card image is outside the registered publisher image authority.");
+  return url;
+}
+const mappedFields = new Set([
+  "id",
+  "collectorNumber",
+  "name",
+  "set",
+  "cardType",
+  "publicCode",
+  "rarity",
+  "domain",
+  "cardImage",
+  "orientation",
+  "illustrator",
+  "text",
+  "energy",
+  "tags",
+  "might",
+  "power",
+  "mightBonus",
+  "effect",
+  "label",
+  "value",
+  "values",
+  "type",
+  "superType",
+  "icon",
+  "provider",
+  "url",
+  "dimensions",
+  "width",
+  "height",
+  "aspectRatio",
+  "colors",
+  "primary",
+  "secondary",
+  "mimeType",
+  "accessibilityText",
+  "richText",
+  "body",
+]);
+function unmappedFields(value: Record<string, unknown>) {
+  const fields: { path: string; value: string }[] = [];
+  const visit = (current: unknown, path: string, depth: number) => {
+    if (depth > 20) throw new AdapterParseFailure("Riftbound source metadata nesting is excessive.");
+    if (Array.isArray(current)) current.forEach((entry, i) => visit(entry, `${path}[${i}]`, depth + 1));
+    else if (current && typeof current === "object")
+      for (const [key, entry] of Object.entries(current)) {
+        const next = `${path}.${key}`;
+        if (!mappedFields.has(key)) fields.push({ path: next, value: JSON.stringify(entry) });
+        else visit(entry, next, depth + 1);
+      }
+  };
+  visit(value, "publisher_record", 0);
+  return fields;
 }
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))

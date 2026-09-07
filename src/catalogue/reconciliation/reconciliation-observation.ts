@@ -65,7 +65,7 @@ export type ParsedCardPrintingObservation = Readonly<{
 export type ParsedOfficialErratumObservation = Readonly<{
   kind: "official_erratum";
   sourceObservationId: string;
-  game: "one-piece" | "fusion-world" | "digimon" | "gundam";
+  game: SupportedGame;
   target:
     | Readonly<{
         type: "card";
@@ -82,7 +82,7 @@ export type ParsedOfficialErratumObservation = Readonly<{
   correctedRulesText: string | null;
   officialWording: string;
   appliesToParallelPrintings: boolean;
-  sourceFragment: string;
+  sourceLocator: string;
 }>;
 
 export type ParsedReconciliationObservation = ParsedCardPrintingObservation | ParsedOfficialErratumObservation;
@@ -388,7 +388,8 @@ function parseOfficialErratumObservation(
     record.game !== "one-piece" &&
     record.game !== "fusion-world" &&
     record.game !== "digimon" &&
-    record.game !== "gundam"
+    record.game !== "gundam" &&
+    record.game !== "riftbound"
   ) {
     throw new Error("Official Erratum Supported Game is invalid.");
   }
@@ -406,23 +407,44 @@ function parseOfficialErratumObservation(
   const targetLocator =
     target.type === "printing" ? requiredString(target.locator, "Official Erratum target locator") : null;
   const source = requiredRecord(record.source, "Official Erratum source");
-  assertOnlyFields(source, ["fragment", "display_name", "image_url"], "Official Erratum source");
-  requiredString(source.display_name, "Official Erratum source display_name");
-  const imageUrl = requiredString(source.image_url, "Official Erratum source image_url");
-  const imageOrigin =
-    game === "one-piece"
-      ? "https://en.onepiece-cardgame.com/images/"
-      : game === "fusion-world"
-        ? "https://www.dbs-cardgame.com/fw/images/"
-        : game === "digimon"
-          ? "https://world.digimoncard.com/"
-          : "https://www.gundam-gcg.com/gcg/bccard/";
-  if (!imageUrl.startsWith(imageOrigin)) {
-    throw new Error("Official Erratum image provenance is invalid.");
-  }
-  const fragment = requiredString(source.fragment, "Official Erratum source fragment");
-  if (!/^#[A-Za-z][A-Za-z0-9_-]+$/.test(fragment)) {
-    throw new Error("Official Erratum source fragment is invalid.");
+  let sourceLocator: string;
+  if (game === "riftbound") {
+    assertOnlyFields(source, ["kind", "url", "heading"], "Riftbound Official Erratum source");
+    const url = new URL(requiredString(source.url, "Official Erratum article URL"));
+    const heading = requiredString(source.heading, "Official Erratum article heading");
+    if (
+      source.kind !== "article_heading" ||
+      url.origin !== "https://playriftbound.com" ||
+      url.pathname !== "/en-us/news/rules-and-releases/riftbound-origins-card-errata/" ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      identity.kind !== "publisher_name" ||
+      identity.value !== heading
+    )
+      throw new Error("Riftbound Official Erratum article provenance is invalid.");
+    sourceLocator = `${url.href} [heading: ${heading}]`;
+  } else {
+    assertOnlyFields(source, ["fragment", "display_name", "image_url"], "Official Erratum source");
+    requiredString(source.display_name, "Official Erratum source display_name");
+    const imageUrl = requiredString(source.image_url, "Official Erratum source image_url");
+    const imageOrigin =
+      game === "one-piece"
+        ? "https://en.onepiece-cardgame.com/images/"
+        : game === "fusion-world"
+          ? "https://www.dbs-cardgame.com/fw/images/"
+          : game === "digimon"
+            ? "https://world.digimoncard.com/"
+            : "https://www.gundam-gcg.com/gcg/bccard/";
+    if (!imageUrl.startsWith(imageOrigin)) {
+      throw new Error("Official Erratum image provenance is invalid.");
+    }
+    const fragment = requiredString(source.fragment, "Official Erratum source fragment");
+    if (!/^#[A-Za-z][A-Za-z0-9_-]+$/.test(fragment)) {
+      throw new Error("Official Erratum source fragment is invalid.");
+    }
+    sourceLocator = fragment;
   }
   const completeness = requiredRecord(record.completeness, "Official Erratum completeness");
   assertOnlyFields(
@@ -475,7 +497,7 @@ function parseOfficialErratumObservation(
         : requiredString(record.corrected_rules_text, "Official Erratum corrected_rules_text"),
     officialWording: requiredString(record.official_wording, "Official Erratum official_wording"),
     appliesToParallelPrintings: record.applies_to_parallel_printings,
-    sourceFragment: fragment,
+    sourceLocator,
   };
 }
 

@@ -1,0 +1,40 @@
+import { readFileSync } from "node:fs";
+import { expect, test } from "vitest";
+import { riftboundOriginsErrata, riftboundOriginsErrataUrl } from "../../src/catalogue/adapters/riftbound-errata";
+import { parseReconciliationObservation } from "../../src/catalogue/reconciliation/reconciliation-observation";
+
+const bytes = readFileSync("acceptance/fixtures/real-sources/2026-09-06/raw/riftbound-errata.body");
+test("Origins retains all named corrections with article heading provenance", () => {
+  const observations = riftboundOriginsErrata(bytes, riftboundOriginsErrataUrl);
+  expect(observations).toHaveLength(31);
+  const monk = observations.find((o) => o.source.heading === "Kinkou Monk")!;
+  expect(monk.observed_printed_rules_text).toContain("buff two other friendly units");
+  expect(monk.corrected_rules_text).toContain("buff up to two other friendly units");
+  expect(monk.source).toEqual({ kind: "article_heading", url: riftboundOriginsErrataUrl, heading: "Kinkou Monk" });
+  expect(monk.published_on).toBe("2025-10-28");
+  expect(monk.effective_from).toBeNull();
+  for (const [index, observation] of observations.entries()) {
+    expect(parseReconciliationObservation(`observation-${index}`, observation).kind).toBe("official_erratum");
+  }
+});
+
+test("named Errata cannot forge article provenance or weaken the Bandai provenance contract", () => {
+  const monk = riftboundOriginsErrata(bytes, riftboundOriginsErrataUrl).find(
+    (o) => o.source.heading === "Kinkou Monk",
+  )!;
+  for (const source of [
+    { ...monk.source, url: "https://example.com/errata" },
+    { ...monk.source, url: `${riftboundOriginsErrataUrl}#invented` },
+    { ...monk.source, heading: "Different Card" },
+    { ...monk.source, image_url: "https://example.com/fabricated.png" },
+  ])
+    expect(() => parseReconciliationObservation("invalid", { ...monk, source })).toThrow();
+  expect(() =>
+    parseReconciliationObservation("invalid", {
+      ...monk,
+      game: "one-piece",
+      target: { type: "card", official_identity: { kind: "card_number", value: "OP01-001" } },
+    }),
+  ).toThrow();
+  expect(() => riftboundOriginsErrata(bytes, `${riftboundOriginsErrataUrl}?other=1`)).toThrow();
+});

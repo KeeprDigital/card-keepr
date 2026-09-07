@@ -7,7 +7,7 @@ import { riftboundSourceAdapterRegistration } from "../../src/catalogue/adapters
 const fixture = new URL("../../acceptance/fixtures/real-sources/2026-09-08-riftbound/raw/", import.meta.url);
 
 test("Riot English pagination retains every returned record and literal token and treatment identifiers", async () => {
-  const observations: ReturnType<typeof riftboundSourceAdapterRegistration.parseBytes> = [];
+  const observations: ReturnType<typeof riftboundSourceAdapterRegistration.parseBytes>[number][] = [];
   for (let offset = 0; offset < 1200; offset += 200) {
     const bytes = readFileSync(new URL(`cards-${offset}.json`, fixture));
     const url = `https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=${offset}&limit=200`;
@@ -16,7 +16,7 @@ test("Riot English pagination retains every returned record and literal token an
     );
   }
   expect(() => canonicalJson(observations)).not.toThrow();
-  const cards = observations.filter((o) => o.card);
+  const cards = observations.filter((o) => "card" in o);
   expect(cards).toHaveLength(1189);
   const byLocator = new Map(cards.map((o) => [o.identity_evidence.locator, o]));
   expect(byLocator.size).toBe(1189);
@@ -51,6 +51,10 @@ test("Riot rejects changed locale, missing pagination links and duplicate publis
     (d: typeof source) => {
       d.data[1] = d.data[0];
     },
+    (d: typeof source) => {
+      d.data[0].cardImage.url =
+        "https://user:password@cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/image.png";
+    },
   ]) {
     const changed = structuredClone(source);
     mutate(changed);
@@ -58,4 +62,19 @@ test("Riot rejects changed locale, missing pagination links and duplicate publis
       riftboundSourceAdapterRegistration.parseBytes(new TextEncoder().encode(JSON.stringify(changed)), context),
     ).toThrow();
   }
+});
+
+test("unmapped publisher fields remain inspectable even with fractional raw metadata", () => {
+  const source = JSON.parse(readFileSync(new URL("cards-0.json", fixture), "utf8"));
+  source.data[0].newPublisherField = { fractional: 0.5 };
+  const observations = riftboundSourceAdapterRegistration.parseBytes(new TextEncoder().encode(JSON.stringify(source)), {
+    url: "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=0&limit=200",
+    mediaType: "application/json",
+  });
+  const first = observations.find((o) => "card" in o)!;
+  expect(first.source_sidecar.unmapped_optional_fields).toContainEqual({
+    path: "publisher_record.newPublisherField",
+    value: '{"fractional":0.5}',
+  });
+  expect(() => canonicalJson(observations)).not.toThrow();
 });
