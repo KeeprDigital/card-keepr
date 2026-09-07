@@ -325,12 +325,18 @@ test.each([
       expect(restoredCards[index]! - (restoredCards[index - 1] ?? 0)).toBeLessThanOrEqual(8);
     expect(restoredCards).toContain(count);
     const page = await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions`);
-    const cards = (page.document.partitions as { kind: string; ordinal: number }[]).find(
-      (part) => part.kind === "cards",
-    )!;
-    const detail = await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${cards.ordinal}`);
-    expect(detail.document.records).toHaveLength(expectedCards);
-    expect(detail.document.records).toEqual(expect.arrayContaining([expect.objectContaining({ name })]));
+    const recordsFor = async (kind: string) => {
+      const records: Record<string, unknown>[] = [];
+      for (const part of page.document.partitions as { kind: string; ordinal: number }[]) {
+        if (part.kind !== kind) continue;
+        const detail = await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${part.ordinal}`);
+        records.push(...(detail.document.records as Record<string, unknown>[]));
+      }
+      return records;
+    };
+    const cards = await recordsFor("cards");
+    expect(cards).toHaveLength(expectedCards);
+    expect(cards).toEqual(expect.arrayContaining([expect.objectContaining({ name })]));
     if (interrupt === "disappearance_warnings") {
       expect(disappearanceCursors.some((count) => count > 0 && count < 64)).toBe(true);
       expect(disappearanceCursors).toContain(64);
@@ -380,11 +386,7 @@ test.each([
       expect(errataCursors.some((count) => count > 0 && count < 32)).toBe(true);
       expect(errataCursors).toContain(32);
       expect(Math.max(...errataCalls)).toBeLessThanOrEqual(100);
-      const errataPart = (page.document.partitions as { kind: string; ordinal: number }[]).find(
-        (part) => part.kind === "errata",
-      )!;
-      const errata = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${errataPart.ordinal}`))
-        .document.records;
+      const errata = await recordsFor("errata");
       expect(errata).toHaveLength(32);
       expect(errata).toEqual(
         expect.arrayContaining([

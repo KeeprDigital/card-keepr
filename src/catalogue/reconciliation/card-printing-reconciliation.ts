@@ -614,7 +614,10 @@ export async function reconcileRetainedCardPrintingEvidence(
           if (printing !== null)
             for (const card of exactUnnumberedCards) {
               consumeIdentityMatch();
-              for await (const candidate of printings.matchingBeforeObservation(card.id)) {
+              for await (const candidate of printings.matchingBeforeObservation(card.id, {
+                records: 8,
+                bytes: 512000,
+              })) {
                 consumeIdentityMatch();
                 if (
                   printingFactsFormattingEquivalent(
@@ -643,6 +646,7 @@ export async function reconcileRetainedCardPrintingEvidence(
               const local: PrintingCompatibility[] = [];
               for await (const match of localPrintingCompatibility.matchingBeforeObservation(
                 compatibilityGroup(expected),
+                { records: 8, bytes: 512000 },
               )) {
                 consumeIdentityMatch();
                 if (isCompatible(match.compatibility, expected)) local.push(match.compatibility);
@@ -910,6 +914,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           if (localMatch !== undefined) matchIds.add(localMatch);
           for await (const match of localPrintingCompatibility.matchingBeforeObservation(
             compatibilityGroup(compatibility),
+            { records: 8, bytes: 512000 },
           )) {
             consumeIdentityMatch();
             if (isCompatible(match.compatibility, compatibility)) matchIds.add(match.printingId);

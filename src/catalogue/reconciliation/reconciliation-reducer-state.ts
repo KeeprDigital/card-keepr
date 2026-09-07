@@ -79,7 +79,7 @@ export class ReconciliationReducerIndex<T> {
   }
 
   /** Query only the predecessor view; call before this observation writes matching state. */
-  async *matchingBeforeObservation(group: string): AsyncGenerator<T> {
+  async *matchingBeforeObservation(group: string, limit = { records: 500, bytes: 1048576 }): AsyncGenerator<T> {
     if (this.ordinal <= 1) return;
     const groupDigest = await sha256Text(group);
     let after = "";
@@ -98,7 +98,7 @@ export class ReconciliationReducerIndex<T> {
       );
       if (!row) return;
       bytes += new TextEncoder().encode(row.content).byteLength;
-      if (++count > 8 || bytes > 512000)
+      if (++count > limit.records || bytes > limit.bytes)
         throw new Error("reconciliation_capacity_exceeded: one identity match has too many candidates.");
       if ((await sha256Text(row.content)) !== row.sha256)
         throw new Error("Reducer state failed integrity verification.");
