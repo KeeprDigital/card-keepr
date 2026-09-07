@@ -103,3 +103,18 @@ export function failGamePreparationStatement(database: CatalogueStore, id: strin
       WHERE id = ? AND supported_game IS NOT NULL AND state = 'preparing'`)
     .bind(code, outcome, id);
 }
+
+export function gamePreparationResumeGuardStatement(database: CatalogueStore, id: string, at: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT CASE
+      WHEN preparation.deadline <= ?2 OR preparation.deadline <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        THEN json_extract('{}', 'reconciliation_deadline_expired')
+      WHEN NOT EXISTS (SELECT 1 FROM game_catalogue_heads WHERE supported_game = preparation.supported_game AND revision_id = preparation.expected_game_revision_id)
+        THEN json_extract('{}', 'game_revision_mismatch')
+      WHEN NOT EXISTS (SELECT 1 FROM game_candidate_slots WHERE supported_game = preparation.supported_game AND preparation_id = preparation.id)
+        THEN json_extract('{}', 'reconciliation_generation_conflict')
+      WHEN EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND recovery_health <> 'healthy')
+        THEN json_extract('{}', 'recovery_not_verified')
+      ELSE 1 END FROM reconciliation_operations AS preparation WHERE preparation.id = ?1`)
+    .bind(id, at);
+}

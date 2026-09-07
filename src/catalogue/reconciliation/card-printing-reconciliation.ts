@@ -1,7 +1,8 @@
 import {
+  nativePreparationFailureCode,
+  type NativePreparationGuardState,
   failIndependentGamePreparation,
   independentGamePreparationResult,
-  type NativeOperationResult,
 } from "./game-reconciliation-outcome";
 import {
   type CanonicalRecordSource,
@@ -1824,18 +1825,23 @@ async function finalizedReconciliationResult(
   runId: string,
   generation: number,
 ): Promise<Record<string, unknown> | null> {
-  const row = await reconciliationRunStateStatement(database, runId).first<
-    NativeOperationResult & { deadline: string | null }
-  >();
+  const row = await reconciliationRunStateStatement(database, runId).first<NativePreparationGuardState>();
   if (row?.supported_game) {
     const terminal = independentGamePreparationResult(runId, row, generation);
     if (terminal) return terminal;
-    if (Date.parse(row.deadline!) <= Date.now()) {
+    const failureCode = nativePreparationFailureCode(row);
+    if (failureCode) {
       const scoped = guardedCatalogueStore(database, () =>
         reconciliationWriterGuard(database, runId, generation, true),
       );
-      return failIndependentGamePreparation(scoped, runId, "reconciliation_deadline_expired", [
-        { code: "reconciliation_deadline_expired", detail: "The original preparation deadline expired." },
+      return failIndependentGamePreparation(scoped, runId, failureCode, [
+        {
+          code: failureCode,
+          detail:
+            failureCode === "reconciliation_deadline_expired"
+              ? "The original preparation deadline expired."
+              : "The expected Game Catalogue Revision changed.",
+        },
       ]);
     }
     return null;

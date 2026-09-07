@@ -4,8 +4,9 @@ import { type CatalogueStore, repositoryStatements } from "../shared";
 export function reconciliationRunStateStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT state, candidate_digest, NULL AS supported_game, ingestion_run_id, 0 AS generation,
-      NULL AS terminal_result_json, NULL AS deadline FROM ingestion_run_current WHERE ingestion_run_id = ?1
-      UNION ALL SELECT state, candidate_digest, supported_game, ingestion_run_id, generation, terminal_result_json, deadline
+      NULL AS terminal_result_json, NULL AS deadline, NULL AS expected_game_revision_id, NULL AS current_game_revision_id FROM ingestion_run_current WHERE ingestion_run_id = ?1
+      UNION ALL SELECT state, candidate_digest, supported_game, ingestion_run_id, generation, terminal_result_json, deadline, expected_game_revision_id,
+      (SELECT revision_id FROM game_catalogue_heads WHERE supported_game = reconciliation_operations.supported_game) AS current_game_revision_id
       FROM reconciliation_operations WHERE id = ?1 AND supported_game IS NOT NULL`)
     .bind(runId);
 }

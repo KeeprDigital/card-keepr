@@ -3,6 +3,7 @@ import { assertIdentifier } from "../source-evidence";
 import { inspectGameCandidate } from "./game-candidate";
 import { synchronizeGameCandidatePauseStatement } from "./game-candidate-repository";
 import {
+  gamePreparationResumeGuardStatement,
   type GamePreparationIntent,
   gamePreparationRequestStatement,
   gamePreparationRequestByIdStatement,
@@ -154,6 +155,7 @@ export async function changeGameReconciliation(
   try {
     await database.batch([
       reconciliationActionGuard(database, id, action, input.generation),
+      ...(action === "resume" ? [gamePreparationResumeGuardStatement(database, id, at)] : []),
       reconciliationActionUpdate(database, id, action, input.generation),
       synchronizeGameCandidatePauseStatement(database, id),
       ...(action === "abandon" ? [releaseGamePreparationSlotStatement(database, id)] : []),
@@ -170,6 +172,15 @@ export async function changeGameReconciliation(
     }
     if (winner)
       throw new AdministrationProblem(409, "idempotency_conflict", "This key binds another preparation action.");
+    if (error instanceof Error) {
+      for (const code of ["game_revision_mismatch", "reconciliation_deadline_expired", "recovery_not_verified"])
+        if (error.message.includes(code))
+          throw new AdministrationProblem(
+            409,
+            code,
+            "The preparation's original predecessor, deadline, or recovery condition no longer permits resumption.",
+          );
+    }
     if (error instanceof Error && error.message.includes("reconciliation_generation_conflict"))
       throw new AdministrationProblem(
         409,

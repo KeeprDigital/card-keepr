@@ -39,7 +39,8 @@ export function reconciliationOperationHeaderStatement(database: CatalogueStore,
   return repositoryStatements(database)
     .prepare(`SELECT state, generation, candidate_digest, definition_pins_json, input_manifest_digest,
       observation_cutoff, identity_decision_cutoff, authority_decision_cutoff, created_at, deadline
-      , ingestion_run_id, supported_game, failure_code, terminal_result_json
+      , ingestion_run_id, supported_game, failure_code, terminal_result_json, expected_game_revision_id
+      , (SELECT revision_id FROM game_catalogue_heads WHERE supported_game = reconciliation_operations.supported_game) AS current_game_revision_id
       FROM reconciliation_operations WHERE id = ?`)
     .bind(runId);
 }
@@ -126,7 +127,10 @@ export function reconciliationWriterGuard(
     .prepare(`SELECT CASE WHEN EXISTS (
     SELECT 1 FROM reconciliation_operations AS reconciliation CROSS JOIN operation_state AS operation
     WHERE reconciliation.id = ? AND reconciliation.generation = ? AND reconciliation.state = 'preparing'
-      AND (reconciliation.supported_game IS NULL OR ? = 1 OR reconciliation.deadline > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      AND (reconciliation.supported_game IS NULL OR ? = 1 OR (
+        reconciliation.deadline > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        AND EXISTS (SELECT 1 FROM game_catalogue_heads AS head WHERE head.supported_game = reconciliation.supported_game AND head.revision_id = reconciliation.expected_game_revision_id)
+        AND EXISTS (SELECT 1 FROM game_candidate_slots AS slot WHERE slot.supported_game = reconciliation.supported_game AND slot.preparation_id = reconciliation.id)))
       AND operation.singleton = 1 AND operation.recovery_health <> 'blocked'
   ) THEN 1 ELSE json_extract('{}', 'reconciliation_writer_fenced') END`)
     .bind(runId, generation, terminalFailure ? 1 : 0);

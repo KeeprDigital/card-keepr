@@ -1,4 +1,6 @@
 import {
+  nativePreparationFailureCode,
+  type NativePreparationGuardState,
   independentGamePreparationResult,
   type NativeOperationResult,
   failIndependentGamePreparation,
@@ -201,18 +203,13 @@ export async function pauseFailedReconciliation(
   generation: number,
   detail: string,
 ) {
-  const operation = await reconciliationOperationHeaderStatement(database, runId).first<
-    NativeOperationResult & { deadline: string }
-  >();
+  const operation = await reconciliationOperationHeaderStatement(database, runId).first<NativePreparationGuardState>();
   if (operation?.supported_game) {
     const terminal = independentGamePreparationResult(runId, operation, generation);
     if (terminal) return terminal;
     const code =
-      Date.parse(operation.deadline) <= Date.now()
-        ? "reconciliation_deadline_expired"
-        : detail.startsWith("reconciliation_capacity_exceeded:")
-          ? "reconciliation_capacity_exceeded"
-          : null;
+      nativePreparationFailureCode(operation) ??
+      (detail.startsWith("reconciliation_capacity_exceeded:") ? "reconciliation_capacity_exceeded" : null);
     if (code) {
       const scoped = guardedCatalogueStore(database, () =>
         reconciliationWriterGuard(database, runId, generation, true),
@@ -220,7 +217,12 @@ export async function pauseFailedReconciliation(
       return (await failIndependentGamePreparation(scoped, runId, code, [
         {
           code,
-          detail: code === "reconciliation_deadline_expired" ? "The original preparation deadline expired." : detail,
+          detail:
+            code === "reconciliation_deadline_expired"
+              ? "The original preparation deadline expired."
+              : code === "game_revision_mismatch"
+                ? "The expected Game Catalogue Revision changed."
+                : detail,
         },
       ]))!;
     }

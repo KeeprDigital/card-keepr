@@ -82,3 +82,15 @@ export function independentGamePreparationResult(
     ...(operation.state === "sealed" ? { candidate_digest: operation.candidate_digest } : {}),
   };
 }
+
+export type NativePreparationGuardState = NativeOperationResult & {
+  deadline: string;
+  expected_game_revision_id: string;
+  current_game_revision_id: string | null;
+};
+
+export function nativePreparationFailureCode(operation: NativePreparationGuardState): string | null {
+  if (Date.parse(operation.deadline) <= Date.now()) return "reconciliation_deadline_expired";
+  if (operation.expected_game_revision_id !== operation.current_game_revision_id) return "game_revision_mismatch";
+  return null;
+}
