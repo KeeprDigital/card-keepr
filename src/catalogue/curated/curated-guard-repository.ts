@@ -1,5 +1,14 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 
+/** Prepared conflicts are visible before their physical event is materialized. */
+export function curatedPreparationStartGuardStatement(database: CatalogueStore, game: string): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(`SELECT CASE WHEN EXISTS (SELECT 1 FROM curated_revision_read
+      WHERE game = ? AND status = 'reconfirmation_required')
+      THEN json_extract('{}', 'curated_revision_reconfirmation_required') ELSE 1 END`)
+    .bind(game);
+}
+
 /** Owner writes recheck mutable authority inside the caller's transaction. */
 export function curatedOwnerMutationGuardStatement(
   database: CatalogueStore,

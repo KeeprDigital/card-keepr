@@ -106,6 +106,7 @@ export async function createGameReconciliation(
     }
     if (error instanceof Error) {
       for (const code of [
+        "curated_revision_reconfirmation_required",
         "reconciliation_policy_changed",
         "game_evidence_not_found",
         "game_revision_mismatch",

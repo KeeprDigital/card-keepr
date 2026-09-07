@@ -300,9 +300,8 @@ test("abandonment releases only its game slot and a new intent creates a fresh c
 });
 
 test("a native source change retains reconfirmable curated diagnostics without failing the collection", async () => {
-  const seed = await reconcile(
-    (await collect("/reconciliation/curated-conflict-fanout-base", "native-curated-seed")).id,
-  );
+  const originalSource = await collect("/reconciliation/curated-conflict-fanout-base", "native-curated-seed");
+  const seed = await reconcile(originalSource.id);
   const card = (seed.document.cards as { id: string; name: string }[])[0]!;
   const published = await approve(seed.document);
   expect(published.response.status).toBe(200);
@@ -350,6 +349,14 @@ test("a native source change retains reconfirmable curated diagnostics without f
     revision: { status: "reconfirmation_required", pending_conflict: { preparation_id: id, run_id: run.id } },
   });
   const pending = status.revision as { pending_conflict: { digest: string }; event_version: number };
+  const bypass = await post("/v1/game-candidates", {
+    ingestion_run_id: originalSource.id,
+    supported_game: "one-piece",
+    expected_game_revision_id: published.document.resulting_revision_id,
+    idempotency_key: "native-curated-without-reaffirmation",
+  });
+  expect(bypass.response.status, JSON.stringify(bypass.document)).toBe(409);
+  expect(bypass.document).toMatchObject({ code: "curated_revision_reconfirmation_required" });
   const reaffirmed = await post(`/admin/v1/curated-revisions/${revisionId}/reaffirm`, {
     environment: "production",
     expected_current_revision_id: published.document.resulting_revision_id,

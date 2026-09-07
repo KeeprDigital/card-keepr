@@ -1,4 +1,5 @@
 import { atomicRepositoryStatement, type CatalogueStore, repositoryStatements } from "../shared";
+import { curatedPreparationStartGuardStatement } from "../curated";
 
 export type GamePreparationIntent = {
   ingestion_run_id: string;
@@ -60,6 +61,7 @@ export function createGamePreparationStatement(
           input.expected_game_revision_id,
           input.supported_game,
         ),
+      curatedPreparationStartGuardStatement(database, input.supported_game),
     ],
     statement: repositoryStatements(database)
       .prepare(`INSERT INTO reconciliation_operations
