@@ -915,6 +915,7 @@ test.each([
     const run = await collectRequests([{ id: "cards", scenario }], "partition-replay");
     let completed = 0;
     let completedGameOutput = 0;
+    let checkedPartitionWrites = 0;
     let resumed = false;
     let failures = 0;
     const database = new Proxy(testEnv.CATALOGUE_DB, {
@@ -937,8 +938,14 @@ test.each([
                     }
                     if (completedGameOutput > 0 && sql.includes("INSERT INTO game_candidate_partitions"))
                       expect(Number(values[1])).toBeGreaterThanOrEqual(completedGameOutput);
-                    if (completed > 0 && sql.includes("INSERT INTO reconciliation_partitions"))
+                    if (
+                      phase === "candidate_partitions" &&
+                      completed > 0 &&
+                      sql.includes("INSERT INTO reconciliation_record_partitions")
+                    ) {
+                      checkedPartitionWrites++;
                       expect(Number(values[1])).toBeGreaterThanOrEqual(completed);
+                    }
                     return prepared.bind(...values);
                   };
                 const value = Reflect.get(prepared, method);
@@ -1015,6 +1022,7 @@ test.each([
     }
     expect(ids.length).toBe(expectedCards);
     expect(new Set(ids).size).toBe(expectedCards);
+    if (phase === "candidate_partitions") expect(checkedPartitionWrites).toBeGreaterThan(0);
     if (phase === "game_preparation") {
       expect(completedGameOutput).toBeGreaterThan(0);
       const candidate = (sealed.candidates as { id: string; state: string }[])[0]!;
