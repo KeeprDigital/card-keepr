@@ -109,6 +109,7 @@ export {
   advanceEvidenceCleanup,
   inspectEvidenceCleanupResults,
   resumeEvidenceCleanup,
+  pauseEvidenceCleanup,
 } from "./evidence-cleanup";
 
 export { beginStagingCleanup, advanceStagingCleanup } from "./staging-cleanup";

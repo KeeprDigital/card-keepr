@@ -471,6 +471,7 @@ export async function capturePreparedAttempt(
       },
       writeToken,
     );
+    await completeEvidenceObjectWrite(database, writeToken, new Date().toISOString()).run();
     await uploadedCaptureContentStatement(database, {
       digest: content.digest,
       byteLength: content.byteLength,
@@ -509,8 +510,6 @@ export async function capturePreparedAttempt(
       headers: responseHeaders,
       diagnostic: failure.message,
     });
-  } finally {
-    await completeEvidenceObjectWrite(database, writeToken, new Date().toISOString()).run();
   }
 }
 

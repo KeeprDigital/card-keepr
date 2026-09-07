@@ -2,6 +2,8 @@ import { exports, env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { installRuntimeSuite } from "./runtime-helpers";
 
+import { seedRunFixtureStatement } from "./query-helpers/run-events";
+
 installRuntimeSuite();
 
 async function request(path: string, now: string, body?: unknown) {
@@ -32,16 +34,14 @@ async function request(path: string, now: string, body?: unknown) {
 
 // Synthetic terminal fixture; no real-source or measured-capacity claim.
 async function terminalRun(id: string) {
-  await env.CATALOGUE_DB.prepare(`INSERT INTO ingestion_runs
-    (id, started_at, expected_current_revision_id, idempotency_key)
-    VALUES (?, '2026-08-01T00:00:00.000Z', 'catrev_spine_000', ?)`)
-    .bind(id, id)
-    .run();
-  await env.CATALOGUE_DB.prepare(`INSERT INTO ingestion_run_current
-    (ingestion_run_id,last_event_sequence,last_event_id,state,completed_stage_count,terminal_at)
-    VALUES (?,1,?,'failed',0,'2026-08-01T00:00:00.000Z')`)
-    .bind(id, id)
-    .run();
+  await seedRunFixtureStatement(env.CATALOGUE_DB, {
+    id,
+    state: "failed",
+    failure_code: "synthetic_capture_failure",
+    started_at: "2026-08-01T00:00:00.000Z",
+    terminal_at: "2026-08-01T00:00:00.000Z",
+    idempotency_key: id,
+  }).run();
 }
 
 test("owner cleanup persists the exact thirty-day eligibility boundary and resumes its intent", async () => {
@@ -268,16 +268,13 @@ test("an unsettled multipart writer is conclusively aborted and cannot complete 
   expect(await env.EVIDENCE_OBJECTS.head(key)).toBeNull();
 });
 
-test("newly acquired paused shared snapshot and historical candidate references preserve their physical bytes", async () => {
+test("newly acquired paused shared snapshot preserves its physical bytes", async () => {
   const key = await capturedObject("cleanup_shared");
   const begin = await request("/v1/ingestion-runs/cleanup_shared/evidence-cleanup", "2026-08-31T00:00:00.000Z", {
     idempotency_key: "cleanup_shared",
   });
   const intent = (await begin.json()) as { id: string };
-  await terminalRun("cleanup_new_reference");
-  await env.CATALOGUE_DB.prepare(
-    `UPDATE ingestion_run_current SET state='paused',terminal_at=NULL WHERE ingestion_run_id='cleanup_new_reference'`,
-  ).run();
+  await seedRunFixtureStatement(env.CATALOGUE_DB, { id: "cleanup_new_reference", state: "paused" }).run();
   // A native revalidation retains a new snapshot identity pointing at the same
   // physical content, acquired after cleanup's owner intent.
   await env.CATALOGUE_DB.prepare(`INSERT INTO source_fetch_attempts(id,ingestion_run_id,request_id,attempt_number,requested_at,completed_at,outcome,response_headers_json)
@@ -290,7 +287,7 @@ test("newly acquired paused shared snapshot and historical candidate references 
   expect((await env.EVIDENCE_OBJECTS.head(key))?.size).toBe(7);
 });
 
-async function abandonedStaging(preparation: string, key: string) {
+async function abandonedStaging(preparation: string, key: string, extraKey?: string) {
   await terminalRun(preparation);
   await env.CATALOGUE_DB.prepare(`INSERT INTO reconciliation_operations
     (id,ingestion_run_id,state,created_at,deadline,definition_pins_json,observation_cutoff,identity_decision_cutoff,authority_decision_cutoff,terminal_at)
@@ -310,6 +307,15 @@ async function abandonedStaging(preparation: string, key: string) {
   )
     .bind(preparation, preparation, key)
     .run();
+  if (extraKey) {
+    const { catalogueStore, trackedStagingBucket } = await import("../../../src/catalogue/shared");
+    await trackedStagingBucket(
+      catalogueStore(env.CATALOGUE_DB),
+      env.CATALOGUE_EXPORTS,
+      "CATALOGUE_EXPORTS",
+      preparation,
+    ).put(extraKey, "orphan");
+  }
   await env.CATALOGUE_DB.prepare(`UPDATE reconciliation_operations SET state='abandoned' WHERE id=?`)
     .bind(preparation)
     .run();
@@ -422,4 +428,115 @@ test("an ambiguous staging deletion keeps its ticket open and prevents reuse des
   ).rejects.toThrow("staging_writer_fenced");
   const retry = await request(`/v1/evidence-cleanups/${intent.id}/advance`, "2027-10-09T00:00:00.000Z", {});
   expect(await retry.json()).toMatchObject({ state: "paused", deleted_objects: 0 });
+});
+
+test("a live uploaded 304 reference protects bytes before its new snapshot is finalized", async () => {
+  const key = await capturedObject("cleanup_revalidation");
+  await seedRunFixtureStatement(env.CATALOGUE_DB, { id: "live_revalidation", state: "paused" }).run();
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO source_requests(ingestion_run_id,request_id,sequence_number,method,url,request_headers_json,representation_fingerprint,state) VALUES ('live_revalidation','request',1,'GET','https://source.invalid/304','{}','fixture','pending')`,
+  ).run();
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO source_capture_operations(attempt_id,ingestion_run_id,request_id,attempt_number,source_snapshot_id,content_object_key,state,requested_at,reused_source_snapshot_id) VALUES ('live304','live_revalidation','request',1,'live304','source-snapshots/live304.bin','uploaded','2026-08-31T00:00:00.000Z','cleanup_revalidation')`,
+  ).run();
+  const begin = await request("/v1/ingestion-runs/cleanup_revalidation/evidence-cleanup", "2026-08-31T00:00:00.000Z", {
+    idempotency_key: "cleanup_revalidation",
+  });
+  expect(begin.status).toBe(202);
+  const intent = (await begin.json()) as { id: string };
+  const progress = await request(`/v1/evidence-cleanups/${intent.id}/advance`, "2026-08-31T00:00:01.000Z", {});
+  expect(await progress.json()).toMatchObject({ state: "completed", protected_objects: 1, deleted_objects: 0 });
+  expect(await env.EVIDENCE_OBJECTS.head(key)).not.toBeNull();
+});
+
+test("a corrupted terminal projection cannot authorize a cleanup or physical delete", async () => {
+  const key = await capturedObject("cleanup_corrupt");
+  const begin = await request("/v1/ingestion-runs/cleanup_corrupt/evidence-cleanup", "2026-08-31T00:00:00.000Z", {
+    idempotency_key: "cleanup_corrupt",
+  });
+  expect(begin.status).toBe(202);
+  const intent = (await begin.json()) as { id: string };
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_run_current SET terminal_at='2026-07-01T00:00:00.000Z' WHERE ingestion_run_id='cleanup_corrupt'`,
+  ).run();
+  const rejected = await request("/v1/ingestion-runs/cleanup_corrupt/evidence-cleanup", "2026-08-31T00:00:00.000Z", {
+    idempotency_key: "cleanup_corrupt_2",
+  });
+  expect(rejected.status).toBeGreaterThanOrEqual(400);
+  const progress = await request(`/v1/evidence-cleanups/${intent.id}/advance`, "2026-08-31T00:00:01.000Z", {});
+  expect(progress.status).toBeGreaterThanOrEqual(400);
+  expect(await env.EVIDENCE_OBJECTS.head(key)).not.toBeNull();
+});
+
+test("exhausted Workflow retries retain a pause that an explicit retry resumes", async () => {
+  await terminalRun("cleanup_exhausted");
+  const begin = await request("/v1/ingestion-runs/cleanup_exhausted/evidence-cleanup", "2026-08-31T00:00:00.000Z", {
+    idempotency_key: "cleanup_exhausted",
+  });
+  const intent = (await begin.json()) as { id: string };
+  const { runEvidenceCleanupWorkflow } = await import("../src/evidence-cleanup-workflow");
+  // Workflow boundary simulates an exhausted step, then lets the failure receipt
+  // commit through real D1. No storage or cleanup state is simulated.
+  const step = {
+    do: async (name: string, ...args: unknown[]) => {
+      if (name === "cleanup unit 0") throw new Error("exhausted injected transport failure");
+      return (args.at(-1) as () => Promise<unknown>)();
+    },
+  };
+  await runEvidenceCleanupWorkflow(env, step as unknown as import("cloudflare:workers").WorkflowStep, {
+    id: intent.id,
+    generation: 0,
+    shard: 0,
+  });
+  const paused = await request(`/v1/evidence-cleanups/${intent.id}`, "2026-08-31T00:00:01.000Z");
+  expect(await paused.json()).toMatchObject({
+    state: "paused",
+    failure_code: "evidence_cleanup_workflow_retry_required",
+    generation: 0,
+  });
+  const retry = await request(`/v1/evidence-cleanups/${intent.id}/retry`, "2026-08-31T00:00:01.000Z", {
+    expected_generation: 0,
+  });
+  expect(await retry.json()).toMatchObject({ state: "pending", generation: 1 });
+  await runEvidenceCleanupWorkflow(env, step as unknown as import("cloudflare:workers").WorkflowStep, {
+    id: intent.id,
+    generation: 0,
+    shard: 0,
+  });
+  const fresh = await request(`/v1/evidence-cleanups/${intent.id}`, "2026-08-31T00:00:01.000Z");
+  expect(await fresh.json()).toMatchObject({ state: "pending", generation: 1 });
+});
+
+test("an unrelated staging key progresses while a prior delete outcome remains unknown", async () => {
+  const blocked = "publication-artifacts/a-unknown",
+    free = "publication-artifacts/z-free";
+  await abandonedStaging("staging_independent", blocked, free);
+  const begin = await request(
+    "/v1/reconciliation-operations/staging_independent/evidence-cleanup",
+    "2026-10-09T00:00:00.000Z",
+    { idempotency_key: "staging_independent" },
+  );
+  const intent = (await begin.json()) as { id: string };
+  const { advanceStagingCleanup } = await import("../../../src/catalogue/source-evidence");
+  const { catalogueStore } = await import("../../../src/catalogue/shared");
+  const bucket = new Proxy(env.CATALOGUE_EXPORTS, {
+    get(target, property) {
+      if (property === "delete")
+        return async (key: string) => {
+          if (key === blocked) throw new Error("unknown transport outcome");
+          return target.delete(key);
+        };
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const progress = await advanceStagingCleanup(
+    catalogueStore(env.CATALOGUE_DB),
+    { PRINTING_IMAGES: env.PRINTING_IMAGES, CATALOGUE_EXPORTS: bucket },
+    intent.id,
+    "2026-10-09T00:00:01.000Z",
+  );
+  expect(progress).toMatchObject({ state: "paused", deleted_objects: 1 });
+  expect(await env.CATALOGUE_EXPORTS.head(free)).toBeNull();
+  expect(await env.CATALOGUE_EXPORTS.head(blocked)).not.toBeNull();
 });

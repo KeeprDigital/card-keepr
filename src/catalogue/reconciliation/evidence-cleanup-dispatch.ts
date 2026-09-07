@@ -3,6 +3,7 @@ import {
   beginStagingCleanup,
   inspectEvidenceCleanup,
   resumeEvidenceCleanup,
+  pauseEvidenceCleanup,
 } from "../source-evidence";
 import { type CatalogueStore, sha256Text, workflowDriver } from "../shared";
 import type { ReconciliationWorkflowParams } from "./reconciliation-workflow";
@@ -35,8 +36,18 @@ export async function startEvidenceCleanup(
   const intent = await (scope === "capture"
     ? beginEvidenceCleanup(env.CATALOGUE_DB, run, key, days, at)
     : beginStagingCleanup(env.CATALOGUE_DB, run, key, days, at));
-  if (intent.state !== "completed")
-    await dispatchEvidenceCleanup(env.RECONCILIATION_WORKFLOW, intent.id, run, intent.generation);
+  if (intent.state !== "completed") {
+    try {
+      await dispatchEvidenceCleanup(env.RECONCILIATION_WORKFLOW, intent.id, intent.ingestion_run_id, intent.generation);
+    } catch {
+      return pauseEvidenceCleanup(
+        env.CATALOGUE_DB,
+        intent.id,
+        intent.generation,
+        "evidence_cleanup_dispatch_retry_required",
+      );
+    }
+  }
   return intent;
 }
 export async function retryEvidenceCleanup(
@@ -46,7 +57,12 @@ export async function retryEvidenceCleanup(
 ) {
   await resumeEvidenceCleanup(env.CATALOGUE_DB, id, generation);
   const intent = await inspectEvidenceCleanup(env.CATALOGUE_DB, id);
-  if (intent.state !== "completed")
-    await dispatchEvidenceCleanup(env.RECONCILIATION_WORKFLOW, id, intent.ingestion_run_id, intent.generation);
+  if (intent.state !== "completed") {
+    try {
+      await dispatchEvidenceCleanup(env.RECONCILIATION_WORKFLOW, id, intent.ingestion_run_id, intent.generation);
+    } catch {
+      return pauseEvidenceCleanup(env.CATALOGUE_DB, id, intent.generation, "evidence_cleanup_dispatch_retry_required");
+    }
+  }
   return intent;
 }

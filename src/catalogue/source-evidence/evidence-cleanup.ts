@@ -70,9 +70,9 @@ export async function beginEvidenceCleanup(db: CatalogueStore, run: string, key:
   await insertCleanup(db, id, run, key, retention, source.terminal_at!, eligible, at).run();
   return inspectEvidenceCleanup(db, id);
 }
-/** One unit performs at most eight metadata/deletion transactions and never reads object bodies. */
+/** One unit performs at most four metadata/deletion transactions and never reads object bodies. */
 export async function advanceEvidenceCleanup(db: CatalogueStore, bucket: R2Bucket, id: string, at: string) {
-  for (let unit = 0; unit < 8; unit++) {
+  for (let unit = 0; unit < 4; unit++) {
     const intent = await inspectEvidenceCleanup(db, id);
     if (intent.state === "completed") return intent;
     let next = await nextCleanupObject(db, intent.ingestion_run_id, intent.cursor).first<{ object_key: string }>();
@@ -185,5 +185,10 @@ export async function resumeEvidenceCleanup(db: CatalogueStore, id: string, gene
   if (current.generation !== generation && current.generation !== generation + 1)
     throw new AdministrationProblem(409, "evidence_cleanup_generation_conflict", "Cleanup generation changed.");
   await resumeCleanup(db, id, generation).run();
+  return inspectEvidenceCleanup(db, id);
+}
+
+export async function pauseEvidenceCleanup(db: CatalogueStore, id: string, generation: number, code: string) {
+  await pauseCleanup(db, id, code, generation).run();
   return inspectEvidenceCleanup(db, id);
 }

@@ -78,6 +78,7 @@ export {
   runEventIdentitySql,
   runEventStatement,
   verifiedRunCurrentSql,
+  runCurrentIntegrityGuardStatement,
 } from "./ingestion-run-event-repository";
 export {
   projectIngestionRunEvent,

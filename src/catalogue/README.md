@@ -236,3 +236,11 @@ through the owner cleanup intents described in [evidence cleanup](../../docs/run
 `source-evidence/evidence-cleanup.ts` and `staging-cleanup.ts` own bounded progress;
 `shared/staging-object-storage.ts` records exact binding/key write incarnations.
 Guarded Catalogue Export deletion retains its distinct package scope.
+
+Cleanup retains a deliberate database fence at the physical-object boundary:
+reservation/ticket/reference constraints apply across the existing producer
+repositories and remain present in restored snapshots. These constraints prevent
+resurrection of an object whose deletion may still be executing. Unlike ordinary
+run transition policy, that negative storage fact cannot be released by a lease
+or replayed owner command. Run projection integrity remains an atomic repository
+authority guard before cleanup claims and physical deletion.

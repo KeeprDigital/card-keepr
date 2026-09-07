@@ -70,7 +70,8 @@ CREATE VIEW evidence_cleanup_snapshot_keys AS
  UNION SELECT source_snapshot_id, content_object_key FROM source_parse_operations;
 CREATE VIEW evidence_cleanup_retained_snapshots AS
  SELECT snapshot.id AS snapshot_id FROM source_snapshots snapshot WHERE
- EXISTS(SELECT 1 FROM reconciliation_evidence_partitions ref WHERE ref.source_snapshot_id=snapshot.id)
+ EXISTS(SELECT 1 FROM source_capture_operations ref JOIN ingestion_run_read owner ON owner.id=ref.ingestion_run_id WHERE ref.reused_source_snapshot_id=snapshot.id AND owner.state NOT IN ('failed','rejected','expired'))
+ OR EXISTS(SELECT 1 FROM reconciliation_evidence_partitions ref WHERE ref.source_snapshot_id=snapshot.id)
  OR EXISTS(SELECT 1 FROM reconciliation_candidates ref WHERE ref.source_snapshot_id=snapshot.id)
  OR EXISTS(SELECT 1 FROM canonical_source_mappings ref WHERE ref.source_snapshot_id=snapshot.id)
  OR EXISTS(SELECT 1 FROM canonical_identity_reviews ref WHERE ref.source_snapshot_id=snapshot.id)
@@ -288,9 +289,8 @@ BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
 ALTER TABLE evidence_cleanup_operations ADD COLUMN preparation_id TEXT REFERENCES reconciliation_operations(id);
 ALTER TABLE evidence_cleanup_operations ADD COLUMN scope TEXT NOT NULL DEFAULT 'capture' CHECK(scope IN ('capture','staging'));
 ALTER TABLE reconciliation_operations ADD COLUMN terminal_at TEXT;
--- Legacy terminal work has no exact completion clock; the old deadline is a
--- conservative lower bound for new eligibility, never invented earlier age.
-UPDATE reconciliation_operations SET terminal_at=MAX(created_at,deadline) WHERE state IN ('failed','abandoned');
+-- Without a proven historical terminal clock, begin its retention at migration.
+UPDATE reconciliation_operations SET terminal_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE state IN ('failed','abandoned');
 CREATE TRIGGER cleanup_preparation_terminal_clock AFTER UPDATE OF state ON reconciliation_operations
 WHEN NEW.state IN ('failed','abandoned') AND OLD.state NOT IN ('failed','abandoned')
 BEGIN UPDATE reconciliation_operations SET terminal_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=NEW.id; END;

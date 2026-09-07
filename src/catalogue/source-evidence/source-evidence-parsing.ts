@@ -151,11 +151,8 @@ export async function parseSnapshot(
       operation.content_object_key,
       new Date().toISOString(),
     ).run();
-    try {
-      await putImmutableBytes(evidenceObjects, operation.content_object_key, observationBytes, digest, writeToken);
-    } finally {
-      await completeEvidenceObjectWrite(database, writeToken, new Date().toISOString()).run();
-    }
+    await putImmutableBytes(evidenceObjects, operation.content_object_key, observationBytes, digest, writeToken);
+    await completeEvidenceObjectWrite(database, writeToken, new Date().toISOString()).run();
     await uploadedParseStatement(database, {
       digest: digest,
       byteLength: observationBytes.byteLength,

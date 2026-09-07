@@ -1,4 +1,10 @@
-import { type CatalogueStore, repositoryStatements } from "../shared";
+import {
+  type CatalogueStore,
+  repositoryStatements,
+  atomicRepositoryStatement,
+  verifiedRunCurrentSql,
+  runCurrentIntegrityGuardStatement,
+} from "../shared";
 
 export function cleanupById(db: CatalogueStore, id: string) {
   return repositoryStatements(db).prepare(`SELECT * FROM evidence_cleanup_operations WHERE id=?`).bind(id);
@@ -9,7 +15,11 @@ export function cleanupByKey(db: CatalogueStore, key: string) {
     .bind(key);
 }
 export function cleanupRun(db: CatalogueStore, id: string) {
-  return repositoryStatements(db).prepare(`SELECT state, terminal_at FROM ingestion_run_read WHERE id=?`).bind(id);
+  return repositoryStatements(db)
+    .prepare(
+      `SELECT current.state, current.terminal_at FROM ingestion_runs run LEFT JOIN ingestion_run_current current ON current.ingestion_run_id=run.id WHERE run.id=? AND CASE WHEN ${verifiedRunCurrentSql} THEN 1 ELSE json_extract('{}','ingestion_run_projection_mismatch') END`,
+    )
+    .bind(id);
 }
 export function insertCleanup(
   db: CatalogueStore,
@@ -21,12 +31,13 @@ export function insertCleanup(
   eligible: string,
   at: string,
 ) {
-  return repositoryStatements(db)
+  const statement = repositoryStatements(db)
     .prepare(`INSERT INTO evidence_cleanup_operations
     (id, ingestion_run_id, idempotency_key, retention_days, terminal_at, eligible_at, created_at)
     SELECT ?,id,?,?,?,?,? FROM ingestion_run_read WHERE id=? AND terminal_at=?
     AND state IN ('failed','rejected','expired') ON CONFLICT DO NOTHING`)
     .bind(id, key, days, terminal, eligible, at, run, terminal);
+  return atomicRepositoryStatement(db, { statement, before: [runCurrentIntegrityGuardStatement(db, run)] });
 }
 export function nextCleanupObject(db: CatalogueStore, run: string, cursor: string) {
   return repositoryStatements(db)
@@ -44,10 +55,11 @@ export function cleanupObject(db: CatalogueStore, key: string) {
   return repositoryStatements(db).prepare(`SELECT * FROM evidence_cleanup_objects WHERE object_key=?`).bind(key);
 }
 export function claimCleanupObject(db: CatalogueStore, id: string, key: string, at: string) {
-  return repositoryStatements(db)
+  const statement = repositoryStatements(db)
     .prepare(`INSERT INTO evidence_cleanup_objects(object_key,cleanup_id,state,claimed_at)
     VALUES (?,?,'reserved',?) ON CONFLICT(object_key) DO NOTHING`)
     .bind(key, id, at);
+  return atomicRepositoryStatement(db, { statement, before: [cleanupOwnerIntegrity(db, key)] });
 }
 export function deletedCleanupObject(db: CatalogueStore, key: string, at: string) {
   return repositoryStatements(db)
@@ -100,21 +112,22 @@ export function cleanupResults(db: CatalogueStore, id: string, after: string) {
     )
     .bind(id, after);
 }
-export function pauseCleanup(db: CatalogueStore, id: string, code: string) {
+export function pauseCleanup(db: CatalogueStore, id: string, code: string, generation?: number) {
   return repositoryStatements(db)
     .prepare(
-      `UPDATE evidence_cleanup_operations SET state='paused',retry_cursor='',failure_code=? WHERE id=? AND state<>'completed'`,
+      `UPDATE evidence_cleanup_operations SET state='paused',retry_cursor='',failure_code=? WHERE id=? AND state<>'completed' AND (? IS NULL OR generation=?)`,
     )
-    .bind(code, id);
+    .bind(code, id, generation ?? null, generation ?? null);
 }
 export function cleanupDeleteGuard(db: CatalogueStore, key: string) {
-  return repositoryStatements(db)
+  const statement = repositoryStatements(db)
     .prepare(`SELECT CASE WHEN EXISTS(SELECT 1 FROM evidence_cleanup_objects WHERE object_key=?)
     AND NOT EXISTS(SELECT 1 FROM evidence_cleanup_retained_keys WHERE object_key=?)
     AND NOT EXISTS(SELECT 1 FROM evidence_object_writers WHERE object_key=? AND completed_at IS NULL)
     AND NOT EXISTS(SELECT 1 FROM operation_state WHERE recovery_restore_guard='blocked')
     THEN 1 ELSE json_extract('{}','evidence_cleanup_reference_protected') END`)
     .bind(key, key, key);
+  return atomicRepositoryStatement(db, { statement, before: [cleanupOwnerIntegrity(db, key)] });
 }
 export function beginEvidenceObjectWrite(db: CatalogueStore, token: string, run: string, key: string, at: string) {
   return repositoryStatements(db)
@@ -145,9 +158,10 @@ export function attemptCleanup(db: CatalogueStore, id: string, at: string) {
     .bind(at, id);
 }
 export function authorizeCleanupDelete(db: CatalogueStore, key: string) {
-  return repositoryStatements(db)
+  const statement = repositoryStatements(db)
     .prepare(`UPDATE evidence_cleanup_objects SET state='deleting' WHERE object_key=? AND state='reserved'`)
     .bind(key);
+  return atomicRepositoryStatement(db, { statement, before: [cleanupOwnerIntegrity(db, key)] });
 }
 export function resumeCleanup(db: CatalogueStore, id: string, generation: number) {
   return repositoryStatements(db)
@@ -164,4 +178,13 @@ export function retainEvidenceObjectReferenceStatement(
   return repositoryStatements(db)
     .prepare(`INSERT INTO evidence_object_references VALUES (?,?,?,?) ON CONFLICT DO NOTHING`)
     .bind(input.objectKey, input.ownerKind, input.ownerId, input.createdAt);
+}
+
+function cleanupOwnerIntegrity(db: CatalogueStore, key: string) {
+  return repositoryStatements(db)
+    .prepare(`SELECT CASE WHEN EXISTS(
+ SELECT 1 FROM evidence_cleanup_inventory inventory LEFT JOIN ingestion_run_current current ON current.ingestion_run_id=inventory.ingestion_run_id
+ WHERE inventory.object_key=? AND (${verifiedRunCurrentSql}) IS NOT 1
+ ) THEN json_extract('{}','ingestion_run_projection_mismatch') ELSE 1 END`)
+    .bind(key);
 }
