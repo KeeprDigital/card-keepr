@@ -296,24 +296,30 @@ async function collectRetainedReconciliationObservation(
       );
     };
     const startOrdinal = continuingDocument ? normalized!.value.nextObservationOrdinal : 0;
+    let work = 0;
+    const savePrefix = async (nextObservationOrdinal: number) => {
+      await retainReconciliationCheckpoint(database, runId, "normalization", checkpointOrdinal++, {
+        inputDigest,
+        sequenceNumber: request.sequence_number,
+        requestId: request.request_id,
+        observationSetId: row.observation_set_id,
+        nextObservationOrdinal,
+        complete: false,
+        officialSurfaceSeen,
+      });
+      if (yieldAtCheckpoint)
+        throw new ReconciliationContinuation({ phase: "normalization", ordinal: checkpointOrdinal - 1 });
+      work = 0;
+    };
     for (let sourceOrdinal = startOrdinal; sourceOrdinal < row.observation_count; sourceOrdinal++) {
-      await normalize(
-        await readSourceObservation(database, runId, row.observation_set_id, sourceOrdinal),
-        sourceOrdinal,
-      );
-      if ((sourceOrdinal + 1) % 8 === 0 && sourceOrdinal + 1 < row.observation_count) {
-        await retainReconciliationCheckpoint(database, runId, "normalization", checkpointOrdinal++, {
-          inputDigest,
-          sequenceNumber: request.sequence_number,
-          requestId: request.request_id,
-          observationSetId: row.observation_set_id,
-          nextObservationOrdinal: sourceOrdinal + 1,
-          complete: false,
-          officialSurfaceSeen,
-        });
-        if (yieldAtCheckpoint)
-          throw new ReconciliationContinuation({ phase: "normalization", ordinal: checkpointOrdinal - 1 });
-      }
+      const wrapped = await readSourceObservation(database, runId, row.observation_set_id, sourceOrdinal);
+      const value = isRecord(wrapped) ? wrapped.value : null;
+      const appearance = isRecord(value) ? value.appearance_evidence : null;
+      const cost = isRecord(appearance) && Array.isArray(appearance.images) ? Math.max(1, appearance.images.length) : 1;
+      if (work > 0 && work + cost > 8) await savePrefix(sourceOrdinal);
+      await normalize(wrapped, sourceOrdinal);
+      work += cost;
+      if (work >= 8 && sourceOrdinal + 1 < row.observation_count) await savePrefix(sourceOrdinal + 1);
     }
     await retainReconciliationCheckpoint(database, runId, "normalization", checkpointOrdinal++, {
       inputDigest,
@@ -475,6 +481,10 @@ async function attachRetainedPrintingImages(
   if (!isRecord(value) || !isRecord(value.appearance_evidence)) return value;
   const declared = value.appearance_evidence.images;
   if (!Array.isArray(declared)) return value;
+  // The observation contract permits one image for each of its three roles.
+  // Reject excess declarations before any per-image storage lookup.
+  if (declared.length > 3)
+    throw new Error("reconciliation_capacity_exceeded: one Printing declares more than three image roles.");
   const retainedImages = [];
   for (const item of declared) {
     if (!isRecord(item) || typeof item.source_url !== "string") {

@@ -428,6 +428,57 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       ],
     };
   }
+  if (scenario === "three-role-image-work-units") {
+    return {
+      cards: Array.from({ length: 8 }, (_, index) => {
+        const observation = printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP95-${String(index + 1).padStart(3, "0")}`,
+          name: `Synthetic three image Card ${index}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `/three-role-images/${index}`,
+          lineageMarker: `three-role-images-${index}`,
+        });
+        observation.appearance_evidence.images.push(
+          ...(["back", "other"] as const).map((role) =>
+            fixturePrintingImage(
+              role,
+              `https://official-source.invalid/images/three-role-${index}-${role}.png`,
+              observation.appearance_evidence.images[0]!.artwork_fingerprint,
+              `three-role-${index}-${role}`,
+            ),
+          ),
+        );
+        return observation;
+      }),
+    };
+  }
+  if (scenario === "capacity-printing-image-fanout") {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP96-002",
+      name: "Synthetic high degree Printing images",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+      locator: "/capacity-printing-image-fanout",
+      lineageMarker: "capacity-printing-image-fanout",
+    });
+    observation.appearance_evidence.images = [
+      observation.appearance_evidence.images[0]!,
+      ...Array.from({ length: 63 }, (_, index) =>
+        fixturePrintingImage(
+          "front",
+          `https://official-source.invalid/images/fanout-${index}.png`,
+          observation.appearance_evidence.images[0]!.artwork_fingerprint,
+          `fanout-${index}`,
+        ),
+      ),
+    ];
+    return { cards: [observation] };
+  }
   if (scenario === "large-card-content") {
     return {
       cards: [

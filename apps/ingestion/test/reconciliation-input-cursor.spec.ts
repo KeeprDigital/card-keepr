@@ -152,6 +152,12 @@ test.each([
   { scenario: "curated-conflict-fanout-base", requireFrozenMetadata: true, groups: [8, 8, 8, 8] },
   { scenario: "capacity-single-observation", requireFrozenMetadata: true, groups: [1] },
   { scenario: "large-card-content", requireFrozenMetadata: true, groups: [1] },
+  {
+    scenario: "three-role-image-work-units",
+    requireFrozenMetadata: true,
+    groups: [6, 6, 6, 6],
+    expectedObservations: 8,
+  },
   { scenario: "single-card-warning-work-units", requireFrozenMetadata: true, groups: [1] },
   { scenario: "card-only-work-units", requireFrozenMetadata: true, groups: [], expectedObservations: 32 },
   { scenario: "metadata-request-pages", requireFrozenMetadata: true, groups: Array(32).fill(1), requestCount: 32 },
@@ -351,6 +357,7 @@ test.each([
       expect(warnings.length).toBeGreaterThan(0);
       expect(warnings.every(({ byte_length }) => byte_length <= 524288)).toBe(true);
     }
+    if (scenario === "three-role-image-work-units") expect(Math.max(...callsPerGroup)).toBeLessThanOrEqual(100);
     expect(completedGroups).toEqual(groups);
     if (requireFrozenMetadata) {
       expect(gameCalls.length).toBeGreaterThan(0);
