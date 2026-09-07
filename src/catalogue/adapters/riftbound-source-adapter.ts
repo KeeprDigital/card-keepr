@@ -291,7 +291,7 @@ function unmappedFields(value: Record<string, unknown>) {
   const fields: { path: string; value: string }[] = [];
   const visit = (current: unknown, path: string, depth: number) => {
     if (depth > 20) throw new AdapterParseFailure("Riftbound source metadata nesting is excessive.");
-    if (Array.isArray(current)) current.forEach((entry, i) => visit(entry, `${path}[${i}]`, depth + 1));
+    if (Array.isArray(current)) for (const [i, entry] of current.entries()) visit(entry, `${path}[${i}]`, depth + 1);
     else if (current && typeof current === "object")
       for (const [key, entry] of Object.entries(current)) {
         const next = `${path}.${key}`;

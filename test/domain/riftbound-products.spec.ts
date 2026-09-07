@@ -21,7 +21,6 @@ test("retained product announcements preserve date precision without inventing P
   expect(secret.source_sidecar.announcement_text).toContain("5x Alt-Art Double Sided Tokens");
   expect(secret.product_release_catalogue.relationships).toEqual([]);
   expect(secret).not.toHaveProperty("printing");
-  observations.forEach((observation, index) =>
-    expect(parseReconciliationObservation(`product-${index}`, observation).kind).toBe("card_printing"),
-  );
+  for (const [index, observation] of observations.entries())
+    expect(parseReconciliationObservation(`product-${index}`, observation).kind).toBe("card_printing");
 });

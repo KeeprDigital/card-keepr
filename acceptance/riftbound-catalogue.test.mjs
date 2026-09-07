@@ -102,7 +102,10 @@ test("retained Riot inventory: owner collects all returned English records witho
   );
   await waitForAdministrationDocument(
     `/v1/ingestion-runs/${run.id}/game-candidates`,
-    (d) => d.candidates.length && d.candidates.every((c) => ["sealed", "failed"].includes(c.state)),
+    (d) =>
+      d.candidates.some((c) => c.state === "failed")
+        ? JSON.stringify(d)
+        : d.candidates.length > 0 && d.candidates.every((c) => c.state === "sealed"),
     environment,
     worker,
     { deadlineMs: 600_000 },
@@ -110,6 +113,14 @@ test("retained Riot inventory: owner collects all returned English records witho
   const shown = await runCli(["source", "show", "--run-id", run.id, "--json"], environment);
   assert.equal(shown.code, 0, shown.stdout);
   const evidence = JSON.parse(shown.stdout);
+  assert.equal(evidence.evidence_plans[0].coverage.subset, "public-english-inventory");
+  assert.equal(evidence.snapshots.length, 12);
+  for (const snapshot of evidence.snapshots)
+    assert.equal(snapshot.content.digest, captures.get(snapshot.request.url).sha256);
+  assert.equal(
+    evidence.observation_sets.reduce((sum, set) => sum + set.observation_count, 0),
+    1189,
+  );
   const proposals = [];
   let after = null;
   do {
