@@ -2,7 +2,7 @@ import { decodeHTML } from "entities";
 import { createHash } from "node:crypto";
 import { officialArtworkFingerprint } from "./official-artwork-identity";
 import { AdapterParseFailure } from "./adapter-parse-failure";
-import type { SourceAdapterRegistration } from "./source-adapters";
+import type { SourceAdapterRegistration } from "./source-adapter-registration-types";
 import { riftboundOriginsErrata, riftboundOriginsErrataUrl } from "./riftbound-errata";
 import { riftboundAnnouncedProducts, riftboundProductsUrl } from "./riftbound-products";
 

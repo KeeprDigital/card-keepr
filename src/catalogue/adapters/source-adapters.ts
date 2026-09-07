@@ -5,62 +5,9 @@ import { AdministrationProblem, gameProfileForGame } from "../shared";
 import { AdapterParseFailure, adapterUrl } from "./adapter-parse-failure";
 import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.ts";
 import { officialRawAdapterContracts } from "./product-release-source-adapters.ts";
-import type { ListingReconciliationTraits } from "./source-adapter-registration-types.ts";
 
-export type OfficialSourceContract = Readonly<{
-  supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam" | "riftbound";
-  partition: "EN-OCEANIA" | "EN-ASIA" | "EN-US";
-  origin: string;
-  documentPathnamePrefixes: readonly string[];
-  imagePathnamePrefixes: readonly string[];
-  documentAuthorities?: readonly { origin: string; pathnamePrefixes: readonly string[] }[];
-  requiredSurfaces: readonly string[];
-}>;
-
-export type SourceAdapterRegistration = Readonly<{
-  adapterVersion: string;
-  sourceLineage: string;
-  supportedGame: string;
-  gameProfileVersion: string;
-  parserContract: string;
-  maximumSnapshotBytes: number;
-  requestCapacity: number;
-  coverageLossThreshold?: Readonly<{ absolute: number; fraction: number }>;
-  origin: "production";
-  requestSurface: Readonly<{ kind: "credential-free-https" }> | Readonly<{ kind: "exact-url"; url: string }>;
-  reconciliationCapability: "catalogue" | "errata" | "unavailable";
-  reconciliationAreas?: readonly ("catalogue" | "errata")[];
-  inheritDiscoveryRequestHeaders?: boolean;
-  listingReconciliation?: ListingReconciliationTraits;
-  parse?: (document: unknown) => readonly unknown[] | Promise<readonly unknown[]>;
-  parseBytes?: (
-    bytes: Uint8Array,
-    context: { mediaType: string | null; url: string; requestId?: string },
-  ) => readonly unknown[] | Promise<readonly unknown[]>;
-  discoverRequests?: (
-    bytes: Uint8Array,
-    context: { mediaType: string | null; url: string; requestId?: string },
-  ) => readonly {
-    role: "listing" | "detail" | "product_detail" | "image";
-    discoveryKey?: string;
-    url: string;
-    headers: Record<string, string>;
-  }[];
-  coverageContracts?: Readonly<
-    Record<
-      string,
-      Readonly<{
-        description: string;
-        requiredSurfaces: readonly string[];
-        requestUrlForSurface: (surface: string) => string;
-      }>
-    >
-  >;
-  requiredSurfaces?: readonly string[];
-  requestUrlForDiscovery?: () => string;
-  requestUrlForSurface?: (surface: string) => string;
-  officialSourceContract?: OfficialSourceContract;
-}>;
+import type { OfficialSourceContract, SourceAdapterRegistration } from "./source-adapter-registration-types";
+export type { OfficialSourceContract, SourceAdapterRegistration } from "./source-adapter-registration-types";
 
 // No ordinary Source Adapter Version capacity may authorize discovery at or
 // beyond this ceiling. Registration fails closed on a declared capacity that
@@ -194,6 +141,15 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
       coverageContracts:
         adapter.sourceLineage === "one-piece-en"
           ? {
+              "p-001-catalogue-and-corroboration": {
+                description:
+                  "Complete P-001 catalogue search plus the separate Store Championship Wave 1 Trophy Card publication and image. Catalogue absence claims apply only to the search, not the event publication.",
+                requiredSurfaces: ["p-001-catalogue", "store-championship-p001"],
+                requestUrlForSurface: (surface: string) =>
+                  surface === "p-001-catalogue"
+                    ? "https://en.onepiece-cardgame.com/cardlist/?freewords=P-001"
+                    : "https://en.onepiece-cardgame.com/events/2023/championship/store_championship_wave1.php",
+              },
               "p-001-catalogue": {
                 description:
                   "Complete English P-001 catalogue search response and its referenced front images; excludes other numbers, products, events and corrections.",

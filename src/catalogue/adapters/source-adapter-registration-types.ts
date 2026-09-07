@@ -16,3 +16,58 @@ export type ListingReconciliationTraits = Readonly<{
   // compatible: by observation semantic, by canonical identity, or never.
   duplicateLocatorCompatibility: "semantic" | "canonical" | "never";
 }>;
+
+export type OfficialSourceContract = Readonly<{
+  supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam" | "riftbound";
+  partition: "EN-OCEANIA" | "EN-ASIA" | "EN-US";
+  origin: string;
+  documentPathnamePrefixes: readonly string[];
+  imagePathnamePrefixes: readonly string[];
+  documentAuthorities?: readonly { origin: string; pathnamePrefixes: readonly string[] }[];
+  requiredSurfaces: readonly string[];
+}>;
+
+export type SourceAdapterRegistration = Readonly<{
+  adapterVersion: string;
+  sourceLineage: string;
+  supportedGame: string;
+  gameProfileVersion: string;
+  parserContract: string;
+  maximumSnapshotBytes: number;
+  requestCapacity: number;
+  coverageLossThreshold?: Readonly<{ absolute: number; fraction: number }>;
+  origin: "production";
+  requestSurface: Readonly<{ kind: "credential-free-https" }> | Readonly<{ kind: "exact-url"; url: string }>;
+  reconciliationCapability: "catalogue" | "errata" | "unavailable";
+  reconciliationAreas?: readonly ("catalogue" | "errata")[];
+  inheritDiscoveryRequestHeaders?: boolean;
+  listingReconciliation?: ListingReconciliationTraits;
+  parse?: (document: unknown) => readonly unknown[] | Promise<readonly unknown[]>;
+  parseBytes?: (
+    bytes: Uint8Array,
+    context: { mediaType: string | null; url: string; requestId?: string },
+  ) => readonly unknown[] | Promise<readonly unknown[]>;
+  discoverRequests?: (
+    bytes: Uint8Array,
+    context: { mediaType: string | null; url: string; requestId?: string },
+  ) => readonly {
+    role: "listing" | "detail" | "product_detail" | "image";
+    discoveryKey?: string;
+    url: string;
+    headers: Record<string, string>;
+  }[];
+  coverageContracts?: Readonly<
+    Record<
+      string,
+      Readonly<{
+        description: string;
+        requiredSurfaces: readonly string[];
+        requestUrlForSurface: (surface: string) => string;
+      }>
+    >
+  >;
+  requiredSurfaces?: readonly string[];
+  requestUrlForDiscovery?: () => string;
+  requestUrlForSurface?: (surface: string) => string;
+  officialSourceContract?: OfficialSourceContract;
+}>;

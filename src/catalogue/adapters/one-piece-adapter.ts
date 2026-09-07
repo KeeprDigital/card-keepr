@@ -99,13 +99,33 @@ const fullOnePieceAdapter = createBandaiAdapter(
 );
 
 const p001CatalogueUrl = "https://en.onepiece-cardgame.com/cardlist/?freewords=P-001";
+const p001EventUrl = "https://en.onepiece-cardgame.com/events/2023/championship/store_championship_wave1.php";
+const p001TrophyUrl = "https://en.onepiece-cardgame.com/images/events/2023/championship/prize/P-001.png?v2";
+function verifyP001Corroboration(bytes: Uint8Array) {
+  const html = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
+  const trophy = requiredHtmlMatch(
+    html,
+    /<h[1-6][^>]*>Winner<\/h[1-6]>([\s\S]*?)<\/section>/u,
+    "Bandai Winner section",
+  )[1]!;
+  if (!trophy.includes("Trophy Card x1") || !trophy.includes(new URL(p001TrophyUrl).pathname + "?v2"))
+    throw new AdapterParseFailure("Bandai event lacks the declared P-001 Trophy Card corroboration.");
+}
 export const onePieceAdapter = {
   ...fullOnePieceAdapter,
   parse(context: Parameters<typeof fullOnePieceAdapter.parse>[0], bytes: Uint8Array) {
+    if (context.url === p001EventUrl) {
+      verifyP001Corroboration(bytes);
+      return [];
+    }
     if (context.url !== p001CatalogueUrl) return fullOnePieceAdapter.parse(context, bytes);
     return parseP001Catalogue(bytes).observations;
   },
   discoverRequests(bytes: Uint8Array, context: Parameters<typeof fullOnePieceAdapter.parse>[0]) {
+    if (context.url === p001EventUrl) {
+      verifyP001Corroboration(bytes);
+      return [{ role: "image" as const, url: p001TrophyUrl, headers: { accept: "image/png" } }];
+    }
     if (context.url !== p001CatalogueUrl) return fullOnePieceAdapter.discoverRequests(bytes, context);
     return parseP001Catalogue(bytes).observations.flatMap((observation) => {
       if (!("appearance_evidence" in observation)) return [];
@@ -347,7 +367,7 @@ function parseOnePieceBandaiCardListV1(
       )[1]!,
     );
     const imageUrl = adapterUrl(imagePath, base).href;
-    const pairs = htmlLabelPairs(body);
+    const pairs = htmlLabelPairs(body).map((pair) => ({ ...pair, label: pair.label.replaceAll(/\s+/gu, " ") }));
     const field = (...labels: string[]): string | null => firstLabelValue(pairs, labels);
     const effect = requiredNullableText(field("Effect", "Card Text", "Text"), "Official effect");
     const setLabel = field("Card Set(s)", "Where to get it") ?? "Unclassified Card List";

@@ -1,4 +1,4 @@
-import type { SourceAdapterRegistration } from "./source-adapters";
+import type { SourceAdapterRegistration } from "./source-adapter-registration-types";
 import { AdapterParseFailure } from "./adapter-parse-failure";
 import { cardObservation, htmlText, requiredHtmlMatch } from "./adapter-html";
 import { normalizeOnePieceCardPage } from "./one-piece-source-adapter";
@@ -32,7 +32,12 @@ function pageIdentity(value: string) {
 }
 function parsePage(bytes: Uint8Array, url: string) {
   const variant = pageIdentity(url);
-  const html = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
+  let html: string;
+  try {
+    html = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
+  } catch (error) {
+    throw new AdapterParseFailure("Limitless page is not valid UTF-8.", { cause: error });
+  }
   const required = (pattern: RegExp, label: string) => requiredHtmlMatch(html, pattern, `Limitless ${label}`)[1]!;
   const number = htmlText(required(/<span class="card-text-id">([\s\S]*?)<\/span>/u, "card identifier"));
   if (number !== "P-001") throw new AdapterParseFailure("Limitless page and card identifier disagree.");
@@ -87,7 +92,7 @@ function parsePage(bytes: Uint8Array, url: string) {
       title: name,
       rules: effect,
       profile: "one-piece@1",
-      attributes: normalized.attributes,
+      attributes: { ...normalized.attributes, effect_text: effect },
       distribution: { code: surface, kind: "source_bucket" },
       printing: { rarity: null, normalizedRarity: null, attributes: {} },
       printed_rules: null,
@@ -134,11 +139,9 @@ export const limitlessOnePieceSourceAdapterRegistration: SourceAdapterRegistrati
     if (context.requestId?.includes(":image:")) return [];
     const page = parsePage(bytes, context.url);
     return [
-      ...(context.url === root
-        ? page.links
-            .filter((url) => url !== root)
-            .map((url) => ({ role: "detail" as const, url, headers: { accept: "text/html" } }))
-        : []),
+      ...page.links
+        .filter((url) => url !== root && url !== context.url)
+        .map((url) => ({ role: "detail" as const, url, headers: { accept: "text/html" } })),
       { role: "image" as const, url: page.image, headers: { accept: "image/webp" } },
     ];
   },
