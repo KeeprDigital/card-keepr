@@ -1,16 +1,11 @@
 import { prepareRunWarningSummary } from "./reconciliation-warning-summary";
 import type { ObservationPlan } from "./reconciliation-plan-state";
-import {
-  boundedAsyncRecordArrays,
-  canonicalStreamValueChunks,
-  prepareCandidateBatch,
-} from "./reconciliation-preparation";
+import { stageCandidatePreparation, type EvidencePartitionInput } from "./reconciliation-staging";
 import { prepareGameCandidateManifests } from "./game-candidate";
 import { preparationCompleteGuard } from "./reconciliation-preparation-repository";
 import { persistCandidatePartitions } from "./reconciliation-partitions";
 import { sealReconciliationOperationStatement } from "./reconciliation-progress-repository";
 import {
-  persistReconciliationPayloadChunkStatement,
   type CatalogueCandidate,
   type CatalogueDraft,
   type CatalogueStore,
@@ -19,12 +14,7 @@ import {
   guardedAtomicBatch,
   retainedPayload,
 } from "../shared";
-import type {
-  Memberships,
-  PrintingCompatibility,
-  ProvenancedWithdrawal,
-  ReconciliationWarning,
-} from "./reconciliation-model";
+import type { ReconciliationWarning } from "./reconciliation-model";
 import {
   type ReconciliationTerminalResultRow,
   terminalResultInsertion,
@@ -33,9 +23,6 @@ import {
 import {
   beginReconciliationStatement,
   blockedCandidateStatement,
-  candidatePlansStatement,
-  createReconciliationContextStatement,
-  evidencePartitionsStatement,
   failedReconciliationStatement,
   failedReconciliationWorkflowStatement,
   reconciliationCandidatePlansStatement,
@@ -45,17 +32,6 @@ import {
   retainedCandidateResultStatement,
   reviewableCandidateStatement,
 } from "./reconciliation-state-repository";
-
-type EvidencePartitionInput = {
-  sequenceNumber: number;
-  requestId: string;
-  observationSetId: string;
-  sourceSnapshotId: string;
-  sourceLineage: string;
-  supportedGame: string;
-  gameProfileVersion: string;
-  adapterVersion: string;
-};
 
 export type CandidatePlanRow = {
   ingestion_run_id: string;
@@ -230,108 +206,6 @@ export async function failReconciliationWorkflow(
     }),
   ]);
   return requiredTerminalResult(database, runId);
-}
-
-type CandidatePlanInput = {
-  sourceObservationSetId: string;
-  sourceSnapshotId: string;
-  sourceObservationId: string;
-  sourceLineage: string;
-  observationKind: "card_printing" | "official_erratum";
-  cardId: string;
-  printingId: string | null;
-  locator: string | null;
-  variantKey: string | null;
-  compatibility: PrintingCompatibility | null;
-  memberships: Memberships;
-  withdrawal: ProvenancedWithdrawal | null;
-  sourceCardFactsJson: string | null;
-};
-
-async function stageCandidatePreparation(
-  database: CatalogueStore,
-  input: {
-    runId: string;
-    candidate: Record<string, unknown>;
-    draft: CatalogueDraft;
-    digestPayload: Record<string, unknown>;
-    plans: AsyncIterable<CandidatePlanInput>;
-    partitions: AsyncIterable<EvidencePartitionInput>;
-  },
-): Promise<number> {
-  const warningsJson = canonicalJson({ reconciliation_warning_partitions: true });
-  let ordinal = 0;
-  const prepare = async (kind: string, content: string, statement: D1PreparedStatement) => {
-    await prepareCandidateBatch(database, input.runId, ordinal, kind, content, [statement]);
-    ordinal++;
-  };
-  const marker = chunkedPayloadMarker("digest");
-  await prepare(
-    "context",
-    marker,
-    createReconciliationContextStatement(database, { runId: input.runId, digestPayload: marker }),
-  );
-  for await (const content of boundedAsyncRecordArrays(evidencePartitionRows(input.partitions))) {
-    await prepare(
-      "evidence",
-      content,
-      evidencePartitionsStatement(database, { runId: input.runId, partitionsJson: content }),
-    );
-  }
-  for (const kind of ["candidate", "digest"] as const) {
-    let index = 0;
-    for await (const content of canonicalStreamValueChunks(
-      kind === "candidate" ? input.candidate : input.digestPayload,
-    )) {
-      await prepare(
-        kind,
-        content,
-        persistReconciliationPayloadChunkStatement(database, { runId: input.runId, kind, index, content }),
-      );
-      index++;
-    }
-  }
-  for await (const content of boundedAsyncRecordArrays(candidatePlanRows(input.plans))) {
-    await prepare(
-      "plans",
-      canonicalJson({ content, warnings: warningsJson }),
-      candidatePlansStatement(database, { runId: input.runId, plansJson: content, warningsJson }),
-    );
-  }
-  return ordinal;
-}
-
-async function* candidatePlanRows(plans: AsyncIterable<CandidatePlanInput>) {
-  for await (const plan of plans)
-    yield {
-      observation_set_id: plan.sourceObservationSetId,
-      snapshot_id: plan.sourceSnapshotId,
-      observation_id: plan.sourceObservationId,
-      source_lineage: plan.sourceLineage,
-      observation_kind: plan.observationKind,
-      card_id: plan.cardId,
-      printing_id: plan.printingId,
-      locator: plan.locator,
-      variant_key: plan.variantKey,
-      compatibility_json: plan.compatibility === null ? null : canonicalJson(plan.compatibility),
-      memberships_json: canonicalJson(plan.memberships),
-      withdrawal_json: plan.withdrawal === null ? null : canonicalJson(plan.withdrawal),
-      source_card_facts_json: plan.sourceCardFactsJson,
-    };
-}
-
-async function* evidencePartitionRows(partitions: AsyncIterable<EvidencePartitionInput>) {
-  for await (const partition of partitions)
-    yield {
-      sequence_number: partition.sequenceNumber,
-      request_id: partition.requestId,
-      observation_set_id: partition.observationSetId,
-      snapshot_id: partition.sourceSnapshotId,
-      source_lineage: partition.sourceLineage,
-      supported_game: partition.supportedGame,
-      profile_version: partition.gameProfileVersion,
-      adapter_version: partition.adapterVersion,
-    };
 }
 
 export async function reconciliationCandidatePlans(

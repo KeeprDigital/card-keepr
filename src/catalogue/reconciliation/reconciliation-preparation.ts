@@ -1,3 +1,4 @@
+import { documentStorage } from "./reconciliation-document";
 import { type CatalogueStore, canonicalJson, compareUtf8, sha256Text } from "../shared";
 import { preparationBatchStatement, recordPreparationBatchStatement } from "./reconciliation-preparation-repository";
 
@@ -8,10 +9,13 @@ export async function prepareCandidateBatch(
   ordinal: number,
   kind: string,
   content: string,
-  statements: readonly D1PreparedStatement[],
+  statements: () => readonly D1PreparedStatement[],
 ) {
   const sha256 = await sha256Text(`${kind}\u0000${content}`);
-  const retained = () => preparationBatchStatement(database, runId, ordinal).first<{ kind: string; sha256: string }>();
+  const retained = () =>
+    documentStorage(() =>
+      preparationBatchStatement(database, runId, ordinal).first<{ kind: string; sha256: string }>(),
+    );
   const verify = (row: { kind: string; sha256: string }) => {
     if (row.kind !== kind || row.sha256 !== sha256)
       throw new Error("Reconciliation preparation replay changed its pinned content.");
@@ -22,7 +26,9 @@ export async function prepareCandidateBatch(
     return;
   }
   try {
-    await database.batch([recordPreparationBatchStatement(database, runId, ordinal, kind, sha256), ...statements]);
+    await documentStorage(() =>
+      database.batch([recordPreparationBatchStatement(database, runId, ordinal, kind, sha256), ...statements()]),
+    );
   } catch (error) {
     const concurrent = await retained();
     if (!concurrent) throw error;

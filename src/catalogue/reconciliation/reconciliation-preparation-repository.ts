@@ -23,7 +23,10 @@ export function recordPreparationBatchStatement(
 export function preparationCompleteGuard(database: CatalogueStore, runId: string, count: number) {
   return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN
-    (SELECT count(*) FROM reconciliation_preparation_batches WHERE ingestion_run_id = ?) = ?
+    EXISTS (SELECT 1 FROM (
+      SELECT content FROM reconciliation_checkpoints WHERE ingestion_run_id = ? AND phase = 'candidate_staging'
+      ORDER BY ordinal DESC LIMIT 1
+    ) WHERE json_extract(content, '$.stage') = 'complete' AND json_extract(content, '$.ordinal') = ?)
     THEN 1 ELSE json_extract('{}', 'reconciliation_preparation_incomplete') END`)
     .bind(runId, count);
 }
