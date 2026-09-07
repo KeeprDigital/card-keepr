@@ -325,7 +325,8 @@ async function collectRetainedReconciliationObservation(
       const wrapped = await readSourceObservation(database, runId, row.observation_set_id, sourceOrdinal);
       const value = isRecord(wrapped) ? wrapped.value : null;
       const appearance = isRecord(value) ? value.appearance_evidence : null;
-      const cost = 1 + (isRecord(appearance) && Array.isArray(appearance.images) ? appearance.images.length : 0);
+      // Image retention also registers and settles a durable staging writer.
+      const cost = 1 + (isRecord(appearance) && Array.isArray(appearance.images) ? 2 * appearance.images.length : 0);
       const size = new TextEncoder().encode(canonicalJson(wrapped)).byteLength;
       if (work > 0 && (work + cost > 16 || workBytes + size > 512000)) await savePrefix(sourceOrdinal);
       await normalize(wrapped, sourceOrdinal);
