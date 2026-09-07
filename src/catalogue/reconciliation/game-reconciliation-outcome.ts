@@ -54,3 +54,31 @@ export async function failIndependentGamePreparation(
   ]);
   return result;
 }
+
+export type NativeOperationResult = {
+  supported_game: string | null;
+  ingestion_run_id: string;
+  state: string;
+  generation: number;
+  terminal_result_json: string | null;
+  candidate_digest: string | null;
+};
+
+/** A superseded worker may observe current status but cannot claim a later generation's outcome. */
+export function independentGamePreparationResult(
+  preparationId: string,
+  operation: NativeOperationResult | null,
+  generation: number,
+): Record<string, unknown> | null {
+  if (!operation?.supported_game) return null;
+  const identity = { preparation_id: preparationId, run_id: operation.ingestion_run_id };
+  if (operation.generation !== generation) return { ...identity, state: "superseded", publishable: false };
+  if (operation.state === "preparing") return null;
+  if (operation.terminal_result_json) return JSON.parse(operation.terminal_result_json);
+  return {
+    ...identity,
+    state: operation.state,
+    publishable: operation.state === "sealed",
+    ...(operation.state === "sealed" ? { candidate_digest: operation.candidate_digest } : {}),
+  };
+}

@@ -3,7 +3,10 @@ import { type CatalogueStore, repositoryStatements } from "../shared";
 
 export function reconciliationRunStateStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare("SELECT state, candidate_digest FROM ingestion_run_current WHERE ingestion_run_id = ?")
+    .prepare(`SELECT state, candidate_digest, NULL AS supported_game, ingestion_run_id, 0 AS generation,
+      NULL AS terminal_result_json FROM ingestion_run_current WHERE ingestion_run_id = ?1
+      UNION ALL SELECT state, candidate_digest, supported_game, ingestion_run_id, generation, terminal_result_json
+      FROM reconciliation_operations WHERE id = ?1 AND supported_game IS NOT NULL`)
     .bind(runId);
 }
 

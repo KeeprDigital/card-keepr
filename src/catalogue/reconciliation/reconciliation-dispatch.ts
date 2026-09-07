@@ -1,3 +1,4 @@
+import { independentGamePreparationResult, type NativeOperationResult } from "./game-reconciliation-outcome";
 import { canonicalJson, type CatalogueStore, guardedCatalogueStore, sha256Text } from "../shared";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import {
@@ -10,12 +11,7 @@ export async function reconciliationDispatchState(database: CatalogueStore, para
   const operation = await reconciliationOperationHeaderStatement(
     database,
     params.preparation_id ?? params.ingestion_run_id,
-  ).first<{
-    state: string;
-    generation: number;
-    candidate_digest: string | null;
-    deadline: string;
-  }>();
+  ).first<NativeOperationResult & { deadline: string }>();
   const checkpoint = await reconciliationCheckpoint<{ id: string; params: ReconciliationWorkflowParams }>(
     database,
     params.preparation_id ?? params.ingestion_run_id,
@@ -23,6 +19,11 @@ export async function reconciliationDispatchState(database: CatalogueStore, para
   );
   return {
     operation,
+    terminal: independentGamePreparationResult(
+      params.preparation_id ?? params.ingestion_run_id,
+      operation,
+      params.generation ?? 0,
+    ),
     successor: checkpoint && checkpoint.ordinal > (params.shard?.ordinal ?? 0) ? checkpoint.value : null,
   };
 }

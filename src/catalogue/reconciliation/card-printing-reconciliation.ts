@@ -1,3 +1,4 @@
+import { independentGamePreparationResult, type NativeOperationResult } from "./game-reconciliation-outcome";
 import {
   type CanonicalRecordSource,
   canonicalRecordSource,
@@ -165,7 +166,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   generation = 0,
   yieldAtCheckpoint = false,
 ): Promise<Record<string, unknown>> {
-  const replay = await finalizedReconciliationResult(database, runId);
+  const replay = await finalizedReconciliationResult(database, runId, generation);
   if (replay !== null) return replay;
   const run = await requiredActiveParsingRun(database, runId);
   await initializeReconciliationProgress(database, runId, observedAt);
@@ -1817,11 +1818,10 @@ function fillAuthorityGaps<T>(authority: T, fallback: T): T {
 async function finalizedReconciliationResult(
   database: CatalogueStore,
   runId: string,
+  generation: number,
 ): Promise<Record<string, unknown> | null> {
-  const row = await reconciliationRunStateStatement(database, runId).first<{
-    state: string;
-    candidate_digest: string | null;
-  }>();
+  const row = await reconciliationRunStateStatement(database, runId).first<NativeOperationResult>();
+  if (row?.supported_game) return independentGamePreparationResult(runId, row, generation);
   return row !== null && (row.state === "awaiting_approval" || row.state === "failed")
     ? row.candidate_digest
       ? { run_id: runId, candidate_digest: row.candidate_digest }

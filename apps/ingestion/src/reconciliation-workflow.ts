@@ -87,6 +87,8 @@ export async function runReconciliationWorkUnits(
       JSON.stringify(await reconciliationDispatchState(catalogueStore(env.CATALOGUE_DB), params)),
     ),
   ) as Awaited<ReturnType<typeof reconciliationDispatchState>>;
+  if (state.terminal)
+    return durableReconciliationResult(params.ingestion_run_id, state.terminal, params.preparation_id);
   if (state.operation?.state === "sealed" && state.operation.candidate_digest)
     return durableReconciliationResult(
       params.ingestion_run_id,

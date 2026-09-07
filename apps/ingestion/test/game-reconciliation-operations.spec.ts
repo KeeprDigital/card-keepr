@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import {
@@ -97,6 +98,28 @@ test.each([
   });
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
   expect((await post("/v1/game-candidates", intent)).document).toEqual(candidate);
+  const replayedWorkflow = await runReconciliationWorkflow(
+    testEnv,
+    {
+      instanceId: `native-replay-${fixture}`,
+      payload: {
+        ingestion_run_id: run.id,
+        preparation_id: id,
+        expected_current_revision_id: intent.expected_game_revision_id,
+        idempotency_key: intent.idempotency_key,
+        observed_at: String(created.document.created_at),
+        generation: 0,
+      },
+    } as import("cloudflare:workers").WorkflowEvent<
+      import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+    >,
+    {
+      do: async (_name: string, _config: unknown, callback: () => Promise<string>) => callback(),
+    } as unknown as import("cloudflare:workers").WorkflowStep,
+  );
+  expect(JSON.parse(replayedWorkflow.result_json).result).toEqual(candidate.outcome);
+  expect((await get(`/v1/game-candidates/${id}`)).document).toEqual(candidate);
+
   if (fixture === "not-demonstrably-novel") {
     const partitions = (await get(`/v1/game-candidates/${id}/partitions`)).document.partitions as {
       ordinal: number;

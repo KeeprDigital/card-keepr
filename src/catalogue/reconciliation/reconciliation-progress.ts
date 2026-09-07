@@ -1,9 +1,10 @@
-import { failIndependentGamePreparation } from "./game-reconciliation-outcome";
-import { reconciliationCheckpointsStatement } from "./reconciliation-checkpoint-repository";
 import {
-  createGamePreparationStatement,
-  type GamePreparationCreation,
-} from "./game-reconciliation-repository";
+  independentGamePreparationResult,
+  type NativeOperationResult,
+  failIndependentGamePreparation,
+} from "./game-reconciliation-outcome";
+import { reconciliationCheckpointsStatement } from "./reconciliation-checkpoint-repository";
+import { createGamePreparationStatement, type GamePreparationCreation } from "./game-reconciliation-repository";
 import {
   createGameCandidateIdentitiesStatement,
   gameCandidatesForPreparationStatement,
@@ -203,47 +204,31 @@ export async function pauseFailedReconciliation(
   if (detail.startsWith("reconciliation_capacity_exceeded:")) {
     const base = database;
     const scoped = guardedCatalogueStore(base, () => reconciliationWriterGuard(base, runId, generation));
-    const operation = await reconciliationOperationHeaderStatement(database, runId).first<{
-      supported_game: string | null;
-      ingestion_run_id: string;
-      state: string;
-      generation: number;
-    }>();
+    const operation = await reconciliationOperationHeaderStatement(database, runId).first<NativeOperationResult>();
     if (operation?.supported_game) {
-      if (operation.state !== "preparing" || operation.generation !== generation)
-        return {
-          preparation_id: runId,
-          run_id: operation.ingestion_run_id,
-          state: operation.generation !== generation ? "superseded" : operation.state,
-          publishable: false,
-        };
+      const terminal = independentGamePreparationResult(runId, operation, generation);
+      if (terminal) return terminal;
       return (await failIndependentGamePreparation(scoped, runId, "reconciliation_capacity_exceeded", [
         { code: "reconciliation_capacity_exceeded", detail },
       ]))!;
     }
     return failReconciliationWorkflow(scoped, runId, new Date().toISOString(), detail);
   }
-  await database.batch([
+  const paused = await database.batch([
     pauseFailedReconciliationStatement(database, runId, generation, detail),
     synchronizeGameCandidatePauseStatement(database, runId),
   ]);
-  const current = await reconciliationOperationHeaderStatement(database, runId).first<{
-    state: string;
-    supported_game: string | null;
-    ingestion_run_id: string;
-    candidate_digest: string | null;
-    failure_code: string | null;
-  }>();
+  const current = await reconciliationOperationHeaderStatement(database, runId).first<NativeOperationResult>();
   if (!current) throw new Error("The durable reconciliation operation is unavailable.");
   if (current.supported_game)
-    return {
-      preparation_id: runId,
-      run_id: current.ingestion_run_id,
-      state: current.state,
-      publishable: current.state === "sealed",
-      failure_code: current.failure_code,
-      ...(current.state === "sealed" ? { candidate_digest: current.candidate_digest } : {}),
-    };
+    return (
+      independentGamePreparationResult(runId, current, paused[0]?.meta.changes === 1 ? generation + 1 : generation) ?? {
+        preparation_id: runId,
+        run_id: current.ingestion_run_id,
+        state: current.state,
+        publishable: false,
+      }
+    );
   if (current.state === "sealed" || current.state === "failed") return retainedReconciliationResult(database, runId);
   return { state: current.state, publishable: false, run_id: runId };
 }
