@@ -5,6 +5,7 @@ import { type CatalogueStore, repositoryStatements } from "../shared";
 export const compositionSnapshotTables = [
   "catalogue_revisions",
   "catalogue_composition_games",
+  "catalogue_candidate_publications",
   "game_catalogue_heads",
   "catalogue_query_revisions",
   "game_candidates",
@@ -15,6 +16,7 @@ export const compositionSnapshotTables = [
   "publication_projection_batches",
   "publication_search_chunks",
   "publication_read_entities",
+  "publication_read_lifecycles",
   "publication_read_attributes",
   "publication_read_release_regions",
   "publication_read_text_chunks",
@@ -88,6 +90,14 @@ export function compositionVerificationQuery(input: CompositionVerificationQuery
       WHERE m.catalogue_revision_id=r.id AND d.kind='printings') AS printings,
     (SELECT count(*) FROM catalogue_composition_games m JOIN publication_query_documents d ON d.candidate_id=m.candidate_id
       WHERE m.catalogue_revision_id=r.id AND d.kind='products') AS products,
+    (SELECT count(*) FROM catalogue_composition_games m JOIN publication_read_entities e ON e.candidate_id=m.candidate_id
+      LEFT JOIN publication_read_lifecycles l ON l.candidate_id=e.candidate_id AND l.kind=e.kind AND l.entity_id=e.entity_id
+      LEFT JOIN catalogue_candidate_publications first ON first.candidate_id=l.first_candidate_id
+      LEFT JOIN catalogue_candidate_publications last ON last.candidate_id=l.last_observed_candidate_id
+      LEFT JOIN catalogue_candidate_publications withdrawn ON withdrawn.candidate_id=l.withdrawal_candidate_id
+      WHERE m.catalogue_revision_id=r.id AND e.kind IN ('cards','printings','products','relationships','product_relationships')
+      AND (l.entity_id IS NULL OR first.candidate_id IS NULL OR last.candidate_id IS NULL
+        OR (l.withdrawal_candidate_id IS NOT NULL AND withdrawn.candidate_id IS NULL))) AS missing_lifecycle,
     (SELECT count(*) FROM publication_search_chunks c WHERE NOT EXISTS (
       SELECT 1 FROM publication_search_fts f WHERE f.candidate_id=c.candidate_id AND f.card_id=c.card_id
       AND f.search_text=c.search_text)) AS missing_search

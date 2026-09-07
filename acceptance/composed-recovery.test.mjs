@@ -1,3 +1,6 @@
+import { gunzipSync } from "node:zlib";
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -11,6 +14,13 @@ import { runCli, startWorker, stopWorker, waitForHealth } from "./helpers/accept
 // Synthetic publisher responses exercise the shipped native collection/preparation Workflows.
 // The legacy publication acceptance harness is deliberately absent.
 test("native owner publication Workflow verifies an independently imported composition snapshot", async (t) => {
+  const fetch = async (url, options) => {
+    try {
+      return await globalThis.fetch(url, options);
+    } catch (cause) {
+      throw new Error(`Local HTTP request failed: ${options?.method ?? "GET"} ${url}`, { cause });
+    }
+  };
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-native-preparation-"));
   const statePath = join(directory, "shared-state"),
     adminKey = randomUUID(),
@@ -232,6 +242,9 @@ test("native owner publication Workflow verifies an independently imported compo
     }),
   });
   assert.equal(duringExport.status, 409);
+  const unavailableSearch = await consumer("/v1/cards?game=digimon&q=Synthetic");
+  assert.equal(unavailableSearch.status, 503, JSON.stringify(unavailableSearch));
+  assert.equal(unavailableSearch.body.code, "catalogue_query_unavailable");
   releaseFirstExport();
   await firstImport;
 
@@ -279,18 +292,56 @@ test("native owner publication Workflow verifies an independently imported compo
   const exportPath = `/v1/catalogue-exports/${publication.resulting_revision_id}`;
   let componentCursor = null;
   const exportedCards = [];
+  const ajv = new Ajv2020({ allErrors: true });
+  addFormats(ajv);
+  const manifestSchema = JSON.parse(
+    await readFile(
+      resolve("prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json"),
+      "utf8",
+    ),
+  );
+  const recordSchema = JSON.parse(
+    await readFile(
+      resolve("prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json"),
+      "utf8",
+    ),
+  );
+  const validateManifest = ajv.compile(manifestSchema),
+    validateRecord = ajv.compile(recordSchema);
   do {
     const index = await consumer(exportPath + (componentCursor ? `?after=${componentCursor}` : ""));
     assert.equal(index.status, 200, JSON.stringify(index));
+    assert.equal(validateManifest(index.body.data), true, JSON.stringify(validateManifest.errors));
+    const canonical = (value) =>
+      Array.isArray(value)
+        ? value.map(canonical)
+        : value && typeof value === "object"
+          ? Object.fromEntries(
+              Object.keys(value)
+                .sort()
+                .map((key) => [key, canonical(value[key])]),
+            )
+          : value;
+    assert.equal(
+      index.body.data.manifest_sha256,
+      createHash("sha256")
+        .update(JSON.stringify(canonical({ ...index.body.data, manifest_sha256: "0".repeat(64) })))
+        .digest("hex"),
+    );
     for (const component of index.body.data.components) {
-      const response = await fetch(component.links.content, { headers: { authorization: `Bearer ${apiKey}` } });
+      const contentUrl = index.body.links.components[component.name];
+      const response = await fetch(contentUrl, { headers: { authorization: `Bearer ${apiKey}` } });
       assert.equal(response.status, 200);
       const bytes = Buffer.from(await response.arrayBuffer());
-      assert.equal(bytes.length, component.bytes);
-      assert.equal(createHash("sha256").update(bytes).digest("hex"), component.sha256);
-      if (component.kind === "cards") exportedCards.push(JSON.parse(bytes).value);
-      if (component.kind !== "text") {
-        const value = JSON.parse(bytes);
+      assert.equal(bytes.length, component.compressed_bytes);
+      assert.equal(createHash("sha256").update(bytes).digest("hex"), component.compressed_sha256);
+      const raw = gunzipSync(bytes);
+      assert.equal(raw.byteLength, component.uncompressed_bytes);
+      assert.equal(createHash("sha256").update(raw).digest("hex"), component.content_sha256);
+      const value = JSON.parse(raw);
+      assert.equal(validateRecord(value), true, JSON.stringify(validateRecord.errors));
+      if (component.kind === "cards") exportedCards.push(value);
+      {
         const inspect = (value) => {
           if (!value || typeof value !== "object") return;
           for (const [key, item] of Object.entries(value)) {
@@ -313,12 +364,12 @@ test("native owner publication Workflow verifies an independently imported compo
         };
         inspect(value);
       }
-      const range = await fetch(component.links.content, {
+      const range = await fetch(contentUrl, {
         headers: { authorization: `Bearer ${apiKey}`, range: "bytes=0-7" },
       });
       assert.equal(range.status, 206);
       assert.deepEqual(Buffer.from(await range.arrayBuffer()), bytes.subarray(0, 8));
-      const conditional = await fetch(component.links.content, {
+      const conditional = await fetch(contentUrl, {
         headers: { authorization: `Bearer ${apiKey}`, "if-none-match": response.headers.get("etag") },
       });
       assert.equal(conditional.status, 304);
@@ -327,9 +378,7 @@ test("native owner publication Workflow verifies an independently imported compo
   } while (componentCursor);
   assert.deepEqual(
     exportedCards.find((card) => card.id === cards.records[0].id),
-    Object.fromEntries(
-      Object.entries(detail.body.data).filter(([key]) => !["type", "printing_ids", "links"].includes(key)),
-    ),
+    Object.fromEntries(Object.entries(detail.body.data).filter(([key]) => !["printing_ids", "links"].includes(key))),
   );
   await Promise.race([
     firstImport,

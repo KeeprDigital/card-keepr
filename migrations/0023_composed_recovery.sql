@@ -1375,4 +1375,23 @@ CREATE TRIGGER restored_collector_fence_source_observation_sets_delete BEFORE DE
 WHEN EXISTS(SELECT 1 FROM catalogue_recovery_collection_classifications WHERE ingestion_run_id=(SELECT ingestion_run_id FROM source_snapshots WHERE id=OLD.source_snapshot_id) AND classification='abandoned_after_restore')
 BEGIN SELECT RAISE(ABORT,'restored_collection_abandoned'); END;
 
+CREATE TRIGGER recovery_fence_catalogue_candidate_publications_insert BEFORE INSERT ON catalogue_candidate_publications
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_catalogue_candidate_publications_update BEFORE UPDATE ON catalogue_candidate_publications
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_catalogue_candidate_publications_delete BEFORE DELETE ON catalogue_candidate_publications
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_publication_read_lifecycles_insert BEFORE INSERT ON publication_read_lifecycles
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_publication_read_lifecycles_update BEFORE UPDATE ON publication_read_lifecycles
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_publication_read_lifecycles_delete BEFORE DELETE ON publication_read_lifecycles
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+
 UPDATE catalogue_schema_state SET migration_level=23 WHERE singleton=1;

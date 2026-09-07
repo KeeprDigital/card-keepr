@@ -28,6 +28,7 @@ export async function captureCompositionSnapshot(
     state.members > 4 ||
     Number(state.cards) + Number(state.products) < 1 ||
     state.missing_search !== 0 ||
+    state.missing_lifecycle !== 0 ||
     state.search_state !== "ready"
   )
     throw new Error("Composed catalogue invariants failed.");
