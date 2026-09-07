@@ -39,7 +39,7 @@ export function reconciliationOperationHeaderStatement(database: CatalogueStore,
   return repositoryStatements(database)
     .prepare(`SELECT state, generation, candidate_digest, definition_pins_json, input_manifest_digest,
       observation_cutoff, identity_decision_cutoff, authority_decision_cutoff, created_at, deadline
-      , ingestion_run_id, supported_game, failure_code
+      , ingestion_run_id, supported_game, failure_code, terminal_result_json
       FROM reconciliation_operations WHERE id = ?`)
     .bind(runId);
 }

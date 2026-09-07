@@ -30,6 +30,7 @@ type GameCandidate = {
   state: string;
   generation: number;
   failure_code: string | null;
+  terminal_result_json: string | null;
   manifest_digest: string | null;
   partition_count: number;
 };
@@ -108,8 +109,9 @@ export async function prepareGameCandidateManifests(
     await save();
   }
   if (cursor.stage === "partitions") {
-    const headers = (await documentStorage(() => gameCandidatesForPreparationStatement(database, runId).all<GameCandidate>()))
-      .results;
+    const headers = (
+      await documentStorage(() => gameCandidatesForPreparationStatement(database, runId).all<GameCandidate>())
+    ).results;
     if (headers.length > 4) throw new Error("reconciliation_capacity_exceeded: unsupported number of selected games.");
     const scopedLineages = canonicalJson(cursor.lineages);
     while (cursor.game < headers.length) {
@@ -215,7 +217,12 @@ export async function inspectGameCandidate(database: CatalogueStore, candidateId
   const candidate = await gameCandidateStatement(database, candidateId).first<GameCandidate>();
   if (!candidate)
     throw new AdministrationProblem(404, "game_candidate_not_found", "This Game Catalogue Candidate does not exist.");
-  return { contract: "card-keepr-game-candidate@1", ...candidate };
+  const { terminal_result_json, ...identity } = candidate;
+  return {
+    contract: "card-keepr-game-candidate@1",
+    ...identity,
+    outcome: terminal_result_json ? JSON.parse(terminal_result_json) : null,
+  };
 }
 
 export async function inspectGameCandidatePartitions(

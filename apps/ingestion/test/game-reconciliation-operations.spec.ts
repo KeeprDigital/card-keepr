@@ -62,8 +62,11 @@ test("preparation checks its game predecessor independently of another game's pu
   }
 });
 
-test("a game preparation reports terminal capacity failure without failing its collection", async () => {
-  const run = await collect("/reconciliation/capacity-high-degree-observation", "native-capacity-evidence");
+test.each([
+  ["capacity-high-degree-observation", "reconciliation_capacity_exceeded"],
+  ["identity-whitespace", "retained_evidence_invalid"],
+])("a game preparation reports terminal %s failure without failing its collection", async (fixture, code) => {
+  const run = await collect(`/reconciliation/${fixture}`, "native-failure-evidence");
   const intent = {
     ingestion_run_id: run.id,
     supported_game: "one-piece",
@@ -81,10 +84,17 @@ test("a game preparation reports terminal capacity failure without failing its c
   }
   expect(candidate, JSON.stringify(candidate)).toMatchObject({
     state: "failed",
-    failure_code: "reconciliation_capacity_exceeded",
+    failure_code: code,
+    outcome: {
+      preparation_id: id,
+      run_id: run.id,
+      state: "failed",
+      failure_code: code,
+      diagnostics: expect.any(Array),
+    },
   });
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
-  expect((await post("/v1/game-candidates", intent)).document).toMatchObject({ id, state: "failed" });
+  expect((await post("/v1/game-candidates", intent)).document).toEqual(candidate);
 });
 
 test("two games from one collection prepare independently while one operation is paused", async () => {

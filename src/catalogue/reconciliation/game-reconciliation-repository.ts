@@ -97,9 +97,9 @@ export function releaseGamePreparationSlotStatement(database: CatalogueStore, id
     .bind(id, id);
 }
 
-export function failGamePreparationStatement(database: CatalogueStore, id: string, code: string) {
+export function failGamePreparationStatement(database: CatalogueStore, id: string, code: string, outcome: string) {
   return repositoryStatements(database)
-    .prepare(`UPDATE reconciliation_operations SET state = 'failed', failure_code = ?
+    .prepare(`UPDATE reconciliation_operations SET state = 'failed', failure_code = ?, terminal_result_json = ?
       WHERE id = ? AND supported_game IS NOT NULL AND state = 'preparing'`)
-    .bind(code, id);
+    .bind(code, outcome, id);
 }

@@ -1,9 +1,8 @@
+import { failIndependentGamePreparation } from "./game-reconciliation-outcome";
 import { reconciliationCheckpointsStatement } from "./reconciliation-checkpoint-repository";
 import {
   createGamePreparationStatement,
   type GamePreparationCreation,
-  failGamePreparationStatement,
-  releaseGamePreparationSlotStatement,
 } from "./game-reconciliation-repository";
 import {
   createGameCandidateIdentitiesStatement,
@@ -218,18 +217,9 @@ export async function pauseFailedReconciliation(
           state: operation.generation !== generation ? "superseded" : operation.state,
           publishable: false,
         };
-      await scoped.batch([
-        failGamePreparationStatement(scoped, runId, "reconciliation_capacity_exceeded"),
-        synchronizeGameCandidatePauseStatement(scoped, runId),
-        releaseGamePreparationSlotStatement(scoped, runId),
-      ]);
-      return {
-        preparation_id: runId,
-        run_id: operation.ingestion_run_id,
-        state: "failed",
-        publishable: false,
-        diagnostics: [{ code: "reconciliation_capacity_exceeded", detail: detail.slice(0, 1024) }],
-      };
+      return (await failIndependentGamePreparation(scoped, runId, "reconciliation_capacity_exceeded", [
+        { code: "reconciliation_capacity_exceeded", detail },
+      ]))!;
     }
     return failReconciliationWorkflow(scoped, runId, new Date().toISOString(), detail);
   }

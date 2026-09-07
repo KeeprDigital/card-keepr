@@ -1,3 +1,4 @@
+import { failIndependentGamePreparation } from "./game-reconciliation-outcome";
 import { prepareRunWarningSummary } from "./reconciliation-warning-summary";
 import type { ObservationPlan } from "./reconciliation-plan-state";
 import { stageCandidatePreparation, type EvidencePartitionInput } from "./reconciliation-staging";
@@ -180,6 +181,13 @@ export async function failReconciliation(
   diagnostics: readonly Record<string, unknown>[],
   observedAt: string,
 ): Promise<Record<string, unknown>> {
+  const native = await failIndependentGamePreparation(
+    database,
+    runId,
+    String(diagnostics[0]?.code ?? "retained_evidence_invalid"),
+    diagnostics,
+  );
+  if (native) return native;
   const runDiagnostics = diagnostics.map((diagnostic) => ({
     code: String(diagnostic.code),
     detail: String(diagnostic.detail),

@@ -49,7 +49,9 @@ CREATE TABLE reconciliation_operations (
   observation_cutoff INTEGER NOT NULL,
   identity_decision_cutoff INTEGER NOT NULL,
   authority_decision_cutoff INTEGER NOT NULL,
-  failure_code TEXT
+  failure_code TEXT,
+  terminal_result_json TEXT CHECK (terminal_result_json IS NULL OR
+    (json_valid(terminal_result_json) AND length(CAST(terminal_result_json AS BLOB)) <= 49152))
 );
 CREATE TRIGGER reconciliation_operation_identity_immutable BEFORE UPDATE ON reconciliation_operations
 WHEN NEW.id <> OLD.id OR NEW.ingestion_run_id <> OLD.ingestion_run_id
@@ -64,6 +66,9 @@ BEGIN SELECT RAISE(ABORT, 'reconciliation_operation_identity_immutable'); END;
 CREATE TRIGGER reconciliation_verified_input_immutable BEFORE UPDATE ON reconciliation_operations
 WHEN OLD.input_manifest_digest IS NOT NULL AND NEW.input_manifest_digest IS NOT OLD.input_manifest_digest
 BEGIN SELECT RAISE(ABORT, 'reconciliation_verified_input_immutable'); END;
+CREATE TRIGGER reconciliation_terminal_result_immutable BEFORE UPDATE ON reconciliation_operations
+WHEN OLD.terminal_result_json IS NOT NULL AND NEW.terminal_result_json IS NOT OLD.terminal_result_json
+BEGIN SELECT RAISE(ABORT, 'reconciliation_terminal_result_immutable'); END;
 CREATE TRIGGER reconciliation_operation_no_delete BEFORE DELETE ON reconciliation_operations
 BEGIN SELECT RAISE(ABORT, 'reconciliation_operation_audit_retained'); END;
 CREATE UNIQUE INDEX legacy_reconciliation_for_run ON reconciliation_operations (ingestion_run_id) WHERE supported_game IS NULL;

@@ -30,7 +30,7 @@ export function gameCandidatesForPreparationStatement(database: CatalogueStore, 
 
 export function gameCandidateStatement(database: CatalogueStore, candidateId: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT candidate.*, operation.failure_code FROM game_candidates AS candidate
+    .prepare(`SELECT candidate.*, operation.failure_code, operation.terminal_result_json FROM game_candidates AS candidate
       JOIN reconciliation_operations AS operation ON operation.id = candidate.preparation_id WHERE candidate.id = ?`)
     .bind(candidateId);
 }
