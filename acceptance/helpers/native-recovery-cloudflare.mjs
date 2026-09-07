@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { nativeSqliteExport } from "./native-sqlite-export.mjs";
 import { open, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { unstable_splitSqlQuery } from "wrangler";
+import { nativeSqliteExport } from "./native-sqlite-export.mjs";
 
 // Only the Cloudflare control-plane boundary is simulated. SQL export/import
 // and every verification query execute against actual independent SQLite files.
@@ -89,7 +89,18 @@ export function nativeRecoveryCloudflare({ databaseDirectory, directory }) {
         if (body.action === "init")
           return success({ upload_url: "https://native-upload.invalid/snapshot", filename: "snapshot.sql" });
         assert.ok(target);
-        target.exec("PRAGMA foreign_keys=OFF;\n" + uploaded + "\nPRAGMA foreign_keys=ON;");
+        // One uploaded SQL file is one local import unit. Autocommitting each
+        // retained row adds filesystem sync work unrelated to provider verification.
+        target.exec("PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE;");
+        try {
+          target.exec(uploaded);
+          target.exec("COMMIT;");
+        } catch (error) {
+          target.exec("ROLLBACK;");
+          throw error;
+        } finally {
+          target.exec("PRAGMA foreign_keys=ON;");
+        }
         await hooks.afterImport?.();
         if (faults.lostImportResponses > 0) {
           faults.lostImportResponses--;
