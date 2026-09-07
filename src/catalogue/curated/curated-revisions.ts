@@ -901,6 +901,7 @@ export async function applyPinnedCuratedRevisions(
 }
 
 type PinnedDraftRevision = {
+  active: number;
   ordinal: number;
   id: string;
   proposal_json: string;
@@ -956,7 +957,8 @@ export async function applyPinnedCuratedRevisionsToDraft(
   };
   const prepareSnapshot = (draft: CatalogueDraft, proposal: Proposal, view: "official" | "result") => {
     cursor.lookups ??= {};
-    const lookup = (cursor.lookups[view] ??= {});
+    cursor.lookups[view] ??= {};
+    const lookup = cursor.lookups[view];
     return draftProposalSnapshot(draft, proposal, { lookup, checkpoint });
   };
   const conflicts = new CuratedConflictPreparation(database, runId, observedAt);
@@ -979,6 +981,11 @@ export async function applyPinnedCuratedRevisionsToDraft(
   }
   if (cursor.stage === "compare") {
     for await (const row of pinnedDraftRevisions(database, runId, cursor.revision)) {
+      if (!row.active) {
+        cursor.revision = row.ordinal;
+        await checkpoint(row);
+        continue;
+      }
       const proposal = structuralProposal(JSON.parse(row.proposal_json));
       const snapshot = await prepareSnapshot(official, proposal, "official");
       const reviewedSourceValue = draftReviewedValue(snapshot, proposal);
@@ -995,6 +1002,11 @@ export async function applyPinnedCuratedRevisionsToDraft(
   if (cursor.stage === "conflict") throw new CuratedDraftSourceChangeError((after) => conflicts.diagnostics(after));
   if (cursor.stage === "apply") {
     for await (const row of pinnedDraftRevisions(database, runId, cursor.revision)) {
+      if (!row.active) {
+        cursor.revision = row.ordinal;
+        await checkpoint(row);
+        continue;
+      }
       const proposal = structuralProposal(JSON.parse(row.proposal_json));
       const reviewedSourceValue = draftReviewedValue(await prepareSnapshot(official, proposal, "official"), proposal);
       const snapshot = await prepareSnapshot(result, proposal, "result");
@@ -1088,7 +1100,8 @@ async function draftProposalSnapshot(
   const add = async (type: string, id: string) => {
     const kind = draftCollection(type);
     if (type === "release") {
-      const lookup = (progress.lookup.release ??= { after: "", complete: false, productId: null });
+      progress.lookup.release ??= { after: "", complete: false, productId: null };
+      const lookup = progress.lookup.release;
       if (!lookup.complete) {
         for await (const product of draft.values("products", lookup.after)) {
           if (product.game === proposal.game && product.releases.some((release) => release.id === id)) {
@@ -1130,7 +1143,8 @@ async function draftProposalSnapshot(
     const target = proposal.target;
     await add(target.from.type, target.from.id);
     await add(target.to.type, target.to.id);
-    const lookup = (progress.lookup.relationships ??= { after: "", complete: false, ids: [] });
+    progress.lookup.relationships ??= { after: "", complete: false, ids: [] };
+    const lookup = progress.lookup.relationships;
     if (!lookup.complete) {
       for await (const relationship of draft.values("product_relationships", lookup.after)) {
         if (

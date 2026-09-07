@@ -104,6 +104,19 @@ CREATE TRIGGER reconciliation_identity_reviews_no_update BEFORE UPDATE ON reconc
 BEGIN SELECT RAISE(ABORT, 'reconciliation_identity_review_immutable'); END;
 CREATE TRIGGER reconciliation_identity_reviews_no_delete BEFORE DELETE ON reconciliation_identity_reviews
 BEGIN SELECT RAISE(ABORT, 'reconciliation_identity_review_immutable'); END;
+CREATE TABLE reconciliation_curated_pins (
+  preparation_id TEXT PRIMARY KEY REFERENCES reconciliation_operations(id),
+  revision_cutoff INTEGER NOT NULL,
+  event_cutoff INTEGER NOT NULL
+);
+CREATE TRIGGER reconciliation_curated_pins_no_update BEFORE UPDATE ON reconciliation_curated_pins
+BEGIN SELECT RAISE(ABORT, 'reconciliation_curated_pin_immutable'); END;
+CREATE TRIGGER reconciliation_curated_pins_no_delete BEFORE DELETE ON reconciliation_curated_pins
+BEGIN SELECT RAISE(ABORT, 'reconciliation_curated_pin_immutable'); END;
+-- SQLite appends rowid to these indexes, permitting bounded cutoff seeks.
+CREATE INDEX curated_revisions_preparation_scan ON curated_revisions(game);
+CREATE INDEX curated_revision_events_preparation_state ON curated_revision_events(revision_id);
+CREATE INDEX curated_revision_events_preparation_reaffirm ON curated_revision_events(revision_id, kind);
 CREATE TABLE game_catalogue_heads (
   supported_game TEXT PRIMARY KEY,
   revision_id TEXT NOT NULL

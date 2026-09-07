@@ -612,12 +612,33 @@ export function nextPinnedCuratedRevisionStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT pin.ordinal, revision.id, revision.proposal_json,
-    revision.content_digest, pin.reviewed_source_digest
+    revision.content_digest, pin.reviewed_source_digest, 1 AS active
     FROM ingestion_run_curated_revisions AS pin
     JOIN curated_revision_read AS revision ON revision.id = pin.revision_id
-    LEFT JOIN reconciliation_operations AS preparation ON preparation.id = ?1
-    WHERE pin.ingestion_run_id = COALESCE(preparation.ingestion_run_id, ?1) AND pin.ordinal > ?2
-      AND (preparation.supported_game IS NULL OR revision.game = preparation.supported_game)
-    ORDER BY pin.ordinal LIMIT 1`)
+    WHERE pin.ingestion_run_id = ?1 AND pin.ordinal > ?2
+      AND NOT EXISTS (SELECT 1 FROM reconciliation_operations WHERE id = ?1 AND supported_game IS NOT NULL)
+    UNION ALL
+    SELECT revision.rowid AS ordinal, revision.id, revision.proposal_json, revision.content_digest,
+      COALESCE((SELECT json_extract(event.event_json, '$.reviewed_source_digest')
+        FROM curated_revision_events AS event
+        WHERE event.revision_id = revision.id AND event.kind = 'reaffirmed' AND event.rowid <= pin.event_cutoff
+        ORDER BY event.rowid DESC LIMIT 1), revision.reviewed_source_digest) AS reviewed_source_digest,
+      (SELECT event.kind IN ('authored', 'reaffirmed') FROM curated_revision_events AS event
+        WHERE event.revision_id = revision.id AND event.rowid <= pin.event_cutoff
+        ORDER BY event.rowid DESC LIMIT 1) AS active
+    FROM reconciliation_curated_pins AS pin
+    JOIN reconciliation_operations AS preparation ON preparation.id = pin.preparation_id
+    JOIN curated_revisions AS revision ON revision.game = preparation.supported_game
+    WHERE pin.preparation_id = ?1 AND revision.rowid > ?2 AND revision.rowid <= pin.revision_cutoff
+    ORDER BY ordinal LIMIT 1`)
     .bind(runId, after);
+}
+
+/** Creation pins immutable history cutoffs; later callbacks seek one revision at a time. */
+export function pinNativeCuratedRevisionSelectionStatement(database: CatalogueStore, preparationId: string) {
+  return repositoryStatements(database)
+    .prepare(`INSERT INTO reconciliation_curated_pins (preparation_id, revision_cutoff, event_cutoff)
+      VALUES (?, COALESCE((SELECT MAX(rowid) FROM curated_revisions), 0),
+        COALESCE((SELECT MAX(rowid) FROM curated_revision_events), 0))`)
+    .bind(preparationId);
 }

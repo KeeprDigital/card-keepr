@@ -1,4 +1,6 @@
 import { expect, test } from "vitest";
+import worker from "../src/index";
+import type { ReconciliationWorkflowParams } from "../../../src/catalogue/reconciliation";
 import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
@@ -359,6 +361,91 @@ test("a native source change retains reconfirmable curated diagnostics without f
   // The legacy collection reservation remains live until the collection adapter completes it.
   expect(reaffirmed.response.status).toBe(409);
   expect(reaffirmed.document).toMatchObject({ code: "active_ingestion_run" });
+});
+
+test("a fresh native preparation pins later owner corrections and retains them across retirement", async () => {
+  const source = await collect("/reconciliation/base", "native-fresh-curated-source");
+  const seed = await reconcile(source.id);
+  const card = (seed.document.cards as { id: string; name: string }[])[0]!;
+  const published = await approve(seed.document);
+  expect(published.response.status).toBe(200);
+  const proposal = {
+    game: "one-piece",
+    target: { kind: "field", entity_type: "card", entity_id: card.id, path: "/name" },
+    assertion: { kind: "field", value: "Owner correction after collection" },
+    rationale: "Reviewed correction over retained source evidence",
+    evidence: [{ kind: "owner_reference", uri: "https://owner.example/fresh-review", content_digest: "b".repeat(64) }],
+    effective_interval: { from: null, to: null },
+    reviewed_source_digest: await sha256Text(canonicalJson(card.name)),
+    supersedes_revision_id: null,
+  };
+  const revision = await post("/admin/v1/curated-revisions", {
+    environment: "production",
+    expected_current_revision_id: published.document.resulting_revision_id,
+    proposal,
+    proposal_digest: await sha256Text(canonicalJson(proposal)),
+    idempotency_key: "native-fresh-curated-revision",
+  });
+  expect(revision.response.status).toBe(201);
+  let params: ReconciliationWorkflowParams | undefined;
+  const queued = { status: async () => ({ status: "queued" }) } as unknown as WorkflowInstance;
+  const binding = {
+    create: async (options: { params: ReconciliationWorkflowParams }) => {
+      params = options.params;
+      return queued;
+    },
+    get: async () => queued,
+  } as unknown as Env["RECONCILIATION_WORKFLOW"];
+  const created = await worker.fetch(
+    new Request("https://card-keepr.invalid/v1/game-candidates", {
+      method: "POST",
+      headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+      body: JSON.stringify({
+        ingestion_run_id: source.id,
+        supported_game: "one-piece",
+        expected_game_revision_id: published.document.resulting_revision_id,
+        idempotency_key: "native-fresh-curated-preparation",
+      }),
+    }),
+    { ...testEnv, RECONCILIATION_WORKFLOW: binding },
+  );
+  expect(created.status).toBe(201);
+  const id = requiredString(await created.json<Record<string, unknown>>(), "id");
+  const retired = await post(`/admin/v1/curated-revisions/${revision.document.curated_revision_id}/retire`, {
+    environment: "production",
+    expected_current_revision_id: published.document.resulting_revision_id,
+    expected_event_version: 1,
+    conflict_digest: null,
+    rationale: "Later retirement must not change an existing preparation's exact pins.",
+    idempotency_key: "native-fresh-curated-retire",
+  });
+  expect(retired.response.status, JSON.stringify(retired.document)).toBe(200);
+  expect(params).toBeDefined();
+  await runReconciliationWorkflow(
+    testEnv,
+    {
+      instanceId: "native-curated-frozen",
+      payload: params!,
+    } as import("cloudflare:workers").WorkflowEvent<ReconciliationWorkflowParams>,
+    {
+      do: async (_name: string, _config: unknown, callback: () => Promise<string>) => callback(),
+    } as unknown as import("cloudflare:workers").WorkflowStep,
+  );
+  let candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  const deadline = Date.now() + 15000;
+  while (candidate.state === "preparing" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  }
+  expect(candidate, JSON.stringify(candidate)).toMatchObject({ state: "sealed" });
+  const partitions = (await get(`/v1/game-candidates/${id}/partitions`)).document.partitions as {
+    kind: string;
+    ordinal: number;
+  }[];
+  const cards = partitions.find((partition) => partition.kind === "cards")!;
+  expect(cards).toBeDefined();
+  const records = (await get(`/v1/game-candidates/${id}/partitions/${cards.ordinal}`)).document.records;
+  expect(records).toContainEqual(expect.objectContaining({ id: card.id, name: "Owner correction after collection" }));
 });
 
 test("a delayed native worker fails at its original deadline without sealing or renewing its intent", async () => {

@@ -6,6 +6,7 @@ import {
   failIndependentGamePreparation,
 } from "./game-reconciliation-outcome";
 import { reconciliationCheckpointsStatement } from "./reconciliation-checkpoint-repository";
+import { pinNativeCuratedRevisionSelectionStatement } from "../curated";
 import { createGamePreparationStatement, type GamePreparationCreation } from "./game-reconciliation-repository";
 import {
   createGameCandidateIdentitiesStatement,
@@ -286,6 +287,7 @@ export async function initializeReconciliationProgress(
         : createReconciliationOperationStatement(database, runId, at, definitions),
       ...admissionPins,
       ...correctionPinStatementsForPreparation(database, runId, JSON.parse(selected?.games_json ?? "[]") as string[]),
+      ...(gamePreparation ? [pinNativeCuratedRevisionSelectionStatement(database, runId)] : []),
       ...(gamePreparation ? [] : [createGameCandidateIdentitiesStatement(database, runId)]),
     ]);
   } catch (error) {

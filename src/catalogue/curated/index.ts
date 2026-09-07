@@ -32,3 +32,4 @@ export { curatedRoutes } from "./routes";
 export { curatedRunStartGuardStatement } from "./curated-guard-repository";
 
 export { CuratedConflictStorageError } from "./curated-conflict-preparation";
+export { pinNativeCuratedRevisionSelectionStatement } from "./curated-repository";

@@ -26,7 +26,7 @@ source evidence, never preparation artifacts.
 | `reconciliation_source_mappings` source collection/snapshot/observation-set FKs | Native branch of `insertSourceMappingsStatement` | Collection ID is selected from the operation. Snapshot and observation-set IDs come from frozen source observations. Owner inspection accepts `preparation_id`; staged mappings remain outside the published index. |
 | `entity_proposal_source_evidence` | `assessSourceAdmission` → `retainProposalEvidenceStatement` | Fixed: the writer resolves preparation ID to the real collection before retaining shared proposal evidence. The generation-fenced preparation remains the writer authorization. |
 | `canonical_identity_reviews`, `canonical_identity_review_runs` | Canonical matching → `insertIdentityReviewStatement` | Fixed: both collection FKs resolve through the operation. Native membership is additionally retained in immutable `reconciliation_identity_reviews`, keyed by preparation/review. Owner inspection can select that preparation. |
-| `ingestion_run_curated_revisions`, `ingestion_run_curated_revision_sets` | Collection/run creation's curated pin recipes | Native preparation reads the selected game's immutable collection pin set through its real collection ID; it does not insert a fictitious run pin. Curated conflict work is preparation-owned. |
+| `ingestion_run_curated_revisions`, `ingestion_run_curated_revision_sets` | Collection/run creation's curated pin recipes | Legacy pins retain collection ownership. Native preparation pins immutable revision/event cutoffs in `reconciliation_curated_pins` at its own creation, then reads one selected-game revision per seek. Curated conflict work is preparation-owned. |
 | `entity_admission_run_pins`, `identity_correction_run_pins` | Historical schema 18/19 writers | Read-only historical compatibility inputs. New pins use preparation-owned tables. Historical selection/cutoff reuse is limited to legacy operations. |
 | `reconciliation_contexts`, `reconciliation_candidates`, `reconciliation_evidence_partitions`, `reconciliation_payload_chunks`, `reconciliation_workflow_requests`, `reconciliation_terminal_results` | Legacy candidate staging, run Workflow request/result recipes | Native success and semantic failure bypass legacy candidate staging; native integrity/capacity/expiry failures bypass legacy run terminal records. Native requests/outcomes have their own preparation ownership. |
 | `catalogue_revisions`, `ingestion_no_change_results`, `ingestion_publication_cleanup`, source freshness tables, `reconciled_withdrawal_assertions`, `catalogue_backup_attempts.publication_ingestion_run_id` | Publication commit, freshness, cleanup, backup/recovery repositories | Not native preparation writers. Native publication integration must consume the retained candidate under its own publication authority. |
@@ -79,13 +79,14 @@ preparation, recheck the new-proposal automation fallback: it must not adopt an
 owner decision written after the preparation's snapshot. Existing proposal
 pins and their late-link regression already cover the retained-proposal case.
 
-Native curated selection currently inherits the collection's immutable pin set.
-This preserves replay, but does not yet prove that a fresh preparation over the
-same evidence can pin an owner reaffirmation made after that collection. The
-production integration must test that lifecycle and give each fresh native
-preparation its own exact curated selection while retaining old pins on resume.
-The current native conflict test still encounters the collection reservation
-when attempting reaffirmation; it does not establish that lifecycle as complete.
+Native curated selection now pins its own immutable history cutoffs atomically
+with preparation creation. The regression verifies that a correction authored
+after collection is included, and a later retirement cannot change that pin.
+Indexed seeks read each revision and its last lifecycle/reaffirmation events at
+those cutoffs; inactive revisions also advance the bounded work cursor.
+The native source-conflict test still encounters the collection reservation
+when attempting reaffirmation. That complete reaffirm/fresh-preparation
+lifecycle remains part of production integration acceptance.
 
 Native mapping publication is downstream work (#226/#227). It must consume
 preparation-owned evidence and gate published visibility on candidate
