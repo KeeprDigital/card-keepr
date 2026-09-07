@@ -22,6 +22,7 @@ import {
   nativeExportRecords,
 } from "./helpers/native-catalogue-runtime.mjs";
 
+import { withNativeRequestPacing } from "./helpers/native-request-pacing.mjs";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
 import { onePieceEvidenceMetrics } from "./helpers/one-piece-evidence-metrics.mjs";
 
@@ -142,7 +143,6 @@ test("retained P-001: owner collects every declared Bandai record through native
     KEEPR_NATIVE_REQUEST_INTERVAL_MS: "2200",
   };
   const pacedCli = async (args) => {
-    await new Promise((resolve) => setTimeout(resolve, 2200));
     return runCli(args, environment);
   };
   const planPath = join(directory, "plan.json");
@@ -195,7 +195,6 @@ test("retained P-001: owner collects every declared Bandai record through native
     ].sort(),
   );
   const cli = async (args) => {
-    await new Promise((resolve) => setTimeout(resolve, 2200));
     const result = await runCli([...args, "--json"], environment);
     assert.equal(result.code, 0, `${result.stdout} ${result.stderr}`);
     return JSON.parse(result.stdout);
@@ -206,9 +205,11 @@ test("retained P-001: owner collects every declared Bandai record through native
     } catch (error) {
       let diagnostic;
       try {
-        const response = await fetch(`${worker.url}/v1/ingestion-runs/${id}/game-candidates`, {
-          headers: { authorization: `Bearer ${key}` },
-        });
+        const response = await withNativeRequestPacing(environment, () =>
+          fetch(`${worker.url}/v1/ingestion-runs/${id}/game-candidates`, {
+            headers: { authorization: `Bearer ${key}` },
+          }),
+        );
         diagnostic = `HTTP ${response.status}: ${await response.text()}`;
       } catch (diagnosticError) {
         diagnostic = `Diagnostic request failed: ${String(diagnosticError)}`;
@@ -295,7 +296,6 @@ test("retained P-001: owner collects every declared Bandai record through native
       },
     }),
   );
-  await new Promise((resolve) => setTimeout(resolve, 2200));
   const absent = await runCli(
     ["entity-proposal", "admit", "--proposal-id", pendingOfficial.id, "--decision", decisionPath, "--yes", "--json"],
     environment,

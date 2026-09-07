@@ -66,6 +66,9 @@ export function retainedIdentityAndEvidence(database) {
       .all(),
     correctionDecisions: database.prepare("SELECT * FROM identity_correction_decisions ORDER BY sequence").all(),
     proposals: database.prepare("SELECT * FROM entity_proposals ORDER BY id").all(),
+    reducerStates: database.prepare("SELECT * FROM reconciliation_reducer_state ORDER BY rowid").all(),
+    textChunks: database.prepare("SELECT * FROM reconciliation_text_chunks ORDER BY rowid").all(),
+    checkpoints: database.prepare("SELECT * FROM reconciliation_checkpoints ORDER BY rowid").all(),
     nativeMappings: database.prepare("SELECT * FROM reconciliation_source_mappings ORDER BY rowid").all(),
     sourceSnapshots: database.prepare("SELECT * FROM source_snapshots ORDER BY rowid").all(),
     publicationArtifacts: database

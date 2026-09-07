@@ -14,25 +14,18 @@ import {
 } from "./acceptance-runtime.mjs";
 import { nativeRecoveryCloudflare } from "./native-recovery-cloudflare.mjs";
 
-const nextNativeRequest = new Map();
-async function paceNativeRequest(environment) {
-  const interval = Number(environment.KEEPR_NATIVE_REQUEST_INTERVAL_MS ?? 0);
-  if (!interval) return;
-  const base = environment.KEEPR_INGESTION_URL;
-  const at = Math.max(Date.now(), nextNativeRequest.get(base) ?? 0);
-  nextNativeRequest.set(base, at + interval);
-  await new Promise((resolve) => setTimeout(resolve, at - Date.now()));
-}
+import { withNativeRequestPacing } from "./native-request-pacing.mjs";
+
 async function get(path, environment) {
-  await paceNativeRequest(environment);
-  const response = await fetch(`${environment.KEEPR_INGESTION_URL}${path}`, {
-    headers: { authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}` },
-  });
+  const response = await withNativeRequestPacing(environment, () =>
+    fetch(`${environment.KEEPR_INGESTION_URL}${path}`, {
+      headers: { authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}` },
+    }),
+  );
   assert.equal(response.status, 200, await response.clone().text());
   return response.json();
 }
 async function cli(args, environment) {
-  await paceNativeRequest(environment);
   const response = await runCli([...args, "--json"], environment);
   assert.equal(response.code, 0, `${response.stdout}\n${response.stderr}`);
   return JSON.parse(response.stdout);
