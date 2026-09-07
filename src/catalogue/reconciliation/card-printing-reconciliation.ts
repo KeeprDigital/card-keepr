@@ -962,24 +962,30 @@ export async function reconcileRetainedCardPrintingEvidence(
           const compatibilityKey = canonicalJson(compatibility);
           const locatorVariantKey = canonicalJson([observation.sourceLineage, locator, observation.variantKey]);
           const localLocated = await localLocators.get(locatorVariantKey);
+          // A pinned admission already resolves identity. Keep exact locator and
+          // canonical-fact checks, without spending the ambiguous-match budget
+          // scanning every other appearance of this Card.
+          let reviewedPrintingId: string | null = admission?.decision?.printing?.id ?? reviewedCardPrintingId;
           const [located, unfilteredDatabaseMatches, appearanceMatches, crossSourceCandidates] = await Promise.all([
             printingAtLocatorVariant(database, observation.sourceLineage, locator, observation.variantKey),
-            compatiblePrintings(database, compatibility),
-            printingsWithAppearance(database, compatibility),
-            observation.supportedGame === "gundam"
+            reviewedPrintingId === null ? compatiblePrintings(database, compatibility) : Promise.resolve([]),
+            reviewedPrintingId === null ? printingsWithAppearance(database, compatibility) : Promise.resolve([]),
+            reviewedPrintingId !== null || observation.supportedGame === "gundam"
               ? Promise.resolve([])
               : crossSourcePrintingCandidates(database, compatibility),
           ]);
           const databaseMatches = unfilteredDatabaseMatches;
           const matchIds = new Set(databaseMatches.map((match) => match.id));
-          const localMatch = await localCompatibility.get(compatibilityKey);
-          if (localMatch !== undefined) matchIds.add(localMatch);
-          for await (const match of localPrintingCompatibility.matchingBeforeObservation(
-            compatibilityGroup(compatibility),
-            { records: 8, bytes: 512000 },
-          )) {
-            consumeIdentityMatch();
-            if (isCompatible(match.compatibility, compatibility)) matchIds.add(match.printingId);
+          if (reviewedPrintingId === null) {
+            const localMatch = await localCompatibility.get(compatibilityKey);
+            if (localMatch !== undefined) matchIds.add(localMatch);
+            for await (const match of localPrintingCompatibility.matchingBeforeObservation(
+              compatibilityGroup(compatibility),
+              { records: 8, bytes: 512000 },
+            )) {
+              consumeIdentityMatch();
+              if (isCompatible(match.compatibility, compatibility)) matchIds.add(match.printingId);
+            }
           }
           const unprovenCrossSourceAppearance =
             matchIds.size === 0 && located === null && localLocated === undefined && crossSourceCandidates.length > 0;
@@ -997,7 +1003,6 @@ export async function reconcileRetainedCardPrintingEvidence(
             (observation.supportedGame !== "gundam" &&
               crossSourceMatches.length > 0 &&
               !hasCrossSourceArtworkEvidence(observation));
-          let reviewedPrintingId: string | null = admission?.decision?.printing?.id ?? reviewedCardPrintingId;
           if (
             located === null &&
             localLocated === undefined &&
