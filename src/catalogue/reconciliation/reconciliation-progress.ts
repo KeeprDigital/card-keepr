@@ -268,7 +268,7 @@ export async function initializeReconciliationProgress(
   }>();
   if (existing) {
     assertPinnedDefinitions(existing.definition_pins_json, definitions);
-    return;
+    return false;
   }
   const selected = gamePreparation
     ? { games_json: canonicalJson([gamePreparation.supported_game]) }
@@ -278,6 +278,7 @@ export async function initializeReconciliationProgress(
     runId,
     JSON.parse(selected?.games_json ?? "[]") as string[],
   );
+  let created = true;
   try {
     await database.batch([
       gamePreparation
@@ -298,11 +299,13 @@ export async function initializeReconciliationProgress(
       definition_pins_json: string;
     }>();
     if (!winner) throw error;
+    created = false;
   }
   const retained = await reconciliationOperationHeaderStatement(database, runId).first<{
     definition_pins_json: string;
   }>();
   assertPinnedDefinitions(retained?.definition_pins_json, definitions);
+  return created;
 }
 
 function assertPinnedDefinitions(retained: string | undefined, definitions: string) {

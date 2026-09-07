@@ -138,7 +138,23 @@ export function pinAdmissionsStatement(database: CatalogueStore, run: string, ga
           ON operation.supported_game IS NULL AND legacy.ingestion_run_id = operation.ingestion_run_id
         WHERE operation.id = ?`)
       .bind(games, policy, run),
-    before: [identityRunGuard(database, run)],
+    before: [
+      identityRunGuard(database, run),
+      repositoryStatements(database)
+        .prepare(`SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM entity_admission_run_pins AS legacy
+          WHERE operation.supported_game IS NULL AND legacy.ingestion_run_id = operation.ingestion_run_id)
+        AND EXISTS (SELECT 1 FROM json_each(?2, '$.authorities') AS authority
+          WHERE json_extract(authority.value, '$.generation') <> COALESCE((
+            SELECT MAX(decision.generation) FROM source_authority_decisions AS decision
+            WHERE decision.game = json_extract(authority.value, '$.game')
+              AND decision.locale = json_extract(authority.value, '$.locale')
+              AND decision.release_region = json_extract(authority.value, '$.release_region')
+              AND decision.area = json_extract(authority.value, '$.area')
+              AND decision.rowid <= operation.authority_decision_cutoff), 0))
+        THEN json_extract('{}', 'reconciliation_policy_changed') ELSE 1 END
+        FROM reconciliation_operations AS operation WHERE operation.id = ?1`)
+        .bind(run, policy),
+    ],
   });
 }
 export function admissionSelectionPageStatement(database: CatalogueStore, run: string, after: number) {

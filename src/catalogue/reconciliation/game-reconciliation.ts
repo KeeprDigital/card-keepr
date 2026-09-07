@@ -51,8 +51,9 @@ export async function createGameReconciliation(
     idempotency_key: input.idempotency_key,
     observed_at: at,
   };
+  let created: boolean;
   try {
-    await initializeReconciliationProgress(database, id, at, {
+    created = await initializeReconciliationProgress(database, id, at, {
       ...input,
       id,
       requestJson,
@@ -68,6 +69,7 @@ export async function createGameReconciliation(
     }
     if (error instanceof Error) {
       for (const code of [
+        "reconciliation_policy_changed",
         "game_evidence_not_found",
         "game_revision_mismatch",
         "game_candidate_slot_occupied",
@@ -86,7 +88,7 @@ export async function createGameReconciliation(
   if (!retained) throw new Error("The game preparation request was not retained.");
   assertRequest(retained, requestJson);
   await dispatchGamePreparation(database, workflow, retained, true);
-  return { created: true, document: await inspectGameCandidate(database, id) };
+  return { created, document: await inspectGameCandidate(database, id) };
 }
 
 function assertRequest(row: RequestRow, request: string) {
