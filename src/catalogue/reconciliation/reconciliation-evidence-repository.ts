@@ -3,7 +3,7 @@ import { type CatalogueStore, repositoryStatements } from "../shared";
 
 export function reconciliationSourceRequestsStatement(
   database: CatalogueStore,
-  runId: string,
+  preparationId: string,
   sequence = -1,
   requestId = "",
 ): D1PreparedStatement {
@@ -14,14 +14,14 @@ export function reconciliationSourceRequestsStatement(
                 discovered_from_request_id, state, source_snapshot_id,
                 failure_code
          FROM source_requests
-         WHERE ingestion_run_id = ? AND (sequence_number, request_id) > (?, ?)
+         WHERE ingestion_run_id = (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?) AND (sequence_number, request_id) > (?, ?)
          ORDER BY sequence_number, request_id LIMIT 1`)
-    .bind(runId, sequence, requestId);
+    .bind(preparationId, sequence, requestId);
 }
 
 export function reconciliationSourceRequestStatement(
   database: CatalogueStore,
-  runId: string,
+  preparationId: string,
   requestId: string,
 ): D1PreparedStatement {
   return repositoryStatements(database)
@@ -31,13 +31,13 @@ export function reconciliationSourceRequestStatement(
                 discovered_from_request_id, state, source_snapshot_id,
                 failure_code
          FROM source_requests
-         WHERE ingestion_run_id = ? AND request_id = ?`)
-    .bind(runId, requestId);
+         WHERE ingestion_run_id = (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?) AND request_id = ?`)
+    .bind(preparationId, requestId);
 }
 
 export function reconciliationObservationSetsStatement(
   database: CatalogueStore,
-  runId: string,
+  preparationId: string,
   afterId: string,
   snapshotId: string | null = null,
 ): D1PreparedStatement {
@@ -68,17 +68,17 @@ export function reconciliationObservationSetsStatement(
            ON snapshots.id = observations.source_snapshot_id
          JOIN ingestion_evidence_plans AS plan
            ON plan.ingestion_run_id = snapshots.ingestion_run_id
-         WHERE snapshots.ingestion_run_id = ?
+         WHERE snapshots.ingestion_run_id = (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?)
            AND observations.id > ? AND (? IS NULL OR observations.source_snapshot_id = ?)
            AND parse.intent = 'collection'
-           AND observations.rowid <= (SELECT observation_cutoff FROM reconciliation_operations WHERE ingestion_run_id = snapshots.ingestion_run_id)
+           AND observations.rowid <= (SELECT observation_cutoff FROM reconciliation_operations WHERE id = ?)
          ORDER BY observations.id LIMIT 1`)
-    .bind(runId, afterId, snapshotId, snapshotId);
+    .bind(preparationId, afterId, snapshotId, snapshotId, preparationId);
 }
 
 export function reconciliationSnapshotEvidenceStatement(
   database: CatalogueStore,
-  runId: string,
+  preparationId: string,
   sourceUrl: string,
   sourceLineage: string,
 ): D1PreparedStatement {
@@ -93,41 +93,45 @@ export function reconciliationSnapshotEvidenceStatement(
           selection.sha256 AS selection_sha256
          FROM source_snapshots AS snapshot
          JOIN reconciliation_evidence_selection AS selection
-           ON selection.preparation_id = snapshot.ingestion_run_id
+           ON selection.preparation_id = ?1
           AND selection.request_id = snapshot.request_id
-         WHERE snapshot.ingestion_run_id = ? AND snapshot.request_url = ? AND snapshot.source_lineage = ?
+         WHERE snapshot.ingestion_run_id = (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?1)
+           AND snapshot.request_url = ?2 AND snapshot.source_lineage = ?3
            AND json_extract(selection.content, '$.request.source_snapshot_id') = snapshot.id
            AND json_extract(selection.content, '$.request.request_role') = 'image'
            AND json_extract(selection.content, '$.request.state') = 'observed'
          ORDER BY snapshot.rowid DESC LIMIT 1`)
-    .bind(runId, sourceUrl, sourceLineage);
+    .bind(preparationId, sourceUrl, sourceLineage);
 }
 
 export function reconciliationCollectionPlansStatement(
   database: CatalogueStore,
-  runId: string,
+  preparationId: string,
   afterLineage = "",
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT source_lineage, discovery_observation_set_id, contract,
                 content_digest
          FROM official_source_collection_plans
-         WHERE ingestion_run_id = ? AND source_lineage > ?
+         WHERE ingestion_run_id = (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?) AND source_lineage > ?
          ORDER BY source_lineage LIMIT 1`)
-    .bind(runId, afterLineage);
+    .bind(preparationId, afterLineage);
 }
 
-export function reconciliationEvidencePlanStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+export function reconciliationEvidencePlanStatement(
+  database: CatalogueStore,
+  preparationId: string,
+): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT request_plan_json
          FROM ingestion_evidence_plans
-         WHERE ingestion_run_id = ?`)
-    .bind(runId);
+         WHERE ingestion_run_id = (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?)`)
+    .bind(preparationId);
 }
 
 export function reconciliationOverflowRequestsStatement(
   database: CatalogueStore,
-  runId: string,
+  preparationId: string,
   sequence = -1,
   requestId = "",
 ): D1PreparedStatement {
@@ -136,14 +140,14 @@ export function reconciliationOverflowRequestsStatement(
                   parent_request_id, method, url, request_headers_json,
                   representation_fingerprint, request_role
            FROM source_discovery_request_plans
-           WHERE ingestion_run_id = ? AND (sequence_number, request_id) > (?, ?)
+           WHERE ingestion_run_id = (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?) AND (sequence_number, request_id) > (?, ?)
            ORDER BY sequence_number, request_id LIMIT 1`)
-    .bind(runId, sequence, requestId);
+    .bind(preparationId, sequence, requestId);
 }
 
 export function reconciliationObservationCountsStatement(
   database: CatalogueStore,
-  runId: string,
+  preparationId: string,
   lineage: string,
   adapter: string,
   requestId: string,
@@ -158,11 +162,11 @@ export function reconciliationObservationCountsStatement(
        JOIN source_parse_operations AS parse
          ON parse.id = observations.parse_operation_id
        WHERE parse.intent = 'collection'
-         AND snapshots.ingestion_run_id <> ? AND snapshots.source_lineage = ?
+         AND snapshots.ingestion_run_id <> (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?) AND snapshots.source_lineage = ?
          AND observations.adapter_version = ? AND snapshots.request_id = ?
        ORDER BY prior_revision.published_at DESC, prior_revision.id DESC,
                 snapshots.source_lineage, snapshots.request_id LIMIT 1`)
-    .bind(runId, lineage, adapter, requestId);
+    .bind(preparationId, lineage, adapter, requestId);
 }
 
 // A source may verify its already accepted bytes without collecting a different
@@ -170,7 +174,7 @@ export function reconciliationObservationCountsStatement(
 // partial optional captures in a published run were never accepted evidence.
 export function unchangedAcceptedSourceStatement(
   database: CatalogueStore,
-  runId: string,
+  preparationId: string,
   lineage: string,
   adapterVersion: string,
 ) {
@@ -190,22 +194,22 @@ export function unchangedAcceptedSourceStatement(
     SELECT snapshots.request_id, snapshots.content_digest FROM source_snapshots AS snapshots
     JOIN source_requests AS requests ON requests.ingestion_run_id = snapshots.ingestion_run_id AND requests.request_id = snapshots.request_id
       AND requests.source_snapshot_id = snapshots.id
-    WHERE snapshots.ingestion_run_id = ?1 AND snapshots.source_lineage = ?2 AND snapshots.adapter_version = ?3 AND requests.request_role <> 'image'
+    WHERE snapshots.ingestion_run_id = (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?1) AND snapshots.source_lineage = ?2 AND snapshots.adapter_version = ?3 AND requests.request_role <> 'image'
   ) SELECT 1 AS unchanged WHERE EXISTS (SELECT 1 FROM current)
     AND (SELECT COUNT(*) FROM current) = (SELECT COUNT(*) FROM previous)
     AND NOT EXISTS (SELECT 1 FROM current LEFT JOIN previous USING(request_id)
       WHERE previous.content_digest IS NULL OR current.content_digest <> previous.content_digest)`)
-    .bind(runId, lineage, adapterVersion);
+    .bind(preparationId, lineage, adapterVersion);
 }
 
 export function reconciliationCollectionPlanChunkStatement(
   database: CatalogueStore,
-  runId: string,
+  preparationId: string,
   lineage: string,
   offset: number,
 ) {
   return repositoryStatements(database)
     .prepare(`SELECT substr(collection_plan_json, ?, 32768) AS content
-    FROM official_source_collection_plans WHERE ingestion_run_id = ? AND source_lineage = ?`)
-    .bind(offset, runId, lineage);
+    FROM official_source_collection_plans WHERE ingestion_run_id = (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?) AND source_lineage = ?`)
+    .bind(offset, preparationId, lineage);
 }
