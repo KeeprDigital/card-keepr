@@ -1,6 +1,5 @@
 export { EvidenceIngestionWorkflow, CatalogueBackupWorkflow, GamePublicationWorkflow } from "../../apps/ingestion/src/index";
 import {
-  collectFixtureEvidence,
   injectFixtureEvidencePlan,
 } from "../../test/support/fixture-evidence-plan";
 import { fixtureSourceSnapshotStatement, cloneFixtureFetchAttemptStatement, cloneFixtureSourceSnapshotStatement } from "../helpers/query-helpers/runtime-fixtures";
@@ -67,13 +66,7 @@ export default {
         env.CATALOGUE_DB,
         await request.json<StartEvidenceRunRequest>(),
       );
-      const collected = await collectFixtureEvidence(
-        env.CATALOGUE_DB,
-        env.EVIDENCE_OBJECTS,
-        env.OFFICIAL_SOURCE_TRANSPORT,
-        String(run.id),
-      );
-      return Response.json(collected, { status: 201 });
+      return Response.json(run, { status: 201 });
     }
     if (
       request.method === "POST" &&

@@ -89,7 +89,9 @@ export const catalogueRoutes = [
     catalogueExportsResponse(request, env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, base),
   ),
   route<Context>("GET", "/v1/catalogue-exports/:revision", async ({ env, request, base }, params) =>
-    currentExport(() => compositionExportResponse(env.CATALOGUE_DB, request, base, params.revision!)),
+    currentExport(() =>
+      compositionExportResponse(env.CATALOGUE_DB, request, base, params.revision!, env.CATALOGUE_EXPORTS),
+    ),
   ),
 ];
 

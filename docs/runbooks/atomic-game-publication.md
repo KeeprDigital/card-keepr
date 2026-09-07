@@ -46,7 +46,12 @@ composition. Pagination pins that composition and rejects a conflicting explicit
 revision. Image content links pin the same revision. Consumer export indexes
 page four immutable per-record gzip NDJSON components at a time under the current
 `card-keepr-catalogue-export-manifest@5` contract. Each component contains one
-normalized public record; text and projection digests are verified before rendering.
+normalized public record. After approval, the Workflow verifies text and projection
+digests, validates each public record against the current schema, and retains its
+verified gzip bytes before visibility. Sixteen-unit successor shards reserve at
+most forty attempts each. Matching immutable inputs reuse prior record objects.
+Public GET, HEAD, conditional and range requests read those stored bytes; they do
+not regenerate export records or gzip streams.
 Component descriptors and cursor are hashed with the manifest digest zeroed.
 Host-specific download links live outside that hashed document. Export listing
 records identify the composition content digest; follow the detail link for the
@@ -54,6 +59,18 @@ first manifest page and its digest. Exports remain available independently of
 query-projection archival; retain their immutable facts, text and candidate bindings.
 Private preparation roots are not consumer exports. Legacy public export shapes
 are unavailable; retained historical recovery objects use a private validator.
+
+The switch also registers a previously verified, revision-specific package
+manifest at `catalogue-public-manifests/REVISION/COMPOSITION_DIGEST.json`. Guarded
+export deletion uses the existing expiring owner plan and confirmation commands.
+The plan lists this exclusive manifest as the exact physical removal set and
+identifies the independently retained backup that protects shared public roots,
+tree nodes and compressed components. Confirmation rechecks those references and
+makes the package unavailable before manifest-last removal. The current package
+is protected; known deleted manifest/component URLs return 410 and unknown names
+return 404. Deletion retains immutable component identities, digests and the
+tombstone. The exclusive package copy is outside required recovery artifact
+closure; shared component bytes and current/retained query material remain intact.
 
 Preparation carries first-observed, last-observed and lifecycle transition facts
 against candidate identities. The fixed-size switch binds the newly published

@@ -1,5 +1,6 @@
 import { type PublicBase, publicUrl } from "../../http/public-base";
-import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
+import { type CatalogueStore, canonicalJson, sha256Text, sha256 } from "../shared";
+import { catalogueExportStatement, pendingExportComponentDeletionStatement } from "./published-read-repository";
 import { parseRange } from "./byte-range";
 import {
   canonicalEtag,
@@ -38,13 +39,30 @@ export async function compositionExportResponse(
   request: Request,
   base: PublicBase,
   revisionId: string,
-): Promise<Response | undefined> {
-  const revision = await nativeRevisionStatement(db, revisionId, false).first<{
+  bucket?: R2Bucket,
+): Promise<Response | null | undefined> {
+  const revision = await nativeRevisionStatement(db, revisionId, false, false).first<{
     id: string;
     published_at: string;
     content_digest: string;
+    publication_operation_id: string | null;
   }>();
-  if (!revision) return undefined;
+  if (!revision) return null;
+  const receipt = await catalogueExportStatement(db, revisionId).first<{
+    maintenance_state: string;
+    manifest_key: string;
+    manifest_digest: string;
+  }>();
+  if (receipt && receipt.maintenance_state !== "available")
+    throw new ReadProblem(410, "catalogue_export_deleted", "This known Catalogue Export has been deleted.");
+  if (!revision.publication_operation_id) return undefined;
+  if (!receipt)
+    throw new ReadProblem(503, "catalogue_export_unavailable", "The public package receipt is unavailable.");
+  if (bucket) {
+    const object = await bucket.get(receipt.manifest_key);
+    if (!object || object.size > 16384 || (await sha256Text(await object.text())) !== receipt.manifest_digest)
+      throw new ReadProblem(503, "catalogue_export_unavailable", "The immutable package manifest failed verification.");
+  }
   await requirePublicExport(db, revisionId);
   const url = new URL(request.url);
   collectionParameters(url, ["after"]);
@@ -106,21 +124,42 @@ export async function compositionExportComponentResponse(
   revisionId: string,
   name: string,
 ): Promise<Response | null | undefined> {
-  if (!(await nativeRevisionStatement(db, revisionId, false).first())) return undefined;
+  const revision = await nativeRevisionStatement(db, revisionId, false, false).first<{
+    publication_operation_id: string | null;
+  }>();
+  if (!revision) return null;
+  const receipt = await catalogueExportStatement(db, revisionId).first<{ maintenance_state: string }>();
+  if (!revision.publication_operation_id) {
+    if (receipt && receipt.maintenance_state !== "available") {
+      if (!(await pendingExportComponentDeletionStatement(db, { revisionId, componentName: name }).first()))
+        return null;
+      throw new ReadProblem(410, "catalogue_export_deleted", "This known Catalogue Export component has been deleted.");
+    }
+    return undefined;
+  }
   await requirePublicExport(db, revisionId);
   const match = /^(one-piece|fusion-world|digimon|gundam)\.(0|[1-9]\d*)$/.exec(name);
   if (!match || !Number.isSafeInteger(Number(match[2]))) return null;
   const artifact = await composedExportArtifactStatement(db, revisionId, match[1]!, Number(match[2])).first<Artifact>();
   if (!artifact) return null;
+  if (receipt && receipt.maintenance_state !== "available")
+    throw new ReadProblem(410, "catalogue_export_deleted", "This known Catalogue Export component has been deleted.");
+  if (!receipt)
+    throw new ReadProblem(503, "catalogue_export_unavailable", "The public package receipt is unavailable.");
   const size = artifact.byte_length;
   const headers: Record<string, string> = {
     ...revisionHeaders(revisionId, `"${artifact.sha256}"`),
     "accept-ranges": "bytes",
     "content-type": "application/gzip",
+    "content-disposition": `attachment; filename="${name}.ndjson.gz"`,
+    "cache-control": "private, max-age=31536000, immutable",
   };
-  const objectHead = await bucket.head(artifact.object_key);
-  if (!objectHead || objectHead.size !== size)
+  const object = await bucket.get(artifact.object_key);
+  if (!object || object.size !== size || size > 4_000_000)
     throw new ReadProblem(503, "catalogue_export_unavailable", "The verified public component is unavailable.");
+  const bytes = new Uint8Array(await object.arrayBuffer());
+  if ((await sha256(bytes)) !== artifact.sha256)
+    throw new ReadProblem(503, "catalogue_export_unavailable", "The immutable public component failed verification.");
   const conditional = conditionalResponse(request, headers);
   if (conditional) return conditional;
   const range =
@@ -138,8 +177,8 @@ export async function compositionExportComponentResponse(
   headers["content-length"] = String(range?.length ?? size);
   if (range) headers["content-range"] = `bytes ${range.offset}-${range.offset + range.length - 1}/${size}`;
   if (request.method === "HEAD") return new Response(null, { status: 200, headers });
-  const object = await bucket.get(artifact.object_key, range ? { range } : {});
-  if (!object || object.size !== size)
-    throw new ReadProblem(503, "catalogue_export_unavailable", "The verified public component is unavailable.");
-  return new Response(object.body, { status: range ? 206 : 200, headers });
+  return new Response(range ? bytes.slice(range.offset, range.offset + range.length) : bytes, {
+    status: range ? 206 : 200,
+    headers,
+  });
 }

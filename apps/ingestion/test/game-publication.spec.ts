@@ -1,8 +1,12 @@
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { advancePublicationExports } from "../../../src/catalogue/ingestion";
+import { prepareCatalogueExportDeletion, confirmCatalogueExportDeletion } from "../../../src/catalogue/export";
 import { publicComponents } from "./query-helpers/atomic-publication";
 import { compositionEntityResponse } from "../../../src/catalogue/read/composition-read";
-import { compositionExportResponse } from "../../../src/catalogue/read/composition-export";
+import {
+  compositionExportResponse,
+  compositionExportComponentResponse,
+} from "../../../src/catalogue/read/composition-export";
 import { installLegacyCurrentHead, restoreFixtureSpine } from "./query-helpers/atomic-publication";
 import { admitSyntheticCurrentCheckpoint, currentGameMembers } from "./query-helpers/atomic-publication";
 import { rejectedAtomicSwitch, publicationStateSnapshot } from "./query-helpers/atomic-publication";
@@ -312,6 +316,129 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
     String(switched.document.resulting_revision_id),
   ))!.json()) as { data: unknown };
   expect(retainedExport.data).toEqual(firstExport.data);
+  await admitSyntheticCurrentCheckpoint(testEnv.CATALOGUE_DB);
+  const current = (await publicationStateSnapshot(testEnv.CATALOGUE_DB)) as { current_revision_id: string };
+  const currentRequest = new Request(`${consumerBase.origin}/v1/catalogue-exports/${current.current_revision_id}`);
+  const currentBefore = (await (await compositionExportResponse(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    currentRequest,
+    consumerBase,
+    current.current_revision_id,
+    testEnv.CATALOGUE_EXPORTS,
+  ))!.json()) as { data: { catalogue_revision: { content_sha256: string } } };
+  const protectedPlan = await prepareCatalogueExportDeletion(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    testEnv.CATALOGUE_EXPORTS,
+    {
+      catalogue_revision_id: current.current_revision_id,
+      manifest_digest: currentBefore.data.catalogue_revision.content_sha256,
+      expected_current_revision_id: current.current_revision_id,
+      plan_id: "native-delete-current-plan",
+    },
+    new Date().toISOString(),
+  );
+  await expect(
+    confirmCatalogueExportDeletion(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      testEnv.CATALOGUE_EXPORTS,
+      {
+        plan_id: String(protectedPlan.id),
+        plan_digest: String(protectedPlan.plan_digest),
+        catalogue_revision_id: current.current_revision_id,
+        manifest_digest: currentBefore.data.catalogue_revision.content_sha256,
+        expected_current_revision_id: current.current_revision_id,
+        confirmation_revision_id: current.current_revision_id,
+        deletion_id: "native-delete-current",
+        idempotency_key: "native-delete-current-intent",
+      },
+      new Date().toISOString(),
+    ),
+  ).rejects.toMatchObject({ code: "current_export_required" });
+  const oldRevision = String(switched.document.resulting_revision_id);
+  const oldDigest = (firstExport.data as { catalogue_revision: { content_sha256: string } }).catalogue_revision
+    .content_sha256;
+  const plan = await prepareCatalogueExportDeletion(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    testEnv.CATALOGUE_EXPORTS,
+    {
+      catalogue_revision_id: oldRevision,
+      manifest_digest: oldDigest,
+      expected_current_revision_id: current.current_revision_id,
+      plan_id: "native-delete-plan",
+    },
+    new Date().toISOString(),
+  );
+  expect(plan.object_keys).toEqual([`catalogue-public-manifests/${oldRevision}/${oldDigest}.json`]);
+  expect(plan.dependencies).toEqual(
+    expect.arrayContaining([expect.objectContaining({ code: "shared_components_retained_for_recovery" })]),
+  );
+  const deletionInput = {
+    plan_id: String(plan.id),
+    plan_digest: String(plan.plan_digest),
+    catalogue_revision_id: oldRevision,
+    manifest_digest: oldDigest,
+    expected_current_revision_id: current.current_revision_id,
+    confirmation_revision_id: oldRevision,
+    deletion_id: "native-delete-operation",
+    idempotency_key: "native-delete-intent",
+  };
+  const deleted = await confirmCatalogueExportDeletion(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    testEnv.CATALOGUE_EXPORTS,
+    deletionInput,
+    new Date().toISOString(),
+  );
+  expect(deleted.state).toBe("deleted");
+  expect(
+    await confirmCatalogueExportDeletion(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      testEnv.CATALOGUE_EXPORTS,
+      deletionInput,
+      new Date().toISOString(),
+    ),
+  ).toEqual(deleted);
+  expect(
+    await testEnv.CATALOGUE_EXPORTS.head(`catalogue-public-manifests/${oldRevision}/${oldDigest}.json`),
+  ).toBeNull();
+  for (const component of firstComponents)
+    expect((await testEnv.CATALOGUE_EXPORTS.head(component.object_key))?.size).toBe(component.byte_length);
+  await expect(
+    compositionExportResponse(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      new Request(`${consumerBase.origin}/v1/catalogue-exports/${oldRevision}`),
+      consumerBase,
+      oldRevision,
+      testEnv.CATALOGUE_EXPORTS,
+    ),
+  ).rejects.toMatchObject({ status: 410 });
+  const knownName = (firstExport.data as { components: { name: string }[] }).components[0]!.name;
+  await expect(
+    compositionExportComponentResponse(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      testEnv.CATALOGUE_EXPORTS,
+      new Request(consumerBase.origin),
+      oldRevision,
+      knownName,
+    ),
+  ).rejects.toMatchObject({ status: 410 });
+  expect(
+    await compositionExportComponentResponse(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      testEnv.CATALOGUE_EXPORTS,
+      new Request(consumerBase.origin),
+      oldRevision,
+      "never-known",
+    ),
+  ).toBeNull();
+  const currentExport = await compositionExportResponse(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    new Request(`${consumerBase.origin}/v1/catalogue-exports/${current.current_revision_id}`),
+    consumerBase,
+    current.current_revision_id,
+    testEnv.CATALOGUE_EXPORTS,
+  );
+  expect(currentExport?.status).toBe(200);
+  expect(await currentExport!.json()).toEqual(currentBefore);
 });
 
 async function preparePublicExports(operation: string, generation: number, bucket?: R2Bucket) {

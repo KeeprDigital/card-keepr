@@ -230,6 +230,9 @@ test("native publication: the CLI publishes separated Product catalogue data con
   const multiPublished = multiApproved;
   assert.notEqual(multiPublished.resulting_revision_id, revisionId);
   const allFiveRevisionId = multiPublished.resulting_revision_id;
+  const observedDigimonRevisionId = multiPublished.publications.find(
+    (publication) => publication.supported_game === "digimon",
+  ).resulting_revision_id;
   revisionId = allFiveRevisionId;
 
   const carryCollected = await runCli(
@@ -292,13 +295,13 @@ test("native publication: the CLI publishes separated Product catalogue data con
   assert.equal(validateProduct(productDocument), true, ajv.errorsText(validateProduct.errors));
   assert.equal(productDocument.data.releases[0].region, "unknown");
   assert.equal(productDocument.data.releases[0].status, "announced");
-  assert.equal(productDocument.data.lifecycle.last_observed_revision_id, allFiveRevisionId);
+  assert.equal(productDocument.data.lifecycle.last_observed_revision_id, observedDigimonRevisionId);
 
   assert.equal(Object.hasOwn(productDocument, "provenance"), false);
   const printingResponse = await fetch(`${api.url}/v1/printings/${printingId}`, { headers });
   assert.equal(printingResponse.status, 200);
   const printingDocument = await printingResponse.json();
-  assert.equal(printingDocument.data.lifecycle.last_observed_revision_id, allFiveRevisionId);
+  assert.equal(printingDocument.data.lifecycle.last_observed_revision_id, observedDigimonRevisionId);
   assert.equal(printingDocument.data.products.length, 1);
   assert.equal(printingDocument.data.products[0].id, cardBearing.id);
   assert.equal(Object.hasOwn(printingDocument.data.products[0], "evidence_category"), false);
@@ -325,9 +328,12 @@ test("native publication: the CLI publishes separated Product catalogue data con
   }
   assert.equal(
     cards.find(({ official_identity }) => official_identity?.value === "BT99-001").lifecycle.last_observed_revision_id,
-    allFiveRevisionId,
+    observedDigimonRevisionId,
   );
-  assert.equal(printings.find(({ id }) => id === printingId).lifecycle.last_observed_revision_id, allFiveRevisionId);
+  assert.equal(
+    printings.find(({ id }) => id === printingId).lifecycle.last_observed_revision_id,
+    observedDigimonRevisionId,
+  );
   const currentOnePiece = products.find(({ official_code }) => official_code === "OP-RAW-01");
   assert.ok(currentOnePiece, JSON.stringify(products.map(({ name, official_code }) => ({ name, official_code }))));
   assert.equal(currentOnePiece.lifecycle.last_observed_revision_id, revisionId);

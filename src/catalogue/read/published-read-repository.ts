@@ -25,7 +25,7 @@ export function exportCollectionStatement(
        FROM catalogue_revisions AS revision
        JOIN pinned_revision AS pinned ON pinned.id=revision.id
        LEFT JOIN catalogue_exports AS export ON revision.id=export.catalogue_revision_id
-       WHERE revision.publication_operation_id IS NOT NULL AND EXISTS(SELECT 1 FROM publication_export_preparations prepared WHERE prepared.publication_operation_id=revision.publication_operation_id AND prepared.state='verified')
+       WHERE revision.publication_operation_id IS NOT NULL AND export.maintenance_state='available' AND EXISTS(SELECT 1 FROM publication_export_preparations prepared WHERE prepared.publication_operation_id=revision.publication_operation_id AND prepared.state='verified')
          AND (? IS NULL OR revision.published_at < ? OR (
              revision.published_at = ? AND revision.id < ?))
        ORDER BY revision.published_at DESC, revision.id DESC LIMIT ?`)

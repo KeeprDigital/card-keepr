@@ -145,6 +145,7 @@ export async function inspectNativeCollection(runId, environment, { partitionKin
 export async function publishNativeCollection(runId, idempotencyKey, environment, worker, deadlineMs = 30000) {
   const inspection = typeof runId === "string" ? await inspectNativeCollection(runId, environment) : runId;
   let publication;
+  const publications = [];
   for (const candidate of inspection.candidates) {
     const key = `${idempotencyKey}-${candidate.supported_game}`;
     await cli(
@@ -209,8 +210,9 @@ export async function publishNativeCollection(runId, idempotencyKey, environment
       { deadlineMs },
     );
     assert.equal(checkpoint.catalogue_revision_id, publication.resulting_revision_id);
+    publications.push(publication);
   }
-  return publication;
+  return { ...publication, publications };
 }
 
 /** Follow the current paged manifest and verify both compressed and public NDJSON bytes. */

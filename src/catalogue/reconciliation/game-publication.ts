@@ -1,7 +1,11 @@
-import { AdministrationProblem, type CatalogueStore, canonicalJson } from "../shared";
+import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { inspectGameCandidate, inspectGameCandidateReadiness } from "./game-candidate";
 import { publicationPreparationGuard } from "./publication-preparation-repository";
-import { publicationOperationStatement, retainPublicationApproval } from "./game-publication-repository";
+import {
+  publicationOperationStatement,
+  retainPublicationApproval,
+  retainPublicPackageManifest,
+} from "./game-publication-repository";
 
 export type PublicationOperation = {
   id: string;
@@ -189,6 +193,21 @@ export async function advanceGamePublication(
       ],
       true,
     );
+    const packageKey = `catalogue-public-manifests/catrev_${id.slice("publication_".length)}/${composition.root_digest}.json`;
+    const packageContent = canonicalJson({ contract: composition.contract, games: composition.games });
+    await env.CATALOGUE_EXPORTS.put(packageKey, packageContent, { onlyIf: { etagDoesNotMatch: "*" } });
+    const retainedPackage = await env.CATALOGUE_EXPORTS.get(packageKey);
+    if (
+      !retainedPackage ||
+      retainedPackage.size > 16384 ||
+      (await sha256Text(await retainedPackage.text())) !== composition.root_digest
+    )
+      throw new AdministrationProblem(
+        409,
+        "publication_artifacts_unverified",
+        "The immutable public package manifest failed verification.",
+      );
+    await retainPublicPackageManifest(db, id, composition.root_digest, packageKey).run();
     try {
       await db.batch(
         publicationSwitchStatements(db, {
@@ -230,7 +249,7 @@ export async function advanceGamePublication(
   return inspectPublication(db, id);
 }
 
-import { sha256Text, workflowDriver } from "../shared";
+import { workflowDriver } from "../shared";
 import type { ReconciliationWorkflowParams } from "./reconciliation-workflow";
 export async function startGamePublication(
   env: Parameters<typeof advanceGamePublication>[0] & {

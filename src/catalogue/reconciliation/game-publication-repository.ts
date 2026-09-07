@@ -1,5 +1,16 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 
+export function retainPublicPackageManifest(db: CatalogueStore, id: string, digest: string, key: string) {
+  return repositoryStatements(db)
+    .prepare("INSERT INTO game_publication_actions VALUES (?,?,?,?) ON CONFLICT(idempotency_key) DO NOTHING")
+    .bind(
+      `public-package:${id}:${digest}`,
+      id,
+      JSON.stringify({ contract: "public-package@1" }),
+      JSON.stringify({ sha256: digest, object_key: key }),
+    );
+}
+
 export function publicationOperationStatement(db: CatalogueStore, id: string, byKey = false) {
   return repositoryStatements(db)
     .prepare(`SELECT p.*, c.preparation_id,c.ingestion_run_id,c.supported_game
@@ -109,6 +120,10 @@ export function publicationSwitchGuard(
  AND state='verified' AND d1_bookmark IS NOT NULL AND manifest_sha256 IS NOT NULL) THEN json_extract('{}','publication_backup_pending')
  WHEN NOT EXISTS(SELECT 1 FROM verified_publication_compositions WHERE sha256=?4)
  THEN json_extract('{}','publication_composition_unverified')
+ WHEN NOT EXISTS(SELECT 1 FROM game_publication_actions a WHERE a.publication_operation_id=?1
+ AND a.idempotency_key='public-package:' || ?1 || ':' || ?4 AND json_extract(a.result_json,'$.sha256')=?4
+ AND json_extract(a.result_json,'$.object_key')='catalogue-public-manifests/catrev_' || substr(?1,13) || '/' || ?4 || '.json')
+ THEN json_extract('{}','publication_package_unverified')
  WHEN EXISTS (
  WITH expected AS (
  SELECT old.supported_game,old.candidate_id,old.root_digest,public.root_digest AS public_root_digest FROM catalogue_composition_games old JOIN publication_export_preparations public ON public.candidate_id=old.candidate_id AND public.state='verified'
@@ -149,6 +164,15 @@ export function publicationSwitchStatements(
         `INSERT INTO catalogue_candidate_publications SELECT candidate_id,? FROM game_publication_operations WHERE id=?`,
       )
       .bind(input.revision, input.id),
+    sql
+      .prepare(
+        "INSERT INTO catalogue_exports(catalogue_revision_id,manifest_key,manifest_digest,verified) VALUES (?, ?, ?,1)",
+      )
+      .bind(
+        input.revision,
+        `catalogue-public-manifests/${input.revision}/${input.composition}.json`,
+        input.composition,
+      ),
     sql
       .prepare(`INSERT INTO catalogue_composition_games SELECT ?,json_extract(value,'$.supported_game'),json_extract(value,'$.candidate_id'),
  CASE WHEN json_extract(value,'$.candidate_id')=(SELECT candidate_id FROM game_publication_operations WHERE id=?) THEN ? ELSE
