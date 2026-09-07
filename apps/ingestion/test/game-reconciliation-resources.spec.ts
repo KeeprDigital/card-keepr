@@ -23,10 +23,15 @@ test.each([
   "known-card-facts-fanout",
   "capacity-nested-card-matches",
   "curated-text-target",
+  "curated-text-target-retry",
+  "curated-text-target-normalization-retry",
+  "curated-text-target-reducer-retry",
   "large-card-content",
 ])("%s respects the D1/R2 callback budget", async (scenario) => {
+  const fixture = scenario.startsWith("curated-text-target") ? "curated-text-target" : scenario;
+  let injectedFailures = 0;
   let predecessor = "catrev_spine_000";
-  if (scenario === "curated-text-target") {
+  if (fixture === "curated-text-target") {
     const seed = await reconcile(
       (await collect("/reconciliation/curated-text-target-base", "curated-resource-seed")).id,
     );
@@ -53,7 +58,7 @@ test.each([
     });
     expect(revision.response.status, JSON.stringify(revision.document)).toBe(201);
   }
-  const source = await collect(`/reconciliation/${scenario}`, "native-resource-evidence");
+  const source = await collect(`/reconciliation/${fixture}`, "native-resource-evidence");
   let params: ReconciliationWorkflowParams | undefined;
   const queued = { status: async () => ({ status: "queued" }) } as unknown as WorkflowInstance;
   const binding = {
@@ -96,7 +101,21 @@ test.each([
     });
   const database = new Proxy(testEnv.CATALOGUE_DB, {
     get(target, property) {
-      if (property === "prepare") return (sql: string) => statement(target.prepare(sql));
+      if (property === "prepare")
+        return (sql: string) => {
+          if (
+            injectedFailures === 0 &&
+            ((scenario === "curated-text-target-retry" && sql.includes("json_quote(content)")) ||
+              (scenario === "curated-text-target-normalization-retry" &&
+                sql.includes("INSERT INTO reconciliation_observation_origins")) ||
+              (scenario === "curated-text-target-reducer-retry" &&
+                sql.includes("INSERT INTO reconciliation_reducer_state")))
+          ) {
+            injectedFailures++;
+            throw new Error("Injected synchronous text-page preparation outage.");
+          }
+          return statement(target.prepare(sql));
+        };
       if (property === "batch")
         return (...args: Parameters<D1Database["batch"]>) => {
           calls++;
@@ -129,25 +148,27 @@ test.each([
       payload: params!,
     } as import("cloudflare:workers").WorkflowEvent<ReconciliationWorkflowParams>,
     {
-      do: async (name: string, _config: unknown, callback: () => Promise<string>) => {
-        calls = 0;
-        try {
-          return await callback();
-        } finally {
-          measured.push({ name, calls });
+      do: async (name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+        for (let attempt = 0; ; attempt++) {
+          calls = 0;
+          try {
+            return await callback();
+          } catch (error) {
+            if (attempt >= config.retries.limit) throw error;
+          } finally {
+            measured.push({ name, calls });
+          }
         }
       },
     } as unknown as import("cloudflare:workers").WorkflowStep,
   );
   expect(measured.filter(({ calls }) => calls > 100)).toEqual([]);
   expect((await get(`/v1/game-candidates/${id}`)).document).toMatchObject({
-    ...(scenario === "known-card-facts-fanout" ||
-    scenario === "large-card-content" ||
-    scenario === "curated-text-target"
+    ...(scenario === "known-card-facts-fanout" || scenario === "large-card-content" || fixture === "curated-text-target"
       ? { state: "sealed" }
       : { state: "failed", failure_code: "reconciliation_capacity_exceeded" }),
   });
-  if (scenario === "curated-text-target") {
+  if (fixture === "curated-text-target") {
     const page = (await get(`/v1/game-candidates/${id}/partitions`)).document;
     const cards = (page.partitions as { kind: string; ordinal: number }[]).filter((part) => part.kind === "cards");
     expect(cards).toHaveLength(1);
@@ -170,5 +191,6 @@ test.each([
       );
     }
   }
+  if (scenario.endsWith("-retry")) expect(injectedFailures).toBe(1);
   expect(measured.length).toBeGreaterThan(10);
 });

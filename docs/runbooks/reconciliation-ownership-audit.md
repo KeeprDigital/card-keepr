@@ -99,3 +99,27 @@ unchanged.
 Native mapping publication is downstream work (#226/#227). It must consume
 preparation-owned evidence and gate published visibility on candidate
 publication, never on the source collection's publication state.
+
+## Synchronous storage-error boundary audit
+
+Reconciliation storage helpers accept only `() => Promise<T>`. Repository
+statement construction, binding, and execution belong inside that callback;
+passing an already-started promise loses synchronous `prepare`/`bind` failures.
+The text reader's page-statement map is also constructed inside its callback.
+
+The audit covered all callers of the normalization, reducer, text, document,
+input, image, and curated-conflict storage wrappers. Normalization and reducer
+callers now defer their complete storage invocation. Document and text wrappers
+no longer accept promises. Input, image, and curated-conflict wrappers already
+required callbacks and retain statement construction inside them. Existing
+explicit try/catch boundaries in Card matching, plan lookup, prior Erratum
+provenance, disappearance, withdrawals, and correction-pin reads also construct
+and execute their statements inside the catch boundary.
+
+Digest, ordinal, byte-length, immutable-receipt, origin, and capacity validation
+remain outside these storage wrappers. Reducer grouping/digest computation is
+performed before entering its storage callback. Consequently those semantic
+failures retain their own classification rather than becoming transient storage
+errors. Real Workflow probes inject synchronous statement-construction outages
+in normalization, reducer writes, and text-page reads and verify retry, eventual
+sealing, exact retained text references, and per-attempt D1/R2 call budgets.

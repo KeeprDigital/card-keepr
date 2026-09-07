@@ -16,9 +16,9 @@ export class ReconciliationReducerStorageError extends Error {
     this.name = "ReconciliationReducerStorageError";
   }
 }
-async function storage<T>(operation: Promise<T>): Promise<T> {
+async function storage<T>(operation: () => Promise<T>): Promise<T> {
   try {
-    return await operation;
+    return await operation();
   } catch (cause) {
     throw new ReconciliationReducerStorageError(cause);
   }
@@ -64,7 +64,7 @@ export class ReconciliationReducerIndex<T> {
   async get(key: string): Promise<T | undefined> {
     if (this.ordinal === 0) return undefined;
     const digest = await sha256Text(key);
-    const row = await storage(
+    const row = await storage(() =>
       reducerStateStatement(
         this.database,
         this.runId,
@@ -86,7 +86,7 @@ export class ReconciliationReducerIndex<T> {
     let bytes = 0;
     let count = 0;
     for (;;) {
-      const row: (StateRow & { key_digest: string }) | null = await storage(
+      const row: (StateRow & { key_digest: string }) | null = await storage(() =>
         nextReducerGroupStateStatement(
           this.database,
           this.runId,
@@ -115,7 +115,7 @@ export class ReconciliationReducerIndex<T> {
   async *latestEntries(after = ""): AsyncGenerator<{ key: string; value: T }> {
     if (this.ordinal === 0) return;
     for (;;) {
-      const row: (StateRow & { key_digest: string }) | null = await storage(
+      const row: (StateRow & { key_digest: string }) | null = await storage(() =>
         nextLatestReducerStateStatement(this.database, this.runId, this.namespace, this.ordinal, after).first<
           StateRow & { key_digest: string }
         >(),
@@ -138,7 +138,7 @@ export class ReconciliationReducerIndex<T> {
   async *insertionEntries(after = 0): AsyncGenerator<{ ordinal: number; value: T }> {
     if (this.ordinal === 0) return;
     for (;;) {
-      const page = await storage(
+      const page = await storage(() =>
         nextReducerInsertionStateStatement(this.database, this.runId, this.namespace, this.ordinal, after).all<
           StateRow & { first_ordinal: number }
         >(),
@@ -161,7 +161,7 @@ export class ReconciliationReducerIndex<T> {
     if (this.ordinal === 0) return;
     for (;;) {
       const ordinal = this.ordinal;
-      const page = await storage(
+      const page = await storage(() =>
         nextReducerEntityStateStatement(this.database, this.runId, this.namespace, ordinal, after).all<
           StateRow & { entity_id: string }
         >(),
@@ -182,7 +182,7 @@ export class ReconciliationReducerIndex<T> {
   async hasEntity(key: string): Promise<boolean | undefined> {
     if (this.ordinal === 0) return undefined;
     const digest = await sha256Text(key);
-    const row = await storage(
+    const row = await storage(() =>
       reducerStateStatement(
         this.database,
         this.runId,
@@ -208,7 +208,8 @@ export class ReconciliationReducerIndex<T> {
     if (new TextEncoder().encode(content).byteLength > 524288)
       throw new Error("reconciliation_capacity_exceeded: one reducer fact exceeds 512 KiB.");
     const sha256 = await sha256Text(content);
-    const inserted = await storage(
+    const groupDigest = this.group ? await sha256Text(this.group(value)) : null;
+    const inserted = await storage(() =>
       retainReducerStateStatement(
         this.database,
         this.runId,
@@ -217,12 +218,12 @@ export class ReconciliationReducerIndex<T> {
         this.ordinal,
         content,
         sha256,
-        this.group ? await sha256Text(this.group(value)) : null,
+        groupDigest,
       ).first<StateRow>(),
     );
     const retained =
       inserted ??
-      (await storage(
+      (await storage(() =>
         exactReducerStateStatement(this.database, this.runId, this.namespace, digest, this.ordinal).first<StateRow>(),
       ));
     if (retained?.content !== content || retained.sha256 !== sha256)

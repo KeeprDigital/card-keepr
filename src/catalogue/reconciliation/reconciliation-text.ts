@@ -14,9 +14,9 @@ export class ReconciliationTextStorageError extends Error {
     this.name = "ReconciliationTextStorageError";
   }
 }
-async function textStorage<T>(operation: Promise<T> | (() => Promise<T>)): Promise<T> {
+async function textStorage<T>(operation: () => Promise<T>): Promise<T> {
   try {
-    return await (typeof operation === "function" ? operation() : operation);
+    return await operation();
   } catch (cause) {
     throw new ReconciliationTextStorageError(cause);
   }
@@ -108,14 +108,14 @@ export async function restorePartitionedRecord(
       readers.push({ part: envelope.text_parts[nextPart++]!, text: "", ordinal: 0 });
     // Each page is capped at 512000 bytes and 16 rows; two pages remain
     // below the one-MiB fetch budget even when separate text fields are large.
-    const statements = readers.map(({ part, ordinal }) =>
-      reconciliationTextPageStatement(database, runId, part.sha256, ordinal, part.chunks),
-    );
-    const pages = await textStorage(() =>
-      statements.length === 1
+    const pages = await textStorage(() => {
+      const statements = readers.map(({ part, ordinal }) =>
+        reconciliationTextPageStatement(database, runId, part.sha256, ordinal, part.chunks),
+      );
+      return statements.length === 1
         ? statements[0]!.all<{ ordinal: number; content: string }>().then((page) => [page])
-        : database.batch<{ ordinal: number; content: string }>(statements),
-    );
+        : database.batch<{ ordinal: number; content: string }>(statements);
+    });
     for (let index = 0; index < readers.length; index++) {
       const reader = readers[index]!;
       const page = pages[index]!;

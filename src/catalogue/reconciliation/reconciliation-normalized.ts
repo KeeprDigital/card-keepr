@@ -16,9 +16,9 @@ export class ReconciliationNormalizationStorageError extends Error {
     this.name = "ReconciliationNormalizationStorageError";
   }
 }
-async function storage<T>(operation: Promise<T>): Promise<T> {
+async function storage<T>(operation: () => Promise<T>): Promise<T> {
   try {
-    return await operation;
+    return await operation();
   } catch (cause) {
     throw new ReconciliationNormalizationStorageError(cause);
   }
@@ -31,8 +31,8 @@ export async function claimObservationOrigin(
   setId: string,
   ordinal: number,
 ) {
-  await storage(retainObservationOriginStatement(database, runId, id, setId, ordinal).run());
-  const origin = await storage(
+  await storage(() => retainObservationOriginStatement(database, runId, id, setId, ordinal).run());
+  const origin = await storage(() =>
     observationOriginStatement(database, runId, id).first<{ observation_set_id: string; source_ordinal: number }>(),
   );
   if (origin?.observation_set_id !== setId || origin.source_ordinal !== ordinal)
@@ -40,7 +40,7 @@ export async function claimObservationOrigin(
 }
 
 export async function hasNormalizedObservation(database: CatalogueStore, runId: string, id: string) {
-  return (await storage(normalizedObservationExistsStatement(database, runId, id).first())) !== null;
+  return (await storage(() => normalizedObservationExistsStatement(database, runId, id).first())) !== null;
 }
 
 export async function retainNormalizedObservation(
@@ -59,8 +59,8 @@ export async function retainNormalizedObservation(
     cardErratumTarget === null
       ? null
       : await sha256Text(canonicalJson([cardErratumTarget.game, cardErratumTarget.officialIdentity]));
-  await storage(retainNormalizedObservationStatement(database, runId, id, content, sha256, targetDigest).run());
-  const retained = await storage(
+  await storage(() => retainNormalizedObservationStatement(database, runId, id, content, sha256, targetDigest).run());
+  const retained = await storage(() =>
     normalizedObservationStatement(database, runId, id).first<{
       content: string;
       sha256: string;
@@ -79,7 +79,7 @@ export async function retainNormalizedObservation(
 export async function* stagedNormalizedObservations<T>(database: CatalogueStore, runId: string): AsyncGenerator<T> {
   let after: string | null = null;
   for (;;) {
-    const row: { observation_id: string; content: string; sha256: string } | null = await storage(
+    const row: { observation_id: string; content: string; sha256: string } | null = await storage(() =>
       nextNormalizedObservationStatement(database, runId, after).first<{
         observation_id: string;
         content: string;
@@ -105,7 +105,7 @@ export async function* normalizedCardErrata<T>(
   let count = 0;
   let bytes = 0;
   for (;;) {
-    const row: { observation_id: string; content: string; sha256: string } | null = await storage(
+    const row: { observation_id: string; content: string; sha256: string } | null = await storage(() =>
       nextNormalizedCardErratumStatement(database, runId, digest, after).first<{
         observation_id: string;
         content: string;
