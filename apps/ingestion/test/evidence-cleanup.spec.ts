@@ -461,6 +461,40 @@ test.each([false, true])(
   },
 );
 
+test("an unfinished 304 reuse retains raw bytes until the newer failed owner's exact retention boundary", async () => {
+  const key = await capturedObject("cleanup_old_304");
+  await seedRunFixtureStatement(env.CATALOGUE_DB, {
+    id: "recent_failed_304",
+    state: "failed",
+    failure_code: "synthetic_capture_failure",
+    started_at: "2026-08-20T00:00:00.000Z",
+    terminal_at: "2026-08-20T00:00:00.000Z",
+  }).run();
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO source_requests(ingestion_run_id,request_id,sequence_number,method,url,request_headers_json,representation_fingerprint,state) VALUES ('recent_failed_304','request',1,'GET','https://source.invalid/304','{}','fixture','pending')`,
+  ).run();
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO source_capture_operations(attempt_id,ingestion_run_id,request_id,attempt_number,source_snapshot_id,content_object_key,state,requested_at,reused_source_snapshot_id) VALUES ('recent304','recent_failed_304','request',1,'recent304','source-snapshots/recent304.bin','uploaded','2026-08-20T00:00:00.000Z','cleanup_old_304')`,
+  ).run();
+  for (const [now, protectedObjects, deletedObjects] of [
+    ["2026-09-18T23:59:59.999Z", 1, 0],
+    ["2026-09-19T00:00:00.000Z", 0, 1],
+  ] as const) {
+    const begin = await request("/v1/ingestion-runs/cleanup_old_304/evidence-cleanup", now, {
+      idempotency_key: `cleanup_old_304_${deletedObjects}`,
+    });
+    expect(begin.status).toBe(202);
+    const intent = (await begin.json()) as { id: string };
+    const progress = await request(`/v1/evidence-cleanups/${intent.id}/advance`, now, {});
+    expect(await progress.json()).toMatchObject({
+      state: "completed",
+      protected_objects: protectedObjects,
+      deleted_objects: deletedObjects,
+    });
+    expect((await env.EVIDENCE_OBJECTS.head(key)) === null).toBe(deletedObjects === 1);
+  }
+});
+
 test("a corrupted terminal projection cannot authorize a cleanup or physical delete", async () => {
   const key = await capturedObject("cleanup_corrupt");
   const begin = await request("/v1/ingestion-runs/cleanup_corrupt/evidence-cleanup", "2026-08-31T00:00:00.000Z", {

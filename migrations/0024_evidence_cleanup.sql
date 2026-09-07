@@ -47,6 +47,9 @@ BEGIN SELECT RAISE(ABORT,'evidence_cleanup_tombstone_immutable'); END;
 CREATE VIEW evidence_cleanup_inventory AS
  SELECT ingestion_run_id, content_object_key AS object_key FROM source_capture_operations
  UNION SELECT ingestion_run_id, content_object_key FROM source_snapshots
+ -- An uploaded 304 already owns the reused raw bytes before snapshot finalization.
+ UNION SELECT ref.ingestion_run_id, snapshot.content_object_key
+ FROM source_capture_operations ref JOIN source_snapshots snapshot ON snapshot.id=ref.reused_source_snapshot_id
  UNION SELECT snapshot.ingestion_run_id, parse.content_object_key
  FROM source_parse_operations parse JOIN source_snapshots snapshot ON snapshot.id=parse.source_snapshot_id;
 CREATE INDEX evidence_cleanup_snapshot_key ON source_snapshots(content_object_key, ingestion_run_id);
