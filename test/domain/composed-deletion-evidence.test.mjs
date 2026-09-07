@@ -7,7 +7,7 @@ import {
 
 // Verification-provider seam: fixed source evidence and an independently mutated
 // restore response exercise the streaming census without a Worker or R2 runtime.
-function snapshotProvider() {
+function snapshotProvider(pageSize = 1) {
   const rows = new Map([
     ["catalogue_exports", [{ snapshot_rowid: 1, catalogue_revision_id: "old", maintenance_state: "deleted" }]],
     ["catalogue_export_deletion_plans", [{ snapshot_rowid: 1, id: "plan", component_names_json: '["digimon.0"]' }]],
@@ -41,7 +41,7 @@ function snapshotProvider() {
           },
         ];
       if (request.kind === "composition-page")
-        return (rows.get(request.table) ?? []).filter((row) => row.snapshot_rowid > request.after).slice(0, 1);
+        return (rows.get(request.table) ?? []).filter((row) => row.snapshot_rowid > request.after).slice(0, pageSize);
       return [];
     },
   };
@@ -79,3 +79,38 @@ for (const [table, field, value] of [
     await assert.rejects(verifyCompositionSnapshot(restored.query, expected), /Restored composition snapshot differs/);
   });
 }
+
+test("batched private authority census preserves every ordered row and detects a changed restore", async () => {
+  const single = snapshotProvider(),
+    batched = snapshotProvider(4);
+  const rows = [1, 3, 4, 9, 10, 14, 18].map((snapshot_rowid) => ({
+    snapshot_rowid,
+    content: JSON.stringify({ ordinal: snapshot_rowid }),
+    sha256: "a".repeat(64),
+  }));
+  single.rows.set("reconciliation_checkpoints", structuredClone(rows));
+  batched.rows.set("reconciliation_checkpoints", structuredClone(rows));
+  let privateQueries = 0;
+  const expected = await captureCompositionSnapshot(single.query, "current");
+  const actual = await captureCompositionSnapshot(async (request) => {
+    if (request.kind === "composition-page" && request.table === "reconciliation_checkpoints") privateQueries++;
+    return batched.query(request);
+  }, "current");
+  assert.equal(privateQueries, 3);
+  assert.deepEqual(actual, expected);
+  assert.equal(actual.tables.find((entry) => entry.table === "reconciliation_checkpoints").rows, 7);
+  batched.rows.get("reconciliation_checkpoints")[2].content = "changed";
+  await assert.rejects(verifyCompositionSnapshot(batched.query, expected), /Restored composition snapshot differs/);
+});
+
+test("private snapshot pages reject oversized payloads and repeated cursors", async () => {
+  const oversized = snapshotProvider(4);
+  oversized.rows.set("reconciliation_checkpoints", [{ snapshot_rowid: 1, content: "x".repeat(1_048_576) }]);
+  await assert.rejects(captureCompositionSnapshot(oversized.query, "current"), /byte budget/);
+  const repeated = snapshotProvider(4);
+  repeated.rows.set("reconciliation_checkpoints", [
+    { snapshot_rowid: 1, content: "first" },
+    { snapshot_rowid: 1, content: "second" },
+  ]);
+  await assert.rejects(captureCompositionSnapshot(repeated.query, "current"), /Invalid snapshot cursor/);
+});

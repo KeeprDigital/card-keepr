@@ -1,7 +1,20 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 
-// These are database snapshot records, never a consumer export envelope. One row
-// per page bounds retained partition/text buffers, independently of catalogue size.
+// These are database snapshot records, never a consumer export envelope.
+// Only schema-bounded private records use small pages; other tables retain one row.
+export const maximumPrivateSnapshotPageBytes = 1_048_576;
+const privateSnapshotColumns = {
+  reconciliation_checkpoints: ["preparation_id", "phase", "ordinal", "content", "sha256"],
+  reconciliation_reducer_state: [
+    "preparation_id",
+    "namespace",
+    "key_digest",
+    "observation_ordinal",
+    "group_digest",
+    "content",
+    "sha256",
+  ],
+} as const;
 export const compositionSnapshotTables = [
   "catalogue_revisions",
   "catalogue_exports",
@@ -93,6 +106,19 @@ export function compositionVerificationQuery(input: CompositionVerificationQuery
   if (input.kind === "foreign-keys") return { sql: "PRAGMA foreign_key_check", params: [] };
   if (input.kind === "composition-page") {
     if (!compositionSnapshotTables.includes(input.table)) throw new Error("Unknown composition snapshot table.");
+    if (input.table === "reconciliation_checkpoints" || input.table === "reconciliation_reducer_state") {
+      const fields = ["snapshot_rowid", ...privateSnapshotColumns[input.table]]
+        .map((column) => `'${column}',${column}`)
+        .join(",");
+      return {
+        sql: `WITH page AS (SELECT rowid AS snapshot_rowid,* FROM ${input.table} WHERE rowid>? ORDER BY rowid LIMIT 4),
+          sizes AS (SELECT snapshot_rowid,sum(length(CAST(json_object(${fields}) AS BLOB))) OVER (ORDER BY snapshot_rowid) AS page_bytes FROM page)
+          SELECT page.* FROM page JOIN sizes USING(snapshot_rowid)
+          WHERE sizes.page_bytes<=${maximumPrivateSnapshotPageBytes} OR page.snapshot_rowid=(SELECT min(snapshot_rowid) FROM page)
+          ORDER BY page.snapshot_rowid`,
+        params: [input.after],
+      };
+    }
     return {
       sql: `SELECT rowid AS snapshot_rowid, * FROM ${input.table} WHERE rowid > ? ORDER BY rowid LIMIT 1`,
       params: [input.after],
