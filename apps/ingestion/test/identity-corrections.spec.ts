@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { runReconciliationWorkflow } from "../src/reconciliation-workflow";
 import {
   installReconciliationSuite,
   post,
@@ -7,6 +8,7 @@ import {
   reconcile,
   approve,
   exportComponentRecords,
+  testEnv,
 } from "./reconciliation-helpers";
 
 installReconciliationSuite();
@@ -511,3 +513,152 @@ test.each(["lookup", "application"])(
     );
   },
 );
+
+test("reviewed identity associations prepare through durable bounded groups", async () => {
+  const prior = await reconcile((await collect("/reconciliation/curated-conflict-fanout-base", "association-seed")).id);
+  const published = await approve(prior.document);
+  expect(published.response.status).toBe(200);
+  const cards = await exportComponentRecords(String(published.document.resulting_revision_id), "cards");
+  for (let index = 0; index < 12; index++) {
+    const proposal = {
+      game: "one-piece",
+      entity_kind: "card",
+      action: "merge",
+      source_ids: index === 0 ? cards.slice(0, 9).map((card) => card.id) : [cards[8 + index * 2]!.id],
+      replacement_ids: [cards[index === 0 ? 9 : 9 + index * 2]!.id],
+      printing_assignments: {},
+      expected_current_revision_id: published.document.resulting_revision_id,
+      rationale: "Synthetic owner comparison establishes one rules-level Card",
+      evidence: { attestation: "Synthetic comparison of retained identities" },
+    };
+    const validated = await post("/v1/identity-corrections/validate", proposal);
+    expect(validated.response.status, JSON.stringify(validated.document)).toBe(200);
+    const decision = await post("/v1/identity-corrections", {
+      ...proposal,
+      review_digest: validated.document.review_digest,
+      idempotency_key: `association-merge-${index}`,
+    });
+    expect(decision.response.status).toBe(201);
+  }
+  const run = await collect("/reconciliation/curated-conflict-fanout-base", "association-refresh");
+  let calls = 0;
+  const associationCalls: number[] = [];
+  const associationOffsets: number[] = [];
+  let armed = false,
+    resumed = false,
+    writes = 0,
+    failures = 0;
+  const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
+  const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement => {
+    const proxy = new Proxy(statement, {
+      get(target, property) {
+        if (property === "bind") return (...values: unknown[]) => wrap(target.bind(...values), sql, values);
+        const value = Reflect.get(target, property);
+        if (["run", "first", "all", "raw"].includes(String(property)))
+          return (...args: unknown[]) => {
+            calls++;
+            return Reflect.apply(value, target, args);
+          };
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    statements.set(proxy, { sql, values });
+    return proxy;
+  };
+  const database = new Proxy(testEnv.CATALOGUE_DB, {
+    get(target, property) {
+      if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
+      if (property === "batch")
+        return (...args: Parameters<D1Database["batch"]>) => {
+          calls++;
+          if (
+            armed &&
+            !resumed &&
+            args[0].some((statement) => {
+              const entry = statements.get(statement);
+              return (
+                entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
+                entry.values.includes("correction_merges")
+              );
+            }) &&
+            ++writes === 2
+          ) {
+            failures++;
+            throw new Error("Injected identity association storage outage after a partial write.");
+          }
+          return target.batch(...args);
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const event = {
+    payload: {
+      ingestion_run_id: run.id,
+      expected_current_revision_id: String(run.document.expected_current_revision_id),
+      idempotency_key: `reconcile-${run.id}`,
+      observed_at: new Date().toISOString(),
+      generation: 0,
+    },
+  } as import("cloudflare:workers").WorkflowEvent<
+    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+  >;
+  const step = {
+    do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+      let result: string;
+      for (let attempt = 0; ; attempt++) {
+        calls = 0;
+        writes = 0;
+        try {
+          result = await callback();
+          break;
+        } catch (error) {
+          if (attempt >= config.retries.limit) throw error;
+        }
+      }
+      if (JSON.parse(result).continuation?.phase === "identity_associations") {
+        associationCalls.push(calls);
+        const progress = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+        const checkpoint = (progress.checkpoints as { phase: string; cursor: { association: number } }[]).find(
+          ({ phase }) => phase === "identity_associations",
+        )!;
+        associationOffsets.push(checkpoint.cursor.association);
+        if (checkpoint.cursor.association > 0) armed = true;
+      }
+      return result;
+    },
+  } as unknown as import("cloudflare:workers").WorkflowStep;
+  const environment = { ...testEnv, CATALOGUE_DB: database };
+  await runReconciliationWorkflow(environment, event, step);
+  expect(failures).toBe(4);
+  const paused = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+  expect(paused).toMatchObject({ state: "paused", generation: 1 });
+  expect(
+    (
+      await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+        generation: 1,
+        idempotency_key: "resume-identity-associations",
+      })
+    ).response.status,
+  ).toBe(200);
+  resumed = true;
+  await runReconciliationWorkflow(environment, { payload: { ...event.payload, generation: 1 } } as typeof event, step);
+  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document.deadline).toBe(paused.deadline);
+  expect(associationOffsets.some((offset) => offset > 0)).toBe(true);
+  expect(associationCalls.length).toBeGreaterThanOrEqual(4);
+  expect(Math.max(...associationCalls)).toBeLessThanOrEqual(100);
+  const candidate = await get(`/v1/ingestion-runs/${run.id}/candidate`);
+  expect(candidate.response.status, JSON.stringify(candidate.document)).toBe(200);
+  const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+  const checkpoint = (status.checkpoints as { phase: string; ordinal: number; cursor: unknown }[]).find(
+    ({ phase }) => phase === "identity_associations",
+  );
+  expect(checkpoint).toMatchObject({ cursor: { complete: true, processedDecisions: 12 } });
+  expect(checkpoint!.ordinal).toBeGreaterThan(0);
+  const accepted = await approve(candidate.document);
+  expect(accepted.response.status, JSON.stringify(accepted.document)).toBe(200);
+  const current = String(accepted.document.resulting_revision_id);
+  expect(await exportComponentRecords(current, "cards")).toHaveLength(12);
+  expect(await exportComponentRecords(current, "printings")).toHaveLength(32);
+  expect(await exportComponentRecords(current, "identity-corrections")).toHaveLength(20);
+});

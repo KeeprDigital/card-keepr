@@ -375,7 +375,13 @@ export async function reconcileRetainedCardPrintingEvidence(
     if (plan.reconciliationCapability !== "errata") errataOnlyEvidence = false;
   }
   if (!reduction) await pinCorrectionDecisions(database, runId, JSON.parse(run.selected_games_json) as string[]);
-  const correctedCardIdentity = await pinnedCardIdentityResolver(database, runId);
+  let correctedCardIdentity: Awaited<ReturnType<typeof pinnedCardIdentityResolver>>;
+  try {
+    correctedCardIdentity = await pinnedCardIdentityResolver(database, runId, yieldAtCheckpoint);
+  } catch (error) {
+    if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
+    throw error;
+  }
   if (!reduction) await pinEntityAdmissions(database, runId, JSON.parse(run.selected_games_json) as string[]);
   let admittedEntities: Awaited<ReturnType<typeof applyPinnedEntityAdmissions>>;
   try {
