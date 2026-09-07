@@ -140,9 +140,7 @@ export async function prepareCandidateInspection(
           : canonicalJson(semantic(left)) === canonicalJson(semantic(right))
             ? "evidence_only"
             : "changed";
-    cursor.counts[entry.kind] ??= {};
-    cursor.counts[entry.kind]![change] = (cursor.counts[entry.kind]![change] ?? 0) + 1;
-    pending.push({
+    const value = {
       game: candidate.supported_game,
       entity_class: entry.kind,
       entity_id: entry.entity_id,
@@ -160,9 +158,16 @@ export async function prepareCandidateInspection(
         preparation_id: candidate.preparation_id,
         parts: right?.envelope.text_parts ?? [],
       },
-    });
+    };
+    const length = new TextEncoder().encode(canonicalJson(value)).byteLength;
+    // Leave room for envelope metadata and never combine an oversized value
+    // with an already buffered page. A checkpoint replays this unread record.
+    if (pending.length && bytes + length > 384000) await retain();
+    cursor.counts[entry.kind] ??= {};
+    cursor.counts[entry.kind]![change] = (cursor.counts[entry.kind]![change] ?? 0) + 1;
+    pending.push(value);
     cursor.count++;
-    bytes += new TextEncoder().encode(canonicalJson(pending.at(-1))).byteLength;
+    bytes += length;
   };
   if (cursor.stage === "before" && cursor.legacy && legacyPayload) {
     while (cursor.legacy.pass < 3) {
@@ -248,7 +253,7 @@ export async function prepareCandidateInspection(
           }
           cursor.record++;
           if (
-            (++work >= (cursor.predecessor || cursor.legacy ? 4 : 32) || bytes >= 128000) &&
+            (++work >= (cursor.predecessor || cursor.legacy ? 4 : 64) || bytes >= 256000) &&
             cursor.record < page.records.length
           )
             await retain();
@@ -256,7 +261,7 @@ export async function prepareCandidateInspection(
       }
       cursor.record = 0;
       cursor.partition++;
-      await retain();
+      if (cursor.predecessor || cursor.legacy || work >= 64 || bytes >= 256000) await retain();
     }
     cursor.partition = 0;
     cursor.stage = stage === "before" ? "after" : "removed";
