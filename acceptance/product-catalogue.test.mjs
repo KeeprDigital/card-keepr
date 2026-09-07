@@ -1,3 +1,10 @@
+import {
+  inspectNativeCollection,
+  publishNativeCollection,
+  waitForNativeCollection,
+  nativeCheckpointTransport,
+  nativeExportRecords,
+} from "./helpers/native-catalogue-runtime.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -9,8 +16,6 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import {
   applyMigrations,
-  waitForRunState as awaitRunState,
-  exportRecords,
   runCli,
   startWorker,
   stopWorker,
@@ -22,7 +27,7 @@ import * as sourceEvidenceQueries from "./helpers/query-helpers/source-evidence.
 
 const root = resolve(import.meta.dirname, "..");
 
-test("compatibility publication: the CLI publishes separated Product catalogue data consumed through authenticated HTTP", async (t) => {
+test("native publication: the CLI publishes separated Product catalogue data consumed through authenticated HTTP", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-product-boundary-"));
   const statePath = join(directory, "shared-state");
   const administrationKey = randomUUID();
@@ -74,7 +79,7 @@ test("compatibility publication: the CLI publishes separated Product catalogue d
   await applyMigrations(statePath);
   const config = JSON.parse(await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
   delete config.$schema;
-  config.main = resolve(root, "acceptance/fixtures/catalogue-publication-ingestion-harness.ts");
+  config.main = resolve(root, "apps/ingestion/src/index.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
   config.ratelimits[0].simple.limit = 300;
   config.services = [
@@ -89,7 +94,9 @@ test("compatibility publication: the CLI publishes separated Product catalogue d
     config: "acceptance/fixtures/fusion-world-official-source.wrangler.jsonc",
     statePath: join(directory, "source-state"),
   });
+  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory);
   const ingestion = await startWorker({
+    ...checkpointTransport,
     config: ingestionConfig,
     envFile: ingestionEnv,
     statePath,
@@ -114,15 +121,14 @@ test("compatibility publication: the CLI publishes separated Product catalogue d
   const collectedRun = JSON.parse(collected.stdout);
   const resumed = await runCli(["source", "resume", "--run-id", collectedRun.id, "--json"], cliEnvironment);
   assert.equal(resumed.code, 0, resumed.stderr);
-  await waitForRunState(collectedRun.id, "awaiting_approval", cliEnvironment, ingestion, statePath);
-  const inspected = await runCli(["candidate", "inspect", "--run-id", collectedRun.id, "--json"], cliEnvironment);
-  assert.equal(inspected.code, 0, inspected.stderr);
-  const inspection = JSON.parse(inspected.stdout);
+  await waitForRunState(collectedRun.id, "sealed", cliEnvironment, ingestion, statePath);
+  const inspected = await inspectNativeCollection(collectedRun.id, cliEnvironment);
+  const inspection = inspected;
   assert.equal(inspection.run_id, collectedRun.id);
-  assert.equal(inspection.diff.summary.cards_added, 1);
-  assert.equal(inspection.diff.summary.printings_added, 1);
+  assert.equal(inspection.counts.cards.added, 1);
+  assert.equal(inspection.counts.printings.added, 1);
   assert.ok(
-    inspection.diff.warnings.some(
+    inspection.warnings.some(
       ({ code, path, raw_value }) =>
         code === "unknown_source_field" &&
         path === "source_sidecar.raw.products[0].campaign_note" &&
@@ -130,33 +136,18 @@ test("compatibility publication: the CLI publishes separated Product catalogue d
     ),
   );
   assert.ok(
-    inspection.diff.warnings.some(
+    inspection.warnings.some(
       ({ code, path, raw_value }) =>
         code === "unknown_source_field" &&
         path === "source_sidecar.raw.products[0].vendor_metadata.merchandising.channel_code" &&
         raw_value === "official-web",
     ),
   );
-  const [printingId] = inspection.diff.printings.added;
-  const approved = await runCli(
-    [
-      "run",
-      "approve",
-      "--run-id",
-      collectedRun.id,
-      "--candidate-digest",
-      inspection.candidate_digest,
-      "--expected-current-revision",
-      "catrev_spine_000",
-      "--idempotency-key",
-      "acceptance-product-approve",
-      "--yes",
-      "--json",
-    ],
-    cliEnvironment,
-  );
-  assert.equal(approved.code, 0, `${approved.stdout}\n${approved.stderr}\n${ingestion.getOutput()}`);
-  const published = JSON.parse(approved.stdout);
+  const [printingId] = inspection.changes
+    .filter((c) => c.entity_class === "printings" && c.change === "added")
+    .map((c) => c.entity_id);
+  const approved = await publishNativeCollection(inspection, "acceptance-product-approve", cliEnvironment, ingestion);
+  const published = approved;
   let revisionId = published.resulting_revision_id;
   assert.match(revisionId, /^catrev_/u);
 
@@ -214,37 +205,22 @@ test("compatibility publication: the CLI publishes separated Product catalogue d
   }
   const multiResumed = await runCli(["source", "resume", "--run-id", multiRun.id, "--json"], cliEnvironment);
   assert.equal(multiResumed.code, 0, multiResumed.stderr);
-  await waitForRunState(multiRun.id, "awaiting_approval", cliEnvironment, ingestion, statePath);
-  const multiInspectionResult = await runCli(
-    ["candidate", "inspect", "--run-id", multiRun.id, "--json"],
-    cliEnvironment,
-  );
+  await waitForRunState(multiRun.id, "sealed", cliEnvironment, ingestion, statePath);
+  const multiInspectionResult = await inspectNativeCollection(multiRun.id, cliEnvironment);
   assert.equal(
     multiInspectionResult.code,
     0,
     `${multiInspectionResult.stdout}\n${multiInspectionResult.stderr}\n${ingestion.getOutput()}`,
   );
-  const multiInspection = JSON.parse(multiInspectionResult.stdout);
+  const multiInspection = multiInspectionResult;
   assert.equal(multiInspection.expected_current_revision_id, revisionId);
-  const multiApproved = await runCli(
-    [
-      "run",
-      "approve",
-      "--run-id",
-      multiRun.id,
-      "--candidate-digest",
-      multiInspection.candidate_digest,
-      "--expected-current-revision",
-      revisionId,
-      "--idempotency-key",
-      "acceptance-product-multi-approve",
-      "--yes",
-      "--json",
-    ],
+  const multiApproved = await publishNativeCollection(
+    multiInspection,
+    "acceptance-product-multi-approve",
     cliEnvironment,
+    ingestion,
   );
-  assert.equal(multiApproved.code, 0, `${multiApproved.stdout}\n${multiApproved.stderr}\n${ingestion.getOutput()}`);
-  const multiPublished = JSON.parse(multiApproved.stdout);
+  const multiPublished = multiApproved;
   assert.notEqual(multiPublished.resulting_revision_id, revisionId);
   const allFiveRevisionId = multiPublished.resulting_revision_id;
   revisionId = allFiveRevisionId;
@@ -264,32 +240,16 @@ test("compatibility publication: the CLI publishes separated Product catalogue d
   assert.equal(carryCollected.code, 0, carryCollected.stderr);
   const carryRun = JSON.parse(carryCollected.stdout);
   assert.equal((await runCli(["source", "resume", "--run-id", carryRun.id, "--json"], cliEnvironment)).code, 0);
-  await waitForRunState(carryRun.id, "awaiting_approval", cliEnvironment, ingestion, statePath);
-  const carryInspectionResult = await runCli(
-    ["candidate", "inspect", "--run-id", carryRun.id, "--json"],
+  await waitForRunState(carryRun.id, "sealed", cliEnvironment, ingestion, statePath);
+  const carryInspectionResult = await inspectNativeCollection(carryRun.id, cliEnvironment);
+  const carryInspection = carryInspectionResult;
+  const carryApproved = await publishNativeCollection(
+    carryInspection,
+    "acceptance-product-carry-approve",
     cliEnvironment,
+    ingestion,
   );
-  assert.equal(carryInspectionResult.code, 0, carryInspectionResult.stderr);
-  const carryInspection = JSON.parse(carryInspectionResult.stdout);
-  const carryApproved = await runCli(
-    [
-      "run",
-      "approve",
-      "--run-id",
-      carryRun.id,
-      "--candidate-digest",
-      carryInspection.candidate_digest,
-      "--expected-current-revision",
-      allFiveRevisionId,
-      "--idempotency-key",
-      "acceptance-product-carry-approve",
-      "--yes",
-      "--json",
-    ],
-    cliEnvironment,
-  );
-  assert.equal(carryApproved.code, 0, `${carryApproved.stdout}\n${carryApproved.stderr}\n${ingestion.getOutput()}`);
-  revisionId = JSON.parse(carryApproved.stdout).resulting_revision_id;
+  revisionId = carryApproved.resulting_revision_id;
   await stopWorker(ingestion);
 
   const api = await startWorker({
@@ -304,7 +264,7 @@ test("compatibility publication: the CLI publishes separated Product catalogue d
   assert.equal(catalogueResponse.status, 200);
   const catalogueDocument = await catalogueResponse.json();
   assert.equal(Object.hasOwn(catalogueDocument.data, "last_successful_checks"), false);
-  const publishedProducts = await exportRecords(api.port, apiKey, revisionId, "products");
+  const publishedProducts = await nativeExportRecords(api.url, apiKey, revisionId, "products");
   const productOnly = publishedProducts.find(({ official_code }) => official_code === "BT-PRODUCT-ONLY");
   const cardBearing = publishedProducts.find(({ official_code }) => official_code === "BT-CARD-BEARING");
   assert.ok(productOnly);
@@ -340,7 +300,7 @@ test("compatibility publication: the CLI publishes separated Product catalogue d
 
   const [products, releases, contexts, relationships, cards, printings] = await Promise.all(
     ["products", "releases", "distribution-contexts", "relationships", "cards", "printings"].map((component) =>
-      exportRecords(api.port, apiKey, revisionId, component),
+      nativeExportRecords(api.url, apiKey, revisionId, component),
     ),
   );
   const exportSchema = JSON.parse(
@@ -494,6 +454,7 @@ test("compatibility publication: the CLI publishes separated Product catalogue d
 
   await stopWorker(api);
   const provenanceIngestion = await startWorker({
+    ...checkpointTransport,
     config: ingestionConfig,
     envFile: ingestionEnv,
     inspectorPort: ingestion.inspectorPort,
@@ -517,36 +478,18 @@ test("compatibility publication: the CLI publishes separated Product catalogue d
   assert.equal(provenanceCollected.code, 0, provenanceCollected.stderr);
   const provenanceRun = JSON.parse(provenanceCollected.stdout);
   assert.equal((await runCli(["source", "resume", "--run-id", provenanceRun.id, "--json"], cliEnvironment)).code, 0);
-  await waitForRunState(provenanceRun.id, "awaiting_approval", cliEnvironment, provenanceIngestion, statePath);
-  const provenanceInspectionResult = await runCli(
-    ["candidate", "inspect", "--run-id", provenanceRun.id, "--json"],
+  await waitForRunState(provenanceRun.id, "sealed", cliEnvironment, provenanceIngestion, statePath);
+  const provenanceInspectionResult = await inspectNativeCollection(provenanceRun.id, cliEnvironment);
+  const provenanceInspection = provenanceInspectionResult;
+  const provenanceApproved = await publishNativeCollection(
+    provenanceInspection,
+    "acceptance-product-code-less-provenance-approve",
     cliEnvironment,
+    provenanceIngestion,
   );
-  assert.equal(provenanceInspectionResult.code, 0, provenanceInspectionResult.stderr);
-  const provenanceInspection = JSON.parse(provenanceInspectionResult.stdout);
-  const provenanceApproved = await runCli(
-    [
-      "run",
-      "approve",
-      "--run-id",
-      provenanceRun.id,
-      "--candidate-digest",
-      provenanceInspection.candidate_digest,
-      "--expected-current-revision",
-      revisionId,
-      "--idempotency-key",
-      "acceptance-product-code-less-provenance-approve",
-      "--yes",
-      "--json",
-    ],
-    cliEnvironment,
-  );
-  assert.equal(
-    provenanceApproved.code,
-    0,
-    `${provenanceApproved.stdout}\n${provenanceApproved.stderr}\n${provenanceIngestion.getOutput()}`,
-  );
-  const codeLessRevisionId = JSON.parse(provenanceApproved.stdout).resulting_revision_id;
+  assert.equal(provenanceApproved.state, "published", JSON.stringify(provenanceApproved));
+
+  const codeLessRevisionId = provenanceApproved.resulting_revision_id;
   await stopWorker(provenanceIngestion);
 
   const provenanceApi = await startWorker({
@@ -558,7 +501,7 @@ test("compatibility publication: the CLI publishes separated Product catalogue d
   });
   t.after(() => stopWorker(provenanceApi));
   await waitForHealth(`${provenanceApi.url}/health`, apiKey, provenanceApi);
-  const codeLessProducts = await exportRecords(provenanceApi.port, apiKey, codeLessRevisionId, "products");
+  const codeLessProducts = await nativeExportRecords(provenanceApi.url, apiKey, codeLessRevisionId, "products");
   const codeLessOnePiece = codeLessProducts.find(({ official_code }) => official_code === "OP-RAW-01");
   assert.equal(
     codeLessOnePiece.id,
@@ -578,7 +521,7 @@ test("compatibility publication: the CLI publishes separated Product catalogue d
 // persisted collection tables, which record why each request stalled.
 async function waitForRunState(runId, expectedState, environment, worker, statePath) {
   try {
-    return await awaitRunState(runId, expectedState, environment, worker, {
+    return await waitForNativeCollection(runId, expectedState, environment, worker, {
       deadlineMs: 40_000,
     });
   } catch (error) {

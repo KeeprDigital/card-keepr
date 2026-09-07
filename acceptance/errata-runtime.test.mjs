@@ -1,20 +1,17 @@
+import {
+  inspectNativeCollection,
+  publishNativeCollection,
+  waitForNativeCollection,
+  nativeCheckpointTransport,
+  nativeExportRecords,
+} from "./helpers/native-catalogue-runtime.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { gunzipSync } from "node:zlib";
-import {
-  administrationDocument,
-  administrationPollInterval,
-  runCli,
-  startWorker,
-  stopWorker,
-  waitForAdministrationDocument,
-  waitForHealth,
-  waitForRunState,
-} from "./helpers/acceptance-runtime.mjs";
+import { runCli, startWorker, stopWorker, waitForHealth, waitForRunState } from "./helpers/acceptance-runtime.mjs";
 import { syntheticSourceAdapterMigrations } from "./helpers/synthetic-source-adapters.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -30,7 +27,9 @@ test("the repository CLI rejects Official Errata authority outside the documente
     writeFile(environmentFile, `API_BEARER_KEY=${apiKey}\nADMINISTRATION_KEY=${administrationKey}\n`, { mode: 0o600 }),
     writeRuntimeConfig(runtimeConfig),
   ]);
+  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory);
   const runtime = await startWorker({
+    ...checkpointTransport,
     config: runtimeConfig,
     envFile: environmentFile,
     migrate: true,
@@ -125,7 +124,9 @@ test("Bandai Errata HTML shape drift fails closed through the CLI and Worker sea
     writeFile(environmentFile, `API_BEARER_KEY=${apiKey}\nADMINISTRATION_KEY=${administrationKey}\n`, { mode: 0o600 }),
     writeRuntimeConfig(runtimeConfig, "AcceptanceShapeDriftOfficialSourceTransport"),
   ]);
+  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory);
   const runtime = await startWorker({
+    ...checkpointTransport,
     config: runtimeConfig,
     envFile: environmentFile,
     migrate: true,
@@ -191,7 +192,9 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
       { mode: 0o600 },
     ),
   ]);
+  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory);
   const runtime = await startWorker({
+    ...checkpointTransport,
     config: runtimeConfig,
     envFile: environmentFile,
     migrate: true,
@@ -258,7 +261,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     cliEnvironment,
     runtime,
   );
-  assert.equal(seedReconciled.publishable, true, JSON.stringify(seedReconciled));
+  assert.equal(seedReconciled.ready, true, JSON.stringify(seedReconciled));
   const seededRevision = await approveCandidate(
     seedRun.id,
     "approve-published-errata-targets",
@@ -315,7 +318,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     cliEnvironment,
     runtime,
   );
-  assert.equal(reconciled.publishable, true, JSON.stringify(reconciled));
+  assert.equal(reconciled.ready, true, JSON.stringify(reconciled));
   const revisionId = await approveCandidate(run.id, "approve-retained-bandai-errata-html", cliEnvironment, runtime);
   const card = reconciled.cards.find((candidate) => candidate.official_identity.value === "OP03-047");
   const vegapunk = reconciled.cards.find((candidate) => candidate.official_identity.value === "OP07-097");
@@ -693,87 +696,23 @@ async function representRetainedSnapshotAdapter(sourceSnapshotId, adapterVersion
 }
 
 async function resumeAndWait(runId, environment, runtime) {
-  const path = `/v1/ingestion-runs/${encodeURIComponent(runId)}/evidence`;
-  const existing = await administrationDocument(path, environment);
-  if (existing?.state === "collecting") {
-    const resumed = await runCli(["source", "resume", "--run-id", runId, "--json"], environment);
-    assert.equal(resumed.code, 0, resumed.stderr);
-  }
-  return waitForAdministrationDocument(
-    path,
-    (document) =>
-      ["parsing", "awaiting_approval"].includes(document.state) ||
-      (document.state === "failed" ? `run ${runId} failed` : false),
-    environment,
-    runtime,
-    { deadlineMs: 20_000 },
-  );
+  const resumed = await runCli(["source", "resume", "--run-id", runId, "--json"], environment);
+  assert.equal(resumed.code, 0, resumed.stdout + resumed.stderr);
+  return waitForNativeCollection(runId, "sealed", environment, runtime, { deadlineMs: 20_000 });
 }
 
-async function reconcileAndWait(runId, expectedRevision, idempotencyKey, environment, runtime) {
-  const deadline = Date.now() + 20_000;
-  let pollCount = 0;
-  while (Date.now() < deadline) {
-    pollCount += 1;
-    const result = await runCli(
-      [
-        "run",
-        "reconcile",
-        "--run-id",
-        runId,
-        "--expected-current-revision",
-        expectedRevision,
-        "--idempotency-key",
-        idempotencyKey,
-        "--environment",
-        "production",
-        "--confirm",
-        environment.KEEPR_ACCEPTANCE_PRODUCTION_CONFIRMATION,
-        "--yes",
-        "--json",
-      ],
-      environment,
-    );
-    if (result.code === 9 && JSON.parse(result.stdout).code === "rate_limited") {
-      throw new Error(
-        `ADMINISTRATION_RATE_LIMIT returned rate_limited on poll ${pollCount} while reconciling ${runId}.`,
-      );
-    }
-    assert.equal(
-      result.code === 0 || result.code === 10,
-      true,
-      `${result.stdout}\n${result.stderr}\n${runtime.getOutput()}`,
-    );
-    const workflow = JSON.parse(result.stdout);
-    if (workflow.status === "complete") return workflow.output;
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, administrationPollInterval(runtime)));
-  }
-  throw new Error(`Reconciliation Workflow did not complete for ${runId}`);
+async function reconcileAndWait(runId, expectedRevision, _idempotencyKey, environment, runtime) {
+  await waitForNativeCollection(runId, "sealed", environment, runtime, { deadlineMs: 20_000 });
+  const inspection = await inspectNativeCollection(runId, environment);
+  const status = await runCli(["status", "--json"], environment);
+  assert.equal(status.code, 0, status.stderr);
+  assert.equal(JSON.parse(status.stdout).safe_state.current_revision_id, expectedRevision);
+  return { ...inspection, ...inspection.records };
 }
 
 async function approveCandidate(runId, idempotencyKey, environment, runtime) {
-  const inspected = await runCli(["candidate", "inspect", "--run-id", runId, "--json"], environment);
-  assert.equal(inspected.code, 0, inspected.stderr);
-  const candidate = JSON.parse(inspected.stdout);
-  const approved = await runCli(
-    [
-      "run",
-      "approve",
-      "--run-id",
-      runId,
-      "--candidate-digest",
-      candidate.candidate_digest,
-      "--expected-current-revision",
-      candidate.expected_current_revision_id,
-      "--idempotency-key",
-      idempotencyKey,
-      "--yes",
-      "--json",
-    ],
-    environment,
-  );
-  assert.equal(approved.code, 0, `${approved.stdout}\n${approved.stderr}\n${runtime.getOutput()}`);
-  return JSON.parse(approved.stdout).resulting_revision_id;
+  const publication = await publishNativeCollection(runId, idempotencyKey, environment, runtime, 20_000);
+  return publication.resulting_revision_id;
 }
 
 async function writeRuntimeConfig(destination, sourceEntrypoint = "AcceptanceOfficialSourceTransport") {
@@ -781,7 +720,7 @@ async function writeRuntimeConfig(destination, sourceEntrypoint = "AcceptanceOff
   const apiConfig = JSON.parse(readFileSync(resolve(root, "apps/api/wrangler.jsonc"), "utf8"));
   delete config.$schema;
   config.name = "card-keepr-combined-acceptance-runtime";
-  config.main = resolve(root, "acceptance/fixtures/combined-card-keepr-runtime.ts");
+  config.main = resolve(root, "acceptance/fixtures/native-combined-card-keepr-runtime.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
   config.services = [
     {
@@ -804,11 +743,6 @@ async function apiJson(baseUrl, pathname, apiKey) {
 }
 
 async function exportComponent(baseUrl, revisionId, component, apiKey) {
-  const response = await fetch(`${baseUrl}/v1/catalogue-exports/${revisionId}/components/${component}`, {
-    headers: { authorization: `Bearer ${apiKey}` },
-  });
-  if (response.status !== 200) {
-    assert.equal(response.status, 200, await response.text());
-  }
-  return gunzipSync(Buffer.from(await response.arrayBuffer())).toString("utf8");
+  const records = await nativeExportRecords(baseUrl, apiKey, revisionId, component);
+  return records.map((record) => JSON.stringify(record)).join("\n") + (records.length ? "\n" : "");
 }

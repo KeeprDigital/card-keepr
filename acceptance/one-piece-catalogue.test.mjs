@@ -1,22 +1,21 @@
+import {
+  inspectNativeCollection,
+  publishNativeCollection,
+  waitForNativeCollection,
+  nativeCheckpointTransport,
+  nativeExportRecords,
+} from "./helpers/native-catalogue-runtime.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { gunzipSync } from "node:zlib";
-import {
-  applyMigrations,
-  runCli,
-  startWorker,
-  stopWorker,
-  waitForHealth,
-  waitForRunState,
-} from "./helpers/acceptance-runtime.mjs";
+import { applyMigrations, runCli, startWorker, stopWorker, waitForHealth } from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
-test("compatibility publication: the owner publishes a complete One Piece catalogue for authenticated consumers", async (t) => {
+test("native publication: the owner publishes a complete One Piece catalogue for authenticated consumers", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-one-piece-"));
   const statePath = join(directory, "state");
   const administrationKey = randomUUID();
@@ -35,7 +34,7 @@ test("compatibility publication: the owner publishes a complete One Piece catalo
   await applyMigrations(statePath);
   const config = JSON.parse(await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
   delete config.$schema;
-  config.main = resolve(root, "acceptance/fixtures/catalogue-publication-ingestion-harness.ts");
+  config.main = resolve(root, "apps/ingestion/src/index.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
   config.services = [
     {
@@ -49,7 +48,9 @@ test("compatibility publication: the owner publishes a complete One Piece catalo
     config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
     statePath: join(directory, "source-state"),
   });
+  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory);
   const ingestion = await startWorker({
+    ...checkpointTransport,
     config: ingestionConfig,
     envFile: ingestionEnv,
     statePath,
@@ -75,7 +76,7 @@ test("compatibility publication: the owner publishes a complete One Piece catalo
   const run = JSON.parse(collected.stdout);
   const resumed = await runCli(["source", "resume", "--run-id", run.id, "--json"], cliEnvironment);
   assert.equal(resumed.code, 0, resumed.stderr);
-  const ready = await waitForRunState(run.id, "awaiting_approval", cliEnvironment, {
+  const ready = await waitForNativeCollection(run.id, "sealed", cliEnvironment, {
     getOutput: () => `${ingestion.getOutput()}\n${source.getOutput()}`,
   });
   assert.ok(
@@ -101,35 +102,17 @@ test("compatibility publication: the owner publishes a complete One Piece catalo
     assert.equal(observationSet.observation_count, expectedCount);
   }
 
-  const inspected = await runCli(["candidate", "inspect", "--run-id", run.id, "--json"], cliEnvironment);
-  assert.equal(inspected.code, 0, inspected.stderr);
-  const candidate = JSON.parse(inspected.stdout);
-  assert.equal(candidate.diff.summary.cards_added, 2);
-  assert.equal(candidate.diff.summary.printings_added, 2);
+  const inspected = await inspectNativeCollection(run.id, cliEnvironment);
+  const candidate = inspected;
+  assert.equal(candidate.counts.cards.added, 2);
+  assert.equal(candidate.counts.printings.added, 2);
   assert.ok(
-    candidate.diff.warnings.some(
+    candidate.warnings.some(
       ({ code, raw_value }) => code === "unknown_source_field" && raw_value === "New optional publisher vocabulary",
     ),
   );
-  const approved = await runCli(
-    [
-      "run",
-      "approve",
-      "--run-id",
-      run.id,
-      "--candidate-digest",
-      candidate.candidate_digest,
-      "--expected-current-revision",
-      "catrev_spine_000",
-      "--idempotency-key",
-      "one-piece-complete-approve",
-      "--yes",
-      "--json",
-    ],
-    cliEnvironment,
-  );
-  assert.equal(approved.code, 0, `${approved.stdout}\n${approved.stderr}\n${ingestion.getOutput()}`);
-  const catalogueRevisionId = JSON.parse(approved.stdout).resulting_revision_id;
+  const approved = await publishNativeCollection(candidate, "one-piece-complete-approve", cliEnvironment, ingestion);
+  const catalogueRevisionId = approved.resulting_revision_id;
 
   await writeFile(planPath, JSON.stringify(completePlan("card-keepr-one-piece-complete-errata-v1")), { mode: 0o600 });
   const errataCollected = await runCli(
@@ -140,31 +123,19 @@ test("compatibility publication: the owner publishes a complete One Piece catalo
   const errataRun = JSON.parse(errataCollected.stdout);
   const errataResumed = await runCli(["source", "resume", "--run-id", errataRun.id, "--json"], cliEnvironment);
   assert.equal(errataResumed.code, 0, errataResumed.stderr);
-  await waitForRunState(errataRun.id, "awaiting_approval", cliEnvironment, {
+  await waitForNativeCollection(errataRun.id, "sealed", cliEnvironment, {
     getOutput: () => `${ingestion.getOutput()}\n${source.getOutput()}`,
   });
-  const errataInspected = await runCli(["candidate", "inspect", "--run-id", errataRun.id, "--json"], cliEnvironment);
-  assert.equal(errataInspected.code, 0, errataInspected.stderr);
-  const errataCandidate = JSON.parse(errataInspected.stdout);
-  const errataApproved = await runCli(
-    [
-      "run",
-      "approve",
-      "--run-id",
-      errataRun.id,
-      "--candidate-digest",
-      errataCandidate.candidate_digest,
-      "--expected-current-revision",
-      catalogueRevisionId,
-      "--idempotency-key",
-      "one-piece-complete-errata-approve",
-      "--yes",
-      "--json",
-    ],
+  const errataInspected = await inspectNativeCollection(errataRun.id, cliEnvironment);
+  const errataCandidate = errataInspected;
+  assert.equal(errataCandidate.candidates[0].expected_game_revision_id, catalogueRevisionId);
+  const errataApproved = await publishNativeCollection(
+    errataCandidate,
+    "one-piece-complete-errata-approve",
     cliEnvironment,
+    ingestion,
   );
-  assert.equal(errataApproved.code, 0, `${errataApproved.stdout}\n${errataApproved.stderr}\n${ingestion.getOutput()}`);
-  const revisionId = JSON.parse(errataApproved.stdout).resulting_revision_id;
+  const revisionId = errataApproved.resulting_revision_id;
   await stopWorker(ingestion);
 
   api = await startWorker({
@@ -175,7 +146,7 @@ test("compatibility publication: the owner publishes a complete One Piece catalo
   await waitForHealth(`${api.url}/health`, apiKey, api);
   const [cards, printings, images, products, releases, errata] = await Promise.all(
     ["cards", "printings", "printing-images", "products", "releases", "errata"].map((component) =>
-      exportRecords(api.port, apiKey, revisionId, component),
+      nativeExportRecords(api.url, apiKey, revisionId, component),
     ),
   );
   assert.equal(cards.length, 2);
@@ -246,15 +217,4 @@ function completePlan(userAgent) {
       },
     ],
   };
-}
-
-async function exportRecords(port, apiKey, revisionId, component) {
-  const response = await fetch(`http://127.0.0.1:${port}/v1/catalogue-exports/${revisionId}/components/${component}`, {
-    headers: { authorization: `Bearer ${apiKey}` },
-  });
-  assert.equal(response.status, 200);
-  const body = gunzipSync(Buffer.from(await response.arrayBuffer()))
-    .toString("utf8")
-    .trim();
-  return body === "" ? [] : body.split("\n").map((line) => JSON.parse(line));
 }
