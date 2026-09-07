@@ -19,5 +19,5 @@ export interface CatalogueDraft {
   has(kind: CatalogueEntityCollection, id: string): Promise<boolean>;
   set<K extends CatalogueEntityCollection>(kind: K, entity: CatalogueDraftEntity<K>): Promise<void>;
   delete(kind: CatalogueEntityCollection, id: string): Promise<void>;
-  values<K extends CatalogueEntityCollection>(kind: K): AsyncIterable<CatalogueDraftEntity<K>>;
+  values<K extends CatalogueEntityCollection>(kind: K, after?: string): AsyncIterable<CatalogueDraftEntity<K>>;
 }

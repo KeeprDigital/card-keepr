@@ -51,11 +51,19 @@ test("all 32 changed Curated Revisions become reconfirmable with a bounded final
   const sqlByStatement = new WeakMap<object, string>();
   const bytesByStatement = new WeakMap<object, number>();
   let interrupted = false;
+  let serviceCalls = 0;
+  const curatedCalls: number[] = [];
+  const compared: number[] = [];
   const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement => {
     const proxy = new Proxy(statement, {
       get(target, property) {
         if (property === "bind") return (...values: unknown[]) => wrap(target.bind(...values), sql, values);
         const value = Reflect.get(target, property);
+        if (["run", "first", "all", "raw"].includes(String(property)))
+          return (...args: unknown[]) => {
+            serviceCalls++;
+            return Reflect.apply(value, target, args);
+          };
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
@@ -68,6 +76,7 @@ test("all 32 changed Curated Revisions become reconfirmable with a bounded final
       if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
       if (property === "batch")
         return async (statements: D1PreparedStatement[]) => {
+          serviceCalls++;
           const final = statements.some((statement) =>
             sqlByStatement.get(statement)?.includes("reconciliation_preparation_incomplete"),
           );
@@ -109,7 +118,17 @@ test("all 32 changed Curated Revisions become reconfirmable with a bounded final
     do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
       for (let attempt = 0; ; attempt++) {
         try {
-          return await callback();
+          serviceCalls = 0;
+          const result = await callback();
+          if (JSON.parse(result).continuation?.phase === "curated_revisions") {
+            curatedCalls.push(serviceCalls);
+            const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+            const checkpoint = (
+              status.checkpoints as { phase: string; cursor: { progress: { stage: string; revision: number } } }[]
+            ).find(({ phase }) => phase === "curated_revisions")!;
+            if (checkpoint.cursor.progress.stage === "compare") compared.push(checkpoint.cursor.progress.revision);
+          }
+          return result;
         } catch (error) {
           if (attempt >= config.retries.limit) throw error;
         }
@@ -117,6 +136,9 @@ test("all 32 changed Curated Revisions become reconfirmable with a bounded final
     },
   } as unknown as import("cloudflare:workers").WorkflowStep;
   await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
+  expect(curatedCalls.length).toBeGreaterThan(0);
+  expect(Math.max(...curatedCalls)).toBeLessThanOrEqual(100);
+  expect(compared.some((value) => value > 0 && value < 31)).toBe(true);
   expect(interrupted).toBe(true);
   const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
   expect(status, JSON.stringify(status)).toMatchObject({

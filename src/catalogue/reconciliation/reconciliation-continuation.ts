@@ -3,6 +3,7 @@ export class ReconciliationContinuation extends Error {
   constructor(
     readonly checkpoint: {
       phase:
+        | "curated_revisions"
         | "source_selection"
         | "source_graph"
         | "graph_validation"

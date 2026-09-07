@@ -175,6 +175,7 @@ test.each([
     const completedGroups: number[] = [];
     const callsPerGroup: number[] = [];
     const selectionCalls: number[] = [];
+    const curatedCalls: number[] = [];
     const graphCalls: number[] = [];
     const graphCursors: number[] = [];
     const preparationCalls: number[] = [];
@@ -251,6 +252,7 @@ test.each([
           completedGroups.push(imagesInUnit);
           callsPerGroup.push(serviceCalls);
         }
+        if (JSON.parse(result as string).continuation?.phase === "curated_revisions") curatedCalls.push(serviceCalls);
         if (JSON.parse(result as string).continuation?.phase === "source_selection") selectionCalls.push(serviceCalls);
         if (JSON.parse(result as string).continuation?.phase === "graph_validation") {
           graphCalls.push(serviceCalls);
@@ -324,6 +326,8 @@ test.each([
     }
     expect(completedGroups).toEqual(groups);
     if (requireFrozenMetadata) {
+      expect(curatedCalls.length).toBeGreaterThan(0);
+      expect(Math.max(...curatedCalls)).toBeLessThanOrEqual(100);
       expect(selectionCalls.length).toBeGreaterThan(0);
       expect(Math.max(...selectionCalls)).toBeLessThanOrEqual(100);
       expect(graphCalls.length).toBeGreaterThan(0);

@@ -1,3 +1,4 @@
+import { prepareCuratedDraft } from "./reconciliation-curated";
 import { prepareInitialWarnings } from "./reconciliation-initial-warnings";
 import { prepareDisappearanceWarnings } from "./reconciliation-disappearance";
 import { prepareOfficialCandidate, omitUndefinedValues } from "./reconciliation-official-assembly";
@@ -45,7 +46,6 @@ import {
 import {
   CuratedDraftSourceChangeError,
   CuratedConflictStorageError,
-  applyPinnedCuratedRevisionsToDraft,
   restoreCuratedEntitySourceFields,
 } from "../curated";
 import {
@@ -1657,8 +1657,9 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
   const curated = new ReconciliationCandidateState(database, runId, "curated", official);
   try {
-    await applyPinnedCuratedRevisionsToDraft(database, runId, official, curated, observedAt);
+    await prepareCuratedDraft(database, runId, official, curated, observedAt, yieldAtCheckpoint);
   } catch (error) {
+    if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
     if (!(error instanceof CuratedDraftSourceChangeError)) throw error;
     candidateCatalogueDigest = await catalogueDataDigest(
       database,

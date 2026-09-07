@@ -914,70 +914,121 @@ export class CuratedDraftSourceChangeError extends Error {
   }
 }
 
-/** The official view stays unchanged while validated revisions write into the result draft. */
+export type CuratedDraftCursor = {
+  stage: "strip" | "compare" | "apply" | "validate" | "conflict" | "complete";
+  kind: number;
+  after: string;
+  revision: number;
+  sourceChanged: boolean;
+};
+
+/** Replay resumes after the completed entity or revision; the caller retains draft positions with this cursor. */
 export async function applyPinnedCuratedRevisionsToDraft(
   database: CatalogueStore,
   runId: string,
   official: CatalogueDraft,
   result: CatalogueDraft,
   observedAt: string,
+  progress?: { cursor: CuratedDraftCursor; checkpoint(cursor: CuratedDraftCursor, record?: unknown): Promise<void> },
 ): Promise<void> {
-  const run = await curatedStatements
-    .curatedRunSelectedGamesStatement(database, { runId })
-    .first<{ selected_games_json: string }>();
-  if (!run)
-    throw new AdministrationProblem(404, "ingestion_run_not_found", "The requested Ingestion Run does not exist.");
-  await stripCuratedDraft(official, JSON.parse(run.selected_games_json) as SupportedGame[]);
+  const cursor = progress?.cursor ?? { stage: "strip", kind: 0, after: "", revision: -1, sourceChanged: false };
+  if (cursor.stage === "complete") return;
+  const checkpoint = async (record?: unknown) => {
+    await progress?.checkpoint(cursor, record);
+  };
+  const advance = async (stage: CuratedDraftCursor["stage"]) => {
+    cursor.stage = stage;
+    cursor.kind = 0;
+    cursor.after = "";
+    cursor.revision = -1;
+    await checkpoint();
+  };
   const conflicts = new CuratedConflictPreparation(database, runId, observedAt);
-  let sourceChanged = false;
-  for await (const row of pinnedDraftRevisions(database, runId)) {
-    const proposal = structuralProposal(JSON.parse(row.proposal_json));
-    const snapshot = await draftProposalSnapshot(official, proposal);
-    const reviewedSourceValue = draftReviewedValue(snapshot, proposal);
-    if ((await sha256Text(canonicalJson(reviewedSourceValue))) !== row.reviewed_source_digest) {
-      sourceChanged = true;
-      await conflicts.record(row.id, row.reviewed_source_digest, reviewedSourceValue);
+  if (cursor.stage === "strip") {
+    const run = await curatedStatements
+      .curatedRunSelectedGamesStatement(database, { runId })
+      .first<{ selected_games_json: string }>();
+    if (!run)
+      throw new AdministrationProblem(404, "ingestion_run_not_found", "The requested Ingestion Run does not exist.");
+    for await (const entry of stripCuratedDraft(
+      official,
+      JSON.parse(run.selected_games_json) as SupportedGame[],
+      cursor,
+    )) {
+      cursor.kind = entry.kind;
+      cursor.after = entry.entity.id;
+      await checkpoint(entry.entity);
     }
+    await advance("compare");
   }
-  if (sourceChanged)
-    throw new CuratedDraftSourceChangeError({
-      [Symbol.asyncIterator]: () => conflicts.diagnostics(),
-    });
-  for await (const row of pinnedDraftRevisions(database, runId)) {
-    const proposal = structuralProposal(JSON.parse(row.proposal_json));
-    const reviewedSourceValue = draftReviewedValue(await draftProposalSnapshot(official, proposal), proposal);
-    const snapshot = await draftProposalSnapshot(result, proposal);
-    if (proposal.target.kind === "field") {
-      const entity = candidateTarget(snapshot, proposal);
-      setAt(
-        entity,
-        pointerParts(proposal.target.path),
-        (proposal.assertion as { kind: "field"; value: unknown }).value,
-      );
-      entity.curated_provenance = [
-        ...(Array.isArray(entity.curated_provenance) ? entity.curated_provenance : []),
-        provenanceFor(proposal, row, reviewedSourceValue),
-      ];
-      const kind = draftCollection(proposal.target.entity_type);
-      const changed = proposal.target.entity_type === "release" ? snapshot.products![0]! : entity;
-      await result.set(kind, changed as CatalogueDraftEntity<typeof kind>);
-    } else {
-      applyRelationship(snapshot, proposal, row, String(reviewedSourceValue));
-      for (const relationship of snapshot.product_relationships ?? [])
-        await result.set("product_relationships", relationship);
+  if (cursor.stage === "compare") {
+    for await (const row of pinnedDraftRevisions(database, runId, cursor.revision)) {
+      const proposal = structuralProposal(JSON.parse(row.proposal_json));
+      const snapshot = await draftProposalSnapshot(official, proposal);
+      const reviewedSourceValue = draftReviewedValue(snapshot, proposal);
+      if ((await sha256Text(canonicalJson(reviewedSourceValue))) !== row.reviewed_source_digest) {
+        cursor.sourceChanged = true;
+        await conflicts.record(row.id, row.reviewed_source_digest, reviewedSourceValue);
+      }
+      cursor.revision = row.ordinal;
+      await checkpoint(row);
     }
+    await advance(cursor.sourceChanged ? "conflict" : "apply");
   }
-  if (!(await validCuratedDraft(result))) {
-    await database.batch([
-      curatedStatements.failInvalidCuratedCandidateStatement(database, { observedAt, runId }),
-      curatedStatements.releaseCuratedRunStatement(database, { runId }),
-    ]);
-    throw new Error("curated_revision_composed_candidate_invalid");
+  if (cursor.stage === "conflict")
+    throw new CuratedDraftSourceChangeError({ [Symbol.asyncIterator]: () => conflicts.diagnostics() });
+  if (cursor.stage === "apply") {
+    for await (const row of pinnedDraftRevisions(database, runId, cursor.revision)) {
+      const proposal = structuralProposal(JSON.parse(row.proposal_json));
+      const reviewedSourceValue = draftReviewedValue(await draftProposalSnapshot(official, proposal), proposal);
+      const snapshot = await draftProposalSnapshot(result, proposal);
+      if (proposal.target.kind === "field") {
+        const entity = candidateTarget(snapshot, proposal);
+        setAt(
+          entity,
+          pointerParts(proposal.target.path),
+          (proposal.assertion as { kind: "field"; value: unknown }).value,
+        );
+        entity.curated_provenance = [
+          ...(Array.isArray(entity.curated_provenance) ? entity.curated_provenance : []),
+          provenanceFor(proposal, row, reviewedSourceValue),
+        ];
+        const kind = draftCollection(proposal.target.entity_type);
+        const changed = proposal.target.entity_type === "release" ? snapshot.products![0]! : entity;
+        await result.set(kind, changed as CatalogueDraftEntity<typeof kind>);
+      } else {
+        applyRelationship(snapshot, proposal, row, String(reviewedSourceValue));
+        for (const relationship of snapshot.product_relationships ?? [])
+          await result.set("product_relationships", relationship);
+      }
+
+      cursor.revision = row.ordinal;
+      await checkpoint(row);
+    }
+    await advance("validate");
+  }
+  if (cursor.stage === "validate") {
+    for await (const entry of validateCuratedDraft(result, cursor)) {
+      if (!entry.valid) {
+        await database.batch([
+          curatedStatements.failInvalidCuratedCandidateStatement(database, { observedAt, runId }),
+          curatedStatements.releaseCuratedRunStatement(database, { runId }),
+        ]);
+        throw new Error("curated_revision_composed_candidate_invalid");
+      }
+      cursor.kind = entry.kind;
+      cursor.after = entry.entity.id;
+      await checkpoint(entry.entity);
+    }
+    await advance("complete");
   }
 }
 
-async function* pinnedDraftRevisions(database: CatalogueStore, runId: string): AsyncGenerator<PinnedDraftRevision> {
-  let after = -1;
+async function* pinnedDraftRevisions(
+  database: CatalogueStore,
+  runId: string,
+  after = -1,
+): AsyncGenerator<PinnedDraftRevision> {
   while (true) {
     const row = await curatedStatements
       .nextPinnedCuratedRevisionStatement(database, runId, after)
@@ -1067,77 +1118,93 @@ async function draftProposalSnapshot(draft: CatalogueDraft, proposal: Proposal):
   return snapshot;
 }
 
-async function stripCuratedDraft(draft: CatalogueDraft, selectedGames: readonly SupportedGame[]): Promise<void> {
-  for (const kind of ["cards", "printings", "products", "distribution_contexts", "errata"] as const) {
-    for await (const entity of draft.values(kind)) {
-      const game =
-        kind === "printings"
-          ? (await draft.get("cards", (entity as CatalogueCandidate["printings"][number]).card_id))?.game
-          : (entity as { game: SupportedGame }).game;
-      if (!game || !selectedGames.includes(game)) continue;
-      const hasProvenance =
-        Object.hasOwn(entity, "curated_provenance") ||
-        (kind === "products" &&
-          (entity as NonNullable<CatalogueCandidate["products"]>[number]).releases.some((release) =>
-            Object.hasOwn(release, "curated_provenance"),
-          ));
-      if (!hasProvenance) continue;
-      restoreCuratedEntitySourceFields(entity);
-      if (kind === "products")
-        for (const release of (entity as NonNullable<CatalogueCandidate["products"]>[number]).releases)
-          restoreCuratedEntitySourceFields(release);
-      await draft.set(kind, entity);
+const curatedDraftKinds = [
+  "cards",
+  "printings",
+  "products",
+  "distribution_contexts",
+  "errata",
+  "product_relationships",
+] as const;
+async function* stripCuratedDraft(
+  draft: CatalogueDraft,
+  selectedGames: readonly SupportedGame[],
+  cursor: CuratedDraftCursor,
+) {
+  for (let kind = cursor.kind; kind < curatedDraftKinds.length; kind++) {
+    const collection = curatedDraftKinds[kind]!;
+    for await (const entity of draft.values(collection, kind === cursor.kind ? cursor.after : "")) {
+      if (collection === "product_relationships") {
+        const relationship = entity as ProductRelationship;
+        if (selectedGames.includes(relationship.game)) {
+          if (relationship.evidence_category === "curated")
+            await draft.delete("product_relationships", relationship.id);
+          else if (Object.hasOwn(relationship, "curated_provenance")) {
+            const reviewed = relationship.curated_provenance?.at(-1)?.reviewed_source_value;
+            const { curated_provenance: _provenance, ...official } = relationship;
+            await draft.set("product_relationships", {
+              ...official,
+              ...(reviewed === "present" ? { observed: true } : reviewed === "absent" ? { observed: false } : {}),
+            });
+          }
+        }
+      } else {
+        const game =
+          collection === "printings"
+            ? (await draft.get("cards", (entity as CatalogueCandidate["printings"][number]).card_id))?.game
+            : (entity as { game: SupportedGame }).game;
+        const product =
+          collection === "products" ? (entity as NonNullable<CatalogueCandidate["products"]>[number]) : undefined;
+        if (
+          game &&
+          selectedGames.includes(game) &&
+          (Object.hasOwn(entity, "curated_provenance") ||
+            product?.releases.some((release) => Object.hasOwn(release, "curated_provenance")))
+        ) {
+          restoreCuratedEntitySourceFields(entity);
+          for (const release of product?.releases ?? []) restoreCuratedEntitySourceFields(release);
+          await draft.set(collection, entity as CatalogueDraftEntity<typeof collection>);
+        }
+      }
+      yield { kind, entity };
     }
-  }
-  for await (const relationship of draft.values("product_relationships")) {
-    if (!selectedGames.includes(relationship.game)) continue;
-    if (relationship.evidence_category === "curated") {
-      await draft.delete("product_relationships", relationship.id);
-      continue;
-    }
-    if (!Object.hasOwn(relationship, "curated_provenance")) continue;
-    const reviewed = relationship.curated_provenance?.at(-1)?.reviewed_source_value;
-    const { curated_provenance: _provenance, ...official } = relationship;
-    await draft.set("product_relationships", {
-      ...official,
-      ...(reviewed === "present" ? { observed: true } : reviewed === "absent" ? { observed: false } : {}),
-    });
   }
 }
 
-async function validCuratedDraft(draft: CatalogueDraft): Promise<boolean> {
-  for (const [kind, type] of [
-    ["cards", "card"],
-    ["printings", "printing"],
-    ["products", "product"],
-    ["distribution_contexts", "distribution_context"],
-    ["errata", "erratum"],
-  ] as const) {
-    for await (const entity of draft.values(kind)) {
-      if (!validCompleteCuratedEntity(type, entity)) return false;
-      if (
-        kind === "products" &&
-        !(entity as NonNullable<CatalogueCandidate["products"]>[number]).releases.every((release) =>
-          validCompleteCuratedEntity("release", release),
-        )
-      )
-        return false;
+async function* validateCuratedDraft(draft: CatalogueDraft, cursor: CuratedDraftCursor) {
+  const types = ["card", "printing", "product", "distribution_context", "erratum"] as const;
+  for (let kind = cursor.kind; kind < curatedDraftKinds.length; kind++) {
+    const collection = curatedDraftKinds[kind]!;
+    for await (const entity of draft.values(collection, kind === cursor.kind ? cursor.after : "")) {
+      let valid = true;
+      if (collection === "product_relationships") {
+        const relationship = entity as ProductRelationship;
+        valid = relationshipEndpointPairs[relationship.kind] === `${relationship.from.type}->${relationship.to.type}`;
+        for (const endpoint of [relationship.from, relationship.to]) {
+          const target = await draft.get(draftCollection(endpoint.type), endpoint.id);
+          if (!target) {
+            valid = false;
+            break;
+          }
+          const game =
+            endpoint.type === "printing"
+              ? (await draft.get("cards", (target as CatalogueCandidate["printings"][number]).card_id))?.game
+              : (target as { game: SupportedGame }).game;
+          if (game !== relationship.game) {
+            valid = false;
+            break;
+          }
+        }
+      } else {
+        valid = validCompleteCuratedEntity(types[kind]!, entity);
+        if (collection === "products")
+          valid &&= (entity as NonNullable<CatalogueCandidate["products"]>[number]).releases.every((release) =>
+            validCompleteCuratedEntity("release", release),
+          );
+      }
+      yield { kind, entity, valid };
     }
   }
-  for await (const relationship of draft.values("product_relationships")) {
-    if (relationshipEndpointPairs[relationship.kind] !== `${relationship.from.type}->${relationship.to.type}`)
-      return false;
-    for (const endpoint of [relationship.from, relationship.to]) {
-      const entity = await draft.get(draftCollection(endpoint.type), endpoint.id);
-      if (!entity) return false;
-      const game =
-        endpoint.type === "printing"
-          ? (await draft.get("cards", (entity as CatalogueCandidate["printings"][number]).card_id))?.game
-          : (entity as { game: SupportedGame }).game;
-      if (game !== relationship.game) return false;
-    }
-  }
-  return true;
 }
 
 export async function curatedRevisionSetForRun(

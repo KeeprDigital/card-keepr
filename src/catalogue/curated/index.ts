@@ -5,6 +5,7 @@
 export {
   CuratedRevisionSourceChangeError,
   CuratedDraftSourceChangeError,
+  type CuratedDraftCursor,
   applyPinnedCuratedRevisionsToDraft,
   applyPinnedCuratedRevisions,
   assertCuratedGamesUnblocked,

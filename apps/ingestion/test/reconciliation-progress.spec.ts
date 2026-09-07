@@ -1218,128 +1218,141 @@ test("one Product evidence group's capacity budget includes partitioned source t
   });
 });
 
-test("curated entity edits resume over the official source view and retain one applied provenance entry", async () => {
-  const { approve, post, testEnv, requiredFirst } = await import("./reconciliation-helpers");
-  const { canonicalJson, sha256Text } = await import("../../../src/catalogue/shared");
-  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
-  const seed = await reconcile((await collect("/reconciliation/base", "curated-draft-seed")).id);
-  const original = requiredFirst(seed.document, "cards");
-  const publishedSeed = await approve(seed.document);
-  expect(publishedSeed.response.status).toBe(200);
-  const proposal = {
-    game: "one-piece",
-    target: { kind: "field", entity_type: "card", entity_id: original.id, path: "/name" },
-    assertion: { kind: "field", value: "Synthetic curated name" },
-    rationale: "Synthetic reviewed source correction",
-    evidence: [{ kind: "owner_reference", uri: "https://owner.example/review/draft", content_digest: "a".repeat(64) }],
-    effective_interval: { from: null, to: null },
-    reviewed_source_digest: await sha256Text(canonicalJson(original.name)),
-    supersedes_revision_id: null,
-  };
-  const created = await post("/admin/v1/curated-revisions", {
-    environment: "production",
-    expected_current_revision_id: publishedSeed.document.resulting_revision_id,
-    proposal,
-    proposal_digest: await sha256Text(canonicalJson(proposal)),
-    idempotency_key: "curated-draft-create",
-  });
-  expect(created.response.status, JSON.stringify(created.document)).toBe(201);
-  const run = await collect("/reconciliation/base", "curated-draft-next");
-  const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
-  let unavailable = true;
-  let failures = 0;
-  const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement => {
-    const proxy = new Proxy(statement, {
+test.each(["entity", "selection"])(
+  "curated edits resume after %s storage failure and retain one applied provenance entry",
+  async (failure) => {
+    const { approve, post, testEnv, requiredFirst } = await import("./reconciliation-helpers");
+    const { canonicalJson, sha256Text } = await import("../../../src/catalogue/shared");
+    const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+    const seed = await reconcile((await collect("/reconciliation/base", "curated-draft-seed")).id);
+    const original = requiredFirst(seed.document, "cards");
+    const publishedSeed = await approve(seed.document);
+    expect(publishedSeed.response.status).toBe(200);
+    const proposal = {
+      game: "one-piece",
+      target: { kind: "field", entity_type: "card", entity_id: original.id, path: "/name" },
+      assertion: { kind: "field", value: "Synthetic curated name" },
+      rationale: "Synthetic reviewed source correction",
+      evidence: [
+        { kind: "owner_reference", uri: "https://owner.example/review/draft", content_digest: "a".repeat(64) },
+      ],
+      effective_interval: { from: null, to: null },
+      reviewed_source_digest: await sha256Text(canonicalJson(original.name)),
+      supersedes_revision_id: null,
+    };
+    const created = await post("/admin/v1/curated-revisions", {
+      environment: "production",
+      expected_current_revision_id: publishedSeed.document.resulting_revision_id,
+      proposal,
+      proposal_digest: await sha256Text(canonicalJson(proposal)),
+      idempotency_key: "curated-draft-create",
+    });
+    expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+    const run = await collect("/reconciliation/base", "curated-draft-next");
+    const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
+    let unavailable = true;
+    let failures = 0;
+    const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement => {
+      const proxy = new Proxy(statement, {
+        get(target, property) {
+          if (property === "bind") return (...bound: unknown[]) => wrap(target.bind(...bound), sql, bound);
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      statements.set(proxy, { sql, values });
+      return proxy;
+    };
+    const database = new Proxy(testEnv.CATALOGUE_DB, {
       get(target, property) {
-        if (property === "bind") return (...bound: unknown[]) => wrap(target.bind(...bound), sql, bound);
+        if (property === "prepare")
+          return (sql: string) => {
+            if (failure === "selection" && unavailable && sql.includes("FROM ingestion_run_curated_revisions AS pin")) {
+              failures++;
+              throw new Error("Injected synchronous curated selection preparation outage");
+            }
+            return wrap(target.prepare(sql), sql);
+          };
+        if (property === "batch")
+          return (batch: D1PreparedStatement[]) => {
+            if (
+              failure === "entity" &&
+              unavailable &&
+              batch.some((statement) => {
+                const entry = statements.get(statement);
+                return (
+                  entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
+                  entry.values.includes("candidate_curated_cards")
+                );
+              })
+            ) {
+              failures++;
+              throw new Error("Injected curated entity storage outage");
+            }
+            return target.batch(batch);
+          };
         const value = Reflect.get(target, property);
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-    statements.set(proxy, { sql, values });
-    return proxy;
-  };
-  const database = new Proxy(testEnv.CATALOGUE_DB, {
-    get(target, property) {
-      if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
-      if (property === "batch")
-        return (batch: D1PreparedStatement[]) => {
-          if (
-            unavailable &&
-            batch.some((statement) => {
-              const entry = statements.get(statement);
-              return (
-                entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
-                entry.values.includes("candidate_curated_cards")
-              );
-            })
-          ) {
-            failures++;
-            throw new Error("Injected curated entity storage outage");
+    const payload = {
+      ingestion_run_id: run.id,
+      expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
+      idempotency_key: "curated-draft-next",
+      observed_at: new Date().toISOString(),
+      generation: 0,
+    };
+    const event = { payload } as import("cloudflare:workers").WorkflowEvent<
+      import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+    >;
+    const step = {
+      do: async (_name: string, _config: unknown, callback: () => Promise<string>) => {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            return await callback();
+          } catch (error) {
+            if (attempt === 3) throw error;
           }
-          return target.batch(batch);
-        };
-      const value = Reflect.get(target, property);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
-  const payload = {
-    ingestion_run_id: run.id,
-    expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
-    idempotency_key: "curated-draft-next",
-    observed_at: new Date().toISOString(),
-    generation: 0,
-  };
-  const event = { payload } as import("cloudflare:workers").WorkflowEvent<
-    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
-  >;
-  const step = {
-    do: async (_name: string, _config: unknown, callback: () => Promise<string>) => {
-      for (let attempt = 0; ; attempt++) {
-        try {
-          return await callback();
-        } catch (error) {
-          if (attempt === 3) throw error;
         }
-      }
-    },
-  } as unknown as import("cloudflare:workers").WorkflowStep;
-  await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
-  expect(failures).toBe(4);
-  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
-    state: "paused",
-    generation: 1,
-  });
-  expect(
-    (
-      await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
-        generation: 1,
-        idempotency_key: "resume-curated-draft",
-      })
-    ).response.status,
-  ).toBe(200);
-  unavailable = false;
-  await runReconciliationWorkflow(
-    { ...testEnv, CATALOGUE_DB: database },
-    { payload: { ...payload, generation: 1 } } as typeof event,
-    step,
-  );
-  const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
-  expect(status.document.state).toBe("sealed");
-  const accepted = await post(`/v1/ingestion-runs/${run.id}/approval`, {
-    candidate_digest: status.document.candidate_digest,
-    expected_current_revision_id: payload.expected_current_revision_id,
-    idempotency_key: "publish-curated-draft",
-  });
-  expect(accepted.response.status, JSON.stringify(accepted.document)).toBe(200);
-  const refreshed = await reconcile((await collect("/reconciliation/base", "curated-draft-refresh")).id);
-  expect(refreshed.response.status, JSON.stringify(refreshed.document)).toBe(200);
-  expect(requiredFirst(refreshed.document, "cards")).toMatchObject({
-    id: original.id,
-    name: "Synthetic curated name",
-    curated_provenance: [expect.objectContaining({ reviewed_source_value: original.name })],
-  });
-});
+      },
+    } as unknown as import("cloudflare:workers").WorkflowStep;
+    await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
+    expect(failures).toBe(4);
+    expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+      state: "paused",
+      generation: 1,
+    });
+    expect(
+      (
+        await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+          generation: 1,
+          idempotency_key: "resume-curated-draft",
+        })
+      ).response.status,
+    ).toBe(200);
+    unavailable = false;
+    await runReconciliationWorkflow(
+      { ...testEnv, CATALOGUE_DB: database },
+      { payload: { ...payload, generation: 1 } } as typeof event,
+      step,
+    );
+    const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+    expect(status.document.state).toBe("sealed");
+    const accepted = await post(`/v1/ingestion-runs/${run.id}/approval`, {
+      candidate_digest: status.document.candidate_digest,
+      expected_current_revision_id: payload.expected_current_revision_id,
+      idempotency_key: "publish-curated-draft",
+    });
+    expect(accepted.response.status, JSON.stringify(accepted.document)).toBe(200);
+    const refreshed = await reconcile((await collect("/reconciliation/base", "curated-draft-refresh")).id);
+    expect(refreshed.response.status, JSON.stringify(refreshed.document)).toBe(200);
+    expect(requiredFirst(refreshed.document, "cards")).toMatchObject({
+      id: original.id,
+      name: "Synthetic curated name",
+      curated_provenance: [expect.objectContaining({ reviewed_source_value: original.name })],
+    });
+  },
+);
 
 test("persistent curated comparison records every changed source field before failing the candidate", async () => {
   const { approve, post, requiredFirst } = await import("./reconciliation-helpers");
