@@ -59,15 +59,15 @@ export class ReconciliationCandidateState implements CatalogueDraft {
     this.collections.add(kind);
     await this.index(kind).seed(id, { id, entity: null });
   }
-  async *values<K extends CatalogueEntityCollection>(kind: K): AsyncGenerator<CatalogueDraftEntity<K>> {
+  async *values<K extends CatalogueEntityCollection>(kind: K, after = ""): AsyncGenerator<CatalogueDraftEntity<K>> {
     if (!this.base) {
-      for await (const row of this.index(kind).entityValues()) {
+      for await (const row of this.index(kind).entityValues(after)) {
         if (row.entity !== null) yield row.entity as CatalogueDraftEntity<K>;
       }
       return;
     }
-    const inherited = this.base.values(kind)[Symbol.asyncIterator]();
-    const changed = this.index(kind).entityValues();
+    const inherited = this.base.values(kind, after)[Symbol.asyncIterator]();
+    const changed = this.index(kind).entityValues(after);
     try {
       let left = await inherited.next();
       let right = await changed.next();

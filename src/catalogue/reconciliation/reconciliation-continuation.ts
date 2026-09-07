@@ -10,7 +10,8 @@ export class ReconciliationContinuation extends Error {
         | "prior_state"
         | "official_reduction"
         | "official_errata"
-        | "withdrawal_diagnostics";
+        | "withdrawal_diagnostics"
+        | `product_reduction:${"one-piece" | "digimon" | "fusion-world" | "gundam"}`;
       ordinal: number;
     },
   ) {

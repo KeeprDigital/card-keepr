@@ -562,7 +562,6 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
     const { testEnv, post } = await import("./reconciliation-helpers");
     const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
     const run = await collect(`/reconciliation/${fixture}`, "product-pass-read-outage");
-    let errataCompleted = false;
     let failures = 0;
     let unavailable = true;
     let replayingSealed = false;
@@ -572,15 +571,10 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
           if (property === "bind") return (...bindings: unknown[]) => wrap(target.bind(...bindings), sql, bindings);
           if (property === "first")
             return async (...args: Parameters<D1PreparedStatement["first"]>) => {
-              if (
-                sql.includes("FROM reconciliation_input_partitions") &&
-                sql.includes("kind = ?") &&
-                values.includes("observations") &&
-                values.at(-1) === -1
-              ) {
-                if (unavailable && errataCompleted) {
+              if (sql.includes("FROM reconciliation_checkpoints") && values.includes("product_reduction:one-piece")) {
+                if (unavailable) {
                   failures++;
-                  throw new Error("Injected Product-pass input storage outage");
+                  throw new Error("Injected Product-pass checkpoint storage outage");
                 }
               }
               return target.first(...args);
@@ -612,15 +606,7 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
       do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
         for (let attempt = 0; ; attempt++) {
           try {
-            const result = await callback();
-            if (JSON.parse(result).continuation?.phase === "official_errata") {
-              const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
-              const checkpoint = (status.checkpoints as { phase: string; cursor: { errataComplete: boolean } }[]).find(
-                (row) => row.phase === "official_errata",
-              );
-              errataCompleted = checkpoint?.cursor.errataComplete === true;
-            }
-            return result;
+            return await callback();
           } catch (error) {
             if (attempt >= config.retries.limit) throw error;
           }

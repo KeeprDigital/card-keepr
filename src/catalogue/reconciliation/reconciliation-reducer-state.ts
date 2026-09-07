@@ -62,6 +62,7 @@ export class ReconciliationReducerIndex<T> {
   }
 
   async get(key: string): Promise<T | undefined> {
+    if (this.ordinal === 0) return undefined;
     const digest = await sha256Text(key);
     const row = await storage(
       reducerStateStatement(
@@ -79,6 +80,7 @@ export class ReconciliationReducerIndex<T> {
 
   /** Query only the predecessor view; call before this observation writes matching state. */
   async *matchingBeforeObservation(group: string): AsyncGenerator<T> {
+    if (this.ordinal <= 1) return;
     const groupDigest = await sha256Text(group);
     let after = "";
     let bytes = 0;
@@ -107,6 +109,7 @@ export class ReconciliationReducerIndex<T> {
 
   /** Iterate the completed observation prefix without rebuilding its complete index. */
   async *latestValues(): AsyncGenerator<T> {
+    if (this.ordinal === 0) return;
     let after = "";
     for (;;) {
       const row: (StateRow & { key_digest: string }) | null = await storage(
@@ -124,6 +127,7 @@ export class ReconciliationReducerIndex<T> {
 
   /** Stable first-insertion order for maps populated exclusively through seed(). */
   async *insertionValues(): AsyncGenerator<T> {
+    if (this.ordinal === 0) return;
     let after = 0;
     for (;;) {
       const page = await storage(
@@ -143,6 +147,7 @@ export class ReconciliationReducerIndex<T> {
 
   /** Entity drafts retain stable ID order while applying deletions and updates during iteration. */
   async *entityValues(after = ""): AsyncGenerator<T> {
+    if (this.ordinal === 0) return;
     for (;;) {
       const ordinal = this.ordinal;
       const page = await storage(
@@ -164,6 +169,7 @@ export class ReconciliationReducerIndex<T> {
 
   /** Draft existence checks verify metadata without hydrating the entity's retained text. */
   async hasEntity(key: string): Promise<boolean | undefined> {
+    if (this.ordinal === 0) return undefined;
     const digest = await sha256Text(key);
     const row = await storage(
       reducerStateStatement(

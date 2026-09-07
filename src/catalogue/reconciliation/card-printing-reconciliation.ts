@@ -54,9 +54,6 @@ import {
   type CatalogueErratum,
   type CataloguePrinting,
   type CataloguePrintingImage,
-  type CatalogueProduct,
-  type CatalogueDistributionContext,
-  type ProductRelationship,
   type CatalogueStore,
   canonicalJson,
   sha256Text,
@@ -72,8 +69,7 @@ import {
   identifyRulesTextErrata,
   mergeCatalogueErrata,
 } from "./errata-rules-text";
-import { type ProductReleaseEvidenceInput } from "./product-release-catalogue";
-import { reconcileProductReleaseState } from "./product-release-state";
+import { reconcileProductReleaseState, type ProductInputEntry } from "./product-release-state";
 import {
   failReconciliation,
   persistBlockedCandidate,
@@ -483,9 +479,9 @@ export async function reconcileRetainedCardPrintingEvidence(
         observation.kind === "card_printing" && observation.observedCardAndPrinting.card !== null
           ? observation.observedCardAndPrinting.printing === null
             ? 2
-            : 4
+            : 6
           : 1;
-      if (inUnit > 0 && (inUnit + work > 8 || bytes + byteLength > 512000)) {
+      if (inUnit > 0 && (inUnit + work > 12 || bytes + byteLength > 512000)) {
         const next = await saveReduction(after, false);
         if (yieldAtCheckpoint) return next;
         inUnit = 0;
@@ -1245,7 +1241,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       after = cursor;
       inUnit += work;
       bytes += byteLength;
-      if (inUnit === 8 || bytes >= 512000) {
+      if (inUnit === 12 || bytes >= 512000) {
         const next = await saveReduction(after, false);
         if (yieldAtCheckpoint) return next;
         inUnit = 0;
@@ -1429,21 +1425,38 @@ export async function reconcileRetainedCardPrintingEvidence(
   const observedProductLineages = new Set<string>();
   try {
     for (const game of productGames) {
-      async function* inputs(): AsyncGenerator<ProductReleaseEvidenceInput> {
-        for await (const observation of retained.observations()) {
-          if (observation.kind !== "card_printing" || observation.supportedGame !== game) continue;
+      async function* inputs(after: ReconciliationInputRecordCursor | null): AsyncGenerator<ProductInputEntry> {
+        for await (const entry of scannedReconciliationRecordEntries<
+          Extract<RetainedObservation, { kind: "card_printing" }>
+        >(
+          database,
+          runId,
+          "observations",
+          after,
+          (value) =>
+            value.kind === "card_printing" && value.supportedGame === game && value.productReleaseValue !== undefined,
+        )) {
+          const observation = entry.value;
+          if (observation === null) {
+            yield { input: null, cursor: entry.cursor, byteLength: entry.byteLength };
+            continue;
+          }
           const plan = await plans.get(observation.sourceObservationId);
           yield {
-            value: observation.productReleaseValue,
-            sourceObservationId: observation.sourceObservationId,
-            sourceObservationSetId: observation.sourceObservationSetId,
-            sourceSnapshotId: observation.sourceSnapshotId,
-            sourceLineage: observation.sourceLineage,
-            sourceSurface: observation.sourceSurface,
-            requestRole: observation.sourceRequestRole,
-            capturedAt: observation.sourceCapturedAt,
-            currentCardId: plan?.cardId ?? null,
-            currentPrintingId: plan?.printingId ?? null,
+            cursor: entry.cursor,
+            byteLength: entry.byteLength,
+            input: {
+              value: observation.productReleaseValue,
+              sourceObservationId: observation.sourceObservationId,
+              sourceObservationSetId: observation.sourceObservationSetId,
+              sourceSnapshotId: observation.sourceSnapshotId,
+              sourceLineage: observation.sourceLineage,
+              sourceSurface: observation.sourceSurface,
+              requestRole: observation.sourceRequestRole,
+              capturedAt: observation.sourceCapturedAt,
+              currentCardId: plan?.cardId ?? null,
+              currentPrintingId: plan?.printingId ?? null,
+            },
           };
         }
       }
@@ -1451,9 +1464,10 @@ export async function reconcileRetainedCardPrintingEvidence(
         database,
         runId,
         productCatalogue.draft,
-        inputs(),
+        inputs,
         game,
         sourceWarnings,
+        { hasInputs: productCheckTimes.has(game), yieldAtCheckpoint },
       );
       productCatalogue = {
         draft: reconciled.draft,
@@ -1466,6 +1480,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
     }
   } catch (error) {
+    if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
     if (isStorageOrCapacityFailure(error)) throw error;
     await diagnostics.push({
       code: "retained_evidence_invalid",
