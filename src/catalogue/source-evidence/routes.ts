@@ -98,6 +98,7 @@ export const sourceEvidenceRoutes = [
           parserContract,
           requestSurface,
           reconciliationCapability,
+          coverageContracts,
         }) => ({
           adapter_version: adapterVersion,
           source_lineage: sourceLineage,
@@ -105,6 +106,11 @@ export const sourceEvidenceRoutes = [
           game_profile: gameProfileVersion,
           parser_contract: parserContract,
           transport_permission: requestSurface,
+          coverage_contracts: Object.entries(coverageContracts ?? {}).map(([subset, contract]) => ({
+            subset,
+            description: contract.description,
+            required_surfaces: contract.requiredSurfaces,
+          })),
           coverage: { locale: "en", area: reconciliationCapability, subset: "complete" },
         }),
       ),
