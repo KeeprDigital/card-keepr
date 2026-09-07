@@ -8,7 +8,7 @@ import {
   reconciliationPartitionStatement,
 } from "./reconciliation-progress-repository";
 import {
-  gameCandidatesForRunStatement,
+  gameCandidatesForPreparationStatement,
   gameCandidateStatement,
   gameCandidatePartitionsStatement,
   gameCandidatePartitionStatement,
@@ -105,7 +105,7 @@ export async function prepareGameCandidateManifests(
     await save();
   }
   if (cursor.stage === "partitions") {
-    const headers = (await documentStorage(() => gameCandidatesForRunStatement(database, runId).all<GameCandidate>()))
+    const headers = (await documentStorage(() => gameCandidatesForPreparationStatement(database, runId).all<GameCandidate>()))
       .results;
     if (headers.length > 4) throw new Error("reconciliation_capacity_exceeded: unsupported number of selected games.");
     const scopedLineages = canonicalJson(cursor.lineages);

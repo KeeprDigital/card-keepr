@@ -2,7 +2,7 @@ import { type CatalogueStore, repositoryStatements } from "../shared";
 
 export function observedPlanStatement(
   database: CatalogueStore,
-  runId: string,
+  preparationId: string,
   through: number,
   kind: "card" | "printing",
   entityId: string,
@@ -11,12 +11,12 @@ export function observedPlanStatement(
   const path = kind === "card" ? "$.value.plan.cardId" : "$.value.plan.printingId";
   return repositoryStatements(database)
     .prepare(`SELECT content, sha256 FROM reconciliation_reducer_state
-      WHERE ingestion_run_id = ? AND namespace = 'observation_plans'
+      WHERE preparation_id = ? AND namespace = 'observation_plans'
         AND json_extract(content, '${path}') = ? AND observation_ordinal <= ?
         AND json_extract(content, '$.value.plan.observationKind') = 'card_printing'
         AND (? IS NULL OR json_extract(content, '$.value.plan.sourceLineage') = ?)
       LIMIT 1`)
-    .bind(runId, entityId, through, lineage ?? null, lineage ?? null);
+    .bind(preparationId, entityId, through, lineage ?? null, lineage ?? null);
 }
 
 export function previouslyObservedEntitiesStatement(

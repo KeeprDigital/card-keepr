@@ -1,29 +1,29 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 
-export function preparedCuratedConflictStatement(database: CatalogueStore, runId: string, revisionId: string) {
+export function preparedCuratedConflictStatement(database: CatalogueStore, preparationId: string, revisionId: string) {
   return repositoryStatements(database)
     .prepare(`SELECT revision_id, content, sha256 FROM reconciliation_curated_conflicts
-    WHERE ingestion_run_id = ? AND revision_id = ?`)
-    .bind(runId, revisionId);
+    WHERE preparation_id = ? AND revision_id = ?`)
+    .bind(preparationId, revisionId);
 }
-export function nextPreparedCuratedConflictStatement(database: CatalogueStore, runId: string, afterId: string) {
+export function nextPreparedCuratedConflictStatement(database: CatalogueStore, preparationId: string, afterId: string) {
   return repositoryStatements(database)
     .prepare(`SELECT revision_id, content, sha256 FROM reconciliation_curated_conflicts
-    WHERE ingestion_run_id = ? AND revision_id > ? ORDER BY revision_id LIMIT 1`)
-    .bind(runId, afterId);
+    WHERE preparation_id = ? AND revision_id > ? ORDER BY revision_id LIMIT 1`)
+    .bind(preparationId, afterId);
 }
 export function retainCuratedConflictStatement(
   database: CatalogueStore,
-  runId: string,
+  preparationId: string,
   revisionId: string,
   content: string,
   digest: string,
 ) {
   return repositoryStatements(database)
     .prepare(`INSERT INTO reconciliation_curated_conflicts
-    (ingestion_run_id, revision_id, content, sha256) VALUES (?, ?, ?, ?)
-    ON CONFLICT (ingestion_run_id, revision_id) DO NOTHING`)
-    .bind(runId, revisionId, content, digest);
+    (preparation_id, revision_id, content, sha256) VALUES (?, ?, ?, ?)
+    ON CONFLICT (preparation_id, revision_id) DO NOTHING`)
+    .bind(preparationId, revisionId, content, digest);
 }
 /** Materialize one already visible lifecycle event before an owner mutates that revision. */
 export function materializeCuratedConflictStatements(

@@ -16,11 +16,11 @@ export type AuthorityDecision = {
 export function authorityDecisionsStatement(database: CatalogueStore, runId?: string) {
   return repositoryStatements(database)
     .prepare(`SELECT decision.* FROM source_authority_decisions AS decision
-    WHERE (?1 IS NULL OR decision.rowid <= (SELECT authority_decision_cutoff FROM reconciliation_operations WHERE ingestion_run_id = ?1))
+    WHERE (?1 IS NULL OR decision.rowid <= (SELECT authority_decision_cutoff FROM reconciliation_operations WHERE id = ?1))
     AND generation = (SELECT MAX(generation) FROM source_authority_decisions AS latest
       WHERE latest.game = decision.game AND latest.locale = decision.locale
         AND latest.release_region = decision.release_region AND latest.area = decision.area
-        AND (?1 IS NULL OR latest.rowid <= (SELECT authority_decision_cutoff FROM reconciliation_operations WHERE ingestion_run_id = ?1)))
+        AND (?1 IS NULL OR latest.rowid <= (SELECT authority_decision_cutoff FROM reconciliation_operations WHERE id = ?1)))
     ORDER BY game, locale, release_region, area`)
     .bind(runId ?? null);
 }

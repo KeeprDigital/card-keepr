@@ -2,7 +2,7 @@ import { type CatalogueStore, repositoryStatements } from "../shared";
 
 export function retainEvidenceSelectionStatement(
   database: CatalogueStore,
-  runId: string,
+  preparationId: string,
   requestId: string,
   sequence: number,
   content: string,
@@ -10,26 +10,26 @@ export function retainEvidenceSelectionStatement(
 ) {
   return repositoryStatements(database)
     .prepare(`INSERT INTO reconciliation_evidence_selection
-    (ingestion_run_id, request_id, sequence_number, content, sha256) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT (ingestion_run_id, request_id) DO NOTHING`)
-    .bind(runId, requestId, sequence, content, digest);
+    (preparation_id, request_id, sequence_number, content, sha256) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT (preparation_id, request_id) DO NOTHING`)
+    .bind(preparationId, requestId, sequence, content, digest);
 }
-export function evidenceSelectionRequestStatement(database: CatalogueStore, runId: string, requestId: string) {
+export function evidenceSelectionRequestStatement(database: CatalogueStore, preparationId: string, requestId: string) {
   return repositoryStatements(database)
     .prepare(`SELECT content, sha256 FROM reconciliation_evidence_selection
-    WHERE ingestion_run_id = ? AND request_id = ?`)
-    .bind(runId, requestId);
+    WHERE preparation_id = ? AND request_id = ?`)
+    .bind(preparationId, requestId);
 }
 export function nextEvidenceSelectionStatement(
   database: CatalogueStore,
-  runId: string,
+  preparationId: string,
   sequence: number,
   requestId: string,
   includeCurrent: boolean,
 ) {
   return repositoryStatements(database)
     .prepare(`SELECT request_id, sequence_number, content, sha256 FROM reconciliation_evidence_selection
-    WHERE ingestion_run_id = ? AND ((sequence_number, request_id) > (?, ?) OR (? = 1 AND sequence_number = ? AND request_id = ?))
+    WHERE preparation_id = ? AND ((sequence_number, request_id) > (?, ?) OR (? = 1 AND sequence_number = ? AND request_id = ?))
     ORDER BY sequence_number, request_id LIMIT 1`)
-    .bind(runId, sequence, requestId, includeCurrent ? 1 : 0, sequence, requestId);
+    .bind(preparationId, sequence, requestId, includeCurrent ? 1 : 0, sequence, requestId);
 }

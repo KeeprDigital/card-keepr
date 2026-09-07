@@ -11,20 +11,20 @@ export function createGameCandidateIdentitiesStatement(database: CatalogueStore,
       SELECT revision.id, revision.ingestion_run_id, revision.expected_previous_revision_id, ancestry.distance + 1
       FROM catalogue_revisions AS revision JOIN ancestry ON ancestry.previous_id = revision.id
     ) INSERT INTO game_candidates
-    (id, ingestion_run_id, supported_game, expected_game_revision_id, created_at, deadline, state, generation)
-    SELECT 'candidate_' || games.ingestion_run_id || '_' || games.game, games.ingestion_run_id, games.game,
+    (id, preparation_id, ingestion_run_id, supported_game, expected_game_revision_id, created_at, deadline, state, generation)
+    SELECT 'candidate_' || games.ingestion_run_id || '_' || games.game, operation.id, games.ingestion_run_id, games.game,
       COALESCE((SELECT revision.id FROM ancestry AS revision
         JOIN ingestion_run_selected_games AS previous ON previous.ingestion_run_id = revision.ingestion_run_id
         WHERE previous.game = games.game ORDER BY revision.distance LIMIT 1), 'catrev_spine_000'),
       operation.created_at, operation.deadline, 'preparing', operation.generation
-    FROM ingestion_run_selected_games AS games JOIN reconciliation_operations AS operation ON operation.ingestion_run_id = games.ingestion_run_id
+    FROM ingestion_run_selected_games AS games JOIN reconciliation_operations AS operation ON operation.id = games.ingestion_run_id
     WHERE games.ingestion_run_id = ? ON CONFLICT (id) DO NOTHING`)
     .bind(runId, runId);
 }
 
-export function gameCandidatesForRunStatement(database: CatalogueStore, runId: string) {
+export function gameCandidatesForPreparationStatement(database: CatalogueStore, runId: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT * FROM game_candidates WHERE ingestion_run_id = ? ORDER BY supported_game LIMIT 5`)
+    .prepare(`SELECT * FROM game_candidates WHERE preparation_id = ? ORDER BY supported_game LIMIT 5`)
     .bind(runId);
 }
 
@@ -54,15 +54,15 @@ export function retainGameEntityScopesStatement(
 ) {
   return repositoryStatements(database)
     .prepare(`INSERT INTO game_candidate_entity_scopes
-    (ingestion_run_id, kind, id, supported_game)
+    (preparation_id, kind, id, supported_game)
     SELECT ?, ?, json_extract(record.value, '$.id'), ${kind === "cards" ? "json_extract(record.value, '$.game')" : "scope.supported_game"}
     FROM json_each(?) AS record ${
       kind === "printings"
         ? `JOIN game_candidate_entity_scopes AS scope
-      ON scope.ingestion_run_id = ? AND scope.kind = 'cards' AND scope.id = json_extract(record.value, '$.card_id')`
+      ON scope.preparation_id = ? AND scope.kind = 'cards' AND scope.id = json_extract(record.value, '$.card_id')`
         : ""
     }
-    WHERE 1 ON CONFLICT (ingestion_run_id, kind, id) DO NOTHING`)
+    WHERE 1 ON CONFLICT (preparation_id, kind, id) DO NOTHING`)
     .bind(...(kind === "cards" ? [runId, kind, content] : [runId, kind, content, runId]));
 }
 
@@ -77,7 +77,7 @@ export function scopedGamePartitionStatement(
   const warningGame = `COALESCE(json_extract(record.value, '$.value.game'), json_extract(record.value, '$.value.supported_game'),
     CASE WHEN instr(json_extract(record.value, '$.value.profile'), '@') > 0 THEN
       substr(json_extract(record.value, '$.value.profile'), 1, instr(json_extract(record.value, '$.value.profile'), '@') - 1) END,
-    (SELECT scope.supported_game FROM game_candidate_entity_scopes AS scope WHERE scope.ingestion_run_id = ?2
+    (SELECT scope.supported_game FROM game_candidate_entity_scopes AS scope WHERE scope.preparation_id = ?2
       AND ((scope.kind = 'cards' AND scope.id = json_extract(record.value, '$.value.card_id'))
         OR (scope.kind = 'printings' AND scope.id = json_extract(record.value, '$.value.printing_id'))) LIMIT 1),
     (SELECT proposal.game FROM entity_proposals AS proposal WHERE proposal.id = json_extract(record.value, '$.value.proposal_id')),
@@ -85,7 +85,7 @@ export function scopedGamePartitionStatement(
       WHERE json_extract(lineage.value, '$.sourceLineage') = json_extract(record.value, '$.value.source_lineage') LIMIT 1))`;
   const predicate =
     kind === "printings" || kind === "printing_images"
-      ? `EXISTS (SELECT 1 FROM game_candidate_entity_scopes AS scope WHERE scope.ingestion_run_id = ?2
+      ? `EXISTS (SELECT 1 FROM game_candidate_entity_scopes AS scope WHERE scope.preparation_id = ?2
         AND scope.kind = 'printings' AND scope.id = json_extract(record.value, '${kind === "printings" ? "$.value.id" : "$.value.printing_id"}') AND scope.supported_game = ?3)`
       : kind === "selected_games" || kind === "card_observed_games" || kind === "product_observed_games"
         ? "json_extract(record.value, '$.value') = ?3"
@@ -131,7 +131,7 @@ export function sealGameCandidateStatement(
     .prepare(`UPDATE game_candidates SET state = 'sealed', manifest_digest = ?, partition_count = ?, preparation_manifest_digest = ?
     WHERE id = ? AND state = 'preparing' AND CASE WHEN
       EXISTS (SELECT 1 FROM (
-        SELECT content FROM reconciliation_checkpoints WHERE ingestion_run_id = ? AND phase = 'game_preparation'
+        SELECT content FROM reconciliation_checkpoints WHERE preparation_id = ? AND phase = 'game_preparation'
         ORDER BY ordinal DESC LIMIT 1
       ) AS checkpoint, json_each(checkpoint.content, '$.seals') AS seal
       WHERE json_extract(checkpoint.content, '$.stage') = 'complete'
@@ -146,8 +146,8 @@ export function sealGameCandidateStatement(
 export function synchronizeGameCandidatePauseStatement(database: CatalogueStore, runId: string) {
   return repositoryStatements(database)
     .prepare(`UPDATE game_candidates SET
-    state = (SELECT state FROM reconciliation_operations WHERE ingestion_run_id = ?),
-    generation = (SELECT generation FROM reconciliation_operations WHERE ingestion_run_id = ?)
-    WHERE ingestion_run_id = ? AND state IN ('preparing', 'paused')`)
+    state = (SELECT state FROM reconciliation_operations WHERE id = ?),
+    generation = (SELECT generation FROM reconciliation_operations WHERE id = ?)
+    WHERE preparation_id = ? AND state IN ('preparing', 'paused')`)
     .bind(runId, runId, runId);
 }

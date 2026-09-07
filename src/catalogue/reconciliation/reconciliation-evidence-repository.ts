@@ -93,7 +93,7 @@ export function reconciliationSnapshotEvidenceStatement(
           selection.sha256 AS selection_sha256
          FROM source_snapshots AS snapshot
          JOIN reconciliation_evidence_selection AS selection
-           ON selection.ingestion_run_id = snapshot.ingestion_run_id
+           ON selection.preparation_id = snapshot.ingestion_run_id
           AND selection.request_id = snapshot.request_id
          WHERE snapshot.ingestion_run_id = ? AND snapshot.request_url = ? AND snapshot.source_lineage = ?
            AND json_extract(selection.content, '$.request.source_snapshot_id') = snapshot.id

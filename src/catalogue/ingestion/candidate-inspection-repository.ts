@@ -65,6 +65,6 @@ export function candidateWarningDocumentStatement(database: CatalogueStore, runI
 export function candidateWarningPartitionStatement(database: CatalogueStore, runId: string, after: number) {
   return repositoryStatements(database)
     .prepare(`SELECT ordinal, content FROM reconciliation_record_partitions
-    WHERE ingestion_run_id = ? AND kind = 'warnings' AND ordinal > ? ORDER BY ordinal LIMIT 1`)
+    WHERE preparation_id = ? AND kind = 'warnings' AND ordinal > ? ORDER BY ordinal LIMIT 1`)
     .bind(runId, after);
 }

@@ -134,7 +134,7 @@ export type IdentityDecision = {
 export function identityDecisionStatement(database: CatalogueStore, id: string, runId?: string) {
   return repositoryStatements(database)
     .prepare(`SELECT * FROM canonical_identity_decisions WHERE review_id = ?
-      AND (? IS NULL OR rowid <= (SELECT identity_decision_cutoff FROM reconciliation_operations WHERE ingestion_run_id = ?))`)
+      AND (? IS NULL OR rowid <= (SELECT identity_decision_cutoff FROM reconciliation_operations WHERE id = ?))`)
     .bind(id, runId ?? null, runId ?? null);
 }
 export function insertIdentityDecisionStatement(database: CatalogueStore, decision: IdentityDecision) {

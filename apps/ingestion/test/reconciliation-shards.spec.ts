@@ -62,7 +62,7 @@ test("a successor initialization outage exhausts bounded retries and returns the
     trace,
   );
   expect(failures).toBe(4);
-  expect(JSON.parse(output.result_json)).toMatchObject({ run_id: run.id, result: { state: "paused" } });
+  expect(JSON.parse(output.result_json), output.result_json).toMatchObject({ run_id: run.id, result: { state: "paused" } });
   expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
     state: "paused",
     generation: 1,
@@ -88,7 +88,7 @@ test.each([false, true])(
     }
     await root.waitForStatus("complete");
     const output = (await root.getOutput()) as { result_json: string };
-    expect(JSON.parse(output.result_json)).toMatchObject({ run_id: run.id, candidate_digest: expect.any(String) });
+    expect(JSON.parse(output.result_json), output.result_json).toMatchObject({ run_id: run.id, candidate_digest: expect.any(String) });
     expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({ state: "sealed" });
     expect((await workflows.get()).length).toBeGreaterThan(1);
   },
@@ -114,7 +114,7 @@ test("a lost successor create response preserves one chain with at most ten prep
     } as unknown as WorkflowStep,
     trace,
   );
-  expect(JSON.parse(output.result_json)).toMatchObject({ run_id: run.id, candidate_digest: expect.any(String) });
+  expect(JSON.parse(output.result_json), output.result_json).toMatchObject({ run_id: run.id, candidate_digest: expect.any(String) });
   expect(trace.created.length).toBeGreaterThan(1);
   expect(new Set(trace.created).size).toBe(trace.created.length);
   expect(trace.callbacks.size).toBe(trace.created.length + 1);

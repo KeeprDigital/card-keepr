@@ -22,16 +22,16 @@ export function terminalIngestionReservationEffects(database: CatalogueStore, ru
     repositoryStatements(database)
       .prepare(`UPDATE game_candidates SET state = (
       SELECT state FROM ingestion_run_current WHERE ingestion_run_id = game_candidates.ingestion_run_id
-    ) WHERE state <> 'abandoned' AND ingestion_run_id IN (${terminal})`)
+    ) WHERE state <> 'abandoned' AND preparation_id IN (SELECT id FROM reconciliation_operations WHERE supported_game IS NULL) AND ingestion_run_id IN (${terminal})`)
       .bind(runId ?? null, runId ?? null),
     repositoryStatements(database)
       .prepare(`DELETE FROM game_candidate_slots
-      WHERE ingestion_run_id IN (${terminal})`)
+      WHERE preparation_id IN (SELECT id FROM reconciliation_operations WHERE supported_game IS NULL) AND ingestion_run_id IN (${terminal})`)
       .bind(runId ?? null, runId ?? null),
     repositoryStatements(database)
       .prepare(`UPDATE reconciliation_operations SET state = 'failed',
       failure_code = (SELECT failure_code FROM ingestion_run_current WHERE ingestion_run_id = reconciliation_operations.ingestion_run_id)
-      WHERE state = 'preparing' AND ingestion_run_id IN (SELECT ingestion_run_id FROM ingestion_run_current
+      WHERE supported_game IS NULL AND state = 'preparing' AND ingestion_run_id IN (SELECT ingestion_run_id FROM ingestion_run_current
         WHERE state = 'failed' AND (? IS NULL OR ingestion_run_id = ?))`)
       .bind(runId ?? null, runId ?? null),
   ];

@@ -1,7 +1,7 @@
 import { reconciliationCheckpointsStatement } from "./reconciliation-checkpoint-repository";
 import {
   createGameCandidateIdentitiesStatement,
-  gameCandidatesForRunStatement,
+  gameCandidatesForPreparationStatement,
   synchronizeGameCandidatePauseStatement,
 } from "./game-candidate-repository";
 import { correctionPinStatementsForNewRun } from "./identity-correction-pins";
@@ -59,7 +59,7 @@ export async function inspectReconciliationProgress(
   return {
     contract: "card-keepr-reconciliation-status@1",
     ...operation,
-    candidates: (await gameCandidatesForRunStatement(database, runId).all()).results,
+    candidates: (await gameCandidatesForPreparationStatement(database, runId).all()).results,
     checkpoints: (
       await reconciliationCheckpointsStatement(database, runId).all<{
         phase: string;
