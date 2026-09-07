@@ -90,7 +90,11 @@ reproduction continued through document preparation, graph verification and
 normalization to input preparation in 801 continuation callbacks from the saved
 checkpoint. That callback count includes document and observation work as well as
 repeated gap traversal; it is a functional result, not a capacity success. The
-checkpoint amplification should inform the separate #233 performance work.
+checkpoint amplification should inform the separate #233 performance work. A
+longer local probe reached its deliberate 2,000-callback cap at input-preparation
+ordinal 1,199 without completing that stage; total preparation work exceeds that
+partial count and remains unresolved capacity evidence. No Workflow shard limit
+was raised.
 This local reproduction used SQLite and a
 small R2 interface over copied retained bytes, including multipart images; it is
 not a native Workflow or publication/recovery pass. Focused regressions cover
