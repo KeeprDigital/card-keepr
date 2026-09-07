@@ -192,6 +192,28 @@ BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
 
 INSERT INTO source_adapter_versions(adapter_version,source_lineage,supported_game,game_profile_version,parser_contract,adapter_origin,request_capacity) VALUES ('riftbound-en@1','riftbound-en','riftbound','riftbound@1','riot-riftbound-gallery@1','production',5000);
 
+CREATE TABLE ingestion_run_selected_games_riftbound AS SELECT "ingestion_run_id","ordinal","game" FROM ingestion_run_selected_games;
+DROP TABLE ingestion_run_selected_games;
+CREATE TABLE ingestion_run_selected_games (
+  ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  game TEXT NOT NULL CHECK (game IN ('one-piece', 'fusion-world', 'digimon', 'gundam', 'riftbound')),
+  PRIMARY KEY (ingestion_run_id, ordinal),
+  UNIQUE (ingestion_run_id, game)
+);
+INSERT INTO ingestion_run_selected_games("ingestion_run_id","ordinal","game") SELECT "ingestion_run_id","ordinal","game" FROM ingestion_run_selected_games_riftbound;
+DROP TABLE ingestion_run_selected_games_riftbound;
+CREATE TRIGGER recovery_fence_ingestion_run_selected_games_insert BEFORE INSERT ON ingestion_run_selected_games
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_ingestion_run_selected_games_update BEFORE UPDATE ON ingestion_run_selected_games
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_ingestion_run_selected_games_delete BEFORE DELETE ON ingestion_run_selected_games
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+INSERT INTO game_catalogue_heads(supported_game,revision_id) VALUES ('riftbound','catrev_spine_000');
+
 UPDATE catalogue_schema_state SET migration_level=26 WHERE singleton=1;
 
 CREATE VIEW visible_prepared_curated_conflicts AS

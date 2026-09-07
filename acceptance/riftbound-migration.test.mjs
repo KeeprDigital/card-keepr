@@ -58,7 +58,7 @@ test("Riftbound CHECK widening preserves populated ancestors, decisions and inbo
       at,
     );
     db.exec("UPDATE catalogue_state SET current_revision_id='riftbound_migration_revision_2'");
-    const affected = ["reconciled_errata", "source_freshness", "curated_revisions", "reconciliation_checkpoints"];
+    const affected = ["reconciled_errata", "source_freshness", "curated_revisions", "reconciliation_checkpoints", "ingestion_run_selected_games"];
     const inbound = () =>
       db
         .prepare(
