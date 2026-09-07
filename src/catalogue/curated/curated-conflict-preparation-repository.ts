@@ -46,3 +46,9 @@ export function materializeCuratedConflictStatements(
       .bind(revisionId),
   ];
 }
+
+export function curatedPreparationProvenanceStatement(database: CatalogueStore, preparationId: string) {
+  return repositoryStatements(database)
+    .prepare("SELECT ingestion_run_id, supported_game FROM reconciliation_operations WHERE id = ?")
+    .bind(preparationId);
+}

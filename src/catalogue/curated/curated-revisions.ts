@@ -1828,6 +1828,7 @@ async function revisionContent(database: CatalogueStore, row: RevisionRow): Prom
             id: conflict.conflict_id,
             digest: conflict.conflict_digest,
             run_id: conflict.run_id,
+            ...(conflict.preparation_id ? { preparation_id: conflict.preparation_id } : {}),
             previous_source_digest: conflict.previous_source_digest,
             observed_source_digest: conflict.observed_source_digest,
           },

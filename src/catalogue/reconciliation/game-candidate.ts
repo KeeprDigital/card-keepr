@@ -55,6 +55,7 @@ export async function prepareGameCandidateManifests(
   inputManifest: string,
   lineages: AsyncIterable<{ supportedGame: string; sourceLineage: string }>,
   yieldAtCheckpoint = false,
+  terminalState: "sealed" | "failed" = "sealed",
 ) {
   const checkpoint = await reconciliationCheckpoint<PreparationCursor>(database, runId, "game_preparation");
   const cursor: PreparationCursor = checkpoint?.value ?? {
@@ -209,7 +210,7 @@ export async function prepareGameCandidateManifests(
     await save();
   }
   return cursor.seals.map((seal) =>
-    sealGameCandidateStatement(database, runId, seal.id, seal.digest, seal.count, inputManifest),
+    sealGameCandidateStatement(database, runId, seal.id, seal.digest, seal.count, inputManifest, terminalState),
   );
 }
 

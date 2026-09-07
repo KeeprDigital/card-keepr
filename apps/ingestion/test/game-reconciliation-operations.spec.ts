@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import {
   get,
@@ -65,6 +66,7 @@ test("preparation checks its game predecessor independently of another game's pu
 test.each([
   ["capacity-high-degree-observation", "reconciliation_capacity_exceeded"],
   ["identity-whitespace", "retained_evidence_invalid"],
+  ["not-demonstrably-novel", "printing_reconciliation_blocked"],
 ])("a game preparation reports terminal %s failure without failing its collection", async (fixture, code) => {
   const run = await collect(`/reconciliation/${fixture}`, "native-failure-evidence");
   const intent = {
@@ -95,6 +97,23 @@ test.each([
   });
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
   expect((await post("/v1/game-candidates", intent)).document).toEqual(candidate);
+  if (fixture === "not-demonstrably-novel") {
+    const partitions = (await get(`/v1/game-candidates/${id}/partitions`)).document.partitions as {
+      ordinal: number;
+      kind: string;
+    }[];
+    const warnings = partitions.filter((part) => part.kind === "warnings" || part.kind === "shared_warnings");
+    expect(warnings.length).toBeGreaterThan(0);
+    const records: Record<string, unknown>[] = [];
+    for (const warning of warnings)
+      records.push(
+        ...((await get(`/v1/game-candidates/${id}/partitions/${warning.ordinal}`)).document.records as Record<
+          string,
+          unknown
+        >[]),
+      );
+    expect(records).toContainEqual(expect.objectContaining({ code: "printing_match_insufficient_evidence" }));
+  }
 });
 
 test("two games from one collection prepare independently while one operation is paused", async () => {
@@ -253,4 +272,68 @@ test("abandonment releases only its game slot and a new intent creates a fresh c
   const replay = await post("/v1/game-candidates", intent);
   expect(replay.response.status).toBe(200);
   expect(replay.document).toMatchObject({ id, state: "abandoned" });
+});
+
+test("a native source change retains reconfirmable curated diagnostics without failing the collection", async () => {
+  const seed = await reconcile(
+    (await collect("/reconciliation/curated-conflict-fanout-base", "native-curated-seed")).id,
+  );
+  const card = (seed.document.cards as { id: string; name: string }[])[0]!;
+  const published = await approve(seed.document);
+  expect(published.response.status).toBe(200);
+  const proposal = {
+    game: "one-piece",
+    target: { kind: "field", entity_type: "card", entity_id: card.id, path: "/name" },
+    assertion: { kind: "field", value: "Synthetic curated name" },
+    rationale: "Synthetic reviewed correction",
+    evidence: [{ kind: "owner_reference", uri: "https://owner.example/native-review", content_digest: "a".repeat(64) }],
+    effective_interval: { from: null, to: null },
+    reviewed_source_digest: await sha256Text(canonicalJson(card.name)),
+    supersedes_revision_id: null,
+  };
+  const revision = await post("/admin/v1/curated-revisions", {
+    environment: "production",
+    expected_current_revision_id: published.document.resulting_revision_id,
+    proposal,
+    proposal_digest: await sha256Text(canonicalJson(proposal)),
+    idempotency_key: "native-curated-revision",
+  });
+  expect(revision.response.status).toBe(201);
+  const revisionId = requiredString(revision.document, "curated_revision_id");
+  const run = await collect("/reconciliation/curated-conflict-fanout-changed", "native-curated-next");
+  const created = await post("/v1/game-candidates", {
+    ingestion_run_id: run.id,
+    supported_game: "one-piece",
+    expected_game_revision_id: published.document.resulting_revision_id,
+    idempotency_key: "native-curated-candidate",
+  });
+  expect(created.response.status).toBe(201);
+  const id = requiredString(created.document, "id");
+  let candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  const deadline = Date.now() + 15000;
+  while (candidate.state === "preparing" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  }
+  expect(candidate, JSON.stringify(candidate)).toMatchObject({
+    state: "failed",
+    failure_code: "curated_revision_reconfirmation_required",
+  });
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
+  const status = (await get(`/admin/v1/curated-revisions/${revisionId}`)).document;
+  expect(status).toMatchObject({
+    revision: { status: "reconfirmation_required", pending_conflict: { preparation_id: id, run_id: run.id } },
+  });
+  const pending = status.revision as { pending_conflict: { digest: string }; event_version: number };
+  const reaffirmed = await post(`/admin/v1/curated-revisions/${revisionId}/reaffirm`, {
+    environment: "production",
+    expected_current_revision_id: published.document.resulting_revision_id,
+    expected_event_version: pending.event_version,
+    conflict_digest: pending.pending_conflict.digest,
+    rationale: "Synthetic owner confirms changed source",
+    idempotency_key: "native-curated-reaffirm",
+  });
+  // The legacy collection reservation remains live until the collection adapter completes it.
+  expect(reaffirmed.response.status).toBe(409);
+  expect(reaffirmed.document).toMatchObject({ code: "active_ingestion_run" });
 });

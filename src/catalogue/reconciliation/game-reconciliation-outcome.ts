@@ -9,6 +9,7 @@ export async function failIndependentGamePreparation(
   preparationId: string,
   code: string,
   diagnostics: readonly Record<string, unknown>[],
+  preparedStatements: D1PreparedStatement[] = [],
 ): Promise<Record<string, unknown> | null> {
   const operation = await reconciliationOperationHeaderStatement(database, preparationId).first<{
     supported_game: string | null;
@@ -46,6 +47,7 @@ export async function failIndependentGamePreparation(
       summary.length !== diagnostics.length || diagnostics.some((entry) => String(entry.detail).length > 1024),
   };
   await database.batch([
+    ...preparedStatements,
     failGamePreparationStatement(database, preparationId, code, canonicalJson(result)),
     synchronizeGameCandidatePauseStatement(database, preparationId),
     releaseGamePreparationSlotStatement(database, preparationId),

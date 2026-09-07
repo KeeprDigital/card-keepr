@@ -371,7 +371,8 @@ FROM reconciliation_curated_conflicts AS conflict
 JOIN reconciliation_operations AS preparation ON preparation.id = conflict.preparation_id
 JOIN ingestion_run_current AS run ON run.ingestion_run_id = preparation.ingestion_run_id
 JOIN curated_revisions AS revision ON revision.id = conflict.revision_id
-WHERE run.state = 'failed' AND run.failure_code = 'curated_revision_reconfirmation_required'
+WHERE ((preparation.supported_game IS NULL AND run.state = 'failed' AND run.failure_code = 'curated_revision_reconfirmation_required')
+    OR (preparation.supported_game IS NOT NULL AND preparation.state = 'failed' AND preparation.failure_code = 'curated_revision_reconfirmation_required'))
   AND revision.status = 'active'
   AND json_extract(conflict.content, '$.eventVersion') = revision.event_version + 1;
 CREATE VIEW curated_revision_read AS

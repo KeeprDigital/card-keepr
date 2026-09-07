@@ -129,9 +129,10 @@ export function sealGameCandidateStatement(
   digest: string,
   count: number,
   preparationManifest: string,
+  terminalState: "sealed" | "failed" = "sealed",
 ) {
   return repositoryStatements(database)
-    .prepare(`UPDATE game_candidates SET state = 'sealed', manifest_digest = ?, partition_count = ?, preparation_manifest_digest = ?
+    .prepare(`UPDATE game_candidates SET state = ?, manifest_digest = ?, partition_count = ?, preparation_manifest_digest = ?
     WHERE id = ? AND state = 'preparing' AND CASE WHEN
       EXISTS (SELECT 1 FROM (
         SELECT content FROM reconciliation_checkpoints WHERE preparation_id = ? AND phase = 'game_preparation'
@@ -142,7 +143,18 @@ export function sealGameCandidateStatement(
         AND json_extract(seal.value, '$.id') = ? AND json_extract(seal.value, '$.digest') = ?
         AND json_extract(seal.value, '$.count') = ?)
     THEN 1 ELSE json_extract('{}', 'game_candidate_partition_count_mismatch') END`)
-    .bind(digest, count, preparationManifest, candidateId, runId, preparationManifest, candidateId, digest, count);
+    .bind(
+      terminalState,
+      digest,
+      count,
+      preparationManifest,
+      candidateId,
+      runId,
+      preparationManifest,
+      candidateId,
+      digest,
+      count,
+    );
 }
 
 /** Temporary run-command adapter; game operation commands replace this as orchestration moves. */

@@ -133,6 +133,7 @@ export async function persistBlockedCandidate(
   database: CatalogueStore,
   input: {
     runId: string;
+    independentGame?: boolean;
     partitions: AsyncIterable<EvidencePartitionInput>;
     plans: AsyncIterable<ObservationPlan>;
     diagnostics: Iterable<Record<string, unknown>> | AsyncIterable<Record<string, unknown>>;
@@ -145,16 +146,34 @@ export async function persistBlockedCandidate(
     yieldAtCheckpoint?: boolean;
     failureCode?: string;
   },
-): Promise<void> {
+): Promise<Record<string, unknown> | void> {
   const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
   const failureCode = input.failureCode ?? "printing_reconciliation_blocked";
-  await persistCandidatePartitions(database, input.runId, input.candidate, input.diagnostics, input.yieldAtCheckpoint);
+  const manifest = await persistCandidatePartitions(
+    database,
+    input.runId,
+    input.candidate,
+    input.diagnostics,
+    input.yieldAtCheckpoint,
+  );
   const runDiagnostics = await prepareRunWarningSummary(
     database,
     input.runId,
     input.diagnostics,
     input.yieldAtCheckpoint,
   );
+  if (input.independentGame) {
+    const failedManifests = await prepareGameCandidateManifests(
+      database,
+      input.runId,
+      input.draft,
+      manifest.digest,
+      input.partitions,
+      input.yieldAtCheckpoint,
+      "failed",
+    );
+    return (await failIndependentGamePreparation(database, input.runId, failureCode, runDiagnostics, failedManifests))!;
+  }
   const preparationCount = await stageCandidatePreparation(database, input);
   const statements = [
     preparationCompleteGuard(database, input.runId, preparationCount),

@@ -1,6 +1,7 @@
 import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { curatedRevisionStatusStatement } from "./curated-repository";
 import {
+  curatedPreparationProvenanceStatement,
   nextPreparedCuratedConflictStatement,
   preparedCuratedConflictStatement,
   retainCuratedConflictStatement,
@@ -22,6 +23,7 @@ export type PendingConflict = {
   conflict_id: string;
   conflict_digest: string;
   run_id: string;
+  preparation_id?: string;
   previous_source_digest: string;
   observed_source_digest: string;
 };
@@ -30,10 +32,12 @@ export async function sourceChangeDetails(
   revisionId: string,
   previousDigest: string,
   reviewedSourceValue: unknown,
+  preparationId?: string,
 ): Promise<PendingConflict> {
   const observed = await sha256Text(canonicalJson(reviewedSourceValue));
   const identity = {
     run_id: runId,
+    ...(preparationId ? { preparation_id: preparationId } : {}),
     revision_id: revisionId,
     previous_source_digest: previousDigest,
     observed_source_digest: observed,
@@ -43,6 +47,7 @@ export async function sourceChangeDetails(
     conflict_id: conflictId,
     conflict_digest: await sha256Text(canonicalJson({ conflict_id: conflictId, ...identity })),
     run_id: runId,
+    ...(preparationId ? { preparation_id: preparationId } : {}),
     previous_source_digest: previousDigest,
     observed_source_digest: observed,
   };
@@ -74,7 +79,19 @@ export class CuratedConflictPreparation {
     private observedAt: string,
   ) {}
   async record(revisionId: string, previousDigest: string, reviewedSourceValue: unknown): Promise<void> {
-    const details = await sourceChangeDetails(this.runId, revisionId, previousDigest, reviewedSourceValue);
+    const provenance = await storage(() =>
+      curatedPreparationProvenanceStatement(this.database, this.runId).first<{
+        ingestion_run_id: string;
+        supported_game: string | null;
+      }>(),
+    );
+    const details = await sourceChangeDetails(
+      provenance?.ingestion_run_id ?? this.runId,
+      revisionId,
+      previousDigest,
+      reviewedSourceValue,
+      provenance?.supported_game ? this.runId : undefined,
+    );
     const existing = await storage(() =>
       preparedCuratedConflictStatement(this.database, this.runId, revisionId).first<PreparedRow>(),
     );

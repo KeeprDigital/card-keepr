@@ -1664,8 +1664,9 @@ export async function reconcileRetainedCardPrintingEvidence(
         digestPayload,
         yieldAtCheckpoint,
       );
-      await persistBlockedCandidate(database, {
+      const failed = await persistBlockedCandidate(database, {
         runId,
+        independentGame: run.supported_game !== null,
         partitions: retained.partitions,
         plans,
         diagnostics: stableDiagnostics,
@@ -1677,7 +1678,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         observedAt,
         yieldAtCheckpoint,
       });
-      return { run_id: runId, candidate_digest: candidateDigest };
+      return failed ?? { run_id: runId, candidate_digest: candidateDigest };
     }
     const curated = new ReconciliationCandidateState(database, runId, "curated", official);
     try {
@@ -1721,8 +1722,9 @@ export async function reconcileRetainedCardPrintingEvidence(
         digestPayload,
         yieldAtCheckpoint,
       );
-      await persistBlockedCandidate(database, {
+      const failed = await persistBlockedCandidate(database, {
         runId,
+        independentGame: run.supported_game !== null,
         partitions: retained.partitions,
         plans,
         diagnostics,
@@ -1735,7 +1737,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         yieldAtCheckpoint,
         failureCode: "curated_revision_reconfirmation_required",
       });
-      return { run_id: runId, candidate_digest: candidateDigest };
+      return failed ?? { run_id: runId, candidate_digest: candidateDigest };
     }
     const corrected = new ReconciliationCandidateState(database, runId, "corrections", curated);
     await applyPinnedIdentityCorrectionsToDraft(database, runId, corrected, warnings, yieldAtCheckpoint);
