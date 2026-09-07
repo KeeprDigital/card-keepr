@@ -84,8 +84,7 @@ ${assertion(`EXISTS(SELECT 1 FROM fresh_baseline_handoffs WHERE ${exact(environm
 export function transferSql(environment, source) {
   const plan = handoffPlan(environment);
   if (
-    !source ||
-    source.role !== "source" ||
+    source?.role !== "source" ||
     source.phase !== 2 ||
     source.release_id !== plan.release_id ||
     source.dispatch_digest !== environment.DISPATCH_DIGEST ||
@@ -130,8 +129,7 @@ ${assertion(`EXISTS(SELECT 1 FROM fresh_baseline_handoffs WHERE ${identity} AND 
 
 export function destinationReleaseSql(environment, source) {
   if (
-    !source ||
-    source.role !== "source" ||
+    source?.role !== "source" ||
     source.phase !== 6 ||
     source.request_json !== environment.PREPARED_PLAN_JSON ||
     source.dispatch_digest !== environment.DISPATCH_DIGEST
