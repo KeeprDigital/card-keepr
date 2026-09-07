@@ -1,6 +1,6 @@
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { inspectGameCandidate, inspectGameCandidateReadiness } from "./game-candidate";
-import { publicationPreparationGuard } from "./publication-preparation-repository";
+import { publicationPreparationGuard, publicationPreparationStatement } from "./publication-preparation-repository";
 import {
   publicationOperationStatement,
   retainPublicationApproval,
@@ -123,7 +123,7 @@ export async function approveGamePublication(
   return document;
 }
 
-import { composePublicationArtifacts, inspectPublicationPreparation } from "./publication-preparation";
+import { composePublicationArtifacts } from "./publication-preparation";
 import {
   publicExportPreparationStatement,
   publicationCompositionHead,
@@ -144,7 +144,7 @@ export async function advanceGamePublication(
   const operation = await publicationOperationStatement(db, id).first<PublicationOperation>();
   if (!operation)
     throw new AdministrationProblem(404, "publication_not_found", "The publication operation does not exist.");
-  if (operation.state === "published" || operation.state === "failed") return inspectPublication(db, id);
+  if (["published", "failed", "retry_paused"].includes(operation.state)) return inspectPublication(db, id);
   if (operation.generation !== generation)
     throw new AdministrationProblem(409, "publication_writer_conflict", "Use the current publication generation.");
   if (operation.deadline <= at) {
@@ -157,8 +157,8 @@ export async function advanceGamePublication(
     await updatePublicationState(db, id, generation, "failed", "publication_candidate_conflict").run();
     return inspectPublication(db, id);
   }
-  const prepared = await inspectPublicationPreparation(db, candidate.id);
-  if (prepared.state !== "verified") {
+  const prepared = await publicationPreparationStatement(db, candidate.id).first<{ state: string }>();
+  if (prepared?.state !== "verified") {
     await updatePublicationState(db, id, generation, "waiting_artifacts").run();
     return inspectPublication(db, id);
   }
@@ -207,7 +207,7 @@ export async function advanceGamePublication(
         "publication_artifacts_unverified",
         "The immutable public package manifest failed verification.",
       );
-    await retainPublicPackageManifest(db, id, composition.root_digest, packageKey).run();
+    await retainPublicPackageManifest(db, id, generation, composition.root_digest, packageKey).run();
     try {
       await db.batch(
         publicationSwitchStatements(db, {
@@ -284,7 +284,7 @@ export async function dispatchGamePublication(
   shard = 0,
   waits = 0,
 ) {
-  if (operation.state === "published" || operation.state === "failed") return;
+  if (["published", "failed", "retry_paused"].includes(operation.state)) return;
   const id = `switch-${await sha256Text(`${operation.id}:${operation.generation}${shard ? `:${shard}` : ""}`)}`;
   await workflowDriver(workflow).ensure(
     id,
@@ -300,9 +300,22 @@ export async function dispatchGamePublication(
   );
 }
 
-import { publicationResumeAction, publicationResumeStatements } from "./game-publication-repository";
-export async function pauseGamePublication(db: CatalogueStore, id: string, generation: number, code: string) {
-  await updatePublicationState(db, id, generation, "retry_paused", code).run();
+import {
+  publicationResumeAction,
+  publicationResumeStatements,
+  pausePublicationSuccessor,
+} from "./game-publication-repository";
+export async function pauseGamePublication(
+  db: CatalogueStore,
+  id: string,
+  generation: number,
+  code: string,
+  successor?: { shard: number; sequence: number },
+) {
+  await (successor
+    ? pausePublicationSuccessor(db, id, generation, successor.shard, successor.sequence)
+    : updatePublicationState(db, id, generation, "retry_paused", code)
+  ).run();
   return inspectPublication(db, id);
 }
 export async function resumeGamePublication(

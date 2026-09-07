@@ -93,6 +93,7 @@ export async function advancePublicationExports(env: Environment, id: string, ge
   if (owner.generation !== generation)
     throw new AdministrationProblem(409, "publication_writer_conflict", "Use the current publication generation.");
   if (["published", "failed"].includes(owner.state)) return { state: "complete" };
+  if (owner.state === "retry_paused") return { state: "retry_paused" };
   if (owner.deadline <= new Date().toISOString() || owner.current_game_revision !== owner.expected_game_revision_id)
     return { state: "invalid" };
   if (owner.private_state !== "verified") return { state: "waiting_private" };

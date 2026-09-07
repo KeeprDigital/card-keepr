@@ -25,6 +25,7 @@ import { inspectCardCollectionQuery } from "../../ingestion/test/query-helpers/c
 import * as ingestionQueries from "../../ingestion/test/query-helpers/ingestion";
 import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
 import apiWorker from "../src/index";
+import { seedNativeExportReadFacts } from "./query-helpers/native-exports";
 import {
   apiCard,
   apiHeaders,
@@ -274,21 +275,23 @@ test.each([false, true])(
       ["errata", "ErratumRecord", "id:utf8"],
       ["relationships", "RelationshipRecord", "id:utf8"],
     ] as const;
-    const components = componentDefinitions.map(([name, schemaDefinition, order]) => {
-      const containsErratum = name === "errata";
-      return {
-        name,
-        media_type: "application/x-ndjson",
-        compression: "gzip",
-        record_schema: `https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/${schemaDefinition}`,
-        order,
-        records: containsErratum ? 1 : 0,
-        uncompressed_bytes: containsErratum ? erratumBytes.byteLength : 0,
-        content_sha256: containsErratum ? erratumDigest : emptyDigest,
-        compressed_bytes: containsErratum ? compressedErratumBytes.byteLength : compressedEmptyBytes.byteLength,
-        compressed_sha256: containsErratum ? compressedErratumDigest : compressedEmptyDigest,
-      };
-    });
+    const components = componentDefinitions
+      .filter(([name]) => superseded || name === "errata")
+      .map(([name, schemaDefinition, order]) => {
+        const containsErratum = name === "errata";
+        return {
+          name: superseded ? name : "gundam.0",
+          media_type: "application/x-ndjson",
+          compression: "gzip",
+          record_schema: `https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/${schemaDefinition}`,
+          ...(superseded ? { order } : { kind: name }),
+          records: containsErratum ? 1 : 0,
+          uncompressed_bytes: containsErratum ? erratumBytes.byteLength : 0,
+          content_sha256: containsErratum ? erratumDigest : emptyDigest,
+          compressed_bytes: containsErratum ? compressedErratumBytes.byteLength : compressedEmptyBytes.byteLength,
+          compressed_sha256: containsErratum ? compressedErratumDigest : compressedEmptyDigest,
+        };
+      });
     const manifestWithPlaceholder = {
       format: "card-keepr-catalogue-export-manifest@5",
       serialization_profile: "card-keepr-ndjson-gzip@1",
@@ -305,13 +308,15 @@ test.each([false, true])(
       manifest_sha256: "0".repeat(64),
     };
     const manifestDigest = await sha256Text(`${canonicalJson(manifestWithPlaceholder)}\n`);
-    const manifest = {
+    let manifest: Record<string, unknown> = {
       ...manifestWithPlaceholder,
       manifest_sha256: manifestDigest,
     };
     const manifestBytes = utf8(`${canonicalJson(manifest)}\n`);
-    const manifestKey = `catalogue-exports/${revisionId}/manifest.json`;
-    const componentKey = `catalogue-exports/${revisionId}/components/` + `${compressedErratumDigest}.ndjson.gz`;
+    let manifestKey = `catalogue-exports/${revisionId}/manifest.json`;
+    const componentKey = superseded
+      ? `catalogue-exports/${revisionId}/components/${compressedErratumDigest}.ndjson.gz`
+      : `catalogue-public-components/${compressedErratumDigest}.ndjson.gz`;
 
     await testEnv.CATALOGUE_EXPORTS.put(manifestKey, manifestBytes, {
       httpMetadata: { contentType: "application/json" },
@@ -346,8 +351,29 @@ test.each([false, true])(
       ingestionQueries
         .insertCatalogueRevisionsForAuthenticatedCatalogueExportReadsPreserveRetainedD1R2Artifact(testEnv.CATALOGUE_DB)
         .bind(revisionId, runId, publishedAt, candidateDigest, candidateDigest),
-      catalogueExportQueries.insertCatalogueExports(testEnv.CATALOGUE_DB).bind(revisionId, manifestKey, manifestDigest),
+      ...(superseded
+        ? [
+            catalogueExportQueries
+              .insertCatalogueExports(testEnv.CATALOGUE_DB)
+              .bind(revisionId, manifestKey, manifestDigest),
+          ]
+        : []),
     ]);
+    if (!superseded) {
+      const native = await seedNativeExportReadFacts(testEnv.CATALOGUE_DB, testEnv.CATALOGUE_EXPORTS, {
+        revisionId,
+        runId,
+        publishedAt,
+        components: [{ descriptor: components[0]!, objectKey: componentKey }],
+      });
+      manifestKey = native.key;
+      manifest = {
+        ...manifestWithPlaceholder,
+        catalogue_revision: { id: revisionId, content_sha256: native.digest },
+        page: { next_cursor: null },
+      };
+      manifest.manifest_sha256 = await sha256Text(canonicalJson(manifest));
+    }
 
     const authenticatedRequest = (path: string) =>
       new Request(`https://card-keepr.invalid${path}`, {
@@ -396,7 +422,7 @@ test.each([false, true])(
     expect(validateErratum).toBeDefined();
     expect(validateErratum!(erratum), JSON.stringify(validateErratum!.errors)).toBe(true);
 
-    const componentPath = `${manifestPath}/components/errata`;
+    const componentPath = `${manifestPath}/components/gundam.0`;
     const firstComponentResponse = await exports.default.fetch(authenticatedRequest(componentPath));
     const secondComponentResponse = await exports.default.fetch(authenticatedRequest(componentPath));
     expect(firstComponentResponse.status).toBe(200);
@@ -421,7 +447,7 @@ test.each([false, true])(
     expect(headResponse.status).toBe(200);
     expect(await headResponse.text()).toBe("");
     expect(headResponse.headers.get("content-length")).toBe(String(compressedErratumBytes.byteLength));
-    expect(headResponse.headers.get("content-disposition")).toBe('attachment; filename="errata.ndjson.gz"');
+    expect(headResponse.headers.get("content-disposition")).toBe('attachment; filename="gundam.0.ndjson.gz"');
     expect(headResponse.headers.get("accept-ranges")).toBe("bytes");
     expect(headResponse.headers.get("etag")).toBe(componentEtag);
     expect(headResponse.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
@@ -458,7 +484,12 @@ test.each([false, true])(
         if (arguments_[0] !== componentKey || object === null) return object;
         return new Proxy(object, {
           get(target, property) {
-            if (property === "etag") return `${target.etag}-replacement`;
+            if (property === "arrayBuffer")
+              return async () => {
+                const bytes = new Uint8Array(await target.arrayBuffer());
+                bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 0xff;
+                return bytes.buffer;
+              };
             const value = Reflect.get(target, property);
             return typeof value === "function" ? value.bind(target) : value;
           },
@@ -471,8 +502,8 @@ test.each([false, true])(
       }),
       { ...testEnv, CATALOGUE_EXPORTS: replacedBodyBucket },
     );
-    expect(raced.status).toBe(404);
-    await expect(raced.json()).resolves.toMatchObject({ code: "not_found" });
+    expect(raced.status).toBe(503);
+    await expect(raced.json()).resolves.toMatchObject({ code: "catalogue_export_unavailable" });
 
     const unsatisfiable = await exports.default.fetch(
       new Request(`https://card-keepr.invalid${componentPath}`, {
@@ -497,10 +528,10 @@ test.each([false, true])(
         },
       }),
     );
-    expect(missing.status).toBe(404);
+    expect(missing.status).toBe(503);
     expect(missing.headers.get("content-type")).toContain("application/problem+json");
     const missingProblem = await missing.json();
-    expect(missingProblem).toMatchObject({ code: "not_found" });
+    expect(missingProblem).toMatchObject({ code: "catalogue_export_unavailable" });
     const problemAjv = new Ajv2020({ allErrors: true, strict: false });
     addFormats(problemAjv);
     problemAjv.addSchema(apiSchema);
@@ -519,9 +550,9 @@ test.each([false, true])(
         },
       }),
     );
-    expect(tampered.status).toBe(404);
+    expect(tampered.status).toBe(503);
     const tamperedProblem = await tampered.json();
-    expect(tamperedProblem).toMatchObject({ code: "not_found" });
+    expect(tamperedProblem).toMatchObject({ code: "catalogue_export_unavailable" });
     expect(validateProblem(tamperedProblem), JSON.stringify(validateProblem.errors)).toBe(true);
 
     await testEnv.CATALOGUE_EXPORTS.put(
@@ -532,9 +563,9 @@ test.each([false, true])(
       })}\n`,
     );
     const changedManifest = await exports.default.fetch(authenticatedRequest(manifestPath));
-    expect(changedManifest.status).toBe(500);
+    expect(changedManifest.status).toBe(503);
     await expect(changedManifest.json()).resolves.toMatchObject({
-      code: "internal_error",
+      code: "catalogue_export_unavailable",
     });
   },
 );
@@ -729,7 +760,7 @@ test("a known deleting or deleted Catalogue Export is immediately 410 while an u
     exports.default.fetch(new Request(`https://card-keepr.invalid${path}`, { headers: apiHeaders("203.0.113.111") }));
   for (const path of [
     "/v1/catalogue-exports/catrev_export_deleted_old",
-    "/v1/catalogue-exports/catrev_export_deleted_old/components/cards",
+    "/v1/catalogue-exports/catrev_export_deleted_old/components/gundam.0",
   ]) {
     const deleted = await request(path);
     expect(deleted.status, path).toBe(410);
@@ -1884,26 +1915,43 @@ async function seedCatalogueExportSummary(revisionId: string, runId: string, pub
     .setCatalogueStatePublishedAt(testEnv.CATALOGUE_DB)
     .bind(publishedAt, revisionId)
     .run();
-  const manifestWithPlaceholder = {
-    export_schema_major: 5,
-    catalogue_revision: {
-      id: revisionId,
-      content_sha256: "b".repeat(64),
-    },
-    manifest_sha256: "0".repeat(64),
-    components: [],
+  const record = {
+    type: "erratum",
+    id: `erratum_${runId}`,
+    game: "gundam",
+    target_type: "card",
+    target_id: "card_retained",
+    effective_from: "2025-01-01",
+    official_wording: "Corrected.",
+    corrected_value: "Corrected.",
   };
-  const manifestDigest = await sha256Text(`${canonicalJson(manifestWithPlaceholder)}\n`);
-  const manifest = {
-    ...manifestWithPlaceholder,
-    manifest_sha256: manifestDigest,
-  };
-  const manifestKey = `catalogue-exports/${revisionId}/manifest.json`;
-  await testEnv.CATALOGUE_EXPORTS.put(manifestKey, `${canonicalJson(manifest)}\n`);
-  await catalogueExportQueries
-    .insertCatalogueExports(testEnv.CATALOGUE_DB)
-    .bind(revisionId, manifestKey, manifestDigest)
-    .run();
+  const raw = utf8(`${canonicalJson(record)}\n`),
+    compressed = deterministicGzip(raw),
+    digest = await sha256(compressed);
+  const objectKey = `catalogue-public-components/${digest}.ndjson.gz`;
+  await testEnv.CATALOGUE_EXPORTS.put(objectKey, compressed);
+  await seedNativeExportReadFacts(testEnv.CATALOGUE_DB, testEnv.CATALOGUE_EXPORTS, {
+    revisionId,
+    runId,
+    publishedAt,
+    components: [
+      {
+        objectKey,
+        descriptor: {
+          name: "gundam.0",
+          kind: "errata",
+          media_type: "application/x-ndjson",
+          compression: "gzip",
+          record_schema: "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/ErratumRecord",
+          records: 1,
+          uncompressed_bytes: raw.byteLength,
+          content_sha256: await sha256(raw),
+          compressed_bytes: compressed.byteLength,
+          compressed_sha256: digest,
+        },
+      },
+    ],
+  });
 }
 
 function proxyR2Bucket(

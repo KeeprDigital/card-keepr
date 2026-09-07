@@ -1,13 +1,22 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 
-export function retainPublicPackageManifest(db: CatalogueStore, id: string, digest: string, key: string) {
+export function retainPublicPackageManifest(
+  db: CatalogueStore,
+  id: string,
+  generation: number,
+  digest: string,
+  key: string,
+) {
   return repositoryStatements(db)
-    .prepare("INSERT INTO game_publication_actions VALUES (?,?,?,?) ON CONFLICT(idempotency_key) DO NOTHING")
+    .prepare(
+      "INSERT INTO game_publication_actions SELECT ?,id,?,? FROM game_publication_operations WHERE id=? AND generation=? AND state IN ('approved','waiting_artifacts','waiting_backup') AND julianday(deadline)>julianday('now') ON CONFLICT(idempotency_key) DO NOTHING",
+    )
     .bind(
       `public-package:${id}:${digest}`,
-      id,
       JSON.stringify({ contract: "public-package@1" }),
       JSON.stringify({ sha256: digest, object_key: key }),
+      id,
+      generation,
     );
 }
 
@@ -78,8 +87,23 @@ export function updatePublicationState(
 ) {
   return repositoryStatements(db)
     .prepare(`UPDATE game_publication_operations SET state=?,failure_code=?
- WHERE id=? AND generation=? AND state NOT IN ('published','failed')`)
+ WHERE id=? AND generation=? AND state IN ('approved','waiting_artifacts','waiting_backup')`)
     .bind(state, code, id, generation);
+}
+export function pausePublicationSuccessor(
+  db: CatalogueStore,
+  id: string,
+  generation: number,
+  shard: number,
+  sequence: number,
+) {
+  const next = `public-export-attempt:${id}:${generation}:${shard + 1}:`;
+  return repositoryStatements(db)
+    .prepare(`UPDATE game_publication_operations SET state='retry_paused',failure_code='publication_successor_dispatch_exhausted'
+ WHERE id=? AND generation=? AND state IN ('approved','waiting_artifacts','waiting_backup')
+ AND coalesce((SELECT sequence FROM publication_export_preparations WHERE publication_operation_id=?),0)=?
+ AND NOT EXISTS(SELECT 1 FROM game_publication_actions WHERE idempotency_key>=? AND idempotency_key<?)`)
+    .bind(id, generation, id, sequence, next, `${next}~`);
 }
 export function publicationSwitchGuard(
   db: CatalogueStore,
@@ -95,7 +119,7 @@ export function publicationSwitchGuard(
   return repositoryStatements(db)
     .prepare(`SELECT CASE
  WHEN NOT EXISTS (SELECT 1 FROM game_publication_operations WHERE id=?1 AND generation=?2
- AND state IN ('approved','waiting_artifacts','waiting_backup','retry_paused')) THEN json_extract('{}','publication_writer_conflict')
+ AND state IN ('approved','waiting_artifacts','waiting_backup')) THEN json_extract('{}','publication_writer_conflict')
  WHEN EXISTS (SELECT 1 FROM game_publication_operations WHERE id=?1 AND julianday(deadline)<=julianday('now')+?6/86400000.0) THEN json_extract('{}','publication_deadline_expired')
  WHEN NOT EXISTS (SELECT 1 FROM game_publication_operations p JOIN game_candidates c ON c.id=p.candidate_id
  JOIN reconciliation_operations o ON o.id=c.preparation_id

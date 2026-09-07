@@ -17,7 +17,7 @@ export function reserveExportAttempt(db: CatalogueStore, id: string, generation:
   return repositoryStatements(db)
     .prepare(`INSERT INTO game_publication_actions
  SELECT ?,id,?,? FROM game_publication_operations WHERE id=? AND generation=?
- AND state IN ('approved','waiting_artifacts','waiting_backup','retry_paused') AND julianday(deadline)>julianday('now')
+ AND state IN ('approved','waiting_artifacts','waiting_backup') AND julianday(deadline)>julianday('now')
  AND (SELECT count(*) FROM game_publication_actions WHERE idempotency_key>=? AND idempotency_key<?)<40
  RETURNING idempotency_key`)
     .bind(
@@ -55,7 +55,7 @@ export function guardExportUnit(db: CatalogueStore, id: string, generation: numb
     .prepare(`SELECT CASE
  WHEN NOT EXISTS (SELECT 1 FROM game_publication_operations p JOIN game_candidates c ON c.id=p.candidate_id JOIN game_catalogue_heads h ON h.supported_game=c.supported_game AND h.revision_id=p.expected_game_revision_id
  JOIN publication_preparations a ON a.candidate_id=c.id AND a.state='verified' AND a.manifest_digest=p.manifest_digest
- WHERE p.id=?1 AND p.generation=?2 AND p.state IN ('approved','waiting_artifacts','waiting_backup','retry_paused') AND julianday(p.deadline)>julianday('now') AND c.state='sealed' AND c.generation=p.candidate_generation)
+ WHERE p.id=?1 AND p.generation=?2 AND p.state IN ('approved','waiting_artifacts','waiting_backup') AND julianday(p.deadline)>julianday('now') AND c.state='sealed' AND c.generation=p.candidate_generation)
  THEN json_extract('{}','publication_export_owner_conflict')
  WHEN COALESCE((SELECT sequence FROM publication_export_preparations WHERE publication_operation_id=?1),0)<>?3 THEN json_extract('{}','publication_export_sequence_conflict')
  ELSE 1 END`)
