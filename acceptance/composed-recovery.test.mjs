@@ -641,11 +641,11 @@ test("native owner publication Workflow verifies an independently imported compo
   assert.equal(correctedResponse.status, 200);
   assert.equal(correctedResponse.body.data.action, "merge");
   assert.deepEqual(correctedResponse.body.data.replacement_ids, [survivorPrintingId]);
-  const retainedPublicExports = async (baseUrl) => {
+  const retainedPublicExports = async (baseUrl, expectedCount = 3) => {
     const listing = await fetch(`${baseUrl}/v1/catalogue-exports`, { headers: { authorization: `Bearer ${apiKey}` } });
     assert.equal(listing.status, 200);
     const exports = (await listing.json()).data;
-    assert.equal(exports.length, 3);
+    assert.equal(exports.length, expectedCount);
     const retained = [];
     for (const item of exports) {
       const pages = [],
@@ -678,6 +678,69 @@ test("native owner publication Workflow verifies an independently imported compo
     return retained;
   };
   const beforeRecoveryExports = await retainedPublicExports(api.url);
+  const deletedPackage = beforeRecoveryExports.find((item) => item.id === initialGameRevision);
+  assert.ok(deletedPackage);
+  const deletedManifestDigest = deletedPackage.pages[0].catalogue_revision.content_sha256;
+  const knownDeletedComponent = deletedPackage.components[0].name;
+  const deletionPlan = await cli([
+    "catalogue-export",
+    "deletion",
+    "prepare",
+    "--catalogue-revision",
+    deletedPackage.id,
+    "--manifest-digest",
+    deletedManifestDigest,
+    "--expected-current-revision",
+    publication.resulting_revision_id,
+    "--plan-id",
+    "native-recovery-delete-plan",
+  ]);
+  assert.deepEqual(deletionPlan.object_keys, [
+    `catalogue-public-manifests/${deletedPackage.id}/${deletedManifestDigest}.json`,
+  ]);
+  assert.ok(
+    deletionPlan.dependencies.some((dependency) => dependency.code === "shared_components_retained_for_recovery"),
+  );
+  const deletionArgs = [
+    "catalogue-export",
+    "deletion",
+    "confirm",
+    "--plan-id",
+    deletionPlan.id,
+    "--plan-digest",
+    deletionPlan.plan_digest,
+    "--catalogue-revision",
+    deletedPackage.id,
+    "--manifest-digest",
+    deletedManifestDigest,
+    "--expected-current-revision",
+    publication.resulting_revision_id,
+    "--confirm-revision",
+    deletedPackage.id,
+    "--deletion-id",
+    "native-recovery-delete",
+    "--idempotency-key",
+    "native-recovery-delete-intent",
+  ];
+  const deletion = await mutate(deletionArgs);
+  assert.equal(deletion.state, "deleted", JSON.stringify(deletion));
+  assert.deepEqual(await mutate(deletionArgs), deletion);
+  const deletionStatusArgs = ["catalogue-export", "deletion", "status", "--deletion-id", "native-recovery-delete"];
+  const beforeRecoveryDeletion = await cli(deletionStatusArgs);
+  const assertDeletedPackage = async (baseUrl) => {
+    for (const [path, status] of [
+      [`/v1/catalogue-exports/${deletedPackage.id}`, 410],
+      [`/v1/catalogue-exports/${deletedPackage.id}/components/${knownDeletedComponent}`, 410],
+      [`/v1/catalogue-exports/${deletedPackage.id}/components/never-known`, 404],
+      ["/v1/catalogue-exports/never-published", 404],
+    ]) {
+      const response = await fetch(`${baseUrl}${path}`, { headers: { authorization: `Bearer ${apiKey}` } });
+      assert.equal(response.status, status, `${path}: ${await response.text()}`);
+    }
+  };
+  await assertDeletedPackage(api.url);
+  const survivingExports = beforeRecoveryExports.filter((item) => item.id !== deletedPackage.id);
+  assert.deepEqual(await retainedPublicExports(api.url, 2), survivingExports);
   const beforeRecoveryDetail = await consumer(`/v1/cards/${cards.records[0].id}`);
 
   pending = await post("/v1/game-candidates", {
@@ -891,7 +954,11 @@ test("native owner publication Workflow verifies an independently imported compo
   await writeFile(restoredApiPath, JSON.stringify(restoredApiConfig));
   const restoredApi = await startWorker({ config: restoredApiPath, envFile: apiEnv, statePath });
   workers.push(restoredApi);
-  assert.deepEqual(await retainedPublicExports(restoredApi.url), beforeRecoveryExports);
+  await assertDeletedPackage(restoredApi.url);
+  assert.deepEqual(await retainedPublicExports(restoredApi.url, 2), survivingExports);
+  const restoredDeletion = await runCli([...deletionStatusArgs, "--json"], replacedEnvironment);
+  assert.equal(restoredDeletion.code, 0, restoredDeletion.stdout + restoredDeletion.stderr);
+  assert.deepEqual(JSON.parse(restoredDeletion.stdout), beforeRecoveryDeletion);
   const restoredRetired = await fetch(`${restoredApi.url}/v1/printings/${correctedPrintingId}`, {
     headers: { authorization: `Bearer ${apiKey}` },
   });
