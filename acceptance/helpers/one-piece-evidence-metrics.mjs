@@ -71,6 +71,9 @@ export async function onePieceEvidenceMetrics(
     contract: "card-keepr-local-p001-measurements@1",
     scope:
       "Complete local acceptance journey; retained 2026-09-06 responses, simulated HTTP delivery and Cloudflare control plane, actual SQLite/export/import. No live-source freshness or production-capacity claim.",
+    concurrency:
+      process.env.KEEPR_EVIDENCE_CONCURRENCY_NOTE ??
+      "Uncontrolled shared host; no CPU, memory or timing capacity claim.",
     elapsed_ms: elapsedMs,
     driver_only: driverUsage,
     source: {

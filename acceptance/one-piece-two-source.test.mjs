@@ -505,17 +505,23 @@ test("retained P-001: owner collects every declared Bandai record through native
     found.data.map((card) => card.id),
     [cardId],
   );
-  for (const printing of printings.filter((p) => printingIdsHas(p.id))) {
+  for (const printing of printings.filter((p) => [...printingIds.values()].includes(p.id))) {
     assert.deepEqual(printing.rarity, baseIntake.content.printing.rarity);
     assert.equal(printing.printed_rules_text, baseIntake.content.printing.printed_rules_text);
-  }
-  function printingIdsHas(id) {
-    return [...printingIds.values()].includes(id);
   }
   for (const printing of printings) {
     const response = await fetch(`${api.url}/v1/printings/${printing.id}`, { headers });
     assert.equal(response.status, 200);
     const data = (await response.json()).data;
+    assert.equal(data.type, "printing");
+    assert.equal(new URL(data.links.self).pathname, `/v1/printings/${printing.id}`);
+    assert.deepEqual(
+      data.printing_images.map((image) => image.id).sort(),
+      images
+        .filter((image) => image.printing_id === printing.id)
+        .map((image) => image.id)
+        .sort(),
+    );
     for (const [field, value] of Object.entries(printing)) assert.deepEqual(data[field], value, `Printing ${field}`);
     for (const image of data.printing_images) {
       const content = await fetch(new URL(image.links.content, api.url), { headers });
@@ -565,7 +571,17 @@ test("retained P-001: owner collects every declared Bandai record through native
   assert.deepEqual(restoredPrintings, printings);
   const restoredWinner = await fetch(`${restoredApi.url}/v1/printings/${winnerPrintingId}`, { headers });
   assert.equal(restoredWinner.status, 200);
-  assert.equal((await restoredWinner.json()).data.id, winnerPrintingId);
+  const restoredWinnerData = (await restoredWinner.json()).data;
+  assert.equal(restoredWinnerData.id, winnerPrintingId);
+  assert.equal(restoredWinnerData.printing_images.length, 1);
+  for (const image of restoredWinnerData.printing_images) {
+    const content = await fetch(new URL(image.links.content, restoredApi.url), { headers });
+    assert.equal(content.status, 200);
+    const bytes = Buffer.from(await content.arrayBuffer());
+    assert.equal(bytes.length, image.content_byte_length);
+    assert.equal(createHash("sha256").update(bytes).digest("hex"), image.content_sha256);
+    assert.ok([...captures.values()].some((c) => c.sha256 === image.content_sha256));
+  }
   metrics.restored_api_and_export_verified = true;
   metrics.verified_public_export = exportBytes;
   metrics.complete_journey_elapsed_ms = performance.now() - started;
