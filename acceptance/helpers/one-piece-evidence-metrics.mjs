@@ -2,8 +2,8 @@ import { DatabaseSync } from "node:sqlite";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 
-// Read-only local measurements. Statement counts are execution attempts, while
-// table counts measure retained rows; neither is presented as exact SQL writes.
+// Read-only local measurements. D1 preparations and batch submissions are
+// separate counters; table counts measure retained rows, not exact SQL writes.
 export async function onePieceEvidenceMetrics(
   databaseDirectory,
   output,
