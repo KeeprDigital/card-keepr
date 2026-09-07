@@ -20,9 +20,26 @@ test("Riftbound CHECK widening preserves populated ancestors, decisions and inbo
       db.prepare(
         "INSERT INTO ingestion_runs(id,started_at,expected_current_revision_id,idempotency_key) VALUES (?,?,?,?)",
       ).run(run, at, predecessor, run);
+      db.prepare("INSERT INTO ingestion_run_selected_games VALUES (?,0,'one-piece')").run(run);
       db.prepare(
         "INSERT INTO catalogue_revisions(id,ingestion_run_id,published_at,content_digest,expected_previous_revision_id,approved_candidate_digest) VALUES (?,?,?,?,?,?)",
       ).run(revision, run, at, "a".repeat(64), predecessor, "b".repeat(64));
+      db.prepare("INSERT INTO revision_printings VALUES (?,?,?,'{}')").run(revision, `printing_${i}`, `card_${i}`);
+      db.prepare("INSERT INTO revision_products VALUES (?,?,'one-piece','TEST','Test','test','[]','{}')").run(
+        revision,
+        `product_${i}`,
+      );
+      db.prepare("INSERT INTO revision_printing_query VALUES (?,?,?,'one-piece','common')").run(
+        revision,
+        `printing_${i}`,
+        `card_${i}`,
+      );
+      db.prepare("INSERT INTO revision_printing_product_query VALUES (?,?,?,?,'')").run(
+        revision,
+        `printing_${i}`,
+        `card_${i}`,
+        `product_${i}`,
+      );
       db.prepare("INSERT INTO catalogue_query_revisions(catalogue_revision_id,state) VALUES (?,'available')").run(
         revision,
       );
@@ -58,7 +75,13 @@ test("Riftbound CHECK widening preserves populated ancestors, decisions and inbo
       at,
     );
     db.exec("UPDATE catalogue_state SET current_revision_id='riftbound_migration_revision_2'");
-    const affected = ["reconciled_errata", "source_freshness", "curated_revisions", "reconciliation_checkpoints", "ingestion_run_selected_games"];
+    const affected = [
+      "reconciled_errata",
+      "source_freshness",
+      "curated_revisions",
+      "reconciliation_checkpoints",
+      "ingestion_run_selected_games",
+    ];
     const inbound = () =>
       db
         .prepare(
@@ -81,6 +104,10 @@ test("Riftbound CHECK widening preserves populated ancestors, decisions and inbo
       "catalogue_exports",
       "catalogue_query_revisions",
       "catalogue_backup_attempts",
+      "revision_printing_query",
+      "revision_printing_product_query",
+      "revision_printings",
+      "revision_products",
     ];
     const before = tables.map((table) => db.prepare(`SELECT * FROM ${table}`).all());
     const guards = db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='trigger' ORDER BY name").all();
@@ -98,6 +125,7 @@ test("Riftbound CHECK widening preserves populated ancestors, decisions and inbo
     db.prepare(
       "INSERT INTO reconciliation_checkpoints VALUES ('preparation_0','product_reduction:riftbound',0,'{}',?)",
     ).run("f".repeat(64));
+    db.prepare("UPDATE revision_printing_query SET supported_game='riftbound' WHERE printing_id='printing_0'").run();
   } finally {
     db.close();
   }

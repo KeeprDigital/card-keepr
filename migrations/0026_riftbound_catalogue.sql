@@ -192,6 +192,42 @@ BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
 
 INSERT INTO source_adapter_versions(adapter_version,source_lineage,supported_game,game_profile_version,parser_contract,adapter_origin,request_capacity) VALUES ('riftbound-en@1','riftbound-en','riftbound','riftbound@1','riot-riftbound-gallery@1','production',5000);
 
+-- Preserve both the legacy query projection and its ON DELETE CASCADE child.
+CREATE TABLE revision_printing_query_riftbound AS SELECT "catalogue_revision_id","printing_id","card_id","supported_game","normalized_rarity" FROM revision_printing_query;
+CREATE TABLE revision_printing_product_query_riftbound AS SELECT "catalogue_revision_id","printing_id","card_id","product_id","release_region" FROM revision_printing_product_query;
+DROP TABLE revision_printing_query;
+CREATE TABLE revision_printing_query (
+  catalogue_revision_id TEXT NOT NULL,
+  printing_id TEXT NOT NULL,
+  card_id TEXT NOT NULL,
+  supported_game TEXT NOT NULL CHECK (supported_game IN ('one-piece', 'fusion-world', 'digimon', 'gundam', 'riftbound')),
+  normalized_rarity TEXT,
+  PRIMARY KEY (catalogue_revision_id, printing_id),
+  FOREIGN KEY (catalogue_revision_id, printing_id)
+    REFERENCES revision_printings(catalogue_revision_id, printing_id) ON DELETE CASCADE
+);
+INSERT INTO revision_printing_query("catalogue_revision_id","printing_id","card_id","supported_game","normalized_rarity") SELECT "catalogue_revision_id","printing_id","card_id","supported_game","normalized_rarity" FROM revision_printing_query_riftbound;
+INSERT INTO revision_printing_product_query("catalogue_revision_id","printing_id","card_id","product_id","release_region") SELECT "catalogue_revision_id","printing_id","card_id","product_id","release_region" FROM revision_printing_product_query_riftbound;
+DROP TABLE revision_printing_query_riftbound;
+DROP TABLE revision_printing_product_query_riftbound;
+CREATE INDEX revision_printing_query_by_card
+  ON revision_printing_query(catalogue_revision_id, card_id, printing_id);
+CREATE INDEX revision_printing_query_by_game
+  ON revision_printing_query(catalogue_revision_id, supported_game, card_id, printing_id);
+CREATE INDEX revision_printing_query_by_game_rarity
+  ON revision_printing_query(catalogue_revision_id, supported_game, normalized_rarity, card_id, printing_id);
+CREATE INDEX revision_printing_query_by_rarity
+  ON revision_printing_query(catalogue_revision_id, normalized_rarity, card_id, printing_id);
+CREATE TRIGGER recovery_fence_revision_printing_query_delete BEFORE DELETE ON revision_printing_query
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_revision_printing_query_insert BEFORE INSERT ON revision_printing_query
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_revision_printing_query_update BEFORE UPDATE ON revision_printing_query
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+
 CREATE TABLE ingestion_run_selected_games_riftbound AS SELECT "ingestion_run_id","ordinal","game" FROM ingestion_run_selected_games;
 DROP TABLE ingestion_run_selected_games;
 CREATE TABLE ingestion_run_selected_games (
