@@ -78,7 +78,9 @@ a completed put by its exact writer token; it does not infer settlement from a
 lease timeout. An unsettled key remains deferred while unrelated keys progress.
 
 Shared staging writes and deletes have non-expiring tickets and a physical-key
-incarnation. A successful delete settles only its own ticket. Once **all** delete
+incarnation. Producer retries can acknowledge a completed put only from the
+exact private writer token on the object, matched to its registered binding, key
+and incarnation; that observation never settles a different writer or a deleter. A successful delete settles only its own ticket. Once **all** delete
 tickets have conclusively settled, a fresh preparation may reuse the same bytes
 at the unchanged key by atomically advancing its incarnation. Old deletion
 callbacks cannot acquire authority for that new incarnation. An ambiguous
