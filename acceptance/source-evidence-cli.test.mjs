@@ -15,7 +15,7 @@ import {
 
 const root = resolve(import.meta.dirname, "..");
 
-test("the CLI audits real retained evidence through a locally emulated ingestion Worker", async (t) => {
+test("compatibility publication: the CLI audits real retained evidence through a locally emulated ingestion Worker", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-evidence-cli-"));
   const administrationKey = crypto.randomUUID();
   const ingestionEnv = join(directory, "ingestion.env");

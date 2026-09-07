@@ -160,6 +160,9 @@ test.each([
       diagnostics: expect.any(Array),
     },
   });
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document.source_coverage).toEqual(
+    expect.arrayContaining([expect.objectContaining({ status: "incomplete", successful_checked_at: null })]),
+  );
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
   expect((await post("/v1/game-candidates", intent)).document).toEqual(candidate);
   const replayedWorkflow = await runReconciliationWorkflow(
@@ -492,6 +495,10 @@ test("invalid native curated composition fails terminally and replays its retain
     state: "failed",
     failure_code: "curated_revision_composed_candidate_invalid",
   });
+  expect((await get(`/v1/ingestion-runs/${changed.id}`)).document.source_coverage).toEqual(
+    expect.arrayContaining([expect.objectContaining({ status: "incomplete", successful_checked_at: null })]),
+  );
+
   expect((await get(`/v1/ingestion-runs/${changed.id}`)).document).toMatchObject({ state: "parsing" });
   const replay = await post("/v1/game-candidates", intent);
   expect(replay.response.status).toBe(200);
@@ -766,6 +773,8 @@ test("an owner can abandon an expired sealed candidate and create a fresh prepar
     sealed = (await get(`/v1/game-candidates/${id}`)).document;
   }
   expect(sealed).toMatchObject({ state: "sealed", generation: 0 });
+  const sealedCoverage = (await get(`/v1/ingestion-runs/${source.id}`)).document.source_coverage;
+  expect(sealedCoverage).toEqual(expect.arrayContaining([expect.objectContaining({ status: "complete" })]));
   const action = { generation: 0, idempotency_key: "abandon-expired-sealed" };
   const abandoned = await post(`/v1/game-candidates/${id}/abandon`, action, {
     "x-keepr-test-now": new Date(Date.parse(String(sealed.deadline)) + 1).toISOString(),
@@ -779,6 +788,7 @@ test("an owner can abandon an expired sealed candidate and create a fresh prepar
   });
   expect((await post(`/v1/game-candidates/${id}/abandon`, action)).document).toEqual(abandoned.document);
   expect((await get(`/v1/game-candidates/${id}`)).document).toMatchObject({ state: "abandoned", generation: 1 });
+  expect((await get(`/v1/ingestion-runs/${source.id}`)).document.source_coverage).toEqual(sealedCoverage);
   const replacement = await post("/v1/game-candidates", { ...intent, idempotency_key: "sealed-abandon-replacement" });
   expect(replacement.response.status).toBe(201);
   expect(replacement.document.id).not.toBe(id);

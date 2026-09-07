@@ -131,11 +131,17 @@ test("Product work resumes after partial writes and carries forward releases abs
   expect(Math.max(...unitCalls)).toBeLessThanOrEqual(100);
   const page = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions`)).document;
   for (const kind of ["products", "distribution_contexts"]) {
-    const partition = (page.partitions as { kind: string; ordinal: number }[]).find((part) => part.kind === kind)!;
-    const detail = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${partition.ordinal}`)).document;
-    expect(detail.records).toHaveLength(40);
+    const records: unknown[] = [];
+    for (const partition of (page.partitions as { kind: string; ordinal: number }[]).filter(
+      (part) => part.kind === kind,
+    )) {
+      const detail = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${partition.ordinal}`))
+        .document;
+      records.push(...(detail.records as unknown[]));
+    }
+    expect(records).toHaveLength(40);
     if (kind === "products")
-      expect(detail.records).toEqual(
+      expect(records).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ official_code: "WU-0", observed: false }),
           expect.objectContaining({ official_code: "WU-39" }),

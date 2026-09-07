@@ -56,7 +56,10 @@ test("real D1 appends accepted transitions, preserves replay results and reconst
 });
 test("an authority failure rolls back the scalar projection, event and sibling mutation together", async () => {
   const database = await start();
-  await eventQueries.clearEventFixtureReservation(testEnv.CATALOGUE_DB).run();
+  await testEnv.CATALOGUE_DB.batch([
+    eventQueries.clearEventFixtureReservation(testEnv.CATALOGUE_DB),
+    eventQueries.deleteEventFixtureReservation(testEnv.CATALOGUE_DB, runId),
+  ]);
   await expect(
     database.batch([
       eventQueries.writeEventFixtureSibling(testEnv.CATALOGUE_DB),

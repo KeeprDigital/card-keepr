@@ -17,6 +17,7 @@ export async function inspectSourceCoverage(
     [...scopes.values()].map(async (plan) => {
       const counts = await sourceCoverageCountsStatement(database, run.id, plan).first<{
         planned_requests: number;
+        native_candidate_sealed: number;
         observed_requests: number;
         last_capture_at: string | null;
         content_captured_at: string | null;
@@ -26,7 +27,7 @@ export async function inspectSourceCoverage(
         counts !== null &&
         counts.planned_requests > 0 &&
         counts.planned_requests === counts.observed_requests &&
-        run.candidate_digest !== null &&
+        (run.candidate_digest !== null || counts.native_candidate_sealed === 1) &&
         run.failure_code === null;
       return {
         source_lineage: plan.source_lineage,

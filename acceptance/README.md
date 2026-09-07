@@ -22,8 +22,16 @@ D1 migrations, Workflow execution, public HTTP and CLI behavior:
 There are **five flows covering five official Source Lineages plus the CLI**.
 Gundam deliberately remains a joint regional flow. The coverage test compares
 this list with the shipped authority registry, so adding a lineage requires an
-explicit smoke decision. Smoke source providers return retained official bytes;
-the source adapters and public administration/consumer contracts remain real.
+explicit smoke decision. Smoke source providers return retained official bytes. These publication flows
+explicitly use the test-owned compatibility parent in
+`fixtures/compatibility-evidence-workflow.ts`: it reuses production capture and
+barrier execution, then selects the retained run-level reconciliation contract.
+The real CLI approval, publication and authenticated consumer assertions remain
+in place. This is compatibility publication evidence, not production-native
+publication evidence. Production native dispatch, per-game inspection and parent
+restart are independently exercised in the ingestion Worker tests. Native
+inspection and publication integration belong to #226–#228; composed recovery is
+#229.
 
 ## In-process runtime and contract tests
 

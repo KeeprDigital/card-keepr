@@ -22,7 +22,7 @@ import * as sourceEvidenceQueries from "./helpers/query-helpers/source-evidence.
 
 const root = resolve(import.meta.dirname, "..");
 
-test("the CLI publishes separated Product catalogue data consumed through authenticated HTTP", async (t) => {
+test("compatibility publication: the CLI publishes separated Product catalogue data consumed through authenticated HTTP", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-product-boundary-"));
   const statePath = join(directory, "shared-state");
   const administrationKey = randomUUID();

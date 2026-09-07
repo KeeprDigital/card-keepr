@@ -16,7 +16,7 @@ import {
 
 const root = resolve(import.meta.dirname, "..");
 
-test("the owner publishes a complete One Piece catalogue for authenticated consumers", async (t) => {
+test("compatibility publication: the owner publishes a complete One Piece catalogue for authenticated consumers", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-one-piece-"));
   const statePath = join(directory, "state");
   const administrationKey = randomUUID();

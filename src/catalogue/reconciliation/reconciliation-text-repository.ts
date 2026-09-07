@@ -13,7 +13,12 @@ export function retainReconciliationTextStatement(
     .bind(preparationId, sha256, ordinal, content);
 }
 
-export function reconciliationTextStatement(database: CatalogueStore, preparationId: string, sha256: string, ordinal: number) {
+export function reconciliationTextStatement(
+  database: CatalogueStore,
+  preparationId: string,
+  sha256: string,
+  ordinal: number,
+) {
   return repositoryStatements(database)
     .prepare(`SELECT content FROM reconciliation_text_chunks WHERE preparation_id = ? AND sha256 = ? AND ordinal = ?`)
     .bind(preparationId, sha256, ordinal);

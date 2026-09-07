@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import { currentPrintingsResponse } from "../../../src/catalogue/read";
 import { catalogueStore } from "../../../src/catalogue/shared";
@@ -258,7 +259,14 @@ test("registered Product detail evidence outranks its conflicting listing throug
   });
   expect(started.response.status).toBe(201);
   const runId = requiredString(started.document, "id");
-  expect((await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
+  // Exercise compatibility publication explicitly; production parents prepare native candidates.
+  await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    testEnv.OFFICIAL_SOURCE_TRANSPORT,
+    runId,
+  );
+  expect((await reconcile(runId, {}, 20_000)).response.status).toBe(200);
   await waitForRunState(runId, "awaiting_approval", 20_000);
   const candidate = await get(`/v1/ingestion-runs/${runId}/candidate`);
   expect(candidate.response.status).toBe(200);
@@ -311,7 +319,14 @@ test("a registered code-less Product refresh preserves its established code", as
     });
     expect(started.response.status).toBe(201);
     const runId = requiredString(started.document, "id");
-    expect((await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
+    // Exercise compatibility publication explicitly; production parents prepare native candidates.
+    await collectFixtureEvidence(
+      testEnv.CATALOGUE_DB,
+      testEnv.EVIDENCE_OBJECTS,
+      testEnv.OFFICIAL_SOURCE_TRANSPORT,
+      runId,
+    );
+    expect((await reconcile(runId, {}, 20_000)).response.status).toBe(200);
     const runDocument = await waitForRunState(runId, "awaiting_approval", 20_000);
     return {
       candidate: await get(`/v1/ingestion-runs/${runId}/candidate`),
@@ -368,7 +383,14 @@ test("a registered fuzzy Product link remains a review warning through publicati
   });
   expect(started.response.status).toBe(201);
   const runId = requiredString(started.document, "id");
-  expect((await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
+  // Exercise compatibility publication explicitly; production parents prepare native candidates.
+  await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    testEnv.OFFICIAL_SOURCE_TRANSPORT,
+    runId,
+  );
+  expect((await reconcile(runId, {}, 20_000)).response.status).toBe(200);
   await waitForRunState(runId, "awaiting_approval", 20_000, 250);
   const candidate = await get(`/v1/ingestion-runs/${runId}/candidate`);
   expect(candidate.response.status).toBe(200);

@@ -1,3 +1,4 @@
+import { waitForNativeCandidates, nativeCandidateRecords } from "./native-candidate-helpers";
 import { expect, test } from "vitest";
 import { collect, get, installReconciliationSuite, reconcile, requiredString } from "./reconciliation-helpers";
 
@@ -31,7 +32,7 @@ test("game predecessor follows pinned ancestry despite publication clock skew", 
 });
 
 test("one collection exposes separate sealed game manifests containing only each game's records", async () => {
-  const { administrationRequest, resumeCollection, waitForEvidenceRun } = await import("./runtime-helpers");
+  const { administrationRequest, resumeCollection } = await import("./runtime-helpers");
   const started = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
     idempotency_key: "separate-game-manifests",
     plans: [
@@ -59,23 +60,14 @@ test("one collection exposes separate sealed game manifests containing only each
   expect(started.status).toBe(201);
   const { id } = await started.json<{ id: string }>();
   await resumeCollection(id);
-  await waitForEvidenceRun(id, "awaiting_approval");
-  const status = await get(`/v1/ingestion-runs/${id}/reconciliation`);
-  const candidates = status.document.candidates as { id: string; supported_game: string; manifest_digest: string }[];
-  expect(candidates.map((candidate) => candidate.supported_game)).toEqual(["fusion-world", "one-piece"]);
+  const candidates = await waitForNativeCandidates(id, 2);
+  expect(candidates.map((candidate) => candidate.supported_game).sort()).toEqual(["fusion-world", "one-piece"]);
   expect(new Set(candidates.map((candidate) => candidate.manifest_digest)).size).toBe(2);
   for (const candidate of candidates) {
     const header = await get(`/v1/game-candidates/${candidate.id}`);
     expect(header.response.status).toBe(200);
-    expect(header.document).toMatchObject({ state: "sealed", deadline: status.document.deadline });
-    const page = await get(`/v1/game-candidates/${candidate.id}/partitions`);
-    expect(page.response.status).toBe(200);
-    const records: Record<string, Record<string, unknown>[]> = {};
-    for (const partition of page.document.partitions as { kind: string; ordinal: number }[]) {
-      const detail = await get(`/v1/game-candidates/${candidate.id}/partitions/${partition.ordinal}`);
-      expect(detail.response.status).toBe(200);
-      records[partition.kind] = detail.document.records as Record<string, unknown>[];
-    }
+    expect(header.document).toMatchObject({ state: "sealed", deadline: candidate.deadline });
+    const records = await nativeCandidateRecords(String(candidate.id));
     expect(records.cards!.length).toBeGreaterThan(0);
     expect(records.cards!.every((card) => card.game === candidate.supported_game)).toBe(true);
     expect(records.printings!.length).toBeGreaterThan(0);
@@ -565,8 +557,9 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
     let failures = 0;
     let unavailable = true;
     let replayingSealed = false;
-    const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement =>
-      new Proxy(statement, {
+    const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
+    const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement => {
+      const proxy = new Proxy(statement, {
         get(target, property) {
           if (property === "bind") return (...bindings: unknown[]) => wrap(target.bind(...bindings), sql, bindings);
           if (property === "first")
@@ -583,6 +576,9 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
           return typeof value === "function" ? value.bind(target) : value;
         },
       });
+      statements.set(proxy, { sql, values });
+      return proxy;
+    };
     const database = new Proxy(testEnv.CATALOGUE_DB, {
       get(target, property) {
         if (property === "prepare")
@@ -590,6 +586,23 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
             if (replayingSealed && sql.includes("reconciliation_payload_chunks"))
               throw new Error("Sealed Workflow replay must use the retained candidate reference.");
             return wrap(target.prepare(sql), sql);
+          };
+        if (property === "batch")
+          return (...args: Parameters<D1Database["batch"]>) => {
+            if (
+              unavailable &&
+              args[0].some((statement) => {
+                const entry = statements.get(statement);
+                return (
+                  entry?.sql.includes("FROM reconciliation_checkpoints") &&
+                  entry.values.includes("product_reduction:one-piece")
+                );
+              })
+            ) {
+              failures++;
+              throw new Error("Injected Product-pass checkpoint storage outage");
+            }
+            return target.batch(...args);
           };
         const value = Reflect.get(target, property);
         return typeof value === "function" ? value.bind(target) : value;

@@ -16,7 +16,7 @@ import {
 
 const root = resolve(import.meta.dirname, "..");
 
-test("the owner publishes a complete Digimon catalogue consumed through authenticated HTTP", async (t) => {
+test("compatibility publication: the owner publishes a complete Digimon catalogue consumed through authenticated HTTP", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-digimon-boundary-"));
   const statePath = join(directory, "shared-state");
   const administrationKey = randomUUID();
@@ -35,7 +35,7 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   await applyMigrations(statePath);
   const config = JSON.parse(await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
   delete config.$schema;
-  config.main = resolve(root, "apps/ingestion/src/index.ts");
+  config.main = resolve(root, "acceptance/fixtures/compatibility-ingestion-harness.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
   config.ratelimits[0].simple.limit = 300;
   config.services = [

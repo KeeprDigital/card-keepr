@@ -85,7 +85,11 @@ export function insertCorrectionStatement(
 }
 // Compose these raw statements into the operation-creation batch. Cutoff zero
 // is an explicit empty set; replay never takes decisions recorded afterward.
-export function correctionPinStatementsForPreparation(database: CatalogueStore, runId: string, games: readonly string[]) {
+export function correctionPinStatementsForPreparation(
+  database: CatalogueStore,
+  runId: string,
+  games: readonly string[],
+) {
   return [
     repositoryStatements(database)
       .prepare(`INSERT OR IGNORE INTO reconciliation_correction_pins

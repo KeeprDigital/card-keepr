@@ -124,15 +124,24 @@ export async function startInprocessWorker({ config, envFile, pacingMode, port, 
   const server = createServer(async (request, response) => {
     try {
       await group.serial;
-      // RPC carries headers as data past Miniflare's localhost CSRF filter.
+      // Carry original headers as data past Miniflare's localhost CSRF filter.
+      // Fetch stays asynchronous: a first RPC call can block Node in Atomics.wait
+      // while workerd blocks on the operational-log pipe that Node must drain.
       // The application itself receives the original Origin, including malformed values.
       const worker = await group.runtime.getWorker("acceptance-http-bridge");
       const chunks = [];
       for await (const chunk of request) chunks.push(chunk);
       const body = ["GET", "HEAD"].includes(request.method) ? undefined : Buffer.concat(chunks);
-      const result = await worker.dispatch(options.name, `http://127.0.0.1:${port}${request.url}`, {
-        method: request.method,
-        headers: request.headers,
+      const result = await worker.fetch("http://acceptance-bridge.invalid/dispatch", {
+        method: "POST",
+        headers: {
+          "x-acceptance-dispatch": encodeURIComponent(JSON.stringify({
+            name: options.name,
+            url: `http://127.0.0.1:${port}${request.url}`,
+            method: request.method,
+            headers: request.headers,
+          })),
+        },
         body,
       });
       response.writeHead(result.status, Object.fromEntries(result.headers));
@@ -162,7 +171,12 @@ export async function startInprocessWorker({ config, envFile, pacingMode, port, 
           compatibilityDate: "2026-07-29",
           script: `import { WorkerEntrypoint } from "cloudflare:workers";
         export default class extends WorkerEntrypoint {
-          async dispatch(name, url, init) { return this.env[name].fetch(url, init); }
+          async fetch(request) {
+            const { name, url, method, headers } = JSON.parse(decodeURIComponent(request.headers.get("x-acceptance-dispatch")));
+            return this.env[name].fetch(url, {
+              method, headers, body: method === "GET" || method === "HEAD" ? undefined : request.body,
+            });
+          }
         }`,
           serviceBindings: Object.fromEntries([...group.workers.keys()].map((name) => [name, name])),
         },

@@ -1,3 +1,4 @@
+export { EvidenceIngestionWorkflow } from "./compatibility-evidence-workflow";
 import { restoreFixturePublicationHealthStatement } from "../helpers/query-helpers/runtime-fixtures";
 import {
   WorkflowEntrypoint,
@@ -6,7 +7,6 @@ import {
 } from "cloudflare:workers";
 import ingestionWorker, {
   EvidenceHostWorkflow,
-  EvidenceIngestionWorkflow,
   OfficialSourceTransport,
   ReconciliationWorkflow,
 } from "../../apps/ingestion/src/index";
@@ -16,7 +16,6 @@ import type {
 
 export {
   EvidenceHostWorkflow,
-  EvidenceIngestionWorkflow,
   OfficialSourceTransport,
   ReconciliationWorkflow,
 };

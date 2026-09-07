@@ -5,6 +5,12 @@ export function sourceCoverageCountsStatement(database: CatalogueStore, runId: s
   return repositoryStatements(database)
     .prepare(`SELECT
     COUNT(*) AS planned_requests,
+    EXISTS (SELECT 1 FROM game_candidates AS candidate
+      JOIN reconciliation_operations AS preparation ON preparation.id = candidate.preparation_id
+      WHERE candidate.ingestion_run_id = ?1 AND candidate.supported_game = ?4
+        AND preparation.supported_game = ?4 AND candidate.manifest_digest IS NOT NULL
+        AND candidate.state IN ('sealed', 'abandoned', 'published')
+    ) AS native_candidate_sealed,
     SUM(CASE WHEN requests.state = 'observed' THEN 1 ELSE 0 END) AS observed_requests,
     MAX(snapshots.retrieved_at) AS last_capture_at,
     MIN((WITH RECURSIVE provenance(id, retrieved_at, reused_source_snapshot_id) AS (
@@ -19,5 +25,5 @@ export function sourceCoverageCountsStatement(database: CatalogueStore, runId: s
     WHERE requests.ingestion_run_id = ?1 AND requests.request_role <> 'image'
       AND (substr(requests.request_id, 1, length(?2) + 1) = ?2 || ':'
         OR requests.request_id IN (SELECT json_extract(value, '$.id') FROM json_each(?3)))`)
-    .bind(runId, plan.source_lineage, canonicalJson(plan.requests));
+    .bind(runId, plan.source_lineage, canonicalJson(plan.requests), plan.supported_game);
 }

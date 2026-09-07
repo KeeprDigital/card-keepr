@@ -1,3 +1,4 @@
+export { EvidenceIngestionWorkflow } from "./compatibility-evidence-workflow";
 import {
   collectFixtureEvidence,
   injectFixtureEvidencePlan,
@@ -14,7 +15,6 @@ import {
 import apiWorker from "../../apps/api/src/index";
 import ingestionWorker, {
   EvidenceHostWorkflow,
-  EvidenceIngestionWorkflow,
   ReconciliationWorkflow,
 } from "../../test/support/ingestion-worker";
 import type {
@@ -28,7 +28,6 @@ import type { StartEvidenceRunRequest } from "../../src/catalogue/source-evidenc
 
 export {
   EvidenceHostWorkflow,
-  EvidenceIngestionWorkflow,
   ReconciliationWorkflow,
 };
 
