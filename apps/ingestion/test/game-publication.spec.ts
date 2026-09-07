@@ -72,4 +72,27 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
     switched.document,
   );
   expect((await get(`/v1/game-candidates/${id}`)).document.state).toBe("published");
+  const next = await post("/v1/game-candidates", {
+    ingestion_run_id: source.id,
+    supported_game: "one-piece",
+    expected_game_revision_id: switched.document.resulting_revision_id,
+    idempotency_key: "same-source-next",
+  });
+  let second = next.document;
+  const secondDeadline = Date.now() + 15000;
+  while (second.state === "preparing" && Date.now() < secondDeadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    second = (await get(`/v1/game-candidates/${second.id}`)).document;
+  }
+  expect(second.state, JSON.stringify(second)).toBe("sealed");
+  expect(second.ingestion_run_id).toBe(source.id);
+  expect(second.id).not.toBe(id);
+  const secondApproval = await post("/v1/publications", {
+    ...intent,
+    candidate_id: second.id,
+    manifest_digest: second.manifest_digest,
+    expected_game_revision_id: switched.document.resulting_revision_id,
+    idempotency_key: "same-source-next-approval",
+  });
+  expect(secondApproval.response.status, JSON.stringify(secondApproval.document)).toBe(202);
 });

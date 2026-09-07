@@ -29,6 +29,16 @@ WHEN NEW.id<>OLD.id OR NEW.candidate_id<>OLD.candidate_id OR NEW.manifest_digest
 BEGIN SELECT RAISE(ABORT,'publication_approval_immutable'); END;
 CREATE TRIGGER game_publication_operation_retained BEFORE DELETE ON game_publication_operations
 BEGIN SELECT RAISE(ABORT,'publication_operation_retained'); END;
+CREATE TABLE game_publication_actions (
+ idempotency_key TEXT PRIMARY KEY,
+ publication_operation_id TEXT NOT NULL REFERENCES game_publication_operations(id),
+ request_json TEXT NOT NULL,
+ result_json TEXT NOT NULL CHECK(json_valid(result_json))
+);
+CREATE TRIGGER game_publication_actions_immutable BEFORE UPDATE ON game_publication_actions
+BEGIN SELECT RAISE(ABORT,'publication_action_immutable'); END;
+CREATE TRIGGER game_publication_actions_retained BEFORE DELETE ON game_publication_actions
+BEGIN SELECT RAISE(ABORT,'publication_action_retained'); END;
 -- Retain the common ancestry spine, without making collection identity a
 -- unique publication identity. Deferred FK checks close over the rebuilt table.
 PRAGMA defer_foreign_keys=ON;

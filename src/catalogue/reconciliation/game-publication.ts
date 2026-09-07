@@ -207,7 +207,23 @@ export async function startGamePublication(
   at: string,
 ) {
   const approval = await approveGamePublication(env.CATALOGUE_DB, input, at);
-  await dispatchGamePublication(env.RECONCILIATION_WORKFLOW, approval);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await dispatchGamePublication(
+        env.RECONCILIATION_WORKFLOW,
+        await inspectPublication(env.CATALOGUE_DB, approval.id),
+      );
+      break;
+    } catch (error) {
+      if (attempt === 2)
+        await pauseGamePublication(
+          env.CATALOGUE_DB,
+          approval.id,
+          approval.generation,
+          "publication_dispatch_retry_exhausted",
+        );
+    }
+  }
   return approval;
 }
 export async function dispatchGamePublication(
@@ -228,4 +244,55 @@ export async function dispatchGamePublication(
     },
     { createRequested: true },
   );
+}
+
+import { publicationResumeAction, publicationResumeStatements } from "./game-publication-repository";
+export async function pauseGamePublication(db: CatalogueStore, id: string, generation: number, code: string) {
+  await updatePublicationState(db, id, generation, "retry_paused", code).run();
+  return inspectPublication(db, id);
+}
+export async function resumeGamePublication(
+  env: Parameters<typeof startGamePublication>[0],
+  id: string,
+  input: { generation: number; idempotency_key: string },
+  at: string,
+) {
+  const request = canonicalJson({ id, ...input });
+  const prior = await publicationResumeAction(env.CATALOGUE_DB, input.idempotency_key).first<{
+    request_json: string;
+    result_json: string;
+  }>();
+  if (prior) {
+    if (prior.request_json !== request)
+      throw new AdministrationProblem(409, "idempotency_conflict", "This key binds another publication resume.");
+    await dispatchGamePublication(env.RECONCILIATION_WORKFLOW, await inspectPublication(env.CATALOGUE_DB, id));
+    return JSON.parse(prior.result_json) as Awaited<ReturnType<typeof inspectPublication>>;
+  }
+  const current = await inspectPublication(env.CATALOGUE_DB, id);
+  const result = { ...current, generation: input.generation + 1, state: "approved", failure_code: null };
+  try {
+    await env.CATALOGUE_DB.batch(
+      publicationResumeStatements(
+        env.CATALOGUE_DB,
+        id,
+        input.generation,
+        input.idempotency_key,
+        request,
+        canonicalJson(result),
+        at,
+      ),
+    );
+  } catch (error) {
+    const winner = await publicationResumeAction(env.CATALOGUE_DB, input.idempotency_key).first<{
+      request_json: string;
+    }>();
+    if (winner?.request_json === request) return resumeGamePublication(env, id, input, at);
+    throw new AdministrationProblem(
+      409,
+      "publication_resume_conflict",
+      "The publication generation, deadline or recovery fence does not permit resumption.",
+    );
+  }
+  await dispatchGamePublication(env.RECONCILIATION_WORKFLOW, result);
+  return result;
 }

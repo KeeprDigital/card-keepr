@@ -1,4 +1,5 @@
 import {
+  resumeGamePublication,
   startGamePublication,
   advanceGamePublication,
   approveGamePublication,
@@ -60,6 +61,19 @@ type Environment = {
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const reconciliationRoutes = [
+  route<Context>("POST", "/v1/publications/:publication/resume", async ({ env, request, observedAt }, params) => {
+    const body = await readAdministrationBody(request);
+    assertOnlyFields(body, ["generation", "idempotency_key"]);
+    return Response.json(
+      await resumeGamePublication(
+        env,
+        params.publication!,
+        { generation: Number(body.generation), idempotency_key: requiredString(body, "idempotency_key") },
+        observedAt,
+      ),
+      { status: 202 },
+    );
+  }),
   route<Context>("POST", "/v1/publications/:publication/advance", async ({ env, request, observedAt }, params) => {
     const body = await readAdministrationBody(request);
     assertOnlyFields(body, ["generation"]);

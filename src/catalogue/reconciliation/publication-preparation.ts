@@ -424,6 +424,7 @@ async function prepareUnit(
   if (partition.kind === "printing_images") {
     delete value.source_url;
     delete value.content_base64;
+    if (state.phase === "exports") delete value.object_key;
   }
   const textParts = envelope.text_parts.filter((part) => {
     let current: unknown = value;

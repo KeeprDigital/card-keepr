@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -140,5 +140,123 @@ test("one owner CLI start verifies native artifacts without exposing any unfinis
   assert.equal(
     (await get(`/v1/game-candidates/${candidate.id}/publication-preparation`)).root_digest,
     status.root_digest,
+  );
+  const approval = await cli([
+    "publication",
+    "approve",
+    "--candidate-id",
+    candidate.id,
+    "--manifest-digest",
+    candidate.manifest_digest,
+    "--expected-game-revision-id",
+    candidate.expected_game_revision_id,
+    "--generation",
+    String(candidate.generation),
+    "--idempotency-key",
+    "native-publication",
+  ]);
+  let publication;
+  const publicationDeadline = Date.now() + 30000;
+  while (Date.now() < publicationDeadline) {
+    publication = await cli(["publication", "status", "--operation-id", approval.id]);
+    if (publication.state === "published" || publication.state === "failed") break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(publication.state, "published", JSON.stringify(publication) + ingestion.getOutput());
+  const visible = await consumer("/v1/cards?game=digimon&limit=1");
+  assert.equal(visible.status, 200, JSON.stringify(visible));
+  assert.equal(visible.body.meta.catalogue_revision_id, publication.resulting_revision_id);
+  assert.equal(visible.body.data.length, 1);
+  assert.equal(visible.body.data[0].type, "card");
+  const detail = await consumer(`/v1/cards/${cards.records[0].id}?include=printings`);
+  assert.equal(detail.status, 200, JSON.stringify(detail));
+  assert.equal(detail.body.data.name, cards.records[0].name);
+  assert.ok(detail.body.included.length > 0);
+  assert.equal(
+    (await consumer(`/v1/cards?game=digimon&q=${encodeURIComponent(cards.records[0].name)}`)).body.data.length > 0,
+    true,
+  );
+  if (images) {
+    const page = await get(`/v1/game-candidates/${candidate.id}/partitions/${images.ordinal}`);
+    const image = await fetch(`${api.url}/v1/printing-images/${page.records[0].id}/content`, {
+      headers: { authorization: `Bearer ${apiKey}` },
+    });
+    assert.equal(image.status, 200);
+    assert.equal((await image.arrayBuffer()).byteLength, page.records[0].content_byte_length);
+  }
+  assert.equal(
+    (
+      await cli([
+        "publication",
+        "approve",
+        "--candidate-id",
+        candidate.id,
+        "--manifest-digest",
+        candidate.manifest_digest,
+        "--expected-game-revision-id",
+        candidate.expected_game_revision_id,
+        "--generation",
+        String(candidate.generation),
+        "--idempotency-key",
+        "native-publication",
+      ])
+    ).id,
+    approval.id,
+  );
+
+  const exportPath = `/v1/catalogue-exports/${publication.resulting_revision_id}`;
+  let componentCursor = null;
+  const exportedCards = [];
+  do {
+    const index = await consumer(exportPath + (componentCursor ? `?after=${componentCursor}` : ""));
+    assert.equal(index.status, 200, JSON.stringify(index));
+    for (const component of index.body.data.manifest.components) {
+      const response = await fetch(component.links.content, { headers: { authorization: `Bearer ${apiKey}` } });
+      assert.equal(response.status, 200);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      assert.equal(bytes.length, component.bytes);
+      assert.equal(createHash("sha256").update(bytes).digest("hex"), component.sha256);
+      if (component.kind === "cards") exportedCards.push(JSON.parse(bytes).value);
+      if (component.kind !== "text") {
+        const value = JSON.parse(bytes);
+        const inspect = (value) => {
+          if (!value || typeof value !== "object") return;
+          for (const [key, item] of Object.entries(value)) {
+            assert.ok(
+              ![
+                "source_lineage",
+                "provenance",
+                "source_url",
+                "object_key",
+                "legality",
+                "eligibility",
+                "candidate_id",
+                "preparation_id",
+                "ingestion_run_id",
+              ].includes(key),
+              key,
+            );
+            if (key !== "game_data") inspect(item);
+          }
+        };
+        inspect(value);
+      }
+      const range = await fetch(component.links.content, {
+        headers: { authorization: `Bearer ${apiKey}`, range: "bytes=0-7" },
+      });
+      assert.equal(range.status, 206);
+      assert.deepEqual(Buffer.from(await range.arrayBuffer()), bytes.subarray(0, 8));
+      const conditional = await fetch(component.links.content, {
+        headers: { authorization: `Bearer ${apiKey}`, "if-none-match": response.headers.get("etag") },
+      });
+      assert.equal(conditional.status, 304);
+    }
+    componentCursor = index.body.data.manifest.page.next_cursor;
+  } while (componentCursor);
+  assert.deepEqual(
+    exportedCards.find((card) => card.id === cards.records[0].id),
+    Object.fromEntries(
+      Object.entries(detail.body.data).filter(([key]) => !["type", "printing_ids", "links"].includes(key)),
+    ),
   );
 });

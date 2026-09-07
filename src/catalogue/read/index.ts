@@ -38,3 +38,6 @@ export {
   sourceFreshnessKey,
   sourceFreshnessStorageScope,
 } from "./source-freshness";
+
+export { compositionEntityResponse, compositionImageResponse } from "./composition-read";
+export { composedDocumentStatement } from "./composition-read-repository";

@@ -1,3 +1,4 @@
+import { nativeCandidateAtRevision } from "./native-prior-state";
 import type {
   CatalogueCandidate,
   CatalogueCard,
@@ -60,6 +61,8 @@ export async function candidateAtRevision(
     yieldAtCheckpoint: boolean;
   },
 ): Promise<CatalogueCandidate | null> {
+  const native = await nativeCandidateAtRevision(database, revisionId, selectedGames, seed, continuation);
+  if (native !== undefined) return native;
   const row = await candidateAtRevisionStatement(database, revisionId).first<{
     ingestion_run_id: string;
     candidate_json: string;
