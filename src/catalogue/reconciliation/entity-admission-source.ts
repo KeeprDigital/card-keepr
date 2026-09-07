@@ -11,12 +11,13 @@ import {
 import type { ParsedCardPrintingObservation } from "./reconciliation-observation";
 import {
   admissionPinStatement,
-  latestAdmissionStatement,
+  unselectedSourceAdmissionStatement,
   pinnedAdmissionStatement,
   proposalReferenceStatement,
   insertProposalStatement,
   insertAdmissionDecisionStatement,
   retainProposalEvidenceStatement,
+  retainNativeAutomaticAdmissionStatement,
   type EntityProposalRow,
   type AdmissionDecisionRow,
 } from "./entity-admission-repository";
@@ -33,7 +34,10 @@ export async function sourceAdmissionPolicy(
   run: string,
 ) {
   const lineage = sourceLineages.find((s) => s.id === sourceLineage);
-  const pin = await admissionPinStatement(database, run).first<{ policy_json: string }>();
+  const pin = await admissionPinStatement(database, run).first<{
+    policy_json: string;
+    supported_game: string | null;
+  }>();
   if (!pin) throw new Error("Admission requires the run's immutable policy snapshot.");
   const { authorities } = JSON.parse(pin.policy_json) as Awaited<ReturnType<typeof sourceAuthorities>>;
   const automatic =
@@ -48,7 +52,11 @@ export async function sourceAdmissionPolicy(
           a.source_lineage === sourceLineage,
       ),
     );
-  return { automatic, digest: await admissionPolicyDigest(sourceLineage, profile) };
+  return {
+    automatic,
+    native: pin.supported_game !== null,
+    digest: await admissionPolicyDigest(sourceLineage, profile),
+  };
 }
 export async function admissionPolicyDigest(sourceLineage: string, profile: string) {
   const requirements = {
@@ -115,7 +123,8 @@ export async function assessSourceAdmission(
     observation.sourceObservationId,
   ).run();
   const pinned = await pinnedAdmissionStatement(database, run, proposal.id).first<AdmissionDecisionRow>();
-  const latest = pinned ?? (await latestAdmissionStatement(database, proposal.id).first<AdmissionDecisionRow>());
+  const latest =
+    pinned ?? (await unselectedSourceAdmissionStatement(database, run, proposal.id).first<AdmissionDecisionRow>());
   const policy = await sourceAdmissionPolicy(
     database,
     observation.sourceLineage,
@@ -170,22 +179,23 @@ export async function completeSourceAdmission(
     publisher_confirmed_fields: [],
   };
   const key = `auto_${run}_${admission.proposal.id}`;
-  await insertAdmissionDecisionStatement(
-    database,
-    {
-      proposal_id: admission.proposal.id,
-      generation,
-      action: "admit",
-      actor: "automation",
-      rationale:
-        "Designated supplemental authority satisfied the game/source admission rules and unambiguous identity checks.",
-      decision_json: canonicalJson(decision),
-      idempotency_key: key,
-      request_json: canonicalJson(decision),
-      decided_at: at,
-    },
-    run,
-  ).run();
+  const row = {
+    proposal_id: admission.proposal.id,
+    generation,
+    action: "admit",
+    actor: "automation",
+    rationale:
+      "Designated supplemental authority satisfied the game/source admission rules and unambiguous identity checks.",
+    decision_json: canonicalJson(decision),
+    idempotency_key: key,
+    request_json: canonicalJson(decision),
+    decided_at: at,
+  };
+  if (admission.policy.native) {
+    if (new TextEncoder().encode(row.decision_json).byteLength > 262144)
+      throw new Error("reconciliation_capacity_exceeded: one automatic admission decision exceeds 256 KiB.");
+    await retainNativeAutomaticAdmissionStatement(database, run, row).run();
+  } else await insertAdmissionDecisionStatement(database, row, run).run();
 }
 
 /** A publisher can confirm only concrete facts actually present in its evidence.

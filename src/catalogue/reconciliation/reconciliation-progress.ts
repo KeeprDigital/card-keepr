@@ -41,6 +41,7 @@ import {
 import {
   AdministrationProblem,
   canonicalJson,
+  completeCollectedEvidenceReservationStatement,
   type CatalogueStore,
   guardedCatalogueStore,
   sha256Text,
@@ -287,7 +288,12 @@ export async function initializeReconciliationProgress(
         : createReconciliationOperationStatement(database, runId, at, definitions),
       ...admissionPins,
       ...correctionPinStatementsForPreparation(database, runId, JSON.parse(selected?.games_json ?? "[]") as string[]),
-      ...(gamePreparation ? [pinNativeCuratedRevisionSelectionStatement(database, runId)] : []),
+      ...(gamePreparation
+        ? [
+            pinNativeCuratedRevisionSelectionStatement(database, runId),
+            completeCollectedEvidenceReservationStatement(database, runId),
+          ]
+        : []),
       ...(gamePreparation ? [] : [createGameCandidateIdentitiesStatement(database, runId)]),
     ]);
   } catch (error) {

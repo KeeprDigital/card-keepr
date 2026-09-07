@@ -1,4 +1,4 @@
-import { type CatalogueStore, repositoryStatements } from "./catalogue-store-repository";
+import { atomicRepositoryStatement, type CatalogueStore, repositoryStatements } from "./catalogue-store-repository";
 
 /** Conservative summary for release/recovery gates while collections overlap. */
 export const nextLiveIngestionReservationSql = `(SELECT reservation.ingestion_run_id
@@ -12,6 +12,36 @@ export function reserveIngestionCollectionStatement(database: CatalogueStore, ru
     .prepare(`INSERT INTO ingestion_collection_reservations (ingestion_run_id)
     VALUES (?)`)
     .bind(runId);
+}
+
+/** Native preparation takes over after collection completion, without a legacy run candidate. */
+export function completeCollectedEvidenceReservationStatement(database: CatalogueStore, preparationId: string) {
+  return atomicRepositoryStatement(database, {
+    statement: repositoryStatements(database)
+      .prepare(`INSERT INTO ingestion_collection_completions
+        (ingestion_run_id, collection_completed_at, first_preparation_id)
+        SELECT preparation.ingestion_run_id, plan.collection_completed_at, preparation.id
+        FROM reconciliation_operations AS preparation
+        JOIN ingestion_evidence_plans AS plan ON plan.ingestion_run_id = preparation.ingestion_run_id
+        JOIN ingestion_run_current AS run ON run.ingestion_run_id = preparation.ingestion_run_id
+        WHERE preparation.id = ? AND preparation.supported_game IS NOT NULL
+          AND plan.collection_completed_at IS NOT NULL AND run.state = 'parsing'
+        ON CONFLICT(ingestion_run_id) DO NOTHING`)
+      .bind(preparationId),
+    after: [
+      repositoryStatements(database)
+        .prepare(`DELETE FROM ingestion_collection_reservations WHERE ingestion_run_id =
+          (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?)
+          AND EXISTS (SELECT 1 FROM ingestion_collection_completions
+            WHERE ingestion_run_id = ingestion_collection_reservations.ingestion_run_id)`)
+        .bind(preparationId),
+      repositoryStatements(database)
+        .prepare(`UPDATE operation_state SET active_ingestion_run_id = ${nextLiveIngestionReservationSql}
+          WHERE singleton = 1 AND active_ingestion_run_id =
+            (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?)`)
+        .bind(preparationId),
+    ],
+  });
 }
 
 /** Terminal lifecycle effects accompany the immutable event in the same transaction. */

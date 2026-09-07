@@ -9,6 +9,7 @@ import {
   installReconciliationSuite,
   reconcile,
   requiredString,
+  post,
   testEnv,
 } from "./reconciliation-helpers";
 import { replaceGameHeadForFence } from "./query-helpers/game-candidates";
@@ -359,3 +360,119 @@ test("a native preparation excludes a supplemental proposal whose owner link arr
     history: [expect.objectContaining({ action: "link" })],
   });
 });
+
+test.each(["link", "reject"])(
+  "a native preparation preserves its snapshot when a new proposal receives a later owner %s",
+  async (action) => {
+    const seed = await reconcile(
+      (
+        await collect(
+          action === "link" ? "/reconciliation/canonical-official" : "/reconciliation/card-without-printing",
+          "native-new-proposal-seed",
+        )
+      ).id,
+    );
+    const card = (seed.document.cards as { id: string }[])[0]!;
+    const published = await approve(seed.document);
+    expect(published.response.status).toBe(200);
+    for (const area of ["card_facts", "printing_details"])
+      expect(
+        (
+          await post("/v1/source-authorities", {
+            game: "one-piece",
+            locale: "en",
+            release_region: "OCEANIA",
+            area,
+            source_lineage: "limitless-one-piece-en",
+            expected_generation: "0",
+            rationale: "Synthetic retained supplemental source",
+            idempotency_key: `new-proposal-${area}`,
+          })
+        ).response.status,
+      ).toBe(200);
+    const source = await collect(
+      action === "link" ? "/reconciliation/canonical-tabular-unresolved" : "/reconciliation/canonical-tabular",
+      "native-new-proposal-source",
+      {
+        game: "one-piece",
+        lineage: "limitless-one-piece-en",
+        adapter: "fixture-one-piece-tabular@1",
+      },
+    );
+    let params: ReconciliationWorkflowParams | undefined;
+    const queued = { status: async () => ({ status: "queued" }) } as unknown as WorkflowInstance;
+    const workflow = {
+      create: async (input: { params: ReconciliationWorkflowParams }) => {
+        params = input.params;
+        return queued;
+      },
+      get: async () => queued,
+    } as unknown as Env["RECONCILIATION_WORKFLOW"];
+    const response = await worker.fetch(
+      new Request("https://card-keepr.invalid/v1/game-candidates", {
+        method: "POST",
+        headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+        body: JSON.stringify({
+          ingestion_run_id: source.id,
+          supported_game: "one-piece",
+          expected_game_revision_id: published.document.resulting_revision_id,
+          idempotency_key: "native-new-proposal-pin",
+        }),
+      }),
+      { ...testEnv, RECONCILIATION_WORKFLOW: workflow },
+    );
+    expect(response.status).toBe(201);
+    const id = requiredString(await response.json<Record<string, unknown>>(), "id");
+    const evidence = (await get(`/v1/ingestion-runs/${source.id}/evidence`)).document;
+    const setId = (evidence.observation_sets as { id: string }[])[0]!.id;
+    const observations = (await get(`/v1/source-observation-sets/${setId}/content`)).document.observations as {
+      value: { identity_evidence: { locator: string; variant_key?: string | null } };
+    }[];
+    const identity = observations[0]!.value.identity_evidence;
+    const proposal = await post("/v1/entity-proposals", {
+      game: "one-piece",
+      source_lineage: "limitless-one-piece-en",
+      reference: JSON.stringify([identity.locator, identity.variant_key ?? null]),
+      content: { card },
+      evidence: { attestation: "Synthetic owner inspection of existing card" },
+      idempotency_key: "native-proposal-after-pin",
+    });
+    expect(proposal.response.status, JSON.stringify(proposal.document)).toBe(201);
+    const linked = await post(`/v1/entity-proposals/${proposal.document.id}/decisions`, {
+      action,
+      ...(action === "link" ? { card_id: card.id } : {}),
+      expected_generation: "0",
+      rationale: "A later owner decision belongs in the next preparation.",
+      idempotency_key: "native-new-proposal-link",
+    });
+    expect(linked.response.status, JSON.stringify(linked.document)).toBe(200);
+    await runReconciliationWorkflow(
+      testEnv,
+      { instanceId: "native-new-proposal-worker", payload: params! } as WorkflowEvent<ReconciliationWorkflowParams>,
+      {
+        do: async (_name: string, _config: unknown, callback: () => Promise<string>) => callback(),
+      } as unknown as WorkflowStep,
+    );
+    const candidate = (await get(`/v1/game-candidates/${id}`)).document;
+    expect(candidate, JSON.stringify(candidate)).toMatchObject({ state: "sealed" });
+    const partitions = (await get(`/v1/game-candidates/${id}/partitions`)).document.partitions as {
+      ordinal: number;
+      kind: string;
+    }[];
+    const warnings: Record<string, unknown>[] = [];
+    for (const part of partitions.filter((p) => p.kind === "warnings" || p.kind === "shared_warnings"))
+      warnings.push(
+        ...((await get(`/v1/game-candidates/${id}/partitions/${part.ordinal}`)).document.records as Record<
+          string,
+          unknown
+        >[]),
+      );
+    if (action === "link")
+      expect(warnings).toContainEqual(expect.objectContaining({ code: "entity_proposal_excluded" }));
+    else expect(warnings).not.toContainEqual(expect.objectContaining({ code: "entity_proposal_excluded" }));
+    expect((await get(`/v1/entity-proposals/${proposal.document.id}`)).document).toMatchObject({
+      status: action === "link" ? "admitted" : "rejected",
+      generation: 1,
+    });
+  },
+);

@@ -365,10 +365,26 @@ test("a native source change retains reconfirmable curated diagnostics without f
     rationale: "Synthetic owner confirms changed source",
     idempotency_key: "native-curated-reaffirm",
   });
-  // The legacy collection reservation remains live until the collection adapter completes it.
-  expect(reaffirmed.response.status).toBe(409);
-  expect(reaffirmed.document).toMatchObject({ code: "active_ingestion_run" });
-});
+  expect(reaffirmed.response.status, JSON.stringify(reaffirmed.document)).toBe(200);
+  const fresh = await post("/v1/game-candidates", {
+    ingestion_run_id: run.id,
+    supported_game: "one-piece",
+    expected_game_revision_id: published.document.resulting_revision_id,
+    idempotency_key: "native-curated-after-reaffirmation",
+  });
+  expect(fresh.response.status, JSON.stringify(fresh.document)).toBe(201);
+  const freshId = requiredString(fresh.document, "id");
+  expect(freshId).not.toBe(id);
+  let freshCandidate = (await get(`/v1/game-candidates/${freshId}`)).document;
+  const freshDeadline = Date.now() + 15000;
+  while (freshCandidate.state === "preparing" && Date.now() < freshDeadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    freshCandidate = (await get(`/v1/game-candidates/${freshId}`)).document;
+  }
+  expect(freshCandidate, JSON.stringify(freshCandidate)).toMatchObject({ state: "sealed" });
+  expect((await get(`/v1/game-candidates/${id}`)).document).toEqual(candidate);
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
+}, 30000);
 
 test("a fresh native preparation pins later owner corrections and retains them across retirement", async () => {
   const source = await collect("/reconciliation/base", "native-fresh-curated-source");

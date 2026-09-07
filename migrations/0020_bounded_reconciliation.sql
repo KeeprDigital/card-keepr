@@ -111,6 +111,19 @@ CREATE TABLE reconciliation_curated_pins (
 );
 CREATE TRIGGER reconciliation_curated_pins_no_update BEFORE UPDATE ON reconciliation_curated_pins
 BEGIN SELECT RAISE(ABORT, 'reconciliation_curated_pin_immutable'); END;
+CREATE TABLE reconciliation_automatic_admissions (
+  preparation_id TEXT NOT NULL REFERENCES reconciliation_operations(id),
+  proposal_id TEXT NOT NULL REFERENCES entity_proposals(id),
+  generation INTEGER NOT NULL CHECK (generation > 0),
+  decision_json TEXT NOT NULL CHECK (json_valid(decision_json) AND length(CAST(decision_json AS BLOB)) <= 262144),
+  rationale TEXT NOT NULL,
+  decided_at TEXT NOT NULL,
+  PRIMARY KEY (preparation_id, proposal_id)
+);
+CREATE TRIGGER reconciliation_automatic_admissions_no_update BEFORE UPDATE ON reconciliation_automatic_admissions
+BEGIN SELECT RAISE(ABORT, 'reconciliation_automatic_admission_immutable'); END;
+CREATE TRIGGER reconciliation_automatic_admissions_no_delete BEFORE DELETE ON reconciliation_automatic_admissions
+BEGIN SELECT RAISE(ABORT, 'reconciliation_automatic_admission_immutable'); END;
 CREATE TRIGGER reconciliation_curated_pins_no_delete BEFORE DELETE ON reconciliation_curated_pins
 BEGIN SELECT RAISE(ABORT, 'reconciliation_curated_pin_immutable'); END;
 -- SQLite appends rowid to these indexes, permitting bounded cutoff seeks.
@@ -121,6 +134,15 @@ CREATE TABLE game_catalogue_heads (
   supported_game TEXT PRIMARY KEY,
   revision_id TEXT NOT NULL
 );
+CREATE TABLE ingestion_collection_completions (
+  ingestion_run_id TEXT PRIMARY KEY REFERENCES ingestion_runs(id),
+  collection_completed_at TEXT NOT NULL,
+  first_preparation_id TEXT NOT NULL REFERENCES reconciliation_operations(id)
+);
+CREATE TRIGGER ingestion_collection_completions_no_update BEFORE UPDATE ON ingestion_collection_completions
+BEGIN SELECT RAISE(ABORT, 'ingestion_collection_completion_immutable'); END;
+CREATE TRIGGER ingestion_collection_completions_no_delete BEFORE DELETE ON ingestion_collection_completions
+BEGIN SELECT RAISE(ABORT, 'ingestion_collection_completion_immutable'); END;
 -- Migration may traverse retained ancestry once; preparation creation reads one
 -- indexed game head and never walks publication history.
 WITH RECURSIVE ancestry(id, ingestion_run_id, previous_id, distance) AS (

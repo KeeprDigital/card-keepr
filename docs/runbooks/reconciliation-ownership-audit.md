@@ -20,7 +20,7 @@ source evidence, never preparation artifacts.
 | `ingestion_runs.linked_run_id`; `ingestion_run_events`, `ingestion_run_current`, `ingestion_run_selected_games` | Shared ingestion event recipes, source-evidence lifecycle, legacy run finalization/publication | Native preparation does not append collection transitions. Its creation and terminal paths write its operation/candidate instead. |
 | `ingestion_evidence_plans`, `source_requests`, `source_snapshots.ingestion_run_id` | Source-plan, capture, and evidence-run repositories | Read through the operation's real collection ID. Native preparation does not add collection requests or captures. |
 | `source_capture_operations.reused_source_snapshot_id`, `source_snapshots.reused_source_snapshot_id`, `source_parse_operations.source_snapshot_id`, `source_observation_sets.source_snapshot_id`, `official_source_collection_plans` | Source capture, parse, and collection-plan repositories | Source IDs remain source IDs. Native verification reads the frozen observations and immutable capture/image references. |
-| Collection capacity/retry/workflow pause and extension tables, `ingestion_workflow_attempts`, `ingestion_run_terminations`, `ingestion_collection_reservations` | Source-evidence control and shared reservation recipes | Collection-owned; native pause/resume/failure does not write these. Automatic collection dispatch/reservation completion is still a separate integration task. |
+| Collection capacity/retry/workflow pause and extension tables, `ingestion_workflow_attempts`, `ingestion_run_terminations`, `ingestion_collection_reservations` | Source-evidence control and shared reservation recipes | Collection-owned; native pause/resume/failure does not write these. Native creation records `ingestion_collection_completions` for completed evidence and releases that collection's reservation atomically with pin capture. Other live collections retain their reservations. |
 | `reconciliation_operations.ingestion_run_id`, `game_candidates.ingestion_run_id`, `game_candidate_slots.ingestion_run_id` | `createGamePreparationStatement`; legacy operation/candidate recipes | Deliberate dual identity: artifacts and slot ownership bind the preparation, while these fields retain the real collection. Native creation inserts them atomically. |
 | `canonical_source_mappings` | `insertSourceMappingsStatement` | Legacy insertion requires `supported_game IS NULL`. Native mappings go to `reconciliation_source_mappings`, keyed by preparation/entity/observation. A published collection cannot grant publication authority to new native mappings. |
 | `reconciliation_source_mappings` source collection/snapshot/observation-set FKs | Native branch of `insertSourceMappingsStatement` | Collection ID is selected from the operation. Snapshot and observation-set IDs come from frozen source observations. Owner inspection accepts `preparation_id`; staged mappings remain outside the published index. |
@@ -65,6 +65,13 @@ while preserving generation/state and recovery fencing.
   pinned decision query's left join preserves that row, so a later owner link
   does not replace the preparation's unresolved decision. The owner-interface
   regression verifies this alongside the retained later owner decision.
+- Proposals first created after the snapshot cannot supply a later owner
+  decision through the fallback query. Native automatic decisions have immutable
+  preparation-owned receipts in `reconciliation_automatic_admissions`. The
+  shared proposal history advances only if its expected generation is still
+  current, preserving a later owner rejection. A single automatic decision is
+  limited to 256 KiB so its receipt plus shared decision copies remain below
+  the staging recipe's 1 MiB target; callback-wide enforcement remains pending.
 - Policy generations are checked against the operation's authority cutoff in
   the creation transaction. An intervening authority mutation rolls creation
   back; exact concurrent creation reuses the winner's identity and deadline.
@@ -74,19 +81,20 @@ while preserving generation/state and recovery fencing.
 This closes the identified source/preparation foreign-key bridges; it is not
 final #225 acceptance. Production collection/owner dispatch, runtime resource
 limits, stress performance, and final verification remain on the finite
-acceptance checklist. When collection reservations are released before native
-preparation, recheck the new-proposal automation fallback: it must not adopt an
-owner decision written after the preparation's snapshot. Existing proposal
-pins and their late-link regression already cover the retained-proposal case.
+acceptance checklist. The handoff regressions cover an owner link/rejection for
+a proposal first created after the snapshot, as well as the existing-proposal
+late-link case.
 
 Native curated selection now pins its own immutable history cutoffs atomically
 with preparation creation. The regression verifies that a correction authored
 after collection is included, and a later retirement cannot change that pin.
 Indexed seeks read each revision and its last lifecycle/reaffirmation events at
 those cutoffs; inactive revisions also advance the bounded work cursor.
-The native source-conflict test still encounters the collection reservation
-when attempting reaffirmation. That complete reaffirm/fresh-preparation
-lifecycle remains part of production integration acceptance.
+Native creation atomically rejects effective pending reconfirmations, including
+prepared conflicts whose physical events have not yet been materialized. The
+source-conflict regression now verifies owner reaffirmation and a fresh sealed
+preparation from the same retained evidence, with the original failed outcome
+unchanged.
 
 Native mapping publication is downstream work (#226/#227). It must consume
 preparation-owned evidence and gate published visibility on candidate

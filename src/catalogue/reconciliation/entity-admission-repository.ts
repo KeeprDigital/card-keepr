@@ -121,7 +121,9 @@ export function admissionEntityStatement(database: CatalogueStore, kind: "card" 
 export function admissionPinStatement(database: CatalogueStore, run: string) {
   return repositoryStatements(database)
     .prepare(
-      "SELECT games_json, policy_json, decision_cutoff FROM reconciliation_admission_pins WHERE preparation_id = ?",
+      `SELECT pin.games_json, pin.policy_json, pin.decision_cutoff, operation.supported_game
+       FROM reconciliation_admission_pins AS pin JOIN reconciliation_operations AS operation ON operation.id = pin.preparation_id
+       WHERE pin.preparation_id = ?`,
     )
     .bind(run);
 }
@@ -228,6 +230,60 @@ export function latestAdmissionStatement(database: CatalogueStore, id: string) {
   return repositoryStatements(database)
     .prepare("SELECT * FROM entity_admission_decisions WHERE proposal_id = ? ORDER BY generation DESC LIMIT 1")
     .bind(id);
+}
+
+/** New native proposals may replay only this preparation's own automatic decision. */
+export function unselectedSourceAdmissionStatement(
+  database: CatalogueStore,
+  preparationId: string,
+  proposalId: string,
+) {
+  return repositoryStatements(database)
+    .prepare(`SELECT decision.proposal_id, decision.generation, 'admit' AS action, 'automation' AS actor,
+      decision.rationale, decision.decision_json,
+      'auto_' || decision.preparation_id || '_' || decision.proposal_id AS idempotency_key,
+      decision.decision_json AS request_json, decision.decided_at
+      FROM reconciliation_automatic_admissions AS decision
+      WHERE decision.preparation_id = ?1 AND decision.proposal_id = ?2
+      UNION ALL
+      SELECT * FROM (SELECT decision.* FROM entity_admission_decisions AS decision
+        WHERE decision.proposal_id = ?2 AND EXISTS (SELECT 1 FROM reconciliation_operations
+          WHERE id = ?1 AND supported_game IS NULL)
+        ORDER BY decision.generation DESC LIMIT 1)
+      LIMIT 1`)
+    .bind(preparationId, proposalId);
+}
+
+/** A later owner decision is kept globally; the preparation retains its own fixed automatic result. */
+export function retainNativeAutomaticAdmissionStatement(
+  database: CatalogueStore,
+  preparationId: string,
+  row: AdmissionDecisionRow,
+) {
+  return atomicRepositoryStatement(database, {
+    before: [identityRunGuard(database, preparationId)],
+    statement: repositoryStatements(database)
+      .prepare(`INSERT INTO reconciliation_automatic_admissions
+        (preparation_id, proposal_id, generation, decision_json, rationale, decided_at)
+        VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(preparation_id, proposal_id) DO NOTHING`)
+      .bind(preparationId, row.proposal_id, row.generation, row.decision_json, row.rationale, row.decided_at),
+    after: [
+      repositoryStatements(database)
+        .prepare(`INSERT INTO entity_admission_decisions
+          (proposal_id, generation, action, actor, rationale, decision_json, idempotency_key, request_json, decided_at)
+          SELECT proposal_id, generation, 'admit', 'automation', rationale, decision_json,
+            'auto_' || preparation_id || '_' || proposal_id, decision_json, decided_at
+          FROM reconciliation_automatic_admissions AS decision
+          WHERE preparation_id = ? AND proposal_id = ? AND generation = 1 + COALESCE(
+            (SELECT MAX(existing.generation) FROM entity_admission_decisions AS existing WHERE existing.proposal_id = decision.proposal_id), 0)`)
+        .bind(preparationId, row.proposal_id),
+      repositoryStatements(database)
+        .prepare(`INSERT INTO entity_admission_events (proposal_id, generation)
+          SELECT proposal_id, generation FROM entity_admission_decisions WHERE idempotency_key = ?
+          ON CONFLICT(proposal_id, generation) DO NOTHING`)
+        .bind(row.idempotency_key),
+    ],
+  });
 }
 export function admissionReplayStatement(database: CatalogueStore, key: string) {
   return repositoryStatements(database)
