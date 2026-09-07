@@ -1,5 +1,10 @@
 import { insertPendingBackupStatement } from "../../../src/catalogue/backup-recovery/backup-repository";
-import { disableRecoveryTransitionTrigger, disableRecoveryHealthTrigger } from "./query-helpers/maintenance-guards";
+import {
+  disableRecoveryTransitionTrigger,
+  disableRecoveryHealthTrigger,
+  resetMaintenanceOperation,
+  failUnfinishedMaintenanceRecoveries,
+} from "./query-helpers/maintenance-guards";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
@@ -964,6 +969,8 @@ async function currentSchemaMigrationLevel(): Promise<number> {
 // Focused concurrency seam: the legacy backup/provider fixture above isolates
 // original admission. Native SQL export/import recovery is covered separately.
 test("recovery cannot discard a post-backup staging write ticket while its R2 call is held", async () => {
+  await failUnfinishedMaintenanceRecoveries(testEnv.CATALOGUE_DB).run();
+  await resetMaintenanceOperation(testEnv.CATALOGUE_DB).run();
   const { seedRunFixtureStatement } = await import("./query-helpers/run-events");
   const { trackedStagingBucket } = await import("../../../src/catalogue/shared");
   await seedRunFixtureStatement(testEnv.CATALOGUE_DB, {
@@ -1032,6 +1039,8 @@ test("recovery cannot discard a post-backup staging write ticket while its R2 ca
 });
 
 test("an ambiguous source writer prevents recovery despite absent bytes and elapsed time", async () => {
+  await failUnfinishedMaintenanceRecoveries(testEnv.CATALOGUE_DB).run();
+  await resetMaintenanceOperation(testEnv.CATALOGUE_DB).run();
   const { seedRunFixtureStatement } = await import("./query-helpers/run-events");
   const { beginEvidenceObjectWrite } = await import(
     "../../../src/catalogue/source-evidence/evidence-cleanup-repository"
