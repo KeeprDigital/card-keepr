@@ -42,9 +42,12 @@ export class ReconciliationErrataState {
     this.index.beginObservation();
     const result: CatalogueErratum[] = [];
     let bytes = 0;
-    for await (const erratum of this.index.matchingBeforeObservation(canonicalJson([game, "card", cardId]))) {
+    for await (const erratum of this.index.matchingBeforeObservation(canonicalJson([game, "card", cardId]), {
+      records: 8,
+      bytes: 512000,
+    })) {
       bytes += await erratumBytes(erratum);
-      if (result.length === 500 || bytes > 1048576)
+      if (result.length === 8 || bytes > 512000)
         throw new Error("reconciliation_capacity_exceeded: one Card's retained Errata exceed their work budget.");
       result.push(erratum);
     }

@@ -2,6 +2,7 @@ import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { retainPartitionedRecord, restorePartitionedRecord } from "./reconciliation-text";
 import {
   nextNormalizedCardErratumStatement,
+  normalizedCardErrataExistStatement,
   retainObservationOriginStatement,
   observationOriginStatement,
   normalizedObservationExistsStatement,
@@ -24,6 +25,10 @@ async function storage<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
+export async function hasNormalizedCardErrata(database: CatalogueStore, runId: string): Promise<boolean> {
+  return (await storage(() => normalizedCardErrataExistStatement(database, runId).first())) !== null;
+}
+
 export async function claimObservationOrigin(
   database: CatalogueStore,
   runId: string,
@@ -31,10 +36,11 @@ export async function claimObservationOrigin(
   setId: string,
   ordinal: number,
 ) {
-  await storage(() => retainObservationOriginStatement(database, runId, id, setId, ordinal).run());
-  const origin = await storage(() =>
-    observationOriginStatement(database, runId, id).first<{ observation_set_id: string; source_ordinal: number }>(),
+  type Origin = { observation_set_id: string; source_ordinal: number };
+  const inserted = await storage(() =>
+    retainObservationOriginStatement(database, runId, id, setId, ordinal).first<Origin>(),
   );
+  const origin = inserted ?? (await storage(() => observationOriginStatement(database, runId, id).first<Origin>()));
   if (origin?.observation_set_id !== setId || origin.source_ordinal !== ordinal)
     throw new Error(`Duplicate Source Observation ${id} spans planned requests.`);
 }
@@ -59,14 +65,12 @@ export async function retainNormalizedObservation(
     cardErratumTarget === null
       ? null
       : await sha256Text(canonicalJson([cardErratumTarget.game, cardErratumTarget.officialIdentity]));
-  await storage(() => retainNormalizedObservationStatement(database, runId, id, content, sha256, targetDigest).run());
-  const retained = await storage(() =>
-    normalizedObservationStatement(database, runId, id).first<{
-      content: string;
-      sha256: string;
-      card_erratum_target_digest: string | null;
-    }>(),
+  type Retained = { content: string; sha256: string; card_erratum_target_digest: string | null };
+  const inserted = await storage(() =>
+    retainNormalizedObservationStatement(database, runId, id, content, sha256, targetDigest).first<Retained>(),
   );
+  const retained =
+    inserted ?? (await storage(() => normalizedObservationStatement(database, runId, id).first<Retained>()));
   if (
     retained?.content !== content ||
     retained.sha256 !== sha256 ||
@@ -117,7 +121,7 @@ export async function* normalizedCardErrata<T>(
     bytes +=
       new TextEncoder().encode(row.content).byteLength +
       envelope.text_parts.reduce((total: number, part: { byte_length: number }) => total + part.byte_length, 0);
-    if (++count > 500 || bytes > 1048576)
+    if (++count > 8 || bytes > 512000)
       throw new Error("reconciliation_capacity_exceeded: one Card has too many Erratum records.");
     if ((await sha256Text(row.content)) !== row.sha256)
       throw new Error("Normalized Erratum failed integrity verification.");

@@ -5,11 +5,20 @@ terminal references; it is not the candidate store. Inspect the reconciliation
 status and partition routes to see preparation independently of a Workflow's
 status.
 
-Each reconciliation Workflow instance executes at most ten preparation steps.
-Each step has three retries. This reserves at most 4,000 service calls for
-preparation at the 100-call work-unit target, leaving room within the 5,000-call
-shard target for dispatch, failure handling and notification. Work-unit resource
-enforcement is separate from this orchestration bound.
+Each reconciliation Workflow instance executes at most 40 preparation steps.
+Before every actual attempt, a guarded D1 reservation charges 100 service calls
+to that preparation, generation and shard. Reservations cannot decrease and
+survive a lost callback result or an actual Workflow restart. Once its 4,500-call
+work allowance is exhausted, the instance dispatches a successor. A lost
+reservation response conservatively consumes capacity even if work never began.
+
+The other 500 calls cover control steps. Native initialization, dispatch-state
+inspection, successor retention, dispatch, failure finalization and notification
+have fixed paths of fewer than 20 service calls each. Their four-attempt retry
+allowances total at most 480 calls; the remainder covers refused work
+reservations. The normal path is much smaller: successor dispatch uses at most
+three Workflow binding calls per attempt. Work-unit resource enforcement remains
+separate from this orchestration bound.
 
 Before dispatching a successor, the current instance retains its exact parameters
 and deterministic identity in the `workflow_dispatch:<generation>` checkpoint.
@@ -72,9 +81,8 @@ candidate headers and a continuation cursor, including retained failed and
 abandoned candidates. Inspect each candidate's durable progress directly; no
 Workflow platform access is required.
 
-Runtime resource enforcement and the remaining acceptance checks are still
-required for #225 before downstream #226/#227 proceed. Those issues must consume
-the sealed candidate and its retained preparation ownership through this protocol.
+Downstream #226/#227 must consume the sealed candidate and its retained
+preparation ownership through this protocol.
 
 Native mapping evidence is retained in `reconciliation_source_mappings`, keyed by
 preparation, entity, and Source Observation. It keeps the real collection ID as
@@ -96,10 +104,17 @@ identities do not consume that allowance. Unnumbered observations receive a
 separate reduction callback. Native capacity outcomes retain their original
 preparation identity and can be replayed.
 
-The resource regression probes actual D1 and R2 calls through the real Workflow
-for high-degree matches and distinct numbered Cards with equal facts. This is
-not yet proof of callback-wide CPU, memory, stream, or Workflow service-call
-limits; those remain part of final resource acceptance.
+Every actual reconciliation callback, including retries and control callbacks,
+uses a resource guard covering D1, R2, and Workflow binding calls. It refuses
+the 101st call and fifth open R2 body. Callback cleanup cancels unconsumed
+bodies. Exhaustion pauses retryably as a storage failure; it cannot masquerade
+as invalid source data. Native resource probes also count actual calls outside
+the guard.
+
+The ingestion Worker config sets `limits.cpu_ms` to 10000 and
+`limits.subrequests` to 5000. These platform limits apply to the deployed Worker;
+Wrangler local development does not enforce CPU limits. Local tests therefore
+do not establish remote CPU or peak resident-memory performance.
 
 Large text fields share bounded write batches across one retained record, with
 at most 16 chunks and 512000 content bytes per batch. Hydration reads at most
@@ -108,3 +123,80 @@ so their combined fetch stays below 1 MiB. Every chunk receipt and completed
 text digest is still checked. The curated field-target regression retains
 32 large trait strings plus the owner's corrected name and verifies their
 retained candidate references while measuring every callback's D1/R2 calls.
+
+Canonical hashing and legacy payload preparation checkpoint after 128 records or
+reaching 512 KiB of canonical bytes. Source parsing, candidate partitioning and
+entity scopes use groups of at most 32 records with their byte thresholds intact.
+Normalization weights image work and source bytes; Product input groups also
+bound their number of effects. One Product input exceeding 24 effects for a
+fresh candidate, or eight when comparing a predecessor, returns an explicit
+capacity outcome. Product identity matching allows eight references and 16
+nested visits. Card Errata work allows eight inline or matching Errata and
+512000 bytes. These bounds do not cap a game's total entities.
+
+A Card, its small identity reference, and its local comparison facts share one
+guarded transaction. The last
+verified text-free write, at most 32 KiB, may satisfy a read in that observation;
+continuations reopen and verify retained storage. New identity allocation and
+normalization use insert receipts directly, reading the existing immutable row
+when an insert loses a race or replays.
+
+Compatibility staging groups at most 32 plans, with at most two retained rows
+per plan, and keeps its 512 KiB byte threshold. Checkpoint inserts return their
+verified receipt directly; replay conflicts still read and verify the exact row.
+Completed catalogue digests return their retained receipt before reopening
+semantic sources. Canonical key ordering uses direct ASCII comparison where
+UTF-16 and UTF-8 ordering agree, retaining NFC byte comparison for other keys.
+
+The sealed input records whether normalized Card Errata exist. The first official
+reduction checkpoint also pins which selected games have published Card identities,
+including withdrawn identities. Proven absence avoids redundant per-Card lookups;
+older receipts without these flags keep the lookups. The same head fence protects
+these observations and the prepared writes.
+
+A fresh candidate with neither a predecessor candidate nor admitted entities
+skips provenance restoration, because normalized source entities have no earlier
+curated effects. Pinned correction comparison, application, and composed-candidate
+validation still run. Later callbacks batch fixed checkpoint reads in groups of
+six, each checkpoint at most 64 KiB. The read window belongs to that callback's
+fresh guarded store; checkpoint writes refresh it after receipt verification.
+
+The separate native 1001-Product probe measures callback D1/R2 calls and elapsed
+preparation time. The original four scale fixtures and deadlines remain the
+performance acceptance gates; these optimizations alone do not establish them.
+
+Source tokens are limited to 4 MiB of UTF-8 bytes and characters, 16384 structural
+punctuation tokens, and depth 128 before parsing. Large quoted text remains
+supported; dense or deeply nested single records return explicit capacity.
+
+Legacy payload construction reuses immutable canonical byte chunks retained
+during the candidate hash. The completed hash checkpoint pins their count; each
+chunk is verified again before compatibility staging. Old checkpoints without
+that receipt use the resumable canonical reader. Sorted record readers retain
+at most four verified metadata batches per sorter and clone envelopes before
+hydration; cached batches never contain hydrated text.
+
+## Working-set argument and capacity proof boundary
+
+Preparation holds bounded pages and a fixed number of current records; its live
+working set does not grow with the number of entities in a game. Reducer indexes
+seek by immutable keys instead of materializing the index. Continuations discard
+callback-local state and reopen verified receipts. Images remain R2 references.
+
+| Work | Retained live content bound |
+| --- | --- |
+| Source parsing | One token, at most 4 MiB, plus bounded source chunks; structure/depth limits bound object amplification. |
+| Metadata reads | Normally at most 512 KiB per page; text hydration fetches two 512000-byte pages. No metadata fetch exceeds 1 MiB or 500 rows. |
+| Identity work | Eight match references and one hydrated match at a time; high-degree records fail explicitly. |
+| Canonical sorting | Four current comparison heads, each at most 2 MiB canonical text, and an output group bounded by 512000 bytes or one oversized head. Output references the existing heads. At most four 512 KiB metadata receipts per sorter; hydration is never cached. |
+| Hashing and partitioning | A resumable record/chunk cursor, bounded canonical chunks, and at most 512 KiB of pending payload content. |
+| Callback checkpoint window | At most 16 fixed phase keys, each no larger than 64 KiB. Writes replace verified cached receipts. |
+
+These bounds leave room within the 64 MiB working-set target for UTF-16 strings,
+decoded envelopes, hash state, and current serialized output. They are an
+algorithmic bound argument, not a measured heap census. The configured CPU cap
+and enforced service-call, open-stream and shard quotas accompany these bounds.
+Representative-concurrency peak memory/CPU measurements, real-source capacity,
+and the complete usable-capacity/fault campaign belong to #233 after its
+prerequisites #230/#231/#232. Passing synthetic tests here does not establish
+those later measurements or production throughput.

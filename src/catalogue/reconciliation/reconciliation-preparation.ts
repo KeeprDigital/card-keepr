@@ -135,9 +135,17 @@ export async function* boundedAsyncRecordArrays(
 }
 
 export async function canonicalValueDigest(value: unknown): Promise<string> {
+  const chunks = canonicalValueChunks(value);
+  const first = chunks.next();
+  const second = chunks.next();
+  // Most identity facts fit in one bounded chunk. Web Crypto avoids opening
+  // a stream for them; large logical records retain the streaming path.
+  if (second.done) return sha256Text(first.value ?? "");
   const digest = new crypto.DigestStream("SHA-256");
   const writer = digest.getWriter();
-  for (const chunk of canonicalValueChunks(value)) await writer.write(new TextEncoder().encode(chunk));
+  await writer.write(new TextEncoder().encode(first.value!));
+  await writer.write(new TextEncoder().encode(second.value));
+  for (const chunk of chunks) await writer.write(new TextEncoder().encode(chunk));
   await writer.close();
   return Array.from(new Uint8Array(await digest.digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }

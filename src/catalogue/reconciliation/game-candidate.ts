@@ -90,7 +90,7 @@ export async function prepareGameCandidateManifests(
       await documentStorage(() => retainGameEntityScopesStatement(database, runId, kind, canonicalJson([scope])).run());
       cursor.after = record.id;
       bytes += new TextEncoder().encode(canonicalJson(record)).byteLength;
-      if (++work === 4 || bytes >= 512000) await save();
+      if (++work === 32 || bytes >= 512000) await save();
     }
     cursor.after = "";
     cursor.stage = kind === "cards" ? "printings" : "lineages";
@@ -198,7 +198,7 @@ export async function prepareGameCandidateManifests(
           }
           cursor.partition = partition.ordinal;
           bytes += new TextEncoder().encode(source.content).byteLength;
-          if (++work === 4 || bytes >= 512000) await save();
+          if (++work === 8 || bytes >= 512000) await save();
         }
       }
       cursor.seals.push({ id: header.id, digest: cursor.digest!, count: cursor.ordinal });

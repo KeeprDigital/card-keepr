@@ -6,9 +6,11 @@ import {
   reconcileRetainedCardPrintingEvidence,
   retainReconciliationDispatch,
   reconciliationDispatchState,
+  reserveReconciliationWorkAttempt,
 } from "../../../src/catalogue/reconciliation";
 import { canonicalJson, catalogueStore, workflowDriver, workflowSteps } from "../../../src/catalogue/shared";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
+import { boundedReconciliationResources } from "./reconciliation-resource-budget";
 
 const reconciliationStep = {
   retries: { limit: 3, delay: 250, backoff: "exponential" as const },
@@ -30,6 +32,7 @@ export async function runReconciliationWorkflow(
   step: WorkflowStep,
 ): Promise<{ result_json: string }> {
   ({ env, step } = observeOperationalWorkflow(step, event, env));
+  ({ env, step } = boundedReconciliationResources(env, step));
   let reconciliationResultJson: string;
   try {
     await step.do(workflowSteps.reconciliation.initialize, reconciliationStep, async () => {
@@ -82,10 +85,19 @@ export async function runReconciliationWorkUnits(
   stepName: string = workflowSteps.reconciliation.reconcile,
   root: NonNullable<ReconciliationWorkflowParams["shard"]>["root"],
 ): Promise<string> {
+  ({ env, step } = boundedReconciliationResources(env, step));
   const state = JSON.parse(
-    await step.do(workflowSteps.reconciliation.dispatchState, reconciliationStep, async () =>
-      JSON.stringify(await reconciliationDispatchState(catalogueStore(env.CATALOGUE_DB), params)),
-    ),
+    await step.do(workflowSteps.reconciliation.dispatchState, reconciliationStep, async () => {
+      const database = catalogueStore(env.CATALOGUE_DB);
+      let state = await reconciliationDispatchState(database, params);
+      // The collection parent enters these units directly, before a legacy
+      // operation exists. Establish it before reserving the first attempt.
+      if (!state.operation && !state.terminal && !params.preparation_id) {
+        await initializeReconciliationProgress(database, params.ingestion_run_id, params.observed_at);
+        state = await reconciliationDispatchState(database, params);
+      }
+      return JSON.stringify(state);
+    }),
   ) as Awaited<ReturnType<typeof reconciliationDispatchState>>;
   if (state.terminal)
     return durableReconciliationResult(params.ingestion_run_id, state.terminal, params.preparation_id);
@@ -103,14 +115,21 @@ export async function runReconciliationWorkUnits(
     await dispatchSuccessor(env, step, state.successor.id, state.successor.params);
     return finishShard(step, params, state.successor.id, state.operation?.deadline);
   }
-  // Ten work callbacks leave room for all four attempts at 100 service calls,
-  // plus bounded dispatch/failure steps, inside the 5,000-call shard target.
-  for (let unit = 0; unit < 10; unit++) {
-    const ordinal = (params.shard?.ordinal ?? 0) * 10 + unit;
+  // Every actual attempt reserves 100 calls durably before performing work.
+  // The other 500 calls cover initialization, dispatch, failure and notification.
+  let workCalls = 0;
+  let nextUnit = params.shard?.firstUnit ?? (params.shard?.ordinal ?? 0) * 10;
+  if (!Number.isSafeInteger(nextUnit) || nextUnit < 0) throw new Error("Invalid reconciliation work ordinal.");
+  for (let unit = 0; unit < 40 && workCalls < 4500; unit++, nextUnit++) {
+    const ordinal = nextUnit;
     const resultJson = await step.do(
       ordinal === 0 ? stepName : `${stepName}-unit-${ordinal}`,
       reconciliationStep,
-      async () => {
+      async (context) => {
+        if (!Number.isInteger(context.attempt) || context.attempt < 1 || context.attempt > 4)
+          throw new Error("Invalid reconciliation attempt count.");
+        const reservedCalls = await reserveReconciliationWorkAttempt(catalogueStore(env.CATALOGUE_DB), params);
+        if (reservedCalls === null) return JSON.stringify({ dispatch_required: true });
         const result = await reconcileRetainedCardPrintingEvidence(
           catalogueStore(env.CATALOGUE_DB),
           env.EVIDENCE_OBJECTS,
@@ -121,16 +140,28 @@ export async function runReconciliationWorkUnits(
           true,
         );
         return result.continuation !== undefined
-          ? JSON.stringify({ continuation: result.continuation })
+          ? JSON.stringify({ continuation: result.continuation, reserved_calls: reservedCalls })
           : durableReconciliationResult(params.ingestion_run_id, result, params.preparation_id);
       },
     );
-    if ((JSON.parse(resultJson) as { continuation?: unknown }).continuation !== undefined) continue;
+    const result = JSON.parse(resultJson) as {
+      continuation?: unknown;
+      reserved_calls?: number;
+      dispatch_required?: boolean;
+    };
+    if (result.dispatch_required) {
+      nextUnit++;
+      break;
+    }
+    if (result.continuation !== undefined) {
+      workCalls = result.reserved_calls ?? workCalls + 400;
+      continue;
+    }
     return resultJson;
   }
   const successor: ReconciliationWorkflowParams = {
     ...params,
-    shard: { ordinal: (params.shard?.ordinal ?? 0) + 1, root },
+    shard: { ordinal: (params.shard?.ordinal ?? 0) + 1, firstUnit: nextUnit, root },
   };
   const retained = await step.do(workflowSteps.reconciliation.retainSuccessor, reconciliationStep, async () =>
     JSON.stringify({ id: await retainReconciliationDispatch(catalogueStore(env.CATALOGUE_DB), successor) }),

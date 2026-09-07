@@ -1,5 +1,10 @@
 export { initializeReconciliationProgress, pauseFailedReconciliation } from "./reconciliation-progress";
-export { reconciliationDispatchState, retainReconciliationDispatch } from "./reconciliation-dispatch";
+export { ReconciliationDocumentStorageError } from "./reconciliation-document";
+export {
+  reconciliationDispatchState,
+  retainReconciliationDispatch,
+  reserveReconciliationWorkAttempt,
+} from "./reconciliation-dispatch";
 // Public surface of the `reconciliation` cluster: turning retained evidence
 // into a Catalogue Candidate, persisting it, and planning its publication,
 // including the Product and Release side of the candidate.

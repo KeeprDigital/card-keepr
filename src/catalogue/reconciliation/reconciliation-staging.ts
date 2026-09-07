@@ -82,7 +82,9 @@ export async function stageCandidatePreparation(
       bytes += length + (records.length ? 1 : 0);
       records.push(content);
       cursor.after = entry.key;
-      if (records.length === 4) await flush();
+      // Each plan writes its candidate and evidence rows; 32 plans leave room
+      // for the receipt and checkpoint within the 100-mutation work bound.
+      if (records.length === 32) await flush();
     }
     await flush();
     cursor.after = "";

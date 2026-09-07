@@ -19,13 +19,21 @@ export type ObjectMemberCursor = {
 export async function* resumableObjectMembers(
   source: (chunkIndex: number) => AsyncIterable<string>,
   after: ObjectMemberCursor | null = null,
-  options: { maximumTokenCharacters?: number } = {},
+  options: {
+    maximumTokenCharacters?: number;
+    maximumStructuralTokens?: number;
+    maximumDepth?: number;
+    maximumTokenBytes?: number;
+  } = {},
 ): AsyncGenerator<{ member: ObjectMember; cursor: ObjectMemberCursor }> {
   const input = new JsonChunks(
     source(after?.chunkIndex ?? 0)[Symbol.asyncIterator](),
     after?.chunkIndex,
     after?.offset,
     options.maximumTokenCharacters,
+    options.maximumStructuralTokens,
+    options.maximumDepth,
+    options.maximumTokenBytes,
   );
   const keys = new Set(after?.keys);
   let key = after?.key ?? "";
@@ -104,6 +112,9 @@ class JsonChunks {
     chunkIndex = 0,
     offset = 0,
     private readonly maximumTokenCharacters = Number.POSITIVE_INFINITY,
+    private readonly maximumStructuralTokens = Number.POSITIVE_INFINITY,
+    private readonly maximumDepth = Number.POSITIVE_INFINITY,
+    private readonly maximumTokenBytes = Number.POSITIVE_INFINITY,
   ) {
     this.chunkIndex = chunkIndex - 1;
     this.initialOffset = offset;
@@ -151,13 +162,20 @@ class JsonChunks {
     if ((await this.peek()) === undefined) throw new Error("A retained payload is incomplete.");
     const parts: string[] = [];
     let characters = 0;
+    let bytes = 0;
     const append = (value: string) => {
       characters += value.length;
       if (characters > this.maximumTokenCharacters)
         throw new Error("reconciliation_capacity_exceeded: one source JSON token exceeds its character budget.");
+      if (Number.isFinite(this.maximumTokenBytes)) {
+        bytes += new TextEncoder().encode(value).byteLength;
+        if (bytes > this.maximumTokenBytes)
+          throw new Error("reconciliation_capacity_exceeded: one source JSON token exceeds its byte budget.");
+      }
       parts.push(value);
     };
     let depth = 0;
+    let structuralTokens = 0;
     let quoted = false;
     let escaped = false;
     while (await this.available()) {
@@ -169,6 +187,8 @@ class JsonChunks {
           return parts.join("");
         }
         this.offset += 1;
+        if (!quoted && "[]{}:,".includes(character) && ++structuralTokens > this.maximumStructuralTokens)
+          throw new Error("reconciliation_capacity_exceeded: one source JSON token exceeds its structural budget.");
         if (quoted) {
           if (escaped) escaped = false;
           else if (character === "\\") escaped = true;
@@ -180,8 +200,10 @@ class JsonChunks {
             }
           }
         } else if (character === '"') quoted = true;
-        else if (character === "[" || character === "{") depth += 1;
-        else if (character === "]" || character === "}") {
+        else if (character === "[" || character === "{") {
+          if (++depth > this.maximumDepth)
+            throw new Error("reconciliation_capacity_exceeded: one source JSON token exceeds its depth budget.");
+        } else if (character === "]" || character === "}") {
           depth -= 1;
           if (depth === 0) {
             append(this.chunk.slice(start, this.offset));

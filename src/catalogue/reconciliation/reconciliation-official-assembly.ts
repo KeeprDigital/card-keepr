@@ -108,7 +108,8 @@ export async function prepareOfficialCandidate(
   const consume = async <T extends { id: string }>(values: AsyncIterable<T>, action: (value: T) => Promise<void>) => {
     for await (const value of values) {
       const size = new TextEncoder().encode(canonicalJson(value)).byteLength;
-      if (records > 0 && (records >= 8 || bytes + size > 512000)) {
+      const recordLimit = stage === "cards" && sources.errata.position > 0 ? 1 : 16;
+      if (records > 0 && (records >= recordLimit || bytes + size > 512000)) {
         await save();
         records = 0;
         bytes = 0;

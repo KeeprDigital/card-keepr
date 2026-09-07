@@ -34,6 +34,13 @@ export type ProductReleaseEvidenceInput = {
 
 type ObservedProduct = ProductSourceObservation;
 
+/** Card and Printing IDs are used only when resolving a relationship. */
+export function productReleaseHasNoRelationships(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const relationships = (value as Record<string, unknown>).relationships;
+  return Array.isArray(relationships) && relationships.length === 0;
+}
+
 type ParsedObservation = {
   products: ObservedProduct[];
   distributionContexts: CatalogueDistributionContext[];

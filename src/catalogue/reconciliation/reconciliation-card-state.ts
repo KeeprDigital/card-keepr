@@ -1,7 +1,10 @@
 import { type CatalogueCard, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { canonicalValueDigest } from "./reconciliation-preparation";
 import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
-import { nextReducerCardReferenceStatement } from "./reconciliation-reducer-state-repository";
+import {
+  nextReducerCardReferenceStatement,
+  unknownCardReferencePresentStatement,
+} from "./reconciliation-reducer-state-repository";
 
 type CardReference = { id: string; identity_kind: CatalogueCard["official_identity"]["kind"] };
 type MatchReference = CardReference & { match_digest: string };
@@ -10,6 +13,7 @@ type MatchReference = CardReference & { match_digest: string };
 export class ReconciliationCardState {
   private cards: ReconciliationReducerIndex<CatalogueCard>;
   private facts: ReconciliationReducerIndex<MatchReference>;
+  private unknownReferences: boolean | undefined;
   constructor(
     private database: CatalogueStore,
     private runId: string,
@@ -29,6 +33,7 @@ export class ReconciliationCardState {
     return this.cards.position;
   }
   resumeAt(position: number) {
+    this.unknownReferences = undefined;
     this.cards.resumeAt(position);
     this.facts.resumeAt(position);
   }
@@ -46,9 +51,22 @@ export class ReconciliationCardState {
   async has(id: string) {
     return this.cards.has(id);
   }
-  async set(id: string, card: CatalogueCard) {
-    await this.cards.set(id, card);
-    await this.facts.set(id, { id, identity_kind: card.official_identity.kind, match_digest: await factsDigest(card) });
+  async set(
+    id: string,
+    card: CatalogueCard,
+    comparison?: { index: ReconciliationReducerIndex<string>; value: string },
+  ) {
+    await this.cards.setAlongside(
+      id,
+      card,
+      {
+        index: this.facts,
+        key: id,
+        value: { id, identity_kind: card.official_identity.kind, match_digest: await factsDigest(card) },
+      },
+      comparison ? { ...comparison, key: id } : undefined,
+    );
+    if (card.official_identity.kind === "unknown") this.unknownReferences = true;
   }
   entityValues(after = "") {
     return this.cards.entityValues(after);
@@ -60,6 +78,24 @@ export class ReconciliationCardState {
     return this.references(this.namespace, canonicalJson([game, identity]), includeCurrent);
   }
   async sameFacts(card: Omit<CatalogueCard, "id">, unknownOnly: boolean): Promise<CardReference[]> {
+    if (unknownOnly) {
+      if (this.unknownReferences === undefined) {
+        try {
+          this.unknownReferences =
+            (await unknownCardReferencePresentStatement(
+              this.database,
+              this.runId,
+              `${this.namespace}_matches`,
+              this.cards.position,
+            ).first()) !== null;
+        } catch (cause) {
+          throw new ReconciliationReducerStorageError(cause);
+        }
+      }
+      // Known-only writes preserve absence as the observation cursor advances.
+      // Resume discards the flag, and an unnumbered write makes it conservative.
+      if (!this.unknownReferences) return [];
+    }
     const references = await this.references(`${this.namespace}_matches`, await factsDigest(card), false, unknownOnly);
     const matches: CardReference[] = [];
     for (const reference of references) {

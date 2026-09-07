@@ -4,6 +4,88 @@ import { createHash } from "node:crypto";
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
 export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
+  if (scenario === "capacity-product-identity-fanout" || scenario === "capacity-product-identity-fanout-base") {
+    const base = scenario.endsWith("-base");
+    return {
+      cards: [
+        {
+          card: {
+            game: "one-piece",
+            official_identity: { kind: "card_number", value: "OP92-997" },
+            name: "Synthetic Product identity Card",
+            effective_rules_text: "Initial rules.",
+            game_data: { profile: "one-piece@1", attributes: onePieceLeaderAttributes() },
+          },
+          completeness: completeEvidence(),
+          memberships: { products: [], distribution_contexts: [], source_buckets: [] },
+          product_release_catalogue: {
+            products: Array.from({ length: base ? 9 : 1 }, (_, index) => ({
+              reference: base
+                ? { kind: "official_code", value: `MATCH-${index}` }
+                : { kind: "name", value: "Shared Product name" },
+              official_code: base ? `MATCH-${index}` : null,
+              name: "Shared Product name",
+              releases: [{ region: "EN-OCEANIA", date: { precision: "month", value: "2026-12" }, status: "announced" }],
+            })),
+            distribution_contexts: [],
+            relationships: [],
+          },
+        },
+      ],
+    };
+  }
+  if (scenario === "capacity-card-inline-errata") {
+    return {
+      cards: [
+        {
+          card: {
+            game: "one-piece",
+            official_identity: { kind: "card_number", value: "OP92-998" },
+            name: "Synthetic high-degree Errata Card",
+            effective_rules_text: "Initial rules.",
+            game_data: { profile: "one-piece@1", attributes: onePieceLeaderAttributes() },
+          },
+          completeness: completeEvidence(),
+          memberships: { products: [], distribution_contexts: [], source_buckets: [] },
+          errata: Array.from({ length: 9 }, (_, index) => ({
+            authority: "official_errata",
+            field: "effective_rules_text",
+            target_type: "card",
+            effective_from: `2026-07-${String(index + 1).padStart(2, "0")}`,
+            official_wording: `Official correction ${index + 1}.`,
+            corrected_value: `Corrected rules ${index + 1}.`,
+          })),
+        },
+      ],
+    };
+  }
+  if (scenario === "capacity-product-input-fanout") {
+    return {
+      cards: [
+        {
+          card: {
+            game: "one-piece",
+            official_identity: { kind: "card_number", value: "OP92-999" },
+            name: "Synthetic Product fanout Card",
+            effective_rules_text: "Official rules without an appearance.",
+            game_data: { profile: "one-piece@1", attributes: onePieceLeaderAttributes() },
+          },
+          completeness: completeEvidence(),
+          memberships: { products: [], distribution_contexts: [], source_buckets: [] },
+          product_release_catalogue: {
+            products: Array.from({ length: 25 }, (_, index) => ({
+              reference: { kind: "official_code", value: `FAN-${index}` },
+              official_code: `FAN-${index}`,
+              name: `Synthetic Product ${index}`,
+              releases: [{ region: "EN-OCEANIA", date: { precision: "month", value: "2026-12" }, status: "announced" }],
+            })),
+            distribution_contexts: [],
+            relationships: [],
+          },
+        },
+      ],
+    };
+  }
   if (scenario === "identity-chain-card-surface") {
     return {
       cards: Array.from({ length: 32 }, (_, index) => ({

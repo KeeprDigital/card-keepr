@@ -155,7 +155,7 @@ test.each([
   {
     scenario: "three-role-image-work-units",
     requireFrozenMetadata: true,
-    groups: [6, 6, 6, 6],
+    groups: [12, 12],
     expectedObservations: 8,
   },
   { scenario: "single-card-warning-work-units", requireFrozenMetadata: true, groups: [1] },
@@ -400,7 +400,7 @@ test.each([
         expect(reductionCursors.some((count) => count > 0 && count < 32)).toBe(true);
       expect(verificationCalls.length).toBeGreaterThan(0);
       expect(Math.max(...verificationCalls)).toBeLessThanOrEqual(100);
-      if (scenario === "curated-conflict-fanout-base") expect(verificationCursors).toContain(8);
+      if (scenario === "curated-conflict-fanout-base") expect(verificationCursors).toContain(expectedObservations);
     }
     expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({ state: "sealed" });
   },
@@ -832,7 +832,9 @@ test.each(["canonical_digest:candidate", "payload_preparation:digest"])(
               cursor: { chunk: number; sha?: { bytes: string }; chunks?: number };
             }[]
           ).find((item) => item.phase === phase)!;
-          if (checkpoint.cursor.chunk > 0) {
+          if (
+            phase === "canonical_digest:candidate" ? checkpoint.cursor.chunk > 0 : (checkpoint.cursor.chunks ?? 0) > 0
+          ) {
             armed = true;
             savedBytes = progressValue(checkpoint.cursor);
           }
@@ -977,12 +979,16 @@ test.each([
         }
         if (!completed && JSON.parse(result).continuation?.phase === phase) {
           const progress = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
-          const cursor = (progress.checkpoints as { phase: string; cursor: Record<string, number> }[]).find(
-            (item) => item.phase === phase,
-          )!.cursor;
-          if (cursor[progressField]! >= 2) {
-            completed = cursor[progressField]!;
-            if (phase === "game_preparation") completedGameOutput = cursor.ordinal!;
+          const cursor = (
+            progress.checkpoints as {
+              phase: string;
+              cursor: Record<string, number> & { seals?: { count: number }[] };
+            }[]
+          ).find((item) => item.phase === phase)!.cursor;
+          const sealedCount = phase === "game_preparation" ? (cursor.seals?.[0]?.count ?? 0) : 0;
+          if (cursor[progressField]! >= 2 || sealedCount > 0) {
+            completed = sealedCount || cursor[progressField]!;
+            if (phase === "game_preparation") completedGameOutput = sealedCount || cursor.ordinal!;
           }
         }
         return result;

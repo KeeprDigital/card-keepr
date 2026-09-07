@@ -22,6 +22,7 @@ import { documentStorage } from "./reconciliation-document";
 import { prepareSourceDocuments, readSourceDocument } from "./reconciliation-source-document";
 import {
   normalizedCardErrata,
+  hasNormalizedCardErrata,
   claimObservationOrigin,
   hasNormalizedObservation,
   retainNormalizedObservation,
@@ -29,7 +30,7 @@ import {
 } from "./reconciliation-normalized";
 import { imageStorage, retainCandidateImage } from "./reconciliation-images";
 import { adapterReconciliationAreas, parsedOfficialArtworkIdentity, requiredSourceAdapter } from "../adapters";
-import { type CatalogueStore, type SupportedGame, sha256, sha256Text } from "../shared";
+import { type CatalogueStore, type SupportedGame, canonicalJson, sha256, sha256Text } from "../shared";
 import {
   evidencePlanForRequest,
   parseEvidencePlans,
@@ -91,13 +92,17 @@ export async function retainedReconciliationObservation(
     ...retained,
     observations: () =>
       verifiedReconciliationRecords<NormalizedReconciliationObservation>(database, runId, "observations"),
-    cardErrata: (game: string, identity: unknown) =>
-      normalizedCardErrata<Extract<NormalizedReconciliationObservation, { kind: "official_erratum" }>>(
+    cardErrata: async function* (game: string, identity: unknown) {
+      // This flag belongs to the sealed input. Older receipts without it keep
+      // the indexed lookup, and inputs containing Errata retain full matching.
+      if (retained.hasCardErrata === false) return;
+      yield* normalizedCardErrata<Extract<NormalizedReconciliationObservation, { kind: "official_erratum" }>>(
         database,
         runId,
         game,
         identity,
-      ),
+      );
+    },
   } as Omit<CollectedReconciliationInput, MetadataSequence | "observations"> & {
     [K in MetadataSequence]: AsyncIterable<SequenceElement<CollectedReconciliationInput[K]>>;
   } & {
@@ -296,7 +301,8 @@ async function collectRetainedReconciliationObservation(
       );
     };
     const startOrdinal = continuingDocument ? normalized!.value.nextObservationOrdinal : 0;
-    let work = 0;
+    let work = 0,
+      workBytes = 0;
     const savePrefix = async (nextObservationOrdinal: number) => {
       await retainReconciliationCheckpoint(database, runId, "normalization", checkpointOrdinal++, {
         inputDigest,
@@ -309,17 +315,20 @@ async function collectRetainedReconciliationObservation(
       });
       if (yieldAtCheckpoint)
         throw new ReconciliationContinuation({ phase: "normalization", ordinal: checkpointOrdinal - 1 });
-      work = 0;
+      work = workBytes = 0;
     };
     for (let sourceOrdinal = startOrdinal; sourceOrdinal < row.observation_count; sourceOrdinal++) {
       const wrapped = await readSourceObservation(database, runId, row.observation_set_id, sourceOrdinal);
       const value = isRecord(wrapped) ? wrapped.value : null;
       const appearance = isRecord(value) ? value.appearance_evidence : null;
-      const cost = isRecord(appearance) && Array.isArray(appearance.images) ? Math.max(1, appearance.images.length) : 1;
-      if (work > 0 && work + cost > 8) await savePrefix(sourceOrdinal);
+      const cost = 1 + (isRecord(appearance) && Array.isArray(appearance.images) ? appearance.images.length : 0);
+      const size = new TextEncoder().encode(canonicalJson(wrapped)).byteLength;
+      if (work > 0 && (work + cost > 16 || workBytes + size > 512000)) await savePrefix(sourceOrdinal);
       await normalize(wrapped, sourceOrdinal);
       work += cost;
-      if (work >= 8 && sourceOrdinal + 1 < row.observation_count) await savePrefix(sourceOrdinal + 1);
+      workBytes += size;
+      if ((work >= 16 || workBytes >= 512000) && sourceOrdinal + 1 < row.observation_count)
+        await savePrefix(sourceOrdinal + 1);
     }
     await retainReconciliationCheckpoint(database, runId, "normalization", checkpointOrdinal++, {
       inputDigest,
@@ -369,6 +378,7 @@ async function collectRetainedReconciliationObservation(
   );
   return {
     observationSetId: first.observation_set_id,
+    hasCardErrata: await hasNormalizedCardErrata(database, runId),
     sourceSnapshotId: first.source_snapshot_id,
     sourceLineage: first.source_lineage,
     supportedGame: supportedGame(first.supported_game),

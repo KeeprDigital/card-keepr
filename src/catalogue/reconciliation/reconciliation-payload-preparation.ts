@@ -3,6 +3,7 @@ import { type CanonicalWorkCursor, consumeCanonicalWork } from "./reconciliation
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
 import { prepareCandidateBatch } from "./reconciliation-preparation";
+import { readCanonicalBytes } from "./reconciliation-canonical-bytes";
 
 type Cursor = CanonicalWorkCursor & { firstReceipt: number; chunks: number; complete: boolean };
 
@@ -45,6 +46,28 @@ export async function prepareCandidatePayload(
     if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase, ordinal });
     ordinal++;
   };
+  const hashed =
+    kind === "digest"
+      ? await reconciliationCheckpoint<{ digest?: string; payloadChunks?: number }>(
+          database,
+          runId,
+          "canonical_digest:candidate",
+        )
+      : null;
+  if (hashed?.value.digest && hashed.value.payloadChunks !== undefined) {
+    const chunks = hashed.value.payloadChunks;
+    if (!Number.isSafeInteger(chunks) || chunks < 0 || cursor.chunks > chunks)
+      throw new Error("Invalid retained canonical byte cursor.");
+    while (cursor.chunks < chunks) {
+      pending = await readCanonicalBytes(database, runId, cursor.chunks);
+      await flush();
+      cursor.complete = cursor.chunks === chunks;
+      await save();
+    }
+    cursor.complete = true;
+    await save();
+    return cursor.chunks;
+  }
   await consumeCanonicalWork(
     value,
     cursor,

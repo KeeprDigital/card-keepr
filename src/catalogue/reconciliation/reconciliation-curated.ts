@@ -19,6 +19,7 @@ export async function prepareCuratedDraft(
   observedAt: string,
   yieldAtCheckpoint: boolean,
   independentGame = false,
+  freshSourceOnly = false,
 ) {
   const checkpoint = await reconciliationCheckpoint<Cursor>(database, runId, "curated_revisions");
   if (checkpoint) {
@@ -26,7 +27,8 @@ export async function prepareCuratedDraft(
     curated.resumeAt(checkpoint.value.curated);
   }
   const cursor = checkpoint?.value.progress ?? {
-    stage: "strip",
+    // Fresh normalized source entities cannot carry prior curated provenance.
+    stage: freshSourceOnly ? "compare" : "strip",
     kind: 0,
     after: "",
     revision: -1,
@@ -48,7 +50,8 @@ export async function prepareCuratedDraft(
           records++;
           bytes += new TextEncoder().encode(canonicalJson(record)).byteLength;
         }
-        if (record !== undefined && records < 4 && bytes < 512000) return;
+        const recordLimit = progress.stage === "validate" && progress.kind < 5 ? 32 : 4;
+        if (record !== undefined && records < recordLimit && bytes < 512000) return;
         await retainReconciliationCheckpoint(database, runId, "curated_revisions", ordinal, {
           progress,
           official: official.positions,

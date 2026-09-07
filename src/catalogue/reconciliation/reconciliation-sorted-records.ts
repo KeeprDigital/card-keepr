@@ -22,6 +22,8 @@ type Cursor = {
 /** Four-way canonical text merge with durable input and output batch cursors. */
 export class ReconciliationSortedRecords<T> implements AsyncIterable<T> {
   private finalPass: number | undefined;
+  // One immutable metadata batch for each merge head. Never cache hydrated text.
+  private batches = new Map<string, Envelope[]>();
   constructor(
     private database: CatalogueStore,
     private runId: string,
@@ -149,22 +151,33 @@ export class ReconciliationSortedRecords<T> implements AsyncIterable<T> {
 
   private async readHead(pass: number, run: number, position: Position): Promise<Item<T> | null> {
     for (;;) {
-      const row = await documentStorage(() =>
-        sortBatchStatement(this.database, this.runId, this.namespace, pass, run, position.batch).first<{
-          content: string;
-          sha256: string;
-        }>(),
-      );
-      if (!row || (await sha256Text(row.content)) !== row.sha256)
-        throw new Error("Sorted reconciliation records failed integrity verification.");
-      const records = JSON.parse(row.content) as Envelope[];
+      const cacheKey = `${pass}:${run}:${position.batch}`;
+      let records = this.batches.get(cacheKey);
+      if (!records) {
+        const row = await documentStorage(() =>
+          sortBatchStatement(this.database, this.runId, this.namespace, pass, run, position.batch).first<{
+            content: string;
+            sha256: string;
+          }>(),
+        );
+        if (
+          !row ||
+          new TextEncoder().encode(row.content).byteLength > 524288 ||
+          (await sha256Text(row.content)) !== row.sha256
+        )
+          throw new Error("Sorted reconciliation records failed integrity verification.");
+        records = JSON.parse(row.content) as Envelope[];
+        if (this.batches.size === 4) this.batches.delete(this.batches.keys().next().value!);
+        this.batches.set(cacheKey, records);
+      }
       if (!records.length) return null;
       if (position.offset >= records.length) {
         position.batch++;
         position.offset = 0;
         continue;
       }
-      const envelope = records[position.offset]!;
+      // Restoration/callers may mutate values; the cached receipt stays pristine.
+      const envelope = structuredClone(records[position.offset]!);
       const value = (await restorePartitionedRecord(this.database, this.runId, envelope)) as T;
       const key = canonicalJson(value);
       sortableSize(key);

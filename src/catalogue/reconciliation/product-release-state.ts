@@ -111,13 +111,34 @@ export async function reconcileProductReleaseState(
   if (!checkpoint) await save();
   let records = 0;
   let bytes = 0;
-  const budget = async (size: number) => {
-    const limit = stage === "inputs" || stage === "existing_products" ? 8 : 16;
-    if (records > 0 && (records >= limit || bytes + size > 512000)) {
+  let inputEffects = 0;
+  const fresh = () => priorProductCount === 0 && priorContexts.position === 0 && priorRelationships.position === 0;
+  const recordLimit = () => {
+    if (stage === "inputs") return fresh() ? 16 : 4;
+    if (stage === "existing_products") return 8;
+    if (stage === "new_products" && priorProductCount === 0) return 32;
+    if (stage === "new_contexts" && priorContexts.position === 0) return 32;
+    if (stage === "new_relationships" && priorRelationships.position === 0) return 32;
+    return 16;
+  };
+  const effectLimit = () => (fresh() ? 32 : 4);
+  const finishRecord = async () => {
+    if (records >= recordLimit() || bytes >= 512000 || inputEffects >= effectLimit()) {
+      await save();
+      records = bytes = inputEffects = 0;
+    }
+  };
+  const budget = async (size: number, effects = 0) => {
+    const limit = recordLimit();
+    if (effects > (fresh() ? 24 : 8))
+      throw new Error("reconciliation_capacity_exceeded: one Product input has too many effects.");
+    if (records > 0 && (records >= limit || bytes + size > 512000 || inputEffects + effects > effectLimit())) {
       await save();
       records = 0;
       bytes = 0;
+      inputEffects = 0;
     }
+    inputEffects += effects;
     records++;
     bytes += size;
   };
@@ -126,6 +147,7 @@ export async function reconcileProductReleaseState(
       await budget(new TextEncoder().encode(JSON.stringify(value)).byteLength);
       await action(value);
       after = value.id;
+      await finishRecord();
     }
   };
   const runStage = async (expected: Stage, next: Stage, action: () => Promise<void>) => {
@@ -137,6 +159,7 @@ export async function reconcileProductReleaseState(
     await save();
     records = 0;
     bytes = 0;
+    inputEffects = 0;
   };
   await runStage("prior_products", "prior_contexts", async () => {
     await consume(prior.values("products", after), async (product) => {
@@ -159,26 +182,46 @@ export async function reconcileProductReleaseState(
   await runStage("inputs", "existing_products", async () => {
     if (!options.hasInputs) return;
     for await (const entry of inputs(inputAfter)) {
-      await budget(entry.byteLength);
       const input = entry.input;
       if (input !== null) {
-        if (input.value !== undefined) checkedLineages.add(input.sourceLineage);
         const parsed = await parseProductReleaseObservation(input, game);
+        await budget(
+          entry.byteLength,
+          parsed.products.length +
+            parsed.distributionContexts.length +
+            parsed.relationships.length +
+            parsed.warnings.length,
+        );
+        if (input.value !== undefined) checkedLineages.add(input.sourceLineage);
         // Identity matching needs only candidates with the same normalized name or official code.
+        let matchingVisits = 0;
         const observation = await preservePublishedProductIdentity(
           parsed,
           async (product) => {
             if (priorProductCount === 0) return [];
             const matches = new Map<string, CatalogueProduct>();
             const add = async (match: CatalogueProduct) => {
+              if (++matchingVisits > 16)
+                throw new Error(
+                  "reconciliation_capacity_exceeded: one Product input requires too many identity visits.",
+                );
               if (matches.has(match.id)) return;
+              if (matches.size === 8)
+                throw new Error("reconciliation_capacity_exceeded: one Product identity has too many candidates.");
               await assertProductGroupBudget([...matches.values(), match]);
               matches.set(match.id, match);
             };
-            for await (const match of names.matchingBeforeObservation(normalizedProductName(product.name) ?? ""))
+            for await (const match of names.matchingBeforeObservation(normalizedProductName(product.name) ?? "", {
+              records: 8,
+              bytes: 512000,
+            }))
               await add(match);
             if (product.officialCode !== null) {
-              for await (const match of codes.matchingBeforeObservation(product.officialCode)) await add(match);
+              for await (const match of codes.matchingBeforeObservation(product.officialCode, {
+                records: 8,
+                bytes: 512000,
+              }))
+                await add(match);
             }
             return [...matches.values()];
           },
@@ -203,8 +246,9 @@ export async function reconcileProductReleaseState(
         }
 
         processedInputs++;
-      }
+      } else await budget(entry.byteLength);
       inputAfter = entry.cursor;
+      await finishRecord();
     }
   });
   const productSurfaceObserved = checkedLineages.size > 0;

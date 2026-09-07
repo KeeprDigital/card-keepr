@@ -135,7 +135,12 @@ export async function prepareSourceDocuments<T extends SourceRow>(
     for await (const { member, cursor: next } of resumableObjectMembers(
       (chunk) => sourceChunks(database, runId, row.observation_set_id, cursor.chunks, chunk),
       cursor.member,
-      { maximumTokenCharacters: 4194304 },
+      {
+        maximumTokenCharacters: 4194304,
+        maximumTokenBytes: 4194304,
+        maximumStructuralTokens: 16384,
+        maximumDepth: 128,
+      },
     )) {
       const size = member.kind === "value" ? new TextEncoder().encode(canonicalJson(member.value)).byteLength : 0;
       if (records > 0 && bytes + size > 512000) {
@@ -165,7 +170,7 @@ export async function prepareSourceDocuments<T extends SourceRow>(
       cursor.member = next;
       previous = next;
       bytes += size;
-      if (++records === 8 || bytes >= 512000) {
+      if (++records === 32 || bytes >= 512000) {
         await save();
         records = 0;
         bytes = 0;

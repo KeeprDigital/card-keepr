@@ -31,6 +31,7 @@ export class ReconciliationReducerIndex<T> {
   private ordinal = 0;
   private completedPrefix = false;
   private written = new Set<string>();
+  private lastWrite: { digest: string; content: string } | null = null;
   constructor(
     private database: CatalogueStore,
     private runId: string,
@@ -47,6 +48,7 @@ export class ReconciliationReducerIndex<T> {
     if (!Number.isSafeInteger(position) || position < 0) throw new Error("Invalid reducer continuation position.");
     this.ordinal = position;
     this.written.clear();
+    this.lastWrite = null;
     this.completedPrefix = true;
   }
 
@@ -54,6 +56,7 @@ export class ReconciliationReducerIndex<T> {
     this.completedPrefix = false;
     this.ordinal++;
     this.written.clear();
+    this.lastWrite = null;
   }
 
   async seed(key: string, value: T): Promise<void> {
@@ -64,6 +67,7 @@ export class ReconciliationReducerIndex<T> {
   async get(key: string): Promise<T | undefined> {
     if (this.ordinal === 0) return undefined;
     const digest = await sha256Text(key);
+    if (this.lastWrite?.digest === digest) return JSON.parse(this.lastWrite.content).value as T;
     const row = await storage(() =>
       reducerStateStatement(
         this.database,
@@ -202,6 +206,29 @@ export class ReconciliationReducerIndex<T> {
   }
 
   async set(key: string, value: T): Promise<void> {
+    const write = await this.prepareWrite(key, value);
+    await write.accept(await storage(() => write.statement().first<StateRow>()));
+  }
+
+  /** One Card, its identity reference, and optional comparison facts share a transaction. */
+  async setAlongside<U, V = never>(
+    key: string,
+    value: T,
+    other: { index: ReconciliationReducerIndex<U>; key: string; value: U },
+    additional?: { index: ReconciliationReducerIndex<V>; key: string; value: V },
+  ) {
+    if (this.database !== other.index.database || (additional && this.database !== additional.index.database))
+      throw new Error("Reducer writes require the same catalogue store.");
+    const left = await this.prepareWrite(key, value);
+    const right = await other.index.prepareWrite(other.key, other.value);
+    const writes = [left, right];
+    if (additional) writes.push(await additional.index.prepareWrite(additional.key, additional.value));
+    const results = await storage(() => this.database.batch<StateRow>(writes.map((write) => write.statement())));
+    for (const [index, write] of writes.entries()) await write.accept(results[index]?.results[0] ?? null);
+  }
+
+  private async prepareWrite(key: string, value: T) {
+    const ordinal = this.ordinal;
     const digest = await sha256Text(key);
     const envelope = await retainPartitionedRecord(this.database, this.runId, JSON.parse(JSON.stringify(value)));
     const content = canonicalJson(envelope);
@@ -209,25 +236,32 @@ export class ReconciliationReducerIndex<T> {
       throw new Error("reconciliation_capacity_exceeded: one reducer fact exceeds 512 KiB.");
     const sha256 = await sha256Text(content);
     const groupDigest = this.group ? await sha256Text(this.group(value)) : null;
-    const inserted = await storage(() =>
-      retainReducerStateStatement(
-        this.database,
-        this.runId,
-        this.namespace,
-        digest,
-        this.ordinal,
-        content,
-        sha256,
-        groupDigest,
-      ).first<StateRow>(),
-    );
-    const retained =
-      inserted ??
-      (await storage(() =>
-        exactReducerStateStatement(this.database, this.runId, this.namespace, digest, this.ordinal).first<StateRow>(),
-      ));
-    if (retained?.content !== content || retained.sha256 !== sha256)
-      throw new Error("Reducer replay changed its immutable observation effect.");
-    this.written.add(digest);
+    return {
+      statement: () =>
+        retainReducerStateStatement(
+          this.database,
+          this.runId,
+          this.namespace,
+          digest,
+          ordinal,
+          content,
+          sha256,
+          groupDigest,
+        ),
+      accept: async (inserted: StateRow | null) => {
+        const retained =
+          inserted ??
+          (await storage(() =>
+            exactReducerStateStatement(this.database, this.runId, this.namespace, digest, ordinal).first<StateRow>(),
+          ));
+        if (retained?.content !== content || retained.sha256 !== sha256)
+          throw new Error("Reducer replay changed its immutable observation effect.");
+        this.written.add(digest);
+        this.lastWrite =
+          envelope.text_parts.length === 0 && new TextEncoder().encode(content).byteLength <= 32768
+            ? { digest, content }
+            : null;
+      },
+    };
   }
 }

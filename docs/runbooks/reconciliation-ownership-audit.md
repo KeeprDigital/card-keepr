@@ -123,3 +123,15 @@ failures retain their own classification rather than becoming transient storage
 errors. Real Workflow probes inject synchronous statement-construction outages
 in normalization, reducer writes, and text-page reads and verify retry, eventual
 sealing, exact retained text references, and per-attempt D1/R2 call budgets.
+
+
+Workflow attempt reservations are retained in `reconciliation_workflow_budgets`,
+keyed by preparation, generation and shard ordinal. Every guarded reservation
+adds 100 calls before work; a monotonic trigger and a 4,500-call ceiling prevent
+restart or lost-output replay from renewing the shard's work allowance. These
+control receipts do not advance candidate progress or release its game slot.
+
+Canonical payload byte receipts live in `reconciliation_canonical_bytes`, keyed
+by preparation and ordinal. Immutable content and SHA-256 bind each chunk; the
+completed candidate hash checkpoint pins the count. These are preparation
+artifacts, with no source-evidence identity or publication authority.

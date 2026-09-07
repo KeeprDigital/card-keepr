@@ -214,7 +214,7 @@ export async function readVerifiedReconciliationInput(
         const size =
           new TextEncoder().encode(canonicalJson(record)).byteLength +
           record.text_parts.reduce((sum, part) => sum + part.byte_length, 0);
-        if (yieldAtCheckpoint && processed > 0 && (processed === 8 || bytes + size > 512000))
+        if (yieldAtCheckpoint && processed > 0 && (processed === 32 || bytes + size > 512000))
           await save(ordinal, index, false);
         const restored = await restorePartitionedRecord(database, runId, record);
         if (partition.kind === "$metadata") metadata = restored as InputMetadata;

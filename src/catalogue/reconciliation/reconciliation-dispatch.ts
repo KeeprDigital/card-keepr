@@ -5,6 +5,8 @@ import {
   reconciliationOperationHeaderStatement,
   reconciliationWriterGuard,
 } from "./reconciliation-progress-repository";
+import { documentStorage } from "./reconciliation-document";
+import { reserveReconciliationWorkAttemptStatement } from "./reconciliation-checkpoint-repository";
 import type { ReconciliationWorkflowParams } from "./reconciliation-workflow";
 
 export async function reconciliationDispatchState(database: CatalogueStore, params: ReconciliationWorkflowParams) {
@@ -52,4 +54,17 @@ export async function retainReconciliationDispatch(database: CatalogueStore, par
     { id, params },
   );
   return id;
+}
+
+/** Charge before every actual callback attempt, including attempts whose result is lost. */
+export async function reserveReconciliationWorkAttempt(database: CatalogueStore, params: ReconciliationWorkflowParams) {
+  const runId = params.preparation_id ?? params.ingestion_run_id;
+  const generation = params.generation ?? 0;
+  const guarded = guardedCatalogueStore(database, () => reconciliationWriterGuard(database, runId, generation));
+  const row = await documentStorage(() =>
+    reserveReconciliationWorkAttemptStatement(guarded, runId, generation, params.shard?.ordinal ?? 0).first<{
+      reserved_calls: number;
+    }>(),
+  );
+  return row?.reserved_calls ?? null;
 }

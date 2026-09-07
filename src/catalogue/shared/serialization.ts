@@ -45,6 +45,9 @@ export function utf8(value: string): Uint8Array {
 }
 
 export function compareUtf8(left: string, right: string): number {
+  // ASCII has identical UTF-16 and UTF-8 order and is already NFC. Catalogue
+  // field names dominate these comparisons, so avoid two byte allocations.
+  if (!/[\u0080-\uffff]/.test(left) && !/[\u0080-\uffff]/.test(right)) return left < right ? -1 : left > right ? 1 : 0;
   const leftBytes = encoder.encode(left.normalize("NFC"));
   const rightBytes = encoder.encode(right.normalize("NFC"));
   const sharedLength = Math.min(leftBytes.length, rightBytes.length);

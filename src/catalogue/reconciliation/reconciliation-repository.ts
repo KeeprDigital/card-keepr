@@ -47,6 +47,12 @@ export async function existingCard(
     .first<ReconciledCardRow>();
 }
 
+export function publishedCardPresentStatement(database: CatalogueStore, game: string) {
+  return repositoryStatements(database)
+    .prepare("SELECT 1 AS present FROM reconciled_cards WHERE supported_game = ? LIMIT 1")
+    .bind(game);
+}
+
 export async function compatiblePrintings(
   database: CatalogueStore,
   compatibility: PrintingCompatibility,
@@ -54,7 +60,7 @@ export async function compatiblePrintings(
   const result = await repositoryStatements(database)
     .prepare(`SELECT * FROM reconciled_printings
       WHERE card_id IS ? AND artwork_fingerprint IS ? AND printed_fields_digest IS ?
-        AND rarity_normalized IS ? AND treatment IS ? ORDER BY id`)
+        AND rarity_normalized IS ? AND treatment IS ? ORDER BY id LIMIT 9`)
     .bind(
       compatibility.card_id,
       compatibility.artwork_fingerprint,
@@ -63,7 +69,7 @@ export async function compatiblePrintings(
       compatibility.treatment,
     )
     .all<ReconciledPrintingRow>();
-  return result.results;
+  return boundedPrintingMatches(result.results);
 }
 
 export async function printingsWithAppearance(
@@ -76,11 +82,11 @@ export async function printingsWithAppearance(
        WHERE card_id = ?
          AND artwork_fingerprint = ?
          AND treatment IS ?
-       ORDER BY id`,
+       ORDER BY id LIMIT 9`,
     )
     .bind(compatibility.card_id, compatibility.artwork_fingerprint, compatibility.treatment)
     .all<ReconciledPrintingRow>();
-  return rows.results;
+  return boundedPrintingMatches(rows.results);
 }
 
 export async function printingAtLocatorVariant(
@@ -103,7 +109,7 @@ export async function printingAtLocatorVariant(
          AND locator.locator = ?
          AND locator.variant_identity = ?
        ORDER BY locator.current DESC,
-                locator.last_observed_revision_id DESC, mapping.mapped_at DESC`,
+                locator.last_observed_revision_id DESC, mapping.mapped_at DESC LIMIT 1`,
     )
     .bind(sourceLineage, locator, variantKey ?? "")
     .first<ReconciledPrintingRow & { mapped_evidence_json: string | null }>();
@@ -129,11 +135,11 @@ export async function printingsAtLocator(
          AND locator.locator = ?
        ORDER BY locator.current DESC,
                 locator.last_observed_revision_id DESC,
-                locator.variant_identity`,
+                locator.variant_identity LIMIT 9`,
     )
     .bind(sourceLineage, locator)
     .all<ReconciledPrintingRow>();
-  return rows.results;
+  return boundedPrintingMatches(rows.results);
 }
 
 export async function gundamPrintingLineages(
@@ -416,20 +422,28 @@ export async function crossSourcePrintingCandidates(
   database: CatalogueStore,
   compatibility: PrintingCompatibility,
 ): Promise<ReconciledPrintingRow[]> {
-  return (
-    await repositoryStatements(database)
-      .prepare(`SELECT * FROM reconciled_printings
+  return boundedPrintingMatches(
+    (
+      await repositoryStatements(database)
+        .prepare(`SELECT * FROM reconciled_printings
     WHERE card_id = ? AND source_lineage <> ? AND printed_fields_digest = ?
-      AND rarity_normalized IS ? AND treatment IS ? ORDER BY id`)
-      .bind(
-        compatibility.card_id,
-        compatibility.source_lineage,
-        compatibility.printed_fields_digest,
-        compatibility.rarity_normalized,
-        compatibility.treatment,
-      )
-      .all<ReconciledPrintingRow>()
-  ).results;
+      AND rarity_normalized IS ? AND treatment IS ? ORDER BY id LIMIT 9`)
+        .bind(
+          compatibility.card_id,
+          compatibility.source_lineage,
+          compatibility.printed_fields_digest,
+          compatibility.rarity_normalized,
+          compatibility.treatment,
+        )
+        .all<ReconciledPrintingRow>()
+    ).results,
+  );
+}
+
+function boundedPrintingMatches(rows: ReconciledPrintingRow[]): ReconciledPrintingRow[] {
+  if (rows.length > 8 || new TextEncoder().encode(canonicalJson(rows)).byteLength > 512000)
+    throw new Error("reconciliation_capacity_exceeded: one Printing identity match exceeds its candidate budget.");
+  return rows;
 }
 
 export async function* gundamAffectedPrintingIds(

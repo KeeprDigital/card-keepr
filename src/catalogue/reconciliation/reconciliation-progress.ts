@@ -285,7 +285,7 @@ export async function initializeReconciliationProgress(
     await database.batch([
       gamePreparation
         ? createGamePreparationStatement(database, gamePreparation, at, definitions)
-        : createReconciliationOperationStatement(database, runId, at, definitions),
+        : createReconciliationOperationStatement(database, runId, new Date().toISOString(), definitions),
       ...admissionPins,
       ...correctionPinStatementsForPreparation(database, runId, JSON.parse(selected?.games_json ?? "[]") as string[]),
       ...(gamePreparation

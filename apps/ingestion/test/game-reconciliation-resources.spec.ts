@@ -19,6 +19,9 @@ installReconciliationSuite();
 
 test.each([
   "capacity-card-identity-fanout",
+  "capacity-card-inline-errata",
+  "capacity-product-input-fanout",
+  "capacity-product-identity-fanout",
   "capacity-card-facts-fanout",
   "known-card-facts-fanout",
   "capacity-nested-card-matches",
@@ -27,10 +30,17 @@ test.each([
   "curated-text-target-normalization-retry",
   "curated-text-target-reducer-retry",
   "large-card-content",
+  "card-only-work-units",
 ])("%s respects the D1/R2 callback budget", async (scenario) => {
   const fixture = scenario.startsWith("curated-text-target") ? "curated-text-target" : scenario;
   let injectedFailures = 0;
   let predecessor = "catrev_spine_000";
+  if (fixture === "capacity-product-identity-fanout") {
+    const seed = await reconcile((await collect(`/reconciliation/${fixture}-base`, "product-identity-seed")).id);
+    const published = await approve(seed.document);
+    expect(published.response.status, JSON.stringify(published.document)).toBe(200);
+    predecessor = requiredString(published.document, "resulting_revision_id");
+  }
   if (fixture === "curated-text-target") {
     const seed = await reconcile(
       (await collect("/reconciliation/curated-text-target-base", "curated-resource-seed")).id,
@@ -163,8 +173,12 @@ test.each([
     } as unknown as import("cloudflare:workers").WorkflowStep,
   );
   expect(measured.filter(({ calls }) => calls > 100)).toEqual([]);
-  expect((await get(`/v1/game-candidates/${id}`)).document).toMatchObject({
-    ...(scenario === "known-card-facts-fanout" || scenario === "large-card-content" || fixture === "curated-text-target"
+  const candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  expect(candidate, JSON.stringify(candidate)).toMatchObject({
+    ...(scenario === "card-only-work-units" ||
+    scenario === "known-card-facts-fanout" ||
+    scenario === "large-card-content" ||
+    fixture === "curated-text-target"
       ? { state: "sealed" }
       : { state: "failed", failure_code: "reconciliation_capacity_exceeded" }),
   });

@@ -33,6 +33,7 @@ export type ReconciliationWorkflowParams = Readonly<{
   generation?: number;
   shard?: Readonly<{
     ordinal: number;
+    firstUnit?: number;
     root: Readonly<{ binding: "reconciliation" | "collection"; id: string }>;
   }>;
 }>;

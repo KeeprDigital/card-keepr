@@ -27,17 +27,14 @@ export async function allocateCanonicalIdentity(
   observedAt: string,
 ) {
   const allocationKey = canonicalJson([kind, key]);
-  const existing = await allocatedIdentityStatement(database, allocationKey).first<{ entity_id: string }>();
-  if (existing) return existing.entity_id;
-  await allocateIdentityStatement(
-    database,
-    allocationKey,
-    `${kind}_${crypto.randomUUID().replaceAll("-", "")}`,
-    kind,
-    observedAt,
-    runId,
-  ).run();
-  const allocated = await allocatedIdentityStatement(database, allocationKey).first<{ entity_id: string }>();
+  const id = `${kind}_${crypto.randomUUID().replaceAll("-", "")}`;
+  const inserted = await documentStorage(() =>
+    allocateIdentityStatement(database, allocationKey, id, kind, observedAt, runId).first<{ entity_id: string }>(),
+  );
+  if (inserted && inserted.entity_id !== id) throw new Error("Canonical identity allocation receipt changed.");
+  const allocated =
+    inserted ??
+    (await documentStorage(() => allocatedIdentityStatement(database, allocationKey).first<{ entity_id: string }>()));
   if (!allocated) throw new Error("Canonical identity allocation was not retained.");
   return allocated.entity_id;
 }
@@ -92,7 +89,7 @@ export async function retainSourceMappings(
     bytes += length + (records.length ? 1 : 0);
     records.push(content);
     cursor.after = entry.key;
-    if (records.length === 4) await flush();
+    if (records.length === 16) await flush();
   }
   cursor.complete = true;
   await flush();

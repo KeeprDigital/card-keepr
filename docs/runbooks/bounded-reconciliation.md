@@ -81,8 +81,9 @@ reads only earlier observation versions and its own writes, so retained later
 observations cannot change earlier identity decisions. This counter counts
 individual effects, not completed work units or a resume cursor.
 
-This implementation checkpoint retains the legacy run-level preparation and
-approval adapter. Game manifests are separate, but their preparation and actions
-still run together. The legacy reducers also reconstruct aggregate metadata.
-Independent game operations and bounded reducer work units remain required for
-#225; these commands and partition bounds do not establish that acceptance.
+Independent game preparation uses `keepr game-candidate create`, `show`,
+`pause`, `resume`, and `abandon`. Each preparation owns its durable progress and
+game slot. The legacy run-level preparation and approval adapter remains for
+compatibility. Both paths use bounded reducers and partitioned retained work;
+see [Reconciliation continuation](reconciliation-workflows.md) for dispatch,
+resource bounds, and the native publication integration boundary.

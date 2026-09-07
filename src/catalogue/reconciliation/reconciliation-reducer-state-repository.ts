@@ -112,6 +112,20 @@ export function nextReducerCardReferenceStatement(
     .bind(preparationId, namespace, group, after, before, before);
 }
 
+export function unknownCardReferencePresentStatement(
+  database: CatalogueStore,
+  preparationId: string,
+  namespace: string,
+  before: number,
+) {
+  return repositoryStatements(database)
+    .prepare(`SELECT 1 AS present FROM reconciliation_reducer_state
+      WHERE preparation_id = ? AND namespace = ? AND observation_ordinal < ?
+        AND group_digest IS NOT NULL AND json_extract(content, '$.value.identity_kind') = 'unknown'
+      LIMIT 1`)
+    .bind(preparationId, namespace, before);
+}
+
 export function nextReducerEntityStateStatement(
   database: CatalogueStore,
   preparationId: string,

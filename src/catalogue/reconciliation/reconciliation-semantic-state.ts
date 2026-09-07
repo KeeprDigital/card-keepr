@@ -80,7 +80,7 @@ export async function prepareSemanticState(
     bytes += size;
   };
   const tick = async () => {
-    if (++work >= 4 || bytes >= 512000) await save();
+    if (++work >= 16 || bytes >= 512000) await save();
   };
   const advance = async (stage: Stage) => {
     cursor.stage = stage;

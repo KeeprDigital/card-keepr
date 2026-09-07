@@ -9,7 +9,7 @@ export function retainObservationOriginStatement(
 ) {
   return repositoryStatements(database)
     .prepare(`INSERT INTO reconciliation_observation_origins (preparation_id, observation_id, observation_set_id, source_ordinal)
-    VALUES (?, ?, ?, ?) ON CONFLICT (preparation_id, observation_id) DO NOTHING`)
+    VALUES (?, ?, ?, ?) ON CONFLICT (preparation_id, observation_id) DO NOTHING RETURNING observation_set_id, source_ordinal`)
     .bind(preparationId, id, setId, ordinal);
 }
 
@@ -39,7 +39,7 @@ export function retainNormalizedObservationStatement(
 ) {
   return repositoryStatements(database)
     .prepare(`INSERT INTO reconciliation_normalized_observations (preparation_id, observation_id, content, sha256, card_erratum_target_digest)
-    VALUES (?, ?, ?, ?, ?) ON CONFLICT (preparation_id, observation_id) DO NOTHING`)
+    VALUES (?, ?, ?, ?, ?) ON CONFLICT (preparation_id, observation_id) DO NOTHING RETURNING content, sha256, card_erratum_target_digest`)
     .bind(preparationId, id, content, sha256, cardErratumTargetDigest);
 }
 
@@ -79,6 +79,13 @@ export function nextNormalizedCardErratumStatement(
     WHERE preparation_id = ? AND card_erratum_target_digest = ? AND (? IS NULL OR observation_id > ?)
     ORDER BY observation_id LIMIT 1`)
     .bind(preparationId, digest, after, after);
+}
+
+export function normalizedCardErrataExistStatement(database: CatalogueStore, preparationId: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT 1 AS present FROM reconciliation_normalized_observations
+      WHERE preparation_id = ? AND card_erratum_target_digest IS NOT NULL LIMIT 1`)
+    .bind(preparationId);
 }
 
 export function normalizedObservationPageStatement(database: CatalogueStore, preparationId: string, after: string) {

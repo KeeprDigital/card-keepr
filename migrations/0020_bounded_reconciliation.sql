@@ -379,6 +379,19 @@ CREATE TRIGGER game_candidate_partition_no_update BEFORE UPDATE ON game_candidat
 BEGIN SELECT RAISE(ABORT, 'game_candidate_partition_immutable'); END;
 CREATE TRIGGER game_candidate_partition_no_delete BEFORE DELETE ON game_candidate_partitions
 BEGIN SELECT RAISE(ABORT, 'game_candidate_partition_audit_retained'); END;
+CREATE TABLE reconciliation_workflow_budgets (
+  preparation_id TEXT NOT NULL REFERENCES reconciliation_operations(id),
+  generation INTEGER NOT NULL CHECK (generation >= 0),
+  shard_ordinal INTEGER NOT NULL CHECK (shard_ordinal >= 0),
+  reserved_calls INTEGER NOT NULL CHECK (reserved_calls BETWEEN 100 AND 4500 AND reserved_calls % 100 = 0),
+  PRIMARY KEY (preparation_id, generation, shard_ordinal)
+);
+CREATE TRIGGER reconciliation_workflow_budget_monotonic BEFORE UPDATE ON reconciliation_workflow_budgets
+WHEN NEW.preparation_id <> OLD.preparation_id OR NEW.generation <> OLD.generation
+  OR NEW.shard_ordinal <> OLD.shard_ordinal OR NEW.reserved_calls <> OLD.reserved_calls + 100
+BEGIN SELECT RAISE(ABORT, 'reconciliation_workflow_budget_monotonic'); END;
+CREATE TRIGGER reconciliation_workflow_budget_no_delete BEFORE DELETE ON reconciliation_workflow_budgets
+BEGIN SELECT RAISE(ABORT, 'reconciliation_workflow_budget_audit_retained'); END;
 CREATE TABLE reconciliation_reducer_state (
   preparation_id TEXT NOT NULL REFERENCES reconciliation_operations(id),
   namespace TEXT NOT NULL,
@@ -390,23 +403,41 @@ CREATE TABLE reconciliation_reducer_state (
   PRIMARY KEY (preparation_id, namespace, key_digest, observation_ordinal)
 );
 CREATE INDEX reconciliation_reducer_state_group
-ON reconciliation_reducer_state (preparation_id, namespace, group_digest, key_digest, observation_ordinal);
+ON reconciliation_reducer_state (preparation_id, namespace, group_digest, key_digest, observation_ordinal)
+WHERE group_digest IS NOT NULL;
 CREATE INDEX reconciliation_reducer_unknown_facts
 ON reconciliation_reducer_state (preparation_id, namespace, group_digest, key_digest, observation_ordinal)
-WHERE json_extract(content, '$.value.identity_kind') = 'unknown';
+WHERE group_digest IS NOT NULL AND json_extract(content, '$.value.identity_kind') = 'unknown';
+CREATE INDEX reconciliation_reducer_unknown_prefix
+ON reconciliation_reducer_state (preparation_id, namespace, observation_ordinal)
+WHERE group_digest IS NOT NULL AND json_extract(content, '$.value.identity_kind') = 'unknown';
 CREATE TRIGGER reconciliation_reducer_state_no_update BEFORE UPDATE ON reconciliation_reducer_state
 BEGIN SELECT RAISE(ABORT, 'reconciliation_reducer_state_immutable'); END;
 CREATE TRIGGER reconciliation_reducer_state_no_delete BEFORE DELETE ON reconciliation_reducer_state
 BEGIN SELECT RAISE(ABORT, 'reconciliation_reducer_state_audit_retained'); END;
 CREATE INDEX reconciliation_source_image_lookup ON source_snapshots (ingestion_run_id, source_lineage, request_url);
 CREATE INDEX reconciliation_reducer_entity_cursor ON reconciliation_reducer_state
-(preparation_id, namespace, json_extract(content, '$.value.id'), observation_ordinal);
+(preparation_id, namespace, json_extract(content, '$.value.id'), observation_ordinal)
+WHERE json_extract(content, '$.value.id') IS NOT NULL;
 CREATE INDEX reconciliation_plan_card ON reconciliation_reducer_state
-(preparation_id, namespace, json_extract(content, '$.value.plan.cardId'), observation_ordinal);
+(preparation_id, namespace, json_extract(content, '$.value.plan.cardId'), observation_ordinal)
+WHERE namespace = 'observation_plans';
 CREATE INDEX reconciliation_plan_printing ON reconciliation_reducer_state
-(preparation_id, namespace, json_extract(content, '$.value.plan.printingId'), observation_ordinal);
+(preparation_id, namespace, json_extract(content, '$.value.plan.printingId'), observation_ordinal)
+WHERE namespace = 'observation_plans';
 CREATE INDEX reconciliation_reducer_insertion_cursor ON reconciliation_reducer_state
 (preparation_id, namespace, observation_ordinal);
+CREATE TABLE reconciliation_canonical_bytes (
+  preparation_id TEXT NOT NULL REFERENCES reconciliation_operations(id),
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  content TEXT NOT NULL CHECK (length(CAST(content AS BLOB)) <= 524288),
+  sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+  PRIMARY KEY (preparation_id, ordinal)
+);
+CREATE TRIGGER reconciliation_canonical_bytes_no_update BEFORE UPDATE ON reconciliation_canonical_bytes
+BEGIN SELECT RAISE(ABORT, 'reconciliation_canonical_bytes_immutable'); END;
+CREATE TRIGGER reconciliation_canonical_bytes_no_delete BEFORE DELETE ON reconciliation_canonical_bytes
+BEGIN SELECT RAISE(ABORT, 'reconciliation_canonical_bytes_audit_retained'); END;
 CREATE TABLE reconciliation_sort_batches (
   preparation_id TEXT NOT NULL REFERENCES reconciliation_operations(id),
   namespace TEXT NOT NULL,

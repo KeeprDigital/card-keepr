@@ -13,7 +13,7 @@ export function allocateIdentityStatement(
     statement: statements
       .prepare(`INSERT INTO canonical_identity_allocations
       (allocation_key, entity_id, entity_kind, allocated_at) VALUES (?, ?, ?, ?)
-      ON CONFLICT(allocation_key) DO NOTHING`)
+      ON CONFLICT(allocation_key) DO NOTHING RETURNING entity_id`)
       .bind(key, id, kind, at),
     before: [identityRunGuard(database, run)],
   });
