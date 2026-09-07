@@ -59,7 +59,7 @@ export async function assertClosedRequestGraph<T extends Evidence, R extends Req
   database: CatalogueStore,
   runId: string,
   inputDigest: string,
-  evidenceAfter: (after?: After) => AsyncIterable<{ request: R; row: T }>,
+  evidenceAfter: (after?: After) => AsyncIterable<{ request: R; row: T | null }>,
   loadDocument: (row: T) => Promise<Document>,
   requestById: (id: string) => Promise<R | undefined>,
   yieldAtCheckpoint: boolean,
@@ -158,6 +158,11 @@ export async function assertClosedRequestGraph<T extends Evidence, R extends Req
   if (cursor.stage === "gundam_requests") {
     for await (const { request, row } of evidenceAfter(cursor.after ?? undefined)) {
       beginRequest(request);
+      if (row === null) {
+        cursor.after!.complete = true;
+        await tick();
+        continue;
+      }
       if (adapterForVersion(row.adapter_version).listingReconciliation?.groupsPublisherPages === true) {
         const document = await loadDocument(row);
         while (cursor.observation < document.observationCount) {
@@ -212,6 +217,11 @@ export async function assertClosedRequestGraph<T extends Evidence, R extends Req
   if (cursor.stage === "requests") {
     for await (const { request, row } of evidenceAfter(cursor.after ?? undefined)) {
       beginRequest(request);
+      if (row === null) {
+        cursor.after!.complete = true;
+        await tick();
+        continue;
+      }
       const adapter = adapterForVersion(row.adapter_version);
       const document = await loadDocument(row);
       if (!cursor.headerComplete) {

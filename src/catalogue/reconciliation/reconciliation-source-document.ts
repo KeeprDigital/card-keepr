@@ -49,7 +49,7 @@ export async function prepareSourceDocuments<T extends SourceRow>(
   inputDigest: string,
   evidenceAfter: (after?: { sequenceNumber: number; requestId: string; complete?: boolean }) => AsyncIterable<{
     request: { sequence_number: number; request_id: string };
-    row: T;
+    row: T | null;
   }>,
   validate: (row: T, values: Record<string, unknown>, observations: number) => void,
   yieldAtCheckpoint: boolean,
@@ -57,7 +57,21 @@ export async function prepareSourceDocuments<T extends SourceRow>(
   const checkpoint = await reconciliationCheckpoint<Cursor>(database, runId, "source_documents");
   if (checkpoint && checkpoint.value.inputDigest !== inputDigest) throw new Error("Source document selection changed.");
   let ordinal = (checkpoint?.ordinal ?? -1) + 1;
+  const saveCursor = async (cursor: Cursor) => {
+    await retainReconciliationCheckpoint(database, runId, "source_documents", ordinal, cursor);
+    if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "source_documents", ordinal });
+    ordinal++;
+  };
+  let skipped: Cursor | null = null;
+  let skippedCount = 0;
   for await (const { request, row } of evidenceAfter(checkpoint?.value)) {
+    // Preserve progress through unavailable selections before spending a document's
+    // own callback budget. Their verified selection still participates in ordering.
+    if (row !== null && skipped !== null) {
+      await saveCursor(skipped);
+      skipped = null;
+      skippedCount = 0;
+    }
     const cursor: Cursor =
       checkpoint?.value.requestId === request.request_id && !checkpoint.value.complete
         ? checkpoint.value
@@ -75,11 +89,17 @@ export async function prepareSourceDocuments<T extends SourceRow>(
             values: {},
             observations: 0,
           };
-    const save = async () => {
-      await retainReconciliationCheckpoint(database, runId, "source_documents", ordinal, cursor);
-      if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "source_documents", ordinal });
-      ordinal++;
-    };
+    const save = () => saveCursor(cursor);
+    if (row === null) {
+      cursor.complete = true;
+      skipped = cursor;
+      if (++skippedCount === 16) {
+        await save();
+        skipped = null;
+        skippedCount = 0;
+      }
+      continue;
+    }
     if (cursor.stage === "bytes") {
       const hash = new StreamingSha256(cursor.hash);
       let chunksInUnit = 0;
@@ -190,6 +210,7 @@ export async function prepareSourceDocuments<T extends SourceRow>(
     cursor.complete = true;
     await save();
   }
+  if (skipped !== null) await saveCursor(skipped);
 }
 
 async function verifyStored(

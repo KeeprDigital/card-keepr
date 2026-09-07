@@ -63,3 +63,31 @@ The branch includes the unchanged Limitless registration migration 0025 from
 passes the actual `23 → 25 → 26` chain. Integration must reconcile migration
 ordering and guards against current main, including the separately owned cleanup
 migration; it must not weaken predecessor checks.
+
+## Paused document preparation and bounded gap regression
+
+Frozen commit `c432427`, 8 September 2026 Melbourne time, completed collection
+with exactly 1,197 requests: 14 observed retained bodies and 1,183 injected image
+404s. No requests remained pending. Initial candidate preparation then paused
+with `ReconciliationDocumentStorageError`; the run was stopped at that first
+confirmed defect and its SQLite/R2 state preserved. It did not reach owner
+admissions, publication, API/export assertions or restoration.
+
+A runtime-free reproduction invoked the shipped retained-evidence preparer and
+its actual 100-call resource wrapper against copies of that state. The underlying
+cause was `Reconciliation callback exceeds 100 calls.` After retained request
+sequence 13, the next retained document was at sequence 106. Reading each
+unavailable image selection consumed the callback budget before document
+preparation could checkpoint. Retried callbacks repeated the same traversal.
+
+Document preparation now checkpoints unavailable selections in bounded groups
+and saves a partial gap before processing the next document. Graph verification
+and normalization likewise retain progress through these gaps. Selection order,
+selection integrity verification and the 100-call ceiling remain intact. The
+original failing callback now yields after 23 SQLite calls; the saved-state
+reproduction continued through document preparation, graph verification and
+normalization to input preparation. This local reproduction used SQLite and a
+small R2 interface over copied retained bytes, including multipart images; it is
+not a native Workflow or publication/recovery pass. Focused regressions cover
+long gaps, terminal cursors, a partial gap before a document, and graph-stage
+progress. Another native run remains required.

@@ -137,14 +137,17 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   assert.equal(resumed.code, 0, resumed.stderr);
   await waitForAdministrationDocument(
     `/v1/ingestion-runs/${run.id}/evidence`,
-    (d) => d.state === "parsing" || (d.state === "failed" ? JSON.stringify(d) : false),
+    (d) => d.state === "parsing" || (["failed", "paused"].includes(d.state) ? JSON.stringify(d) : false),
     environment,
     worker,
     { deadlineMs: 600_000 },
   );
   await waitForAdministrationDocument(
     `/v1/ingestion-runs/${run.id}/game-candidates`,
-    (d) => d.candidates.length > 0 && d.candidates.every((c) => ["sealed", "failed"].includes(c.state)),
+    (d) =>
+      d.candidates.some((c) => c.state === "paused")
+        ? JSON.stringify(d)
+        : d.candidates.length > 0 && d.candidates.every((c) => ["sealed", "failed"].includes(c.state)),
     environment,
     worker,
     { deadlineMs: 600_000 },
@@ -346,7 +349,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   ]);
   const candidate = await waitForAdministrationDocument(
     `/v1/game-candidates/${prepared.id}`,
-    (d) => d.state === "sealed" || (d.state === "failed" ? JSON.stringify(d) : false),
+    (d) => d.state === "sealed" || (["failed", "paused"].includes(d.state) ? JSON.stringify(d) : false),
     environment,
     worker,
     { deadlineMs: 600_000 },
@@ -485,7 +488,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   ]);
   const refreshedCandidate = await waitForAdministrationDocument(
     `/v1/game-candidates/${refresh.id}`,
-    (d) => d.state === "sealed" || (d.state === "failed" ? JSON.stringify(d) : false),
+    (d) => d.state === "sealed" || (["failed", "paused"].includes(d.state) ? JSON.stringify(d) : false),
     environment,
     worker,
     { deadlineMs: 600_000 },
@@ -537,7 +540,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   const freshCollection = await waitForAdministrationDocument(
     `/v1/ingestion-runs/${fresh.id}/game-candidates`,
     (d) =>
-      d.candidates.some((c) => c.state === "failed")
+      d.candidates.some((c) => ["failed", "paused"].includes(c.state))
         ? JSON.stringify(d)
         : d.candidates.length === 1 && d.candidates[0].state === "sealed",
     environment,
