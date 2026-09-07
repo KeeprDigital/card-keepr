@@ -1,5 +1,5 @@
 import { AdministrationProblem, type CatalogueStore, sha256Text } from "../shared";
-import { inspectEvidenceCleanup } from "./evidence-cleanup";
+import { inspectEvidenceCleanup, matchingCleanupIntent, type Cleanup } from "./evidence-cleanup";
 import {
   cleanupByKey,
   cleanupResultStatements,
@@ -32,12 +32,8 @@ export async function beginStagingCleanup(
   const retention = days === undefined ? 30 : days;
   if (typeof retention !== "number" || !Number.isSafeInteger(retention) || retention < 1 || retention > 36500)
     throw new AdministrationProblem(422, "invalid_parameter", "retention_days must be an integer from 1 to 36500.");
-  const prior = await cleanupByKey(db, key).first<{ id: string; preparation_id: string; retention_days: number }>();
-  if (prior) {
-    if (prior.preparation_id !== preparation || prior.retention_days !== retention)
-      throw new AdministrationProblem(409, "idempotency_conflict", "Cleanup intent differs from its retained request.");
-    return inspectEvidenceCleanup(db, prior.id);
-  }
+  const prior = await cleanupByKey(db, key).first<Cleanup>();
+  if (prior) return matchingCleanupIntent(prior, "staging", preparation, retention);
   const owner = await stagingPreparation(db, preparation).first<{ terminal_at: string | null; state: string }>();
   if (!owner) throw new AdministrationProblem(404, "reconciliation_not_found", "Preparation was not found.");
   if (
@@ -52,7 +48,7 @@ export async function beginStagingCleanup(
     );
   const id = `cleanup_${await sha256Text(key)}`;
   await insertStagingCleanup(db, id, preparation, key, retention, at).run();
-  return inspectEvidenceCleanup(db, id);
+  return matchingCleanupIntent(await inspectEvidenceCleanup(db, id), "staging", preparation, retention);
 }
 
 export async function advanceStagingCleanup(

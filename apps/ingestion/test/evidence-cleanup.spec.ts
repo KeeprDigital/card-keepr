@@ -619,3 +619,26 @@ test("the production system clock ignores an owner supplied future deletion time
   expect(response.status).toBe(409);
   expect(await response.json()).toMatchObject({ code: "evidence_cleanup_not_eligible" });
 });
+
+test.each(["capture", "staging"] as const)(
+  "concurrent conflicting %s starts cannot silently share an idempotency key",
+  async (scope) => {
+    for (const owner of ["cleanup_race_one", "cleanup_race_two"]) {
+      if (scope === "capture") await terminalRun(owner);
+      else await abandonedStaging(owner, `publication-artifacts/${owner}`);
+    }
+    const replies = await Promise.all(
+      ["cleanup_race_one", "cleanup_race_two"].map((owner) =>
+        request(
+          scope === "capture"
+            ? `/v1/ingestion-runs/${owner}/evidence-cleanup`
+            : `/v1/reconciliation-operations/${owner}/evidence-cleanup`,
+          "2026-10-09T00:00:00.000Z",
+          { idempotency_key: "cleanup_race" },
+        ),
+      ),
+    );
+    expect(replies.map((reply) => reply.status).sort()).toEqual([202, 409]);
+    expect(await replies.find((reply) => reply.status === 409)!.json()).toMatchObject({ code: "idempotency_conflict" });
+  },
+);

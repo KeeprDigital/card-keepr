@@ -97,3 +97,9 @@ The local tests use explicitly synthetic fixtures and injected failures. The
 native recovery test imports an actual SQLite snapshot and checks reclaimed
 content denial after acceptance. Neither proves live cleanup, complete-game
 capacity, CPU/memory cost or an SLA.
+
+Recovery admission also waits for unresolved source and staging writers. An
+older snapshot must not erase a ticket for a storage call that may still finish.
+This check belongs to original recovery reservation; rehydration preserves the
+chosen snapshot's conservative ticket state. A rejected storage response or an
+absent HEAD never clears that writer.

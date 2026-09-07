@@ -50,11 +50,7 @@ export async function beginEvidenceCleanup(db: CatalogueStore, run: string, key:
   if (typeof retention !== "number" || !Number.isInteger(retention) || retention < 1 || retention > 36500)
     throw new AdministrationProblem(422, "invalid_parameter", "retention_days must be an integer from 1 to 36500.");
   const prior = await cleanupByKey(db, key).first<Cleanup>();
-  if (prior) {
-    if (prior.scope !== "capture" || prior.ingestion_run_id !== run || prior.retention_days !== retention)
-      throw new AdministrationProblem(409, "idempotency_conflict", "Cleanup intent differs from its retained request.");
-    return prior;
-  }
+  if (prior) return matchingCleanupIntent(prior, "capture", run, retention);
   const source = await cleanupRun(db, run).first<{ state: string; terminal_at: string | null }>();
   if (!source) throw new AdministrationProblem(404, "ingestion_run_not_found", "The Ingestion Run was not found.");
   const eligible = source.terminal_at
@@ -68,7 +64,7 @@ export async function beginEvidenceCleanup(db: CatalogueStore, run: string, key:
     );
   const id = `cleanup_${await sha256Text(key)}`;
   await insertCleanup(db, id, run, key, retention, source.terminal_at!, eligible, at).run();
-  return inspectEvidenceCleanup(db, id);
+  return matchingCleanupIntent(await inspectEvidenceCleanup(db, id), "capture", run, retention);
 }
 /** One unit performs at most four metadata/deletion transactions and never reads object bodies. */
 export async function advanceEvidenceCleanup(db: CatalogueStore, bucket: R2Bucket, id: string, at: string) {
@@ -104,15 +100,13 @@ export async function advanceEvidenceCleanup(db: CatalogueStore, bucket: R2Bucke
       multipart_upload_id: string | null;
     }>();
     if (writer) {
-      let settled = false;
+      let settled = (await bucket.head(next.object_key))?.customMetadata?.cleanup_writer_token === writer.token;
       if (!settled && writer.multipart_upload_id) {
         // Abort completion is a storage acknowledgement, not a lease timeout.
         // Once it succeeds this exact upload can no longer complete later.
         await bucket.resumeMultipartUpload(next.object_key, writer.multipart_upload_id).abort();
         settled = true;
       }
-      if (!settled)
-        settled = (await bucket.head(next.object_key))?.customMetadata?.cleanup_writer_token === writer.token;
       if (settled) await completeEvidenceObjectWrite(db, writer.token, at).run();
       else {
         await db.batch(
@@ -191,4 +185,20 @@ export async function resumeEvidenceCleanup(db: CatalogueStore, id: string, gene
 export async function pauseEvidenceCleanup(db: CatalogueStore, id: string, generation: number, code: string) {
   await pauseCleanup(db, id, code, generation).run();
   return inspectEvidenceCleanup(db, id);
+}
+
+/** Validate the persisted winner both for an early replay and an INSERT race. */
+export function matchingCleanupIntent(
+  intent: Cleanup,
+  scope: Cleanup["scope"],
+  owner: string,
+  retention: number,
+): Cleanup {
+  if (
+    intent.scope !== scope ||
+    (scope === "capture" ? intent.ingestion_run_id : intent.preparation_id) !== owner ||
+    intent.retention_days !== retention
+  )
+    throw new AdministrationProblem(409, "idempotency_conflict", "Cleanup intent differs from its retained request.");
+  return intent;
 }

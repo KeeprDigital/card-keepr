@@ -960,3 +960,106 @@ async function currentSchemaMigrationLevel(): Promise<number> {
   if (state === null) throw new Error("Catalogue schema state is unavailable.");
   return state.migration_level;
 }
+
+// Focused concurrency seam: the legacy backup/provider fixture above isolates
+// original admission. Native SQL export/import recovery is covered separately.
+test("recovery cannot discard a post-backup staging write ticket while its R2 call is held", async () => {
+  const { seedRunFixtureStatement } = await import("./query-helpers/run-events");
+  const { trackedStagingBucket } = await import("../../../src/catalogue/shared");
+  await seedRunFixtureStatement(testEnv.CATALOGUE_DB, {
+    id: "recovery-writer",
+    state: "failed",
+    failure_code: "synthetic_failure",
+  }).run();
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO reconciliation_operations(id,ingestion_run_id,state,created_at,deadline,definition_pins_json,observation_cutoff,identity_decision_cutoff,authority_decision_cutoff) VALUES ('recovery-writer','recovery-writer','preparing','2026-09-01T00:00:00.000Z','2026-09-08T00:00:00.000Z','{}',0,0,0)`,
+  ).run();
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const bucket = new Proxy(testEnv.CATALOGUE_EXPORTS, {
+    get(target, property) {
+      if (property === "put")
+        return async (...args: Parameters<R2Bucket["put"]>) => {
+          entered();
+          await held;
+          return target.put(...args);
+        };
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const writing = trackedStagingBucket(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    bucket,
+    "CATALOGUE_EXPORTS",
+    "recovery-writer",
+  ).put("publication-artifacts/recovery-held", "held");
+  await started;
+  try {
+    await expect(
+      beginCatalogueRecovery(
+        catalogueStore(testEnv.CATALOGUE_DB),
+        testEnv.BACKUPS,
+        recoveryInput("recovery-held", "begin-recovery-held"),
+        recoveryProvider(),
+      ),
+    ).rejects.toMatchObject({ code: "recovery_writer_unsettled" });
+    expect(
+      await testEnv.CATALOGUE_DB.prepare(
+        "SELECT completed_at FROM staging_object_writes WHERE preparation_id='recovery-writer'",
+      ).first(),
+    ).toMatchObject({ completed_at: null });
+    expect(
+      await testEnv.CATALOGUE_DB.prepare("SELECT recovery_restore_guard FROM operation_state").first(),
+    ).toMatchObject({ recovery_restore_guard: "clear" });
+  } finally {
+    release();
+    await writing;
+  }
+  await expect(
+    beginCatalogueRecovery(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      testEnv.BACKUPS,
+      recoveryInput("recovery-held", "begin-recovery-held"),
+      recoveryProvider(),
+    ),
+  ).resolves.toMatchObject({ state: "validating" });
+});
+
+test("an ambiguous source writer prevents recovery despite absent bytes and elapsed time", async () => {
+  const { seedRunFixtureStatement } = await import("./query-helpers/run-events");
+  const { beginEvidenceObjectWrite } = await import(
+    "../../../src/catalogue/source-evidence/evidence-cleanup-repository"
+  );
+  await seedRunFixtureStatement(testEnv.CATALOGUE_DB, {
+    id: "recovery-unknown-writer",
+    state: "failed",
+    failure_code: "synthetic_failure",
+  }).run();
+  await beginEvidenceObjectWrite(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    "unknown-source-writer",
+    "recovery-unknown-writer",
+    "source-snapshots/unknown-recovery.bin",
+    "2026-01-01T00:00:00.000Z",
+  ).run();
+  expect(await testEnv.EVIDENCE_OBJECTS.head("source-snapshots/unknown-recovery.bin")).toBeNull();
+  await expect(
+    beginCatalogueRecovery(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      testEnv.BACKUPS,
+      { ...recoveryInput("recovery-unknown", "begin-recovery-unknown"), observedAt: "2027-09-01T00:00:00.000Z" },
+      recoveryProvider(),
+    ),
+  ).rejects.toMatchObject({ code: "recovery_writer_unsettled" });
+  expect(
+    await testEnv.CATALOGUE_DB.prepare(
+      "SELECT completed_at FROM evidence_object_writers WHERE token='unknown-source-writer'",
+    ).first(),
+  ).toMatchObject({ completed_at: null });
+});

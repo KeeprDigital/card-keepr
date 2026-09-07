@@ -23,7 +23,11 @@ export function guardRecoveryStartStatement(
   input: Readonly<{ expectedCurrentRevisionId: string; observedAt: string; linkedOperationId: string | null }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT CASE WHEN EXISTS (
+    .prepare(`SELECT CASE
+         WHEN EXISTS(SELECT 1 FROM evidence_object_writers WHERE completed_at IS NULL)
+           OR EXISTS(SELECT 1 FROM staging_object_writes WHERE completed_at IS NULL)
+         THEN json_extract('{}','recovery_writer_unsettled')
+         WHEN EXISTS (
            SELECT 1 FROM catalogue_state AS catalogue
            JOIN operation_state AS operation ON operation.singleton = 1
            WHERE catalogue.singleton = 1
