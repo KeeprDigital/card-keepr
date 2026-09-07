@@ -260,3 +260,13 @@ covers pacing, package reuse, explicit cache clearing, and rejection of HTTP429;
 a failed download is not cached as success. The retained-published path also
 recognizes a verified backup and proceeds without allocating or resuming a
 backup attempt. The remaining consumer and restore assertions still await proof.
+
+A further offline continuation check found that the local checkpoint provider's
+in-memory import generation restarted at zero, which would reopen an existing
+`restore-1.sqlite` on the next publication. It now selects a generation above
+retained import files and reserves the new file exclusively, advancing past
+allocation collisions. The actual SQLite regression reproduces the old identity
+reuse and verifies restart, a retained generation gap, concurrent allocation of
+distinct files, and preservation of earlier imported contents. This preserves
+the terminal verified import while later publications obtain fresh independent
+verification databases; it is a fixture correction, not a production migration.

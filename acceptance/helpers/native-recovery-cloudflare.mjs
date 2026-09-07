@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { nativeSqliteExport } from "./native-sqlite-export.mjs";
-import { readdir } from "node:fs/promises";
+import { open, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { unstable_splitSqlQuery } from "wrangler";
@@ -120,9 +120,23 @@ export function nativeRecoveryCloudflare({ databaseDirectory, directory }) {
         return success(targetId ? [{ uuid: targetId, name: "card-keepr-disposable-verification" }] : []);
       if (request.method === "POST" && url.pathname.endsWith("/database")) {
         target?.close();
-        generation++;
-        targetId = `00000000-0000-4000-8000-${String(generation).padStart(12, "0")}`;
-        target = new DatabaseSync(join(directory, `restore-${generation}.sqlite`));
+        const retainedGenerations = (await readdir(directory))
+          .filter((name) => /^restore-[0-9]+\.sqlite$/.test(name))
+          .map((name) => Number(name.match(/[0-9]+/)[0]));
+        let allocatedGeneration = Math.max(generation, ...retainedGenerations) + 1;
+        for (;;) {
+          try {
+            const reserved = await open(join(directory, `restore-${allocatedGeneration}.sqlite`), "wx");
+            await reserved.close();
+            break;
+          } catch (error) {
+            if (error.code !== "EEXIST") throw error;
+            allocatedGeneration++;
+          }
+        }
+        generation = Math.max(generation, allocatedGeneration);
+        targetId = `00000000-0000-4000-8000-${String(allocatedGeneration).padStart(12, "0")}`;
+        target = new DatabaseSync(join(directory, `restore-${allocatedGeneration}.sqlite`));
         return success({ uuid: targetId });
       }
       throw new Error(`Unexpected native Cloudflare request ${request.method} ${url}`);
