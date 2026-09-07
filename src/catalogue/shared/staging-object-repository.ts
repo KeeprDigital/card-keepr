@@ -28,3 +28,16 @@ export function finishStagingWrite(db: CatalogueStore, token: string, at: string
     .prepare(`UPDATE staging_object_writes SET completed_at=? WHERE token=? AND completed_at IS NULL`)
     .bind(at, token);
 }
+
+export function finishObservedStagingWrite(
+  db: CatalogueStore,
+  binding: StagingBinding,
+  key: string,
+  token: string,
+  at: string,
+) {
+  return repositoryStatements(db)
+    .prepare(`UPDATE staging_object_writes SET completed_at=? WHERE token=? AND binding=? AND object_key=? AND completed_at IS NULL
+ AND incarnation=(SELECT incarnation FROM staging_objects WHERE binding=? AND object_key=?)`)
+    .bind(at, token, binding, key, binding, key);
+}

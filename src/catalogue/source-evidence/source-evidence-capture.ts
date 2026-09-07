@@ -1,6 +1,7 @@
 import {
   beginEvidenceObjectWrite,
   completeEvidenceObjectWrite,
+  completeObservedEvidenceWrite,
   retainEvidenceMultipart,
 } from "./evidence-cleanup-repository";
 import { createHash } from "node:crypto";
@@ -740,6 +741,15 @@ async function recoverCompletedUpload(
     byteLength += read.value.byteLength;
     hash.update(read.value);
   }
+  const observedToken = object.customMetadata?.cleanup_writer_token;
+  if (observedToken)
+    await completeObservedEvidenceWrite(
+      database,
+      observedToken,
+      operation.ingestion_run_id,
+      operation.content_object_key,
+      new Date().toISOString(),
+    ).run();
   await uploadedCaptureContentStatement(database, {
     digest: hash.digest("hex"),
     byteLength: byteLength,

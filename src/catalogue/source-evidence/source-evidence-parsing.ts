@@ -1,4 +1,8 @@
-import { beginEvidenceObjectWrite, completeEvidenceObjectWrite } from "./evidence-cleanup-repository";
+import {
+  beginEvidenceObjectWrite,
+  completeEvidenceObjectWrite,
+  completeObservedEvidenceWrite,
+} from "./evidence-cleanup-repository";
 import { MissingObjectError } from "../shared";
 import {
   AdapterParseFailure,
@@ -151,7 +155,21 @@ export async function parseSnapshot(
       operation.content_object_key,
       new Date().toISOString(),
     ).run();
-    await putImmutableBytes(evidenceObjects, operation.content_object_key, observationBytes, digest, writeToken);
+    const observedToken = await putImmutableBytes(
+      evidenceObjects,
+      operation.content_object_key,
+      observationBytes,
+      digest,
+      writeToken,
+    );
+    if (observedToken && observedToken !== writeToken)
+      await completeObservedEvidenceWrite(
+        database,
+        observedToken,
+        snapshot.ingestion_run_id,
+        operation.content_object_key,
+        new Date().toISOString(),
+      ).run();
     await completeEvidenceObjectWrite(database, writeToken, new Date().toISOString()).run();
     await uploadedParseStatement(database, {
       digest: digest,
@@ -453,11 +471,11 @@ async function putImmutableBytes(
   bytes: Uint8Array,
   digest: string,
   writeToken: string,
-): Promise<void> {
+): Promise<string | undefined> {
   const existing = await bucket.head(key);
   if (existing !== null) {
     assertMatchingObject(existing, bytes, digest);
-    return;
+    return existing.customMetadata?.cleanup_writer_token;
   }
   const stored = await bucket.put(key, bytes, {
     onlyIf: { etagDoesNotMatch: "*" },
@@ -467,10 +485,11 @@ async function putImmutableBytes(
     },
     customMetadata: { sha256: digest, cleanup_writer_token: writeToken },
   });
-  if (stored !== null) return;
+  if (stored !== null) return writeToken;
   const concurrent = await bucket.head(key);
   if (concurrent === null) throw new Error("Immutable evidence write conflict");
   assertMatchingObject(concurrent, bytes, digest);
+  return concurrent.customMetadata?.cleanup_writer_token;
 }
 
 function assertMatchingObject(object: R2Object, bytes: Uint8Array, digest: string): void {

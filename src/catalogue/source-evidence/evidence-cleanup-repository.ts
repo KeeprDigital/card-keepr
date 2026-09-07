@@ -191,3 +191,12 @@ function cleanupOwnerIntegrity(db: CatalogueStore, key: string) {
  ) THEN json_extract('{}','ingestion_run_projection_mismatch') ELSE 1 END`)
     .bind(key);
 }
+
+/** Storage metadata acknowledges only its exact registered physical writer. */
+export function completeObservedEvidenceWrite(db: CatalogueStore, token: string, run: string, key: string, at: string) {
+  return repositoryStatements(db)
+    .prepare(
+      `UPDATE evidence_object_writers SET completed_at=? WHERE token=? AND ingestion_run_id=? AND object_key=? AND completed_at IS NULL`,
+    )
+    .bind(at, token, run, key);
+}

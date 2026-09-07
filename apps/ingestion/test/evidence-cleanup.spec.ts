@@ -642,3 +642,45 @@ test.each(["capture", "staging"] as const)(
     expect(await replies.find((reply) => reply.status === 409)!.json()).toMatchObject({ code: "idempotency_conflict" });
   },
 );
+
+test("staging retry settles only the writer token actually observed in object metadata", async () => {
+  await activeStaging("staging_lost_response");
+  const { catalogueStore, trackedStagingBucket } = await import("../../../src/catalogue/shared");
+  const key = "publication-artifacts/lost-put";
+  const bucket = new Proxy(env.CATALOGUE_EXPORTS, {
+    get(target, property) {
+      if (property === "put")
+        return async (...args: Parameters<R2Bucket["put"]>) => {
+          await target.put(...args);
+          throw new Error("synthetic lost put response");
+        };
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  await expect(
+    trackedStagingBucket(catalogueStore(env.CATALOGUE_DB), bucket, "CATALOGUE_EXPORTS", "staging_lost_response").put(
+      key,
+      "same bytes",
+      { onlyIf: { etagDoesNotMatch: "*" } },
+    ),
+  ).rejects.toThrow("synthetic lost put response");
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO staging_object_writes VALUES ('unrelated-lost-writer','staging_lost_response','CATALOGUE_EXPORTS',?,0,'2026-09-08T00:00:00.000Z',NULL)`,
+  )
+    .bind(key)
+    .run();
+  await trackedStagingBucket(
+    catalogueStore(env.CATALOGUE_DB),
+    env.CATALOGUE_EXPORTS,
+    "CATALOGUE_EXPORTS",
+    "staging_lost_response",
+  ).put(key, "same bytes", { onlyIf: { etagDoesNotMatch: "*" } });
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      "SELECT token FROM staging_object_writes WHERE object_key=? AND completed_at IS NULL",
+    )
+      .bind(key)
+      .all(),
+  ).toMatchObject({ results: [{ token: "unrelated-lost-writer" }] });
+});
