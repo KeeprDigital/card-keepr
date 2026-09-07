@@ -13,7 +13,8 @@
     "export_created_at",
     "supported_games",
     "components",
-    "manifest_sha256"
+    "manifest_sha256",
+    "page"
   ],
   "properties": {
     "format": {
@@ -57,48 +58,29 @@
     },
     "components": {
       "type": "array",
-      "minItems": 10,
-      "maxItems": 11,
+      "maxItems": 4,
       "uniqueItems": true,
-      "prefixItems": [
-        {
-          "$ref": "#/$defs/SupportedGamesComponent"
-        },
-        {
-          "$ref": "#/$defs/GameProfilesComponent"
-        },
-        {
-          "$ref": "#/$defs/CardsComponent"
-        },
-        {
-          "$ref": "#/$defs/PrintingsComponent"
-        },
-        {
-          "$ref": "#/$defs/PrintingImagesComponent"
-        },
-        {
-          "$ref": "#/$defs/ProductsComponent"
-        },
-        {
-          "$ref": "#/$defs/ReleasesComponent"
-        },
-        {
-          "$ref": "#/$defs/DistributionContextsComponent"
-        },
-        {
-          "$ref": "#/$defs/ErrataComponent"
-        },
-        {
-          "$ref": "#/$defs/RelationshipsComponent"
-        },
-        {
-          "$ref": "#/$defs/IdentityCorrectionsComponent"
-        }
-      ],
-      "items": false
+      "items": {
+        "$ref": "#/$defs/Component"
+      }
     },
     "manifest_sha256": {
       "$ref": "#/$defs/Sha256"
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "next_cursor"
+      ],
+      "properties": {
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     }
   },
   "$defs": {
@@ -133,16 +115,17 @@
         "media_type",
         "compression",
         "record_schema",
-        "order",
         "records",
         "uncompressed_bytes",
         "content_sha256",
         "compressed_bytes",
-        "compressed_sha256"
+        "compressed_sha256",
+        "kind"
       ],
       "properties": {
         "name": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^(one-piece|fusion-world|digimon|gundam)\\.(0|[1-9][0-9]*)$"
         },
         "media_type": {
           "const": "application/x-ndjson"
@@ -151,18 +134,22 @@
           "const": "gzip"
         },
         "record_schema": {
-          "type": "string",
-          "format": "uri-reference"
-        },
-        "order": {
           "enum": [
-            "id:utf8",
-            "profile:utf8"
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/SupportedGameRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/GameProfileRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/CardRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/PrintingRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/PrintingImageRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/ProductRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/ReleaseRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/DistributionContextRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/ErratumRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/RelationshipRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/IdentityCorrectionRecord"
           ]
         },
         "records": {
-          "type": "integer",
-          "minimum": 0
+          "const": 1
         },
         "uncompressed_bytes": {
           "type": "integer",
@@ -177,239 +164,23 @@
         },
         "compressed_sha256": {
           "$ref": "#/$defs/Sha256"
+        },
+        "kind": {
+          "enum": [
+            "supported-games",
+            "game-profiles",
+            "cards",
+            "printings",
+            "printing-images",
+            "products",
+            "releases",
+            "distribution-contexts",
+            "errata",
+            "relationships",
+            "identity-corrections"
+          ]
         }
       }
-    },
-    "SupportedGamesComponent": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/Component"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "name": {
-              "const": "supported-games"
-            },
-            "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/SupportedGameRecord"
-            },
-            "order": {
-              "const": "id:utf8"
-            }
-          }
-        }
-      ]
-    },
-    "GameProfilesComponent": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/Component"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "name": {
-              "const": "game-profiles"
-            },
-            "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/GameProfileRecord"
-            },
-            "order": {
-              "const": "profile:utf8"
-            }
-          }
-        }
-      ]
-    },
-    "CardsComponent": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/Component"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "name": {
-              "const": "cards"
-            },
-            "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/CardRecord"
-            },
-            "order": {
-              "const": "id:utf8"
-            }
-          }
-        }
-      ]
-    },
-    "PrintingsComponent": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/Component"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "name": {
-              "const": "printings"
-            },
-            "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/PrintingRecord"
-            },
-            "order": {
-              "const": "id:utf8"
-            }
-          }
-        }
-      ]
-    },
-    "PrintingImagesComponent": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/Component"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "name": {
-              "const": "printing-images"
-            },
-            "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/PrintingImageRecord"
-            },
-            "order": {
-              "const": "id:utf8"
-            }
-          }
-        }
-      ]
-    },
-    "ProductsComponent": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/Component"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "name": {
-              "const": "products"
-            },
-            "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/ProductRecord"
-            },
-            "order": {
-              "const": "id:utf8"
-            }
-          }
-        }
-      ]
-    },
-    "ReleasesComponent": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/Component"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "name": {
-              "const": "releases"
-            },
-            "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/ReleaseRecord"
-            },
-            "order": {
-              "const": "id:utf8"
-            }
-          }
-        }
-      ]
-    },
-    "DistributionContextsComponent": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/Component"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "name": {
-              "const": "distribution-contexts"
-            },
-            "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/DistributionContextRecord"
-            },
-            "order": {
-              "const": "id:utf8"
-            }
-          }
-        }
-      ]
-    },
-    "ErrataComponent": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/Component"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "name": {
-              "const": "errata"
-            },
-            "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/ErratumRecord"
-            },
-            "order": {
-              "const": "id:utf8"
-            }
-          }
-        }
-      ]
-    },
-    "RelationshipsComponent": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/Component"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "name": {
-              "const": "relationships"
-            },
-            "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/RelationshipRecord"
-            },
-            "order": {
-              "const": "id:utf8"
-            }
-          }
-        }
-      ]
-    },
-    "IdentityCorrectionsComponent": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/Component"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "name": {
-              "const": "identity-corrections"
-            },
-            "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/IdentityCorrectionRecord"
-            },
-            "order": {
-              "const": "id:utf8"
-            }
-          }
-        }
-      ]
     }
   }
 }

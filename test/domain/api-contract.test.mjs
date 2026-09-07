@@ -195,9 +195,7 @@ test("the Catalogue Export schema carries typed Product and Release facts withou
   assert.equal(exportSchema.$defs.ReleaseRecord.required.includes("event_key"), true);
   assert.equal(exportSchema.$defs.ReleaseRecord.required.includes("status"), true);
   assert.ok(
-    exportManifest.$defs.ReleasesComponent.allOf[1].properties.record_schema.const.includes(
-      "catalogue-export-record@5",
-    ),
+    exportManifest.$defs.Component.properties.record_schema.enum.includes(`${exportSchema.$id}#/$defs/ReleaseRecord`),
   );
   for (const definition of ["PrintingProductProjection", "PrintingDistributionContextProjection"]) {
     assert.equal(Object.hasOwn(exportSchema.$defs[definition].properties, "source_observation_ids"), false);

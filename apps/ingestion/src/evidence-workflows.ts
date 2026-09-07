@@ -1,5 +1,6 @@
+import { snapshotRecoveryWait } from "./snapshot-recovery-wait";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
-import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
+import { installedSourceAdapterRegistrations, requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import {
   type CatalogueStore,
   canonicalJson,
@@ -73,7 +74,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
     step: WorkflowStep,
   ): Promise<unknown> {
     try {
-      const operational = observeOperationalWorkflow(step, event, this.env);
+      const operational = observeOperationalWorkflow(snapshotRecoveryWait(this.env, step), event, this.env);
       this.env = operational.env;
       step = observeWorkflowProgress(operational.step, (progress) =>
         recordIngestionWorkflowProgress(
@@ -276,7 +277,11 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
         if (
           run.state === "parsing" &&
           run.plan_origin === "production" &&
-          requiredSourceAdapter(run.adapter_version).reconciliationCapability === "catalogue"
+          (requiredSourceAdapter(run.adapter_version).reconciliationCapability === "catalogue" ||
+            installedSourceAdapterRegistrations.some(
+              (adapter) =>
+                adapter.adapterVersion === run.adapter_version && adapter.reconciliationCapability === "errata",
+            ))
         ) {
           return await this.prepareCollectedEvidence(event, step, run);
         }
@@ -298,7 +303,8 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
   ): Promise<unknown> {
     const runId = run.id;
     const games = JSON.parse(run.selected_games_json) as string[];
-    if (games.length > 1 || requiredSourceAdapter(run.adapter_version).officialSourceContract) {
+    const adapter = requiredSourceAdapter(run.adapter_version);
+    if (games.length > 1 || adapter.officialSourceContract || adapter.reconciliationCapability === "errata") {
       if (games.length > 4) throw new Error("Collection selected too many Supported Games.");
       const preparations: Awaited<ReturnType<typeof prepareCollectedGame>>[] = [];
       for (const game of [...games].sort()) {
@@ -460,7 +466,7 @@ async function evidenceHostWorkflowId(runId: string, shard: HostShard): Promise<
 export class EvidenceHostWorkflow extends WorkflowEntrypoint<Env, EvidenceHostWorkflowParams> {
   override async run(event: Readonly<WorkflowEvent<EvidenceHostWorkflowParams>>, step: WorkflowStep): Promise<unknown> {
     try {
-      const operational = observeOperationalWorkflow(step, event, this.env);
+      const operational = observeOperationalWorkflow(snapshotRecoveryWait(this.env, step), event, this.env);
       this.env = operational.env;
       step = observeWorkflowProgress(operational.step, (progress) =>
         recordIngestionWorkflowProgress(

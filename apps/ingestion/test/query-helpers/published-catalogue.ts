@@ -88,7 +88,7 @@ export function insertRevisionCardsForCardAttributeMigrationBackfillsTypedValues
 
 export function insertCatalogueRevisions(database: D1Database): D1PreparedStatement {
   return database.prepare(
-    `INSERT INTO catalogue_revisions VALUES ('catrev_products', 'run_products', '2026-01-01T00:00:00.000Z', ?, 'catrev_spine_000', ?)`,
+    `INSERT INTO catalogue_revisions(id,ingestion_run_id,published_at,content_digest,expected_previous_revision_id,approved_candidate_digest) VALUES ('catrev_products', 'run_products', '2026-01-01T00:00:00.000Z', ?, 'catrev_spine_000', ?)`,
   );
 }
 

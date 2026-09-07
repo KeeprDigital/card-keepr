@@ -1435,11 +1435,13 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
   }
   if (
     scenario === "dedicated-printing-erratum-seed" ||
+    scenario === "dedicated-printing-erratum-relocated" ||
     scenario === "multi-printing" ||
     scenario === "multi-printing-shared-locator"
   ) {
     const sharedLocator = scenario === "multi-printing-shared-locator";
-    const dedicated = scenario === "dedicated-printing-erratum-seed";
+    const dedicated =
+      scenario === "dedicated-printing-erratum-seed" || scenario === "dedicated-printing-erratum-relocated";
     const base = printingObservation({
       game: "one-piece",
       profile: "one-piece@1",
@@ -1450,7 +1452,7 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       locator: sharedLocator
         ? "/official/multi/shared"
         : dedicated
-          ? "/official/dedicated-multi/base"
+          ? `/official/dedicated-multi/base${scenario === "dedicated-printing-erratum-relocated" ? "-refreshed" : ""}`
           : "/official/multi/base",
       ...(sharedLocator ? { variantKey: "base" } : {}),
       lineageMarker: dedicated ? "dedicated-multi-base" : "multi-base",

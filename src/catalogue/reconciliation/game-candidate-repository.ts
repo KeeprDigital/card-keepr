@@ -186,8 +186,11 @@ export function predecessorGameCandidateStatement(database: CatalogueStore, revi
     FROM catalogue_revisions AS revision JOIN game_candidates AS candidate
       ON candidate.ingestion_run_id = revision.ingestion_run_id AND candidate.supported_game = ?
     WHERE revision.id = ? AND candidate.manifest_digest IS NOT NULL
-      AND candidate.preparation_id = candidate.ingestion_run_id LIMIT 1`)
-    .bind(game, revisionId);
+      AND candidate.preparation_id = candidate.ingestion_run_id
+    UNION ALL SELECT candidate.id,candidate.preparation_id,candidate.partition_count
+    FROM catalogue_composition_games composition JOIN game_candidates candidate ON candidate.id=composition.candidate_id
+    WHERE composition.supported_game=? AND composition.catalogue_revision_id=? LIMIT 1`)
+    .bind(game, revisionId, game, revisionId);
 }
 
 export function gameCandidateInspectionSummaryStatement(database: CatalogueStore, candidateId: string) {
@@ -208,4 +211,13 @@ export function inspectionGameHeadStatement(database: CatalogueStore, game: stri
   return repositoryStatements(database)
     .prepare("SELECT revision_id FROM game_catalogue_heads WHERE supported_game = ?")
     .bind(game);
+}
+
+/** Native predecessor authority comes from composition membership, never ID spelling. */
+export function nativePredecessorGameCandidateStatement(database: CatalogueStore, revisionId: string, game: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT candidate.id,candidate.preparation_id,candidate.partition_count
+    FROM catalogue_composition_games composition JOIN game_candidates candidate ON candidate.id=composition.candidate_id
+    WHERE composition.supported_game=? AND composition.catalogue_revision_id=?`)
+    .bind(game, revisionId);
 }

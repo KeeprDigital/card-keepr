@@ -1,3 +1,4 @@
+import { parseRange } from "./byte-range";
 import { MissingObjectError } from "../shared";
 import { parseCatalogueRevisionId, parsePublicationInstant } from "../../http/catalogue";
 import { ifNoneMatchMatches as ifNoneMatch } from "../../http/conditional-request";
@@ -57,7 +58,7 @@ type ExportManifest = {
 export async function catalogueExportsResponse(
   request: Request,
   database: CatalogueStore,
-  bucket: R2Bucket,
+  _bucket: R2Bucket,
   base: PublicBase,
 ): Promise<Response> {
   const url = new URL(request.url);
@@ -82,24 +83,14 @@ export async function catalogueExportsResponse(
     limit,
   );
   const selected = page.rows;
-  const data = await Promise.all(
-    selected.map(async (exportRow) => {
-      const verified = await loadVerifiedExportManifest(database, bucket, exportRow.catalogue_revision_id);
-      if (verified === null) {
-        throw new Error("Verified Catalogue Export is unavailable");
-      }
-      return {
-        type: "catalogue_export",
-        catalogue_revision_id: exportRow.catalogue_revision_id,
-        export_schema_major: verified.manifest.export_schema_major,
-        published_at: exportRow.published_at,
-        manifest_sha256: exportRow.manifest_digest,
-        links: {
-          self: publicUrl(base, `/v1/catalogue-exports/${encodeURIComponent(exportRow.catalogue_revision_id)}`),
-        },
-      };
-    }),
-  );
+  const data = selected.map((exportRow) => ({
+    type: "catalogue_export",
+    catalogue_revision_id: exportRow.catalogue_revision_id,
+    export_schema_major: 5,
+    published_at: exportRow.published_at,
+    content_sha256: exportRow.content_digest,
+    links: { self: publicUrl(base, `/v1/catalogue-exports/${exportRow.catalogue_revision_id}`) },
+  }));
   const next = page.hasMore
     ? encodeCursor({
         contract: "card-keepr-catalogue-export-cursor@1",
@@ -572,25 +563,6 @@ async function loadVerifiedExportManifest(
     throw new Error("Verified Catalogue Export manifest changed");
   }
   return { exportRow, manifest };
-}
-
-function parseRange(header: string | null, size: number): { offset: number; length: number } | "unsatisfiable" | null {
-  if (header === null) return null;
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header);
-  if (match === null || (match[1] === "" && match[2] === "")) {
-    return "unsatisfiable";
-  }
-  if (match[1] === "") {
-    const suffix = Number.parseInt(match[2]!, 10);
-    if (suffix < 1) return "unsatisfiable";
-    const length = Math.min(suffix, size);
-    return { offset: size - length, length };
-  }
-  const offset = Number.parseInt(match[1]!, 10);
-  const requestedEnd = match[2] === "" ? size - 1 : Number.parseInt(match[2]!, 10);
-  if (offset >= size || requestedEnd < offset) return "unsatisfiable";
-  const end = Math.min(requestedEnd, size - 1);
-  return { offset, length: end - offset + 1 };
 }
 
 async function identityCorrectionResponse(

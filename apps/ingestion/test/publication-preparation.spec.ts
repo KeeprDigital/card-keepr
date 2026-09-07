@@ -120,11 +120,13 @@ test("partial object staging exhausts bounded retry and resumes without replacin
       .document;
   const before = status.artifact_count;
   let puts = 0;
+  let stagedKey = "";
   const bucket = new Proxy(testEnv.CATALOGUE_EXPORTS, {
     get(target, property) {
       if (property === "put")
         return async (...args: Parameters<R2Bucket["put"]>) => {
           puts++;
+          stagedKey = args[0];
           await target.put(...args);
           throw new Error("Injected lost object PUT response");
         };
@@ -152,13 +154,15 @@ test("partial object staging exhausts bounded retry and resumes without replacin
     artifact_count: before,
   });
   expect(puts).toBe(1);
+  const retainedBytes = await (await testEnv.CATALOGUE_EXPORTS.get(stagedKey))!.arrayBuffer();
   const paused = status;
   status = (await post(path, { ...intent, sequence: status.sequence, resume: true, idempotency_key: "resume-partial" }))
     .document;
   expect(status).toMatchObject({ state: "preparing", deadline: paused.deadline, artifact_count: before });
   await finish(path, intent, status);
-  const artifacts = (await get(`${path}/artifacts`)).document.artifacts as { kind: string; reused: number }[];
-  expect(artifacts).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "cards", reused: 1 })]));
+  const artifacts = (await get(`${path}/artifacts`)).document.artifacts as { object_key: string; reused: number }[];
+  expect(artifacts).toEqual(expect.arrayContaining([expect.objectContaining({ object_key: stagedKey, reused: 1 })]));
+  expect(await (await testEnv.CATALOGUE_EXPORTS.get(stagedKey))!.arrayBuffer()).toEqual(retainedBytes);
 });
 
 test("corrupt immutable image bytes fail distinctly and cannot be resumed", async () => {
@@ -356,7 +360,16 @@ test("an empty complete game seals a verified empty composition", async () => {
     idempotency_key: "empty-start",
   };
   const status = await finish(path, intent, (await post(path, intent)).document);
-  expect(status).toMatchObject({ state: "verified", artifact_count: 0 });
+  expect(status).toMatchObject({ state: "verified", artifact_count: 4 });
+  const artifacts = (await get(`${path}/artifacts`)).document.artifacts as { kind: string }[];
+  expect(artifacts.map(({ kind }) => kind).sort()).toEqual([
+    "game_profiles",
+    "query_search",
+    "query_search",
+    "supported_games",
+  ]);
+  expect((await get(`${path}/query?kind=cards`)).document.records).toEqual([]);
+  expect((await get(`${path}/query?kind=printings`)).document.records).toEqual([]);
 });
 
 test.each(["projections", "composition"])(

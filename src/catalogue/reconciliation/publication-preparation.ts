@@ -1,3 +1,7 @@
+import { publicExportPreparationStatement } from "./game-publication-repository";
+import { publicationRecord, type PublicationEnvelope } from "./publication-record";
+import { preparePublicLifecycle } from "./publication-lifecycle";
+import { retainPublicLifecycle } from "./publication-lifecycle-repository";
 import { logProtectedFailure } from "../../http/protected-failure";
 import {
   normalizeCardSearchText,
@@ -29,11 +33,9 @@ import {
 
 type Environment = { CATALOGUE_DB: CatalogueStore; PRINTING_IMAGES: R2Bucket; CATALOGUE_EXPORTS: R2Bucket };
 type Candidate = Awaited<ReturnType<typeof inspectGameCandidate>>;
-type Envelope = {
-  value: Record<string, unknown>;
-  text_parts: { path: (string | number)[]; sha256: string; chunks: number; byte_length: number }[];
-};
+type Envelope = PublicationEnvelope;
 const catalogueKinds = new Set([
+  "selected_games",
   "cards",
   "printings",
   "printing_images",
@@ -350,7 +352,7 @@ async function prepareUnit(
     if (state.phase === "images" && cursor.chain !== candidate.manifest_digest)
       throw new PublicationIntegrityError("publication_manifest_corrupt");
     state.phase = state.phase === "images" ? "exports" : state.phase === "exports" ? "projections" : "composition";
-    cursor.partition = cursor.record = cursor.text = cursor.chunk = 0;
+    cursor.partition = cursor.record = cursor.text = cursor.chunk = cursor.subrecord = 0;
     return;
   }
   const partition = await gameCandidatePartitionStatement(db, id, cursor.partition).first<{
@@ -383,7 +385,7 @@ async function prepareUnit(
         }),
       );
     cursor.partition++;
-    cursor.record = cursor.text = cursor.chunk = 0;
+    cursor.record = cursor.text = cursor.chunk = cursor.subrecord = 0;
   };
   if (state.phase === "images") {
     if (partition.kind !== "printing_images" || cursor.record === records.length) {
@@ -415,15 +417,17 @@ async function prepareUnit(
     await nextPartition();
     return;
   }
-  const envelope = records[cursor.record]!;
+  const derived = await publicationRecord(partition.kind, records[cursor.record]!, cursor.subrecord ?? 0);
+  const { kind, envelope } = derived;
   const value = consumerContent(envelope.value) as Record<string, unknown>;
-  if (partition.kind === "products")
+  if (kind === "products")
     for (const field of ["included", "source_observations", "observed", "withdrawal", "reference"]) delete value[field];
-  if (partition.kind === "distribution_contexts" || partition.kind === "product_relationships")
-    for (const field of ["observed", "key", "relationship_value", "resolution"]) delete value[field];
-  if (partition.kind === "printing_images") {
+  if (kind === "distribution_contexts" || kind === "product_relationships")
+    for (const field of ["observed", "key", "resolution"]) delete value[field];
+  if (kind === "printing_images") {
     delete value.source_url;
     delete value.content_base64;
+    if (state.phase === "exports") delete value.object_key;
   }
   const textParts = envelope.text_parts.filter((part) => {
     let current: unknown = value;
@@ -451,6 +455,7 @@ async function prepareUnit(
       `publication-text/${part.sha256}/${cursor.chunk}`,
     );
     artifact("text", ref);
+    statements.push(repository.retainPublicReadText(db, id, part.sha256, cursor.chunk, chunk.content));
     cursor.chunk++;
     if (cursor.chunk === part.chunks) {
       if (hash.digestHex() !== part.sha256 || cursor.text_bytes !== part.byte_length)
@@ -462,7 +467,7 @@ async function prepareUnit(
     }
     return;
   }
-  if (state.phase === "projections" && partition.kind === "cards" && cursor.text < 3) {
+  if (state.phase === "projections" && kind === "cards" && cursor.text < 3) {
     const paths = [["official_identity", "value"], ["name"], ["effective_rules_text"]];
     const path = paths[cursor.text]!;
     const part = textParts.find((part) => canonicalJson(part.path) === canonicalJson(path));
@@ -521,21 +526,20 @@ async function prepareUnit(
   }
   const content = canonicalJson({
     contract: "card-keepr-game-export-record@1",
-    kind: partition.kind,
+    kind: kind,
     value,
     text_parts: textParts,
   });
   if (new TextEncoder().encode(content).byteLength > 524288)
     throw new PublicationIntegrityError("publication_capacity_exceeded");
-  if (state.phase === "exports")
-    artifact(partition.kind, await retainPublicationObject(env.CATALOGUE_EXPORTS, content));
+  if (state.phase === "exports") artifact(kind, await retainPublicationObject(env.CATALOGUE_EXPORTS, content));
   else {
     const projection = canonicalJson({
       contract: "card-keepr-game-query-batch@1",
-      kind: partition.kind,
+      kind: kind,
       records: [{ value, text_parts: textParts }],
       search:
-        partition.kind === "cards"
+        kind === "cards"
           ? [
               {
                 id: value.id,
@@ -551,20 +555,45 @@ async function prepareUnit(
     if (new TextEncoder().encode(projection).byteLength > 524288)
       throw new PublicationIntegrityError("publication_capacity_exceeded");
     const ref = await retainPublicationObject(env.CATALOGUE_EXPORTS, projection);
+    statements.push(repository.retainPublicationProjection(db, id, state.artifact_count, kind, projection, ref.sha256));
+    statements.push(repository.retainPublicationQueryDocument(db, id, kind, String(value.id), state.artifact_count));
     statements.push(
-      repository.retainPublicationProjection(db, id, state.artifact_count, partition.kind, projection, ref.sha256),
-    );
-    statements.push(
-      repository.retainPublicationQueryDocument(db, id, partition.kind, String(value.id), state.artifact_count),
+      ...repository.retainPublicReadFacts(
+        db,
+        id,
+        state.artifact_count,
+        candidate.preparation_id,
+        candidate.supported_game,
+      ),
     );
     artifact("query_search", ref);
+    const lifecycle = await preparePublicLifecycle(db, candidate, kind, envelope.value);
+    if (lifecycle) {
+      statements.push(retainPublicLifecycle(db, lifecycle));
+      artifact(
+        "public_lifecycle",
+        await retainPublicationObject(
+          env.CATALOGUE_EXPORTS,
+          canonicalJson({
+            contract: "card-keepr-game-export-record@1",
+            kind: "public_lifecycle",
+            value: lifecycle,
+            text_parts: [],
+          }),
+        ),
+      );
+    }
   }
-  cursor.record++;
+  if (derived.more) cursor.subrecord = (cursor.subrecord ?? 0) + 1;
+  else {
+    cursor.record++;
+    cursor.subrecord = 0;
+  }
   cursor.text = cursor.chunk = 0;
 }
 
 /** Preparation of a composition only retains references; #228 owns selecting a published head. */
-export async function composePublicationArtifacts(env: Environment, ids: unknown) {
+export async function composePublicationArtifacts(env: Environment, ids: unknown, requirePublicExports = false) {
   if (
     !Array.isArray(ids) ||
     ids.length < 1 ||
@@ -577,7 +606,8 @@ export async function composePublicationArtifacts(env: Environment, ids: unknown
       "invalid_publication_composition",
       "Select one verified candidate per game, at most four.",
     );
-  const games: { supported_game: string; candidate_id: string; root_digest: string }[] = [];
+  const games: { supported_game: string; candidate_id: string; root_digest: string; public_root_digest?: string }[] =
+    [];
   for (const id of ids) {
     const status = await inspectPublicationPreparation(env.CATALOGUE_DB, id);
     if (status.state !== "verified" || !status.root_digest)
@@ -594,7 +624,31 @@ export async function composePublicationArtifacts(env: Environment, ids: unknown
         "A verified game's root is missing or corrupt.",
       );
     await verifyPublicationObject(env.CATALOGUE_EXPORTS, root.key, status.root_digest, root.size);
-    games.push({ supported_game: status.supported_game, candidate_id: id, root_digest: status.root_digest });
+    const publicExport = await publicExportPreparationStatement(env.CATALOGUE_DB, id).first<{
+      state: string;
+      root_digest: string;
+      root_object_key: string;
+      root_bytes: number;
+    }>();
+    if (requirePublicExports && publicExport?.state !== "verified")
+      throw new AdministrationProblem(
+        409,
+        "public_export_unverified",
+        "Stage and verify the public export before selecting this composition.",
+      );
+    if (publicExport?.state === "verified")
+      await verifyPublicationObject(
+        env.CATALOGUE_EXPORTS,
+        publicExport.root_object_key,
+        publicExport.root_digest,
+        publicExport.root_bytes,
+      );
+    games.push({
+      supported_game: status.supported_game,
+      candidate_id: id,
+      root_digest: status.root_digest,
+      ...(publicExport?.state === "verified" ? { public_root_digest: publicExport.root_digest } : {}),
+    });
   }
   games.sort((a, b) => (a.supported_game < b.supported_game ? -1 : 1));
   if (new Set(games.map((game) => game.supported_game)).size !== games.length)

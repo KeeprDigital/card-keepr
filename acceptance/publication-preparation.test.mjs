@@ -1,5 +1,8 @@
+import { gunzipSync } from "node:zlib";
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -140,5 +143,196 @@ test("one owner CLI start verifies native artifacts without exposing any unfinis
   assert.equal(
     (await get(`/v1/game-candidates/${candidate.id}/publication-preparation`)).root_digest,
     status.root_digest,
+  );
+  const approval = await cli([
+    "publication",
+    "approve",
+    "--candidate-id",
+    candidate.id,
+    "--manifest-digest",
+    candidate.manifest_digest,
+    "--expected-game-revision-id",
+    candidate.expected_game_revision_id,
+    "--generation",
+    String(candidate.generation),
+    "--idempotency-key",
+    "native-publication",
+  ]);
+  let publication;
+  const publicationDeadline = Date.now() + 30000;
+  while (Date.now() < publicationDeadline) {
+    publication = await cli(["publication", "status", "--operation-id", approval.id]);
+    if (publication.state === "published" || publication.state === "failed") break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(publication.state, "published", JSON.stringify(publication) + ingestion.getOutput());
+  const visible = await consumer("/v1/cards?game=digimon&limit=1");
+  assert.equal(visible.status, 200, JSON.stringify(visible));
+  assert.equal(visible.body.meta.catalogue_revision_id, publication.resulting_revision_id);
+  assert.equal(visible.body.data.length, 1);
+  assert.equal(visible.body.data[0].type, "card");
+  const detail = await consumer(`/v1/cards/${cards.records[0].id}?include=printings`);
+  assert.equal(detail.status, 200, JSON.stringify(detail));
+  assert.equal(detail.body.data.name, cards.records[0].name);
+  assert.ok(detail.body.included.length > 0);
+  const rarity = detail.body.included.find((printing) => printing.rarity?.normalized)?.rarity.normalized;
+  assert.ok(rarity, "Synthetic publisher provides a normalized Printing rarity.");
+  const filteredCards = await consumer(`/v1/cards?game=digimon&rarity=${encodeURIComponent(rarity)}`);
+  assert.equal(filteredCards.status, 200, JSON.stringify(filteredCards));
+  assert.ok(filteredCards.body.data.some((card) => card.id === cards.records[0].id));
+  const filteredPrintings = await consumer(`/v1/printings?game=digimon&rarity=${encodeURIComponent(rarity)}`);
+  assert.equal(filteredPrintings.status, 200, JSON.stringify(filteredPrintings));
+  assert.ok(filteredPrintings.body.data.some((printing) => printing.card_id === cards.records[0].id));
+
+  assert.equal(
+    (await consumer(`/v1/cards?game=digimon&q=${encodeURIComponent(cards.records[0].name)}`)).body.data.length > 0,
+    true,
+  );
+  if (images) {
+    const page = await get(`/v1/game-candidates/${candidate.id}/partitions/${images.ordinal}`);
+    const image = await fetch(`${api.url}/v1/printing-images/${page.records[0].id}/content`, {
+      headers: { authorization: `Bearer ${apiKey}` },
+    });
+    assert.equal(image.status, 200);
+    const bytes = Buffer.from(await image.arrayBuffer());
+    assert.equal(bytes.byteLength, page.records[0].content_byte_length);
+    const range = await fetch(image.url, { headers: { authorization: `Bearer ${apiKey}`, range: "bytes=0-7" } });
+    assert.equal(range.status, 206);
+    assert.deepEqual(Buffer.from(await range.arrayBuffer()), bytes.subarray(0, 8));
+    const head = await fetch(image.url, { method: "HEAD", headers: { authorization: `Bearer ${apiKey}` } });
+    assert.equal(head.status, 200);
+    assert.equal(head.headers.get("etag"), image.headers.get("etag"));
+    assert.equal((await head.arrayBuffer()).byteLength, 0);
+    const invalid = await fetch(image.url, {
+      headers: { authorization: `Bearer ${apiKey}`, range: `bytes=${bytes.length}-` },
+    });
+    assert.equal(invalid.status, 416);
+    assert.equal((await invalid.json()).code, "range_not_satisfiable");
+  }
+  assert.equal(
+    (
+      await cli([
+        "publication",
+        "approve",
+        "--candidate-id",
+        candidate.id,
+        "--manifest-digest",
+        candidate.manifest_digest,
+        "--expected-game-revision-id",
+        candidate.expected_game_revision_id,
+        "--generation",
+        String(candidate.generation),
+        "--idempotency-key",
+        "native-publication",
+      ])
+    ).id,
+    approval.id,
+  );
+
+  const listing = await consumer("/v1/catalogue-exports");
+  assert.equal(listing.status, 200, JSON.stringify(listing));
+  assert.ok(listing.body.data.some((value) => value.catalogue_revision_id === publication.resulting_revision_id));
+  if (visible.body.page.next_cursor) {
+    const next = await consumer(
+      `/v1/cards?game=digimon&limit=1&after=${encodeURIComponent(visible.body.page.next_cursor)}`,
+    );
+    assert.equal(next.status, 200, JSON.stringify(next));
+    assert.notEqual(next.body.data[0].id, visible.body.data[0].id);
+    const override = await consumer(
+      `/v1/cards?game=digimon&limit=1&after=${encodeURIComponent(visible.body.page.next_cursor)}&revision=catrev_spine_000`,
+    );
+    assert.equal(override.status, 400);
+  }
+  assert.equal((await consumer("/v1/cards?game=digimon&attribute.not_defined=1")).status, 400);
+  const exportPath = `/v1/catalogue-exports/${publication.resulting_revision_id}`;
+  let componentCursor = null;
+  const exportedCards = [];
+  const ajv = new Ajv2020({ allErrors: true });
+  addFormats(ajv);
+  const manifestSchema = JSON.parse(
+    await readFile(
+      resolve("prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json"),
+      "utf8",
+    ),
+  );
+  const recordSchema = JSON.parse(
+    await readFile(
+      resolve("prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json"),
+      "utf8",
+    ),
+  );
+  const validateManifest = ajv.compile(manifestSchema),
+    validateRecord = ajv.compile(recordSchema);
+  do {
+    const index = await consumer(exportPath + (componentCursor ? `?after=${componentCursor}` : ""));
+    assert.equal(index.status, 200, JSON.stringify(index));
+    assert.equal(validateManifest(index.body.data), true, JSON.stringify(validateManifest.errors));
+    const canonical = (value) =>
+      Array.isArray(value)
+        ? value.map(canonical)
+        : value && typeof value === "object"
+          ? Object.fromEntries(
+              Object.keys(value)
+                .sort()
+                .map((key) => [key, canonical(value[key])]),
+            )
+          : value;
+    assert.equal(
+      index.body.data.manifest_sha256,
+      createHash("sha256")
+        .update(JSON.stringify(canonical({ ...index.body.data, manifest_sha256: "0".repeat(64) })))
+        .digest("hex"),
+    );
+    for (const component of index.body.data.components) {
+      const contentUrl = index.body.links.components[component.name];
+      const response = await fetch(contentUrl, { headers: { authorization: `Bearer ${apiKey}` } });
+      assert.equal(response.status, 200);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      assert.equal(bytes.length, component.compressed_bytes);
+      assert.equal(createHash("sha256").update(bytes).digest("hex"), component.compressed_sha256);
+      const raw = gunzipSync(bytes);
+      assert.equal(raw.byteLength, component.uncompressed_bytes);
+      assert.equal(createHash("sha256").update(raw).digest("hex"), component.content_sha256);
+      const value = JSON.parse(raw);
+      assert.equal(validateRecord(value), true, JSON.stringify(validateRecord.errors));
+      if (component.kind === "cards") exportedCards.push(value);
+      {
+        const inspect = (value) => {
+          if (!value || typeof value !== "object") return;
+          for (const [key, item] of Object.entries(value)) {
+            assert.ok(
+              ![
+                "source_lineage",
+                "provenance",
+                "source_url",
+                "object_key",
+                "legality",
+                "eligibility",
+                "candidate_id",
+                "preparation_id",
+                "ingestion_run_id",
+              ].includes(key),
+              key,
+            );
+            if (key !== "game_data") inspect(item);
+          }
+        };
+        inspect(value);
+      }
+      const range = await fetch(contentUrl, {
+        headers: { authorization: `Bearer ${apiKey}`, range: "bytes=0-7" },
+      });
+      assert.equal(range.status, 206);
+      assert.deepEqual(Buffer.from(await range.arrayBuffer()), bytes.subarray(0, 8));
+      const conditional = await fetch(contentUrl, {
+        headers: { authorization: `Bearer ${apiKey}`, "if-none-match": response.headers.get("etag") },
+      });
+      assert.equal(conditional.status, 304);
+    }
+    componentCursor = index.body.data.page.next_cursor;
+  } while (componentCursor);
+  assert.deepEqual(
+    exportedCards.find((card) => card.id === cards.records[0].id),
+    Object.fromEntries(Object.entries(detail.body.data).filter(([key]) => !["printing_ids", "links"].includes(key))),
   );
 });

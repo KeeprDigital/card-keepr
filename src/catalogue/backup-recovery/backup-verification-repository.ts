@@ -1,7 +1,9 @@
+import { type CompositionVerificationQuery, compositionVerificationQuery } from "./composition-verification-repository";
 import { cardCollectionPageQuery } from "../read";
 import { type CatalogueStore, repositoryStatements, runCurrentColumns } from "../shared";
 
 export type CatalogueVerificationQuery =
+  | CompositionVerificationQuery
   | Readonly<{ kind: "evidence"; revisionId: string; expectedJson: string }>
   | Readonly<{ kind: "integrity" }>
   | Readonly<{ kind: "representative-card"; revisionId: string; representativeCardId: string; searchText: string }>;
@@ -11,6 +13,13 @@ export function catalogueVerificationQuery(input: CatalogueVerificationQuery): {
   sql: string;
   params: readonly unknown[];
 } {
+  if (
+    input.kind === "composition-schema" ||
+    input.kind === "composition-state" ||
+    input.kind === "composition-page" ||
+    input.kind === "foreign-keys"
+  )
+    return compositionVerificationQuery(input);
   if (input.kind === "integrity") return { sql: "PRAGMA quick_check", params: [] };
   if (input.kind === "evidence")
     return { sql: verificationEvidenceSql(), params: [input.revisionId, input.expectedJson] };

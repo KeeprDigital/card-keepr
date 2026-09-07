@@ -179,6 +179,7 @@ export async function startWorker({
   config,
   envFile,
   inspectorPort,
+  outboundService,
   migrate = false,
   testMigrations = [],
   pacingMode = "immediate",
@@ -192,12 +193,14 @@ export async function startWorker({
     return (await import("./inprocess-runtime.mjs")).startInprocessWorker({
       config,
       envFile,
+      outboundService,
       pacingMode,
       port: port ?? (await allocatePort()),
       registryPath,
       statePath,
       vars,
     });
+  if (outboundService) throw new Error("Local Cloudflare fault transport requires the in-process runtime.");
   // The probed port is released before wrangler binds it, so another program
   // may still take it first; a boot that dies on that collision retries on
   // fresh ports, and every attempt including the last is checked so a dead

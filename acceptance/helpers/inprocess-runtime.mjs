@@ -93,7 +93,16 @@ async function bundle(main, define) {
   return bundles.get(key);
 }
 
-export async function startInprocessWorker({ config, envFile, pacingMode, port, registryPath, statePath, vars }) {
+export async function startInprocessWorker({
+  config,
+  envFile,
+  outboundService,
+  pacingMode,
+  port,
+  registryPath,
+  statePath,
+  vars,
+}) {
   const key = registryPath ?? dirname(resolve(statePath));
   let group = groups.get(key);
   if (!group) {
@@ -111,6 +120,7 @@ export async function startInprocessWorker({ config, envFile, pacingMode, port, 
   const options = {
     ...prepared.workerOptions,
     name: prepared.raw.name,
+    ...(outboundService ? { outboundService } : {}),
     modules: true,
     script: await bundle(prepared.main, prepared.define),
     bindings: {

@@ -6,6 +6,19 @@ the attempt `verified`. Disposable Restore is proof that the backup can be read;
 it does not change the production binding. Catalogue Recovery restores production
 and keeps mutation blocked until verification and explicit owner acceptance.
 
+Native per-game publication reserves its backup under the real publication
+operation and source ingestion run. The backup covers the complete composition,
+including unchanged sibling games. Status retains those identities through failed
+attempts and retry children.
+
+The SQL snapshot phase temporarily fences database writers while derived search
+indexes are removed for D1 export. Collection and preparation Workflows wait on
+that fence and retain their original operation, generation, and deadline. Once
+export and search reconstruction finish, Disposable Restore verification leaves
+normal collection and preparation available. A next publication still waits for
+the required verified checkpoint. Actual Catalogue Recovery holds the global
+mutation fence until explicit owner acceptance.
+
 ## Inspect after publication
 
 Use the ingestion administration endpoint and its existing credential setup
@@ -148,9 +161,14 @@ npm run --silent keepr -- recovery inspect \
 jq -e '.state == "awaiting_acceptance" and .verification != null' recovery.json
 ```
 
-Verification reconstructs derived data and checks the exact revision, schema,
-counts, and representative catalogue and Curated Revision evidence
-against the backup manifest. Inspect the retained verification document and
+Verification reconstructs derived search data. For native compositions it checks
+all component memberships, the schema definition, and streaming digests of every
+row in the retained publication, identity, admission, correction, curated,
+reconciliation, and source-evidence tables against the snapshot manifest. It also
+reads and hashes the private publication artifact tree, including retained text
+and images. Each database read and metadata object is bounded; total verification
+time still depends on catalogue size. Legacy snapshots retain their existing
+revision, count, and representative-evidence checks. Inspect the retained verification document and
 failure details; an import finishing successfully is insufficient.
 
 For **replacement database** recovery, follow the
@@ -183,6 +201,15 @@ and `active_recovery_id: null`; both runtimes must be healthy. Acceptance verifi
 the live bound database and retained evidence before clearing the mutation block.
 An acceptance replay rechecks evidence before releasing a still-blocked operation.
 
+After acceptance, inspect `restored_work`, `restored_collections`, and
+`snapshot_scope`. Published and terminal work remains retained. Nonterminal
+reconciliation/publication work from the snapshot is classified as abandoned,
+its generation is invalidated, and its slot is released. Incomplete collection
+work is likewise abandoned and cannot resume stale writes. Retained completed
+source evidence can be used for a fresh candidate. Work created after the SQL
+snapshot is outside that snapshot and cannot be recovered by it; inspect any
+independently retained operation records before creating replacement work.
+
 ## Failure and follow-up
 
 Failed restore or verification leaves recovery blocked. Keep the operation ID,
@@ -197,3 +224,11 @@ Production Release failures after migration require compatible roll-forward as
 specified in the [release runbook](production-release.md). Schema-changing
 pre-Go-Live work may instead require deliberate data regeneration under ADR 0008;
 that is a separate owner decision, not recovery acceptance.
+
+Stored public exports participate in the same recovery closure. Snapshot evidence
+includes public export preparations, component descriptors and Merkle nodes; all
+three tables are fenced during SQL export and actual recovery. Verification
+follows each composition member's public root and checks its operation, candidate,
+revision, manifest, private root and deadline bindings. It hashes the retained
+gzip components, validates their descriptor digests and lengths, and checks the
+leaf count. Missing or corrupt public bytes prevent verification and acceptance.

@@ -83,23 +83,17 @@ test("printing-image records reference the image by identifier and carry no URL"
 
 test("manifest components reference their bytes by name and carry no URL", () => {
   const components = [
-    ["supported-games", "SupportedGameRecord", "id:utf8"],
-    ["game-profiles", "GameProfileRecord", "profile:utf8"],
-    ["cards", "CardRecord", "id:utf8"],
-    ["printings", "PrintingRecord", "id:utf8"],
-    ["printing-images", "PrintingImageRecord", "id:utf8"],
-    ["products", "ProductRecord", "id:utf8"],
-    ["releases", "ReleaseRecord", "id:utf8"],
-    ["distribution-contexts", "DistributionContextRecord", "id:utf8"],
-    ["errata", "ErratumRecord", "id:utf8"],
-    ["relationships", "RelationshipRecord", "id:utf8"],
-  ].map(([name, definition, order]) => ({
-    name,
+    ["supported-games", "SupportedGameRecord"],
+    ["game-profiles", "GameProfileRecord"],
+    ["cards", "CardRecord"],
+    ["releases", "ReleaseRecord"],
+  ].map(([kind, definition], ordinal) => ({
+    name: `one-piece.${ordinal}`,
+    kind,
     media_type: "application/x-ndjson",
     compression: "gzip",
     record_schema: `${recordSchemaUri}#/$defs/${definition}`,
-    order,
-    records: 0,
+    records: 1,
     uncompressed_bytes: 0,
     content_sha256: "b".repeat(64),
     compressed_bytes: 20,
@@ -114,9 +108,14 @@ test("manifest components reference their bytes by name and carry no URL", () =>
     export_created_at: "2026-09-04T00:00:00.000Z",
     supported_games: ["one-piece"],
     components,
+    page: { next_cursor: null },
     manifest_sha256: "e".repeat(64),
   };
   assert.doesNotThrow(() => verifyExportManifest(manifest));
+  assert.throws(
+    () => verifyExportManifest({ ...manifest, components: [...components, { ...components[0], name: "one-piece.4" }] }),
+    /manifest failed schema verification/u,
+  );
   for (const [content_url, cause] of [
     [(name) => `/v1/catalogue-exports/catrev_1/components/${name}`, /embeds an API link/u],
     [

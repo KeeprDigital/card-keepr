@@ -87,3 +87,10 @@ export {
   retainPublicationFence,
 } from "./publication-preparation";
 export { dispatchPublicationPreparation } from "./publication-preparation-dispatch";
+
+export {
+  advanceGamePublication,
+  pauseGamePublication,
+  dispatchGamePublication,
+  inspectPublication,
+} from "./game-publication";

@@ -12,6 +12,8 @@ import {
 
 type Environment = {
   BACKUPS: R2Bucket;
+  CATALOGUE_EXPORTS: R2Bucket;
+  PRINTING_IMAGES: R2Bucket;
   CATALOGUE_BACKUP_WORKFLOW: Parameters<typeof startOrObserveCatalogueBackupWorkflow>[1];
   CATALOGUE_D1_DATABASE_ID: string;
   CATALOGUE_DB: CatalogueStore;
@@ -115,13 +117,20 @@ export const backupRecoveryRoutes = [
     const body = await readAdministrationBody(request);
     assertOnlyFields(body, ["target_digest", "idempotency_key"]);
     return Response.json(
-      await verifyCatalogueRecovery(env.CATALOGUE_DB, env.BACKUPS, params.recovery!, {
-        targetDigest: requiredString(body, "target_digest"),
-        idempotencyKey: requiredString(body, "idempotency_key"),
-        observedAt,
-        cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
-        verificationToken: env.D1_VERIFICATION_TOKEN,
-      }),
+      await verifyCatalogueRecovery(
+        env.CATALOGUE_DB,
+        env.BACKUPS,
+        params.recovery!,
+        {
+          targetDigest: requiredString(body, "target_digest"),
+          idempotencyKey: requiredString(body, "idempotency_key"),
+          observedAt,
+          cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
+          verificationToken: env.D1_VERIFICATION_TOKEN,
+        },
+        undefined,
+        { catalogue: env.CATALOGUE_EXPORTS, images: env.PRINTING_IMAGES },
+      ),
     );
   }),
   route<Context>("POST", "/v1/recoveries/:recovery/acceptance", async ({ request, env, observedAt }, params) => {

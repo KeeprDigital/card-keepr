@@ -1,3 +1,4 @@
+import { verifyCompositionArtifacts } from "./composition-artifacts";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import {
   type CatalogueVerificationEvidence,
@@ -180,13 +181,13 @@ export async function beginCatalogueRecovery(
   let replay = await recoveryByIdempotency(database, input.idempotencyKey);
   if (replay !== null) {
     if (replay.request_json !== requestJson) throw idempotencyReused();
-    return recoveryDocument(replay);
+    return recoveryDocument(database, replay);
   }
   await hydrateRetainedRecoveryIfPresent(database, backups, input.recoveryId, true);
   replay = await recoveryByIdempotency(database, input.idempotencyKey);
   if (replay !== null) {
     if (replay.request_json !== requestJson) throw idempotencyReused();
-    return recoveryDocument(replay);
+    return recoveryDocument(database, replay);
   }
   const identity = await recoveryRow(database, input.recoveryId);
   if (identity !== null) {
@@ -264,7 +265,7 @@ export async function beginCatalogueRecovery(
     const winner = await recoveryByIdempotency(database, input.idempotencyKey);
     if (winner !== null) {
       if (winner.request_json !== requestJson) throw idempotencyReused();
-      return recoveryDocument(winner);
+      return recoveryDocument(database, winner);
     }
     throw new AdministrationProblem(
       409,
@@ -342,7 +343,7 @@ export async function inspectCatalogueRecovery(
   if (row === null) {
     throw new AdministrationProblem(404, "recovery_not_found", "Catalogue recovery operation not found.");
   }
-  return recoveryDocument(row);
+  return recoveryDocument(database, row);
 }
 
 export async function verifyCatalogueRecovery(
@@ -351,6 +352,7 @@ export async function verifyCatalogueRecovery(
   recoveryId: string,
   input: VerifyCatalogueRecoveryInput,
   provider: D1RecoveryProvider = cloudflareD1RecoveryProvider,
+  artifacts?: { catalogue: R2Bucket; images: R2Bucket },
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(input.idempotencyKey, "idempotency_key");
   assertSha256(input.targetDigest, "target_digest");
@@ -367,7 +369,7 @@ export async function verifyCatalogueRecovery(
       throw idempotencyReused();
     const retained = await requiredRecoveryJournal(backups, recoveryId);
     await persistRecoveryJournal(backups, row, retained.backup);
-    return recoveryDocument(row);
+    return recoveryDocument(database, row);
   }
   if (row.state === "failed") throw retainedRecoveryFailure(row);
   if (row.state !== "validating") {
@@ -388,6 +390,11 @@ export async function verifyCatalogueRecovery(
     throw new Error("The restored recovery database is unavailable.");
   }
   try {
+    const expected = JSON.parse(row.expected_verification_json) as CatalogueVerificationEvidence;
+    if (expected.composition_snapshot) {
+      if (!artifacts) throw new Error("Private composition artifacts are required for Catalogue Recovery.");
+      await verifyCompositionArtifacts(database, artifacts.catalogue, artifacts.images, row.target_revision_id);
+    }
     const verification = await provider.reconstructAndVerify({
       accountId: input.cloudflareAccountId,
       databaseId: row.restored_database_id,
@@ -451,7 +458,7 @@ export async function acceptCatalogueRecovery(
     const retained = await requiredRecoveryJournal(backups, recoveryId);
     await releaseAcceptedRecoveryIfSafe(database, row, retained.backup, input.boundDatabaseId);
     await persistRecoveryJournal(backups, row, retained.backup);
-    return recoveryDocument(row);
+    return recoveryDocument(database, row);
   }
   if (row.state === "failed") throw retainedRecoveryFailure(row);
   if (row.state !== "awaiting_acceptance") {
@@ -499,6 +506,7 @@ export async function acceptCatalogueRecovery(
         recoveryId,
         target_revision_id: row.target_revision_id,
       }),
+      ...recoveryStatements.classifyRestoredWorkStatements(database, recoveryId),
       recoveryStatements.acceptRecoveryOperationStatement(database, {
         idempotencyKey: input.idempotencyKey,
         requestDigest,
@@ -526,7 +534,7 @@ export async function acceptCatalogueRecovery(
         throw idempotencyReused();
       const retained = await requiredRecoveryJournal(backups, recoveryId);
       await persistRecoveryJournal(backups, winner, retained.backup);
-      return recoveryDocument(winner);
+      return recoveryDocument(database, winner);
     }
     throw new AdministrationProblem(409, "recovery_state_changed", "Recovery acceptance changed concurrently.");
   }
@@ -556,6 +564,7 @@ async function releaseAcceptedRecoveryIfSafe(
   try {
     await database.batch([
       recoveryStatements.guardRecoveryReleaseStatement(database, { id: recovery.id }),
+      ...recoveryStatements.classifyRestoredWorkStatements(database, recovery.id),
       recoveryStatements.clearBlockedRecoveryStatement(database, { id: recovery.id }),
       recoveryStatements.guardHealthyRecoveryStatement(database),
     ]);
@@ -1002,9 +1011,14 @@ function recoveryByIdempotency(database: CatalogueStore, idempotencyKey: string)
   return recoveryStatements.recoveryOperationByIdempotencyStatement(database, { idempotencyKey }).first<RecoveryRow>();
 }
 
-async function recoveryDocument(row: RecoveryRow): Promise<Record<string, unknown>> {
+async function recoveryDocument(database: CatalogueStore, row: RecoveryRow): Promise<Record<string, unknown>> {
   return {
     contract: "card-keepr-catalogue-recovery@1",
+    restored_work: (await recoveryStatements.restoredWorkClassificationsStatement(database, row.id).all()).results,
+    restored_collections: (await recoveryStatements.restoredCollectionClassificationsStatement(database, row.id).all())
+      .results,
+    snapshot_scope:
+      "Only operations present in the restored snapshot are retained; newer operations are not recovered.",
     id: row.id,
     state: row.state,
     method: row.method,

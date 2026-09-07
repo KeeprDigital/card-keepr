@@ -986,7 +986,7 @@
         "catalogue_revision_id",
         "export_schema_major",
         "published_at",
-        "manifest_sha256",
+        "content_sha256",
         "links"
       ],
       "properties": {
@@ -1003,7 +1003,7 @@
         "published_at": {
           "$ref": "#/$defs/Timestamp"
         },
-        "manifest_sha256": {
+        "content_sha256": {
           "$ref": "#/$defs/Sha256"
         },
         "links": {

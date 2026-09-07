@@ -1,33 +1,27 @@
+import { stripCuratedRevisionEffects } from "../curated";
 import type {
   CatalogueCandidate,
   CatalogueCard,
+  CatalogueDistributionContext,
   CatalogueErratum,
   CataloguePrinting,
   CataloguePrintingImage,
   CatalogueProduct,
-  CatalogueDistributionContext,
-  ProductRelationship,
   CatalogueStore,
-  SupportedGame,
   ObjectMemberCursor,
+  ProductRelationship,
+  SupportedGame,
 } from "../shared";
-import { canonicalJson, retainedPayloadChunks, resumableObjectMembers } from "../shared";
-import { stripCuratedRevisionEffects } from "../curated";
-import type { ReconciliationCandidateState } from "./reconciliation-candidate-state";
+import { canonicalJson, resumableObjectMembers, retainedPayloadChunks } from "../shared";
+import { nativeCandidateAtRevision } from "./native-prior-state";
+import type { PriorStateContinuation, PriorStatePositions, PriorStateSeed } from "./prior-state-types";
+
+export type { PriorStatePositions } from "./prior-state-types";
+
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
 import { candidateAtRevisionStatement } from "./reconciliation-read-repository";
 
-export type PriorStatePositions = {
-  cards: number;
-  priorCards: number;
-  printings: number;
-  priorPrintings: number;
-  printingImages: number;
-  priorProducts: ReconciliationCandidateState["positions"];
-  priorErrata: number;
-  currentErrata: number;
-};
 type PriorStateCursor = {
   revisionId: string;
   sourceRunId: string | null;
@@ -43,23 +37,11 @@ export async function candidateAtRevision(
   database: CatalogueStore,
   revisionId: string,
   selectedGames: readonly SupportedGame[],
-  seed: {
-    card: (card: CatalogueCard) => Promise<void>;
-    printing: (printing: CataloguePrinting) => Promise<void>;
-    image: (image: CataloguePrintingImage) => Promise<void>;
-    product: (product: CatalogueProduct) => Promise<void>;
-    context: (context: CatalogueDistributionContext) => Promise<void>;
-    relationship: (relationship: ProductRelationship) => Promise<void>;
-    erratum: (erratum: CatalogueErratum) => Promise<void>;
-    correction: (correction: NonNullable<CatalogueCandidate["identity_corrections"]>[number]) => Promise<void>;
-  },
-  continuation: {
-    runId: string;
-    capture: () => PriorStatePositions;
-    restore: (positions: PriorStatePositions) => void;
-    yieldAtCheckpoint: boolean;
-  },
+  seed: PriorStateSeed,
+  continuation: PriorStateContinuation,
 ): Promise<CatalogueCandidate | null> {
+  const native = await nativeCandidateAtRevision(database, revisionId, selectedGames, seed, continuation);
+  if (native !== undefined) return native;
   const row = await candidateAtRevisionStatement(database, revisionId).first<{
     ingestion_run_id: string;
     candidate_json: string;

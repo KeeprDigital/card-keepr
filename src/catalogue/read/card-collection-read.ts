@@ -53,12 +53,14 @@ export async function cardCollectionResponse(
   database: CatalogueStore,
   request: Request,
   base: PublicBase,
+  pinnedRevision?: { id: string; published_at: string },
 ): Promise<Response> {
   const url = new URL(request.url);
   const filters = parseFilters(url);
   const cursor = parseCursor(url.searchParams.get("after"), filters);
   if (cursor === "invalid") throw invalidCursor();
-  const revision = await pinRevision(database, cursor?.revision_id ?? null, "/v1/cards", base, { search: true });
+  const revision =
+    pinnedRevision ?? (await pinRevision(database, cursor?.revision_id ?? null, "/v1/cards", base, { search: true }));
   await validatePublishedFilters(database, revision.id, filters);
   const etag = await canonicalEtag({
     route: "/v1/cards",
