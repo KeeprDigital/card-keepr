@@ -50,3 +50,13 @@ Workflow parameters or events. The automatic collection path still uses the
 legacy run adapter. Its production multi-game dispatch, native terminal handling,
 and resource acceptance remain required integration work for issue #225 before
 downstream issues #226 and #227 proceed.
+
+Native mapping evidence is retained in `reconciliation_source_mappings`, keyed by
+preparation, entity, and Source Observation. It keeps the real collection ID as
+provenance. Owner identity inspection accepts `preparation_id` to page that
+preparation's mappings and show its candidate state. These staged rows do not
+enter the legacy canonical mapping index, even when the source collection was
+already published. Native publication integration (#226/#227) must use the
+preparation's retained mapping evidence and gate any published mapping projection
+on that candidate's publication; source collection state is not publication
+authority for a native candidate.

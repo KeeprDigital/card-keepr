@@ -276,6 +276,7 @@ export const reconciliationRoutes = [
         env.CATALOGUE_DB,
         params.identity!,
         new URL(request.url).searchParams.get("after") ?? "",
+        new URL(request.url).searchParams.get("preparation_id"),
       ),
     );
   }),

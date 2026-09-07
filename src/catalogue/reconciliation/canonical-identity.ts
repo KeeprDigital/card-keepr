@@ -98,10 +98,15 @@ export async function retainSourceMappings(
   await flush();
 }
 export type { SourceMapping } from "./canonical-identity-repository";
-export async function inspectCanonicalIdentity(database: CatalogueStore, id: string, after = "") {
+export async function inspectCanonicalIdentity(
+  database: CatalogueStore,
+  id: string,
+  after = "",
+  preparationId: string | null = null,
+) {
   const allocation = await identityAllocationStatement(database, id).first<{ entity_kind: string }>();
   const mappings = (
-    await identityMappingsStatement(database, id, after).all<{
+    await identityMappingsStatement(database, id, after, preparationId).all<{
       entity_kind: string;
       evidence_json: string;
       source_observation_id: string;

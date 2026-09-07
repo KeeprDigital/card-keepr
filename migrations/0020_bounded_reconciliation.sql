@@ -72,6 +72,27 @@ BEGIN SELECT RAISE(ABORT, 'reconciliation_terminal_result_immutable'); END;
 CREATE TRIGGER reconciliation_operation_no_delete BEFORE DELETE ON reconciliation_operations
 BEGIN SELECT RAISE(ABORT, 'reconciliation_operation_audit_retained'); END;
 CREATE UNIQUE INDEX legacy_reconciliation_for_run ON reconciliation_operations (ingestion_run_id) WHERE supported_game IS NULL;
+-- Native mapping evidence is preparation-owned. A published source collection
+-- never grants publication authority to a new preparation using its evidence.
+CREATE TABLE reconciliation_source_mappings (
+  preparation_id TEXT NOT NULL REFERENCES reconciliation_operations(id),
+  entity_id TEXT NOT NULL,
+  source_observation_id TEXT NOT NULL,
+  entity_kind TEXT NOT NULL CHECK (entity_kind IN ('card', 'printing')),
+  source_lineage TEXT NOT NULL,
+  ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
+  source_snapshot_id TEXT NOT NULL REFERENCES source_snapshots(id),
+  source_observation_set_id TEXT NOT NULL REFERENCES source_observation_sets(id),
+  locator TEXT,
+  variant_key TEXT,
+  evidence_json TEXT NOT NULL CHECK (json_valid(evidence_json) AND length(CAST(evidence_json AS BLOB)) <= 524288),
+  mapped_at TEXT NOT NULL,
+  PRIMARY KEY (preparation_id, entity_id, source_observation_id)
+);
+CREATE TRIGGER reconciliation_source_mappings_no_update BEFORE UPDATE ON reconciliation_source_mappings
+BEGIN SELECT RAISE(ABORT, 'reconciliation_source_mapping_immutable'); END;
+CREATE TRIGGER reconciliation_source_mappings_no_delete BEFORE DELETE ON reconciliation_source_mappings
+BEGIN SELECT RAISE(ABORT, 'reconciliation_source_mapping_immutable'); END;
 CREATE TABLE game_catalogue_heads (
   supported_game TEXT PRIMARY KEY,
   revision_id TEXT NOT NULL
