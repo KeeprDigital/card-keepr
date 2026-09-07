@@ -8,6 +8,7 @@ export class ReconciliationContinuation extends Error {
         | "input_preparation"
         | "input_verification"
         | "prior_state"
+        | "initial_warnings"
         | "official_reduction"
         | "official_errata"
         | "official_assembly"

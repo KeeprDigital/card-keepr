@@ -1,3 +1,4 @@
+import { prepareInitialWarnings } from "./reconciliation-initial-warnings";
 import { prepareDisappearanceWarnings } from "./reconciliation-disappearance";
 import { prepareOfficialCandidate, omitUndefinedValues } from "./reconciliation-official-assembly";
 import { prepareWithdrawalDiagnostics } from "./reconciliation-withdrawals";
@@ -356,17 +357,12 @@ export async function reconcileRetainedCardPrintingEvidence(
     "warning_records",
   );
   if (!reduction) {
-    for await (const warning of retained.countChangeWarnings) await sourceWarnings.push(warning);
-    for await (const image of retained.unavailablePrintingImages)
-      await sourceWarnings.push({
-        code: "printing_image_unavailable",
-        request_id: image.requestId,
-        source_url: image.sourceUrl,
-        source_lineage: image.sourceLineage,
-        failure_code: image.failureCode,
-        detail:
-          "The Official Source did not serve this Printing Image within its bounded transport retries; the Printing is published without it and a later run can collect it.",
-      });
+    try {
+      await prepareInitialWarnings(database, runId, sourceWarnings, yieldAtCheckpoint);
+    } catch (error) {
+      if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
+      throw error;
+    }
   }
   const evidenceGames = new Set<SupportedGame>();
   const evidenceLineages = new Set<string>();
