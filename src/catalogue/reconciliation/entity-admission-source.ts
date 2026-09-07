@@ -82,7 +82,12 @@ export async function assessSourceAdmission(
   observation: SourceObservation,
   at: string,
 ) {
-  if (!supplementalLineage(observation.sourceLineage) || !observation.observedCardAndPrinting.card) return null;
+  if (!observation.observedCardAndPrinting.card) return null;
+  const supplemental = supplementalLineage(observation.sourceLineage);
+  const unprovenPrinting =
+    observation.observedCardAndPrinting.printing !== null &&
+    (!observation.artworkIdentityExplicit || !observation.demonstrablyNovel || !observation.noveltyProofComplete);
+  if (!supplemental && !unprovenPrinting) return null;
   const reference = canonicalJson([
     observation.locator ?? observation.observedCardAndPrinting.card.official_identity,
     observation.variantKey,

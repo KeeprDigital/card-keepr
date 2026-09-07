@@ -77,7 +77,7 @@ const definition: RawAdapterDefinition = {
     liveShapes: false,
   },
 };
-export const onePieceAdapter = createBandaiAdapter(
+const fullOnePieceAdapter = createBandaiAdapter(
   definition,
   (_lineage, surface, raw) => normalizeOnePieceSurface(surface, raw, true),
   {
@@ -97,6 +97,44 @@ export const onePieceAdapter = createBandaiAdapter(
     inlineCardList: (html, url) => parseOnePieceBandaiCardListV1(html, url, true),
   },
 );
+
+const p001CatalogueUrl = "https://en.onepiece-cardgame.com/cardlist/?freewords=P-001";
+export const onePieceAdapter = {
+  ...fullOnePieceAdapter,
+  parse(context: Parameters<typeof fullOnePieceAdapter.parse>[0], bytes: Uint8Array) {
+    if (context.url !== p001CatalogueUrl) return fullOnePieceAdapter.parse(context, bytes);
+    return parseP001Catalogue(bytes).observations;
+  },
+  discoverRequests(bytes: Uint8Array, context: Parameters<typeof fullOnePieceAdapter.parse>[0]) {
+    if (context.url !== p001CatalogueUrl) return fullOnePieceAdapter.discoverRequests(bytes, context);
+    return parseP001Catalogue(bytes).observations.flatMap((observation) => {
+      if (!("appearance_evidence" in observation)) return [];
+      const images = observation.appearance_evidence?.images;
+      if (!Array.isArray(images)) throw new AdapterParseFailure("P-001 image inventory is missing.");
+      return images.map((image) => ({
+        role: "image" as const,
+        url: String(image.source_url),
+        headers: { accept: "image/png" },
+      }));
+    });
+  },
+};
+function parseP001Catalogue(bytes: Uint8Array) {
+  const html = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
+  const parsed = parseOnePieceBandaiCardListV1(html, p001CatalogueUrl, true);
+  if (
+    parsed.observations.length === 0 ||
+    parsed.observations.some((o) => !("card" in o) || o.card?.official_identity.value !== "P-001")
+  )
+    throw new AdapterParseFailure("P-001 catalogue contains missing or out-of-scope card identities.");
+  const locators = parsed.observations.map((o) => ("identity_evidence" in o ? o.identity_evidence?.locator : null));
+  if (
+    locators.some((x) => typeof x !== "string" || !/^P-001(?:_p[0-9]+)?$/u.test(x)) ||
+    new Set(locators).size !== locators.length
+  )
+    throw new AdapterParseFailure("P-001 catalogue has duplicate or invalid source locators.");
+  return parsed;
+}
 
 function normalizeOnePieceSurface(
   surface: string,

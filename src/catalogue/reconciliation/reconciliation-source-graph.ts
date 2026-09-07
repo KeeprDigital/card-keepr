@@ -63,6 +63,7 @@ export async function assertClosedRequestGraph<T extends Evidence, R extends Req
   loadDocument: (row: T) => Promise<Document>,
   requestById: (id: string) => Promise<R | undefined>,
   yieldAtCheckpoint: boolean,
+  adapterForVersion = requiredSourceAdapter,
 ) {
   const gundam = new ReconciliationGundamGraph(database, runId);
   const inputs = new ReconciliationReducerIndex<unknown[]>(database, runId, "gundam_graph_inputs");
@@ -157,7 +158,7 @@ export async function assertClosedRequestGraph<T extends Evidence, R extends Req
   if (cursor.stage === "gundam_requests") {
     for await (const { request, row } of evidenceAfter(cursor.after ?? undefined)) {
       beginRequest(request);
-      if (requiredSourceAdapter(row.adapter_version).listingReconciliation?.groupsPublisherPages === true) {
+      if (adapterForVersion(row.adapter_version).listingReconciliation?.groupsPublisherPages === true) {
         const document = await loadDocument(row);
         while (cursor.observation < document.observationCount) {
           const wrapped = await readSourceObservation(database, runId, row.observation_set_id, cursor.observation);
@@ -211,7 +212,7 @@ export async function assertClosedRequestGraph<T extends Evidence, R extends Req
   if (cursor.stage === "requests") {
     for await (const { request, row } of evidenceAfter(cursor.after ?? undefined)) {
       beginRequest(request);
-      const adapter = requiredSourceAdapter(row.adapter_version);
+      const adapter = adapterForVersion(row.adapter_version);
       const document = await loadDocument(row);
       if (!cursor.headerComplete) {
         const summary = document.evidenceSummary;
@@ -335,7 +336,7 @@ export async function assertClosedRequestGraph<T extends Evidence, R extends Req
   }
   if (cursor.stage === "root_surfaces") {
     for (const [version, actual] of rootSurfaces) {
-      const adapter = requiredSourceAdapter(version);
+      const adapter = adapterForVersion(version);
       if (adapter.origin !== "production" || adapter.reconciliationCapability === "unavailable")
         throw new Error(`Official Source ${version} has invalid production coverage authority.`);
       const expected = new Set(adapter.requiredSurfaces ?? []);

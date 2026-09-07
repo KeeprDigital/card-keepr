@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { requiredSourceAdapter } from "../adapters";
+import { requiredSourceAdapter, sourceAdapterForCoverage } from "../adapters";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256, utf8 } from "../shared";
 import { type AttemptOutcome, attemptStatement, sourceSnapshotStatement } from "./evidence-repository";
 import {
@@ -600,7 +600,10 @@ export async function parseCapturedRequest(
       intent: "collection",
       idempotencyKey: `${run.id}:${sourceRequest.request_id}`,
     });
-    const adapter = requiredSourceAdapter(evidencePlan.adapter_version);
+    const adapter = sourceAdapterForCoverage(
+      requiredSourceAdapter(evidencePlan.adapter_version),
+      evidencePlan.coverage?.subset,
+    );
     const discovered = await discoverSnapshotRequests(
       database,
       evidenceObjects,

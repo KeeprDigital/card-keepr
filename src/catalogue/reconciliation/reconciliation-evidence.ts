@@ -29,7 +29,12 @@ import {
   stagedNormalizedObservations,
 } from "./reconciliation-normalized";
 import { imageStorage, retainCandidateImage } from "./reconciliation-images";
-import { adapterReconciliationAreas, parsedOfficialArtworkIdentity, requiredSourceAdapter } from "../adapters";
+import {
+  sourceAdapterForCoverage,
+  adapterReconciliationAreas,
+  parsedOfficialArtworkIdentity,
+  requiredSourceAdapter,
+} from "../adapters";
 import { type CatalogueStore, type SupportedGame, canonicalJson, sha256, sha256Text } from "../shared";
 import {
   evidencePlanForRequest,
@@ -222,6 +227,11 @@ async function collectRetainedReconciliationObservation(
       loadDocument,
       selectedRequestById,
       yieldAtCheckpoint,
+      (version) =>
+        sourceAdapterForCoverage(
+          requiredSourceAdapter(version),
+          evidencePlans.find((p) => p.adapter_version === version)?.coverage?.subset,
+        ),
     );
     await retainReconciliationCheckpoint(database, runId, "source_graph", 0, { inputDigest });
     if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "source_graph", ordinal: 0 });
@@ -392,6 +402,7 @@ async function collectRetainedReconciliationObservation(
         sourceLineage: plan.source_lineage,
         supportedGame: supportedGame(plan.supported_game),
         adapterVersion: plan.adapter_version,
+        subset: plan.coverage?.subset ?? "complete",
         reconciliationCapability: requiredSourceAdapter(plan.adapter_version).reconciliationCapability,
       };
     }),

@@ -241,7 +241,7 @@ export const documentSchemas = {
   evidencePlan: object(
     {
       participation: { enum: ["required", "optional"] },
-      coverage: object({ locale: { const: "en" }, area: string, subset: { const: "complete" } }),
+      coverage: object({ locale: { const: "en" }, area: string, subset: string }),
       supported_game: string,
       source_lineage: string,
       game_profile_version: string,

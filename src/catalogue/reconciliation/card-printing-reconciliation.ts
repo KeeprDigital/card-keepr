@@ -404,12 +404,14 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
   const evidenceGames = new Set<SupportedGame>();
   const evidenceLineages = new Set<string>();
+  const completeLineages = new Set<string>();
   let errataOnlyEvidence = true;
   const evidencePlanSnapshot: unknown[] = [];
   for await (const plan of retained.evidencePlans) {
     evidencePlanSnapshot.push(plan);
     evidenceGames.add(plan.supportedGame);
     evidenceLineages.add(plan.sourceLineage);
+    if ((plan.subset ?? "complete") === "complete") completeLineages.add(plan.sourceLineage);
     if (plan.reconciliationCapability !== "errata") errataOnlyEvidence = false;
   }
   if (!reduction) await pinCorrectionDecisions(database, runId, JSON.parse(run.selected_games_json) as string[]);
@@ -1719,7 +1721,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     throw error;
   }
   const { draft: official, observedCards, observedPrintings } = assembled;
-  const checkedSourceLineages = errataOnlyEvidence ? [] : [...evidenceLineages].sort();
+  const checkedSourceLineages = errataOnlyEvidence ? [] : [...completeLineages].sort();
   try {
     await prepareDisappearanceWarnings(
       database,

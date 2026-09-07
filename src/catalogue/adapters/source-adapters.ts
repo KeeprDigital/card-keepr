@@ -1,3 +1,4 @@
+import { limitlessOnePieceSourceAdapterRegistration } from "./limitless-one-piece-source-adapter";
 import { sourceLineages } from "./source-registry";
 import { AdministrationProblem, gameProfileForGame } from "../shared";
 import { AdapterParseFailure, adapterUrl } from "./adapter-parse-failure";
@@ -6,11 +7,12 @@ import { officialRawAdapterContracts } from "./product-release-source-adapters.t
 import type { ListingReconciliationTraits } from "./source-adapter-registration-types.ts";
 
 export type OfficialSourceContract = Readonly<{
-  supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam";
+  supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam" | "riftbound";
   partition: "EN-OCEANIA" | "EN-ASIA" | "EN-US";
   origin: string;
   documentPathnamePrefixes: readonly string[];
   imagePathnamePrefixes: readonly string[];
+  documentAuthorities?: readonly { origin: string; pathnamePrefixes: readonly string[] }[];
   requiredSurfaces: readonly string[];
 }>;
 
@@ -43,6 +45,16 @@ export type SourceAdapterRegistration = Readonly<{
     url: string;
     headers: Record<string, string>;
   }[];
+  coverageContracts?: Readonly<
+    Record<
+      string,
+      Readonly<{
+        description: string;
+        requiredSurfaces: readonly string[];
+        requestUrlForSurface: (surface: string) => string;
+      }>
+    >
+  >;
   requiredSurfaces?: readonly string[];
   requestUrlForDiscovery?: () => string;
   requestUrlForSurface?: (surface: string) => string;
@@ -96,8 +108,12 @@ export function requiredOfficialSourceContract(adapter: SourceAdapterRegistratio
 export function assertOfficialSourceUrl(value: string, contract: OfficialSourceContract): URL {
   const url = adapterUrl(value);
   if (
-    url.origin !== contract.origin ||
-    !contract.documentPathnamePrefixes.some((prefix) => url.pathname.startsWith(prefix)) ||
+    !(
+      contract.documentAuthorities ?? [{ origin: contract.origin, pathnamePrefixes: contract.documentPathnamePrefixes }]
+    ).some(
+      (authority) =>
+        url.origin === authority.origin && authority.pathnamePrefixes.some((prefix) => url.pathname.startsWith(prefix)),
+    ) ||
     url.username !== "" ||
     url.password !== "" ||
     url.hash !== ""
@@ -137,6 +153,7 @@ function productionCatalogueRegistration(
 
 export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistration[] = Object.freeze(
   [
+    limitlessOnePieceSourceAdapterRegistration,
     {
       adapterVersion: "one-piece-official-errata-html@1",
       sourceLineage: "one-piece-en",
@@ -172,6 +189,17 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
     },
     ...officialRawAdapterContracts.map((adapter) => ({
       ...productionCatalogueRegistration(adapter),
+      coverageContracts:
+        adapter.sourceLineage === "one-piece-en"
+          ? {
+              "p-001-catalogue": {
+                description:
+                  "Complete English P-001 catalogue search response and its referenced front images; excludes other numbers, products, events and corrections.",
+                requiredSurfaces: ["p-001-catalogue"],
+                requestUrlForSurface: () => "https://en.onepiece-cardgame.com/cardlist/?freewords=P-001",
+              },
+            }
+          : undefined,
       listingReconciliation: adapter.listingReconciliation,
       parseBytes: (bytes: Uint8Array, context: { mediaType: string | null; url: string; requestId?: string }) =>
         adapter.parse(context, bytes),
@@ -191,7 +219,8 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
   ].map((adapter) =>
     Object.freeze({
       ...adapter,
-      requestCapacity: sourceRequestCapacity(adapter.adapterVersion),
+      requestCapacity:
+        "requestCapacity" in adapter ? adapter.requestCapacity : sourceRequestCapacity(adapter.adapterVersion),
       coverageLossThreshold: { absolute: 25, fraction: 0.2 },
     }),
   ),
@@ -209,6 +238,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] = 
     (adapter) =>
       adapter.reconciliationCapability !== "catalogue" ||
       typeof adapter.parseBytes !== "function" ||
+      !officialRawAdapterContracts.some((raw) => raw.sourceLineage === adapter.sourceLineage) ||
       activeOfficialRawAdapterVersions.has(adapter.adapterVersion),
   ),
 );
@@ -310,4 +340,26 @@ export function assertAdapterRequestSurface(adapter: SourceAdapterRegistration, 
     "official_source_surface_mismatch",
     `The Official Errata adapter accepts only ${surface.url}.`,
   );
+}
+
+/** A named scope owns a finite root contract; it never weakens the default discovery. */
+export function sourceAdapterForCoverage(
+  adapter: SourceAdapterRegistration,
+  subset = "complete",
+): SourceAdapterRegistration {
+  if (subset === "complete") return adapter;
+  const contract = adapter.coverageContracts?.[subset];
+  if (!contract)
+    throw new AdministrationProblem(
+      422,
+      "unsupported_source_subset",
+      "The adapter has no independently complete contract for this named subset.",
+    );
+  return {
+    ...adapter,
+    requiredSurfaces: contract.requiredSurfaces,
+    requestUrlForSurface: contract.requestUrlForSurface,
+    requestUrlForDiscovery: undefined,
+    reconciliationAreas: [adapter.reconciliationCapability === "errata" ? "errata" : "catalogue"],
+  };
 }
