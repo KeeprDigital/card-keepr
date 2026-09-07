@@ -511,7 +511,9 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
       game: "riftbound",
       target: relationship ?? { kind: "field", entity_type: entityType, entity_id: entityId, path },
       assertion: relationship ? { kind: "relationship", presence: value } : { kind: "field", value },
-      rationale: "Fixture owner review bound to retained Riot evidence.",
+      rationale: relationship
+        ? "Synthetic owner-attested relationship for lifecycle testing; the announcement does not establish Printing membership."
+        : "Fixture owner review bound to retained Riot evidence.",
       evidence: [{ kind: "owner_reference", uri: capture.url, content_digest: capture.sha256 }],
       effective_interval: { from: null, to: null },
       reviewed_source_digest: createHash("sha256").update(JSON.stringify(previousValue)).digest("hex"),
@@ -688,6 +690,24 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     worker,
     120_000,
   );
+  const assertCuratedProductExports = async (revision) => {
+    const publishedProducts = await nativeExportRecords(api.url, apiKey, revision, "products");
+    assert.equal(
+      publishedProducts.find((product) => product.id === reviewedProduct.id)?.name,
+      `${reviewedProduct.name} (owner reviewed)`,
+    );
+    const relationships = await nativeExportRecords(api.url, apiKey, revision, "product_relationships");
+    const relationship = relationships.find(
+      (item) =>
+        item.kind === "printing-product" &&
+        item.from.id === admittedPrintings.get("ogn-141-298") &&
+        item.to.id === reviewedProduct.id,
+    );
+    assert.ok(relationship);
+    assert.equal(relationship.evidence_category, "curated");
+    return { products: publishedProducts, relationships };
+  };
+  await assertCuratedProductExports(finalPublication.resulting_revision_id);
   const finalPrintings = await nativeExportRecords(
     api.url,
     apiKey,
@@ -743,6 +763,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     worker,
     120_000,
   );
+  const freshProductExports = await assertCuratedProductExports(finalPublication.resulting_revision_id);
   const freshPrintings = await nativeExportRecords(
     api.url,
     apiKey,
@@ -798,6 +819,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
       .digest("hex"),
     manifest.captures.find((c) => c.id === "riftbound-image-ogn-141-298").sha256,
   );
+  assert.deepEqual(await assertCuratedProductExports(finalPublication.resulting_revision_id), freshProductExports);
   restoredAdmin = await startWorker({
     ...checkpoint,
     config: configPath,
