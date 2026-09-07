@@ -1,8 +1,8 @@
 import { type CatalogueStore, sha256Text, StreamingSha256 } from "../shared";
-import { publishedCompositionStatement } from "../shared";
+import { compositionArtifactRootsStatement } from "./composition-verification-repository";
 
 type Reference = { object_key: string; sha256: string; byte_length: number };
-/** Follow the private verified roots. Consumer exports deliberately omit evidence. */
+/** Verify private evidence and the exact retained public bytes bound into the composition. */
 export async function verifyCompositionArtifacts(
   db: CatalogueStore,
   bucket: R2Bucket,
@@ -10,22 +10,29 @@ export async function verifyCompositionArtifacts(
   revisionId: string,
 ) {
   const members = (
-    await publishedCompositionStatement(db, revisionId).all<{
+    await compositionArtifactRootsStatement(db, revisionId).all<{
       candidate_id: string;
       preparation_id: string;
       manifest_digest: string;
       supported_game: string;
       root_digest: string;
+      game_revision_id: string;
+      publication_operation_id: string;
+      revision_id: string;
+      public_state: string;
+      public_root_digest: string;
+      root_object_key: string;
+      root_bytes: number;
+      component_count: number;
+      deadline: string;
+      composition_digest: string;
+      composition_json: string;
     }>()
   ).results;
   if (!members.length) throw new Error("Published composition roots are unavailable.");
+  await readRoot(bucket, members[0]!.composition_digest);
   for (const member of members) {
-    const key = `publication-artifacts/${member.root_digest}`;
-    const object = await bucket.get(key);
-    if (!object || object.size > 524288) throw new Error("Publication root is unavailable or oversized.");
-    const content = await object.text();
-    if ((await sha256Text(content)) !== member.root_digest) throw new Error("Publication root digest mismatch.");
-    const root = JSON.parse(content);
+    const root = await readRoot(bucket, member.root_digest);
     if (
       root.contract !== "card-keepr-game-publication-artifacts@1" ||
       root.candidate_id !== member.candidate_id ||
@@ -35,7 +42,54 @@ export async function verifyCompositionArtifacts(
     )
       throw new Error("Publication root identity mismatch.");
     await verifyReference(bucket, images, root.artifacts, 0);
+    if (
+      member.public_state !== "verified" ||
+      member.revision_id !== member.game_revision_id ||
+      member.root_object_key !== `publication-artifacts/${member.public_root_digest}` ||
+      !Number.isSafeInteger(member.component_count) ||
+      member.component_count < 1 ||
+      typeof member.composition_json !== "string" ||
+      (await sha256Text(member.composition_json)) !== member.composition_digest
+    )
+      throw new Error("Public export publication binding mismatch.");
+    const composition = JSON.parse(member.composition_json);
+    if (
+      composition.contract !== "card-keepr-prepared-publication-composition@1" ||
+      !Array.isArray(composition.games) ||
+      composition.games.length !== members.length ||
+      !composition.games.some(
+        (game: Record<string, unknown>) =>
+          game.candidate_id === member.candidate_id &&
+          game.supported_game === member.supported_game &&
+          game.root_digest === member.root_digest &&
+          game.public_root_digest === member.public_root_digest,
+      )
+    )
+      throw new Error("Public export composition binding mismatch.");
+    const publicRoot = await readRoot(bucket, member.public_root_digest, member.root_bytes);
+    if (
+      publicRoot.contract !== "card-keepr-game-public-export-artifacts@5" ||
+      publicRoot.publication_operation_id !== member.publication_operation_id ||
+      publicRoot.candidate_id !== member.candidate_id ||
+      publicRoot.catalogue_revision_id !== member.revision_id ||
+      publicRoot.manifest_digest !== member.manifest_digest ||
+      publicRoot.private_root_digest !== member.root_digest ||
+      publicRoot.deadline !== member.deadline ||
+      publicRoot.component_count !== member.component_count
+    )
+      throw new Error("Public export root identity mismatch.");
+    const components = await verifyReference(bucket, images, publicRoot.artifacts, 0, undefined, true);
+    if (components !== member.component_count) throw new Error("Public export component count mismatch.");
   }
+}
+async function readRoot(bucket: R2Bucket, digest: string, byteLength?: number) {
+  if (typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) throw new Error("Invalid publication root digest.");
+  const object = await bucket.get(`publication-artifacts/${digest}`);
+  if (!object || object.size > 524288 || (byteLength !== undefined && object.size !== byteLength))
+    throw new Error("Publication root is unavailable or oversized.");
+  const content = await object.text();
+  if ((await sha256Text(content)) !== digest) throw new Error("Publication root digest mismatch.");
+  return JSON.parse(content);
 }
 async function verifyReference(
   bucket: R2Bucket,
@@ -43,7 +97,8 @@ async function verifyReference(
   reference: Reference,
   depth: number,
   nodeLevel?: number | null,
-): Promise<void> {
+  publicExport = false,
+): Promise<number> {
   if (
     depth > 32 ||
     typeof reference?.object_key !== "string" ||
@@ -75,16 +130,42 @@ async function verifyReference(
         object.size > 16384
       )
         throw new Error("Invalid bounded publication composition node.");
-      for (const child of value.children)
-        await verifyReference(bucket, images, child, depth + 1, value.level === 0 ? null : value.level - 1);
+      let leaves = 0;
+      for (const child of value.children) {
+        if (
+          publicExport &&
+          value.level === 0 &&
+          (child.descriptor?.compressed_sha256 !== child.sha256 ||
+            child.descriptor?.compressed_bytes !== child.byte_length ||
+            child.descriptor?.records !== 1)
+        )
+          throw new Error("Public export descriptor mismatch.");
+        leaves += await verifyReference(
+          bucket,
+          images,
+          child,
+          depth + 1,
+          value.level === 0 ? null : value.level - 1,
+          publicExport,
+        );
+      }
+      return leaves;
     } else if (
+      publicExport ||
       (nodeLevel !== null && nodeLevel !== undefined) ||
       !["card-keepr-game-export-record@1", "card-keepr-game-query-batch@1", "card-keepr-game-search-chunk@1"].includes(
         value.contract,
       )
     )
       throw new Error("Invalid publication artifact contract.");
+    return 1;
   } else {
+    if (
+      publicExport &&
+      (reference.object_key !== `catalogue-public-components/${reference.sha256}.ndjson.gz` ||
+        reference.byte_length > 4_000_000)
+    )
+      throw new Error("Invalid public export component reference.");
     if (nodeLevel !== undefined && nodeLevel !== null) throw new Error("Expected a publication composition node.");
     const digest = new StreamingSha256();
     const reader = object.body.getReader();
@@ -94,5 +175,6 @@ async function verifyReference(
       digest.update(value);
     }
     if (digest.digestHex() !== reference.sha256) throw new Error("Publication artifact digest mismatch.");
+    return 1;
   }
 }

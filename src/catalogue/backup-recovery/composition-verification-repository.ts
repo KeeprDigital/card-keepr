@@ -12,6 +12,9 @@ export const compositionSnapshotTables = [
   "game_publication_operations",
   "game_publication_actions",
   "publication_preparations",
+  "publication_export_preparations",
+  "publication_export_components",
+  "publication_export_nodes",
   "publication_query_documents",
   "publication_projection_batches",
   "publication_search_chunks",
@@ -112,4 +115,19 @@ export function compositionVerificationStatement(db: CatalogueStore, input: Comp
   return repositoryStatements(db)
     .prepare(query.sql)
     .bind(...query.params);
+}
+
+export function compositionArtifactRootsStatement(db: CatalogueStore, revisionId: string) {
+  return repositoryStatements(db)
+    .prepare(`SELECT m.supported_game,m.game_revision_id,m.candidate_id,m.root_digest,
+ c.preparation_id,c.manifest_digest,p.publication_operation_id,p.revision_id,p.state AS public_state,
+ p.root_digest AS public_root_digest,p.root_object_key,p.root_bytes,p.component_count,o.deadline,
+ r.content_digest AS composition_digest,v.content AS composition_json
+ FROM catalogue_composition_games m JOIN game_candidates c ON c.id=m.candidate_id
+ JOIN catalogue_revisions r ON r.id=m.catalogue_revision_id
+ LEFT JOIN verified_publication_compositions v ON v.sha256=r.content_digest
+ LEFT JOIN publication_export_preparations p ON p.candidate_id=m.candidate_id
+ LEFT JOIN game_publication_operations o ON o.id=p.publication_operation_id
+ WHERE m.catalogue_revision_id=? ORDER BY m.supported_game LIMIT 4`)
+    .bind(revisionId);
 }

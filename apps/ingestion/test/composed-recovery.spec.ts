@@ -1,5 +1,8 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { verifyCompositionArtifacts } from "../../../src/catalogue/backup-recovery/composition-artifacts";
+import { retainedPublicComponent } from "./query-helpers/public-export-recovery";
 import { expect, test } from "vitest";
-import { collect, get, post, installReconciliationSuite, requiredString } from "./reconciliation-helpers";
+import { collect, get, post, installReconciliationSuite, requiredString, testEnv } from "./reconciliation-helpers";
 
 installReconciliationSuite();
 
@@ -60,6 +63,17 @@ test("native backup consumes its reservation and rejects legacy-only simulated r
     ).document;
   }
   expect(preparation.state).toBe("verified");
+  for (let unit = 0; unit < 250; unit++) {
+    const prepared = await post(`/v1/publications/${approved.document.id}/export-preparation/advance`, {
+      generation: 0,
+      idempotency_key: `recovery-public-${unit}`,
+    });
+    expect(prepared.response.status, JSON.stringify(prepared.document)).toBe(200);
+    if (prepared.document.state !== "preparing") {
+      expect(prepared.document.state).toBe("verified");
+      break;
+    }
+  }
   const switched = await post(`/v1/publications/${approved.document.id}/advance`, { generation: 0 });
   expect(switched.response.status, JSON.stringify(switched.document)).toBe(200);
   expect(switched.document).toMatchObject({
@@ -72,6 +86,31 @@ test("native backup consumes its reservation and rejects legacy-only simulated r
     switched.document,
   );
   expect((await get(`/v1/game-candidates/${id}`)).document.state).toBe("published");
+  const db = catalogueStore(testEnv.CATALOGUE_DB);
+  const component = await retainedPublicComponent(db, id).first<{ object_key: string; byte_length: number }>();
+  expect(component).not.toBeNull();
+  const key = component!.object_key;
+  const original = await testEnv.CATALOGUE_EXPORTS.get(key);
+  const bytes = await original!.arrayBuffer();
+  const verifyArtifacts = () =>
+    verifyCompositionArtifacts(
+      db,
+      testEnv.CATALOGUE_EXPORTS,
+      testEnv.PRINTING_IMAGES,
+      String(switched.document.resulting_revision_id),
+    );
+  await expect(verifyArtifacts()).resolves.toBeUndefined();
+  try {
+    await testEnv.CATALOGUE_EXPORTS.delete(key);
+    await expect(verifyArtifacts()).rejects.toThrow(/artifact missing or truncated/);
+    const corrupt = new Uint8Array(bytes.slice(0));
+    corrupt[corrupt.length - 1] = corrupt[corrupt.length - 1]! ^ 1;
+    await testEnv.CATALOGUE_EXPORTS.put(key, corrupt);
+    await expect(verifyArtifacts()).rejects.toThrow(/artifact digest mismatch/);
+  } finally {
+    await testEnv.CATALOGUE_EXPORTS.put(key, bytes);
+  }
+  await expect(verifyArtifacts()).resolves.toBeUndefined();
   const backup = await post("/v1/backups", {
     expected_current_revision_id: switched.document.resulting_revision_id,
     idempotency_key: switched.document.backup_attempt_id,

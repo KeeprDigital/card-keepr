@@ -1394,4 +1394,32 @@ CREATE TRIGGER recovery_fence_publication_read_lifecycles_delete BEFORE DELETE O
 WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
 BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
 
+CREATE TRIGGER recovery_fence_publication_export_preparations_insert BEFORE INSERT ON publication_export_preparations
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_publication_export_preparations_update BEFORE UPDATE ON publication_export_preparations
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_publication_export_preparations_delete BEFORE DELETE ON publication_export_preparations
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_publication_export_components_insert BEFORE INSERT ON publication_export_components
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_publication_export_components_update BEFORE UPDATE ON publication_export_components
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_publication_export_components_delete BEFORE DELETE ON publication_export_components
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_publication_export_nodes_insert BEFORE INSERT ON publication_export_nodes
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_publication_export_nodes_update BEFORE UPDATE ON publication_export_nodes
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+CREATE TRIGGER recovery_fence_publication_export_nodes_delete BEFORE DELETE ON publication_export_nodes
+WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore_guard='blocked')
+BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
+
 UPDATE catalogue_schema_state SET migration_level=23 WHERE singleton=1;

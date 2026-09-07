@@ -641,6 +641,43 @@ test("native owner publication Workflow verifies an independently imported compo
   assert.equal(correctedResponse.status, 200);
   assert.equal(correctedResponse.body.data.action, "merge");
   assert.deepEqual(correctedResponse.body.data.replacement_ids, [survivorPrintingId]);
+  const retainedPublicExports = async (baseUrl) => {
+    const listing = await fetch(`${baseUrl}/v1/catalogue-exports`, { headers: { authorization: `Bearer ${apiKey}` } });
+    assert.equal(listing.status, 200);
+    const exports = (await listing.json()).data;
+    assert.equal(exports.length, 3);
+    const retained = [];
+    for (const item of exports) {
+      const pages = [],
+        components = [];
+      let after = null;
+      do {
+        const response = await fetch(
+          `${baseUrl}/v1/catalogue-exports/${item.catalogue_revision_id}${after ? `?after=${after}` : ""}`,
+          {
+            headers: { authorization: `Bearer ${apiKey}` },
+          },
+        );
+        assert.equal(response.status, 200);
+        const page = await response.json();
+        pages.push(page.data);
+        for (const descriptor of page.data.components) {
+          const component = await fetch(page.links.components[descriptor.name], {
+            headers: { authorization: `Bearer ${apiKey}` },
+          });
+          assert.equal(component.status, 200);
+          const bytes = Buffer.from(await component.arrayBuffer());
+          assert.equal(bytes.length, descriptor.compressed_bytes);
+          assert.equal(createHash("sha256").update(bytes).digest("hex"), descriptor.compressed_sha256);
+          components.push({ name: descriptor.name, bytes: bytes.toString("hex") });
+        }
+        after = page.data.page.next_cursor;
+      } while (after);
+      retained.push({ id: item.catalogue_revision_id, pages, components });
+    }
+    return retained;
+  };
+  const beforeRecoveryExports = await retainedPublicExports(api.url);
   const beforeRecoveryDetail = await consumer(`/v1/cards/${cards.records[0].id}`);
 
   pending = await post("/v1/game-candidates", {
@@ -854,6 +891,7 @@ test("native owner publication Workflow verifies an independently imported compo
   await writeFile(restoredApiPath, JSON.stringify(restoredApiConfig));
   const restoredApi = await startWorker({ config: restoredApiPath, envFile: apiEnv, statePath });
   workers.push(restoredApi);
+  assert.deepEqual(await retainedPublicExports(restoredApi.url), beforeRecoveryExports);
   const restoredRetired = await fetch(`${restoredApi.url}/v1/printings/${correctedPrintingId}`, {
     headers: { authorization: `Bearer ${apiKey}` },
   });

@@ -37,6 +37,15 @@ test("composed recovery migration preserves populated ancestors and fences a pre
     const writer = db.prepare(
       "INSERT INTO ingestion_runs(id,started_at,expected_current_revision_id,idempotency_key) VALUES ('late-writer','2026-09-07T00:00:00.000Z','revision_2','late-writer')",
     );
+    const exportWriters = [
+      db.prepare(
+        "INSERT INTO publication_export_preparations VALUES ('late-op','late-candidate','late-revision','preparing',0,'{}',0,NULL,NULL,NULL,NULL)",
+      ),
+      db.prepare(
+        "INSERT INTO publication_export_components VALUES ('late-candidate',0,'cards','late-card','digest','key','digest',1,'{}')",
+      ),
+      db.prepare("INSERT INTO publication_export_nodes VALUES ('late-op',0,0,'key','digest',1)"),
+    ];
     db.exec("BEGIN");
     db.exec(
       await readFile(
@@ -50,6 +59,8 @@ test("composed recovery migration preserves populated ancestors and fences a pre
     assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
     db.exec("UPDATE operation_state SET recovery_restore_guard='blocked'");
     assert.throws(() => writer.run(), /catalogue_recovery_writer_fenced/);
+    for (const exportWriter of exportWriters)
+      assert.throws(() => exportWriter.run(), /catalogue_recovery_writer_fenced/);
     assert.equal(db.prepare("SELECT count(*) AS n FROM ingestion_runs").get().n, 3);
     db.exec("UPDATE operation_state SET recovery_restore_guard='clear'");
     writer.run();
