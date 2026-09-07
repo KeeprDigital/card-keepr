@@ -403,6 +403,9 @@ async function collectRetainedReconciliationObservation(
         supportedGame: supportedGame(plan.supported_game),
         adapterVersion: plan.adapter_version,
         subset: plan.coverage?.subset ?? "complete",
+        cardIdentities: requiredSourceAdapter(plan.adapter_version).coverageContracts?.[
+          plan.coverage?.subset ?? "complete"
+        ]?.cardIdentities,
         reconciliationCapability: requiredSourceAdapter(plan.adapter_version).reconciliationCapability,
       };
     }),

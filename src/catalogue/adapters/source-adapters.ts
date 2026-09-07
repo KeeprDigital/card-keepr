@@ -1,3 +1,4 @@
+import { onePieceCoverageContracts } from "./one-piece-adapter";
 import { limitlessOnePieceSourceAdapterRegistration } from "./limitless-one-piece-source-adapter";
 import { sourceLineages } from "./source-registry";
 import { AdministrationProblem, gameProfileForGame } from "../shared";
@@ -136,26 +137,7 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
     },
     ...officialRawAdapterContracts.map((adapter) => ({
       ...productionCatalogueRegistration(adapter),
-      coverageContracts:
-        adapter.sourceLineage === "one-piece-en"
-          ? {
-              "p-001-catalogue-and-corroboration": {
-                description:
-                  "Complete P-001 catalogue search plus the separate Store Championship Wave 1 Trophy Card publication and image. Catalogue absence claims apply only to the search, not the event publication.",
-                requiredSurfaces: ["p-001-catalogue", "store-championship-p001"],
-                requestUrlForSurface: (surface: string) =>
-                  surface === "p-001-catalogue"
-                    ? "https://en.onepiece-cardgame.com/cardlist/?freewords=P-001"
-                    : "https://en.onepiece-cardgame.com/events/2023/championship/store_championship_wave1.php",
-              },
-              "p-001-catalogue": {
-                description:
-                  "Complete English P-001 catalogue search response and its referenced front images; excludes other numbers, products, events and corrections.",
-                requiredSurfaces: ["p-001-catalogue"],
-                requestUrlForSurface: () => "https://en.onepiece-cardgame.com/cardlist/?freewords=P-001",
-              },
-            }
-          : undefined,
+      coverageContracts: adapter.sourceLineage === "one-piece-en" ? onePieceCoverageContracts : undefined,
       listingReconciliation: adapter.listingReconciliation,
       parseBytes: (bytes: Uint8Array, context: { mediaType: string | null; url: string; requestId?: string }) =>
         adapter.parse(context, bytes),

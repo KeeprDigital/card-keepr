@@ -115,3 +115,9 @@ After stopping the local runtimes, the test restores that imported database into
 the disposable API binding and boots the API again using the retained R2 objects.
 It compares the restored public Printing export and reads the WINNER Printing.
 This verifies the imported result through the ordinary consumer boundary.
+
+A complete named P-001 refresh compares the manifest-verified predecessor's
+P-001 Printings for the selected source. A missing variant produces
+`record_not_observed` while preserving its identity and retained facts. A source
+omitted from the plan or unavailable as optional evidence is not checked for
+absence. This does not establish absence outside the named Card scope.

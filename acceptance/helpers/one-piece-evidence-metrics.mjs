@@ -55,13 +55,14 @@ export async function onePieceEvidenceMetrics(
     }
     if (record.event !== "workflow.step.completed") continue;
     const name = record.workflow.step.replace(/-unit-[0-9]+$/u, "");
-    const total = (workflow[name] ??= {
+    workflow[name] ??= {
       attempts: 0,
       elapsed_ms: 0,
       prepared_statements: 0,
       batch_calls: 0,
       batch_statements: 0,
-    });
+    };
+    const total = workflow[name];
     total.attempts++;
     total.elapsed_ms += record.duration_ms;
     for (const field of ["prepared_statements", "batch_calls", "batch_statements"]) total[field] += record.d1[field];

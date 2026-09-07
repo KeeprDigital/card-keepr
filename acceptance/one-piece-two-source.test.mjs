@@ -92,6 +92,14 @@ test("retained P-001: owner collects every declared Bandai record through native
       const capture = captures.get(request.url);
       assert.ok(capture, `undeclared network request ${request.url}`);
       served.push(capture.id);
+      if (request.url.includes("en.onepiece-cardgame.com/cardlist/") && fault === "disappearance") {
+        const original = capture.bodyBytes.toString("utf8");
+        const body = original
+          .replace(/<dl class="modalCol" id="P-001_p6">[\s\S]*?<\/dl>/u, "")
+          .replace('<div class="countCol">7 results</div>', '<div class="countCol">6 results</div>');
+        assert.notEqual(body, original);
+        return new Response(body, { headers: capture.headers });
+      }
       if (request.url.includes("onepiece.limitlesstcg.com") && fault === "outage")
         return new Response("Injected optional-source outage", { status: 503 });
       if (request.url.includes("onepiece.limitlesstcg.com") && fault === "conflict") {
@@ -426,10 +434,12 @@ test("retained P-001: owner collects every declared Bandai record through native
   const linkedPublication = await publishNativeCollection(linkedInspection, "linked-appearances", environment, worker);
   let finalPublication = linkedPublication;
   const fullPlan = JSON.parse(await readFile(planPath, "utf8"));
-  for (const scenario of ["official-only", "optional-outage"]) {
+  for (const scenario of ["official-only", "scoped-disappearance", "optional-outage"]) {
     const scenarioPlan = structuredClone(fullPlan);
-    if (scenario === "official-only") scenarioPlan.plans = scenarioPlan.plans.slice(0, 1);
-    else {
+    if (scenario !== "optional-outage") {
+      scenarioPlan.plans = scenarioPlan.plans.slice(0, 1);
+      if (scenario === "scoped-disappearance") fault = "disappearance";
+    } else {
       scenarioPlan.plans[1].participation = "optional";
       fault = "outage";
     }
@@ -439,7 +449,7 @@ test("retained P-001: owner collects every declared Bandai record through native
     await sealed(refreshed.id);
     const inspection = await inspectNativeCollection(refreshed.id, environment);
     const coverage = (await cli(["source", "show", "--run-id", refreshed.id])).source_coverage;
-    if (scenario === "official-only")
+    if (scenario !== "optional-outage")
       assert.deepEqual(
         coverage.map((c) => c.source_lineage),
         ["one-piece-en"],
@@ -454,6 +464,14 @@ test("retained P-001: owner collects every declared Bandai record through native
       inspection.records.printings.map((p) => p.id).sort(),
       [...printingIds.values(), winnerPrintingId].sort(),
     );
+    const missing = inspection.warnings.filter((warning) => warning.code === "record_not_observed");
+    if (scenario === "scoped-disappearance") {
+      assert.deepEqual(
+        missing.map((warning) => warning.printing_id),
+        [printingIds.get("P-001_p6")],
+      );
+      assert.equal(missing[0].source_lineage, "one-piece-en");
+    } else assert.deepEqual(missing, []);
     finalPublication = await publishNativeCollection(inspection, scenario, environment, worker);
     fault = null;
   }

@@ -4,7 +4,17 @@ The complete declared P-001 journey passed on 2026-09-08 (Australia/Melbourne).
 The tested working-tree code was committed unchanged as `bc3a739` after the run
 started. A later commit, `94fa729`, adds explicit API link/image-membership and
 restored WINNER image-byte assertions; those additional assertions were not part
-of this run and remain for final acceptance validation.
+of this run and remain for final acceptance validation. Review also added a
+seven-to-six in-scope disappearance refresh, a durable-cursor regression, and
+optional-field retention checks. The earlier measurements below remain the
+unchanged results of the five-publication run; they do not measure these additions.
+
+The final runtime-free domain suite passes 200 tests across 33 files. Static
+review fixes preserve unknown Limitless labels in the source sidecar, classify
+malformed source URLs/UTF-8 correctly, and keep P-001 registration facts in the
+One Piece module. The optional-field regression fails against the prior parser.
+Both Standards and Spec rechecks found no remaining actionable production-code
+finding; native and broad Worker/acceptance validation remain queued.
 
 The command was:
 

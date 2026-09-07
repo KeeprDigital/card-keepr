@@ -31,6 +31,7 @@ export class ReconciliationContinuation extends Error {
         | "official_reduction"
         | "official_errata"
         | "official_assembly"
+        | "scoped_disappearance"
         | "disappearance_warnings"
         | "withdrawal_diagnostics"
         | `product_reduction:${"one-piece" | "digimon" | "fusion-world" | "gundam"}`;

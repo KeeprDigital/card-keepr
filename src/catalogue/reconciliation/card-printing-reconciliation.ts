@@ -1,3 +1,4 @@
+import { prepareScopedDisappearanceWarnings, type CheckedCardScope } from "./scoped-disappearance";
 import { nativePrintingsAtLocator, retainPrintingLocator } from "./native-printing-locators";
 import {
   nativePreparationFailureCode,
@@ -405,6 +406,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   const evidenceGames = new Set<SupportedGame>();
   const evidenceLineages = new Set<string>();
   const completeLineages = new Set<string>();
+  const checkedCardScopes: CheckedCardScope[] = [];
   let errataOnlyEvidence = true;
   const evidencePlanSnapshot: unknown[] = [];
   for await (const plan of retained.evidencePlans) {
@@ -412,7 +414,10 @@ export async function reconcileRetainedCardPrintingEvidence(
     evidenceGames.add(plan.supportedGame);
     evidenceLineages.add(plan.sourceLineage);
     if ((plan.subset ?? "complete") === "complete") completeLineages.add(plan.sourceLineage);
-    if (plan.reconciliationCapability !== "errata") errataOnlyEvidence = false;
+    if (plan.reconciliationCapability !== "errata") {
+      errataOnlyEvidence = false;
+      if (plan.cardIdentities?.length) checkedCardScopes.push({ ...plan, cardIdentities: plan.cardIdentities });
+    }
   }
   if (!reduction) await pinCorrectionDecisions(database, runId, JSON.parse(run.selected_games_json) as string[]);
   let correctedCardIdentity: Awaited<ReturnType<typeof pinnedCardIdentityResolver>>;
@@ -1740,6 +1745,16 @@ export async function reconcileRetainedCardPrintingEvidence(
   const { draft: official, observedCards, observedPrintings } = assembled;
   const checkedSourceLineages = errataOnlyEvidence ? [] : [...completeLineages].sort();
   try {
+    await prepareScopedDisappearanceWarnings(
+      database,
+      runId,
+      checkedCardScopes,
+      priorCards,
+      priorPrintings,
+      plans,
+      sourceWarnings,
+      yieldAtCheckpoint,
+    );
     await prepareDisappearanceWarnings(
       database,
       runId,
