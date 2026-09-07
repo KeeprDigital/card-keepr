@@ -93,6 +93,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     assert.equal(result.code, 0, result.stdout + result.stderr);
     return JSON.parse(result.stdout);
   };
+  const planPath = join(directory, "plan.json");
   let run = resumeRunId ? { id: resumeRunId } : null;
   if (!resumeDirectory) {
     for (const area of ["card_facts", "printing_details", "corrected_card_content"])
@@ -116,7 +117,6 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
         "--idempotency-key",
         `riot-authority-${area}`,
       ]);
-    const planPath = join(directory, "plan.json");
     await writeFile(
       planPath,
       JSON.stringify({
@@ -535,6 +535,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
         idempotency_key: idempotency,
       }),
     });
+    await paceNativeRequest(environment);
     const status = await fetch(`${worker.url}/v1/status?${query}`, { headers: { authorization: `Bearer ${key}` } });
     assert.equal(status.status, 200);
     const confirmation = (await status.json()).resolved_target.confirmation;
@@ -734,15 +735,20 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
         : resumeDirectory
           ? "resumed_retained_run"
           : "fresh_retained_collection",
-      retained_snapshots: 14,
+      initial_collection_retained_snapshots: 14,
+      journey_retained_snapshots: evidence.snapshots.length + freshEvidence.snapshots.length,
+      journey_observations: [...evidence.observation_sets, ...freshEvidence.observation_sets].reduce(
+        (n, set) => n + set.observation_count,
+        0,
+      ),
       observed_inventory_records: 1189,
-      observed_errata: 31,
+      initial_collection_errata_observations: 31,
       observed_products: 9,
       visually_reviewed_printings: 6,
       additional_card_only_admissions: 30,
       injected_unretained_image_failures: 1183,
       elapsed_functional_replay_ms: Math.round(performance.now() - startedAt),
-      retained_body_bytes: [...captures.values()]
+      unique_retained_body_bytes: [...captures.values()]
         .filter((c) => !c.id.startsWith("riftbound-sets"))
         .reduce((n, c) => n + c.bodyBytes.length, 0),
     }),
