@@ -1553,13 +1553,26 @@ export async function reconcileRetainedCardPrintingEvidence(
   };
 
   candidate = omitUndefinedValues(candidate) as CatalogueCandidate;
-  let official: ReconciliationCandidateState;
+  let assembled: Awaited<ReturnType<typeof prepareOfficialCandidate>>;
   try {
-    official = await prepareOfficialCandidate(
+    assembled = await prepareOfficialCandidate(
       database,
       runId,
       productCatalogue.draft,
-      { cards, printings, images: printingImages, errata: currentErrata, plans, games: evidenceGames },
+      {
+        cards,
+        printings,
+        images: printingImages,
+        errata: currentErrata,
+        plans,
+        games: evidenceGames,
+        observedCard: async (id) =>
+          (await localCardFacts.has(id)) || (await targetedCardIds.has(id)) || (await admittedEntities.hasCard(id)),
+        observedPrinting: async (id) =>
+          (await plans.hasObserved("printing", id)) ||
+          (await targetedPrintingIds.has(id)) ||
+          (await admittedEntities.hasPrinting(id)),
+      },
       diagnostics,
       observedAt,
       yieldAtCheckpoint,
@@ -1568,6 +1581,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
     throw error;
   }
+  const { draft: official, observedCards, observedPrintings } = assembled;
   for await (const { printingId, sourceLineage, memberships } of plans.memberships())
     for await (const warning of relationshipDisappearanceWarnings(database, printingId, sourceLineage, memberships))
       await sourceWarnings.push(warning);
@@ -1624,25 +1638,6 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
   const warnings = sourceWarnings;
   let candidateCatalogueDigest: string;
-  const observedCards = new ReconciliationSortedRecords<string>(database, runId, "observed_card_ids");
-  for await (const card of official.values("cards")) {
-    if (
-      (await localCardFacts.has(card.id)) ||
-      (await targetedCardIds.has(card.id)) ||
-      (await admittedEntities.hasCard(card.id))
-    )
-      await observedCards.append(card.id);
-  }
-  const observedPrintingIds = new ReconciliationRecordLog<string>(database, runId, "observed_printing_ids");
-  const observedPrintings = { [Symbol.asyncIterator]: () => observedPrintingIds.records() };
-  for await (const printing of official.values("printings")) {
-    if (
-      (await plans.hasObserved("printing", printing.id)) ||
-      (await targetedPrintingIds.has(printing.id)) ||
-      (await admittedEntities.hasPrinting(printing.id))
-    )
-      await observedPrintingIds.append(printing.id);
-  }
   if (diagnostics.length > 0) {
     candidateCatalogueDigest = await catalogueDataDigest(
       database,

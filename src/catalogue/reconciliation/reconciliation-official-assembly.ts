@@ -1,3 +1,4 @@
+import { ReconciliationRecordLog } from "./reconciliation-record-log";
 import {
   type CatalogueCard,
   type CataloguePrinting,
@@ -20,6 +21,10 @@ type Cursor = {
   stage: "cards" | "printings" | "printing_images" | "errata" | "complete";
   after: string;
   cards: number;
+  observedCards: number;
+  observedPrintings: number;
+  cardLog: number;
+  printingLog: number;
   positions: ReconciliationCandidateState["positions"];
   diagnostics: { position: number; count: number };
 };
@@ -36,6 +41,8 @@ export async function prepareOfficialCandidate(
     errata: ReconciliationErrataState;
     plans: ReconciliationPlanState;
     games: ReadonlySet<SupportedGame>;
+    observedCard: (id: string) => Promise<boolean>;
+    observedPrinting: (id: string) => Promise<boolean>;
   },
   diagnostics: ReconciliationRecordSink<{
     code: "canonical_card_conflict";
@@ -49,23 +56,40 @@ export async function prepareOfficialCandidate(
   },
   observedAt: string,
   yieldAtCheckpoint: boolean,
-): Promise<ReconciliationCandidateState> {
+) {
   const draft = new ReconciliationCandidateState(database, runId, "before_curated", base);
+  const cardIds = new ReconciliationRecordLog<string>(database, runId, "observed_card_ids");
+  const printingIds = new ReconciliationRecordLog<string>(database, runId, "observed_printing_ids");
+  const assembled = {
+    draft,
+    observedCards: { [Symbol.asyncIterator]: () => cardIds.records() },
+    observedPrintings: { [Symbol.asyncIterator]: () => printingIds.records() },
+  };
   const checkpoint = await reconciliationCheckpoint<Cursor>(database, runId, "official_assembly");
   let stage: Cursor["stage"] = checkpoint?.value.stage ?? "cards";
   let after = checkpoint?.value.after ?? "";
   let cards = checkpoint?.value.cards ?? 0;
+  let observedCards = checkpoint?.value.observedCards ?? 0;
+  let observedPrintings = checkpoint?.value.observedPrintings ?? 0;
   let ordinal = (checkpoint?.ordinal ?? -1) + 1;
   if (checkpoint) {
     draft.resumeAt(checkpoint.value.positions);
     diagnostics.resumeAt(checkpoint.value.diagnostics);
-    if (stage === "complete") return draft;
+    cardIds.resumeAt(checkpoint.value.cardLog);
+    printingIds.resumeAt(checkpoint.value.printingLog);
+    if (stage === "complete") return assembled;
   }
   const save = async () => {
+    const cardLog = await cardIds.checkpoint();
+    const printingLog = await printingIds.checkpoint();
     await retainReconciliationCheckpoint(database, runId, "official_assembly", ordinal, {
       stage,
       after,
       cards,
+      observedCards,
+      observedPrintings,
+      cardLog,
+      printingLog,
       positions: draft.positions,
       diagnostics: diagnostics.cursor,
     } satisfies Cursor);
@@ -118,6 +142,10 @@ export async function prepareOfficialCandidate(
         }
       }
       await draft.set("cards", omitUndefinedValues(resolved) as CatalogueCard);
+      if (await sources.observedCard(card.id)) {
+        await cardIds.append(card.id);
+        observedCards++;
+      }
       cards++;
     });
     await finish("printings");
@@ -125,6 +153,10 @@ export async function prepareOfficialCandidate(
   if (stage === "printings") {
     await consume(sources.printings.entityValues(after), async (printing) => {
       await draft.set("printings", omitUndefinedValues(printing) as CataloguePrinting);
+      if (await sources.observedPrinting(printing.id)) {
+        await printingIds.append(printing.id);
+        observedPrintings++;
+      }
     });
     await finish("printing_images");
   }
@@ -140,7 +172,7 @@ export async function prepareOfficialCandidate(
     });
     await finish("complete");
   }
-  return draft;
+  return assembled;
 }
 
 export function omitUndefinedValues(value: unknown): unknown {

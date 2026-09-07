@@ -95,6 +95,7 @@ test.each([
     const sourceWarningCalls: number[] = [];
     const assembledCards: number[] = [];
     const assemblyCalls: number[] = [];
+    const assembledObserved: { cards: number; printings: number }[] = [];
     const restoredCards: number[] = [];
     let calls = 0;
     let armed = false;
@@ -225,10 +226,17 @@ test.each([
         if (JSON.parse(result).continuation?.phase === "official_assembly") {
           assemblyCalls.push(calls);
           const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
-          const checkpoint = (status.checkpoints as { phase: string; cursor: { cards: number } }[]).find(
-            (row) => row.phase === "official_assembly",
-          )!;
+          const checkpoint = (
+            status.checkpoints as {
+              phase: string;
+              cursor: { cards: number; observedCards: number; observedPrintings: number };
+            }[]
+          ).find((row) => row.phase === "official_assembly")!;
           assembledCards.push(checkpoint.cursor.cards);
+          assembledObserved.push({
+            cards: checkpoint.cursor.observedCards,
+            printings: checkpoint.cursor.observedPrintings,
+          });
           if (interrupt === "official_assembly" && checkpoint.cursor.cards > 0) armed = true;
         }
         expect(new TextEncoder().encode(result).byteLength).toBeLessThan(65536);
@@ -272,6 +280,7 @@ test.each([
     if (count === 32) expect(restoredCards.some((restored) => restored > 0 && restored < 32)).toBe(true);
     if (base === "prior-state-text-pages") expect(Math.max(...chunkPositions)).toBeGreaterThan(0);
     expect(Math.max(...callsPerUnit)).toBeLessThanOrEqual(100);
+    expect(Math.max(...assemblyCalls)).toBeLessThanOrEqual(100);
     for (let index = 0; index < restoredCards.length; index++)
       expect(restoredCards[index]! - (restoredCards[index - 1] ?? 0)).toBeLessThanOrEqual(8);
     expect(restoredCards).toContain(count);
@@ -294,6 +303,8 @@ test.each([
     if (interrupt === "official_assembly") {
       expect(assembledCards.some((count) => count > 0 && count < 40)).toBe(true);
       expect(assembledCards).toContain(40);
+      expect(assembledObserved).toContainEqual({ cards: 32, printings: 32 });
+      expect(assembledObserved.some(({ cards }) => cards > 0 && cards < 32)).toBe(true);
       expect(Math.max(...assemblyCalls)).toBeLessThanOrEqual(100);
     }
     if (interrupt === "withdrawal_diagnostics") {
