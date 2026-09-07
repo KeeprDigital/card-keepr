@@ -1,3 +1,4 @@
+import { runEvidenceCleanupWorkflow } from "./evidence-cleanup-workflow";
 import { snapshotRecoveryWait } from "./snapshot-recovery-wait";
 import { runGamePublicationWorkflow } from "./game-publication-workflow";
 import { runPublicationPreparationWorkflow } from "./publication-preparation-workflow";
@@ -37,6 +38,7 @@ export async function runReconciliationWorkflow(
   step = snapshotRecoveryWait(env, step);
   ({ env, step } = observeOperationalWorkflow(step, event, env));
   ({ env, step } = boundedReconciliationResources(env, step));
+  if (event.payload.evidence_cleanup) return runEvidenceCleanupWorkflow(env, step, event.payload.evidence_cleanup);
   if (event.payload.publication) return runGamePublicationWorkflow(env, step, event.payload.publication);
   if (event.payload.publication_preparation) return runPublicationPreparationWorkflow(env, step, event.payload);
   let reconciliationResultJson: string;

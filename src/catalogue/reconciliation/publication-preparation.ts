@@ -1,3 +1,4 @@
+import { trackedStagingBucket } from "../shared";
 import { publicExportPreparationStatement } from "./game-publication-repository";
 import { publicationRecord, type PublicationEnvelope } from "./publication-record";
 import { preparePublicLifecycle } from "./publication-lifecycle";
@@ -115,6 +116,11 @@ export async function advancePublicationPreparation(
     .first<{ request_json: string; result_json: string }>();
   if (replay) return replayResult(replay, request);
   const candidate = await inspectGameCandidate(db, id);
+  env = {
+    CATALOGUE_DB: db,
+    PRINTING_IMAGES: env.PRINTING_IMAGES,
+    CATALOGUE_EXPORTS: trackedStagingBucket(db, env.CATALOGUE_EXPORTS, "CATALOGUE_EXPORTS", candidate.preparation_id),
+  };
   const current = await repository.publicationPreparationStatement(db, id).first<PreparationState>();
   try {
     await repository
@@ -608,6 +614,7 @@ export async function composePublicationArtifacts(env: Environment, ids: unknown
     );
   const games: { supported_game: string; candidate_id: string; root_digest: string; public_root_digest?: string }[] =
     [];
+  let compositionOwner = "";
   for (const id of ids) {
     const status = await inspectPublicationPreparation(env.CATALOGUE_DB, id);
     if (status.state !== "verified" || !status.root_digest)
@@ -616,6 +623,7 @@ export async function composePublicationArtifacts(env: Environment, ids: unknown
         "publication_artifacts_unverified",
         "Each selected game must have verified publication artifacts.",
       );
+    compositionOwner = status.preparation_id;
     const root = await env.CATALOGUE_EXPORTS.head(`publication-artifacts/${status.root_digest}`);
     if (!root || root.size > 16384)
       throw new AdministrationProblem(
@@ -654,7 +662,10 @@ export async function composePublicationArtifacts(env: Environment, ids: unknown
   if (new Set(games.map((game) => game.supported_game)).size !== games.length)
     throw new AdministrationProblem(422, "duplicate_composition_game", "Select only one candidate for each game.");
   const content = canonicalJson({ contract: "card-keepr-prepared-publication-composition@1", games });
-  const root = await retainPublicationObject(env.CATALOGUE_EXPORTS, content);
+  const root = await retainPublicationObject(
+    trackedStagingBucket(env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, "CATALOGUE_EXPORTS", compositionOwner),
+    content,
+  );
   await repository.retainVerifiedPublicationComposition(env.CATALOGUE_DB, root.sha256, content).run();
   return {
     ...JSON.parse(content),

@@ -27,7 +27,7 @@ test("native owner publication Workflow verifies an independently imported compo
     apiKey = randomUUID();
   const config = JSON.parse(await readFile(resolve("apps/ingestion/wrangler.jsonc"), "utf8"));
   delete config.$schema;
-  config.main = resolve("apps/ingestion/src/index.ts");
+  config.main = resolve("acceptance/fixtures/cleanup-native-runtime.ts");
   config.d1_databases[0].migrations_dir = resolve("migrations");
   config.ratelimits[0].simple.limit = 300;
   config.services = [{ binding: "OFFICIAL_SOURCE_TRANSPORT", service: "card-keepr-synthetic-official-source" }];
@@ -143,6 +143,12 @@ test("native owner publication Workflow verifies an independently imported compo
     delete body.request_id;
     return { status: response.status, body };
   };
+  const seededCleanupResponse = await fetch(`${ingestion.url}/acceptance/unused-cleanup-capture`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${adminKey}` },
+  });
+  assert.equal(seededCleanupResponse.status, 200);
+  const cleanupFixture = await seededCleanupResponse.json();
   const before = await consumer("/v1/cards?game=digimon");
   const run = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "native-artifact-source"]);
   await cli(["source", "resume", "--run-id", run.id]);
@@ -506,6 +512,23 @@ test("native owner publication Workflow verifies an independently imported compo
     await new Promise((resolve) => setTimeout(resolve, 100));
   } while (Date.now() < onePieceBackupDeadline);
   assert.equal(backup.state, "verified", JSON.stringify(backup));
+  const cleanupIntent = await cli([
+    "evidence-cleanup",
+    "start",
+    "--run-id",
+    cleanupFixture.run,
+    "--idempotency-key",
+    "native-unused-cleanup",
+  ]);
+  let cleanupStatus;
+  for (let i = 0; i < 100; i++) {
+    cleanupStatus = await get(`/v1/evidence-cleanups/${cleanupIntent.id}`);
+    if (cleanupStatus.state === "paused") break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.equal(cleanupStatus.failure_code, "evidence_cleanup_waiting_backup_retention");
+  assert.equal(cleanupStatus.deleted_objects, 0);
+
   assert.equal(cloudflare.snapshots.length, 2);
   const mutate = async (args, env = environment) => {
     const full = [...args, "--environment", "production", "--yes", "--json"];
@@ -827,6 +850,20 @@ test("native owner publication Workflow verifies an independently imported compo
   assert.equal(backup.publication_ingestion_run_id, run.id);
   assert.equal(backup.restore_generation, 2);
   assert.equal(cloudflare.snapshots.length, 5);
+  // Advance only the synthetic cleanup clock beyond the existing dated 90-day
+  // retention. No backup is deleted or its policy changed. The newest verified
+  // checkpoint was exported/imported after reservation and contains the fence.
+  const cleanupAdvance = await fetch(`${ingestion.url}/v1/evidence-cleanups/${cleanupIntent.id}/advance`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${adminKey}`,
+      "content-type": "application/json",
+      "x-keepr-test-now": new Date(Date.now() + 366 * 86400000).toISOString(),
+    },
+    body: "{}",
+  });
+  assert.equal(cleanupAdvance.status, 200, await cleanupAdvance.clone().text());
+  assert.equal((await cleanupAdvance.json()).deleted_objects, 1);
   const recoveryId = "native-recovery-proof";
   const recovery = await mutate([
     "recovery",
@@ -918,6 +955,12 @@ test("native owner publication Workflow verifies an independently imported compo
     replacedEnvironment,
   );
   assert.equal(accepted.state, "accepted");
+  const reclaimedAfterRestore = await fetch(
+    `${replacedEnvironment.KEEPR_INGESTION_URL}/v1/source-snapshots/${cleanupFixture.id}/content`,
+    { headers: { authorization: `Bearer ${adminKey}` } },
+  );
+  assert.equal(reclaimedAfterRestore.status, 410, await reclaimedAfterRestore.clone().text());
+
   assert.ok(
     accepted.restored_work.some((row) => row.classification === "abandoned_after_restore" && row.operations === 1),
   );
