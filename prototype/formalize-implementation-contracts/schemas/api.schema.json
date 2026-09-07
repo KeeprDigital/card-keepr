@@ -23,7 +23,8 @@
         "one-piece",
         "fusion-world",
         "digimon",
-        "gundam"
+        "gundam",
+        "riftbound"
       ]
     },
     "Region": {
@@ -124,6 +125,23 @@
           ],
           "properties": {
             "kind": {
+              "const": "publisher_name"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
               "const": "functional_designation"
             },
             "value": {
@@ -159,7 +177,7 @@
       "properties": {
         "profile": {
           "type": "string",
-          "pattern": "^(one-piece|fusion-world|digimon|gundam)@[1-9][0-9]*$"
+          "pattern": "^(one-piece|fusion-world|digimon|gundam|riftbound)@[1-9][0-9]*$"
         },
         "attributes": {
           "type": "object",
@@ -774,7 +792,8 @@
             "one-piece",
             "fusion-world",
             "digimon",
-            "gundam"
+            "gundam",
+            "riftbound"
           ]
         },
         "card_number": {

@@ -122,3 +122,44 @@ restoration. Its normal teardown removed the disposable state. Subsequent failed
 Riftbound replays preserve their local state for diagnosis after all runtimes
 stop; successful runs still remove it. The CLI fix was verified without another
 collection.
+
+## First public export failure and contract repair
+
+Frozen commit `efd9000` ran for 643.83 seconds. It verified 14 retained
+snapshots, 1,229 observations and 1,189 unique source Printing proposals,
+completed six explicit owner Printing admissions and 30 Card-only admissions,
+and sealed the reviewed candidate. The first publication then failed with
+`public_export_record_invalid`. No resulting revision, API/export consumer
+assertion, Curated Revision, fresh collection or restoration succeeded in that
+run. Its stopped SQLite/R2 state was retained for diagnosis.
+
+The shipped serializer's first record was a `supported_game` with key
+`riftbound` and profile `riftbound@1`. The active public v5 schema still listed
+four games. The active public record/manifest, API and administration contracts
+now include the accepted Riftbound game/profile/component and nonempty
+`publisher_name` identity variants. Historical export schemas are unchanged;
+public manifest pages still allow at most four components.
+
+Read-only reconstruction against the failed run validates all 130 actual
+prepared records: one supported game, one profile, 36 Cards, six Printings,
+six images, nine Products, nine Releases, 31 Errata and 31 relationships.
+Invoking the shipped record preparation function with an in-memory R2 interface
+also produces 130 compressed components whose advertised record schemas
+validate. Their descriptors validate in 33 derived manifest pages. Those
+manifest pages use diagnostic revision metadata; this is contract validation,
+not a published manifest or native publication/recovery pass.
+
+After integrating actual main `3b756156`, review caught a separate inherited
+serialization defect: resolved evidence metadata included `cardIdentities:
+undefined` for default complete scopes. The actual canonical serializer rejected
+that property for both Bandai and Riftbound. Conditional omission preserves the
+absence of an identity restriction; the named P-001 scope retains its exact
+identity array. Three regressions cover both defaults and the named scope.
+
+The native fixture supports an explicitly labelled retained-run resume using
+`KEEPR_RIFTBOUND_RESUME_DIRECTORY` and `KEEPR_RIFTBOUND_RESUME_RUN_ID` together.
+It rechecks retained evidence, replays owner decisions with their original
+idempotency keys, and prepares/publishes under new keys through shipped owner
+operations. It skips the original collection and migrations; all subsequent
+consumer, Curated Revision, fresh Origins collection and recovery assertions
+remain required. A resumed result must not be reported as a fresh full journey.

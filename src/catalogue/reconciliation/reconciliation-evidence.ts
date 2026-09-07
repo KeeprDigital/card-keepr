@@ -433,24 +433,7 @@ async function collectRetainedReconciliationObservation(
     countChangeWarnings,
     unavailablePrintingImages,
     partitions,
-    evidencePlans: selectedPlans.map((plan) => {
-      return {
-        sourceLineage: plan.source_lineage,
-        supportedGame: supportedGame(plan.supported_game),
-        adapterVersion: plan.adapter_version,
-        subset: plan.coverage?.subset ?? "complete",
-        printingAdmission:
-          sourceAdapterForCoverage(requiredSourceAdapter(plan.adapter_version), plan.coverage?.subset)
-            .printingAdmission ?? "source_qualification",
-        reconciliationCapability: sourceAdapterForCoverage(
-          requiredSourceAdapter(plan.adapter_version),
-          plan.coverage?.subset,
-        ).reconciliationCapability,
-        cardIdentities: requiredSourceAdapter(plan.adapter_version).coverageContracts?.[
-          plan.coverage?.subset ?? "complete"
-        ]?.cardIdentities,
-      };
-    }),
+    evidencePlans: selectedPlans.map(resolvedReconciliationEvidencePlan),
     observations: stagedNormalizedObservations<NormalizedReconciliationObservation>(database, runId),
   };
 }
@@ -835,4 +818,24 @@ function supportedGame(value: string): SupportedGame {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function resolvedReconciliationEvidencePlan(plan: ReturnType<typeof parseEvidencePlans>[number]) {
+  const cardIdentities = requiredSourceAdapter(plan.adapter_version).coverageContracts?.[
+    plan.coverage?.subset ?? "complete"
+  ]?.cardIdentities;
+  return {
+    sourceLineage: plan.source_lineage,
+    supportedGame: supportedGame(plan.supported_game),
+    adapterVersion: plan.adapter_version,
+    subset: plan.coverage?.subset ?? "complete",
+    printingAdmission:
+      sourceAdapterForCoverage(requiredSourceAdapter(plan.adapter_version), plan.coverage?.subset).printingAdmission ??
+      "source_qualification",
+    reconciliationCapability: sourceAdapterForCoverage(
+      requiredSourceAdapter(plan.adapter_version),
+      plan.coverage?.subset,
+    ).reconciliationCapability,
+    ...(cardIdentities === undefined ? {} : { cardIdentities }),
+  };
 }

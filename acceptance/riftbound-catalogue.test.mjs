@@ -29,7 +29,11 @@ async function runCli(args, environment, options) {
 // replayed locally; collection, parsing and all owner operations are shipped code.
 test("retained Riot catalogue: owner reviews, publishes and restores English inventory, Errata and Products", async (t) => {
   const startedAt = performance.now();
-  const directory = await mkdtemp(join(tmpdir(), "keepr-real-riftbound-"));
+  const resumeDirectory = process.env.KEEPR_RIFTBOUND_RESUME_DIRECTORY;
+  const resumeRunId = process.env.KEEPR_RIFTBOUND_RESUME_RUN_ID;
+  assert.equal(Boolean(resumeDirectory), Boolean(resumeRunId), "Resume requires both retained directory and run id");
+  const directory = resumeDirectory ? resolve(resumeDirectory) : await mkdtemp(join(tmpdir(), "keepr-real-riftbound-"));
+  if (resumeDirectory) t.diagnostic(`Resuming retained run ${resumeRunId}; original collection is not repeated.`);
   const statePath = join(directory, "state");
   const pack = resolve("acceptance/fixtures/real-sources/2026-09-06");
   const previous = JSON.parse(await readFile(join(pack, "manifest.json"), "utf8"));
@@ -54,7 +58,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   config.d1_databases[0].migrations_dir = resolve("migrations");
   const configPath = join(directory, "ingestion.json");
   await writeFile(configPath, JSON.stringify(config));
-  await applyMigrations(statePath);
+  if (!resumeDirectory) await applyMigrations(statePath);
   const checkpoint = await nativeCheckpointTransport(t, statePath, directory, configPath);
   const key = crypto.randomUUID();
   const served = [];
@@ -81,8 +85,8 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     if (api) await stopWorker(api);
     if (restoredAdmin) await stopWorker(restoredAdmin);
     await stopWorker(worker);
-    if (journeyCompleted) await rm(directory, { recursive: true, force: true });
-    else t.diagnostic(`Failed native replay state retained at ${directory}`);
+    if (journeyCompleted && !resumeDirectory) await rm(directory, { recursive: true, force: true });
+    else t.diagnostic(`Native replay state retained at ${directory}`);
   });
   await waitForHealth(`${worker.url}/health`, key, worker);
   const environment = {
@@ -95,71 +99,74 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     assert.equal(result.code, 0, result.stdout + result.stderr);
     return JSON.parse(result.stdout);
   };
-  for (const area of ["card_facts", "printing_details", "corrected_card_content"])
-    await cli([
-      "source",
-      "designate",
-      "--game",
-      "riftbound",
-      "--locale",
-      "en",
-      "--release-region",
-      "US",
-      "--area",
-      area,
-      "--source-lineage",
-      "riftbound-en",
-      "--expected-generation",
-      "0",
-      "--rationale",
-      "Use retained Riot evidence for this English catalogue replay.",
-      "--idempotency-key",
-      `riot-authority-${area}`,
-    ]);
-  const planPath = join(directory, "plan.json");
-  await writeFile(
-    planPath,
-    JSON.stringify({
-      plans: [
-        {
-          supported_game: "riftbound",
-          source_lineage: "riftbound-en",
-          adapter_version: "riftbound-en@1",
-          subset: "complete",
-          requests: [
-            { id: "riftbound-en:catalogue", url: current.captures[0].url },
-            { id: "riftbound-en:errata", url: previous.captures.find((c) => c.id === "riftbound-errata").url },
-            { id: "riftbound-en:products", url: previous.captures.find((c) => c.id === "riftbound-products").url },
-          ],
-        },
-      ],
-    }),
-  );
-  const collected = await runCli(
-    ["source", "collect", "--plan-file", planPath, "--idempotency-key", "real-riftbound", "--json"],
-    environment,
-  );
-  assert.equal(collected.code, 0, `${collected.stdout} ${collected.stderr}\n${worker.getOutput()}`);
-  const run = JSON.parse(collected.stdout);
-  const resumed = await runCli(["source", "resume", "--run-id", run.id, "--json"], environment);
-  assert.equal(resumed.code, 0, resumed.stderr);
-  await waitForAdministrationDocument(
-    `/v1/ingestion-runs/${run.id}/evidence`,
-    (d) => d.state === "parsing" || (["failed", "paused"].includes(d.state) ? JSON.stringify(d) : false),
-    environment,
-    worker,
-    { deadlineMs: 600_000 },
-  );
-  await waitForAdministrationDocument(
-    `/v1/ingestion-runs/${run.id}/game-candidates`,
-    (d) =>
-      d.candidates.some((c) => c.state === "paused")
-        ? JSON.stringify(d)
-        : d.candidates.length > 0 && d.candidates.every((c) => ["sealed", "failed"].includes(c.state)),
-    environment,
-    worker,
-    { deadlineMs: 600_000 },
-  );
+  let run = resumeRunId ? { id: resumeRunId } : null;
+  if (!resumeDirectory) {
+    for (const area of ["card_facts", "printing_details", "corrected_card_content"])
+      await cli([
+        "source",
+        "designate",
+        "--game",
+        "riftbound",
+        "--locale",
+        "en",
+        "--release-region",
+        "US",
+        "--area",
+        area,
+        "--source-lineage",
+        "riftbound-en",
+        "--expected-generation",
+        "0",
+        "--rationale",
+        "Use retained Riot evidence for this English catalogue replay.",
+        "--idempotency-key",
+        `riot-authority-${area}`,
+      ]);
+    const planPath = join(directory, "plan.json");
+    await writeFile(
+      planPath,
+      JSON.stringify({
+        plans: [
+          {
+            supported_game: "riftbound",
+            source_lineage: "riftbound-en",
+            adapter_version: "riftbound-en@1",
+            subset: "complete",
+            requests: [
+              { id: "riftbound-en:catalogue", url: current.captures[0].url },
+              { id: "riftbound-en:errata", url: previous.captures.find((c) => c.id === "riftbound-errata").url },
+              { id: "riftbound-en:products", url: previous.captures.find((c) => c.id === "riftbound-products").url },
+            ],
+          },
+        ],
+      }),
+    );
+    const collected = await runCli(
+      ["source", "collect", "--plan-file", planPath, "--idempotency-key", "real-riftbound", "--json"],
+      environment,
+    );
+    assert.equal(collected.code, 0, `${collected.stdout} ${collected.stderr}\n${worker.getOutput()}`);
+    run = JSON.parse(collected.stdout);
+    const resumed = await runCli(["source", "resume", "--run-id", run.id, "--json"], environment);
+    assert.equal(resumed.code, 0, resumed.stderr);
+    await waitForAdministrationDocument(
+      `/v1/ingestion-runs/${run.id}/evidence`,
+      (d) => d.state === "parsing" || (["failed", "paused"].includes(d.state) ? JSON.stringify(d) : false),
+      environment,
+      worker,
+      { deadlineMs: 600_000 },
+    );
+    await waitForAdministrationDocument(
+      `/v1/ingestion-runs/${run.id}/game-candidates`,
+      (d) =>
+        d.candidates.some((c) => c.state === "paused")
+          ? JSON.stringify(d)
+          : d.candidates.length > 0 && d.candidates.every((c) => ["sealed", "failed"].includes(c.state)),
+      environment,
+      worker,
+      { deadlineMs: 600_000 },
+    );
+  }
   const shown = await runCli(["source", "show", "--run-id", run.id, "--json"], environment);
   assert.equal(shown.code, 0, shown.stdout);
   const evidence = JSON.parse(shown.stdout);
@@ -184,20 +191,22 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     );
     assert.equal(result.code, 0, result.stdout);
     const page = JSON.parse(result.stdout);
-    proposals.push(...page.proposals);
+    proposals.push(...page.proposals.filter((p) => p.source_lineage === "riftbound-en"));
     after = page.next_cursor;
   } while (after);
   assert.equal(proposals.length, 1189);
   assert.equal(new Set(proposals.map((p) => p.id)).size, 1189);
-  assert.deepEqual(
-    [...new Set(served)].sort(),
-    [
-      ...current.captures.filter((c) => c.id.startsWith("riftbound-cards-")).map((c) => c.id),
-      ...previous.captures.filter((c) => c.id.startsWith("riftbound-image-")).map((c) => c.id),
-      "riftbound-errata",
-      "riftbound-products",
-    ].sort(),
-  );
+  if (!resumeDirectory) {
+    assert.deepEqual(
+      [...new Set(served)].sort(),
+      [
+        ...current.captures.filter((c) => c.id.startsWith("riftbound-cards-")).map((c) => c.id),
+        ...previous.captures.filter((c) => c.id.startsWith("riftbound-image-")).map((c) => c.id),
+        "riftbound-errata",
+        "riftbound-products",
+      ].sort(),
+    );
+  }
   const intake = await cli(["game-candidate", "list", "--run-id", run.id]);
   // Missing Erratum targets may fail the first preparation. Retain that
   // diagnostic; explicit Card admission below must make the next one publish.
@@ -352,7 +361,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     "--expected-game-revision-id",
     "catrev_spine_000",
     "--idempotency-key",
-    "reviewed-riftbound",
+    resumeDirectory ? "reviewed-riftbound-public-v5" : "reviewed-riftbound",
     "--yes",
   ]);
   const candidate = await waitForAdministrationDocument(
@@ -364,7 +373,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   );
   const publication = await publishNativeCollection(
     { candidates: [candidate] },
-    "reviewed-riftbound-publication",
+    resumeDirectory ? "reviewed-riftbound-public-v5-publication" : "reviewed-riftbound-publication",
     environment,
     worker,
     120_000,
@@ -639,6 +648,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   assert.deepEqual(JSON.parse(freshAfterRestore.stdout).observation_sets, freshEvidence.observation_sets);
   t.diagnostic(
     JSON.stringify({
+      replay_mode: resumeDirectory ? "resumed_retained_run" : "fresh_retained_collection",
       retained_snapshots: 14,
       observed_inventory_records: 1189,
       observed_errata: 31,
