@@ -555,13 +555,10 @@ export async function createVerifiedCatalogueBackup(
         )
           throw new Error("Retained backup object evidence does not match the attempt.");
         if (native !== null) {
-          const key = existing.customMetadata?.snapshot_key;
-          const snapshot = key ? await backups.get(key) : null;
-          if (!snapshot) throw new Error("Retained composition snapshot evidence is unavailable.");
-          const content = await snapshot.text();
-          if ((await sha256(content)) !== existing.customMetadata?.snapshot_sha256)
-            throw new Error("Composition snapshot evidence is corrupt.");
-          expectedVerification.composition_snapshot = JSON.parse(content) as CompositionSnapshotEvidence;
+          expectedVerification.composition_snapshot = await retainedCompositionSnapshot(
+            backups,
+            existing.customMetadata,
+          );
         }
         const retainedEvidence = await digestRetainedObject(existing);
         contentSha256 = retainedEvidence.sha256;
@@ -652,13 +649,7 @@ export async function createVerifiedCatalogueBackup(
     }
     if (native !== null && expectedVerification.composition_snapshot === undefined) {
       const retained = await backups.head(objectKey);
-      const key = retained?.customMetadata?.snapshot_key;
-      const snapshot = key ? await backups.get(key) : null;
-      if (!snapshot) throw new Error("Retained composition snapshot evidence is unavailable.");
-      const content = await snapshot.text();
-      if ((await sha256(content)) !== retained?.customMetadata?.snapshot_sha256)
-        throw new Error("Composition snapshot evidence is corrupt.");
-      expectedVerification.composition_snapshot = JSON.parse(content) as CompositionSnapshotEvidence;
+      expectedVerification.composition_snapshot = await retainedCompositionSnapshot(backups, retained?.customMetadata);
     }
     if (bookmark === null) {
       throw new Error("The retained D1 export bookmark is unavailable.");
@@ -1308,6 +1299,19 @@ async function transitionExportedAttempt(
   if (changed.meta.changes !== 1) {
     throw new AdministrationProblem(409, "backup_in_progress", "The backup attempt state changed concurrently.");
   }
+}
+
+async function retainedCompositionSnapshot(
+  backups: R2Bucket,
+  metadata: Record<string, string> | undefined,
+): Promise<CompositionSnapshotEvidence> {
+  const snapshot = metadata?.snapshot_key ? await backups.get(metadata.snapshot_key) : null;
+  if (!snapshot || snapshot.size > 65536)
+    throw new Error("Retained composition snapshot evidence is unavailable or oversized.");
+  const content = await snapshot.text();
+  if ((await sha256(content)) !== metadata?.snapshot_sha256)
+    throw new Error("Composition snapshot evidence is corrupt.");
+  return JSON.parse(content) as CompositionSnapshotEvidence;
 }
 
 export async function failActiveCatalogueBackupAttempt(

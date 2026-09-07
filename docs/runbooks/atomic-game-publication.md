@@ -79,7 +79,8 @@ collection identity. Candidate/preparation/source/publication IDs are distinct.
 The same switch reserves an existing `catalogue_backup_attempts` row in `pending`
 with `publication_operation_id`, real `publication_ingestion_run_id`, and exact
 `catalogue_revision_id`. `request_json` binds the operation, revision and
-composition digest. Actual backup/restore and verification are #229's work.
+composition digest. The publication Workflow dispatches that exact reservation
+through the existing backup Workflow; see the [backup and recovery runbook](backup-recovery.md).
 
 The shared repository interfaces are `publicationBackupReservationStatement(db,
 attemptId)` and `publishedCompositionStatement(db, revisionId)`. The first returns
@@ -89,11 +90,13 @@ digests. Root objects are `publication-artifacts/DIGEST` and recursively referen
 #227 immutable artifacts. The preparation manifest includes inspection partitions;
 consumer artifact components exclude administrative partition kinds.
 
-#229 completes its existing immutable backup attempt/retry machinery. Publication
+Composed recovery uses the existing immutable backup attempt/retry machinery. Publication
 observes a verified attempt for the exact current revision, requiring a bookmark
 and manifest digest. A retry child must retain the native operation/composition
-bindings. No owner-supplied boolean clears the checkpoint. Pending verification
-does not set recovery health degraded: other games can prepare and approve.
+bindings. No owner-supplied boolean clears the checkpoint. Disposable verification
+does not set recovery health degraded: other games can prepare and approve. The
+SQL snapshot phase temporarily fences mutation while exporting and reconstructing
+derived search data.
 Actual recovery must set the global recovery health/active ID/restore guard and
 preserve those fences until verified owner acceptance.
 

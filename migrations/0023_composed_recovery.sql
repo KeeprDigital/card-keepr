@@ -19,7 +19,6 @@ BEGIN SELECT RAISE(ABORT,'recovery_classification_immutable'); END;
 CREATE TRIGGER catalogue_recovery_classification_retained BEFORE DELETE ON catalogue_recovery_work_classifications
 BEGIN SELECT RAISE(ABORT,'recovery_classification_retained'); END;
 
-UPDATE catalogue_schema_state SET migration_level=23 WHERE singleton=1;
 
 -- Guard commits, including already-staged writers, throughout snapshot export and actual recovery.
 CREATE TRIGGER recovery_fence_canonical_identity_allocations_insert BEFORE INSERT ON canonical_identity_allocations
@@ -1375,3 +1374,5 @@ BEGIN SELECT RAISE(ABORT,'restored_collection_abandoned'); END;
 CREATE TRIGGER restored_collector_fence_source_observation_sets_delete BEFORE DELETE ON source_observation_sets
 WHEN EXISTS(SELECT 1 FROM catalogue_recovery_collection_classifications WHERE ingestion_run_id=(SELECT ingestion_run_id FROM source_snapshots WHERE id=OLD.source_snapshot_id) AND classification='abandoned_after_restore')
 BEGIN SELECT RAISE(ABORT,'restored_collection_abandoned'); END;
+
+UPDATE catalogue_schema_state SET migration_level=23 WHERE singleton=1;

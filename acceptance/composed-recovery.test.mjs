@@ -514,6 +514,34 @@ test("native owner publication Workflow verifies an independently imported compo
     "--yes",
   ]);
   assert.equal(admitted.history.length, 1);
+  const correctionPrintings = (await consumer(`/v1/printings?card_id=${cards.records[0].id}`)).body.data;
+  assert.ok(correctionPrintings.length > 1);
+  const correctedPrintingId = correctionPrintings[1].id;
+  const survivorPrintingId = correctionPrintings[0].id;
+  const correctionProposal = {
+    game: "digimon",
+    entity_kind: "printing",
+    action: "merge",
+    source_ids: [correctedPrintingId],
+    replacement_ids: [survivorPrintingId],
+    printing_assignments: {},
+    expected_current_revision_id: publication.resulting_revision_id,
+    rationale: "Synthetic recovery proof of a reviewed duplicate",
+    evidence: { attestation: "Synthetic owner review establishes the retained survivor" },
+  };
+  await writeFile(proposalFile, JSON.stringify(correctionProposal));
+  const correctionReview = await cli(["identity-correction", "validate", "--proposal", proposalFile]);
+  await writeFile(
+    proposalFile,
+    JSON.stringify({
+      ...correctionProposal,
+      review_digest: correctionReview.review_digest,
+      idempotency_key: "native-recovery-correction",
+    }),
+  );
+  const correction = await cli(["identity-correction", "create", "--proposal", proposalFile, "--yes"]);
+  const correctionHistory = await cli(["identity-correction", "inspect", "--correction-id", correction.id]);
+
   const post = async (path, body) => {
     const response = await fetch(`${ingestion.url}${path}`, {
       method: "POST",
@@ -560,6 +588,12 @@ test("native owner publication Workflow verifies an independently imported compo
   const admittedCardId = admitted.history[0].decision.card.id;
   assert.equal((await consumer(`/v1/cards/${admittedCardId}`)).body.data.name, "Recovery admitted Digimon");
   assert.equal((await consumer("/v1/catalogue-exports")).body.data.length, 3);
+  const correctedResponse = await consumer(`/v1/printings/${correctedPrintingId}`);
+  assert.equal(correctedResponse.status, 200);
+  assert.equal(correctedResponse.body.data.action, "merge");
+  assert.deepEqual(correctedResponse.body.data.replacement_ids, [survivorPrintingId]);
+  const beforeRecoveryDetail = await consumer(`/v1/cards/${cards.records[0].id}`);
+
   pending = await post("/v1/game-candidates", {
     ingestion_run_id: run.id,
     supported_game: "digimon",
@@ -757,6 +791,12 @@ test("native owner publication Workflow verifies an independently imported compo
   );
   assert.equal(restoredProposal.code, 0, restoredProposal.stdout);
   assert.deepEqual(JSON.parse(restoredProposal.stdout).history, admitted.history);
+  const restoredCorrection = await runCli(
+    ["identity-correction", "inspect", "--correction-id", correction.id, "--json"],
+    replacedEnvironment,
+  );
+  assert.equal(restoredCorrection.code, 0, restoredCorrection.stdout);
+  assert.deepEqual(JSON.parse(restoredCorrection.stdout), correctionHistory);
 
   const restoredApiConfig = JSON.parse(await readFile(resolve("apps/api/wrangler.jsonc"), "utf8"));
   restoredApiConfig.main = resolve("apps/api/src/index.ts");
@@ -765,6 +805,15 @@ test("native owner publication Workflow verifies an independently imported compo
   await writeFile(restoredApiPath, JSON.stringify(restoredApiConfig));
   const restoredApi = await startWorker({ config: restoredApiPath, envFile: apiEnv, statePath });
   workers.push(restoredApi);
+  const restoredRetired = await fetch(`${restoredApi.url}/v1/printings/${correctedPrintingId}`, {
+    headers: { authorization: `Bearer ${apiKey}` },
+  });
+  assert.equal(restoredRetired.status, 200);
+  const restoredCorrectionDocument = await restoredRetired.json();
+  assert.equal(restoredCorrectionDocument.data.action, "merge");
+  assert.deepEqual(restoredCorrectionDocument.data.replacement_ids, [survivorPrintingId]);
+  assert.ok(restoredCorrectionDocument.data.links.survivor.endsWith(`/v1/printings/${survivorPrintingId}`));
+
   const restoredResponse = await fetch(`${restoredApi.url}/v1/cards/${cards.records[0].id}`, {
     headers: { authorization: `Bearer ${apiKey}` },
   });
@@ -779,7 +828,7 @@ test("native owner publication Workflow verifies an independently imported compo
               .map(([key, item]) => [key, withoutLinks(item)]),
           )
         : value;
-  assert.deepEqual(withoutLinks((await restoredResponse.json()).data), withoutLinks(detail.body.data));
+  assert.deepEqual(withoutLinks((await restoredResponse.json()).data), withoutLinks(beforeRecoveryDetail.body.data));
   assert.equal((await fetch(`${restoredApi.url}/v1/cards/${cards.records[0].id}`)).status, 401);
   const restoredSearch = await fetch(`${restoredApi.url}/v1/cards?q=${encodeURIComponent(cards.records[0].name)}`, {
     headers: { authorization: `Bearer ${apiKey}` },

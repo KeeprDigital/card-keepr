@@ -7,7 +7,7 @@ statements; they do not execute them. Backup Attempt persistence lives in
 requests in `backup-workflow-repository.ts`, and FTS export leases in
 `card-search-recovery-repository.ts`.
 
-`backup-verification-repository.ts` defines the three bounded verification query
+`backup-verification-repository.ts` defines the bounded verification query
 shapes used by both local D1 and the remote D1 API. The domain chooses the
 verification request and evaluates its result; SQL and binding order stay in the
 repository. FTS DDL is shared with remote restore through the existing
@@ -25,6 +25,20 @@ a restore generation. Recovery health cannot leave `blocked` while its retained
 active recovery has not been accepted; the affected update raises
 `recovery_not_accepted`, rolling back the whole batch. These guarantees hold
 without the former transition triggers.
+
+Native verification adds one-row snapshot queries in
+`composition-verification-repository.ts`. The domain hashes those rows and schema
+definitions into immutable evidence and verifies the same evidence on an
+independent restored database. `composition-artifacts.ts` verifies the private
+publication roots and their bounded descendants against retained R2 bytes.
+
+Schema 23 fences mutation commits during SQL export and actual recovery. Export
+reconstructs all derived search tables before releasing its temporary fence.
+Disposable verification runs with normal mutation available; final publication
+still requires its checkpoint. Actual recovery keeps the fence through explicit
+acceptance, which records classifications and invalidates incomplete restored
+writers. The ingestion Workflow wrapper waits durably on a temporary fence while
+preserving operation generations and deadlines.
 
 ## Durable dispatch
 
