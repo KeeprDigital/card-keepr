@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import {
   runCli,
+  administrationPollInterval,
   waitForAdministrationDocument,
   waitForRunState as waitForSourceState,
   persistedDatabaseDirectory,
@@ -48,6 +49,21 @@ export async function nativeCheckpointTransport(t, statePath, directory, configF
 }
 
 export async function waitForNativeCollection(runId, expected, environment, worker, options = {}) {
+  if (expected === "failed") {
+    const deadline = Date.now() + (options.deadlineMs ?? 90_000);
+    let source, collection;
+    while (Date.now() < deadline) {
+      source = await get(`/v1/ingestion-runs/${runId}/evidence`, environment);
+      if (source.state === "failed") return source;
+      collection = await get(`/v1/ingestion-runs/${runId}/game-candidates`, environment);
+      const failed = collection.candidates.find((candidate) => candidate.state === "failed");
+      // Native collection and preparation have separate failure owners. Return
+      // the actual failed owner, without inventing a legacy collection state.
+      if (failed) return failed;
+      await new Promise((resolve) => setTimeout(resolve, administrationPollInterval(worker)));
+    }
+    throw new Error(`No native failure for ${runId}: ${JSON.stringify({ source, collection })}\n${worker.getOutput()}`);
+  }
   if (expected !== "sealed") return waitForSourceState(runId, expected, environment, worker, options);
   const source = await get(`/v1/ingestion-runs/${runId}/evidence`, environment);
   const games = new Set(source.evidence_plans.map((p) => p.supported_game));

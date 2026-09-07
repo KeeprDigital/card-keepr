@@ -332,8 +332,8 @@ async function waitForRunState(runId, expectedState, environment, worker) {
       deadlineMs: 30_000,
     });
   } catch (error) {
-    const inspected = await inspectNativeCollection(runId, environment);
-    error.message += `\ncandidate inspection: ${JSON.stringify(inspected)}`;
+    const inspected = await runCli(["game-candidate", "list", "--run-id", runId, "--json"], environment);
+    error.message += `\ncandidate status: ${inspected.stdout} ${inspected.stderr}`;
     throw error;
   }
 }
