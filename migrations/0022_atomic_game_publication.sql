@@ -113,7 +113,7 @@ INSERT INTO publication_read_entities
  SELECT b.candidate_id,b.kind,json_extract(b.content,'$.records[0].value.id'),b.ordinal,c.preparation_id,c.supported_game,
  coalesce(json_extract(b.content,'$.records[0].value.card_id'),json_extract(b.content,'$.records[0].value.printing_id')),json_extract(b.content,'$.records[0].value.official_identity.kind'),
  json_extract(b.content,'$.records[0].value.official_identity.value'),json_extract(b.content,'$.records[0].value.name'),
- json_extract(b.content,'$.records[0].value.official_code'),lower(json_extract(b.content,'$.records[0].value.rarity')),
+ json_extract(b.content,'$.records[0].value.official_code'),lower(json_extract(b.content,'$.records[0].value.rarity.normalized')),
  json_extract(b.content,'$.records[0].value.kind'),json_extract(b.content,'$.records[0].value.from.id'),json_extract(b.content,'$.records[0].value.to.id'),json_extract(b.content,'$.records[0].value.product_id'),
  CASE WHEN b.kind='printings' THEN coalesce(json_extract(b.content,'$.records[0].value.card_id'),'') ELSE c.supported_game END,
  CASE WHEN b.kind='cards' THEN coalesce(json_extract(b.content,'$.records[0].value.official_identity.kind'),'unknown') WHEN b.kind='products' THEN CASE WHEN json_extract(b.content,'$.records[0].value.official_code') IS NULL THEN '1' ELSE '0' END ELSE '' END,

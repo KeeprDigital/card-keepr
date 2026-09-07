@@ -1,6 +1,6 @@
 import type { CatalogueCandidate, CatalogueStore, SupportedGame } from "../shared";
 import { verifiedCandidatePartition } from "./game-candidate-inspection";
-import { predecessorGameCandidateStatement } from "./game-candidate-repository";
+import { nativePredecessorGameCandidateStatement } from "./game-candidate-repository";
 import type { PriorStateContinuation, PriorStatePositions, PriorStateSeed } from "./prior-state-types";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
@@ -23,13 +23,12 @@ export async function nativeCandidateAtRevision(
   continuation: PriorStateContinuation,
 ) {
   if (games.length !== 1) return undefined;
-  const candidate = await predecessorGameCandidateStatement(db, revision, games[0]!).first<{
+  const candidate = await nativePredecessorGameCandidateStatement(db, revision, games[0]!).first<{
     id: string;
     preparation_id: string;
     partition_count: number;
   }>();
-  if (!candidate || (candidate.id === candidate.preparation_id && !candidate.id.startsWith("candidate_")))
-    return undefined;
+  if (!candidate) return undefined;
   const retained = await reconciliationCheckpoint<Cursor>(db, continuation.runId, "prior_state");
   const cursor: Cursor = retained?.value ?? {
     candidate: candidate.id,

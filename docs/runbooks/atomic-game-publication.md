@@ -1,26 +1,71 @@
-# Atomic game publication
+# Publish an exact game candidate
 
-Implementation checkpoint for #228/#229; this branch is not launch-ready until
-publication and composed recovery pass their joint checkpoint.
+Inspect the sealed candidate and retain its candidate ID, manifest digest,
+expected Game Catalogue Revision and generation. Approval covers the complete
+candidate. Start publication with the owner CLI:
 
-The owner approves the entire sealed candidate with its exact manifest,
-expected Game Catalogue Revision and candidate generation. `POST /v1/publications`
-persists that approval before returning 202; `/v1/publications/start` additionally
-dispatches the durable Workflow. `keepr publication approve` uses the latter.
-`GET /v1/publications/ID` / `keepr publication status --operation-id ID` reads
-current status. Exact approval replay returns its retained acknowledgement,
-including after completion; status is a separate read. The original candidate
-deadline does not change. No correction applicability date is consulted.
+```sh
+keepr publication approve --candidate-id CANDIDATE \
+  --manifest-digest SHA256 --expected-game-revision-id GAME_REVISION \
+  --generation GENERATION --idempotency-key INTENT --json
+keepr publication status --operation-id PUBLICATION --json
+```
 
-The small switch transaction has eleven fixed statements. It inserts at most
-four game references and constant-size revision, queryability, result and backup
-metadata; it never inserts catalogue entities. Database guards bind the owner
-approval, inspection receipt, verified preparation, slot, candidate and operation
-generations, game predecessor, current composition, exact replacement members,
-original deadline, recovery state and prior verified backup. Any guard error
-rolls back every sibling statement. Unrelated-game contention refreshes only the
-four composition references. Current plus two predecessor compositions remain
-queryable; archived projections retain their immutable private evidence.
+The authenticated start persists approval before returning 202. The operation ID
+is distinct from the candidate, reconciliation and source collection IDs.
+Repeating the exact approval key returns its original acknowledgement; inspect
+status for current progress. Reusing the key with different intent fails.
+
+Verified artifact preparation and exact candidate readiness are independent
+prerequisites. The Workflow waits for artifacts and the current composition's
+verified backup checkpoint. Other games can prepare candidates and approve
+publication while that checkpoint is pending. The original candidate deadline
+remains binding throughout waits, retries and resume.
+
+The final D1 transaction verifies the exact candidate approval, manifest,
+predecessor, generation, deadline, recovery health and composition. It advances
+the game and global heads, retains query visibility, records the publication
+result, and reserves its backup together. A failed predicate rolls back the whole
+transaction. Unrelated-game contention refreshes at most four immutable game
+references with a bounded retry allowance. A stale same-game approval fails.
+
+Resume a paused operation using its current operation generation and a new key:
+
+```sh
+keepr publication resume --operation-id PUBLICATION \
+  --generation GENERATION --idempotency-key RESUME_INTENT --json
+```
+
+Resume preserves the candidate, manifest and deadline and increments the writer
+generation. An old writer cannot commit. Publication consults no correction applicability
+date; a correction becomes visible only through its approved candidate. Replaying the resume key retains its
+original result and re-dispatches the current operation if work remains.
+
+Ordinary reads select immutable game projections through the published
+composition. Pagination pins that composition and rejects a conflicting explicit
+revision. Image content links pin the same revision. Consumer export indexes
+page immutable per-game fact components and remain available independently of
+query-projection archival; private preparation roots are not consumer exports.
+
+A retained legacy catalogue without prepared composition members cannot switch
+natively: the database fails closed with
+`publication_legacy_composition_unprepared`. Retaining legacy rows through the
+schema migration does not establish verified native carry-forward roots. Do not
+bypass this guard or fabricate a source collection to migrate such a catalogue.
+[ADR 0008](../adr/0008-no-version-retention-before-go-live.md) requires old-shape data to be
+regenerated before Go-Live. The supported native start is the empty catalogue
+spine with freshly sealed candidates; an existing legacy current head requires
+the separately controlled re-baseline/regeneration process before native
+publication. The supported handoff and proof belong to
+[issue 239](https://github.com/KeeprDigital/card-keepr/issues/239), with rollout
+and freeze tracked in 151 and 136. This operation does not delete retained source evidence or perform
+a database reset.
+
+Issue 228 and composed backup/recovery issue 229 share a merge checkpoint. This
+publication implementation alone is not launch-ready. Require the shipped owner
+Workflow's backup and independently restored composed catalogue proof before
+merging the joint work. Local integration tests are the gate; report actual CI
+status separately.
 
 ## Recovery handoff
 

@@ -108,7 +108,13 @@ export async function compositionExportComponentResponse(
   if (range && (!request.headers.has("if-range") || request.headers.get("if-range") === headers.etag)) {
     const parsed = /^bytes=(\d*)-(\d*)$/.exec(range);
     if (!parsed || (!parsed[1] && !parsed[2]))
-      return new Response(null, { status: 416, headers: { ...headers, "content-range": `bytes */${length}` } });
+      throw new ReadProblem(
+        416,
+        "range_not_satisfiable",
+        "The requested Catalogue Export byte range is not satisfiable.",
+        null,
+        { headers: { ...headers, "content-range": `bytes */${length}` } },
+      );
     if (!parsed[1]) {
       length = Math.min(length, Number(parsed[2]));
       offset = artifact.byte_length - length;

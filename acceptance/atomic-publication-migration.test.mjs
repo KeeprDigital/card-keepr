@@ -9,7 +9,7 @@ test("atomic publication migration preserves populated legacy ancestry and all i
   const db = new DatabaseSync(":memory:");
   try {
     const names = (await readdir(new URL("../migrations/", import.meta.url))).filter((n) => n.endsWith(".sql")).sort();
-    for (const name of names.filter((n) => Number.parseInt(n) < 22))
+    for (const name of names.filter((n) => Number.parseInt(n, 10) < 22))
       db.exec(await readFile(new URL(`../migrations/${name}`, import.meta.url), "utf8"));
     for (let i = 0; i < 3; i++) {
       db.prepare(
