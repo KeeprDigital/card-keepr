@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { isDeepStrictEqual } from "node:util";
 import {
   applyMigrations,
   runCli,
@@ -28,6 +29,11 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   const resumeDirectory = process.env.KEEPR_RIFTBOUND_RESUME_DIRECTORY;
   const resumeRunId = process.env.KEEPR_RIFTBOUND_RESUME_RUN_ID;
   const resumePublicationId = process.env.KEEPR_RIFTBOUND_RESUME_PUBLICATION_ID;
+  const resumeReviewedPublicationId = process.env.KEEPR_RIFTBOUND_REVIEWED_PUBLICATION_ID;
+  assert.ok(
+    !resumeReviewedPublicationId || resumePublicationId,
+    "Reviewed continuation requires the original publication",
+  );
   assert.ok(!resumePublicationId || resumeDirectory, "Published resume requires retained run state");
   assert.equal(Boolean(resumeDirectory), Boolean(resumeRunId), "Resume requires both retained directory and run id");
   const directory = resumeDirectory ? resolve(resumeDirectory) : await mkdtemp(join(tmpdir(), "keepr-real-riftbound-"));
@@ -479,7 +485,9 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   const headers = { authorization: `Bearer ${apiKey}` };
   assert.equal((await pacedFetch(`${api.url}/v1/printings/${exported[0].id}`)).status, 401);
   for (const [locator, id] of admittedPrintings) {
-    const response = await pacedFetch(`${api.url}/v1/printings/${id}`, { headers });
+    const response = await pacedFetch(`${api.url}/v1/printings/${id}?revision=${publication.resulting_revision_id}`, {
+      headers,
+    });
     assert.equal(response.status, 200);
     const data = (await response.json()).data;
     const record = exported.find((p) => p.id === id);
@@ -495,6 +503,21 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   const printedMonk =
     "When you play me, buff two other friendly units. (Each one that doesn't have a buff gets a +1 [M] buff.)";
   const curatedSourceProposals = [];
+  let expectedRelationshipId;
+  let retainedCurated = [];
+  if (resumeReviewedPublicationId) {
+    const listed = await runCli(
+      ["curated-revision", "list", "--game", "riftbound", "--secrets-stdin-fd", "3", "--json"],
+      environment,
+      { secrets: { administration_key: key } },
+    );
+    assert.equal(listed.code, 0, listed.stdout + listed.stderr);
+    retainedCurated = JSON.parse(listed.stdout).items;
+    assert.equal(retainedCurated.length, 6);
+    t.diagnostic(
+      "Continuing after the verified Curated publication; six existing Curated operations are inspected, not repeated.",
+    );
+  }
   const curate = async (
     entityType,
     entityId,
@@ -527,6 +550,25 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
       assert.equal(result.code, 0, result.stdout + result.stderr);
       return JSON.parse(result.stdout);
     };
+    if (resumeReviewedPublicationId) {
+      const matches = retainedCurated.filter((item) => isDeepStrictEqual(item.content.target, proposal.target));
+      assert.equal(matches.length, supersede ? 2 : 1);
+      for (const item of matches) {
+        assert.deepEqual(item.content.assertion, proposal.assertion);
+        assert.deepEqual(item.content.evidence, proposal.evidence);
+        assert.equal(item.content.reviewed_source_digest, proposal.reviewed_source_digest);
+      }
+      const active = matches.find((item) => item.status === "active");
+      assert.ok(active);
+      if (supersede) {
+        const original = matches.find((item) => item.status === "superseded");
+        assert.ok(original);
+        assert.equal(active.content.supersedes_revision_id, original.id);
+      }
+      if (relationship) expectedRelationshipId = `relationship_${active.id}`;
+      curatedSourceProposals.push(structuredClone(proposal));
+      return active;
+    }
     const validation = await call([
       "validate",
       "--proposal",
@@ -617,6 +659,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
         "--yes",
       ]);
       assert.equal(result.code, "curated_revision_superseded");
+      if (relationship) expectedRelationshipId = `relationship_${result.curated_revision_id}`;
     }
     return created;
   };
@@ -663,40 +706,52 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     },
     true,
   );
-  const refresh = await cli([
-    "game-candidate",
-    "prepare",
-    "--run-id",
-    run.id,
-    "--game",
-    "riftbound",
-    "--expected-game-revision-id",
-    publication.resulting_revision_id,
-    "--idempotency-key",
-    "reviewed-image-facts",
-    "--yes",
-  ]);
-  const refreshedCandidate = await waitForAdministrationDocument(
-    `/v1/game-candidates/${refresh.id}`,
-    (d) => d.state === "sealed" || (["failed", "paused"].includes(d.state) ? JSON.stringify(d) : false),
-    environment,
-    worker,
-    { deadlineMs: 600_000 },
-  );
-  let finalPublication = await publishNativeCollection(
-    { candidates: [refreshedCandidate] },
-    "riftbound-image-facts",
-    environment,
-    worker,
-    120_000,
-  );
+  let finalPublication;
+  if (resumeReviewedPublicationId) {
+    finalPublication = await waitForAdministrationDocument(
+      `/v1/publications/${resumeReviewedPublicationId}`,
+      (d) => d.state === "published",
+      environment,
+      worker,
+    );
+    const backup = await cli(["backup", "status", "--attempt-id", finalPublication.backup_attempt_id]);
+    assert.equal(backup.state, "verified");
+  } else {
+    const refresh = await cli([
+      "game-candidate",
+      "prepare",
+      "--run-id",
+      run.id,
+      "--game",
+      "riftbound",
+      "--expected-game-revision-id",
+      publication.resulting_revision_id,
+      "--idempotency-key",
+      "reviewed-image-facts",
+      "--yes",
+    ]);
+    const refreshedCandidate = await waitForAdministrationDocument(
+      `/v1/game-candidates/${refresh.id}`,
+      (d) => d.state === "sealed" || (["failed", "paused"].includes(d.state) ? JSON.stringify(d) : false),
+      environment,
+      worker,
+      { deadlineMs: 600_000 },
+    );
+    finalPublication = await publishNativeCollection(
+      { candidates: [refreshedCandidate] },
+      "riftbound-image-facts",
+      environment,
+      worker,
+      120_000,
+    );
+  }
   const assertCuratedProductExports = async (revision) => {
     const publishedProducts = await nativeExportRecords(api.url, apiKey, revision, "products");
     assert.equal(
       publishedProducts.find((product) => product.id === reviewedProduct.id)?.name,
       `${reviewedProduct.name} (owner reviewed)`,
     );
-    const relationships = await nativeExportRecords(api.url, apiKey, revision, "product_relationships");
+    const relationships = await nativeExportRecords(api.url, apiKey, revision, "relationships");
     const relationship = relationships.find(
       (item) =>
         item.kind === "printing-product" &&
@@ -704,7 +759,14 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
         item.to.id === reviewedProduct.id,
     );
     assert.ok(relationship);
-    assert.equal(relationship.evidence_category, "curated");
+    assert.equal(relationship.type, "relationship");
+    assert.equal(relationship.id, expectedRelationshipId);
+    assert.deepEqual(relationship.from, { type: "printing", id: admittedPrintings.get("ogn-141-298") });
+    assert.deepEqual(relationship.to, { type: "product", id: reviewedProduct.id });
+    assert.equal(relationship.lifecycle.current, true);
+    const printing = await pacedFetch(`${api.url}/v1/printings/${relationship.from.id}`, { headers });
+    assert.equal(printing.status, 200);
+    assert.ok((await printing.json()).data.products.some((product) => product.id === reviewedProduct.id));
     return { products: publishedProducts, relationships };
   };
   await assertCuratedProductExports(finalPublication.resulting_revision_id);
@@ -900,11 +962,13 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   assert.deepEqual(JSON.parse(freshAfterRestore.stdout).observation_sets, freshEvidence.observation_sets);
   t.diagnostic(
     JSON.stringify({
-      replay_mode: resumePublicationId
-        ? "resumed_published_revision"
-        : resumeDirectory
-          ? "resumed_retained_run"
-          : "fresh_retained_collection",
+      replay_mode: resumeReviewedPublicationId
+        ? "verified-curated-publication-continuation"
+        : resumePublicationId
+          ? "resumed_published_revision"
+          : resumeDirectory
+            ? "resumed_retained_run"
+            : "fresh_retained_collection",
       initial_collection_retained_snapshots: 14,
       journey_retained_snapshots: evidence.snapshots.length + freshEvidence.snapshots.length,
       journey_observations: [...evidence.observation_sets, ...freshEvidence.observation_sets].reduce(
