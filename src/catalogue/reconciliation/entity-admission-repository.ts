@@ -54,6 +54,7 @@ export function insertProposalStatement(database: CatalogueStore, row: EntityPro
         row.created_at,
       ),
     before: [run ? identityRunGuard(database, run) : admissionIdleGuard(database)],
+    after: [admissionEventStatement(database, row.id, 0)],
   });
 }
 export type AdmissionIdentityAllocation = { key: string; id: string; kind: "card" | "printing" };
@@ -94,7 +95,13 @@ export function insertAdmissionDecisionStatement(
       THEN 1 ELSE json_extract('{}', 'admission_generation_conflict') END`)
         .bind(row.generation, row.proposal_id),
     ],
+    after: [admissionEventStatement(database, row.proposal_id, row.generation)],
   });
+}
+function admissionEventStatement(database: CatalogueStore, proposalId: string, generation: number) {
+  return repositoryStatements(database)
+    .prepare("INSERT INTO entity_admission_events (proposal_id, generation) VALUES (?, ?)")
+    .bind(proposalId, generation);
 }
 function admissionIdleGuard(database: CatalogueStore) {
   return repositoryStatements(database).prepare(`SELECT CASE WHEN EXISTS (

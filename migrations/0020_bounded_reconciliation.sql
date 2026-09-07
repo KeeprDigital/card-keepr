@@ -13,10 +13,6 @@ INSERT INTO entity_admission_events (proposal_id, generation)
   SELECT id, 0 FROM entity_proposals ORDER BY id;
 INSERT INTO entity_admission_events (proposal_id, generation)
   SELECT proposal_id, generation FROM entity_admission_decisions ORDER BY proposal_id, generation;
-CREATE TRIGGER entity_proposal_admission_event AFTER INSERT ON entity_proposals
-BEGIN INSERT INTO entity_admission_events (proposal_id, generation) VALUES (NEW.id, 0); END;
-CREATE TRIGGER entity_decision_admission_event AFTER INSERT ON entity_admission_decisions
-BEGIN INSERT INTO entity_admission_events (proposal_id, generation) VALUES (NEW.proposal_id, NEW.generation); END;
 CREATE TRIGGER entity_admission_events_no_update BEFORE UPDATE ON entity_admission_events
 BEGIN SELECT RAISE(ABORT, 'entity_admission_event_immutable'); END;
 CREATE TRIGGER entity_admission_events_no_delete BEFORE DELETE ON entity_admission_events
