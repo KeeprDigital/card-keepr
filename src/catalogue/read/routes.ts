@@ -1,3 +1,4 @@
+import { ReadProblem } from "./collection-endpoint";
 import { compositionExportResponse, compositionExportComponentResponse } from "./composition-export";
 import { compositionEntityResponse, compositionImageResponse } from "./composition-read";
 import { catalogueResponse } from "../../http/catalogue";
@@ -7,8 +8,6 @@ import { cardCollectionResponse } from "./card-collection-read";
 import { currentPrintingsResponse } from "./printing-collection-read";
 import { currentProductResponse, currentProductsResponse } from "./product-release-read";
 import {
-  catalogueExportComponentResponse,
-  catalogueExportResponse,
   catalogueExportsResponse,
   currentCardResponse,
   currentCatalogueStatus,
@@ -75,23 +74,14 @@ export const catalogueRoutes = [
   ),
   ...["GET", "HEAD"].map((method) =>
     route<Context>(method, "/v1/catalogue-exports/:revision/components/:component", async ({ env, request }, params) =>
-      nativeOrLegacy(
-        () =>
-          compositionExportComponentResponse(
-            env.CATALOGUE_DB,
-            env.CATALOGUE_EXPORTS,
-            request,
-            params.revision!,
-            params.component!,
-          ),
-        () =>
-          catalogueExportComponentResponse(
-            request,
-            env.CATALOGUE_DB,
-            env.CATALOGUE_EXPORTS,
-            params.revision!,
-            params.component!,
-          ),
+      currentExport(() =>
+        compositionExportComponentResponse(
+          env.CATALOGUE_DB,
+          env.CATALOGUE_EXPORTS,
+          request,
+          params.revision!,
+          params.component!,
+        ),
       ),
     ),
   ),
@@ -99,10 +89,7 @@ export const catalogueRoutes = [
     catalogueExportsResponse(request, env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, base),
   ),
   route<Context>("GET", "/v1/catalogue-exports/:revision", async ({ env, request, base }, params) =>
-    nativeOrLegacy(
-      () => compositionExportResponse(env.CATALOGUE_DB, request, base, params.revision!),
-      () => catalogueExportResponse(request, env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, params.revision!, base),
-    ),
+    currentExport(() => compositionExportResponse(env.CATALOGUE_DB, request, base, params.revision!)),
   ),
 ];
 
@@ -112,4 +99,15 @@ async function nativeOrLegacy(
 ) {
   const response = await native();
   return response === undefined ? legacy() : response;
+}
+
+async function currentExport(read: () => Promise<Response | null | undefined>) {
+  const response = await read();
+  if (response === undefined)
+    throw new ReadProblem(
+      503,
+      "catalogue_export_unavailable",
+      "This revision has no current public export. Use a native publication from the supported baseline.",
+    );
+  return response;
 }

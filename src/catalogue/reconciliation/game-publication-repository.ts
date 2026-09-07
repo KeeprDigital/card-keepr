@@ -94,6 +94,7 @@ export function publicationSwitchGuard(
  JOIN game_candidate_partitions summary ON summary.candidate_id=c.id AND summary.ordinal=c.partition_count-1 AND summary.kind='inspection_summary'
  WHERE p.id=?1 AND c.state='sealed' AND o.state='sealed' AND c.generation=p.candidate_generation AND o.generation=p.candidate_generation
  AND c.manifest_digest=p.manifest_digest AND c.deadline=p.deadline AND c.expected_game_revision_id=p.expected_game_revision_id
+ AND EXISTS (SELECT 1 FROM publication_read_entities metadata WHERE metadata.candidate_id=c.id AND metadata.kind='supported_games')
  AND json_extract(summary.content,'$[0].value.integrity.complete')=1
  AND json_extract(summary.content,'$[0].value.integrity.sha256')=p.inspection_receipt)
  THEN json_extract('{}','publication_candidate_conflict')
@@ -142,6 +143,11 @@ export function publicationSwitchStatements(
       .prepare(`INSERT INTO catalogue_revisions(id,ingestion_run_id,published_at,content_digest,expected_previous_revision_id,approved_candidate_digest,publication_operation_id)
  SELECT ?,c.ingestion_run_id,?,?,?,p.manifest_digest,p.id FROM game_publication_operations p JOIN game_candidates c ON c.id=p.candidate_id WHERE p.id=?`)
       .bind(input.revision, input.at, input.composition, input.predecessor, input.id),
+    sql
+      .prepare(
+        `INSERT INTO catalogue_candidate_publications SELECT candidate_id,? FROM game_publication_operations WHERE id=?`,
+      )
+      .bind(input.revision, input.id),
     sql
       .prepare(`INSERT INTO catalogue_composition_games SELECT ?,json_extract(value,'$.supported_game'),json_extract(value,'$.candidate_id'),
  CASE WHEN json_extract(value,'$.candidate_id')=(SELECT candidate_id FROM game_publication_operations WHERE id=?) THEN ? ELSE

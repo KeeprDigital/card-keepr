@@ -41,11 +41,13 @@ type Revision = {
 export type DocumentRow = {
   entity_id?: string;
   printing_ids?: string;
+  lifecycle_json?: string | null;
   position?: string;
   candidate_id: string;
   preparation_id: string;
   game_revision_id: string;
   content: string;
+  sha256: string;
 };
 type Value = Record<string, unknown>;
 const emptyFilters: ComposedFilters = {
@@ -58,7 +60,9 @@ const emptyFilters: ComposedFilters = {
   release_region: null,
 };
 
-async function hydrate(db: CatalogueStore, row: DocumentRow): Promise<Value> {
+export async function hydrate(db: CatalogueStore, row: DocumentRow): Promise<Value> {
+  if ((await sha256Text(row.content)) !== row.sha256)
+    throw new ReadProblem(503, "catalogue_query_unavailable", "An immutable entity failed verification.");
   const envelope = JSON.parse(row.content).records[0] as {
     value: Value;
     text_parts: { path: (string | number)[]; sha256: string; chunks: number; byte_length: number }[];
@@ -88,6 +92,7 @@ async function hydrate(db: CatalogueStore, row: DocumentRow): Promise<Value> {
       throw new ReadProblem(503, "catalogue_query_unavailable", "An immutable text component failed verification.");
     target[part.path.at(-1)!] = text;
   }
+  if (row.lifecycle_json) envelope.value.lifecycle = JSON.parse(row.lifecycle_json);
   return consumerContent(envelope.value) as Value;
 }
 async function related(db: CatalogueStore, revision: string, kind: string, field: string, id: string) {
@@ -139,7 +144,11 @@ async function representation(db: CatalogueStore, revision: Revision, kind: stri
     let targetBytes = 0;
     for (const relation of relationships) {
       const to = relation.to as { id: string };
-      if (relation.kind !== "printing-product" && relation.kind !== "printing-distribution-context") continue;
+      if (
+        (relation.lifecycle as Value | undefined)?.current !== true ||
+        (relation.kind !== "printing-product" && relation.kind !== "printing-distribution-context")
+      )
+        continue;
       const targetKind = relation.kind === "printing-product" ? "products" : "distribution_contexts";
       const target = await composedDocumentStatement(db, revision.id, targetKind, to.id).first<DocumentRow>();
       if (target) {
@@ -151,15 +160,51 @@ async function representation(db: CatalogueStore, revision: Revision, kind: stri
             "catalogue_query_unavailable",
             "The requested Printing relationships exceed their response budget.",
           );
-        (targetKind === "products" ? products : contexts).push(document);
+        (targetKind === "products" ? products : contexts).push(
+          pickPublicFields(
+            document,
+            targetKind === "products" ? ["id", "official_code", "name"] : ["id", "kind", "label", "product_id"],
+          ),
+        );
       }
     }
     data.products = products;
     data.distribution_contexts = contexts;
   }
-  if (kind === "products")
-    data.releases = value.releases ?? (await related(db, revision.id, "releases", "product_id", id));
+  if (kind === "products") data.releases = await related(db, revision.id, "releases", "product_id", id);
   return data;
+}
+const publicRecordFields: Record<string, [string, string[]]> = {
+  cards: ["card", ["id", "game", "official_identity", "name", "effective_rules_text", "game_data", "lifecycle"]],
+  printings: [
+    "printing",
+    ["id", "card_id", "rarity", "printed_rules_text", "game_data", "products", "distribution_contexts", "lifecycle"],
+  ],
+  products: ["product", ["id", "game", "official_code", "name", "lifecycle"]],
+  releases: ["release", ["id", "product_id", "event_key", "region", "date", "status"]],
+  printing_images: ["printing_image", ["id", "printing_id", "role", "media_type", "width", "height", "content_sha256"]],
+  distribution_contexts: ["distribution_context", ["id", "game", "kind", "label", "product_id"]],
+  errata: [
+    "erratum",
+    ["id", "game", "target_type", "target_id", "effective_from", "official_wording", "corrected_value"],
+  ],
+  relationships: ["relationship", ["id", "kind", "from", "to", "relationship_value", "lifecycle"]],
+  product_relationships: ["relationship", ["id", "kind", "from", "to", "relationship_value", "lifecycle"]],
+  identity_corrections: ["identity_correction", ["id", "game", "entity_kind", "action", "replacement_ids"]],
+  supported_games: ["supported_game", ["id", "key", "name", "supported_locales", "game_profile"]],
+  game_profiles: ["game_profile", ["profile", "game", "schema"]],
+};
+function pickPublicFields(value: Value, fields: string[]) {
+  return Object.fromEntries(fields.filter((f) => Object.hasOwn(value, f)).map((f) => [f, value[f]]));
+}
+/** Public exports use the same verified immutable facts as the native read model. */
+export async function composedPublicRecord(db: CatalogueStore, revisionId: string, kind: string, row: DocumentRow) {
+  const definition = publicRecordFields[kind];
+  if (!definition)
+    throw new ReadProblem(503, "catalogue_export_unavailable", "The current public record contract is unavailable.");
+  const value =
+    kind === "printings" ? await representation(db, { id: revisionId } as Revision, kind, row) : await hydrate(db, row);
+  return { type: definition[0], ...pickPublicFields(value, definition[1]) };
 }
 async function jsonResponse(request: Request, revision: Revision, document: unknown) {
   const headers = revisionHeaders(revision.id, await canonicalEtag(document));
@@ -314,6 +359,12 @@ export async function compositionEntityResponse(
       links: { self: publicUrl(base, url.pathname + url.search) },
     });
   }
+  if (kind === "cards" && filters.q !== null && revision.search_state !== "ready")
+    throw new ReadProblem(
+      503,
+      "catalogue_query_unavailable",
+      "The pinned Card search projection is temporarily unavailable.",
+    );
   for (const [field, value] of Object.entries({
     product_id: filters.product_id,
     rarity: filters.rarity,
