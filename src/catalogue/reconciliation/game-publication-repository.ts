@@ -78,13 +78,14 @@ export function publicationSwitchGuard(
     predecessor: string;
     composition: string;
     at: string;
+    clockOffsetMs?: number;
   },
 ) {
   return repositoryStatements(db)
     .prepare(`SELECT CASE
  WHEN NOT EXISTS (SELECT 1 FROM game_publication_operations WHERE id=?1 AND generation=?2
  AND state IN ('approved','waiting_artifacts','waiting_backup','retry_paused')) THEN json_extract('{}','publication_writer_conflict')
- WHEN EXISTS (SELECT 1 FROM game_publication_operations WHERE id=?1 AND deadline<=?5) THEN json_extract('{}','publication_deadline_expired')
+ WHEN EXISTS (SELECT 1 FROM game_publication_operations WHERE id=?1 AND julianday(deadline)<=julianday('now')+?6/86400000.0) THEN json_extract('{}','publication_deadline_expired')
  WHEN NOT EXISTS (SELECT 1 FROM game_publication_operations p JOIN game_candidates c ON c.id=p.candidate_id
  JOIN reconciliation_operations o ON o.id=c.preparation_id
  JOIN game_candidate_slots slot ON slot.supported_game=c.supported_game AND slot.preparation_id=c.preparation_id
@@ -115,7 +116,7 @@ export function publicationSwitchGuard(
  SELECT * FROM (SELECT * FROM expected EXCEPT SELECT * FROM actual)
  UNION ALL SELECT * FROM (SELECT * FROM actual EXCEPT SELECT * FROM expected)
  ) THEN json_extract('{}','publication_composition_conflict') ELSE 1 END`)
-    .bind(input.id, input.generation, input.predecessor, input.composition, input.at);
+    .bind(input.id, input.generation, input.predecessor, input.composition, input.at, input.clockOffsetMs ?? 0);
 }
 
 /** Four members and fixed metadata only. No entity rows enter this transaction. */
@@ -127,6 +128,7 @@ export function publicationSwitchStatements(
     predecessor: string;
     composition: string;
     at: string;
+    clockOffsetMs?: number;
     revision: string;
     backup: string;
   },

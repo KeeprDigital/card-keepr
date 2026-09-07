@@ -73,4 +73,78 @@ BEGIN SELECT RAISE(ABORT,'catalogue_composition_retained'); END;
 ALTER TABLE catalogue_backup_attempts ADD COLUMN publication_operation_id TEXT REFERENCES game_publication_operations(id);
 CREATE UNIQUE INDEX catalogue_publication_backup ON catalogue_backup_attempts(publication_operation_id)
  WHERE publication_operation_id IS NOT NULL AND linked_attempt_id IS NULL;
+-- Prepared public query facts remain private until selected by a composition.
+CREATE TABLE publication_read_entities (
+ candidate_id TEXT NOT NULL REFERENCES publication_preparations(candidate_id),
+ kind TEXT NOT NULL,entity_id TEXT NOT NULL,batch_ordinal INTEGER NOT NULL,
+ preparation_id TEXT NOT NULL,supported_game TEXT NOT NULL,
+ card_id TEXT,identity_kind TEXT,identity_value TEXT,name TEXT,official_code TEXT,rarity TEXT,
+ relationship_kind TEXT,from_id TEXT,to_id TEXT,product_id TEXT,
+ sort1 TEXT NOT NULL,sort2 TEXT NOT NULL,sort3 TEXT NOT NULL,sort4 TEXT NOT NULL,sort5 TEXT NOT NULL,
+ record_bytes INTEGER NOT NULL,
+ PRIMARY KEY(candidate_id,kind,entity_id),
+ FOREIGN KEY(candidate_id,batch_ordinal) REFERENCES publication_projection_batches(candidate_id,ordinal)
+);
+CREATE INDEX publication_read_order ON publication_read_entities(candidate_id,kind,sort1,sort2,sort3,sort4,sort5,entity_id);
+CREATE INDEX publication_read_card ON publication_read_entities(candidate_id,kind,card_id,entity_id);
+CREATE INDEX publication_read_rarity ON publication_read_entities(candidate_id,kind,rarity,card_id,entity_id);
+CREATE INDEX publication_read_identity ON publication_read_entities(candidate_id,kind,identity_kind,identity_value,entity_id);
+CREATE INDEX publication_read_from ON publication_read_entities(candidate_id,kind,from_id,entity_id);
+CREATE INDEX publication_read_to ON publication_read_entities(candidate_id,kind,relationship_kind,to_id,from_id);
+CREATE INDEX publication_read_product ON publication_read_entities(candidate_id,kind,product_id,entity_id);
+CREATE TABLE publication_read_attributes (
+ candidate_id TEXT NOT NULL,card_id TEXT NOT NULL,profile TEXT NOT NULL,attribute TEXT NOT NULL,value TEXT NOT NULL,
+ PRIMARY KEY(candidate_id,card_id,profile,attribute,value)
+);
+CREATE INDEX publication_read_attribute_value ON publication_read_attributes(candidate_id,profile,attribute,value,card_id);
+CREATE TABLE publication_read_release_regions (
+ candidate_id TEXT NOT NULL,product_id TEXT NOT NULL,region TEXT NOT NULL,
+ PRIMARY KEY(candidate_id,product_id,region)
+);
+CREATE INDEX publication_read_region ON publication_read_release_regions(candidate_id,region,product_id);
+CREATE TABLE publication_read_text_chunks (
+ candidate_id TEXT NOT NULL REFERENCES publication_preparations(candidate_id),
+ sha256 TEXT NOT NULL,ordinal INTEGER NOT NULL,content TEXT NOT NULL CHECK(length(CAST(content AS BLOB))<=131072),
+ PRIMARY KEY(candidate_id,sha256,ordinal)
+);
+
+-- Preserve schema-21 prepared candidates without re-running sealed preparation.
+INSERT INTO publication_read_entities
+ SELECT b.candidate_id,b.kind,json_extract(b.content,'$.records[0].value.id'),b.ordinal,c.preparation_id,c.supported_game,
+ coalesce(json_extract(b.content,'$.records[0].value.card_id'),json_extract(b.content,'$.records[0].value.printing_id')),json_extract(b.content,'$.records[0].value.official_identity.kind'),
+ json_extract(b.content,'$.records[0].value.official_identity.value'),json_extract(b.content,'$.records[0].value.name'),
+ json_extract(b.content,'$.records[0].value.official_code'),lower(json_extract(b.content,'$.records[0].value.rarity')),
+ json_extract(b.content,'$.records[0].value.kind'),json_extract(b.content,'$.records[0].value.from.id'),json_extract(b.content,'$.records[0].value.to.id'),json_extract(b.content,'$.records[0].value.product_id'),
+ CASE WHEN b.kind='printings' THEN coalesce(json_extract(b.content,'$.records[0].value.card_id'),'') ELSE c.supported_game END,
+ CASE WHEN b.kind='cards' THEN coalesce(json_extract(b.content,'$.records[0].value.official_identity.kind'),'unknown') WHEN b.kind='products' THEN CASE WHEN json_extract(b.content,'$.records[0].value.official_code') IS NULL THEN '1' ELSE '0' END ELSE '' END,
+ CASE WHEN b.kind='cards' THEN coalesce(json_extract(b.content,'$.records[0].value.official_identity.value'),'') WHEN b.kind='products' THEN coalesce(json_extract(b.content,'$.records[0].value.official_code'),'') ELSE '' END,
+ CASE WHEN b.kind='products' THEN CASE WHEN json_extract(b.content,'$.records[0].value.name') IS NULL THEN '1' ELSE '0' END ELSE '' END,
+ CASE WHEN b.kind='products' THEN coalesce(json_extract(b.content,'$.records[0].value.name'),'') ELSE '' END,
+ length(CAST(b.content AS BLOB))+coalesce((SELECT sum(json_extract(value,'$.byte_length')) FROM json_each(b.content,'$.records[0].text_parts')),0)
+ FROM publication_projection_batches b JOIN game_candidates c ON c.id=b.candidate_id;
+INSERT INTO publication_read_attributes
+ WITH RECURSIVE attributes(candidate_id,card_id,profile,attribute,value,kind) AS (
+ SELECT b.candidate_id,json_extract(b.content,'$.records[0].value.id'),json_extract(b.content,'$.records[0].value.game_data.profile'),field.key,field.value,field.type
+ FROM publication_projection_batches b,json_each(b.content,'$.records[0].value.game_data.attributes') field WHERE b.kind='cards'
+ UNION ALL SELECT p.candidate_id,p.card_id,p.profile,p.attribute || CASE WHEN p.kind='array' THEN '' ELSE '.' || child.key END,child.value,child.type
+ FROM attributes p,json_each(CASE WHEN p.kind IN ('array','object') THEN p.value ELSE '[]' END) child)
+ SELECT DISTINCT candidate_id,card_id,profile,attribute,CASE kind WHEN 'text' THEN json_quote(value) WHEN 'null' THEN 'null' WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' ELSE CAST(value AS TEXT) END FROM attributes WHERE kind NOT IN ('array','object');
+INSERT INTO publication_read_release_regions SELECT DISTINCT b.candidate_id,json_extract(b.content,'$.records[0].value.id'),json_extract(release.value,'$.region')
+ FROM publication_projection_batches b,json_each(b.content,'$.records[0].value.releases') release
+ WHERE b.kind='products' AND json_extract(release.value,'$.region') IS NOT NULL;
+
+INSERT INTO publication_read_text_chunks
+SELECT DISTINCT c.id,t.sha256,t.ordinal,t.content
+FROM publication_projection_batches b JOIN game_candidates c ON c.id=b.candidate_id
+JOIN json_each(b.content,'$.records[0].text_parts') part
+JOIN reconciliation_text_chunks t ON t.preparation_id=c.preparation_id AND t.sha256=json_extract(part.value,'$.sha256');
+
+CREATE TRIGGER publication_read_entities_immutable BEFORE UPDATE ON publication_read_entities
+BEGIN SELECT RAISE(ABORT,'publication_read_immutable'); END;
+CREATE TRIGGER publication_read_text_immutable BEFORE UPDATE ON publication_read_text_chunks
+BEGIN SELECT RAISE(ABORT,'publication_read_immutable'); END;
+CREATE TRIGGER publication_read_attributes_immutable BEFORE UPDATE ON publication_read_attributes
+BEGIN SELECT RAISE(ABORT,'publication_read_immutable'); END;
+CREATE TRIGGER publication_read_regions_immutable BEFORE UPDATE ON publication_read_release_regions
+BEGIN SELECT RAISE(ABORT,'publication_read_immutable'); END;
 UPDATE catalogue_schema_state SET migration_level=22 WHERE singleton=1;

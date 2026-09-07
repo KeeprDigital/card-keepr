@@ -19,25 +19,17 @@ export function exportCollectionStatement(
          FROM catalogue_revisions AS revision
          JOIN pinned_revision ON revision.id = pinned_revision.id
        )
-       SELECT export.catalogue_revision_id, revision.published_at,
+       SELECT revision.id AS catalogue_revision_id, revision.published_at,
               export.manifest_key, export.manifest_digest,
-              export.maintenance_state
-       FROM catalogue_exports AS export
-       JOIN catalogue_revisions AS revision
-         ON revision.id = export.catalogue_revision_id
-       JOIN pinned_revision AS pinned
-         ON pinned.id = export.catalogue_revision_id
-       WHERE export.verified = 1
-         AND export.maintenance_state = 'available'
-         AND (
-           ? IS NULL OR revision.published_at < ? OR (
-             revision.published_at = ? AND
-             export.catalogue_revision_id < ?
-           )
-         )
-       ORDER BY revision.published_at DESC,
-                export.catalogue_revision_id DESC
-       LIMIT ?`)
+              export.maintenance_state, revision.publication_operation_id
+       FROM catalogue_revisions AS revision
+       JOIN pinned_revision AS pinned ON pinned.id=revision.id
+       LEFT JOIN catalogue_exports AS export ON revision.id=export.catalogue_revision_id
+       WHERE (revision.publication_operation_id IS NOT NULL OR
+              (export.verified=1 AND export.maintenance_state='available'))
+         AND (? IS NULL OR revision.published_at < ? OR (
+             revision.published_at = ? AND revision.id < ?))
+       ORDER BY revision.published_at DESC, revision.id DESC LIMIT ?`)
     .bind(
       input.revisionId,
       input.afterPublishedAt,
@@ -268,6 +260,7 @@ export type PrintingImageRow = {
 };
 
 export type ExportRow = {
+  publication_operation_id?: string | null;
   catalogue_revision_id: string;
   published_at: string;
   manifest_key: string;

@@ -452,6 +452,7 @@ async function prepareUnit(
       `publication-text/${part.sha256}/${cursor.chunk}`,
     );
     artifact("text", ref);
+    statements.push(repository.retainPublicReadText(db, id, part.sha256, cursor.chunk, chunk.content));
     cursor.chunk++;
     if (cursor.chunk === part.chunks) {
       if (hash.digestHex() !== part.sha256 || cursor.text_bytes !== part.byte_length)
@@ -557,6 +558,15 @@ async function prepareUnit(
     );
     statements.push(
       repository.retainPublicationQueryDocument(db, id, partition.kind, String(value.id), state.artifact_count),
+    );
+    statements.push(
+      ...repository.retainPublicReadFacts(
+        db,
+        id,
+        state.artifact_count,
+        candidate.preparation_id,
+        candidate.supported_game,
+      ),
     );
     artifact("query_search", ref);
   }

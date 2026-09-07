@@ -1,35 +1,39 @@
-import { type PublicBase, publicUrl, absoluteDocumentLinks } from "../../http/public-base";
+import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
 import {
   type CatalogueStore,
   consumerContent,
-  normalizeCardSearchText,
   gameProfileFilterValue,
   gameProfileForGame,
+  normalizeCardSearchText,
+  sha256Text,
 } from "../shared";
+import { parseRange } from "./byte-range";
 import {
   canonicalEtag,
-  conditionalResponse,
-  revisionHeaders,
-  ReadProblem,
-  collectionLimit,
   collectionFilter,
+  collectionLimit,
   collectionParameters,
-  invalidParameter,
-  encodeCursor,
+  conditionalResponse,
   decodeCursor,
+  encodeCursor,
+  invalidParameter,
+  ReadProblem,
+  revisionHeaders,
 } from "./collection-endpoint";
 import {
-  nativeRevisionStatement,
-  composedDocumentStatement,
-  composedTextStatement,
-  composedCollectionStatement,
-  composedRelationsStatement,
   type ComposedFilters,
+  composedCollectionStatement,
+  composedDocumentStatement,
+  composedFilterValueStatement,
+  composedRelationsStatement,
+  composedTextStatement,
+  nativeRevisionStatement,
 } from "./composition-read-repository";
 
-type Revision = { id: string; published_at: string; content_digest: string };
+type Revision = { id: string; published_at: string; content_digest: string; query_state: string };
 export type DocumentRow = {
   entity_id?: string;
+  position?: string;
   candidate_id: string;
   preparation_id: string;
   game_revision_id: string;
@@ -56,7 +60,7 @@ async function hydrate(db: CatalogueStore, row: DocumentRow): Promise<Value> {
       throw new ReadProblem(503, "catalogue_query_unavailable", "The requested entity exceeds its response budget.");
     const chunks: string[] = [];
     for (let ordinal = 0; ordinal < part.chunks; ordinal++) {
-      const chunk = await composedTextStatement(db, row.preparation_id, part.sha256, ordinal).first<{
+      const chunk = await composedTextStatement(db, row.candidate_id, part.sha256, ordinal).first<{
         content: string;
       }>();
       if (!chunk)
@@ -65,7 +69,10 @@ async function hydrate(db: CatalogueStore, row: DocumentRow): Promise<Value> {
     }
     let target = envelope.value;
     for (const segment of part.path.slice(0, -1)) target = target[segment] as Value;
-    target[part.path.at(-1)!] = chunks.join("");
+    const text = chunks.join("");
+    if (new TextEncoder().encode(text).byteLength !== part.byte_length || (await sha256Text(text)) !== part.sha256)
+      throw new ReadProblem(503, "catalogue_query_unavailable", "An immutable text component failed verification.");
+    target[part.path.at(-1)!] = text;
   }
   return consumerContent(envelope.value) as Value;
 }
@@ -76,14 +83,15 @@ async function related(db: CatalogueStore, revision: string, kind: string, field
   for (;;) {
     const rows = (await composedRelationsStatement(db, revision, kind, field, id, after).all<DocumentRow>()).results;
     for (const row of rows) {
-      bytes += new TextEncoder().encode(row.content).byteLength;
+      const value = await hydrate(db, row);
+      bytes += new TextEncoder().encode(JSON.stringify(value)).byteLength;
       if (bytes > 4_000_000)
         throw new ReadProblem(
           503,
           "catalogue_query_unavailable",
           "The requested relationships exceed their response budget.",
         );
-      records.push(await hydrate(db, row));
+      records.push(value);
     }
     if (rows.length < 32) break;
     after = rows.at(-1)!.entity_id!;
@@ -122,7 +130,8 @@ async function representation(db: CatalogueStore, revision: Revision, kind: stri
     data.products = products;
     data.distribution_contexts = contexts;
   }
-  if (kind === "products") data.releases = await related(db, revision.id, "releases", "product_id", id);
+  if (kind === "products")
+    data.releases = value.releases ?? (await related(db, revision.id, "releases", "product_id", id));
   return data;
 }
 async function jsonResponse(request: Request, revision: Revision, document: unknown) {
@@ -150,55 +159,23 @@ export async function compositionEntityResponse(
       })
     : null;
   if (cursor && cursor.contract !== "card-keepr-composition-cursor@1") return undefined;
-  const pinned = url.searchParams.get("revision") ?? cursor?.revision_id ?? null;
-  const revision = await nativeRevisionStatement(db, pinned).first<Revision>();
-  if (!revision) {
-    if (cursor?.contract === "card-keepr-composition-cursor@1")
-      throw new ReadProblem(409, "cursor_revision_unavailable", "The cursor Catalogue Revision is unavailable.");
-    return undefined;
-  }
-  if (id !== undefined) {
-    collectionParameters(url, ["include", "revision"]);
-    const include = url.searchParams.get("include");
-    if (include !== null && !(kind === "cards" && include === "printings"))
-      throw new ReadProblem(400, "invalid_parameter", "The detail include projection is invalid.");
-    const row = await composedDocumentStatement(db, revision.id, kind, id).first<DocumentRow>();
-    if (!row) return null;
-    const data = await representation(db, revision, kind, row);
-    return jsonResponse(request, revision, {
-      data: absoluteDocumentLinks(data, base),
-      ...(include === "printings"
-        ? {
-            included: await Promise.all(
-              (data.printing_ids as string[]).map(async (printing) => {
-                const value = await composedDocumentStatement(
-                  db,
-                  revision.id,
-                  "printings",
-                  printing,
-                ).first<DocumentRow>();
-                return absoluteDocumentLinks(await representation(db, revision, "printings", value!), base);
-              }),
-            ),
-          }
-        : {}),
-      meta: { catalogue_revision_id: revision.id, published_at: revision.published_at },
-      links: { self: publicUrl(base, url.pathname + url.search) },
-    });
-  }
-  collectionParameters(url, [
-    "limit",
-    "after",
-    "game",
-    "q",
-    "card_id",
-    "card_number",
-    "rarity",
-    "product_id",
-    "release_region",
-    "revision",
-    ...Array.from(url.searchParams.keys()).filter((k) => kind === "cards" && k.startsWith("attribute.")),
-  ]);
+  if (cursor && url.searchParams.has("revision") && url.searchParams.get("revision") !== cursor.revision_id)
+    throw new ReadProblem(400, "invalid_cursor", "The revision must match the cursor's pinned composition.");
+  if (id !== undefined) collectionParameters(url, ["include", "revision"]);
+  if (id === undefined)
+    collectionParameters(url, [
+      "limit",
+      "after",
+      "game",
+      "q",
+      "card_id",
+      "card_number",
+      "rarity",
+      "product_id",
+      "release_region",
+      "revision",
+      ...Array.from(url.searchParams.keys()).filter((k) => kind === "cards" && k.startsWith("attribute.")),
+    ]);
   const limit = collectionLimit(url.searchParams.get("limit"));
   const filters = { ...emptyFilters };
   for (const key of Object.keys(filters) as (keyof ComposedFilters)[]) {
@@ -215,8 +192,13 @@ export async function compositionEntityResponse(
     filters.q = normalizeCardSearchText(filters.q);
     if (!filters.q) throw invalidParameter("q", "q must contain at least one character.");
   }
+  if (filters.rarity !== null) {
+    filters.rarity = filters.rarity.normalize("NFC").trim().toLowerCase();
+    if (!/^[a-z0-9_-]{1,100}$/u.test(filters.rarity))
+      throw invalidParameter("rarity", "rarity must be a normalized rarity value.");
+  }
   const attributes: Record<string, string> = {};
-  for (const name of url.searchParams.keys())
+  for (const name of [...url.searchParams.keys()].sort())
     if (name.startsWith("attribute.")) {
       const profile = filters.game ? gameProfileForGame(filters.game) : null;
       const value = profile ? gameProfileFilterValue(profile, name.slice(10), collectionFilter(url, name)!) : null;
@@ -225,7 +207,104 @@ export async function compositionEntityResponse(
       attributes[name.slice(10)] = value;
     }
   if (Object.keys(attributes).length) filters.attributes = attributes;
+  const pinned = url.searchParams.get("revision") ?? cursor?.revision_id ?? null;
+  const revision = await nativeRevisionStatement(db, pinned, false).first<Revision>();
+  if (!revision) {
+    if (cursor?.contract === "card-keepr-composition-cursor@1")
+      throw new ReadProblem(409, "cursor_revision_unavailable", "The cursor Catalogue Revision is unavailable.", null, {
+        extensions: { links: { collection: publicUrl(base, url.pathname) } },
+      });
+    return undefined;
+  }
+  if (revision.query_state !== "available")
+    throw new ReadProblem(
+      cursor ? 409 : 503,
+      cursor ? "cursor_revision_unavailable" : "catalogue_query_unavailable",
+      "The pinned Catalogue Revision query projection is unavailable.",
+      null,
+      { extensions: { links: { collection: publicUrl(base, url.pathname) } } },
+    );
+  if (id !== undefined) {
+    collectionParameters(url, ["include", "revision"]);
+    const include = url.searchParams.get("include");
+    if (include !== null && !(kind === "cards" && include === "printings"))
+      throw new ReadProblem(400, "invalid_parameter", "The detail include projection is invalid.");
+    const row = await composedDocumentStatement(db, revision.id, kind, id).first<DocumentRow>();
+    if (!row) {
+      const correctionRow = await composedDocumentStatement(
+        db,
+        revision.id,
+        "identity_corrections",
+        id,
+      ).first<DocumentRow>();
+      if (!correctionRow) return null;
+      const correction = await hydrate(db, correctionRow);
+      if (correction.entity_kind !== (kind === "cards" ? "card" : "printing")) return null;
+      const replacements = (correction.replacement_ids as string[]).map((replacement) =>
+        publicUrl(base, `/v1/${kind}/${replacement}`),
+      );
+      return jsonResponse(request, revision, {
+        data: {
+          type: "identity_correction",
+          ...correction,
+          links: correction.action === "merge" ? { survivor: replacements[0] } : { replacements },
+        },
+        meta: { catalogue_revision_id: revision.id, published_at: revision.published_at },
+        links: { self: publicUrl(base, url.pathname) },
+      });
+    }
+    const data = await representation(db, revision, kind, row);
+    const included: unknown[] = [];
+    let bytes = new TextEncoder().encode(JSON.stringify(data)).byteLength;
+    if (include === "printings")
+      for (const printing of data.printing_ids as string[]) {
+        const row = await composedDocumentStatement(db, revision.id, "printings", printing).first<DocumentRow>();
+        if (!row) throw new ReadProblem(503, "catalogue_query_unavailable", "A pinned Printing is unavailable.");
+        const value = absoluteDocumentLinks(await representation(db, revision, "printings", row), base);
+        bytes += new TextEncoder().encode(JSON.stringify(value)).byteLength;
+        if (bytes > 4_000_000)
+          throw new ReadProblem(
+            503,
+            "catalogue_query_unavailable",
+            "The included Printings exceed their response budget.",
+          );
+        included.push(value);
+      }
+    return jsonResponse(request, revision, {
+      data: absoluteDocumentLinks(data, base),
+      ...(include === "printings" ? { included } : {}),
+      meta: { catalogue_revision_id: revision.id, published_at: revision.published_at },
+      links: { self: publicUrl(base, url.pathname + url.search) },
+    });
+  }
+  for (const [field, value] of Object.entries({
+    product_id: filters.product_id,
+    rarity: filters.rarity,
+    ...Object.fromEntries(
+      Object.entries(filters.attributes ?? {}).map(([name, value]) => [`attribute.${name}`, value]),
+    ),
+  })) {
+    if (value !== null && !(await composedFilterValueStatement(db, revision.id, field, value, filters.game).first()))
+      throw invalidParameter(field, "This value is not present in the pinned catalogue revision.");
+  }
   const fingerprint = JSON.stringify({ kind, filters });
+  if (cursor) {
+    let position: unknown;
+    try {
+      position = JSON.parse(cursor.after ?? "");
+    } catch {
+      throw new ReadProblem(400, "invalid_cursor", "The cursor position is invalid.");
+    }
+    if (!Array.isArray(position) || position.length !== 6 || position.some((value) => typeof value !== "string"))
+      throw new ReadProblem(400, "invalid_cursor", "The cursor position is invalid.");
+  }
+  const canonical = new URLSearchParams({ limit: String(limit) });
+  for (const [key, value] of Object.entries(filters))
+    if (key !== "attributes" && value !== null) canonical.set(key, String(value));
+  for (const name of Object.keys(attributes))
+    canonical.set(`attribute.${name}`, url.searchParams.get(`attribute.${name}`)!);
+  if (pinned) canonical.set("revision", pinned);
+  if (raw) canonical.set("after", raw);
   if (cursor && (cursor.filters !== fingerprint || cursor.limit !== limit || typeof cursor.after !== "string"))
     throw new ReadProblem(400, "invalid_cursor", "The cursor does not match these filters.");
   const rows = (
@@ -250,7 +329,7 @@ export async function compositionEntityResponse(
       ? encodeCursor({
           contract: "card-keepr-composition-cursor@1",
           revision_id: revision.id,
-          after: selected.at(-1)!.entity_id,
+          after: selected.at(-1)!.position,
           filters: fingerprint,
           limit,
         })
@@ -259,7 +338,7 @@ export async function compositionEntityResponse(
     data,
     meta: { catalogue_revision_id: revision.id, published_at: revision.published_at },
     page: { limit, next_cursor: next },
-    links: { self: publicUrl(base, url.pathname + url.search) },
+    links: { self: publicUrl(base, url.pathname + "?" + canonical.toString()) },
   });
 }
 
@@ -271,21 +350,50 @@ export async function compositionImageResponse(
 ): Promise<Response | null | undefined> {
   const url = new URL(request.url);
   collectionParameters(url, ["revision"]);
-  const revision = await nativeRevisionStatement(db, url.searchParams.get("revision")).first<Revision>();
+  const revision = await nativeRevisionStatement(db, url.searchParams.get("revision"), false).first<Revision>();
   if (!revision) return undefined;
+  if (revision.query_state !== "available")
+    throw new ReadProblem(
+      503,
+      "catalogue_query_unavailable",
+      "The pinned Catalogue Revision query projection is unavailable.",
+    );
   const row = await composedDocumentStatement(db, revision.id, "printing_images", id).first<DocumentRow>();
   if (!row) return null;
   const value = await hydrate(db, row);
-  const headers = {
-    ...revisionHeaders(revision.id, `"${value.content_sha256}"`),
+  const etag = `"${value.content_sha256}"`;
+  const size = Number(value.content_byte_length);
+  const headers = new Headers({
+    ...revisionHeaders(revision.id, etag),
+    "accept-ranges": "bytes",
     "content-type": String(value.media_type),
-    "content-length": String(value.content_byte_length),
-  };
-  const conditional = conditionalResponse(request, headers);
+    "cache-control": "private, max-age=31536000, immutable",
+  });
+  const isHead = request.method === "HEAD";
+  const conditional = isHead ? null : conditionalResponse(request, Object.fromEntries(headers));
   if (conditional) return conditional;
-  if (request.method === "HEAD") return new Response(null, { headers });
-  const object = await bucket.get(String(value.object_key));
-  if (!object || object.size !== value.content_byte_length)
+  const range = isHead ? null : parseRange(request.headers.get("range"), size);
+  if (range === "unsatisfiable")
+    throw new ReadProblem(
+      416,
+      "range_not_satisfiable",
+      "The requested Printing Image byte range is not satisfiable.",
+      null,
+      {
+        headers: {
+          "accept-ranges": "bytes",
+          "content-range": `bytes */${size}`,
+          etag,
+          "x-catalogue-revision": revision.id,
+        },
+      },
+    );
+  const object = isHead
+    ? await bucket.head(String(value.object_key))
+    : await bucket.get(String(value.object_key), range === null ? {} : { range });
+  if (!object || object.size !== size)
     throw new ReadProblem(503, "printing_image_unavailable", "The immutable image is unavailable.");
-  return new Response(object.body, { headers });
+  headers.set("content-length", String(range === null ? size : range.length));
+  if (range !== null) headers.set("content-range", `bytes ${range.offset}-${range.offset + range.length - 1}/${size}`);
+  return new Response(isHead ? null : (object as R2ObjectBody).body, { status: range === null ? 200 : 206, headers });
 }

@@ -1,3 +1,5 @@
+import { compositionExportResponse } from "./composition-export";
+import { parseRange } from "./byte-range";
 import { MissingObjectError } from "../shared";
 import { parseCatalogueRevisionId, parsePublicationInstant } from "../../http/catalogue";
 import { ifNoneMatchMatches as ifNoneMatch } from "../../http/conditional-request";
@@ -84,6 +86,24 @@ export async function catalogueExportsResponse(
   const selected = page.rows;
   const data = await Promise.all(
     selected.map(async (exportRow) => {
+      if (exportRow.publication_operation_id) {
+        const response = await compositionExportResponse(
+          database,
+          new Request(publicUrl(base, `/v1/catalogue-exports/${exportRow.catalogue_revision_id}`)),
+          base,
+          exportRow.catalogue_revision_id,
+        );
+        if (!response) throw new Error("Verified Catalogue Export is unavailable");
+        const { data } = (await response.json()) as { data: { manifest_sha256: string; export_schema_major: number } };
+        return {
+          type: "catalogue_export",
+          catalogue_revision_id: exportRow.catalogue_revision_id,
+          export_schema_major: data.export_schema_major,
+          published_at: exportRow.published_at,
+          manifest_sha256: data.manifest_sha256,
+          links: { self: publicUrl(base, `/v1/catalogue-exports/${exportRow.catalogue_revision_id}`) },
+        };
+      }
       const verified = await loadVerifiedExportManifest(database, bucket, exportRow.catalogue_revision_id);
       if (verified === null) {
         throw new Error("Verified Catalogue Export is unavailable");
@@ -572,25 +592,6 @@ async function loadVerifiedExportManifest(
     throw new Error("Verified Catalogue Export manifest changed");
   }
   return { exportRow, manifest };
-}
-
-function parseRange(header: string | null, size: number): { offset: number; length: number } | "unsatisfiable" | null {
-  if (header === null) return null;
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header);
-  if (match === null || (match[1] === "" && match[2] === "")) {
-    return "unsatisfiable";
-  }
-  if (match[1] === "") {
-    const suffix = Number.parseInt(match[2]!, 10);
-    if (suffix < 1) return "unsatisfiable";
-    const length = Math.min(suffix, size);
-    return { offset: size - length, length };
-  }
-  const offset = Number.parseInt(match[1]!, 10);
-  const requestedEnd = match[2] === "" ? size - 1 : Number.parseInt(match[2]!, 10);
-  if (offset >= size || requestedEnd < offset) return "unsatisfiable";
-  const end = Math.min(requestedEnd, size - 1);
-  return { offset, length: end - offset + 1 };
 }
 
 async function identityCorrectionResponse(
