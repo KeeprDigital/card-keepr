@@ -4,6 +4,30 @@ import { createHash } from "node:crypto";
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
 export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
+  if (scenario === "dedicated-errata-work-units") {
+    return {
+      cards: Array.from({ length: 32 }, (_, index) => ({
+        kind: "official_erratum",
+        game: "one-piece",
+        target: {
+          type: "card",
+          official_identity: { kind: "card_number", value: `OP96-${String(index + 1).padStart(3, "0")}` },
+        },
+        published_on: "2026-07-31",
+        effective_from: null,
+        observed_printed_rules_text: "Official printed rules",
+        corrected_rules_text: `Corrected rules for Card ${index}`,
+        official_wording: `The corrected rules for Card ${index} apply to all Printings.`,
+        applies_to_parallel_printings: true,
+        source: {
+          fragment: `#errata_work_unit_${index}`,
+          display_name: `OP96-${String(index + 1).padStart(3, "0")} Synthetic reviewed Card ${index}`,
+          image_url: `https://en.onepiece-cardgame.com/images/rules/cards/OP96-${String(index + 1).padStart(3, "0")}.png`,
+        },
+        completeness: completeEvidence(),
+      })),
+    };
+  }
   if (scenario === "card-only-work-units") {
     return {
       cards: Array.from({ length: 32 }, (_, index) => ({

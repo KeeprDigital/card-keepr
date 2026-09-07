@@ -255,6 +255,18 @@ export async function* verifiedReconciliationRecordEntries<T>(
   kind: string,
   cursor: ReconciliationInputRecordCursor | null = null,
 ): AsyncGenerator<{ value: T; cursor: ReconciliationInputRecordCursor; byteLength: number }> {
+  for await (const entry of scannedReconciliationRecordEntries<T>(database, runId, kind, cursor, () => true))
+    yield { ...entry, value: entry.value as T };
+}
+
+/** Advance across every verified envelope; restore text only for the selected record kind. */
+export async function* scannedReconciliationRecordEntries<T>(
+  database: CatalogueStore,
+  runId: string,
+  kind: string,
+  cursor: ReconciliationInputRecordCursor | null,
+  select: (value: Record<string, unknown>) => boolean,
+): AsyncGenerator<{ value: T | null; cursor: ReconciliationInputRecordCursor; byteLength: number }> {
   let after = cursor ? cursor.partition - 1 : -1;
   for (;;) {
     const partition = await storage(() =>
@@ -268,17 +280,21 @@ export async function* verifiedReconciliationRecordEntries<T>(
     if ((await sha256Text(partition.content)) !== partition.sha256)
       throw new Error("Retained observation partition failed integrity verification.");
     const records = JSON.parse(partition.content);
-    for (let index = partition.ordinal === cursor?.partition ? cursor.record : 0; index < records.length; index++)
+    for (let index = partition.ordinal === cursor?.partition ? cursor.record : 0; index < records.length; index++) {
+      const selected = select(records[index].value);
       yield {
-        value: (await restorePartitionedRecord(database, runId, records[index])) as T,
+        value: selected ? ((await restorePartitionedRecord(database, runId, records[index])) as T) : null,
         byteLength:
           new TextEncoder().encode(canonicalJson(records[index])).byteLength +
-          records[index].text_parts.reduce(
-            (total: number, part: { byte_length: number }) => total + part.byte_length,
-            0,
-          ),
+          (selected
+            ? records[index].text_parts.reduce(
+                (total: number, part: { byte_length: number }) => total + part.byte_length,
+                0,
+              )
+            : 0),
         cursor: { partition: partition.ordinal, record: index + 1 },
       };
+    }
     after = partition.ordinal;
   }
 }

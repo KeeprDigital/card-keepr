@@ -180,6 +180,8 @@ test.each([
     const verificationCursors: number[] = [];
     const reductionCalls: number[] = [];
     const reductionCursors: number[] = [];
+    let officialCardsComplete = false;
+    let officialErrataComplete = false;
     const images = new Proxy(testEnv.PRINTING_IMAGES, {
       get(target, property) {
         if (property === "put")
@@ -197,14 +199,21 @@ test.each([
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-    const wrap = (statement: D1PreparedStatement): D1PreparedStatement =>
+    const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement =>
       new Proxy(statement, {
         get(target, property) {
-          if (property === "bind") return (...values: unknown[]) => wrap(target.bind(...values));
+          if (property === "bind") return (...bound: unknown[]) => wrap(target.bind(...bound), sql, bound);
           const value = Reflect.get(target, property);
           if (["run", "first", "all", "raw"].includes(String(property)))
             return (...args: unknown[]) => {
               serviceCalls++;
+              if (
+                officialCardsComplete &&
+                !officialErrataComplete &&
+                sql.includes("FROM reconciliation_input_partitions") &&
+                values.includes("observations")
+              )
+                throw new Error("The completed Card scan found no dedicated Errata; do not reread its observations.");
               return Reflect.apply(value, target, args);
             };
           return typeof value === "function" ? value.bind(target) : value;
@@ -218,7 +227,7 @@ test.each([
               throw new Error("Continuing a work unit must not recount the complete retained candidate.");
             if (requireFrozenMetadata && completedGroups.length > 0 && /\b(?:FROM|JOIN)\s+source_requests\b/u.test(sql))
               throw new Error("A returning normalization unit must reopen the frozen request selection.");
-            return wrap(target.prepare(sql));
+            return wrap(target.prepare(sql), sql);
           };
         if (property === "batch")
           return (...args: Parameters<D1Database["batch"]>) => {
@@ -262,10 +271,12 @@ test.each([
           reductionCalls.push(serviceCalls);
           const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
           const checkpoint = (
-            status.checkpoints as { phase: string; cursor: { processedObservations: number } }[]
+            status.checkpoints as { phase: string; cursor: { processedObservations: number; complete: boolean } }[]
           ).find((row) => row.phase === "official_reduction");
           reductionCursors.push(checkpoint!.cursor.processedObservations);
+          officialCardsComplete = checkpoint!.cursor.complete;
         }
+        if (JSON.parse(result as string).continuation?.phase === "official_errata") officialErrataComplete = true;
         expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThan(65536);
         return result;
       },

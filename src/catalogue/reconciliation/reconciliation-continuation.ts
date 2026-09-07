@@ -8,7 +8,8 @@ export class ReconciliationContinuation extends Error {
         | "input_preparation"
         | "input_verification"
         | "prior_state"
-        | "official_reduction";
+        | "official_reduction"
+        | "official_errata";
       ordinal: number;
     },
   ) {

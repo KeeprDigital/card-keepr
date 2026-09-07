@@ -562,7 +562,7 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
     const { testEnv, post } = await import("./reconciliation-helpers");
     const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
     const run = await collect(`/reconciliation/${fixture}`, "product-pass-read-outage");
-    let passes = 0;
+    let errataCompleted = false;
     let failures = 0;
     let unavailable = true;
     let replayingSealed = false;
@@ -578,8 +578,7 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
                 values.includes("observations") &&
                 values.at(-1) === -1
               ) {
-                passes++;
-                if (unavailable && passes === 2) {
+                if (unavailable && errataCompleted) {
                   failures++;
                   throw new Error("Injected Product-pass input storage outage");
                 }
@@ -612,10 +611,16 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
     const step = {
       do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
         for (let attempt = 0; ; attempt++) {
-          // The completed Card pass returns separately; each remaining attempt reads Errata, then Products.
-          passes = 0;
           try {
-            return await callback();
+            const result = await callback();
+            if (JSON.parse(result).continuation?.phase === "official_errata") {
+              const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+              const checkpoint = (status.checkpoints as { phase: string; cursor: { errataComplete: boolean } }[]).find(
+                (row) => row.phase === "official_errata",
+              );
+              errataCompleted = checkpoint?.cursor.errataComplete === true;
+            }
+            return result;
           } catch (error) {
             if (attempt >= config.retries.limit) throw error;
           }

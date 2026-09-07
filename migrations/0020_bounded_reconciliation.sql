@@ -282,7 +282,7 @@ WHERE NOT EXISTS (SELECT 1 FROM curated_revision_events AS event
   WHERE event.revision_id = conflict.revision_id AND event.event_version = conflict.event_version);
 CREATE TABLE reconciliation_checkpoints (
   ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
-  phase TEXT NOT NULL CHECK (phase IN ('source_graph', 'normalization', 'input_selection', 'input_verification', 'input_preparation', 'prior_state', 'official_reduction')),
+  phase TEXT NOT NULL CHECK (phase IN ('source_graph', 'normalization', 'input_selection', 'input_verification', 'input_preparation', 'prior_state', 'official_reduction', 'official_errata')),
   ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
   content TEXT NOT NULL CHECK (json_valid(content) AND length(CAST(content AS BLOB)) <= 65536),
   sha256 TEXT NOT NULL CHECK (length(sha256) = 64),

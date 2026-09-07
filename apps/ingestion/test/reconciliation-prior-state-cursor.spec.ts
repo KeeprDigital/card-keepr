@@ -31,6 +31,14 @@ test.each([
     interrupt: "official_reduction",
   },
   {
+    base: "curated-conflict-fanout-base",
+    changed: "dedicated-errata-work-units",
+    expectedCards: 32,
+    count: 32,
+    name: "Synthetic reviewed Card 0",
+    interrupt: "official_errata",
+  },
+  {
     base: "prior-state-text-pages",
     changed: "prior-state-text-pages",
     expectedCards: 32,
@@ -38,13 +46,25 @@ test.each([
     name: "Synthetic reviewed Card 0",
   },
 ])(
-  "prior Cards from $base resume through durable returning groups",
+  "prior Cards from $base resume through durable returning groups ($interrupt)",
   async ({ base, changed, count, expectedCards, name, interrupt = "" }) => {
     const prior = await collect(`/reconciliation/${base}`, "prior-state-base");
     const accepted = await reconcile(prior.id);
     expect(accepted.response.status).toBe(200);
     expect((await approve(accepted.document)).response.status).toBe(200);
-    const run = await collect(`/reconciliation/${changed}`, "prior-state-changed");
+    const run = await collect(
+      `/reconciliation/${changed}`,
+      "prior-state-changed",
+      interrupt === "official_errata"
+        ? {
+            game: "one-piece",
+            lineage: "one-piece-en",
+            adapter: "fixture-one-piece-official-errata-json@1",
+          }
+        : undefined,
+    );
+    const errataCursors: number[] = [];
+    const errataCalls: number[] = [];
     const restoredCards: number[] = [];
     let calls = 0;
     let armed = false;
@@ -84,7 +104,13 @@ test.each([
                 const entry = statements.get(statement);
                 return (
                   entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
-                  entry.values.includes(interrupt === "prior_state" ? "prior_cards" : "card_facts")
+                  entry.values.includes(
+                    interrupt === "prior_state"
+                      ? "prior_cards"
+                      : interrupt === "official_errata"
+                        ? "current_errata"
+                        : "card_facts",
+                  )
                 );
               }) &&
               ++priorWrites === 2
@@ -130,6 +156,15 @@ test.each([
             status.checkpoints as { phase: string; cursor: { processedObservations: number } }[]
           ).find((row) => row.phase === "official_reduction");
           if (checkpoint!.cursor.processedObservations > 0) armed = true;
+        }
+        if (JSON.parse(result).continuation?.phase === "official_errata") {
+          errataCalls.push(calls);
+          const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+          const checkpoint = (status.checkpoints as { phase: string; cursor: { processedErrata: number } }[]).find(
+            (row) => row.phase === "official_errata",
+          )!;
+          errataCursors.push(checkpoint.cursor.processedErrata);
+          if (interrupt === "official_errata" && checkpoint.cursor.processedErrata > 0) armed = true;
         }
         expect(new TextEncoder().encode(result).byteLength).toBeLessThan(65536);
         return result;
@@ -182,5 +217,22 @@ test.each([
     const detail = await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${cards.ordinal}`);
     expect(detail.document.records).toHaveLength(expectedCards);
     expect(detail.document.records).toEqual(expect.arrayContaining([expect.objectContaining({ name })]));
+    if (interrupt === "official_errata") {
+      expect(errataCursors.some((count) => count > 0 && count < 32)).toBe(true);
+      expect(errataCursors).toContain(32);
+      expect(Math.max(...errataCalls)).toBeLessThanOrEqual(100);
+      const errataPart = (page.document.partitions as { kind: string; ordinal: number }[]).find(
+        (part) => part.kind === "errata",
+      )!;
+      const errata = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${errataPart.ordinal}`))
+        .document.records;
+      expect(errata).toHaveLength(32);
+      expect(errata).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ corrected_value: "Corrected rules for Card 0" }),
+          expect.objectContaining({ corrected_value: "Corrected rules for Card 31" }),
+        ]),
+      );
+    }
   },
 );

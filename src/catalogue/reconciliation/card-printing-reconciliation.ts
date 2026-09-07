@@ -12,6 +12,7 @@ import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from ".
 import {
   ReconciliationInputStorageError,
   verifiedReconciliationRecordEntries,
+  scannedReconciliationRecordEntries,
   type ReconciliationInputRecordCursor,
 } from "./reconciliation-input";
 import { canonicalStreamValueDigest } from "./reconciliation-preparation";
@@ -147,7 +148,11 @@ type OfficialReductionCursor = {
   productGames: SupportedGame[];
   after: ReconciliationInputRecordCursor | null;
   processedObservations: number;
+  dedicatedErrata: number;
   complete: boolean;
+  errataAfter?: ReconciliationInputRecordCursor | null;
+  processedErrata?: number;
+  errataComplete?: boolean;
 };
 
 export async function reconcileRetainedCardPrintingEvidence(
@@ -165,7 +170,9 @@ export async function reconcileRetainedCardPrintingEvidence(
   await initializeReconciliationProgress(database, runId, observedAt);
   const base = database;
   database = guardedCatalogueStore(base, () => reconciliationWriterGuard(base, runId, generation));
-  const reduction = await reconciliationCheckpoint<OfficialReductionCursor>(database, runId, "official_reduction");
+  const errataReduction = await reconciliationCheckpoint<OfficialReductionCursor>(database, runId, "official_errata");
+  const reduction =
+    errataReduction ?? (await reconciliationCheckpoint<OfficialReductionCursor>(database, runId, "official_reduction"));
   let retained: Awaited<ReturnType<typeof retainedReconciliationObservation>>;
   try {
     retained = await retainedReconciliationObservation(
@@ -414,9 +421,15 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
   let reductionOrdinal = (reduction?.ordinal ?? -1) + 1;
   let processedObservations = reduction?.value.processedObservations ?? 0;
-  const saveReduction = async (after: ReconciliationInputRecordCursor | null, complete: boolean) => {
+  let dedicatedErrata = reduction?.value.dedicatedErrata ?? 0;
+  const saveReduction = async (
+    after: ReconciliationInputRecordCursor | null,
+    complete: boolean,
+    errata?: { errataAfter: ReconciliationInputRecordCursor | null; processedErrata: number; errataComplete: boolean },
+  ) => {
+    const phase = errata ? "official_errata" : "official_reduction";
     const mappings = await sourceMappings.checkpoint();
-    await retainReconciliationCheckpoint(database, runId, "official_reduction", reductionOrdinal, {
+    await retainReconciliationCheckpoint(database, runId, phase, reductionOrdinal, {
       prior: priorPositions(),
       priorCandidate,
       input: {
@@ -438,9 +451,11 @@ export async function reconcileRetainedCardPrintingEvidence(
       productGames: [...productGames],
       after,
       processedObservations,
+      dedicatedErrata,
       complete,
+      ...errata,
     } satisfies OfficialReductionCursor);
-    return { continuation: { phase: "official_reduction", ordinal: reductionOrdinal++ } };
+    return { continuation: { phase, ordinal: reductionOrdinal++ } };
   };
   if (!reduction) {
     const next = await saveReduction(null, false);
@@ -1222,6 +1237,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         await sourceWarnings.push(...observation.sourceWarnings);
       }
       processedObservations++;
+      if (observation.kind === "official_erratum") dedicatedErrata++;
       after = cursor;
       inUnit += work;
       bytes += byteLength;
@@ -1236,113 +1252,156 @@ export async function reconcileRetainedCardPrintingEvidence(
     if (yieldAtCheckpoint) return next;
   }
 
-  for await (const observation of retained.observations()) {
-    if (observation.kind !== "official_erratum") continue;
-    if (observation.target.type === "card" && !observation.appliesToParallelPrintings) {
-      await diagnostics.push({
-        code: "retained_evidence_invalid",
-        source_observation_id: observation.sourceObservationId,
-        locator: observation.sourceFragment,
-        matched_printing_ids: [],
-        detail: "A non-parallel Official Erratum must target exactly one Printing.",
+  if (!errataReduction?.value.errataComplete) {
+    reductionOrdinal = (errataReduction?.ordinal ?? -1) + 1;
+    let after = errataReduction?.value.errataAfter ?? null;
+    let processedErrata = errataReduction?.value.processedErrata ?? 0;
+    let scanned = 0;
+    let reduced = 0;
+    let bytes = 0;
+    const saveErrata = (complete: boolean) =>
+      saveReduction(reduction?.value.after ?? null, true, {
+        errataAfter: after,
+        processedErrata,
+        errataComplete: complete,
       });
-      continue;
-    }
-    const matchingCards = [
-      ...new Map(
-        [
-          ...(await cards.sameOfficialIdentity(observation.game, observation.target.officialIdentity, true)),
-          ...(await priorCards.sameOfficialIdentity(observation.game, observation.target.officialIdentity, true)),
-        ].map((card) => [card.id, card]),
-      ).values(),
-    ];
-    if (matchingCards.length !== 1) {
-      await diagnostics.push({
-        code: "retained_evidence_invalid",
-        source_observation_id: observation.sourceObservationId,
-        locator: observation.sourceFragment,
-        matched_printing_ids: [],
-        detail:
-          matchingCards.length === 0
-            ? "Official Erratum evidence does not resolve one Card in the expected published Catalogue Revision."
-            : "Official Erratum evidence resolves more than one Card in the expected published Catalogue Revision.",
-      });
-      continue;
-    }
-    const card = (await priorCards.get(matchingCards[0]!.id)) ?? (await cards.get(matchingCards[0]!.id))!;
-    await targetedCardIds.seed(card.id, true);
-    let targetPrintingId: string | null = null;
-    if (observation.target.type === "printing") {
-      const located = await printingsAtLocator(database, observation.sourceLineage, observation.target.locator);
-      const publishedById = new Map<string, CataloguePrinting>();
-      for (const locatedPrinting of located) {
-        const published = await priorPrintings.get(locatedPrinting.id);
-        if (published?.card_id === card.id) publishedById.set(published.id, published);
+    if (dedicatedErrata > 0)
+      for await (const entry of scannedReconciliationRecordEntries<
+        Extract<RetainedObservation, { kind: "official_erratum" }>
+      >(database, runId, "observations", after, (value) => value.kind === "official_erratum")) {
+        if (scanned > 0 && bytes + entry.byteLength > 512000) {
+          const next = await saveErrata(false);
+          if (yieldAtCheckpoint) return next;
+          scanned = 0;
+          reduced = 0;
+          bytes = 0;
+        }
+        const observation = entry.value;
+        erratumUnit: {
+          if (observation === null) break erratumUnit;
+          if (observation.target.type === "card" && !observation.appliesToParallelPrintings) {
+            await diagnostics.push({
+              code: "retained_evidence_invalid",
+              source_observation_id: observation.sourceObservationId,
+              locator: observation.sourceFragment,
+              matched_printing_ids: [],
+              detail: "A non-parallel Official Erratum must target exactly one Printing.",
+            });
+            break erratumUnit;
+          }
+          const matchingCards = [
+            ...new Map(
+              [
+                ...(await cards.sameOfficialIdentity(observation.game, observation.target.officialIdentity, true)),
+                ...(await priorCards.sameOfficialIdentity(observation.game, observation.target.officialIdentity, true)),
+              ].map((card) => [card.id, card]),
+            ).values(),
+          ];
+          if (matchingCards.length !== 1) {
+            await diagnostics.push({
+              code: "retained_evidence_invalid",
+              source_observation_id: observation.sourceObservationId,
+              locator: observation.sourceFragment,
+              matched_printing_ids: [],
+              detail:
+                matchingCards.length === 0
+                  ? "Official Erratum evidence does not resolve one Card in the expected published Catalogue Revision."
+                  : "Official Erratum evidence resolves more than one Card in the expected published Catalogue Revision.",
+            });
+            break erratumUnit;
+          }
+          const card = (await priorCards.get(matchingCards[0]!.id)) ?? (await cards.get(matchingCards[0]!.id))!;
+          await targetedCardIds.seed(card.id, true);
+          let targetPrintingId: string | null = null;
+          if (observation.target.type === "printing") {
+            const located = await printingsAtLocator(database, observation.sourceLineage, observation.target.locator);
+            const publishedById = new Map<string, CataloguePrinting>();
+            for (const locatedPrinting of located) {
+              const published = await priorPrintings.get(locatedPrinting.id);
+              if (published?.card_id === card.id) publishedById.set(published.id, published);
+            }
+            const publishedPrintings = [...publishedById.values()];
+            if (publishedPrintings.length !== 1) {
+              await diagnostics.push({
+                code: "retained_evidence_invalid",
+                source_observation_id: observation.sourceObservationId,
+                locator: observation.target.locator,
+                matched_printing_ids: publishedPrintings.map((printing) => printing.id).sort(),
+                detail:
+                  "Official Erratum evidence does not resolve exactly one Printing of the Card in the expected published Catalogue Revision.",
+              });
+              break erratumUnit;
+            }
+            const publishedPrinting = publishedPrintings[0]!;
+            targetPrintingId = publishedPrinting.id;
+            await targetedPrintingIds.seed(publishedPrinting.id, true);
+          }
+          try {
+            await retainObservedErrata(
+              await identifyRulesTextErrata({
+                game: observation.game,
+                cardId: card.id,
+                printingId: targetPrintingId,
+                sourceLineage: observation.sourceLineage,
+                sourceObservationId: observation.sourceObservationId,
+                errata: [
+                  {
+                    targetType: observation.target.type,
+                    effectiveFrom: observation.effectiveFrom,
+                    officialWording: observation.officialWording,
+                    correctedValue: observation.correctedRulesText,
+                  },
+                ],
+              }),
+            );
+            await plans.append({
+              sourceObservationSetId: observation.sourceObservationSetId,
+              sourceSnapshotId: observation.sourceSnapshotId,
+              sourceObservationId: observation.sourceObservationId,
+              sourceLineage: observation.sourceLineage,
+              supportedGame: observation.supportedGame,
+              observationKind: "official_erratum",
+              cardId: card.id,
+              printingId: targetPrintingId,
+              locator: null,
+              variantKey: null,
+              compatibility: null,
+              sourceCardFactsJson: null,
+              memberships: {
+                products: [],
+                distribution_contexts: [],
+                source_buckets: [],
+              },
+              withdrawal: null,
+            });
+          } catch (error) {
+            if (isStorageOrCapacityFailure(error)) throw error;
+            await diagnostics.push({
+              code: "retained_evidence_invalid",
+              source_observation_id: observation.sourceObservationId,
+              locator: observation.sourceFragment,
+              matched_printing_ids: [],
+              detail: error instanceof Error ? error.message : "Retained Official Erratum evidence is invalid.",
+            });
+          }
+        }
+        after = entry.cursor;
+        scanned++;
+        if (observation !== null) {
+          reduced++;
+          processedErrata++;
+        }
+        bytes += entry.byteLength;
+        if (scanned >= 500 || reduced >= 2 || bytes >= 512000) {
+          const next = await saveErrata(false);
+          if (yieldAtCheckpoint) return next;
+          scanned = 0;
+          reduced = 0;
+          bytes = 0;
+        }
       }
-      const publishedPrintings = [...publishedById.values()];
-      if (publishedPrintings.length !== 1) {
-        await diagnostics.push({
-          code: "retained_evidence_invalid",
-          source_observation_id: observation.sourceObservationId,
-          locator: observation.target.locator,
-          matched_printing_ids: publishedPrintings.map((printing) => printing.id).sort(),
-          detail:
-            "Official Erratum evidence does not resolve exactly one Printing of the Card in the expected published Catalogue Revision.",
-        });
-        continue;
-      }
-      const publishedPrinting = publishedPrintings[0]!;
-      targetPrintingId = publishedPrinting.id;
-      await targetedPrintingIds.seed(publishedPrinting.id, true);
-    }
-    try {
-      await retainObservedErrata(
-        await identifyRulesTextErrata({
-          game: observation.game,
-          cardId: card.id,
-          printingId: targetPrintingId,
-          sourceLineage: observation.sourceLineage,
-          sourceObservationId: observation.sourceObservationId,
-          errata: [
-            {
-              targetType: observation.target.type,
-              effectiveFrom: observation.effectiveFrom,
-              officialWording: observation.officialWording,
-              correctedValue: observation.correctedRulesText,
-            },
-          ],
-        }),
-      );
-      await plans.append({
-        sourceObservationSetId: observation.sourceObservationSetId,
-        sourceSnapshotId: observation.sourceSnapshotId,
-        sourceObservationId: observation.sourceObservationId,
-        sourceLineage: observation.sourceLineage,
-        supportedGame: observation.supportedGame,
-        observationKind: "official_erratum",
-        cardId: card.id,
-        printingId: targetPrintingId,
-        locator: null,
-        variantKey: null,
-        compatibility: null,
-        sourceCardFactsJson: null,
-        memberships: {
-          products: [],
-          distribution_contexts: [],
-          source_buckets: [],
-        },
-        withdrawal: null,
-      });
-    } catch (error) {
-      if (isStorageOrCapacityFailure(error)) throw error;
-      await diagnostics.push({
-        code: "retained_evidence_invalid",
-        source_observation_id: observation.sourceObservationId,
-        locator: observation.sourceFragment,
-        matched_printing_ids: [],
-        detail: error instanceof Error ? error.message : "Retained Official Erratum evidence is invalid.",
-      });
-    }
+    const next = await saveErrata(true);
+    if (yieldAtCheckpoint) return next;
   }
 
   for await (const diagnostic of withdrawalConflictDiagnostics(database, runId, plans))
