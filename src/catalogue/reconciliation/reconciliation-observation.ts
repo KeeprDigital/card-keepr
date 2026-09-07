@@ -10,7 +10,7 @@ import {
   sourceFieldWarning,
   type ProfileWarning,
 } from "../shared";
-import { parsedOfficialArtworkIdentity } from "../adapters";
+import { parsedOfficialArtworkIdentity, riftboundOriginsTargetName } from "../adapters";
 import { parseRulesTextErrata, type ParsedRulesTextErratum } from "./errata-rules-text";
 
 export type PrintingCompatibility = Readonly<{
@@ -421,7 +421,11 @@ function parseOfficialErratumObservation(
       url.search ||
       url.hash ||
       identity.kind !== "publisher_name" ||
-      identity.value !== heading
+      identity.value !==
+        riftboundOriginsTargetName(
+          heading,
+          requiredString(record.observed_printed_rules_text, "Official Erratum old text"),
+        )
     )
       throw new Error("Riftbound Official Erratum article provenance is invalid.");
     sourceLocator = `${url.href} [heading: ${heading}]`;

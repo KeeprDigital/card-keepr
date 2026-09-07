@@ -4,6 +4,16 @@ import { nodeTag, nodeText, riftboundArticle } from "./riftbound-article";
 export const riftboundOriginsErrataUrl =
   "https://playriftbound.com/en-us/news/rules-and-releases/riftbound-origins-card-errata/";
 
+/** Exact retained Origins alias: the sole OGS-017/024 gallery record has
+ * this complete name and exactly the article's old wording. Never apply
+ * punctuation folding or infer Printing equivalence from this Card alias. */
+export function riftboundOriginsTargetName(heading: string, oldText: string): string {
+  if (heading !== "Dark Child, Starter") return heading;
+  if (oldText !== "At the end of your turn, ready 2 runes.")
+    throw new AdapterParseFailure("The evidence for the scoped Dark Child Card alias changed.");
+  return "Dark Child - Starter";
+}
+
 export function riftboundOriginsErrata(bytes: Uint8Array, url: string) {
   if (url !== riftboundOriginsErrataUrl) throw new AdapterParseFailure("Unregistered Riftbound Errata article.");
   const article = riftboundArticle(bytes);
@@ -40,7 +50,13 @@ export function riftboundOriginsErrata(bytes: Uint8Array, url: string) {
   return entries.map((entry) => ({
     kind: "official_erratum" as const,
     game: "riftbound" as const,
-    target: { type: "card" as const, official_identity: { kind: "publisher_name" as const, value: entry.heading } },
+    target: {
+      type: "card" as const,
+      official_identity: {
+        kind: "publisher_name" as const,
+        value: riftboundOriginsTargetName(entry.heading, entry.old.join("\n")),
+      },
+    },
     published_on: article.publishedOn,
     effective_from: null,
     observed_printed_rules_text: entry.old.join("\n"),

@@ -9,6 +9,14 @@ establish unique Card names in §132.1 and the inclusion of the subtitle in §13
 42,947,831 bytes. This is an English-only policy; no cross-language equivalence
 is implemented from §132.3.
 
+One exact Origins article alias is evidenced by the retained sources:
+`Dark Child, Starter` targets the gallery's `Dark Child - Starter` (the sole
+`ogs-017-024` record). Both contain the exact old text “At the end of your turn,
+ready 2 runes.” The alias is scoped to this article and wording; changed wording
+requires review. The original heading, article URL and old/new text remain in
+the retained observation, while the target uses the gallery's canonical full
+name. This does not normalize punctuation generally or identify a Printing.
+
 `publisher_name` is a closed Riftbound identity variant. The adapter preserves
 the exact full gallery name without stripping punctuation or subtitles. Public
 codes, including alternate-art suffixes, signatures, overnumbering and token

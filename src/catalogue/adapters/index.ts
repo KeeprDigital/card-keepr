@@ -34,3 +34,4 @@ export { AdapterParseFailure } from "./adapter-parse-failure";
 export { publishers, sources, sourceLineages, gameProfileRegistrations } from "./source-registry";
 
 export { sourceAdapterForCoverage } from "./source-adapters";
+export { riftboundOriginsTargetName } from "./riftbound-errata";
