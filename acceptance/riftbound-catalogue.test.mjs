@@ -79,7 +79,7 @@ test("retained Riot inventory: owner collects all returned English records witho
           supported_game: "riftbound",
           source_lineage: "riftbound-en",
           adapter_version: "riftbound-en@1",
-          coverage: { locale: "en", area: "catalogue", subset: "public-english-inventory" },
+          subset: "public-english-inventory",
           requests: [{ id: "riftbound-en:catalogue", url: current.captures[0].url }],
         },
       ],
@@ -113,7 +113,11 @@ test("retained Riot inventory: owner collects all returned English records witho
   const shown = await runCli(["source", "show", "--run-id", run.id, "--json"], environment);
   assert.equal(shown.code, 0, shown.stdout);
   const evidence = JSON.parse(shown.stdout);
-  assert.equal(evidence.evidence_plans[0].coverage.subset, "public-english-inventory");
+  assert.deepEqual(evidence.evidence_plans[0].coverage, {
+    locale: "en",
+    area: "catalogue",
+    subset: "public-english-inventory",
+  });
   assert.equal(evidence.snapshots.length, 12);
   for (const snapshot of evidence.snapshots)
     assert.equal(snapshot.content.digest, captures.get(snapshot.request.url).sha256);
