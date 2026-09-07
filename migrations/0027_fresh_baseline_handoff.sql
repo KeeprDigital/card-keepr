@@ -32,11 +32,18 @@ CREATE VIEW fresh_baseline_quiescence AS SELECT
  AND NOT EXISTS(SELECT 1 FROM ingestion_publication_cleanup WHERE state='cleaning')
  AND NOT EXISTS(SELECT 1 FROM catalogue_export_deletions WHERE state='deleting')
  AND NOT EXISTS(SELECT 1 FROM catalogue_backup_attempts WHERE state NOT IN ('verified','failed'))
+ AND NOT EXISTS(SELECT 1 FROM card_search_fts_state WHERE state<>'ready')
  AND NOT EXISTS(SELECT 1 FROM reconciliation_operations WHERE state NOT IN ('sealed','failed','abandoned'))
  AND NOT EXISTS(SELECT 1 FROM publication_preparations WHERE state IN ('preparing','retry_paused'))
  AND NOT EXISTS(SELECT 1 FROM game_publication_operations WHERE state NOT IN ('published','failed')) AS ready;
 CREATE TRIGGER fresh_baseline_claim_guard BEFORE INSERT ON fresh_baseline_handoffs
-WHEN NEW.phase<>1 OR NOT EXISTS(SELECT 1 FROM fresh_baseline_quiescence WHERE ready=1)
+WHEN NEW.phase<>1
+ OR NOT EXISTS(SELECT 1 FROM administration_idempotency WHERE operation='prepare_production_release'
+ AND request_json=NEW.request_json AND response_json=NEW.preparation_json
+ AND json_extract(response_json,'$.dispatch_digest')=NEW.dispatch_digest
+ AND json_extract(response_json,'$.release_id')=NEW.release_id)
+ OR NOT EXISTS(SELECT 1 FROM operation_state WHERE active_production_release_id=NEW.release_id)
+ OR NOT EXISTS(SELECT 1 FROM fresh_baseline_quiescence WHERE ready=1)
  OR EXISTS(SELECT 1 FROM operation_state WHERE recovery_health<>'healthy' OR recovery_restore_guard<>'clear' OR active_recovery_id IS NOT NULL)
 BEGIN SELECT RAISE(ABORT,'fresh_baseline_not_quiescent'); END;
 CREATE TRIGGER handoff_fence_administration_idempotency_insert BEFORE INSERT ON administration_idempotency
@@ -1261,15 +1268,6 @@ CREATE TRIGGER handoff_fence_revision_card_search_chunks_update BEFORE UPDATE ON
 WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
 BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
 CREATE TRIGGER handoff_fence_revision_card_search_chunks_delete BEFORE DELETE ON revision_card_search_chunks
-WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
-BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
-CREATE TRIGGER handoff_fence_revision_card_search_fts_rows_insert BEFORE INSERT ON revision_card_search_fts_rows
-WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
-BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
-CREATE TRIGGER handoff_fence_revision_card_search_fts_rows_update BEFORE UPDATE ON revision_card_search_fts_rows
-WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
-BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
-CREATE TRIGGER handoff_fence_revision_card_search_fts_rows_delete BEFORE DELETE ON revision_card_search_fts_rows
 WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
 BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
 CREATE TRIGGER handoff_fence_revision_cards_insert BEFORE INSERT ON revision_cards

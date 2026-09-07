@@ -16,7 +16,7 @@ import * as queries from "./helpers/query-helpers/fresh-baseline.mjs";
 const bundle = await build({
   stdin: {
     contents:
-      'export { prepareProductionRelease } from "./src/catalogue/ingestion/production-release"; export { catalogueStore } from "./src/catalogue/shared/catalogue-store-repository";',
+      'export { prepareProductionRelease } from "./src/catalogue/ingestion/production-release"; export { catalogueStore } from "./src/catalogue/shared/catalogue-store-repository"; export { prepareCardSearchForD1ExportStatements, reconstructCardSearchAfterD1RestoreStatements } from "./src/catalogue/backup-recovery/card-search-recovery-statements";',
     resolveDir: process.cwd(),
   },
   bundle: true,
@@ -53,13 +53,15 @@ async function setup(t) {
   const template = new DatabaseSync(join(directory, "template.sqlite"));
   for (const sql of migrations) template.exec(sql);
   queries.lowerBaselineLevel(template);
+  for (const sql of runtime.prepareCardSearchForD1ExportStatements) template.exec(sql);
   template.close();
   // Real SQL export/import of a local test fold. This is synthetic protocol
   // evidence; it is not the final #136 fold, a provider export, or live readiness.
-  const baseline = execFileSync("/usr/bin/sqlite3", [join(directory, "template.sqlite"), ".dump"], {
+  const exportedBaseline = execFileSync("/usr/bin/sqlite3", [join(directory, "template.sqlite"), ".dump"], {
     maxBuffer: 16 * 1024 * 1024,
     encoding: "utf8",
   });
+  const baseline = exportedBaseline + "\n" + runtime.reconstructCardSearchAfterD1RestoreStatements.join(";\n") + ";";
   const destination = new DatabaseSync(join(directory, "destination.sqlite"));
   t.after(() => {
     source.close();
@@ -131,7 +133,7 @@ async function setup(t) {
     read: async (role) => read(role),
     claim: async () => execute(source, await readFile(`${directory}/fresh-claim.sql`, "utf8")),
     installBaseline: async () => {
-      destination.exec(baseline);
+      if (queries.schemaRows(destination).all().length === 0) destination.exec(baseline);
       return { baseline_sha256: sha(baseline), migration_level: 1, integrity: "ok", foreign_keys: "ok" };
     },
     transfer: async (row) => execute(destination, transferSql(environment, JSON.parse(JSON.stringify(row)))),
