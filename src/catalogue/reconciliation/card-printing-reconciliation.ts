@@ -1,4 +1,4 @@
-import { prepareScopedDisappearanceWarnings, type CheckedCardScope } from "./scoped-disappearance";
+import { type CheckedCardScope } from "./scoped-disappearance";
 import { nativePrintingsAtLocator, retainPrintingLocator } from "./native-printing-locators";
 import {
   nativePreparationFailureCode,
@@ -1745,21 +1745,12 @@ export async function reconcileRetainedCardPrintingEvidence(
   const { draft: official, observedCards, observedPrintings } = assembled;
   const checkedSourceLineages = errataOnlyEvidence ? [] : [...completeLineages].sort();
   try {
-    await prepareScopedDisappearanceWarnings(
-      database,
-      runId,
-      checkedCardScopes,
-      priorCards,
-      priorPrintings,
-      plans,
-      sourceWarnings,
-      yieldAtCheckpoint,
-    );
     await prepareDisappearanceWarnings(
       database,
       runId,
       {
         plans,
+        cardScopes: { scopes: checkedCardScopes, priorCards, priorPrintings },
         hasPrintings: (official.positions.printings ?? 0) > 0,
         checkedLineages: checkedSourceLineages,
         errataLineages: errataOnlyEvidence ? [...evidenceLineages] : [],

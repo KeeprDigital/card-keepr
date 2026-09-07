@@ -103,3 +103,18 @@ The Node test driver reported 59,065,645 user and 8,925,568 system CPU microseco
 and maximum RSS of 614,992 KiB. These exclude workerd and CLI processes and must
 not be described as isolate CPU or peak memory. The coordinated capacity campaign
 owns those conclusions.
+
+## Integration and persisted-stage validation
+
+Main `ea51172` was merged in `17e56d9`, including cleanup migration 0024.
+Migration 0025 now requires schema 24; its populated SQLite regression preserves
+three historical revisions and Card records, existing adapter registrations,
+and foreign-key integrity while advancing to schema 25.
+
+The local API suite passed 95 tests at `017d13f`. At that same head, the new
+persisted-cursor regression correctly failed: SQLite rejected the standalone
+`scoped_disappearance` phase under its checkpoint phase constraint. The fix
+uses `scoped_printings` and `scoped_cards` stages within the existing
+`disappearance_warnings` phase. Its interrupted-stage regression covers six
+observed variants and a completely missing Card, retaining outside-scope records.
+The persisted regression and remaining broad validation are pending rerun.
