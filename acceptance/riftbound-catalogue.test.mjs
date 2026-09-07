@@ -562,6 +562,12 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   const freshCards = await nativeExportRecords(api.url, apiKey, finalPublication.resulting_revision_id, "cards");
   assert.deepEqual(freshCards.map((c) => c.id).sort(), cards.map((c) => c.id).sort());
   cards = freshCards;
+  const monkResponse = await fetch(`${api.url}/v1/cards/${admittedCards.get("Kinkou Monk")}`, { headers });
+  assert.equal(monkResponse.status, 200);
+  const monkCard = (await monkResponse.json()).data;
+  assert.equal(monkCard.id, admittedCards.get("Kinkou Monk"));
+  assert.match(monkCard.effective_rules_text, /buff up to two/);
+  assert.ok(monkCard.printing_ids.includes(admittedPrintings.get("ogn-141-298")));
   const freshEvidence = await cli(["source", "show", "--run-id", fresh.id]);
   assert.deepEqual(freshEvidence.evidence_plans[0].coverage, {
     locale: "en",
