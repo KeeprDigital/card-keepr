@@ -30,3 +30,14 @@ export function adapterUrl(value: string | URL, base?: string | URL): URL {
     });
   }
 }
+
+/** Catch decoding failures only around the native decoder, never parser logic. */
+export function decodeAdapterUtf8(bytes: Uint8Array): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
+  } catch (error) {
+    if (error instanceof TypeError)
+      throw new AdapterParseFailure("The Official Source bytes are not valid UTF-8.", { cause: error });
+    throw error;
+  }
+}

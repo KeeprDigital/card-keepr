@@ -4,8 +4,13 @@ import { riftboundOriginsErrata, riftboundOriginsErrataUrl } from "../../src/cat
 import { parseReconciliationObservation } from "../../src/catalogue/reconciliation/reconciliation-observation";
 import { sourceAdapterForCoverage } from "../../src/catalogue/adapters/source-adapters";
 import { riftboundSourceAdapterRegistration } from "../../src/catalogue/adapters/riftbound-source-adapter";
+import { AdapterParseFailure } from "../../src/catalogue/adapters/adapter-parse-failure";
 
 const bytes = readFileSync("acceptance/fixtures/real-sources/2026-09-06/raw/riftbound-errata.body");
+test("malformed article decoding remains a source-contract failure", () => {
+  for (const bytes of [new Uint8Array([0xff]), new TextEncoder().encode('<script id="__NEXT_DATA__">{</script>')])
+    expect(() => riftboundOriginsErrata(bytes, riftboundOriginsErrataUrl)).toThrow(AdapterParseFailure);
+});
 test("Origins preserves the evidenced Dark Child heading alias without creating a second Card", () => {
   const observation = riftboundOriginsErrata(bytes, riftboundOriginsErrataUrl).find(
     (o) => o.source.heading === "Dark Child, Starter",

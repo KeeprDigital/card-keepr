@@ -1,7 +1,7 @@
 import { decodeHTML } from "entities";
 import { createHash } from "node:crypto";
 import { officialArtworkFingerprint } from "./official-artwork-identity";
-import { AdapterParseFailure } from "./adapter-parse-failure";
+import { AdapterParseFailure, adapterUrl, decodeAdapterUtf8, withAdapterParseFailure } from "./adapter-parse-failure";
 import type { SourceAdapterRegistration } from "./source-adapter-registration-types";
 import { riftboundOriginsErrata, riftboundOriginsErrataUrl } from "./riftbound-errata";
 import { riftboundAnnouncedProducts, riftboundProductsUrl } from "./riftbound-products";
@@ -125,7 +125,7 @@ function inventory(bytes: Uint8Array, sourceUrl: string) {
   )
     throw new AdapterParseFailure("Riftbound inventory must use the registered English publisher surface.");
   const from = Number(url.searchParams.get("from"));
-  const document = record(JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes)));
+  const document = record(withAdapterParseFailure(() => JSON.parse(decodeAdapterUtf8(bytes))));
   const metadata = record(document.metadata);
   const total = number(metadata.totalItems);
   const pages = number(metadata.totalPages);
@@ -155,7 +155,7 @@ function inventory(bytes: Uint8Array, sourceUrl: string) {
     last: pageUrl((pages - 1) * 200),
     next,
   })) {
-    if (expected === null ? links[key] != null : new URL(text(links[key]), inventoryOrigin).href !== expected)
+    if (expected === null ? links[key] != null : adapterUrl(text(links[key]), inventoryOrigin).href !== expected)
       throw new AdapterParseFailure("Riftbound pagination does not close over exact publisher links.");
   }
   return { cards, metadata, next };
@@ -239,7 +239,7 @@ function observation(card: Record<string, unknown>, count: number, metadata: Rec
   };
 }
 function publisherImageUrl(value: unknown) {
-  const url = new URL(text(value));
+  const url = adapterUrl(text(value));
   if (
     url.origin !== "https://cmsassets.rgpub.io" ||
     !url.pathname.startsWith("/sanity/images/dsfx7636/game_data_live/") ||

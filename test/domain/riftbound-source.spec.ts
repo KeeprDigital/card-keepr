@@ -3,8 +3,23 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { canonicalJson } from "../../src/catalogue/shared";
 import { riftboundSourceAdapterRegistration } from "../../src/catalogue/adapters/riftbound-source-adapter";
+import { AdapterParseFailure } from "../../src/catalogue/adapters/adapter-parse-failure";
 
 const fixture = new URL("../../acceptance/fixtures/real-sources/2026-09-08-riftbound/raw/", import.meta.url);
+
+test("malformed Riot bytes and image URLs remain source-contract failures", () => {
+  const context = {
+    url: "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=0&limit=200",
+    mediaType: "application/json",
+  };
+  for (const bytes of [new Uint8Array([0xff]), new TextEncoder().encode("{")])
+    expect(() => riftboundSourceAdapterRegistration.parseBytes(bytes, context)).toThrow(AdapterParseFailure);
+  const source = JSON.parse(readFileSync(new URL("cards-0.json", fixture), "utf8"));
+  source.data[0].cardImage.url = "not a URL";
+  expect(() =>
+    riftboundSourceAdapterRegistration.parseBytes(new TextEncoder().encode(JSON.stringify(source)), context),
+  ).toThrow(AdapterParseFailure);
+});
 
 test("Riot English pagination retains every returned record and literal token and treatment identifiers", async () => {
   const observations: ReturnType<typeof riftboundSourceAdapterRegistration.parseBytes>[number][] = [];

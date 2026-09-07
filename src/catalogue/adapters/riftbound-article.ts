@@ -1,9 +1,9 @@
 import { parse, parseFragment, type DefaultTreeAdapterMap } from "parse5";
-import { AdapterParseFailure } from "./adapter-parse-failure";
+import { AdapterParseFailure, decodeAdapterUtf8, withAdapterParseFailure } from "./adapter-parse-failure";
 
 type Node = DefaultTreeAdapterMap["node"];
 export function riftboundArticle(bytes: Uint8Array) {
-  const document = parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes));
+  const document = parse(decodeAdapterUtf8(bytes));
   const scripts: Node[] = [];
   const visit = (node: Node) => {
     if (
@@ -16,7 +16,7 @@ export function riftboundArticle(bytes: Uint8Array) {
   };
   visit(document);
   if (scripts.length !== 1) throw new AdapterParseFailure("Riftbound article needs one publisher document.");
-  const data = JSON.parse(nodeText(scripts[0]!));
+  const data = withAdapterParseFailure(() => JSON.parse(nodeText(scripts[0]!)));
   const blades: Record<string, unknown>[] = data?.props?.pageProps?.page?.blades;
   if (!Array.isArray(blades)) throw new AdapterParseFailure("Riftbound article blades are missing.");
   const mastheads = blades.filter((b) => b.type === "articleMasthead");

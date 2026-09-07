@@ -538,6 +538,8 @@ function parseOfficialIdentity(value: unknown, game: SupportedGame): CatalogueCa
     if (value !== value.trim()) throw new Error("Riftbound full publisher name must be exact.");
     return { kind: "publisher_name", value };
   }
+  if (game === "riftbound")
+    throw new Error("Riftbound Card identity requires its full publisher name, not a Printing code.");
   if (
     identity.kind !== "card_number" ||
     typeof identity.value !== "string" ||
@@ -547,9 +549,8 @@ function parseOfficialIdentity(value: unknown, game: SupportedGame): CatalogueCa
   ) {
     throw new Error("Retained Card official card number is invalid.");
   }
-  const canonical = game === "riftbound" ? identity.value : identity.value.toUpperCase();
-  const acceptedNumberPatterns: Record<SupportedGame, RegExp> = {
-    riftbound: /^[A-Z]{3}-(?:[0-9]+[a-z*]?\/[0-9]+|(?:T|R)[0-9]+|SP[0-9]+\/[0-9]+)$/,
+  const canonical = identity.value.toUpperCase();
+  const acceptedNumberPatterns: Record<Exclude<SupportedGame, "riftbound">, RegExp> = {
     "one-piece": /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
     "fusion-world": /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
     digimon: /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
