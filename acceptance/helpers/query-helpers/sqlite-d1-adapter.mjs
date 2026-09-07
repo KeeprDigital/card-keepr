@@ -20,6 +20,9 @@ export function d1Adapter(database) {
           bindings = values;
           return prepared;
         },
+        async run() {
+          return executions.get(prepared)();
+        },
         async all() {
           return { results: database.prepare(sql).all(...bindings) };
         },

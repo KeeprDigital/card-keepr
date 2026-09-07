@@ -8,6 +8,8 @@ import {
   isReleaseHead,
   isReleaseIdentity,
 } from "../src/catalogue/shared/release-input-shapes.mjs";
+import { correctionPlan } from "./fresh-baseline-correction.mjs";
+import { handoffPlan, compileHandoffClaim } from "./fresh-baseline-handoff.mjs";
 import { SPINE_REVISION_ID } from "../src/catalogue/shared/spine-revision.mjs";
 import {
   productionReleaseLeaseAssignmentsSql,
@@ -51,6 +53,10 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   // targets, and the live gate proves emptiness instead of recovery evidence.
   const bootstrap = booleanInput(required(environment, "BOOTSTRAP"));
   const preparedPlan = json("PREPARED_PLAN_JSON");
+  const correcting = environment.HANDOFF_OPERATION === "correct_fresh_baseline_handoff";
+  if (correcting) correctionPlan(environment);
+  if (environment.HANDOFF_OPERATION === "cancel_fresh_baseline_handoff" && !preparedPlan.fresh_baseline_handoff)
+    throw new Error("fresh_baseline_cancellation_not_applicable");
   if (preparedPlan?.bootstrap !== bootstrap) throw new Error("bootstrap_mismatch");
   const replacementId = required(environment, "REPLACEMENT_RECOVERY_ID");
   if (bootstrap && replacementId !== "none") throw new Error("bootstrap_replacement_not_allowed");
@@ -75,10 +81,13 @@ export async function validateDispatchAndWriteSql(environment, directory) {
     return parse(value);
   };
   const plan = {
+    ...(preparedPlan.fresh_baseline_handoff === undefined
+      ? {}
+      : { fresh_baseline_handoff: handoffPlan(environment).fresh_baseline_handoff }),
     bootstrap,
     expected_actor: bot(required(environment, "EXPECTED_ACTOR")),
     expected_current_revision_id: opaque(required(environment, "EXPECTED_CURRENT_REVISION")),
-    expected_head_sha: head(required(environment, "EXPECTED_HEAD_SHA")),
+    expected_head_sha: head(correcting ? preparedPlan.expected_head_sha : required(environment, "EXPECTED_HEAD_SHA")),
     expected_migration_level: positiveInteger(required(environment, "EXPECTED_MIGRATION_LEVEL")),
     idempotency_key: opaque(required(environment, "IDEMPOTENCY_KEY")),
     production_target: json("PRODUCTION_TARGET_JSON"),
@@ -208,6 +217,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
     `UPDATE operation_state SET ${productionReleaseLeaseAssignmentsSql(null, null)} WHERE singleton=1 AND ${leaseIdentity} AND ${cleanupAllowed}; SELECT CASE WHEN EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND active_ingestion_run_id IS NULL AND active_production_release_id IS NULL) THEN 1 ELSE 0 END AS fence_released;\n`,
     { mode: 0o600 },
   );
+  if (plan.fresh_baseline_handoff) await compileHandoffClaim(environment, directory);
   if (replacement !== null) {
     await writeFile(
       `${directory}/replacement-handoff.sql`,

@@ -42,7 +42,10 @@ test("production release is manual, serialized, versioned, and owns all producti
   // The guarded release is the workflow's only job (ADR 0005 removed the
   // credential-probe job), and it is selected by the operation input alone.
   assert.equal((release.split("\njobs:\n")[1].match(/^ {2}[\w-]+:$/gmu) ?? []).length, 1);
-  assert.match(release, /options: \[production_release\]/u);
+  assert.match(
+    release,
+    /options: \[production_release, cancel_fresh_baseline_handoff, correct_fresh_baseline_handoff\]/u,
+  );
   assert.match(release, /validate-dispatch \/tmp\/production-release/u);
   assert.match(release, /production-release-provider\.mjs verify-target/u);
   assert.match(release, /production-release-provider\.mjs observe-bindings/u);
@@ -201,8 +204,8 @@ test("the Bootstrap Mode branch keeps every data-independent gate, runs no data-
     .split(/\n {6}- name: /u)
     .slice(1)
     .map((step) => ({ name: step.split("\n")[0], body: step }));
-  const bootstrapOnly = steps.filter((step) => /if: inputs\.bootstrap == 'true'/u.test(step.body));
-  const populatedOnly = steps.filter((step) => /if: inputs\.bootstrap != 'true'/u.test(step.body));
+  const bootstrapOnly = steps.filter((step) => /if: [^\n]*inputs\.bootstrap == 'true'/u.test(step.body));
+  const populatedOnly = steps.filter((step) => /if: [^\n]*inputs\.bootstrap != 'true'/u.test(step.body));
   const shared = steps.filter((step) => !/inputs\.bootstrap/u.test(step.body));
   assert.deepEqual(
     bootstrapOnly.map((step) => step.name),
@@ -298,7 +301,10 @@ test("only the guarded CLI provider can select release mode", () => {
   assert.match(server, /operation: "production_release"/u);
   assert.match(cli, /inputs: document\.dispatch_inputs/u);
   assert.doesNotMatch(cli, /createHash|stableJson/u);
-  assert.match(provider, /inputs\?\.operation !== "production_release"/u);
+  assert.match(
+    provider,
+    /!\["production_release", "cancel_fresh_baseline_handoff", "correct_fresh_baseline_handoff"\]\.includes\(\s*inputs\?\.operation/u,
+  );
   assert.equal((provider.match(/export async function dispatchProductionRelease/gu) ?? []).length, 1);
 });
 

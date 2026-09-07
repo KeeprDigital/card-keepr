@@ -1,3 +1,4 @@
+import { withNativeRequestPacing } from "./helpers/native-request-pacing.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -16,11 +17,7 @@ import {
   waitForHealth,
   waitForAdministrationDocument,
 } from "./helpers/acceptance-runtime.mjs";
-import {
-  nativeCheckpointTransport,
-  publishNativeCollection,
-  paceNativeRequest,
-} from "./helpers/native-catalogue-runtime.mjs";
+import { nativeCheckpointTransport, publishNativeCollection } from "./helpers/native-catalogue-runtime.mjs";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
 
 // Synthetic source facts, actual publication/backup Workflows and SQL imports.
@@ -63,10 +60,10 @@ test("five-game composition and current plus two survive an actual SQL import", 
     },
   });
   let api;
-  const consumerGet = async (url, options) => {
-    await paceNativeRequest({ KEEPR_INGESTION_URL: api.url, KEEPR_NATIVE_REQUEST_INTERVAL_MS: "250" });
-    return fetch(url, options);
-  };
+  const consumerGet = (url, options) =>
+    withNativeRequestPacing({ KEEPR_INGESTION_URL: api.url, KEEPR_NATIVE_REQUEST_INTERVAL_MS: "250" }, () =>
+      fetch(url, options),
+    );
   let journeyCompleted = false;
   t.after(async () => {
     if (api) await stopWorker(api);

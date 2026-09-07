@@ -329,3 +329,28 @@ after failing on the old request-time compiler; direct field checks preserve
 calendar dates, types, vocabulary, required/closed objects and uniqueness.
 A minimal actual Worker/D1 diagnostic and regression remain required to confirm
 native behavior, distinct from these runtime-free results.
+
+Frozen `1189b1a` supplied the minimal native proof: the exact prior `f60fef3`
+validator bundled against the retained D1 returned `EvalError` with dynamic code
+generation rejected. The corrected validator returned HTTP 200 for the same
+Monk proposal. A real Workerd/D1 regression passed the native published Printing,
+wrong-type rejection and unsupported-field rejection in 732 ms. Both native
+processes and the regression runtime stopped. The four existing Curated Worker
+files had passed 39/39; the runtime-free suite now passes 230 domain tests.
+
+## Integration of the schema-27 handoff protocol
+
+Actual main `396d1eab7a850460b3f1d52d871fe516ec3d9420` integrates the fresh-baseline
+handoff protocol at schema 27. Riftbound now follows it as migration
+`0028_riftbound_catalogue.sql`, strictly requiring level 27. The populated
+rehearsal first caught the loss of handoff triggers during CHECK-table rebuilds;
+the migration now restores all 18 handoff mutation triggers on the six rebuilt
+tables. It preserves all prior rows, inbound foreign keys, and the complete
+trigger census, including the handoff guards. The shared request queue from
+main now owns CLI, helper and poll pacing; Riftbound's direct administration and
+export reads use that same queue without a duplicate pre-CLI delay.
+
+The earlier AUyRnJ evidence and verified SQL import remain at their genuine
+schema 26. They are retained as historical proof and are not relabelled as
+schema 27 or 28. A fresh native journey is required on the reconciled migration
+chain; earlier functional successes and exact failures remain recorded above.

@@ -1,8 +1,8 @@
 -- #232: widen existing closed game contracts without publishing or enabling data.
 
--- Follows the consumed Source Adapter registration migration 0025.
+-- Follows the fresh-baseline handoff migration 0027.
 
-SELECT CASE WHEN (SELECT migration_level FROM catalogue_schema_state WHERE singleton=1)=25 THEN 1 ELSE json_extract('schema_level_mismatch_expected_25','$') END;
+SELECT CASE WHEN (SELECT migration_level FROM catalogue_schema_state WHERE singleton=1)=27 THEN 1 ELSE json_extract('schema_level_mismatch_expected_27','$') END;
 
 PRAGMA defer_foreign_keys=ON;
 DROP VIEW curated_revision_event_read;
@@ -250,7 +250,63 @@ WHEN EXISTS(SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_restore
 BEGIN SELECT RAISE(ABORT,'catalogue_recovery_writer_fenced'); END;
 INSERT INTO game_catalogue_heads(supported_game,revision_id) VALUES ('riftbound','catrev_spine_000');
 
-UPDATE catalogue_schema_state SET migration_level=26 WHERE singleton=1;
+-- Rebuilding these tables must retain the accepted handoff mutation fences.
+CREATE TRIGGER handoff_fence_reconciled_errata_insert BEFORE INSERT ON reconciled_errata
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_reconciled_errata_update BEFORE UPDATE ON reconciled_errata
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_reconciled_errata_delete BEFORE DELETE ON reconciled_errata
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_source_freshness_insert BEFORE INSERT ON source_freshness
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_source_freshness_update BEFORE UPDATE ON source_freshness
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_source_freshness_delete BEFORE DELETE ON source_freshness
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_curated_revisions_insert BEFORE INSERT ON curated_revisions
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_curated_revisions_update BEFORE UPDATE ON curated_revisions
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_curated_revisions_delete BEFORE DELETE ON curated_revisions
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_reconciliation_checkpoints_insert BEFORE INSERT ON reconciliation_checkpoints
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_reconciliation_checkpoints_update BEFORE UPDATE ON reconciliation_checkpoints
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_reconciliation_checkpoints_delete BEFORE DELETE ON reconciliation_checkpoints
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_revision_printing_query_insert BEFORE INSERT ON revision_printing_query
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_revision_printing_query_update BEFORE UPDATE ON revision_printing_query
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_revision_printing_query_delete BEFORE DELETE ON revision_printing_query
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_ingestion_run_selected_games_insert BEFORE INSERT ON ingestion_run_selected_games
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_ingestion_run_selected_games_update BEFORE UPDATE ON ingestion_run_selected_games
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_ingestion_run_selected_games_delete BEFORE DELETE ON ingestion_run_selected_games
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+
+UPDATE catalogue_schema_state SET migration_level=28 WHERE singleton=1;
 
 CREATE VIEW visible_prepared_curated_conflicts AS
 SELECT conflict.revision_id, conflict.content,

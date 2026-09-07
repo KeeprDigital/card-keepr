@@ -32,6 +32,7 @@ export function nativeRecoveryCloudflare({ databaseDirectory, directory }) {
     throw new Error("Native source database was not found.");
   }
   return {
+    sourceFile,
     snapshots,
     faults,
     hooks,

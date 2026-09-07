@@ -220,3 +220,11 @@ live secret scope, token grants, D1 location/bookmark usability, R2 public
 access settings, traffic propagation, or production observability acceptance.
 Verify these in GitHub and Cloudflare before approving the workflow run and
 retain the resulting run, deployment/version IDs, logs, and Production Release evidence.
+
+## Fresh-baseline handoff
+
+The distinct [fresh-baseline procedure](fresh-baseline-handoff.md) transfers
+prepared release authority to an independently verified empty baseline while
+retaining the source D1 and its recovery/evidence. It is not replacement recovery
+or a Bootstrap Mode bypass. It requires the prerequisite protocol to be released
+through the pre-fold runtime before the final #136 fold and approved cutover.

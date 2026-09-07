@@ -12,7 +12,7 @@ test("Riftbound CHECK widening preserves populated ancestors, decisions and inbo
   try {
     db.exec("PRAGMA foreign_keys=ON");
     const root = new URL("../migrations/", import.meta.url);
-    for (const name of (await readdir(root)).filter((n) => n.endsWith(".sql") && Number.parseInt(n, 10) <= 25).sort())
+    for (const name of (await readdir(root)).filter((n) => n.endsWith(".sql") && Number.parseInt(n, 10) <= 27).sort())
       db.exec(await readFile(new URL(name, root), "utf8"));
     const at = "2026-09-08T00:00:00.000Z";
     for (let i = 0; i < 3; i++) {
@@ -71,7 +71,7 @@ test("Riftbound CHECK widening preserves populated ancestors, decisions and inbo
     const before = tables.map((table) => queries.tableRows(db, table).all());
     const guards = queries.triggers(db).all();
     db.exec("BEGIN");
-    db.exec(await readFile(new URL("0026_riftbound_catalogue.sql", root), "utf8"));
+    db.exec(await readFile(new URL("0028_riftbound_catalogue.sql", root), "utf8"));
     db.exec("COMMIT");
     assert.deepEqual(
       tables.map((table) => queries.tableRows(db, table).all()),
@@ -80,7 +80,7 @@ test("Riftbound CHECK widening preserves populated ancestors, decisions and inbo
     assert.deepEqual(inbound(), beforeFks);
     assert.deepEqual(queries.triggers(db).all(), guards);
     assert.deepEqual(schema.foreignKeyViolations(db).all(), []);
-    assert.equal(schema.schemaMigrationLevel(db).get().migration_level, 26);
+    assert.equal(schema.schemaMigrationLevel(db).get().migration_level, 28);
     queries.seedRiftboundCheckpoint(db).run("f".repeat(64));
     queries.setRiftboundPrintingGame(db).run();
   } finally {

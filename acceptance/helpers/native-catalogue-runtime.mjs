@@ -14,25 +14,17 @@ import {
 } from "./acceptance-runtime.mjs";
 import { nativeRecoveryCloudflare } from "./native-recovery-cloudflare.mjs";
 
-const nextNativeRequest = new Map();
-export async function paceNativeRequest(environment) {
-  const interval = Number(environment.KEEPR_NATIVE_REQUEST_INTERVAL_MS ?? 0);
-  if (!interval) return;
-  const base = environment.KEEPR_INGESTION_URL;
-  const at = Math.max(Date.now(), nextNativeRequest.get(base) ?? 0);
-  nextNativeRequest.set(base, at + interval);
-  await new Promise((resolve) => setTimeout(resolve, at - Date.now()));
-}
+import { withNativeRequestPacing } from "./native-request-pacing.mjs";
 async function get(path, environment) {
-  await paceNativeRequest(environment);
-  const response = await fetch(`${environment.KEEPR_INGESTION_URL}${path}`, {
-    headers: { authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}` },
-  });
+  const response = await withNativeRequestPacing(environment, () =>
+    fetch(`${environment.KEEPR_INGESTION_URL}${path}`, {
+      headers: { authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}` },
+    }),
+  );
   assert.equal(response.status, 200, await response.clone().text());
   return response.json();
 }
 async function cli(args, environment) {
-  await paceNativeRequest(environment);
   const response = await runCli([...args, "--json"], environment);
   assert.equal(response.code, 0, `${response.stdout}\n${response.stderr}`);
   return JSON.parse(response.stdout);
@@ -227,13 +219,14 @@ export async function nativeExportRecords(baseUrl, apiKey, revisionId, kind) {
   return (await exportLoads.get(key)).filter((entry) => entry.kind === kind).map((entry) => entry.value);
 }
 export async function loadNativeExport(baseUrl, apiKey, revisionId, requestIntervalMs = 0) {
-  const get = async (url, options) => {
-    await paceNativeRequest({
-      KEEPR_INGESTION_URL: baseUrl,
-      KEEPR_NATIVE_REQUEST_INTERVAL_MS: String(requestIntervalMs),
-    });
-    return fetch(url, options);
-  };
+  const get = (url, options) =>
+    withNativeRequestPacing(
+      {
+        KEEPR_INGESTION_URL: baseUrl,
+        KEEPR_NATIVE_REQUEST_INTERVAL_MS: String(requestIntervalMs),
+      },
+      () => fetch(url, options),
+    );
   const records = [],
     headers = { authorization: `Bearer ${apiKey}` };
   let after = null;

@@ -10,22 +10,15 @@ import { riftboundReplayTransport } from "./helpers/riftbound-replay-transport.m
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
 import {
   applyMigrations,
-  runCli as runUnpacedCli,
+  runCli,
   startWorker,
   stopWorker,
   waitForHealth,
   waitForAdministrationDocument,
 } from "./helpers/acceptance-runtime.mjs";
-import {
-  paceNativeRequest,
-  nativeCheckpointTransport,
-  publishNativeCollection,
-} from "./helpers/native-catalogue-runtime.mjs";
+import { nativeCheckpointTransport, publishNativeCollection } from "./helpers/native-catalogue-runtime.mjs";
 
-async function runCli(args, environment, options) {
-  await paceNativeRequest(environment);
-  return runUnpacedCli(args, environment, options);
-}
+import { withNativeRequestPacing } from "./helpers/native-request-pacing.mjs";
 
 // Actual retained HTTP bodies. External HTTP and Cloudflare control plane are
 // replayed locally; collection, parsing and all owner operations are shipped code.
@@ -90,6 +83,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     KEEPR_ADMINISTRATION_KEY: key,
     KEEPR_NATIVE_REQUEST_INTERVAL_MS: "2200",
   };
+  const pacedFetch = (url, options) => withNativeRequestPacing(environment, () => fetch(url, options));
   const cli = async (args) => {
     const result = await runCli([...args, "--json"], environment);
     assert.equal(result.code, 0, result.stdout + result.stderr);
@@ -364,8 +358,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     if (failed.state !== "verified") {
       assert.equal(failed.state, "failed");
       const idempotency = "riftbound-signed-transport-backup-retry";
-      await paceNativeRequest(environment);
-      const statusResponse = await fetch(
+      const statusResponse = await pacedFetch(
         `${worker.url}/v1/status?${new URLSearchParams({ expected_current_revision_id: publication.resulting_revision_id })}`,
         { headers: { authorization: `Bearer ${key}` } },
       );
@@ -378,8 +371,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
         failed_attempt_id: failed.idempotency_key,
         failed_attempt_digest: failed.attempt_digest,
       };
-      await paceNativeRequest(environment);
-      const existingRetry = await fetch(`${worker.url}/v1/backups/${idempotency}`, {
+      const existingRetry = await pacedFetch(`${worker.url}/v1/backups/${idempotency}`, {
         headers: { authorization: `Bearer ${key}` },
       });
       assert.ok([200, 404].includes(existingRetry.status));
@@ -410,8 +402,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
         const existing = await existingRetry.json();
         const { production_target: _target, ...expectedResume } = binding;
         await resumeExistingBackupAttempt(existing, expectedResume, async (resume) => {
-          await paceNativeRequest(environment);
-          const resumed = await fetch(`${worker.url}${resume.path}`, {
+          const resumed = await pacedFetch(`${worker.url}${resume.path}`, {
             method: resume.method,
             headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
             body: JSON.stringify(resume.body),
@@ -487,16 +478,16 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   const darkChild = errata.find((e) => e.target_id === admittedCards.get("Dark Child - Starter"));
   assert.equal(darkChild.corrected_value, "At the end of your turn, ready up to 2 runes.");
   const headers = { authorization: `Bearer ${apiKey}` };
-  assert.equal((await fetch(`${api.url}/v1/printings/${exported[0].id}`)).status, 401);
+  assert.equal((await pacedFetch(`${api.url}/v1/printings/${exported[0].id}`)).status, 401);
   for (const [locator, id] of admittedPrintings) {
-    const response = await fetch(`${api.url}/v1/printings/${id}`, { headers });
+    const response = await pacedFetch(`${api.url}/v1/printings/${id}`, { headers });
     assert.equal(response.status, 200);
     const data = (await response.json()).data;
     const record = exported.find((p) => p.id === id);
     for (const [field, value] of Object.entries(record)) assert.deepEqual(data[field], value, field);
     assert.equal(data.printing_images.length, 1);
     const image = data.printing_images[0];
-    const content = await fetch(new URL(image.links.content, api.url), { headers });
+    const content = await pacedFetch(new URL(image.links.content, api.url), { headers });
     assert.equal(content.status, 200);
     const bytes = Buffer.from(await content.arrayBuffer());
     const capture = manifest.captures.find((c) => c.id === `riftbound-image-${locator}`);
@@ -543,8 +534,9 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
         idempotency_key: idempotency,
       }),
     });
-    await paceNativeRequest(environment);
-    const status = await fetch(`${worker.url}/v1/status?${query}`, { headers: { authorization: `Bearer ${key}` } });
+    const status = await pacedFetch(`${worker.url}/v1/status?${query}`, {
+      headers: { authorization: `Bearer ${key}` },
+    });
     assert.equal(status.status, 200);
     const confirmation = (await status.json()).resolved_target.confirmation;
     return call([
@@ -672,7 +664,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   const freshCards = await nativeExportRecords(api.url, apiKey, finalPublication.resulting_revision_id, "cards");
   assert.deepEqual(freshCards.map((c) => c.id).sort(), cards.map((c) => c.id).sort());
   cards = freshCards;
-  const monkResponse = await fetch(`${api.url}/v1/cards/${admittedCards.get("Kinkou Monk")}`, { headers });
+  const monkResponse = await pacedFetch(`${api.url}/v1/cards/${admittedCards.get("Kinkou Monk")}`, { headers });
   assert.equal(monkResponse.status, 200);
   const monkCard = (await monkResponse.json()).data;
   assert.equal(monkCard.id, admittedCards.get("Kinkou Monk"));
@@ -703,11 +695,11 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     finalPrintings,
   );
   assert.deepEqual(await nativeExportRecords(api.url, apiKey, finalPublication.resulting_revision_id, "cards"), cards);
-  const restoredResponse = await fetch(`${api.url}/v1/printings/${admittedPrintings.get("ogn-141-298")}`, { headers });
+  const restoredResponse = await pacedFetch(`${api.url}/v1/printings/${admittedPrintings.get("ogn-141-298")}`, { headers });
   assert.equal(restoredResponse.status, 200);
   const restoredMonk = (await restoredResponse.json()).data;
   assert.equal(restoredMonk.printed_rules_text, printedMonk);
-  const restoredImage = await fetch(new URL(restoredMonk.printing_images[0].links.content, api.url), { headers });
+  const restoredImage = await pacedFetch(new URL(restoredMonk.printing_images[0].links.content, api.url), { headers });
   assert.equal(restoredImage.status, 200);
   assert.equal(
     createHash("sha256")
