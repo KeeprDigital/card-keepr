@@ -90,9 +90,16 @@ export async function persistReviewableCandidate(
     candidateDigest: string;
     candidateCatalogueDigest: string;
     observedAt: string;
+    yieldAtCheckpoint?: boolean;
   },
 ): Promise<void> {
-  const manifest = await persistCandidatePartitions(database, input.runId, input.candidate, input.warnings);
+  const manifest = await persistCandidatePartitions(
+    database,
+    input.runId,
+    input.candidate,
+    input.warnings,
+    input.yieldAtCheckpoint,
+  );
   const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
   const runWarnings = await boundedRunWarnings(input.warnings);
   const preparationCount = await stageCandidatePreparation(database, input);
@@ -134,13 +141,14 @@ export async function persistBlockedCandidate(
     candidateDigest: string;
     candidateCatalogueDigest: string;
     observedAt: string;
+    yieldAtCheckpoint?: boolean;
     failureCode?: string;
   },
 ): Promise<void> {
   const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
-  const runDiagnostics = await boundedRunWarnings(input.diagnostics);
   const failureCode = input.failureCode ?? "printing_reconciliation_blocked";
-  await persistCandidatePartitions(database, input.runId, input.candidate, input.diagnostics);
+  await persistCandidatePartitions(database, input.runId, input.candidate, input.diagnostics, input.yieldAtCheckpoint);
+  const runDiagnostics = await boundedRunWarnings(input.diagnostics);
   const preparationCount = await stageCandidatePreparation(database, input);
   const statements = [
     preparationCompleteGuard(database, input.runId, preparationCount),

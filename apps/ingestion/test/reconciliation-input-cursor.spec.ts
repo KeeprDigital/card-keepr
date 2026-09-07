@@ -181,6 +181,8 @@ test.each([
     const sortingCalls: number[] = [];
     const digestCalls: number[] = [];
     const candidateDigestCalls: number[] = [];
+    const partitionCalls: number[] = [];
+    const mappingCalls: number[] = [];
     const graphCalls: number[] = [];
     const graphCursors: number[] = [];
     const preparationCalls: number[] = [];
@@ -257,6 +259,9 @@ test.each([
           completedGroups.push(imagesInUnit);
           callsPerGroup.push(serviceCalls);
         }
+        if (JSON.parse(result as string).continuation?.phase === "source_mappings") mappingCalls.push(serviceCalls);
+        if (JSON.parse(result as string).continuation?.phase === "candidate_partitions")
+          partitionCalls.push(serviceCalls);
         if (JSON.parse(result as string).continuation?.phase === "canonical_digest:candidate")
           candidateDigestCalls.push(serviceCalls);
         if (JSON.parse(result as string).continuation?.phase === "canonical_digest:catalogue")
@@ -339,6 +344,10 @@ test.each([
     }
     expect(completedGroups).toEqual(groups);
     if (requireFrozenMetadata) {
+      expect(mappingCalls.length).toBeGreaterThan(0);
+      expect(Math.max(...mappingCalls)).toBeLessThanOrEqual(100);
+      expect(partitionCalls.length).toBeGreaterThan(0);
+      expect(Math.max(...partitionCalls)).toBeLessThanOrEqual(100);
       expect(candidateDigestCalls.length).toBeGreaterThan(0);
       expect(Math.max(...candidateDigestCalls)).toBeLessThanOrEqual(100);
       expect(digestCalls.length).toBeGreaterThan(0);
@@ -842,4 +851,103 @@ test("canonical hashing resumes inside large Card text after a checkpoint write 
     (replayed.checkpoints as { phase: string; cursor: { digest?: string } }[]).find((item) => item.phase === phase)!
       .cursor.digest,
   ).toBe(digest);
+});
+
+test("candidate partitions resume after an output write without rewriting their completed prefix", async () => {
+  const run = await collectRequests([{ id: "cards", scenario: "curated-conflict-fanout-base" }], "partition-replay");
+  let completed = 0;
+  let resumed = false;
+  let failures = 0;
+  const database = new Proxy(testEnv.CATALOGUE_DB, {
+    get(target, property) {
+      if (property === "prepare")
+        return (sql: string) => {
+          const statement = target.prepare(sql);
+          return new Proxy(statement, {
+            get(prepared, method) {
+              if (method === "bind")
+                return (...values: unknown[]) => {
+                  if (
+                    sql.includes("INSERT INTO reconciliation_checkpoints") &&
+                    values[1] === "candidate_partitions" &&
+                    completed > 0 &&
+                    !resumed
+                  ) {
+                    failures++;
+                    throw new Error("Injected partition checkpoint outage after its output write.");
+                  }
+                  if (completed > 0 && sql.includes("INSERT INTO reconciliation_partitions"))
+                    expect(Number(values[1])).toBeGreaterThanOrEqual(completed);
+                  return prepared.bind(...values);
+                };
+              const value = Reflect.get(prepared, method);
+              return typeof value === "function" ? value.bind(prepared) : value;
+            },
+          });
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const step = {
+    do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+      let result: string;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          result = await callback();
+          break;
+        } catch (error) {
+          if (attempt >= config.retries.limit) throw error;
+        }
+      }
+      if (!completed && JSON.parse(result).continuation?.phase === "candidate_partitions") {
+        const progress = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+        const cursor = (progress.checkpoints as { phase: string; cursor: { ordinal: number } }[]).find(
+          (item) => item.phase === "candidate_partitions",
+        )!.cursor;
+        if (cursor.ordinal >= 2) completed = cursor.ordinal;
+      }
+      return result;
+    },
+  } as unknown as import("cloudflare:workers").WorkflowStep;
+  const event = {
+    payload: {
+      ingestion_run_id: run.id,
+      expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
+      idempotency_key: "partition-replay",
+      observed_at: new Date().toISOString(),
+      generation: 0,
+    },
+  } as import("cloudflare:workers").WorkflowEvent<
+    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+  >;
+  await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
+  expect(failures).toBe(4);
+  const paused = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+  expect(paused).toMatchObject({ state: "paused", generation: 1 });
+  expect(
+    (
+      await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+        generation: 1,
+        idempotency_key: "resume-partition-replay",
+      })
+    ).response.status,
+  ).toBe(200);
+  resumed = true;
+  await runReconciliationWorkflow(
+    { ...testEnv, CATALOGUE_DB: database },
+    { payload: { ...event.payload, generation: 1 } } as typeof event,
+    step,
+  );
+  const sealed = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+  expect(sealed).toMatchObject({ state: "sealed", deadline: paused.deadline });
+  const page = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions`)).document;
+  const ids: string[] = [];
+  for (const partition of page.partitions as { ordinal: number; kind: string }[]) {
+    if (partition.kind !== "cards") continue;
+    const detail = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${partition.ordinal}`)).document;
+    ids.push(...(detail.records as { id: string }[]).map((record) => record.id));
+  }
+  expect(ids.length).toBe(32);
+  expect(new Set(ids).size).toBe(32);
 });

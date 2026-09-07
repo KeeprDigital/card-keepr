@@ -1667,6 +1667,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         candidateDigest,
         candidateCatalogueDigest,
         observedAt,
+        yieldAtCheckpoint,
       });
       return { run_id: runId, candidate_digest: candidateDigest };
     }
@@ -1723,6 +1724,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         candidateDigest,
         candidateCatalogueDigest,
         observedAt,
+        yieldAtCheckpoint,
         failureCode: "curated_revision_reconfirmation_required",
       });
       return { run_id: runId, candidate_digest: candidateDigest };
@@ -1759,7 +1761,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       digestPayload,
       yieldAtCheckpoint,
     );
-    await retainSourceMappings(database, runId, sourceMappings.records());
+    await retainSourceMappings(database, runId, sourceMappings, yieldAtCheckpoint);
     await persistReviewableCandidate(database, {
       runId,
       partitions: retained.partitions,
@@ -1771,6 +1773,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       candidateDigest,
       candidateCatalogueDigest,
       observedAt,
+      yieldAtCheckpoint,
     });
     return { run_id: runId, candidate_digest: candidateDigest };
   } catch (error) {

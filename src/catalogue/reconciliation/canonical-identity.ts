@@ -1,4 +1,7 @@
-import { boundedAsyncRecordArrays } from "./reconciliation-preparation";
+import type { CanonicalRecordSource } from "./reconciliation-canonical-digest";
+import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
+import { ReconciliationContinuation } from "./reconciliation-continuation";
+import { documentStorage } from "./reconciliation-document";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import {
   allocateIdentityStatement,
@@ -58,10 +61,41 @@ export async function boundedSourceMapping(mapping: SourceMapping): Promise<Sour
 export async function retainSourceMappings(
   database: CatalogueStore,
   runId: string,
-  mappings: AsyncIterable<SourceMapping>,
+  mappings: Pick<CanonicalRecordSource<SourceMapping>, "canonicalEntries">,
+  yieldAtCheckpoint: boolean,
 ) {
-  for await (const payload of boundedAsyncRecordArrays(mappings, 100))
-    await insertSourceMappingsStatement(database, runId, payload).run();
+  const checkpoint = await reconciliationCheckpoint<{ after: string; complete: boolean }>(
+    database,
+    runId,
+    "source_mappings",
+  );
+  if (checkpoint?.value.complete) return;
+  const cursor = checkpoint?.value ?? { after: "", complete: false };
+  let ordinal = (checkpoint?.ordinal ?? -1) + 1;
+  let records: string[] = [],
+    bytes = 2;
+  const flush = async () => {
+    if (records.length)
+      await documentStorage(() => insertSourceMappingsStatement(database, runId, `[${records.join(",")}]`).run());
+    await retainReconciliationCheckpoint(database, runId, "source_mappings", ordinal, cursor);
+    if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "source_mappings", ordinal });
+    ordinal++;
+    records = [];
+    bytes = 2;
+  };
+  for await (const entry of mappings.canonicalEntries(cursor.after)) {
+    const content = canonicalJson(entry.value);
+    const length = new TextEncoder().encode(content).byteLength;
+    if (length + 2 > 512000)
+      throw new Error("reconciliation_capacity_exceeded: one source mapping exceeds 512000 bytes.");
+    if (records.length && bytes + length + 1 > 512000) await flush();
+    bytes += length + (records.length ? 1 : 0);
+    records.push(content);
+    cursor.after = entry.key;
+    if (records.length === 4) await flush();
+  }
+  cursor.complete = true;
+  await flush();
 }
 export type { SourceMapping } from "./canonical-identity-repository";
 export async function inspectCanonicalIdentity(database: CatalogueStore, id: string, after = "") {
