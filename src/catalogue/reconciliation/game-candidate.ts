@@ -21,12 +21,15 @@ import { sourceAdapterRegistrations } from "../adapters";
 
 type GameCandidate = {
   id: string;
+  preparation_id: string;
   ingestion_run_id: string;
   supported_game: string;
   expected_game_revision_id: string;
   created_at: string;
   deadline: string;
   state: string;
+  generation: number;
+  failure_code: string | null;
   manifest_digest: string | null;
   partition_count: number;
 };

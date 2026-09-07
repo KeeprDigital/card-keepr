@@ -1,6 +1,7 @@
 import {
   reserveIngestionCollectionStatement,
   terminalIngestionReservationEffects,
+  projectPublishedGameHeadsStatement,
   nextLiveIngestionReservationSql,
 } from "./ingestion-reservation-repository";
 import { atomicRepositoryStatement, type CatalogueStore, repositoryStatements } from "./catalogue-store-repository";
@@ -108,6 +109,7 @@ export function runEventStatement(database: CatalogueStore, input: RunEventMutat
       ...claim,
       ...(input.after ?? []),
       ...terminalIngestionReservationEffects(database, event.runId),
+      ...(event.kind === "published" ? [projectPublishedGameHeadsStatement(database, event.runId)] : []),
     ],
   });
 }
@@ -255,7 +257,7 @@ export function expireRunEventsStatement(database: CatalogueStore, observedAt: s
   return atomicRepositoryStatement(database, {
     statement,
     before: [integrity],
-    after: [append, ...terminalIngestionReservationEffects(database)],
+    after: [append, ...terminalIngestionReservationEffects(database), projectPublishedGameHeadsStatement(database)],
   });
 }
 

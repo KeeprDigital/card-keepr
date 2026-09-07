@@ -26,6 +26,7 @@ import {
 
 export type ReconciliationWorkflowParams = Readonly<{
   ingestion_run_id: string;
+  preparation_id?: string;
   expected_current_revision_id: string;
   idempotency_key: string;
   observed_at: string;
@@ -229,7 +230,9 @@ async function recoverTerminalWorkflow(
     return retainedReconciliationResult(database, request.ingestion_run_id);
   }
   await pauseFailedReconciliationStatement(database, request.ingestion_run_id, generation, detail).run();
-  const current = await reconciliationOperationHeaderStatement(database, request.ingestion_run_id).first<{ state: string }>();
+  const current = await reconciliationOperationHeaderStatement(database, request.ingestion_run_id).first<{
+    state: string;
+  }>();
   if (current?.state === "sealed" || current?.state === "failed")
     return retainedReconciliationResult(database, request.ingestion_run_id);
   if (!current) throw new Error("The durable reconciliation operation is unavailable.");

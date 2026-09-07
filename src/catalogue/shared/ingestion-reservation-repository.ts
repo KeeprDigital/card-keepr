@@ -36,3 +36,16 @@ export function terminalIngestionReservationEffects(database: CatalogueStore, ru
       .bind(runId ?? null, runId ?? null),
   ];
 }
+
+/** Publication advances only the games represented by the current revision. */
+export function projectPublishedGameHeadsStatement(database: CatalogueStore, runId?: string): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(`UPDATE game_catalogue_heads SET revision_id = (SELECT current_revision_id FROM catalogue_state WHERE singleton = 1)
+      WHERE revision_id <> (SELECT current_revision_id FROM catalogue_state WHERE singleton = 1)
+        AND supported_game IN (SELECT selected.game FROM catalogue_state AS state
+          JOIN catalogue_revisions AS revision ON revision.id = state.current_revision_id
+          JOIN ingestion_run_current AS run ON run.ingestion_run_id = revision.ingestion_run_id AND run.state = 'published'
+          JOIN ingestion_run_selected_games AS selected ON selected.ingestion_run_id = run.ingestion_run_id
+          WHERE state.singleton = 1 AND (? IS NULL OR run.ingestion_run_id = ?))`)
+    .bind(runId ?? null, runId ?? null);
+}

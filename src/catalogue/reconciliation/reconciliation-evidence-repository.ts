@@ -1,6 +1,25 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
+const evidencePlansSql = `CASE WHEN json_type(plan.request_plan_json, '$.plans') = 'array'
+  THEN json_extract(plan.request_plan_json, '$.plans') ELSE json_array(json(plan.request_plan_json)) END`;
+
+// Match immutable roots first. Discovered request IDs use their validated
+// Source Lineage prefix, exactly as evidencePlanForRequest does.
+function requestInPreparationGame(requestId: string) {
+  return `EXISTS (SELECT 1 FROM reconciliation_operations AS operation
+    JOIN ingestion_evidence_plans AS plan ON plan.ingestion_run_id = operation.ingestion_run_id
+    WHERE operation.id = ?1 AND (operation.supported_game IS NULL OR EXISTS (
+      SELECT 1 FROM json_each(${evidencePlansSql}) AS selected
+      WHERE json_extract(selected.value, '$.supported_game') = operation.supported_game AND (
+        EXISTS (SELECT 1 FROM json_each(selected.value, '$.requests') AS root
+          WHERE json_extract(root.value, '$.id') = ${requestId})
+        OR (json_extract(selected.value, '$.source_lineage') = substr(${requestId}, 1, instr(${requestId}, ':') - 1)
+          AND NOT EXISTS (SELECT 1 FROM json_each(${evidencePlansSql}) AS any_plan,
+            json_each(any_plan.value, '$.requests') AS root WHERE json_extract(root.value, '$.id') = ${requestId}))
+      ))))`;
+}
+
 export function reconciliationSourceRequestsStatement(
   database: CatalogueStore,
   preparationId: string,
@@ -15,6 +34,7 @@ export function reconciliationSourceRequestsStatement(
                 failure_code
          FROM source_requests
          WHERE ingestion_run_id = (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?) AND (sequence_number, request_id) > (?, ?)
+           AND ${requestInPreparationGame("source_requests.request_id")}
          ORDER BY sequence_number, request_id LIMIT 1`)
     .bind(preparationId, sequence, requestId);
 }
@@ -71,6 +91,8 @@ export function reconciliationObservationSetsStatement(
          WHERE snapshots.ingestion_run_id = (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?)
            AND observations.id > ? AND (? IS NULL OR observations.source_snapshot_id = ?)
            AND parse.intent = 'collection'
+           AND ((SELECT supported_game FROM reconciliation_operations WHERE id = ?1) IS NULL
+             OR observations.supported_game = (SELECT supported_game FROM reconciliation_operations WHERE id = ?1))
            AND observations.rowid <= (SELECT observation_cutoff FROM reconciliation_operations WHERE id = ?)
          ORDER BY observations.id LIMIT 1`)
     .bind(preparationId, afterId, snapshotId, snapshotId, preparationId);
@@ -114,6 +136,9 @@ export function reconciliationCollectionPlansStatement(
                 content_digest
          FROM official_source_collection_plans
          WHERE ingestion_run_id = (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?) AND source_lineage > ?
+           AND EXISTS (SELECT 1 FROM reconciliation_operations AS operation
+             JOIN source_observation_sets AS observation ON observation.id = official_source_collection_plans.discovery_observation_set_id
+             WHERE operation.id = ?1 AND (operation.supported_game IS NULL OR observation.supported_game = operation.supported_game))
          ORDER BY source_lineage LIMIT 1`)
     .bind(preparationId, afterLineage);
 }
@@ -123,9 +148,12 @@ export function reconciliationEvidencePlanStatement(
   preparationId: string,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT request_plan_json
-         FROM ingestion_evidence_plans
-         WHERE ingestion_run_id = (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?)`)
+    .prepare(`SELECT CASE WHEN operation.supported_game IS NULL THEN plan.request_plan_json
+      ELSE (SELECT json_object('plans', json_group_array(json(selected.value)))
+        FROM json_each(${evidencePlansSql}) AS selected
+        WHERE json_extract(selected.value, '$.supported_game') = operation.supported_game) END AS request_plan_json
+      FROM reconciliation_operations AS operation JOIN ingestion_evidence_plans AS plan
+        ON plan.ingestion_run_id = operation.ingestion_run_id WHERE operation.id = ?`)
     .bind(preparationId);
 }
 
@@ -141,6 +169,7 @@ export function reconciliationOverflowRequestsStatement(
                   representation_fingerprint, request_role
            FROM source_discovery_request_plans
            WHERE ingestion_run_id = (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?) AND (sequence_number, request_id) > (?, ?)
+             AND ${requestInPreparationGame("source_discovery_request_plans.request_id")}
            ORDER BY sequence_number, request_id LIMIT 1`)
     .bind(preparationId, sequence, requestId);
 }

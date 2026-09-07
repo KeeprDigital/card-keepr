@@ -7,7 +7,10 @@ import {
 import type { ReconciliationWorkflowParams } from "./reconciliation-workflow";
 
 export async function reconciliationDispatchState(database: CatalogueStore, params: ReconciliationWorkflowParams) {
-  const operation = await reconciliationOperationHeaderStatement(database, params.ingestion_run_id).first<{
+  const operation = await reconciliationOperationHeaderStatement(
+    database,
+    params.preparation_id ?? params.ingestion_run_id,
+  ).first<{
     state: string;
     generation: number;
     candidate_digest: string | null;
@@ -15,7 +18,7 @@ export async function reconciliationDispatchState(database: CatalogueStore, para
   }>();
   const checkpoint = await reconciliationCheckpoint<{ id: string; params: ReconciliationWorkflowParams }>(
     database,
-    params.ingestion_run_id,
+    params.preparation_id ?? params.ingestion_run_id,
     `workflow_dispatch:${params.generation ?? 0}`,
   );
   return {
@@ -32,17 +35,17 @@ export async function retainReconciliationDispatch(database: CatalogueStore, par
   const generation = params.generation ?? 0;
   const id = `reconcile-shard-${await sha256Text(
     canonicalJson({
-      run: params.ingestion_run_id,
+      run: params.preparation_id ?? params.ingestion_run_id,
       generation,
       ordinal: shard.ordinal,
     }),
   )}`;
   const guarded = guardedCatalogueStore(database, () =>
-    reconciliationWriterGuard(database, params.ingestion_run_id, generation),
+    reconciliationWriterGuard(database, params.preparation_id ?? params.ingestion_run_id, generation),
   );
   await retainReconciliationCheckpoint(
     guarded,
-    params.ingestion_run_id,
+    params.preparation_id ?? params.ingestion_run_id,
     `workflow_dispatch:${generation}`,
     shard.ordinal,
     { id, params },

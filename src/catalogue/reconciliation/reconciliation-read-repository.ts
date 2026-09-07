@@ -69,13 +69,17 @@ export function publishedWithdrawalAssertionsStatement(
 
 export function activeParsingRunStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT run.id, run.state, run.selected_games_json,
-              run.expected_current_revision_id,
+    .prepare(`SELECT run.id, run.state,
+              CASE WHEN preparation.supported_game IS NULL THEN run.selected_games_json
+                ELSE json_array(preparation.supported_game) END AS selected_games_json,
+              COALESCE(preparation.expected_game_revision_id, run.expected_current_revision_id) AS expected_current_revision_id,
+              preparation.supported_game, preparation.state AS preparation_state,
               (SELECT ingestion_run_id FROM ingestion_collection_reservations WHERE ingestion_run_id = run.id) AS active_ingestion_run_id,
               operation.recovery_health
        FROM ingestion_run_read AS run
+       LEFT JOIN reconciliation_operations AS preparation ON preparation.id = ?1
        JOIN operation_state AS operation ON operation.singleton = 1
-       WHERE run.id = ?`)
+       WHERE run.id = COALESCE(preparation.ingestion_run_id, ?1)`)
     .bind(runId);
 }
 

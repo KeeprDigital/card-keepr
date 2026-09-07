@@ -218,9 +218,12 @@ export function curatedRunSelectedGamesStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(
-      `SELECT (SELECT json_group_array(game) FROM (
+      `SELECT CASE WHEN preparation.supported_game IS NOT NULL THEN json_array(preparation.supported_game)
+      ELSE (SELECT json_group_array(game) FROM (
         SELECT game FROM ingestion_run_selected_games WHERE ingestion_run_id = identity.id ORDER BY ordinal
-      )) AS selected_games_json FROM ingestion_runs AS identity WHERE identity.id = ?`,
+      )) END AS selected_games_json FROM ingestion_runs AS identity
+      LEFT JOIN reconciliation_operations AS preparation ON preparation.id = ?1
+      WHERE identity.id = COALESCE(preparation.ingestion_run_id, ?1)`,
     )
     .bind(input.runId);
 }
@@ -612,6 +615,9 @@ export function nextPinnedCuratedRevisionStatement(
     revision.content_digest, pin.reviewed_source_digest
     FROM ingestion_run_curated_revisions AS pin
     JOIN curated_revision_read AS revision ON revision.id = pin.revision_id
-    WHERE pin.ingestion_run_id = ? AND pin.ordinal > ? ORDER BY pin.ordinal LIMIT 1`)
+    LEFT JOIN reconciliation_operations AS preparation ON preparation.id = ?1
+    WHERE pin.ingestion_run_id = COALESCE(preparation.ingestion_run_id, ?1) AND pin.ordinal > ?2
+      AND (preparation.supported_game IS NULL OR revision.game = preparation.supported_game)
+    ORDER BY pin.ordinal LIMIT 1`)
     .bind(runId, after);
 }

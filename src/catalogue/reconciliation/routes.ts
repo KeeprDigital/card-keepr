@@ -1,4 +1,5 @@
 import { inspectGameCandidate, inspectGameCandidatePartitions, inspectGameCandidatePartition } from "./game-candidate";
+import { createGameReconciliation, changeGameReconciliation } from "./game-reconciliation";
 import {
   changeReconciliationProgress,
   inspectReconciliationInputs,
@@ -35,6 +36,60 @@ type Environment = {
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const reconciliationRoutes = [
+  route<Context>("GET", "/v1/game-candidates/:candidate/inputs", async ({ env, request }, params) => {
+    const candidate = await inspectGameCandidate(env.CATALOGUE_DB, params.candidate!);
+    const inputs = await inspectReconciliationInputs(
+      env.CATALOGUE_DB,
+      candidate.preparation_id,
+      new URL(request.url).searchParams.get("after"),
+    );
+    return Response.json({
+      ...inputs,
+      ingestion_run_id: candidate.ingestion_run_id,
+      preparation_id: candidate.preparation_id,
+    });
+  }),
+  route<Context>("GET", "/v1/game-candidates/:candidate/inputs/:ordinal", async ({ env }, params) => {
+    const candidate = await inspectGameCandidate(env.CATALOGUE_DB, params.candidate!);
+    const input = await inspectReconciliationInput(env.CATALOGUE_DB, candidate.preparation_id, params.ordinal!);
+    return Response.json({
+      ...input,
+      ingestion_run_id: candidate.ingestion_run_id,
+      preparation_id: candidate.preparation_id,
+    });
+  }),
+  route<Context>("POST", "/v1/game-candidates", async ({ env, request, observedAt }) => {
+    const body = await readAdministrationBody(request);
+    assertOnlyFields(body, ["ingestion_run_id", "supported_game", "expected_game_revision_id", "idempotency_key"]);
+    const result = await createGameReconciliation(
+      env.CATALOGUE_DB,
+      env.RECONCILIATION_WORKFLOW,
+      {
+        ingestion_run_id: requiredString(body, "ingestion_run_id"),
+        supported_game: requiredString(body, "supported_game"),
+        expected_game_revision_id: requiredString(body, "expected_game_revision_id"),
+        idempotency_key: requiredString(body, "idempotency_key"),
+      },
+      observedAt,
+    );
+    return Response.json(result.document, { status: result.created ? 201 : 200 });
+  }),
+  ...(["pause", "resume", "abandon"] as const).map((action) =>
+    route<Context>("POST", `/v1/game-candidates/:candidate/${action}`, async ({ env, request, observedAt }, params) => {
+      const body = await readAdministrationBody(request);
+      assertOnlyFields(body, ["generation", "idempotency_key"]);
+      return Response.json(
+        await changeGameReconciliation(
+          env.CATALOGUE_DB,
+          env.RECONCILIATION_WORKFLOW,
+          params.candidate!,
+          action,
+          { generation: Number(body.generation), idempotency_key: requiredString(body, "idempotency_key") },
+          observedAt,
+        ),
+      );
+    }),
+  ),
   route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation/text/:digest/:ordinal", async ({ env }, params) =>
     Response.json(await inspectReconciliationText(env.CATALOGUE_DB, params.run!, params.digest!, params.ordinal!)),
   ),

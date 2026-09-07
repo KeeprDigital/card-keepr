@@ -115,6 +115,8 @@ type ActiveRunRow = {
   expected_current_revision_id: string;
   active_ingestion_run_id: string | null;
   recovery_health: string;
+  supported_game: string | null;
+  preparation_state: string | null;
 };
 
 type Diagnostic = {
@@ -1189,7 +1191,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           const mapping: SourceMapping = {
             entityId,
             kind,
-            runId,
+            runId: run.id,
             sourceObservationId: observation.sourceObservationId,
             sourceLineage: observation.sourceLineage,
             sourceSnapshotId: observation.sourceSnapshotId,
@@ -1770,6 +1772,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     await retainSourceMappings(database, runId, sourceMappings, yieldAtCheckpoint);
     await persistReviewableCandidate(database, {
       runId,
+      independentGame: run.supported_game !== null,
       partitions: retained.partitions,
       plans,
       warnings,
@@ -2070,21 +2073,26 @@ function printingImageEvidenceEquivalent(left: CataloguePrintingImage, right: Ca
 
 async function requiredActiveParsingRun(database: CatalogueStore, runId: string): Promise<ActiveRunRow> {
   const row = await activeParsingRunStatement(database, runId).first<ActiveRunRow>();
-  if (row === null || row.active_ingestion_run_id !== runId) {
+  if (
+    row === null ||
+    (row.supported_game === null && row.active_ingestion_run_id !== runId) ||
+    (row.supported_game !== null && row.preparation_state !== "preparing")
+  ) {
     throw new AdministrationProblem(
       409,
       "run_not_active",
       "Only the active parsing Ingestion Run can reconcile retained evidence.",
     );
   }
-  assertIngestionRunTransition(row.state, "reconciling", {
-    invalid: () =>
-      new AdministrationProblem(
-        409,
-        "run_not_active",
-        "Only the active parsing Ingestion Run can reconcile retained evidence.",
-      ),
-  });
+  if (row.supported_game === null)
+    assertIngestionRunTransition(row.state, "reconciling", {
+      invalid: () =>
+        new AdministrationProblem(
+          409,
+          "run_not_active",
+          "Only the active parsing Ingestion Run can reconcile retained evidence.",
+        ),
+    });
   if (row.recovery_health !== "healthy") {
     throw new AdministrationProblem(
       409,

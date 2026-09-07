@@ -55,7 +55,8 @@ export function insertSourceMappingsStatement(database: CatalogueStore, runId: s
       (entity_id, entity_kind, source_observation_id, source_lineage, ingestion_run_id,
        source_snapshot_id, source_observation_set_id, locator, variant_key, evidence_json, mapped_at)
       SELECT json_extract(value, '$.entityId'), json_extract(value, '$.kind'),
-       json_extract(value, '$.sourceObservationId'), json_extract(value, '$.sourceLineage'), ?,
+       json_extract(value, '$.sourceObservationId'), json_extract(value, '$.sourceLineage'),
+       (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?),
        json_extract(value, '$.sourceSnapshotId'), json_extract(value, '$.sourceObservationSetId'),
        json_extract(value, '$.locator'), json_extract(value, '$.variantKey'),
        json_extract(value, '$.evidenceJson'), json_extract(value, '$.mappedAt')
@@ -67,10 +68,14 @@ export function insertSourceMappingsStatement(database: CatalogueStore, runId: s
 export function identityRunGuard(database: CatalogueStore, run: string) {
   return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN EXISTS (
-    SELECT 1 FROM operation_state AS operation JOIN ingestion_run_current AS run
-      ON EXISTS (SELECT 1 FROM ingestion_collection_reservations WHERE ingestion_run_id = run.ingestion_run_id)
-    WHERE operation.singleton = 1 AND run.ingestion_run_id = ?
-      AND run.state IN ('parsing', 'reconciling') AND operation.recovery_health <> 'blocked'
+    SELECT 1 FROM operation_state AS operation
+    WHERE operation.singleton = 1 AND operation.recovery_health <> 'blocked'
+      AND (EXISTS (SELECT 1 FROM reconciliation_operations AS preparation
+        JOIN game_candidate_slots AS slot ON slot.preparation_id = preparation.id
+        WHERE preparation.id = ?1 AND preparation.supported_game IS NOT NULL AND preparation.state = 'preparing')
+      OR EXISTS (SELECT 1 FROM ingestion_run_current AS run
+        JOIN ingestion_collection_reservations AS reservation ON reservation.ingestion_run_id = run.ingestion_run_id
+        WHERE run.ingestion_run_id = ?1 AND run.state IN ('parsing', 'reconciling')))
       AND (operation.active_production_release_id IS NULL OR operation.active_production_release_expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     ) THEN 1 ELSE json_extract('{}', 'canonical_identity_run_not_active') END`)
     .bind(run);

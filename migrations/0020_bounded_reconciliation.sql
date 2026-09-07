@@ -67,6 +67,34 @@ BEGIN SELECT RAISE(ABORT, 'reconciliation_verified_input_immutable'); END;
 CREATE TRIGGER reconciliation_operation_no_delete BEFORE DELETE ON reconciliation_operations
 BEGIN SELECT RAISE(ABORT, 'reconciliation_operation_audit_retained'); END;
 CREATE UNIQUE INDEX legacy_reconciliation_for_run ON reconciliation_operations (ingestion_run_id) WHERE supported_game IS NULL;
+CREATE TABLE game_catalogue_heads (
+  supported_game TEXT PRIMARY KEY,
+  revision_id TEXT NOT NULL
+);
+-- Migration may traverse retained ancestry once; preparation creation reads one
+-- indexed game head and never walks publication history.
+WITH RECURSIVE ancestry(id, ingestion_run_id, previous_id, distance) AS (
+  SELECT revision.id, revision.ingestion_run_id, revision.expected_previous_revision_id, 0
+  FROM catalogue_revisions AS revision JOIN catalogue_state AS state ON state.current_revision_id = revision.id
+  UNION ALL
+  SELECT revision.id, revision.ingestion_run_id, revision.expected_previous_revision_id, ancestry.distance + 1
+  FROM catalogue_revisions AS revision JOIN ancestry ON ancestry.previous_id = revision.id
+), games(game) AS (VALUES ('one-piece'), ('fusion-world'), ('digimon'), ('gundam'))
+INSERT INTO game_catalogue_heads (supported_game, revision_id)
+SELECT game, COALESCE((SELECT ancestry.id FROM ancestry JOIN ingestion_run_selected_games AS selected
+  ON selected.ingestion_run_id = ancestry.ingestion_run_id
+  WHERE selected.game = games.game ORDER BY ancestry.distance LIMIT 1), 'catrev_spine_000') FROM games;
+CREATE TABLE game_reconciliation_requests (
+  idempotency_key TEXT PRIMARY KEY,
+  preparation_id TEXT NOT NULL UNIQUE REFERENCES reconciliation_operations(id),
+  request_json TEXT NOT NULL CHECK (json_valid(request_json)),
+  workflow_params_json TEXT NOT NULL CHECK (json_valid(workflow_params_json)),
+  workflow_instance_id TEXT NOT NULL UNIQUE
+);
+CREATE TRIGGER game_reconciliation_request_no_update BEFORE UPDATE ON game_reconciliation_requests
+BEGIN SELECT RAISE(ABORT, 'game_reconciliation_request_immutable'); END;
+CREATE TRIGGER game_reconciliation_request_no_delete BEFORE DELETE ON game_reconciliation_requests
+BEGIN SELECT RAISE(ABORT, 'game_reconciliation_request_immutable'); END;
 -- Pre-schema-20 run pins remain retained audit evidence. New preparations own
 -- their decision snapshots independently, including preparations sharing a run.
 CREATE TABLE reconciliation_admission_pins (

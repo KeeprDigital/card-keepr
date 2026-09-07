@@ -1,5 +1,11 @@
 import { reconciliationCheckpointsStatement } from "./reconciliation-checkpoint-repository";
 import {
+  createGamePreparationStatement,
+  type GamePreparationCreation,
+  failGamePreparationStatement,
+  releaseGamePreparationSlotStatement,
+} from "./game-reconciliation-repository";
+import {
   createGameCandidateIdentitiesStatement,
   gameCandidatesForPreparationStatement,
   synchronizeGameCandidatePauseStatement,
@@ -198,19 +204,66 @@ export async function pauseFailedReconciliation(
   if (detail.startsWith("reconciliation_capacity_exceeded:")) {
     const base = database;
     const scoped = guardedCatalogueStore(base, () => reconciliationWriterGuard(base, runId, generation));
+    const operation = await reconciliationOperationHeaderStatement(database, runId).first<{
+      supported_game: string | null;
+      ingestion_run_id: string;
+      state: string;
+      generation: number;
+    }>();
+    if (operation?.supported_game) {
+      if (operation.state !== "preparing" || operation.generation !== generation)
+        return {
+          preparation_id: runId,
+          run_id: operation.ingestion_run_id,
+          state: operation.generation !== generation ? "superseded" : operation.state,
+          publishable: false,
+        };
+      await scoped.batch([
+        failGamePreparationStatement(scoped, runId, "reconciliation_capacity_exceeded"),
+        synchronizeGameCandidatePauseStatement(scoped, runId),
+        releaseGamePreparationSlotStatement(scoped, runId),
+      ]);
+      return {
+        preparation_id: runId,
+        run_id: operation.ingestion_run_id,
+        state: "failed",
+        publishable: false,
+        diagnostics: [{ code: "reconciliation_capacity_exceeded", detail: detail.slice(0, 1024) }],
+      };
+    }
     return failReconciliationWorkflow(scoped, runId, new Date().toISOString(), detail);
   }
   await database.batch([
     pauseFailedReconciliationStatement(database, runId, generation, detail),
     synchronizeGameCandidatePauseStatement(database, runId),
   ]);
-  const current = await reconciliationOperationHeaderStatement(database, runId).first<{ state: string }>();
+  const current = await reconciliationOperationHeaderStatement(database, runId).first<{
+    state: string;
+    supported_game: string | null;
+    ingestion_run_id: string;
+    candidate_digest: string | null;
+    failure_code: string | null;
+  }>();
   if (!current) throw new Error("The durable reconciliation operation is unavailable.");
+  if (current.supported_game)
+    return {
+      preparation_id: runId,
+      run_id: current.ingestion_run_id,
+      state: current.state,
+      publishable: current.state === "sealed",
+      failure_code: current.failure_code,
+      ...(current.state === "sealed" ? { candidate_digest: current.candidate_digest } : {}),
+    };
   if (current.state === "sealed" || current.state === "failed") return retainedReconciliationResult(database, runId);
   return { state: current.state, publishable: false, run_id: runId };
 }
 
-export async function initializeReconciliationProgress(database: CatalogueStore, runId: string, at: string) {
+export async function initializeReconciliationProgress(
+  database: CatalogueStore,
+  runId: string,
+  at: string,
+  gamePreparation?: GamePreparationCreation,
+) {
   const definitions = JSON.stringify({
     profiles: gameProfileRegistrations(),
     adapters: sourceAdapterRegistrations.map((adapter) =>
@@ -226,7 +279,9 @@ export async function initializeReconciliationProgress(database: CatalogueStore,
     assertPinnedDefinitions(existing.definition_pins_json, definitions);
     return;
   }
-  const selected = await reconciliationSelectedGamesStatement(database, runId).first<{ games_json: string }>();
+  const selected = gamePreparation
+    ? { games_json: canonicalJson([gamePreparation.supported_game]) }
+    : await reconciliationSelectedGamesStatement(database, runId).first<{ games_json: string }>();
   const admissionPins = await entityAdmissionPinStatementsForPreparation(
     database,
     runId,
@@ -234,10 +289,12 @@ export async function initializeReconciliationProgress(database: CatalogueStore,
   );
   try {
     await database.batch([
-      createReconciliationOperationStatement(database, runId, at, definitions),
+      gamePreparation
+        ? createGamePreparationStatement(database, gamePreparation, at, definitions)
+        : createReconciliationOperationStatement(database, runId, at, definitions),
       ...admissionPins,
       ...correctionPinStatementsForPreparation(database, runId, JSON.parse(selected?.games_json ?? "[]") as string[]),
-      createGameCandidateIdentitiesStatement(database, runId),
+      ...(gamePreparation ? [] : [createGameCandidateIdentitiesStatement(database, runId)]),
     ]);
   } catch (error) {
     if (error instanceof Error && error.message.includes("game_candidate_slot_occupied"))

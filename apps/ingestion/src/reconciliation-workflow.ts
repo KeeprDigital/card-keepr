@@ -35,7 +35,7 @@ export async function runReconciliationWorkflow(
     await step.do(workflowSteps.reconciliation.initialize, reconciliationStep, async () => {
       await initializeReconciliationProgress(
         catalogueStore(env.CATALOGUE_DB),
-        event.payload.ingestion_run_id,
+        event.payload.preparation_id ?? event.payload.ingestion_run_id,
         event.payload.observed_at,
       );
       return JSON.stringify({ initialized: true });
@@ -51,11 +51,11 @@ export async function runReconciliationWorkflow(
     reconciliationResultJson = await step.do(workflowSteps.reconciliation.failure, reconciliationStep, async () => {
       const result = await pauseFailedReconciliation(
         catalogueStore(env.CATALOGUE_DB),
-        event.payload.ingestion_run_id,
+        event.payload.preparation_id ?? event.payload.ingestion_run_id,
         event.payload.generation ?? 0,
         error instanceof Error ? error.message : "The reconciliation Workflow exhausted its retries.",
       );
-      return durableReconciliationResult(event.payload.ingestion_run_id, result);
+      return durableReconciliationResult(event.payload.ingestion_run_id, result, event.payload.preparation_id);
     });
   }
   if (event.payload.shard && JSON.parse(reconciliationResultJson).continuation === undefined) {
@@ -88,7 +88,11 @@ export async function runReconciliationWorkUnits(
     ),
   ) as Awaited<ReturnType<typeof reconciliationDispatchState>>;
   if (state.operation?.state === "sealed" && state.operation.candidate_digest)
-    return durableReconciliationResult(params.ingestion_run_id, { candidate_digest: state.operation.candidate_digest });
+    return durableReconciliationResult(
+      params.ingestion_run_id,
+      { candidate_digest: state.operation.candidate_digest },
+      params.preparation_id,
+    );
   if (
     state.successor &&
     state.operation?.state === "preparing" &&
@@ -108,7 +112,7 @@ export async function runReconciliationWorkUnits(
         const result = await reconcileRetainedCardPrintingEvidence(
           catalogueStore(env.CATALOGUE_DB),
           env.EVIDENCE_OBJECTS,
-          params.ingestion_run_id,
+          params.preparation_id ?? params.ingestion_run_id,
           params.observed_at,
           env.PRINTING_IMAGES,
           params.generation ?? 0,
@@ -116,7 +120,7 @@ export async function runReconciliationWorkUnits(
         );
         return result.continuation !== undefined
           ? JSON.stringify({ continuation: result.continuation })
-          : durableReconciliationResult(params.ingestion_run_id, result);
+          : durableReconciliationResult(params.ingestion_run_id, result, params.preparation_id);
       },
     );
     if ((JSON.parse(resultJson) as { continuation?: unknown }).continuation !== undefined) continue;
@@ -153,17 +157,22 @@ async function finishShard(step: WorkflowStep, params: ReconciliationWorkflowPar
   return terminal.payload;
 }
 
-export function durableReconciliationResult(runId: string, result: Record<string, unknown>): string {
+export function durableReconciliationResult(
+  runId: string,
+  result: Record<string, unknown>,
+  preparationId?: string,
+): string {
+  const identity = preparationId
+    ? { contract: "card-keepr-game-reconciliation-workflow-result@1", run_id: runId, preparation_id: preparationId }
+    : { contract: "card-keepr-reconciliation-workflow-result@1", run_id: runId };
   const reference = canonicalJson(
     typeof result.candidate_digest === "string"
       ? {
-          contract: "card-keepr-reconciliation-workflow-result@1",
-          run_id: runId,
+          ...identity,
           candidate_digest: result.candidate_digest,
         }
       : {
-          contract: "card-keepr-reconciliation-workflow-result@1",
-          run_id: runId,
+          ...identity,
           result,
         },
   );

@@ -56,6 +56,7 @@ export async function persistReviewableCandidate(
   database: CatalogueStore,
   input: {
     runId: string;
+    independentGame?: boolean;
     partitions: AsyncIterable<EvidencePartitionInput>;
     plans: AsyncIterable<ObservationPlan>;
     warnings:
@@ -77,6 +78,27 @@ export async function persistReviewableCandidate(
     input.warnings,
     input.yieldAtCheckpoint,
   );
+  if (input.independentGame) {
+    const gameSeals = await prepareGameCandidateManifests(
+      database,
+      input.runId,
+      input.draft,
+      manifest.digest,
+      input.partitions,
+      input.yieldAtCheckpoint,
+    );
+    await database.batch([
+      ...gameSeals,
+      sealReconciliationOperationStatement(
+        database,
+        input.runId,
+        input.candidateDigest,
+        manifest.digest,
+        manifest.count,
+      ),
+    ]);
+    return;
+  }
   const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
   const runWarnings = await prepareRunWarningSummary(database, input.runId, input.warnings, input.yieldAtCheckpoint);
   const preparationCount = await stageCandidatePreparation(database, input);
