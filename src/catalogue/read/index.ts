@@ -47,3 +47,5 @@ export {
   publicationExportSourceStatement,
   publicationExportDependenciesStatement,
 } from "./composition-read-repository";
+
+export { compositionSmokeTargets } from "./composition-smoke-targets";

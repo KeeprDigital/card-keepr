@@ -7,13 +7,14 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { proveNativePopulatedHandoff } from "./helpers/native-fresh-baseline.mjs";
 import { nativeRecoveryCloudflare } from "./helpers/native-recovery-cloudflare.mjs";
 import { persistedDatabaseDirectory, executeSql } from "./helpers/acceptance-runtime.mjs";
 import { runCli, startWorker, stopWorker, waitForHealth } from "./helpers/acceptance-runtime.mjs";
 
 // Synthetic publisher responses exercise the shipped native collection/preparation Workflows.
 // The legacy publication acceptance harness is deliberately absent.
-test("native owner publication Workflow verifies an independently imported composition snapshot", async (t) => {
+async function proveNativeComposition(t, proof) {
   const fetch = async (url, options) => {
     try {
       return await globalThis.fetch(url, options);
@@ -63,12 +64,27 @@ test("native owner publication Workflow verifies an independently imported compo
     ),
   ]);
   const workers = [];
+  let proofCompleted = false;
+  const redact = (text) =>
+    [adminKey, apiKey, "local-export", "local-verify"].reduce(
+      (value, secret) => value.replaceAll(secret, "<REDACTED>"),
+      text,
+    );
   let releaseFirstExport, signalFirstExport, releaseFirstImport, signalFirstImport;
   t.after(async () => {
     releaseFirstExport?.();
     releaseFirstImport?.();
     for (const worker of workers) await stopWorker(worker);
-    await rm(directory, { recursive: true, force: true });
+    if (proofCompleted) await rm(directory, { recursive: true, force: true });
+    else {
+      await writeFile(
+        join(directory, "failure-runtime.log"),
+        redact(workers.map((worker) => worker.getOutput()).join("\n")),
+      );
+      await writeFile(adminEnv, "ADMINISTRATION_KEY=<REDACTED>\n");
+      await writeFile(apiEnv, "API_BEARER_KEY=<REDACTED>\n");
+      t.diagnostic(`Native failure state retained after runtime shutdown: ${directory}`);
+    }
   });
   const source = await startWorker({
     config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
@@ -134,11 +150,13 @@ test("native owner publication Workflow verifies an independently imported compo
   };
   const get = async (path) => {
     const response = await fetch(`${ingestion.url}${path}`, { headers: { authorization: `Bearer ${adminKey}` } });
-    assert.equal(response.status, 200, await response.clone().text());
+    assert.equal(response.status, 200, `${path}: ${await response.clone().text()}\n${redact(ingestion.getOutput())}`);
     return response.json();
   };
   const consumer = async (path) => {
     const response = await fetch(`${api.url}${path}`, { headers: { authorization: `Bearer ${apiKey}` } });
+    if (!(response.headers.get("content-type") ?? "").includes("json"))
+      return { status: response.status, byte_length: (await response.arrayBuffer()).byteLength };
     const body = await response.json();
     delete body.request_id;
     return { status: response.status, body };
@@ -572,7 +590,10 @@ test("native owner publication Workflow verifies an independently imported compo
     JSON.stringify({
       expected_generation: "0",
       rationale: "Synthetic recovery admission proof",
-      exception: { scope: ["identity"], attestation: "Synthetic owner inspection establishes the issued distinction" },
+      exception: {
+        scope: ["identity"],
+        attestation: "Synthetic owner inspection establishes the issued distinction",
+      },
       idempotency_key: "native-recovery-admit",
     }),
   );
@@ -660,12 +681,52 @@ test("native owner publication Workflow verifies an independently imported compo
   const admittedCardId = admitted.history[0].decision.card.id;
   assert.equal((await consumer(`/v1/cards/${admittedCardId}`)).body.data.name, "Recovery admitted Digimon");
   assert.equal((await consumer("/v1/catalogue-exports")).body.data.length, 3);
+  if (proof === "fresh baseline") {
+    // A fourth native publication supplies an actually archived cursor while
+    // retaining the current revision and its two verified predecessors.
+    const fourthRun = await cli([
+      "source",
+      "collect",
+      "--plan-file",
+      onePiecePlan,
+      "--idempotency-key",
+      "native-fresh-fourth-source",
+    ]);
+    await cli(["source", "resume", "--run-id", fourthRun.id]);
+    const fourth = await awaitCandidate(fourthRun.id);
+    assert.equal(fourth.state, "sealed", JSON.stringify(fourth));
+    await prepare(fourth, "native-fresh-fourth-artifacts");
+    const fourthApproval = await approve(fourth, "native-fresh-fourth-approval");
+    const fourthPublication = await awaitPublication(fourthApproval.id, "published");
+    assert.equal(typeof fourthPublication.backup_attempt_id, "string", JSON.stringify(fourthPublication));
+    const deadline = Date.now() + 30000;
+    let fourthBackup;
+    do {
+      fourthBackup = await get(`/v1/backups/${fourthPublication.backup_attempt_id}`);
+      if (["verified", "failed"].includes(fourthBackup.state)) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    } while (Date.now() < deadline);
+    assert.equal(fourthBackup.state, "verified", JSON.stringify(fourthBackup));
+    await proveNativePopulatedHandoff({
+      t,
+      directory,
+      statePath,
+      configPath,
+      environment,
+      sourceFile: cloudflare.sourceFile,
+      consumer,
+    });
+    proofCompleted = true;
+    return;
+  }
   const correctedResponse = await consumer(`/v1/printings/${correctedPrintingId}`);
   assert.equal(correctedResponse.status, 200);
   assert.equal(correctedResponse.body.data.action, "merge");
   assert.deepEqual(correctedResponse.body.data.replacement_ids, [survivorPrintingId]);
   const retainedPublicExports = async (baseUrl, expectedCount = 3) => {
-    const listing = await fetch(`${baseUrl}/v1/catalogue-exports`, { headers: { authorization: `Bearer ${apiKey}` } });
+    const listing = await fetch(`${baseUrl}/v1/catalogue-exports`, {
+      headers: { authorization: `Bearer ${apiKey}` },
+    });
     assert.equal(listing.status, 200);
     const exports = (await listing.json()).data;
     assert.equal(exports.length, expectedCount);
@@ -1045,4 +1106,9 @@ test("native owner publication Workflow verifies an independently imported compo
     (await restoredSibling.json()).data.map((card) => card.id),
     onePieceCards.map((card) => card.id),
   );
-});
+  proofCompleted = true;
+}
+
+for (const proof of ["recovery", "fresh baseline"])
+  test(`native owner publication Workflow verifies ${proof} with retained composition`, (t) =>
+    proveNativeComposition(t, proof));

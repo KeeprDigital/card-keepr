@@ -24,9 +24,13 @@ ajv.addSchema(exportManifestSchemaV5);
 ajv.addSchema(apiSchema);
 const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`);
 const validateCatalogue = ajv.getSchema(`${apiSchema.$id}#/$defs/CatalogueDocument`);
-// Every checked-in migration bumps the schema level by one (ADR 0006), so
-// the readiness document of a migrated local database reports their count.
-const migrationLevel = readdirSync(resolve(root, "migrations")).filter((entry) => entry.endsWith(".sql")).length;
+// Reserved migration numbers can leave gaps; readiness reports the highest
+// applied migration number, not the number of checked-in files.
+const migrationLevel = Math.max(
+  ...readdirSync(resolve(root, "migrations"))
+    .filter((entry) => /^\d+_.+\.sql$/.test(entry))
+    .map((entry) => Number.parseInt(entry, 10)),
+);
 const ingestionConfig = JSON.parse(readFileSync(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
 
 const rateLimitWindowSeconds = 60;

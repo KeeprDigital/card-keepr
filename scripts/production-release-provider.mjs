@@ -96,6 +96,84 @@ export async function observeCatalogueBindings(environment, fetchImpl = fetch) {
   };
 }
 
+/** Observe actual traffic versions and configured zone routes, not settings alone. */
+export async function observeReleaseActivation(environment, expectedVersions, configPaths, fetchImpl = fetch) {
+  const token = required(environment, "CLOUDFLARE_API_TOKEN");
+  const observations = [];
+  for (const path of configPaths) {
+    const config = await readWorkerConfig(path);
+    const worker = config.name;
+    if (!(worker in workerConfigs)) throw new Error("unknown_release_worker");
+    const root = `/accounts/${account(environment)}/workers/scripts/${encodeURIComponent(worker)}`;
+    const deployments = await cloudflare(fetchImpl, token, `${root}/deployments`);
+    const latest = deployments.result?.deployments?.[0];
+    if (
+      !record(latest) ||
+      typeof latest.id !== "string" ||
+      !Array.isArray(latest.versions) ||
+      latest.versions.length === 0
+    )
+      throw new Error("release_active_deployment_missing");
+    const expected = expectedVersions?.find((version) => version.worker === worker);
+    if (
+      expectedVersions !== null &&
+      (!expected ||
+        latest.versions.length !== 1 ||
+        latest.versions[0].version_id !== expected.version_id ||
+        latest.versions[0].percentage !== 100)
+    )
+      throw new Error("release_active_version_mismatch");
+    if (latest.versions.reduce((sum, item) => sum + item.percentage, 0) !== 100)
+      throw new Error("release_active_traffic_invalid");
+    for (const active of latest.versions) {
+      if (typeof active.version_id !== "string" || !(active.percentage > 0))
+        throw new Error("release_active_version_invalid");
+      const version = await cloudflare(fetchImpl, token, `${root}/versions/${encodeURIComponent(active.version_id)}`);
+      if (
+        !Array.isArray(version.result?.resources?.bindings) ||
+        !isDeepStrictEqual(
+          normalizedBindings(version.result.resources.bindings, worker),
+          expectedBindings(config, expectedSecrets[worker], worker),
+        )
+      )
+        throw new Error("release_active_version_binding_mismatch");
+    }
+    const routes = [];
+    for (const route of config.routes ?? []) {
+      if (typeof route !== "object" || !route.pattern || route.custom_domain)
+        throw new Error("release_route_contract_unsupported");
+      let zone = route.zone_id;
+      if (!zone) {
+        const found = await cloudflare(
+          fetchImpl,
+          token,
+          `/zones?name=${encodeURIComponent(route.zone_name)}&account.id=${encodeURIComponent(account(environment))}`,
+        );
+        if (
+          !Array.isArray(found.result) ||
+          found.result.length !== 1 ||
+          found.result[0].name !== route.zone_name ||
+          found.result[0].account?.id !== account(environment)
+        )
+          throw new Error("release_route_zone_ambiguous");
+        zone = found.result[0].id;
+      }
+      const inventory = await cloudflare(fetchImpl, token, `/zones/${encodeURIComponent(zone)}/workers/routes`);
+      if (!Array.isArray(inventory.result)) throw new Error("release_routes_missing");
+      const matched = inventory.result.filter((item) => item.pattern === route.pattern);
+      if (matched.length !== 1 || matched[0].script !== worker) throw new Error("release_route_mismatch");
+      routes.push({ zone_id: zone, pattern: route.pattern, script: worker });
+    }
+    observations.push({
+      worker,
+      deployment_id: latest.id,
+      versions: latest.versions.map(({ version_id, percentage }) => ({ version_id, percentage })),
+      routes,
+    });
+  }
+  return { contract: "card-keepr-activated-release-pair@1", workers: observations };
+}
+
 async function configuredWorkers() {
   const entries = await Promise.all(
     Object.entries(workerConfigs).map(async ([worker, path]) => {

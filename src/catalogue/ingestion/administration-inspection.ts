@@ -1,6 +1,6 @@
 import { outstandingBackupDispatches } from "../backup-recovery";
 import { curatedRevisionInspectionForRun } from "../curated";
-import { cardSearchFtsQuery, cardSearchText, sourceFreshnessFromStorage } from "../read";
+import { cardSearchFtsQuery, cardSearchText, compositionSmokeTargets, sourceFreshnessFromStorage } from "../read";
 import {
   AdministrationProblem,
   type CatalogueCandidate,
@@ -29,6 +29,7 @@ import {
   smokeTargetPrintingsStatement,
   smokeTargetSearchMatchStatement,
 } from "./administration-inspection-repository";
+import { freshBaselineHandoffStatement, latestFreshBaselineCorrectionStatement } from "./fresh-baseline-repository";
 import { inspectCatalogueCandidate } from "./candidate-inspection";
 import { repairableCatalogueRevisionWindow } from "./catalogue-revision-retention";
 import { SPINE_REVISION_ID } from "./production-release";
@@ -54,7 +55,18 @@ export async function administrationStatus(
   }>,
   reconcile = true,
 ): Promise<Record<string, unknown>> {
-  if (reconcile) {
+  const handoff = await freshBaselineHandoffStatement(database).first<{
+    release_id: string;
+    role: string;
+    phase: number;
+    dispatch_digest: string;
+    request_json: string;
+    evidence_json: string;
+  }>();
+  const handoffBlocked =
+    handoff !== null &&
+    ((handoff.role === "source" && handoff.phase !== 7) || (handoff.role === "destination" && handoff.phase !== 6));
+  if (reconcile && !handoffBlocked) {
     await expireOverdueRuns(database, observedAt);
     await reconcileAbandonedPublication(database, catalogueExports, observedAt);
   }
@@ -105,6 +117,16 @@ export async function administrationStatus(
     retained_database_id: string;
     verification_json: string;
   }>();
+  const correction =
+    handoff === null
+      ? null
+      : await latestFreshBaselineCorrectionStatement(database, handoff.dispatch_digest).first<{
+          request_json: string;
+          evidence_json: string;
+          state: number;
+          generation: number;
+          correction_digest: string;
+        }>();
   const activeProductionRelease = await activeProductionReleaseStatement(database).first<Record<string, unknown>>();
   const productionTargetDigest = await sha256Text(canonicalJson(productionTarget));
   const retention = retainedEvidence.results.map((row) => ({
@@ -127,6 +149,7 @@ export async function administrationStatus(
       active_production_release_id: operation.active_production_release_id,
       active_recovery_id: operation.active_recovery_id,
       mutation_safe:
+        !handoffBlocked &&
         operation.recovery_health === "healthy" &&
         operation.active_ingestion_run_id === null &&
         !(
@@ -135,6 +158,23 @@ export async function administrationStatus(
           operation.active_production_release_expires_at > observedAt
         ),
     },
+    fresh_baseline_handoff:
+      handoff === null
+        ? null
+        : {
+            ...handoff,
+            request: JSON.parse(handoff.request_json),
+            evidence: JSON.parse(handoff.evidence_json),
+            mutation_blocked: handoffBlocked,
+            correction:
+              correction === null
+                ? null
+                : {
+                    ...correction,
+                    request: JSON.parse(correction.request_json),
+                    evidence: JSON.parse(correction.evidence_json),
+                  },
+          },
     active_production_release: activeProductionRelease,
     release_preflight: {
       // Bootstrap Mode (issue #141): the catalogue is provably empty, so the
@@ -238,7 +278,21 @@ export async function productionReleaseSmokeTargets(
 ): Promise<Record<string, unknown> | null> {
   if (revisionIds.length !== 3) return null;
   const revisions = [];
+  let nativeImageId: string | undefined;
   for (const revisionId of revisionIds) {
+    const native = await compositionSmokeTargets(
+      database,
+      revisionId,
+      releaseSmokeSearchQuery,
+      revisionId === revisionIds[0],
+    );
+    if (native === null) return null;
+    if (native !== undefined) {
+      if (revisionId === revisionIds[0]) nativeImageId = native.printing_image_id;
+      const { printing_image_id: _imageId, ...target } = native;
+      revisions.push(target);
+      continue;
+    }
     const [cards, printings] = await Promise.all([
       smokeTargetCardsStatement(database, revisionId).all<{
         card_id: string;
@@ -309,7 +363,9 @@ export async function productionReleaseSmokeTargets(
     });
   }
   const [currentExtras, unavailable] = await Promise.all([
-    smokeTargetExtrasStatement(database, revisionIds[0]!).first<Record<string, string | null>>(),
+    nativeImageId === undefined
+      ? smokeTargetExtrasStatement(database, revisionIds[0]!).first<Record<string, string | null>>()
+      : Promise.resolve({ printing_image_id: nativeImageId }),
     archivedQueryRevisionStatement(database).first<{ catalogue_revision_id: string }>(),
   ]);
   if (
@@ -320,7 +376,11 @@ export async function productionReleaseSmokeTargets(
     return null;
   const staleAfter = (revisions[0] as { card_cursor: string }).card_cursor;
   const decoded = JSON.parse(
-    new TextDecoder().decode(Uint8Array.from(atob(staleAfter), (character) => character.charCodeAt(0))),
+    new TextDecoder().decode(
+      Uint8Array.from(atob(staleAfter.replaceAll("-", "+").replaceAll("_", "/")), (character) =>
+        character.charCodeAt(0),
+      ),
+    ),
   ) as Record<string, unknown>;
   return {
     revisions,
@@ -336,7 +396,7 @@ export function releaseSmokeSearchQuery(documentJson: string): string | null {
     const card = isRecord(envelope.data) ? envelope.data : envelope;
     if (
       !isRecord(card.official_identity) ||
-      typeof card.official_identity.value !== "string" ||
+      (card.official_identity.value !== null && typeof card.official_identity.value !== "string") ||
       typeof card.name !== "string" ||
       (card.effective_rules_text !== null &&
         card.effective_rules_text !== undefined &&

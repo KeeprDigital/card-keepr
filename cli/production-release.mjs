@@ -6,6 +6,10 @@ export async function runProductionReleaseCommand(args, environment, json) {
   const options = parseOptions(
     args,
     [
+      "--correct-handoff-sha",
+      "--correction-key",
+      "--fresh-database-id",
+      "--baseline-sha256",
       "--release-id",
       "--expected-current-revision",
       "--expected-head-sha",
@@ -17,7 +21,7 @@ export async function runProductionReleaseCommand(args, environment, json) {
       "--replacement-database-id",
       "--retained-database-id",
     ],
-    ["--json", "--yes", "--bootstrap"],
+    ["--json", "--yes", "--bootstrap", "--cancel-fresh-handoff"],
   );
   const value = options.values;
   const fail = (code, detail, exitCode) => writeCliFailure(json, { code, detail }, exitCode);
@@ -58,6 +62,25 @@ export async function runProductionReleaseCommand(args, environment, json) {
     expected_migration_level: Number(value["--expected-migration-level"]),
     bootstrap: options.flags.has("--bootstrap"),
     replacement_handoff: replacement,
+    ...(value["--correct-handoff-sha"] !== undefined || value["--correction-key"] !== undefined
+      ? {
+          correct_handoff: {
+            expected_head_sha: value["--correct-handoff-sha"],
+            idempotency_key: value["--correction-key"],
+          },
+        }
+      : {}),
+    ...(options.flags.has("--cancel-fresh-handoff") ? { cancel_handoff: true } : {}),
+    ...(value["--fresh-database-id"] !== undefined || value["--baseline-sha256"] !== undefined
+      ? {
+          fresh_baseline_handoff: {
+            destination_database_id: value["--fresh-database-id"],
+            baseline_sha256: value["--baseline-sha256"],
+            destination_migration_level: 1,
+            scope: "fresh_database_regeneration",
+          },
+        }
+      : {}),
     ...(value["--confirm"] === undefined ? { prepare: true } : { confirmation: value["--confirm"] }),
   };
   const observed = await requestDocument(environment, "/v1/production-releases", { method: "POST", body });
@@ -101,7 +124,7 @@ export async function runProductionReleaseCommand(args, environment, json) {
     contract: "card-keepr-production-release-dispatch@1",
     release_id: body.release_id,
     state: "requested",
-    expected_head_sha: body.expected_head_sha,
+    expected_head_sha: document.dispatch_inputs.expected_head_sha,
   };
   process.stdout.write(json ? `${JSON.stringify(result)}\n` : `Production Release ${body.release_id}: requested\n`);
   return 10;

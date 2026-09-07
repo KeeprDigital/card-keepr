@@ -32,6 +32,7 @@ export function nativeRecoveryCloudflare({ databaseDirectory, directory }) {
     throw new Error("Native source database was not found.");
   }
   return {
+    sourceFile,
     snapshots,
     faults,
     hooks,
@@ -60,8 +61,8 @@ export function nativeRecoveryCloudflare({ databaseDirectory, directory }) {
           encoding: "utf8",
           maxBuffer: 64 * 1024 * 1024,
         });
-        const virtual = exported.match(/[^\n]*CREATE VIRTUAL TABLE[^\n]*/g);
-        if (virtual) throw new Error(`Export still contains virtual tables: ${virtual.join(" | ")}`);
+        const virtual = exported.split("\n").filter((line) => line.includes("CREATE VIRTUAL TABLE"));
+        if (virtual.length > 0) throw new Error(`Export still contains virtual tables: ${virtual.join(" | ")}`);
         // D1 management exports omit provider-owned bookkeeping; AUTOINCREMENT
         // counters are reconstructed by inserting the retained primary keys.
         const statements = unstable_splitSqlQuery(exported).filter(
