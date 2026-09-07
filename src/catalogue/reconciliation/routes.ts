@@ -1,3 +1,4 @@
+import { startEvidenceCleanup, retryEvidenceCleanup } from "./evidence-cleanup-dispatch";
 import {
   resumeGamePublication,
   startGamePublication,
@@ -61,6 +62,44 @@ type Environment = {
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const reconciliationRoutes = [
+  route<Context>(
+    "POST",
+    "/v1/reconciliation-operations/:preparation/evidence-cleanup",
+    async ({ request, env, observedAt }, params) => {
+      const body = await readAdministrationBody(request);
+      assertOnlyFields(body, ["idempotency_key", "retention_days"]);
+      return Response.json(
+        await startEvidenceCleanup(
+          env,
+          params.preparation!,
+          requiredString(body, "idempotency_key"),
+          body.retention_days,
+          observedAt,
+          "staging",
+        ),
+        { status: 202 },
+      );
+    },
+  ),
+  route<Context>("POST", "/v1/ingestion-runs/:run/evidence-cleanup", async ({ request, env, observedAt }, params) => {
+    const body = await readAdministrationBody(request);
+    assertOnlyFields(body, ["idempotency_key", "retention_days"]);
+    return Response.json(
+      await startEvidenceCleanup(
+        env,
+        params.run!,
+        requiredString(body, "idempotency_key"),
+        body.retention_days,
+        observedAt,
+      ),
+      { status: 202 },
+    );
+  }),
+  route<Context>("POST", "/v1/evidence-cleanups/:cleanup/retry", async ({ request, env }, params) => {
+    const body = await readAdministrationBody(request);
+    assertOnlyFields(body, ["expected_generation"]);
+    return Response.json(await retryEvidenceCleanup(env, params.cleanup!, body.expected_generation), { status: 202 });
+  }),
   route<Context>("POST", "/v1/publications/:publication/resume", async ({ env, request, observedAt }, params) => {
     const body = await readAdministrationBody(request);
     assertOnlyFields(body, ["generation", "idempotency_key"]);

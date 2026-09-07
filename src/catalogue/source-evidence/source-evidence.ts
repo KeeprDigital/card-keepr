@@ -1,3 +1,4 @@
+import { assertEvidenceAvailable } from "./evidence-cleanup";
 import { AdministrationProblem, type CatalogueStore } from "../shared";
 import { sourceObservationSetStatement, sourceSnapshotStatement } from "./evidence-repository";
 import { assertIdentifier, type StartEvidenceRunRequest } from "./source-evidence-model";
@@ -36,6 +37,7 @@ export async function sourceSnapshotContent(
   if (snapshot === null) {
     throw new AdministrationProblem(404, "source_snapshot_not_found", "The requested Source Snapshot does not exist.");
   }
+  await assertEvidenceAvailable(database, snapshot.content_object_key);
   return evidenceObjectResponse(evidenceObjects, {
     key: snapshot.content_object_key,
     digest: snapshot.content_digest,
@@ -58,6 +60,7 @@ export async function sourceObservationSetContent(
       "The requested Source Observation set does not exist.",
     );
   }
+  await assertEvidenceAvailable(database, observation.content_object_key);
   return evidenceObjectResponse(evidenceObjects, {
     key: observation.content_object_key,
     digest: observation.content_digest,

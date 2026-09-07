@@ -1,3 +1,5 @@
+import { advanceStagingCleanup } from "./staging-cleanup";
+import { inspectEvidenceCleanup, inspectEvidenceCleanupResults, advanceEvidenceCleanup } from "./evidence-cleanup";
 import { sourceLifecycleHistory, decideSourceLifecycle } from "./source-lifecycle";
 import { sourceAuthorities, selectSourceAuthority } from "./source-authority";
 import { publishers, sources, sourceLineages, gameProfileRegistrations, sourceAdapterRegistrations } from "../adapters";
@@ -28,12 +30,35 @@ type Environment = {
   EVIDENCE_HOST_WORKFLOW: Parameters<typeof pauseEvidenceCollection>[2];
   EVIDENCE_INGESTION_WORKFLOW: Parameters<typeof resumeEvidenceRun>[1];
   EVIDENCE_OBJECTS: R2Bucket;
+  PRINTING_IMAGES: R2Bucket;
+  CATALOGUE_EXPORTS: R2Bucket;
   SOURCE_HOST_PACING_INTERVAL_MS: string;
   SOURCE_HOST_PACING_MODE: string;
 };
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const sourceEvidenceRoutes = [
+  route<Context>("GET", "/v1/evidence-cleanups/:cleanup/objects", async ({ env, request }, params) =>
+    Response.json(
+      await inspectEvidenceCleanupResults(
+        env.CATALOGUE_DB,
+        params.cleanup!,
+        new URL(request.url).searchParams.get("after") ?? "",
+      ),
+    ),
+  ),
+  route<Context>("GET", "/v1/evidence-cleanups/:cleanup", async ({ env }, params) =>
+    Response.json(await inspectEvidenceCleanup(env.CATALOGUE_DB, params.cleanup!)),
+  ),
+  route<Context>("POST", "/v1/evidence-cleanups/:cleanup/advance", async ({ request, env, observedAt }, params) => {
+    assertOnlyFields(await readAdministrationBody(request), []);
+    const intent = await inspectEvidenceCleanup(env.CATALOGUE_DB, params.cleanup!);
+    return Response.json(
+      await (intent.scope === "staging"
+        ? advanceStagingCleanup(env.CATALOGUE_DB, env, params.cleanup!, observedAt)
+        : advanceEvidenceCleanup(env.CATALOGUE_DB, env.EVIDENCE_OBJECTS, params.cleanup!, observedAt)),
+    );
+  }),
   route<Context>("GET", "/v1/source-lineages/:lineage/lifecycle", async ({ env }, params) =>
     Response.json(await sourceLifecycleHistory(env.CATALOGUE_DB, params.lineage!)),
   ),

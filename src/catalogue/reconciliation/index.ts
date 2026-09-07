@@ -94,3 +94,5 @@ export {
   dispatchGamePublication,
   inspectPublication,
 } from "./game-publication";
+
+export { dispatchEvidenceCleanup } from "./evidence-cleanup-dispatch";

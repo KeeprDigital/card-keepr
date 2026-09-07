@@ -1,3 +1,9 @@
+import {
+  beginEvidenceObjectWrite,
+  completeEvidenceObjectWrite,
+  completeObservedEvidenceWrite,
+  retainEvidenceMultipart,
+} from "./evidence-cleanup-repository";
 import { createHash } from "node:crypto";
 import { requiredSourceAdapter } from "../adapters";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256, utf8 } from "../shared";
@@ -447,13 +453,31 @@ export async function capturePreparedAttempt(
     attemptId: operation.attempt_id,
   }).run();
   operation = await requiredCaptureOperation(database, operation.attempt_id);
+  const writeToken = crypto.randomUUID();
   try {
     const content = await streamSnapshotToR2(
       evidenceObjects,
       operation.content_object_key,
       response,
       requiredSourceAdapter(evidencePlan.adapter_version).maximumSnapshotBytes,
+      async (upload) => {
+        await retainEvidenceMultipart(database, writeToken, upload).run();
+      },
+      writeToken,
+      async () => {
+        await beginEvidenceObjectWrite(
+          database,
+          writeToken,
+          run.id,
+          operation.content_object_key,
+          new Date().toISOString(),
+        ).run();
+      },
+      async () => {
+        await completeEvidenceObjectWrite(database, writeToken, new Date().toISOString()).run();
+      },
     );
+    await completeEvidenceObjectWrite(database, writeToken, new Date().toISOString()).run();
     await uploadedCaptureContentStatement(database, {
       digest: content.digest,
       byteLength: content.byteLength,
@@ -722,6 +746,15 @@ async function recoverCompletedUpload(
     byteLength += read.value.byteLength;
     hash.update(read.value);
   }
+  const observedToken = object.customMetadata?.cleanup_writer_token;
+  if (observedToken)
+    await completeObservedEvidenceWrite(
+      database,
+      observedToken,
+      operation.ingestion_run_id,
+      operation.content_object_key,
+      new Date().toISOString(),
+    ).run();
   await uploadedCaptureContentStatement(database, {
     digest: hash.digest("hex"),
     byteLength: byteLength,
@@ -735,9 +768,14 @@ async function streamSnapshotToR2(
   objectKey: string,
   response: Response,
   maximumBytes: number,
+  retainMultipart: (uploadId: string) => Promise<void>,
+  writeToken: string,
+  registerWriter: () => Promise<void>,
+  acknowledgeSettledWriter: () => Promise<void>,
 ): Promise<{ byteLength: number; digest: string }> {
   const hash = createHash("sha256");
   const metadata = {
+    customMetadata: { cleanup_writer_token: writeToken },
     httpMetadata: {
       contentType: response.headers.get("content-type") ?? "application/octet-stream",
       cacheControl: "private, max-age=31536000, immutable",
@@ -770,12 +808,16 @@ async function streamSnapshotToR2(
         "Official Source body ended before its declared Content-Length.",
       );
     }
+    await registerWriter();
     try {
       const stored = await bucket.put(objectKey, new Uint8Array(), {
         ...metadata,
         onlyIf: { etagDoesNotMatch: "*" },
       });
-      if (stored === null) throw new Error("object key already exists");
+      if (stored === null) {
+        await acknowledgeSettledWriter();
+        throw new Error("object key already exists");
+      }
     } catch (error) {
       throw new CapturePersistenceError("storage_failure", errorMessage(error, "Evidence object write failed."));
     }
@@ -798,6 +840,7 @@ async function streamSnapshotToR2(
         controller.enqueue(chunk);
       },
     });
+    await registerWriter();
     const results = await Promise.allSettled([
       bucket.put(objectKey, fixed.readable, {
         ...metadata,
@@ -805,6 +848,11 @@ async function streamSnapshotToR2(
       }),
       response.body.pipeThrough(hashingStream).pipeTo(fixed.writable),
     ]);
+    const storageResult = results[0]!;
+    if (storageResult.status === "fulfilled" && storageResult.value === null) {
+      await acknowledgeSettledWriter();
+      throw new CapturePersistenceError("storage_failure", "Immutable evidence object key already exists.");
+    }
     const bodyResult = results[1]!;
     if (bodyResult.status === "rejected") {
       await bucket.delete(objectKey).catch(() => undefined);
@@ -813,7 +861,6 @@ async function streamSnapshotToR2(
         errorMessage(bodyResult.reason, "Official Source body stream failed."),
       );
     }
-    const storageResult = results[0]!;
     if (storageResult.status === "rejected" || storageResult.value === null) {
       throw new CapturePersistenceError(
         "storage_failure",
@@ -828,6 +875,14 @@ async function streamSnapshotToR2(
   let multipart: R2MultipartUpload;
   try {
     multipart = await bucket.createMultipartUpload(objectKey, metadata);
+    try {
+      await registerWriter();
+      await retainMultipart(multipart.uploadId);
+    } catch (error) {
+      await multipart.abort();
+      await acknowledgeSettledWriter();
+      throw error;
+    }
   } catch (error) {
     throw new CapturePersistenceError(
       "storage_failure",
@@ -897,7 +952,10 @@ async function streamSnapshotToR2(
     }
     return { byteLength, digest: hash.digest("hex") };
   } catch (error) {
-    await multipart.abort().catch(() => undefined);
+    await multipart
+      .abort()
+      .then(acknowledgeSettledWriter)
+      .catch(() => undefined);
     throw error;
   }
 }
