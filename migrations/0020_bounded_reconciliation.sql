@@ -196,6 +196,7 @@ CREATE TRIGGER reconciliation_text_no_delete BEFORE DELETE ON reconciliation_tex
 BEGIN SELECT RAISE(ABORT, 'reconciliation_text_audit_retained'); END;
 CREATE TRIGGER game_candidate_identity_immutable BEFORE UPDATE ON game_candidates
 WHEN NEW.id <> OLD.id OR NEW.preparation_id <> OLD.preparation_id OR NEW.supported_game <> OLD.supported_game
+  OR NEW.ingestion_run_id <> OLD.ingestion_run_id
   OR NEW.expected_game_revision_id <> OLD.expected_game_revision_id OR NEW.created_at <> OLD.created_at OR NEW.deadline <> OLD.deadline
   OR (OLD.manifest_digest IS NOT NULL AND (NEW.manifest_digest IS NOT OLD.manifest_digest OR NEW.partition_count <> OLD.partition_count
     OR NEW.preparation_manifest_digest IS NOT OLD.preparation_manifest_digest))
