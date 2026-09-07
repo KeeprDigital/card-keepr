@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";
-import { parseEnv } from "node:util";
+import { parseEnv, inspect } from "node:util";
 import { after } from "node:test";
 import { createMigrationLedger, appliedMigrations, recordMigration } from "./query-helpers/migrations.mjs";
 import { unstable_getMiniflareWorkerOptions, unstable_splitSqlQuery } from "wrangler";
@@ -160,7 +160,7 @@ export async function startInprocessWorker({
       if (result.body) for await (const chunk of result.body) response.write(chunk);
       response.end();
     } catch (error) {
-      group.output += `${error.stack}\n`;
+      group.output += `[acceptance-http-bridge] ${request.method} ${request.url}\n${inspect(error, { depth: 4 })}\n`;
       response.writeHead(500).end(String(error));
     }
   });

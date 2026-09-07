@@ -64,12 +64,27 @@ async function proveNativeComposition(t, proof) {
     ),
   ]);
   const workers = [];
+  let proofCompleted = false;
+  const redact = (text) =>
+    [adminKey, apiKey, "local-export", "local-verify"].reduce(
+      (value, secret) => value.replaceAll(secret, "<REDACTED>"),
+      text,
+    );
   let releaseFirstExport, signalFirstExport, releaseFirstImport, signalFirstImport;
   t.after(async () => {
     releaseFirstExport?.();
     releaseFirstImport?.();
     for (const worker of workers) await stopWorker(worker);
-    await rm(directory, { recursive: true, force: true });
+    if (proofCompleted) await rm(directory, { recursive: true, force: true });
+    else {
+      await writeFile(
+        join(directory, "failure-runtime.log"),
+        redact(workers.map((worker) => worker.getOutput()).join("\n")),
+      );
+      await writeFile(adminEnv, "ADMINISTRATION_KEY=<REDACTED>\n");
+      await writeFile(apiEnv, "API_BEARER_KEY=<REDACTED>\n");
+      t.diagnostic(`Native failure state retained after runtime shutdown: ${directory}`);
+    }
   });
   const source = await startWorker({
     config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
@@ -135,7 +150,7 @@ async function proveNativeComposition(t, proof) {
   };
   const get = async (path) => {
     const response = await fetch(`${ingestion.url}${path}`, { headers: { authorization: `Bearer ${adminKey}` } });
-    assert.equal(response.status, 200, await response.clone().text());
+    assert.equal(response.status, 200, `${path}: ${await response.clone().text()}\n${redact(ingestion.getOutput())}`);
     return response.json();
   };
   const consumer = async (path) => {
@@ -681,6 +696,7 @@ async function proveNativeComposition(t, proof) {
     await prepare(fourth, "native-fresh-fourth-artifacts");
     const fourthApproval = await approve(fourth, "native-fresh-fourth-approval");
     const fourthPublication = await awaitPublication(fourthApproval.id, "published");
+    assert.equal(typeof fourthPublication.backup_attempt_id, "string", JSON.stringify(fourthPublication));
     const deadline = Date.now() + 30000;
     let fourthBackup;
     do {
@@ -698,6 +714,7 @@ async function proveNativeComposition(t, proof) {
       sourceFile: cloudflare.sourceFile,
       consumer,
     });
+    proofCompleted = true;
     return;
   }
   const correctedResponse = await consumer(`/v1/printings/${correctedPrintingId}`);
@@ -1087,6 +1104,7 @@ async function proveNativeComposition(t, proof) {
     (await restoredSibling.json()).data.map((card) => card.id),
     onePieceCards.map((card) => card.id),
   );
+  proofCompleted = true;
 }
 
 for (const proof of ["recovery", "fresh baseline"])
