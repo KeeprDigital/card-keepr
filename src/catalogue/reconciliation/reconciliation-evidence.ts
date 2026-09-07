@@ -193,9 +193,13 @@ async function collectRetainedReconciliationObservation(
         ]
       : [],
   );
-  const evidenceAfter = async function* (after?: { sequenceNumber: number; requestId: string; complete?: boolean }) {
+  const selectionsAfter = async function* (after?: { sequenceNumber: number; requestId: string; complete?: boolean }) {
     for await (const selection of retainedEvidenceSelection<EvidenceSelection>(database, runId, after))
-      if (selection.row !== null) yield { request: selection.request, row: selection.row };
+      yield { request: selection.request, row: selection.row };
+  };
+  const evidenceAfter = async function* (after?: { sequenceNumber: number; requestId: string; complete?: boolean }) {
+    for await (const selection of selectionsAfter(after))
+      if (selection.row !== null) yield { ...selection, row: selection.row };
   };
   const selectedEvidence = { [Symbol.asyncIterator]: () => evidenceAfter() };
   const orderedRows = {
@@ -216,7 +220,7 @@ async function collectRetainedReconciliationObservation(
       evidenceObjects,
       runId,
       inputDigest,
-      evidenceAfter,
+      selectionsAfter,
       validateObservationDocument,
       yieldAtCheckpoint,
     );
@@ -224,7 +228,7 @@ async function collectRetainedReconciliationObservation(
       database,
       runId,
       inputDigest,
-      evidenceAfter,
+      selectionsAfter,
       loadDocument,
       selectedRequestById,
       yieldAtCheckpoint,
@@ -241,7 +245,7 @@ async function collectRetainedReconciliationObservation(
     inputDigest: string;
     sequenceNumber: number;
     requestId: string;
-    observationSetId: string;
+    observationSetId: string | null;
     nextObservationOrdinal: number;
     complete: boolean;
     officialSurfaceSeen: boolean;
@@ -249,7 +253,30 @@ async function collectRetainedReconciliationObservation(
   if (normalized && normalized.value.inputDigest !== inputDigest)
     throw new Error("Normalization checkpoint provenance changed.");
   let checkpointOrdinal = (normalized?.ordinal ?? -1) + 1;
-  for await (const { request, row } of evidenceAfter(normalized?.value)) {
+  let gap: { sequenceNumber: number; requestId: string } | null = null;
+  let gapCount = 0;
+  const saveGap = async () => {
+    if (gap === null) return;
+    await retainReconciliationCheckpoint(database, runId, "normalization", checkpointOrdinal++, {
+      inputDigest,
+      ...gap,
+      observationSetId: null,
+      nextObservationOrdinal: 0,
+      complete: true,
+      officialSurfaceSeen: false,
+    });
+    if (yieldAtCheckpoint)
+      throw new ReconciliationContinuation({ phase: "normalization", ordinal: checkpointOrdinal - 1 });
+    gap = null;
+    gapCount = 0;
+  };
+  for await (const { request, row } of selectionsAfter(normalized?.value)) {
+    if (row === null) {
+      gap = { sequenceNumber: request.sequence_number, requestId: request.request_id };
+      if (++gapCount === 16) await saveGap();
+      continue;
+    }
+    await saveGap();
     const continuingDocument = normalized?.value.requestId === request.request_id && !normalized.value.complete;
     let officialSurfaceSeen = continuingDocument ? normalized!.value.officialSurfaceSeen : false;
     const sourceSurface = await sourceSurfaceForRequest(request, selectedRequestById, row);
@@ -357,6 +384,7 @@ async function collectRetainedReconciliationObservation(
     if (yieldAtCheckpoint)
       throw new ReconciliationContinuation({ phase: "normalization", ordinal: checkpointOrdinal - 1 });
   }
+  await saveGap();
   const partitions = metadataSequence(async ({ request, row }) =>
     row === null
       ? []
