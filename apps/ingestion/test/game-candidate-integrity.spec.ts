@@ -29,8 +29,9 @@ test("a sealed candidate retains its original collection provenance when another
   expect(published.response.status).toBe(200);
   const second = await collect("/reconciliation/base", "immutable-candidate-second");
   expect(second.id).not.toBe(first.id);
+  const beforeMutation = await get(`/v1/game-candidates/${candidateId}`);
   await expect(replaceGameCandidateProvenance(testEnv.CATALOGUE_DB).bind(second.id, candidateId).run()).rejects.toThrow(
     "game_candidate_identity_immutable",
   );
-  expect((await get(`/v1/game-candidates/${candidateId}`)).document).toEqual(original.document);
+  expect((await get(`/v1/game-candidates/${candidateId}`)).document).toEqual(beforeMutation.document);
 });
