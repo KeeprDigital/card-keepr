@@ -89,8 +89,13 @@ export function correctionPinStatementsForPreparation(database: CatalogueStore, 
   return [
     repositoryStatements(database)
       .prepare(`INSERT OR IGNORE INTO reconciliation_correction_pins
-    (preparation_id, games_json, decision_cutoff) SELECT ?, ?, COALESCE(MAX(sequence), 0) FROM identity_correction_decisions`)
-      .bind(runId, canonicalJson([...new Set(games)].sort())),
+    (preparation_id, games_json, decision_cutoff)
+    SELECT operation.id, COALESCE(legacy.games_json, ?),
+      COALESCE(legacy.decision_cutoff, (SELECT COALESCE(MAX(sequence), 0) FROM identity_correction_decisions))
+    FROM reconciliation_operations AS operation LEFT JOIN identity_correction_run_pins AS legacy
+      ON operation.supported_game IS NULL AND legacy.ingestion_run_id = operation.ingestion_run_id
+    WHERE operation.id = ?`)
+      .bind(canonicalJson([...new Set(games)].sort()), runId),
   ];
 }
 export function correctionPinStatement(database: CatalogueStore, runId: string) {

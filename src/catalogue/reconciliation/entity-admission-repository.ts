@@ -128,9 +128,16 @@ export function admissionPinStatement(database: CatalogueStore, run: string) {
 export function pinAdmissionsStatement(database: CatalogueStore, run: string, games: string, policy: string) {
   return atomicRepositoryStatement(database, {
     statement: repositoryStatements(database)
-      .prepare(`INSERT INTO reconciliation_admission_pins (preparation_id, games_json, policy_json, decision_cutoff)
-        VALUES (?, ?, ?, (SELECT COALESCE(MAX(sequence), 0) FROM entity_admission_events))`)
-      .bind(run, games, policy),
+      .prepare(`INSERT INTO reconciliation_admission_pins
+        (preparation_id, games_json, policy_json, decision_cutoff, legacy_selection_run_id)
+        SELECT operation.id, COALESCE(legacy.games_json, ?), COALESCE(legacy.policy_json, ?),
+          CASE WHEN legacy.ingestion_run_id IS NULL
+            THEN (SELECT COALESCE(MAX(sequence), 0) FROM entity_admission_events) ELSE NULL END,
+          legacy.ingestion_run_id
+        FROM reconciliation_operations AS operation LEFT JOIN entity_admission_run_pins AS legacy
+          ON operation.supported_game IS NULL AND legacy.ingestion_run_id = operation.ingestion_run_id
+        WHERE operation.id = ?`)
+      .bind(games, policy, run),
     before: [identityRunGuard(database, run)],
   });
 }
@@ -161,14 +168,14 @@ export function retainAdmissionSelectionStatement(
 }
 export function admissionSelectionReceiptStatement(database: CatalogueStore, run: string, proposals: string[]) {
   return repositoryStatements(database)
-    .prepare(`SELECT proposal_id, generation FROM reconciliation_admission_decisions
+    .prepare(`SELECT proposal_id, generation FROM reconciliation_selected_admissions
       WHERE preparation_id = ? AND proposal_id IN (SELECT value FROM json_each(?)) ORDER BY proposal_id`)
     .bind(run, canonicalJson(proposals));
 }
 export function pinnedAdmissionsStatement(database: CatalogueStore, run: string, after: string) {
   return repositoryStatements(database)
     .prepare(`SELECT p.id, p.source_lineage, d.decision_json, d.action, pin.generation
-    FROM reconciliation_admission_decisions pin JOIN entity_proposals p ON p.id = pin.proposal_id
+    FROM reconciliation_selected_admissions pin JOIN entity_proposals p ON p.id = pin.proposal_id
     LEFT JOIN entity_admission_decisions d ON d.proposal_id = p.id AND d.generation = pin.generation
     WHERE pin.preparation_id = ? AND p.id > ? ORDER BY p.id LIMIT 1`)
     .bind(run, after);
@@ -213,7 +220,7 @@ export function admissionReplayStatement(database: CatalogueStore, key: string) 
 }
 export function pinnedAdmissionStatement(database: CatalogueStore, run: string, id: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT pin.generation, d.* FROM reconciliation_admission_decisions pin
+    .prepare(`SELECT pin.generation, d.* FROM reconciliation_selected_admissions pin
     LEFT JOIN entity_admission_decisions d ON d.proposal_id = pin.proposal_id AND d.generation = pin.generation
     WHERE pin.preparation_id = ? AND pin.proposal_id = ?`)
     .bind(run, id);
@@ -254,7 +261,7 @@ export function latestAcceptedAdmissionStatement(database: CatalogueStore, id: s
 
 export function admissionPinMetadataPageStatement(database: CatalogueStore, run: string, after: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT proposal_id, generation FROM reconciliation_admission_decisions
+    .prepare(`SELECT proposal_id, generation FROM reconciliation_selected_admissions
     WHERE preparation_id = ? AND proposal_id > ? ORDER BY proposal_id LIMIT 100`)
     .bind(run, after);
 }

@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { retainLegacyCorrectionPin } from "./query-helpers/legacy-decision-pins";
 import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 import {
   installReconciliationSuite,
@@ -133,6 +134,53 @@ async function admitSyntheticPrinting(reference: string) {
   expect(admitted.response.status, JSON.stringify(admitted.document)).toBe(200);
   return (admitted.document.history as { decision: { card: { id: string }; printing: { id: string } } }[])[0]!.decision;
 }
+
+test("an empty legacy correction snapshot excludes decisions recorded before its upgraded resume", async () => {
+  const original = await admitSyntheticPrinting("legacy-original");
+  const left = await admitSyntheticPrinting("legacy-left");
+  const right = await admitSyntheticPrinting("legacy-right");
+  const seed = await approve(
+    (await reconcile((await collect("/reconciliation/card-without-printing", "legacy-correction-seed")).id)).document,
+  );
+  expect(seed.response.status).toBe(200);
+  const proposal = {
+    game: "one-piece",
+    entity_kind: "printing",
+    action: "split",
+    source_ids: [original.printing.id],
+    replacement_ids: [left.printing.id, right.printing.id],
+    printing_assignments: {},
+    expected_current_revision_id: String(seed.document.resulting_revision_id),
+    rationale: "Synthetic decision after the retained empty snapshot",
+    evidence: { attestation: "Synthetic inspection of distinct issued variants" },
+  };
+  const reviewed = await post("/v1/identity-corrections/validate", proposal);
+  expect(reviewed.response.status).toBe(200);
+  const decided = await post("/v1/identity-corrections", {
+    ...proposal,
+    review_digest: reviewed.document.review_digest,
+    idempotency_key: "legacy-later-split",
+  });
+  expect(decided.response.status).toBe(201);
+  const run = await collect("/reconciliation/card-without-printing", "legacy-correction-resume");
+  // Simulate the retained schema-19 snapshot, whose zero cutoff is an exact empty set.
+  await retainLegacyCorrectionPin(testEnv.CATALOGUE_DB).bind(run.id).run();
+  const result = await reconcile(run.id);
+  expect(result.response.status, JSON.stringify(result.document)).toBe(200);
+  const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+  const candidate = (status.document.candidates as { id: string }[])[0]!;
+  const page = await get(`/v1/game-candidates/${candidate.id}/partitions`);
+  expect(page.response.status).toBe(200);
+  const partitions = page.document.partitions as { kind: string; ordinal: number }[];
+  expect(partitions.filter(({ kind }) => kind === "identity_corrections")).toEqual([]);
+  const printings: unknown[] = [];
+  for (const partition of partitions.filter(({ kind }) => kind === "printings")) {
+    const detail = await get(`/v1/game-candidates/${candidate.id}/partitions/${partition.ordinal}`);
+    expect(detail.response.status).toBe(200);
+    printings.push(...(detail.document.records as unknown[]));
+  }
+  expect(printings).toEqual(expect.arrayContaining([expect.objectContaining({ id: original.printing.id })]));
+});
 
 test("Printing split publishes all replacements and never chooses a consumer-owned variant", async () => {
   const original = await admitSyntheticPrinting("synthetic-conflated");

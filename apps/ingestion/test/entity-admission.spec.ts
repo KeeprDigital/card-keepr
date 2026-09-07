@@ -1,5 +1,6 @@
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { expect, test } from "vitest";
+import { retainLegacyAdmissionPin, retainLegacyAdmissionSelection } from "./query-helpers/legacy-decision-pins";
 import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 import {
   installReconciliationSuite,
@@ -74,6 +75,44 @@ const syntheticCard = {
     },
   },
 };
+
+test.each([false, true])(
+  "a legacy admission snapshot retains its selection after upgrade (selected: %s)",
+  async (selected) => {
+    const created = await post("/v1/entity-proposals", {
+      game: "one-piece",
+      source_lineage: "owner",
+      reference: "legacy-pinned-owner-card",
+      content: { card: syntheticCard },
+      evidence: { attestation: "Synthetic historical owner intake." },
+      idempotency_key: "legacy-pinned-proposal",
+    });
+    expect(created.response.status).toBe(201);
+    const admitted = await post(`/v1/entity-proposals/${created.document.id}/decisions`, {
+      action: "admit",
+      expected_generation: "0",
+      rationale: "Decision made after the historical snapshot",
+      idempotency_key: "legacy-later-admit",
+    });
+    expect(admitted.response.status).toBe(200);
+    const run = await collect("/reconciliation/card-without-printing", "legacy-admission-resume");
+    // Retain the schema-18 snapshot: either empty or this proposal before admission.
+    const policy = await get("/v1/source-authorities");
+    expect(policy.response.status).toBe(200);
+    await testEnv.CATALOGUE_DB.batch([
+      retainLegacyAdmissionPin(testEnv.CATALOGUE_DB).bind(run.id, JSON.stringify(policy.document)),
+      ...(selected ? [retainLegacyAdmissionSelection(testEnv.CATALOGUE_DB).bind(run.id, created.document.id)] : []),
+    ]);
+    const result = await reconcile(run.id);
+    expect(result.response.status, JSON.stringify(result.document)).toBe(200);
+    const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+    expect(status.document.admission_decision_count).toBe(selected ? 1 : 0);
+    const published = await approve(result.document);
+    expect(published.response.status).toBe(200);
+    const cards = await exportComponentRecords(String(published.document.resulting_revision_id), "cards");
+    expect(cards).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Synthetic owner card" })]));
+  },
+);
 
 test("attested admission preserves unknown number and cannot waive required game structure", async () => {
   const created = await post("/v1/entity-proposals", {
@@ -315,7 +354,9 @@ test.each([
     const checkpoint = (status.checkpoints as { phase: string; ordinal: number; cursor: unknown }[]).find(
       ({ phase }) => phase === "entity_admissions",
     );
-    expect(checkpoint).toMatchObject({ cursor: { complete: true, processedDecisions: count, cards: count, pendingWarning: null } });
+    expect(checkpoint).toMatchObject({
+      cursor: { complete: true, processedDecisions: count, cards: count, pendingWarning: null },
+    });
     expect(checkpoint!.ordinal).toBeGreaterThanOrEqual(Math.max(Math.ceil(count / 4), Math.ceil(warningCount / 4)) - 1);
     if (warningCount) {
       const warnings = partitions

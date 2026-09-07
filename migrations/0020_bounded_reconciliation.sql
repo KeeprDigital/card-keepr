@@ -73,7 +73,9 @@ CREATE TABLE reconciliation_admission_pins (
   preparation_id TEXT PRIMARY KEY REFERENCES reconciliation_operations(id),
   games_json TEXT NOT NULL CHECK (json_valid(games_json)),
   policy_json TEXT NOT NULL CHECK (json_valid(policy_json)),
-  decision_cutoff INTEGER NOT NULL CHECK (decision_cutoff >= 0)
+  decision_cutoff INTEGER CHECK (decision_cutoff >= 0),
+  legacy_selection_run_id TEXT REFERENCES entity_admission_run_pins(ingestion_run_id),
+  CHECK ((decision_cutoff IS NULL) = (legacy_selection_run_id IS NOT NULL))
 );
 CREATE TABLE reconciliation_admission_decisions (
   preparation_id TEXT NOT NULL REFERENCES reconciliation_admission_pins(preparation_id),
@@ -81,11 +83,28 @@ CREATE TABLE reconciliation_admission_decisions (
   generation INTEGER NOT NULL CHECK (generation >= 0),
   PRIMARY KEY (preparation_id, proposal_id)
 );
+CREATE INDEX reconciliation_admission_legacy_selection ON reconciliation_admission_pins (legacy_selection_run_id)
+  WHERE legacy_selection_run_id IS NOT NULL;
 CREATE TABLE reconciliation_correction_pins (
   preparation_id TEXT PRIMARY KEY REFERENCES reconciliation_operations(id),
   games_json TEXT NOT NULL CHECK (json_valid(games_json)),
   decision_cutoff INTEGER NOT NULL CHECK (decision_cutoff >= 0)
 );
+-- Reuse the immutable historical selection without copying an unbounded set
+-- into the operation-creation transaction.
+CREATE VIEW reconciliation_selected_admissions AS
+SELECT preparation_id, proposal_id, generation FROM reconciliation_admission_decisions
+UNION ALL
+SELECT pin.preparation_id, decision.proposal_id, decision.generation
+FROM reconciliation_admission_pins AS pin
+JOIN entity_admission_pinned_decisions AS decision ON decision.ingestion_run_id = pin.legacy_selection_run_id;
+CREATE TRIGGER reconciliation_legacy_selection_frozen BEFORE INSERT ON entity_admission_pinned_decisions
+WHEN EXISTS (SELECT 1 FROM reconciliation_admission_pins WHERE legacy_selection_run_id = NEW.ingestion_run_id)
+BEGIN SELECT RAISE(ABORT, 'reconciliation_decision_pin_immutable'); END;
+CREATE TRIGGER reconciliation_legacy_selection_not_extended BEFORE INSERT ON reconciliation_admission_decisions
+WHEN EXISTS (SELECT 1 FROM reconciliation_admission_pins
+  WHERE preparation_id = NEW.preparation_id AND legacy_selection_run_id IS NOT NULL)
+BEGIN SELECT RAISE(ABORT, 'reconciliation_decision_pin_immutable'); END;
 CREATE TRIGGER reconciliation_admission_pins_no_update BEFORE UPDATE ON reconciliation_admission_pins
 BEGIN SELECT RAISE(ABORT, 'reconciliation_decision_pin_immutable'); END;
 CREATE TRIGGER reconciliation_admission_pins_no_delete BEFORE DELETE ON reconciliation_admission_pins
