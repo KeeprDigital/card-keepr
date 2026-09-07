@@ -43,6 +43,9 @@ test("a collection parent dispatches independent game preparations and replays t
     ],
   });
   expect(new Set(output.game_preparations.map(({ id }) => id)).size).toBe(2);
+  const evidenceResponse = await administrationRequest(`/v1/ingestion-runs/${collection.id}/evidence`, "GET");
+  const evidence = await evidenceResponse.json<{ collection_completed_at: string }>();
+  const originalDeadlines = new Map<string, { created_at: unknown; deadline: unknown }>();
   for (const candidate of output.game_preparations) {
     let document: Record<string, unknown> = {};
     const deadline = Date.now() + 15000;
@@ -60,10 +63,17 @@ test("a collection parent dispatches independent game preparations and replays t
       state: "sealed",
     });
     expect(candidate.id).not.toBe(collection.id);
+    expect(Date.parse(String(document.created_at))).toBeGreaterThan(Date.parse(evidence.collection_completed_at));
+    expect(Date.parse(String(document.deadline)) - Date.parse(String(document.created_at))).toBe(604800000);
+    originalDeadlines.set(candidate.id, { created_at: document.created_at, deadline: document.deadline });
   }
   await parent.restart();
   await waitForWorkflowStatus(accepted.workflow.id, () => parent.status(), "complete", 20000);
   expect((await parent.status()).output).toEqual(output);
+  for (const [id, original] of originalDeadlines) {
+    const inspected = await administrationRequest(`/v1/game-candidates/${id}`, "GET");
+    expect(await inspected.json()).toMatchObject(original);
+  }
 }, 45000);
 
 test("an occupied game slot does not prevent the collection parent from dispatching another game", async () => {

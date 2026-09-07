@@ -292,7 +292,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
                     this.env.RECONCILIATION_WORKFLOW,
                     runId,
                     game,
-                    run.collection_completed_at ?? run.started_at,
+                    new Date().toISOString(),
                   ),
               );
               preparations.push(prepared);
