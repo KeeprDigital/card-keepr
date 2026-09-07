@@ -9,8 +9,7 @@ export function correctionPlan(environment) {
   const text = environment.HANDOFF_CORRECTION_JSON;
   const correction = JSON.parse(text ?? "null");
   if (
-    !correction ||
-    correction.contract !== "card-keepr-fresh-baseline-correction@1" ||
+    correction?.contract !== "card-keepr-fresh-baseline-correction@1" ||
     correction.release_id !== plan.release_id ||
     correction.handoff_dispatch_digest !== environment.DISPATCH_DIGEST ||
     hash(text) !== environment.HANDOFF_CORRECTION_DIGEST ||
