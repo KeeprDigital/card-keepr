@@ -158,7 +158,7 @@ export async function assessSourceAdmission(
     canonicalJson(decision!.card.official_identity) !==
       canonicalJson(observation.observedCardAndPrinting.card.official_identity);
   const permitted =
-    admitted ||
+    (admitted && (!ownerReviewRequired || (latest?.actor === "owner" && decision?.printing != null))) ||
     (!admitted &&
       !ownerReviewRequired &&
       !rejected &&
