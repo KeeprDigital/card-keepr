@@ -157,7 +157,9 @@ function observation(card: Record<string, unknown>, count: number, metadata: Rec
     },
     card: {
       game: "riftbound",
-      official_identity: code === null ? { kind: "unknown", value: null } : { kind: "card_number", value: code },
+      // Riot Core Rules 2026-07-16 §132 defines Card identity by full name.
+      // Public codes distinguish source Printing records, including alternate art.
+      official_identity: { kind: "publisher_name", value: text(card.name) },
       name: text(card.name),
       effective_rules_text: [ability, effect].filter((s) => s !== null).join("\n") || null,
       game_data: { profile: "riftbound@1", attributes },
@@ -180,7 +182,11 @@ function observation(card: Record<string, unknown>, count: number, metadata: Rec
     appearance_evidence: { images: [{ role: "front", source_url: imageUrl.href, artwork_fingerprint: fingerprint }] },
     memberships: { products: [], distribution_contexts: [], source_buckets: [text(set.id)] },
     product_release_catalogue: { products: [], distribution_contexts: [], relationships: [] },
-    source_sidecar: { publisher_record_json: JSON.stringify(card), pagination_metadata: metadata, unmapped_optional_fields: [] },
+    source_sidecar: {
+      publisher_record_json: JSON.stringify(card),
+      pagination_metadata: metadata,
+      unmapped_optional_fields: [],
+    },
   };
 }
 function record(value: unknown): Record<string, unknown> {

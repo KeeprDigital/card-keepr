@@ -7,7 +7,7 @@ import { riftboundSourceAdapterRegistration } from "../../src/catalogue/adapters
 const fixture = new URL("../../acceptance/fixtures/real-sources/2026-09-08-riftbound/raw/", import.meta.url);
 
 test("Riot English pagination retains every returned record and literal token and treatment identifiers", async () => {
-  const observations = [];
+  const observations: ReturnType<typeof riftboundSourceAdapterRegistration.parseBytes> = [];
   for (let offset = 0; offset < 1200; offset += 200) {
     const bytes = readFileSync(new URL(`cards-${offset}.json`, fixture));
     const url = `https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=${offset}&limit=200`;
@@ -20,7 +20,11 @@ test("Riot English pagination retains every returned record and literal token an
   expect(cards).toHaveLength(1189);
   const byLocator = new Map(cards.map((o) => [o.identity_evidence.locator, o]));
   expect(byLocator.size).toBe(1189);
-  expect(byLocator.get("unl-t04")?.card.official_identity).toEqual({ kind: "card_number", value: "UNL-T04" });
+  expect(byLocator.get("unl-t04")?.card.official_identity).toEqual({ kind: "publisher_name", value: "Buff" });
+  expect(byLocator.get("unl-t04")?.printing.game_data.attributes.public_code).toBe("UNL-T04");
+  expect(byLocator.get("ogn-066a-298")?.card.official_identity).toEqual(
+    byLocator.get("ogn-066-298")?.card.official_identity,
+  );
   expect(byLocator.get("unl-t04")?.card.game_data.attributes.card_types).toEqual([]);
   expect(byLocator.get("unl-t04")?.card.game_data.attributes.supertypes).toEqual(["token"]);
   expect(byLocator.get("sfd-227-star-221")?.printing.game_data.attributes.public_code).toBe("SFD-227*/221");

@@ -507,6 +507,11 @@ function parseOfficialIdentity(value: unknown, game: SupportedGame): CatalogueCa
   if (identity.kind === "functional_designation" && identity.value === "DON!!" && game === "one-piece") {
     return { kind: "functional_designation", value: "DON!!" };
   }
+  if (identity.kind === "publisher_name" && game === "riftbound") {
+    const value = requiredString(identity.value, "Riftbound full publisher name");
+    if (value !== value.trim()) throw new Error("Riftbound full publisher name must be exact.");
+    return { kind: "publisher_name", value };
+  }
   if (
     identity.kind !== "card_number" ||
     typeof identity.value !== "string" ||

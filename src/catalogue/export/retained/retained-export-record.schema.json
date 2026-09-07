@@ -147,6 +147,15 @@
           "additionalProperties": false,
           "required": ["kind", "value"],
           "properties": {
+            "kind": { "const": "publisher_name" },
+            "value": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
             "kind": {
               "const": "card_number"
             },
