@@ -69,3 +69,10 @@ export function retainedIdentityAndEvidence(database) {
     backups: database.prepare("SELECT * FROM catalogue_backup_attempts ORDER BY rowid").all(),
   };
 }
+
+export function assertBaselineIntegrity(database) {
+  const integrity = database.prepare("PRAGMA integrity_check").all();
+  const foreignKeys = database.prepare("PRAGMA foreign_key_check").all();
+  if (integrity.length !== 1 || integrity[0].integrity_check !== "ok" || foreignKeys.length !== 0)
+    throw new Error("native_fresh_baseline_integrity_failed");
+}

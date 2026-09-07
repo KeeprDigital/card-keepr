@@ -116,11 +116,21 @@ cancellation faults. Its provider/smoke responses are explicitly synthetic.
 
 `acceptance/fresh-baseline-owner.test.mjs` exercises the shipped CLI and
 production authenticated ingestion/consumer Workers, a native D1 claim, HTTP
-mutation denial, separately confirmed cancellation and persisted restart status.
+mutation denial, separately confirmed cancellation/correction and persisted restart status.
 GitHub dispatch and the observation used in its cancellation are local doubles.
 `acceptance/production-release-provider.test.mjs` independently checks the actual
 provider adapter against wrong active versions, traffic, bindings, routes and
 zone identity. None of these tests represents retained real publisher evidence.
+
+`acceptance/composed-recovery.test.mjs` adds a populated handoff branch. Shipped
+native publication Workflows generate identity decisions, verified SQL backups,
+and the retained current-plus-two revision window. The shipped owner CLI prepares
+the release and native source D1 executes its compiled claim and transitions;
+an independent SQLite destination installs a local baseline and checks integrity
+and foreign keys. Retained identity, composition, backup and evidence rows are
+compared before and after source retirement. Publisher input, provider activation
+and observation, and destination smoke are synthetic. This is local protocol
+proof, not retained real-source or live cutover evidence.
 
 The following remain live prerequisites: approved protocol staging/production
 release, actual exact-SHA executable release gates, final fold equivalence,
