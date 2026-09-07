@@ -45,3 +45,4 @@ export {
 export { backupRecoveryRoutes } from "./routes";
 
 export { publicationBackupDispatchStatements, outstandingBackupDispatches } from "./backup-dispatch";
+export { catalogueMutationFenced } from "./backup-recovery";

@@ -40,16 +40,31 @@ export function correctionEntityStatement(
   id: string,
   revision: string,
 ) {
+  // Native review evidence binds immutable text digests and lengths as well as
+  // identity facts, without materializing arbitrarily large display text.
   const table = kind === "card" ? "revision_cards" : "revision_printings";
   const key = kind === "card" ? "card_id" : "printing_id";
   return repositoryStatements(database)
-    .prepare(`SELECT document_json FROM ${table} WHERE catalogue_revision_id = ? AND ${key} = ?`)
-    .bind(revision, id);
+    .prepare(`SELECT json_set(json_extract(b.content,'$.records[0].value'),
+      '$._publication_text_parts',json_extract(b.content,'$.records[0].text_parts')) AS document_json
+      FROM catalogue_composition_games m JOIN publication_read_entities e ON e.candidate_id=m.candidate_id
+      JOIN publication_projection_batches b ON b.candidate_id=e.candidate_id AND b.ordinal=e.batch_ordinal
+      WHERE m.catalogue_revision_id=?1 AND e.kind=?3 AND e.entity_id=?2
+      UNION ALL SELECT document_json FROM ${table} WHERE catalogue_revision_id=?1 AND ${key}=?2
+      AND NOT EXISTS(SELECT 1 FROM catalogue_revisions WHERE id=?1 AND publication_operation_id IS NOT NULL)
+      LIMIT 1`)
+    .bind(revision, id, kind === "card" ? "cards" : "printings");
 }
 export function correctionCardPrintingsStatement(database: CatalogueStore, revision: string, ids: string[]) {
   return repositoryStatements(database)
     .prepare(
-      `SELECT printing_id, card_id FROM revision_printings WHERE catalogue_revision_id = ? AND card_id IN (SELECT value FROM json_each(?)) ORDER BY printing_id`,
+      `SELECT e.entity_id AS printing_id,e.card_id FROM catalogue_composition_games m
+      JOIN publication_read_entities e ON e.candidate_id=m.candidate_id
+      WHERE m.catalogue_revision_id=?1 AND e.kind='printings' AND e.card_id IN (SELECT value FROM json_each(?2))
+      UNION ALL SELECT printing_id,card_id FROM revision_printings WHERE catalogue_revision_id=?1
+      AND card_id IN (SELECT value FROM json_each(?2))
+      AND NOT EXISTS(SELECT 1 FROM catalogue_revisions WHERE id=?1 AND publication_operation_id IS NOT NULL)
+      ORDER BY printing_id LIMIT 1001`,
     )
     .bind(revision, canonicalJson(ids));
 }

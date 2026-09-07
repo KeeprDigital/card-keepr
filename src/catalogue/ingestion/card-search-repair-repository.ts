@@ -306,7 +306,7 @@ export function advanceCardSearchChunkOffsetStatement(
          WHERE catalogue_revision_id = ?
            AND state = 'pending'
            AND repair_card_id = ?
-           AND repair_chunk_offset = ?`)
+           AND repair_chunk_offset = ? RETURNING repair_chunk_offset`)
     .bind(input.nextOffset, input.revisionId, input.cardId, input.expectedOffset);
 }
 

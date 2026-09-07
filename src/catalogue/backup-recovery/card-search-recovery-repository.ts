@@ -77,3 +77,13 @@ export function completedCardSearchReconstructionQuery(ownerToken: string): { sq
     params: [ownerToken],
   };
 }
+
+export function claimRestoredSearchReconstructionQuery(ownerToken: string, revisionId: string) {
+  return {
+    sql: `UPDATE card_search_fts_state SET state='reconstructing',owner_token=?
+      WHERE singleton=1 AND CASE WHEN EXISTS(SELECT 1 FROM catalogue_state c JOIN operation_state o ON o.singleton=1
+        WHERE c.singleton=1 AND c.current_revision_id=? AND o.recovery_restore_guard='blocked')
+        THEN 1 ELSE json_extract('{}','restore_target_not_fenced') END`,
+    params: [ownerToken, revisionId],
+  };
+}

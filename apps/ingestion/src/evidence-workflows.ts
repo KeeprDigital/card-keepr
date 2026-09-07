@@ -1,3 +1,4 @@
+import { snapshotRecoveryWait } from "./snapshot-recovery-wait";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import {
@@ -73,7 +74,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
     step: WorkflowStep,
   ): Promise<unknown> {
     try {
-      const operational = observeOperationalWorkflow(step, event, this.env);
+      const operational = observeOperationalWorkflow(snapshotRecoveryWait(this.env, step), event, this.env);
       this.env = operational.env;
       step = observeWorkflowProgress(operational.step, (progress) =>
         recordIngestionWorkflowProgress(
@@ -460,7 +461,7 @@ async function evidenceHostWorkflowId(runId: string, shard: HostShard): Promise<
 export class EvidenceHostWorkflow extends WorkflowEntrypoint<Env, EvidenceHostWorkflowParams> {
   override async run(event: Readonly<WorkflowEvent<EvidenceHostWorkflowParams>>, step: WorkflowStep): Promise<unknown> {
     try {
-      const operational = observeOperationalWorkflow(step, event, this.env);
+      const operational = observeOperationalWorkflow(snapshotRecoveryWait(this.env, step), event, this.env);
       this.env = operational.env;
       step = observeWorkflowProgress(operational.step, (progress) =>
         recordIngestionWorkflowProgress(

@@ -24,7 +24,7 @@ import {
   sha256Text,
   utf8,
 } from "../shared";
-import { verifyComponentExportRecord, verifyExportManifest } from "./export-validation";
+import { verifyComponentExportRecord, verifyExportManifest } from "./retained-export-validation";
 
 const componentDefinitions = [
   ["supported-games", "SupportedGameRecord", "id:utf8", 5],

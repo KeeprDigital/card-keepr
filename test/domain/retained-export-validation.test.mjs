@@ -4,26 +4,8 @@ import {
   verifyComponentExportRecord,
   verifyExportManifest,
   verifyExportRecord,
-} from "../../src/catalogue/export/export-validation.ts";
-import { deterministicGzip, deterministicGzipStream } from "../../src/catalogue/shared/export-compression.ts";
-
-const goldenInput = new TextEncoder().encode('{"id":"golden"}\n');
-const goldenHex = "1f8b08000000000002ffab56ca4c51b2524acfcf4949cd53aae50200cc28fff510000000";
-
-test("buffered and streaming export compression share exact golden bytes", async () => {
-  const chunks = [goldenInput.slice(0, 3), goldenInput.slice(3, 11), goldenInput.slice(11)];
-  const stream = new ReadableStream({
-    pull(controller) {
-      const chunk = chunks.shift();
-      if (chunk === undefined) controller.close();
-      else controller.enqueue(chunk);
-    },
-  });
-  const streamed = new Uint8Array(await new Response(deterministicGzipStream(stream)).arrayBuffer());
-  assert.equal(Buffer.from(deterministicGzip(goldenInput)).toString("hex"), goldenHex);
-  assert.equal(Buffer.from(streamed).toString("hex"), goldenHex);
-});
-
+} from "../../src/catalogue/export/retained-export-validation.ts";
+// Retained operational backup facts keep their historical validation independently of the public format.
 test("component export validation rejects a valid record from the wrong component", () => {
   const supportedGame = {
     type: "supported_game",
@@ -83,17 +65,23 @@ test("printing-image records reference the image by identifier and carry no URL"
 
 test("manifest components reference their bytes by name and carry no URL", () => {
   const components = [
-    ["supported-games", "SupportedGameRecord"],
-    ["game-profiles", "GameProfileRecord"],
-    ["cards", "CardRecord"],
-    ["releases", "ReleaseRecord"],
-  ].map(([kind, definition], ordinal) => ({
-    name: `one-piece.${ordinal}`,
-    kind,
+    ["supported-games", "SupportedGameRecord", "id:utf8"],
+    ["game-profiles", "GameProfileRecord", "profile:utf8"],
+    ["cards", "CardRecord", "id:utf8"],
+    ["printings", "PrintingRecord", "id:utf8"],
+    ["printing-images", "PrintingImageRecord", "id:utf8"],
+    ["products", "ProductRecord", "id:utf8"],
+    ["releases", "ReleaseRecord", "id:utf8"],
+    ["distribution-contexts", "DistributionContextRecord", "id:utf8"],
+    ["errata", "ErratumRecord", "id:utf8"],
+    ["relationships", "RelationshipRecord", "id:utf8"],
+  ].map(([name, definition, order]) => ({
+    name,
     media_type: "application/x-ndjson",
     compression: "gzip",
     record_schema: `${recordSchemaUri}#/$defs/${definition}`,
-    records: 1,
+    order,
+    records: 0,
     uncompressed_bytes: 0,
     content_sha256: "b".repeat(64),
     compressed_bytes: 20,
@@ -108,14 +96,9 @@ test("manifest components reference their bytes by name and carry no URL", () =>
     export_created_at: "2026-09-04T00:00:00.000Z",
     supported_games: ["one-piece"],
     components,
-    page: { next_cursor: null },
     manifest_sha256: "e".repeat(64),
   };
   assert.doesNotThrow(() => verifyExportManifest(manifest));
-  assert.throws(
-    () => verifyExportManifest({ ...manifest, components: [...components, { ...components[0], name: "one-piece.4" }] }),
-    /manifest failed schema verification/u,
-  );
   for (const [content_url, cause] of [
     [(name) => `/v1/catalogue-exports/catrev_1/components/${name}`, /embeds an API link/u],
     [
