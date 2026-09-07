@@ -1,5 +1,6 @@
+import { rejectedAtomicSwitch, publicationStateSnapshot } from "./query-helpers/atomic-publication";
 import { expect, test } from "vitest";
-import { collect, get, post, installReconciliationSuite, requiredString } from "./reconciliation-helpers";
+import { collect, get, post, installReconciliationSuite, requiredString, testEnv } from "./reconciliation-helpers";
 
 installReconciliationSuite();
 
@@ -60,6 +61,28 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
     ).document;
   }
   expect(preparation.state).toBe("verified");
+  const composition = await post("/v1/publication-compositions", { candidate_ids: [id] });
+  expect(composition.response.status).toBe(200);
+  const switchInput = {
+    id: String(approved.document.id),
+    generation: 0,
+    predecessor: "catrev_spine_000",
+    composition: String(composition.document.root_digest),
+    at: new Date().toISOString(),
+    revision: "catrev_rejected_atomic",
+    backup: "backup_rejected_atomic",
+  };
+  const before = await publicationStateSnapshot(testEnv.CATALOGUE_DB);
+  for (const [change, code] of [
+    [{ generation: 9 }, "publication_writer_conflict"],
+    [{ clockOffsetMs: 8 * 86400000 }, "publication_deadline_expired"],
+    [{ predecessor: "catrev_missing" }, "publication_composition_conflict"],
+    [{ composition: "0".repeat(64) }, "publication_composition_unverified"],
+  ] as const) {
+    await expect(rejectedAtomicSwitch(testEnv.CATALOGUE_DB, { ...switchInput, ...change })).rejects.toThrow(code);
+    expect(await publicationStateSnapshot(testEnv.CATALOGUE_DB)).toEqual(before);
+    expect((await get(`/v1/publications/${approved.document.id}`)).document.state).toBe("approved");
+  }
   const switched = await post(`/v1/publications/${approved.document.id}/advance`, { generation: 0 });
   expect(switched.response.status, JSON.stringify(switched.document)).toBe(200);
   expect(switched.document).toMatchObject({
@@ -95,4 +118,46 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
     idempotency_key: "same-source-next-approval",
   });
   expect(secondApproval.response.status, JSON.stringify(secondApproval.document)).toBe(202);
+  const secondPath = `/v1/game-candidates/${second.id}/publication-preparation`;
+  let secondPreparation = (
+    await post(secondPath, {
+      manifest_digest: second.manifest_digest,
+      generation: 0,
+      sequence: 0,
+      idempotency_key: "second-artifacts",
+    })
+  ).document;
+  for (let unit = 0; secondPreparation.state === "preparing" && unit < 250; unit++)
+    secondPreparation = (
+      await post(secondPath, {
+        manifest_digest: second.manifest_digest,
+        generation: 0,
+        sequence: secondPreparation.sequence,
+        idempotency_key: `second-artifacts-${unit}`,
+      })
+    ).document;
+  expect(secondPreparation.state).toBe("verified");
+  const waiting = await post(`/v1/publications/${secondApproval.document.id}/advance`, { generation: 0 });
+  expect(waiting.document.state, JSON.stringify(waiting.document)).toBe("waiting_backup");
+  const resumed = await post(`/v1/publications/${secondApproval.document.id}/resume`, {
+    generation: 0,
+    idempotency_key: "resume-exact-approval",
+  });
+  expect(resumed.document).toMatchObject({
+    generation: 1,
+    deadline: second.deadline,
+    candidate_id: second.id,
+    manifest_digest: second.manifest_digest,
+  });
+  expect(
+    (await post(`/v1/publications/${secondApproval.document.id}/advance`, { generation: 0 })).response.status,
+  ).toBe(409);
+  const replay = await post(`/v1/publications/${secondApproval.document.id}/resume`, {
+    generation: 0,
+    idempotency_key: "resume-exact-approval",
+  });
+  expect(replay.document).toEqual(resumed.document);
+  expect((await get(`/v1/publications/${approved.document.id}`)).document.resulting_revision_id).toBe(
+    switched.document.resulting_revision_id,
+  );
 });

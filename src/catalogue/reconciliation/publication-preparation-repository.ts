@@ -207,3 +207,52 @@ export function publicationTerminalGuard(
     THEN 1 ELSE json_extract('{}','publication_sequence_conflict') END`)
     .bind(id, manifest, generation, sequence);
 }
+
+/** Extract typed public facts once; consumer queries never inspect document JSON. */
+export function retainPublicReadFacts(
+  db: CatalogueStore,
+  id: string,
+  ordinal: number,
+  preparation: string,
+  game: string,
+) {
+  const sql = repositoryStatements(db);
+  return [
+    sql
+      .prepare(`INSERT INTO publication_read_entities
+ SELECT ?1,b.kind,json_extract(b.content,'$.records[0].value.id'),b.ordinal,?3,?4,
+ coalesce(json_extract(b.content,'$.records[0].value.card_id'),json_extract(b.content,'$.records[0].value.printing_id')),json_extract(b.content,'$.records[0].value.official_identity.kind'),
+ json_extract(b.content,'$.records[0].value.official_identity.value'),json_extract(b.content,'$.records[0].value.name'),
+ json_extract(b.content,'$.records[0].value.official_code'),lower(json_extract(b.content,'$.records[0].value.rarity')),
+ json_extract(b.content,'$.records[0].value.kind'),json_extract(b.content,'$.records[0].value.from.id'),json_extract(b.content,'$.records[0].value.to.id'),json_extract(b.content,'$.records[0].value.product_id'),
+ CASE WHEN b.kind='printings' THEN coalesce(json_extract(b.content,'$.records[0].value.card_id'),'') ELSE ?4 END,
+ CASE WHEN b.kind='cards' THEN coalesce(json_extract(b.content,'$.records[0].value.official_identity.kind'),'unknown') WHEN b.kind='products' THEN CASE WHEN json_extract(b.content,'$.records[0].value.official_code') IS NULL THEN '1' ELSE '0' END ELSE '' END,
+ CASE WHEN b.kind='cards' THEN coalesce(json_extract(b.content,'$.records[0].value.official_identity.value'),'') WHEN b.kind='products' THEN coalesce(json_extract(b.content,'$.records[0].value.official_code'),'') ELSE '' END,
+ CASE WHEN b.kind='products' THEN CASE WHEN json_extract(b.content,'$.records[0].value.name') IS NULL THEN '1' ELSE '0' END ELSE '' END,
+ CASE WHEN b.kind='products' THEN coalesce(json_extract(b.content,'$.records[0].value.name'),'') ELSE '' END,
+ length(CAST(b.content AS BLOB))+coalesce((SELECT sum(json_extract(value,'$.byte_length')) FROM json_each(b.content,'$.records[0].text_parts')),0)
+ FROM publication_projection_batches b WHERE b.candidate_id=?1 AND b.ordinal=?2`)
+      .bind(id, ordinal, preparation, game),
+    sql
+      .prepare(`INSERT INTO publication_read_attributes
+ WITH RECURSIVE attributes(card_id,profile,attribute,value,kind) AS (
+ SELECT json_extract(b.content,'$.records[0].value.id'),json_extract(b.content,'$.records[0].value.game_data.profile'),field.key,field.value,field.type
+ FROM publication_projection_batches b,json_each(b.content,'$.records[0].value.game_data.attributes') field WHERE b.candidate_id=?1 AND b.ordinal=?2 AND b.kind='cards'
+ UNION ALL SELECT p.card_id,p.profile,p.attribute || CASE WHEN p.kind='array' THEN '' ELSE '.' || child.key END,child.value,child.type
+ FROM attributes p,json_each(CASE WHEN p.kind IN ('array','object') THEN p.value ELSE '[]' END) child)
+ SELECT DISTINCT ?1,card_id,profile,attribute,CASE kind WHEN 'text' THEN json_quote(value) WHEN 'null' THEN 'null' WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' ELSE CAST(value AS TEXT) END FROM attributes WHERE kind NOT IN ('array','object')`)
+      .bind(id, ordinal),
+    sql
+      .prepare(`INSERT INTO publication_read_release_regions SELECT DISTINCT ?1,json_extract(b.content,'$.records[0].value.id'),json_extract(release.value,'$.region')
+ FROM publication_projection_batches b,json_each(b.content,'$.records[0].value.releases') release
+ WHERE b.candidate_id=?1 AND b.ordinal=?2 AND b.kind='products' AND json_extract(release.value,'$.region') IS NOT NULL`)
+      .bind(id, ordinal),
+  ];
+}
+export function retainPublicReadText(db: CatalogueStore, id: string, sha: string, ordinal: number, content: string) {
+  return repositoryStatements(db)
+    .prepare(
+      `INSERT INTO publication_read_text_chunks VALUES (?,?,?,?) ON CONFLICT(candidate_id,sha256,ordinal) DO NOTHING`,
+    )
+    .bind(id, sha, ordinal, content);
+}

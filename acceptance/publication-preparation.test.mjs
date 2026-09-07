@@ -182,7 +182,20 @@ test("one owner CLI start verifies native artifacts without exposing any unfinis
       headers: { authorization: `Bearer ${apiKey}` },
     });
     assert.equal(image.status, 200);
-    assert.equal((await image.arrayBuffer()).byteLength, page.records[0].content_byte_length);
+    const bytes = Buffer.from(await image.arrayBuffer());
+    assert.equal(bytes.byteLength, page.records[0].content_byte_length);
+    const range = await fetch(image.url, { headers: { authorization: `Bearer ${apiKey}`, range: "bytes=0-7" } });
+    assert.equal(range.status, 206);
+    assert.deepEqual(Buffer.from(await range.arrayBuffer()), bytes.subarray(0, 8));
+    const head = await fetch(image.url, { method: "HEAD", headers: { authorization: `Bearer ${apiKey}` } });
+    assert.equal(head.status, 200);
+    assert.equal(head.headers.get("etag"), image.headers.get("etag"));
+    assert.equal((await head.arrayBuffer()).byteLength, 0);
+    const invalid = await fetch(image.url, {
+      headers: { authorization: `Bearer ${apiKey}`, range: `bytes=${bytes.length}-` },
+    });
+    assert.equal(invalid.status, 416);
+    assert.equal((await invalid.json()).code, "range_not_satisfiable");
   }
   assert.equal(
     (
@@ -204,13 +217,28 @@ test("one owner CLI start verifies native artifacts without exposing any unfinis
     approval.id,
   );
 
+  const listing = await consumer("/v1/catalogue-exports");
+  assert.equal(listing.status, 200, JSON.stringify(listing));
+  assert.ok(listing.body.data.some((value) => value.catalogue_revision_id === publication.resulting_revision_id));
+  if (visible.body.page.next_cursor) {
+    const next = await consumer(
+      `/v1/cards?game=digimon&limit=1&after=${encodeURIComponent(visible.body.page.next_cursor)}`,
+    );
+    assert.equal(next.status, 200, JSON.stringify(next));
+    assert.notEqual(next.body.data[0].id, visible.body.data[0].id);
+    const override = await consumer(
+      `/v1/cards?game=digimon&limit=1&after=${encodeURIComponent(visible.body.page.next_cursor)}&revision=catrev_spine_000`,
+    );
+    assert.equal(override.status, 400);
+  }
+  assert.equal((await consumer("/v1/cards?game=digimon&attribute.not_defined=1")).status, 400);
   const exportPath = `/v1/catalogue-exports/${publication.resulting_revision_id}`;
   let componentCursor = null;
   const exportedCards = [];
   do {
     const index = await consumer(exportPath + (componentCursor ? `?after=${componentCursor}` : ""));
     assert.equal(index.status, 200, JSON.stringify(index));
-    for (const component of index.body.data.manifest.components) {
+    for (const component of index.body.data.components) {
       const response = await fetch(component.links.content, { headers: { authorization: `Bearer ${apiKey}` } });
       assert.equal(response.status, 200);
       const bytes = Buffer.from(await response.arrayBuffer());
@@ -251,7 +279,7 @@ test("one owner CLI start verifies native artifacts without exposing any unfinis
       });
       assert.equal(conditional.status, 304);
     }
-    componentCursor = index.body.data.manifest.page.next_cursor;
+    componentCursor = index.body.data.page.next_cursor;
   } while (componentCursor);
   assert.deepEqual(
     exportedCards.find((card) => card.id === cards.records[0].id),

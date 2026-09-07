@@ -31,7 +31,7 @@ export async function compositionExportResponse(
   base: PublicBase,
   revisionId: string,
 ): Promise<Response | undefined> {
-  const revision = await nativeRevisionStatement(db, revisionId).first<{
+  const revision = await nativeRevisionStatement(db, revisionId, false).first<{
     id: string;
     published_at: string;
     content_digest: string;
@@ -75,14 +75,7 @@ export async function compositionExportResponse(
   };
   manifest.manifest_sha256 = await sha256Text(canonicalJson(manifest));
   const document = {
-    data: {
-      type: "catalogue_export",
-      catalogue_revision_id: revisionId,
-      export_schema_major: 1,
-      published_at: revision.published_at,
-      manifest_sha256: manifest.manifest_sha256,
-      manifest,
-    },
+    data: manifest,
     meta: { catalogue_revision_id: revisionId, published_at: revision.published_at },
     links: { self: publicUrl(base, url.pathname + url.search) },
   };
@@ -96,7 +89,7 @@ export async function compositionExportComponentResponse(
   revisionId: string,
   name: string,
 ): Promise<Response | null | undefined> {
-  const revision = await nativeRevisionStatement(db, revisionId).first();
+  const revision = await nativeRevisionStatement(db, revisionId, false).first();
   if (!revision) return undefined;
   const match = /^(one-piece|fusion-world|digimon|gundam)\.(\d+)$/.exec(name);
   if (!match) return null;
@@ -124,10 +117,13 @@ export async function compositionExportComponentResponse(
       length = Math.min(parsed[2] ? Number(parsed[2]) + 1 : artifact.byte_length, artifact.byte_length) - offset;
     }
     if (length <= 0 || offset < 0)
-      return new Response(null, {
-        status: 416,
-        headers: { ...headers, "content-range": `bytes */${artifact.byte_length}` },
-      });
+      throw new ReadProblem(
+        416,
+        "range_not_satisfiable",
+        "The requested Catalogue Export byte range is not satisfiable.",
+        null,
+        { headers: { ...headers, "content-range": `bytes */${artifact.byte_length}` } },
+      );
     headers["content-range"] = `bytes ${offset}-${offset + length - 1}/${artifact.byte_length}`;
   }
   headers["content-length"] = String(length);

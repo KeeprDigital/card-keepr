@@ -135,6 +135,7 @@ export async function advanceGamePublication(
   at = new Date().toISOString(),
 ) {
   const db = env.CATALOGUE_DB;
+  const clockOffsetMs = Date.parse(at) - Date.now();
   const operation = await publicationOperationStatement(db, id).first<PublicationOperation>();
   if (!operation)
     throw new AdministrationProblem(404, "publication_not_found", "The publication operation does not exist.");
@@ -176,7 +177,8 @@ export async function advanceGamePublication(
           generation,
           predecessor: head,
           composition: composition.root_digest,
-          at,
+          at: new Date(Date.now() + clockOffsetMs).toISOString(),
+          clockOffsetMs,
           revision: `catrev_${id.slice("publication_".length)}`,
           backup: `backup_${id.slice("publication_".length)}`,
         }),
@@ -185,6 +187,18 @@ export async function advanceGamePublication(
     } catch (error) {
       const current = await inspectPublication(db, id);
       if (current.state === "published") return current;
+      if (error instanceof Error && /publication_(deadline_expired|candidate_conflict)/.test(error.message)) {
+        await updatePublicationState(
+          db,
+          id,
+          generation,
+          "failed",
+          error.message.includes("deadline_expired")
+            ? "publication_deadline_expired"
+            : "publication_candidate_conflict",
+        ).run();
+        return inspectPublication(db, id);
+      }
       if (error instanceof Error && error.message.includes("publication_composition_conflict")) continue;
       if (error instanceof Error && error.message.includes("publication_backup_pending")) {
         await updatePublicationState(db, id, generation, "waiting_backup").run();

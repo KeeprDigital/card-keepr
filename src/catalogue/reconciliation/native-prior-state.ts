@@ -1,10 +1,10 @@
-import { type CatalogueStore, type CatalogueCandidate } from "../shared";
-import { predecessorGameCandidateStatement } from "./game-candidate-repository";
+import type { CatalogueCandidate, CatalogueStore, SupportedGame } from "../shared";
 import { verifiedCandidatePartition } from "./game-candidate-inspection";
-import { restorePartitionedRecord } from "./reconciliation-text";
+import { predecessorGameCandidateStatement } from "./game-candidate-repository";
+import type { PriorStateContinuation, PriorStatePositions, PriorStateSeed } from "./prior-state-types";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
-import type { candidateAtRevision, PriorStatePositions } from "./reconciliation-prior-state";
+import { restorePartitionedRecord } from "./reconciliation-text";
 
 type Cursor = {
   candidate: string;
@@ -18,9 +18,9 @@ type Cursor = {
 export async function nativeCandidateAtRevision(
   db: CatalogueStore,
   revision: string,
-  games: Parameters<typeof candidateAtRevision>[2],
-  seed: Parameters<typeof candidateAtRevision>[3],
-  continuation: Parameters<typeof candidateAtRevision>[4],
+  games: readonly SupportedGame[],
+  seed: PriorStateSeed,
+  continuation: PriorStateContinuation,
 ) {
   if (games.length !== 1) return undefined;
   const candidate = await predecessorGameCandidateStatement(db, revision, games[0]!).first<{
