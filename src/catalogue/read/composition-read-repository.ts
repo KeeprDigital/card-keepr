@@ -98,6 +98,7 @@ export function composedCollectionStatement(
       bindings.push(filters.release_region ?? "");
     } else {
       conditions.push(`EXISTS(SELECT 1 FROM publication_read_entities rel
+ JOIN publication_read_lifecycles membership ON membership.candidate_id=rel.candidate_id AND membership.kind=rel.kind AND membership.entity_id=rel.entity_id AND membership.withdrawn=0
  ${kind === "cards" ? `JOIN publication_read_entities printing ON printing.candidate_id=rel.candidate_id AND printing.kind='printings' AND printing.entity_id=rel.from_id` : ""}
  WHERE rel.candidate_id=e.candidate_id AND rel.kind='product_relationships' AND rel.relationship_kind='printing-product'
  AND ${kind === "cards" ? "printing.card_id=e.entity_id" : "rel.from_id=e.entity_id"}

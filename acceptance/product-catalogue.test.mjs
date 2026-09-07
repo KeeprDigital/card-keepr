@@ -207,13 +207,19 @@ test("native publication: the CLI publishes separated Product catalogue data con
   assert.equal(multiResumed.code, 0, multiResumed.stderr);
   await waitForRunState(multiRun.id, "sealed", cliEnvironment, ingestion, statePath);
   const multiInspectionResult = await inspectNativeCollection(multiRun.id, cliEnvironment);
-  assert.equal(
-    multiInspectionResult.code,
-    0,
-    `${multiInspectionResult.stdout}\n${multiInspectionResult.stderr}\n${ingestion.getOutput()}`,
-  );
   const multiInspection = multiInspectionResult;
-  assert.equal(multiInspection.expected_current_revision_id, revisionId);
+  assert.equal(multiInspection.ready, true);
+  assert.deepEqual(
+    Object.fromEntries(
+      multiInspection.candidates.map((candidate) => [candidate.supported_game, candidate.expected_game_revision_id]),
+    ),
+    {
+      digimon: revisionId,
+      "one-piece": "catrev_spine_000",
+      "fusion-world": "catrev_spine_000",
+      gundam: "catrev_spine_000",
+    },
+  );
   const multiApproved = await publishNativeCollection(
     multiInspection,
     "acceptance-product-multi-approve",
