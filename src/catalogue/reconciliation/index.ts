@@ -78,3 +78,12 @@ export {
   correctionDecisionPinMetadata,
 } from "./identity-correction-pins";
 export { restorePartitionedRecord } from "./reconciliation-text";
+
+export {
+  advancePublicationPreparation,
+  inspectPublicationPreparation,
+  reservePublicationWork,
+  pausePublicationWorkflow,
+  retainPublicationFence,
+} from "./publication-preparation";
+export { dispatchPublicationPreparation } from "./publication-preparation-dispatch";

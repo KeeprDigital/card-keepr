@@ -48,6 +48,29 @@ const commandRoutes = {
   },
   reconciliationStatus: { path: "/v1/ingestion-runs/{run-id}/reconciliation" },
   reconciliationText: { path: "/v1/ingestion-runs/{run-id}/reconciliation/text/{digest}/{ordinal}" },
+  publicationPreparation: { path: "/v1/game-candidates/{candidate-id}/publication-preparation" },
+  publicationArtifacts: {
+    path: "/v1/game-candidates/{candidate-id}/publication-preparation/artifacts?after={after}",
+    optional: ["after"],
+  },
+  publicationResume: {
+    path: "/v1/game-candidates/{candidate-id}/publication-preparation/resume",
+    fields: {
+      manifest_digest: "manifest-digest",
+      generation: "generation",
+      sequence: "sequence",
+      idempotency_key: "idempotency-key",
+    },
+  },
+  publicationPrepare: {
+    path: "/v1/game-candidates/{candidate-id}/publication-preparation/start",
+    fields: {
+      manifest_digest: "manifest-digest",
+      generation: "generation",
+      sequence: "sequence",
+      idempotency_key: "idempotency-key",
+    },
+  },
   gameCandidateEvidence: {
     path: "/v1/game-candidates/{candidate-id}/inspection/evidence/{kind}?after={after}&manifest={manifest}",
     optional: ["after", "manifest"],
@@ -318,6 +341,10 @@ const commands = {
   "run cleanup": (args, env, json) => routeCommand("cleanupRun", args, env, json),
   "reconciliation status": (args, env, json) => routeCommand("reconciliationStatus", args, env, json),
   "reconciliation text": (args, env, json) => routeCommand("reconciliationText", args, env, json),
+  "publication-preparation status": (args, env, json) => routeCommand("publicationPreparation", args, env, json),
+  "publication-preparation artifacts": (args, env, json) => routeCommand("publicationArtifacts", args, env, json),
+  "publication-preparation resume": (args, env, json) => routeCommand("publicationResume", args, env, json),
+  "publication-preparation start": (args, env, json) => routeCommand("publicationPrepare", args, env, json),
   "game-candidate show": (args, env, json) => routeCommand("gameCandidate", args, env, json),
   "game-candidate list": (args, env, json) => routeCommand("collectionGameCandidates", args, env, json),
   "game-candidate evidence": (args, env, json) => routeCommand("gameCandidateEvidence", args, env, json),

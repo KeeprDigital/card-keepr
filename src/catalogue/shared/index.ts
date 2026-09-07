@@ -158,3 +158,10 @@ export {
   type CatalogueDraftEntity,
   type CatalogueEntityCollection,
 } from "./catalogue-draft";
+
+export {
+  normalizeCardSearchText,
+  maximumNormalizedSearchQueryCodePoints,
+  maximumSearchChunkCodePoints,
+  searchChunkStride,
+} from "./card-search-contract";
