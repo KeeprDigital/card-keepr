@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
+import { isNativeCheckpointRequest } from "./native-checkpoint-hosts.mjs";
 
 export function riftboundReplayTransport(checkpoint, captures, served) {
   return async (request) => {
     const hostname = new URL(request.url).hostname;
-    if (["api.cloudflare.com", "native-export.invalid", "native-upload.invalid"].includes(hostname))
-      return checkpoint.outboundService(request);
+    if (isNativeCheckpointRequest(request)) return checkpoint.outboundService(request);
     const capture = captures.get(request.url);
     if (!capture) {
       assert.equal(hostname, "cmsassets.rgpub.io", `undeclared request ${request.url}`);

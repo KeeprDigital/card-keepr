@@ -4,6 +4,8 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import { isNativeCheckpointRequest } from "./helpers/native-checkpoint-hosts.mjs";
+import { nativeExportReader } from "./helpers/native-export-reader.mjs";
 import { build } from "esbuild";
 import { reconciliationSourceDocument } from "../test/support/fake-publisher/reconciliation-documents.ts";
 import {
@@ -17,13 +19,15 @@ import {
 import {
   nativeCheckpointTransport,
   publishNativeCollection,
-  nativeExportRecords,
+  paceNativeRequest,
 } from "./helpers/native-catalogue-runtime.mjs";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
 
 // Synthetic source facts, actual publication/backup Workflows and SQL imports.
 // This bounded composition regression is separate from real Riot evidence.
 test("five-game composition and current plus two survive an actual SQL import", async (t) => {
+  const exportReader = nativeExportReader(250);
+  const nativeExportRecords = exportReader.records;
   const directory = await mkdtemp(join(tmpdir(), "keepr-five-game-restore-"));
   const statePath = join(directory, "state");
   const migrationModule = join(directory, "fixture-migration.mjs");
@@ -53,12 +57,16 @@ test("five-game composition and current plus two survive an actual SQL import", 
     vars: { ...checkpoint.vars, ADMINISTRATION_KEY: adminKey, SOURCE_HOST_PACING_MODE: "immediate" },
     outboundService: (request) => {
       const url = new URL(request.url);
-      if (url.hostname === "api.cloudflare.com") return checkpoint.outboundService(request);
+      if (isNativeCheckpointRequest(request)) return checkpoint.outboundService(request);
       assert.equal(url.hostname, "official-source.invalid");
       return Response.json(reconciliationSourceDocument(url.pathname.split("/").at(-1), "", request.url));
     },
   });
   let api;
+  const consumerGet = async (url, options) => {
+    await paceNativeRequest({ KEEPR_INGESTION_URL: api.url, KEEPR_NATIVE_REQUEST_INTERVAL_MS: "250" });
+    return fetch(url, options);
+  };
   let journeyCompleted = false;
   t.after(async () => {
     if (api) await stopWorker(api);
@@ -109,7 +117,7 @@ test("five-game composition and current plus two survive an actual SQL import", 
     const result = [];
     let after = null;
     do {
-      const response = await fetch(
+      const response = await consumerGet(
         `${api.url}/v1/catalogue-exports/${revision}${after ? `?after=${encodeURIComponent(after)}` : ""}`,
         { headers: { authorization: `Bearer ${apiKey}` } },
       );
@@ -219,19 +227,21 @@ test("five-game composition and current plus two survive an actual SQL import", 
   const verifyRetainedReads = async () => {
     for (const revision of revisions.slice(-3))
       for (const card of cards) {
-        const response = await fetch(`${api.url}/v1/cards/${card.id}?revision=${revision}`, { headers });
+        const response = await consumerGet(`${api.url}/v1/cards/${card.id}?revision=${revision}`, { headers });
         assert.equal(response.status, 200, await response.clone().text());
         assert.equal((await response.json()).data.id, card.id);
       }
-    assert.notEqual(
-      (await fetch(`${api.url}/v1/cards/${cards[0].id}?revision=${initialFiveRevision}`, { headers })).status,
-      200,
-    );
+    const retired = await consumerGet(`${api.url}/v1/cards/${cards[0].id}?revision=${initialFiveRevision}`, {
+      headers,
+    });
+    assert.equal(retired.status, 503, await retired.clone().text());
+    assert.equal((await retired.json()).code, "catalogue_query_unavailable");
   };
   await verifyRetainedReads();
   await stopWorker(api);
   await stopWorker(worker);
   const restored = await verifiedBackupApiState(statePath, directory);
+  exportReader.clear();
   api = await startWorker({ config: "apps/api/wrangler.jsonc", statePath: restored, vars: { API_BEARER_KEY: apiKey } });
   await waitForHealth(`${api.url}/health`, apiKey, api);
   assert.deepEqual(await nativeExportRecords(api.url, apiKey, revisions.at(-1), "cards"), cards);
