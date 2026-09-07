@@ -52,8 +52,8 @@ export function reconciliationOperationStatement(database: CatalogueStore, runId
     (SELECT count(*) FROM reconciliation_source_documents WHERE preparation_id = reconciliation_operations.id) AS completed_documents,
     (SELECT count(*) FROM reconciliation_reducer_state WHERE preparation_id = reconciliation_operations.id) AS completed_reducer_records,
     (SELECT count(*) FROM reconciliation_normalized_observations WHERE preparation_id = reconciliation_operations.id) AS completed_observations,
-    EXISTS (SELECT 1 FROM entity_admission_run_pins WHERE ingestion_run_id = reconciliation_operations.id) AS admission_selection_pinned,
-    (SELECT count(*) FROM entity_admission_pinned_decisions WHERE ingestion_run_id = reconciliation_operations.id) AS admission_decision_count,
+    EXISTS (SELECT 1 FROM reconciliation_admission_pins WHERE preparation_id = reconciliation_operations.id) AS admission_selection_pinned,
+    (SELECT count(*) FROM reconciliation_admission_decisions WHERE preparation_id = reconciliation_operations.id) AS admission_decision_count,
     candidate_digest, manifest_digest, input_manifest_digest, failure_code, definition_pins_json, observation_cutoff, identity_decision_cutoff, authority_decision_cutoff
     FROM reconciliation_operations WHERE id = ?`)
     .bind(runId);

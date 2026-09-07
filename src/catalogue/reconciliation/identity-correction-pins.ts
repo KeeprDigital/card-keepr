@@ -5,18 +5,18 @@ import type { IdentityCorrectionProposal } from "./identity-corrections";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import {
   correctionPinStatement,
-  correctionPinStatementsForNewRun,
+  correctionPinStatementsForPreparation,
   pinnedCorrectionsStatement,
   type CorrectionRow,
 } from "./identity-correction-repository";
-export { correctionPinStatementsForNewRun } from "./identity-correction-repository";
+export { correctionPinStatementsForPreparation } from "./identity-correction-repository";
 
 export async function pinCorrectionDecisions(database: CatalogueStore, runId: string, games: readonly string[]) {
   const expected = canonicalJson([...new Set(games)].sort());
   let existing = await correctionPinStatement(database, runId).first<{ games_json: string; decision_cutoff: number }>();
   if (!existing) {
     try {
-      await database.batch(correctionPinStatementsForNewRun(database, runId, games));
+      await database.batch(correctionPinStatementsForPreparation(database, runId, games));
       existing = await correctionPinStatement(database, runId).first<{ games_json: string; decision_cutoff: number }>();
     } catch (error) {
       existing = await correctionPinStatement(database, runId).first<{ games_json: string; decision_cutoff: number }>();

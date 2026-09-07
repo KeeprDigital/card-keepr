@@ -1,4 +1,4 @@
-import { correctionPinStatementsForNewRun } from "./identity-correction-repository";
+import { correctionPinStatementsForPreparation } from "./identity-correction-repository";
 import { type CatalogueStore, repositoryStatements, atomicRepositoryStatement } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
@@ -28,7 +28,7 @@ export function createReconciliationWorkflowRequestStatement(
   }>,
 ): D1PreparedStatement {
   return atomicRepositoryStatement(database, {
-    after: correctionPinStatementsForNewRun(database, input.runId, input.games),
+    after: correctionPinStatementsForPreparation(database, input.runId, input.games),
     statement: repositoryStatements(database)
       .prepare(`INSERT OR IGNORE INTO reconciliation_workflow_requests (
          idempotency_key, ingestion_run_id,

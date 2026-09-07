@@ -85,24 +85,24 @@ export function insertCorrectionStatement(
 }
 // Compose these raw statements into the operation-creation batch. Cutoff zero
 // is an explicit empty set; replay never takes decisions recorded afterward.
-export function correctionPinStatementsForNewRun(database: CatalogueStore, runId: string, games: readonly string[]) {
+export function correctionPinStatementsForPreparation(database: CatalogueStore, runId: string, games: readonly string[]) {
   return [
     repositoryStatements(database)
-      .prepare(`INSERT OR IGNORE INTO identity_correction_run_pins
-    (ingestion_run_id, games_json, decision_cutoff) SELECT ?, ?, COALESCE(MAX(sequence), 0) FROM identity_correction_decisions`)
+      .prepare(`INSERT OR IGNORE INTO reconciliation_correction_pins
+    (preparation_id, games_json, decision_cutoff) SELECT ?, ?, COALESCE(MAX(sequence), 0) FROM identity_correction_decisions`)
       .bind(runId, canonicalJson([...new Set(games)].sort())),
   ];
 }
 export function correctionPinStatement(database: CatalogueStore, runId: string) {
   return repositoryStatements(database)
-    .prepare("SELECT games_json, decision_cutoff FROM identity_correction_run_pins WHERE ingestion_run_id = ?")
+    .prepare("SELECT games_json, decision_cutoff FROM reconciliation_correction_pins WHERE preparation_id = ?")
     .bind(runId);
 }
 export function pinnedCorrectionsStatement(database: CatalogueStore, runId: string, after: number) {
   return repositoryStatements(database)
-    .prepare(`SELECT d.* FROM identity_correction_decisions d JOIN identity_correction_run_pins p
+    .prepare(`SELECT d.* FROM identity_correction_decisions d JOIN reconciliation_correction_pins p
     ON d.sequence <= p.decision_cutoff AND d.game IN (SELECT value FROM json_each(p.games_json))
-    WHERE p.ingestion_run_id = ? AND d.sequence > ? ORDER BY d.sequence LIMIT 1`)
+    WHERE p.preparation_id = ? AND d.sequence > ? ORDER BY d.sequence LIMIT 1`)
     .bind(runId, after);
 }
 export function publishCorrectionStatements(

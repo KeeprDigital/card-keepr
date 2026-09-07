@@ -4,13 +4,13 @@ import {
   gameCandidatesForPreparationStatement,
   synchronizeGameCandidatePauseStatement,
 } from "./game-candidate-repository";
-import { correctionPinStatementsForNewRun } from "./identity-correction-pins";
+import { correctionPinStatementsForPreparation } from "./identity-correction-pins";
 import { failReconciliationWorkflow, retainedReconciliationResult } from "./reconciliation-candidate-store";
 import {
   reconciliationInputPartitionStatement,
   reconciliationInputPartitionsStatement,
 } from "./reconciliation-input-repository";
-import { entityAdmissionPinStatementsForNewRun } from "./entity-admission-pins";
+import { entityAdmissionPinStatementsForPreparation } from "./entity-admission-pins";
 import { reconciliationSelectedGamesStatement } from "./reconciliation-progress-repository";
 import {
   failedReconciliationWorkflowStatement,
@@ -227,7 +227,7 @@ export async function initializeReconciliationProgress(database: CatalogueStore,
     return;
   }
   const selected = await reconciliationSelectedGamesStatement(database, runId).first<{ games_json: string }>();
-  const admissionPins = await entityAdmissionPinStatementsForNewRun(
+  const admissionPins = await entityAdmissionPinStatementsForPreparation(
     database,
     runId,
     JSON.parse(selected?.games_json ?? "[]") as string[],
@@ -236,7 +236,7 @@ export async function initializeReconciliationProgress(database: CatalogueStore,
     await database.batch([
       createReconciliationOperationStatement(database, runId, at, definitions),
       ...admissionPins,
-      ...correctionPinStatementsForNewRun(database, runId, JSON.parse(selected?.games_json ?? "[]") as string[]),
+      ...correctionPinStatementsForPreparation(database, runId, JSON.parse(selected?.games_json ?? "[]") as string[]),
       createGameCandidateIdentitiesStatement(database, runId),
     ]);
   } catch (error) {

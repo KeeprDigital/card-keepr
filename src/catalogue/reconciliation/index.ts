@@ -68,7 +68,7 @@ export { pinEntityAdmissions } from "./entity-admission-pins";
 
 export {
   pinCorrectionDecisions,
-  correctionPinStatementsForNewRun,
+  correctionPinStatementsForPreparation,
   correctionDecisionPinMetadata,
 } from "./identity-correction-pins";
 export { restorePartitionedRecord } from "./reconciliation-text";

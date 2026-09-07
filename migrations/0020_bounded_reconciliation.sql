@@ -67,6 +67,37 @@ BEGIN SELECT RAISE(ABORT, 'reconciliation_verified_input_immutable'); END;
 CREATE TRIGGER reconciliation_operation_no_delete BEFORE DELETE ON reconciliation_operations
 BEGIN SELECT RAISE(ABORT, 'reconciliation_operation_audit_retained'); END;
 CREATE UNIQUE INDEX legacy_reconciliation_for_run ON reconciliation_operations (ingestion_run_id) WHERE supported_game IS NULL;
+-- Pre-schema-20 run pins remain retained audit evidence. New preparations own
+-- their decision snapshots independently, including preparations sharing a run.
+CREATE TABLE reconciliation_admission_pins (
+  preparation_id TEXT PRIMARY KEY REFERENCES reconciliation_operations(id),
+  games_json TEXT NOT NULL CHECK (json_valid(games_json)),
+  policy_json TEXT NOT NULL CHECK (json_valid(policy_json)),
+  decision_cutoff INTEGER NOT NULL CHECK (decision_cutoff >= 0)
+);
+CREATE TABLE reconciliation_admission_decisions (
+  preparation_id TEXT NOT NULL REFERENCES reconciliation_admission_pins(preparation_id),
+  proposal_id TEXT NOT NULL REFERENCES entity_proposals(id),
+  generation INTEGER NOT NULL CHECK (generation >= 0),
+  PRIMARY KEY (preparation_id, proposal_id)
+);
+CREATE TABLE reconciliation_correction_pins (
+  preparation_id TEXT PRIMARY KEY REFERENCES reconciliation_operations(id),
+  games_json TEXT NOT NULL CHECK (json_valid(games_json)),
+  decision_cutoff INTEGER NOT NULL CHECK (decision_cutoff >= 0)
+);
+CREATE TRIGGER reconciliation_admission_pins_no_update BEFORE UPDATE ON reconciliation_admission_pins
+BEGIN SELECT RAISE(ABORT, 'reconciliation_decision_pin_immutable'); END;
+CREATE TRIGGER reconciliation_admission_pins_no_delete BEFORE DELETE ON reconciliation_admission_pins
+BEGIN SELECT RAISE(ABORT, 'reconciliation_decision_pin_immutable'); END;
+CREATE TRIGGER reconciliation_admission_decisions_no_update BEFORE UPDATE ON reconciliation_admission_decisions
+BEGIN SELECT RAISE(ABORT, 'reconciliation_decision_pin_immutable'); END;
+CREATE TRIGGER reconciliation_admission_decisions_no_delete BEFORE DELETE ON reconciliation_admission_decisions
+BEGIN SELECT RAISE(ABORT, 'reconciliation_decision_pin_immutable'); END;
+CREATE TRIGGER reconciliation_correction_pins_no_update BEFORE UPDATE ON reconciliation_correction_pins
+BEGIN SELECT RAISE(ABORT, 'reconciliation_decision_pin_immutable'); END;
+CREATE TRIGGER reconciliation_correction_pins_no_delete BEFORE DELETE ON reconciliation_correction_pins
+BEGIN SELECT RAISE(ABORT, 'reconciliation_decision_pin_immutable'); END;
 CREATE TABLE reconciliation_record_partitions (
   preparation_id TEXT NOT NULL REFERENCES reconciliation_operations(id),
   ordinal INTEGER NOT NULL CHECK (ordinal >= 0),

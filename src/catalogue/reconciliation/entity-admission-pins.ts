@@ -269,7 +269,7 @@ export async function applyPinnedEntityAdmissions(
 }
 
 /** Compose this with operation creation; retries reuse the retained selection. */
-export async function entityAdmissionPinStatementsForNewRun(
+export async function entityAdmissionPinStatementsForPreparation(
   database: CatalogueStore,
   runId: string,
   games: readonly string[],
