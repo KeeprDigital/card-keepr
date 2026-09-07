@@ -106,12 +106,14 @@ export function composedCollectionStatement(
     .prepare(`WITH page AS MATERIALIZED (
  SELECT e.* FROM catalogue_composition_games m JOIN publication_read_entities e ON e.candidate_id=m.candidate_id
  WHERE ${conditions.join(" AND ")} ORDER BY e.sort1,e.sort2,e.sort3,e.sort4,e.sort5,e.entity_id LIMIT ?),
- sized AS (SELECT *,sum(record_bytes) OVER(ORDER BY sort1,sort2,sort3,sort4,sort5,entity_id) response_bytes FROM page)
+ facts AS MATERIALIZED (SELECT e.*,CASE WHEN e.kind='cards' THEN
+ coalesce((SELECT sum(length(CAST(json_quote(entity_id) AS BLOB))+1) FROM publication_read_entities printing WHERE printing.candidate_id=e.candidate_id AND printing.kind='printings' AND printing.card_id=e.entity_id),1)+1 ELSE 2 END AS printing_id_bytes FROM page e),
+ sized AS (SELECT *,sum(record_bytes+printing_id_bytes) OVER(ORDER BY sort1,sort2,sort3,sort4,sort5,entity_id) response_bytes FROM facts)
  SELECT e.entity_id,json_array(e.sort1,e.sort2,e.sort3,e.sort4,e.sort5,e.entity_id) AS position,e.candidate_id,e.preparation_id,
- m.game_revision_id,(SELECT json_group_array(entity_id) FROM (SELECT entity_id FROM publication_read_entities printing WHERE printing.candidate_id=e.candidate_id AND printing.kind='printings' AND printing.card_id=e.entity_id ORDER BY entity_id)) AS printing_ids,CASE WHEN e.response_bytes<=4000000 THEN b.content ELSE NULL END AS content
+ m.game_revision_id,CASE WHEN e.response_bytes<=4000000 AND e.printing_id_bytes<=524288 THEN (SELECT json_group_array(entity_id) FROM (SELECT entity_id FROM publication_read_entities printing WHERE printing.candidate_id=e.candidate_id AND printing.kind='printings' AND printing.card_id=e.entity_id ORDER BY entity_id)) ELSE NULL END AS printing_ids,CASE WHEN e.response_bytes<=4000000 AND e.printing_id_bytes<=524288 THEN b.content ELSE NULL END AS content
  FROM sized e JOIN catalogue_composition_games m ON m.candidate_id=e.candidate_id AND m.catalogue_revision_id=?
  JOIN publication_projection_batches b ON b.candidate_id=e.candidate_id AND b.ordinal=e.batch_ordinal
- WHERE e.response_bytes-e.record_bytes<4000000 ORDER BY e.sort1,e.sort2,e.sort3,e.sort4,e.sort5,e.entity_id`)
+ WHERE e.response_bytes-e.record_bytes-e.printing_id_bytes<4000000 ORDER BY e.sort1,e.sort2,e.sort3,e.sort4,e.sort5,e.entity_id`)
     .bind(...bindings, revision);
 }
 export function composedRelationsStatement(
