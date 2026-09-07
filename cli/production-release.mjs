@@ -6,6 +6,8 @@ export async function runProductionReleaseCommand(args, environment, json) {
   const options = parseOptions(
     args,
     [
+      "--fresh-database-id",
+      "--baseline-sha256",
       "--release-id",
       "--expected-current-revision",
       "--expected-head-sha",
@@ -58,6 +60,16 @@ export async function runProductionReleaseCommand(args, environment, json) {
     expected_migration_level: Number(value["--expected-migration-level"]),
     bootstrap: options.flags.has("--bootstrap"),
     replacement_handoff: replacement,
+    ...(value["--fresh-database-id"] !== undefined || value["--baseline-sha256"] !== undefined
+      ? {
+          fresh_baseline_handoff: {
+            destination_database_id: value["--fresh-database-id"],
+            baseline_sha256: value["--baseline-sha256"],
+            destination_migration_level: 1,
+            scope: "fresh_database_regeneration",
+          },
+        }
+      : {}),
     ...(value["--confirm"] === undefined ? { prepare: true } : { confirmation: value["--confirm"] }),
   };
   const observed = await requestDocument(environment, "/v1/production-releases", { method: "POST", body });

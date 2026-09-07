@@ -29,6 +29,7 @@ import {
   smokeTargetPrintingsStatement,
   smokeTargetSearchMatchStatement,
 } from "./administration-inspection-repository";
+import { freshBaselineHandoffStatement } from "./fresh-baseline-repository";
 import { inspectCatalogueCandidate } from "./candidate-inspection";
 import { repairableCatalogueRevisionWindow } from "./catalogue-revision-retention";
 import { SPINE_REVISION_ID } from "./production-release";
@@ -54,7 +55,16 @@ export async function administrationStatus(
   }>,
   reconcile = true,
 ): Promise<Record<string, unknown>> {
-  if (reconcile) {
+  const handoff = await freshBaselineHandoffStatement(database).first<{
+    release_id: string;
+    role: string;
+    phase: number;
+    dispatch_digest: string;
+    request_json: string;
+    evidence_json: string;
+  }>();
+  const handoffBlocked = handoff !== null && (handoff.role === "source" || handoff.phase < 6);
+  if (reconcile && !handoffBlocked) {
     await expireOverdueRuns(database, observedAt);
     await reconcileAbandonedPublication(database, catalogueExports, observedAt);
   }
@@ -127,6 +137,7 @@ export async function administrationStatus(
       active_production_release_id: operation.active_production_release_id,
       active_recovery_id: operation.active_recovery_id,
       mutation_safe:
+        !handoffBlocked &&
         operation.recovery_health === "healthy" &&
         operation.active_ingestion_run_id === null &&
         !(
@@ -135,6 +146,15 @@ export async function administrationStatus(
           operation.active_production_release_expires_at > observedAt
         ),
     },
+    fresh_baseline_handoff:
+      handoff === null
+        ? null
+        : {
+            ...handoff,
+            request: JSON.parse(handoff.request_json),
+            evidence: JSON.parse(handoff.evidence_json),
+            mutation_blocked: handoffBlocked,
+          },
     active_production_release: activeProductionRelease,
     release_preflight: {
       // Bootstrap Mode (issue #141): the catalogue is provably empty, so the

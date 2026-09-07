@@ -1,6 +1,11 @@
 import { AdministrationProblem, type CatalogueStore, canonicalJson } from "../shared";
 import { administrationStatus } from "./administration-inspection";
-import { type ProductionTarget, prepareProductionRelease, validatedPlan } from "./production-release";
+import {
+  type ProductionTarget,
+  prepareProductionRelease,
+  validatedPlan,
+  validateFreshBaseline,
+} from "./production-release";
 import { preparedProductionReleaseStatement } from "./production-release-repository";
 
 /** Resolve owner choices against current authority; a preview only reads. */
@@ -20,6 +25,7 @@ export async function resolveProductionRelease(
     "expected_migration_level",
     "bootstrap",
     "replacement_handoff",
+    "fresh_baseline_handoff",
     "prepare",
     "confirmation",
   ];
@@ -58,6 +64,7 @@ export async function resolveProductionRelease(
     requireConfirmation(request, confirmation);
     return JSON.parse(prior.response_json) as Record<string, unknown>;
   }
+  const fresh = validateFreshBaseline(request.fresh_baseline_handoff, target);
   const status = await administrationStatus(database, exports, observedAt, target, false);
   const safe = status.safe_state as Record<string, unknown>;
   const preflight = status.release_preflight as Record<string, unknown>;
@@ -124,6 +131,7 @@ export async function resolveProductionRelease(
       expected_head_sha: request.expected_head_sha,
       expected_actor: request.expected_actor,
       expected_migration_level: request.expected_migration_level,
+      ...(fresh === null ? {} : { fresh_baseline_handoff: fresh }),
       production_target: target,
       production_target_digest: preflight.production_target_digest,
       bootstrap: request.bootstrap,
@@ -154,6 +162,8 @@ function releaseConfirmation(
   target: ProductionTarget,
 ): string {
   return JSON.stringify({
+    ...(plan.fresh_baseline_handoff ? { fresh_baseline_handoff: plan.fresh_baseline_handoff } : {}),
+    expected_actor: plan.expected_actor,
     production_target: target,
     release_id: plan.release_id,
     expected_current_revision_id: plan.expected_current_revision_id,

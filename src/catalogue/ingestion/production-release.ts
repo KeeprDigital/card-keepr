@@ -16,7 +16,33 @@ import {
   recordPreparedProductionReleaseStatement,
 } from "./production-release-repository";
 
+import { freshBaselineAvailableStatement } from "./fresh-baseline-repository";
+
 export { SPINE_REVISION_ID };
+
+export type FreshBaselineHandoff = Readonly<{
+  destination_database_id: string;
+  baseline_sha256: string;
+  destination_migration_level: 1;
+  scope: "fresh_database_regeneration";
+}>;
+
+export function validateFreshBaseline(value: unknown, target: ProductionTarget): FreshBaselineHandoff | null {
+  if (value === undefined || value === null) return null;
+  if (
+    !isRecord(value) ||
+    !exactKeys(value, ["destination_database_id", "baseline_sha256", "destination_migration_level", "scope"]) ||
+    typeof value.destination_database_id !== "string" ||
+    !/^[A-Za-z0-9][A-Za-z0-9_-]{5,127}$/.test(value.destination_database_id) ||
+    !isReleaseDigest(value.baseline_sha256) ||
+    value.destination_migration_level !== 1 ||
+    value.scope !== "fresh_database_regeneration" ||
+    target.d1_databases.length < 1 ||
+    target.d1_databases.some((database) => database.id === value.destination_database_id)
+  )
+    invalid();
+  return value as FreshBaselineHandoff;
+}
 
 export type ProductionTarget = Readonly<{
   cloudflare_account_id: string;
@@ -57,6 +83,7 @@ export async function prepareProductionRelease(
   const gate = plan.bootstrap ? bootstrapGate(database, plan, observedAt) : populatedGate(database, plan, observedAt);
   try {
     await database.batch([
+      ...(plan.fresh_baseline_handoff ? [freshBaselineAvailableStatement(database)] : []),
       gate,
       recordPreparedProductionReleaseStatement(database, {
         key: plan.idempotency_key,
@@ -92,7 +119,10 @@ export function validatedPlan(request: Record<string, unknown>, target: Producti
     "retained_revision_evidence",
     "replacement_handoff",
   ];
+  if (Object.hasOwn(request, "fresh_baseline_handoff")) required.push("fresh_baseline_handoff");
   if (Object.keys(request).sort().join("|") !== required.sort().join("|")) invalid();
+  const fresh = validateFreshBaseline(request.fresh_baseline_handoff, target);
+  if (fresh !== null && request.replacement_handoff !== null) invalid();
   if (
     !opaque(request.release_id) ||
     !opaque(request.idempotency_key) ||
@@ -115,6 +145,7 @@ export function validatedPlan(request: Record<string, unknown>, target: Producti
     expected_migration_level: number;
     production_target: ProductionTarget;
     production_target_digest: string;
+    fresh_baseline_handoff?: FreshBaselineHandoff;
   };
   if (request.bootstrap) {
     if (

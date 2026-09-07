@@ -8,6 +8,7 @@ import {
   isReleaseHead,
   isReleaseIdentity,
 } from "../src/catalogue/shared/release-input-shapes.mjs";
+import { handoffPlan, compileHandoffClaim } from "./fresh-baseline-handoff.mjs";
 import { SPINE_REVISION_ID } from "../src/catalogue/shared/spine-revision.mjs";
 import {
   productionReleaseLeaseAssignmentsSql,
@@ -75,6 +76,9 @@ export async function validateDispatchAndWriteSql(environment, directory) {
     return parse(value);
   };
   const plan = {
+    ...(preparedPlan.fresh_baseline_handoff === undefined
+      ? {}
+      : { fresh_baseline_handoff: handoffPlan(environment).fresh_baseline_handoff }),
     bootstrap,
     expected_actor: bot(required(environment, "EXPECTED_ACTOR")),
     expected_current_revision_id: opaque(required(environment, "EXPECTED_CURRENT_REVISION")),
@@ -208,6 +212,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
     `UPDATE operation_state SET ${productionReleaseLeaseAssignmentsSql(null, null)} WHERE singleton=1 AND ${leaseIdentity} AND ${cleanupAllowed}; SELECT CASE WHEN EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND active_ingestion_run_id IS NULL AND active_production_release_id IS NULL) THEN 1 ELSE 0 END AS fence_released;\n`,
     { mode: 0o600 },
   );
+  if (plan.fresh_baseline_handoff) await compileHandoffClaim(environment, directory);
   if (replacement !== null) {
     await writeFile(
       `${directory}/replacement-handoff.sql`,
