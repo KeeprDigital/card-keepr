@@ -20,6 +20,7 @@ export const riftboundSourceAdapterRegistration = {
   origin: "production",
   requestSurface: { kind: "credential-free-https" },
   reconciliationCapability: "catalogue",
+  printingAdmission: "owner_review",
   reconciliationAreas: ["catalogue", "errata"],
   officialSourceContract: {
     supportedGame: "riftbound",

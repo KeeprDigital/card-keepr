@@ -1,6 +1,7 @@
 import { URL } from "node:url";
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
+import { sourceAdapterForCoverage, requiredSourceAdapter } from "../../src/catalogue/adapters/source-adapters";
 import { canonicalJson } from "../../src/catalogue/shared";
 import { riftboundSourceAdapterRegistration } from "../../src/catalogue/adapters/riftbound-source-adapter";
 import { AdapterParseFailure } from "../../src/catalogue/adapters/adapter-parse-failure";
@@ -92,4 +93,18 @@ test("unmapped publisher fields remain inspectable even with fractional raw meta
     value: '{"fractional":0.5}',
   });
   expect(() => canonicalJson(observations)).not.toThrow();
+});
+
+test("Riot scopes explicitly require owner Printing review while ordinary source qualification stays default", () => {
+  for (const subset of ["complete", "public-english-inventory", "origins-errata", "announced-products-2027"])
+    expect(sourceAdapterForCoverage(riftboundSourceAdapterRegistration, subset).printingAdmission).toBe("owner_review");
+  expect(sourceAdapterForCoverage(riftboundSourceAdapterRegistration, "origins-errata").reconciliationCapability).toBe(
+    "errata",
+  );
+  expect(requiredSourceAdapter("one-piece-en@6").printingAdmission ?? "source_qualification").toBe(
+    "source_qualification",
+  );
+  expect(sourceAdapterForCoverage(requiredSourceAdapter("one-piece-en@6"), "p-001-catalogue").printingAdmission).toBe(
+    "owner_review",
+  );
 });
