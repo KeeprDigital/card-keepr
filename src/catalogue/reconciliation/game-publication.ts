@@ -121,6 +121,7 @@ export async function approveGamePublication(
 
 import { composePublicationArtifacts, inspectPublicationPreparation } from "./publication-preparation";
 import {
+  publicExportPreparationStatement,
   publicationCompositionHead,
   compositionGamesStatement,
   publicationCheckpointStatement,
@@ -157,6 +158,20 @@ export async function advanceGamePublication(
     await updatePublicationState(db, id, generation, "waiting_artifacts").run();
     return inspectPublication(db, id);
   }
+  const publicExport = await publicExportPreparationStatement(db, candidate.id).first<{
+    state: string;
+    failure_code: string | null;
+  }>();
+  if (publicExport?.state !== "verified") {
+    await updatePublicationState(
+      db,
+      id,
+      generation,
+      publicExport?.state === "failed" ? "failed" : "waiting_artifacts",
+      publicExport?.failure_code ?? null,
+    ).run();
+    return inspectPublication(db, id);
+  }
   // Retry unrelated-game contention by refreshing at most four immutable roots.
   for (let attempt = 0; attempt < 3; attempt++) {
     const head = (await publicationCompositionHead(db).first<{ current_revision_id: string }>())!.current_revision_id;
@@ -166,10 +181,14 @@ export async function advanceGamePublication(
     }
     const members = (await compositionGamesStatement(db, head).all<{ supported_game: string; candidate_id: string }>())
       .results;
-    const composition = await composePublicationArtifacts(env, [
-      ...members.filter((m) => m.supported_game !== candidate.supported_game).map((m) => m.candidate_id),
-      candidate.id,
-    ]);
+    const composition = await composePublicationArtifacts(
+      env,
+      [
+        ...members.filter((m) => m.supported_game !== candidate.supported_game).map((m) => m.candidate_id),
+        candidate.id,
+      ],
+      true,
+    );
     try {
       await db.batch(
         publicationSwitchStatements(db, {

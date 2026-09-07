@@ -1,17 +1,35 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 
-function lifecycleProjection(entity: string) {
+function lifecycleProjection(entity: string, staging = false) {
+  const binding = (alias: string, field: string) =>
+    staging
+      ? `coalesce(${alias}.catalogue_revision_id,CASE WHEN l.${field}=${entity}.candidate_id THEN m.game_revision_id END)`
+      : `${alias}.catalogue_revision_id`;
+  const first = binding("first_binding", "first_candidate_id"),
+    last = binding("last_binding", "last_observed_candidate_id"),
+    withdrawal = binding("withdrawal_binding", "withdrawal_candidate_id");
   return `(SELECT CASE WHEN l.kind IN ('product_relationships','relationships') THEN
- json_object('first_revision_id',first_binding.catalogue_revision_id,'last_observed_revision_id',last_binding.catalogue_revision_id,
- 'current',json(CASE WHEN l.withdrawn=0 THEN 'true' ELSE 'false' END),'last_missing_revision_id',withdrawal_binding.catalogue_revision_id)
- ELSE json_patch(json_object('first_revision_id',first_binding.catalogue_revision_id,'last_observed_revision_id',last_binding.catalogue_revision_id,'withdrawn',json(CASE WHEN l.withdrawn=1 THEN 'true' ELSE 'false' END)),
- CASE WHEN withdrawal_binding.catalogue_revision_id IS NULL THEN '{}' ELSE json_object('withdrawal',json_object('revision_id',withdrawal_binding.catalogue_revision_id)) END) END
- FROM publication_read_lifecycles l JOIN catalogue_candidate_publications first_binding ON first_binding.candidate_id=l.first_candidate_id
- JOIN catalogue_candidate_publications last_binding ON last_binding.candidate_id=l.last_observed_candidate_id
+ json_object('first_revision_id',${first},'last_observed_revision_id',${last},'current',json(CASE WHEN l.withdrawn=0 THEN 'true' ELSE 'false' END),'last_missing_revision_id',${withdrawal})
+ ELSE json_patch(json_object('first_revision_id',${first},'last_observed_revision_id',${last},'withdrawn',json(CASE WHEN l.withdrawn=1 THEN 'true' ELSE 'false' END)),
+ CASE WHEN ${withdrawal} IS NULL THEN '{}' ELSE json_object('withdrawal',json_object('revision_id',${withdrawal})) END) END
+ FROM publication_read_lifecycles l LEFT JOIN catalogue_candidate_publications first_binding ON first_binding.candidate_id=l.first_candidate_id
+ LEFT JOIN catalogue_candidate_publications last_binding ON last_binding.candidate_id=l.last_observed_candidate_id
  LEFT JOIN catalogue_candidate_publications withdrawal_binding ON withdrawal_binding.candidate_id=l.withdrawal_candidate_id
  WHERE l.candidate_id=${entity}.candidate_id AND l.kind=${entity}.kind AND l.entity_id=${entity}.entity_id) AS lifecycle_json`;
 }
 
+/** A candidate selection is private staging input, never a persisted or visible composition. */
+export type PublicRecordSelection = string | { candidateId: string; revisionId: string };
+function recordSelection(selection: PublicRecordSelection) {
+  return typeof selection === "string"
+    ? { source: "catalogue_composition_games", bindings: [] as string[], revision: selection }
+    : {
+        source:
+          "(SELECT id AS candidate_id,supported_game,? AS game_revision_id,? AS catalogue_revision_id FROM game_candidates WHERE id=?)",
+        bindings: [selection.revisionId, selection.revisionId, selection.candidateId],
+        revision: selection.revisionId,
+      };
+}
 export function nativeRevisionStatement(
   db: CatalogueStore,
   revision: string | null,
@@ -24,13 +42,19 @@ export function nativeRevisionStatement(
  WHERE r.id=COALESCE(?,(SELECT current_revision_id FROM catalogue_state WHERE singleton=1)) ${nativeOnly ? "AND r.publication_operation_id IS NOT NULL" : ""}`)
     .bind(revision);
 }
-export function composedDocumentStatement(db: CatalogueStore, revision: string, kind: string, id: string) {
+export function composedDocumentStatement(
+  db: CatalogueStore,
+  selection: PublicRecordSelection,
+  kind: string,
+  id: string,
+) {
+  const scope = recordSelection(selection);
   return repositoryStatements(db)
-    .prepare(`SELECT e.candidate_id,e.preparation_id,m.game_revision_id,b.content,b.sha256,${lifecycleProjection("e")} FROM catalogue_composition_games m
+    .prepare(`SELECT e.candidate_id,e.preparation_id,m.game_revision_id,b.content,b.sha256,${lifecycleProjection("e", typeof selection !== "string")} FROM ${scope.source} m
  JOIN publication_read_entities e ON e.candidate_id=m.candidate_id
  JOIN publication_projection_batches b ON b.candidate_id=e.candidate_id AND b.ordinal=e.batch_ordinal
  WHERE m.catalogue_revision_id=? AND e.kind=? AND e.entity_id=? LIMIT 1`)
-    .bind(revision, kind, id);
+    .bind(...scope.bindings, scope.revision, kind, id);
 }
 export function composedTextStatement(db: CatalogueStore, candidate: string, digest: string, ordinal: number) {
   return repositoryStatements(db)
@@ -131,20 +155,21 @@ export function composedCollectionStatement(
 }
 export function composedRelationsStatement(
   db: CatalogueStore,
-  revision: string,
+  selection: PublicRecordSelection,
   kind: string,
   field: string,
   id: string,
   after: string,
 ) {
+  const scope = recordSelection(selection);
   const column = field === "from.id" ? "from_id" : field === "printing_id" ? "card_id" : field;
   if (!["from_id", "card_id", "product_id"].includes(column))
     throw new TypeError("Unknown published relationship field.");
   return repositoryStatements(db)
-    .prepare(`SELECT e.entity_id,e.candidate_id,e.preparation_id,m.game_revision_id,b.content,b.sha256,${lifecycleProjection("e")} FROM catalogue_composition_games m
+    .prepare(`SELECT e.entity_id,e.candidate_id,e.preparation_id,m.game_revision_id,b.content,b.sha256,${lifecycleProjection("e", typeof selection !== "string")} FROM ${scope.source} m
  JOIN publication_read_entities e ON e.candidate_id=m.candidate_id JOIN publication_projection_batches b ON b.candidate_id=e.candidate_id AND b.ordinal=e.batch_ordinal
  WHERE m.catalogue_revision_id=? AND e.kind=? AND e.${column}=? AND e.entity_id>? ORDER BY e.entity_id LIMIT 32`)
-    .bind(revision, kind, id, after);
+    .bind(...scope.bindings, scope.revision, kind, id, after);
 }
 export function composedFilterValueStatement(
   db: CatalogueStore,
@@ -172,19 +197,25 @@ export function composedExportArtifactsStatement(
   afterOrdinal: number,
 ) {
   return repositoryStatements(db)
-    .prepare(`SELECT m.supported_game,e.kind,e.batch_ordinal AS ordinal,e.entity_id,e.candidate_id,e.preparation_id,m.game_revision_id,b.content,b.sha256,${lifecycleProjection("e")}
- FROM catalogue_composition_games m JOIN publication_read_entities e ON e.candidate_id=m.candidate_id
- JOIN publication_projection_batches b ON b.candidate_id=e.candidate_id AND b.ordinal=e.batch_ordinal
- WHERE m.catalogue_revision_id=? AND (m.supported_game>? OR (m.supported_game=? AND e.batch_ordinal>?))
- ORDER BY m.supported_game,e.batch_ordinal LIMIT 4`)
+    .prepare(`SELECT m.supported_game,e.* FROM catalogue_composition_games m
+ JOIN publication_export_preparations p ON p.candidate_id=m.candidate_id AND p.state='verified'
+ JOIN publication_export_components e ON e.candidate_id=m.candidate_id
+ WHERE m.catalogue_revision_id=? AND (m.supported_game>? OR (m.supported_game=? AND e.ordinal>?)) ORDER BY m.supported_game,e.ordinal LIMIT 4`)
     .bind(revision, afterGame, afterGame, afterOrdinal);
+}
+export function composedPublicExportReadyStatement(db: CatalogueStore, revision: string) {
+  return repositoryStatements(db)
+    .prepare(`SELECT 1 AS ready FROM catalogue_revisions r
+ WHERE r.id=? AND EXISTS(SELECT 1 FROM publication_export_preparations p WHERE p.publication_operation_id=r.publication_operation_id AND p.state='verified')
+ AND NOT EXISTS(SELECT 1 FROM catalogue_composition_games m LEFT JOIN publication_export_preparations p ON p.candidate_id=m.candidate_id AND p.state='verified' WHERE m.catalogue_revision_id=r.id AND p.candidate_id IS NULL)`)
+    .bind(revision);
 }
 export function composedExportArtifactStatement(db: CatalogueStore, revision: string, game: string, ordinal: number) {
   return repositoryStatements(db)
-    .prepare(`SELECT m.supported_game,e.kind,e.batch_ordinal AS ordinal,e.entity_id,e.candidate_id,e.preparation_id,m.game_revision_id,b.content,b.sha256,${lifecycleProjection("e")}
- FROM catalogue_composition_games m JOIN publication_read_entities e ON e.candidate_id=m.candidate_id
- JOIN publication_projection_batches b ON b.candidate_id=e.candidate_id AND b.ordinal=e.batch_ordinal
- WHERE m.catalogue_revision_id=? AND m.supported_game=? AND e.batch_ordinal=?`)
+    .prepare(`SELECT e.* FROM catalogue_composition_games m
+ JOIN publication_export_preparations p ON p.candidate_id=m.candidate_id AND p.state='verified'
+ JOIN publication_export_components e ON e.candidate_id=m.candidate_id
+ WHERE m.catalogue_revision_id=? AND m.supported_game=? AND e.ordinal=?`)
     .bind(revision, game, ordinal);
 }
 export function composedSupportedGamesStatement(db: CatalogueStore, revision: string) {
@@ -193,4 +224,31 @@ export function composedSupportedGamesStatement(db: CatalogueStore, revision: st
       `SELECT supported_game FROM catalogue_composition_games WHERE catalogue_revision_id=? ORDER BY supported_game LIMIT 4`,
     )
     .bind(revision);
+}
+
+export function publicationExportSourceStatement(
+  db: CatalogueStore,
+  candidateId: string,
+  revisionId: string,
+  afterOrdinal: number,
+) {
+  const scope = recordSelection({ candidateId, revisionId });
+  return repositoryStatements(db)
+    .prepare(`SELECT m.supported_game,e.kind,e.batch_ordinal AS ordinal,e.entity_id,e.candidate_id,e.preparation_id,m.game_revision_id,b.content,b.sha256,${lifecycleProjection("e", true)}
+ FROM ${scope.source} m JOIN publication_read_entities e ON e.candidate_id=m.candidate_id
+ JOIN publication_projection_batches b ON b.candidate_id=e.candidate_id AND b.ordinal=e.batch_ordinal
+ WHERE e.batch_ordinal>? ORDER BY e.batch_ordinal LIMIT 1`)
+    .bind(...scope.bindings, afterOrdinal);
+}
+export function publicationExportDependenciesStatement(db: CatalogueStore, candidateId: string, printingId: string) {
+  return repositoryStatements(db)
+    .prepare(`SELECT rel.entity_id,b.sha256 AS relationship_digest,target.entity_id AS target_id,target_batch.sha256 AS target_digest,
+ coalesce((SELECT sum(json_extract(value,'$.chunks')) FROM json_each(b.content,'$.records[0].text_parts')),0)+coalesce((SELECT sum(json_extract(value,'$.chunks')) FROM json_each(target_batch.content,'$.records[0].text_parts')),0) AS text_calls
+ FROM publication_read_entities rel JOIN publication_read_lifecycles l ON l.candidate_id=rel.candidate_id AND l.kind=rel.kind AND l.entity_id=rel.entity_id AND l.withdrawn=0
+ JOIN publication_projection_batches b ON b.candidate_id=rel.candidate_id AND b.ordinal=rel.batch_ordinal
+ LEFT JOIN publication_read_entities target ON target.candidate_id=rel.candidate_id AND target.entity_id=rel.to_id AND target.kind=CASE rel.relationship_kind WHEN 'printing-product' THEN 'products' ELSE 'distribution_contexts' END
+ LEFT JOIN publication_projection_batches target_batch ON target_batch.candidate_id=target.candidate_id AND target_batch.ordinal=target.batch_ordinal
+ WHERE rel.candidate_id=? AND rel.kind='product_relationships' AND rel.from_id=? AND rel.relationship_kind IN ('printing-product','printing-distribution-context')
+ ORDER BY rel.entity_id LIMIT 129`)
+    .bind(candidateId, printingId);
 }

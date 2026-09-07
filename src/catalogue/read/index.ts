@@ -41,3 +41,9 @@ export {
 
 export { compositionEntityResponse, compositionImageResponse } from "./composition-read";
 export { composedDocumentStatement } from "./composition-read-repository";
+
+export { composedPublicRecord, type DocumentRow } from "./composition-read";
+export {
+  publicationExportSourceStatement,
+  publicationExportDependenciesStatement,
+} from "./composition-read-repository";

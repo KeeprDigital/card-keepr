@@ -1,6 +1,5 @@
 import { type PublicBase, publicUrl } from "../../http/public-base";
-import { type CatalogueStore, canonicalJson, deterministicGzip, sha256, sha256Text } from "../shared";
-import { composedPublicRecord, type DocumentRow } from "./composition-read";
+import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { parseRange } from "./byte-range";
 import {
   canonicalEtag,
@@ -16,46 +15,23 @@ import {
   composedExportArtifactsStatement,
   composedExportArtifactStatement,
   composedSupportedGamesStatement,
+  composedPublicExportReadyStatement,
 } from "./composition-read-repository";
 
-type Artifact = DocumentRow & { supported_game: string; ordinal: number; kind: string };
-const definitions: Record<string, string> = {
-  supported_games: "SupportedGameRecord",
-  game_profiles: "GameProfileRecord",
-  cards: "CardRecord",
-  printings: "PrintingRecord",
-  printing_images: "PrintingImageRecord",
-  products: "ProductRecord",
-  releases: "ReleaseRecord",
-  distribution_contexts: "DistributionContextRecord",
-  errata: "ErratumRecord",
-  relationships: "RelationshipRecord",
-  product_relationships: "RelationshipRecord",
-  identity_corrections: "IdentityCorrectionRecord",
-};
-async function component(db: CatalogueStore, revision: string, artifact: Artifact) {
-  const value = await composedPublicRecord(db, revision, artifact.kind, artifact);
-  const raw = new TextEncoder().encode(`${canonicalJson(value)}\n`);
-  if (raw.byteLength > 4_000_000)
-    throw new ReadProblem(503, "catalogue_export_unavailable", "The public record exceeds its component budget.");
-  const bytes = deterministicGzip(raw);
-  return {
-    bytes,
-    descriptor: {
-      name: `${artifact.supported_game}.${artifact.ordinal}`,
-      kind: artifact.kind === "product_relationships" ? "relationships" : artifact.kind.replaceAll("_", "-"),
-      media_type: "application/x-ndjson",
-      compression: "gzip",
-      record_schema: `https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/${definitions[artifact.kind]}`,
-      records: 1,
-      uncompressed_bytes: raw.byteLength,
-      content_sha256: await sha256(raw),
-      compressed_bytes: bytes.byteLength,
-      compressed_sha256: await sha256(bytes),
-    },
-  };
+async function requirePublicExport(db: CatalogueStore, revisionId: string) {
+  if (!(await composedPublicExportReadyStatement(db, revisionId).first()))
+    throw new ReadProblem(503, "catalogue_export_unavailable", "The current public export artifacts are unavailable.");
 }
 
+type Artifact = {
+  supported_game: string;
+  ordinal: number;
+  kind: string;
+  object_key: string;
+  sha256: string;
+  byte_length: number;
+  descriptor_json: string;
+};
 /** Four deterministic record components per page; host links never enter content hashes. */
 export async function compositionExportResponse(
   db: CatalogueStore,
@@ -69,6 +45,7 @@ export async function compositionExportResponse(
     content_digest: string;
   }>();
   if (!revision) return undefined;
+  await requirePublicExport(db, revisionId);
   const url = new URL(request.url);
   collectionParameters(url, ["after"]);
   const raw = url.searchParams.get("after");
@@ -84,8 +61,7 @@ export async function compositionExportResponse(
   const artifacts = (
     await composedExportArtifactsStatement(db, revisionId, cursor?.game ?? "", cursor?.ordinal ?? -1).all<Artifact>()
   ).results;
-  const components = [];
-  for (const artifact of artifacts) components.push((await component(db, revisionId, artifact)).descriptor);
+  const components = artifacts.map((artifact) => JSON.parse(artifact.descriptor_json) as { name: string });
   const next =
     artifacts.length === 4
       ? encodeCursor({
@@ -125,42 +101,45 @@ export async function compositionExportResponse(
 }
 export async function compositionExportComponentResponse(
   db: CatalogueStore,
-  _bucket: R2Bucket,
+  bucket: R2Bucket,
   request: Request,
   revisionId: string,
   name: string,
 ): Promise<Response | null | undefined> {
   if (!(await nativeRevisionStatement(db, revisionId, false).first())) return undefined;
+  await requirePublicExport(db, revisionId);
   const match = /^(one-piece|fusion-world|digimon|gundam)\.(0|[1-9]\d*)$/.exec(name);
   if (!match || !Number.isSafeInteger(Number(match[2]))) return null;
   const artifact = await composedExportArtifactStatement(db, revisionId, match[1]!, Number(match[2])).first<Artifact>();
   if (!artifact) return null;
-  const { bytes, descriptor } = await component(db, revisionId, artifact);
+  const size = artifact.byte_length;
   const headers: Record<string, string> = {
-    ...revisionHeaders(revisionId, `"${descriptor.compressed_sha256}"`),
+    ...revisionHeaders(revisionId, `"${artifact.sha256}"`),
     "accept-ranges": "bytes",
     "content-type": "application/gzip",
   };
+  const objectHead = await bucket.head(artifact.object_key);
+  if (!objectHead || objectHead.size !== size)
+    throw new ReadProblem(503, "catalogue_export_unavailable", "The verified public component is unavailable.");
   const conditional = conditionalResponse(request, headers);
   if (conditional) return conditional;
   const range =
     request.method === "HEAD" || (request.headers.has("if-range") && request.headers.get("if-range") !== headers.etag)
       ? null
-      : parseRange(request.headers.get("range"), bytes.byteLength);
+      : parseRange(request.headers.get("range"), size);
   if (range === "unsatisfiable")
     throw new ReadProblem(
       416,
       "range_not_satisfiable",
       "The requested Catalogue Export byte range is not satisfiable.",
       null,
-      { headers: { ...headers, "content-range": `bytes */${bytes.byteLength}` } },
+      { headers: { ...headers, "content-range": `bytes */${size}` } },
     );
-  headers["content-length"] = String(range?.length ?? bytes.byteLength);
-  if (range) headers["content-range"] = `bytes ${range.offset}-${range.offset + range.length - 1}/${bytes.byteLength}`;
-  return new Response(
-    request.method === "HEAD"
-      ? null
-      : bytes.slice(range?.offset ?? 0, range ? range.offset + range.length : bytes.byteLength),
-    { status: range ? 206 : 200, headers },
-  );
+  headers["content-length"] = String(range?.length ?? size);
+  if (range) headers["content-range"] = `bytes ${range.offset}-${range.offset + range.length - 1}/${size}`;
+  if (request.method === "HEAD") return new Response(null, { status: 200, headers });
+  const object = await bucket.get(artifact.object_key, range ? { range } : {});
+  if (!object || object.size !== size)
+    throw new ReadProblem(503, "catalogue_export_unavailable", "The verified public component is unavailable.");
+  return new Response(object.body, { status: range ? 206 : 200, headers });
 }

@@ -91,6 +91,7 @@ export function publicationSwitchGuard(
  JOIN game_candidate_slots slot ON slot.supported_game=c.supported_game AND slot.preparation_id=c.preparation_id
  JOIN game_catalogue_heads h ON h.supported_game=c.supported_game AND h.revision_id=p.expected_game_revision_id
  JOIN publication_preparations a ON a.candidate_id=c.id AND a.manifest_digest=p.manifest_digest AND a.generation=p.candidate_generation AND a.state='verified'
+ JOIN publication_export_preparations public ON public.candidate_id=c.id AND public.publication_operation_id=p.id AND public.state='verified' AND public.root_digest IS NOT NULL AND public.revision_id='catrev_' || substr(p.id,13)
  JOIN game_candidate_partitions summary ON summary.candidate_id=c.id AND summary.ordinal=c.partition_count-1 AND summary.kind='inspection_summary'
  WHERE p.id=?1 AND c.state='sealed' AND o.state='sealed' AND c.generation=p.candidate_generation AND o.generation=p.candidate_generation
  AND c.manifest_digest=p.manifest_digest AND c.deadline=p.deadline AND c.expected_game_revision_id=p.expected_game_revision_id
@@ -110,11 +111,11 @@ export function publicationSwitchGuard(
  THEN json_extract('{}','publication_composition_unverified')
  WHEN EXISTS (
  WITH expected AS (
- SELECT old.supported_game,old.candidate_id,old.root_digest FROM catalogue_composition_games old
+ SELECT old.supported_game,old.candidate_id,old.root_digest,public.root_digest AS public_root_digest FROM catalogue_composition_games old JOIN publication_export_preparations public ON public.candidate_id=old.candidate_id AND public.state='verified'
  WHERE old.catalogue_revision_id=?3 AND old.supported_game<>(SELECT c.supported_game FROM game_candidates c JOIN game_publication_operations p ON p.candidate_id=c.id WHERE p.id=?1)
- UNION ALL SELECT c.supported_game,c.id,a.root_digest FROM game_publication_operations p JOIN game_candidates c ON c.id=p.candidate_id
- JOIN publication_preparations a ON a.candidate_id=c.id WHERE p.id=?1
- ), actual AS (SELECT json_extract(value,'$.supported_game') supported_game,json_extract(value,'$.candidate_id') candidate_id,json_extract(value,'$.root_digest') root_digest
+ UNION ALL SELECT c.supported_game,c.id,a.root_digest,public.root_digest FROM game_publication_operations p JOIN game_candidates c ON c.id=p.candidate_id
+ JOIN publication_preparations a ON a.candidate_id=c.id JOIN publication_export_preparations public ON public.candidate_id=c.id AND public.state='verified' WHERE p.id=?1
+ ), actual AS (SELECT json_extract(value,'$.supported_game') supported_game,json_extract(value,'$.candidate_id') candidate_id,json_extract(value,'$.root_digest') root_digest,json_extract(value,'$.public_root_digest') public_root_digest
  FROM verified_publication_compositions,json_each(content,'$.games') WHERE sha256=?4)
  SELECT * FROM (SELECT * FROM expected EXCEPT SELECT * FROM actual)
  UNION ALL SELECT * FROM (SELECT * FROM actual EXCEPT SELECT * FROM expected)
@@ -230,4 +231,12 @@ export function publicationResumeStatements(
       .bind(id),
     sql.prepare(`INSERT INTO game_publication_actions VALUES (?,?,?,?)`).bind(key, id, request, result),
   ];
+}
+
+export function publicExportPreparationStatement(db: CatalogueStore, candidate: string) {
+  return repositoryStatements(db)
+    .prepare(
+      "SELECT state,root_digest,root_object_key,root_bytes,failure_code FROM publication_export_preparations WHERE candidate_id=?",
+    )
+    .bind(candidate);
 }

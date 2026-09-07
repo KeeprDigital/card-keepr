@@ -1,3 +1,4 @@
+import { publicExportPreparationStatement } from "./game-publication-repository";
 import { publicationRecord, type PublicationEnvelope } from "./publication-record";
 import { preparePublicLifecycle } from "./publication-lifecycle";
 import { retainPublicLifecycle } from "./publication-lifecycle-repository";
@@ -592,7 +593,7 @@ async function prepareUnit(
 }
 
 /** Preparation of a composition only retains references; #228 owns selecting a published head. */
-export async function composePublicationArtifacts(env: Environment, ids: unknown) {
+export async function composePublicationArtifacts(env: Environment, ids: unknown, requirePublicExports = false) {
   if (
     !Array.isArray(ids) ||
     ids.length < 1 ||
@@ -605,7 +606,8 @@ export async function composePublicationArtifacts(env: Environment, ids: unknown
       "invalid_publication_composition",
       "Select one verified candidate per game, at most four.",
     );
-  const games: { supported_game: string; candidate_id: string; root_digest: string }[] = [];
+  const games: { supported_game: string; candidate_id: string; root_digest: string; public_root_digest?: string }[] =
+    [];
   for (const id of ids) {
     const status = await inspectPublicationPreparation(env.CATALOGUE_DB, id);
     if (status.state !== "verified" || !status.root_digest)
@@ -622,7 +624,31 @@ export async function composePublicationArtifacts(env: Environment, ids: unknown
         "A verified game's root is missing or corrupt.",
       );
     await verifyPublicationObject(env.CATALOGUE_EXPORTS, root.key, status.root_digest, root.size);
-    games.push({ supported_game: status.supported_game, candidate_id: id, root_digest: status.root_digest });
+    const publicExport = await publicExportPreparationStatement(env.CATALOGUE_DB, id).first<{
+      state: string;
+      root_digest: string;
+      root_object_key: string;
+      root_bytes: number;
+    }>();
+    if (requirePublicExports && publicExport?.state !== "verified")
+      throw new AdministrationProblem(
+        409,
+        "public_export_unverified",
+        "Stage and verify the public export before selecting this composition.",
+      );
+    if (publicExport?.state === "verified")
+      await verifyPublicationObject(
+        env.CATALOGUE_EXPORTS,
+        publicExport.root_object_key,
+        publicExport.root_digest,
+        publicExport.root_bytes,
+      );
+    games.push({
+      supported_game: status.supported_game,
+      candidate_id: id,
+      root_digest: status.root_digest,
+      ...(publicExport?.state === "verified" ? { public_root_digest: publicExport.root_digest } : {}),
+    });
   }
   games.sort((a, b) => (a.supported_game < b.supported_game ? -1 : 1));
   if (new Set(games.map((game) => game.supported_game)).size !== games.length)

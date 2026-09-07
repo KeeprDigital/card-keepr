@@ -26,3 +26,5 @@ export type {
   RetryPublicationCleanupRequest,
   RetryRunRequest,
 } from "./run-types";
+
+export { advancePublicationExports } from "./publication-export-preparation";

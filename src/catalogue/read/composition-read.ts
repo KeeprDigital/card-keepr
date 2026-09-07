@@ -22,6 +22,7 @@ import {
 } from "./collection-endpoint";
 import {
   type ComposedFilters,
+  type PublicRecordSelection,
   composedCollectionStatement,
   composedDocumentStatement,
   composedFilterValueStatement,
@@ -32,6 +33,7 @@ import {
 
 type Revision = {
   id: string;
+  selection?: PublicRecordSelection;
   published_at: string;
   content_digest: string;
   query_state: string;
@@ -95,7 +97,7 @@ export async function hydrate(db: CatalogueStore, row: DocumentRow): Promise<Val
   if (row.lifecycle_json) envelope.value.lifecycle = JSON.parse(row.lifecycle_json);
   return consumerContent(envelope.value) as Value;
 }
-async function related(db: CatalogueStore, revision: string, kind: string, field: string, id: string) {
+async function related(db: CatalogueStore, revision: PublicRecordSelection, kind: string, field: string, id: string) {
   const records: Value[] = [];
   let after = "";
   let bytes = 0;
@@ -117,7 +119,13 @@ async function related(db: CatalogueStore, revision: string, kind: string, field
   }
   return records;
 }
-async function representation(db: CatalogueStore, revision: Revision, kind: string, row: DocumentRow) {
+async function representation(
+  db: CatalogueStore,
+  revision: Revision,
+  kind: string,
+  row: DocumentRow,
+  includeImages = true,
+) {
   const value = await hydrate(db, row);
   const id = String(value.id);
   const type = kind === "cards" ? "card" : kind === "printings" ? "printing" : "product";
@@ -125,9 +133,11 @@ async function representation(db: CatalogueStore, revision: Revision, kind: stri
   if (kind === "cards")
     data.printing_ids = row.printing_ids
       ? JSON.parse(row.printing_ids)
-      : (await related(db, revision.id, "printings", "card_id", id)).map((v) => v.id);
+      : (await related(db, revision.selection ?? revision.id, "printings", "card_id", id)).map((v) => v.id);
   if (kind === "printings") {
-    const images = await related(db, revision.id, "printing_images", "printing_id", id);
+    const images = includeImages
+      ? await related(db, revision.selection ?? revision.id, "printing_images", "printing_id", id)
+      : [];
     data.printing_images = images.map((image) => ({
       id: image.id,
       role: image.role,
@@ -138,7 +148,7 @@ async function representation(db: CatalogueStore, revision: Revision, kind: stri
       content_byte_length: image.content_byte_length,
       links: { content: `/v1/printing-images/${image.id}/content?revision=${revision.id}` },
     }));
-    const relationships = await related(db, revision.id, "product_relationships", "from.id", id);
+    const relationships = await related(db, revision.selection ?? revision.id, "product_relationships", "from.id", id);
     const products: Value[] = [];
     const contexts: Value[] = [];
     let targetBytes = 0;
@@ -150,7 +160,12 @@ async function representation(db: CatalogueStore, revision: Revision, kind: stri
       )
         continue;
       const targetKind = relation.kind === "printing-product" ? "products" : "distribution_contexts";
-      const target = await composedDocumentStatement(db, revision.id, targetKind, to.id).first<DocumentRow>();
+      const target = await composedDocumentStatement(
+        db,
+        revision.selection ?? revision.id,
+        targetKind,
+        to.id,
+      ).first<DocumentRow>();
       if (target) {
         const document = await hydrate(db, target);
         targetBytes += new TextEncoder().encode(JSON.stringify(document)).byteLength;
@@ -171,7 +186,10 @@ async function representation(db: CatalogueStore, revision: Revision, kind: stri
     data.products = products;
     data.distribution_contexts = contexts;
   }
-  if (kind === "products") data.releases = await related(db, revision.id, "releases", "product_id", id);
+  if (kind === "products")
+    data.releases = (await related(db, revision.selection ?? revision.id, "releases", "product_id", id)).map(
+      (release) => pickPublicFields(release, ["id", "event_key", "region", "date", "status"]),
+    );
   return data;
 }
 const publicRecordFields: Record<string, [string, string[]]> = {
@@ -198,12 +216,25 @@ function pickPublicFields(value: Value, fields: string[]) {
   return Object.fromEntries(fields.filter((f) => Object.hasOwn(value, f)).map((f) => [f, value[f]]));
 }
 /** Public exports use the same verified immutable facts as the native read model. */
-export async function composedPublicRecord(db: CatalogueStore, revisionId: string, kind: string, row: DocumentRow) {
+export async function composedPublicRecord(
+  db: CatalogueStore,
+  selection: PublicRecordSelection,
+  kind: string,
+  row: DocumentRow,
+) {
   const definition = publicRecordFields[kind];
   if (!definition)
     throw new ReadProblem(503, "catalogue_export_unavailable", "The current public record contract is unavailable.");
   const value =
-    kind === "printings" ? await representation(db, { id: revisionId } as Revision, kind, row) : await hydrate(db, row);
+    kind === "printings"
+      ? await representation(
+          db,
+          { id: typeof selection === "string" ? selection : selection.revisionId, selection } as Revision,
+          kind,
+          row,
+          false,
+        )
+      : await hydrate(db, row);
   return { type: definition[0], ...pickPublicFields(value, definition[1]) };
 }
 async function jsonResponse(request: Request, revision: Revision, document: unknown) {

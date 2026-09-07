@@ -66,6 +66,7 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
     ).document;
   }
   expect(preparation.state).toBe("verified");
+  await preparePublicExports(String(approved.document.id), 0);
   const composition = await post("/v1/publication-compositions", { candidate_ids: [id] });
   expect(composition.response.status).toBe(200);
   const switchInput = {
@@ -176,6 +177,7 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
       })
     ).document;
   expect(secondPreparation.state).toBe("verified");
+  await preparePublicExports(String(secondApproval.document.id), 0);
   const waiting = await post(`/v1/publications/${secondApproval.document.id}/advance`, { generation: 0 });
   expect(waiting.document.state, JSON.stringify(waiting.document)).toBe("waiting_backup");
   const resumed = await post(`/v1/publications/${secondApproval.document.id}/resume`, {
@@ -245,6 +247,7 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
       })
     ).document;
   expect(otherPrepared.state).toBe("verified");
+  await preparePublicExports(String(otherApproval.document.id), 0);
   expect((await post(`/v1/publications/${otherApproval.document.id}/advance`, { generation: 0 })).document.state).toBe(
     "waiting_backup",
   );
@@ -287,3 +290,18 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
   ))!.json()) as { data: unknown };
   expect(retainedExport.data).toEqual(firstExport.data);
 });
+
+async function preparePublicExports(operation: string, generation: number) {
+  for (let sequence = 0; sequence < 250; sequence++) {
+    const result = await post(`/v1/publications/${operation}/export-preparation/advance`, {
+      generation,
+      idempotency_key: `public-unit-${operation}-${sequence}`,
+    });
+    expect(result.response.status, JSON.stringify(result.document)).toBe(200);
+    if (result.document.state !== "preparing") {
+      expect(result.document.state, JSON.stringify(result.document)).toBe("verified");
+      return;
+    }
+  }
+  throw new Error("Public export preparation did not complete within its bounded units.");
+}

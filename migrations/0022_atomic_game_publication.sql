@@ -176,4 +176,44 @@ CREATE TRIGGER publication_read_attributes_immutable BEFORE UPDATE ON publicatio
 BEGIN SELECT RAISE(ABORT,'publication_read_immutable'); END;
 CREATE TRIGGER publication_read_regions_immutable BEFORE UPDATE ON publication_read_release_regions
 BEGIN SELECT RAISE(ABORT,'publication_read_immutable'); END;
+-- Public bytes are prepared only after the durable approval fixes their own revision ID.
+CREATE TABLE publication_export_preparations (
+ publication_operation_id TEXT PRIMARY KEY REFERENCES game_publication_operations(id),
+ candidate_id TEXT NOT NULL UNIQUE REFERENCES game_candidates(id),
+ revision_id TEXT NOT NULL UNIQUE,
+ state TEXT NOT NULL CHECK(state IN ('preparing','verified','failed')),
+ sequence INTEGER NOT NULL,
+ cursor_json TEXT NOT NULL CHECK(json_valid(cursor_json)),
+ component_count INTEGER NOT NULL,
+ root_digest TEXT,
+ root_object_key TEXT,
+ root_bytes INTEGER,
+ failure_code TEXT
+);
+CREATE TRIGGER publication_export_preparation_identity BEFORE UPDATE ON publication_export_preparations
+WHEN OLD.state<>'preparing' OR OLD.publication_operation_id<>NEW.publication_operation_id OR OLD.candidate_id<>NEW.candidate_id OR OLD.revision_id<>NEW.revision_id
+BEGIN SELECT RAISE(ABORT,'publication_export_immutable'); END;
+CREATE TRIGGER publication_export_preparation_retained BEFORE DELETE ON publication_export_preparations
+BEGIN SELECT RAISE(ABORT,'publication_export_retained'); END;
+CREATE TABLE publication_export_components (
+ candidate_id TEXT NOT NULL REFERENCES game_candidates(id),
+ ordinal INTEGER NOT NULL,kind TEXT NOT NULL,entity_id TEXT NOT NULL,input_digest TEXT NOT NULL,
+ object_key TEXT NOT NULL,sha256 TEXT NOT NULL,byte_length INTEGER NOT NULL,
+ descriptor_json TEXT NOT NULL CHECK(json_valid(descriptor_json)),
+ PRIMARY KEY(candidate_id,ordinal),UNIQUE(candidate_id,kind,entity_id)
+);
+CREATE TRIGGER publication_export_components_immutable BEFORE UPDATE ON publication_export_components
+BEGIN SELECT RAISE(ABORT,'publication_export_immutable'); END;
+CREATE TRIGGER publication_export_components_retained BEFORE DELETE ON publication_export_components
+BEGIN SELECT RAISE(ABORT,'publication_export_retained'); END;
+CREATE TABLE publication_export_nodes (
+ publication_operation_id TEXT NOT NULL REFERENCES game_publication_operations(id),
+ level INTEGER NOT NULL,ordinal INTEGER NOT NULL,object_key TEXT NOT NULL,sha256 TEXT NOT NULL,byte_length INTEGER NOT NULL,
+ PRIMARY KEY(publication_operation_id,level,ordinal)
+);
+CREATE TRIGGER publication_export_nodes_immutable BEFORE UPDATE ON publication_export_nodes
+BEGIN SELECT RAISE(ABORT,'publication_export_immutable'); END;
+CREATE TRIGGER publication_export_nodes_retained BEFORE DELETE ON publication_export_nodes
+BEGIN SELECT RAISE(ABORT,'publication_export_retained'); END;
+
 UPDATE catalogue_schema_state SET migration_level=22 WHERE singleton=1;
