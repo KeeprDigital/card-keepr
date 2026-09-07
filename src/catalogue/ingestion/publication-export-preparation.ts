@@ -96,9 +96,10 @@ export async function advancePublicationExports(env: Environment, id: string, ge
   if (owner.state === "retry_paused") return { state: "retry_paused" };
   if (owner.deadline <= new Date().toISOString() || owner.current_game_revision !== owner.expected_game_revision_id)
     return { state: "invalid" };
-  if (owner.private_state !== "verified") return { state: "waiting_private" };
-  if (owner.recovery_health !== "healthy" || owner.search_state !== "ready") return { state: "waiting_recovery" };
   const current = await repository.exportPreparation(db, id).first<PublicExportState>();
+  if (owner.private_state !== "verified") return { state: "waiting_private", sequence: current?.sequence ?? 0 };
+  if (owner.recovery_health !== "healthy" || owner.search_state !== "ready")
+    return { state: "waiting_recovery", sequence: current?.sequence ?? 0 };
   if (current && current.state !== "preparing") return result(current);
   const state: PublicExportState = current
     ? { ...current }

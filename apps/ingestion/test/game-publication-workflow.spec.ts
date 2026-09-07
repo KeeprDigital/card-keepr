@@ -5,6 +5,7 @@ import { catalogueStore } from "../../../src/catalogue/shared";
 import { reservePublicExportAttempt } from "../../../src/catalogue/ingestion";
 import { pauseGamePublication } from "../../../src/catalogue/reconciliation";
 import { resumeGamePublication } from "../../../src/catalogue/reconciliation/game-publication";
+import { setCardSearchFtsStateStateOwnerToken } from "./query-helpers/card-search";
 import { collect, get, post, installReconciliationSuite, testEnv } from "./reconciliation-helpers";
 
 installReconciliationSuite();
@@ -58,73 +59,111 @@ async function approvedCandidate(key: string) {
   return approved.document;
 }
 
-test("successor dispatch exhaustion retains a fenced pause and explicit resume preserves exact approval", async () => {
-  const approved = await approvedCandidate("successor-failure");
-  const id = String(approved.id),
-    db = catalogueStore(testEnv.CATALOGUE_DB);
-  let creates = 0;
-  const failing = {
-    ...testEnv,
-    RECONCILIATION_WORKFLOW: {
-      async create() {
-        creates++;
-        throw new Error("injected successor create failure");
+test.each([false, true])(
+  "successor dispatch exhaustion retains a fenced pause and exact resume (existing progress: %s)",
+  async (progress) => {
+    const approved = await approvedCandidate("successor-failure");
+    const id = String(approved.id),
+      db = catalogueStore(testEnv.CATALOGUE_DB);
+    const sequence = progress ? 1 : 0;
+    if (progress) {
+      const path = `/v1/game-candidates/${approved.candidate_id}/publication-preparation`;
+      let prepared = (
+        await post(path, {
+          manifest_digest: approved.manifest_digest,
+          generation: 0,
+          sequence: 0,
+          idempotency_key: "wait-private",
+        })
+      ).document;
+      for (let unit = 0; prepared.state === "preparing" && unit < 250; unit++)
+        prepared = (
+          await post(path, {
+            manifest_digest: approved.manifest_digest,
+            generation: 0,
+            sequence: prepared.sequence,
+            idempotency_key: `wait-private-${unit}`,
+          })
+        ).document;
+      expect(prepared.state).toBe("verified");
+      expect(
+        (
+          await post(`/v1/publications/${id}/export-preparation/advance`, {
+            generation: 0,
+            idempotency_key: "wait-public-first",
+          })
+        ).document.sequence,
+      ).toBe(sequence);
+      await setCardSearchFtsStateStateOwnerToken(testEnv.CATALOGUE_DB)
+        .bind("injected-search-wait", "2099-01-01T00:00:00.000Z")
+        .run();
+    }
+    let creates = 0;
+    const failing = {
+      ...testEnv,
+      RECONCILIATION_WORKFLOW: {
+        async create() {
+          creates++;
+          throw new Error("injected successor create failure");
+        },
+        async get() {
+          throw new Error("workflow not found");
+        },
       },
-      async get() {
-        throw new Error("workflow not found");
+    } as unknown as Env;
+    const steps = stepDriver();
+    await expect(runGamePublicationWorkflow(failing, steps, { id, generation: 0 })).rejects.toThrow(
+      "injected successor",
+    );
+    expect(creates).toBe(4);
+    const paused = (await get(`/v1/publications/${id}`)).document;
+    expect(paused).toMatchObject({
+      state: "retry_paused",
+      failure_code: "publication_successor_dispatch_exhausted",
+      deadline: approved.deadline,
+      candidate_id: approved.candidate_id,
+    });
+    expect((await post(`/v1/publications/${id}/advance`, { generation: 0 })).document).toEqual(paused);
+    await runGamePublicationWorkflow(failing, steps, { id, generation: 0 });
+    expect((await get(`/v1/publications/${id}`)).document).toEqual(paused);
+    expect(creates).toBe(4);
+    const dispatched: unknown[] = [];
+    const successful = {
+      ...testEnv,
+      CATALOGUE_DB: db,
+      RECONCILIATION_WORKFLOW: {
+        async create(input: unknown) {
+          dispatched.push(input);
+          return {
+            async status() {
+              return { status: "queued" };
+            },
+          };
+        },
       },
-    },
-  } as unknown as Env;
-  const steps = stepDriver();
-  await expect(runGamePublicationWorkflow(failing, steps, { id, generation: 0 })).rejects.toThrow("injected successor");
-  expect(creates).toBe(4);
-  const paused = (await get(`/v1/publications/${id}`)).document;
-  expect(paused).toMatchObject({
-    state: "retry_paused",
-    failure_code: "publication_successor_dispatch_exhausted",
-    deadline: approved.deadline,
-    candidate_id: approved.candidate_id,
-  });
-  expect((await post(`/v1/publications/${id}/advance`, { generation: 0 })).document).toEqual(paused);
-  await runGamePublicationWorkflow(failing, steps, { id, generation: 0 });
-  expect((await get(`/v1/publications/${id}`)).document).toEqual(paused);
-  expect(creates).toBe(4);
-  const dispatched: unknown[] = [];
-  const successful = {
-    ...testEnv,
-    CATALOGUE_DB: db,
-    RECONCILIATION_WORKFLOW: {
-      async create(input: unknown) {
-        dispatched.push(input);
-        return {
-          async status() {
-            return { status: "queued" };
-          },
-        };
-      },
-    },
-  } as unknown as Parameters<typeof resumeGamePublication>[0];
-  const resumed = await resumeGamePublication(
-    successful,
-    id,
-    { generation: 0, idempotency_key: "successor-resume" },
-    new Date().toISOString(),
-  );
-  expect(resumed).toMatchObject({
-    generation: 1,
-    state: "approved",
-    deadline: approved.deadline,
-    candidate_id: approved.candidate_id,
-  });
-  await pauseGamePublication(db, id, 0, "publication_successor_dispatch_exhausted", { shard: 0, sequence: 0 });
-  expect((await get(`/v1/publications/${id}`)).document.state).toBe("approved");
-  expect(await reservePublicExportAttempt(db, id, 1, 1)).toBe(true);
-  await pauseGamePublication(db, id, 1, "publication_successor_dispatch_exhausted", { shard: 0, sequence: 0 });
-  expect((await get(`/v1/publications/${id}`)).document.state).toBe("approved");
-  await runGamePublicationWorkflow(failing, stepDriver(), { id, generation: 0 });
-  expect(creates).toBe(4);
-  expect(dispatched).toHaveLength(1);
-});
+    } as unknown as Parameters<typeof resumeGamePublication>[0];
+    const resumed = await resumeGamePublication(
+      successful,
+      id,
+      { generation: 0, idempotency_key: "successor-resume" },
+      new Date().toISOString(),
+    );
+    expect(resumed).toMatchObject({
+      generation: 1,
+      state: "approved",
+      deadline: approved.deadline,
+      candidate_id: approved.candidate_id,
+    });
+    await pauseGamePublication(db, id, 0, "publication_successor_dispatch_exhausted", { shard: 0, sequence });
+    expect((await get(`/v1/publications/${id}`)).document.state).toBe("approved");
+    expect(await reservePublicExportAttempt(db, id, 1, 1)).toBe(true);
+    await pauseGamePublication(db, id, 1, "publication_successor_dispatch_exhausted", { shard: 0, sequence });
+    expect((await get(`/v1/publications/${id}`)).document.state).toBe("approved");
+    await runGamePublicationWorkflow(failing, stepDriver(), { id, generation: 0 });
+    expect(creates).toBe(4);
+    expect(dispatched).toHaveLength(1);
+  },
+);
 
 test("forty durable attempts pause without an implicit advance or another successor budget", async () => {
   const approved = await approvedCandidate("attempt-budget");
