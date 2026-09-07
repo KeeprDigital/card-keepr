@@ -114,9 +114,16 @@ export function admissionEntityStatement(database: CatalogueStore, kind: "card" 
   const table = kind === "card" ? "revision_cards" : "revision_printings";
   const column = kind === "card" ? "card_id" : "printing_id";
   return repositoryStatements(database)
-    .prepare(`SELECT document_json FROM ${table}
-    WHERE catalogue_revision_id = (SELECT current_revision_id FROM catalogue_state WHERE singleton = 1) AND ${column} = ?`)
-    .bind(id);
+    .prepare(`WITH current AS (SELECT current_revision_id AS id FROM catalogue_state WHERE singleton = 1)
+      SELECT json_extract(b.content, '$.records[0].value') AS document_json
+      FROM current JOIN catalogue_composition_games m ON m.catalogue_revision_id = current.id
+      JOIN publication_read_entities e ON e.candidate_id = m.candidate_id AND e.kind = ?2 AND e.entity_id = ?1
+      JOIN publication_projection_batches b ON b.candidate_id = e.candidate_id AND b.ordinal = e.batch_ordinal
+      UNION ALL SELECT document_json FROM ${table}, current
+      WHERE catalogue_revision_id = current.id AND ${column} = ?1
+      AND NOT EXISTS (SELECT 1 FROM catalogue_revisions WHERE id = current.id AND publication_operation_id IS NOT NULL)
+      LIMIT 1`)
+    .bind(id, kind === "card" ? "cards" : "printings");
 }
 export function admissionPinStatement(database: CatalogueStore, run: string) {
   return repositoryStatements(database)
@@ -300,13 +307,19 @@ export function pinnedAdmissionStatement(database: CatalogueStore, run: string, 
 
 export function admissionCardIdentityStatement(database: CatalogueStore, game: string, identity: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT card_id AS id FROM revision_cards
-    WHERE catalogue_revision_id = (SELECT current_revision_id FROM catalogue_state WHERE singleton = 1)
-      AND json_extract(document_json, '$.data.game') = ? AND json_extract(document_json, '$.data.official_identity') = json(?)
-    UNION SELECT json_extract(d.decision_json, '$.card.id') AS id FROM entity_admission_decisions d
+    .prepare(`WITH current AS (SELECT current_revision_id AS id FROM catalogue_state WHERE singleton = 1)
+      SELECT e.entity_id AS id FROM current
+      JOIN catalogue_composition_games m ON m.catalogue_revision_id = current.id AND m.supported_game = ?1
+      JOIN publication_read_entities e ON e.candidate_id = m.candidate_id AND e.kind = 'cards'
+        AND e.identity_kind = json_extract(?2, '$.kind') AND e.identity_value = json_extract(?2, '$.value')
+      UNION SELECT card_id AS id FROM revision_cards, current
+      WHERE catalogue_revision_id = current.id
+        AND json_extract(document_json, '$.data.game') = ?1 AND json_extract(document_json, '$.data.official_identity') = json(?2)
+        AND NOT EXISTS (SELECT 1 FROM catalogue_revisions WHERE id = current.id AND publication_operation_id IS NOT NULL)
+      UNION SELECT json_extract(d.decision_json, '$.card.id') AS id FROM entity_admission_decisions d
       WHERE d.action IN ('admit', 'link') AND d.generation = (SELECT MAX(generation) FROM entity_admission_decisions WHERE proposal_id = d.proposal_id)
-      AND json_extract(d.decision_json, '$.card.game') = ? AND json_extract(d.decision_json, '$.card.official_identity') = json(?) LIMIT 2`)
-    .bind(game, identity, game, identity);
+      AND json_extract(d.decision_json, '$.card.game') = ?1 AND json_extract(d.decision_json, '$.card.official_identity') = json(?2) LIMIT 2`)
+    .bind(game, identity);
 }
 
 export function proposalSourceEvidenceStatement(database: CatalogueStore, id: string, after: string) {
