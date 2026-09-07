@@ -650,6 +650,8 @@ async function collectSource(input, environment, runtime) {
   return JSON.parse(result.stdout);
 }
 
+const injectedFixtureRuns = new Set();
+
 async function collectFixtureSource(input, environment) {
   const response = await fetch(new URL("/acceptance/synthetic-evidence", environment.KEEPR_INGESTION_URL), {
     method: "POST",
@@ -674,6 +676,7 @@ async function collectFixtureSource(input, environment) {
   });
   const document = await response.json();
   assert.equal(response.status, 201, JSON.stringify(document));
+  injectedFixtureRuns.add(document.id);
   return document;
 }
 
@@ -700,7 +703,9 @@ async function resumeAndWait(runId, environment, runtime) {
   const sourceResponse = await fetch(`${runtime.url}/v1/ingestion-runs/${runId}/evidence`, { headers });
   assert.equal(sourceResponse.status, 200);
   const source = await sourceResponse.json();
-  if (source.state === "collecting") {
+  if (!injectedFixtureRuns.has(runId)) {
+    if (source.state !== "collecting")
+      return waitForNativeCollection(runId, "sealed", environment, runtime, { deadlineMs: 20_000 });
     const resumed = await runCli(["source", "resume", "--run-id", runId, "--json"], environment);
     assert.equal(resumed.code, 0, resumed.stdout + resumed.stderr);
   } else {
