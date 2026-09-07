@@ -59,10 +59,12 @@ test("five-game composition and current plus two survive an actual SQL import", 
     },
   });
   let api;
+  let journeyCompleted = false;
   t.after(async () => {
     if (api) await stopWorker(api);
     await stopWorker(worker);
-    await rm(directory, { recursive: true, force: true });
+    if (journeyCompleted) await rm(directory, { recursive: true, force: true });
+    else t.diagnostic(`Failed five-game replay state retained at ${directory}`);
   });
   await waitForHealth(`${worker.url}/health`, adminKey, worker);
   api = await startWorker({ config: "apps/api/wrangler.jsonc", statePath, vars: { API_BEARER_KEY: apiKey } });
@@ -149,7 +151,7 @@ test("five-game composition and current plus two survive an actual SQL import", 
     const collection = await waitForAdministrationDocument(
       `/v1/ingestion-runs/${source.id}/game-candidates`,
       (d) =>
-        d.candidates.some((c) => c.state === "failed")
+        d.candidates.some((c) => ["failed", "paused"].includes(c.state))
           ? JSON.stringify(d)
           : d.candidates.length === 1 && d.candidates[0].state === "sealed",
       environment,
@@ -190,7 +192,7 @@ test("five-game composition and current plus two survive an actual SQL import", 
     ]);
     const candidate = await waitForAdministrationDocument(
       `/v1/game-candidates/${prepared.id}`,
-      (d) => d.state === "sealed" || (d.state === "failed" ? JSON.stringify(d) : false),
+      (d) => d.state === "sealed" || (["failed", "paused"].includes(d.state) ? JSON.stringify(d) : false),
       environment,
       worker,
       { deadlineMs: 120_000 },
@@ -234,4 +236,5 @@ test("five-game composition and current plus two survive an actual SQL import", 
   await waitForHealth(`${api.url}/health`, apiKey, api);
   assert.deepEqual(await nativeExportRecords(api.url, apiKey, revisions.at(-1), "cards"), cards);
   await verifyRetainedReads();
+  journeyCompleted = true;
 });
