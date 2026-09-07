@@ -78,6 +78,8 @@ test("fixtures without an interval keep their existing unpaced behavior", async 
     },
   });
   assert.equal(await request({}, () => 42), 42);
+  for (const interval of ["bad", "-1"])
+    assert.throws(() => request({ ...environment, KEEPR_NATIVE_REQUEST_INTERVAL_MS: interval }, () => {}), RangeError);
 });
 
 test("shipped CLI, native reads and administration polls use the same queue", async (t) => {

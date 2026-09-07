@@ -1,5 +1,6 @@
 // One queue for opt-in native administration traffic, including CLI commands,
-// helper reads and polling. Hold the slot through the response so slow commands
+// helper reads and polling. Hold the slot until the CLI exits or fetch headers
+// arrive so slow commands
 // cannot release a burst of overdue reservations. Failures are never retried.
 export function createNativeRequestQueue({
   now = () => Date.now(),
@@ -8,7 +9,7 @@ export function createNativeRequestQueue({
   const origins = new Map();
   return function request(environment, action) {
     const interval = Number(environment?.KEEPR_NATIVE_REQUEST_INTERVAL_MS ?? 0);
-    if (!interval) return action();
+    if (interval === 0) return action();
     if (!Number.isFinite(interval) || interval < 0) throw new RangeError("Invalid native request interval");
     const origin = new URL(environment.KEEPR_INGESTION_URL ?? "http://127.0.0.1:8788").origin;
     let state = origins.get(origin);
