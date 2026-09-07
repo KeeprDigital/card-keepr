@@ -1,6 +1,7 @@
 import { URL } from "node:url";
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
+import { canonicalJson } from "../../src/catalogue/shared";
 import { riftboundSourceAdapterRegistration } from "../../src/catalogue/adapters/riftbound-source-adapter";
 
 const fixture = new URL("../../acceptance/fixtures/real-sources/2026-09-08-riftbound/raw/", import.meta.url);
@@ -14,6 +15,7 @@ test("Riot English pagination retains every returned record and literal token an
       ...(await riftboundSourceAdapterRegistration.parseBytes!(bytes, { url, mediaType: "application/json" })),
     );
   }
+  expect(() => canonicalJson(observations)).not.toThrow();
   const cards = observations.filter((o) => o.card);
   expect(cards).toHaveLength(1189);
   const byLocator = new Map(cards.map((o) => [o.identity_evidence.locator, o]));

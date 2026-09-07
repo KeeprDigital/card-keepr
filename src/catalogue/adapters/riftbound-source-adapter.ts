@@ -180,7 +180,7 @@ function observation(card: Record<string, unknown>, count: number, metadata: Rec
     appearance_evidence: { images: [{ role: "front", source_url: imageUrl.href, artwork_fingerprint: fingerprint }] },
     memberships: { products: [], distribution_contexts: [], source_buckets: [text(set.id)] },
     product_release_catalogue: { products: [], distribution_contexts: [], relationships: [] },
-    source_sidecar: { publisher_record: card, pagination_metadata: metadata, unmapped_optional_fields: [] },
+    source_sidecar: { publisher_record_json: JSON.stringify(card), pagination_metadata: metadata, unmapped_optional_fields: [] },
   };
 }
 function record(value: unknown): Record<string, unknown> {
