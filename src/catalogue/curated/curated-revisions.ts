@@ -909,6 +909,12 @@ type PinnedDraftRevision = {
   reviewed_source_digest: string;
 };
 
+export class CuratedDraftInvalidError extends Error {
+  constructor() {
+    super("curated_revision_composed_candidate_invalid");
+  }
+}
+
 export class CuratedDraftSourceChangeError extends Error {
   constructor(readonly diagnostics: (after?: string) => AsyncIterable<Record<string, unknown>>) {
     super("curated_revision_reconfirmation_required");
@@ -936,6 +942,7 @@ export async function applyPinnedCuratedRevisionsToDraft(
   result: CatalogueDraft,
   observedAt: string,
   progress?: { cursor: CuratedDraftCursor; checkpoint(cursor: CuratedDraftCursor, record?: unknown): Promise<void> },
+  independentGame = false,
 ): Promise<void> {
   const cursor: CuratedDraftCursor = progress?.cursor ?? {
     stage: "strip",
@@ -1039,11 +1046,13 @@ export async function applyPinnedCuratedRevisionsToDraft(
   if (cursor.stage === "validate") {
     for await (const entry of validateCuratedDraft(result, cursor)) {
       if (!entry.valid) {
-        await database.batch([
-          curatedStatements.failInvalidCuratedCandidateStatement(database, { observedAt, runId }),
-          curatedStatements.releaseCuratedRunStatement(database, { runId }),
-        ]);
-        throw new Error("curated_revision_composed_candidate_invalid");
+        if (!independentGame) {
+          await database.batch([
+            curatedStatements.failInvalidCuratedCandidateStatement(database, { observedAt, runId }),
+            curatedStatements.releaseCuratedRunStatement(database, { runId }),
+          ]);
+        }
+        throw new CuratedDraftInvalidError();
       }
       cursor.kind = entry.kind;
       cursor.after = entry.entity.id;

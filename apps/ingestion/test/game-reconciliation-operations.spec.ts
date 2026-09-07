@@ -446,6 +446,77 @@ test("a native source change retains reconfirmable curated diagnostics without f
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
 }, 30000);
 
+test("invalid native curated composition fails terminally and replays its retained outcome", async () => {
+  const source = await collect("/reconciliation/curated-composition-character", "native-invalid-curated-seed");
+  const seed = await reconcile(source.id);
+  const card = (seed.document.cards as { id: string }[])[0]!;
+  const published = await approve(seed.document);
+  expect(published.response.status).toBe(200);
+  const proposal = {
+    game: "one-piece",
+    target: { kind: "field", entity_type: "card", entity_id: card.id, path: "/game_data/attributes/life" },
+    assertion: { kind: "field", value: null },
+    rationale: "A Character does not need Leader life",
+    evidence: [{ kind: "owner_reference", uri: "https://owner.example/composition", content_digest: "a".repeat(64) }],
+    effective_interval: { from: null, to: null },
+    reviewed_source_digest: await sha256Text(canonicalJson(5)),
+    supersedes_revision_id: null,
+  };
+  const revision = await post("/admin/v1/curated-revisions", {
+    environment: "production",
+    expected_current_revision_id: published.document.resulting_revision_id,
+    proposal,
+    proposal_digest: await sha256Text(canonicalJson(proposal)),
+    idempotency_key: "native-invalid-curated-revision",
+  });
+  expect(revision.response.status, JSON.stringify(revision.document)).toBe(201);
+  const changed = await collect("/reconciliation/curated-composition-leader", "native-invalid-curated-next");
+  const intent = {
+    ingestion_run_id: changed.id,
+    supported_game: "one-piece",
+    expected_game_revision_id: published.document.resulting_revision_id,
+    idempotency_key: "native-invalid-curated-candidate",
+  };
+  const created = await post("/v1/game-candidates", intent);
+  expect(created.response.status).toBe(201);
+  const id = requiredString(created.document, "id");
+  let candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  const deadline = Date.now() + 15000;
+  while (candidate.state === "preparing" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  }
+  expect(candidate, JSON.stringify(candidate)).toMatchObject({
+    state: "failed",
+    failure_code: "curated_revision_composed_candidate_invalid",
+  });
+  expect((await get(`/v1/ingestion-runs/${changed.id}`)).document).toMatchObject({ state: "parsing" });
+  const replay = await post("/v1/game-candidates", intent);
+  expect(replay.response.status).toBe(200);
+  expect(replay.document).toEqual(candidate);
+  const workflowReplay = await runReconciliationWorkflow(
+    testEnv,
+    {
+      instanceId: "native-invalid-curated-replay",
+      payload: {
+        ingestion_run_id: changed.id,
+        preparation_id: id,
+        expected_current_revision_id: intent.expected_game_revision_id,
+        idempotency_key: intent.idempotency_key,
+        observed_at: String(created.document.created_at),
+        generation: 0,
+      },
+      timestamp: new Date(),
+    } as import("cloudflare:workers").WorkflowEvent<ReconciliationWorkflowParams>,
+    {
+      do: async (_name: string, _config: unknown, callback: () => Promise<string>) => callback(),
+    } as unknown as import("cloudflare:workers").WorkflowStep,
+  );
+  expect(JSON.parse(workflowReplay.result_json).result).toEqual(candidate.outcome);
+  expect(new TextEncoder().encode(JSON.stringify(workflowReplay)).byteLength).toBeLessThan(49152);
+  expect((await get(`/v1/game-candidates/${id}`)).document).toEqual(candidate);
+});
+
 test("a fresh native preparation pins later owner corrections and retains them across retirement", async () => {
   const source = await collect("/reconciliation/base", "native-fresh-curated-source");
   const seed = await reconcile(source.id);

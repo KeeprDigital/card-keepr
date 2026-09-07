@@ -53,6 +53,7 @@ import {
 } from "./canonical-identity";
 import {
   CuratedDraftSourceChangeError,
+  CuratedDraftInvalidError,
   CuratedConflictStorageError,
   restoreCuratedEntitySourceFields,
 } from "../curated";
@@ -1688,8 +1689,26 @@ export async function reconcileRetainedCardPrintingEvidence(
     }
     const curated = new ReconciliationCandidateState(database, runId, "curated", official);
     try {
-      await prepareCuratedDraft(database, runId, official, curated, observedAt, yieldAtCheckpoint);
+      await prepareCuratedDraft(
+        database,
+        runId,
+        official,
+        curated,
+        observedAt,
+        yieldAtCheckpoint,
+        run.supported_game !== null,
+      );
     } catch (error) {
+      if (error instanceof CuratedDraftInvalidError && run.supported_game !== null) {
+        const failed = await failIndependentGamePreparation(database, runId, error.message, [
+          {
+            code: error.message,
+            detail: "The pinned curated corrections produce an invalid candidate with the retained source facts.",
+          },
+        ]);
+        if (failed) return failed;
+        throw error;
+      }
       if (!(error instanceof CuratedDraftSourceChangeError)) throw error;
       const diagnostics = await prepareCuratedConflictDiagnostics(
         database,

@@ -18,6 +18,7 @@ export async function prepareCuratedDraft(
   curated: ReconciliationCandidateState,
   observedAt: string,
   yieldAtCheckpoint: boolean,
+  independentGame = false,
 ) {
   const checkpoint = await reconciliationCheckpoint<Cursor>(database, runId, "curated_revisions");
   if (checkpoint) {
@@ -34,25 +35,33 @@ export async function prepareCuratedDraft(
   let ordinal = (checkpoint?.ordinal ?? -1) + 1;
   let records = 0,
     bytes = 0;
-  await applyPinnedCuratedRevisionsToDraft(database, runId, official, curated, observedAt, {
-    cursor,
-    checkpoint: async (progress, record) => {
-      if (record !== undefined) {
-        records++;
-        bytes += new TextEncoder().encode(canonicalJson(record)).byteLength;
-      }
-      if (record !== undefined && records < 4 && bytes < 512000) return;
-      await retainReconciliationCheckpoint(database, runId, "curated_revisions", ordinal, {
-        progress,
-        official: official.positions,
-        curated: curated.positions,
-      } satisfies Cursor);
-      if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "curated_revisions", ordinal });
-      ordinal++;
-      records = 0;
-      bytes = 0;
+  await applyPinnedCuratedRevisionsToDraft(
+    database,
+    runId,
+    official,
+    curated,
+    observedAt,
+    {
+      cursor,
+      checkpoint: async (progress, record) => {
+        if (record !== undefined) {
+          records++;
+          bytes += new TextEncoder().encode(canonicalJson(record)).byteLength;
+        }
+        if (record !== undefined && records < 4 && bytes < 512000) return;
+        await retainReconciliationCheckpoint(database, runId, "curated_revisions", ordinal, {
+          progress,
+          official: official.positions,
+          curated: curated.positions,
+        } satisfies Cursor);
+        if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "curated_revisions", ordinal });
+        ordinal++;
+        records = 0;
+        bytes = 0;
+      },
     },
-  });
+    independentGame,
+  );
 }
 
 /** Retain conflict diagnostics once in revision order before sorting or hashing them. */

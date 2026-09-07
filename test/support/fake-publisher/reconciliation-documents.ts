@@ -408,6 +408,26 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       ],
     };
   }
+  if (scenario === "curated-composition-character" || scenario === "curated-composition-leader") {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP96-001",
+          name: "Synthetic curated composition",
+          cardAttributes: {
+            ...onePieceLeaderAttributes(),
+            card_type: scenario === "curated-composition-character" ? "character" : "leader",
+            cost: 1,
+          },
+          printingAttributes: { illustration_types: [] },
+          locator: "/curated-composition",
+          lineageMarker: "curated-composition",
+        }),
+      ],
+    };
+  }
   if (scenario === "large-card-content") {
     return {
       cards: [

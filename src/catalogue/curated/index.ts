@@ -5,6 +5,7 @@
 export {
   CuratedRevisionSourceChangeError,
   CuratedDraftSourceChangeError,
+  CuratedDraftInvalidError,
   type CuratedDraftCursor,
   applyPinnedCuratedRevisionsToDraft,
   applyPinnedCuratedRevisions,
