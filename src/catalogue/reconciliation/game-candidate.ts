@@ -1,4 +1,8 @@
-import { verifyInspectionArtifacts, inspectionIntegrityReceipt, type InspectionIntegrityCursor } from "./game-inspection-integrity";
+import {
+  verifyInspectionArtifacts,
+  inspectionIntegrityReceipt,
+  type InspectionIntegrityCursor,
+} from "./game-inspection-integrity";
 import { inspectionEvidenceClasses, inspectionEvidenceStatement } from "./game-inspection-evidence-repository";
 import {
   prepareCandidateInspection,
@@ -261,8 +265,18 @@ export async function prepareGameCandidateManifests(
           cursor.ordinal++;
         },
       );
-      const integrity = await verifyInspectionArtifacts(database, printingImageObjects, header, cursor.ordinal, cursor.digest!, cursor.integrity,
-        async (integrity) => { cursor.integrity = integrity; await save(); });
+      const integrity = await verifyInspectionArtifacts(
+        database,
+        printingImageObjects,
+        header,
+        cursor.ordinal,
+        cursor.digest!,
+        cursor.integrity,
+        async (integrity) => {
+          cursor.integrity = integrity;
+          await save();
+        },
+      );
       const summaryContent = canonicalJson([
         {
           contract: "card-keepr-partitioned-record@1",
@@ -428,16 +442,40 @@ export async function inspectGameCandidateReadiness(
     counts: Record<string, Record<string, number>>;
     record_count: number;
     content_partitions: number;
-    integrity: { manifest_prefix: string; partitions: number; texts: number; images: number; complete: boolean; sha256: string };
+    integrity: {
+      manifest_prefix: string;
+      partitions: number;
+      texts: number;
+      images: number;
+      complete: boolean;
+      sha256: string;
+    };
   };
   if (!value.integrity?.complete || value.integrity.partitions !== summary.ordinal)
-    throw new AdministrationProblem(409, "candidate_artifact_invalid", "Candidate inspection has no complete integrity receipt.");
+    throw new AdministrationProblem(
+      409,
+      "candidate_artifact_invalid",
+      "Candidate inspection has no complete integrity receipt.",
+    );
   const { sha256: receiptSha, ...receipt } = value.integrity;
-  if (await sha256Text(canonicalJson(receipt)) !== receiptSha || await sha256Text(canonicalJson({
-    previous: receipt.manifest_prefix, ordinal: summary.ordinal, kind: "inspection_summary", sha256: partition.sha256,
-    record_count: 1, byte_length: partition.byte_length,
-  })) !== candidate.manifest_digest)
-    throw new AdministrationProblem(409, "candidate_artifact_invalid", "Inspection integrity receipt is not bound to this candidate manifest.");
+  if (
+    (await sha256Text(canonicalJson(receipt))) !== receiptSha ||
+    (await sha256Text(
+      canonicalJson({
+        previous: receipt.manifest_prefix,
+        ordinal: summary.ordinal,
+        kind: "inspection_summary",
+        sha256: partition.sha256,
+        record_count: 1,
+        byte_length: partition.byte_length,
+      }),
+    )) !== candidate.manifest_digest
+  )
+    throw new AdministrationProblem(
+      409,
+      "candidate_artifact_invalid",
+      "Inspection integrity receipt is not bound to this candidate manifest.",
+    );
   const counts = (
     await gameCandidateInspectionCountsStatement(database, candidateId).all<{
       kind: string;

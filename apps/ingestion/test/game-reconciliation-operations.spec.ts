@@ -675,6 +675,11 @@ test("native supplemental admission retains collection evidence and preparation-
     candidate = (await get(`/v1/game-candidates/${id}`)).document;
   }
   expect(candidate, JSON.stringify(candidate)).toMatchObject({ state: "sealed" });
+  const admissionEvidence = await get(`/v1/game-candidates/${id}/inspection/evidence/admission`);
+  expect(admissionEvidence.response.status).toBe(200);
+  expect(admissionEvidence.document.records).toEqual([
+    expect.objectContaining({ action: "admit", source_lineage: "limitless-one-piece-en" }),
+  ]);
   const proposals = (await get("/v1/entity-proposals?game=one-piece")).document.proposals as Record<string, unknown>[];
   expect(proposals).toEqual([
     expect.objectContaining({ status: "admitted", source_lineage: "limitless-one-piece-en" }),

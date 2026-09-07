@@ -127,7 +127,8 @@ Download and verify an image with authenticated
 `GET /v1/game-candidates/:candidate/partitions/:ordinal/images/:record?manifest=SHA256`,
 where `record` is its zero-based index in a `printing_images` partition. The route
 verifies the image bytes before returning the stream and rejects missing or
-corrupt objects.
+corrupt objects. For an `inspection` record whose class is `printing_images`, use
+the same route with `side=before` or `side=after` to inspect that exact side.
 
 Readiness binds the candidate manifest and exact game predecessor. An expired,
 abandoned, or stale candidate is not ready. A candidate sealed by an older
@@ -141,3 +142,16 @@ final switch verify their own readiness independently.
 Approval remains a decision about the whole candidate. Reading every page is
 available to the owner and requires no per-item acknowledgement. These commands
 do not approve or publish a candidate.
+
+The summary includes a durable integrity receipt for metadata partitions, complete
+text digests and both proposed and predecessor image bytes. Verification runs in
+bounded preparation callbacks; the receipt binds the verified manifest prefix and
+is itself sealed into the final manifest. This is an integrity snapshot, not
+continuous object-health monitoring. Subsequent object reads still verify bytes,
+and publication retains its independent final verification gates.
+
+A published predecessor from the explicit legacy publication contract may have
+only retained candidate JSON. Preparation reads that exact revision through the
+existing bounded payload cursor, retaining before-values and text under the new
+preparation. A missing predecessor payload remains an integrity failure; no
+current-revision substitution or test-environment dispatch shortcut is used.

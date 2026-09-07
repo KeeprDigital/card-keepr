@@ -255,3 +255,62 @@ test("injected corrupt inspection summary cannot report readiness", async () => 
   );
   expect(response.status).toBe(409);
 });
+
+test("injected loss of a replaced before-image prevents a native inspection integrity receipt", async () => {
+  const base = await collect("/reconciliation/deterministic-forward", "inspection-before-image-base");
+  const result = await reconcile(base.id);
+  const published = await post(`/v1/ingestion-runs/${base.id}/approval`, {
+    candidate_digest: result.document.candidate_digest,
+    expected_current_revision_id: result.document.expected_current_revision_id,
+    idempotency_key: "inspection-before-image-publish",
+  });
+  expect(published.response.status).toBe(200);
+  const status = await get(`/v1/ingestion-runs/${base.id}/reconciliation`);
+  const priorId = (status.document.candidates as { id: string }[])[0]!.id;
+  const { nativeCandidateRecords } = await import("./native-candidate-helpers");
+  const previous = await nativeCandidateRecords(priorId);
+  const printings = result.document.printings as { id: string }[];
+  const correction = {
+    game: "one-piece",
+    entity_kind: "printing",
+    action: "merge",
+    source_ids: [printings[0]!.id],
+    replacement_ids: [printings[1]!.id],
+    printing_assignments: {},
+    expected_current_revision_id: published.document.resulting_revision_id,
+    rationale: "Synthetic owner identity correction for inspection",
+    evidence: { attestation: "Synthetic owner review of both retained Printings" },
+  };
+  const validation = await post("/v1/identity-corrections/validate", correction);
+  expect(validation.response.status, JSON.stringify(validation.document)).toBe(200);
+  expect(
+    (
+      await post("/v1/identity-corrections", {
+        ...correction,
+        review_digest: validation.document.review_digest,
+        idempotency_key: "inspection-before-image-correction",
+      })
+    ).response.status,
+  ).toBe(201);
+  // Inject loss after owner review. This image will exist only in the before-value.
+  const retiredImage = previous.printing_images!.find((image) => image.printing_id === printings[0]!.id)!;
+  await testEnv.PRINTING_IMAGES.delete(String(retiredImage.object_key));
+  const next = await collect("/reconciliation/card-without-printing", "inspection-before-image-next");
+  const created = await post("/v1/game-candidates", {
+    ingestion_run_id: next.id,
+    supported_game: "one-piece",
+    expected_game_revision_id: published.document.resulting_revision_id,
+    idempotency_key: "inspection-before-image-native",
+  });
+  expect(created.response.status).toBe(201);
+  const id = requiredString(created.document, "id");
+  const deadline = Date.now() + 15000;
+  let candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  while (candidate.state === "preparing" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  }
+  expect(candidate, JSON.stringify(candidate)).toMatchObject({ state: "paused", manifest_digest: null });
+  expect((await get(`/v1/game-candidates/${id}/inspection`)).document).toMatchObject({ ready: false });
+  expect((await get(`/v1/ingestion-runs/${next.id}`)).document).toMatchObject({ state: "parsing" });
+});

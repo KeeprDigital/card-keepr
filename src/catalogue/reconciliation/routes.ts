@@ -59,6 +59,7 @@ export const reconciliationRoutes = [
         candidate.id,
         params.ordinal!,
         params.record!,
+        new URL(request.url).searchParams.get("side") ?? "after",
       );
     },
   ),

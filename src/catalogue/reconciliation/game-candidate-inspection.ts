@@ -1,3 +1,6 @@
+import { candidateAtRevisionStatement } from "./reconciliation-read-repository";
+import { retainPartitionedRecord } from "./reconciliation-text";
+import { retainedPayloadChunks, resumableObjectMembers, type ObjectMemberCursor } from "../shared";
 import { documentStorage } from "./reconciliation-document";
 import { AdministrationProblem, canonicalJson, sha256Text, type CatalogueStore } from "../shared";
 import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
@@ -13,18 +16,21 @@ export type InspectionCursor = {
   beforePosition: number;
   afterPosition: number;
   after: string;
+  legacy?: { runId: string; member: ObjectMemberCursor | null };
   count: number;
   counts: Record<string, Record<string, number>>;
 };
 
 export async function verifiedCandidatePartition(database: CatalogueStore, id: string, ordinal: number) {
-  const row = await documentStorage(() => gameCandidatePartitionStatement(database, id, ordinal).first<{
-    content: string;
-    kind: string;
-    sha256: string;
-    byte_length: number;
-    record_count: number;
-  }>());
+  const row = await documentStorage(() =>
+    gameCandidatePartitionStatement(database, id, ordinal).first<{
+      content: string;
+      kind: string;
+      sha256: string;
+      byte_length: number;
+      record_count: number;
+    }>(),
+  );
   if (!row)
     throw new AdministrationProblem(409, "candidate_artifact_missing", "A required candidate partition is missing.");
   if (
@@ -69,11 +75,13 @@ export async function prepareCandidateInspection(
 ) {
   const cursor: InspectionCursor = state ?? {
     stage: "before",
-    predecessor: await documentStorage(() => predecessorGameCandidateStatement(
-      database,
-      candidate.expected_game_revision_id,
-      candidate.supported_game,
-    ).first<{ id: string; preparation_id: string; partition_count: number }>()),
+    predecessor: await documentStorage(() =>
+      predecessorGameCandidateStatement(database, candidate.expected_game_revision_id, candidate.supported_game).first<{
+        id: string;
+        preparation_id: string;
+        partition_count: number;
+      }>(),
+    ),
     partition: 0,
     record: 0,
     beforePosition: 0,
@@ -82,8 +90,19 @@ export async function prepareCandidateInspection(
     count: 0,
     counts: {},
   };
-  if (!cursor.predecessor && candidate.expected_game_revision_id !== "catrev_spine_000")
-    throw new Error("The exact predecessor candidate required for inspection is unavailable.");
+  let legacyPayload: { ingestion_run_id: string; candidate_json: string } | null = null;
+  if (!cursor.predecessor && candidate.expected_game_revision_id !== "catrev_spine_000") {
+    legacyPayload = await documentStorage(() =>
+      candidateAtRevisionStatement(database, candidate.expected_game_revision_id).first<{
+        ingestion_run_id: string;
+        candidate_json: string;
+      }>(),
+    );
+    if (!legacyPayload) throw new Error("The exact predecessor candidate required for inspection is unavailable.");
+    if (cursor.legacy && cursor.legacy.runId !== legacyPayload.ingestion_run_id)
+      throw new Error("Retained predecessor identity changed.");
+    cursor.legacy ??= { runId: legacyPayload.ingestion_run_id, member: null };
+  }
   const before = new ReconciliationReducerIndex<Entry>(
     database,
     candidate.preparation_id,
@@ -132,8 +151,8 @@ export async function prepareCandidateInspection(
       before: left?.envelope.value ?? null,
       after: right?.envelope.value ?? null,
       before_text: {
-        candidate_id: cursor.predecessor?.id ?? null,
-        preparation_id: cursor.predecessor?.preparation_id ?? null,
+        candidate_id: cursor.legacy ? candidate.id : (cursor.predecessor?.id ?? null),
+        preparation_id: cursor.legacy ? candidate.preparation_id : (cursor.predecessor?.preparation_id ?? null),
         parts: left?.envelope.text_parts ?? [],
       },
       after_text: {
@@ -145,6 +164,45 @@ export async function prepareCandidateInspection(
     cursor.count++;
     bytes += new TextEncoder().encode(canonicalJson(pending.at(-1))).byteLength;
   };
+  if (cursor.stage === "before" && cursor.legacy && legacyPayload) {
+    for await (const { member, cursor: position } of resumableObjectMembers(
+      (chunk) =>
+        retainedPayloadChunks(database, cursor.legacy!.runId, "candidate", legacyPayload!.candidate_json, chunk),
+      cursor.legacy.member,
+    )) {
+      if (member.kind === "value" && member.array) {
+        const value = member.value as Record<string, unknown>;
+        let selected =
+          typeof value === "string" ? value === candidate.supported_game : value?.game === candidate.supported_game;
+        if (member.key === "printings" && value && typeof value.card_id === "string")
+          selected = !!(await before.get(`cards:${value.card_id}`));
+        if (member.key === "printing_images" && value && typeof value.printing_id === "string")
+          selected = !!(await before.get(`printings:${value.printing_id}`));
+        if (selected) {
+          const id =
+            typeof value === "object" && value !== null
+              ? typeof value.id === "string"
+                ? value.id
+                : member.key === "source_checks"
+                  ? canonicalJson([value.game, value.area])
+                  : canonicalJson(value)
+              : canonicalJson(value);
+          const key = `${member.key}:${id}`;
+          await before.seed(key, {
+            id: key,
+            entity_id: id,
+            kind: member.key,
+            envelope: await retainPartitionedRecord(database, candidate.preparation_id, member.value),
+          });
+        }
+        bytes += new TextEncoder().encode(canonicalJson(member.value)).byteLength;
+      }
+      cursor.legacy.member = position;
+      if (++work >= 4 || bytes >= 512000) await retain();
+    }
+    cursor.stage = "after";
+    await retain();
+  }
   for (const stage of ["before", "after"] as const) {
     if (cursor.stage !== stage) continue;
     const source = stage === "before" ? cursor.predecessor?.id : candidate.id;
@@ -168,10 +226,13 @@ export async function prepareCandidateInspection(
           if (stage === "before") await before.seed(key, entry);
           else {
             await emit(await before.get(key), entry);
-            if (cursor.predecessor) await after.seed(key, entry);
+            if (cursor.predecessor || cursor.legacy) await after.seed(key, entry);
           }
           cursor.record++;
-          if ((++work >= (cursor.predecessor ? 4 : 32) || bytes >= 128000) && cursor.record < page.records.length)
+          if (
+            (++work >= (cursor.predecessor || cursor.legacy ? 4 : 32) || bytes >= 128000) &&
+            cursor.record < page.records.length
+          )
             await retain();
         }
       }
@@ -279,6 +340,7 @@ export async function candidateImageContent(
   candidateId: string,
   ordinal: string,
   record: string,
+  side = "after",
 ) {
   if (
     !/^\d+$/.test(ordinal) ||
@@ -292,10 +354,18 @@ export async function candidateImageContent(
       "Use a candidate partition and image record ordinal.",
     );
   const partition = await verifiedCandidatePartition(database, candidateId, Number(ordinal));
-  const image = partition.records[Number(record)]?.value as
-    | { object_key: string; content_sha256: string; content_byte_length: number; media_type: string }
-    | undefined;
-  if (partition.kind !== "printing_images" || !image)
+  const value = partition.records[Number(record)]?.value;
+  if (side !== "before" && side !== "after")
+    throw new AdministrationProblem(422, "invalid_image_reference", "Use before or after for the image side.");
+  const inspection = value as { entity_class?: string; before?: unknown; after?: unknown } | undefined;
+  const image = (
+    partition.kind === "inspection" && inspection?.entity_class === "printing_images"
+      ? inspection[side]
+      : partition.kind === "printing_images" && side === "after"
+        ? value
+        : undefined
+  ) as { object_key: string; content_sha256: string; content_byte_length: number; media_type: string } | undefined;
+  if (!image)
     throw new AdministrationProblem(404, "candidate_image_not_found", "This partition record is not a Printing Image.");
   const object = await bucket.get(image.object_key);
   if (!object)

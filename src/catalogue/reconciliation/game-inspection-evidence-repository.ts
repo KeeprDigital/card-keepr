@@ -20,8 +20,9 @@ export function inspectionEvidenceStatement(
       'source_observation_set_id', source_observation_set_id, 'source_observation_id', source_observation_id,
       'locator', locator, 'variant_key', variant_key, 'evidence', json(evidence_json), 'mapped_at', mapped_at) AS document_json
       FROM reconciliation_source_mappings mapping WHERE preparation_id = ?1
-      AND EXISTS (SELECT 1 FROM game_candidate_entity_scopes scope WHERE scope.preparation_id = mapping.preparation_id
-        AND scope.id = mapping.entity_id AND scope.kind = mapping.entity_kind || 's' AND scope.supported_game = ?2)`;
+      AND (EXISTS (SELECT 1 FROM reconciliation_operations operation WHERE operation.id = mapping.preparation_id AND operation.supported_game = ?2)
+        OR EXISTS (SELECT 1 FROM game_candidate_entity_scopes scope WHERE scope.preparation_id = mapping.preparation_id
+        AND scope.id = mapping.entity_id AND scope.kind = mapping.entity_kind || 's' AND scope.supported_game = ?2))`;
       break;
     case "admission":
       source = `SELECT proposal.id, json_object('proposal_id', proposal.id,
