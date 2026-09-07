@@ -364,8 +364,8 @@ test("an empty complete game seals a verified empty composition", async () => {
   const artifacts = (await get(`${path}/artifacts`)).document.artifacts as { kind: string }[];
   expect(artifacts.map(({ kind }) => kind).sort()).toEqual([
     "game_profiles",
-    "game_profiles",
-    "supported_games",
+    "query_search",
+    "query_search",
     "supported_games",
   ]);
   expect((await get(`${path}/query?kind=cards`)).document.records).toEqual([]);
