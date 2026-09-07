@@ -87,3 +87,57 @@ game slot. The legacy run-level preparation and approval adapter remains for
 compatibility. Both paths use bounded reducers and partitioned retained work;
 see [Reconciliation continuation](reconciliation-workflows.md) for dispatch,
 resource bounds, and the native publication integration boundary.
+
+## Complete candidate inspection
+
+Newly prepared candidates retain `inspection` partitions and one
+`inspection_summary` partition in the same immutable game manifest. Inspect the
+summary and use the manifest returned by `show` to pin subsequent pages:
+
+```sh
+keepr game-candidate inspect --candidate-id CANDIDATE --manifest SHA256 --json
+keepr game-candidate partitions --candidate-id CANDIDATE --manifest SHA256 --json
+keepr game-candidate partition --candidate-id CANDIDATE --ordinal 0 --manifest SHA256 --json
+keepr game-candidate evidence --candidate-id CANDIDATE --kind identity --manifest SHA256 --json
+```
+
+Pass each returned opaque `next_cursor` unchanged as `--after`. Partition cursors
+bind the manifest; evidence cursors also bind their class. The supported evidence
+classes are `identity`, `admission`, `correction`, and `curated`. These pages expose
+retained decisions and mapping evidence from this preparation, including the
+original collection, Source Snapshot, and Source Observation Set references.
+Download retained source bytes through the existing authenticated
+`/v1/source-snapshots/:snapshot/content` and
+`/v1/source-observation-sets/:observationSet/content` routes. The candidate's
+`inputs` pages retain source coverage and verification metadata.
+
+Every inspection detail names its entity class and exact expected Game Catalogue
+Revision, and includes full before/after values. Products include their complete
+Release values; relationships include both endpoints. Changes are `added`,
+`removed`, `changed`, `evidence_only`, or `carry_forward`. Warnings, exclusions,
+source checks and identity corrections remain inspectable alongside catalogue
+entities. The summary's per-class counts reconcile with all inspection detail
+records. Evidence counts reconcile separately with the evidence-class pages.
+
+Large text uses the existing transport placeholders. Restore the detail's own
+`text_parts` first, then use `before_text` and `after_text` to restore referenced
+values from their respective preparations. Never interpret a transport null as a
+source assertion. Printing Image records retain their face/role and exact digest.
+Download and verify an image with authenticated
+`GET /v1/game-candidates/:candidate/partitions/:ordinal/images/:record?manifest=SHA256`,
+where `record` is its zero-based index in a `printing_images` partition. The route
+verifies the image bytes before returning the stream and rejects missing or
+corrupt objects.
+
+Readiness binds the candidate manifest and exact game predecessor. An expired,
+abandoned, or stale candidate is not ready. A candidate sealed by an older
+runtime without inspection artifacts reports `inspection_not_prepared`; its
+immutable manifest is never amended. Create a fresh candidate through the normal
+owner operation when complete inspection is required. Corrupt partition bytes,
+missing required partitions, and inconsistent counts fail inspection. Inspection
+readiness describes retained review artifacts; publication preparation and its
+final switch verify their own readiness independently.
+
+Approval remains a decision about the whole candidate. Reading every page is
+available to the owner and requires no per-item acknowledgement. These commands
+do not approve or publish a candidate.

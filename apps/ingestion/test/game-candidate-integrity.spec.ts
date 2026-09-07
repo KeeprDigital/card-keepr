@@ -70,3 +70,188 @@ test("reusing a published collection retains native mapping ownership separately
   expect((await get(`/v1/reconciliation/identities/${printingId}`)).document).toEqual(original);
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "published" });
 });
+
+test("candidate partition inspection rejects a mixed manifest pin and returns verified content identity", async () => {
+  const run = await collect("/reconciliation/base", "inspection-pin");
+  await reconcile(run.id);
+  const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+  const id = (status.document.candidates as { id: string }[])[0]!.id;
+  const candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  const wrong = await get(`/v1/game-candidates/${id}/partitions/0?manifest=${"0".repeat(64)}`);
+  expect(wrong.response.status).toBe(409);
+  const detail = await get(`/v1/game-candidates/${id}/partitions/0?manifest=${candidate.manifest_digest}`);
+  expect(detail.response.status).toBe(200);
+  expect(detail.document).toMatchObject({
+    candidate_id: id,
+    manifest_digest: candidate.manifest_digest,
+    expected_game_revision_id: candidate.expected_game_revision_id,
+  });
+});
+
+test("owner inspection retains complete proposed values and semantic differences against its exact predecessor", async () => {
+  const run = await collect("/reconciliation/base", "inspection-values");
+  await reconcile(run.id);
+  const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+  const id = (status.document.candidates as { id: string }[])[0]!.id;
+  const pages = await get(`/v1/game-candidates/${id}/partitions`);
+  const inspection = (pages.document.partitions as { kind: string; ordinal: number }[]).filter(
+    (p) => p.kind === "inspection",
+  );
+  expect(inspection.length).toBeGreaterThan(0);
+  const details = await Promise.all(inspection.map((p) => get(`/v1/game-candidates/${id}/partitions/${p.ordinal}`)));
+  const records = details.flatMap((p) => p.document.records as Record<string, unknown>[]);
+  expect(records).toContainEqual(
+    expect.objectContaining({
+      entity_class: "cards",
+      change: "added",
+      before: null,
+      after: expect.objectContaining({ name: "Monkey.D.Luffy" }),
+      expected_game_revision_id: "catrev_spine_000",
+    }),
+  );
+});
+
+for (const change of ["product", "release", "image", "evidence"]) {
+  test(`synthetic ${change}-only refresh has complete native candidate inspection`, async () => {
+    const base = await collect("/reconciliation/inspection-base", `inspection-${change}-base`);
+    const result = await reconcile(base.id);
+    const published = await post(`/v1/ingestion-runs/${base.id}/approval`, {
+      candidate_digest: result.document.candidate_digest,
+      expected_current_revision_id: result.document.expected_current_revision_id,
+      idempotency_key: `inspection-${change}-publish`,
+    });
+    expect(published.response.status).toBe(200);
+    const next = await collect(`/reconciliation/inspection-${change}`, `inspection-${change}-next`);
+    const created = await post("/v1/game-candidates", {
+      ingestion_run_id: next.id,
+      supported_game: "one-piece",
+      expected_game_revision_id: published.document.resulting_revision_id,
+      idempotency_key: `inspection-${change}-native`,
+    });
+    expect(created.response.status).toBe(201);
+    const id = requiredString(created.document, "id");
+    const deadline = Date.now() + 15000;
+    let candidate = (await get(`/v1/game-candidates/${id}`)).document;
+    while (candidate.state === "preparing" && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      candidate = (await get(`/v1/game-candidates/${id}`)).document;
+    }
+    expect(candidate).toMatchObject({ state: "sealed" });
+    const { nativeCandidateRecords } = await import("./native-candidate-helpers");
+    const records = await nativeCandidateRecords(id);
+    const differences = records.inspection!;
+    const summary = await get(`/v1/game-candidates/${id}/inspection?manifest=${candidate.manifest_digest}`);
+    expect(summary.response.status, JSON.stringify(summary.document)).toBe(200);
+    expect(summary.document).toMatchObject({
+      ready: true,
+      record_count: differences.length,
+      approval_scope: "whole_candidate",
+      expected_game_revision_id: published.document.resulting_revision_id,
+    });
+    expect(differences).toContainEqual(
+      expect.objectContaining({
+        entity_class: "cards",
+        change: "carry_forward",
+        before: expect.objectContaining({ name: "Inspection Card" }),
+        after: expect.objectContaining({ name: "Inspection Card" }),
+      }),
+    );
+    if (change === "product")
+      expect(differences).toContainEqual(
+        expect.objectContaining({
+          entity_class: "products",
+          change: "changed",
+          before: expect.objectContaining({ name: "Inspection Product" }),
+          after: expect.objectContaining({ name: "Revised Product" }),
+        }),
+      );
+    if (change === "release")
+      expect(differences).toContainEqual(
+        expect.objectContaining({
+          entity_class: "products",
+          change: "changed",
+          before: expect.objectContaining({
+            releases: [expect.objectContaining({ date: { precision: "month", value: "2026-09" } })],
+          }),
+          after: expect.objectContaining({
+            releases: [expect.objectContaining({ date: { precision: "month", value: "2026-10" } })],
+          }),
+        }),
+      );
+    if (change === "image")
+      expect(differences.some((row) => row.entity_class === "printing_images" && row.change !== "carry_forward")).toBe(
+        true,
+      );
+    if (change === "evidence")
+      expect(differences).toContainEqual(
+        expect.objectContaining({ entity_class: "products", change: "evidence_only" }),
+      );
+    const evidence = await get(`/v1/game-candidates/${id}/inspection/evidence/identity`);
+    expect(evidence.response.status).toBe(200);
+    expect((evidence.document.records as unknown[]).length).toBe(1);
+    const mixed = await get(`/v1/game-candidates/${id}/partitions?after=${"0".repeat(64)}:0`);
+    expect(mixed.response.status).toBe(409);
+  });
+}
+
+test("owner image inspection verifies bytes and injected missing images fail closed", async () => {
+  const { default: worker } = await import("../src/index");
+  const run = await collect("/reconciliation/base", "inspection-image-download");
+  await reconcile(run.id);
+  const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+  const id = (status.document.candidates as { id: string }[])[0]!.id;
+  const page = await get(`/v1/game-candidates/${id}/partitions`);
+  const image = (page.document.partitions as { ordinal: number; kind: string }[]).find(
+    (p) => p.kind === "printing_images",
+  )!;
+  const details = await get(`/v1/game-candidates/${id}/partitions/${image.ordinal}`);
+  const metadata = (details.document.records as { object_key: string; content_byte_length: number }[])[0]!;
+  const request = () =>
+    new Request(`https://card-keepr.invalid/v1/game-candidates/${id}/partitions/${image.ordinal}/images/0`, {
+      headers: { authorization: "Bearer vitest-administration-key" },
+    });
+  const response = await worker.fetch(request(), testEnv);
+  expect(response.status).toBe(200);
+  expect((await response.arrayBuffer()).byteLength).toBe(metadata.content_byte_length);
+  // Explicit injected storage loss, not a finding about retained real-source evidence.
+  await testEnv.PRINTING_IMAGES.delete(metadata.object_key);
+  const missing = await worker.fetch(request(), testEnv);
+  expect(missing.status).toBe(409);
+});
+
+test("injected corrupt inspection summary cannot report readiness", async () => {
+  const { default: worker } = await import("../src/index");
+  const run = await collect("/reconciliation/base", "inspection-corrupt-summary");
+  await reconcile(run.id);
+  const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+  const id = (status.document.candidates as { id: string }[])[0]!.id;
+  const statement = (original: D1PreparedStatement): D1PreparedStatement =>
+    new Proxy(original, {
+      get(target, property) {
+        if (property === "bind") return (...values: unknown[]) => statement(target.bind(...values));
+        if (property === "first")
+          return async (...args: unknown[]) => {
+            const value = await Reflect.apply(target.first, target, args);
+            return value && typeof value === "object" && "kind" in value && value.kind === "inspection_summary"
+              ? { ...value, sha256: "0".repeat(64) }
+              : value;
+          };
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  const database = new Proxy(testEnv.CATALOGUE_DB, {
+    get(target, property) {
+      if (property === "prepare") return (sql: string) => statement(target.prepare(sql));
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const response = await worker.fetch(
+    new Request(`https://card-keepr.invalid/v1/game-candidates/${id}/inspection`, {
+      headers: { authorization: "Bearer vitest-administration-key" },
+    }),
+    { ...testEnv, CATALOGUE_DB: database },
+  );
+  expect(response.status).toBe(409);
+});

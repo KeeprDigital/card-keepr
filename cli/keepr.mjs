@@ -48,10 +48,24 @@ const commandRoutes = {
   },
   reconciliationStatus: { path: "/v1/ingestion-runs/{run-id}/reconciliation" },
   reconciliationText: { path: "/v1/ingestion-runs/{run-id}/reconciliation/text/{digest}/{ordinal}" },
+  gameCandidateEvidence: {
+    path: "/v1/game-candidates/{candidate-id}/inspection/evidence/{kind}?after={after}&manifest={manifest}",
+    optional: ["after", "manifest"],
+  },
+  gameCandidateInspection: {
+    path: "/v1/game-candidates/{candidate-id}/inspection?manifest={manifest}",
+    optional: ["manifest"],
+  },
   gameCandidate: { path: "/v1/game-candidates/{candidate-id}" },
   collectionGameCandidates: { path: "/v1/ingestion-runs/{run-id}/game-candidates?after={after}", optional: ["after"] },
-  gameCandidatePartitions: { path: "/v1/game-candidates/{candidate-id}/partitions?after={after}", optional: ["after"] },
-  gameCandidatePartition: { path: "/v1/game-candidates/{candidate-id}/partitions/{ordinal}" },
+  gameCandidatePartitions: {
+    path: "/v1/game-candidates/{candidate-id}/partitions?after={after}&manifest={manifest}",
+    optional: ["after", "manifest"],
+  },
+  gameCandidatePartition: {
+    path: "/v1/game-candidates/{candidate-id}/partitions/{ordinal}?manifest={manifest}",
+    optional: ["manifest"],
+  },
   reconciliationPartitions: {
     path: "/v1/ingestion-runs/{run-id}/reconciliation/partitions?after={after}",
     optional: ["after"],
@@ -306,6 +320,8 @@ const commands = {
   "reconciliation text": (args, env, json) => routeCommand("reconciliationText", args, env, json),
   "game-candidate show": (args, env, json) => routeCommand("gameCandidate", args, env, json),
   "game-candidate list": (args, env, json) => routeCommand("collectionGameCandidates", args, env, json),
+  "game-candidate evidence": (args, env, json) => routeCommand("gameCandidateEvidence", args, env, json),
+  "game-candidate inspect": (args, env, json) => routeCommand("gameCandidateInspection", args, env, json),
   "game-candidate partitions": (args, env, json) => routeCommand("gameCandidatePartitions", args, env, json),
   "game-candidate partition": (args, env, json) => routeCommand("gameCandidatePartition", args, env, json),
   "reconciliation inputs": (args, env, json) => routeCommand("reconciliationInputs", args, env, json),

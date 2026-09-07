@@ -4,6 +4,54 @@ import { createHash } from "node:crypto";
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
 export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
+  if (scenario.startsWith("inspection-")) {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP01-001",
+      name: "Inspection Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: {},
+      locator: "/inspection/stable",
+      lineageMarker: "one-piece",
+      memberships: { products: ["INSPECT-01"], distribution_contexts: [], source_buckets: ["main-list"] },
+    });
+    if (scenario === "inspection-image")
+      observation.appearance_evidence.images = [
+        fixturePrintingImage(
+          "front",
+          "https://official-source.invalid/images/OP01-001.png",
+          `sha256:${"a".repeat(64)}`,
+          "inspection-changed-bytes",
+        ),
+      ];
+    return {
+      cards: [
+        {
+          ...observation,
+          product_release_catalogue: {
+            products: [
+              {
+                reference: { kind: "official_code", value: "INSPECT-01" },
+                official_code: "INSPECT-01",
+                name: scenario === "inspection-product" ? "Revised Product" : "Inspection Product",
+                releases: [
+                  {
+                    event_key: "inspection-release",
+                    region: "EN-OCEANIA",
+                    date: { precision: "month", value: scenario === "inspection-release" ? "2026-10" : "2026-09" },
+                    status: "announced",
+                  },
+                ],
+              },
+            ],
+            distribution_contexts: [],
+            relationships: [],
+          },
+        },
+      ],
+    };
+  }
   if (scenario === "capacity-product-identity-fanout" || scenario === "capacity-product-identity-fanout-base") {
     const base = scenario.endsWith("-base");
     return {

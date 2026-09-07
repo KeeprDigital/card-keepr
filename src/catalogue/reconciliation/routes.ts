@@ -1,5 +1,7 @@
+import { inspectCandidateEvidence, candidateImageContent } from "./game-candidate-inspection";
 import {
   inspectGameCandidate,
+  inspectGameCandidateReadiness,
   inspectGameCandidatePartitions,
   inspectGameCandidatePartition,
   listCollectionGameCandidates,
@@ -37,11 +39,56 @@ import { resumeReconciliationWorkflow, startOrObserveReconciliationWorkflow } fr
 
 type Environment = {
   CATALOGUE_DB: CatalogueStore;
+  PRINTING_IMAGES: R2Bucket;
   RECONCILIATION_WORKFLOW: Parameters<typeof startOrObserveReconciliationWorkflow>[1];
 };
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const reconciliationRoutes = [
+  route<Context>(
+    "GET",
+    "/v1/game-candidates/:candidate/partitions/:ordinal/images/:record",
+    async ({ env, request }, params) => {
+      const candidate = await inspectGameCandidate(env.CATALOGUE_DB, params.candidate!);
+      const manifest = new URL(request.url).searchParams.get("manifest");
+      if (manifest !== null && manifest !== candidate.manifest_digest)
+        throw new AdministrationProblem(409, "candidate_pin_mismatch", "Use the exact candidate manifest.");
+      return candidateImageContent(
+        env.CATALOGUE_DB,
+        env.PRINTING_IMAGES,
+        candidate.id,
+        params.ordinal!,
+        params.record!,
+      );
+    },
+  ),
+  route<Context>(
+    "GET",
+    "/v1/game-candidates/:candidate/inspection/evidence/:kind",
+    async ({ env, request }, params) => {
+      const candidate = await inspectGameCandidate(env.CATALOGUE_DB, params.candidate!);
+      const query = new URL(request.url).searchParams;
+      return Response.json(
+        await inspectCandidateEvidence(
+          env.CATALOGUE_DB,
+          candidate,
+          params.kind!,
+          query.get("after"),
+          query.get("manifest"),
+        ),
+      );
+    },
+  ),
+  route<Context>("GET", "/v1/game-candidates/:candidate/inspection", async ({ env, request, observedAt }, params) =>
+    Response.json(
+      await inspectGameCandidateReadiness(
+        env.CATALOGUE_DB,
+        params.candidate!,
+        new URL(request.url).searchParams.get("manifest"),
+        observedAt,
+      ),
+    ),
+  ),
   route<Context>("GET", "/v1/game-candidates/:candidate/progress", async ({ env }, params) =>
     Response.json(await inspectGameCandidateProgress(env.CATALOGUE_DB, params.candidate!)),
   ),
@@ -130,11 +177,19 @@ export const reconciliationRoutes = [
         env.CATALOGUE_DB,
         params.candidate!,
         new URL(request.url).searchParams.get("after"),
+        new URL(request.url).searchParams.get("manifest"),
       ),
     ),
   ),
-  route<Context>("GET", "/v1/game-candidates/:candidate/partitions/:ordinal", async ({ env }, params) =>
-    Response.json(await inspectGameCandidatePartition(env.CATALOGUE_DB, params.candidate!, params.ordinal!)),
+  route<Context>("GET", "/v1/game-candidates/:candidate/partitions/:ordinal", async ({ env, request }, params) =>
+    Response.json(
+      await inspectGameCandidatePartition(
+        env.CATALOGUE_DB,
+        params.candidate!,
+        params.ordinal!,
+        new URL(request.url).searchParams.get("manifest"),
+      ),
+    ),
   ),
   route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation/inputs", async ({ env, request }, params) =>
     Response.json(

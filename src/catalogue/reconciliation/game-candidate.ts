@@ -1,3 +1,10 @@
+import { inspectionEvidenceClasses, inspectionEvidenceStatement } from "./game-inspection-evidence-repository";
+import {
+  prepareCandidateInspection,
+  verifiedCandidatePartition,
+  type InspectionCursor,
+} from "./game-candidate-inspection";
+import { retainPartitionedRecord } from "./reconciliation-text";
 import { AdministrationProblem, canonicalJson, type CatalogueDraft, type CatalogueStore, sha256Text } from "../shared";
 import type { CanonicalRecordSource } from "./reconciliation-canonical-digest";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
@@ -11,6 +18,9 @@ import {
   gameCandidatesForPreparationStatement,
   gameCandidatesForCollectionStatement,
   gameCandidateStatement,
+  inspectionGameHeadStatement,
+  gameCandidateInspectionSummaryStatement,
+  gameCandidateInspectionCountsStatement,
   gameCandidatePartitionsStatement,
   gameCandidatePartitionStatement,
   insertGameCandidatePartitionStatement,
@@ -47,6 +57,8 @@ type PreparationCursor = {
   ordinal: number;
   digest: string | null;
   seals: { id: string; digest: string; count: number }[];
+  inspection?: InspectionCursor;
+  contentPartitions?: number;
 };
 
 /** Legacy run adapter: each game manifest is prepared through durable bounded scans. */
@@ -201,8 +213,92 @@ export async function prepareGameCandidateManifests(
           if (++work === 8 || bytes >= 512000) await save();
         }
       }
+      cursor.contentPartitions ??= cursor.ordinal;
+      await prepareCandidateInspection(
+        database,
+        header,
+        cursor.inspection,
+        cursor.contentPartitions,
+        async (inspection) => {
+          cursor.inspection = inspection;
+          await save();
+        },
+        async (values) => {
+          const envelopes = [];
+          for (const value of values) envelopes.push(await retainPartitionedRecord(database, runId, value));
+          const content = canonicalJson(envelopes);
+          if (new TextEncoder().encode(content).byteLength > 524288)
+            throw new Error("reconciliation_capacity_exceeded: inspection record exceeds 512 KiB.");
+          const sha256 = await sha256Text(content);
+          await documentStorage(() =>
+            insertGameCandidatePartitionStatement(
+              database,
+              header.id,
+              cursor.ordinal,
+              "inspection",
+              content,
+              sha256,
+              values.length,
+            ).run(),
+          );
+          const retained = await documentStorage(() =>
+            gameCandidatePartitionStatement(database, header.id, cursor.ordinal).first<{ content: string }>(),
+          );
+          if (retained?.content !== content) throw new Error("Inspection replay differs from its immutable content.");
+          cursor.digest = await sha256Text(
+            canonicalJson({
+              previous: cursor.digest,
+              ordinal: cursor.ordinal,
+              kind: "inspection",
+              sha256,
+              record_count: values.length,
+              byte_length: new TextEncoder().encode(content).byteLength,
+            }),
+          );
+          cursor.ordinal++;
+        },
+      );
+      const summaryContent = canonicalJson([
+        {
+          contract: "card-keepr-partitioned-record@1",
+          value: {
+            game: header.supported_game,
+            approval_scope: "whole_candidate",
+            expected_game_revision_id: header.expected_game_revision_id,
+            counts: cursor.inspection!.counts,
+            record_count: cursor.inspection!.count,
+            content_partitions: cursor.contentPartitions,
+          },
+          text_parts: [],
+        },
+      ]);
+      const summarySha = await sha256Text(summaryContent);
+      await documentStorage(() =>
+        insertGameCandidatePartitionStatement(
+          database,
+          header.id,
+          cursor.ordinal,
+          "inspection_summary",
+          summaryContent,
+          summarySha,
+          1,
+        ).run(),
+      );
+      cursor.digest = await sha256Text(
+        canonicalJson({
+          previous: cursor.digest,
+          ordinal: cursor.ordinal,
+          kind: "inspection_summary",
+          sha256: summarySha,
+          record_count: 1,
+          byte_length: new TextEncoder().encode(summaryContent).byteLength,
+        }),
+      );
+      cursor.ordinal++;
       cursor.seals.push({ id: header.id, digest: cursor.digest!, count: cursor.ordinal });
       cursor.game++;
+      delete cursor.inspection;
+      delete cursor.contentPartitions;
       cursor.partition = -1;
       cursor.ordinal = 0;
       cursor.digest = null;
@@ -254,36 +350,133 @@ export async function inspectGameCandidatePartitions(
   database: CatalogueStore,
   candidateId: string,
   after: string | null,
+  manifest: string | null = null,
 ) {
-  const cursor = after === null ? -1 : Number(after);
+  const candidate = await inspectGameCandidate(database, candidateId);
+  if (manifest !== null && manifest !== candidate.manifest_digest)
+    throw new AdministrationProblem(409, "candidate_pin_mismatch", "Use pages from the exact candidate manifest.");
+  const parts = after?.split(":");
+  if (parts && (parts.length !== 2 || parts[0] !== candidate.manifest_digest))
+    throw new AdministrationProblem(409, "candidate_pin_mismatch", "Use the returned manifest-bound cursor.");
+  const cursor = after === null ? -1 : Number(parts![1]);
   if (!Number.isSafeInteger(cursor) || cursor < -1)
     throw new AdministrationProblem(422, "invalid_cursor", "Use the returned partition cursor.");
-  const candidate = await inspectGameCandidate(database, candidateId);
   const partitions = (await gameCandidatePartitionsStatement(database, candidateId, cursor).all<{ ordinal: number }>())
     .results;
   return {
     contract: "card-keepr-game-candidate-partitions@1",
     candidate,
     partitions,
-    next_cursor: partitions.length === 100 ? String(partitions.at(-1)!.ordinal) : null,
+    next_cursor: partitions.length === 100 ? `${candidate.manifest_digest}:${partitions.at(-1)!.ordinal}` : null,
   };
 }
 
-export async function inspectGameCandidatePartition(database: CatalogueStore, candidateId: string, ordinal: string) {
+export async function inspectGameCandidatePartition(
+  database: CatalogueStore,
+  candidateId: string,
+  ordinal: string,
+  manifest: string | null = null,
+) {
+  const candidate = await inspectGameCandidate(database, candidateId);
+  if (manifest !== null && manifest !== candidate.manifest_digest)
+    throw new AdministrationProblem(409, "candidate_pin_mismatch", "Use pages from the exact candidate manifest.");
   if (!/^\d+$/.test(ordinal) || !Number.isSafeInteger(Number(ordinal)))
     throw new AdministrationProblem(422, "invalid_cursor", "Use a retained partition ordinal.");
-  const partition = await gameCandidatePartitionStatement(database, candidateId, Number(ordinal)).first<{
-    kind: string;
-    content: string;
-    sha256: string;
-  }>();
-  if (!partition)
-    throw new AdministrationProblem(404, "partition_not_found", "This game candidate partition does not exist.");
-  const envelopes = JSON.parse(partition.content) as { value: unknown; text_parts: unknown[] }[];
+  const partition = await verifiedCandidatePartition(database, candidateId, Number(ordinal));
+  const envelopes = partition.records;
   return {
+    candidate_id: candidate.id,
+    manifest_digest: candidate.manifest_digest,
+    expected_game_revision_id: candidate.expected_game_revision_id,
     kind: partition.kind,
     sha256: partition.sha256,
     records: envelopes.map((record) => record.value),
     text_parts: envelopes.map((record) => record.text_parts),
+  };
+}
+
+export async function inspectGameCandidateReadiness(
+  database: CatalogueStore,
+  candidateId: string,
+  manifest: string | null,
+  observedAt = new Date().toISOString(),
+) {
+  const candidate = await inspectGameCandidate(database, candidateId);
+  if (manifest !== null && manifest !== candidate.manifest_digest)
+    throw new AdministrationProblem(409, "candidate_pin_mismatch", "Use the exact candidate manifest.");
+  const summary = await gameCandidateInspectionSummaryStatement(database, candidateId).first<{ ordinal: number }>();
+  if (!summary || !candidate.manifest_digest)
+    return {
+      contract: "card-keepr-candidate-inspection@1",
+      candidate_id: candidate.id,
+      preparation_id: candidate.preparation_id,
+      manifest_digest: candidate.manifest_digest,
+      expected_game_revision_id: candidate.expected_game_revision_id,
+      ready: false,
+      reason: "inspection_not_prepared",
+      approval_scope: "whole_candidate",
+    };
+  const partition = await verifiedCandidatePartition(database, candidateId, summary.ordinal);
+  const value = partition.records[0]!.value as {
+    counts: Record<string, Record<string, number>>;
+    record_count: number;
+    content_partitions: number;
+  };
+  const counts = (
+    await gameCandidateInspectionCountsStatement(database, candidateId).all<{
+      kind: string;
+      partitions: number;
+      records: number;
+    }>()
+  ).results;
+  if (
+    counts.reduce((sum, row) => sum + row.partitions, 0) !== candidate.partition_count ||
+    counts.find((row) => row.kind === "inspection")?.records !== value.record_count ||
+    Object.values(value.counts)
+      .flatMap(Object.values)
+      .reduce((sum, count) => sum + count, 0) !== value.record_count
+  )
+    throw new AdministrationProblem(
+      409,
+      "candidate_artifact_invalid",
+      "Candidate inspection counts do not reconcile with retained details.",
+    );
+  const head = await inspectionGameHeadStatement(database, candidate.supported_game).first<{ revision_id: string }>();
+  const reason =
+    candidate.state !== "sealed"
+      ? "candidate_not_sealed"
+      : candidate.deadline <= observedAt
+        ? "candidate_expired"
+        : head?.revision_id !== candidate.expected_game_revision_id
+          ? "game_predecessor_changed"
+          : null;
+  return {
+    contract: "card-keepr-candidate-inspection@1",
+    candidate_id: candidate.id,
+    preparation_id: candidate.preparation_id,
+    ingestion_run_id: candidate.ingestion_run_id,
+    manifest_digest: candidate.manifest_digest,
+    expected_game_revision_id: candidate.expected_game_revision_id,
+    deadline: candidate.deadline,
+    ready: reason === null,
+    reason,
+    approval_scope: "whole_candidate",
+    counts: value.counts,
+    record_count: value.record_count,
+    evidence_counts: Object.fromEntries(
+      await Promise.all(
+        inspectionEvidenceClasses.map(async (kind) => [
+          kind,
+          (await inspectionEvidenceStatement(
+            database,
+            candidate.preparation_id,
+            candidate.supported_game,
+            kind,
+            "",
+            true,
+          ).first<{ count: number }>())!.count,
+        ]),
+      ),
+    ),
   };
 }
