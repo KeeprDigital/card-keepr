@@ -138,7 +138,7 @@ export async function compositionExportComponentResponse(
     return undefined;
   }
   await requirePublicExport(db, revisionId);
-  const match = /^(one-piece|fusion-world|digimon|gundam)\.(0|[1-9]\d*)$/.exec(name);
+  const match = /^(one-piece|fusion-world|digimon|gundam|riftbound)\.(0|[1-9]\d*)$/.exec(name);
   if (!match || !Number.isSafeInteger(Number(match[2]))) return null;
   const artifact = await composedExportArtifactStatement(db, revisionId, match[1]!, Number(match[2])).first<Artifact>();
   if (!artifact) return null;

@@ -191,7 +191,7 @@
       "properties": {
         "profile": {
           "type": "string",
-          "pattern": "^(one-piece|fusion-world|digimon|gundam)@[1-9][0-9]*$"
+          "pattern": "^(one-piece|fusion-world|digimon|gundam|riftbound)@[1-9][0-9]*$"
         },
         "attributes": {
           "type": "object",
