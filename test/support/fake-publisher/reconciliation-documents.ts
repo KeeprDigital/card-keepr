@@ -472,6 +472,28 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       ),
     };
   }
+  if (scenario === "curated-text-target-base" || scenario === "curated-text-target") {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP93-001",
+          name: "Synthetic curated text target",
+          cardAttributes: {
+            ...onePieceLeaderAttributes(),
+            traits:
+              scenario === "curated-text-target"
+                ? Array.from({ length: 32 }, (_, index) => `Synthetic trait ${index} ${"text ".repeat(8000)}`)
+                : ["Synthetic trait"],
+          },
+          printingAttributes: { illustration_types: [] },
+          locator: "/curated-text-target",
+          lineageMarker: "curated-text-target",
+        }),
+      ],
+    };
+  }
   if (scenario === "three-role-image-work-units") {
     return {
       cards: Array.from({ length: 8 }, (_, index) => {

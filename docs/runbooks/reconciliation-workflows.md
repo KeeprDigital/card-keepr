@@ -100,3 +100,11 @@ The resource regression probes actual D1 and R2 calls through the real Workflow
 for high-degree matches and distinct numbered Cards with equal facts. This is
 not yet proof of callback-wide CPU, memory, stream, or Workflow service-call
 limits; those remain part of final resource acceptance.
+
+Large text fields share bounded write batches across one retained record, with
+at most 16 chunks and 512000 content bytes per batch. Hydration reads at most
+two pages together; each page has at most 16 chunks and 512000 content bytes,
+so their combined fetch stays below 1 MiB. Every chunk receipt and completed
+text digest is still checked. The curated field-target regression retains
+32 large trait strings plus the owner's corrected name and verifies their
+retained candidate references while measuring every callback's D1/R2 calls.

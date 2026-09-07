@@ -2,7 +2,18 @@ import { expect, test } from "vitest";
 import worker from "../src/index";
 import type { ReconciliationWorkflowParams } from "../../../src/catalogue/reconciliation";
 import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
-import { collect, get, installReconciliationSuite, requiredString, testEnv } from "./reconciliation-helpers";
+import {
+  approve,
+  reconcile,
+  post,
+  collect,
+  get,
+  installReconciliationSuite,
+  requiredString,
+  testEnv,
+} from "./reconciliation-helpers";
+
+import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 
 installReconciliationSuite();
 
@@ -11,7 +22,37 @@ test.each([
   "capacity-card-facts-fanout",
   "known-card-facts-fanout",
   "capacity-nested-card-matches",
+  "curated-text-target",
+  "large-card-content",
 ])("%s respects the D1/R2 callback budget", async (scenario) => {
+  let predecessor = "catrev_spine_000";
+  if (scenario === "curated-text-target") {
+    const seed = await reconcile(
+      (await collect("/reconciliation/curated-text-target-base", "curated-resource-seed")).id,
+    );
+    const card = (seed.document.cards as { id: string; name: string }[])[0]!;
+    const published = await approve(seed.document);
+    expect(published.response.status).toBe(200);
+    predecessor = requiredString(published.document, "resulting_revision_id");
+    const proposal = {
+      game: "one-piece",
+      target: { kind: "field", entity_type: "card", entity_id: card.id, path: "/name" },
+      assertion: { kind: "field", value: "Reviewed curated text target" },
+      rationale: "Reviewed name for retained source",
+      evidence: [{ kind: "owner_reference", uri: "https://owner.example/text-target", content_digest: "a".repeat(64) }],
+      effective_interval: { from: null, to: null },
+      reviewed_source_digest: await sha256Text(canonicalJson(card.name)),
+      supersedes_revision_id: null,
+    };
+    const revision = await post("/admin/v1/curated-revisions", {
+      environment: "production",
+      expected_current_revision_id: predecessor,
+      proposal,
+      proposal_digest: await sha256Text(canonicalJson(proposal)),
+      idempotency_key: "curated-resource-correction",
+    });
+    expect(revision.response.status, JSON.stringify(revision.document)).toBe(201);
+  }
   const source = await collect(`/reconciliation/${scenario}`, "native-resource-evidence");
   let params: ReconciliationWorkflowParams | undefined;
   const queued = { status: async () => ({ status: "queued" }) } as unknown as WorkflowInstance;
@@ -29,7 +70,7 @@ test.each([
       body: JSON.stringify({
         ingestion_run_id: source.id,
         supported_game: "one-piece",
-        expected_game_revision_id: "catrev_spine_000",
+        expected_game_revision_id: predecessor,
         idempotency_key: "native-resource-candidate",
       }),
     }),
@@ -100,9 +141,34 @@ test.each([
   );
   expect(measured.filter(({ calls }) => calls > 100)).toEqual([]);
   expect((await get(`/v1/game-candidates/${id}`)).document).toMatchObject({
-    ...(scenario === "known-card-facts-fanout"
+    ...(scenario === "known-card-facts-fanout" ||
+    scenario === "large-card-content" ||
+    scenario === "curated-text-target"
       ? { state: "sealed" }
       : { state: "failed", failure_code: "reconciliation_capacity_exceeded" }),
   });
+  if (scenario === "curated-text-target") {
+    const page = (await get(`/v1/game-candidates/${id}/partitions`)).document;
+    const cards = (page.partitions as { kind: string; ordinal: number }[]).filter((part) => part.kind === "cards");
+    expect(cards).toHaveLength(1);
+    const detail = (await get(`/v1/game-candidates/${id}/partitions/${cards[0]!.ordinal}`)).document;
+    expect(detail.records).toMatchObject([{ name: "Reviewed curated text target" }]);
+    const parts = (detail.text_parts as { path: (string | number)[]; sha256: string; byte_length: number }[][])[0]!;
+    expect(parts).toHaveLength(32);
+    const expectedTraits = Array.from(
+      { length: 32 },
+      (_, index) => `Synthetic trait ${index} ${"text ".repeat(8000)}`,
+    ).sort();
+    for (let index = 0; index < 32; index++) {
+      const expected = expectedTraits[index]!;
+      expect(parts).toContainEqual(
+        expect.objectContaining({
+          path: ["game_data", "attributes", "traits", index],
+          sha256: await sha256Text(expected),
+          byte_length: new TextEncoder().encode(expected).byteLength,
+        }),
+      );
+    }
+  }
   expect(measured.length).toBeGreaterThan(10);
 });
