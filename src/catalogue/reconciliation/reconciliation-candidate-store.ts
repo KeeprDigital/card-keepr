@@ -1,3 +1,4 @@
+import { prepareRunWarningSummary } from "./reconciliation-warning-summary";
 import type { ObservationPlan } from "./reconciliation-plan-state";
 import {
   boundedAsyncRecordArrays,
@@ -101,7 +102,7 @@ export async function persistReviewableCandidate(
     input.yieldAtCheckpoint,
   );
   const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
-  const runWarnings = await boundedRunWarnings(input.warnings);
+  const runWarnings = await prepareRunWarningSummary(database, input.runId, input.warnings, input.yieldAtCheckpoint);
   const preparationCount = await stageCandidatePreparation(database, input);
   const gameSeals = await prepareGameCandidateManifests(
     database,
@@ -148,7 +149,12 @@ export async function persistBlockedCandidate(
   const approvalDeadline = new Date(Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000).toISOString();
   const failureCode = input.failureCode ?? "printing_reconciliation_blocked";
   await persistCandidatePartitions(database, input.runId, input.candidate, input.diagnostics, input.yieldAtCheckpoint);
-  const runDiagnostics = await boundedRunWarnings(input.diagnostics);
+  const runDiagnostics = await prepareRunWarningSummary(
+    database,
+    input.runId,
+    input.diagnostics,
+    input.yieldAtCheckpoint,
+  );
   const preparationCount = await stageCandidatePreparation(database, input);
   const statements = [
     preparationCompleteGuard(database, input.runId, preparationCount),
@@ -167,22 +173,6 @@ export async function persistBlockedCandidate(
     releaseReconciliationRunStatement(database, input.runId),
   ];
   await database.batch(guardedAtomicBatch(statements));
-}
-
-function publicRunDiagnostic(diagnostic: Record<string, unknown>): Record<string, unknown> {
-  const base = {
-    code: String(diagnostic.code),
-    detail: String(diagnostic.detail),
-  };
-  if (diagnostic.code !== "curated_revision_reconfirmation_required") {
-    return base;
-  }
-  return {
-    ...base,
-    curated_revision_id: diagnostic.curated_revision_id,
-    conflict_id: diagnostic.conflict_id,
-    conflict_digest: diagnostic.conflict_digest,
-  };
 }
 
 export async function failReconciliation(
@@ -484,32 +474,4 @@ function recordArray(value: unknown): value is Record<string, unknown>[] {
   return (
     Array.isArray(value) && value.every((item) => item !== null && typeof item === "object" && !Array.isArray(item))
   );
-}
-
-/** Run summaries stay bounded; the complete warnings remain in inspectable partitions. */
-async function boundedRunWarnings(
-  warnings: Iterable<Record<string, unknown>> | AsyncIterable<Record<string, unknown>>,
-): Promise<Record<string, unknown>[]> {
-  const summary: Record<string, unknown>[] = [];
-  let bytes = 2,
-    total = 0,
-    truncated = false;
-  for await (const warning of warnings) {
-    total++;
-    if (truncated) continue;
-    const value = publicRunDiagnostic(warning);
-    const length = new TextEncoder().encode(canonicalJson(value)).byteLength;
-    if (summary.length === 100 || bytes + length > 65024) {
-      truncated = true;
-      continue;
-    }
-    summary.push(value);
-    bytes += length + 1;
-  }
-  if (truncated)
-    summary.push({
-      code: "candidate_warnings_partitioned",
-      detail: `Inspect the candidate warning partitions for all ${total} warnings.`,
-    });
-  return summary;
 }
