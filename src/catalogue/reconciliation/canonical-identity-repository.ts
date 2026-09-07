@@ -123,7 +123,7 @@ export function insertIdentityReviewStatement(database: CatalogueStore, review: 
     statement: repositoryStatements(database)
       .prepare(`INSERT INTO canonical_identity_reviews
       (id, ingestion_run_id, source_lineage, source_observation_id, source_snapshot_id, evidence_json, candidate_printing_ids_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`)
+      VALUES (?, (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?), ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`)
       .bind(
         review.id,
         review.ingestion_run_id,
@@ -138,16 +138,34 @@ export function insertIdentityReviewStatement(database: CatalogueStore, review: 
     after: [
       repositoryStatements(database)
         .prepare(`INSERT INTO canonical_identity_review_runs
-      (review_id, ingestion_run_id, source_observation_id, source_snapshot_id) VALUES (?, ?, ?, ?)
+      (review_id, ingestion_run_id, source_observation_id, source_snapshot_id) VALUES (?, (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?), ?, ?)
       ON CONFLICT(review_id, ingestion_run_id) DO NOTHING`)
         .bind(review.id, review.ingestion_run_id, review.source_observation_id, review.source_snapshot_id),
+      repositoryStatements(database)
+        .prepare(`INSERT INTO reconciliation_identity_reviews (preparation_id, review_id, source_observation_id, source_snapshot_id)
+          SELECT id, ?2, ?3, ?4 FROM reconciliation_operations WHERE id = ?1 AND supported_game IS NOT NULL
+          ON CONFLICT(preparation_id, review_id) DO NOTHING`)
+        .bind(review.ingestion_run_id, review.id, review.source_observation_id, review.source_snapshot_id),
     ],
   });
 }
 export function identityReviewStatement(database: CatalogueStore, id: string) {
   return repositoryStatements(database).prepare("SELECT * FROM canonical_identity_reviews WHERE id = ?").bind(id);
 }
-export function identityReviewsStatement(database: CatalogueStore, run: string, after: string) {
+export function identityReviewsStatement(
+  database: CatalogueStore,
+  run: string,
+  after: string,
+  preparationId: string | null = null,
+) {
+  if (preparationId)
+    return repositoryStatements(database)
+      .prepare(`SELECT review.id, review.source_lineage, review.evidence_json, review.candidate_printing_ids_json, review.created_at,
+      preparation.ingestion_run_id, capture.preparation_id, capture.source_observation_id, capture.source_snapshot_id
+      FROM reconciliation_identity_reviews AS capture JOIN canonical_identity_reviews AS review ON review.id = capture.review_id
+      JOIN reconciliation_operations AS preparation ON preparation.id = capture.preparation_id
+      WHERE capture.preparation_id = ? AND capture.review_id > ? ORDER BY capture.review_id LIMIT 101`)
+      .bind(preparationId, after);
   return repositoryStatements(database)
     .prepare(`SELECT review.id, review.source_lineage, review.evidence_json, review.candidate_printing_ids_json, review.created_at,
        capture.ingestion_run_id, capture.source_observation_id, capture.source_snapshot_id

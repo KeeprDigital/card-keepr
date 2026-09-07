@@ -252,3 +252,110 @@ test("concurrent exact native intents create one operation and replay its origin
   expect(results[0]!.document).toEqual(results[1]!.document);
   expect((await request()).document).toEqual(results[0]!.document);
 });
+
+test("a native preparation excludes a supplemental proposal whose owner link arrived after its decision pin", async () => {
+  const initial = await reconcile(
+    (await collect("/reconciliation/canonical-official", "native-admission-pin-seed")).id,
+  );
+  const cardId = (initial.document.cards as { id: string }[])[0]!.id;
+  expect((await approve(initial.document)).response.status).toBe(200);
+  for (const area of ["card_facts", "printing_details"]) {
+    const response = await worker.fetch(
+      new Request("https://card-keepr.invalid/v1/source-authorities", {
+        method: "POST",
+        headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+        body: JSON.stringify({
+          game: "one-piece",
+          locale: "en",
+          release_region: "OCEANIA",
+          area,
+          source_lineage: "limitless-one-piece-en",
+          expected_generation: "0",
+          rationale: "Synthetic pinned admission",
+          idempotency_key: `native-pinned-${area}`,
+        }),
+      }),
+      testEnv,
+    );
+    expect(response.status, await response.text()).toBe(200);
+  }
+  const source = await collect("/reconciliation/canonical-tabular-unresolved", "native-admission-pin-source", {
+    game: "one-piece",
+    lineage: "limitless-one-piece-en",
+    adapter: "fixture-one-piece-tabular@1",
+  });
+  const unresolved = await reconcile(source.id);
+  const published = await approve(unresolved.document);
+  expect(published.response.status, JSON.stringify(published.document)).toBe(200);
+  const proposal = ((await get("/v1/entity-proposals?game=one-piece")).document.proposals as { id: string }[])[0]!;
+  let params: ReconciliationWorkflowParams | undefined;
+  const instance = { status: async () => ({ status: "queued" }) } as unknown as WorkflowInstance;
+  const workflow = {
+    create: async (options: { params: ReconciliationWorkflowParams }) => {
+      params = options.params;
+      return instance;
+    },
+    get: async () => instance,
+  } as unknown as Env["RECONCILIATION_WORKFLOW"];
+  const response = await worker.fetch(
+    new Request("https://card-keepr.invalid/v1/game-candidates", {
+      method: "POST",
+      headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+      body: JSON.stringify({
+        ingestion_run_id: source.id,
+        supported_game: "one-piece",
+        expected_game_revision_id: published.document.resulting_revision_id,
+        idempotency_key: "native-pinned-late-link",
+      }),
+    }),
+    { ...testEnv, RECONCILIATION_WORKFLOW: workflow },
+  );
+  expect(response.status).toBe(201);
+  const id = requiredString(await response.json<Record<string, unknown>>(), "id");
+  const linked = await worker.fetch(
+    new Request(`https://card-keepr.invalid/v1/entity-proposals/${proposal.id}/decisions`, {
+      method: "POST",
+      headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "link",
+        card_id: cardId,
+        printing_id: (initial.document.printings as { id: string }[])[0]!.id,
+        exception: {
+          scope: ["identity"],
+          attestation: "Synthetic owner inspection establishes the existing Printing identity.",
+        },
+        expected_generation: "0",
+        rationale: "Synthetic later owner link",
+        idempotency_key: "native-owner-link-after-pin",
+      }),
+    }),
+    testEnv,
+  );
+  expect(linked.status, await linked.text()).toBe(200);
+  await runReconciliationWorkflow(
+    testEnv,
+    { instanceId: "native-pinned-late-link-worker", payload: params! } as WorkflowEvent<ReconciliationWorkflowParams>,
+    {
+      do: async (_name: string, _config: unknown, callback: () => Promise<string>) => callback(),
+    } as unknown as WorkflowStep,
+  );
+  expect((await get(`/v1/game-candidates/${id}`)).document).toMatchObject({ state: "sealed" });
+  const partitions = (await get(`/v1/game-candidates/${id}/partitions`)).document.partitions as {
+    ordinal: number;
+    kind: string;
+  }[];
+  const warnings: Record<string, unknown>[] = [];
+  for (const partition of partitions.filter((part) => part.kind === "warnings" || part.kind === "shared_warnings"))
+    warnings.push(
+      ...((await get(`/v1/game-candidates/${id}/partitions/${partition.ordinal}`)).document.records as Record<
+        string,
+        unknown
+      >[]),
+    );
+  expect(warnings).toContainEqual(expect.objectContaining({ code: "entity_proposal_excluded" }));
+  expect((await get(`/v1/entity-proposals/${proposal.id}`)).document).toMatchObject({
+    status: "admitted",
+    generation: 1,
+    history: [expect.objectContaining({ action: "link" })],
+  });
+});

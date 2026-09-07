@@ -93,6 +93,17 @@ CREATE TRIGGER reconciliation_source_mappings_no_update BEFORE UPDATE ON reconci
 BEGIN SELECT RAISE(ABORT, 'reconciliation_source_mapping_immutable'); END;
 CREATE TRIGGER reconciliation_source_mappings_no_delete BEFORE DELETE ON reconciliation_source_mappings
 BEGIN SELECT RAISE(ABORT, 'reconciliation_source_mapping_immutable'); END;
+CREATE TABLE reconciliation_identity_reviews (
+  preparation_id TEXT NOT NULL REFERENCES reconciliation_operations(id),
+  review_id TEXT NOT NULL REFERENCES canonical_identity_reviews(id),
+  source_observation_id TEXT NOT NULL,
+  source_snapshot_id TEXT NOT NULL REFERENCES source_snapshots(id),
+  PRIMARY KEY (preparation_id, review_id)
+);
+CREATE TRIGGER reconciliation_identity_reviews_no_update BEFORE UPDATE ON reconciliation_identity_reviews
+BEGIN SELECT RAISE(ABORT, 'reconciliation_identity_review_immutable'); END;
+CREATE TRIGGER reconciliation_identity_reviews_no_delete BEFORE DELETE ON reconciliation_identity_reviews
+BEGIN SELECT RAISE(ABORT, 'reconciliation_identity_review_immutable'); END;
 CREATE TABLE game_catalogue_heads (
   supported_game TEXT PRIMARY KEY,
   revision_id TEXT NOT NULL

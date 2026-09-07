@@ -387,3 +387,120 @@ test("a delayed native worker fails at its original deadline without sealing or 
   expect((await post("/v1/game-candidates", intent)).document).toEqual(candidate);
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
 });
+
+test("native supplemental admission retains collection evidence and preparation-owned mappings", async () => {
+  for (const area of ["card_facts", "printing_details"]) {
+    expect(
+      (
+        await post("/v1/source-authorities", {
+          game: "one-piece",
+          locale: "en",
+          release_region: "OCEANIA",
+          area,
+          source_lineage: "limitless-one-piece-en",
+          expected_generation: "0",
+          rationale: "Synthetic native admission",
+          idempotency_key: `native-admission-${area}`,
+        })
+      ).response.status,
+    ).toBe(200);
+  }
+  const run = await collect("/reconciliation/canonical-tabular", "native-admission-evidence", {
+    game: "one-piece",
+    lineage: "limitless-one-piece-en",
+    adapter: "fixture-one-piece-tabular@1",
+  });
+  const created = await post("/v1/game-candidates", {
+    ingestion_run_id: run.id,
+    supported_game: "one-piece",
+    expected_game_revision_id: "catrev_spine_000",
+    idempotency_key: "native-admission-intent",
+  });
+  expect(created.response.status).toBe(201);
+  const id = requiredString(created.document, "id");
+  let candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  const deadline = Date.now() + 15000;
+  while (candidate.state === "preparing" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  }
+  expect(candidate, JSON.stringify(candidate)).toMatchObject({ state: "sealed" });
+  const proposals = (await get("/v1/entity-proposals?game=one-piece")).document.proposals as Record<string, unknown>[];
+  expect(proposals).toEqual([
+    expect.objectContaining({ status: "admitted", source_lineage: "limitless-one-piece-en" }),
+  ]);
+  const partitions = (await get(`/v1/game-candidates/${id}/partitions`)).document.partitions as {
+    ordinal: number;
+    kind: string;
+  }[];
+  const printingPartition = partitions.find((partition) => partition.kind === "printings")!;
+  expect(printingPartition).toBeDefined();
+  const printing = (
+    (await get(`/v1/game-candidates/${id}/partitions/${printingPartition.ordinal}`)).document.records as {
+      id: string;
+    }[]
+  )[0]!;
+  const mappings = (await get(`/v1/reconciliation/identities/${printing.id}?preparation_id=${id}`)).document.mappings;
+  expect(mappings).toEqual([expect.objectContaining({ preparation_id: id, ingestion_run_id: run.id })]);
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
+});
+
+test("native ambiguous matches retain review evidence under their preparation and source collection", async () => {
+  const seed = await reconcile(
+    (await collect("/reconciliation/canonical-official-ambiguous", "native-review-seed")).id,
+  );
+  const printingId = (seed.document.printings as { id: string }[])[0]!.id;
+  const published = await approve(seed.document);
+  expect(published.response.status).toBe(200);
+  for (const area of ["card_facts", "printing_details"]) {
+    expect(
+      (
+        await post("/v1/source-authorities", {
+          game: "one-piece",
+          locale: "en",
+          release_region: "OCEANIA",
+          area,
+          source_lineage: "limitless-one-piece-en",
+          expected_generation: "0",
+          rationale: "Synthetic native review",
+          idempotency_key: `native-review-${area}`,
+        })
+      ).response.status,
+    ).toBe(200);
+  }
+  const run = await collect("/reconciliation/canonical-tabular-ambiguous", "native-review-evidence", {
+    game: "one-piece",
+    lineage: "limitless-one-piece-en",
+    adapter: "fixture-one-piece-tabular@1",
+  });
+  const created = await post("/v1/game-candidates", {
+    ingestion_run_id: run.id,
+    supported_game: "one-piece",
+    expected_game_revision_id: published.document.resulting_revision_id,
+    idempotency_key: "native-review-intent",
+  });
+  expect(created.response.status).toBe(201);
+  const id = requiredString(created.document, "id");
+  let candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  const deadline = Date.now() + 15000;
+  while (candidate.state === "preparing" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  }
+  expect(candidate, JSON.stringify(candidate)).toMatchObject({
+    state: "failed",
+    failure_code: "printing_reconciliation_blocked",
+  });
+  const reviews = await get(`/v1/reconciliation/identity-reviews?preparation_id=${id}`);
+  expect(reviews.response.status).toBe(200);
+  expect(reviews.document.reviews).toEqual([
+    expect.objectContaining({
+      preparation_id: id,
+      ingestion_run_id: run.id,
+      source_lineage: "limitless-one-piece-en",
+      candidate_printing_ids: [printingId],
+      evidence: expect.any(Object),
+    }),
+  ]);
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
+});

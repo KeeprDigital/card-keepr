@@ -129,8 +129,13 @@ export async function inspectCanonicalIdentity(
   };
 }
 
-export async function inspectIdentityReviews(database: CatalogueStore, run: string, after: string) {
-  const rows = (await identityReviewsStatement(database, run, after).all<IdentityReview>()).results;
+export async function inspectIdentityReviews(
+  database: CatalogueStore,
+  run: string,
+  after: string,
+  preparationId: string | null = null,
+) {
+  const rows = (await identityReviewsStatement(database, run, after, preparationId).all<IdentityReview>()).results;
   return {
     reviews: rows.slice(0, 100).map(({ evidence_json, candidate_printing_ids_json, ...row }) => ({
       ...row,

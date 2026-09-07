@@ -247,7 +247,12 @@ export const reconciliationRoutes = [
   route<Context>("GET", "/v1/reconciliation/identity-reviews", async ({ request, env }) => {
     const query = new URL(request.url).searchParams;
     return Response.json(
-      await inspectIdentityReviews(env.CATALOGUE_DB, query.get("run_id") ?? "", query.get("after") ?? ""),
+      await inspectIdentityReviews(
+        env.CATALOGUE_DB,
+        query.get("run_id") ?? "",
+        query.get("after") ?? "",
+        query.get("preparation_id"),
+      ),
     );
   }),
   route<Context>(

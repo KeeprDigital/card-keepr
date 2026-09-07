@@ -217,7 +217,7 @@ export function retainProposalEvidenceStatement(
   return atomicRepositoryStatement(database, {
     statement: repositoryStatements(database)
       .prepare(`INSERT INTO entity_proposal_source_evidence
-      (proposal_id, ingestion_run_id, source_snapshot_id, source_observation_id) VALUES (?, ?, ?, ?)
+      (proposal_id, ingestion_run_id, source_snapshot_id, source_observation_id) VALUES (?, (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?), ?, ?)
       ON CONFLICT(proposal_id, ingestion_run_id, source_observation_id) DO NOTHING`)
       .bind(proposalId, run, snapshot, observation),
     before: [identityRunGuard(database, run)],
