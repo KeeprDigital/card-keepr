@@ -1,5 +1,5 @@
 import type { SourceAdapterRegistration } from "./source-adapter-registration-types";
-import { AdapterParseFailure } from "./adapter-parse-failure";
+import { AdapterParseFailure, adapterUrl, decodeAdapterUtf8 } from "./adapter-parse-failure";
 import { cardObservation, htmlText, requiredHtmlMatch } from "./adapter-html";
 import { normalizeOnePieceCardPage } from "./one-piece-source-adapter";
 import { officialArtworkFingerprint } from "./official-artwork-identity";
@@ -11,14 +11,19 @@ const imageOrigin = "https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com";
 const coverage = {
   description:
     "All English P-001 variant pages linked by the base card's Printing table and their front images. No other card numbers, product inventory, prices or eligibility.",
+  cardIdentities: [{ kind: "card_number", value: "P-001" }],
   requiredSurfaces: [surface],
-  requestUrlForSurface: () => root,
+  requestUrlForSurface: (requested: string) => {
+    if (requested !== surface)
+      throw new AdapterParseFailure("Unknown Limitless coverage surface.", { category: "configuration" });
+    return root;
+  },
 };
 
 function pageIdentity(value: string) {
-  const url = new URL(value);
+  const url = adapterUrl(value);
   if (
-    url.origin !== new URL(root).origin ||
+    url.origin !== adapterUrl(root).origin ||
     url.pathname !== "/cards/en/P-001" ||
     url.hash ||
     url.username ||
@@ -32,12 +37,7 @@ function pageIdentity(value: string) {
 }
 function parsePage(bytes: Uint8Array, url: string) {
   const variant = pageIdentity(url);
-  let html: string;
-  try {
-    html = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
-  } catch (error) {
-    throw new AdapterParseFailure("Limitless page is not valid UTF-8.", { cause: error });
-  }
+  const html = decodeAdapterUtf8(bytes);
   const required = (pattern: RegExp, label: string) => requiredHtmlMatch(html, pattern, `Limitless ${label}`)[1]!;
   const number = htmlText(required(/<span class="card-text-id">([\s\S]*?)<\/span>/u, "card identifier"));
   if (number !== "P-001") throw new AdapterParseFailure("Limitless page and card identifier disagree.");
@@ -47,6 +47,10 @@ function parsePage(bytes: Uint8Array, url: string) {
   const text = required(/<div class="card-text">([\s\S]*?)<div class="card-legality">/u, "card content");
   const sections = [...text.matchAll(/<div class="card-text-section">([\s\S]*?)<\/div>/gu)];
   if (sections.length !== 3) throw new AdapterParseFailure("Limitless P-001 rules sections changed.");
+  const recognizedLabels = new Set(["Category", "Color", "Attribute", "Type"]);
+  const optionalFields = [...text.matchAll(/<span data-tooltip="([^"]+)">([\s\S]*?)<\/span>/gu)]
+    .map((match) => ({ label: htmlText(match[1]!), value: htmlText(match[2]!) }))
+    .filter(({ label }) => !recognizedLabels.has(label));
   const effect = htmlText(sections[1]![1]!);
   const raw = {
     Category: tooltip("Category"),
@@ -63,7 +67,7 @@ function parsePage(bytes: Uint8Array, url: string) {
   };
   const normalized = normalizeOnePieceCardPage(raw);
   const image = required(/<div class="card-image">\s*<img\b[^>]*\bsrc="([^"]+)"/u, "front image");
-  const imageUrl = new URL(image);
+  const imageUrl = adapterUrl(image);
   if (
     imageUrl.origin !== imageOrigin ||
     !/^\/one-piece\/P\/P-001(?:_p[0-9]+)?_EN\.webp$/u.test(imageUrl.pathname) ||
@@ -78,7 +82,7 @@ function parsePage(bytes: Uint8Array, url: string) {
   const links = rows.map((row) => {
     if (/class="current"/u.test(row[1]!)) return url;
     const href = requiredHtmlMatch(row[2]!, /<td>\s*<a\s+href="([^"]+)"/u, "Limitless Printing page link")[1]!;
-    const linked = new URL(href.replaceAll("&amp;", "&"), root).href;
+    const linked = adapterUrl(href.replaceAll("&amp;", "&"), root).href;
     pageIdentity(linked);
     return linked;
   });
@@ -109,9 +113,12 @@ function parsePage(bytes: Uint8Array, url: string) {
     "one-piece",
   );
   observation.source_sidecar = {
-    raw: { card: raw, printing_pages: links },
+    raw: { card: raw, printing_pages: links, optional_fields: optionalFields },
     consumed_fields: ["card", "printing_pages"],
-    unmapped_optional_fields: [],
+    unmapped_optional_fields: optionalFields.map((field, index) => ({
+      path: `source_sidecar.raw.optional_fields[${index}]`,
+      value: field,
+    })),
   };
   return { observation, links, image };
 }

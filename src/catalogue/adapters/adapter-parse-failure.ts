@@ -37,7 +37,7 @@ export function decodeAdapterUtf8(bytes: Uint8Array): string {
     return new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
   } catch (error) {
     if (error instanceof TypeError)
-      throw new AdapterParseFailure("The Official Source bytes are not valid UTF-8.", { cause: error });
+      throw new AdapterParseFailure("The Source bytes are not valid UTF-8.", { cause: error });
     throw error;
   }
 }

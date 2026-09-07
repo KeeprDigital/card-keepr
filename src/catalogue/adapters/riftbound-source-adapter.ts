@@ -69,7 +69,8 @@ export const riftboundSourceAdapterRegistration = {
       reconciliationCapability: "errata",
       requiredSurfaces: ["errata"],
       requestUrlForSurface(surface) {
-        if (surface !== "errata") throw new AdapterParseFailure("Unknown Riftbound Errata surface.");
+        if (surface !== "errata")
+          throw new AdapterParseFailure("Unknown Riftbound Errata surface.", { category: "configuration" });
         return riftboundOriginsErrataUrl;
       },
     },
@@ -78,7 +79,8 @@ export const riftboundSourceAdapterRegistration = {
         "The nine principal Product announcements in Products and Sets into 2027, including the named Proving Grounds subsection; dates retain published precision and regions remain unknown.",
       requiredSurfaces: ["products"],
       requestUrlForSurface(surface) {
-        if (surface !== "products") throw new AdapterParseFailure("Unknown Riftbound Product surface.");
+        if (surface !== "products")
+          throw new AdapterParseFailure("Unknown Riftbound Product surface.", { category: "configuration" });
         return riftboundProductsUrl;
       },
     },
@@ -110,7 +112,8 @@ export const riftboundSourceAdapterRegistration = {
 } satisfies SourceAdapterRegistration;
 
 function inventorySurfaceUrl(surface: string) {
-  if (surface !== "catalogue") throw new AdapterParseFailure("Unknown Riftbound inventory surface.");
+  if (surface !== "catalogue")
+    throw new AdapterParseFailure("Unknown Riftbound inventory surface.", { category: "configuration" });
   return `${inventoryOrigin}${inventoryPath}?locale=en_US&from=0&limit=200`;
 }
 

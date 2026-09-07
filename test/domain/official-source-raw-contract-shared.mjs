@@ -19,10 +19,14 @@ import syntheticOfficialSource, {
   officialRawSurfacePayload,
 } from "../../acceptance/fixtures/synthetic-official-source.mjs";
 
+// This matrix owns the retained Bandai fixture families; other installed sources have their own retained-byte tests.
 export const productionAdapterVersions = sourceAdapterRegistrations
   .filter(
-    ({ origin, reconciliationCapability, parseBytes }) =>
-      origin === "production" && reconciliationCapability === "catalogue" && typeof parseBytes === "function",
+    ({ origin, reconciliationCapability, parseBytes, sourceLineage }) =>
+      origin === "production" &&
+      reconciliationCapability === "catalogue" &&
+      typeof parseBytes === "function" &&
+      ["one-piece-en", "fusion-world-en", "digimon-en", "gundam-en-asia", "gundam-en-us"].includes(sourceLineage),
   )
   .map(({ adapterVersion }) => adapterVersion);
 

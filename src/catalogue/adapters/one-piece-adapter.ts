@@ -29,7 +29,7 @@ import {
   stableValue,
 } from "./adapter-normalization";
 import type { OfficialErratumObservation } from "./adapter-observations";
-import { AdapterParseFailure, adapterUrl } from "./adapter-parse-failure";
+import { AdapterParseFailure, adapterUrl, decodeAdapterUtf8 } from "./adapter-parse-failure";
 import { parseProductDetail } from "./adapter-product-html";
 import { createBandaiAdapter } from "./bandai-adapter-runtime";
 import { officialArtworkFingerprint } from "./official-artwork-identity";
@@ -101,8 +101,24 @@ const fullOnePieceAdapter = createBandaiAdapter(
 const p001CatalogueUrl = "https://en.onepiece-cardgame.com/cardlist/?freewords=P-001";
 const p001EventUrl = "https://en.onepiece-cardgame.com/events/2023/championship/store_championship_wave1.php";
 const p001TrophyUrl = "https://en.onepiece-cardgame.com/images/events/2023/championship/prize/P-001.png?v2";
+export const onePieceCoverageContracts = {
+  "p-001-catalogue": {
+    description:
+      "Complete English P-001 catalogue search and referenced front images; excludes other numbers, products, events and corrections.",
+    cardIdentities: [{ kind: "card_number", value: "P-001" }],
+    requiredSurfaces: ["p-001-catalogue"],
+    requestUrlForSurface: () => p001CatalogueUrl,
+  },
+  "p-001-catalogue-and-corroboration": {
+    description:
+      "Complete P-001 catalogue search plus the separate Store Championship Wave 1 Trophy Card publication and image. Catalogue absence applies only to the search.",
+    cardIdentities: [{ kind: "card_number", value: "P-001" }],
+    requiredSurfaces: ["p-001-catalogue", "store-championship-p001"],
+    requestUrlForSurface: (surface: string) => (surface === "p-001-catalogue" ? p001CatalogueUrl : p001EventUrl),
+  },
+};
 function verifyP001Corroboration(bytes: Uint8Array) {
-  const html = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
+  const html = decodeAdapterUtf8(bytes);
   const trophy = requiredHtmlMatch(
     html,
     /<h[1-6][^>]*>Winner<\/h[1-6]>([\s\S]*?)<\/section>/u,
@@ -140,7 +156,7 @@ export const onePieceAdapter = {
   },
 };
 function parseP001Catalogue(bytes: Uint8Array) {
-  const html = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
+  const html = decodeAdapterUtf8(bytes);
   const parsed = parseOnePieceBandaiCardListV1(html, p001CatalogueUrl, true);
   if (
     parsed.observations.length === 0 ||
