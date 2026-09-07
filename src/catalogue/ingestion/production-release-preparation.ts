@@ -1,4 +1,8 @@
 import { AdministrationProblem, type CatalogueStore, canonicalJson } from "../shared";
+import {
+  freshBaselineCancellationStatement,
+  recordFreshBaselineCancellationStatement,
+} from "./fresh-baseline-repository";
 import { administrationStatus } from "./administration-inspection";
 import {
   type ProductionTarget,
@@ -26,11 +30,16 @@ export async function resolveProductionRelease(
     "bootstrap",
     "replacement_handoff",
     "fresh_baseline_handoff",
+    "cancel_handoff",
     "prepare",
     "confirmation",
   ];
   if (Object.keys(request).some((key) => !fields.includes(key))) invalid();
-  if (typeof request.idempotency_key !== "string") invalid();
+  if (
+    typeof request.idempotency_key !== "string" ||
+    (request.cancel_handoff !== undefined && request.cancel_handoff !== true)
+  )
+    invalid();
   const prior = await preparedProductionReleaseStatement(database, request.idempotency_key).first<{
     operation: string;
     request_json: string;
@@ -49,7 +58,7 @@ export async function resolveProductionRelease(
             retained_database_id: plan.replacement_handoff.retained_database_id,
           };
     const same = fields
-      .filter((key) => key !== "confirmation" && key !== "prepare")
+      .filter((key) => key !== "confirmation" && key !== "prepare" && key !== "cancel_handoff")
       .every(
         (key) =>
           canonicalJson(request[key] ?? null) ===
@@ -58,12 +67,37 @@ export async function resolveProductionRelease(
     if (prior.operation !== "prepare_production_release" || !same) {
       throw new AdministrationProblem(409, "idempotency_key_reused", "The idempotency key belongs to another request.");
     }
-    const confirmation = releaseConfirmation(plan, desired, target);
+    if (request.cancel_handoff === true && !plan.fresh_baseline_handoff) invalid();
+    const confirmation = releaseConfirmation(plan, desired, target, request.cancel_handoff === true);
     if (request.prepare === true)
       return { contract: "card-keepr-production-release-confirmation@1", release_id: plan.release_id, confirmation };
     requireConfirmation(request, confirmation);
-    return JSON.parse(prior.response_json) as Record<string, unknown>;
+    const response = JSON.parse(prior.response_json) as Record<string, unknown>;
+    if (request.cancel_handoff === true) {
+      const digest = String(response.dispatch_digest);
+      const recorded = await freshBaselineCancellationStatement(database, digest).first<{ response_json: string }>();
+      if (recorded !== null) return JSON.parse(recorded.response_json) as Record<string, unknown>;
+      const cancellation = {
+        ...response,
+        dispatch_inputs: {
+          ...(response.dispatch_inputs as Record<string, string>),
+          operation: "cancel_fresh_baseline_handoff",
+        },
+      };
+      try {
+        await recordFreshBaselineCancellationStatement(database, digest, canonicalJson(cancellation), observedAt).run();
+      } catch {
+        throw new AdministrationProblem(
+          409,
+          "fresh_baseline_cancellation_unsafe",
+          "Cancellation requires a claimed handoff before activation intent.",
+        );
+      }
+      return cancellation;
+    }
+    return response;
   }
+  if (request.cancel_handoff === true) invalid();
   const fresh = validateFreshBaseline(request.fresh_baseline_handoff, target);
   const status = await administrationStatus(database, exports, observedAt, target, false);
   const safe = status.safe_state as Record<string, unknown>;
@@ -160,8 +194,10 @@ function releaseConfirmation(
   plan: ReturnType<typeof validatedPlan>,
   desired: Record<string, unknown> | null,
   target: ProductionTarget,
+  cancel = false,
 ): string {
   return JSON.stringify({
+    ...(cancel ? { operation: "cancel_fresh_baseline_handoff" } : {}),
     ...(plan.fresh_baseline_handoff ? { fresh_baseline_handoff: plan.fresh_baseline_handoff } : {}),
     expected_actor: plan.expected_actor,
     production_target: target,

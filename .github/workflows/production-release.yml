@@ -17,7 +17,7 @@ on:
         required: false
         default: production_release
         type: choice
-        options: [production_release]
+        options: [production_release, cancel_fresh_baseline_handoff]
       release_id:
         required: false
         type: string
@@ -87,7 +87,7 @@ concurrency:
 
 jobs:
   guarded-release:
-    if: inputs.operation == 'production_release'
+    if: inputs.operation == 'production_release' || inputs.operation == 'cancel_fresh_baseline_handoff'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: production
@@ -99,6 +99,8 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOYMENT_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ inputs.expected_account_id }}
+      HANDOFF_OPERATION: ${{ inputs.operation }}
+      HANDOFF_EXECUTION_ID: ${{ github.run_id }}:${{ github.run_attempt }}
       RELEASE_ID: ${{ inputs.release_id }}
       EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
       EXPECTED_ACTOR: ${{ inputs.expected_actor }}

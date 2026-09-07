@@ -6,9 +6,18 @@ import { isDeepStrictEqual } from "node:util";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import { executeSqlFile } from "./production-release-d1.mjs";
 import { writeReplacementConfigs } from "./production-release.mjs";
-import { observeCatalogueBindings, verifyUploadedVersion } from "./production-release-provider.mjs";
+import {
+  observeCatalogueBindings,
+  observeReleaseActivation,
+  verifyUploadedVersion,
+} from "./production-release-provider.mjs";
 import { runBootstrapSmoke } from "./production-smoke.mjs";
 import {
+  cancellationReadSql,
+  cancellationSql,
+  handoffPhases as phases,
+  activationIntent,
+  renewHandoffSql,
   baselineBytes,
   destinationReleaseSql,
   handoffPlan,
@@ -21,64 +30,102 @@ import {
 export async function runFreshBaselineRelease(environment, adapter) {
   const plan = handoffPlan(environment);
   let source = await adapter.read("source");
+  if (source?.phase === 7) throw new Error("fresh_baseline_handoff_cancelled");
+  if (source !== null) {
+    const destination = await adapter.read("destination");
+    if (source.phase !== phases.accepted || destination?.phase !== phases.accepted) await adapter.renew();
+  }
   if (source === null) {
     await adapter.claim();
     source = await adapter.read("source");
   }
-  if (source.phase === 1) {
+  if (source.phase === phases.claimed) {
     const baseline = await adapter.installBaseline();
-    await adapter.advance("source", 1, baseline);
+    await adapter.advance("source", phases.claimed, baseline);
     source = await adapter.read("source");
   }
   let destination = await adapter.read("destination");
   if (destination === null) {
-    if (source.phase !== 2) throw new Error("fresh_baseline_destination_authority_missing");
+    if (source.phase !== phases.baselineVerified) throw new Error("fresh_baseline_destination_authority_missing");
     await adapter.transfer(source);
     destination = await adapter.read("destination");
   }
-  if (destination.phase === 2) await adapter.advance("destination", 2, { transferred: environment.DISPATCH_DIGEST });
-  if (source.phase === 2) await adapter.advance("source", 2, { transferred: environment.DISPATCH_DIGEST });
+  if (destination.phase === phases.baselineVerified)
+    await adapter.advance("destination", phases.baselineVerified, { transferred: environment.DISPATCH_DIGEST });
+  if (source.phase === phases.baselineVerified)
+    await adapter.advance("source", phases.baselineVerified, { transferred: environment.DISPATCH_DIGEST });
   source = await adapter.read("source");
   destination = await adapter.read("destination");
   // Upload is safe to retry before intent. Existing exact tags must resolve to
   // one version; an ambiguous upload fails closed instead of creating a pair.
-  if (source.phase === 3 || destination.phase === 3) {
+  if (source.phase === phases.transferred || destination.phase === phases.transferred) {
     const versions = await adapter.uploadAndVerify();
-    if (source.phase === 3) await adapter.advance("source", 3, { versions });
+    if (source.phase === phases.transferred) await adapter.advance("source", phases.transferred, { versions });
     else if (!isDeepStrictEqual(JSON.parse(source.evidence_json).at(-1), { versions }))
       throw new Error("fresh_baseline_version_changed");
-    if (destination.phase === 3) await adapter.advance("destination", 3, { versions });
+    if (destination.phase === phases.transferred)
+      await adapter.advance("destination", phases.transferred, { versions });
   }
   source = await adapter.read("source");
   destination = await adapter.read("destination");
-  if (source.phase === 4 || destination.phase === 4) {
+  if (source.phase === phases.activationIntended || destination.phase === phases.activationIntended) {
     // Both durable intents precede the first provider activation request.
-    if (source.phase < 4 || destination.phase < 4) throw new Error("fresh_baseline_activation_not_authorized");
-    const intent = JSON.parse(source.evidence_json)[2];
-    if (!isDeepStrictEqual(intent, JSON.parse(destination.evidence_json)[2]))
-      throw new Error("fresh_baseline_intent_mismatch");
+    if (source.phase < phases.activationIntended || destination.phase < phases.activationIntended)
+      throw new Error("fresh_baseline_activation_not_authorized");
+    const intent = activationIntent(source);
+    if (!isDeepStrictEqual(intent, activationIntent(destination))) throw new Error("fresh_baseline_intent_mismatch");
     await adapter.activate(intent.versions);
-    const binding = await adapter.observe();
+    const binding = await adapter.observe(intent.versions);
     const smoke = await adapter.smoke();
     const observed = { binding, smoke };
-    if (source.phase === 4) await adapter.advance("source", 4, observed);
-    if (destination.phase === 4) await adapter.advance("destination", 4, observed);
+    if (source.phase === phases.activationIntended)
+      await adapter.advance("source", phases.activationIntended, observed);
+    if (destination.phase === phases.activationIntended)
+      await adapter.advance("destination", phases.activationIntended, observed);
   }
   source = await adapter.read("source");
   destination = await adapter.read("destination");
-  if (source.phase === 5) {
-    if (destination.phase !== 5) throw new Error("fresh_baseline_destination_not_observed");
-    await adapter.advance("source", 5, {
+  if (source.phase === phases.bindingObserved) {
+    if (destination.phase !== phases.bindingObserved) throw new Error("fresh_baseline_destination_not_observed");
+    await adapter.advance("source", phases.bindingObserved, {
       retired: true,
       destination_database_id: plan.fresh_baseline_handoff.destination_database_id,
     });
     source = await adapter.read("source");
   }
-  if (source.phase !== 6) throw new Error("fresh_baseline_source_not_retired");
-  if (destination.phase === 5) await adapter.accept(source);
+  if (source.phase !== phases.accepted) throw new Error("fresh_baseline_source_not_retired");
+  if (destination.phase === phases.bindingObserved) await adapter.accept(source);
   destination = await adapter.read("destination");
-  if (destination.phase !== 6) throw new Error("fresh_baseline_destination_not_accepted");
+  if (destination.phase !== phases.accepted) throw new Error("fresh_baseline_destination_not_accepted");
   return { release_id: plan.release_id, state: "handoff_accepted", go_live: false, source_retained: true };
+}
+
+export async function cancelFreshBaselineRelease(environment, adapter) {
+  const plan = handoffPlan(environment);
+  const authorization = await adapter.cancellation();
+  if (
+    !authorization ||
+    authorization.dispatch_digest !== environment.DISPATCH_DIGEST ||
+    authorization.prepared_plan_json !== environment.PREPARED_PLAN_JSON ||
+    authorization.dispatch_inputs?.operation !== "cancel_fresh_baseline_handoff"
+  )
+    throw new Error("fresh_baseline_cancellation_not_authorized");
+  const source = await adapter.read("source");
+  const destination = await adapter.read("destination");
+  if (source?.phase === 7)
+    return { release_id: plan.release_id, state: "handoff_cancelled", destination_quarantined: true };
+  if (
+    !source ||
+    source.phase >= phases.activationIntended ||
+    (destination !== null && destination.phase >= phases.activationIntended && destination.phase !== 7)
+  )
+    throw new Error("fresh_baseline_cancellation_unsafe");
+  await adapter.renew();
+  const observation = await adapter.observeSource();
+  const evidence = { source_still_active: true, observation };
+  if (destination !== null && destination.phase !== 7) await adapter.cancel("destination", evidence);
+  await adapter.cancel("source", evidence);
+  return { release_id: plan.release_id, state: "handoff_cancelled", destination_quarantined: true };
 }
 
 async function command(args) {
@@ -127,6 +174,16 @@ export async function providerAdapter(environment, directory) {
   });
   return {
     read,
+    async cancellation() {
+      const rows = (await sql("source", cancellationReadSql(environment)))[0].results;
+      return rows.length === 1 ? JSON.parse(rows[0].response_json) : null;
+    },
+    observeSource: () => observeReleaseActivation(environment, null, ["apps/api/wrangler.jsonc", configs.source]),
+    cancel: (role, evidence) => sql(role, cancellationSql(environment, role, evidence)),
+    async renew() {
+      for (const role of ["source", "destination"])
+        if (await read(role)) await sql(role, renewHandoffSql(environment, role));
+    },
     claim: () => executeSqlFile(environment, { configPath: configs.source, sqlPath: `${directory}/fresh-claim.sql` }),
     async installBaseline() {
       const files = (await readdir("migrations")).filter((name) => name.endsWith(".sql"));
@@ -193,6 +250,8 @@ export async function providerAdapter(environment, directory) {
       return result;
     },
     async activate(versions) {
+      await sql("source", renewHandoffSql(environment, "source"));
+      await sql("destination", renewHandoffSql(environment, "destination"));
       for (const [index, [worker, path, suffix]] of workerConfigurations.entries()) {
         const actual = await verifyUploadedVersion(versionEnvironment(worker, path, suffix));
         if (!isDeepStrictEqual(actual, versions[index])) throw new Error("fresh_baseline_uploaded_version_changed");
@@ -201,12 +260,15 @@ export async function providerAdapter(environment, directory) {
         await command(["versions", "deploy", `${versions[index].version_id}@100%`, "--yes", "--config", path]);
       for (const [, path] of workerConfigurations) await command(["triggers", "deploy", "--config", path]);
     },
-    observe: () =>
-      observeCatalogueBindings({
+    async observe(versions) {
+      const bindings = await observeCatalogueBindings({
         ...environment,
         REPLACEMENT_DATABASE_ID: fresh.destination_database_id,
         RETAINED_DATABASE_ID: plan.production_target.d1_databases[0].id,
-      }),
+      });
+      const activation = await observeReleaseActivation(environment, versions, [apiConfig, configs.destination]);
+      return { bindings, activation };
+    },
     async smoke() {
       const config = await readWorkerConfig(configs.destination);
       return runBootstrapSmoke({
@@ -222,6 +284,10 @@ export async function providerAdapter(environment, directory) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const directory = process.argv[2] ?? "/tmp/production-release";
-  const result = await runFreshBaselineRelease(process.env, await providerAdapter(process.env, directory));
+  const run =
+    process.env.HANDOFF_OPERATION === "cancel_fresh_baseline_handoff"
+      ? cancelFreshBaselineRelease
+      : runFreshBaselineRelease;
+  const result = await run(process.env, await providerAdapter(process.env, directory));
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }

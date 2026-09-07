@@ -6,22 +6,39 @@ CREATE TABLE fresh_baseline_handoffs (
  release_id TEXT PRIMARY KEY,
  role TEXT NOT NULL CHECK(role IN ('source','destination')),
  dispatch_digest TEXT NOT NULL UNIQUE,
+ execution_id TEXT NOT NULL,
  request_json TEXT NOT NULL CHECK(json_valid(request_json)),
  preparation_json TEXT NOT NULL CHECK(json_valid(preparation_json)),
- phase INTEGER NOT NULL CHECK(phase BETWEEN 1 AND 6),
+ phase INTEGER NOT NULL CHECK(phase BETWEEN 1 AND 7),
  evidence_json TEXT NOT NULL CHECK(json_valid(evidence_json)),
  created_at TEXT NOT NULL
 );
-CREATE UNIQUE INDEX fresh_baseline_single_authority ON fresh_baseline_handoffs((1));
+CREATE UNIQUE INDEX fresh_baseline_single_authority ON fresh_baseline_handoffs((1)) WHERE role='destination' OR phase<>7;
+CREATE TABLE fresh_baseline_cancellations (
+ dispatch_digest TEXT PRIMARY KEY,
+ response_json TEXT NOT NULL CHECK(json_valid(response_json)),
+ created_at TEXT NOT NULL
+);
+CREATE TRIGGER fresh_baseline_cancel_guard BEFORE INSERT ON fresh_baseline_cancellations
+WHEN NOT EXISTS(SELECT 1 FROM fresh_baseline_handoffs WHERE dispatch_digest=NEW.dispatch_digest AND role='source' AND phase<4)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_cancellation_unsafe'); END;
+CREATE TRIGGER fresh_baseline_cancel_immutable_update BEFORE UPDATE ON fresh_baseline_cancellations
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_cancellation_immutable'); END;
+CREATE TRIGGER fresh_baseline_cancel_immutable_delete BEFORE DELETE ON fresh_baseline_cancellations
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_cancellation_immutable'); END;
 CREATE TRIGGER fresh_baseline_identity BEFORE UPDATE ON fresh_baseline_handoffs
 WHEN NEW.release_id<>OLD.release_id OR NEW.role<>OLD.role OR NEW.dispatch_digest<>OLD.dispatch_digest
  OR NEW.request_json<>OLD.request_json OR NEW.preparation_json<>OLD.preparation_json OR NEW.created_at<>OLD.created_at
- OR NEW.phase<>OLD.phase+1
+ OR NOT (
+ (NEW.phase=7 AND OLD.phase<4 AND NEW.execution_id=OLD.execution_id AND json_extract(NEW.evidence_json,'$[#-1].source_still_active')=1)
+ OR (OLD.phase<6 AND NEW.phase=OLD.phase+1 AND NEW.execution_id=OLD.execution_id AND EXISTS(SELECT 1 FROM operation_state WHERE active_production_release_id=OLD.release_id AND active_production_release_expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now')))
+ OR (NEW.phase=OLD.phase AND NEW.evidence_json=OLD.evidence_json AND EXISTS(SELECT 1 FROM operation_state WHERE active_production_release_id=OLD.release_id AND (NEW.execution_id=OLD.execution_id OR active_production_release_expires_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))))
+ )
 BEGIN SELECT RAISE(ABORT,'fresh_baseline_transition_invalid'); END;
 CREATE TRIGGER fresh_baseline_retained BEFORE DELETE ON fresh_baseline_handoffs
 BEGIN SELECT RAISE(ABORT,'fresh_baseline_authority_retained'); END;
 CREATE VIEW fresh_baseline_mutation_fence AS
- SELECT release_id,role,phase FROM fresh_baseline_handoffs WHERE role='source' OR phase<6;
+ SELECT release_id,role,phase FROM fresh_baseline_handoffs WHERE (role='source' AND phase<>7) OR (role='destination' AND phase<>6);
 CREATE VIEW fresh_baseline_quiescence AS SELECT
  NOT EXISTS(SELECT 1 FROM ingestion_collection_reservations)
  AND NOT EXISTS(SELECT 1 FROM evidence_object_writers WHERE completed_at IS NULL)

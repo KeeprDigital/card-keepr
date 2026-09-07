@@ -8,7 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { build } from "esbuild";
 import { validateDispatchAndWriteSql } from "../scripts/production-release.mjs";
-import { runFreshBaselineRelease } from "../scripts/fresh-baseline-release.mjs";
+import { cancelFreshBaselineRelease, runFreshBaselineRelease } from "../scripts/fresh-baseline-release.mjs";
 import { destinationReleaseSql, handoffReadSql, phaseSql, transferSql } from "../scripts/fresh-baseline-handoff.mjs";
 import { d1Adapter } from "./helpers/query-helpers/sqlite-d1-adapter.mjs";
 import * as queries from "./helpers/query-helpers/fresh-baseline.mjs";
@@ -104,6 +104,7 @@ async function setup(t) {
   const environment = Object.fromEntries(
     Object.entries(preparation.dispatch_inputs).map(([key, value]) => [key.toUpperCase(), value]),
   );
+  environment.HANDOFF_EXECUTION_ID = "synthetic_execution_239";
   await validateDispatchAndWriteSql(environment, directory);
   const execute = (db, sql) => {
     db.exec("BEGIN");
@@ -131,6 +132,16 @@ async function setup(t) {
   let activations = 0;
   const adapter = {
     read: async (role) => read(role),
+    cancellation: async () => ({
+      ...preparation,
+      dispatch_inputs: { ...preparation.dispatch_inputs, operation: "cancel_fresh_baseline_handoff" },
+    }),
+    observeSource: async () => ({ synthetic_provider_observation: true, source_database_id: "source_database" }),
+    cancel: async (role, evidence) => execute(databases[role], cancellationSql(environment, role, evidence)),
+    renew: async () => {
+      for (const role of ["source", "destination"])
+        if (read(role)) execute(databases[role], renewHandoffSql(environment, role));
+    },
     claim: async () => execute(source, await readFile(`${directory}/fresh-claim.sql`, "utf8")),
     installBaseline: async () => {
       if (queries.schemaRows(destination).all().length === 0) destination.exec(baseline);
@@ -232,4 +243,74 @@ test("activation or smoke failures preserve both fences and accept only a proved
       assert.throws(() => destinationReleaseSql(f.environment, f.read("source")), /source_not_retired/);
       await runFreshBaselineRelease(f.environment, f.adapter);
     });
+});
+
+test("expired execution must renew, and a replaced execution cannot advance or cancel", async (t) => {
+  const f = await setup(t);
+  await f.adapter.claim();
+  const old = { ...f.environment };
+  queries.expireLease(f.source).run();
+  assert.throws(
+    () => f.execute(f.source, phaseSql(old, "source", 1, { baseline: "synthetic" })),
+    /fresh_baseline_guard_failed/,
+  );
+  f.environment.HANDOFF_EXECUTION_ID = "synthetic_replacement_execution";
+  await f.adapter.renew();
+  assert.throws(
+    () => f.execute(f.source, phaseSql(old, "source", 1, { baseline: "synthetic" })),
+    /fresh_baseline_guard_failed/,
+  );
+  assert.throws(() => f.execute(f.source, renewHandoffSql(old, "source")), /fresh_baseline_transition_invalid/);
+  await f.adapter.advance("source", 1, { baseline: "synthetic" });
+});
+
+test("pre-intent cancellation quarantines destination and proves source traffic before reopening", async (t) => {
+  const f = await setup(t);
+  await assert.rejects(
+    () =>
+      runFreshBaselineRelease(f.environment, {
+        ...f.adapter,
+        uploadAndVerify: async () => {
+          throw new Error("synthetic_upload_failure");
+        },
+      }),
+    /synthetic_upload_failure/,
+  );
+  queries.recordCancellation(f.source, f.environment.DISPATCH_DIGEST, await f.adapter.cancellation());
+  await assert.rejects(
+    () =>
+      cancelFreshBaselineRelease(f.environment, {
+        ...f.adapter,
+        observeSource: async () => {
+          throw new Error("synthetic_destination_traffic");
+        },
+      }),
+    /synthetic_destination_traffic/,
+  );
+  assert.throws(() => queries.mutateCatalogue(f.source).run(), /fresh_baseline_mutation_fenced/);
+  await cancelFreshBaselineRelease(f.environment, f.adapter);
+  assert.equal(f.read("destination").phase, 7);
+  assert.equal(f.read("source").phase, 7);
+  queries.mutateCatalogue(f.source).run();
+  assert.throws(() => queries.mutateCatalogue(f.destination).run(), /fresh_baseline_mutation_fenced/);
+  assert.equal((await cancelFreshBaselineRelease(f.environment, f.adapter)).state, "handoff_cancelled");
+  await assert.rejects(() => runFreshBaselineRelease(f.environment, f.adapter), /fresh_baseline_handoff_cancelled/);
+});
+
+test("any durable activation intent rejects cancellation, even if provider activation failed", async (t) => {
+  const f = await setup(t);
+  await assert.rejects(
+    () =>
+      runFreshBaselineRelease(f.environment, {
+        ...f.adapter,
+        activate: async () => {
+          throw new Error("synthetic_activation_failure");
+        },
+      }),
+    /synthetic_activation_failure/,
+  );
+  await assert.rejects(
+    () => cancelFreshBaselineRelease(f.environment, f.adapter),
+    /fresh_baseline_cancellation_unsafe/,
+  );
 });

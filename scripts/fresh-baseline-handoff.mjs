@@ -7,6 +7,35 @@ const hash = (text) => createHash("sha256").update(text).digest("hex");
 const assertion = (condition) =>
   `SELECT CASE WHEN ${condition} THEN 1 ELSE json_extract('{}','fresh_baseline_guard_failed') END AS verified;`;
 
+export const handoffPhases = Object.freeze({
+  claimed: 1,
+  baselineVerified: 2,
+  transferred: 3,
+  activationIntended: 4,
+  bindingObserved: 5,
+  accepted: 6,
+});
+const intentEvidenceIndex = handoffPhases.activationIntended - 2;
+export function activationIntent(row) {
+  return JSON.parse(row.evidence_json)[intentEvidenceIndex];
+}
+function executionId(environment) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_:.-]{0,255}$/.test(environment.HANDOFF_EXECUTION_ID ?? ""))
+    throw new Error("fresh_baseline_execution_identity_missing");
+  return environment.HANDOFF_EXECUTION_ID;
+}
+function leaseFence(environment) {
+  const plan = handoffPlan(environment);
+  return `execution_id=${q(executionId(environment))} AND EXISTS(SELECT 1 FROM operation_state WHERE active_production_release_id=${q(plan.release_id)} AND active_production_release_expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
+}
+export function renewHandoffSql(environment, role) {
+  const identity = exact(environment, role);
+  const plan = handoffPlan(environment);
+  return `UPDATE fresh_baseline_handoffs SET execution_id=${q(executionId(environment))} WHERE ${identity};
+ UPDATE operation_state SET active_production_release_expires_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','+45 minutes') WHERE active_production_release_id=${q(plan.release_id)} AND EXISTS(SELECT 1 FROM fresh_baseline_handoffs WHERE ${identity} AND execution_id=${q(executionId(environment))});
+ ${assertion(`EXISTS(SELECT 1 FROM fresh_baseline_handoffs WHERE ${identity} AND ${leaseFence(environment)})`)}`;
+}
+
 /** The same server-confirmed bytes authenticate every two-D1 phase. */
 export function handoffPlan(environment) {
   const plan = JSON.parse(environment.PREPARED_PLAN_JSON);
@@ -45,8 +74,8 @@ export async function compileHandoffClaim(environment, directory) {
   await writeFile(
     `${directory}/fresh-claim.sql`,
     `${claim}\n${assertion(owns)}
-INSERT INTO fresh_baseline_handoffs(release_id,role,dispatch_digest,request_json,preparation_json,phase,evidence_json,created_at)
-VALUES(${q(plan.release_id)},'source',${q(environment.DISPATCH_DIGEST)},${q(environment.PREPARED_PLAN_JSON)},(${prepared}),1,'[]',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+INSERT INTO fresh_baseline_handoffs(release_id,role,dispatch_digest,execution_id,request_json,preparation_json,phase,evidence_json,created_at)
+VALUES(${q(plan.release_id)},'source',${q(environment.DISPATCH_DIGEST)},${q(executionId(environment))},${q(environment.PREPARED_PLAN_JSON)},(${prepared}),1,'[]',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 ${assertion(`EXISTS(SELECT 1 FROM fresh_baseline_handoffs WHERE ${exact(environment, "source")} AND phase=1)`)}`,
   );
 }
@@ -77,8 +106,8 @@ INSERT INTO administration_idempotency(idempotency_key,operation,request_json,re
 VALUES(${q(plan.idempotency_key)},'prepare_production_release',${q(source.request_json)},${q(source.preparation_json)},201,'success',${q(source.created_at)});
 UPDATE operation_state SET active_production_release_id=${q(plan.release_id)},active_production_release_expires_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','+45 minutes') WHERE singleton=1 AND active_production_release_id IS NULL;
 ${assertion(`EXISTS(SELECT 1 FROM operation_state WHERE active_production_release_id=${q(plan.release_id)})`)}
-INSERT INTO fresh_baseline_handoffs(release_id,role,dispatch_digest,request_json,preparation_json,phase,evidence_json,created_at)
-VALUES(${q(plan.release_id)},'destination',${q(source.dispatch_digest)},${q(source.request_json)},${q(source.preparation_json)},1,'[]',${q(source.created_at)});
+INSERT INTO fresh_baseline_handoffs(release_id,role,dispatch_digest,execution_id,request_json,preparation_json,phase,evidence_json,created_at)
+VALUES(${q(plan.release_id)},'destination',${q(source.dispatch_digest)},${q(executionId(environment))},${q(source.request_json)},${q(source.preparation_json)},1,'[]',${q(source.created_at)});
 UPDATE fresh_baseline_handoffs SET phase=2,evidence_json=${q(source.evidence_json)} WHERE ${identity} AND phase=1;
 ${assertion(`EXISTS(SELECT 1 FROM fresh_baseline_handoffs WHERE ${identity} AND phase=2)`)}`;
 }
@@ -95,8 +124,8 @@ export function phaseSql(environment, role, from, evidence) {
     throw new Error("invalid_fresh_baseline_phase");
   const identity = exact(environment, role);
   const encoded = JSON.stringify(evidence);
-  return `UPDATE fresh_baseline_handoffs SET phase=${from + 1},evidence_json=json_insert(evidence_json,'$[#]',json(${q(encoded)})) WHERE ${identity} AND phase=${from};
-${assertion(`EXISTS(SELECT 1 FROM fresh_baseline_handoffs WHERE ${identity} AND phase=${from + 1} AND json_extract(evidence_json,'$[#-1]')=json(${q(encoded)}))`)}`;
+  return `UPDATE fresh_baseline_handoffs SET phase=${from + 1},evidence_json=json_insert(evidence_json,'$[#]',json(${q(encoded)})) WHERE ${identity} AND phase=${from} AND ${leaseFence(environment)};
+${assertion(`EXISTS(SELECT 1 FROM fresh_baseline_handoffs WHERE ${identity} AND phase=${from + 1} AND ${leaseFence(environment)} AND json_extract(evidence_json,'$[#-1]')=json(${q(encoded)}))`)}`;
 }
 
 export function destinationReleaseSql(environment, source) {
@@ -124,4 +153,21 @@ export async function baselineBytes(environment, path) {
 
 export function assertExactPhase(actual, expected) {
   if (!isDeepStrictEqual(actual, expected)) throw new Error("fresh_baseline_replay_conflict");
+}
+
+export function cancellationReadSql(environment) {
+  return `SELECT response_json FROM fresh_baseline_cancellations WHERE dispatch_digest=${q(environment.DISPATCH_DIGEST)};`;
+}
+export function cancellationSql(environment, role, evidence) {
+  if (!["source", "destination"].includes(role) || evidence?.source_still_active !== true)
+    throw new Error("fresh_baseline_cancellation_unobserved");
+  const authorized =
+    role === "source"
+      ? `AND EXISTS(SELECT 1 FROM fresh_baseline_cancellations WHERE dispatch_digest=${q(environment.DISPATCH_DIGEST)})`
+      : "";
+  const identity = exact(environment, role);
+  const plan = handoffPlan(environment);
+  return `UPDATE fresh_baseline_handoffs SET phase=7,evidence_json=json_insert(evidence_json,'$[#]',json(${q(JSON.stringify(evidence))})) WHERE ${identity} AND phase<4 AND ${leaseFence(environment)} ${authorized};
+${assertion(`EXISTS(SELECT 1 FROM fresh_baseline_handoffs WHERE ${identity} AND phase=7)`)}
+${role === "source" ? `UPDATE operation_state SET active_production_release_id=NULL,active_production_release_expires_at=NULL WHERE active_production_release_id=${q(plan.release_id)};` : ""}`;
 }

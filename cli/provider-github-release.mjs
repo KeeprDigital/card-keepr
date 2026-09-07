@@ -10,7 +10,11 @@ export async function dispatchProductionRelease({
   workflowId = releaseWorkflow,
   apiUrl = githubApi,
 }) {
-  if (typeof credential !== "string" || credential.length < 20 || inputs?.operation !== "production_release")
+  if (
+    typeof credential !== "string" ||
+    credential.length < 20 ||
+    !["production_release", "cancel_fresh_baseline_handoff"].includes(inputs?.operation)
+  )
     return false;
   let response;
   try {

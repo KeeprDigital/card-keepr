@@ -52,6 +52,8 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   // targets, and the live gate proves emptiness instead of recovery evidence.
   const bootstrap = booleanInput(required(environment, "BOOTSTRAP"));
   const preparedPlan = json("PREPARED_PLAN_JSON");
+  if (environment.HANDOFF_OPERATION === "cancel_fresh_baseline_handoff" && !preparedPlan.fresh_baseline_handoff)
+    throw new Error("fresh_baseline_cancellation_not_applicable");
   if (preparedPlan?.bootstrap !== bootstrap) throw new Error("bootstrap_mismatch");
   const replacementId = required(environment, "REPLACEMENT_RECOVERY_ID");
   if (bootstrap && replacementId !== "none") throw new Error("bootstrap_replacement_not_allowed");

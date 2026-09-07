@@ -46,3 +46,10 @@ export function foreignKeys(database, enabled) {
 export function lowerBaselineLevel(database) {
   database.exec("UPDATE catalogue_schema_state SET migration_level=1 WHERE singleton=1");
 }
+export function recordCancellation(database, digest, response) {
+  return database
+    .prepare(
+      "INSERT INTO fresh_baseline_cancellations(dispatch_digest,response_json,created_at) VALUES(?,?,'2026-09-08T00:00:00.000Z')",
+    )
+    .run(digest, JSON.stringify(response));
+}

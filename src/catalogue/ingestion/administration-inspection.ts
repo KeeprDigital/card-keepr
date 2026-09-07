@@ -63,7 +63,9 @@ export async function administrationStatus(
     request_json: string;
     evidence_json: string;
   }>();
-  const handoffBlocked = handoff !== null && (handoff.role === "source" || handoff.phase < 6);
+  const handoffBlocked =
+    handoff !== null &&
+    ((handoff.role === "source" && handoff.phase !== 7) || (handoff.role === "destination" && handoff.phase !== 6));
   if (reconcile && !handoffBlocked) {
     await expireOverdueRuns(database, observedAt);
     await reconcileAbandonedPublication(database, catalogueExports, observedAt);

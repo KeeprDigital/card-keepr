@@ -19,7 +19,7 @@ export async function runProductionReleaseCommand(args, environment, json) {
       "--replacement-database-id",
       "--retained-database-id",
     ],
-    ["--json", "--yes", "--bootstrap"],
+    ["--json", "--yes", "--bootstrap", "--cancel-fresh-handoff"],
   );
   const value = options.values;
   const fail = (code, detail, exitCode) => writeCliFailure(json, { code, detail }, exitCode);
@@ -60,6 +60,7 @@ export async function runProductionReleaseCommand(args, environment, json) {
     expected_migration_level: Number(value["--expected-migration-level"]),
     bootstrap: options.flags.has("--bootstrap"),
     replacement_handoff: replacement,
+    ...(options.flags.has("--cancel-fresh-handoff") ? { cancel_handoff: true } : {}),
     ...(value["--fresh-database-id"] !== undefined || value["--baseline-sha256"] !== undefined
       ? {
           fresh_baseline_handoff: {
