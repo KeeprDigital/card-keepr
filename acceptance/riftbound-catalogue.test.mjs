@@ -88,7 +88,7 @@ test("retained Riot inventory: owner collects all returned English records witho
     ["source", "collect", "--plan-file", planPath, "--idempotency-key", "real-riftbound", "--json"],
     environment,
   );
-  assert.equal(collected.code, 0, `${collected.stdout} ${collected.stderr}`);
+  assert.equal(collected.code, 0, `${collected.stdout} ${collected.stderr}\n${worker.getOutput()}`);
   const run = JSON.parse(collected.stdout);
   const resumed = await runCli(["source", "resume", "--run-id", run.id, "--json"], environment);
   assert.equal(resumed.code, 0, resumed.stderr);
