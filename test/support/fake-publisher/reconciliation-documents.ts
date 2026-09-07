@@ -28,7 +28,11 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       })),
     };
   }
-  if (scenario === "card-only-work-units" || scenario === "card-only-work-units-changed") {
+  if (
+    scenario === "card-only-work-units" ||
+    scenario === "card-only-work-units-changed" ||
+    scenario === "curated-lookup-relationships"
+  ) {
     return {
       cards: Array.from({ length: 32 }, (_, offset) => {
         const index = offset + (scenario.endsWith("changed") ? 8 : 0);
@@ -62,7 +66,18 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
                 evidence_category: "explicit",
               },
             ],
-            relationships: [],
+            relationships:
+              scenario === "curated-lookup-relationships"
+                ? [
+                    {
+                      kind: "distribution-context-product",
+                      context_key: `work-unit-context-${index}`,
+                      product_reference: { kind: "official_code", value: `WU-${index}` },
+                      resolution: "explicit",
+                      evidence_category: "explicit",
+                    },
+                  ]
+                : [],
           },
         };
       }),

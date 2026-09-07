@@ -914,12 +914,17 @@ export class CuratedDraftSourceChangeError extends Error {
   }
 }
 
+type CuratedDraftLookup = {
+  release?: { after: string; complete: boolean; productId: string | null };
+  relationships?: { after: string; complete: boolean; ids: string[] };
+};
 export type CuratedDraftCursor = {
   stage: "strip" | "compare" | "apply" | "validate" | "conflict" | "complete";
   kind: number;
   after: string;
   revision: number;
   sourceChanged: boolean;
+  lookups?: { official?: CuratedDraftLookup; result?: CuratedDraftLookup };
 };
 
 /** Replay resumes after the completed entity or revision; the caller retains draft positions with this cursor. */
@@ -931,7 +936,13 @@ export async function applyPinnedCuratedRevisionsToDraft(
   observedAt: string,
   progress?: { cursor: CuratedDraftCursor; checkpoint(cursor: CuratedDraftCursor, record?: unknown): Promise<void> },
 ): Promise<void> {
-  const cursor = progress?.cursor ?? { stage: "strip", kind: 0, after: "", revision: -1, sourceChanged: false };
+  const cursor: CuratedDraftCursor = progress?.cursor ?? {
+    stage: "strip",
+    kind: 0,
+    after: "",
+    revision: -1,
+    sourceChanged: false,
+  };
   if (cursor.stage === "complete") return;
   const checkpoint = async (record?: unknown) => {
     await progress?.checkpoint(cursor, record);
@@ -942,6 +953,11 @@ export async function applyPinnedCuratedRevisionsToDraft(
     cursor.after = "";
     cursor.revision = -1;
     await checkpoint();
+  };
+  const prepareSnapshot = (draft: CatalogueDraft, proposal: Proposal, view: "official" | "result") => {
+    cursor.lookups ??= {};
+    const lookup = (cursor.lookups[view] ??= {});
+    return draftProposalSnapshot(draft, proposal, { lookup, checkpoint });
   };
   const conflicts = new CuratedConflictPreparation(database, runId, observedAt);
   if (cursor.stage === "strip") {
@@ -964,12 +980,13 @@ export async function applyPinnedCuratedRevisionsToDraft(
   if (cursor.stage === "compare") {
     for await (const row of pinnedDraftRevisions(database, runId, cursor.revision)) {
       const proposal = structuralProposal(JSON.parse(row.proposal_json));
-      const snapshot = await draftProposalSnapshot(official, proposal);
+      const snapshot = await prepareSnapshot(official, proposal, "official");
       const reviewedSourceValue = draftReviewedValue(snapshot, proposal);
       if ((await sha256Text(canonicalJson(reviewedSourceValue))) !== row.reviewed_source_digest) {
         cursor.sourceChanged = true;
         await conflicts.record(row.id, row.reviewed_source_digest, reviewedSourceValue);
       }
+      cursor.lookups = {};
       cursor.revision = row.ordinal;
       await checkpoint(row);
     }
@@ -980,8 +997,8 @@ export async function applyPinnedCuratedRevisionsToDraft(
   if (cursor.stage === "apply") {
     for await (const row of pinnedDraftRevisions(database, runId, cursor.revision)) {
       const proposal = structuralProposal(JSON.parse(row.proposal_json));
-      const reviewedSourceValue = draftReviewedValue(await draftProposalSnapshot(official, proposal), proposal);
-      const snapshot = await draftProposalSnapshot(result, proposal);
+      const reviewedSourceValue = draftReviewedValue(await prepareSnapshot(official, proposal, "official"), proposal);
+      const snapshot = await prepareSnapshot(result, proposal, "result");
       if (proposal.target.kind === "field") {
         const entity = candidateTarget(snapshot, proposal);
         setAt(
@@ -1002,6 +1019,7 @@ export async function applyPinnedCuratedRevisionsToDraft(
           await result.set("product_relationships", relationship);
       }
 
+      cursor.lookups = {};
       cursor.revision = row.ordinal;
       await checkpoint(row);
     }
@@ -1057,7 +1075,11 @@ function draftReviewedValue(snapshot: CatalogueCandidate, proposal: Proposal): u
 }
 
 /** Existing target and relationship validators operate on just the proposal's bounded local entities. */
-async function draftProposalSnapshot(draft: CatalogueDraft, proposal: Proposal): Promise<CatalogueCandidate> {
+async function draftProposalSnapshot(
+  draft: CatalogueDraft,
+  proposal: Proposal,
+  progress: { lookup: CuratedDraftLookup; checkpoint(record?: unknown): Promise<void> },
+): Promise<CatalogueCandidate> {
   const snapshot: CatalogueCandidate = {
     contract: "card-keepr-catalogue-candidate@1",
     selected_games: [proposal.game],
@@ -1067,11 +1089,23 @@ async function draftProposalSnapshot(draft: CatalogueDraft, proposal: Proposal):
   const add = async (type: string, id: string) => {
     const kind = draftCollection(type);
     if (type === "release") {
-      for await (const product of draft.values("products")) {
-        if (product.game === proposal.game && product.releases.some((release) => release.id === id)) {
-          snapshot.products = [product];
-          return;
+      const lookup = (progress.lookup.release ??= { after: "", complete: false, productId: null });
+      if (!lookup.complete) {
+        for await (const product of draft.values("products", lookup.after)) {
+          if (product.game === proposal.game && product.releases.some((release) => release.id === id)) {
+            lookup.productId = product.id;
+            lookup.complete = true;
+          }
+          lookup.after = product.id;
+          await progress.checkpoint(product);
+          if (lookup.complete) break;
         }
+        lookup.complete = true;
+        await progress.checkpoint();
+      }
+      if (lookup.productId !== null) {
+        const product = await draft.get("products", lookup.productId);
+        if (product) snapshot.products = [product];
       }
       return;
     }
@@ -1097,20 +1131,36 @@ async function draftProposalSnapshot(draft: CatalogueDraft, proposal: Proposal):
     const target = proposal.target;
     await add(target.from.type, target.from.id);
     await add(target.to.type, target.to.id);
+    const lookup = (progress.lookup.relationships ??= { after: "", complete: false, ids: [] });
+    if (!lookup.complete) {
+      for await (const relationship of draft.values("product_relationships", lookup.after)) {
+        if (
+          relationship.kind === target.relationship_kind &&
+          relationship.from.type === target.from.type &&
+          relationship.from.id === target.from.id &&
+          relationship.to.type === target.to.type &&
+          relationship.to.id === target.to.id
+        ) {
+          if (lookup.ids.length >= 4)
+            throw new Error(
+              "reconciliation_capacity_exceeded: one curated relationship target exceeds four evidence relationships.",
+            );
+          lookup.ids.push(relationship.id);
+        }
+        lookup.after = relationship.id;
+        await progress.checkpoint(relationship);
+      }
+      lookup.complete = true;
+      await progress.checkpoint();
+    }
     const relationships: ProductRelationship[] = [];
     let bytes = 2;
-    for await (const relationship of draft.values("product_relationships")) {
-      if (
-        relationship.kind !== target.relationship_kind ||
-        relationship.from.type !== target.from.type ||
-        relationship.from.id !== target.from.id ||
-        relationship.to.type !== target.to.type ||
-        relationship.to.id !== target.to.id
-      )
-        continue;
+    for (const id of lookup.ids) {
+      const relationship = await draft.get("product_relationships", id);
+      if (!relationship) throw new Error("Curated relationship lookup changed during preparation.");
       bytes += new TextEncoder().encode(canonicalJson(relationship)).byteLength + 1;
-      if (relationships.length >= 500 || bytes > 1048576)
-        throw new Error("reconciliation_capacity_exceeded: one curated relationship target has too much evidence.");
+      if (bytes > 512000)
+        throw new Error("reconciliation_capacity_exceeded: one curated relationship target exceeds 500 KiB.");
       relationships.push(relationship);
     }
     snapshot.product_relationships = relationships;
