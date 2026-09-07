@@ -105,6 +105,7 @@ export const onePieceCoverageContracts = {
   "p-001-catalogue": {
     description:
       "Complete English P-001 catalogue search and referenced front images; excludes other numbers, products, events and corrections.",
+    printingAdmission: "owner_review" as const,
     cardIdentities: [{ kind: "card_number", value: "P-001" }],
     requiredSurfaces: ["p-001-catalogue"],
     requestUrlForSurface: () => p001CatalogueUrl,
@@ -112,6 +113,7 @@ export const onePieceCoverageContracts = {
   "p-001-catalogue-and-corroboration": {
     description:
       "Complete P-001 catalogue search plus the separate Store Championship Wave 1 Trophy Card publication and image. Catalogue absence applies only to the search.",
+    printingAdmission: "owner_review" as const,
     cardIdentities: [{ kind: "card_number", value: "P-001" }],
     requiredSurfaces: ["p-001-catalogue", "store-championship-p001"],
     requestUrlForSurface: (surface: string) => (surface === "p-001-catalogue" ? p001CatalogueUrl : p001EventUrl),

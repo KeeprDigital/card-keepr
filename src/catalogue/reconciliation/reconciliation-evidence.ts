@@ -439,6 +439,9 @@ async function collectRetainedReconciliationObservation(
         supportedGame: supportedGame(plan.supported_game),
         adapterVersion: plan.adapter_version,
         subset: plan.coverage?.subset ?? "complete",
+        printingAdmission:
+          sourceAdapterForCoverage(requiredSourceAdapter(plan.adapter_version), plan.coverage?.subset)
+            .printingAdmission ?? "source_qualification",
         reconciliationCapability: sourceAdapterForCoverage(
           requiredSourceAdapter(plan.adapter_version),
           plan.coverage?.subset,

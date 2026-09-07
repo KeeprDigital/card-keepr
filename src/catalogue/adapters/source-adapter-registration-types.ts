@@ -39,6 +39,8 @@ export type SourceAdapterRegistration = Readonly<{
   origin: "production";
   requestSurface: Readonly<{ kind: "credential-free-https" }> | Readonly<{ kind: "exact-url"; url: string }>;
   reconciliationCapability: "catalogue" | "errata" | "unavailable";
+  /** Whether source-qualified Printing evidence is sufficient or an owner decision is mandatory. */
+  printingAdmission?: "owner_review" | "source_qualification";
   reconciliationAreas?: readonly ("catalogue" | "errata")[];
   inheritDiscoveryRequestHeaders?: boolean;
   listingReconciliation?: ListingReconciliationTraits;
@@ -63,6 +65,7 @@ export type SourceAdapterRegistration = Readonly<{
         description: string;
         reconciliationAreas?: readonly ("catalogue" | "errata")[];
         reconciliationCapability?: "catalogue" | "errata";
+        printingAdmission?: "owner_review" | "source_qualification";
         /** Exact Card identities whose complete variant inventory belongs to this scope. */
         cardIdentities?: readonly { kind: string; value: string }[];
         requiredSurfaces: readonly string[];

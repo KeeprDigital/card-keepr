@@ -134,6 +134,7 @@ export const limitlessOnePieceSourceAdapterRegistration: SourceAdapterRegistrati
   origin: "production",
   requestSurface: { kind: "credential-free-https" },
   reconciliationCapability: "catalogue",
+  printingAdmission: "owner_review",
   reconciliationAreas: ["catalogue"],
   coverageContracts: { [surface]: coverage },
   requiredSurfaces: coverage.requiredSurfaces,

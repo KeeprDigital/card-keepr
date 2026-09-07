@@ -298,6 +298,7 @@ export function sourceAdapterForCoverage(
   return {
     ...adapter,
     requiredSurfaces: contract.requiredSurfaces,
+    printingAdmission: contract.printingAdmission ?? adapter.printingAdmission,
     requestUrlForSurface: contract.requestUrlForSurface,
     requestUrlForDiscovery: undefined,
     reconciliationCapability: contract.reconciliationCapability ?? adapter.reconciliationCapability,

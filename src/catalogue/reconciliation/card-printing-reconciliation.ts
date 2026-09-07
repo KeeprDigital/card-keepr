@@ -405,12 +405,14 @@ export async function reconcileRetainedCardPrintingEvidence(
   const evidenceGames = new Set<SupportedGame>();
   const evidenceLineages = new Set<string>();
   const completeLineages = new Set<string>();
+  const ownerReviewedPrintingLineages = new Set<string>();
   let errataOnlyEvidence = true;
   const evidencePlanSnapshot: unknown[] = [];
   for await (const plan of retained.evidencePlans) {
     evidencePlanSnapshot.push(plan);
     evidenceGames.add(plan.supportedGame);
     evidenceLineages.add(plan.sourceLineage);
+    if (plan.printingAdmission === "owner_review") ownerReviewedPrintingLineages.add(plan.sourceLineage);
     if ((plan.subset ?? "complete") === "complete") completeLineages.add(plan.sourceLineage);
     if (plan.reconciliationCapability !== "errata") errataOnlyEvidence = false;
   }
@@ -610,7 +612,11 @@ export async function reconcileRetainedCardPrintingEvidence(
           });
           break observationUnit;
         }
-        const admission = await assessSourceAdmission(database, runId, observation, observedAt);
+        const admission = await assessSourceAdmission(database, runId, observation, observedAt, {
+          printingAdmission: ownerReviewedPrintingLineages.has(observation.sourceLineage)
+            ? "owner_review"
+            : "source_qualification",
+        });
         if (admission?.identityExceptionConflict) {
           await diagnostics.push({
             code: "canonical_card_conflict",
