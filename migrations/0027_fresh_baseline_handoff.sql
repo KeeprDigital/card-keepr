@@ -1512,6 +1512,15 @@ BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
 CREATE TRIGGER handoff_fence_verified_publication_compositions_delete BEFORE DELETE ON verified_publication_compositions
 WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
 BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_card_search_fts_state_insert BEFORE INSERT ON card_search_fts_state
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_card_search_fts_state_update BEFORE UPDATE ON card_search_fts_state
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+CREATE TRIGGER handoff_fence_card_search_fts_state_delete BEFORE DELETE ON card_search_fts_state
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
 -- Release scripts may renew the same lease, but no expired/failed owner can
 -- reclaim source authority or change recovery state through ordinary cleanup.
 CREATE TRIGGER handoff_fence_operation_state BEFORE UPDATE ON operation_state

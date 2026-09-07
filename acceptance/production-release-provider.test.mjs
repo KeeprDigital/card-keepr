@@ -299,8 +299,8 @@ async function providerFetch(mutate = () => {}) {
     const versionOf = /\/workers\/scripts\/([^/]+)\/versions\/version-(.+)$/u.exec(url.pathname);
     const databaseId = /\/d1\/database\/([^/]+)$/u.exec(url.pathname)?.[1];
     const bucket = /\/r2\/buckets\/([^/]+)$/u.exec(url.pathname)?.[1];
-    if (url.pathname === "/zones") result = [{ id: "zone-239", name: "keepr.digital", account: { id: account } }];
-    else if (url.pathname === "/zones/zone-239/workers/routes")
+    if (url.pathname.endsWith("/zones")) result = [{ id: "zone-239", name: "keepr.digital", account: { id: account } }];
+    else if (url.pathname.endsWith("/zones/zone-239/workers/routes"))
       result = Object.values(configs).flatMap((config) =>
         config.routes.map((route) => ({ id: route.pattern, pattern: route.pattern, script: config.name })),
       );
@@ -453,7 +453,7 @@ for (const [label, mutate, error] of [
   [
     "ambiguous zone",
     (url, doc) => {
-      if (url.pathname === "/zones") doc.result.push(doc.result[0]);
+      if (url.pathname.endsWith("/zones")) doc.result.push(doc.result[0]);
     },
     /release_route_zone_ambiguous/,
   ],

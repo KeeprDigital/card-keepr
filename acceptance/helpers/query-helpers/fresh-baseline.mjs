@@ -53,3 +53,8 @@ export function recordCancellation(database, digest, response) {
     )
     .run(digest, JSON.stringify(response));
 }
+export function trySearchMaintenance(database) {
+  return database.prepare(
+    "UPDATE card_search_fts_state SET state='reconstructing',owner_token='late_owner',lease_expires_at='2099-01-01T00:00:00.000Z' WHERE singleton=1",
+  );
+}

@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { backup as sqliteBackup, DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { build } from "esbuild";
 import { validateDispatchAndWriteSql } from "../scripts/production-release.mjs";
@@ -185,6 +185,7 @@ test("two SQL databases transfer only prepared authority and retire source befor
   assert.equal(f.read("destination").phase, 6);
   assert.throws(() => queries.mutateCatalogue(f.source).run(), /fresh_baseline_mutation_fenced/);
   assert.throws(() => queries.cleanupLease(f.source).run(), /fresh_baseline_mutation_fenced/);
+  assert.throws(() => queries.trySearchMaintenance(f.source).run(), /fresh_baseline_mutation_fenced/);
   queries.mutateCatalogue(f.destination).run();
   assert.equal(queries.sharedReferences(f.source).all().length, 1);
   assert.throws(() => queries.attemptSharedDelete(f.destination).run(), /fresh_baseline_retained_source_storage/);
@@ -320,4 +321,38 @@ test("any durable activation intent rejects cancellation, even if provider activ
     () => cancelFreshBaselineRelease(f.environment, f.adapter),
     /fresh_baseline_cancellation_unsafe/,
   );
+});
+
+test("SQL restoration preserves retired-source evidence and destination shared-storage protection", async (t) => {
+  const f = await setup(t);
+  queries.seedSharedReference(f.source).run();
+  await runFreshBaselineRelease(f.environment, f.adapter);
+  const directory = await mkdtemp(join(tmpdir(), "keepr-restored-handoff-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  for (const [role, original] of [
+    ["source", f.source],
+    ["destination", f.destination],
+  ]) {
+    const copied = join(directory, `${role}.sqlite`);
+    await sqliteBackup(original, copied);
+    const backup = new DatabaseSync(copied);
+    // Search indexes are disposable in the established SQL backup contract. Only
+    // this disposable export copy is prepared; neither authority database changes.
+    for (const sql of runtime.prepareCardSearchForD1ExportStatements) backup.exec(sql);
+    backup.close();
+    const exported = execFileSync("/usr/bin/sqlite3", [copied, ".dump"], {
+      maxBuffer: 16 * 1024 * 1024,
+      encoding: "utf8",
+    });
+    const restored = new DatabaseSync(":memory:");
+    t.after(() => restored.close());
+    restored.exec(exported);
+    if (role === "source") {
+      assert.equal(queries.sharedReferences(restored).all().length, 1);
+      assert.throws(() => queries.mutateCatalogue(restored).run(), /fresh_baseline_mutation_fenced/);
+    } else {
+      queries.mutateCatalogue(restored).run();
+      assert.throws(() => queries.attemptSharedDelete(restored).run(), /fresh_baseline_retained_source_storage/);
+    }
+  }
 });
