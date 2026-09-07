@@ -12,7 +12,7 @@ test("Riftbound CHECK widening preserves populated ancestors, decisions and inbo
   try {
     db.exec("PRAGMA foreign_keys=ON");
     const root = new URL("../migrations/", import.meta.url);
-    for (const name of (await readdir(root)).filter((n) => n.endsWith(".sql") && Number.parseInt(n, 10) <= 23).sort())
+    for (const name of (await readdir(root)).filter((n) => n.endsWith(".sql") && Number.parseInt(n, 10) <= 25).sort())
       db.exec(await readFile(new URL(name, root), "utf8"));
     const at = "2026-09-08T00:00:00.000Z";
     for (let i = 0; i < 3; i++) {

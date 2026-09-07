@@ -1,8 +1,8 @@
 -- #232: widen existing closed game contracts without publishing or enabling data.
 
--- Independently rehearsed from verified schema23; integration reconciles reserved0024/25.
+-- Follows the consumed Source Adapter registration migration 0025.
 
-SELECT CASE WHEN (SELECT migration_level FROM catalogue_schema_state WHERE singleton=1)=23 THEN 1 ELSE json_extract('schema_level_mismatch_expected_23','$') END;
+SELECT CASE WHEN (SELECT migration_level FROM catalogue_schema_state WHERE singleton=1)=25 THEN 1 ELSE json_extract('schema_level_mismatch_expected_25','$') END;
 
 PRAGMA defer_foreign_keys=ON;
 DROP VIEW curated_revision_event_read;
