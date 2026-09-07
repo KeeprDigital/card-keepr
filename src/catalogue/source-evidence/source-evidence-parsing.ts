@@ -148,19 +148,21 @@ export async function parseSnapshot(
     const observationBytes = utf8(canonicalJson(observationDocument));
     const digest = await sha256(observationBytes);
     const writeToken = crypto.randomUUID();
-    await beginEvidenceObjectWrite(
-      database,
-      writeToken,
-      snapshot.ingestion_run_id,
-      operation.content_object_key,
-      new Date().toISOString(),
-    ).run();
     const observedToken = await putImmutableBytes(
       evidenceObjects,
       operation.content_object_key,
       observationBytes,
       digest,
       writeToken,
+      async () => {
+        await beginEvidenceObjectWrite(
+          database,
+          writeToken,
+          snapshot.ingestion_run_id,
+          operation.content_object_key,
+          new Date().toISOString(),
+        ).run();
+      },
     );
     if (observedToken && observedToken !== writeToken)
       await completeObservedEvidenceWrite(
@@ -471,12 +473,14 @@ async function putImmutableBytes(
   bytes: Uint8Array,
   digest: string,
   writeToken: string,
+  registerWriter: () => Promise<void>,
 ): Promise<string | undefined> {
   const existing = await bucket.head(key);
   if (existing !== null) {
     assertMatchingObject(existing, bytes, digest);
     return existing.customMetadata?.cleanup_writer_token;
   }
+  await registerWriter();
   const stored = await bucket.put(key, bytes, {
     onlyIf: { etagDoesNotMatch: "*" },
     httpMetadata: {

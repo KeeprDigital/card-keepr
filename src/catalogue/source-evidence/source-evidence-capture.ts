@@ -454,13 +454,6 @@ export async function capturePreparedAttempt(
   }).run();
   operation = await requiredCaptureOperation(database, operation.attempt_id);
   const writeToken = crypto.randomUUID();
-  await beginEvidenceObjectWrite(
-    database,
-    writeToken,
-    run.id,
-    operation.content_object_key,
-    new Date().toISOString(),
-  ).run();
   try {
     const content = await streamSnapshotToR2(
       evidenceObjects,
@@ -471,6 +464,18 @@ export async function capturePreparedAttempt(
         await retainEvidenceMultipart(database, writeToken, upload).run();
       },
       writeToken,
+      async () => {
+        await beginEvidenceObjectWrite(
+          database,
+          writeToken,
+          run.id,
+          operation.content_object_key,
+          new Date().toISOString(),
+        ).run();
+      },
+      async () => {
+        await completeEvidenceObjectWrite(database, writeToken, new Date().toISOString()).run();
+      },
     );
     await completeEvidenceObjectWrite(database, writeToken, new Date().toISOString()).run();
     await uploadedCaptureContentStatement(database, {
@@ -765,6 +770,8 @@ async function streamSnapshotToR2(
   maximumBytes: number,
   retainMultipart: (uploadId: string) => Promise<void>,
   writeToken: string,
+  registerWriter: () => Promise<void>,
+  acknowledgeAbort: () => Promise<void>,
 ): Promise<{ byteLength: number; digest: string }> {
   const hash = createHash("sha256");
   const metadata = {
@@ -801,6 +808,7 @@ async function streamSnapshotToR2(
         "Official Source body ended before its declared Content-Length.",
       );
     }
+    await registerWriter();
     try {
       const stored = await bucket.put(objectKey, new Uint8Array(), {
         ...metadata,
@@ -829,6 +837,7 @@ async function streamSnapshotToR2(
         controller.enqueue(chunk);
       },
     });
+    await registerWriter();
     const results = await Promise.allSettled([
       bucket.put(objectKey, fixed.readable, {
         ...metadata,
@@ -860,9 +869,11 @@ async function streamSnapshotToR2(
   try {
     multipart = await bucket.createMultipartUpload(objectKey, metadata);
     try {
+      await registerWriter();
       await retainMultipart(multipart.uploadId);
     } catch (error) {
       await multipart.abort();
+      await acknowledgeAbort();
       throw error;
     }
   } catch (error) {
@@ -934,7 +945,10 @@ async function streamSnapshotToR2(
     }
     return { byteLength, digest: hash.digest("hex") };
   } catch (error) {
-    await multipart.abort().catch(() => undefined);
+    await multipart
+      .abort()
+      .then(acknowledgeAbort)
+      .catch(() => undefined);
     throw error;
   }
 }

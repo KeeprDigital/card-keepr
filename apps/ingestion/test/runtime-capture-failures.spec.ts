@@ -346,6 +346,13 @@ test.each([
       "body_failure",
       "body_failure",
     ]);
+    expect(
+      await env.CATALOGUE_DB.prepare(
+        "SELECT count(*) AS n FROM evidence_object_writers WHERE ingestion_run_id=? AND completed_at IS NULL",
+      )
+        .bind(run.id)
+        .first(),
+    ).toMatchObject({ n: 0 });
     for (let attempt = 1; attempt <= 4; attempt += 1) {
       const identity = await captureOperationIdentity(run.id, "one-piece-en:discovery", attempt);
       expect(await env.EVIDENCE_OBJECTS.head(identity.objectKey)).toBeNull();
