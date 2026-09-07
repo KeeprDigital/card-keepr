@@ -174,6 +174,7 @@ test.each([
     let serviceCalls = 0;
     const completedGroups: number[] = [];
     const callsPerGroup: number[] = [];
+    const selectionCalls: number[] = [];
     const graphCalls: number[] = [];
     const graphCursors: number[] = [];
     const preparationCalls: number[] = [];
@@ -250,6 +251,7 @@ test.each([
           completedGroups.push(imagesInUnit);
           callsPerGroup.push(serviceCalls);
         }
+        if (JSON.parse(result as string).continuation?.phase === "source_selection") selectionCalls.push(serviceCalls);
         if (JSON.parse(result as string).continuation?.phase === "graph_validation") {
           graphCalls.push(serviceCalls);
           const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
@@ -322,6 +324,8 @@ test.each([
     }
     expect(completedGroups).toEqual(groups);
     if (requireFrozenMetadata) {
+      expect(selectionCalls.length).toBeGreaterThan(0);
+      expect(Math.max(...selectionCalls)).toBeLessThanOrEqual(100);
       expect(graphCalls.length).toBeGreaterThan(0);
       expect(Math.max(...graphCalls)).toBeLessThanOrEqual(100);
       if (requestCount === 32) expect(graphCursors.some((count) => count > 0 && count < 32)).toBe(true);
@@ -478,3 +482,107 @@ test.each(["r2", "receipt"])(
     expect(cards.reduce((sum, part) => sum + part.record_count, 0)).toBe(32);
   },
 );
+
+test("source selection resumes after an uncheckpointed evidence receipt without rescanning its completed prefix", async () => {
+  const run = await collectRequests(
+    Array.from({ length: 12 }, (_, index) => ({
+      id: `cards-${index}`,
+      scenario: `metadata-request-pages?request=${index}`,
+    })),
+    "selection-receipt-cursor",
+  );
+  let selectionSequence = -1;
+  let resumed = false;
+  let failures = 0;
+  const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement =>
+    new Proxy(statement, {
+      get(target, property) {
+        if (property === "bind") return (...bound: unknown[]) => wrap(target.bind(...bound), sql, bound);
+        if (
+          property === "first" &&
+          selectionSequence >= 0 &&
+          !resumed &&
+          sql.includes("SELECT content, sha256 FROM reconciliation_evidence_selection")
+        )
+          return async () => {
+            failures++;
+            throw new Error("Injected selection receipt outage after an uncheckpointed write.");
+          };
+        if (
+          property === "first" &&
+          selectionSequence >= 0 &&
+          sql.includes("FROM source_requests") &&
+          sql.includes("ORDER BY sequence_number, request_id LIMIT 1")
+        )
+          expect(Number(values[1])).toBeGreaterThanOrEqual(selectionSequence);
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  const database = new Proxy(testEnv.CATALOGUE_DB, {
+    get(target, property) {
+      if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const step = {
+    do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+      let result: string;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          result = await callback();
+          break;
+        } catch (error) {
+          if (attempt >= config.retries.limit) throw error;
+        }
+      }
+      if (JSON.parse(result).continuation?.phase === "source_selection") {
+        const progress = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+        const checkpoint = (
+          progress.checkpoints as { phase: string; cursor: { stage: string; sequence: number } }[]
+        ).find(({ phase }) => phase === "source_selection")!;
+        if (checkpoint.cursor.stage === "selection" && checkpoint.cursor.sequence >= 0)
+          selectionSequence = checkpoint.cursor.sequence;
+      }
+      return result;
+    },
+  } as unknown as import("cloudflare:workers").WorkflowStep;
+  const event = {
+    payload: {
+      ingestion_run_id: run.id,
+      expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
+      idempotency_key: "selection-receipt-cursor",
+      observed_at: new Date().toISOString(),
+      generation: 0,
+    },
+  } as import("cloudflare:workers").WorkflowEvent<
+    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+  >;
+  await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
+  expect(failures).toBe(4);
+  const paused = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+  expect(paused).toMatchObject({ state: "paused", generation: 1 });
+  expect(
+    (
+      await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+        generation: 1,
+        idempotency_key: "resume-selection-receipt",
+      })
+    ).response.status,
+  ).toBe(200);
+  resumed = true;
+  await runReconciliationWorkflow(
+    { ...testEnv, CATALOGUE_DB: database },
+    { payload: { ...event.payload, generation: 1 } } as typeof event,
+    step,
+  );
+  const sealed = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+  expect(sealed).toMatchObject({ state: "sealed", deadline: paused.deadline });
+  const page = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions`)).document;
+  expect(
+    (page.partitions as { kind: string; record_count: number }[])
+      .filter(({ kind }) => kind === "cards")
+      .reduce((sum, part) => sum + part.record_count, 0),
+  ).toBe(12);
+});
