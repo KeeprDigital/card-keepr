@@ -15,7 +15,7 @@ import {
 import { nativeRecoveryCloudflare } from "./native-recovery-cloudflare.mjs";
 
 const nextNativeRequest = new Map();
-async function paceNativeRequest(environment) {
+export async function paceNativeRequest(environment) {
   const interval = Number(environment.KEEPR_NATIVE_REQUEST_INTERVAL_MS ?? 0);
   if (!interval) return;
   const base = environment.KEEPR_INGESTION_URL;

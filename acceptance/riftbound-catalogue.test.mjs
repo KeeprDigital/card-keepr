@@ -7,17 +7,23 @@ import test from "node:test";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
 import {
   applyMigrations,
-  runCli,
+  runCli as runUnpacedCli,
   startWorker,
   stopWorker,
   waitForHealth,
   waitForAdministrationDocument,
 } from "./helpers/acceptance-runtime.mjs";
 import {
+  paceNativeRequest,
   nativeCheckpointTransport,
   publishNativeCollection,
   nativeExportRecords,
 } from "./helpers/native-catalogue-runtime.mjs";
+
+async function runCli(args, environment, options) {
+  await paceNativeRequest(environment);
+  return runUnpacedCli(args, environment, options);
+}
 
 // Actual retained HTTP bodies. External HTTP and Cloudflare control plane are
 // replayed locally; collection, parsing and all owner operations are shipped code.
