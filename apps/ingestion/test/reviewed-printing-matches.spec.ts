@@ -93,3 +93,88 @@ test.each([true, false])(
     );
   },
 );
+
+test.each(["known-first", "known-last", "conflict"])(
+  "reviewed same-Printing unknowns preserve known facts: %s",
+  async (mode) => {
+    const conflict = mode === "conflict";
+    const seed = await reconcile((await collect("/reconciliation/canonical-official", "known-seed")).id);
+    const published = await approve(seed.document);
+    expect(published.response.status).toBe(200);
+    const revision = String(published.document.resulting_revision_id);
+    const { id: _cardId, ...card } = (seed.document.cards as Record<string, unknown>[])[0]!;
+    const {
+      id: printingId,
+      card_id: _printingCard,
+      ...printing
+    } = (seed.document.printings as Record<string, unknown>[])[0]!;
+    for (const area of ["card_facts", "printing_details"])
+      expect(
+        (
+          await post("/v1/source-authorities", {
+            game: "one-piece",
+            locale: "en",
+            release_region: "OCEANIA",
+            area,
+            source_lineage: "limitless-one-piece-en",
+            expected_generation: "0",
+            rationale: "Synthetic complementary source test",
+            idempotency_key: `known-${area}`,
+          })
+        ).response.status,
+      ).toBe(200);
+    for (let index = 0; index < 10; index++) {
+      const proposal = await post("/v1/entity-proposals", {
+        game: "one-piece",
+        source_lineage: "limitless-one-piece-en",
+        reference: JSON.stringify([`/supplemental/alternate-${index}`, null]),
+        content: { card, printing },
+        evidence: { attestation: "Synthetic source alias review." },
+        idempotency_key: `known-${index}`,
+      });
+      expect(proposal.response.status).toBe(201);
+      const linked = await post(`/v1/entity-proposals/${proposal.document.id}/decisions`, {
+        action: "link",
+        expected_generation: "0",
+        printing_id: printingId,
+        rationale: "Synthetic aliases depict the same Printing",
+        exception: { scope: ["identity", "source_evidence"], attestation: "Synthetic identity review." },
+        idempotency_key: `known-link-${index}`,
+      });
+      expect(linked.response.status, JSON.stringify(linked.document)).toBe(200);
+    }
+    const run = await collect(
+      `/reconciliation/canonical-tabular-unknown-${mode}-many-alternates`,
+      "known-refresh",
+      supplemental,
+    );
+    const candidate = await prepare(run.id, revision, "known-prepare");
+    if (conflict) {
+      expect(candidate, JSON.stringify(candidate)).toMatchObject({
+        state: "failed",
+        outcome: {
+          diagnostics: expect.arrayContaining([expect.objectContaining({ code: "printing_match_contradictory" })]),
+        },
+      });
+      return;
+    }
+    expect(candidate, JSON.stringify(candidate)).toMatchObject({ state: "sealed" });
+    const partitions = (await get(`/v1/game-candidates/${candidate.id}/partitions`)).document.partitions as {
+      ordinal: number;
+      kind: string;
+    }[];
+    const values = [];
+    for (const partition of partitions.filter((p) => p.kind === "printings")) {
+      values.push(
+        ...((await get(`/v1/game-candidates/${candidate.id}/partitions/${partition.ordinal}`)).document
+          .records as Record<string, unknown>[]),
+      );
+    }
+    expect(values).toHaveLength(1);
+    expect(values[0]).toMatchObject({
+      id: printingId,
+      rarity: printing.rarity,
+      printed_rules_text: printing.printed_rules_text,
+    });
+  },
+);

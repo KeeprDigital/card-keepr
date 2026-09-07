@@ -1192,10 +1192,22 @@ export async function reconcileRetainedCardPrintingEvidence(
             acceptedPrinting = fillAuthorityGaps(authoritativePrinting, proposedPrinting);
           }
           const priorPrintingFacts = await localPrintingFacts.get(printingId);
+          // Reviewed identity permits complementary source facts, not competing
+          // known values. Symmetric gap filling makes this independent of source
+          // observation order and keeps explicit unknowns from erasing facts.
+          const complementaryReviewedFacts =
+            reviewedPrintingId !== null &&
+            priorPrintingFacts !== undefined &&
+            printingFactsFormattingEquivalent(
+              fillAuthorityGaps(priorPrintingFacts, acceptedPrinting),
+              fillAuthorityGaps(acceptedPrinting, priorPrintingFacts),
+            );
+          if (complementaryReviewedFacts) acceptedPrinting = fillAuthorityGaps(priorPrintingFacts!, acceptedPrinting);
           if (
             publishedPrintingConflict !== null ||
             (priorPrintingFacts !== undefined &&
               !retainAsiaPrintingAuthority &&
+              !complementaryReviewedFacts &&
               !printingFactsFormattingEquivalent(priorPrintingFacts, acceptedPrinting))
           ) {
             await diagnostics.push({

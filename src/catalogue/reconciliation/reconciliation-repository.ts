@@ -320,7 +320,7 @@ export async function canonicalPrintingConflict(
     printed_rules_text: current.printed_rules_text,
     game_data: current.game_data,
   };
-  if (printingFactsFormattingEquivalent(currentCanonical, proposed)) {
+  if (!substantiveFactsConflict(currentCanonical, proposed)) {
     return null;
   }
   const authorities = await repositoryStatements(database)
