@@ -199,3 +199,17 @@ retries its failed backup through the owner CLI using the exact failed-attempt
 digest and resolved target, and requires verified backup before continuing.
 All consumer, Curated Revision, fresh-collection and restoration assertions
 remain required and pending. No publication ledger or backup receipt is edited.
+
+Frozen commit `de9cb68` then stopped after 115.61 seconds on a fixture assertion:
+the owner CLI accepted `riftbound-signed-transport-backup-retry` and returned the
+running backup Workflow contract with exit code 10, while the fixture expected
+zero. The retained retry state is `exporting`, with no failure code. This is not
+a backend backup failure or a verified backup result. The original publication
+and failed attempt remain unchanged.
+
+The fixture now accepts exit 10 only for the exact running backup Workflow
+contract, matching retry key and nonempty Workflow ID; unrelated contracts,
+failed status, another retry key and other nonzero codes are rejected by a
+focused regression. On continuation it inspects the existing retry, validates and invokes its
+advertised resume body with the same identity if active, then polls it without
+allocating another retry. Consumer and restoration proof remain pending.
