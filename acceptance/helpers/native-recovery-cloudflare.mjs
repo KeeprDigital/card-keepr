@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { nativeSqliteExport } from "./native-sqlite-export.mjs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -56,10 +56,7 @@ export function nativeRecoveryCloudflare({ databaseDirectory, directory }) {
           faults.exportFailures--;
           return Response.json({ success: false, errors: [{ message: "Injected SQL export failure" }] });
         }
-        exported = execFileSync("/usr/bin/sqlite3", [await sourceFile(), ".dump"], {
-          encoding: "utf8",
-          maxBuffer: 64 * 1024 * 1024,
-        });
+        exported = await nativeSqliteExport(await sourceFile(), join(directory, "native-export.sql"));
         const virtual = exported.split("\n").filter((line) => line.includes("CREATE VIRTUAL TABLE"));
         if (virtual.length > 0) throw new Error(`Export still contains virtual tables: ${virtual.join(" | ")}`);
         // D1 management exports omit provider-owned bookkeeping; AUTOINCREMENT
