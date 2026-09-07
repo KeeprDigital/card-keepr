@@ -14,6 +14,7 @@ export async function retainSourceObservations(
   runId: string,
   setId: string,
   observations: unknown[],
+  firstOrdinal = 0,
 ) {
   let pending: { ordinal: number; content: string; sha256: string }[] = [];
   let bytes = 0;
@@ -35,7 +36,8 @@ export async function retainSourceObservations(
     pending = [];
     bytes = 0;
   };
-  for (const [ordinal, observation] of observations.entries()) {
+  for (const [offset, observation] of observations.entries()) {
+    const ordinal = firstOrdinal + offset;
     const content = canonicalJson(await retainPartitionedRecord(database, runId, canonicalJson(observation)));
     const size = new TextEncoder().encode(content).byteLength;
     if (size > 512000)

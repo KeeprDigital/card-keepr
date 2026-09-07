@@ -19,11 +19,13 @@ export type ObjectMemberCursor = {
 export async function* resumableObjectMembers(
   source: (chunkIndex: number) => AsyncIterable<string>,
   after: ObjectMemberCursor | null = null,
+  options: { maximumTokenCharacters?: number } = {},
 ): AsyncGenerator<{ member: ObjectMember; cursor: ObjectMemberCursor }> {
   const input = new JsonChunks(
     source(after?.chunkIndex ?? 0)[Symbol.asyncIterator](),
     after?.chunkIndex,
     after?.offset,
+    options.maximumTokenCharacters,
   );
   const keys = new Set(after?.keys);
   let key = after?.key ?? "";
@@ -101,6 +103,7 @@ class JsonChunks {
     private readonly source: AsyncIterator<string>,
     chunkIndex = 0,
     offset = 0,
+    private readonly maximumTokenCharacters = Number.POSITIVE_INFINITY,
   ) {
     this.chunkIndex = chunkIndex - 1;
     this.initialOffset = offset;
@@ -147,6 +150,13 @@ class JsonChunks {
   async token(): Promise<string> {
     if ((await this.peek()) === undefined) throw new Error("A retained payload is incomplete.");
     const parts: string[] = [];
+    let characters = 0;
+    const append = (value: string) => {
+      characters += value.length;
+      if (characters > this.maximumTokenCharacters)
+        throw new Error("reconciliation_capacity_exceeded: one source JSON token exceeds its character budget.");
+      parts.push(value);
+    };
     let depth = 0;
     let quoted = false;
     let escaped = false;
@@ -155,7 +165,7 @@ class JsonChunks {
       while (this.offset < this.chunk.length) {
         const character = this.chunk.charAt(this.offset);
         if (!quoted && depth === 0 && ",:]} \t\r\n".includes(character)) {
-          parts.push(this.chunk.slice(start, this.offset));
+          append(this.chunk.slice(start, this.offset));
           return parts.join("");
         }
         this.offset += 1;
@@ -165,7 +175,7 @@ class JsonChunks {
           else if (character === '"') {
             quoted = false;
             if (depth === 0) {
-              parts.push(this.chunk.slice(start, this.offset));
+              append(this.chunk.slice(start, this.offset));
               return parts.join("");
             }
           }
@@ -174,12 +184,12 @@ class JsonChunks {
         else if (character === "]" || character === "}") {
           depth -= 1;
           if (depth === 0) {
-            parts.push(this.chunk.slice(start, this.offset));
+            append(this.chunk.slice(start, this.offset));
             return parts.join("");
           }
         }
       }
-      parts.push(this.chunk.slice(start, this.offset));
+      append(this.chunk.slice(start, this.offset));
     }
     return parts.join("");
   }

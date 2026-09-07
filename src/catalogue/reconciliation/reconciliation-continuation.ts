@@ -4,6 +4,7 @@ export class ReconciliationContinuation extends Error {
     readonly checkpoint: {
       phase:
         | "source_graph"
+        | "source_documents"
         | "normalization"
         | "input_preparation"
         | "input_verification"

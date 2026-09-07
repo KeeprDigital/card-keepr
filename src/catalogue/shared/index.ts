@@ -134,7 +134,7 @@ export {
   utf8,
 } from "./serialization";
 export { SPINE_REVISION_ID } from "./spine-revision.mjs";
-export { StreamingSha256 } from "./streaming-sha256";
+export { StreamingSha256, type StreamingSha256State } from "./streaming-sha256";
 export {
   inspectWorkflowInstance,
   isWorkflowInstanceNotFound,

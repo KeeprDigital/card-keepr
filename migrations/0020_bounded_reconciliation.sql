@@ -152,32 +152,30 @@ CREATE TABLE game_candidates (
   partition_count INTEGER NOT NULL DEFAULT 0 CHECK (partition_count >= 0),
   UNIQUE (ingestion_run_id, supported_game)
 );
-CREATE TABLE reconciliation_verified_documents (
-  ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
-  observation_set_id TEXT NOT NULL,
-  provenance_digest TEXT NOT NULL CHECK (length(provenance_digest) = 64),
-  manifest_digest TEXT NOT NULL CHECK (length(manifest_digest) = 64),
-  partition_count INTEGER NOT NULL CHECK (partition_count > 0),
-  PRIMARY KEY (ingestion_run_id, observation_set_id)
-);
-CREATE TRIGGER reconciliation_document_no_update BEFORE UPDATE ON reconciliation_verified_documents
-BEGIN SELECT RAISE(ABORT, 'reconciliation_document_immutable'); END;
-CREATE TRIGGER reconciliation_document_no_delete BEFORE DELETE ON reconciliation_verified_documents
-BEGIN SELECT RAISE(ABORT, 'reconciliation_document_audit_retained'); END;
-CREATE TABLE reconciliation_document_partitions (
+CREATE TABLE reconciliation_source_byte_chunks (
   ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
   observation_set_id TEXT NOT NULL,
   ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
-  kind TEXT NOT NULL CHECK (kind = 'document'),
   content TEXT NOT NULL CHECK (json_valid(content) AND json_type(content) = 'array'
-    AND length(CAST(content AS BLOB)) <= 524288 AND json_array_length(content) <= 500),
+    AND json_array_length(content) = 1 AND length(CAST(content AS BLOB)) <= 524288),
   sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
   PRIMARY KEY (ingestion_run_id, observation_set_id, ordinal)
 );
-CREATE TRIGGER reconciliation_document_partition_no_update BEFORE UPDATE ON reconciliation_document_partitions
-BEGIN SELECT RAISE(ABORT, 'reconciliation_document_partition_immutable'); END;
-CREATE TRIGGER reconciliation_document_partition_no_delete BEFORE DELETE ON reconciliation_document_partitions
-BEGIN SELECT RAISE(ABORT, 'reconciliation_document_partition_audit_retained'); END;
+CREATE TRIGGER reconciliation_source_bytes_no_update BEFORE UPDATE ON reconciliation_source_byte_chunks
+BEGIN SELECT RAISE(ABORT, 'reconciliation_source_bytes_immutable'); END;
+CREATE TRIGGER reconciliation_source_bytes_no_delete BEFORE DELETE ON reconciliation_source_byte_chunks
+BEGIN SELECT RAISE(ABORT, 'reconciliation_source_bytes_retained'); END;
+CREATE TABLE reconciliation_source_documents (
+  ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
+  observation_set_id TEXT NOT NULL,
+  content TEXT NOT NULL CHECK (json_valid(content) AND length(CAST(content AS BLOB)) <= 65536),
+  sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+  PRIMARY KEY (ingestion_run_id, observation_set_id)
+);
+CREATE TRIGGER reconciliation_source_header_no_update BEFORE UPDATE ON reconciliation_source_documents
+BEGIN SELECT RAISE(ABORT, 'reconciliation_source_header_immutable'); END;
+CREATE TRIGGER reconciliation_source_header_no_delete BEFORE DELETE ON reconciliation_source_documents
+BEGIN SELECT RAISE(ABORT, 'reconciliation_source_header_retained'); END;
 CREATE TABLE reconciliation_text_chunks (
   ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
   sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
@@ -301,7 +299,7 @@ WHERE NOT EXISTS (SELECT 1 FROM curated_revision_events AS event
   WHERE event.revision_id = conflict.revision_id AND event.event_version = conflict.event_version);
 CREATE TABLE reconciliation_checkpoints (
   ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
-  phase TEXT NOT NULL CHECK (phase IN ('source_graph', 'normalization', 'input_selection', 'input_verification', 'input_preparation', 'prior_state', 'initial_warnings', 'entity_admissions', 'admission_selection', 'identity_associations', 'official_reduction', 'official_errata', 'official_assembly', 'disappearance_warnings', 'withdrawal_diagnostics', 'product_reduction:one-piece', 'product_reduction:digimon', 'product_reduction:fusion-world', 'product_reduction:gundam')),
+  phase TEXT NOT NULL CHECK (phase IN ('source_graph', 'source_documents', 'normalization', 'input_selection', 'input_verification', 'input_preparation', 'prior_state', 'initial_warnings', 'entity_admissions', 'admission_selection', 'identity_associations', 'official_reduction', 'official_errata', 'official_assembly', 'disappearance_warnings', 'withdrawal_diagnostics', 'product_reduction:one-piece', 'product_reduction:digimon', 'product_reduction:fusion-world', 'product_reduction:gundam')),
   ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
   content TEXT NOT NULL CHECK (json_valid(content) AND length(CAST(content AS BLOB)) <= 65536),
   sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
