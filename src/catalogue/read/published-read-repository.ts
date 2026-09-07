@@ -21,12 +21,11 @@ export function exportCollectionStatement(
        )
        SELECT revision.id AS catalogue_revision_id, revision.published_at,
               export.manifest_key, export.manifest_digest,
-              export.maintenance_state, revision.publication_operation_id
+              export.maintenance_state, revision.publication_operation_id,revision.content_digest
        FROM catalogue_revisions AS revision
        JOIN pinned_revision AS pinned ON pinned.id=revision.id
        LEFT JOIN catalogue_exports AS export ON revision.id=export.catalogue_revision_id
-       WHERE (revision.publication_operation_id IS NOT NULL OR
-              (export.verified=1 AND export.maintenance_state='available'))
+       WHERE revision.publication_operation_id IS NOT NULL
          AND (? IS NULL OR revision.published_at < ? OR (
              revision.published_at = ? AND revision.id < ?))
        ORDER BY revision.published_at DESC, revision.id DESC LIMIT ?`)
@@ -261,6 +260,7 @@ export type PrintingImageRow = {
 
 export type ExportRow = {
   publication_operation_id?: string | null;
+  content_digest?: string;
   catalogue_revision_id: string;
   published_at: string;
   manifest_key: string;

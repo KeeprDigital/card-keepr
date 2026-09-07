@@ -25,7 +25,7 @@ remains binding throughout waits, retries and resume.
 The final D1 transaction verifies the exact candidate approval, manifest,
 predecessor, generation, deadline, recovery health and composition. It advances
 the game and global heads, retains query visibility, records the publication
-result, and reserves its backup together. A failed predicate rolls back the whole
+result, binds the candidate to its actual global revision, and reserves its backup together. A failed predicate rolls back the whole
 transaction. Unrelated-game contention refreshes at most four immutable game
 references with a bounded retry allowance. A stale same-game approval fails.
 
@@ -44,8 +44,22 @@ original result and re-dispatches the current operation if work remains.
 Ordinary reads select immutable game projections through the published
 composition. Pagination pins that composition and rejects a conflicting explicit
 revision. Image content links pin the same revision. Consumer export indexes
-page immutable per-game fact components and remain available independently of
-query-projection archival; private preparation roots are not consumer exports.
+page four immutable per-record gzip NDJSON components at a time under the current
+`card-keepr-catalogue-export-manifest@5` contract. Each component contains one
+normalized public record; text and projection digests are verified before rendering.
+Component descriptors and cursor are hashed with the manifest digest zeroed.
+Host-specific download links live outside that hashed document. Export listing
+records identify the composition content digest; follow the detail link for the
+first manifest page and its digest. Exports remain available independently of
+query-projection archival; retain their immutable facts, text and candidate bindings.
+Private preparation roots are not consumer exports. Legacy public export shapes
+are unavailable; retained historical recovery objects use a private validator.
+
+Preparation carries first-observed, last-observed and lifecycle transition facts
+against candidate identities. The fixed-size switch binds the newly published
+candidate to the actual operation-derived global revision. Resolving those
+immutable bindings preserves history across repeated source collections and
+unrelated-game publication without prebinding a future global composition.
 
 A retained legacy catalogue without prepared composition members cannot switch
 natively: the database fails closed with

@@ -1,4 +1,3 @@
-import { compositionExportResponse } from "./composition-export";
 import { parseRange } from "./byte-range";
 import { MissingObjectError } from "../shared";
 import { parseCatalogueRevisionId, parsePublicationInstant } from "../../http/catalogue";
@@ -59,7 +58,7 @@ type ExportManifest = {
 export async function catalogueExportsResponse(
   request: Request,
   database: CatalogueStore,
-  bucket: R2Bucket,
+  _bucket: R2Bucket,
   base: PublicBase,
 ): Promise<Response> {
   const url = new URL(request.url);
@@ -84,42 +83,14 @@ export async function catalogueExportsResponse(
     limit,
   );
   const selected = page.rows;
-  const data = await Promise.all(
-    selected.map(async (exportRow) => {
-      if (exportRow.publication_operation_id) {
-        const response = await compositionExportResponse(
-          database,
-          new Request(publicUrl(base, `/v1/catalogue-exports/${exportRow.catalogue_revision_id}`)),
-          base,
-          exportRow.catalogue_revision_id,
-        );
-        if (!response) throw new Error("Verified Catalogue Export is unavailable");
-        const { data } = (await response.json()) as { data: { manifest_sha256: string; export_schema_major: number } };
-        return {
-          type: "catalogue_export",
-          catalogue_revision_id: exportRow.catalogue_revision_id,
-          export_schema_major: data.export_schema_major,
-          published_at: exportRow.published_at,
-          manifest_sha256: data.manifest_sha256,
-          links: { self: publicUrl(base, `/v1/catalogue-exports/${exportRow.catalogue_revision_id}`) },
-        };
-      }
-      const verified = await loadVerifiedExportManifest(database, bucket, exportRow.catalogue_revision_id);
-      if (verified === null) {
-        throw new Error("Verified Catalogue Export is unavailable");
-      }
-      return {
-        type: "catalogue_export",
-        catalogue_revision_id: exportRow.catalogue_revision_id,
-        export_schema_major: verified.manifest.export_schema_major,
-        published_at: exportRow.published_at,
-        manifest_sha256: exportRow.manifest_digest,
-        links: {
-          self: publicUrl(base, `/v1/catalogue-exports/${encodeURIComponent(exportRow.catalogue_revision_id)}`),
-        },
-      };
-    }),
-  );
+  const data = selected.map((exportRow) => ({
+    type: "catalogue_export",
+    catalogue_revision_id: exportRow.catalogue_revision_id,
+    export_schema_major: 5,
+    published_at: exportRow.published_at,
+    content_sha256: exportRow.content_digest,
+    links: { self: publicUrl(base, `/v1/catalogue-exports/${exportRow.catalogue_revision_id}`) },
+  }));
   const next = page.hasMore
     ? encodeCursor({
         contract: "card-keepr-catalogue-export-cursor@1",

@@ -16,6 +16,7 @@ export type PreparationState = {
 export type PreparationCursor = {
   partition: number;
   record: number;
+  subrecord?: number;
   text: number;
   chunk: number;
   chain: string;

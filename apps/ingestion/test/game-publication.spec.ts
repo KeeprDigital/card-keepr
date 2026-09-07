@@ -1,3 +1,6 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { compositionEntityResponse } from "../../../src/catalogue/read/composition-read";
+import { compositionExportResponse } from "../../../src/catalogue/read/composition-export";
 import { installLegacyCurrentHead, restoreFixtureSpine } from "./query-helpers/atomic-publication";
 import { admitSyntheticCurrentCheckpoint, currentGameMembers } from "./query-helpers/atomic-publication";
 import { rejectedAtomicSwitch, publicationStateSnapshot } from "./query-helpers/atomic-publication";
@@ -104,6 +107,33 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
     switched.document,
   );
   expect((await get(`/v1/game-candidates/${id}`)).document.state).toBe("published");
+  const consumerBase = { origin: "https://catalogue.example", basePath: "" };
+  const firstCards = (await (await compositionEntityResponse(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    new Request(`${consumerBase.origin}/v1/cards?game=one-piece`),
+    consumerBase,
+    "cards",
+  ))!.json()) as { data: { id: string; lifecycle: unknown }[] };
+  expect(firstCards.data.length).toBeGreaterThan(0);
+  for (const card of firstCards.data)
+    expect(card.lifecycle).toEqual({
+      first_revision_id: switched.document.resulting_revision_id,
+      last_observed_revision_id: switched.document.resulting_revision_id,
+      withdrawn: false,
+    });
+  const firstExport = (await (await compositionExportResponse(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    new Request(`${consumerBase.origin}/v1/catalogue-exports/${switched.document.resulting_revision_id}`),
+    consumerBase,
+    String(switched.document.resulting_revision_id),
+  ))!.json()) as { data: unknown };
+  const otherHost = (await (await compositionExportResponse(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    new Request(`https://another.example/v1/catalogue-exports/${switched.document.resulting_revision_id}`),
+    { origin: "https://another.example", basePath: "" },
+    String(switched.document.resulting_revision_id),
+  ))!.json()) as { data: unknown };
+  expect(otherHost.data).toEqual(firstExport.data);
   const next = await post("/v1/game-candidates", {
     ingestion_run_id: source.id,
     supported_game: "one-piece",
@@ -240,4 +270,20 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
   });
   expect(members.find((member) => member.supported_game === "fusion-world")).toMatchObject({ candidate_id: other.id });
   expect((await get(`/v1/publications/${otherApproval.document.id}`)).document.deadline).toBe(other.deadline);
+  const carriedCards = (await (await compositionEntityResponse(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    new Request(`${consumerBase.origin}/v1/cards?game=one-piece`),
+    consumerBase,
+    "cards",
+  ))!.json()) as { data: { id: string; lifecycle: unknown }[] };
+  expect(carriedCards.data.map((c) => ({ id: c.id, lifecycle: c.lifecycle }))).toEqual(
+    firstCards.data.map((c) => ({ id: c.id, lifecycle: c.lifecycle })),
+  );
+  const retainedExport = (await (await compositionExportResponse(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    new Request(`${consumerBase.origin}/v1/catalogue-exports/${switched.document.resulting_revision_id}`),
+    consumerBase,
+    String(switched.document.resulting_revision_id),
+  ))!.json()) as { data: unknown };
+  expect(retainedExport.data).toEqual(firstExport.data);
 });

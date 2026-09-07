@@ -74,6 +74,33 @@ ALTER TABLE catalogue_backup_attempts ADD COLUMN publication_operation_id TEXT R
 CREATE UNIQUE INDEX catalogue_publication_backup ON catalogue_backup_attempts(publication_operation_id)
  WHERE publication_operation_id IS NOT NULL AND linked_attempt_id IS NULL;
 -- Prepared public query facts remain private until selected by a composition.
+-- Public lifecycle facts carry candidate references until the atomic switch binds
+-- that candidate to its actual global composition revision.
+CREATE TABLE catalogue_candidate_publications (
+ candidate_id TEXT PRIMARY KEY REFERENCES game_candidates(id),
+ catalogue_revision_id TEXT NOT NULL UNIQUE REFERENCES catalogue_revisions(id)
+);
+CREATE TRIGGER catalogue_candidate_publications_no_update BEFORE UPDATE ON catalogue_candidate_publications
+BEGIN SELECT RAISE(ABORT,'published_candidate_binding_immutable'); END;
+CREATE TRIGGER catalogue_candidate_publications_no_delete BEFORE DELETE ON catalogue_candidate_publications
+BEGIN SELECT RAISE(ABORT,'published_candidate_binding_retained'); END;
+CREATE TABLE publication_read_lifecycles (
+ candidate_id TEXT NOT NULL REFERENCES publication_preparations(candidate_id),
+ kind TEXT NOT NULL, entity_id TEXT NOT NULL,
+ first_candidate_id TEXT NOT NULL REFERENCES game_candidates(id),
+ last_observed_candidate_id TEXT NOT NULL REFERENCES game_candidates(id),
+ withdrawn INTEGER NOT NULL CHECK(withdrawn IN (0,1)),
+ withdrawal_candidate_id TEXT REFERENCES game_candidates(id),
+ withdrawal_evidence_json TEXT CHECK(withdrawal_evidence_json IS NULL OR
+   (json_valid(withdrawal_evidence_json) AND length(CAST(withdrawal_evidence_json AS BLOB))<=131072)),
+ observation_digest TEXT CHECK(observation_digest IS NULL OR length(observation_digest)=64),
+ PRIMARY KEY(candidate_id,kind,entity_id)
+);
+CREATE TRIGGER publication_read_lifecycles_no_update BEFORE UPDATE ON publication_read_lifecycles
+BEGIN SELECT RAISE(ABORT,'publication_lifecycle_immutable'); END;
+CREATE TRIGGER publication_read_lifecycles_no_delete BEFORE DELETE ON publication_read_lifecycles
+BEGIN SELECT RAISE(ABORT,'publication_lifecycle_retained'); END;
+
 CREATE TABLE publication_read_entities (
  candidate_id TEXT NOT NULL REFERENCES publication_preparations(candidate_id),
  kind TEXT NOT NULL,entity_id TEXT NOT NULL,batch_ordinal INTEGER NOT NULL,
@@ -92,6 +119,8 @@ CREATE INDEX publication_read_identity ON publication_read_entities(candidate_id
 CREATE INDEX publication_read_from ON publication_read_entities(candidate_id,kind,from_id,entity_id);
 CREATE INDEX publication_read_to ON publication_read_entities(candidate_id,kind,relationship_kind,to_id,from_id);
 CREATE INDEX publication_read_product ON publication_read_entities(candidate_id,kind,product_id,entity_id);
+CREATE UNIQUE INDEX publication_read_batch ON publication_read_entities(candidate_id,batch_ordinal);
+
 CREATE TABLE publication_read_attributes (
  candidate_id TEXT NOT NULL,card_id TEXT NOT NULL,profile TEXT NOT NULL,attribute TEXT NOT NULL,value TEXT NOT NULL,
  PRIMARY KEY(candidate_id,card_id,profile,attribute,value)
