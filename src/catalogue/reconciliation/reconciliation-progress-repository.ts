@@ -37,7 +37,7 @@ export function createReconciliationOperationStatement(
 
 export function reconciliationOperationHeaderStatement(database: CatalogueStore, runId: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT state, generation, definition_pins_json, input_manifest_digest,
+    .prepare(`SELECT state, generation, candidate_digest, definition_pins_json, input_manifest_digest,
       observation_cutoff, identity_decision_cutoff, authority_decision_cutoff, created_at, deadline
       FROM reconciliation_operations WHERE ingestion_run_id = ?`)
     .bind(runId);

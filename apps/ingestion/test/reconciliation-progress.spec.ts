@@ -228,7 +228,7 @@ test("owner pause fences the prior generation and exact resume preserves identit
   expect(stale.status).toBe(409);
   // Inject an old and then a current delivery at the external Workflow boundary;
   // observe the outcome only through owner administration.
-  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
   const step = {
     do: async (_name: string, _config: unknown, callback: () => Promise<string>) => callback(),
   } as unknown as import("cloudflare:workers").WorkflowStep;
@@ -271,7 +271,7 @@ test("collection can continue while the same game's candidate slot stays seriali
     idempotency_key: "release-game-slot",
   });
   expect((await reconcile(second.id)).response.status).toBe(200);
-  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
   const { testEnv } = await import("./reconciliation-helpers");
   const firstStatus = await get(`/v1/ingestion-runs/${first.id}/reconciliation`);
   // An old delivery may initialize again after its slot has a new owner.
@@ -351,7 +351,7 @@ test("a terminal response from an old Workflow poll cannot pause a resumed gener
 
 test("transient image storage failures exhaust bounded retries into a resumable pause", async () => {
   const { testEnv } = await import("./reconciliation-helpers");
-  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
   const run = await collect("/reconciliation/base", "image-storage-outage");
   let attempts = 0;
   const unavailable = new Proxy(testEnv.PRINTING_IMAGES, {
@@ -397,7 +397,7 @@ test("transient image storage failures exhaust bounded retries into a resumable 
 
 test("verified source documents survive a later read outage and resume without rereading completed documents", async () => {
   const { testEnv, collectRequests, post } = await import("./reconciliation-helpers");
-  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
   const run = await collectRequests(
     [
       { id: "first", scenario: "base" },
@@ -480,7 +480,7 @@ test("verified source documents survive a later read outage and resume without r
 
 test("normalization resumes after its last retained observation without repeating image work", async () => {
   const { testEnv, post } = await import("./reconciliation-helpers");
-  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
   const run = await collect("/reconciliation/deterministic-forward", "normalized-observation-resume");
   let firstKey: string | null = null;
   let firstWrites = 0;
@@ -560,7 +560,7 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
   "a Product-pass read outage pauses and replays %s observation effects",
   async (fixture) => {
     const { testEnv, post } = await import("./reconciliation-helpers");
-    const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+    const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
     const run = await collect(`/reconciliation/${fixture}`, "product-pass-read-outage");
     let failures = 0;
     let unavailable = true;
@@ -655,7 +655,7 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
 
 test("interrupted preparation resumes verified batches before sealing for review", async () => {
   const { testEnv, post } = await import("./reconciliation-helpers");
-  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
   const run = await collect("/reconciliation/base", "preparation-interruption");
   const sqlByStatement = new WeakMap<object, string>();
   const wrap = (statement: D1PreparedStatement, sql: string): D1PreparedStatement => {
@@ -756,7 +756,7 @@ test("interrupted preparation resumes verified batches before sealing for review
 test("operation initialization pins even an empty admission selection before Workflow delivery", async () => {
   const { default: worker } = await import("../src/index");
   const { testEnv } = await import("./reconciliation-helpers");
-  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
   const run = await collect("/reconciliation/base", "early-admission-pin");
   const instance = { status: async () => ({ status: "running" }) } as unknown as WorkflowInstance;
   const workflow = {
@@ -804,7 +804,7 @@ test("operation initialization pins even an empty admission selection before Wor
 test("a completed Workflow that paused durable work reports paused without requiring a sealed candidate", async () => {
   const { default: worker } = await import("../src/index");
   const { testEnv, post } = await import("./reconciliation-helpers");
-  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
   const run = await collect("/reconciliation/base", "workflow-complete-paused");
   const unavailable = new Proxy(testEnv.PRINTING_IMAGES, {
     get(target, property) {
@@ -913,7 +913,7 @@ test("a retained Printing Image read outage preserves preparation for owner resu
   const { post, testEnv, waitForRunState } = await import("./reconciliation-helpers");
   const { officialSourceDiscoveryRequests } = await import("../../../src/catalogue/adapters");
   const { collectFixtureEvidence } = await import("../../../test/support/fixture-evidence-plan");
-  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "digimon",
     source_lineage: "digimon-en",
@@ -1027,7 +1027,7 @@ test("a single Card's Erratum budget includes externally retained text", async (
 
 test("a published catalogue larger than 1 MiB is streamed into the next candidate without an aggregate prior-payload read", async () => {
   const { approve, testEnv } = await import("./reconciliation-helpers");
-  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
   const firstRun = await collect("/reconciliation/prior-candidate-stream", "prior-stream-first");
   const first = await reconcile(firstRun.id);
   expect(first.response.status).toBe(200);
@@ -1107,7 +1107,7 @@ test("a published catalogue larger than 1 MiB is streamed into the next candidat
 
 test("a Product-group storage outage pauses and resumes typed relationships without losing observed Products", async () => {
   const { testEnv, post } = await import("./reconciliation-helpers");
-  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
   const run = await collect("/reconciliation/product-typed-relationships", "product-group-outage");
   const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
   let unavailable = true;
@@ -1223,7 +1223,7 @@ test.each(["entity", "selection"])(
   async (failure) => {
     const { approve, post, testEnv, requiredFirst } = await import("./reconciliation-helpers");
     const { canonicalJson, sha256Text } = await import("../../../src/catalogue/shared");
-    const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+    const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
     const seed = await reconcile((await collect("/reconciliation/base", "curated-draft-seed")).id);
     const original = requiredFirst(seed.document, "cards");
     const publishedSeed = await approve(seed.document);
@@ -1387,7 +1387,7 @@ test("persistent curated comparison records every changed source field before fa
   }
   const run = await collect("/reconciliation/curated-draft-source-changed", "curated-conflicts-next");
   const { testEnv } = await import("./reconciliation-helpers");
-  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
   const sqlByStatement = new WeakMap<object, string>();
   const wrap = (statement: D1PreparedStatement, sql: string): D1PreparedStatement => {
     const proxy = new Proxy(statement, {
@@ -1582,7 +1582,7 @@ test.each(retainedStateNamespaces)(
   "a %s storage outage resumes retained identities and effective rules text",
   async (namespace) => {
     const { testEnv, post, approve } = await import("./reconciliation-helpers");
-    const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+    const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
     const seed = await reconcile(
       (await collect("/reconciliation/errata-card-rules-text", `errata-state-seed-${namespace}`)).id,
     );
@@ -1713,7 +1713,7 @@ test.each(retainedStateNamespaces)(
 test("admission selection is frozen without an unbounded operation-start write", async () => {
   const { default: worker } = await import("../src/index");
   const { testEnv, post } = await import("./reconciliation-helpers");
-  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
   for (let index = 0; index < 128; index++) {
     expect(
       (

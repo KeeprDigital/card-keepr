@@ -17,6 +17,12 @@ export const workflowSteps = {
   },
   reconciliation: {
     reconcile: "reconcile retained Card, Printing, and Erratum evidence",
+    unit: "reconcile retained Card, Printing, and Erratum evidence-unit-{unit}",
+    dispatchState: "read reconciliation dispatch",
+    retainSuccessor: "retain reconciliation successor",
+    dispatchSuccessor: "dispatch reconciliation successor",
+    notifyRoot: "notify reconciliation root",
+    terminal: "await reconciliation terminal reference",
     failure: "finalize exhausted reconciliation failure",
   },
   backup: {
@@ -50,7 +56,8 @@ export function workflowStepName(template: string, parameters: Record<string, st
 }
 export function assertWorkflowRestartTarget(kind: WorkflowKind, target: WorkflowRestartTarget): void {
   const match = Object.entries(workflowSteps[kind]).find(([, template]) => templatePattern(template).test(target.name));
-  const expectedType = match?.[0] === "wait" || match?.[0] === "retry" ? "sleep" : "do";
+  const expectedType =
+    match?.[0] === "terminal" ? "waitForEvent" : match?.[0] === "wait" || match?.[0] === "retry" ? "sleep" : "do";
   if (
     !match ||
     target.type !== expectedType ||

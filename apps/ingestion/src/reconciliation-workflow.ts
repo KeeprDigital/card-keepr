@@ -4,8 +4,10 @@ import {
   initializeReconciliationProgress,
   type ReconciliationWorkflowParams,
   reconcileRetainedCardPrintingEvidence,
+  retainReconciliationDispatch,
+  reconciliationDispatchState,
 } from "../../../src/catalogue/reconciliation";
-import { canonicalJson, catalogueStore, workflowSteps } from "../../../src/catalogue/shared";
+import { canonicalJson, catalogueStore, workflowDriver, workflowSteps } from "../../../src/catalogue/shared";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 
 const reconciliationStep = {
@@ -35,7 +37,13 @@ export async function runReconciliationWorkflow(
   );
   let reconciliationResultJson: string;
   try {
-    reconciliationResultJson = await runReconciliationWorkUnits(env, step, event.payload);
+    reconciliationResultJson = await runReconciliationWorkUnits(
+      env,
+      step,
+      event.payload,
+      workflowSteps.reconciliation.reconcile,
+      event.payload.shard?.root ?? { binding: "reconciliation", id: event.instanceId },
+    );
   } catch (error) {
     reconciliationResultJson = await step.do(workflowSteps.reconciliation.failure, reconciliationStep, async () => {
       const result = await pauseFailedReconciliation(
@@ -47,6 +55,17 @@ export async function runReconciliationWorkflow(
       return durableReconciliationResult(event.payload.ingestion_run_id, result);
     });
   }
+  if (event.payload.shard && JSON.parse(reconciliationResultJson).continuation === undefined) {
+    const root = event.payload.shard.root;
+    await step.do(workflowSteps.reconciliation.notifyRoot, reconciliationStep, async () => {
+      const binding = root.binding === "collection" ? env.EVIDENCE_INGESTION_WORKFLOW : env.RECONCILIATION_WORKFLOW;
+      await (await binding.get(root.id)).sendEvent({
+        type: "reconciliation-terminal",
+        payload: reconciliationResultJson,
+      });
+      return JSON.stringify({ delivered: true });
+    });
+  }
   return {
     result_json: reconciliationResultJson,
   };
@@ -56,12 +75,31 @@ export async function runReconciliationWorkflow(
 export async function runReconciliationWorkUnits(
   env: Env,
   step: WorkflowStep,
-  params: Pick<ReconciliationWorkflowParams, "ingestion_run_id" | "observed_at" | "generation">,
+  params: ReconciliationWorkflowParams,
   stepName: string = workflowSteps.reconciliation.reconcile,
+  root: NonNullable<ReconciliationWorkflowParams["shard"]>["root"],
 ): Promise<string> {
-  for (let unit = 0; ; unit++) {
+  const state = JSON.parse(
+    await step.do(workflowSteps.reconciliation.dispatchState, reconciliationStep, async () =>
+      JSON.stringify(await reconciliationDispatchState(catalogueStore(env.CATALOGUE_DB), params)),
+    ),
+  ) as Awaited<ReturnType<typeof reconciliationDispatchState>>;
+  if (state.operation?.state === "sealed" && state.operation.candidate_digest)
+    return durableReconciliationResult(params.ingestion_run_id, { candidate_digest: state.operation.candidate_digest });
+  if (
+    state.successor &&
+    state.operation?.state === "preparing" &&
+    state.operation.generation === (params.generation ?? 0)
+  ) {
+    await dispatchSuccessor(env, step, state.successor.id, state.successor.params);
+    return finishShard(step, params, state.successor.id, state.operation?.deadline);
+  }
+  // Ten work callbacks leave room for all four attempts at 100 service calls,
+  // plus bounded dispatch/failure steps, inside the 5,000-call shard target.
+  for (let unit = 0; unit < 10; unit++) {
+    const ordinal = (params.shard?.ordinal ?? 0) * 10 + unit;
     const resultJson = await step.do(
-      unit === 0 ? stepName : `${stepName}-unit-${unit}`,
+      ordinal === 0 ? stepName : `${stepName}-unit-${ordinal}`,
       reconciliationStep,
       async () => {
         const result = await reconcileRetainedCardPrintingEvidence(
@@ -81,6 +119,35 @@ export async function runReconciliationWorkUnits(
     if ((JSON.parse(resultJson) as { continuation?: unknown }).continuation !== undefined) continue;
     return resultJson;
   }
+  const successor: ReconciliationWorkflowParams = {
+    ...params,
+    shard: { ordinal: (params.shard?.ordinal ?? 0) + 1, root },
+  };
+  const retained = await step.do(workflowSteps.reconciliation.retainSuccessor, reconciliationStep, async () =>
+    JSON.stringify({ id: await retainReconciliationDispatch(catalogueStore(env.CATALOGUE_DB), successor) }),
+  );
+  const { id } = JSON.parse(retained) as { id: string };
+  await dispatchSuccessor(env, step, id, successor);
+  return finishShard(step, params, id, state.operation?.deadline);
+}
+
+async function dispatchSuccessor(env: Env, step: WorkflowStep, id: string, params: ReconciliationWorkflowParams) {
+  await step.do(workflowSteps.reconciliation.dispatchSuccessor, reconciliationStep, async () => {
+    await workflowDriver(env.RECONCILIATION_WORKFLOW).ensure(id, params, { createRequested: true });
+    return JSON.stringify({ id });
+  });
+}
+
+async function finishShard(step: WorkflowStep, params: ReconciliationWorkflowParams, id: string, deadline?: string) {
+  if (params.shard) return JSON.stringify({ continuation: { workflow_instance_id: id } });
+  const terminal = await step.waitForEvent<string>(workflowSteps.reconciliation.terminal, {
+    type: "reconciliation-terminal",
+    timeout: Math.max(
+      1000,
+      (deadline ? Date.parse(deadline) : Date.parse(params.observed_at) + 604800000) - Date.now(),
+    ),
+  });
+  return terminal.payload;
 }
 
 export function durableReconciliationResult(runId: string, result: Record<string, unknown>): string {

@@ -11,7 +11,7 @@ import {
 } from "../../../src/catalogue/reconciliation";
 import { type CatalogueCandidate, catalogueRevisionIdentity, catalogueStore } from "../../../src/catalogue/shared";
 import ingestionWorker from "../src/index";
-import { runReconciliationWorkflow } from "../src/reconciliation-workflow";
+import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 import * as catalogueExportQueries from "./query-helpers/catalogue-export";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
@@ -439,7 +439,9 @@ test("reconciliation commit success survives lost step output without repeating 
     .map((record) => JSON.parse(record))
     .find(
       (record) =>
-        record.event === "workflow.step.completed" && record.request?.id === "workflow-reconciliation-correlation",
+        record.event === "workflow.step.completed" &&
+        record.request?.id === "workflow-reconciliation-correlation" &&
+        record.workflow?.step === "reconcile retained Card, Printing, and Erratum evidence",
     );
   expect(workflowRecord).toMatchObject({
     contract: "card-keepr-operational-log@1",

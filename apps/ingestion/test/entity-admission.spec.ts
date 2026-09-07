@@ -1,6 +1,6 @@
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { expect, test } from "vitest";
-import { runReconciliationWorkflow } from "../src/reconciliation-workflow";
+import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 import {
   installReconciliationSuite,
   post,

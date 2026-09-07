@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { runReconciliationWorkflow } from "../src/reconciliation-workflow";
+import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 import {
   installReconciliationSuite,
   post,
@@ -377,7 +377,7 @@ test.each(["lookup", "application"])(
   "a retained correction %s storage outage pauses and resumes the same reviewed Card association",
   async (phase) => {
     const { testEnv, requiredString } = await import("./reconciliation-helpers");
-    const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+    const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
     const original = await admitSyntheticPrinting("lookup-source");
     const replacement = await admitSyntheticPrinting("lookup-replacement");
     const seed = await approve(

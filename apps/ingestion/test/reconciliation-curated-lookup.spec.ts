@@ -11,7 +11,7 @@ import {
   requiredString,
   testEnv,
 } from "./reconciliation-helpers";
-import { runReconciliationWorkflow } from "../src/reconciliation-workflow";
+import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
 installReconciliationSuite();
 

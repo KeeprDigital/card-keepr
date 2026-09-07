@@ -30,6 +30,10 @@ export type ReconciliationWorkflowParams = Readonly<{
   idempotency_key: string;
   observed_at: string;
   generation?: number;
+  shard?: Readonly<{
+    ordinal: number;
+    root: Readonly<{ binding: "reconciliation" | "collection"; id: string }>;
+  }>;
 }>;
 
 type ReconciliationWorkflowRequestRow = {

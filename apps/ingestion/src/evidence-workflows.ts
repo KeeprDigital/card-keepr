@@ -280,8 +280,14 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
           const reconciliationResultJson = await runReconciliationWorkUnits(
             this.env,
             step,
-            { ingestion_run_id: runId, observed_at: run.collection_completed_at ?? new Date().toISOString() },
+            {
+              ingestion_run_id: runId,
+              observed_at: run.collection_completed_at ?? new Date().toISOString(),
+              expected_current_revision_id: run.expected_current_revision_id,
+              idempotency_key: `collection-${event.instanceId}`,
+            },
             workflowSteps.parent.reconcile,
+            { binding: "collection", id: event.instanceId },
           );
           return {
             ingestion_run_id: runId,
