@@ -1,6 +1,8 @@
 import { type CataloguePrinting, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { nativePredecessorGameCandidateStatement } from "./game-candidate-repository";
 import { nativePriorPrintingLocatorsStatement } from "./native-printing-locators-repository";
+import { exactReducerStateStatement } from "./reconciliation-reducer-state-repository";
+import { documentStorage } from "./reconciliation-document";
 
 export function retainPrintingLocator(
   previous: CataloguePrinting | undefined,
@@ -33,26 +35,40 @@ export async function nativePrintingsAtLocator(
   lineage: string,
   locator: string,
 ): Promise<{ id: string }[] | undefined> {
-  const candidate = await nativePredecessorGameCandidateStatement(db, prior.revision, prior.game).first<{
-    id: string;
-  }>();
+  const candidate = await documentStorage(() =>
+    nativePredecessorGameCandidateStatement(db, prior.revision, prior.game).first<{ id: string }>(),
+  );
   if (!candidate) return undefined;
   // Prior-state seeding verifies the exact member's manifest partitions before
   // retaining this immutable, card-indexed view. Read only its completed prefix.
+  const group = await sha256Text(prior.cardId);
   const rows = (
-    await nativePriorPrintingLocatorsStatement(
-      db,
-      prior.preparationId,
-      await sha256Text(prior.cardId),
-      prior.through,
-      lineage,
-      locator,
-    ).all<{ content: string; sha256: string }>()
+    await documentStorage(() =>
+      nativePriorPrintingLocatorsStatement(db, prior.preparationId, group, prior.through, lineage, locator).all<{
+        key_digest: string;
+        observation_ordinal: number;
+        byte_length: number;
+      }>(),
+    )
   ).results;
-  if (rows.length > 8) throw new Error("reconciliation_capacity_exceeded: one locator matches too many Printings.");
+  if (rows.length > 8 || rows.reduce((total, row) => total + row.byte_length, 0) > 512000)
+    throw new Error("reconciliation_capacity_exceeded: one locator exceeds its Printing match budget.");
   const ids = new Set<string>();
-  for (const row of rows) {
-    if ((await sha256Text(row.content)) !== row.sha256)
+  for (const match of rows) {
+    const row = await documentStorage(() =>
+      exactReducerStateStatement(
+        db,
+        prior.preparationId,
+        "prior_printings",
+        match.key_digest,
+        match.observation_ordinal,
+      ).first<{ content: string; sha256: string }>(),
+    );
+    if (
+      !row ||
+      new TextEncoder().encode(row.content).byteLength !== match.byte_length ||
+      (await sha256Text(row.content)) !== row.sha256
+    )
       throw new Error("Prior Printing locator evidence failed integrity verification.");
     const value = JSON.parse(row.content).value as CataloguePrinting;
     if (value.card_id !== prior.cardId) throw new Error("Prior Printing locator evidence has another Card identity.");

@@ -9,7 +9,8 @@ export function nativePriorPrintingLocatorsStatement(
   locator: string,
 ) {
   return repositoryStatements(db)
-    .prepare(`SELECT state.content,state.sha256 FROM reconciliation_reducer_state state
+    .prepare(`SELECT state.key_digest,state.observation_ordinal,length(CAST(state.content AS BLOB)) AS byte_length
+    FROM reconciliation_reducer_state state
     WHERE state.preparation_id=?1 AND state.namespace='prior_printings' AND state.group_digest=?2
       AND state.observation_ordinal<=?3 AND NOT EXISTS (
         SELECT 1 FROM reconciliation_reducer_state later WHERE later.preparation_id=state.preparation_id
