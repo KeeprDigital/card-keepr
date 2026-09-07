@@ -48,6 +48,7 @@ test("native publication: the owner publishes a complete One Piece catalogue for
     config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
     statePath: join(directory, "source-state"),
   });
+  t.after(() => stopWorker(source));
   const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory, ingestionConfig);
   const ingestion = await startWorker({
     ...checkpointTransport,

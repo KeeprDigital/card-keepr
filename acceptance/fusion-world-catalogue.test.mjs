@@ -80,6 +80,7 @@ test("native publication: the owner publishes a complete Fusion World source for
     config: "acceptance/fixtures/fusion-world-official-source.wrangler.jsonc",
     statePath: join(directory, "source-state"),
   });
+  t.after(() => stopWorker(source));
   const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory, ingestionConfig);
   const ingestion = await startWorker({
     ...checkpointTransport,
