@@ -25,7 +25,7 @@ const failClosedCases = [
   "energy-marker-rarity",
 ];
 
-test("the owner publishes a complete Fusion World source for authenticated consumers", async (t) => {
+test("compatibility publication: the owner publishes a complete Fusion World source for authenticated consumers", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-fusion-world-"));
   const statePath = join(directory, "shared-state");
   const administrationKey = randomUUID();

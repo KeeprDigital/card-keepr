@@ -1,45 +1,16 @@
 import type { CatalogueStore } from "../shared";
-import type { Memberships } from "./reconciliation-model";
 import type { LocatorEvidence, LocatorEvidenceCollection } from "./reconciliation-publication";
 import {
   disappearedCardsStatement,
   disappearedPrintingsStatement,
-  printingRelationshipsForLineageStatement,
   reconciledPrintingDocumentStatement,
   reconciledPrintingLocatorsStatement,
   reconciledPrintingRelationshipsStatement,
 } from "./reconciliation-read-repository";
-import {
-  aggregateRelationshipEvidence,
-  membershipEntries,
-  type RelationshipEvidenceRow,
-} from "./reconciliation-relationships";
+import { aggregateRelationshipEvidence, type RelationshipEvidenceRow } from "./reconciliation-relationships";
 import type { ReconciledPrintingRow } from "./reconciliation-repository";
 
 type MembershipRow = RelationshipEvidenceRow;
-
-export async function relationshipDisappearanceWarnings(
-  database: CatalogueStore,
-  printingId: string,
-  sourceLineage: string,
-  memberships: Memberships,
-): Promise<Record<string, unknown>[]> {
-  const existing = await printingRelationshipsForLineageStatement(database, {
-    printingId: printingId,
-    sourceLineage: sourceLineage,
-  }).all<MembershipRow>();
-  const current = new Set(membershipEntries(memberships).map(membershipKey));
-  const disappeared = new Map(
-    existing.results.filter((row) => !current.has(membershipKey(row))).map((row) => [membershipKey(row), row]),
-  );
-  return [...disappeared.values()].map((row) => ({
-    code: "relationship_not_observed",
-    printing_id: printingId,
-    relationship_kind: row.relationship_kind,
-    relationship_value: row.relationship_value,
-    detail: "The relationship was not observed in this complete run; it remains historical and is not withdrawn.",
-  }));
-}
 
 export async function printingDisappearanceWarnings(
   database: CatalogueStore,
@@ -141,10 +112,6 @@ function locatorEvidenceCollection(
     current: evidence.filter((locator) => locator.current),
     historical: evidence.filter((locator) => !locator.current),
   };
-}
-
-function membershipKey(row: Pick<MembershipRow, "relationship_kind" | "relationship_value">): string {
-  return `${row.relationship_kind}\u0000${row.relationship_value}`;
 }
 
 function membershipProjection<T>(create: () => T): {

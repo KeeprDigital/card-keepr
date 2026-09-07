@@ -1,3 +1,4 @@
+import { waitForNativeCandidates } from "./native-candidate-helpers";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { requiredSourceAdapter, officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
@@ -170,13 +171,9 @@ test("authenticated reparse requires the exact Digimon snapshot capture version"
     });
   } finally {
     await waitForWorkflowStatus(accepted.workflow.id, () => parent.status(), "complete", 90_000);
-    const candidateResponse = await administrationRequest(`/v1/ingestion-runs/${run.id}/candidate`, "GET");
-    expect(candidateResponse.status).toBe(200);
-    const candidate = await candidateResponse.json<{
-      candidate_digest: string;
-    }>();
-    const rejected = await administrationRequest(`/v1/ingestion-runs/${run.id}/rejection`, "POST", {
-      candidate_digest: candidate.candidate_digest,
+    const [candidate] = await waitForNativeCandidates(run.id, 1);
+    const rejected = await administrationRequest(`/v1/game-candidates/${candidate!.id}/abandon`, "POST", {
+      generation: candidate!.generation,
       idempotency_key: "digimon-exact-capture-version-cleanup",
     });
     expect(rejected.status).toBe(200);

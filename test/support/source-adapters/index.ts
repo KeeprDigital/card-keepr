@@ -22,6 +22,20 @@ const parseCardSourceDocument = (document: unknown): readonly unknown[] => {
 export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[] = Object.freeze(
   [
     {
+      adapterVersion: "fixture-one-piece-erratum-target@1",
+      sourceLineage: "one-piece-en",
+      supportedGame: "one-piece",
+      gameProfileVersion: "one-piece@1",
+      parserContract: "synthetic-card-erratum-target-fixture@1",
+      maximumSnapshotBytes: 16 * 1024 * 1024,
+      origin: "production" as const,
+      requestSurface: { kind: "credential-free-https" as const },
+      reconciliationCapability: "catalogue" as const,
+      requiredSurfaces: ["errata"],
+      requestUrlForSurface: () => "https://official-source.invalid/reconciliation/erratum-target-large-text",
+      parse: parseCardSourceDocument,
+    },
+    {
       adapterVersion: "fixture-one-piece-refresh-errata@1",
       sourceLineage: "one-piece-en",
       supportedGame: "one-piece",

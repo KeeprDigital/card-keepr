@@ -8,6 +8,7 @@ export const workflowSteps = {
     finalize: "finalize collection barrier stage {stage}",
     wait: "await collection barrier stage {stage}",
     reconcile: "reconcile retained Official Source evidence",
+    prepareGame: "dispatch retained evidence preparation for {game}",
   },
   child: {
     state: "read run state stage {stage}",
@@ -16,7 +17,14 @@ export const workflowSteps = {
     retry: "retry {request} pass {pass}",
   },
   reconciliation: {
+    initialize: "initialize reconciliation operation",
     reconcile: "reconcile retained Card, Printing, and Erratum evidence",
+    unit: "reconcile retained Card, Printing, and Erratum evidence-unit-{unit}",
+    dispatchState: "read reconciliation dispatch",
+    retainSuccessor: "retain reconciliation successor",
+    dispatchSuccessor: "dispatch reconciliation successor",
+    notifyRoot: "notify reconciliation root",
+    terminal: "await reconciliation terminal reference",
     failure: "finalize exhausted reconciliation failure",
   },
   backup: {
@@ -28,6 +36,7 @@ export type WorkflowKind = keyof typeof workflowSteps;
 export type WorkflowRestartTarget = { name: string; count: number; type: "do" | "sleep" | "waitForEvent" };
 
 function parameterPattern(key: string): string {
+  if (key === "game") return "(?:one-piece|fusion-world|digimon|gundam)";
   if (key === "purpose") return "(?:load|reload)";
   if (key === "request") return "[A-Za-z0-9][A-Za-z0-9_.:@-]{0,199}";
   return "(?:0|[1-9][0-9]*)";
@@ -50,7 +59,8 @@ export function workflowStepName(template: string, parameters: Record<string, st
 }
 export function assertWorkflowRestartTarget(kind: WorkflowKind, target: WorkflowRestartTarget): void {
   const match = Object.entries(workflowSteps[kind]).find(([, template]) => templatePattern(template).test(target.name));
-  const expectedType = match?.[0] === "wait" || match?.[0] === "retry" ? "sleep" : "do";
+  const expectedType =
+    match?.[0] === "terminal" ? "waitForEvent" : match?.[0] === "wait" || match?.[0] === "retry" ? "sleep" : "do";
   if (
     !match ||
     target.type !== expectedType ||
@@ -66,6 +76,7 @@ export function assertWorkflowRestartTarget(kind: WorkflowKind, target: Workflow
 export function advancesCollectionProgress(kind: WorkflowKind, name: string): boolean {
   return (
     (kind === "child" && templatePattern(workflowSteps.child.collect).test(name)) ||
-    (kind === "parent" && name === workflowSteps.parent.reconcile)
+    (kind === "parent" &&
+      (name === workflowSteps.parent.reconcile || templatePattern(workflowSteps.parent.prepareGame).test(name)))
   );
 }

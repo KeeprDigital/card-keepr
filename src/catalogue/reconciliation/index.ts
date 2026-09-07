@@ -1,3 +1,10 @@
+export { initializeReconciliationProgress, pauseFailedReconciliation } from "./reconciliation-progress";
+export { ReconciliationDocumentStorageError } from "./reconciliation-document";
+export {
+  reconciliationDispatchState,
+  retainReconciliationDispatch,
+  reserveReconciliationWorkAttempt,
+} from "./reconciliation-dispatch";
 // Public surface of the `reconciliation` cluster: turning retained evidence
 // into a Catalogue Candidate, persisting it, and planning its publication,
 // including the Product and Release side of the candidate.
@@ -61,11 +68,13 @@ export {
 } from "./product-release-publication";
 
 export { reconciliationRoutes } from "./routes";
+export { prepareCollectedGame } from "./game-reconciliation";
 
 export { pinEntityAdmissions } from "./entity-admission-pins";
 
 export {
   pinCorrectionDecisions,
-  correctionPinStatementsForNewRun,
+  correctionPinStatementsForPreparation,
   correctionDecisionPinMetadata,
 } from "./identity-correction-pins";
+export { restorePartitionedRecord } from "./reconciliation-text";

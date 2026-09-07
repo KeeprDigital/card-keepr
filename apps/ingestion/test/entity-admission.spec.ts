@@ -1,5 +1,7 @@
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { expect, test } from "vitest";
+import { retainLegacyAdmissionPin, retainLegacyAdmissionSelection } from "./query-helpers/legacy-decision-pins";
+import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 import {
   installReconciliationSuite,
   post,
@@ -73,6 +75,44 @@ const syntheticCard = {
     },
   },
 };
+
+test.each([false, true])(
+  "a legacy admission snapshot retains its selection after upgrade (selected: %s)",
+  async (selected) => {
+    const created = await post("/v1/entity-proposals", {
+      game: "one-piece",
+      source_lineage: "owner",
+      reference: "legacy-pinned-owner-card",
+      content: { card: syntheticCard },
+      evidence: { attestation: "Synthetic historical owner intake." },
+      idempotency_key: "legacy-pinned-proposal",
+    });
+    expect(created.response.status).toBe(201);
+    const admitted = await post(`/v1/entity-proposals/${created.document.id}/decisions`, {
+      action: "admit",
+      expected_generation: "0",
+      rationale: "Decision made after the historical snapshot",
+      idempotency_key: "legacy-later-admit",
+    });
+    expect(admitted.response.status).toBe(200);
+    const run = await collect("/reconciliation/card-without-printing", "legacy-admission-resume");
+    // Retain the schema-18 snapshot: either empty or this proposal before admission.
+    const policy = await get("/v1/source-authorities");
+    expect(policy.response.status).toBe(200);
+    await testEnv.CATALOGUE_DB.batch([
+      retainLegacyAdmissionPin(testEnv.CATALOGUE_DB).bind(run.id, JSON.stringify(policy.document)),
+      ...(selected ? [retainLegacyAdmissionSelection(testEnv.CATALOGUE_DB).bind(run.id, created.document.id)] : []),
+    ]);
+    const result = await reconcile(run.id);
+    expect(result.response.status, JSON.stringify(result.document)).toBe(200);
+    const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+    expect(status.document.admission_decision_count).toBe(selected ? 1 : 0);
+    const published = await approve(result.document);
+    expect(published.response.status).toBe(200);
+    const cards = await exportComponentRecords(String(published.document.resulting_revision_id), "cards");
+    expect(cards).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Synthetic owner card" })]));
+  },
+);
 
 test("attested admission preserves unknown number and cannot waive required game structure", async () => {
   const created = await post("/v1/entity-proposals", {
@@ -154,6 +194,188 @@ test("owner admission enters the next candidate and consumer catalogue only afte
     ]),
   );
 });
+
+test.each([
+  { count: 32, warningCount: 0 },
+  { count: 1, warningCount: 64 },
+])(
+  "owner admissions enter bounded preparation groups ($count decisions, $warningCount warnings)",
+  async ({ count, warningCount }) => {
+    for (let index = 0; index < count; index++) {
+      const created = await post("/v1/entity-proposals", {
+        game: "one-piece",
+        source_lineage: "owner",
+        reference: `bounded-admission-${index}`,
+        content: {
+          card: {
+            ...syntheticCard,
+            name: `Synthetic admitted Card ${index}`,
+            game_data: {
+              ...syntheticCard.game_data,
+              attributes: {
+                ...syntheticCard.game_data.attributes,
+                ...Object.fromEntries(
+                  Array.from({ length: warningCount }, (_, index) => [`unknown_${index}`, "Synthetic warning value"]),
+                ),
+              },
+            },
+          },
+        },
+        evidence: { attestation: "Synthetic personal inspection." },
+        idempotency_key: `bounded-proposal-${index}`,
+      });
+      expect(created.response.status).toBe(201);
+      expect(
+        (
+          await post(`/v1/entity-proposals/${created.document.id}/decisions`, {
+            action: "admit",
+            expected_generation: "0",
+            rationale: "Inspected synthetic fixture",
+            idempotency_key: `bounded-admit-${index}`,
+          })
+        ).response.status,
+      ).toBe(200);
+    }
+    const run = await collect("/reconciliation/card-without-printing", "bounded-admission-publish");
+    let calls = 0;
+    let armed = false,
+      resumed = false,
+      failures = 0;
+    const admissionCalls: number[] = [];
+    const wrap = (statement: D1PreparedStatement, sql: string): D1PreparedStatement =>
+      new Proxy(statement, {
+        get(target, property) {
+          if (property === "bind")
+            return (...values: unknown[]) => {
+              if (
+                armed &&
+                !resumed &&
+                sql.includes("INSERT INTO reconciliation_checkpoints") &&
+                values[1] === "entity_admissions"
+              ) {
+                failures++;
+                throw new Error("Injected admission warning checkpoint outage.");
+              }
+              return wrap(target.bind(...values), sql);
+            };
+          const value = Reflect.get(target, property);
+          if (["run", "first", "all", "raw"].includes(String(property)))
+            return (...args: unknown[]) => {
+              calls++;
+              return Reflect.apply(value, target, args);
+            };
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    const database = new Proxy(testEnv.CATALOGUE_DB, {
+      get(target, property) {
+        if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
+        if (property === "batch")
+          return (...args: Parameters<D1Database["batch"]>) => {
+            calls++;
+            return target.batch(...args);
+          };
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const event = {
+      payload: {
+        ingestion_run_id: run.id,
+        expected_current_revision_id: String(run.document.expected_current_revision_id),
+        idempotency_key: `reconcile-${run.id}`,
+        observed_at: new Date().toISOString(),
+        generation: 0,
+      },
+    } as import("cloudflare:workers").WorkflowEvent<
+      import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+    >;
+    const step = {
+      do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+        let result: string;
+        for (let attempt = 0; ; attempt++) {
+          calls = 0;
+          try {
+            result = await callback();
+            break;
+          } catch (error) {
+            if (attempt >= config.retries.limit) throw error;
+          }
+        }
+        if (JSON.parse(result).continuation?.phase === "entity_admissions") {
+          admissionCalls.push(calls);
+          if (warningCount && !armed) {
+            const progress = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+            const cursor = (
+              progress.checkpoints as { phase: string; cursor: { pendingWarning: number | null } }[]
+            ).find((item) => item.phase === "entity_admissions")!.cursor;
+            if (cursor.pendingWarning !== null && cursor.pendingWarning > 0) armed = true;
+          }
+        }
+        return result;
+      },
+    } as unknown as import("cloudflare:workers").WorkflowStep;
+    await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
+    if (warningCount) {
+      expect(failures).toBe(4);
+      const paused = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+      expect(paused).toMatchObject({ state: "paused", generation: 1 });
+      expect(
+        (
+          await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+            generation: 1,
+            idempotency_key: "resume-admission-warnings",
+          })
+        ).response.status,
+      ).toBe(200);
+      resumed = true;
+      await runReconciliationWorkflow(
+        { ...testEnv, CATALOGUE_DB: database },
+        { payload: { ...event.payload, generation: 1 } } as typeof event,
+        step,
+      );
+      expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+        state: "sealed",
+        deadline: paused.deadline,
+      });
+    }
+    expect(admissionCalls.length).toBeGreaterThanOrEqual(Math.max(Math.ceil(count / 4), Math.ceil(warningCount / 4)));
+    expect(Math.max(...admissionCalls)).toBeLessThanOrEqual(100);
+    const candidate = await get(`/v1/ingestion-runs/${run.id}/candidate`);
+    expect(candidate.response.status, JSON.stringify(candidate.document)).toBe(200);
+    const partitions = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions`)).document.partitions as {
+      kind: string;
+      record_count: number;
+    }[];
+    expect(partitions.filter(({ kind }) => kind === "cards").reduce((sum, part) => sum + part.record_count, 0)).toBe(
+      count + 1,
+    );
+    const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+    const checkpoint = (status.checkpoints as { phase: string; ordinal: number; cursor: unknown }[]).find(
+      ({ phase }) => phase === "entity_admissions",
+    );
+    expect(checkpoint).toMatchObject({
+      cursor: { complete: true, processedDecisions: count, cards: count, pendingWarning: null },
+    });
+    expect(checkpoint!.ordinal).toBeGreaterThanOrEqual(Math.max(Math.ceil(count / 4), Math.ceil(warningCount / 4)) - 1);
+    if (warningCount) {
+      const warnings = partitions
+        .filter((partition) => partition.kind === "warnings")
+        .reduce((sum, part) => sum + part.record_count, 0);
+      expect(warnings).toBeGreaterThanOrEqual(warningCount + 1);
+    }
+    const published = await approve(candidate.document);
+    expect(published.response.status).toBe(200);
+    const cards = await exportComponentRecords(String(published.document.resulting_revision_id), "cards");
+    expect(cards).toHaveLength(count + 1);
+    expect(cards).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "Synthetic admitted Card 0" }),
+        expect.objectContaining({ name: `Synthetic admitted Card ${count - 1}` }),
+      ]),
+    );
+  },
+);
 
 test("manual Printing admission identifies its Card and retains a scoped attestation without fake image proof", async () => {
   const created = await post("/v1/entity-proposals", {

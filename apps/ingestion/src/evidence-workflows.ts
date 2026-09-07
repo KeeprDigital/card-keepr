@@ -1,6 +1,5 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
-import { reconcileRetainedCardPrintingEvidence } from "../../../src/catalogue/reconciliation";
 import {
   type CatalogueStore,
   canonicalJson,
@@ -34,7 +33,8 @@ import {
 } from "../../../src/catalogue/source-evidence";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 import { fenceCollectionWorkflow, isSupersededCollectionWorkflow } from "./collection-workflow-fence";
-import { durableReconciliationResult } from "./reconciliation-workflow";
+import { runReconciliationWorkUnits } from "./reconciliation-workflow";
+import { prepareCollectedGame } from "../../../src/catalogue/reconciliation";
 
 const deterministicDatabaseStep = {
   retries: { limit: 3, delay: 250, backoff: "exponential" as const },
@@ -278,23 +278,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
           run.plan_origin === "production" &&
           requiredSourceAdapter(run.adapter_version).reconciliationCapability === "catalogue"
         ) {
-          const reconciliationResultJson = await step.do(
-            workflowSteps.parent.reconcile,
-            deterministicDatabaseStep,
-            async () => {
-              const result = await reconcileRetainedCardPrintingEvidence(
-                catalogueStore(this.env.CATALOGUE_DB),
-                this.env.EVIDENCE_OBJECTS,
-                runId,
-                run.collection_completed_at ?? new Date().toISOString(),
-              );
-              return durableReconciliationResult(runId, result);
-            },
-          );
-          return {
-            ingestion_run_id: runId,
-            reconciliation: JSON.parse(reconciliationResultJson),
-          };
+          return await this.prepareCollectedEvidence(event, step, run);
         }
         return {
           ingestion_run_id: runId,
@@ -306,6 +290,60 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
       if (!isSupersededCollectionWorkflow(error)) throw error;
       return { ingestion_run_id: event.payload.ingestion_run_id, superseded: true };
     }
+  }
+  protected async prepareCollectedEvidence(
+    event: Readonly<WorkflowEvent<EvidenceParentWorkflowParams>>,
+    step: WorkflowStep,
+    run: Awaited<ReturnType<typeof requiredEvidenceRun>>,
+  ): Promise<unknown> {
+    const runId = run.id;
+    const games = JSON.parse(run.selected_games_json) as string[];
+    if (games.length > 1 || requiredSourceAdapter(run.adapter_version).officialSourceContract) {
+      if (games.length > 4) throw new Error("Collection selected too many Supported Games.");
+      const preparations: Awaited<ReturnType<typeof prepareCollectedGame>>[] = [];
+      for (const game of [...games].sort()) {
+        const prepared = await step.do(
+          workflowStepName(workflowSteps.parent.prepareGame, { game }),
+          deterministicDatabaseStep,
+          () =>
+            prepareCollectedGame(
+              catalogueStore(this.env.CATALOGUE_DB),
+              this.env.RECONCILIATION_WORKFLOW,
+              runId,
+              game,
+              new Date().toISOString(),
+            ),
+        );
+        preparations.push(prepared);
+      }
+      return { ingestion_run_id: runId, game_preparations: preparations };
+    }
+
+    return this.reconcileCollectedEvidence(event, step, run);
+  }
+
+  protected async reconcileCollectedEvidence(
+    event: Readonly<WorkflowEvent<EvidenceParentWorkflowParams>>,
+    step: WorkflowStep,
+    run: Awaited<ReturnType<typeof requiredEvidenceRun>>,
+  ): Promise<unknown> {
+    const runId = run.id;
+    const reconciliationResultJson = await runReconciliationWorkUnits(
+      this.env,
+      step,
+      {
+        ingestion_run_id: runId,
+        observed_at: run.collection_completed_at ?? new Date().toISOString(),
+        expected_current_revision_id: run.expected_current_revision_id,
+        idempotency_key: `collection-${event.instanceId}`,
+      },
+      workflowSteps.parent.reconcile,
+      { binding: "collection", id: event.instanceId },
+    );
+    return {
+      ingestion_run_id: runId,
+      reconciliation: JSON.parse(reconciliationResultJson),
+    };
   }
 }
 

@@ -177,9 +177,38 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
   }
   expect(completed).toMatchObject({
     id: run.id,
-    state: "awaiting_approval",
+    state: "parsing",
     failure_code: null,
   });
+  const parent = await env.EVIDENCE_INGESTION_WORKFLOW.get(accepted.workflow.id);
+  const output = (await parent.status()).output as { game_preparations: { id: string; supported_game: string }[] };
+  expect(output).toMatchObject({
+    game_preparations: [{ id: expect.any(String), supported_game: "fusion-world" }],
+  });
+  const candidateId = output.game_preparations[0]!.id;
+  let prepared: Record<string, unknown> = {};
+  const preparationDeadline = Date.now() + 15000;
+  do {
+    const response = await administrationRequest(`/v1/game-candidates/${candidateId}`, "GET");
+    expect(response.status).toBe(200);
+    prepared = await response.json<Record<string, unknown>>();
+    if (prepared.state !== "preparing") break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  } while (Date.now() < preparationDeadline);
+  expect(prepared, JSON.stringify(prepared)).toMatchObject({
+    ingestion_run_id: run.id,
+    supported_game: "fusion-world",
+    state: "sealed",
+  });
+  const listed = await administrationRequest(`/v1/ingestion-runs/${run.id}/game-candidates`, "GET");
+  expect(listed.status).toBe(200);
+  await expect(listed.json()).resolves.toMatchObject({
+    ingestion_run_id: run.id,
+    candidates: [{ id: candidateId, preparation_id: candidateId, supported_game: "fusion-world", state: "sealed" }],
+    next_cursor: null,
+  });
+  const after = await administrationRequest(`/v1/ingestion-runs/${run.id}/game-candidates?after=${candidateId}`, "GET");
+  await expect(after.json()).resolves.toMatchObject({ candidates: [], next_cursor: null });
   expect(completed.snapshots.length).toBeGreaterThan(0);
   expect(completed.observation_sets.length).toBeGreaterThan(0);
   expect(completed.official_source_collection_plans).toMatchObject([

@@ -1,3 +1,4 @@
+import { reserveIngestionCollectionStatement } from "../../../../src/catalogue/shared/ingestion-reservation-repository";
 import {
   atomicRepositoryStatement,
   catalogueStore,
@@ -5,6 +6,7 @@ import {
   runEventCommand,
   runEventIdentitySql,
   runEventStatement,
+  runStartGuardStatement,
 } from "../../../../src/catalogue/shared";
 import {
   emptyRunCurrent,
@@ -18,7 +20,11 @@ type FixtureRun = Record<string, unknown> & { id: unknown; state: unknown; idemp
 /** Test data is authored as facts with an explicit state path. This seam never
  * interprets SQL or installs compatibility triggers in the application schema.
  */
-export function seedRunFixtureStatement(database: D1Database, input: FixtureRun): D1PreparedStatement {
+export function seedRunFixtureStatement(
+  database: D1Database,
+  input: FixtureRun,
+  guardStart = false,
+): D1PreparedStatement {
   const store = catalogueStore(database);
   const runId = String(input.id);
   const state = String(input.state) as IngestionRunState;
@@ -47,7 +53,7 @@ export function seedRunFixtureStatement(database: D1Database, input: FixtureRun)
                 throw new TypeError("Unknown fixture Ingestion Run state.");
               })();
   const startedAt = text(input.started_at) ?? "2026-09-01T00:00:00.000Z";
-  const statements: D1PreparedStatement[] = [fixtureBirthStatement(database, input, state === "planning")];
+  const statements: D1PreparedStatement[] = [fixtureBirthStatement(database, input, state === "planning", guardStart)];
   // A planning fixture can carry candidate/diagnostic facts at birth; scalar
   // identity facts for later states are supplied on the accepted final event.
   for (const [index, next] of path.entries()) {
@@ -135,8 +141,9 @@ export function seedRunFixtureStatement(database: D1Database, input: FixtureRun)
 export function bindRunFixtureStatement(
   database: D1Database,
   input: (...values: unknown[]) => FixtureRun,
+  guardStart = false,
 ): D1PreparedStatement {
-  const bind = (...values: unknown[]) => seedRunFixtureStatement(database, input(...values));
+  const bind = (...values: unknown[]) => seedRunFixtureStatement(database, input(...values), guardStart);
   return {
     bind,
     run: () => bind().run(),
@@ -149,7 +156,12 @@ function text(value: unknown): string | null {
   return value === undefined || value === null ? null : String(value);
 }
 
-function fixtureBirthStatement(database: D1Database, input: FixtureRun, final: boolean): D1PreparedStatement {
+function fixtureBirthStatement(
+  database: D1Database,
+  input: FixtureRun,
+  final: boolean,
+  guardStart: boolean,
+): D1PreparedStatement {
   const store = catalogueStore(database);
   const runId = String(input.id);
   const startedAt = text(input.started_at) ?? "2026-09-01T00:00:00.000Z";
@@ -181,6 +193,8 @@ function fixtureBirthStatement(database: D1Database, input: FixtureRun, final: b
     candidateJson: text(input.candidate_json) ?? "{}",
     diagnosticsJson: text(input.warnings_json) ?? "[]",
     before: [anchor, games],
+    guards: guardStart ? [runStartGuardStatement(store)] : [],
+    after: guardStart ? [reserveIngestionCollectionStatement(store, runId)] : [],
     statement: repositoryStatements(store)
       .prepare(
         `INSERT INTO ingestion_run_current (${runCurrentColumns.join(", ")}) VALUES (${runCurrentColumns.map(() => "?").join(", ")})`,

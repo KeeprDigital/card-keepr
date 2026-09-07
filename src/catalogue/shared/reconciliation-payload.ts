@@ -1,6 +1,7 @@
 import type { CatalogueStore } from "./catalogue-store-repository";
 import {
   persistReconciliationPayloadChunkStatement,
+  retainedReconciliationPayloadChunkStatement,
   retainedReconciliationPayloadChunksStatement,
 } from "./reconciliation-payload-repository";
 import { canonicalJson } from "./serialization";
@@ -99,4 +100,33 @@ export function byteChunks(value: string): string[] {
     offset = end;
   }
   return chunks.length === 0 ? [""] : chunks;
+}
+
+export async function* retainedPayloadChunks(
+  database: CatalogueStore,
+  runId: string,
+  kind: "candidate" | "digest",
+  inline: string,
+  startIndex = 0,
+): AsyncGenerator<string> {
+  if (inline !== marker(kind)) {
+    if (startIndex !== 0) throw new Error("An inline retained payload cursor has an invalid chunk index.");
+    yield inline;
+    return;
+  }
+  let expected = startIndex;
+  while (true) {
+    const chunk = await retainedReconciliationPayloadChunkStatement(database, {
+      runId,
+      kind,
+      after: expected - 1,
+    }).first<{ chunk_index: number; content: string }>();
+    if (chunk === null) {
+      if (expected === 0) throw new Error(`Chunked reconciliation ${kind} payload is unavailable.`);
+      return;
+    }
+    if (chunk.chunk_index !== expected) throw new Error(`Chunked reconciliation ${kind} payload is incomplete.`);
+    yield chunk.content;
+    expected += 1;
+  }
 }

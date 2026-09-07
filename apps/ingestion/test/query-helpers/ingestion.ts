@@ -1190,18 +1190,22 @@ export function setIngestionRunCuratedRevisionSetsSetDigest(database: D1Database
 }
 
 export function insertIngestionRunsForInsertParsingRun(database: D1Database): D1PreparedStatement {
-  return bindRunFixtureStatement(database, (...values) => ({
-    id: values[0],
-    state: "parsing",
-    selected_games_json: values[1],
-    started_at: values[2],
-    expected_current_revision_id: values[3],
-    idempotency_key: values[4],
-    candidate_json: "{}",
-    progress_json: '{"completed_stages":["planning","collecting"],"current_stage":"parsing"}',
-    warnings_json: "[]",
-    approval_history_json: "[]",
-  }));
+  return bindRunFixtureStatement(
+    database,
+    (...values) => ({
+      id: values[0],
+      state: "parsing",
+      selected_games_json: values[1],
+      started_at: values[2],
+      expected_current_revision_id: values[3],
+      idempotency_key: values[4],
+      candidate_json: "{}",
+      progress_json: '{"completed_stages":["planning","collecting"],"current_stage":"parsing"}',
+      warnings_json: "[]",
+      approval_history_json: "[]",
+    }),
+    true,
+  );
 }
 
 export function insertIngestionRunsForPublishedEvidenceDiagnosticsExplicitlyAdvertiseNoRetryRoute(

@@ -1,8 +1,18 @@
+import { materializeCuratedConflictStatements } from "./curated-conflict-preparation-repository";
+import {
+  CuratedConflictPreparation,
+  sourceChangeDetails,
+  sourceChangeDiagnostic,
+  type PendingConflict,
+} from "./curated-conflict-preparation";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import {
   AdministrationProblem,
   type CatalogueCandidate,
+  type CatalogueDraft,
+  type CatalogueEntityCollection,
+  type CatalogueDraftEntity,
   type CatalogueStore,
   type CuratedEvidence,
   type CuratedFieldTarget,
@@ -890,6 +900,385 @@ export async function applyPinnedCuratedRevisions(
   return result;
 }
 
+type PinnedDraftRevision = {
+  active: number;
+  ordinal: number;
+  id: string;
+  proposal_json: string;
+  content_digest: string;
+  reviewed_source_digest: string;
+};
+
+export class CuratedDraftInvalidError extends Error {
+  constructor() {
+    super("curated_revision_composed_candidate_invalid");
+  }
+}
+
+export class CuratedDraftSourceChangeError extends Error {
+  constructor(readonly diagnostics: (after?: string) => AsyncIterable<Record<string, unknown>>) {
+    super("curated_revision_reconfirmation_required");
+  }
+}
+
+type CuratedDraftLookup = {
+  release?: { after: string; complete: boolean; productId: string | null };
+  relationships?: { after: string; complete: boolean; ids: string[] };
+};
+export type CuratedDraftCursor = {
+  stage: "strip" | "compare" | "apply" | "validate" | "conflict" | "complete";
+  kind: number;
+  after: string;
+  revision: number;
+  sourceChanged: boolean;
+  lookups?: { official?: CuratedDraftLookup; result?: CuratedDraftLookup };
+};
+
+/** Replay resumes after the completed entity or revision; the caller retains draft positions with this cursor. */
+export async function applyPinnedCuratedRevisionsToDraft(
+  database: CatalogueStore,
+  runId: string,
+  official: CatalogueDraft,
+  result: CatalogueDraft,
+  observedAt: string,
+  progress?: { cursor: CuratedDraftCursor; checkpoint(cursor: CuratedDraftCursor, record?: unknown): Promise<void> },
+  independentGame = false,
+): Promise<void> {
+  const cursor: CuratedDraftCursor = progress?.cursor ?? {
+    stage: "strip",
+    kind: 0,
+    after: "",
+    revision: -1,
+    sourceChanged: false,
+  };
+  if (cursor.stage === "complete") return;
+  const checkpoint = async (record?: unknown) => {
+    await progress?.checkpoint(cursor, record);
+  };
+  const advance = async (stage: CuratedDraftCursor["stage"]) => {
+    cursor.stage = stage;
+    cursor.kind = 0;
+    cursor.after = "";
+    cursor.revision = -1;
+    await checkpoint();
+  };
+  const prepareSnapshot = (draft: CatalogueDraft, proposal: Proposal, view: "official" | "result") => {
+    cursor.lookups ??= {};
+    cursor.lookups[view] ??= {};
+    const lookup = cursor.lookups[view];
+    return draftProposalSnapshot(draft, proposal, { lookup, checkpoint });
+  };
+  const conflicts = new CuratedConflictPreparation(database, runId, observedAt);
+  if (cursor.stage === "strip") {
+    const run = await curatedStatements
+      .curatedRunSelectedGamesStatement(database, { runId })
+      .first<{ selected_games_json: string }>();
+    if (!run)
+      throw new AdministrationProblem(404, "ingestion_run_not_found", "The requested Ingestion Run does not exist.");
+    for await (const entry of stripCuratedDraft(
+      official,
+      JSON.parse(run.selected_games_json) as SupportedGame[],
+      cursor,
+    )) {
+      cursor.kind = entry.kind;
+      cursor.after = entry.entity.id;
+      await checkpoint(entry.entity);
+    }
+    await advance("compare");
+  }
+  if (cursor.stage === "compare") {
+    for await (const row of pinnedDraftRevisions(database, runId, cursor.revision)) {
+      if (!row.active) {
+        cursor.revision = row.ordinal;
+        await checkpoint(row);
+        continue;
+      }
+      const proposal = structuralProposal(JSON.parse(row.proposal_json));
+      const snapshot = await prepareSnapshot(official, proposal, "official");
+      const reviewedSourceValue = draftReviewedValue(snapshot, proposal);
+      if ((await sha256Text(canonicalJson(reviewedSourceValue))) !== row.reviewed_source_digest) {
+        cursor.sourceChanged = true;
+        await conflicts.record(row.id, row.reviewed_source_digest, reviewedSourceValue);
+      }
+      cursor.lookups = {};
+      cursor.revision = row.ordinal;
+      await checkpoint(row);
+    }
+    await advance(cursor.sourceChanged ? "conflict" : "apply");
+  }
+  if (cursor.stage === "conflict") throw new CuratedDraftSourceChangeError((after) => conflicts.diagnostics(after));
+  if (cursor.stage === "apply") {
+    for await (const row of pinnedDraftRevisions(database, runId, cursor.revision)) {
+      if (!row.active) {
+        cursor.revision = row.ordinal;
+        await checkpoint(row);
+        continue;
+      }
+      const proposal = structuralProposal(JSON.parse(row.proposal_json));
+      const reviewedSourceValue = draftReviewedValue(await prepareSnapshot(official, proposal, "official"), proposal);
+      const snapshot = await prepareSnapshot(result, proposal, "result");
+      if (proposal.target.kind === "field") {
+        const entity = candidateTarget(snapshot, proposal);
+        setAt(
+          entity,
+          pointerParts(proposal.target.path),
+          (proposal.assertion as { kind: "field"; value: unknown }).value,
+        );
+        entity.curated_provenance = [
+          ...(Array.isArray(entity.curated_provenance) ? entity.curated_provenance : []),
+          provenanceFor(proposal, row, reviewedSourceValue),
+        ];
+        const kind = draftCollection(proposal.target.entity_type);
+        const changed = proposal.target.entity_type === "release" ? snapshot.products![0]! : entity;
+        await result.set(kind, changed as CatalogueDraftEntity<typeof kind>);
+      } else {
+        applyRelationship(snapshot, proposal, row, String(reviewedSourceValue));
+        for (const relationship of snapshot.product_relationships ?? [])
+          await result.set("product_relationships", relationship);
+      }
+
+      cursor.lookups = {};
+      cursor.revision = row.ordinal;
+      await checkpoint(row);
+    }
+    await advance("validate");
+  }
+  if (cursor.stage === "validate") {
+    for await (const entry of validateCuratedDraft(result, cursor)) {
+      if (!entry.valid) {
+        if (!independentGame) {
+          await database.batch([
+            curatedStatements.failInvalidCuratedCandidateStatement(database, { observedAt, runId }),
+            curatedStatements.releaseCuratedRunStatement(database, { runId }),
+          ]);
+        }
+        throw new CuratedDraftInvalidError();
+      }
+      cursor.kind = entry.kind;
+      cursor.after = entry.entity.id;
+      await checkpoint(entry.entity);
+    }
+    await advance("complete");
+  }
+}
+
+async function* pinnedDraftRevisions(
+  database: CatalogueStore,
+  runId: string,
+  after = -1,
+): AsyncGenerator<PinnedDraftRevision> {
+  while (true) {
+    const row = await curatedStatements
+      .nextPinnedCuratedRevisionStatement(database, runId, after)
+      .first<PinnedDraftRevision>();
+    if (!row) return;
+    yield row;
+    after = row.ordinal;
+  }
+}
+
+function draftCollection(type: string): CatalogueEntityCollection {
+  if (type === "card") return "cards";
+  if (type === "printing") return "printings";
+  if (type === "product" || type === "release") return "products";
+  if (type === "distribution_context") return "distribution_contexts";
+  if (type === "erratum") return "errata";
+  throw new Error("Unknown Curated Revision entity type.");
+}
+
+function draftReviewedValue(snapshot: CatalogueCandidate, proposal: Proposal): unknown {
+  return proposal.target.kind === "field"
+    ? reviewedFieldSource(valueAt(candidateTarget(snapshot, proposal), pointerParts(proposal.target.path)))
+    : relationshipPresent(snapshot, proposal)
+      ? "present"
+      : "absent";
+}
+
+/** Existing target and relationship validators operate on just the proposal's bounded local entities. */
+async function draftProposalSnapshot(
+  draft: CatalogueDraft,
+  proposal: Proposal,
+  progress: { lookup: CuratedDraftLookup; checkpoint(record?: unknown): Promise<void> },
+): Promise<CatalogueCandidate> {
+  const snapshot: CatalogueCandidate = {
+    contract: "card-keepr-catalogue-candidate@1",
+    selected_games: [proposal.game],
+    cards: [],
+    printings: [],
+  };
+  const add = async (type: string, id: string) => {
+    const kind = draftCollection(type);
+    if (type === "release") {
+      progress.lookup.release ??= { after: "", complete: false, productId: null };
+      const lookup = progress.lookup.release;
+      if (!lookup.complete) {
+        for await (const product of draft.values("products", lookup.after)) {
+          if (product.game === proposal.game && product.releases.some((release) => release.id === id)) {
+            lookup.productId = product.id;
+            lookup.complete = true;
+          }
+          lookup.after = product.id;
+          await progress.checkpoint(product);
+          if (lookup.complete) break;
+        }
+        lookup.complete = true;
+        await progress.checkpoint();
+      }
+      if (lookup.productId !== null) {
+        const product = await draft.get("products", lookup.productId);
+        if (product) snapshot.products = [product];
+      }
+      return;
+    }
+    const entity = await draft.get(kind, id);
+    if (!entity) return;
+    const previous = snapshot[kind] ?? [];
+    if (!previous.some((value) => value.id === id))
+      Object.defineProperty(snapshot, kind, {
+        value: [...previous, entity],
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    if (type === "printing") {
+      const printing = entity as CatalogueCandidate["printings"][number];
+      const card = await draft.get("cards", printing.card_id);
+      if (card && !snapshot.cards.some((existing) => existing.id === card.id))
+        snapshot.cards = [...snapshot.cards, card];
+    }
+  };
+  if (proposal.target.kind === "field") await add(proposal.target.entity_type, proposal.target.entity_id);
+  else {
+    const target = proposal.target;
+    await add(target.from.type, target.from.id);
+    await add(target.to.type, target.to.id);
+    progress.lookup.relationships ??= { after: "", complete: false, ids: [] };
+    const lookup = progress.lookup.relationships;
+    if (!lookup.complete) {
+      for await (const relationship of draft.values("product_relationships", lookup.after)) {
+        if (
+          relationship.kind === target.relationship_kind &&
+          relationship.from.type === target.from.type &&
+          relationship.from.id === target.from.id &&
+          relationship.to.type === target.to.type &&
+          relationship.to.id === target.to.id
+        ) {
+          if (lookup.ids.length >= 4)
+            throw new Error(
+              "reconciliation_capacity_exceeded: one curated relationship target exceeds four evidence relationships.",
+            );
+          lookup.ids.push(relationship.id);
+        }
+        lookup.after = relationship.id;
+        await progress.checkpoint(relationship);
+      }
+      lookup.complete = true;
+      await progress.checkpoint();
+    }
+    const relationships: ProductRelationship[] = [];
+    let bytes = 2;
+    for (const id of lookup.ids) {
+      const relationship = await draft.get("product_relationships", id);
+      if (!relationship) throw new Error("Curated relationship lookup changed during preparation.");
+      bytes += new TextEncoder().encode(canonicalJson(relationship)).byteLength + 1;
+      if (bytes > 512000)
+        throw new Error("reconciliation_capacity_exceeded: one curated relationship target exceeds 500 KiB.");
+      relationships.push(relationship);
+    }
+    snapshot.product_relationships = relationships;
+  }
+  return snapshot;
+}
+
+const curatedDraftKinds = [
+  "cards",
+  "printings",
+  "products",
+  "distribution_contexts",
+  "errata",
+  "product_relationships",
+] as const;
+async function* stripCuratedDraft(
+  draft: CatalogueDraft,
+  selectedGames: readonly SupportedGame[],
+  cursor: CuratedDraftCursor,
+) {
+  for (let kind = cursor.kind; kind < curatedDraftKinds.length; kind++) {
+    const collection = curatedDraftKinds[kind]!;
+    for await (const entity of draft.values(collection, kind === cursor.kind ? cursor.after : "")) {
+      if (collection === "product_relationships") {
+        const relationship = entity as ProductRelationship;
+        if (selectedGames.includes(relationship.game)) {
+          if (relationship.evidence_category === "curated")
+            await draft.delete("product_relationships", relationship.id);
+          else if (Object.hasOwn(relationship, "curated_provenance")) {
+            const reviewed = relationship.curated_provenance?.at(-1)?.reviewed_source_value;
+            const { curated_provenance: _provenance, ...official } = relationship;
+            await draft.set("product_relationships", {
+              ...official,
+              ...(reviewed === "present" ? { observed: true } : reviewed === "absent" ? { observed: false } : {}),
+            });
+          }
+        }
+      } else {
+        const game =
+          collection === "printings"
+            ? (await draft.get("cards", (entity as CatalogueCandidate["printings"][number]).card_id))?.game
+            : (entity as { game: SupportedGame }).game;
+        const product =
+          collection === "products" ? (entity as NonNullable<CatalogueCandidate["products"]>[number]) : undefined;
+        if (
+          game &&
+          selectedGames.includes(game) &&
+          (Object.hasOwn(entity, "curated_provenance") ||
+            product?.releases.some((release) => Object.hasOwn(release, "curated_provenance")))
+        ) {
+          restoreCuratedEntitySourceFields(entity);
+          for (const release of product?.releases ?? []) restoreCuratedEntitySourceFields(release);
+          await draft.set(collection, entity as CatalogueDraftEntity<typeof collection>);
+        }
+      }
+      yield { kind, entity };
+    }
+  }
+}
+
+async function* validateCuratedDraft(draft: CatalogueDraft, cursor: CuratedDraftCursor) {
+  const types = ["card", "printing", "product", "distribution_context", "erratum"] as const;
+  for (let kind = cursor.kind; kind < curatedDraftKinds.length; kind++) {
+    const collection = curatedDraftKinds[kind]!;
+    for await (const entity of draft.values(collection, kind === cursor.kind ? cursor.after : "")) {
+      let valid = true;
+      if (collection === "product_relationships") {
+        const relationship = entity as ProductRelationship;
+        valid = relationshipEndpointPairs[relationship.kind] === `${relationship.from.type}->${relationship.to.type}`;
+        for (const endpoint of [relationship.from, relationship.to]) {
+          const target = await draft.get(draftCollection(endpoint.type), endpoint.id);
+          if (!target) {
+            valid = false;
+            break;
+          }
+          const game =
+            endpoint.type === "printing"
+              ? (await draft.get("cards", (target as CatalogueCandidate["printings"][number]).card_id))?.game
+              : (target as { game: SupportedGame }).game;
+          if (game !== relationship.game) {
+            valid = false;
+            break;
+          }
+        }
+      } else {
+        valid = validCompleteCuratedEntity(types[kind]!, entity);
+        if (collection === "products")
+          valid &&= (entity as NonNullable<CatalogueCandidate["products"]>[number]).releases.every((release) =>
+            validCompleteCuratedEntity("release", release),
+          );
+      }
+      yield { kind, entity, valid };
+    }
+  }
+}
+
 export async function curatedRevisionSetForRun(
   database: CatalogueStore,
   runId: string,
@@ -1015,18 +1404,7 @@ export function stripCuratedRevisionEffects(
     ...(candidate.distribution_contexts ?? []).filter((context) => selected === null || selected.has(context.game)),
     ...(candidate.errata ?? []).filter((erratum) => selected === null || selected.has(erratum.game)),
   ] as Record<string, unknown>[];
-  for (const entity of entities) {
-    const provenance = Array.isArray(entity.curated_provenance)
-      ? (entity.curated_provenance as CuratedProvenance[])
-      : [];
-    for (const item of provenance) {
-      const target = item.target;
-      if (target.kind === "field" && typeof target.path === "string") {
-        restoreReviewedField(entity, pointerParts(target.path), item.reviewed_source_value);
-      }
-    }
-    delete entity.curated_provenance;
-  }
+  for (const entity of entities) restoreCuratedEntitySourceFields(entity);
   if (candidate.product_relationships !== undefined) {
     candidate.product_relationships = candidate.product_relationships
       .filter(
@@ -1046,6 +1424,18 @@ export function stripCuratedRevisionEffects(
       });
   }
   return candidate;
+}
+
+/** Restore a freshly decoded entity's reviewed official fields before applying the pinned revisions. */
+export function restoreCuratedEntitySourceFields(entity: Record<string, unknown>): void {
+  const provenance = Array.isArray(entity.curated_provenance) ? (entity.curated_provenance as CuratedProvenance[]) : [];
+  for (const item of provenance) {
+    const target = item.target;
+    if (target.kind === "field" && typeof target.path === "string") {
+      restoreReviewedField(entity, pointerParts(target.path), item.reviewed_source_value);
+    }
+  }
+  delete entity.curated_provenance;
 }
 
 async function curatedRevisionSchemaAvailable(database: CatalogueStore): Promise<boolean> {
@@ -1085,24 +1475,13 @@ async function sourceChangePersistence(
       .curatedRevisionStatusStatement(database, { revisionId: conflict.row.id })
       .first<{ status: string; event_version: number }>();
     if (revision?.status === "reconfirmation_required") continue;
-    const observed = await sha256Text(canonicalJson(conflict.reviewedSourceValue));
     const version = (revision?.event_version ?? 0) + 1;
-    const conflictId = `crconf_${crypto.randomUUID()}`;
-    const details = {
-      conflict_id: conflictId,
-      conflict_digest: await sha256Text(
-        canonicalJson({
-          conflict_id: conflictId,
-          run_id: runId,
-          revision_id: conflict.row.id,
-          previous_source_digest: conflict.row.reviewed_source_digest,
-          observed_source_digest: observed,
-        }),
-      ),
-      run_id: runId,
-      previous_source_digest: conflict.row.reviewed_source_digest,
-      observed_source_digest: observed,
-    };
+    const details = await sourceChangeDetails(
+      runId,
+      conflict.row.id,
+      conflict.row.reviewed_source_digest,
+      conflict.reviewedSourceValue,
+    );
     diagnostics.push(sourceChangeDiagnostic(conflict.row.id, details));
     statements.push(
       curatedStatements.markActiveCuratedSourceChangeStatement(database, {
@@ -1135,24 +1514,6 @@ export class CuratedRevisionSourceChangeError extends Error {
   ) {
     super("curated_revision_reconfirmation_required");
   }
-}
-
-type PendingConflict = {
-  conflict_id: string;
-  conflict_digest: string;
-  run_id: string;
-  previous_source_digest: string;
-  observed_source_digest: string;
-};
-
-function sourceChangeDiagnostic(revisionId: string, conflict: PendingConflict): Record<string, unknown> {
-  return {
-    code: "curated_revision_reconfirmation_required",
-    detail: `Official Source evidence changed for Curated Revision ${revisionId}.`,
-    curated_revision_id: revisionId,
-    conflict_id: conflict.conflict_id,
-    conflict_digest: conflict.conflict_digest,
-  };
 }
 
 type ExistingMutation = {
@@ -1227,6 +1588,7 @@ async function existingRevisionMutation(
       "An active production release blocks Curated Revision mutation.",
     );
   }
+  await database.batch(materializeCuratedConflictStatements(database, revisionId));
   const row = await curatedRevisionStatement(database, revisionId).first<RevisionRow>();
   if (row === null)
     throw new AdministrationProblem(
@@ -1489,6 +1851,7 @@ async function revisionContent(database: CatalogueStore, row: RevisionRow): Prom
             id: conflict.conflict_id,
             digest: conflict.conflict_digest,
             run_id: conflict.run_id,
+            ...(conflict.preparation_id ? { preparation_id: conflict.preparation_id } : {}),
             previous_source_digest: conflict.previous_source_digest,
             observed_source_digest: conflict.observed_source_digest,
           },

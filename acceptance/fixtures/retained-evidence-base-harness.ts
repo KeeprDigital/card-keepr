@@ -1,3 +1,4 @@
+export { EvidenceIngestionWorkflow } from "./compatibility-evidence-workflow";
 import { restoreFixturePublicationHealthStatement } from "../helpers/query-helpers/runtime-fixtures";
 import { administrationPresentation } from "../../src/http/administration-presentation.mjs";
 import {
@@ -6,7 +7,6 @@ import {
 } from "../../test/support/fixture-evidence-plan";
 import ingestionWorker, {
   EvidenceHostWorkflow,
-  EvidenceIngestionWorkflow,
   OfficialSourceTransport,
   ReconciliationWorkflow,
 } from "../../test/support/ingestion-worker";
@@ -22,7 +22,6 @@ import type { StartEvidenceRunRequest } from "../../src/catalogue/source-evidenc
 
 export {
   EvidenceHostWorkflow,
-  EvidenceIngestionWorkflow,
   OfficialSourceTransport,
   ReconciliationWorkflow,
 };

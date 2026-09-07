@@ -1,6 +1,6 @@
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import type { EvidenceParentWorkflowParams } from "../../src/catalogue/source-evidence";
-import { EvidenceIngestionWorkflow as ProductionEvidenceIngestionWorkflow } from "../../apps/ingestion/src/index";
+import { EvidenceIngestionWorkflow as ProductionEvidenceIngestionWorkflow } from "./compatibility-evidence-workflow";
 
 export {
   default,

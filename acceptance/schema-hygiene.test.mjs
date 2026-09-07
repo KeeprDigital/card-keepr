@@ -460,7 +460,7 @@ test("the schema carries the hot-path indexes and not the dead ones", async () =
     "SEARCH source_snapshots USING INDEX source_snapshots_by_run (ingestion_run_id=?)",
   ]);
   assert.deepEqual(plan(schemaQueries.explainSnapshotCount(database)), [
-    "SEARCH source_snapshots USING COVERING INDEX source_snapshots_by_run (ingestion_run_id=?)",
+    "SEARCH source_snapshots USING COVERING INDEX reconciliation_source_image_lookup (ingestion_run_id=?)",
   ]);
   assert.deepEqual(plan(schemaQueries.explainRecentFetchAttempts(database)), [
     "SEARCH source_fetch_attempts USING INDEX source_fetch_attempts_by_run (ingestion_run_id=?)",

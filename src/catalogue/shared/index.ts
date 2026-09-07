@@ -39,6 +39,7 @@ export {
   type CatalogueStore,
   catalogueEnvironment,
   catalogueStore,
+  guardedCatalogueStore,
   repositoryStatements,
 } from "./catalogue-store-repository";
 export { consumerContent } from "./consumer-content";
@@ -108,6 +109,7 @@ export {
   guardedAtomicBatch,
   payloadChunkStatements,
   retainedPayload,
+  retainedPayloadChunks,
 } from "./reconciliation-payload";
 // Game Profile contract helpers, consumed by curated, export,
 // and reconciliation alike.
@@ -132,7 +134,7 @@ export {
   utf8,
 } from "./serialization";
 export { SPINE_REVISION_ID } from "./spine-revision.mjs";
-export { StreamingSha256 } from "./streaming-sha256";
+export { StreamingSha256, type StreamingSha256State } from "./streaming-sha256";
 export {
   inspectWorkflowInstance,
   isWorkflowInstanceNotFound,
@@ -141,3 +143,18 @@ export {
 } from "./workflow-driver";
 export { observeWorkflowProgress, type WorkflowProgress } from "./workflow-progress";
 export { advancesCollectionProgress, type WorkflowKind, workflowStepName, workflowSteps } from "./workflow-steps";
+
+export {
+  nextLiveIngestionReservationSql,
+  completeCollectedEvidenceReservationStatement,
+} from "./ingestion-reservation-repository";
+
+export { persistReconciliationPayloadChunkStatement } from "./reconciliation-payload-repository";
+
+export { streamedObjectMembers, resumableObjectMembers, type ObjectMemberCursor } from "./streamed-object-members";
+export {
+  catalogueEntityCollections,
+  type CatalogueDraft,
+  type CatalogueDraftEntity,
+  type CatalogueEntityCollection,
+} from "./catalogue-draft";

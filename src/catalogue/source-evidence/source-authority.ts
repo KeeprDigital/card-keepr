@@ -21,8 +21,8 @@ export type AuthoritySelectionRequest = {
 // Adding another publisher source does not change this policy.
 const initialAuthorityLineages = ["one-piece-en", "fusion-world-en", "digimon-en", "gundam-en-asia", "gundam-en-us"];
 const areas = ["card_facts", "printing_details", "corrected_card_content"] as const;
-export async function sourceAuthorities(database: CatalogueStore) {
-  const decisions = (await authorityDecisionsStatement(database).all<AuthorityDecision>()).results;
+export async function sourceAuthorities(database: CatalogueStore, runId?: string) {
+  const decisions = (await authorityDecisionsStatement(database, runId).all<AuthorityDecision>()).results;
   return {
     authorities: sourceLineages
       .filter(({ id }) => initialAuthorityLineages.includes(id))
@@ -132,8 +132,9 @@ export async function assertSelectedAuthoritiesCollected(
     adapter_version: string;
   }[],
   unchangedAcceptedLineages: ReadonlySet<string> = new Set(),
+  runId?: string,
 ) {
-  const { authorities } = await sourceAuthorities(database);
+  const { authorities } = await sourceAuthorities(database, runId);
   for (const decision of authorities) {
     const area = decision.area === "corrected_card_content" ? "errata" : "catalogue";
     const applicable = plans.filter((plan) => {

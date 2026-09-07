@@ -651,7 +651,11 @@ describe("Errata rules-text lifecycle", () => {
     );
     const observed = await reconcile(observedRun.id);
     expect(observed.response.status).toBe(200);
-    const observedErratum = requiredFirst(observed.document, "errata");
+    const targetPrinting = requiredFirst(observed.document, "printings");
+    const observedErratum = (observed.document.errata as Record<string, unknown>[]).find(
+      (erratum) => erratum.target_type === "printing" && erratum.target_id === targetPrinting.id,
+    )!;
+    expect(observedErratum).toBeDefined();
     const observedPublished = await approve(observed.document);
     expect(observedPublished.response.status).toBe(200);
     const observedRevisionId = requiredString(observedPublished.document, "resulting_revision_id");
@@ -1057,6 +1061,7 @@ async function reconcile(runId: string, extraHeaders: Record<string, string> = {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     const observed = await post(`/v1/ingestion-runs/${runId}/reconciliation`, body, extraHeaders);
+    if (observed.response.status !== 200 && observed.response.status !== 202) return observed;
     if (
       observed.document.status === "complete" &&
       observed.document.output !== null &&

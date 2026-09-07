@@ -1,3 +1,4 @@
+import { waitForNativeCandidates } from "./native-candidate-helpers";
 import { expect, test } from "vitest";
 import { administrationRequest, installRuntimeSuite, resumeCollection, waitForEvidenceRun } from "./runtime-helpers";
 
@@ -47,8 +48,9 @@ test("an optional source outage retains its failed attempt without blocking the 
   expect(response.status).toBe(201);
   const { id } = await response.json<{ id: string }>();
   await resumeCollection(id);
-  const result = await waitForEvidenceRun(id, "awaiting_approval");
-  expect(result.state).toBe("awaiting_approval");
+  await waitForNativeCandidates(id, 2, 8_000, { "fusion-world": "failed", "one-piece": "sealed" });
+  const result = await waitForEvidenceRun(id, "parsing");
+  expect(result.state).toBe("parsing");
   expect(result).toMatchObject({
     source_coverage: [
       {

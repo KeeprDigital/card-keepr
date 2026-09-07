@@ -54,6 +54,7 @@ export function insertProposalStatement(database: CatalogueStore, row: EntityPro
         row.created_at,
       ),
     before: [run ? identityRunGuard(database, run) : admissionIdleGuard(database)],
+    after: [admissionEventStatement(database, row.id, 0)],
   });
 }
 export type AdmissionIdentityAllocation = { key: string; id: string; kind: "card" | "printing" };
@@ -94,7 +95,13 @@ export function insertAdmissionDecisionStatement(
       THEN 1 ELSE json_extract('{}', 'admission_generation_conflict') END`)
         .bind(row.generation, row.proposal_id),
     ],
+    after: [admissionEventStatement(database, row.proposal_id, row.generation)],
   });
+}
+function admissionEventStatement(database: CatalogueStore, proposalId: string, generation: number) {
+  return repositoryStatements(database)
+    .prepare("INSERT INTO entity_admission_events (proposal_id, generation) VALUES (?, ?)")
+    .bind(proposalId, generation);
 }
 function admissionIdleGuard(database: CatalogueStore) {
   return repositoryStatements(database).prepare(`SELECT CASE WHEN EXISTS (
@@ -113,30 +120,82 @@ export function admissionEntityStatement(database: CatalogueStore, kind: "card" 
 }
 export function admissionPinStatement(database: CatalogueStore, run: string) {
   return repositoryStatements(database)
-    .prepare("SELECT games_json, policy_json FROM entity_admission_run_pins WHERE ingestion_run_id = ?")
+    .prepare(
+      `SELECT pin.games_json, pin.policy_json, pin.decision_cutoff, operation.supported_game
+       FROM reconciliation_admission_pins AS pin JOIN reconciliation_operations AS operation ON operation.id = pin.preparation_id
+       WHERE pin.preparation_id = ?`,
+    )
     .bind(run);
 }
 export function pinAdmissionsStatement(database: CatalogueStore, run: string, games: string, policy: string) {
   return atomicRepositoryStatement(database, {
     statement: repositoryStatements(database)
-      .prepare("INSERT INTO entity_admission_run_pins (ingestion_run_id, games_json, policy_json) VALUES (?, ?, ?)")
-      .bind(run, games, policy),
-    before: [identityRunGuard(database, run)],
-    after: [
+      .prepare(`INSERT INTO reconciliation_admission_pins
+        (preparation_id, games_json, policy_json, decision_cutoff, legacy_selection_run_id)
+        SELECT operation.id, COALESCE(legacy.games_json, ?), COALESCE(legacy.policy_json, ?),
+          CASE WHEN legacy.ingestion_run_id IS NULL
+            THEN (SELECT COALESCE(MAX(sequence), 0) FROM entity_admission_events) ELSE NULL END,
+          legacy.ingestion_run_id
+        FROM reconciliation_operations AS operation LEFT JOIN entity_admission_run_pins AS legacy
+          ON operation.supported_game IS NULL AND legacy.ingestion_run_id = operation.ingestion_run_id
+        WHERE operation.id = ?`)
+      .bind(games, policy, run),
+    before: [
+      identityRunGuard(database, run),
       repositoryStatements(database)
-        .prepare(`INSERT INTO entity_admission_pinned_decisions (ingestion_run_id, proposal_id, generation)
-      SELECT ?, p.id, COALESCE((SELECT MAX(generation) FROM entity_admission_decisions WHERE proposal_id = p.id), 0)
-      FROM entity_proposals p WHERE p.game IN (SELECT value FROM json_each(?))`)
-        .bind(run, games),
+        .prepare(`SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM entity_admission_run_pins AS legacy
+          WHERE operation.supported_game IS NULL AND legacy.ingestion_run_id = operation.ingestion_run_id)
+        AND EXISTS (SELECT 1 FROM json_each(?2, '$.authorities') AS authority
+          WHERE json_extract(authority.value, '$.generation') <> COALESCE((
+            SELECT MAX(decision.generation) FROM source_authority_decisions AS decision
+            WHERE decision.game = json_extract(authority.value, '$.game')
+              AND decision.locale = json_extract(authority.value, '$.locale')
+              AND decision.release_region = json_extract(authority.value, '$.release_region')
+              AND decision.area = json_extract(authority.value, '$.area')
+              AND decision.rowid <= operation.authority_decision_cutoff), 0))
+        THEN json_extract('{}', 'reconciliation_policy_changed') ELSE 1 END
+        FROM reconciliation_operations AS operation WHERE operation.id = ?1`)
+        .bind(run, policy),
     ],
   });
 }
+export function admissionSelectionPageStatement(database: CatalogueStore, run: string, after: number) {
+  return repositoryStatements(database)
+    .prepare(`SELECT event.sequence, event.proposal_id,
+      CASE WHEN event.generation = 0 AND p.game IN (SELECT value FROM json_each(pin.games_json))
+        THEN (SELECT chosen.generation FROM entity_admission_events chosen
+          WHERE chosen.proposal_id = event.proposal_id AND chosen.sequence <= pin.decision_cutoff
+          ORDER BY chosen.sequence DESC LIMIT 1)
+        ELSE NULL END AS generation
+      FROM reconciliation_admission_pins pin JOIN entity_admission_events event
+        ON event.sequence > ? AND event.sequence <= pin.decision_cutoff
+      JOIN entity_proposals p ON p.id = event.proposal_id
+      WHERE pin.preparation_id = ? ORDER BY event.sequence LIMIT 50`)
+    .bind(after, run);
+}
+export function retainAdmissionSelectionStatement(
+  database: CatalogueStore,
+  run: string,
+  proposal: string,
+  generation: number,
+) {
+  return repositoryStatements(database)
+    .prepare(`INSERT INTO reconciliation_admission_decisions (preparation_id, proposal_id, generation)
+      VALUES (?, ?, ?) ON CONFLICT(preparation_id, proposal_id) DO NOTHING`)
+    .bind(run, proposal, generation);
+}
+export function admissionSelectionReceiptStatement(database: CatalogueStore, run: string, proposals: string[]) {
+  return repositoryStatements(database)
+    .prepare(`SELECT proposal_id, generation FROM reconciliation_selected_admissions
+      WHERE preparation_id = ? AND proposal_id IN (SELECT value FROM json_each(?)) ORDER BY proposal_id`)
+    .bind(run, canonicalJson(proposals));
+}
 export function pinnedAdmissionsStatement(database: CatalogueStore, run: string, after: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT p.*, d.decision_json, d.action, pin.generation
-    FROM entity_admission_pinned_decisions pin JOIN entity_proposals p ON p.id = pin.proposal_id
+    .prepare(`SELECT p.id, p.source_lineage, d.decision_json, d.action, pin.generation
+    FROM reconciliation_selected_admissions pin JOIN entity_proposals p ON p.id = pin.proposal_id
     LEFT JOIN entity_admission_decisions d ON d.proposal_id = p.id AND d.generation = pin.generation
-    WHERE pin.ingestion_run_id = ? AND p.id > ? ORDER BY p.id LIMIT 100`)
+    WHERE pin.preparation_id = ? AND p.id > ? ORDER BY p.id LIMIT 1`)
     .bind(run, after);
 }
 
@@ -160,7 +219,7 @@ export function retainProposalEvidenceStatement(
   return atomicRepositoryStatement(database, {
     statement: repositoryStatements(database)
       .prepare(`INSERT INTO entity_proposal_source_evidence
-      (proposal_id, ingestion_run_id, source_snapshot_id, source_observation_id) VALUES (?, ?, ?, ?)
+      (proposal_id, ingestion_run_id, source_snapshot_id, source_observation_id) VALUES (?, (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?), ?, ?)
       ON CONFLICT(proposal_id, ingestion_run_id, source_observation_id) DO NOTHING`)
       .bind(proposalId, run, snapshot, observation),
     before: [identityRunGuard(database, run)],
@@ -172,6 +231,60 @@ export function latestAdmissionStatement(database: CatalogueStore, id: string) {
     .prepare("SELECT * FROM entity_admission_decisions WHERE proposal_id = ? ORDER BY generation DESC LIMIT 1")
     .bind(id);
 }
+
+/** New native proposals may replay only this preparation's own automatic decision. */
+export function unselectedSourceAdmissionStatement(
+  database: CatalogueStore,
+  preparationId: string,
+  proposalId: string,
+) {
+  return repositoryStatements(database)
+    .prepare(`SELECT decision.proposal_id, decision.generation, 'admit' AS action, 'automation' AS actor,
+      decision.rationale, decision.decision_json,
+      'auto_' || decision.preparation_id || '_' || decision.proposal_id AS idempotency_key,
+      decision.decision_json AS request_json, decision.decided_at
+      FROM reconciliation_automatic_admissions AS decision
+      WHERE decision.preparation_id = ?1 AND decision.proposal_id = ?2
+      UNION ALL
+      SELECT * FROM (SELECT decision.* FROM entity_admission_decisions AS decision
+        WHERE decision.proposal_id = ?2 AND EXISTS (SELECT 1 FROM reconciliation_operations
+          WHERE id = ?1 AND supported_game IS NULL)
+        ORDER BY decision.generation DESC LIMIT 1)
+      LIMIT 1`)
+    .bind(preparationId, proposalId);
+}
+
+/** A later owner decision is kept globally; the preparation retains its own fixed automatic result. */
+export function retainNativeAutomaticAdmissionStatement(
+  database: CatalogueStore,
+  preparationId: string,
+  row: AdmissionDecisionRow,
+) {
+  return atomicRepositoryStatement(database, {
+    before: [identityRunGuard(database, preparationId)],
+    statement: repositoryStatements(database)
+      .prepare(`INSERT INTO reconciliation_automatic_admissions
+        (preparation_id, proposal_id, generation, decision_json, rationale, decided_at)
+        VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(preparation_id, proposal_id) DO NOTHING`)
+      .bind(preparationId, row.proposal_id, row.generation, row.decision_json, row.rationale, row.decided_at),
+    after: [
+      repositoryStatements(database)
+        .prepare(`INSERT INTO entity_admission_decisions
+          (proposal_id, generation, action, actor, rationale, decision_json, idempotency_key, request_json, decided_at)
+          SELECT proposal_id, generation, 'admit', 'automation', rationale, decision_json,
+            'auto_' || preparation_id || '_' || proposal_id, decision_json, decided_at
+          FROM reconciliation_automatic_admissions AS decision
+          WHERE preparation_id = ? AND proposal_id = ? AND generation = 1 + COALESCE(
+            (SELECT MAX(existing.generation) FROM entity_admission_decisions AS existing WHERE existing.proposal_id = decision.proposal_id), 0)`)
+        .bind(preparationId, row.proposal_id),
+      repositoryStatements(database)
+        .prepare(`INSERT INTO entity_admission_events (proposal_id, generation)
+          SELECT proposal_id, generation FROM entity_admission_decisions WHERE idempotency_key = ?
+          ON CONFLICT(proposal_id, generation) DO NOTHING`)
+        .bind(row.idempotency_key),
+    ],
+  });
+}
 export function admissionReplayStatement(database: CatalogueStore, key: string) {
   return repositoryStatements(database)
     .prepare("SELECT * FROM entity_admission_decisions WHERE idempotency_key = ?")
@@ -179,9 +292,9 @@ export function admissionReplayStatement(database: CatalogueStore, key: string) 
 }
 export function pinnedAdmissionStatement(database: CatalogueStore, run: string, id: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT pin.generation, d.* FROM entity_admission_pinned_decisions pin
+    .prepare(`SELECT pin.generation, d.* FROM reconciliation_selected_admissions pin
     LEFT JOIN entity_admission_decisions d ON d.proposal_id = pin.proposal_id AND d.generation = pin.generation
-    WHERE pin.ingestion_run_id = ? AND pin.proposal_id = ?`)
+    WHERE pin.preparation_id = ? AND pin.proposal_id = ?`)
     .bind(run, id);
 }
 
@@ -216,4 +329,11 @@ export function latestAcceptedAdmissionStatement(database: CatalogueStore, id: s
     .prepare(`SELECT * FROM entity_admission_decisions
     WHERE proposal_id = ? AND action IN ('admit', 'link') ORDER BY generation DESC LIMIT 1`)
     .bind(id);
+}
+
+export function admissionPinMetadataPageStatement(database: CatalogueStore, run: string, after: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT proposal_id, generation FROM reconciliation_selected_admissions
+    WHERE preparation_id = ? AND proposal_id > ? ORDER BY proposal_id LIMIT 100`)
+    .bind(run, after);
 }

@@ -69,3 +69,7 @@ export function corruptEventFixtureTerminalState(database: D1Database, runId: st
 export function readEventFixtureReservation(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT active_ingestion_run_id FROM operation_state WHERE singleton=1`);
 }
+
+export function deleteEventFixtureReservation(database: D1Database, runId: string) {
+  return database.prepare("DELETE FROM ingestion_collection_reservations WHERE ingestion_run_id = ?").bind(runId);
+}

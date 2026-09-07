@@ -3,7 +3,11 @@ import { type CatalogueStore, repositoryStatements } from "../shared";
 
 export function reconciliationRunStateStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare("SELECT state FROM ingestion_run_current WHERE ingestion_run_id = ?")
+    .prepare(`SELECT state, candidate_digest, NULL AS supported_game, ingestion_run_id, 0 AS generation,
+      NULL AS terminal_result_json, NULL AS deadline, NULL AS expected_game_revision_id, NULL AS current_game_revision_id FROM ingestion_run_current WHERE ingestion_run_id = ?1
+      UNION ALL SELECT state, candidate_digest, supported_game, ingestion_run_id, generation, terminal_result_json, deadline, expected_game_revision_id,
+      (SELECT revision_id FROM game_catalogue_heads WHERE supported_game = reconciliation_operations.supported_game) AS current_game_revision_id
+      FROM reconciliation_operations WHERE id = ?1 AND supported_game IS NOT NULL`)
     .bind(runId);
 }
 
@@ -18,34 +22,41 @@ export function candidateAtRevisionStatement(database: CatalogueStore, revisionI
 
 export function errataProvenanceByIdsStatement(database: CatalogueStore, erratumIdsJson: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT erratum_id, source_lineage, source_observation_id
+    .prepare(`SELECT erratum_id, source_lineage, source_observation_id, count(*) OVER () AS total
          FROM erratum_provenance
          WHERE erratum_id IN (SELECT value FROM json_each(?))
-         ORDER BY erratum_id, source_lineage, source_observation_id`)
+         ORDER BY erratum_id, source_lineage, source_observation_id LIMIT 500`)
     .bind(erratumIdsJson);
 }
 
-export function currentPrintingMembershipsStatement(database: CatalogueStore): D1PreparedStatement {
-  return repositoryStatements(database).prepare(`SELECT printing_id, source_lineage, relationship_kind,
-                  relationship_value
-           FROM reconciled_printing_memberships
-           WHERE current = 1
-           ORDER BY printing_id, source_lineage,
-                    relationship_kind, relationship_value`);
+export function currentPrintingMembershipsStatement(
+  database: CatalogueStore,
+  after: readonly string[],
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(`WITH candidates AS (
+    SELECT DISTINCT printing_id, source_lineage, relationship_kind, relationship_value
+    FROM reconciled_printing_memberships WHERE current = 1
+      AND (printing_id, source_lineage, relationship_kind, relationship_value) > (?, ?, ?, ?)
+    ORDER BY printing_id, source_lineage, relationship_kind, relationship_value LIMIT 100),
+    bounded AS (SELECT *, row_number() OVER (ORDER BY printing_id, source_lineage, relationship_kind, relationship_value) AS ordinal,
+      sum(length(CAST(printing_id || source_lineage || relationship_kind || relationship_value AS BLOB)) + 128)
+      OVER (ORDER BY printing_id, source_lineage, relationship_kind, relationship_value) AS bytes FROM candidates)
+    SELECT printing_id, source_lineage, relationship_kind, relationship_value FROM bounded
+    WHERE bytes <= 524288 OR ordinal = 1 ORDER BY printing_id, source_lineage, relationship_kind, relationship_value`)
+    .bind(...after);
 }
 
-export function currentCardWithdrawalEvidenceStatement(database: CatalogueStore): D1PreparedStatement {
-  return repositoryStatements(database).prepare(`SELECT id, withdrawal_evidence_json
-           FROM reconciled_cards
-           WHERE withdrawal_evidence_json IS NOT NULL
-           ORDER BY id`);
-}
-
-export function currentPrintingWithdrawalEvidenceStatement(database: CatalogueStore): D1PreparedStatement {
-  return repositoryStatements(database).prepare(`SELECT id, withdrawal_evidence_json
-           FROM reconciled_printings
-           WHERE withdrawal_evidence_json IS NOT NULL
-           ORDER BY id`);
+export function currentWithdrawalEvidenceStatement(
+  database: CatalogueStore,
+  kind: "card" | "printing",
+  after: string,
+): D1PreparedStatement {
+  const table = kind === "card" ? "reconciled_cards" : "reconciled_printings";
+  return repositoryStatements(database)
+    .prepare(`SELECT id, withdrawal_evidence_json FROM ${table}
+    WHERE withdrawal_evidence_json IS NOT NULL AND id > ? ORDER BY id LIMIT 1`)
+    .bind(after);
 }
 
 export function publishedWithdrawalAssertionsStatement(
@@ -56,46 +67,36 @@ export function publishedWithdrawalAssertionsStatement(
     .prepare(`SELECT assertion, state, effective_at
            FROM reconciled_withdrawal_assertions
            WHERE entity_type = ? AND entity_id = ?
-           ORDER BY published_catalogue_revision_id, source_observation_id`)
+           ORDER BY effective_at DESC, published_catalogue_revision_id, source_observation_id LIMIT 1`)
     .bind(input.entityType, input.entityId);
 }
 
 export function activeParsingRunStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT run.id, run.state, run.selected_games_json,
-              run.expected_current_revision_id,
-              operation.active_ingestion_run_id,
+    .prepare(`SELECT run.id, run.state,
+              CASE WHEN preparation.supported_game IS NULL THEN run.selected_games_json
+                ELSE json_array(preparation.supported_game) END AS selected_games_json,
+              COALESCE(preparation.expected_game_revision_id, run.expected_current_revision_id) AS expected_current_revision_id,
+              preparation.supported_game, preparation.state AS preparation_state,
+              (SELECT ingestion_run_id FROM ingestion_collection_reservations WHERE ingestion_run_id = run.id) AS active_ingestion_run_id,
               operation.recovery_health
        FROM ingestion_run_read AS run
+       LEFT JOIN reconciliation_operations AS preparation ON preparation.id = ?1
        JOIN operation_state AS operation ON operation.singleton = 1
-       WHERE run.id = ?`)
+       WHERE run.id = COALESCE(preparation.ingestion_run_id, ?1)`)
     .bind(runId);
 }
 
 export function printingRelationshipsForLineageStatement(
   database: CatalogueStore,
-  input: Readonly<{ printingId: string; sourceLineage: string }>,
+  input: Readonly<{ printingId: string; sourceLineage: string; afterKind: string; afterValue: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT source_lineage, source_observation_id,
-              relationship_kind, relationship_value,
-              membership.first_revision_id,
-              membership.last_observed_revision_id,
-              first_revision.published_at AS first_revision_order,
-              last_revision.published_at AS last_observed_revision_order,
-              current, last_missing_revision_id
-       FROM reconciled_printing_memberships AS membership
-       JOIN catalogue_revisions AS first_revision
-         ON first_revision.id = membership.first_revision_id
-       JOIN catalogue_revisions AS last_revision
-         ON last_revision.id = membership.last_observed_revision_id
-       WHERE printing_id = ? AND source_lineage = ? AND current = 1
-       ORDER BY relationship_kind, relationship_value,
-                first_revision.published_at, membership.first_revision_id,
-                last_revision.published_at,
-                membership.last_observed_revision_id,
-                source_observation_id`)
-    .bind(input.printingId, input.sourceLineage);
+    .prepare(`SELECT DISTINCT relationship_kind, relationship_value
+    FROM reconciled_printing_memberships WHERE printing_id = ? AND source_lineage = ? AND current = 1
+      AND (relationship_kind, relationship_value) > (?, ?)
+    ORDER BY relationship_kind, relationship_value LIMIT 1`)
+    .bind(input.printingId, input.sourceLineage, input.afterKind, input.afterValue);
 }
 
 export function disappearedPrintingsStatement(

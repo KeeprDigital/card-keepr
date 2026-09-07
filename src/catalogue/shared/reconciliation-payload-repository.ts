@@ -23,3 +23,15 @@ export function retainedReconciliationPayloadChunksStatement(
        ORDER BY chunk_index`)
     .bind(input.runId, input.kind);
 }
+
+export function retainedReconciliationPayloadChunkStatement(
+  database: CatalogueStore,
+  input: Readonly<{ runId: string; kind: string; after: number }>,
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(`SELECT chunk_index, content
+       FROM reconciliation_payload_chunks
+       WHERE ingestion_run_id = ? AND payload_kind = ? AND chunk_index > ?
+       ORDER BY chunk_index LIMIT 1`)
+    .bind(input.runId, input.kind, input.after);
+}

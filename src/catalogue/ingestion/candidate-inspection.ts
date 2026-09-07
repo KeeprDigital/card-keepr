@@ -1,9 +1,11 @@
 import { type CatalogueCandidate, type CatalogueStore, canonicalJson } from "../shared";
+import { restorePartitionedRecord } from "../reconciliation";
 import {
   type CandidateObservedEntityRow,
   type ReconciliationPartitionLineageRow,
   candidateObservedEntitiesStatement,
   candidateWarningDocumentStatement,
+  candidateWarningPartitionStatement,
   currentCardObservationLineagesStatement,
   currentPrintingLocatorsStatement,
   reconciliationPartitionLineagesStatement,
@@ -110,6 +112,20 @@ async function candidateWarnings(
   const reconciled = await candidateWarningDocumentStatement(database, runId).first<{ warnings_json: string }>();
   if (reconciled === null) return fallback;
   const parsed: unknown = JSON.parse(reconciled.warnings_json);
+  if (isRecord(parsed) && parsed.reconciliation_warning_partitions === true) {
+    const warnings: Record<string, unknown>[] = [];
+    let after = -1;
+    for (;;) {
+      const partition = await candidateWarningPartitionStatement(database, runId, after).first<{
+        ordinal: number;
+        content: string;
+      }>();
+      if (!partition) return warnings;
+      for (const record of JSON.parse(partition.content))
+        warnings.push((await restorePartitionedRecord(database, runId, record)) as Record<string, unknown>);
+      after = partition.ordinal;
+    }
+  }
   return Array.isArray(parsed) ? parsed.filter(isRecord) : fallback;
 }
 

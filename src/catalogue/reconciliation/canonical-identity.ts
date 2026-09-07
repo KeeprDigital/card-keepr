@@ -1,10 +1,8 @@
-import {
-  AdministrationProblem,
-  type CatalogueStore,
-  canonicalJson,
-  sha256Text,
-  byteBoundedJsonArrays,
-} from "../shared";
+import type { CanonicalRecordSource } from "./reconciliation-canonical-digest";
+import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
+import { ReconciliationContinuation } from "./reconciliation-continuation";
+import { documentStorage } from "./reconciliation-document";
+import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import {
   allocateIdentityStatement,
   allocatedIdentityStatement,
@@ -29,46 +27,83 @@ export async function allocateCanonicalIdentity(
   observedAt: string,
 ) {
   const allocationKey = canonicalJson([kind, key]);
-  const existing = await allocatedIdentityStatement(database, allocationKey).first<{ entity_id: string }>();
-  if (existing) return existing.entity_id;
-  await allocateIdentityStatement(
-    database,
-    allocationKey,
-    `${kind}_${crypto.randomUUID().replaceAll("-", "")}`,
-    kind,
-    observedAt,
-    runId,
-  ).run();
-  const allocated = await allocatedIdentityStatement(database, allocationKey).first<{ entity_id: string }>();
+  const id = `${kind}_${crypto.randomUUID().replaceAll("-", "")}`;
+  const inserted = await documentStorage(() =>
+    allocateIdentityStatement(database, allocationKey, id, kind, observedAt, runId).first<{ entity_id: string }>(),
+  );
+  if (inserted && inserted.entity_id !== id) throw new Error("Canonical identity allocation receipt changed.");
+  const allocated =
+    inserted ??
+    (await documentStorage(() => allocatedIdentityStatement(database, allocationKey).first<{ entity_id: string }>()));
   if (!allocated) throw new Error("Canonical identity allocation was not retained.");
   return allocated.entity_id;
 }
-export async function retainSourceMappings(database: CatalogueStore, runId: string, mappings: SourceMapping[]) {
-  for (const mapping of mappings) {
-    if (new TextEncoder().encode(mapping.evidenceJson).byteLength > 128 * 1024) {
-      const evidence = JSON.parse(mapping.evidenceJson);
-      mapping.evidenceJson = canonicalJson({
-        compatibility: evidence.compatibility,
-        retained_evidence: {
-          source_observation_id: mapping.sourceObservationId,
-          source_observation_set_id: mapping.sourceObservationSetId,
-          source_snapshot_id: mapping.sourceSnapshotId,
-          content_digest: await sha256Text(mapping.evidenceJson),
-        },
-      });
-    }
+export async function boundedSourceMapping(mapping: SourceMapping): Promise<SourceMapping> {
+  if (new TextEncoder().encode(mapping.evidenceJson).byteLength <= 128 * 1024) return mapping;
+  const evidence = JSON.parse(mapping.evidenceJson);
+  return {
+    ...mapping,
+    evidenceJson: canonicalJson({
+      compatibility: evidence.compatibility,
+      retained_evidence: {
+        source_observation_id: mapping.sourceObservationId,
+        source_observation_set_id: mapping.sourceObservationSetId,
+        source_snapshot_id: mapping.sourceSnapshotId,
+        content_digest: await sha256Text(mapping.evidenceJson),
+      },
+    }),
+  };
+}
+
+export async function retainSourceMappings(
+  database: CatalogueStore,
+  runId: string,
+  mappings: Pick<CanonicalRecordSource<SourceMapping>, "canonicalEntries">,
+  yieldAtCheckpoint: boolean,
+) {
+  const checkpoint = await reconciliationCheckpoint<{ after: string; complete: boolean }>(
+    database,
+    runId,
+    "source_mappings",
+  );
+  if (checkpoint?.value.complete) return;
+  const cursor = checkpoint?.value ?? { after: "", complete: false };
+  let ordinal = (checkpoint?.ordinal ?? -1) + 1;
+  let records: string[] = [],
+    bytes = 2;
+  const flush = async () => {
+    if (records.length)
+      await documentStorage(() => insertSourceMappingsStatement(database, runId, `[${records.join(",")}]`).run());
+    await retainReconciliationCheckpoint(database, runId, "source_mappings", ordinal, cursor);
+    if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "source_mappings", ordinal });
+    ordinal++;
+    records = [];
+    bytes = 2;
+  };
+  for await (const entry of mappings.canonicalEntries(cursor.after)) {
+    const content = canonicalJson(entry.value);
+    const length = new TextEncoder().encode(content).byteLength;
+    if (length + 2 > 512000)
+      throw new Error("reconciliation_capacity_exceeded: one source mapping exceeds 512000 bytes.");
+    if (records.length && bytes + length + 1 > 512000) await flush();
+    bytes += length + (records.length ? 1 : 0);
+    records.push(content);
+    cursor.after = entry.key;
+    if (records.length === 16) await flush();
   }
-  for (let index = 0; index < mappings.length; index += 100) {
-    for (const payload of byteBoundedJsonArrays(mappings.slice(index, index + 100))) {
-      await insertSourceMappingsStatement(database, runId, payload).run();
-    }
-  }
+  cursor.complete = true;
+  await flush();
 }
 export type { SourceMapping } from "./canonical-identity-repository";
-export async function inspectCanonicalIdentity(database: CatalogueStore, id: string, after = "") {
+export async function inspectCanonicalIdentity(
+  database: CatalogueStore,
+  id: string,
+  after = "",
+  preparationId: string | null = null,
+) {
   const allocation = await identityAllocationStatement(database, id).first<{ entity_kind: string }>();
   const mappings = (
-    await identityMappingsStatement(database, id, after).all<{
+    await identityMappingsStatement(database, id, after, preparationId).all<{
       entity_kind: string;
       evidence_json: string;
       source_observation_id: string;
@@ -91,8 +126,13 @@ export async function inspectCanonicalIdentity(database: CatalogueStore, id: str
   };
 }
 
-export async function inspectIdentityReviews(database: CatalogueStore, run: string, after: string) {
-  const rows = (await identityReviewsStatement(database, run, after).all<IdentityReview>()).results;
+export async function inspectIdentityReviews(
+  database: CatalogueStore,
+  run: string,
+  after: string,
+  preparationId: string | null = null,
+) {
+  const rows = (await identityReviewsStatement(database, run, after, preparationId).all<IdentityReview>()).results;
   return {
     reviews: rows.slice(0, 100).map(({ evidence_json, candidate_printing_ids_json, ...row }) => ({
       ...row,
@@ -156,7 +196,7 @@ export async function matchingIdentityDecision(
 ) {
   const evidenceJson = canonicalJson(input.evidence);
   const id = `identity_review_${await sha256Text(canonicalJson([input.sourceLineage, evidenceJson, input.candidates]))}`;
-  const decision = await identityDecisionStatement(database, id).first<IdentityDecision>();
+  const decision = await identityDecisionStatement(database, id, input.runId).first<IdentityDecision>();
   if (decision && input.candidates.includes(decision.printing_id)) return decision.printing_id;
   await insertIdentityReviewStatement(database, {
     id,

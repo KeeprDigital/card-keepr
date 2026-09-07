@@ -1,0 +1,219 @@
+import { atomicRepositoryStatement, type CatalogueStore, repositoryStatements } from "../shared";
+
+export function createReconciliationOperationStatement(
+  database: CatalogueStore,
+  runId: string,
+  at: string,
+  definitions: string,
+) {
+  const statement = repositoryStatements(database)
+    .prepare(`INSERT OR IGNORE INTO reconciliation_operations
+    (ingestion_run_id, id, state, created_at, deadline, definition_pins_json, observation_cutoff, identity_decision_cutoff, authority_decision_cutoff)
+    VALUES (?, ?, 'preparing', ?, ?, ?,
+      COALESCE((SELECT MAX(rowid) FROM source_observation_sets), 0),
+      COALESCE((SELECT MAX(rowid) FROM canonical_identity_decisions), 0),
+      COALESCE((SELECT MAX(rowid) FROM source_authority_decisions), 0))`)
+    .bind(runId, runId, at, new Date(Date.parse(at) + 604800000).toISOString(), definitions);
+  return atomicRepositoryStatement(database, {
+    statement,
+    before: [
+      repositoryStatements(database)
+        .prepare(`SELECT CASE WHEN
+      NOT EXISTS (SELECT 1 FROM reconciliation_operations WHERE id = ?)
+      AND EXISTS (SELECT 1 FROM game_candidate_slots AS slot
+        JOIN ingestion_run_selected_games AS game ON game.game = slot.supported_game
+        WHERE game.ingestion_run_id = ? AND slot.preparation_id <> ?)
+      THEN json_extract('{}', 'game_candidate_slot_occupied') ELSE 1 END`)
+        .bind(runId, runId, runId),
+    ],
+    after: [
+      repositoryStatements(database)
+        .prepare(`INSERT INTO game_candidate_slots (supported_game, preparation_id, ingestion_run_id)
+      SELECT game, ingestion_run_id, ingestion_run_id FROM ingestion_run_selected_games WHERE ingestion_run_id = ? AND changes() = 1`)
+        .bind(runId),
+    ],
+  });
+}
+
+export function reconciliationOperationHeaderStatement(database: CatalogueStore, runId: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT state, generation, candidate_digest, definition_pins_json, input_manifest_digest,
+      observation_cutoff, identity_decision_cutoff, authority_decision_cutoff, created_at, deadline
+      , ingestion_run_id, supported_game, failure_code, terminal_result_json, expected_game_revision_id
+      , (SELECT revision_id FROM game_catalogue_heads WHERE supported_game = reconciliation_operations.supported_game) AS current_game_revision_id
+      FROM reconciliation_operations WHERE id = ?`)
+    .bind(runId);
+}
+
+export function reconciliationOperationStatement(database: CatalogueStore, runId: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT id AS reconciliation_id, ingestion_run_id,
+    state, generation, created_at, deadline, completed_partitions,
+    (SELECT count(*) FROM reconciliation_preparation_batches WHERE preparation_id = reconciliation_operations.id) AS completed_batches,
+    (SELECT count(*) FROM reconciliation_input_partitions WHERE preparation_id = reconciliation_operations.id) AS completed_input_partitions,
+    (SELECT count(*) FROM reconciliation_source_documents WHERE preparation_id = reconciliation_operations.id) AS completed_documents,
+    (SELECT count(*) FROM reconciliation_reducer_state WHERE preparation_id = reconciliation_operations.id) AS completed_reducer_records,
+    (SELECT count(*) FROM reconciliation_normalized_observations WHERE preparation_id = reconciliation_operations.id) AS completed_observations,
+    EXISTS (SELECT 1 FROM reconciliation_admission_pins WHERE preparation_id = reconciliation_operations.id) AS admission_selection_pinned,
+    (SELECT count(*) FROM reconciliation_selected_admissions WHERE preparation_id = reconciliation_operations.id) AS admission_decision_count,
+    candidate_digest, manifest_digest, input_manifest_digest, failure_code, definition_pins_json, observation_cutoff, identity_decision_cutoff, authority_decision_cutoff
+    FROM reconciliation_operations WHERE id = ?`)
+    .bind(runId);
+}
+
+export function sealReconciliationOperationStatement(
+  database: CatalogueStore,
+  runId: string,
+  digest: string,
+  manifestDigest: string,
+  partitionCount: number,
+) {
+  return repositoryStatements(database)
+    .prepare(`UPDATE reconciliation_operations SET state = 'sealed',
+    candidate_digest = ?, manifest_digest = ? WHERE id = ? AND state = 'preparing'
+    AND CASE WHEN input_manifest_digest IS NOT NULL AND completed_partitions = ? THEN 1 ELSE json_extract('{}', 'reconciliation_partition_count_mismatch') END`)
+    .bind(digest, manifestDigest, runId, partitionCount);
+}
+
+export function insertReconciliationPartitionStatement(
+  database: CatalogueStore,
+  input: {
+    runId: string;
+    ordinal: number;
+    kind: string;
+    content: string;
+    sha256: string;
+    bytes: number;
+    records: number;
+  },
+) {
+  const statement = repositoryStatements(database)
+    .prepare(`INSERT INTO reconciliation_record_partitions
+    (preparation_id, ordinal, kind, content, sha256, byte_length, record_count) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (preparation_id, ordinal) DO NOTHING`)
+    .bind(input.runId, input.ordinal, input.kind, input.content, input.sha256, input.bytes, input.records);
+  return atomicRepositoryStatement(database, {
+    statement,
+    before: [
+      repositoryStatements(database)
+        .prepare(`SELECT CASE WHEN EXISTS (
+      SELECT 1 FROM reconciliation_operations WHERE id = ? AND state = 'preparing'
+    ) THEN 1 ELSE json_extract('{}', 'reconciliation_not_preparing') END`)
+        .bind(input.runId),
+    ],
+    after: [
+      repositoryStatements(database)
+        .prepare(`UPDATE reconciliation_operations
+      SET completed_partitions = completed_partitions + 1 WHERE id = ? AND changes() = 1`)
+        .bind(input.runId),
+    ],
+  });
+}
+
+export function reconciliationPartitionsStatement(database: CatalogueStore, runId: string, after: number) {
+  return repositoryStatements(database)
+    .prepare(`SELECT ordinal, kind, sha256, byte_length, record_count
+    FROM reconciliation_record_partitions WHERE preparation_id = ? AND ordinal > ? ORDER BY ordinal LIMIT 100`)
+    .bind(runId, after);
+}
+
+export function reconciliationWriterGuard(
+  database: CatalogueStore,
+  runId: string,
+  generation: number,
+  terminalFailure = false,
+) {
+  return repositoryStatements(database)
+    .prepare(`SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM reconciliation_operations AS reconciliation CROSS JOIN operation_state AS operation
+    WHERE reconciliation.id = ? AND reconciliation.generation = ? AND reconciliation.state = 'preparing'
+      AND (reconciliation.supported_game IS NULL OR ? = 1 OR (
+        reconciliation.deadline > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        AND EXISTS (SELECT 1 FROM game_catalogue_heads AS head WHERE head.supported_game = reconciliation.supported_game AND head.revision_id = reconciliation.expected_game_revision_id)
+        AND EXISTS (SELECT 1 FROM game_candidate_slots AS slot WHERE slot.supported_game = reconciliation.supported_game AND slot.preparation_id = reconciliation.id)))
+      AND operation.singleton = 1 AND operation.recovery_health <> 'blocked'
+  ) THEN 1 ELSE json_extract('{}', 'reconciliation_writer_fenced') END`)
+    .bind(runId, generation, terminalFailure ? 1 : 0);
+}
+
+export function reconciliationActionStatement(database: CatalogueStore, key: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT request_json, result_json FROM reconciliation_actions WHERE idempotency_key = ?`)
+    .bind(key);
+}
+
+export function reconciliationActionUpdate(
+  database: CatalogueStore,
+  runId: string,
+  action: "pause" | "resume" | "abandon",
+  generation: number,
+) {
+  const from = action === "resume" || action === "abandon" ? "paused" : "preparing";
+  const to = action === "pause" ? "paused" : action === "resume" ? "preparing" : "abandoned";
+  return repositoryStatements(database)
+    .prepare(`UPDATE reconciliation_operations SET state = ?, generation = generation + ?
+    WHERE id = ? AND (state = ? ${action === "abandon" ? "OR (supported_game IS NOT NULL AND state = 'sealed')" : ""}) AND generation = ?`)
+    .bind(to, action === "resume" ? 0 : 1, runId, from, generation);
+}
+
+export function reconciliationActionGuard(
+  database: CatalogueStore,
+  runId: string,
+  action: "pause" | "resume" | "abandon",
+  generation: number,
+) {
+  return repositoryStatements(database)
+    .prepare(`SELECT CASE WHEN NOT EXISTS (
+      SELECT 1 FROM operation_state WHERE singleton = 1 AND recovery_health <> 'blocked'
+    ) THEN json_extract('{}', 'recovery_not_verified') WHEN EXISTS (
+    SELECT 1 FROM reconciliation_operations WHERE id = ?
+      AND (state = ? ${action === "abandon" ? "OR (supported_game IS NOT NULL AND state = 'sealed')" : ""}) AND generation = ?
+  ) THEN 1 ELSE json_extract('{}', 'reconciliation_generation_conflict') END`)
+    .bind(runId, action === "pause" ? "preparing" : "paused", generation);
+}
+
+export function retainReconciliationAction(
+  database: CatalogueStore,
+  runId: string,
+  key: string,
+  request: string,
+  result: string,
+) {
+  return repositoryStatements(database)
+    .prepare(`INSERT INTO reconciliation_actions (preparation_id, idempotency_key, request_json, result_json)
+    VALUES (?, ?, ?, ?)`)
+    .bind(runId, key, request, result);
+}
+
+export function pauseFailedReconciliationStatement(
+  database: CatalogueStore,
+  runId: string,
+  generation: number,
+  detail: string,
+) {
+  return repositoryStatements(database)
+    .prepare(`UPDATE reconciliation_operations SET state = 'paused',
+    generation = generation + 1, failure_code = ? WHERE id = ? AND generation = ? AND state = 'preparing'`)
+    .bind(detail.slice(0, 1024), runId, generation);
+}
+
+export function reconciliationRequestForRunStatement(database: CatalogueStore, runId: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT * FROM reconciliation_workflow_requests WHERE ingestion_run_id = ?`)
+    .bind(runId);
+}
+
+export function reconciliationPartitionStatement(database: CatalogueStore, runId: string, ordinal: number) {
+  return repositoryStatements(database)
+    .prepare(`SELECT kind, content, sha256, byte_length, record_count
+    FROM reconciliation_record_partitions WHERE preparation_id = ? AND ordinal = ?`)
+    .bind(runId, ordinal);
+}
+
+export function reconciliationSelectedGamesStatement(database: CatalogueStore, runId: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT json_group_array(game) AS games_json FROM (
+    SELECT game FROM ingestion_run_selected_games WHERE ingestion_run_id = ? ORDER BY game
+  )`)
+    .bind(runId);
+}
