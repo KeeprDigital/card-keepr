@@ -61,6 +61,19 @@ export function trySearchMaintenance(database) {
 
 export function retainedIdentityAndEvidence(database) {
   return {
+    admissionDecisions: database
+      .prepare("SELECT * FROM entity_admission_decisions ORDER BY proposal_id,generation")
+      .all(),
+    correctionDecisions: database.prepare("SELECT * FROM identity_correction_decisions ORDER BY sequence").all(),
+    proposals: database.prepare("SELECT * FROM entity_proposals ORDER BY id").all(),
+    nativeMappings: database.prepare("SELECT * FROM reconciliation_source_mappings ORDER BY rowid").all(),
+    sourceSnapshots: database.prepare("SELECT * FROM source_snapshots ORDER BY rowid").all(),
+    publicationArtifacts: database
+      .prepare("SELECT * FROM publication_preparation_artifacts ORDER BY candidate_id,ordinal")
+      .all(),
+    publicationNodes: database
+      .prepare("SELECT * FROM publication_composition_nodes ORDER BY candidate_id,level,ordinal")
+      .all(),
     decisions: database.prepare("SELECT * FROM canonical_identity_decisions ORDER BY rowid").all(),
     allocations: database.prepare("SELECT * FROM canonical_identity_allocations ORDER BY rowid").all(),
     mappings: database.prepare("SELECT * FROM canonical_source_mappings ORDER BY rowid").all(),

@@ -125,8 +125,12 @@ export async function proveNativePopulatedHandoff({
     destination.close();
   });
   const before = queries.retainedIdentityAndEvidence(source);
-  assert.ok(before.decisions.length > 0);
-  assert.ok(before.references.length > 0);
+  assert.ok(
+    before.admissionDecisions.some((row) => row.idempotency_key === "native-recovery-admit" && row.action === "admit"),
+  );
+  assert.ok(before.correctionDecisions.some((row) => row.idempotency_key === "native-recovery-correction"));
+  for (const name of ["allocations", "nativeMappings", "sourceSnapshots", "publicationArtifacts", "publicationNodes"])
+    assert.ok(before[name].length > 0, `${name} must contain native retained evidence`);
   const read = (role) => {
     if (role === "destination" && queries.schemaRows(destination).all().length === 0) return null;
     return (role === "source" ? source : destination).prepare(handoffReadSql(environmentSql, role)).get() ?? null;

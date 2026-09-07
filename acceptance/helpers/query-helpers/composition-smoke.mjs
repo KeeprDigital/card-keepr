@@ -15,8 +15,9 @@ export function seedCompositionSmoke(db, defect) {
       revision,
       revision === "revision_archived" ? "archived" : "available",
     );
-    db.prepare("INSERT INTO catalogue_composition_games VALUES (?,'one-piece','candidate',?,?)").run(
+    db.prepare("INSERT INTO catalogue_composition_games VALUES (?,'one-piece',?,?,?)").run(
       revision,
+      defect === "older-image-free" && revision !== revisions[0] ? "candidate_history" : "candidate",
       revision,
       "a".repeat(64),
     );
@@ -69,5 +70,19 @@ export function seedCompositionSmoke(db, defect) {
     db.prepare(
       "INSERT INTO publication_search_fts VALUES ('|candidate|','candidate','card_b','searchable curated card')",
     ).run();
+  if (defect === "older-image-free") {
+    for (const table of ["publication_read_entities", "publication_projection_batches"]) {
+      const columns = db
+        .prepare(`PRAGMA table_info(${table})`)
+        .all()
+        .map((row) => row.name);
+      db.exec(
+        `INSERT INTO ${table} SELECT ${columns.map((name) => (name === "candidate_id" ? "'candidate_history'" : name)).join(",")} FROM ${table} WHERE candidate_id='candidate' AND kind<>'printing_images'`,
+      );
+    }
+    db.exec(
+      "INSERT INTO publication_search_fts VALUES ('|candidate_history|','candidate_history','card_b','searchable curated card')",
+    );
+  }
   return revisions;
 }

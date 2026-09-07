@@ -280,7 +280,12 @@ export async function productionReleaseSmokeTargets(
   const revisions = [];
   let nativeImageId: string | undefined;
   for (const revisionId of revisionIds) {
-    const native = await compositionSmokeTargets(database, revisionId, releaseSmokeSearchQuery);
+    const native = await compositionSmokeTargets(
+      database,
+      revisionId,
+      releaseSmokeSearchQuery,
+      revisionId === revisionIds[0],
+    );
     if (native === null) return null;
     if (native !== undefined) {
       if (revisionId === revisionIds[0]) nativeImageId = native.printing_image_id;

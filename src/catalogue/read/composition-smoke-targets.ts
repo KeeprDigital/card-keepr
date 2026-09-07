@@ -8,6 +8,7 @@ export async function compositionSmokeTargets(
   database: CatalogueStore,
   revisionId: string,
   searchQueryFor: (document: string) => string | null,
+  requireImage: boolean,
 ): Promise<Record<string, string> | null | undefined> {
   const revision = await nativeRevisionStatement(database, revisionId, false).first<{
     query_state: string;
@@ -17,7 +18,7 @@ export async function compositionSmokeTargets(
   if (revision.query_state !== "available" || revision.search_state !== "ready") return null;
   try {
     const [cards, printings, images] = await Promise.all(
-      ["cards", "printings", "printing_images"].map(
+      ["cards", "printings", ...(requireImage ? ["printing_images"] : [])].map(
         async (kind) =>
           (
             await composedCollectionStatement(
@@ -31,16 +32,16 @@ export async function compositionSmokeTargets(
           ).results,
       ),
     );
-    if (cards!.length !== 2 || printings!.length !== 2 || images!.length === 0) return null;
+    if (cards!.length !== 2 || printings!.length !== 2 || (requireImage && images!.length === 0)) return null;
     const card = await hydrate(database, cards![1]!);
     const printing = await hydrate(database, printings![1]!);
-    const image = await hydrate(database, images![0]!);
+    const image = requireImage ? await hydrate(database, images![0]!) : null;
     const query = searchQueryFor(JSON.stringify(card));
     if (
       query === null ||
       typeof card.id !== "string" ||
       typeof printing.id !== "string" ||
-      typeof image.id !== "string"
+      (requireImage && typeof image?.id !== "string")
     )
       return null;
     const searchFilters = { ...emptyCompositionFilters, q: query };
@@ -59,7 +60,7 @@ export async function compositionSmokeTargets(
       revision_id: revisionId,
       card_id: card.id,
       printing_id: printing.id,
-      printing_image_id: image.id,
+      ...(image === null ? {} : { printing_image_id: String(image.id) }),
       search_query: query,
       card_cursor: compositionCursor(revisionId, "cards", emptyCompositionFilters, cards![0]!.position!, 50),
       search_cursor: compositionCursor(revisionId, "cards", searchFilters, cards![0]!.position!, 50),

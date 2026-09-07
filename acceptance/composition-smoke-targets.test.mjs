@@ -25,7 +25,7 @@ const migrations = await Promise.all(
     .sort()
     .map((n) => readFile(`migrations/${n}`, "utf8")),
 );
-for (const defect of [null, "missing-image", "missing-printing", "corrupt-card", "missing-search"])
+for (const defect of [null, "older-image-free", "missing-image", "missing-printing", "corrupt-card", "missing-search"])
   test(`native release smoke target selection: ${defect ?? "consumer cursor roundtrip"}`, async (t) => {
     const db = new DatabaseSync(":memory:");
     t.after(() => db.close());
@@ -33,7 +33,7 @@ for (const defect of [null, "missing-image", "missing-printing", "corrupt-card",
     const revisions = seedCompositionSmoke(db, defect);
     const store = runtime.catalogueStore(d1Adapter(db));
     const targets = await runtime.productionReleaseSmokeTargets(store, revisions);
-    if (defect) {
+    if (defect && defect !== "older-image-free") {
       assert.equal(targets, null);
       return;
     }
