@@ -109,8 +109,11 @@ export class ReconciliationReducerIndex<T> {
 
   /** Iterate the completed observation prefix without rebuilding its complete index. */
   async *latestValues(): AsyncGenerator<T> {
+    for await (const entry of this.latestEntries()) yield entry.value;
+  }
+
+  async *latestEntries(after = ""): AsyncGenerator<{ key: string; value: T }> {
     if (this.ordinal === 0) return;
-    let after = "";
     for (;;) {
       const row: (StateRow & { key_digest: string }) | null = await storage(
         nextLatestReducerStateStatement(this.database, this.runId, this.namespace, this.ordinal, after).first<
@@ -120,7 +123,10 @@ export class ReconciliationReducerIndex<T> {
       if (!row) return;
       if ((await sha256Text(row.content)) !== row.sha256)
         throw new Error("Reducer state failed integrity verification.");
-      yield (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T;
+      yield {
+        key: row.key_digest,
+        value: (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T,
+      };
       after = row.key_digest;
     }
   }

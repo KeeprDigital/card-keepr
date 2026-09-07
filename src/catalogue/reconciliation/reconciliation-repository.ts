@@ -5,7 +5,7 @@ import {
   canonicalJson,
   repositoryStatements,
 } from "../shared";
-import { type PrintingCompatibility } from "./reconciliation-model";
+import type { PrintingCompatibility } from "./reconciliation-model";
 
 export type ReconciledCardRow = {
   id: string;
@@ -432,8 +432,11 @@ export async function crossSourcePrintingCandidates(
   ).results;
 }
 
-export async function* gundamAffectedPrintingIds(database: CatalogueStore, checkedLineages: readonly string[]) {
-  let after = "";
+export async function* gundamAffectedPrintingIds(
+  database: CatalogueStore,
+  checkedLineages: readonly string[],
+  after = "",
+) {
   for (;;) {
     const rows = (
       await repositoryStatements(database)

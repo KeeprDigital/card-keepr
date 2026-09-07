@@ -36,39 +36,3 @@ export function previouslyObservedEntitiesStatement(
       ORDER BY entity.id LIMIT 100`)
     .bind(after, lineage);
 }
-
-export function nextPlanMembershipGroupStatement(
-  database: CatalogueStore,
-  runId: string,
-  through: number,
-  afterPrinting: string,
-  afterLineage: string,
-) {
-  return repositoryStatements(database)
-    .prepare(`SELECT
-      json_extract(content, '$.value.plan.printingId') AS printing_id,
-      json_extract(content, '$.value.plan.sourceLineage') AS source_lineage
-    FROM reconciliation_reducer_state WHERE ingestion_run_id = ? AND namespace = 'observation_plans'
-      AND observation_ordinal <= ? AND json_extract(content, '$.value.plan.observationKind') = 'card_printing'
-      AND (json_extract(content, '$.value.plan.printingId'), json_extract(content, '$.value.plan.sourceLineage')) > (?, ?)
-    GROUP BY printing_id, source_lineage ORDER BY printing_id, source_lineage LIMIT 1`)
-    .bind(runId, through, afterPrinting, afterLineage);
-}
-
-export function nextMembershipPlanStatement(
-  database: CatalogueStore,
-  runId: string,
-  through: number,
-  printingId: string,
-  lineage: string,
-  after: string,
-) {
-  return repositoryStatements(database)
-    .prepare(`SELECT content, sha256, key_digest
-    FROM reconciliation_reducer_state WHERE ingestion_run_id = ? AND namespace = 'observation_plans'
-      AND observation_ordinal <= ? AND json_extract(content, '$.value.plan.observationKind') = 'card_printing'
-      AND json_extract(content, '$.value.plan.printingId') = ?
-      AND json_extract(content, '$.value.plan.sourceLineage') = ? AND key_digest > ?
-    ORDER BY key_digest LIMIT 1`)
-    .bind(runId, through, printingId, lineage, after);
-}

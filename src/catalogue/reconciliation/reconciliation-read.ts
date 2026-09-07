@@ -1,58 +1,16 @@
-import { ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
 import type { CatalogueStore } from "../shared";
-import type { Memberships } from "./reconciliation-model";
 import type { LocatorEvidence, LocatorEvidenceCollection } from "./reconciliation-publication";
 import {
   disappearedCardsStatement,
   disappearedPrintingsStatement,
-  printingRelationshipsForLineageStatement,
   reconciledPrintingDocumentStatement,
   reconciledPrintingLocatorsStatement,
   reconciledPrintingRelationshipsStatement,
 } from "./reconciliation-read-repository";
-import {
-  aggregateRelationshipEvidence,
-  membershipEntries,
-  type RelationshipEvidenceRow,
-} from "./reconciliation-relationships";
+import { aggregateRelationshipEvidence, type RelationshipEvidenceRow } from "./reconciliation-relationships";
 import type { ReconciledPrintingRow } from "./reconciliation-repository";
 
 type MembershipRow = RelationshipEvidenceRow;
-
-export async function* relationshipDisappearanceWarnings(
-  database: CatalogueStore,
-  printingId: string,
-  sourceLineage: string,
-  memberships: Memberships,
-): AsyncGenerator<Record<string, unknown>> {
-  const current = new Set(membershipEntries(memberships).map(membershipKey));
-  let afterKind = "",
-    afterValue = "";
-  for (;;) {
-    let row: Pick<MembershipRow, "relationship_kind" | "relationship_value"> | null;
-    try {
-      row = await printingRelationshipsForLineageStatement(database, {
-        printingId,
-        sourceLineage,
-        afterKind,
-        afterValue,
-      }).first<Pick<MembershipRow, "relationship_kind" | "relationship_value">>();
-    } catch (cause) {
-      throw new ReconciliationReducerStorageError(cause);
-    }
-    if (!row) return;
-    afterKind = row.relationship_kind;
-    afterValue = row.relationship_value;
-    if (!current.has(membershipKey(row)))
-      yield {
-        code: "relationship_not_observed",
-        printing_id: printingId,
-        relationship_kind: row.relationship_kind,
-        relationship_value: row.relationship_value,
-        detail: "The relationship was not observed in this complete run; it remains historical and is not withdrawn.",
-      };
-  }
-}
 
 export async function printingDisappearanceWarnings(
   database: CatalogueStore,
@@ -154,10 +112,6 @@ function locatorEvidenceCollection(
     current: evidence.filter((locator) => locator.current),
     historical: evidence.filter((locator) => !locator.current),
   };
-}
-
-function membershipKey(row: Pick<MembershipRow, "relationship_kind" | "relationship_value">): string {
-  return `${row.relationship_kind}\u0000${row.relationship_value}`;
 }
 
 function membershipProjection<T>(create: () => T): {

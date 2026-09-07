@@ -1,3 +1,4 @@
+import { prepareDisappearanceWarnings } from "./reconciliation-disappearance";
 import { prepareOfficialCandidate, omitUndefinedValues } from "./reconciliation-official-assembly";
 import { prepareWithdrawalDiagnostics } from "./reconciliation-withdrawals";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
@@ -83,7 +84,7 @@ import {
   isCompatible,
   type PrintingCompatibility,
 } from "./reconciliation-model";
-import { publicReconciledPrinting, relationshipDisappearanceWarnings } from "./reconciliation-read";
+import { publicReconciledPrinting } from "./reconciliation-read";
 import {
   activeParsingRunStatement,
   currentWithdrawalEvidenceStatement,
@@ -92,14 +93,13 @@ import {
   reconciliationRunStateStatement,
 } from "./reconciliation-read-repository";
 import {
+  gundamPrintingLineages,
   canonicalCardConflict,
   canonicalPrintingConflict,
   compatiblePrintings,
   crossSourcePrintingCandidates,
   existingCard,
-  gundamAffectedPrintingIds,
   gundamCardLineages,
-  gundamPrintingLineages,
   gundamPrintingHasProductMembership,
   printingAtLocatorVariant,
   printingFactsFormattingEquivalent,
@@ -1582,59 +1582,27 @@ export async function reconcileRetainedCardPrintingEvidence(
     throw error;
   }
   const { draft: official, observedCards, observedPrintings } = assembled;
-  for await (const { printingId, sourceLineage, memberships } of plans.memberships())
-    for await (const warning of relationshipDisappearanceWarnings(database, printingId, sourceLineage, memberships))
-      await sourceWarnings.push(warning);
   const checkedSourceLineages = errataOnlyEvidence ? [] : [...evidenceLineages].sort();
-  const addLineageWarning = async (printingId: string) => {
-    const lineages = new Set(
-      (await gundamPrintingLineages(database, printingId))
-        .filter(({ source_lineage, current }) => current === 1 && !checkedSourceLineages.includes(source_lineage))
-        .map(({ source_lineage }) => source_lineage),
+  try {
+    await prepareDisappearanceWarnings(
+      database,
+      runId,
+      {
+        plans,
+        hasPrintings: (official.positions.printings ?? 0) > 0,
+        checkedLineages: checkedSourceLineages,
+        errataLineages: errataOnlyEvidence ? [...evidenceLineages] : [],
+        priorErrata,
+        observedErrata,
+        gundamProvenance: localGundamPrintingProvenance,
+        printingCompatibility: localPrintingCompatibility,
+      },
+      sourceWarnings,
+      yieldAtCheckpoint,
     );
-    for (const lineage of (await localGundamPrintingProvenance.get(printingId)) ?? []) lineages.add(lineage);
-    if (lineages.size === 1)
-      await sourceWarnings.push({
-        code: "single_locale_gundam_printing",
-        printing_id: printingId,
-        source_lineage: [...lineages][0]!,
-        detail:
-          "The Gundam Printing is currently observed on only one English surface; publication retains that provenance for owner review.",
-      });
-  };
-  if (checkedSourceLineages.some((lineage) => lineage === "gundam-en-asia" || lineage === "gundam-en-us")) {
-    for await (const printingId of gundamAffectedPrintingIds(database, checkedSourceLineages))
-      await addLineageWarning(printingId);
-    for await (const { printingId, compatibility } of localPrintingCompatibility.latestValues()) {
-      if (compatibility.source_lineage !== "gundam-en-asia" && compatibility.source_lineage !== "gundam-en-us")
-        continue;
-      const alreadyVisited = (await gundamPrintingLineages(database, printingId)).some(
-        ({ source_lineage, current }) => current === 1 && checkedSourceLineages.includes(source_lineage),
-      );
-      if (!alreadyVisited) await addLineageWarning(printingId);
-    }
-  }
-  for (const lineage of checkedSourceLineages) {
-    for await (const warning of plans.disappearanceWarnings("printing", lineage)) await sourceWarnings.push(warning);
-    for await (const warning of plans.disappearanceWarnings("card", lineage)) await sourceWarnings.push(warning);
-  }
-  if (errataOnlyEvidence) {
-    const lineages = evidenceLineages;
-    for (const sourceLineage of lineages)
-      for await (const erratum of priorErrata.values()) {
-        if (
-          (await observedErrata.has(erratum.id)) ||
-          !erratum.provenance.some((item) => item.source_lineage === sourceLineage)
-        )
-          continue;
-        await sourceWarnings.push({
-          code: "erratum_not_observed",
-          erratum_id: erratum.id,
-          source_lineage: sourceLineage,
-          detail:
-            "The previously published Erratum was not present in this complete Official Errata observation; it was retained without advancing its last-observed revision.",
-        });
-      }
+  } catch (error) {
+    if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
+    throw error;
   }
   const warnings = sourceWarnings;
   let candidateCatalogueDigest: string;

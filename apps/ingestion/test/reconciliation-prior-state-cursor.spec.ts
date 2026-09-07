@@ -63,6 +63,14 @@ test.each([
     interrupt: "source_warnings",
   },
   {
+    base: "curated-conflict-fanout-base",
+    changed: "prior-state-carry-forward",
+    expectedCards: 40,
+    count: 32,
+    name: "Synthetic reviewed Card 0",
+    interrupt: "disappearance_warnings",
+  },
+  {
     base: "prior-state-text-pages",
     changed: "prior-state-text-pages",
     expectedCards: 32,
@@ -91,6 +99,8 @@ test.each([
     const errataCalls: number[] = [];
     const withdrawalCursors: number[] = [];
     const withdrawalCalls: number[] = [];
+    const disappearanceCursors: number[] = [];
+    const disappearanceCalls: number[] = [];
     const sourceWarningCursors: number[] = [];
     const sourceWarningCalls: number[] = [];
     const assembledCards: number[] = [];
@@ -144,7 +154,7 @@ test.each([
                           ? "withdrawal_assertion_groups"
                           : interrupt === "official_assembly"
                             ? "candidate_before_curated_cards"
-                            : interrupt === "source_warnings"
+                            : interrupt === "source_warnings" || interrupt === "disappearance_warnings"
                               ? "warning_records"
                               : "card_facts",
                   )
@@ -204,6 +214,15 @@ test.each([
             sourceWarningCursors.push(checkpoint.cursor.pendingSourceWarning);
             if (checkpoint.cursor.pendingSourceWarning >= 8) armed = true;
           }
+        }
+        if (JSON.parse(result).continuation?.phase === "disappearance_warnings") {
+          disappearanceCalls.push(calls);
+          const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+          const checkpoint = (status.checkpoints as { phase: string; cursor: { processedRecords: number } }[]).find(
+            (row) => row.phase === "disappearance_warnings",
+          )!;
+          disappearanceCursors.push(checkpoint.cursor.processedRecords);
+          if (interrupt === "disappearance_warnings") armed = true;
         }
         if (JSON.parse(result).continuation?.phase === "official_errata") {
           errataCalls.push(calls);
@@ -291,6 +310,19 @@ test.each([
     const detail = await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${cards.ordinal}`);
     expect(detail.document.records).toHaveLength(expectedCards);
     expect(detail.document.records).toEqual(expect.arrayContaining([expect.objectContaining({ name })]));
+    if (interrupt === "disappearance_warnings") {
+      expect(disappearanceCursors.some((count) => count > 0 && count < 64)).toBe(true);
+      expect(disappearanceCursors).toContain(64);
+      expect(Math.max(...disappearanceCalls)).toBeLessThanOrEqual(100);
+      let absent = 0;
+      for (const partition of page.document.partitions as { kind: string; ordinal: number }[]) {
+        if (partition.kind !== "warnings") continue;
+        const detail = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${partition.ordinal}`))
+          .document;
+        absent += (detail.records as { code: string }[]).filter(({ code }) => code === "record_not_observed").length;
+      }
+      expect(absent).toBe(16);
+    }
     if (interrupt === "source_warnings") {
       expect(sourceWarningCursors).toContain(8);
       expect(sourceWarningCursors).toContain(56);
