@@ -155,6 +155,8 @@ async function proveNativeComposition(t, proof) {
   };
   const consumer = async (path) => {
     const response = await fetch(`${api.url}${path}`, { headers: { authorization: `Bearer ${apiKey}` } });
+    if (!(response.headers.get("content-type") ?? "").includes("json"))
+      return { status: response.status, byte_length: (await response.arrayBuffer()).byteLength };
     const body = await response.json();
     delete body.request_id;
     return { status: response.status, body };

@@ -52,6 +52,25 @@ export async function proveNativePopulatedHandoff({
   assert.equal(status.release_preflight.bootstrap, false);
   assert.equal(status.release_preflight.retention_ready, true, JSON.stringify(status.release_preflight));
   assert.ok(status.release_preflight.smoke_targets, JSON.stringify(status.release_preflight));
+  const targets = status.release_preflight.smoke_targets;
+  for (const revision of targets.revisions) {
+    for (const [kind, cursor, id, query] of [
+      ["cards", revision.card_cursor, revision.card_id, ""],
+      ["cards", revision.search_cursor, revision.card_id, `&q=${encodeURIComponent(revision.search_query)}`],
+      ["printings", revision.printing_cursor, revision.printing_id, ""],
+    ]) {
+      const page = await consumer(`/v1/${kind}?after=${encodeURIComponent(cursor)}${query}`);
+      assert.equal(page.status, 200, JSON.stringify(page));
+      assert.equal(page.body.meta.catalogue_revision_id, revision.revision_id);
+      assert.ok(page.body.data.some((record) => record.id === id));
+    }
+  }
+  const image = await consumer(`/v1/printing-images/${encodeURIComponent(targets.printing_image_id)}/content`);
+  assert.equal(image.status, 200);
+  assert.ok(image.byte_length > 0);
+  const stale = await consumer(`/v1/cards?after=${encodeURIComponent(targets.stale_cursor)}`);
+  assert.equal(stale.status, 409);
+  assert.equal(stale.body.code, "cursor_revision_unavailable");
   const dispatches = [];
   const github = createServer(async (req, res) => {
     let text = "";

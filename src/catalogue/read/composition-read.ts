@@ -52,7 +52,7 @@ export type DocumentRow = {
   sha256: string;
 };
 type Value = Record<string, unknown>;
-const emptyFilters: ComposedFilters = {
+export const emptyCompositionFilters: Readonly<ComposedFilters> = {
   game: null,
   q: null,
   card_id: null,
@@ -61,6 +61,22 @@ const emptyFilters: ComposedFilters = {
   product_id: null,
   release_region: null,
 };
+
+export function compositionCursor(
+  revisionId: string,
+  kind: string,
+  filters: ComposedFilters,
+  after: string,
+  limit: number,
+): string {
+  return encodeCursor({
+    contract: "card-keepr-composition-cursor@1",
+    revision_id: revisionId,
+    after,
+    filters: JSON.stringify({ kind, filters }),
+    limit,
+  });
+}
 
 export async function hydrate(db: CatalogueStore, row: DocumentRow): Promise<Value> {
   if ((await sha256Text(row.content)) !== row.sha256)
@@ -281,7 +297,7 @@ export async function compositionEntityResponse(
   if (cursor && url.searchParams.has("revision") && url.searchParams.get("revision") !== cursor.revision_id)
     throw new ReadProblem(400, "invalid_cursor", "The revision must match the cursor's pinned composition.");
   const limit = collectionLimit(url.searchParams.get("limit"));
-  const filters = { ...emptyFilters };
+  const filters = { ...emptyCompositionFilters };
   for (const key of Object.keys(filters) as (keyof ComposedFilters)[]) {
     if (key !== "attributes") filters[key] = collectionFilter(url, key);
   }
@@ -460,13 +476,7 @@ export async function compositionEntityResponse(
     throw new ReadProblem(503, "catalogue_query_unavailable", "One record exceeds its response budget.");
   const next =
     rows.length > selected.length
-      ? encodeCursor({
-          contract: "card-keepr-composition-cursor@1",
-          revision_id: revision.id,
-          after: selected.at(-1)!.position,
-          filters: fingerprint,
-          limit,
-        })
+      ? compositionCursor(revision.id, kind, filters, selected.at(-1)!.position!, limit)
       : null;
   return jsonResponse(request, revision, {
     data,

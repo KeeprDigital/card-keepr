@@ -1,6 +1,6 @@
 import { outstandingBackupDispatches } from "../backup-recovery";
 import { curatedRevisionInspectionForRun } from "../curated";
-import { cardSearchFtsQuery, cardSearchText, sourceFreshnessFromStorage } from "../read";
+import { cardSearchFtsQuery, cardSearchText, compositionSmokeTargets, sourceFreshnessFromStorage } from "../read";
 import {
   AdministrationProblem,
   type CatalogueCandidate,
@@ -278,7 +278,16 @@ export async function productionReleaseSmokeTargets(
 ): Promise<Record<string, unknown> | null> {
   if (revisionIds.length !== 3) return null;
   const revisions = [];
+  let nativeImageId: string | undefined;
   for (const revisionId of revisionIds) {
+    const native = await compositionSmokeTargets(database, revisionId, releaseSmokeSearchQuery);
+    if (native === null) return null;
+    if (native !== undefined) {
+      if (revisionId === revisionIds[0]) nativeImageId = native.printing_image_id;
+      const { printing_image_id: _imageId, ...target } = native;
+      revisions.push(target);
+      continue;
+    }
     const [cards, printings] = await Promise.all([
       smokeTargetCardsStatement(database, revisionId).all<{
         card_id: string;
@@ -349,7 +358,9 @@ export async function productionReleaseSmokeTargets(
     });
   }
   const [currentExtras, unavailable] = await Promise.all([
-    smokeTargetExtrasStatement(database, revisionIds[0]!).first<Record<string, string | null>>(),
+    nativeImageId === undefined
+      ? smokeTargetExtrasStatement(database, revisionIds[0]!).first<Record<string, string | null>>()
+      : Promise.resolve({ printing_image_id: nativeImageId }),
     archivedQueryRevisionStatement(database).first<{ catalogue_revision_id: string }>(),
   ]);
   if (
@@ -360,7 +371,11 @@ export async function productionReleaseSmokeTargets(
     return null;
   const staleAfter = (revisions[0] as { card_cursor: string }).card_cursor;
   const decoded = JSON.parse(
-    new TextDecoder().decode(Uint8Array.from(atob(staleAfter), (character) => character.charCodeAt(0))),
+    new TextDecoder().decode(
+      Uint8Array.from(atob(staleAfter.replaceAll("-", "+").replaceAll("_", "/")), (character) =>
+        character.charCodeAt(0),
+      ),
+    ),
   ) as Record<string, unknown>;
   return {
     revisions,
@@ -376,7 +391,7 @@ export function releaseSmokeSearchQuery(documentJson: string): string | null {
     const card = isRecord(envelope.data) ? envelope.data : envelope;
     if (
       !isRecord(card.official_identity) ||
-      typeof card.official_identity.value !== "string" ||
+      (card.official_identity.value !== null && typeof card.official_identity.value !== "string") ||
       typeof card.name !== "string" ||
       (card.effective_rules_text !== null &&
         card.effective_rules_text !== undefined &&
