@@ -16,7 +16,7 @@ keepr evidence-cleanup retry --cleanup-id CLEANUP --expected-generation 0 --json
 
 The first request persists intent before dispatching the existing Reconciliation
 Workflow. Shards perform sixteen bounded units and dispatch deterministic
-successors. Capture units visit at most eight physical keys; staging units visit
+successors. Capture units visit at most four physical keys; staging units visit
 at most four. They read metadata and delete individual keys, never buffer object
 bodies, enumerate a bucket prefix, or recursively garbage-collect a Merkle tree.
 The protected owner API also offers one bounded `/advance` for operational
@@ -41,7 +41,7 @@ attached artifact can be reclaimed. Candidate image partitions, retained
 artifact/node receipts, verified roots, export components and package manifests
 protect their shared data. Existing pre-migration objects without positive
 ownership inventory are not guessed from an R2 listing. The migration dates
-previously terminal preparations conservatively from their existing deadline;
+previously terminal preparations conservatively from the migration time;
 new terminal transitions retain their actual terminal clock.
 
 A durable logical reservation atomically rechecks references and rejects new
