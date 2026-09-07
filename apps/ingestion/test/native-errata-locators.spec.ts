@@ -2,6 +2,9 @@ import { expect, test } from "vitest";
 import { collect, get, post, installReconciliationSuite, testEnv } from "./reconciliation-helpers";
 import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
 import { admitSyntheticCurrentCheckpoint, publicationStateSnapshot } from "./query-helpers/atomic-publication";
+import { catalogueStore, type CataloguePrinting } from "../../../src/catalogue/shared";
+import { ReconciliationReducerIndex } from "../../../src/catalogue/reconciliation/reconciliation-reducer-state";
+import { nativePrintingsAtLocator } from "../../../src/catalogue/reconciliation/native-printing-locators";
 
 installReconciliationSuite();
 
@@ -88,6 +91,52 @@ test.each(["ambiguous", "missing"])("native Errata fails closed for a %s publish
   );
   expect(await publicationStateSnapshot(testEnv.CATALOGUE_DB)).toEqual(before);
   expect((await get(`/v1/game-candidates/${failed.id}`)).document.failure_code).toBe("printing_reconciliation_blocked");
+  if (kind === "ambiguous") {
+    // Controlled oversized-envelope injection, not source or recovery evidence.
+    // Two matches stay below the row cap but exceed the per-unit byte budget.
+    const prior = new ReconciliationReducerIndex<CataloguePrinting>(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      String(failed.id),
+      "prior_printings",
+      (printing) => printing.card_id,
+    );
+    prior.resumeAt(1000);
+    for (const record of records.printings!) {
+      const printing = structuredClone(record) as CataloguePrinting;
+      printing.game_data = {
+        profile: "one-piece@1",
+        attributes: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`padding_${i}`, "x".repeat(24000)])),
+      };
+      await prior.seed(printing.id, printing);
+    }
+    let envelopeReads = 0;
+    const database = new Proxy(testEnv.CATALOGUE_DB, {
+      get(target, field) {
+        if (field === "prepare")
+          return (sql: string) => {
+            if (sql.includes("SELECT content, sha256 FROM reconciliation_reducer_state")) envelopeReads++;
+            return target.prepare(sql);
+          };
+        const value = Reflect.get(target, field);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    await expect(
+      nativePrintingsAtLocator(
+        catalogueStore(database),
+        {
+          preparationId: String(failed.id),
+          revision,
+          game: "one-piece",
+          cardId: String(records.printings![0]!.card_id),
+          through: prior.position,
+        },
+        "one-piece-en",
+        "/official/multi/shared",
+      ),
+    ).rejects.toThrow("reconciliation_capacity_exceeded");
+    expect(envelopeReads).toBe(0);
+  }
 });
 
 test("native Errata resolves an older published locator after a Printing refresh", async () => {
