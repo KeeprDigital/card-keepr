@@ -75,6 +75,7 @@ test("retained P-001: owner collects every declared Bandai record through native
   await applyMigrations(statePath);
   const checkpoint = await nativeCheckpointTransport(t, statePath, directory, configPath);
   const key = crypto.randomUUID();
+  const apiKey = crypto.randomUUID();
   let api;
   let restoredApi;
   const served = [];
@@ -115,13 +116,23 @@ test("retained P-001: owner collects every declared Bandai record through native
       return new Response(capture.bodyBytes, { headers: capture.headers });
     },
   });
+  const redact = (value) =>
+    String(value)
+      .replaceAll(key, "[redacted]")
+      .replaceAll(apiKey, "[redacted]")
+      .replaceAll("local-export", "[redacted]")
+      .replaceAll("local-verify", "[redacted]");
   t.after(async () => {
     await Promise.all([
       stopWorker(worker),
       ...(api ? [stopWorker(api)] : []),
       ...(restoredApi ? [stopWorker(restoredApi)] : []),
     ]);
-    await rm(directory, { recursive: true, force: true });
+    if (t.passed) await rm(directory, { recursive: true, force: true });
+    else {
+      await writeFile(join(directory, "worker-failure.log"), redact(worker.getOutput()));
+      t.diagnostic(`P-001 failure state retained after runtime shutdown: ${directory}`);
+    }
   });
   worker.administrationPollIntervalMs = 2200;
   await waitForHealth(`${worker.url}/health`, key, worker);
@@ -193,15 +204,16 @@ test("retained P-001: owner collects every declared Bandai record through native
     try {
       return await waitForNativeCollection(id, "sealed", environment, worker);
     } catch (error) {
-      const candidates = await (
-        await fetch(`${worker.url}/v1/ingestion-runs/${id}/game-candidates`, {
+      let diagnostic;
+      try {
+        const response = await fetch(`${worker.url}/v1/ingestion-runs/${id}/game-candidates`, {
           headers: { authorization: `Bearer ${key}` },
-        })
-      ).json();
-      const outcomes = [];
-      for (const candidate of candidates.candidates)
-        outcomes.push(await cli(["game-candidate", "show", "--candidate-id", candidate.id]));
-      throw new Error(JSON.stringify(outcomes), { cause: error });
+        });
+        diagnostic = `HTTP ${response.status}: ${await response.text()}`;
+      } catch (diagnosticError) {
+        diagnostic = `Diagnostic request failed: ${String(diagnosticError)}`;
+      }
+      throw new Error(redact(`Native collection ${id} failed; ${diagnostic}`), { cause: error });
     }
   };
   for (const candidate of intakeCandidates.candidates) {
@@ -354,17 +366,7 @@ test("retained P-001: owner collects every declared Bandai record through native
   assert.ok(![...printingIds.values()].includes(winnerPrintingId));
   const secondRun = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "eight-appearances"]);
   await cli(["source", "resume", "--run-id", secondRun.id]);
-  try {
-    await waitForNativeCollection(secondRun.id, "sealed", environment, worker);
-  } catch (error) {
-    const candidates = await (
-      await fetch(`${worker.url}/v1/ingestion-runs/${secondRun.id}/game-candidates`, {
-        headers: { authorization: `Bearer ${key}` },
-      })
-    ).json();
-    const details = await cli(["game-candidate", "show", "--candidate-id", candidates.candidates[0].id]);
-    throw new Error(JSON.stringify(details), { cause: error });
-  }
+  await sealed(secondRun.id);
   const secondInspection = await inspectNativeCollection(secondRun.id, environment);
   assert.equal(secondInspection.records.cards.length, 1);
   assert.equal(secondInspection.records.printings.length, 8);
@@ -502,7 +504,6 @@ test("retained P-001: owner collects every declared Bandai record through native
     },
   );
   await stopWorker(worker);
-  const apiKey = crypto.randomUUID();
   api = await startWorker({ config: "apps/api/wrangler.jsonc", statePath, vars: { API_BEARER_KEY: apiKey } });
   await waitForHealth(`${api.url}/health`, apiKey, api);
   const [cards, printings, images] = await Promise.all(
