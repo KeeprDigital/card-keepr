@@ -514,7 +514,7 @@ test.each(["lookup", "application"])(
   },
 );
 
-test.each(["associations", "application"])(
+test.each(["associations", "application", "lookup"])(
   "reviewed identity %s prepare through durable bounded groups",
   async (failurePhase) => {
     const prior = await reconcile(
@@ -531,8 +531,8 @@ test.each(["associations", "application"])(
         source_ids:
           index === 0
             ? cards.slice(0, 9).map((card) => card.id)
-            : [cards[failurePhase === "application" ? 8 + index : 8 + index * 2]!.id],
-        replacement_ids: [cards[index === 0 ? 9 : failurePhase === "application" ? 9 + index : 9 + index * 2]!.id],
+            : [cards[failurePhase !== "associations" ? 8 + index : 8 + index * 2]!.id],
+        replacement_ids: [cards[index === 0 ? 9 : failurePhase !== "associations" ? 9 + index : 9 + index * 2]!.id],
         printing_assignments: {},
         expected_current_revision_id: published.document.resulting_revision_id,
         rationale: "Synthetic owner comparison establishes one rules-level Card",
@@ -556,6 +556,8 @@ test.each(["associations", "application"])(
     let calls = 0;
     const associationCalls: number[] = [];
     const applicationCalls: number[] = [];
+    const lookupCalls: number[] = [];
+    const reductionCalls: number[] = [];
     const associationOffsets: number[] = [];
     let sawChain = false;
     let armed = false,
@@ -566,7 +568,20 @@ test.each(["associations", "application"])(
     const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement => {
       const proxy = new Proxy(statement, {
         get(target, property) {
-          if (property === "bind") return (...values: unknown[]) => wrap(target.bind(...values), sql, values);
+          if (property === "bind")
+            return (...values: unknown[]) => {
+              if (
+                failurePhase === "lookup" &&
+                armed &&
+                !resumed &&
+                sql.includes("INSERT INTO reconciliation_checkpoints") &&
+                values[1] === "identity_lookup"
+              ) {
+                failures++;
+                throw new Error("Injected identity lookup checkpoint outage.");
+              }
+              return wrap(target.bind(...values), sql, values);
+            };
           const value = Reflect.get(target, property);
           if (["run", "first", "all", "raw"].includes(String(property)))
             return (...args: unknown[]) => {
@@ -586,6 +601,7 @@ test.each(["associations", "application"])(
           return (...args: Parameters<D1Database["batch"]>) => {
             calls++;
             if (
+              failurePhase !== "lookup" &&
               armed &&
               !resumed &&
               args[0].some((statement) => {
@@ -634,6 +650,20 @@ test.each(["associations", "application"])(
             if (attempt >= config.retries.limit) throw error;
           }
         }
+        if (JSON.parse(result).continuation?.phase === "official_reduction") reductionCalls.push(calls);
+        if (JSON.parse(result).continuation?.phase === "identity_lookup") {
+          lookupCalls.push(calls);
+          if (failurePhase === "lookup" && !armed) {
+            const progress = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+            const cursor = (progress.checkpoints as { phase: string; cursor: { visited: string[] } }[]).find(
+              (item) => item.phase === "identity_lookup",
+            )!.cursor;
+            if (cursor.visited.length > 0) {
+              armed = true;
+              sawChain = true;
+            }
+          }
+        }
         if (JSON.parse(result).continuation?.phase === "identity_application") {
           applicationCalls.push(calls);
           if (failurePhase === "application" && (!armed || !sawChain)) {
@@ -680,7 +710,12 @@ test.each(["associations", "application"])(
       step,
     );
     expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document.deadline).toBe(paused.deadline);
-    if (failurePhase === "application") expect(sawChain).toBe(true);
+    if (failurePhase !== "associations") expect(sawChain).toBe(true);
+    if (failurePhase === "lookup") {
+      expect(lookupCalls.length).toBeGreaterThan(0);
+      expect(Math.max(...lookupCalls)).toBeLessThanOrEqual(100);
+      expect(Math.max(...reductionCalls)).toBeLessThanOrEqual(100);
+    }
     expect(applicationCalls.length).toBeGreaterThan(0);
     expect(Math.max(...applicationCalls)).toBeLessThanOrEqual(100);
     expect(associationOffsets.some((offset) => offset > 0)).toBe(true);
@@ -700,7 +735,7 @@ test.each(["associations", "application"])(
     expect(await exportComponentRecords(current, "cards")).toHaveLength(12);
     const finalPrintings = await exportComponentRecords(current, "printings");
     expect(finalPrintings).toHaveLength(32);
-    if (failurePhase === "application")
+    if (failurePhase !== "associations")
       expect(finalPrintings.filter((printing) => printing.card_id === cards[20]!.id)).toHaveLength(21);
     expect(await exportComponentRecords(current, "identity-corrections")).toHaveLength(20);
   },

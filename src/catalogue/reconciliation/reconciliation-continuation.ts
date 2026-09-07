@@ -4,6 +4,7 @@ export class ReconciliationContinuation extends Error {
     readonly checkpoint: {
       phase:
         | `canonical_digest:${"catalogue" | "candidate"}`
+        | "identity_lookup"
         | "game_preparation"
         | "candidate_staging"
         | `payload_preparation:${"candidate" | "digest"}`

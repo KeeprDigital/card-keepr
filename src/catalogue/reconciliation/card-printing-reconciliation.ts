@@ -956,23 +956,29 @@ export async function reconcileRetainedCardPrintingEvidence(
           );
           uncorroboratedCrossLocaleMatches.forEach((matchId) => matchIds.delete(matchId));
           const missingProductCorroboration = uncorroboratedCrossLocaleMatches.length > 0 && matchIds.size === 0;
-          const locatedConflict =
-            (located !== null &&
-              !isCompatible(
-                { ...located, card_id: await correctedCardIdentity(located.card_id, located.id) },
-                { ...compatibility, card_id: await correctedCardIdentity(compatibility.card_id, located.id) },
-              )) ||
-            (localLocated !== undefined &&
-              !isCompatible(
-                {
-                  ...localLocated.compatibility,
-                  card_id: await correctedCardIdentity(localLocated.compatibility.card_id, localLocated.printingId),
-                },
-                {
-                  ...compatibility,
-                  card_id: await correctedCardIdentity(compatibility.card_id, localLocated.printingId),
-                },
-              ));
+          let locatedConflict: boolean;
+          try {
+            locatedConflict =
+              (located !== null &&
+                !isCompatible(
+                  { ...located, card_id: await correctedCardIdentity(located.card_id, located.id) },
+                  { ...compatibility, card_id: await correctedCardIdentity(compatibility.card_id, located.id) },
+                )) ||
+              (localLocated !== undefined &&
+                !isCompatible(
+                  {
+                    ...localLocated.compatibility,
+                    card_id: await correctedCardIdentity(localLocated.compatibility.card_id, localLocated.printingId),
+                  },
+                  {
+                    ...compatibility,
+                    card_id: await correctedCardIdentity(compatibility.card_id, localLocated.printingId),
+                  },
+                ));
+          } catch (error) {
+            if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
+            throw error;
+          }
           if (locatedConflict) {
             const locatedId = located?.id ?? localLocated!.printingId;
             await diagnostics.push({

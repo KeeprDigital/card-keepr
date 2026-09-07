@@ -120,19 +120,48 @@ export async function pinnedCardIdentityResolver(database: CatalogueStore, runId
   }
   const nextIdentity = async (cardId: string, printingId: string) =>
     (await assignments.get(canonicalJson([cardId, printingId]))) ?? (await merges.get(cardId));
+  type LookupCursor = { key: string | null; resolved: string; visited: string[]; position: number };
+  const lookup = await reconciliationCheckpoint<LookupCursor>(database, runId, "identity_lookup");
+  const lookupCursor: LookupCursor = lookup?.value ?? { key: null, resolved: "", visited: [], position: 0 };
+  const resolvedIdentities = new ReconciliationReducerIndex<string>(database, runId, "resolved_card_identities");
+  resolvedIdentities.resumeAt(lookupCursor.position);
+  let lookupOrdinal = (lookup?.ordinal ?? -1) + 1;
+  const saveLookup = async () => {
+    lookupCursor.position = resolvedIdentities.position;
+    await retainReconciliationCheckpoint(database, runId, "identity_lookup", lookupOrdinal, lookupCursor);
+    if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "identity_lookup", ordinal: lookupOrdinal });
+    lookupOrdinal++;
+  };
   const resolve = async (cardId: string, printingId: string) => {
-    let resolved = cardId;
-    const visited = new Set<string>();
-    // A single identity chain is a bounded lookup unit, including at most 66 state reads.
-    for (let depth = 0; ; depth++) {
-      const next = await nextIdentity(resolved, printingId);
-      if (!next || next === resolved) break;
-      if (depth === 32)
-        throw new Error("reconciliation_capacity_exceeded: one identity correction chain exceeds 32 links.");
-      if (visited.has(next)) throw new Error("Retained identity correction cycle.");
-      visited.add(resolved);
-      resolved = next;
+    const key = canonicalJson([cardId, printingId]);
+    const previous = await resolvedIdentities.get(key);
+    if (previous !== undefined) return previous;
+    if (lookupCursor.key !== null && lookupCursor.key !== key)
+      throw new Error("Identity lookup continuation changed its active association.");
+    if (lookupCursor.key === null) {
+      lookupCursor.key = key;
+      lookupCursor.resolved = cardId;
+      lookupCursor.visited = [];
     }
+    let work = 0;
+    for (;;) {
+      const next = await nextIdentity(lookupCursor.resolved, printingId);
+      if (!next || next === lookupCursor.resolved) break;
+      if (lookupCursor.visited.length === 32)
+        throw new Error("reconciliation_capacity_exceeded: one identity correction chain exceeds 32 links.");
+      if (lookupCursor.visited.includes(next)) throw new Error("Retained identity correction cycle.");
+      lookupCursor.visited.push(lookupCursor.resolved);
+      lookupCursor.resolved = next;
+      if (++work === 4) {
+        await saveLookup();
+        work = 0;
+      }
+    }
+    const resolved = lookupCursor.resolved;
+    await resolvedIdentities.seed(key, resolved);
+    lookupCursor.key = null;
+    lookupCursor.visited = [];
+    await saveLookup();
     return resolved;
   };
   return Object.assign(resolve, { next: nextIdentity });
