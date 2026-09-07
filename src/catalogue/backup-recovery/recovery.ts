@@ -1,3 +1,4 @@
+import { verifyCompositionArtifacts } from "./composition-artifacts";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import {
   type CatalogueVerificationEvidence,
@@ -342,7 +343,15 @@ export async function inspectCatalogueRecovery(
   if (row === null) {
     throw new AdministrationProblem(404, "recovery_not_found", "Catalogue recovery operation not found.");
   }
-  return recoveryDocument(row);
+  return {
+    ...(await recoveryDocument(row)),
+    restored_work: (await recoveryStatements.restoredWorkClassificationsStatement(database, recoveryId).all()).results,
+    restored_collections: (
+      await recoveryStatements.restoredCollectionClassificationsStatement(database, recoveryId).all()
+    ).results,
+    snapshot_scope:
+      "Only operations present in the restored snapshot are retained; newer operations are not recovered.",
+  };
 }
 
 export async function verifyCatalogueRecovery(
@@ -351,6 +360,7 @@ export async function verifyCatalogueRecovery(
   recoveryId: string,
   input: VerifyCatalogueRecoveryInput,
   provider: D1RecoveryProvider = cloudflareD1RecoveryProvider,
+  artifacts?: { catalogue: R2Bucket; images: R2Bucket },
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(input.idempotencyKey, "idempotency_key");
   assertSha256(input.targetDigest, "target_digest");
@@ -388,6 +398,11 @@ export async function verifyCatalogueRecovery(
     throw new Error("The restored recovery database is unavailable.");
   }
   try {
+    const expected = JSON.parse(row.expected_verification_json) as CatalogueVerificationEvidence;
+    if (expected.composition_snapshot) {
+      if (!artifacts) throw new Error("Private composition artifacts are required for Catalogue Recovery.");
+      await verifyCompositionArtifacts(database, artifacts.catalogue, artifacts.images, row.target_revision_id);
+    }
     const verification = await provider.reconstructAndVerify({
       accountId: input.cloudflareAccountId,
       databaseId: row.restored_database_id,
@@ -499,6 +514,7 @@ export async function acceptCatalogueRecovery(
         recoveryId,
         target_revision_id: row.target_revision_id,
       }),
+      ...recoveryStatements.classifyRestoredWorkStatements(database, recoveryId),
       recoveryStatements.acceptRecoveryOperationStatement(database, {
         idempotencyKey: input.idempotencyKey,
         requestDigest,
@@ -556,6 +572,7 @@ async function releaseAcceptedRecoveryIfSafe(
   try {
     await database.batch([
       recoveryStatements.guardRecoveryReleaseStatement(database, { id: recovery.id }),
+      ...recoveryStatements.classifyRestoredWorkStatements(database, recovery.id),
       recoveryStatements.clearBlockedRecoveryStatement(database, { id: recovery.id }),
       recoveryStatements.guardHealthyRecoveryStatement(database),
     ]);

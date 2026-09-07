@@ -1,3 +1,10 @@
+import { verifyCompositionArtifacts } from "./composition-artifacts";
+import {
+  captureCompositionSnapshot,
+  verifyCompositionSnapshot,
+  type CompositionSnapshotEvidence,
+} from "./composition-verification";
+import { publicationBackupReservationStatement } from "../shared";
 import { storedProductApiProjection } from "../read";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, StreamingSha256, sha256Text } from "../shared";
 import { backupDispatchStatus } from "./backup-dispatch";
@@ -13,7 +20,10 @@ import {
   catalogueVerificationStatement,
 } from "./backup-verification-repository";
 import { withCardSearchPreparedForD1Export } from "./card-search-recovery";
-import { completedCardSearchReconstructionQuery } from "./card-search-recovery-repository";
+import {
+  claimRestoredSearchReconstructionQuery,
+  completedCardSearchReconstructionQuery,
+} from "./card-search-recovery-repository";
 import {
   prepareCardSearchForD1ExportStatements,
   reconstructCardSearchAfterD1RestoreStatements,
@@ -67,6 +77,7 @@ export type D1BackupProvider = Readonly<{
 }>;
 
 export type CatalogueVerificationEvidence = Readonly<{
+  composition_snapshot?: CompositionSnapshotEvidence;
   cards: number;
   printings: number;
   products: number;
@@ -114,6 +125,8 @@ type BackupInput = Readonly<{
 
 type BackupExecutionOptions = Readonly<{
   terminalFailure?: boolean;
+  publicationArtifacts?: R2Bucket;
+  printingImages?: R2Bucket;
 }>;
 
 export type PublicationBackupReservation = Readonly<{
@@ -173,6 +186,9 @@ export async function catalogueBackupAttemptStatus(
     object_key: attempt.object_key,
     content_sha256: attempt.content_sha256,
     manifest_sha256: attempt.manifest_sha256,
+    d1_bookmark: attempt.d1_bookmark,
+    publication_operation_id: attempt.publication_operation_id,
+    publication_ingestion_run_id: attempt.publication_ingestion_run_id,
     linked_attempt_id: attempt.linked_attempt_id,
     disposable_database_id: attempt.disposable_database_id,
     restore_generation: attempt.restore_generation,
@@ -186,8 +202,15 @@ export async function catalogueBackupAttemptStatus(
             method: "POST",
             path: "/v1/backups",
             body: {
-              ...(JSON.parse(attempt.request_json) as Record<string, unknown>),
+              expected_current_revision_id: attempt.catalogue_revision_id,
               idempotency_key: attempt.idempotency_key,
+              ...(attempt.linked_attempt_id === null
+                ? {}
+                : {
+                    failed_attempt_id: attempt.linked_attempt_id,
+                    failed_attempt_digest: (JSON.parse(attempt.request_json) as Record<string, unknown>)
+                      .failed_attempt_digest,
+                  }),
             },
           }
         : null,
@@ -316,11 +339,11 @@ export async function createVerifiedCatalogueBackup(
 ): Promise<CatalogueBackupDocument> {
   validateInput(input);
   const digest = await sha256(input.idempotencyKey);
-  const ownerToken = `backup:${digest}`;
+  let ownerToken = `backup:${digest}`;
   const objectPrefix = `d1-backups/${input.expectedCurrentRevisionId}/${digest}`;
-  const objectKey = `${objectPrefix}/catalogue.sql`;
+  let objectKey = `${objectPrefix}/catalogue.sql`;
   const manifestKey = `${objectPrefix}/manifest.json`;
-  const requestJson = JSON.stringify({
+  let requestJson = JSON.stringify({
     expected_current_revision_id: input.expectedCurrentRevisionId,
     ...(input.failedAttemptId === undefined
       ? {}
@@ -335,6 +358,31 @@ export async function createVerifiedCatalogueBackup(
     failedAttemptId: input.failedAttemptId,
     failedAttemptDigest: input.failedAttemptDigest,
   });
+  type NativeReservation = {
+    publication_operation_id: string;
+    catalogue_revision_id: string;
+    composition_digest: string;
+  };
+  const native =
+    (await publicationBackupReservationStatement(
+      database,
+      linkedAttemptId ?? input.idempotencyKey,
+    ).first<NativeReservation>()) ??
+    (await backupStatements
+      .nativeBackupRevisionStatement(database, input.expectedCurrentRevisionId)
+      .first<NativeReservation>());
+  if (native !== null) {
+    if (native.catalogue_revision_id !== input.expectedCurrentRevisionId)
+      throw new Error("Native backup revision mismatch.");
+    requestJson = JSON.stringify({
+      publication_operation_id: native.publication_operation_id,
+      catalogue_revision_id: native.catalogue_revision_id,
+      composition_digest: native.composition_digest,
+      ...(linkedAttemptId === null
+        ? {}
+        : { failed_attempt_id: linkedAttemptId, failed_attempt_digest: input.failedAttemptDigest }),
+    });
+  }
   await backupStatements
     .insertPendingBackupStatement(database, {
       idempotencyKey: input.idempotencyKey,
@@ -350,6 +398,8 @@ export async function createVerifiedCatalogueBackup(
     .backupAttemptWithRetentionStatement(database, { idempotencyKey: input.idempotencyKey })
     .first<{
       request_json: string;
+      owner_token: string;
+      publication_operation_id: string | null;
       state: string;
       catalogue_revision_id: string;
       object_key: string;
@@ -382,6 +432,8 @@ export async function createVerifiedCatalogueBackup(
       "The backup idempotency key is bound to another request.",
     );
   }
+  ownerToken = attempt.owner_token;
+  objectKey = attempt.object_key;
   if (
     attempt.state === "verified" &&
     attempt.d1_bookmark !== null &&
@@ -416,6 +468,8 @@ export async function createVerifiedCatalogueBackup(
     current_revision_id: string;
     active_ingestion_run_id: string | null;
     recovery_health: string;
+    active_recovery_id: string | null;
+    recovery_restore_guard: string;
   }>();
   if (state?.current_revision_id !== input.expectedCurrentRevisionId) {
     await failAttempt(
@@ -443,8 +497,9 @@ export async function createVerifiedCatalogueBackup(
     );
     throw new AdministrationProblem(409, "maintenance_not_idle", "Catalogue backup requires idle ingestion.");
   }
-  const { expected: expectedVerification, representativeDocuments: expectedRepresentativeDocuments } =
+  const { expected: capturedVerification, representativeDocuments: expectedRepresentativeDocuments } =
     await captureCatalogueVerificationEvidenceWithDocuments(database, input.expectedCurrentRevisionId);
+  const expectedVerification = { ...capturedVerification };
   let attemptState = attempt.state;
   if (attemptState === "pending") {
     try {
@@ -455,7 +510,10 @@ export async function createVerifiedCatalogueBackup(
           publicationOwned: publicationOwned ? 1 : 0,
         }),
         backupStatements.startBackupExportStatement(database, { idempotencyKey: input.idempotencyKey, ownerToken }),
-        backupStatements.reserveBackupOperationStatement(database, { publicationOwned: publicationOwned ? 1 : 0 }),
+        backupStatements.reserveBackupOperationStatement(database, {
+          publicationOwned: publicationOwned ? 1 : 0,
+          native: native !== null,
+        }),
       ]);
     } catch {
       throw new AdministrationProblem(
@@ -465,7 +523,15 @@ export async function createVerifiedCatalogueBackup(
       );
     }
     attemptState = "exporting";
-  } else if (state.recovery_health !== (publicationOwned ? "degraded" : "blocked")) {
+  } else if (
+    state.recovery_health !== (native !== null ? "healthy" : publicationOwned ? "degraded" : "blocked") &&
+    !(
+      native !== null &&
+      attemptState === "exporting" &&
+      state.active_recovery_id === null &&
+      state.recovery_restore_guard === "blocked"
+    )
+  ) {
     throw new Error("The active backup attempt lost its recovery block.");
   }
 
@@ -488,13 +554,46 @@ export async function createVerifiedCatalogueBackup(
           exportedBookmark.length === 0
         )
           throw new Error("Retained backup object evidence does not match the attempt.");
+        if (native !== null) {
+          const key = existing.customMetadata?.snapshot_key;
+          const snapshot = key ? await backups.get(key) : null;
+          if (!snapshot) throw new Error("Retained composition snapshot evidence is unavailable.");
+          const content = await snapshot.text();
+          if ((await sha256(content)) !== existing.customMetadata?.snapshot_sha256)
+            throw new Error("Composition snapshot evidence is corrupt.");
+          expectedVerification.composition_snapshot = JSON.parse(content) as CompositionSnapshotEvidence;
+        }
         const retainedEvidence = await digestRetainedObject(existing);
         contentSha256 = retainedEvidence.sha256;
         exportBytes = retainedEvidence.size;
       } else {
         await backupStatements.blockBackupRestoreStatement(database).run();
         let exported;
+        let snapshotKey: string | undefined;
+        let snapshotDigest: string | undefined;
         try {
+          if (native !== null) {
+            await backupStatements.fenceCompositionSnapshotStatement(database).run();
+            const snapshot = await captureCompositionSnapshot(
+              async (request) =>
+                (await catalogueVerificationStatement(database, request).all<Record<string, unknown>>()).results,
+              input.expectedCurrentRevisionId,
+            );
+            if (!snapshot) throw new Error("Native composition snapshot is unavailable.");
+            if (!options.publicationArtifacts || !options.printingImages)
+              throw new Error("Private publication artifacts are required for native backup.");
+            await verifyCompositionArtifacts(
+              database,
+              options.publicationArtifacts,
+              options.printingImages,
+              input.expectedCurrentRevisionId,
+            );
+            expectedVerification.composition_snapshot = snapshot;
+            const content = canonicalJson(snapshot);
+            snapshotDigest = await sha256(content);
+            snapshotKey = `${objectPrefix}/snapshot-${snapshotDigest}.json`;
+            await backups.put(snapshotKey, content, { onlyIf: { etagDoesNotMatch: "*" } });
+          }
           exported = await withCardSearchPreparedForD1Export(
             database,
             { ownerToken, observedAt: leaseObservedAt, leaseExpiresAt },
@@ -506,7 +605,7 @@ export async function createVerifiedCatalogueBackup(
               }),
           );
         } finally {
-          await backupStatements.clearBackupRestoreStatement(database).run();
+          await backupStatements.clearBackupRestoreStatement(database, native !== null).run();
         }
         exportedBookmark = exported.bookmark;
         const sized = new FixedLengthStream(exported.size);
@@ -525,6 +624,7 @@ export async function createVerifiedCatalogueBackup(
             customMetadata: {
               catalogue_revision_id: input.expectedCurrentRevisionId,
               d1_bookmark: exported.bookmark,
+              ...(snapshotKey === undefined ? {} : { snapshot_key: snapshotKey, snapshot_sha256: snapshotDigest! }),
             },
           }),
         ]);
@@ -549,6 +649,16 @@ export async function createVerifiedCatalogueBackup(
       );
       bookmark = exportedBookmark;
       attemptState = "restoring_verification";
+    }
+    if (native !== null && expectedVerification.composition_snapshot === undefined) {
+      const retained = await backups.head(objectKey);
+      const key = retained?.customMetadata?.snapshot_key;
+      const snapshot = key ? await backups.get(key) : null;
+      if (!snapshot) throw new Error("Retained composition snapshot evidence is unavailable.");
+      const content = await snapshot.text();
+      if ((await sha256(content)) !== retained?.customMetadata?.snapshot_sha256)
+        throw new Error("Composition snapshot evidence is corrupt.");
+      expectedVerification.composition_snapshot = JSON.parse(content) as CompositionSnapshotEvidence;
     }
     if (bookmark === null) {
       throw new Error("The retained D1 export bookmark is unavailable.");
@@ -762,6 +872,18 @@ async function verifyRestoredCatalogueQueries(
     expectedRepresentativeDocuments?: CatalogueRepresentativeDocuments;
   }>,
 ): Promise<RestoredCatalogueVerification> {
+  if (input.expected.composition_snapshot) {
+    const snapshot = input.expected.composition_snapshot;
+    if (
+      snapshot.revision_id !== input.expectedRevisionId ||
+      snapshot.schema_migration_level !== input.expectedSchemaMigrationLevel
+    )
+      throw new Error("Restored composition identity mismatch.");
+    const [integrity] = await query({ kind: "integrity" });
+    if (integrity?.quick_check !== "ok") throw new Error("Restored D1 integrity failed.");
+    await verifyCompositionSnapshot(query, snapshot);
+    return completeRestoredVerification();
+  }
   const [row] = await query({
     kind: "evidence",
     revisionId: input.expectedRevisionId,
@@ -993,6 +1115,11 @@ export const cloudflareD1BackupProvider: D1BackupProvider = {
 
   async reconstructAndVerify(input) {
     const pathname = d1Path(input.accountId, input.databaseId, "query");
+    await cloudflareD1Request(
+      pathname,
+      input.token,
+      claimRestoredSearchReconstructionQuery(input.ownerToken, input.expectedRevisionId),
+    );
     for (const sql of prepareCardSearchForD1ExportStatements) {
       await cloudflareD1Request(pathname, input.token, { sql });
     }
@@ -1189,7 +1316,34 @@ export async function failActiveCatalogueBackupAttempt(
   completedAt: string,
   detail: string,
 ): Promise<void> {
-  const ownerToken = `backup:${await sha256(idempotencyKey)}`;
+  const snapshot = await backupStatements.nativeBackupSnapshotFenceStatement(database, idempotencyKey).first<{
+    owner_token: string;
+    active_recovery_id: string | null;
+    recovery_restore_guard: string;
+    search_owner_token: string | null;
+    search_state: string;
+  }>();
+  if (
+    snapshot?.active_recovery_id === null &&
+    snapshot.recovery_restore_guard === "blocked" &&
+    (snapshot.search_owner_token === snapshot.owner_token || snapshot.search_state === "ready")
+  ) {
+    const at = new Date().toISOString();
+    await withCardSearchPreparedForD1Export(
+      database,
+      {
+        ownerToken: snapshot.owner_token,
+        observedAt: at,
+        leaseExpiresAt: new Date(Date.now() + 3600000).toISOString(),
+      },
+      async () => undefined,
+    );
+    await backupStatements.clearBackupRestoreStatement(database, true).run();
+  }
+  const retained = await backupStatements
+    .backupAttemptWithRetentionStatement(database, { idempotencyKey })
+    .first<{ owner_token: string }>();
+  const ownerToken = retained?.owner_token ?? `backup:${await sha256(idempotencyKey)}`;
   await database.batch([
     backupStatements.degradeActiveBackupStateStatement(database, { idempotencyKey, ownerToken }),
     backupStatements.failOwnedActiveBackupStatement(database, { detail, completedAt, idempotencyKey, ownerToken }),
@@ -1358,4 +1512,17 @@ async function currentSchemaMigrationLevel(database: CatalogueStore): Promise<nu
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+export async function catalogueMutationFenced(database: CatalogueStore): Promise<boolean> {
+  const state = await backupStatements.catalogueMutationFenceStatement(database).first<{
+    recovery_health: string;
+    recovery_restore_guard: string;
+    active_recovery_id: string | null;
+  }>();
+  return (
+    state?.recovery_health === "blocked" ||
+    state?.recovery_restore_guard === "blocked" ||
+    state?.active_recovery_id != null
+  );
 }
