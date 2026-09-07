@@ -296,6 +296,7 @@ export function sourceAdapterForCoverage(
   return {
     ...adapter,
     requiredSurfaces: contract.requiredSurfaces,
+    printingAdmission: contract.printingAdmission ?? adapter.printingAdmission,
     requestUrlForSurface: contract.requestUrlForSurface,
     requestUrlForDiscovery: undefined,
     reconciliationAreas: [adapter.reconciliationCapability === "errata" ? "errata" : "catalogue"],
