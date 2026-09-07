@@ -86,6 +86,7 @@ export async function persistReviewableCandidate(
     input.draft,
     manifest.digest,
     input.partitions,
+    input.yieldAtCheckpoint,
   );
   const statements = [
     preparationCompleteGuard(database, input.runId, preparationCount),

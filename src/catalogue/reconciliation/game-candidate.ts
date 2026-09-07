@@ -1,5 +1,8 @@
 import { AdministrationProblem, canonicalJson, type CatalogueDraft, type CatalogueStore, sha256Text } from "../shared";
-import { boundedAsyncRecordArrays } from "./reconciliation-preparation";
+import type { CanonicalRecordSource } from "./reconciliation-canonical-digest";
+import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
+import { ReconciliationContinuation } from "./reconciliation-continuation";
+import { documentStorage } from "./reconciliation-document";
 import {
   reconciliationPartitionsStatement,
   reconciliationPartitionStatement,
@@ -28,109 +31,181 @@ type GameCandidate = {
   partition_count: number;
 };
 
-/** Legacy preparation adapter: scope retained partitions without constructing another game-sized object. */
+type PreparationCursor = {
+  stage: "cards" | "printings" | "lineages" | "partitions" | "complete";
+  inputManifest: string;
+  after: string;
+  lineages: { sourceLineage: string; supportedGame: string }[];
+  game: number;
+  partition: number;
+  ordinal: number;
+  digest: string | null;
+  seals: { id: string; digest: string; count: number }[];
+};
+
+/** Legacy run adapter: each game manifest is prepared through durable bounded scans. */
 export async function prepareGameCandidateManifests(
   database: CatalogueStore,
   runId: string,
   candidate: CatalogueDraft,
   inputManifest: string,
   lineages: AsyncIterable<{ supportedGame: string; sourceLineage: string }>,
+  yieldAtCheckpoint = false,
 ) {
+  const checkpoint = await reconciliationCheckpoint<PreparationCursor>(database, runId, "game_preparation");
+  const cursor: PreparationCursor = checkpoint?.value ?? {
+    stage: "cards",
+    inputManifest,
+    after: "",
+    lineages: sourceAdapterRegistrations.map(({ sourceLineage, supportedGame }) => ({ sourceLineage, supportedGame })),
+    game: 0,
+    partition: -1,
+    ordinal: 0,
+    digest: null,
+    seals: [],
+  };
+  if (cursor.inputManifest !== inputManifest) throw new Error("Game preparation manifest prefix changed.");
+  let checkpointOrdinal = (checkpoint?.ordinal ?? -1) + 1;
+  let work = 0,
+    bytes = 0;
+  const save = async () => {
+    await retainReconciliationCheckpoint(database, runId, "game_preparation", checkpointOrdinal, cursor);
+    if (yieldAtCheckpoint)
+      throw new ReconciliationContinuation({ phase: "game_preparation", ordinal: checkpointOrdinal });
+    checkpointOrdinal++;
+    work = bytes = 0;
+  };
   for (const kind of ["cards", "printings"] as const) {
-    async function* scopes() {
-      for await (const record of candidate.values(kind))
-        yield "game" in record ? { id: record.id, game: record.game } : { id: record.id, card_id: record.card_id };
+    if (cursor.stage !== kind) continue;
+    for await (const record of candidate.values(kind, cursor.after)) {
+      const scope =
+        "game" in record ? { id: record.id, game: record.game } : { id: record.id, card_id: record.card_id };
+      await documentStorage(() => retainGameEntityScopesStatement(database, runId, kind, canonicalJson([scope])).run());
+      cursor.after = record.id;
+      bytes += new TextEncoder().encode(canonicalJson(record)).byteLength;
+      if (++work === 4 || bytes >= 512000) await save();
     }
-    for await (const content of boundedAsyncRecordArrays(scopes(), 100))
-      await retainGameEntityScopesStatement(database, runId, kind, content).run();
+    cursor.after = "";
+    cursor.stage = kind === "cards" ? "printings" : "lineages";
+    await save();
   }
-
-  const headers = (await gameCandidatesForRunStatement(database, runId).all<GameCandidate>()).results;
-  const seals: D1PreparedStatement[] = [];
-  const lineageGames = new Map(
-    sourceAdapterRegistrations.map(({ sourceLineage, supportedGame }) => [
-      sourceLineage,
-      { sourceLineage, supportedGame },
-    ]),
-  );
-  for await (const { sourceLineage, supportedGame } of lineages)
-    lineageGames.set(sourceLineage, { sourceLineage, supportedGame });
-  const scopedLineages = canonicalJson([...lineageGames.values()]);
-  for (const header of headers) {
-    let digest = await sha256Text(
-      canonicalJson({
-        contract: "card-keepr-game-candidate-manifest@1",
-        candidate_id: header.id,
-        ingestion_run_id: runId,
-        supported_game: header.supported_game,
-        expected_game_revision_id: header.expected_game_revision_id,
-        created_at: header.created_at,
-        deadline: header.deadline,
-        preparation_manifest: inputManifest,
-      }),
-    );
-    let after = -1;
-    let ordinal = 0;
-    for (;;) {
-      const page = (
-        await reconciliationPartitionsStatement(database, runId, after).all<{ ordinal: number; kind: string }>()
-      ).results;
-      if (!page.length) break;
-      for (const partition of page) {
-        const source = await reconciliationPartitionStatement(database, runId, partition.ordinal).first<{
-          content: string;
-        }>();
-        if (!source) throw new Error("The retained candidate partition is unavailable.");
-        for (const kind of partition.kind === "warnings" ? ["warnings", "shared_warnings"] : [partition.kind]) {
-          const rows = (
-            await scopedGamePartitionStatement(
-              database,
-              runId,
-              header.supported_game,
-              kind,
-              source.content,
-              scopedLineages,
-            ).all<{ value: string; type: string }>()
-          ).results;
-          const records = rows.map((row) =>
-            row.type === "object" || row.type === "array" ? (JSON.parse(row.value) as unknown) : row.value,
+  if (cursor.stage === "lineages") {
+    if (!("canonicalEntries" in lineages)) throw new Error("Game preparation requires resumable lineage evidence.");
+    const source = lineages as CanonicalRecordSource<{ supportedGame: string; sourceLineage: string }>;
+    for await (const entry of source.canonicalEntries(cursor.after)) {
+      const index = cursor.lineages.findIndex((lineage) => lineage.sourceLineage === entry.value.sourceLineage);
+      const lineage = { sourceLineage: entry.value.sourceLineage, supportedGame: entry.value.supportedGame };
+      if (index < 0) cursor.lineages.push(lineage);
+      else cursor.lineages[index] = lineage;
+      cursor.after = entry.key;
+      if (++work === 4) await save();
+    }
+    cursor.after = "";
+    cursor.stage = "partitions";
+    await save();
+  }
+  if (cursor.stage === "partitions") {
+    const headers = (await documentStorage(() => gameCandidatesForRunStatement(database, runId).all<GameCandidate>()))
+      .results;
+    if (headers.length > 4) throw new Error("reconciliation_capacity_exceeded: unsupported number of selected games.");
+    const scopedLineages = canonicalJson(cursor.lineages);
+    while (cursor.game < headers.length) {
+      const header = headers[cursor.game]!;
+      cursor.digest ??= await sha256Text(
+        canonicalJson({
+          contract: "card-keepr-game-candidate-manifest@1",
+          candidate_id: header.id,
+          ingestion_run_id: runId,
+          supported_game: header.supported_game,
+          expected_game_revision_id: header.expected_game_revision_id,
+          created_at: header.created_at,
+          deadline: header.deadline,
+          preparation_manifest: inputManifest,
+        }),
+      );
+      for (;;) {
+        const page = (
+          await documentStorage(() =>
+            reconciliationPartitionsStatement(database, runId, cursor.partition).all<{
+              ordinal: number;
+              kind: string;
+            }>(),
+          )
+        ).results;
+        if (!page.length) break;
+        for (const partition of page) {
+          const source = await documentStorage(() =>
+            reconciliationPartitionStatement(database, runId, partition.ordinal).first<{ content: string }>(),
           );
-          if (!records.length) continue;
-          const content = canonicalJson(records);
-          const sha256 = await sha256Text(content);
-          await insertGameCandidatePartitionStatement(
-            database,
-            header.id,
-            ordinal,
-            kind,
-            content,
-            sha256,
-            records.length,
-          ).run();
-          const retained = await gameCandidatePartitionStatement(database, header.id, ordinal).first<{
-            content: string;
-            kind: string;
-          }>();
-          if (retained?.content !== content || retained.kind !== kind)
-            throw new Error("Game candidate partition replay differs from its immutable content.");
-          digest = await sha256Text(
-            canonicalJson({
-              previous: digest,
-              ordinal,
-              kind,
-              sha256,
-              record_count: records.length,
-              byte_length: new TextEncoder().encode(content).byteLength,
-            }),
-          );
-          ordinal++;
+          if (!source) throw new Error("The retained candidate partition is unavailable.");
+          for (const kind of partition.kind === "warnings" ? ["warnings", "shared_warnings"] : [partition.kind]) {
+            const rows = (
+              await documentStorage(() =>
+                scopedGamePartitionStatement(
+                  database,
+                  runId,
+                  header.supported_game,
+                  kind,
+                  source.content,
+                  scopedLineages,
+                ).all<{ value: string; type: string }>(),
+              )
+            ).results;
+            const records = rows.map((row) =>
+              row.type === "object" || row.type === "array" ? JSON.parse(row.value) : row.value,
+            );
+            if (!records.length) continue;
+            const content = canonicalJson(records),
+              sha256 = await sha256Text(content);
+            await documentStorage(() =>
+              insertGameCandidatePartitionStatement(
+                database,
+                header.id,
+                cursor.ordinal,
+                kind,
+                content,
+                sha256,
+                records.length,
+              ).run(),
+            );
+            const retained = await documentStorage(() =>
+              gameCandidatePartitionStatement(database, header.id, cursor.ordinal).first<{
+                content: string;
+                kind: string;
+              }>(),
+            );
+            if (retained?.content !== content || retained.kind !== kind)
+              throw new Error("Game candidate partition replay differs from its immutable content.");
+            cursor.digest = await sha256Text(
+              canonicalJson({
+                previous: cursor.digest,
+                ordinal: cursor.ordinal,
+                kind,
+                sha256,
+                record_count: records.length,
+                byte_length: new TextEncoder().encode(content).byteLength,
+              }),
+            );
+            cursor.ordinal++;
+          }
+          cursor.partition = partition.ordinal;
+          bytes += new TextEncoder().encode(source.content).byteLength;
+          if (++work === 4 || bytes >= 512000) await save();
         }
       }
-      after = page.at(-1)!.ordinal;
+      cursor.seals.push({ id: header.id, digest: cursor.digest!, count: cursor.ordinal });
+      cursor.game++;
+      cursor.partition = -1;
+      cursor.ordinal = 0;
+      cursor.digest = null;
+      await save();
     }
-    seals.push(sealGameCandidateStatement(database, header.id, digest, ordinal, inputManifest));
+    cursor.stage = "complete";
+    await save();
   }
-  return seals;
+  return cursor.seals.map((seal) =>
+    sealGameCandidateStatement(database, runId, seal.id, seal.digest, seal.count, inputManifest),
+  );
 }
 
 export async function inspectGameCandidate(database: CatalogueStore, candidateId: string) {

@@ -24,7 +24,7 @@ export function createGameCandidateIdentitiesStatement(database: CatalogueStore,
 
 export function gameCandidatesForRunStatement(database: CatalogueStore, runId: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT * FROM game_candidates WHERE ingestion_run_id = ? ORDER BY supported_game`)
+    .prepare(`SELECT * FROM game_candidates WHERE ingestion_run_id = ? ORDER BY supported_game LIMIT 5`)
     .bind(runId);
 }
 
@@ -121,6 +121,7 @@ export function insertGameCandidatePartitionStatement(
 
 export function sealGameCandidateStatement(
   database: CatalogueStore,
+  runId: string,
   candidateId: string,
   digest: string,
   count: number,
@@ -129,9 +130,16 @@ export function sealGameCandidateStatement(
   return repositoryStatements(database)
     .prepare(`UPDATE game_candidates SET state = 'sealed', manifest_digest = ?, partition_count = ?, preparation_manifest_digest = ?
     WHERE id = ? AND state = 'preparing' AND CASE WHEN
-      (SELECT count(*) FROM game_candidate_partitions WHERE candidate_id = ?) = ?
+      EXISTS (SELECT 1 FROM (
+        SELECT content FROM reconciliation_checkpoints WHERE ingestion_run_id = ? AND phase = 'game_preparation'
+        ORDER BY ordinal DESC LIMIT 1
+      ) AS checkpoint, json_each(checkpoint.content, '$.seals') AS seal
+      WHERE json_extract(checkpoint.content, '$.stage') = 'complete'
+        AND json_extract(checkpoint.content, '$.inputManifest') = ?
+        AND json_extract(seal.value, '$.id') = ? AND json_extract(seal.value, '$.digest') = ?
+        AND json_extract(seal.value, '$.count') = ?)
     THEN 1 ELSE json_extract('{}', 'game_candidate_partition_count_mismatch') END`)
-    .bind(digest, count, preparationManifest, candidateId, candidateId, count);
+    .bind(digest, count, preparationManifest, candidateId, runId, preparationManifest, candidateId, digest, count);
 }
 
 /** Temporary run-command adapter; game operation commands replace this as orchestration moves. */

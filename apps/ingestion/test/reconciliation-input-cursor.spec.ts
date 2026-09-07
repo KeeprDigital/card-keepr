@@ -186,6 +186,7 @@ test.each([
     const summaryCalls: number[] = [];
     const stagingCalls: number[] = [];
     const payloadCalls: number[] = [];
+    const gameCalls: number[] = [];
     const graphCalls: number[] = [];
     const graphCursors: number[] = [];
     const preparationCalls: number[] = [];
@@ -262,6 +263,7 @@ test.each([
           completedGroups.push(imagesInUnit);
           callsPerGroup.push(serviceCalls);
         }
+        if (JSON.parse(result as string).continuation?.phase === "game_preparation") gameCalls.push(serviceCalls);
         if (JSON.parse(result as string).continuation?.phase === "candidate_staging") stagingCalls.push(serviceCalls);
         if (JSON.parse(result as string).continuation?.phase?.startsWith("payload_preparation:"))
           payloadCalls.push(serviceCalls);
@@ -351,6 +353,8 @@ test.each([
     }
     expect(completedGroups).toEqual(groups);
     if (requireFrozenMetadata) {
+      expect(gameCalls.length).toBeGreaterThan(0);
+      expect(Math.max(...gameCalls)).toBeLessThanOrEqual(100);
       expect(stagingCalls.length).toBeGreaterThan(0);
       expect(Math.max(...stagingCalls)).toBeLessThanOrEqual(100);
       expect(payloadCalls.length).toBeGreaterThan(0);
@@ -897,6 +901,12 @@ test.each([
     progressField: "ordinal",
     expectedCards: 32,
   },
+  {
+    phase: "game_preparation",
+    scenario: "curated-conflict-fanout-base",
+    progressField: "partition",
+    expectedCards: 32,
+  },
   { phase: "candidate_staging", scenario: "curated-conflict-fanout-base", progressField: "ordinal", expectedCards: 32 },
   { phase: "warning_summary", scenario: "single-card-warning-work-units", progressField: "total", expectedCards: 1 },
 ])(
@@ -904,6 +914,7 @@ test.each([
   async ({ phase, scenario, progressField, expectedCards }) => {
     const run = await collectRequests([{ id: "cards", scenario }], "partition-replay");
     let completed = 0;
+    let completedGameOutput = 0;
     let resumed = false;
     let failures = 0;
     const database = new Proxy(testEnv.CATALOGUE_DB, {
@@ -924,6 +935,8 @@ test.each([
                       failures++;
                       throw new Error("Injected partition checkpoint outage after its output write.");
                     }
+                    if (completedGameOutput > 0 && sql.includes("INSERT INTO game_candidate_partitions"))
+                      expect(Number(values[1])).toBeGreaterThanOrEqual(completedGameOutput);
                     if (completed > 0 && sql.includes("INSERT INTO reconciliation_partitions"))
                       expect(Number(values[1])).toBeGreaterThanOrEqual(completed);
                     return prepared.bind(...values);
@@ -953,7 +966,10 @@ test.each([
           const cursor = (progress.checkpoints as { phase: string; cursor: Record<string, number> }[]).find(
             (item) => item.phase === phase,
           )!.cursor;
-          if (cursor[progressField]! >= 2) completed = cursor[progressField]!;
+          if (cursor[progressField]! >= 2) {
+            completed = cursor[progressField]!;
+            if (phase === "game_preparation") completedGameOutput = cursor.ordinal!;
+          }
         }
         return result;
       },
@@ -999,6 +1015,20 @@ test.each([
     }
     expect(ids.length).toBe(expectedCards);
     expect(new Set(ids).size).toBe(expectedCards);
+    if (phase === "game_preparation") {
+      expect(completedGameOutput).toBeGreaterThan(0);
+      const candidate = (sealed.candidates as { id: string; state: string }[])[0]!;
+      const header = (await get(`/v1/game-candidates/${candidate.id}`)).document;
+      expect(header).toMatchObject({ state: "sealed", deadline: paused.deadline });
+      const gamePage = (await get(`/v1/game-candidates/${candidate.id}/partitions`)).document;
+      const gameIds: string[] = [];
+      for (const partition of gamePage.partitions as { ordinal: number; kind: string }[]) {
+        if (partition.kind !== "cards") continue;
+        const detail = (await get(`/v1/game-candidates/${candidate.id}/partitions/${partition.ordinal}`)).document;
+        gameIds.push(...(detail.records as { id: string }[]).map((record) => record.id));
+      }
+      expect(gameIds.sort()).toEqual([...ids].sort());
+    }
     if (phase === "warning_summary") {
       const warnings = (page.partitions as { kind: string; record_count: number }[])
         .filter((part) => part.kind === "warnings")
