@@ -70,11 +70,13 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     },
   });
   let api, restoredAdmin;
+  let journeyCompleted = false;
   t.after(async () => {
     if (api) await stopWorker(api);
     if (restoredAdmin) await stopWorker(restoredAdmin);
     await stopWorker(worker);
-    await rm(directory, { recursive: true, force: true });
+    if (journeyCompleted) await rm(directory, { recursive: true, force: true });
+    else t.diagnostic(`Failed native replay state retained at ${directory}`);
   });
   await waitForHealth(`${worker.url}/health`, key, worker);
   const environment = {
@@ -644,4 +646,5 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
         .reduce((n, c) => n + c.bodyBytes.length, 0),
     }),
   );
+  journeyCompleted = true;
 });

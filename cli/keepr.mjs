@@ -374,7 +374,21 @@ async function routeCommand(name, arguments_, environment, json) {
     const confirmed = confirmProductionTarget(json, confirmation, value("confirm"));
     if (confirmed !== 0) return confirmed;
   }
-  const pathname = definition.path.replace(/\{([^}]+)\}/g, (_, field) => encodeURIComponent(value(field) ?? ""));
+  const [pathTemplate, queryTemplate] = definition.path.split("?");
+  const query = new URLSearchParams(queryTemplate);
+  for (const [key, template] of [...query]) {
+    const placeholders = [...template.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]);
+    if (placeholders.some((field) => value(field) === undefined && definition.optional?.includes(field)))
+      query.delete(key);
+    else
+      query.set(
+        key,
+        template.replace(/\{([^}]+)\}/g, (_, field) => value(field) ?? ""),
+      );
+  }
+  const pathname =
+    pathTemplate.replace(/\{([^}]+)\}/g, (_, field) => encodeURIComponent(value(field) ?? "")) +
+    (query.size > 0 ? `?${query}` : "");
   return administrationRequest(
     environment,
     json,

@@ -100,3 +100,25 @@ small R2 interface over copied retained bytes, including multipart images; it is
 not a native Workflow or publication/recovery pass. Focused regressions cover
 long gaps, terminal cursors, a partial gap before a document, and graph-stage
 progress. Another native run remains required.
+
+## Candidate-list CLI cursor failure
+
+Frozen commit `412c518` completed the same real-source collection and advanced
+past the repaired document, graph and normalization stages. In 348.24 seconds it
+reached the assertions for 14 retained snapshots with matching body digests,
+1,229 observations and 1,189 unique paginated Printing proposals. The initial
+candidate had reached a terminal sealed/failed state.
+
+The next shipped CLI call, `game-candidate list --run-id <run>`, failed with
+`invalid_cursor: Use the returned candidate cursor.` The CLI serialized an absent
+optional cursor as `?after=`; the server correctly distinguishes that invalid
+empty cursor from an omitted cursor. A runtime-free CLI transport regression
+reproduced the exact outgoing path. The route builder now omits absent optional
+query parameters and preserves supplied opaque cursors. All three transport
+tests pass.
+
+This run did not reach owner admissions, publication, API/export assertions or
+restoration. Its normal teardown removed the disposable state. Subsequent failed
+Riftbound replays preserve their local state for diagnosis after all runtimes
+stop; successful runs still remove it. The CLI fix was verified without another
+collection.
