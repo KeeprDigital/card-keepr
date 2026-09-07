@@ -3,6 +3,7 @@ export class ReconciliationContinuation extends Error {
   constructor(
     readonly checkpoint: {
       phase:
+        | `canonical_digest:${"catalogue" | "candidate"}`
         | "curated_diagnostics"
         | `record_sorting:${string}`
         | "semantic_preparation"

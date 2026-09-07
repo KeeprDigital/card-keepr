@@ -62,8 +62,14 @@ export async function prepareOfficialCandidate(
   const printingIds = new ReconciliationRecordLog<string>(database, runId, "observed_printing_ids");
   const assembled = {
     draft,
-    observedCards: { [Symbol.asyncIterator]: () => cardIds.records() },
-    observedPrintings: { [Symbol.asyncIterator]: () => printingIds.records() },
+    observedCards: {
+      [Symbol.asyncIterator]: () => cardIds.records(),
+      canonicalEntries: (after: string) => cardIds.canonicalEntries(after),
+    },
+    observedPrintings: {
+      [Symbol.asyncIterator]: () => printingIds.records(),
+      canonicalEntries: (after: string) => printingIds.canonicalEntries(after),
+    },
   };
   const checkpoint = await reconciliationCheckpoint<Cursor>(database, runId, "official_assembly");
   let stage: Cursor["stage"] = checkpoint?.value.stage ?? "cards";

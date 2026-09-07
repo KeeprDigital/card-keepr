@@ -1,3 +1,4 @@
+import { canonicalRecordSource } from "./reconciliation-canonical-digest";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import type { ReconciliationInputRecordCursor } from "./reconciliation-input";
@@ -207,11 +208,9 @@ export async function reconcileProductReleaseState(
     }
   });
   const productSurfaceObserved = checkedLineages.size > 0;
-  const observedProducts = {
-    async *[Symbol.asyncIterator]() {
-      for await (const product of groups.entityValues()) yield product.id;
-    },
-  };
+  const observedProducts = canonicalRecordSource(async function* (after) {
+    for await (const product of groups.entityValues(after)) yield { key: product.id, value: product.id };
+  });
   await runStage("existing_products", "new_products", async () => {
     await consume(prior.values("products", after), async (product) => {
       if (product.game !== game) {

@@ -16,6 +16,7 @@ import {
   readVerifiedReconciliationInput,
   retainVerifiedReconciliationInput,
   verifiedReconciliationRecords,
+  verifiedReconciliationSource,
 } from "./reconciliation-input";
 import { documentStorage } from "./reconciliation-document";
 import { prepareSourceDocuments, readSourceDocument } from "./reconciliation-source-document";
@@ -71,7 +72,7 @@ export async function retainedReconciliationObservation(
         ...Object.fromEntries(
           ["countChangeWarnings", "unavailablePrintingImages", "partitions"].map((kind) => [
             kind,
-            { [Symbol.asyncIterator]: () => verifiedReconciliationRecords(database, runId, kind) },
+            verifiedReconciliationSource(database, runId, kind),
           ]),
         ),
         evidencePlans: {

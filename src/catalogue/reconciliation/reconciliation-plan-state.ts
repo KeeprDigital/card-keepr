@@ -41,6 +41,9 @@ export class ReconciliationPlanState implements AsyncIterable<ObservationPlan> {
   async get(observationId: string) {
     return (await this.index.get(observationId))?.plan;
   }
+  async *canonicalEntries(after: string) {
+    for await (const value of this.values(after)) yield { key: value.sourceObservationId, value };
+  }
   [Symbol.asyncIterator]() {
     return this.values();
   }

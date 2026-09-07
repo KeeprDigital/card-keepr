@@ -42,6 +42,17 @@ export class ReconciliationRecordLog<T> {
     this.bytes = 2;
   }
 
+  async *canonicalEntries(after: string) {
+    await this.flush();
+    const cursor: { batch: string; offset: number } | null = after ? JSON.parse(after) : null;
+    // Reopen the partially consumed batch; completed batches are excluded by ID.
+    const previous = cursor ? String(Number(cursor.batch) - 1).padStart(12, "0") : "";
+    for await (const batch of this.index.entityValues(cursor?.batch === "000000000000" ? "" : previous)) {
+      for (let offset = batch.id === cursor?.batch ? cursor.offset : 0; offset < batch.records.length; offset++)
+        yield { key: canonicalJson({ batch: batch.id, offset: offset + 1 }), value: batch.records[offset]! };
+    }
+  }
+
   async *records(): AsyncGenerator<T> {
     await this.flush();
     for await (const batch of this.index.entityValues()) yield* batch.records;

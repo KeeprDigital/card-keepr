@@ -61,6 +61,10 @@ export class ReconciliationRecordCollection<T extends Record<string, unknown>>
     );
     this.sorted = sorted;
   }
+  async *canonicalEntries(after: string) {
+    await this.prepareSorted();
+    yield* this.sorted!.canonicalEntries(after);
+  }
   async *[Symbol.asyncIterator](): AsyncGenerator<T> {
     await this.prepareSorted();
     yield* this.sorted!;

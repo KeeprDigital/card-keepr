@@ -1,3 +1,8 @@
+import {
+  type CanonicalRecordSource,
+  canonicalRecordSource,
+  prepareCanonicalDigest,
+} from "./reconciliation-canonical-digest";
 import { prepareSemanticState } from "./reconciliation-semantic-state";
 import { applyPinnedIdentityCorrectionsToDraft } from "./identity-correction-application";
 import { prepareCuratedDraft, prepareCuratedConflictDiagnostics } from "./reconciliation-curated";
@@ -22,7 +27,6 @@ import {
   scannedReconciliationRecordEntries,
   type ReconciliationInputRecordCursor,
 } from "./reconciliation-input";
-import { canonicalStreamValueDigest } from "./reconciliation-preparation";
 import { CandidateImageStorageError } from "./reconciliation-images";
 import { initializeReconciliationProgress } from "./reconciliation-progress";
 import { reconciliationWriterGuard } from "./reconciliation-progress-repository";
@@ -1452,12 +1456,17 @@ export async function reconcileRetainedCardPrintingEvidence(
     draft: priorProducts,
     productSurfaceObserved: false,
   };
-  const observedProductGroups = new Map<SupportedGame, AsyncIterable<string>>();
-  const observedProducts = {
-    async *[Symbol.asyncIterator]() {
-      for (const records of observedProductGroups.values()) yield* records;
-    },
-  };
+  const observedProductGroups = new Map<SupportedGame, CanonicalRecordSource<string>>();
+  const observedProducts = canonicalRecordSource(async function* (after) {
+    const cursor: [number, string] = after ? JSON.parse(after) : [0, ""];
+    let index = 0;
+    for (const records of observedProductGroups.values()) {
+      const group = index++;
+      if (group < cursor[0]) continue;
+      for await (const entry of records.canonicalEntries(group === cursor[0] ? cursor[1] : ""))
+        yield { key: canonicalJson([group, entry.key]), value: entry.value };
+    }
+  });
   const observedProductGames = new Set<SupportedGame>();
   const observedProductLineages = new Set<string>();
   try {
@@ -1640,7 +1649,13 @@ export async function reconcileRetainedCardPrintingEvidence(
         diagnostics: stableDiagnostics,
         warnings,
       });
-      const candidateDigest = await canonicalStreamValueDigest(digestPayload);
+      const candidateDigest = await prepareCanonicalDigest(
+        database,
+        runId,
+        "candidate",
+        digestPayload,
+        yieldAtCheckpoint,
+      );
       await persistBlockedCandidate(database, {
         runId,
         partitions: retained.partitions,
@@ -1690,7 +1705,13 @@ export async function reconcileRetainedCardPrintingEvidence(
         diagnostics,
         warnings,
       });
-      const candidateDigest = await canonicalStreamValueDigest(digestPayload);
+      const candidateDigest = await prepareCanonicalDigest(
+        database,
+        runId,
+        "candidate",
+        digestPayload,
+        yieldAtCheckpoint,
+      );
       await persistBlockedCandidate(database, {
         runId,
         partitions: retained.partitions,
@@ -1731,7 +1752,13 @@ export async function reconcileRetainedCardPrintingEvidence(
       diagnostics: [],
       warnings,
     });
-    const candidateDigest = await canonicalStreamValueDigest(digestPayload);
+    const candidateDigest = await prepareCanonicalDigest(
+      database,
+      runId,
+      "candidate",
+      digestPayload,
+      yieldAtCheckpoint,
+    );
     await retainSourceMappings(database, runId, sourceMappings.records());
     await persistReviewableCandidate(database, {
       runId,
@@ -1884,11 +1911,17 @@ async function catalogueDataDigest(
     yieldAtCheckpoint,
   );
   const catalogueCandidate = await semanticDraftDocument(draft, candidate);
-  return canonicalStreamValueDigest({
-    catalogue_data: catalogueCandidate,
-    current_memberships: sortedMemberships,
-    withdrawals: sortedWithdrawals,
-  });
+  return prepareCanonicalDigest(
+    database,
+    runId,
+    "catalogue",
+    {
+      catalogue_data: catalogueCandidate,
+      current_memberships: sortedMemberships,
+      withdrawals: sortedWithdrawals,
+    },
+    yieldAtCheckpoint,
+  );
 }
 
 async function semanticDraftDocument(draft: ReconciliationCandidateState, metadata: CatalogueCandidate) {
@@ -1912,14 +1945,12 @@ async function semanticDraftDocument(draft: ReconciliationCandidateState, metada
     "identity_corrections",
   ] as const) {
     if (!(kind in document)) continue;
-    result[kind] = {
-      async *[Symbol.asyncIterator]() {
-        for await (const entity of draft.values(kind)) {
-          const value = semanticCatalogueCandidate({ ...shell, [kind]: [entity] });
-          yield (value[kind] as unknown[])[0];
-        }
-      },
-    };
+    result[kind] = canonicalRecordSource(async function* (after) {
+      for await (const entity of draft.values(kind, after)) {
+        const value = semanticCatalogueCandidate({ ...shell, [kind]: [entity] });
+        yield { key: entity.id, value: (value[kind] as unknown[])[0] };
+      }
+    });
   }
   return result;
 }

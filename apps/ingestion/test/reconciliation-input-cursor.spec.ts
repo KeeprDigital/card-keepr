@@ -179,6 +179,8 @@ test.each([
     const curatedCalls: number[] = [];
     const semanticCalls: number[] = [];
     const sortingCalls: number[] = [];
+    const digestCalls: number[] = [];
+    const candidateDigestCalls: number[] = [];
     const graphCalls: number[] = [];
     const graphCursors: number[] = [];
     const preparationCalls: number[] = [];
@@ -255,6 +257,10 @@ test.each([
           completedGroups.push(imagesInUnit);
           callsPerGroup.push(serviceCalls);
         }
+        if (JSON.parse(result as string).continuation?.phase === "canonical_digest:candidate")
+          candidateDigestCalls.push(serviceCalls);
+        if (JSON.parse(result as string).continuation?.phase === "canonical_digest:catalogue")
+          digestCalls.push(serviceCalls);
         if (JSON.parse(result as string).continuation?.phase?.startsWith("record_sorting:"))
           sortingCalls.push(serviceCalls);
         if (JSON.parse(result as string).continuation?.phase === "semantic_preparation")
@@ -333,6 +339,10 @@ test.each([
     }
     expect(completedGroups).toEqual(groups);
     if (requireFrozenMetadata) {
+      expect(candidateDigestCalls.length).toBeGreaterThan(0);
+      expect(Math.max(...candidateDigestCalls)).toBeLessThanOrEqual(100);
+      expect(digestCalls.length).toBeGreaterThan(0);
+      expect(Math.max(...digestCalls)).toBeLessThanOrEqual(100);
       expect(sortingCalls.length).toBeGreaterThan(0);
       expect(Math.max(...sortingCalls)).toBeLessThanOrEqual(100);
       expect(semanticCalls.length).toBeGreaterThan(0);
@@ -722,4 +732,114 @@ test("canonical sorting replays an uncheckpointed merge batch and preserves ever
   expect(keys.length).toBeGreaterThanOrEqual(64);
   expect(new Set(keys).size).toBe(keys.length);
   expect(keys).toEqual([...keys].sort((a, b) => a.localeCompare(b)));
+});
+
+test("canonical hashing resumes inside large Card text after a checkpoint write outage", async () => {
+  const run = await collectRequests([{ id: "cards", scenario: "large-card-content" }], "hash-replay");
+  const phase = "canonical_digest:candidate";
+  let armed = false;
+  let resumed = false;
+  let failures = 0;
+  let savedBytes = 0;
+  let resumedBytes = 0;
+  const database = new Proxy(testEnv.CATALOGUE_DB, {
+    get(target, property) {
+      if (property === "prepare")
+        return (sql: string) => {
+          const statement = target.prepare(sql);
+          return new Proxy(statement, {
+            get(prepared, method) {
+              if (method === "bind")
+                return (...values: unknown[]) => {
+                  if (sql.includes("INSERT INTO reconciliation_checkpoints") && values[1] === phase) {
+                    const cursor = JSON.parse(values[3] as string) as { sha: { bytes: string } };
+                    if (armed && !resumed) {
+                      failures++;
+                      throw new Error("Injected hash checkpoint write outage.");
+                    }
+                    if (resumed) resumedBytes ||= Number(cursor.sha.bytes);
+                  }
+                  return prepared.bind(...values);
+                };
+              const value = Reflect.get(prepared, method);
+              return typeof value === "function" ? value.bind(prepared) : value;
+            },
+          });
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const step = {
+    do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+      let result: string;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          result = await callback();
+          break;
+        } catch (error) {
+          if (attempt >= config.retries.limit) throw error;
+        }
+      }
+      if (!armed && JSON.parse(result).continuation?.phase === phase) {
+        const progress = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+        const checkpoint = (
+          progress.checkpoints as { phase: string; cursor: { chunk: number; sha: { bytes: string } } }[]
+        ).find((item) => item.phase === phase)!;
+        if (checkpoint.cursor.chunk > 0) {
+          armed = true;
+          savedBytes = Number(checkpoint.cursor.sha.bytes);
+        }
+      }
+      return result;
+    },
+  } as unknown as import("cloudflare:workers").WorkflowStep;
+  const event = {
+    payload: {
+      ingestion_run_id: run.id,
+      expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
+      idempotency_key: "hash-replay",
+      observed_at: new Date().toISOString(),
+      generation: 0,
+    },
+  } as import("cloudflare:workers").WorkflowEvent<
+    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+  >;
+  await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
+  expect(failures).toBe(4);
+  expect(savedBytes).toBeGreaterThan(500000);
+  const paused = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+  expect(paused).toMatchObject({ state: "paused", generation: 1 });
+  expect(
+    (
+      await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+        generation: 1,
+        idempotency_key: "resume-hash-replay",
+      })
+    ).response.status,
+  ).toBe(200);
+  resumed = true;
+  await runReconciliationWorkflow(
+    { ...testEnv, CATALOGUE_DB: database },
+    { payload: { ...event.payload, generation: 1 } } as typeof event,
+    step,
+  );
+  const sealed = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+  expect(sealed).toMatchObject({ state: "sealed", deadline: paused.deadline });
+  expect(resumedBytes).toBeGreaterThan(savedBytes);
+  const digest = (sealed.checkpoints as { phase: string; cursor: { digest?: string } }[]).find(
+    (item) => item.phase === phase,
+  )!.cursor.digest;
+  expect(digest).toMatch(/^[a-f0-9]{64}$/);
+  // Replaying the same completed operation must retain the exact digest.
+  await runReconciliationWorkflow(
+    { ...testEnv, CATALOGUE_DB: database },
+    { payload: { ...event.payload, generation: 1 } } as typeof event,
+    step,
+  );
+  const replayed = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+  expect(
+    (replayed.checkpoints as { phase: string; cursor: { digest?: string } }[]).find((item) => item.phase === phase)!
+      .cursor.digest,
+  ).toBe(digest);
 });

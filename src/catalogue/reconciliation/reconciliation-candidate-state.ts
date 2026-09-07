@@ -1,3 +1,4 @@
+import { canonicalRecordSource } from "./reconciliation-canonical-digest";
 import {
   type CatalogueCandidate,
   type CatalogueDraft,
@@ -118,11 +119,9 @@ export class ReconciliationCandidateState implements CatalogueDraft {
         }
       }
       const draft = this;
-      result[kind] = {
-        [Symbol.asyncIterator]() {
-          return draft.values(kind);
-        },
-      };
+      result[kind] = canonicalRecordSource(async function* (after) {
+        for await (const entity of draft.values(kind, after)) yield { key: entity.id, value: entity };
+      });
     }
     return result;
   }

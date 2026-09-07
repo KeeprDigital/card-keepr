@@ -133,13 +133,17 @@ export class ReconciliationSortedRecords<T> implements AsyncIterable<T> {
   }
 
   async *[Symbol.asyncIterator](): AsyncGenerator<T> {
+    for await (const entry of this.canonicalEntries("")) yield entry.value;
+  }
+
+  async *canonicalEntries(after: string): AsyncGenerator<{ key: string; value: T }> {
     if (this.finalPass === undefined) throw new Error("Sorted reconciliation records must be prepared before reading.");
-    const position = { batch: 0, offset: 0 };
+    const position: Position = after ? JSON.parse(after) : { batch: 0, offset: 0 };
     for (;;) {
       const item = await this.readHead(this.finalPass, 0, position);
       if (!item) return;
-      yield item.value;
       position.offset++;
+      yield { key: canonicalJson(position), value: item.value };
     }
   }
 

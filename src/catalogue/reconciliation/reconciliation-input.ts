@@ -1,3 +1,4 @@
+import { canonicalRecordSource } from "./reconciliation-canonical-digest";
 import { normalizedObservationPageStatement } from "./reconciliation-normalized-repository";
 import { ReconciliationInputSequence } from "./reconciliation-input-sequence";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
@@ -233,13 +234,24 @@ export async function readVerifiedReconciliationInput(
   }
   if (!metadata) throw new Error("Retained reconciliation input metadata is unavailable.");
   const result = { ...metadata.values };
-  for (const kind of metadata.array_keys)
-    result[kind] = { [Symbol.asyncIterator]: () => verifiedReconciliationRecords(database, runId, kind) };
+  for (const kind of metadata.array_keys) result[kind] = verifiedReconciliationSource(database, runId, kind);
   return result;
 }
 
 /** Re-open the immutable verified sequence without retaining the complete observation array. */
 export type ReconciliationInputRecordCursor = { partition: number; record: number };
+
+export function verifiedReconciliationSource<T>(database: CatalogueStore, runId: string, kind: string) {
+  return canonicalRecordSource(async function* (after) {
+    for await (const entry of verifiedReconciliationRecordEntries<T>(
+      database,
+      runId,
+      kind,
+      after ? JSON.parse(after) : null,
+    ))
+      yield { key: canonicalJson(entry.cursor), value: entry.value };
+  });
+}
 
 export async function* verifiedReconciliationRecords<T>(
   database: CatalogueStore,
