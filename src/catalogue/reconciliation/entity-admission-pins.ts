@@ -114,6 +114,7 @@ type AdmissionCursor = {
   printingPosition: number;
   warnings: { position: number; count: number };
   processedDecisions: number;
+  pendingWarning: number | null;
   complete: boolean;
 };
 export async function applyPinnedEntityAdmissions(
@@ -148,6 +149,7 @@ export async function applyPinnedEntityAdmissions(
   }
   const checkpoint = await reconciliationCheckpoint<AdmissionCursor>(database, runId, "entity_admissions");
   let processedDecisions = checkpoint?.value.processedDecisions ?? 0;
+  let pendingWarning = checkpoint?.value.pendingWarning ?? null;
   let ordinal = (checkpoint?.ordinal ?? -1) + 1;
   if (checkpoint) {
     after = checkpoint.value.after;
@@ -169,6 +171,7 @@ export async function applyPinnedEntityAdmissions(
       printingPosition: printings.position,
       warnings: warnings.cursor,
       processedDecisions,
+      pendingWarning,
       complete,
     } satisfies AdmissionCursor);
     if (options.yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "entity_admissions", ordinal });
@@ -188,12 +191,13 @@ export async function applyPinnedEntityAdmissions(
     ).results;
     for (const row of rows) {
       const size = new TextEncoder().encode(canonicalJson(row)).byteLength;
-      if (records > 0 && (records === 4 || bytes + size > 512000)) {
+      if (records > 0 && (records >= 4 || bytes + size > 512000)) {
         await save(false);
         records = 0;
         bytes = 0;
       }
       admission: {
+        if (pendingWarning !== null) break admission;
         cards.beginObservation?.();
         printings.beginObservation?.();
         if (row.action !== "admit" && row.action !== "link") {
@@ -226,17 +230,31 @@ export async function applyPinnedEntityAdmissions(
           await admittedPrintings.seed(decision.printing.id, true);
           printingCount++;
         }
-        await warnings.push(
-          {
-            code: "entity_admission",
-            proposal_id: row.id,
-            generation: row.generation,
-            card_id: decision.card.id,
-            printing_id: decision.printing?.id ?? null,
-            detail: `Entity Proposal ${row.id} admitted by immutable decision ${row.generation}; candidate approval is still required.`,
-          },
-          ...decision.warnings,
-        );
+        await warnings.push({
+          code: "entity_admission",
+          proposal_id: row.id,
+          generation: row.generation,
+          card_id: decision.card.id,
+          printing_id: decision.printing?.id ?? null,
+          detail: `Entity Proposal ${row.id} admitted by immutable decision ${row.generation}; candidate approval is still required.`,
+        });
+        pendingWarning = 0;
+      }
+      if (pendingWarning !== null) {
+        const decision = JSON.parse(row.decision_json!) as AdmittedEntity;
+        while (pendingWarning < decision.warnings.length) {
+          const warning = decision.warnings[pendingWarning]!;
+          const length = new TextEncoder().encode(canonicalJson(warning)).byteLength;
+          if (records > 0 && (records >= 4 || bytes + length > 512000)) {
+            await save(false);
+            records = bytes = 0;
+          }
+          await warnings.push(warning);
+          pendingWarning++;
+          records++;
+          bytes += length;
+        }
+        pendingWarning = null;
       }
       after = row.id;
       processedDecisions++;
