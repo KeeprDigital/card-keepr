@@ -1,4 +1,3 @@
--- Follows the verified evidence cleanup migration 0024.
 SELECT CASE WHEN (SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1) = 24
   THEN 1 ELSE json_extract('schema_level_mismatch_expected_24', '$') END;
 INSERT INTO source_adapter_versions (

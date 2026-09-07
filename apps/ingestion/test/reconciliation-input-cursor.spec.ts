@@ -22,7 +22,7 @@ test.each([
   },
   {
     title: "completed observation groups",
-    successfulImages: 8,
+    successfulImages: 5,
     requests: [{ id: "cards", scenario: "curated-conflict-fanout-base" }],
   },
 ])(
@@ -119,7 +119,7 @@ test.each([
           ordinal: 0,
           cursor: expect.objectContaining({
             observationSetId: firstSet.id,
-            ...(successfulImages === 8 ? { nextObservationOrdinal: 8, complete: false } : {}),
+            ...(successfulImages === 5 ? { nextObservationOrdinal: 5, complete: false } : {}),
           }),
         }),
       ]),
@@ -148,14 +148,14 @@ test.each([
 );
 
 test.each([
-  { scenario: "curated-conflict-fanout-base", requireFrozenMetadata: false, groups: [8, 8, 8, 8] },
-  { scenario: "curated-conflict-fanout-base", requireFrozenMetadata: true, groups: [8, 8, 8, 8] },
+  { scenario: "curated-conflict-fanout-base", requireFrozenMetadata: false, groups: [5, 5, 5, 5, 5, 5, 2] },
+  { scenario: "curated-conflict-fanout-base", requireFrozenMetadata: true, groups: [5, 5, 5, 5, 5, 5, 2] },
   { scenario: "capacity-single-observation", requireFrozenMetadata: true, groups: [1] },
   { scenario: "large-card-content", requireFrozenMetadata: true, groups: [1] },
   {
     scenario: "three-role-image-work-units",
     requireFrozenMetadata: true,
-    groups: [12, 12],
+    groups: [6, 6, 6, 6],
     expectedObservations: 8,
   },
   { scenario: "single-card-warning-work-units", requireFrozenMetadata: true, groups: [1] },

@@ -1,3 +1,4 @@
+import { type CheckedCardScope } from "./scoped-disappearance";
 import { nativePrintingsAtLocator, retainPrintingLocator } from "./native-printing-locators";
 import {
   nativePreparationFailureCode,
@@ -405,6 +406,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   const evidenceGames = new Set<SupportedGame>();
   const evidenceLineages = new Set<string>();
   const completeLineages = new Set<string>();
+  const checkedCardScopes: CheckedCardScope[] = [];
   const ownerReviewedPrintingLineages = new Set<string>();
   let errataOnlyEvidence = true;
   const evidencePlanSnapshot: unknown[] = [];
@@ -414,7 +416,10 @@ export async function reconcileRetainedCardPrintingEvidence(
     evidenceLineages.add(plan.sourceLineage);
     if (plan.printingAdmission === "owner_review") ownerReviewedPrintingLineages.add(plan.sourceLineage);
     if ((plan.subset ?? "complete") === "complete") completeLineages.add(plan.sourceLineage);
-    if (plan.reconciliationCapability !== "errata") errataOnlyEvidence = false;
+    if (plan.reconciliationCapability !== "errata") {
+      errataOnlyEvidence = false;
+      if (plan.cardIdentities?.length) checkedCardScopes.push({ ...plan, cardIdentities: plan.cardIdentities });
+    }
   }
   if (!reduction) await pinCorrectionDecisions(database, runId, JSON.parse(run.selected_games_json) as string[]);
   let correctedCardIdentity: Awaited<ReturnType<typeof pinnedCardIdentityResolver>>;
@@ -1198,10 +1203,22 @@ export async function reconcileRetainedCardPrintingEvidence(
             acceptedPrinting = fillAuthorityGaps(authoritativePrinting, proposedPrinting);
           }
           const priorPrintingFacts = await localPrintingFacts.get(printingId);
+          // Reviewed identity permits complementary source facts, not competing
+          // known values. Symmetric gap filling makes this independent of source
+          // observation order and keeps explicit unknowns from erasing facts.
+          const complementaryReviewedFacts =
+            reviewedPrintingId !== null &&
+            priorPrintingFacts !== undefined &&
+            printingFactsFormattingEquivalent(
+              fillAuthorityGaps(priorPrintingFacts, acceptedPrinting),
+              fillAuthorityGaps(acceptedPrinting, priorPrintingFacts),
+            );
+          if (complementaryReviewedFacts) acceptedPrinting = fillAuthorityGaps(priorPrintingFacts!, acceptedPrinting);
           if (
             publishedPrintingConflict !== null ||
             (priorPrintingFacts !== undefined &&
               !retainAsiaPrintingAuthority &&
+              !complementaryReviewedFacts &&
               !printingFactsFormattingEquivalent(priorPrintingFacts, acceptedPrinting))
           ) {
             await diagnostics.push({
@@ -1739,6 +1756,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       runId,
       {
         plans,
+        cardScopes: { scopes: checkedCardScopes, priorCards, priorPrintings },
         hasPrintings: (official.positions.printings ?? 0) > 0,
         checkedLineages: checkedSourceLineages,
         errataLineages: errataOnlyEvidence ? [...evidenceLineages] : [],

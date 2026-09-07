@@ -376,6 +376,21 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
             alternate.evidence.appearance_evidence.images.forEach((image) => {
               image.artwork_fingerprint = artwork;
             });
+            if (scenario.includes("unknown") && (scenario.includes("known-last") ? index < 9 : index > 0))
+              return {
+                ...alternate,
+                evidence: {
+                  ...alternate.evidence,
+                  printing: {
+                    ...alternate.evidence.printing,
+                    rarity: {
+                      raw: scenario.includes("conflict") && index === 9 ? "DIFFERENT" : null,
+                      normalized: null,
+                    },
+                    printed_rules_text: null,
+                  },
+                },
+              };
             return alternate;
           })
         : [row],

@@ -446,6 +446,9 @@ async function collectRetainedReconciliationObservation(
           requiredSourceAdapter(plan.adapter_version),
           plan.coverage?.subset,
         ).reconciliationCapability,
+        cardIdentities: requiredSourceAdapter(plan.adapter_version).coverageContracts?.[
+          plan.coverage?.subset ?? "complete"
+        ]?.cardIdentities,
       };
     }),
     observations: stagedNormalizedObservations<NormalizedReconciliationObservation>(database, runId),
