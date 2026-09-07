@@ -1,5 +1,5 @@
-SELECT CASE WHEN (SELECT migration_level FROM catalogue_schema_state WHERE singleton=1)=24
-THEN 1 ELSE json_extract('schema_level_mismatch_expected_24','$') END;
+SELECT CASE WHEN (SELECT migration_level FROM catalogue_schema_state WHERE singleton=1)=25
+THEN 1 ELSE json_extract('schema_level_mismatch_expected_25','$') END;
 
 -- Durable authority survives lease expiry, Workflow restart and failed activation.
 CREATE TABLE fresh_baseline_handoffs (

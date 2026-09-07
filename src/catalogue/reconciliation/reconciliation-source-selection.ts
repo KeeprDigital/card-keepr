@@ -5,7 +5,7 @@ import {
   StreamingSha256,
   resumableObjectMembers,
 } from "../shared";
-import { requiredSourceAdapter } from "../adapters";
+import { requiredSourceAdapter, sourceAdapterForCoverage } from "../adapters";
 import {
   isOptionalSourceOutage,
   assertSelectedAuthoritiesCollected,
@@ -427,7 +427,7 @@ export async function prepareSourceSelection(
     for (; cursor.plan < selectedPlans.length; ) {
       const plan = selectedPlans[cursor.plan]!;
       await validateOfficialSurfaceCoverage({
-        adapter: requiredSourceAdapter(plan.adapter_version),
+        adapter: sourceAdapterForCoverage(requiredSourceAdapter(plan.adapter_version), plan.coverage?.subset),
         plan,
         hasCollectionRequest: (id) => surfaces.has(id),
       });

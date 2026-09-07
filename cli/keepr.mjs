@@ -114,6 +114,11 @@ const commandRoutes = {
     path: "/v1/game-candidates/{candidate-id}/inspection?manifest={manifest}",
     optional: ["manifest"],
   },
+  gameCandidateAbandon: {
+    path: "/v1/game-candidates/{candidate-id}/abandon",
+    fields: { generation: "generation", idempotency_key: "idempotency-key" },
+    yes: true,
+  },
   gameCandidate: { path: "/v1/game-candidates/{candidate-id}" },
   collectionGameCandidates: { path: "/v1/ingestion-runs/{run-id}/game-candidates?after={after}", optional: ["after"] },
   gameCandidatePartitions: {
@@ -394,6 +399,7 @@ const commands = {
   "publication-preparation artifacts": (args, env, json) => routeCommand("publicationArtifacts", args, env, json),
   "publication-preparation resume": (args, env, json) => routeCommand("publicationResume", args, env, json),
   "publication-preparation start": (args, env, json) => routeCommand("publicationPrepare", args, env, json),
+  "game-candidate abandon": (args, env, json) => routeCommand("gameCandidateAbandon", args, env, json),
   "game-candidate show": (args, env, json) => routeCommand("gameCandidate", args, env, json),
   "game-candidate list": (args, env, json) => routeCommand("collectionGameCandidates", args, env, json),
   "game-candidate evidence": (args, env, json) => routeCommand("gameCandidateEvidence", args, env, json),
@@ -1030,7 +1036,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr identity-correction validate | identity-correction create | identity-correction inspect | identity-correction list | entity-proposal list | entity-proposal inspect | entity-proposal create | entity-proposal admit | entity-proposal link | entity-proposal reject | entity-proposal reconsider | identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | game-candidate list | game-candidate show | game-candidate inspect | game-candidate evidence | game-candidate partitions | game-candidate partition | reconciliation status | reconciliation text | reconciliation inputs | reconciliation input | reconciliation partitions | reconciliation partition | reconciliation pause | reconciliation resume | reconciliation abandon | run approve | run reject | run retry | run cleanup | staging-cleanup start | evidence-cleanup start | evidence-cleanup status | evidence-cleanup objects | evidence-cleanup retry | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
+        "Usage: keepr identity-correction validate | identity-correction create | identity-correction inspect | identity-correction list | entity-proposal list | entity-proposal inspect | entity-proposal create | entity-proposal admit | entity-proposal link | entity-proposal reject | entity-proposal reconsider | identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | game-candidate abandon | game-candidate list | game-candidate show | game-candidate inspect | game-candidate evidence | game-candidate partitions | game-candidate partition | reconciliation status | reconciliation text | reconciliation inputs | reconciliation input | reconciliation partitions | reconciliation partition | reconciliation pause | reconciliation resume | reconciliation abandon | run approve | run reject | run retry | run cleanup | staging-cleanup start | evidence-cleanup start | evidence-cleanup status | evidence-cleanup objects | evidence-cleanup retry | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
     },
     2,
   );

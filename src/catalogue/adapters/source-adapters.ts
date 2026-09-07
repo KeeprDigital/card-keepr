@@ -1,53 +1,13 @@
+import { onePieceCoverageContracts } from "./one-piece-adapter";
+import { limitlessOnePieceSourceAdapterRegistration } from "./limitless-one-piece-source-adapter";
 import { sourceLineages } from "./source-registry";
 import { AdministrationProblem, gameProfileForGame } from "../shared";
 import { AdapterParseFailure, adapterUrl } from "./adapter-parse-failure";
 import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.ts";
 import { officialRawAdapterContracts } from "./product-release-source-adapters.ts";
-import type { ListingReconciliationTraits } from "./source-adapter-registration-types.ts";
 
-export type OfficialSourceContract = Readonly<{
-  supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam";
-  partition: "EN-OCEANIA" | "EN-ASIA" | "EN-US";
-  origin: string;
-  documentPathnamePrefixes: readonly string[];
-  imagePathnamePrefixes: readonly string[];
-  requiredSurfaces: readonly string[];
-}>;
-
-export type SourceAdapterRegistration = Readonly<{
-  adapterVersion: string;
-  sourceLineage: string;
-  supportedGame: string;
-  gameProfileVersion: string;
-  parserContract: string;
-  maximumSnapshotBytes: number;
-  requestCapacity: number;
-  coverageLossThreshold?: Readonly<{ absolute: number; fraction: number }>;
-  origin: "production";
-  requestSurface: Readonly<{ kind: "credential-free-https" }> | Readonly<{ kind: "exact-url"; url: string }>;
-  reconciliationCapability: "catalogue" | "errata" | "unavailable";
-  reconciliationAreas?: readonly ("catalogue" | "errata")[];
-  inheritDiscoveryRequestHeaders?: boolean;
-  listingReconciliation?: ListingReconciliationTraits;
-  parse?: (document: unknown) => readonly unknown[] | Promise<readonly unknown[]>;
-  parseBytes?: (
-    bytes: Uint8Array,
-    context: { mediaType: string | null; url: string; requestId?: string },
-  ) => readonly unknown[] | Promise<readonly unknown[]>;
-  discoverRequests?: (
-    bytes: Uint8Array,
-    context: { mediaType: string | null; url: string; requestId?: string },
-  ) => readonly {
-    role: "listing" | "detail" | "product_detail" | "image";
-    discoveryKey?: string;
-    url: string;
-    headers: Record<string, string>;
-  }[];
-  requiredSurfaces?: readonly string[];
-  requestUrlForDiscovery?: () => string;
-  requestUrlForSurface?: (surface: string) => string;
-  officialSourceContract?: OfficialSourceContract;
-}>;
+import type { OfficialSourceContract, SourceAdapterRegistration } from "./source-adapter-registration-types";
+export type { OfficialSourceContract, SourceAdapterRegistration } from "./source-adapter-registration-types";
 
 // No ordinary Source Adapter Version capacity may authorize discovery at or
 // beyond this ceiling. Registration fails closed on a declared capacity that
@@ -96,8 +56,12 @@ export function requiredOfficialSourceContract(adapter: SourceAdapterRegistratio
 export function assertOfficialSourceUrl(value: string, contract: OfficialSourceContract): URL {
   const url = adapterUrl(value);
   if (
-    url.origin !== contract.origin ||
-    !contract.documentPathnamePrefixes.some((prefix) => url.pathname.startsWith(prefix)) ||
+    !(
+      contract.documentAuthorities ?? [{ origin: contract.origin, pathnamePrefixes: contract.documentPathnamePrefixes }]
+    ).some(
+      (authority) =>
+        url.origin === authority.origin && authority.pathnamePrefixes.some((prefix) => url.pathname.startsWith(prefix)),
+    ) ||
     url.username !== "" ||
     url.password !== "" ||
     url.hash !== ""
@@ -137,6 +101,7 @@ function productionCatalogueRegistration(
 
 export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistration[] = Object.freeze(
   [
+    limitlessOnePieceSourceAdapterRegistration,
     {
       adapterVersion: "one-piece-official-errata-html@1",
       sourceLineage: "one-piece-en",
@@ -172,6 +137,7 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
     },
     ...officialRawAdapterContracts.map((adapter) => ({
       ...productionCatalogueRegistration(adapter),
+      coverageContracts: adapter.sourceLineage === "one-piece-en" ? onePieceCoverageContracts : undefined,
       listingReconciliation: adapter.listingReconciliation,
       parseBytes: (bytes: Uint8Array, context: { mediaType: string | null; url: string; requestId?: string }) =>
         adapter.parse(context, bytes),
@@ -191,7 +157,8 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
   ].map((adapter) =>
     Object.freeze({
       ...adapter,
-      requestCapacity: sourceRequestCapacity(adapter.adapterVersion),
+      requestCapacity:
+        "requestCapacity" in adapter ? adapter.requestCapacity : sourceRequestCapacity(adapter.adapterVersion),
       coverageLossThreshold: { absolute: 25, fraction: 0.2 },
     }),
   ),
@@ -209,6 +176,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] = 
     (adapter) =>
       adapter.reconciliationCapability !== "catalogue" ||
       typeof adapter.parseBytes !== "function" ||
+      !officialRawAdapterContracts.some((raw) => raw.sourceLineage === adapter.sourceLineage) ||
       activeOfficialRawAdapterVersions.has(adapter.adapterVersion),
   ),
 );
@@ -310,4 +278,27 @@ export function assertAdapterRequestSurface(adapter: SourceAdapterRegistration, 
     "official_source_surface_mismatch",
     `The Official Errata adapter accepts only ${surface.url}.`,
   );
+}
+
+/** A named scope owns a finite root contract; it never weakens the default discovery. */
+export function sourceAdapterForCoverage(
+  adapter: SourceAdapterRegistration,
+  subset = "complete",
+): SourceAdapterRegistration {
+  if (subset === "complete") return adapter;
+  const contract = adapter.coverageContracts?.[subset];
+  if (!contract)
+    throw new AdministrationProblem(
+      422,
+      "unsupported_source_subset",
+      "The adapter has no independently complete contract for this named subset.",
+    );
+  return {
+    ...adapter,
+    requiredSurfaces: contract.requiredSurfaces,
+    printingAdmission: contract.printingAdmission ?? adapter.printingAdmission,
+    requestUrlForSurface: contract.requestUrlForSurface,
+    requestUrlForDiscovery: undefined,
+    reconciliationAreas: [adapter.reconciliationCapability === "errata" ? "errata" : "catalogue"],
+  };
 }

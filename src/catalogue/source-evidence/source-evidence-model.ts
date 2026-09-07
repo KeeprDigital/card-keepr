@@ -1,5 +1,6 @@
 import {
   sourceLineages,
+  sourceAdapterForCoverage,
   assertAdapterBinding,
   assertAdapterRequestSurface,
   assertOfficialSourceUrl,
@@ -147,7 +148,7 @@ export type OfficialSourceCollectionPlan = {
   requests: OfficialSourceCollectionRequest[];
 };
 
-export type SourceCoverage = { locale: "en"; area: string; subset: "complete" };
+export type SourceCoverage = { locale: "en"; area: string; subset: string };
 
 export type EvidencePlan = {
   participation?: "required" | "optional";
@@ -206,19 +207,12 @@ export async function validateEvidencePlan(request: EvidencePlanInput & { idempo
   assertIdentifier(request.source_lineage, "source_lineage");
   assertIdentifier(request.adapter_version, "adapter_version");
   assertIdentifier(request.idempotency_key, "idempotency_key");
-  const adapter = requiredActiveSourceAdapter(request.adapter_version);
+  const adapter = sourceAdapterForCoverage(requiredActiveSourceAdapter(request.adapter_version), request.subset);
   if (request.participation !== undefined && !["required", "optional"].includes(request.participation)) {
     throw new AdministrationProblem(
       422,
       "invalid_participation",
       "Participation must be required or optional before collection.",
-    );
-  }
-  if (request.subset !== undefined && request.subset !== "complete") {
-    throw new AdministrationProblem(
-      422,
-      "unsupported_source_subset",
-      "This adapter proves only its complete declared area. Select an independently complete adapter; arbitrary page subsets are not permitted.",
     );
   }
   assertAdapterBinding(adapter, {
@@ -333,7 +327,7 @@ export async function validateEvidencePlan(request: EvidencePlanInput & { idempo
       coverage: {
         locale: sourceLineages.find(({ id }) => id === adapter.sourceLineage)?.locale ?? "en",
         area: adapter.reconciliationCapability,
-        subset: "complete",
+        subset: request.subset ?? "complete",
       },
       supported_game: adapter.supportedGame,
       source_lineage: adapter.sourceLineage,

@@ -6,6 +6,10 @@ record; the implementation checkpoint and runbook identify executable behavior.
 No prerequisite live release, final fold, cutover readiness or Go-Live is claimed.
 The source baseline for this work is main `ea51172a27ec525be577553482a41304fa9333c0`
 (schema 24: native compositions/recovery and non-expiring storage tickets).
+The branch now integrates main `3b756156753ebba1f8982f0bf2318e0773aba03b`
+(schema 25, Limitless supporting evidence). The prerequisite migration guards
+that actual schema-25 predecessor; reconcile again if another migration lands
+before this slice.
 
 ## Implementation checkpoint
 

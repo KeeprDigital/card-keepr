@@ -29,7 +29,7 @@ import {
   stableValue,
 } from "./adapter-normalization";
 import type { OfficialErratumObservation } from "./adapter-observations";
-import { AdapterParseFailure, adapterUrl } from "./adapter-parse-failure";
+import { AdapterParseFailure, adapterUrl, decodeAdapterUtf8 } from "./adapter-parse-failure";
 import { parseProductDetail } from "./adapter-product-html";
 import { createBandaiAdapter } from "./bandai-adapter-runtime";
 import { officialArtworkFingerprint } from "./official-artwork-identity";
@@ -77,7 +77,7 @@ const definition: RawAdapterDefinition = {
     liveShapes: false,
   },
 };
-export const onePieceAdapter = createBandaiAdapter(
+const fullOnePieceAdapter = createBandaiAdapter(
   definition,
   (_lineage, surface, raw) => normalizeOnePieceSurface(surface, raw, true),
   {
@@ -97,6 +97,82 @@ export const onePieceAdapter = createBandaiAdapter(
     inlineCardList: (html, url) => parseOnePieceBandaiCardListV1(html, url, true),
   },
 );
+
+const p001CatalogueUrl = "https://en.onepiece-cardgame.com/cardlist/?freewords=P-001";
+const p001EventUrl = "https://en.onepiece-cardgame.com/events/2023/championship/store_championship_wave1.php";
+const p001TrophyUrl = "https://en.onepiece-cardgame.com/images/events/2023/championship/prize/P-001.png?v2";
+export const onePieceCoverageContracts = {
+  "p-001-catalogue": {
+    description:
+      "Complete English P-001 catalogue search and referenced front images; excludes other numbers, products, events and corrections.",
+    printingAdmission: "owner_review" as const,
+    cardIdentities: [{ kind: "card_number", value: "P-001" }],
+    requiredSurfaces: ["p-001-catalogue"],
+    requestUrlForSurface: () => p001CatalogueUrl,
+  },
+  "p-001-catalogue-and-corroboration": {
+    description:
+      "Complete P-001 catalogue search plus the separate Store Championship Wave 1 Trophy Card publication and image. Catalogue absence applies only to the search.",
+    printingAdmission: "owner_review" as const,
+    cardIdentities: [{ kind: "card_number", value: "P-001" }],
+    requiredSurfaces: ["p-001-catalogue", "store-championship-p001"],
+    requestUrlForSurface: (surface: string) => (surface === "p-001-catalogue" ? p001CatalogueUrl : p001EventUrl),
+  },
+};
+function verifyP001Corroboration(bytes: Uint8Array) {
+  const html = decodeAdapterUtf8(bytes);
+  const trophy = requiredHtmlMatch(
+    html,
+    /<h[1-6][^>]*>Winner<\/h[1-6]>([\s\S]*?)<\/section>/u,
+    "Bandai Winner section",
+  )[1]!;
+  if (!trophy.includes("Trophy Card x1") || !trophy.includes(new URL(p001TrophyUrl).pathname + "?v2"))
+    throw new AdapterParseFailure("Bandai event lacks the declared P-001 Trophy Card corroboration.");
+}
+export const onePieceAdapter = {
+  ...fullOnePieceAdapter,
+  parse(context: Parameters<typeof fullOnePieceAdapter.parse>[0], bytes: Uint8Array) {
+    if (context.url === p001EventUrl) {
+      verifyP001Corroboration(bytes);
+      return [];
+    }
+    if (context.url !== p001CatalogueUrl) return fullOnePieceAdapter.parse(context, bytes);
+    return parseP001Catalogue(bytes).observations;
+  },
+  discoverRequests(bytes: Uint8Array, context: Parameters<typeof fullOnePieceAdapter.parse>[0]) {
+    if (context.url === p001EventUrl) {
+      verifyP001Corroboration(bytes);
+      return [{ role: "image" as const, url: p001TrophyUrl, headers: { accept: "image/png" } }];
+    }
+    if (context.url !== p001CatalogueUrl) return fullOnePieceAdapter.discoverRequests(bytes, context);
+    return parseP001Catalogue(bytes).observations.flatMap((observation) => {
+      if (!("appearance_evidence" in observation)) return [];
+      const images = observation.appearance_evidence?.images;
+      if (!Array.isArray(images)) throw new AdapterParseFailure("P-001 image inventory is missing.");
+      return images.map((image) => ({
+        role: "image" as const,
+        url: String(image.source_url),
+        headers: { accept: "image/png" },
+      }));
+    });
+  },
+};
+function parseP001Catalogue(bytes: Uint8Array) {
+  const html = decodeAdapterUtf8(bytes);
+  const parsed = parseOnePieceBandaiCardListV1(html, p001CatalogueUrl, true);
+  if (
+    parsed.observations.length === 0 ||
+    parsed.observations.some((o) => !("card" in o) || o.card?.official_identity.value !== "P-001")
+  )
+    throw new AdapterParseFailure("P-001 catalogue contains missing or out-of-scope card identities.");
+  const locators = parsed.observations.map((o) => ("identity_evidence" in o ? o.identity_evidence?.locator : null));
+  if (
+    locators.some((x) => typeof x !== "string" || !/^P-001(?:_p[0-9]+)?$/u.test(x)) ||
+    new Set(locators).size !== locators.length
+  )
+    throw new AdapterParseFailure("P-001 catalogue has duplicate or invalid source locators.");
+  return parsed;
+}
 
 function normalizeOnePieceSurface(
   surface: string,
@@ -309,7 +385,7 @@ function parseOnePieceBandaiCardListV1(
       )[1]!,
     );
     const imageUrl = adapterUrl(imagePath, base).href;
-    const pairs = htmlLabelPairs(body);
+    const pairs = htmlLabelPairs(body).map((pair) => ({ ...pair, label: pair.label.replaceAll(/\s+/gu, " ") }));
     const field = (...labels: string[]): string | null => firstLabelValue(pairs, labels);
     const effect = requiredNullableText(field("Effect", "Card Text", "Text"), "Official effect");
     const setLabel = field("Card Set(s)", "Where to get it") ?? "Unclassified Card List";

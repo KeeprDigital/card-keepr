@@ -241,7 +241,7 @@
   },
   "one-piece-en-card-list.json": {
     "bytes_sha256": "93a49866c157de61bf503a81beb0b9951e98f658bf68687e060a4d616eb3872d",
-    "observations_sha256": "4e6e9b8dfab23917a17e3b92d1f4b4ee7ca416c6469f81376404ca26dc7d2d1f"
+    "observations_sha256": "56845268ccca7016144311646225308d53a2daee74719be75f5bd9e2a612233a"
   },
   "one-piece-en-don-rules-hub.json": {
     "bytes_sha256": "b532c2761fb8621b744a9618f48e1141030b82f77c07ece02e5a00ad3f8414b8",
@@ -269,7 +269,7 @@
   },
   "one-piece-en-restructured-discovery.json": {
     "bytes_sha256": "27e169e3345d29cbe60c8e4db87647a16b3adf37de299c5ca64dc3b185a09fe6",
-    "observations_sha256": "e96410a611a243b1e31f445274e01cf55e568b7859952b9c6bdc64a13e29bc8c"
+    "observations_sha256": "0418e2b9272f5ab3dac6e9a85b8d466d5e3281915d22ef220c3a7537da03fd85"
   },
   "one-piece-en-rules-hub.json": {
     "bytes_sha256": "c9de2076bf785f2a42b94aecdd6fac97540f488ae709e726b216ec0be787e916",
