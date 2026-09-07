@@ -105,7 +105,7 @@ export async function prepareSourceDocuments<T extends SourceRow>(
           retainSourceByteChunkStatement(database, runId, row.observation_set_id, cursor.chunks, content, digest).run(),
         );
         await verifyStored(
-          sourceByteChunkStatement(database, runId, row.observation_set_id, cursor.chunks),
+          () => sourceByteChunkStatement(database, runId, row.observation_set_id, cursor.chunks),
           content,
           digest,
         );
@@ -181,14 +181,18 @@ export async function prepareSourceDocuments<T extends SourceRow>(
     await documentStorage(() =>
       retainSourceDocumentHeaderStatement(database, runId, row.observation_set_id, content, digest).run(),
     );
-    await verifyStored(sourceDocumentHeaderStatement(database, runId, row.observation_set_id), content, digest);
+    await verifyStored(() => sourceDocumentHeaderStatement(database, runId, row.observation_set_id), content, digest);
     cursor.complete = true;
     await save();
   }
 }
 
-async function verifyStored(statement: ReturnType<typeof sourceByteChunkStatement>, content: string, digest: string) {
-  const receipt = await documentStorage(() => statement.first<Stored>());
+async function verifyStored(
+  statement: () => ReturnType<typeof sourceByteChunkStatement>,
+  content: string,
+  digest: string,
+) {
+  const receipt = await documentStorage(() => statement().first<Stored>());
   if (receipt?.content !== content || receipt.sha256 !== digest)
     throw new Error("Source document replay changed immutable content.");
 }

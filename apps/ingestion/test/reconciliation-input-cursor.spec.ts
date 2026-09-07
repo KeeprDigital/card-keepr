@@ -331,117 +331,137 @@ test.each([
   },
 );
 
-test("source observation bytes resume from retained ranges before graph validation", async () => {
-  const run = await collectRequests([{ id: "cards", scenario: "prior-state-text-pages" }], "source-byte-cursor");
-  let serviceCalls = 0;
-  const documentCalls: number[] = [];
-  let failures = 0;
-  let resumed = false;
-  let completedBytes = 0;
-  const completed: number[] = [];
-  const ranges: number[] = [];
-  const evidence = new Proxy(testEnv.EVIDENCE_OBJECTS, {
-    get(target, property) {
-      if (property === "get")
-        return (...args: Parameters<R2Bucket["get"]>) => {
-          serviceCalls++;
-          if (args[0].startsWith("source-observations/")) {
-            const range = args[1]?.range as { offset?: number; length?: number } | undefined;
-            expect(range?.length).toBeLessThanOrEqual(65536);
-            expect(range?.offset).toBeGreaterThanOrEqual(completedBytes);
-            if (completedBytes > 0 && !resumed) {
-              failures++;
-              throw new Error("Injected source byte storage outage after retained progress.");
-            }
-            ranges.push(range!.offset!);
-          }
-          return target.get(...args);
-        };
-      const value = Reflect.get(target, property);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
-  const wrap = (statement: D1PreparedStatement): D1PreparedStatement =>
-    new Proxy(statement, {
+test.each(["r2", "receipt"])(
+  "source observation bytes resume from retained ranges after %s storage failure",
+  async (failure) => {
+    const run = await collectRequests([{ id: "cards", scenario: "prior-state-text-pages" }], "source-byte-cursor");
+    let serviceCalls = 0;
+    const documentCalls: number[] = [];
+    let failures = 0;
+    let resumed = false;
+    let completedBytes = 0;
+    const completed: number[] = [];
+    const ranges: number[] = [];
+    const evidence = new Proxy(testEnv.EVIDENCE_OBJECTS, {
       get(target, property) {
-        if (property === "bind") return (...values: unknown[]) => wrap(target.bind(...values));
-        const value = Reflect.get(target, property);
-        if (["run", "first", "all", "raw"].includes(String(property)))
-          return (...args: unknown[]) => {
+        if (property === "get")
+          return (...args: Parameters<R2Bucket["get"]>) => {
             serviceCalls++;
-            return Reflect.apply(value, target, args);
+            if (args[0].startsWith("source-observations/")) {
+              const range = args[1]?.range as { offset?: number; length?: number } | undefined;
+              expect(range?.length).toBeLessThanOrEqual(65536);
+              expect(range?.offset).toBeGreaterThanOrEqual(completedBytes);
+              if (failure === "r2" && completedBytes > 0 && !resumed) {
+                failures++;
+                throw new Error("Injected source byte storage outage after retained progress.");
+              }
+              ranges.push(range!.offset!);
+            }
+            return target.get(...args);
           };
+        const value = Reflect.get(target, property);
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-  const database = new Proxy(testEnv.CATALOGUE_DB, {
-    get(target, property) {
-      if (property === "prepare") return (sql: string) => wrap(target.prepare(sql));
-      if (property === "batch")
-        return (...args: Parameters<D1Database["batch"]>) => {
-          serviceCalls++;
-          return target.batch(...args);
-        };
-      const value = Reflect.get(target, property);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
-  const step = {
-    do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
-      let result: string;
-      for (let attempt = 0; ; attempt++) {
-        try {
-          serviceCalls = 0;
-          result = await callback();
-          break;
-        } catch (error) {
-          if (attempt >= config.retries.limit) throw error;
+    const wrap = (statement: D1PreparedStatement): D1PreparedStatement =>
+      new Proxy(statement, {
+        get(target, property) {
+          if (property === "bind") return (...values: unknown[]) => wrap(target.bind(...values));
+          const value = Reflect.get(target, property);
+          if (["run", "first", "all", "raw"].includes(String(property)))
+            return (...args: unknown[]) => {
+              serviceCalls++;
+              return Reflect.apply(value, target, args);
+            };
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    const database = new Proxy(testEnv.CATALOGUE_DB, {
+      get(target, property) {
+        if (property === "prepare")
+          return (sql: string) => {
+            if (
+              failure === "receipt" &&
+              completedBytes > 0 &&
+              !resumed &&
+              sql.includes("FROM reconciliation_source_byte_chunks")
+            ) {
+              failures++;
+              throw new Error("Injected synchronous source receipt preparation outage after retained progress.");
+            }
+            return wrap(target.prepare(sql));
+          };
+        if (property === "batch")
+          return (...args: Parameters<D1Database["batch"]>) => {
+            serviceCalls++;
+            return target.batch(...args);
+          };
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const step = {
+      do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+        let result: string;
+        for (let attempt = 0; ; attempt++) {
+          try {
+            serviceCalls = 0;
+            result = await callback();
+            break;
+          } catch (error) {
+            if (attempt >= config.retries.limit) throw error;
+          }
         }
-      }
-      if (JSON.parse(result).continuation?.phase === "source_documents") {
-        documentCalls.push(serviceCalls);
-        const progress = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
-        const checkpoint = (progress.checkpoints as { phase: string; cursor: { offset: number } }[]).find(
-          ({ phase }) => phase === "source_documents",
-        )!;
-        completedBytes = checkpoint.cursor.offset;
-        completed.push(completedBytes);
-      }
-      return result;
-    },
-  } as unknown as import("cloudflare:workers").WorkflowStep;
-  const event = {
-    payload: {
-      ingestion_run_id: run.id,
-      expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
-      idempotency_key: "source-byte-cursor",
-      observed_at: new Date().toISOString(),
-      generation: 0,
-    },
-  } as import("cloudflare:workers").WorkflowEvent<
-    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
-  >;
-  const environment = { ...testEnv, EVIDENCE_OBJECTS: evidence, CATALOGUE_DB: database };
-  await runReconciliationWorkflow(environment, event, step);
-  expect(failures).toBe(4);
-  const paused = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
-  expect(paused).toMatchObject({ state: "paused", generation: 1 });
-  expect(
-    (
-      await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
-        generation: 1,
-        idempotency_key: "resume-source-bytes",
-      })
-    ).response.status,
-  ).toBe(200);
-  resumed = true;
-  await runReconciliationWorkflow(environment, { payload: { ...event.payload, generation: 1 } } as typeof event, step);
-  const sealed = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
-  expect(sealed).toMatchObject({ state: "sealed", deadline: paused.deadline });
-  expect(Math.max(...documentCalls)).toBeLessThanOrEqual(100);
-  expect(completed.length).toBeGreaterThan(2);
-  expect(new Set(ranges).size).toBe(ranges.length);
-  const page = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions`)).document;
-  const cards = (page.partitions as { kind: string; record_count: number }[]).filter(({ kind }) => kind === "cards");
-  expect(cards.reduce((sum, part) => sum + part.record_count, 0)).toBe(32);
-});
+        if (JSON.parse(result).continuation?.phase === "source_documents") {
+          documentCalls.push(serviceCalls);
+          const progress = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+          const checkpoint = (progress.checkpoints as { phase: string; cursor: { offset: number } }[]).find(
+            ({ phase }) => phase === "source_documents",
+          )!;
+          completedBytes = checkpoint.cursor.offset;
+          completed.push(completedBytes);
+        }
+        return result;
+      },
+    } as unknown as import("cloudflare:workers").WorkflowStep;
+    const event = {
+      payload: {
+        ingestion_run_id: run.id,
+        expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
+        idempotency_key: "source-byte-cursor",
+        observed_at: new Date().toISOString(),
+        generation: 0,
+      },
+    } as import("cloudflare:workers").WorkflowEvent<
+      import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+    >;
+    const environment = { ...testEnv, EVIDENCE_OBJECTS: evidence, CATALOGUE_DB: database };
+    await runReconciliationWorkflow(environment, event, step);
+    expect(failures).toBe(4);
+    const paused = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+    expect(paused).toMatchObject({ state: "paused", generation: 1 });
+    expect(
+      (
+        await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+          generation: 1,
+          idempotency_key: "resume-source-bytes",
+        })
+      ).response.status,
+    ).toBe(200);
+    resumed = true;
+    await runReconciliationWorkflow(
+      environment,
+      { payload: { ...event.payload, generation: 1 } } as typeof event,
+      step,
+    );
+    const sealed = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+    expect(sealed).toMatchObject({ state: "sealed", deadline: paused.deadline });
+    expect(Math.max(...documentCalls)).toBeLessThanOrEqual(100);
+    expect(completed.length).toBeGreaterThan(2);
+    if (failure === "r2") expect(new Set(ranges).size).toBe(ranges.length);
+    else expect(ranges.length - new Set(ranges).size).toBe(4);
+    const page = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions`)).document;
+    const cards = (page.partitions as { kind: string; record_count: number }[]).filter(({ kind }) => kind === "cards");
+    expect(cards.reduce((sum, part) => sum + part.record_count, 0)).toBe(32);
+  },
+);
