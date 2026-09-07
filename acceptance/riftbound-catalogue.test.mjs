@@ -722,6 +722,42 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     vars: { ...checkpoint.vars, ADMINISTRATION_KEY: key, SOURCE_HOST_PACING_MODE: "immediate" },
   });
   await waitForHealth(`${restoredAdmin.url}/health`, key, restoredAdmin);
+  const monkCapture = manifest.captures.find((c) => c.id === "riftbound-image-ogn-141-298");
+  await writeFile(
+    proposalPath,
+    JSON.stringify({
+      game: "riftbound",
+      target: {
+        kind: "field",
+        entity_type: "printing",
+        entity_id: admittedPrintings.get("ogn-141-298"),
+        path: "/printed_rules_text",
+      },
+      assertion: { kind: "field", value: printedMonk },
+      rationale: "Verify restored private source authority beneath the published Curated Revision.",
+      evidence: [{ kind: "owner_reference", uri: monkCapture.url, content_digest: monkCapture.sha256 }],
+      effective_interval: { from: null, to: null },
+      reviewed_source_digest: createHash("sha256").update("null").digest("hex"),
+      supersedes_revision_id: null,
+    }),
+  );
+  const restoredValidation = await runCli(
+    [
+      "curated-revision",
+      "validate",
+      "--proposal",
+      proposalPath,
+      "--expected-current-revision",
+      finalPublication.resulting_revision_id,
+      "--secrets-stdin-fd",
+      "3",
+      "--json",
+    ],
+    { ...environment, KEEPR_INGESTION_URL: restoredAdmin.url },
+    { secrets: { administration_key: key } },
+  );
+  assert.equal(restoredValidation.code, 0, restoredValidation.stdout + restoredValidation.stderr);
+  assert.equal(JSON.parse(restoredValidation.stdout).valid, true);
   const shownAfterRestore = await runCli(["source", "show", "--run-id", run.id, "--json"], {
     ...environment,
     KEEPR_INGESTION_URL: restoredAdmin.url,

@@ -70,6 +70,9 @@ export const compositionSnapshotTables = [
   "ingestion_run_event_payload_chunks",
   "reconciliation_operations",
   "reconciliation_contexts",
+  "reconciliation_checkpoints",
+  "reconciliation_reducer_state",
+  "reconciliation_text_chunks",
   "reconciliation_source_observations",
   "reconciliation_observation_origins",
 ] as const;

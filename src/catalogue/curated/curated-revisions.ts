@@ -1,3 +1,4 @@
+import { nativeCuratedTarget } from "./curated-native-target";
 import { materializeCuratedConflictStatements } from "./curated-conflict-preparation-repository";
 import {
   CuratedConflictPreparation,
@@ -1892,6 +1893,14 @@ async function currentTarget(
     proposal.target.kind === "field" &&
     (proposal.target.entity_type === "card" || proposal.target.entity_type === "printing")
   ) {
+    const native = await nativeCuratedTarget(
+      database,
+      revisionId,
+      proposal.game,
+      proposal.target.entity_type,
+      proposal.target.entity_id,
+    );
+    if (native !== undefined) return stripCuratedEntityEffects(native);
     const row = await curatedStatements
       .curatedEntityDocumentStatement(database, {
         revisionId,

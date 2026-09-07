@@ -270,3 +270,45 @@ reuse and verifies restart, a retained generation gap, concurrent allocation of
 distinct files, and preservation of earlier imported contents. This preserves
 the terminal verified import while later publications obtain fresh independent
 verification databases; it is a fixture correction, not a production migration.
+
+## Native consumer checks and Curated target lookup
+
+The frozen `c717988` verified-publication continuation stopped after 152.32
+seconds. It reverified the complete export, 31 Errata and their targets, nine
+Products and Releases, unknown regions and quarter precision, and the scoped
+Dark Child wording. All six authenticated Printing reads and retained image
+SHA-256 comparisons passed. The first Curated Revision validation then returned
+`curated_revision_target_not_found`; no Curated Revision was created. All
+runtimes stopped and the verified publication/backup state was preserved.
+
+A read-only invocation of the shipped validator reproduced the same failure in
+104 ms against the retained database. Curated Card/Printing targeting still
+queried legacy revision tables; native publication stores its membership in the
+composed publication projections. Public projections deliberately remove private
+Curated provenance, so using consumer values alone would lose reviewed-source
+restoration. The corrected reader gates native membership and its game, selects
+the published preparation, and resolves its audit-retained private entity from
+completed checkpoint cutoffs. Correction, Curated and official layers preserve
+the existing precedence. Entity/checkpoint/text digests and bounded text lengths
+are verified, and a Printing must retain its published owning Card. Native
+failures never fall back to legacy rows. The original retained-state validation
+then passed in 32 ms; this remains a read-only diagnostic, not completed native
+Curated publication or restore evidence.
+
+The existing immutable/audit-retained triggers protect reducer records, text
+chunks and checkpoints. These three tables are now explicitly included in the
+backup verification census. A nonzero correction pin requires its completed
+identity checkpoint; missing authority is unavailable, not an implicit empty
+correction set. Runtime-free SQLite regressions cover direct Card/Printing
+validation, wrong game/revision, missing/unpublished/retired targets, corrupt
+private/checkpoint digests, completed-prefix selection, original-source
+restoration and retained text hydration. The native journey now additionally
+requires restored owner validation against the Monk's underlying null source
+wording after its Curated printed wording has been published.
+
+The separate existing Product/relationship Curated target branch still reads a
+legacy whole-candidate document. Its concrete trigger is a field proposal for a
+Product (or a relationship proposal) against a native composed Catalogue
+Revision. It is outside the Card/Printing correction exercised by #232 and is
+reported to the coordinator as a remaining shared Curated integration gap.
+No Product/relationship native completion is claimed here.
