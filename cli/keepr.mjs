@@ -14,6 +14,10 @@ import { requestDocument } from "./lib/json-client.mjs";
 import { runProductionReleaseCommand } from "./production-release.mjs";
 
 const commandRoutes = {
+  publicationOperationResume: {
+    path: "/v1/publications/{operation-id}/resume",
+    fields: { generation: "generation", idempotency_key: "idempotency-key" },
+  },
   publicationStatus: { path: "/v1/publications/{operation-id}" },
   publicationStart: {
     path: "/v1/publications/start",
@@ -354,6 +358,7 @@ const commands = {
   "reconciliation status": (args, env, json) => routeCommand("reconciliationStatus", args, env, json),
   "reconciliation text": (args, env, json) => routeCommand("reconciliationText", args, env, json),
   "publication approve": (args, env, json) => routeCommand("publicationStart", args, env, json),
+  "publication resume": (args, env, json) => routeCommand("publicationOperationResume", args, env, json),
   "publication status": (args, env, json) => routeCommand("publicationStatus", args, env, json),
   "publication-preparation status": (args, env, json) => routeCommand("publicationPreparation", args, env, json),
   "publication-preparation artifacts": (args, env, json) => routeCommand("publicationArtifacts", args, env, json),

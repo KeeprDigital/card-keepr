@@ -88,4 +88,4 @@ export {
 } from "./publication-preparation";
 export { dispatchPublicationPreparation } from "./publication-preparation-dispatch";
 
-export { advanceGamePublication } from "./game-publication";
+export { advanceGamePublication, pauseGamePublication } from "./game-publication";

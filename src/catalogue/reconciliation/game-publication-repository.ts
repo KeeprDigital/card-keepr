@@ -190,3 +190,34 @@ export function publicationSwitchStatements(
       .bind(input.revision, input.backup, input.at, input.id, input.generation),
   ];
 }
+
+export function publicationResumeAction(db: CatalogueStore, key: string) {
+  return repositoryStatements(db)
+    .prepare(`SELECT request_json,result_json FROM game_publication_actions WHERE idempotency_key=?`)
+    .bind(key);
+}
+export function publicationResumeStatements(
+  db: CatalogueStore,
+  id: string,
+  generation: number,
+  key: string,
+  request: string,
+  result: string,
+  at: string,
+) {
+  const sql = repositoryStatements(db);
+  return [
+    sql
+      .prepare(`SELECT CASE WHEN EXISTS(SELECT 1 FROM game_publication_operations p,operation_state o
+ WHERE p.id=? AND p.generation=? AND p.state NOT IN ('published','failed') AND p.deadline>?
+ AND o.singleton=1 AND o.recovery_health='healthy' AND o.active_recovery_id IS NULL AND o.recovery_restore_guard='clear')
+ THEN 1 ELSE json_extract('{}','publication_resume_conflict') END`)
+      .bind(id, generation, at),
+    sql
+      .prepare(
+        `UPDATE game_publication_operations SET generation=generation+1,state='approved',failure_code=NULL WHERE id=?`,
+      )
+      .bind(id),
+    sql.prepare(`INSERT INTO game_publication_actions VALUES (?,?,?,?)`).bind(key, id, request, result),
+  ];
+}
