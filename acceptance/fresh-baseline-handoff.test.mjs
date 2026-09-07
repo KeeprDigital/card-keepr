@@ -25,7 +25,7 @@ const bundle = await build({
   platform: "node",
 });
 const runtime = await import(
-  `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`
+  `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text + "\n//# sourceURL=fresh-baseline-runtime.mjs").toString("base64")}`
 );
 const migrations = await Promise.all(
   (await readdir("migrations"))
@@ -76,7 +76,7 @@ async function setup(t) {
     idempotency_key: "prepare_239",
     expected_current_revision_id: "catrev_spine_000",
     expected_head_sha: "a".repeat(40),
-    expected_actor: "owner",
+    expected_actor: "owner[bot]",
     expected_migration_level: 27,
     production_target: target,
     production_target_digest: sha(JSON.stringify(canonical(target))),
