@@ -4,6 +4,7 @@ import { inspectGameCandidate } from "./game-candidate";
 import { synchronizeGameCandidatePauseStatement } from "./game-candidate-repository";
 import {
   gamePreparationResumeGuardStatement,
+  collectionGamePredecessorStatement,
   type GamePreparationIntent,
   gamePreparationRequestStatement,
   gamePreparationRequestByIdStatement,
@@ -24,6 +25,36 @@ type RequestRow = {
   workflow_params_json: string;
   workflow_instance_id: string;
 };
+
+/** Collection retries reuse the original request even if the game's head advances. */
+export async function prepareCollectedGame(
+  database: CatalogueStore,
+  workflow: Workflow<ReconciliationWorkflowParams>,
+  runId: string,
+  game: string,
+  at: string,
+) {
+  const key = `collection-${runId}-${game}`;
+  const retained = await gamePreparationRequestStatement(database, key).first<RequestRow>();
+  let input: GamePreparationIntent;
+  if (retained) {
+    input = JSON.parse(retained.request_json) as GamePreparationIntent;
+    if (input.ingestion_run_id !== runId || input.supported_game !== game)
+      throw new AdministrationProblem(409, "idempotency_conflict", "This key binds another game preparation intent.");
+  }
+  else {
+    const head = await collectionGamePredecessorStatement(database, game).first<{ revision_id: string }>();
+    if (!head) throw new AdministrationProblem(422, "unsupported_game", "Select a Supported Game.");
+    input = {
+      ingestion_run_id: runId,
+      supported_game: game,
+      expected_game_revision_id: head.revision_id,
+      idempotency_key: key,
+    };
+  }
+  const { document } = await createGameReconciliation(database, workflow, input, at);
+  return { id: String(document.id), supported_game: game };
+}
 
 export async function createGameReconciliation(
   database: CatalogueStore,

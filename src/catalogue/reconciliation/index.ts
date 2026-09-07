@@ -63,6 +63,7 @@ export {
 } from "./product-release-publication";
 
 export { reconciliationRoutes } from "./routes";
+export { prepareCollectedGame } from "./game-reconciliation";
 
 export { pinEntityAdmissions } from "./entity-admission-pins";
 

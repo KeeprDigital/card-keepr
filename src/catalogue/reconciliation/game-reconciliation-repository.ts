@@ -14,6 +14,12 @@ export type GamePreparationCreation = GamePreparationIntent & {
   workflowId: string;
 };
 
+export function collectionGamePredecessorStatement(database: CatalogueStore, game: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT revision_id FROM game_catalogue_heads WHERE supported_game = ?`)
+    .bind(game);
+}
+
 export function gamePreparationRequestStatement(database: CatalogueStore, key: string) {
   return repositoryStatements(database)
     .prepare(`SELECT preparation_id, request_json, workflow_params_json, workflow_instance_id

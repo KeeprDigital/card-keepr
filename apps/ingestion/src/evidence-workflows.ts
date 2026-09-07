@@ -34,6 +34,7 @@ import {
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 import { fenceCollectionWorkflow, isSupersededCollectionWorkflow } from "./collection-workflow-fence";
 import { runReconciliationWorkUnits } from "./reconciliation-workflow";
+import { prepareCollectedGame } from "../../../src/catalogue/reconciliation";
 
 const deterministicDatabaseStep = {
   retries: { limit: 3, delay: 250, backoff: "exponential" as const },
@@ -277,6 +278,27 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
           run.plan_origin === "production" &&
           requiredSourceAdapter(run.adapter_version).reconciliationCapability === "catalogue"
         ) {
+          const games = JSON.parse(run.selected_games_json) as string[];
+          if (games.length > 1) {
+            if (games.length > 4) throw new Error("Collection selected too many Supported Games.");
+            const preparations: { id: string; supported_game: string }[] = [];
+            for (const game of [...games].sort()) {
+              const prepared = await step.do(
+                workflowStepName(workflowSteps.parent.prepareGame, { game }),
+                deterministicDatabaseStep,
+                () =>
+                  prepareCollectedGame(
+                    catalogueStore(this.env.CATALOGUE_DB),
+                    this.env.RECONCILIATION_WORKFLOW,
+                    runId,
+                    game,
+                    run.collection_completed_at ?? run.started_at,
+                  ),
+              );
+              preparations.push(prepared);
+            }
+            return { ingestion_run_id: runId, game_preparations: preparations };
+          }
           const reconciliationResultJson = await runReconciliationWorkUnits(
             this.env,
             step,
