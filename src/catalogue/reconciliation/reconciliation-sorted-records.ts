@@ -194,10 +194,10 @@ export class ReconciliationSortedRecords<T> implements AsyncIterable<T> {
 
 function sortableSize(key: string): number {
   const bytes = new TextEncoder().encode(key).byteLength;
-  // Four resident merge heads must share one metadata-sized work budget.
-  if (bytes > 128000)
-    throw new Error(
-      "reconciliation_capacity_exceeded: one sortable diagnostic or semantic record exceeds 128000 bytes.",
-    );
+  // Four comparison heads plus a single oversized output stay below the 64 MiB
+  // memory budget, including hydrated values and UTF-16 canonical keys. Text is
+  // retained separately; only the envelopes must fit the metadata-sized batches.
+  if (bytes > 2097152)
+    throw new Error("reconciliation_capacity_exceeded: one sortable diagnostic or semantic record exceeds 2 MiB.");
   return bytes;
 }

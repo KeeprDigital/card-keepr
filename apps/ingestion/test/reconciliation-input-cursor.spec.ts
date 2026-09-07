@@ -150,6 +150,7 @@ test.each([
 test.each([
   { scenario: "curated-conflict-fanout-base", requireFrozenMetadata: false, groups: [8, 8, 8, 8] },
   { scenario: "curated-conflict-fanout-base", requireFrozenMetadata: true, groups: [8, 8, 8, 8] },
+  { scenario: "capacity-single-observation", requireFrozenMetadata: true, groups: [1] },
   { scenario: "large-card-content", requireFrozenMetadata: true, groups: [1] },
   { scenario: "single-card-warning-work-units", requireFrozenMetadata: true, groups: [1] },
   { scenario: "card-only-work-units", requireFrozenMetadata: true, groups: [], expectedObservations: 32 },
