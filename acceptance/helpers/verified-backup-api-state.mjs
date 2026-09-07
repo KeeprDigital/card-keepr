@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { copyFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { persistedDatabaseDirectory } from "./acceptance-runtime.mjs";
+import { catalogueStateTableExists } from "./query-helpers/schema.mjs";
 
 /** Use the actual last Cloudflare-verification import for a separate API boot.
  * Restore the disposable test binding in place, retaining its R2 objects and
@@ -18,7 +19,7 @@ export async function verifiedBackupApiState(statePath, directory) {
     if (!name.endsWith(".sqlite")) continue;
     const path = join(databaseDirectory, name);
     const database = new DatabaseSync(path, { readOnly: true });
-    const catalogue = database.prepare("SELECT 1 FROM sqlite_schema WHERE name='catalogue_state'").get();
+    const catalogue = catalogueStateTableExists(database).get();
     database.close();
     if (!catalogue) continue;
     await rm(`${path}-wal`, { force: true });

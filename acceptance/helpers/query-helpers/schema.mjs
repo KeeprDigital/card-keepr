@@ -26,6 +26,10 @@ export function sourceRequestTableExists(database) {
   return database.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'source_requests'");
 }
 
+export function catalogueStateTableExists(database) {
+  return database.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'catalogue_state'");
+}
+
 export function setUnexpectedSchemaLevel(database) {
   return database.prepare("UPDATE catalogue_schema_state SET migration_level = 99 WHERE singleton = 1");
 }
