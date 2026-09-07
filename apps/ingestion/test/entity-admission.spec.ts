@@ -7,7 +7,6 @@ import {
 import { initializeReconciliationProgress } from "../../../src/catalogue/reconciliation/reconciliation-progress";
 import { parseReconciliationObservation } from "../../../src/catalogue/reconciliation/reconciliation-observation";
 import { reconciliationSourceDocument } from "../../../test/support/fake-publisher/reconciliation-documents";
-import { readSourceSnapshotsIdRetrievedAt } from "./query-helpers/source-evidence";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { expect, test } from "vitest";
 import { retainLegacyAdmissionPin, retainLegacyAdmissionSelection } from "./query-helpers/legacy-decision-pins";
@@ -787,10 +786,8 @@ test.each([
     const db = catalogueStore(testEnv.CATALOGUE_DB);
     const at = new Date().toISOString();
     await initializeReconciliationProgress(db, run.id, at);
-    const snapshot = await readSourceSnapshotsIdRetrievedAt(testEnv.CATALOGUE_DB)
-      .bind(run.id, "cards")
-      .first<{ id: string }>();
-    expect(snapshot).not.toBeNull();
+    const snapshot = (run.document.snapshots as { id: string }[])[0];
+    expect(snapshot).toBeDefined();
     const document = reconciliationSourceDocument(
       "inspection-base",
       "cards",
