@@ -108,6 +108,7 @@ export async function* retainedPayloadChunks(
   kind: "candidate" | "digest",
   inline: string,
   startIndex = 0,
+  read: <T>(operation: () => Promise<T>) => Promise<T> = (operation) => operation(),
 ): AsyncGenerator<string> {
   if (inline !== marker(kind)) {
     if (startIndex !== 0) throw new Error("An inline retained payload cursor has an invalid chunk index.");
@@ -116,11 +117,13 @@ export async function* retainedPayloadChunks(
   }
   let expected = startIndex;
   while (true) {
-    const chunk = await retainedReconciliationPayloadChunkStatement(database, {
-      runId,
-      kind,
-      after: expected - 1,
-    }).first<{ chunk_index: number; content: string }>();
+    const chunk = await read(() =>
+      retainedReconciliationPayloadChunkStatement(database, {
+        runId,
+        kind,
+        after: expected - 1,
+      }).first<{ chunk_index: number; content: string }>(),
+    );
     if (chunk === null) {
       if (expected === 0) throw new Error(`Chunked reconciliation ${kind} payload is unavailable.`);
       return;

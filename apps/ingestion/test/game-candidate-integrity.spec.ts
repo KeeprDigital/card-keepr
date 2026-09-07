@@ -314,3 +314,74 @@ test("injected loss of a replaced before-image prevents a native inspection inte
   expect((await get(`/v1/game-candidates/${id}/inspection`)).document).toMatchObject({ ready: false });
   expect((await get(`/v1/ingestion-runs/${next.id}`)).document).toMatchObject({ state: "parsing" });
 });
+
+test("canonical legacy candidate JSON preserves before-images regardless of member order", async () => {
+  const { canonicalJson } = await import("../../../src/catalogue/shared");
+  const { seedRunFixtureStatement } = await import("./query-helpers/run-events");
+  const { nativeCandidateRecords } = await import("./native-candidate-helpers");
+  const source = await collect("/reconciliation/base", "inspection-legacy-image-source");
+  const reconciled = await reconcile(source.id);
+  const status = await get(`/v1/ingestion-runs/${source.id}/reconciliation`);
+  const candidateId = (status.document.candidates as { id: string }[])[0]!.id;
+  const records = await nativeCandidateRecords(candidateId);
+  expect(
+    (
+      await post(`/v1/ingestion-runs/${source.id}/rejection`, {
+        candidate_digest: reconciled.document.candidate_digest,
+        idempotency_key: "inspection-legacy-image-reject",
+      })
+    ).response.status,
+  ).toBe(200);
+  // Explicit legacy publication fixture: retained candidate JSON, without game partitions.
+  const legacyId = "fixture_inspection_legacy_images";
+  await seedRunFixtureStatement(testEnv.CATALOGUE_DB, {
+    id: legacyId,
+    state: "failed",
+    started_at: "2000-01-01T00:00:00.000Z",
+    terminal_at: "2000-01-01T00:00:00.000Z",
+    selected_games_json: '["one-piece"]',
+    failure_code: "fixture_source_ready",
+    candidate_json: canonicalJson({
+      contract: "card-keepr-catalogue-candidate@1",
+      selected_games: ["one-piece"],
+      cards: records.cards,
+      printings: records.printings,
+      printing_images: records.printing_images,
+    }),
+  }).run();
+  const retried = await post(`/v1/ingestion-runs/${legacyId}/retry`, {
+    idempotency_key: "inspection-legacy-image-retry",
+  });
+  expect(retried.response.status, JSON.stringify(retried.document)).toBe(201);
+  const published = await post(`/v1/ingestion-runs/${retried.document.id}/approval`, {
+    candidate_digest: retried.document.candidate_digest,
+    expected_current_revision_id: retried.document.expected_current_revision_id,
+    idempotency_key: "inspection-legacy-image-publish",
+  });
+  expect(published.response.status, JSON.stringify(published.document)).toBe(200);
+  const next = await collect("/reconciliation/base", "inspection-legacy-image-next");
+  const created = await post("/v1/game-candidates", {
+    ingestion_run_id: next.id,
+    supported_game: "one-piece",
+    expected_game_revision_id: published.document.resulting_revision_id,
+    idempotency_key: "inspection-legacy-image-native",
+  });
+  expect(created.response.status).toBe(201);
+  const id = requiredString(created.document, "id");
+  let candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  const deadline = Date.now() + 15000;
+  while (candidate.state === "preparing" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  }
+  expect(candidate, JSON.stringify(candidate)).toMatchObject({ state: "sealed" });
+  const inspected = await nativeCandidateRecords(id);
+  expect(inspected.inspection).toContainEqual(
+    expect.objectContaining({
+      entity_class: "printing_images",
+      change: "carry_forward",
+      before: expect.objectContaining({ role: "front" }),
+      after: expect.objectContaining({ role: "front" }),
+    }),
+  );
+});

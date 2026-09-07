@@ -16,7 +16,7 @@ export type InspectionCursor = {
   beforePosition: number;
   afterPosition: number;
   after: string;
-  legacy?: { runId: string; member: ObjectMemberCursor | null };
+  legacy?: { runId: string; member: ObjectMemberCursor | null; pass: number };
   count: number;
   counts: Record<string, Record<string, number>>;
 };
@@ -101,7 +101,7 @@ export async function prepareCandidateInspection(
     if (!legacyPayload) throw new Error("The exact predecessor candidate required for inspection is unavailable.");
     if (cursor.legacy && cursor.legacy.runId !== legacyPayload.ingestion_run_id)
       throw new Error("Retained predecessor identity changed.");
-    cursor.legacy ??= { runId: legacyPayload.ingestion_run_id, member: null };
+    cursor.legacy ??= { runId: legacyPayload.ingestion_run_id, member: null, pass: 0 };
   }
   const before = new ReconciliationReducerIndex<Entry>(
     database,
@@ -165,40 +165,58 @@ export async function prepareCandidateInspection(
     bytes += new TextEncoder().encode(canonicalJson(pending.at(-1))).byteLength;
   };
   if (cursor.stage === "before" && cursor.legacy && legacyPayload) {
-    for await (const { member, cursor: position } of resumableObjectMembers(
-      (chunk) =>
-        retainedPayloadChunks(database, cursor.legacy!.runId, "candidate", legacyPayload!.candidate_json, chunk),
-      cursor.legacy.member,
-    )) {
-      if (member.kind === "value" && member.array) {
-        const value = member.value as Record<string, unknown>;
-        let selected =
-          typeof value === "string" ? value === candidate.supported_game : value?.game === candidate.supported_game;
-        if (member.key === "printings" && value && typeof value.card_id === "string")
-          selected = !!(await before.get(`cards:${value.card_id}`));
-        if (member.key === "printing_images" && value && typeof value.printing_id === "string")
-          selected = !!(await before.get(`printings:${value.printing_id}`));
-        if (selected) {
-          const id =
-            typeof value === "object" && value !== null
-              ? typeof value.id === "string"
-                ? value.id
-                : member.key === "source_checks"
-                  ? canonicalJson([value.game, value.area])
-                  : canonicalJson(value)
-              : canonicalJson(value);
-          const key = `${member.key}:${id}`;
-          await before.seed(key, {
-            id: key,
-            entity_id: id,
-            kind: member.key,
-            envelope: await retainPartitionedRecord(database, candidate.preparation_id, member.value),
-          });
+    while (cursor.legacy.pass < 3) {
+      for await (const { member, cursor: position } of resumableObjectMembers(
+        (chunk) =>
+          retainedPayloadChunks(
+            database,
+            cursor.legacy!.runId,
+            "candidate",
+            legacyPayload!.candidate_json,
+            chunk,
+            documentStorage,
+          ),
+        cursor.legacy.member,
+      )) {
+        const selectedPass =
+          cursor.legacy.pass === 0
+            ? member.key === "cards"
+            : cursor.legacy.pass === 1
+              ? member.key === "printings"
+              : member.key !== "cards" && member.key !== "printings";
+        if (selectedPass && member.kind === "value" && member.array) {
+          const value = member.value as Record<string, unknown>;
+          let selected =
+            typeof value === "string" ? value === candidate.supported_game : value?.game === candidate.supported_game;
+          if (member.key === "printings" && value && typeof value.card_id === "string")
+            selected = !!(await before.get(`cards:${value.card_id}`));
+          if (member.key === "printing_images" && value && typeof value.printing_id === "string")
+            selected = !!(await before.get(`printings:${value.printing_id}`));
+          if (selected) {
+            const id =
+              typeof value === "object" && value !== null
+                ? typeof value.id === "string"
+                  ? value.id
+                  : member.key === "source_checks"
+                    ? canonicalJson([value.game, value.area])
+                    : canonicalJson(value)
+                : canonicalJson(value);
+            const key = `${member.key}:${id}`;
+            await before.seed(key, {
+              id: key,
+              entity_id: id,
+              kind: member.key,
+              envelope: await retainPartitionedRecord(database, candidate.preparation_id, member.value),
+            });
+          }
+          bytes += new TextEncoder().encode(canonicalJson(member.value)).byteLength;
         }
-        bytes += new TextEncoder().encode(canonicalJson(member.value)).byteLength;
+        cursor.legacy.member = position;
+        if (++work >= 4 || bytes >= 512000) await retain();
       }
-      cursor.legacy.member = position;
-      if (++work >= 4 || bytes >= 512000) await retain();
+      cursor.legacy.pass++;
+      cursor.legacy.member = null;
+      await retain();
     }
     cursor.stage = "after";
     await retain();
