@@ -112,3 +112,7 @@ export function countCatalogueBackupWorkflowRequestsCount(database: D1Database):
      WHERE idempotency_key LIKE 'retry-backup-source-%'
         OR idempotency_key = 'backup-unlinked-route'`);
 }
+
+export function removeRacingRecoveryBackup(database: D1Database): D1PreparedStatement {
+  return database.prepare("DELETE FROM catalogue_backup_attempts WHERE idempotency_key='racing-recovery-backup'");
+}

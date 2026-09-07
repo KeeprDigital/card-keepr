@@ -1,3 +1,4 @@
+import { insertPendingBackupStatement } from "../../../src/catalogue/backup-recovery/backup-repository";
 import { disableRecoveryTransitionTrigger, disableRecoveryHealthTrigger } from "./query-helpers/maintenance-guards";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as ingestionQueries from "./query-helpers/ingestion";
@@ -493,39 +494,60 @@ test("exact accepted replay remains immutable after a later publication", async 
     .run();
 });
 
-test("a race during external prework cannot acquire the block or begin restore", async () => {
-  let restoreCalls = 0;
-  const provider = recoveryProvider({
-    currentBookmark: async () => {
-      await publishedCatalogueQueries
-        .setCatalogueStateCurrentRevisionIdForRaceDuringExternalPreworkCannotAcquireBlockOrBegin(testEnv.CATALOGUE_DB)
-        .run();
-      return "bookmark-before-race";
-    },
-    timeTravelRestore: async () => {
-      restoreCalls += 1;
-      return {
-        bookmark: "bookmark-restored",
-        previousBookmark: "bookmark-undo",
-      };
-    },
-  });
-  await expect(
-    beginCatalogueRecovery(
-      catalogueStore(testEnv.CATALOGUE_DB),
-      testEnv.BACKUPS,
-      recoveryInput("recovery-raced", "begin-raced"),
-      provider,
-    ),
-  ).rejects.toMatchObject({ code: "recovery_state_changed" });
-  expect(restoreCalls).toBe(0);
-  await expect(
-    backupRecoveryQueries.countCatalogueRecoveryOperationsCount(testEnv.CATALOGUE_DB).first(),
-  ).resolves.toEqual({ count: 0 });
-  await publishedCatalogueQueries
-    .setCatalogueStateCurrentRevisionIdForProductCursorsPinRoutePreserveFilteredKeysetOrder(testEnv.CATALOGUE_DB)
-    .run();
-});
+test.each(["revision", "backup"])(
+  "a %s race during external prework cannot acquire the block or begin restore",
+  async (race) => {
+    let restoreCalls = 0;
+    const provider = recoveryProvider({
+      currentBookmark: async () => {
+        if (race === "backup") {
+          await insertPendingBackupStatement(catalogueStore(testEnv.CATALOGUE_DB), {
+            idempotencyKey: "racing-recovery-backup",
+            requestJson: "{}",
+            ownerToken: "racing-recovery-backup",
+            expectedCurrentRevisionId: "catrev_spine_000",
+            objectKey: "racing-recovery-backup.sql",
+            observedAt: "2026-08-05T08:00:00.000Z",
+            linkedAttemptId: null,
+          }).run();
+        } else {
+          await publishedCatalogueQueries
+            .setCatalogueStateCurrentRevisionIdForRaceDuringExternalPreworkCannotAcquireBlockOrBegin(
+              testEnv.CATALOGUE_DB,
+            )
+            .run();
+        }
+        return "bookmark-before-race";
+      },
+      timeTravelRestore: async () => {
+        restoreCalls += 1;
+        return {
+          bookmark: "bookmark-restored",
+          previousBookmark: "bookmark-undo",
+        };
+      },
+    });
+    await expect(
+      beginCatalogueRecovery(
+        catalogueStore(testEnv.CATALOGUE_DB),
+        testEnv.BACKUPS,
+        recoveryInput(`recovery-raced-${race}`, `begin-raced-${race}`),
+        provider,
+      ),
+    ).rejects.toMatchObject({ code: "recovery_state_changed" });
+    expect(restoreCalls).toBe(0);
+    await expect(
+      ingestionQueries.readOperationStateRecoveryHealthActiveRecoveryId(testEnv.CATALOGUE_DB).first(),
+    ).resolves.toMatchObject({ active_recovery_id: null, recovery_restore_guard: "clear" });
+    if (race === "backup") await backupRecoveryQueries.removeRacingRecoveryBackup(testEnv.CATALOGUE_DB).run();
+    await expect(
+      backupRecoveryQueries.countCatalogueRecoveryOperationsCount(testEnv.CATALOGUE_DB).first(),
+    ).resolves.toEqual({ count: 0 });
+    await publishedCatalogueQueries
+      .setCatalogueStateCurrentRevisionIdForProductCursorsPinRoutePreserveFilteredKeysetOrder(testEnv.CATALOGUE_DB)
+      .run();
+  },
+);
 
 test("inspect observes a paused restore without mutation and a second begin reports recovery_exists", async () => {
   let markRestoreStarted: () => void = () => {};

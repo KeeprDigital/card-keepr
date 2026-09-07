@@ -181,13 +181,13 @@ export async function beginCatalogueRecovery(
   let replay = await recoveryByIdempotency(database, input.idempotencyKey);
   if (replay !== null) {
     if (replay.request_json !== requestJson) throw idempotencyReused();
-    return recoveryDocument(replay);
+    return recoveryDocument(database, replay);
   }
   await hydrateRetainedRecoveryIfPresent(database, backups, input.recoveryId, true);
   replay = await recoveryByIdempotency(database, input.idempotencyKey);
   if (replay !== null) {
     if (replay.request_json !== requestJson) throw idempotencyReused();
-    return recoveryDocument(replay);
+    return recoveryDocument(database, replay);
   }
   const identity = await recoveryRow(database, input.recoveryId);
   if (identity !== null) {
@@ -265,7 +265,7 @@ export async function beginCatalogueRecovery(
     const winner = await recoveryByIdempotency(database, input.idempotencyKey);
     if (winner !== null) {
       if (winner.request_json !== requestJson) throw idempotencyReused();
-      return recoveryDocument(winner);
+      return recoveryDocument(database, winner);
     }
     throw new AdministrationProblem(
       409,
@@ -343,15 +343,7 @@ export async function inspectCatalogueRecovery(
   if (row === null) {
     throw new AdministrationProblem(404, "recovery_not_found", "Catalogue recovery operation not found.");
   }
-  return {
-    ...(await recoveryDocument(row)),
-    restored_work: (await recoveryStatements.restoredWorkClassificationsStatement(database, recoveryId).all()).results,
-    restored_collections: (
-      await recoveryStatements.restoredCollectionClassificationsStatement(database, recoveryId).all()
-    ).results,
-    snapshot_scope:
-      "Only operations present in the restored snapshot are retained; newer operations are not recovered.",
-  };
+  return recoveryDocument(database, row);
 }
 
 export async function verifyCatalogueRecovery(
@@ -377,7 +369,7 @@ export async function verifyCatalogueRecovery(
       throw idempotencyReused();
     const retained = await requiredRecoveryJournal(backups, recoveryId);
     await persistRecoveryJournal(backups, row, retained.backup);
-    return recoveryDocument(row);
+    return recoveryDocument(database, row);
   }
   if (row.state === "failed") throw retainedRecoveryFailure(row);
   if (row.state !== "validating") {
@@ -466,7 +458,7 @@ export async function acceptCatalogueRecovery(
     const retained = await requiredRecoveryJournal(backups, recoveryId);
     await releaseAcceptedRecoveryIfSafe(database, row, retained.backup, input.boundDatabaseId);
     await persistRecoveryJournal(backups, row, retained.backup);
-    return recoveryDocument(row);
+    return recoveryDocument(database, row);
   }
   if (row.state === "failed") throw retainedRecoveryFailure(row);
   if (row.state !== "awaiting_acceptance") {
@@ -542,7 +534,7 @@ export async function acceptCatalogueRecovery(
         throw idempotencyReused();
       const retained = await requiredRecoveryJournal(backups, recoveryId);
       await persistRecoveryJournal(backups, winner, retained.backup);
-      return recoveryDocument(winner);
+      return recoveryDocument(database, winner);
     }
     throw new AdministrationProblem(409, "recovery_state_changed", "Recovery acceptance changed concurrently.");
   }
@@ -1019,9 +1011,14 @@ function recoveryByIdempotency(database: CatalogueStore, idempotencyKey: string)
   return recoveryStatements.recoveryOperationByIdempotencyStatement(database, { idempotencyKey }).first<RecoveryRow>();
 }
 
-async function recoveryDocument(row: RecoveryRow): Promise<Record<string, unknown>> {
+async function recoveryDocument(database: CatalogueStore, row: RecoveryRow): Promise<Record<string, unknown>> {
   return {
     contract: "card-keepr-catalogue-recovery@1",
+    restored_work: (await recoveryStatements.restoredWorkClassificationsStatement(database, row.id).all()).results,
+    restored_collections: (await recoveryStatements.restoredCollectionClassificationsStatement(database, row.id).all())
+      .results,
+    snapshot_scope:
+      "Only operations present in the restored snapshot are retained; newer operations are not recovered.",
     id: row.id,
     state: row.state,
     method: row.method,

@@ -212,7 +212,13 @@ async function repairCardSearchMaterializationStep(
     );
     const inserted = await database.batch(statements);
     const offsetResult = inserted.at(-1);
-    if (offsetResult === undefined || (offsetResult.meta.changes !== 0 && offsetResult.meta.changes !== 1)) {
+    // FTS commit work can inflate D1's changes count for the following UPDATE.
+    // RETURNING identifies the actual CAS row independently of those derived writes.
+    if (
+      offsetResult === undefined ||
+      offsetResult.results.length > 1 ||
+      offsetResult.results.some((row) => (row as { repair_chunk_offset: number }).repair_chunk_offset !== nextOffset)
+    ) {
       throw new Error("The Card search repair chunk offset CAS is invalid.");
     }
     return repairResult(

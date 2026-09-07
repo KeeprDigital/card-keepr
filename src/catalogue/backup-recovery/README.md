@@ -47,3 +47,9 @@ Publication reserves the immutable backup Workflow request and its pending dispa
 `GET /v1/status` lists pending or failed dispatches under `diagnostics.backup_dispatches`; the Backup Attempt inspection also includes `dispatch`. Each includes the exact `POST /v1/backups` retry body and the three-attempt bound per request. Replaying that body retries the retained dispatch, preserving its original timestamp and identity. An acknowledged dispatch is not downgraded by a concurrent failed observer. Backup execution failures continue to use the existing immutable failed-attempt retry chain.
 
 The approval route accepts a completion waiter. The runtime request-clock harness configures a bounded test waiter; ordinary requests await only durable dispatch, while verification proceeds in the Workflow.
+
+Private historical export validation is isolated under `../export/retained/` and
+`retained-export-validation.ts`. Its internal schema identifiers are private
+URNs; no consumer route exposes the historical package shape. Retained operational
+artifacts keep their exact schema checks independently of the current public
+export contract.

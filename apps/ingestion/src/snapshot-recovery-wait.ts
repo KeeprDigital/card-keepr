@@ -19,15 +19,19 @@ export function snapshotRecoveryWait(env: Env, step: WorkflowStep): WorkflowStep
             ]);
           } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
-            const blocked = await target.do(`${name} recovery fence ${generation}`, () =>
-              catalogueMutationFenced(catalogueStore(env.CATALOGUE_DB)),
+            if (!/fenced|recovery|blocked/.test(detail)) throw error;
+            const blocked = await target.do(
+              `${name} recovery fence ${generation}`,
+              { retries: { limit: 3, delay: 500 }, timeout: "1 minute" },
+              () => catalogueMutationFenced(catalogueStore(env.CATALOGUE_DB)),
             );
             if (!blocked && !/catalogue_recovery_writer_fenced|recovery_not_verified/.test(detail)) throw error;
-            if (!/fenced|recovery|blocked/.test(detail)) throw error;
             for (let wait = 0; ; wait++) {
               await target.sleep(`${name} recovery wait ${generation}:${wait}`, "5 seconds");
-              const fenced = await target.do(`${name} recovery check ${generation}:${wait}`, () =>
-                catalogueMutationFenced(catalogueStore(env.CATALOGUE_DB)),
+              const fenced = await target.do(
+                `${name} recovery check ${generation}:${wait}`,
+                { retries: { limit: 3, delay: 500 }, timeout: "1 minute" },
+                () => catalogueMutationFenced(catalogueStore(env.CATALOGUE_DB)),
               );
               if (!fenced) break;
             }

@@ -108,8 +108,7 @@ export function reserveRecoveryOperationStatement(
            AND (active_production_release_id IS NULL OR active_production_release_expires_at <= ?)
            AND (
              (? IS NULL AND recovery_health <> 'blocked'
-               AND active_recovery_id IS NULL
-               AND NOT EXISTS(SELECT 1 FROM catalogue_backup_attempts WHERE state IN ('pending','exporting','restoring_verification','verifying')))
+               AND active_recovery_id IS NULL)
              OR (? IS NOT NULL AND recovery_health = 'blocked'
                AND active_recovery_id = ?)
            )`)
