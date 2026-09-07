@@ -50,6 +50,9 @@ export class ReconciliationCardState {
     await this.cards.set(id, card);
     await this.facts.set(id, { id, identity_kind: card.official_identity.kind, match_digest: await factsDigest(card) });
   }
+  entityValues(after = "") {
+    return this.cards.entityValues(after);
+  }
   values() {
     return this.cards.latestValues();
   }

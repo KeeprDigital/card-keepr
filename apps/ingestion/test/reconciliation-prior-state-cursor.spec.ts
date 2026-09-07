@@ -47,6 +47,14 @@ test.each([
     interrupt: "withdrawal_diagnostics",
   },
   {
+    base: "curated-conflict-fanout-base",
+    changed: "prior-state-carry-forward",
+    expectedCards: 40,
+    count: 32,
+    name: "Synthetic reviewed Card 0",
+    interrupt: "official_assembly",
+  },
+  {
     base: "prior-state-text-pages",
     changed: "prior-state-text-pages",
     expectedCards: 32,
@@ -75,6 +83,8 @@ test.each([
     const errataCalls: number[] = [];
     const withdrawalCursors: number[] = [];
     const withdrawalCalls: number[] = [];
+    const assembledCards: number[] = [];
+    const assemblyCalls: number[] = [];
     const restoredCards: number[] = [];
     let calls = 0;
     let armed = false;
@@ -121,7 +131,9 @@ test.each([
                         ? "current_errata"
                         : interrupt === "withdrawal_diagnostics"
                           ? "withdrawal_assertion_groups"
-                          : "card_facts",
+                          : interrupt === "official_assembly"
+                            ? "candidate_before_curated_cards"
+                            : "card_facts",
                   )
                 );
               }) &&
@@ -187,6 +199,15 @@ test.each([
           withdrawalCursors.push(checkpoint.cursor.processedPlans);
           if (interrupt === "withdrawal_diagnostics" && checkpoint.cursor.processedPlans > 0) armed = true;
         }
+        if (JSON.parse(result).continuation?.phase === "official_assembly") {
+          assemblyCalls.push(calls);
+          const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+          const checkpoint = (status.checkpoints as { phase: string; cursor: { cards: number } }[]).find(
+            (row) => row.phase === "official_assembly",
+          )!;
+          assembledCards.push(checkpoint.cursor.cards);
+          if (interrupt === "official_assembly" && checkpoint.cursor.cards > 0) armed = true;
+        }
         expect(new TextEncoder().encode(result).byteLength).toBeLessThan(65536);
         return result;
       },
@@ -238,6 +259,11 @@ test.each([
     const detail = await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${cards.ordinal}`);
     expect(detail.document.records).toHaveLength(expectedCards);
     expect(detail.document.records).toEqual(expect.arrayContaining([expect.objectContaining({ name })]));
+    if (interrupt === "official_assembly") {
+      expect(assembledCards.some((count) => count > 0 && count < 40)).toBe(true);
+      expect(assembledCards).toContain(40);
+      expect(Math.max(...assemblyCalls)).toBeLessThanOrEqual(100);
+    }
     if (interrupt === "withdrawal_diagnostics") {
       expect(withdrawalCursors.some((count) => count > 0 && count < 32)).toBe(true);
       expect(withdrawalCursors).toContain(32);

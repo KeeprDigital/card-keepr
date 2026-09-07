@@ -1,3 +1,4 @@
+import { prepareOfficialCandidate, omitUndefinedValues } from "./reconciliation-official-assembly";
 import { prepareWithdrawalDiagnostics } from "./reconciliation-withdrawals";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { candidateAtRevision, type PriorStatePositions } from "./reconciliation-prior-state";
@@ -50,7 +51,6 @@ import {
   guardedCatalogueStore,
   assertIngestionRunTransition,
   type CatalogueCandidate,
-  type CatalogueCard,
   type CatalogueErratum,
   type CataloguePrinting,
   type CataloguePrintingImage,
@@ -1490,43 +1490,6 @@ export async function reconcileRetainedCardPrintingEvidence(
       detail: error instanceof Error ? error.message : "Retained Product evidence is invalid.",
     });
   }
-  const official = new ReconciliationCandidateState(database, runId, "before_curated", productCatalogue.draft);
-  for await (const card of cards.values()) {
-    const cardErrata = await currentErrata.forCard(card.game, card.id);
-    await official.set(
-      "cards",
-      omitUndefinedValues(
-        await (async (card: CatalogueCard) => {
-          if (!evidenceGames.has(card.game)) return card;
-          try {
-            return {
-              ...card,
-              effective_rules_text: deriveEffectiveRulesText(card, cardErrata, observedAt),
-            };
-          } catch (error) {
-            const conflictPlans = await plans.forCard(card.id);
-            await diagnostics.push({
-              code: "canonical_card_conflict",
-              source_observation_id: conflictPlans[0]?.sourceObservationId ?? null,
-              locator: conflictPlans[0]?.locator ?? null,
-              matched_printing_ids: conflictPlans.flatMap((plan) =>
-                plan.printingId === null ? [] : [plan.printingId],
-              ),
-              detail:
-                error instanceof ErratumRulesTextError
-                  ? error.message
-                  : "The Card has an unresolved Effective Rules Text conflict.",
-            });
-            return card;
-          }
-        })(card),
-      ) as CatalogueCard,
-    );
-  }
-  for await (const printing of printings.latestValues())
-    await official.set("printings", omitUndefinedValues(printing) as CataloguePrinting);
-  for await (const image of printingImages.latestValues())
-    await official.set("printing_images", omitUndefinedValues(image) as CataloguePrintingImage);
   let candidate: CatalogueCandidate = {
     contract: catalogueCandidateContract,
     selected_games: [...new Set([...(priorCandidate?.selected_games ?? []), ...evidenceGames])].sort(),
@@ -1560,8 +1523,21 @@ export async function reconcileRetainedCardPrintingEvidence(
   };
 
   candidate = omitUndefinedValues(candidate) as CatalogueCandidate;
-  await official.seed(candidate, ["identity_corrections"]);
-  for await (const erratum of currentErrata.values()) await official.set("errata", erratum);
+  let official: ReconciliationCandidateState;
+  try {
+    official = await prepareOfficialCandidate(
+      database,
+      runId,
+      productCatalogue.draft,
+      { cards, printings, images: printingImages, errata: currentErrata, plans, games: evidenceGames },
+      diagnostics,
+      observedAt,
+      yieldAtCheckpoint,
+    );
+  } catch (error) {
+    if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
+    throw error;
+  }
   for await (const { printingId, sourceLineage, memberships } of plans.memberships())
     for await (const warning of relationshipDisappearanceWarnings(database, printingId, sourceLineage, memberships))
       await sourceWarnings.push(warning);
@@ -2095,18 +2071,6 @@ function semanticCatalogueCandidate(candidate: CatalogueCandidate): Record<strin
     ),
     errata: (candidate.errata ?? []).map((erratum) => JSON.parse(canonicalErratum(erratum))),
   };
-}
-
-function omitUndefinedValues(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(omitUndefinedValues);
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value)
-        .filter(([, item]) => item !== undefined)
-        .map(([key, item]) => [key, omitUndefinedValues(item)]),
-    );
-  }
-  return value;
 }
 
 async function addGundamProducts(

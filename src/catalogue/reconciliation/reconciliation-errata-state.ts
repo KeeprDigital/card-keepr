@@ -33,8 +33,8 @@ export class ReconciliationErrataState {
   has(id: string): Promise<boolean> {
     return this.populated ? this.index.has(id) : Promise.resolve(false);
   }
-  values(): AsyncIterable<CatalogueErratum> {
-    return this.index.entityValues();
+  values(after = ""): AsyncIterable<CatalogueErratum> {
+    return this.index.entityValues(after);
   }
 
   async forCard(game: string, cardId: string): Promise<CatalogueErratum[]> {
