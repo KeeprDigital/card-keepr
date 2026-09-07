@@ -312,3 +312,20 @@ Product (or a relationship proposal) against a native composed Catalogue
 Revision. It is outside the Card/Printing correction exercised by #232 and is
 reported to the coordinator as a remaining shared Curated integration gap.
 No Product/relationship native completion is claimed here.
+
+The frozen `f60fef3` follow-up passed all 39 tests in the four Curated Worker
+files, then stopped the native continuation after 152.30 seconds with
+`internal_error` at the same first validation request. No Curated Revision was
+created; runtimes stopped. The existing Worker files use the test pool and did
+not prove native request-time code-generation restrictions. Disabling dynamic
+code generation in the read-only validator reproduced an Ajv `EvalError` from
+`fieldAjv.compile(schema)` during validation.
+
+Curated field schemas now feed the existing generated standalone-validator
+pipeline, including all registered profile property paths. Request handling
+selects a precompiled validator and still performs complete-entity checks.
+Unknown schemas fail closed. The code-generation-disabled regression passed
+after failing on the old request-time compiler; direct field checks preserve
+calendar dates, types, vocabulary, required/closed objects and uniqueness.
+A minimal actual Worker/D1 diagnostic and regression remain required to confirm
+native behavior, distinct from these runtime-free results.

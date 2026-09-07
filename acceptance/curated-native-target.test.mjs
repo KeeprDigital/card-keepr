@@ -47,6 +47,26 @@ test("Curated validation resolves a published native Printing through its exact 
   const { validateCuratedRevision, catalogueStore } = await import(pathToFileURL(output).href);
   const fixture = curatedNativeFixture();
   t.after(() => fixture.db.close());
+  await t.test("native validation does not generate code during the request", async () => {
+    const OriginalFunction = globalThis.Function;
+    const originalError = console.error;
+    // biome-ignore lint/complexity/useArrowFunction: the replacement must remain constructible to reproduce new Function rejection.
+    globalThis.Function = function () {
+      throw new EvalError("Code generation from strings disallowed for this context");
+    };
+    console.error = () => {};
+    try {
+      const validated = await validateCuratedRevision(
+        catalogueStore(d1Adapter(fixture.db)),
+        proposal(),
+        "composition_current",
+      );
+      assert.equal(validated.valid, true);
+    } finally {
+      globalThis.Function = OriginalFunction;
+      console.error = originalError;
+    }
+  });
   const result = await validateCuratedRevision(
     catalogueStore(d1Adapter(fixture.db)),
     proposal(),

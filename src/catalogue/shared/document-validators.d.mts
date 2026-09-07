@@ -1,4 +1,5 @@
 // Generated validator signatures.
+export function curatedField(value: unknown): boolean;
 export function record(value: unknown): boolean;
 export function candidate(value: unknown): boolean;
 export function proposalEvidence(value: unknown): boolean;

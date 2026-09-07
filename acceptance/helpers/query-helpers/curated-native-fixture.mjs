@@ -100,3 +100,27 @@ export function appendCuratedText(db, digest, content) {
 export function requireCuratedCorrection(db) {
   db.prepare("UPDATE reconciliation_correction_pins SET decision_cutoff=1").run();
 }
+
+/** Reuse the same fixture records in actual D1 without a mock query dispatcher. */
+export function curatedNativeD1Statements() {
+  const fixture = curatedNativeFixture();
+  try {
+    return fixture.db
+      .prepare("SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name")
+      .all()
+      .flatMap(({ name, sql }) => {
+        const rows = fixture.db.prepare(`SELECT * FROM ${name}`).all();
+        return [
+          { sql, params: [] },
+          ...rows.map((row) => ({
+            sql: `INSERT INTO ${name} VALUES (${Object.keys(row)
+              .map(() => "?")
+              .join(",")})`,
+            params: Object.values(row),
+          })),
+        ];
+      });
+  } finally {
+    fixture.db.close();
+  }
+}

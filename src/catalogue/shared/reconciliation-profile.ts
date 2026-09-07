@@ -342,6 +342,11 @@ export function exportedGameProfileSchema(profile: string) {
   };
 }
 
+/** Enumerate the registered schemas used to generate closed Curated field validators. */
+export function registeredGameProfileSchemas() {
+  return Object.keys(profileContracts).sort().map(exportedGameProfileSchema);
+}
+
 function exportedSchema(schema: Schema): Record<string, unknown> {
   if (schema.kind === "string") {
     return {

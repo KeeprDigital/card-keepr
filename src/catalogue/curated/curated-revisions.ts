@@ -6,10 +6,10 @@ import {
   sourceChangeDiagnostic,
   type PendingConflict,
 } from "./curated-conflict-preparation";
-import Ajv2020 from "ajv/dist/2020.js";
-import addFormats from "ajv-formats";
 import {
   AdministrationProblem,
+  sharedCuratableFieldSchemas,
+  validCuratedField,
   type CatalogueCandidate,
   type CatalogueDraft,
   type CatalogueEntityCollection,
@@ -81,8 +81,6 @@ const relationshipEndpointPairs: Readonly<Record<string, string>> = {
 export const curatedSourceAbsence = Object.freeze({
   contract: "card-keepr-curated-source-absence@1" as const,
 });
-const fieldAjv = new Ajv2020({ allErrors: true, strict: false });
-addFormats(fieldAjv);
 
 type FieldTarget = CuratedFieldTarget;
 type RelationshipTarget = CuratedRelationshipTarget;
@@ -2329,52 +2327,6 @@ function protectedPath(parts: readonly string[]): boolean {
 
 type JsonSchema = Readonly<Record<string, unknown>>;
 
-const nullableTextSchema = {
-  oneOf: [{ type: "string" }, { type: "null" }],
-} as const;
-const nullableNonEmptyTextSchema = {
-  oneOf: [{ type: "string", minLength: 1 }, { type: "null" }],
-} as const;
-const nullableDateSchema = {
-  oneOf: [{ type: "string", format: "date" }, { type: "null" }],
-} as const;
-const sharedCuratableFieldSchemas: Readonly<Record<string, JsonSchema>> = {
-  "card:/name": { type: "string", minLength: 1 },
-  "card:/effective_rules_text": nullableTextSchema,
-  "printing:/rarity": {
-    type: "object",
-    additionalProperties: false,
-    required: ["normalized", "raw"],
-    properties: { normalized: nullableTextSchema, raw: nullableTextSchema },
-  },
-  "printing:/rarity/normalized": nullableTextSchema,
-  "printing:/rarity/raw": nullableTextSchema,
-  "printing:/printed_rules_text": nullableTextSchema,
-  "product:/official_code": nullableNonEmptyTextSchema,
-  "product:/name": nullableNonEmptyTextSchema,
-  "release:/date": {
-    type: "object",
-    additionalProperties: false,
-    required: ["precision", "value"],
-    properties: {
-      precision: {
-        enum: ["day", "month", "quarter", "season", "year", "unknown", null],
-      },
-      value: nullableNonEmptyTextSchema,
-    },
-  },
-  "release:/date/precision": {
-    enum: ["day", "month", "quarter", "season", "year", "unknown", null],
-  },
-  "release:/date/value": nullableNonEmptyTextSchema,
-  "release:/status": { enum: ["announced", "released", null] },
-  "distribution_context:/kind": { enum: ["product", "tournament_pack", "winner_prize", "promotion", "other"] },
-  "distribution_context:/label": { type: "string", minLength: 1 },
-  "erratum:/effective_from": nullableDateSchema,
-  "erratum:/official_wording": { type: "string", minLength: 1 },
-  "erratum:/corrected_value": nullableNonEmptyTextSchema,
-};
-
 function curatedFieldSchema(
   entityType: string,
   target: Record<string, unknown>,
@@ -2411,7 +2363,7 @@ function validCuratedFieldAssertion(
   assertion: unknown,
   schema: JsonSchema,
 ): boolean {
-  if (!fieldAjv.compile(schema)(assertion)) return false;
+  if (!validCuratedField(schema, assertion)) return false;
   const modified = structuredClone(target);
   setAt(modified, parts, assertion);
   if (!validCompleteCuratedEntity(entityType, modified)) return false;

@@ -1,3 +1,4 @@
+import { curatedFieldDocumentSchema } from "./curated-field-schemas.ts";
 import { activeRunStages as stages, ingestionRunStates as states } from "./ingestion-run-state.ts";
 
 // Persisted document shapes. Semantic relationships remain with their domain codec.
@@ -222,6 +223,7 @@ const proposalFieldTarget = {
   properties: { ...curatedFieldTarget.properties, entity_id: proposalIdentity },
 };
 export const documentSchemas = {
+  curatedField: curatedFieldDocumentSchema,
   record,
   candidate,
   proposalEvidence,
