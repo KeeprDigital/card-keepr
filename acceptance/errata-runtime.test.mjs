@@ -696,8 +696,31 @@ async function representRetainedSnapshotAdapter(sourceSnapshotId, adapterVersion
 }
 
 async function resumeAndWait(runId, environment, runtime) {
-  const resumed = await runCli(["source", "resume", "--run-id", runId, "--json"], environment);
-  assert.equal(resumed.code, 0, resumed.stdout + resumed.stderr);
+  const headers = { authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}` };
+  const sourceResponse = await fetch(`${runtime.url}/v1/ingestion-runs/${runId}/evidence`, { headers });
+  assert.equal(sourceResponse.status, 200);
+  const source = await sourceResponse.json();
+  if (source.state === "collecting") {
+    const resumed = await runCli(["source", "resume", "--run-id", runId, "--json"], environment);
+    assert.equal(resumed.code, 0, resumed.stdout + resumed.stderr);
+  } else {
+    // Synthetic source fixtures already captured and parsed their retained
+    // evidence. Enter the shipped native candidate owner directly.
+    assert.equal(source.state, "parsing");
+    const status = await runCli(["status", "--json"], environment);
+    assert.equal(status.code, 0, status.stderr);
+    const response = await fetch(`${runtime.url}/v1/game-candidates`, {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        ingestion_run_id: runId,
+        supported_game: "one-piece",
+        expected_game_revision_id: JSON.parse(status.stdout).safe_state.current_revision_id,
+        idempotency_key: `native-fixture-${runId}`,
+      }),
+    });
+    assert.equal(response.status, 201, await response.clone().text());
+  }
   return waitForNativeCollection(runId, "sealed", environment, runtime, { deadlineMs: 20_000 });
 }
 

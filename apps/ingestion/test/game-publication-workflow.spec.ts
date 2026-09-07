@@ -2,10 +2,11 @@ import type { WorkflowStep } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { runGamePublicationWorkflow } from "../src/game-publication-workflow";
 import { catalogueStore } from "../../../src/catalogue/shared";
-import { reservePublicExportAttempt } from "../../../src/catalogue/ingestion";
+import { reservePublicExportAttempt, advancePublicationExports } from "../../../src/catalogue/ingestion";
 import { pauseGamePublication } from "../../../src/catalogue/reconciliation";
 import { resumeGamePublication } from "../../../src/catalogue/reconciliation/game-publication";
 import { setCardSearchFtsStateStateOwnerToken } from "./query-helpers/card-search";
+import { publicationStateSnapshot } from "./query-helpers/atomic-publication";
 import { collect, get, post, installReconciliationSuite, testEnv } from "./reconciliation-helpers";
 
 installReconciliationSuite();
@@ -179,4 +180,59 @@ test("forty durable attempts pause without an implicit advance or another succes
   });
   expect((await post(`/v1/publications/${id}/advance`, { generation: 0 })).document.state).toBe("retry_paused");
   expect(await reservePublicExportAttempt(db, id, 0, 1)).toBe(false);
+});
+
+test("corrupt retained public bytes fail preparation before any head or backup reservation changes", async () => {
+  const approved = await approvedCandidate("corrupt-public-artifact");
+  const path = `/v1/game-candidates/${approved.candidate_id}/publication-preparation`;
+  let prepared = (
+    await post(path, {
+      manifest_digest: approved.manifest_digest,
+      generation: 0,
+      sequence: 0,
+      idempotency_key: "corrupt-private",
+    })
+  ).document;
+  for (let unit = 0; prepared.state === "preparing" && unit < 250; unit++)
+    prepared = (
+      await post(path, {
+        manifest_digest: approved.manifest_digest,
+        generation: 0,
+        sequence: prepared.sequence,
+        idempotency_key: `corrupt-private-${unit}`,
+      })
+    ).document;
+  expect(prepared.state).toBe("verified");
+  const before = await publicationStateSnapshot(testEnv.CATALOGUE_DB);
+  const bucket = new Proxy(testEnv.CATALOGUE_EXPORTS, {
+    get(target, property) {
+      if (property === "get")
+        return async (...args: Parameters<R2Bucket["get"]>) => {
+          const object = await target.get(...args);
+          if (!object || !args[0].startsWith("catalogue-public-components/")) return object;
+          return new Proxy(object, {
+            get(value, field) {
+              if (field === "arrayBuffer") return async () => new Uint8Array(value.size).buffer;
+              const member = Reflect.get(value, field);
+              return typeof member === "function" ? member.bind(value) : member;
+            },
+          });
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const result = await advancePublicationExports(
+    { CATALOGUE_DB: catalogueStore(testEnv.CATALOGUE_DB), CATALOGUE_EXPORTS: bucket },
+    String(approved.id),
+    0,
+    "corrupt-public-unit",
+  );
+  expect(result).toMatchObject({ state: "failed", failure_code: "public_export_artifact_corrupt" });
+  expect((await post(`/v1/publications/${approved.id}/advance`, { generation: 0 })).document).toMatchObject({
+    state: "failed",
+    failure_code: "public_export_artifact_corrupt",
+    deadline: approved.deadline,
+  });
+  expect(await publicationStateSnapshot(testEnv.CATALOGUE_DB)).toEqual(before);
 });

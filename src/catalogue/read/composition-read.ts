@@ -434,7 +434,22 @@ export async function compositionEntityResponse(
   let bytes = 0;
   for (const row of rows.slice(0, limit)) {
     if (row.content === null) break;
-    const value = absoluteDocumentLinks(await representation(db, revision, kind, row), base);
+    const represented = await representation(db, revision, kind, row);
+    const value = absoluteDocumentLinks(
+      kind === "cards"
+        ? pickPublicFields(represented, [
+            "type",
+            "id",
+            "game",
+            "official_identity",
+            "name",
+            "game_data",
+            "lifecycle",
+            "links",
+          ])
+        : represented,
+      base,
+    );
     const size = new TextEncoder().encode(JSON.stringify(value)).byteLength;
     if (bytes + size > 4_000_000) break;
     selected.push(row);

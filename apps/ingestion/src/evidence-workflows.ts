@@ -277,7 +277,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
         if (
           run.state === "parsing" &&
           run.plan_origin === "production" &&
-          requiredSourceAdapter(run.adapter_version).reconciliationCapability === "catalogue"
+          requiredSourceAdapter(run.adapter_version).reconciliationCapability !== "unavailable"
         ) {
           return await this.prepareCollectedEvidence(event, step, run);
         }
@@ -299,7 +299,8 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
   ): Promise<unknown> {
     const runId = run.id;
     const games = JSON.parse(run.selected_games_json) as string[];
-    if (games.length > 1 || requiredSourceAdapter(run.adapter_version).officialSourceContract) {
+    const adapter = requiredSourceAdapter(run.adapter_version);
+    if (games.length > 1 || adapter.officialSourceContract || adapter.reconciliationCapability === "errata") {
       if (games.length > 4) throw new Error("Collection selected too many Supported Games.");
       const preparations: Awaited<ReturnType<typeof prepareCollectedGame>>[] = [];
       for (const game of [...games].sort()) {
