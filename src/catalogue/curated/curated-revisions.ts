@@ -1,19 +1,9 @@
-import { nativeCuratedTarget } from "./curated-native-target";
-import { materializeCuratedConflictStatements } from "./curated-conflict-preparation-repository";
-import {
-  CuratedConflictPreparation,
-  sourceChangeDetails,
-  sourceChangeDiagnostic,
-  type PendingConflict,
-} from "./curated-conflict-preparation";
 import {
   AdministrationProblem,
-  sharedCuratableFieldSchemas,
-  validCuratedField,
   type CatalogueCandidate,
   type CatalogueDraft,
-  type CatalogueEntityCollection,
   type CatalogueDraftEntity,
+  type CatalogueEntityCollection,
   type CatalogueStore,
   type CuratedEvidence,
   type CuratedFieldTarget,
@@ -28,7 +18,17 @@ import {
   retainedPayload,
   type SupportedGame,
   sha256Text,
+  sharedCuratableFieldSchemas,
+  validCuratedField,
 } from "../shared";
+import {
+  CuratedConflictPreparation,
+  type PendingConflict,
+  sourceChangeDetails,
+  sourceChangeDiagnostic,
+} from "./curated-conflict-preparation";
+import { materializeCuratedConflictStatements } from "./curated-conflict-preparation-repository";
+import { nativeCuratedRelationshipTarget, nativeCuratedTarget } from "./curated-native-target";
 import * as curatedStatements from "./curated-repository";
 import {
   curatedLifecycleMutationStatements,
@@ -1887,10 +1887,11 @@ async function currentTarget(
   revisionId: string,
   proposal: Proposal,
 ): Promise<Record<string, unknown>> {
-  if (
-    proposal.target.kind === "field" &&
-    (proposal.target.entity_type === "card" || proposal.target.entity_type === "printing")
-  ) {
+  if (proposal.target.kind === "relationship") {
+    const native = await nativeCuratedRelationshipTarget(database, revisionId, proposal.game, proposal.target);
+    if (native !== undefined)
+      return stripCuratedRevisionEffects(native as unknown as CatalogueCandidate) as unknown as Record<string, unknown>;
+  } else {
     const native = await nativeCuratedTarget(
       database,
       revisionId,
@@ -1899,6 +1900,11 @@ async function currentTarget(
       proposal.target.entity_id,
     );
     if (native !== undefined) return stripCuratedEntityEffects(native);
+  }
+  if (
+    proposal.target.kind === "field" &&
+    (proposal.target.entity_type === "card" || proposal.target.entity_type === "printing")
+  ) {
     const row = await curatedStatements
       .curatedEntityDocumentStatement(database, {
         revisionId,

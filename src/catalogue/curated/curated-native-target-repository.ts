@@ -9,7 +9,7 @@ export function curatedNativeRevisionStatement(db: CatalogueStore, revision: str
 }
 export function curatedNativeMemberStatement(db: CatalogueStore, revision: string, kind: string, id: string) {
   return repositoryStatements(db)
-    .prepare(`SELECT c.preparation_id,m.supported_game,e.card_id
+    .prepare(`SELECT c.preparation_id,m.supported_game,e.card_id,e.product_id
     FROM catalogue_composition_games m JOIN game_candidates c ON c.id=m.candidate_id
     JOIN publication_read_entities e ON e.candidate_id=m.candidate_id
     WHERE m.catalogue_revision_id=? AND e.kind=? AND e.entity_id=?
@@ -46,4 +46,21 @@ export function curatedNativeCorrectionPinStatement(db: CatalogueStore, preparat
   return repositoryStatements(db)
     .prepare(`SELECT decision_cutoff,games_json FROM reconciliation_correction_pins WHERE preparation_id=?`)
     .bind(preparation);
+}
+
+export function curatedNativeRelationshipsStatement(
+  db: CatalogueStore,
+  revision: string,
+  game: string,
+  target: { relationship_kind: string; from: { id: string }; to: { id: string } },
+  after: string,
+) {
+  return repositoryStatements(db)
+    .prepare(`SELECT e.entity_id FROM catalogue_composition_games m
+    JOIN game_candidates c ON c.id=m.candidate_id
+    JOIN publication_read_entities e ON e.candidate_id=m.candidate_id
+    WHERE m.catalogue_revision_id=? AND m.supported_game=? AND c.supported_game=m.supported_game
+      AND c.state='published' AND e.kind='product_relationships' AND e.relationship_kind=?
+      AND e.from_id=? AND e.to_id=? AND e.entity_id>? ORDER BY e.entity_id LIMIT 16`)
+    .bind(revision, game, target.relationship_kind, target.from.id, target.to.id, after);
 }

@@ -1,6 +1,23 @@
 import { AdministrationProblem, type CatalogueStore, sha256Text } from "../shared";
 import * as repository from "./curated-native-target-repository";
 
+type EntityKind =
+  | "card"
+  | "printing"
+  | "product"
+  | "distribution_context"
+  | "erratum"
+  | "release"
+  | "product_relationship";
+const collections = {
+  card: "cards",
+  printing: "printings",
+  product: "products",
+  distribution_context: "distribution_contexts",
+  erratum: "errata",
+  release: "releases",
+  product_relationship: "product_relationships",
+} as const;
 type Value = Record<string, unknown>;
 type Row = { content: string; sha256: string };
 type Positions = Record<string, number>;
@@ -31,7 +48,7 @@ export async function nativeCuratedTarget(
   db: CatalogueStore,
   revision: string,
   game: string,
-  kind: "card" | "printing",
+  kind: EntityKind,
   id: string,
 ): Promise<Value | undefined> {
   const published = await repository
@@ -39,10 +56,10 @@ export async function nativeCuratedTarget(
     .first<{ publication_operation_id: string | null; query_state: string | null }>();
   if (!published?.publication_operation_id) return undefined;
   if (published.query_state !== "available") throw unavailable();
-  const collection = kind === "card" ? "cards" : "printings";
+  const collection = collections[kind];
   const member = await repository
     .curatedNativeMemberStatement(db, revision, collection, id)
-    .first<{ preparation_id: string; supported_game: string; card_id: string | null }>();
+    .first<{ preparation_id: string; supported_game: string; card_id: string | null; product_id: string | null }>();
   if (!member) throw missing();
   if (member.supported_game !== game)
     throw new AdministrationProblem(
@@ -50,6 +67,13 @@ export async function nativeCuratedTarget(
       "curated_revision_target_invalid",
       "The target does not belong to the proposed Supported Game.",
     );
+  if (kind === "release") {
+    if (!member.product_id) throw unavailable();
+    const product = await nativeCuratedTarget(db, revision, game, "product", member.product_id);
+    const release = (product?.releases as Value[] | undefined)?.find((value) => value.id === id);
+    if (!release) throw unavailable();
+    return release;
+  }
   const preparation = member.preparation_id;
   const curated = await verified(
     await repository.curatedNativeCheckpointStatement(db, preparation, "curated_revisions").first<Row>(),
@@ -76,6 +100,31 @@ export async function nativeCuratedTarget(
     ["curated", curated.curated as Positions],
     ["before_curated", curated.official as Positions],
   ];
+  if (["products", "distribution_contexts", "product_relationships"].includes(collection)) {
+    const official = await verified(
+      await repository.curatedNativeCheckpointStatement(db, preparation, "official_errata").first<Row>(),
+    );
+    const productGames = official.productGames;
+    if (
+      official.errataComplete !== true ||
+      !Array.isArray(productGames) ||
+      productGames.length > 5 ||
+      new Set(productGames).size !== productGames.length ||
+      productGames.some((value) => !["one-piece", "digimon", "fusion-world", "gundam", "riftbound"].includes(value))
+    )
+      throw unavailable();
+    // Each game's reduction inherits the preceding draft, including its contexts and relationships.
+    for (const productGame of [...productGames].reverse()) {
+      const product = await verified(
+        await repository
+          .curatedNativeCheckpointStatement(db, preparation, `product_reduction:${productGame}`)
+          .first<Row>(),
+      );
+      if (product.stage !== "complete") throw unavailable();
+      layers.push([`product_result_${productGame}`, product.result as Positions]);
+    }
+    layers.push(["prior_products", (official.prior as Value)?.priorProducts as Positions]);
+  }
   const key = await sha256Text(id);
   for (const [phase, positions] of layers) {
     const through = positions?.[collection] ?? 0;
@@ -132,7 +181,7 @@ export async function nativeCuratedTarget(
     const retained = envelope.value as Value;
     const entity = retained?.entity as Value | null;
     if (retained?.id !== id || !entity || entity.id !== id) throw unavailable();
-    if (kind === "card" && entity.game !== game) throw unavailable();
+    if (kind !== "printing" && entity.game !== game) throw unavailable();
     if (kind === "printing") {
       if (entity.card_id !== member.card_id || typeof entity.card_id !== "string") throw unavailable();
       const owner = await repository
@@ -143,4 +192,67 @@ export async function nativeCuratedTarget(
     return entity;
   }
   throw unavailable();
+}
+
+/** Only the exact endpoints and matching relationship records enter this small candidate. */
+export async function nativeCuratedRelationshipTarget(
+  db: CatalogueStore,
+  revision: string,
+  game: string,
+  target: { relationship_kind: string; from: { type: string; id: string }; to: { type: string; id: string } },
+): Promise<Value | undefined> {
+  const published = await repository
+    .curatedNativeRevisionStatement(db, revision)
+    .first<{ publication_operation_id: string | null; query_state: string | null }>();
+  if (!published?.publication_operation_id) return undefined;
+  if (published.query_state !== "available") throw unavailable();
+  const candidate: Record<string, Value[]> = {
+    cards: [],
+    printings: [],
+    products: [],
+    distribution_contexts: [],
+    product_relationships: [],
+  };
+  let bytes = 0;
+  const add = (collection: string, entity: Value) => {
+    bytes += new TextEncoder().encode(JSON.stringify(entity)).byteLength;
+    if (bytes > 4_000_000) throw unavailable();
+    if (!candidate[collection]!.some((value) => value.id === entity.id)) candidate[collection]!.push(entity);
+  };
+  for (const endpoint of [target.from, target.to]) {
+    if (!["card", "printing", "product", "distribution_context"].includes(endpoint.type)) throw missing();
+    const kind = endpoint.type as EntityKind;
+    const entity = await nativeCuratedTarget(db, revision, game, kind, endpoint.id);
+    if (!entity) throw unavailable();
+    add(collections[kind], entity);
+    if (kind === "printing") {
+      const card = await nativeCuratedTarget(db, revision, game, "card", entity.card_id as string);
+      if (!card) throw unavailable();
+      add("cards", card);
+    }
+  }
+  let after = "";
+  let count = 0;
+  for (;;) {
+    const page = await repository
+      .curatedNativeRelationshipsStatement(db, revision, game, target, after)
+      .all<{ entity_id: string }>();
+    for (const row of page.results) {
+      if (++count > 64) throw unavailable();
+      const entity = await nativeCuratedTarget(db, revision, game, "product_relationship", row.entity_id);
+      if (
+        !entity ||
+        entity.kind !== target.relationship_kind ||
+        (entity.from as Value)?.type !== target.from.type ||
+        (entity.from as Value)?.id !== target.from.id ||
+        (entity.to as Value)?.type !== target.to.type ||
+        (entity.to as Value)?.id !== target.to.id
+      )
+        throw unavailable();
+      add("product_relationships", entity);
+      after = row.entity_id;
+    }
+    if (page.results.length < 16) break;
+  }
+  return candidate;
 }

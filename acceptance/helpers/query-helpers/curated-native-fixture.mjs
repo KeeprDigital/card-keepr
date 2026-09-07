@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 export function curatedNativeFixture() {
   const db = new DatabaseSync(":memory:");
@@ -8,7 +9,7 @@ export function curatedNativeFixture() {
     CREATE TABLE catalogue_query_revisions (catalogue_revision_id TEXT PRIMARY KEY, state TEXT);
     CREATE TABLE catalogue_composition_games (catalogue_revision_id TEXT, supported_game TEXT, candidate_id TEXT, game_revision_id TEXT);
     CREATE TABLE game_candidates (id TEXT PRIMARY KEY, preparation_id TEXT, supported_game TEXT, state TEXT);
-    CREATE TABLE publication_read_entities (candidate_id TEXT, kind TEXT, entity_id TEXT, card_id TEXT);
+    CREATE TABLE publication_read_entities (candidate_id TEXT, kind TEXT, entity_id TEXT, card_id TEXT, product_id TEXT, from_id TEXT, to_id TEXT, relationship_kind TEXT);
     CREATE TABLE reconciliation_correction_pins (preparation_id TEXT PRIMARY KEY, decision_cutoff INTEGER, games_json TEXT);
     INSERT INTO reconciliation_correction_pins VALUES ('preparation_native',0,'["riftbound"]');
     CREATE TABLE reconciliation_checkpoints (preparation_id TEXT, phase TEXT, ordinal INTEGER, content TEXT, sha256 TEXT);
@@ -21,7 +22,7 @@ export function curatedNativeFixture() {
     INSERT INTO catalogue_query_revisions VALUES ('composition_current','available');
     INSERT INTO catalogue_composition_games VALUES ('composition_current','riftbound','candidate_native','game_revision_earlier');
     INSERT INTO game_candidates VALUES ('candidate_native','preparation_native','riftbound','published');
-    INSERT INTO publication_read_entities VALUES ('candidate_native','cards','card_monk',NULL),('candidate_native','printings','printing_monk','card_monk');`);
+    INSERT INTO publication_read_entities (candidate_id,kind,entity_id,card_id) VALUES ('candidate_native','cards','card_monk',NULL),('candidate_native','printings','printing_monk','card_monk');`);
   function checkpoint(phase, value) {
     const content = JSON.stringify(value);
     db.prepare(
@@ -104,6 +105,7 @@ export function requireCuratedCorrection(db) {
 /** Reuse the same fixture records in actual D1 without a mock query dispatcher. */
 export function curatedNativeD1Statements() {
   const fixture = curatedNativeFixture();
+  addCuratedProductFixture(fixture);
   try {
     return fixture.db
       .prepare("SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name")
@@ -123,4 +125,69 @@ export function curatedNativeD1Statements() {
   } finally {
     fixture.db.close();
   }
+}
+
+export function addCuratedProductFixture(fixture) {
+  const { db, checkpoint, entity } = fixture;
+  db.exec(`INSERT INTO publication_read_entities (candidate_id,kind,entity_id,product_id,from_id,to_id,relationship_kind) VALUES
+    ('candidate_native','products','product_native',NULL,NULL,NULL,NULL),
+    ('candidate_native','releases','release_native','product_native',NULL,NULL,NULL),
+    ('candidate_native','distribution_contexts','context_native',NULL,NULL,NULL,NULL),
+    ('candidate_native','product_relationships','relationship_native',NULL,'printing_monk','product_native','printing-product');`);
+  checkpoint("product_reduction:riftbound", {
+    stage: "complete",
+    result: { products: 1, distribution_contexts: 1, product_relationships: 1 },
+  });
+  checkpoint("official_errata", { errataComplete: true, productGames: ["riftbound"], prior: { priorProducts: {} } });
+  entity("candidate_product_result_riftbound_products", {
+    id: "product_native",
+    game: "riftbound",
+    name: "Official product",
+    reference: { kind: "official_code", value: "OGN" },
+    official_code: "OGN",
+    releases: [
+      {
+        id: "release_native",
+        product_id: "product_native",
+        event_key: "event_native",
+        region: null,
+        date: { precision: "quarter", value: "2027-Q1" },
+        status: "announced",
+      },
+    ],
+  });
+  entity("candidate_product_result_riftbound_distribution_contexts", {
+    id: "context_native",
+    game: "riftbound",
+    label: "Official context",
+    kind: "promotion",
+  });
+  entity("candidate_product_result_riftbound_product_relationships", {
+    id: "relationship_native",
+    game: "riftbound",
+    kind: "printing-product",
+    from: { type: "printing", id: "printing_monk" },
+    to: { type: "product", id: "product_native" },
+    observed: false,
+    evidence_category: "official",
+    curated_provenance: [{ reviewed_source_value: "present" }],
+  });
+}
+
+export function removeCuratedProductCheckpoint(f) {
+  f.db.exec("DELETE FROM reconciliation_checkpoints WHERE phase='product_reduction:riftbound'");
+}
+export function corruptCuratedProduct(f) {
+  f.db.exec(
+    "UPDATE reconciliation_reducer_state SET sha256='invalid' WHERE namespace='candidate_product_result_riftbound_products'",
+  );
+}
+export function wrongGameCuratedProduct(f) {
+  f.db.exec("DELETE FROM reconciliation_reducer_state WHERE namespace='candidate_product_result_riftbound_products'");
+  f.entity("candidate_product_result_riftbound_products", { id: "product_native", game: "gundam" }, 1);
+}
+export function addCuratedErratumMembership(f) {
+  f.db.exec(
+    "INSERT INTO publication_read_entities (candidate_id,kind,entity_id) VALUES ('candidate_native','errata','erratum_native')",
+  );
 }

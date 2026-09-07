@@ -3,19 +3,25 @@ import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { backup, DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
-import { d1Adapter } from "./helpers/query-helpers/sqlite-d1-adapter.mjs";
 import {
+  addCuratedErratumMembership,
+  addCuratedProductFixture,
+  appendCuratedText,
+  corruptCuratedCheckpoint,
+  corruptCuratedFixture,
+  corruptCuratedProduct,
   curatedNativeFixture,
+  removeCuratedProductCheckpoint,
   requireCuratedCorrection,
   retireCuratedFixture,
   unpublishCuratedFixture,
-  corruptCuratedFixture,
-  corruptCuratedCheckpoint,
-  appendCuratedText,
+  wrongGameCuratedProduct,
 } from "./helpers/query-helpers/curated-native-fixture.mjs";
+import { d1Adapter } from "./helpers/query-helpers/sqlite-d1-adapter.mjs";
 
 const digest = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const proposal = () => ({
@@ -83,6 +89,143 @@ test("Curated validation resolves a published native Printing through its exact 
       (await validateCuratedRevision(catalogueStore(d1Adapter(fixture.db)), p, "composition_current")).valid,
       true,
     );
+  });
+  await t.test("native Product, Release, context and relationship retain official source authority", async () => {
+    const f = curatedNativeFixture();
+    try {
+      addCuratedProductFixture(f);
+      for (const [type, id, path, source, value] of [
+        ["product", "product_native", "/name", "Official product", "Reviewed product"],
+        ["release", "release_native", "/status", "announced", "released"],
+        ["distribution_context", "context_native", "/label", "Official context", "Reviewed context"],
+      ]) {
+        const p = proposal();
+        p.target = { kind: "field", entity_type: type, entity_id: id, path };
+        p.assertion.value = value;
+        p.reviewed_source_digest = digest(source);
+        assert.equal(
+          (await validateCuratedRevision(catalogueStore(d1Adapter(f.db)), p, "composition_current")).valid,
+          true,
+        );
+      }
+      const p = proposal();
+      p.target = {
+        kind: "relationship",
+        relationship_kind: "printing-product",
+        from: { type: "printing", id: "printing_monk" },
+        to: { type: "product", id: "product_native" },
+      };
+      p.assertion = { kind: "relationship", presence: "absent" };
+      p.reviewed_source_digest = digest("present");
+      assert.equal(
+        (await validateCuratedRevision(catalogueStore(d1Adapter(f.db)), p, "composition_current")).valid,
+        true,
+      );
+    } finally {
+      f.db.close();
+    }
+  });
+  for (const [name, change, expected] of [
+    ["missing Product checkpoint", removeCuratedProductCheckpoint, "curated_revision_target_unavailable"],
+    [
+      "incomplete Product checkpoint",
+      (f) => f.checkpoint("product_reduction:riftbound", { stage: "inputs", result: { products: 1 } }),
+      "curated_revision_target_unavailable",
+    ],
+    ["corrupt Product record", corruptCuratedProduct, "curated_revision_target_unavailable"],
+    ["wrong Product game", wrongGameCuratedProduct, "curated_revision_target_unavailable"],
+  ])
+    await t.test(name, async () => {
+      const f = curatedNativeFixture();
+      try {
+        addCuratedProductFixture(f);
+        change(f);
+        const p = proposal();
+        p.target = { kind: "field", entity_type: "product", entity_id: "product_native", path: "/name" };
+        p.assertion.value = "Reviewed product";
+        p.reviewed_source_digest = digest("Official product");
+        await assert.rejects(validateCuratedRevision(catalogueStore(d1Adapter(f.db)), p, "composition_current"), {
+          code: expected,
+        });
+      } finally {
+        f.db.close();
+      }
+    });
+  await t.test("Erratum source fields survive native lookup", async () => {
+    const f = curatedNativeFixture();
+    try {
+      addCuratedErratumMembership(f);
+      f.checkpoint("curated_revisions", { progress: { stage: "complete" }, official: { errata: 1 }, curated: {} });
+      f.entity("candidate_before_curated_errata", {
+        id: "erratum_native",
+        game: "riftbound",
+        effective_from: null,
+        official_wording: "Official wording",
+        corrected_value: null,
+      });
+      const p = proposal();
+      p.target = { kind: "field", entity_type: "erratum", entity_id: "erratum_native", path: "/official_wording" };
+      p.assertion.value = "Reviewed wording";
+      p.reviewed_source_digest = digest("Official wording");
+      assert.equal(
+        (await validateCuratedRevision(catalogueStore(d1Adapter(f.db)), p, "composition_current")).valid,
+        true,
+      );
+    } finally {
+      f.db.close();
+    }
+  });
+  await t.test("later game overlays and Curated source presence survive SQLite backup and restore", async () => {
+    const f = curatedNativeFixture();
+    const p = proposal();
+    p.target = {
+      kind: "relationship",
+      relationship_kind: "printing-product",
+      from: { type: "printing", id: "printing_monk" },
+      to: { type: "product", id: "product_native" },
+    };
+    p.assertion = { kind: "relationship", presence: "absent" };
+    p.reviewed_source_digest = digest("absent");
+    try {
+      addCuratedProductFixture(f);
+      f.checkpoint("official_errata", {
+        errataComplete: true,
+        productGames: ["riftbound", "gundam"],
+        prior: { priorProducts: {} },
+      });
+      f.checkpoint("product_reduction:gundam", { stage: "complete", result: { product_relationships: 1 } });
+      f.entity("candidate_product_result_gundam_product_relationships", {
+        id: "relationship_native",
+        game: "riftbound",
+        kind: "printing-product",
+        from: p.target.from,
+        to: p.target.to,
+        observed: true,
+        evidence_category: "explicit",
+        curated_provenance: [{ reviewed_source_value: "absent" }],
+      });
+      assert.equal(
+        (await validateCuratedRevision(catalogueStore(d1Adapter(f.db)), p, "composition_current")).valid,
+        true,
+      );
+      const restoredPath = join(directory, "product-restore.sqlite");
+      await backup(f.db, restoredPath);
+      const restored = new DatabaseSync(restoredPath);
+      try {
+        assert.equal(
+          (await validateCuratedRevision(catalogueStore(d1Adapter(restored)), p, "composition_current")).valid,
+          true,
+        );
+        p.reviewed_source_digest = digest("present");
+        await assert.rejects(validateCuratedRevision(catalogueStore(d1Adapter(restored)), p, "composition_current"), {
+          code: "curated_revision_reviewed_source_mismatch",
+        });
+      } finally {
+        restored.close();
+      }
+    } finally {
+      f.db.close();
+    }
   });
   for (const [name, change, expected] of [
     [

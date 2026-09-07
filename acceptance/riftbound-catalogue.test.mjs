@@ -1,24 +1,23 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { nativeExportReader } from "./helpers/native-export-reader.mjs";
-import { acceptedBackupRetry, resumeExistingBackupAttempt } from "./helpers/native-backup-retry.mjs";
-import { riftboundReplayTransport } from "./helpers/riftbound-replay-transport.mjs";
-import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
 import {
   applyMigrations,
   runCli,
   startWorker,
   stopWorker,
-  waitForHealth,
   waitForAdministrationDocument,
+  waitForHealth,
 } from "./helpers/acceptance-runtime.mjs";
+import { acceptedBackupRetry, resumeExistingBackupAttempt } from "./helpers/native-backup-retry.mjs";
 import { nativeCheckpointTransport, publishNativeCollection } from "./helpers/native-catalogue-runtime.mjs";
-
+import { nativeExportReader } from "./helpers/native-export-reader.mjs";
 import { withNativeRequestPacing } from "./helpers/native-request-pacing.mjs";
+import { riftboundReplayTransport } from "./helpers/riftbound-replay-transport.mjs";
+import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
 
 // Actual retained HTTP bodies. External HTTP and Cloudflare control plane are
 // replayed locally; collection, parsing and all owner operations are shipped code.
@@ -495,13 +494,24 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   }
   const printedMonk =
     "When you play me, buff two other friendly units. (Each one that doesn't have a buff gets a +1 [M] buff.)";
-  const curate = async (entityType, entityId, path, value, previousValue, captureId) => {
-    const capture = manifest.captures.find((c) => c.id === captureId);
+  const curatedSourceProposals = [];
+  const curate = async (
+    entityType,
+    entityId,
+    path,
+    value,
+    previousValue,
+    captureId,
+    relationship = null,
+    supersede = false,
+  ) => {
+    const capture =
+      manifest.captures.find((c) => c.id === captureId) ?? previous.captures.find((c) => c.id === captureId);
     const proposal = {
       game: "riftbound",
-      target: { kind: "field", entity_type: entityType, entity_id: entityId, path },
-      assertion: { kind: "field", value },
-      rationale: "Independent visual review of the retained Riot Printing image.",
+      target: relationship ?? { kind: "field", entity_type: entityType, entity_id: entityId, path },
+      assertion: relationship ? { kind: "relationship", presence: value } : { kind: "field", value },
+      rationale: "Fixture owner review bound to retained Riot evidence.",
       evidence: [{ kind: "owner_reference", uri: capture.url, content_digest: capture.sha256 }],
       effective_interval: { from: null, to: null },
       reviewed_source_digest: createHash("sha256").update(JSON.stringify(previousValue)).digest("hex"),
@@ -539,7 +549,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     });
     assert.equal(status.status, 200);
     const confirmation = (await status.json()).resolved_target.confirmation;
-    return call([
+    const created = await call([
       "create",
       "--proposal",
       proposalPath,
@@ -555,6 +565,58 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
       confirmation,
       "--yes",
     ]);
+    curatedSourceProposals.push(structuredClone(proposal));
+    if (supersede) {
+      proposal.supersedes_revision_id = created.curated_revision_id;
+      proposal.rationale = "Fixture owner supersession retains the exact reviewed official source.";
+      await writeFile(proposalPath, JSON.stringify(proposal));
+      const replacement = await call([
+        "validate",
+        "--proposal",
+        proposalPath,
+        "--expected-current-revision",
+        publication.resulting_revision_id,
+      ]);
+      const supersessionKey = `supersede-${entityId}`;
+      const binding = {
+        curated_revision_id: created.curated_revision_id,
+        expected_event_version: created.event_version,
+        conflict_digest: null,
+        idempotency_key: supersessionKey,
+        replacement_supported_game: "riftbound",
+        replacement_target: proposal.target,
+        replacement_content_digest: replacement.proposal_digest,
+      };
+      const resolved = await pacedFetch(
+        `${worker.url}/v1/status?${new URLSearchParams({ expected_current_revision_id: publication.resulting_revision_id, curated_operation: "supersede", curated_binding: JSON.stringify(binding) })}`,
+        { headers: { authorization: `Bearer ${key}` } },
+      );
+      assert.equal(resolved.status, 200);
+      const result = await call([
+        "supersede",
+        "--revision-id",
+        created.curated_revision_id,
+        "--event-version",
+        String(created.event_version),
+        "--rationale",
+        proposal.rationale,
+        "--proposal",
+        proposalPath,
+        "--proposal-digest",
+        replacement.proposal_digest,
+        "--expected-current-revision",
+        publication.resulting_revision_id,
+        "--idempotency-key",
+        supersessionKey,
+        "--environment",
+        "production",
+        "--confirm",
+        (await resolved.json()).resolved_target.confirmation,
+        "--yes",
+      ]);
+      assert.equal(result.code, "curated_revision_superseded");
+    }
+    return created;
   };
   await curate(
     "printing",
@@ -571,6 +633,33 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     ["Ahri", "Ionia"],
     ["Ahri"],
     "riftbound-image-sfd-227-star-221",
+  );
+  const reviewedProduct = products.find((product) => typeof product.official_code === "string");
+  assert.ok(reviewedProduct);
+  await curate(
+    "product",
+    reviewedProduct.id,
+    "/name",
+    `${reviewedProduct.name} (owner reviewed)`,
+    reviewedProduct.name,
+    "riftbound-products",
+    null,
+    true,
+  );
+  await curate(
+    null,
+    `relationship-${reviewedProduct.id}`,
+    null,
+    "present",
+    "absent",
+    "riftbound-products",
+    {
+      kind: "relationship",
+      relationship_kind: "printing-product",
+      from: { type: "printing", id: admittedPrintings.get("ogn-141-298") },
+      to: { type: "product", id: reviewedProduct.id },
+    },
+    true,
   );
   const refresh = await cli([
     "game-candidate",
@@ -695,7 +784,9 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     finalPrintings,
   );
   assert.deepEqual(await nativeExportRecords(api.url, apiKey, finalPublication.resulting_revision_id, "cards"), cards);
-  const restoredResponse = await pacedFetch(`${api.url}/v1/printings/${admittedPrintings.get("ogn-141-298")}`, { headers });
+  const restoredResponse = await pacedFetch(`${api.url}/v1/printings/${admittedPrintings.get("ogn-141-298")}`, {
+    headers,
+  });
   assert.equal(restoredResponse.status, 200);
   const restoredMonk = (await restoredResponse.json()).data;
   assert.equal(restoredMonk.printed_rules_text, printedMonk);
@@ -750,6 +841,26 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   );
   assert.equal(restoredValidation.code, 0, restoredValidation.stdout + restoredValidation.stderr);
   assert.equal(JSON.parse(restoredValidation.stdout).valid, true);
+  for (const proposal of curatedSourceProposals) {
+    await writeFile(proposalPath, JSON.stringify(proposal));
+    const validation = await runCli(
+      [
+        "curated-revision",
+        "validate",
+        "--proposal",
+        proposalPath,
+        "--expected-current-revision",
+        finalPublication.resulting_revision_id,
+        "--secrets-stdin-fd",
+        "3",
+        "--json",
+      ],
+      { ...environment, KEEPR_INGESTION_URL: restoredAdmin.url },
+      { secrets: { administration_key: key } },
+    );
+    assert.equal(validation.code, 0, validation.stdout + validation.stderr);
+    assert.equal(JSON.parse(validation.stdout).valid, true);
+  }
   const shownAfterRestore = await runCli(["source", "show", "--run-id", run.id, "--json"], {
     ...environment,
     KEEPR_INGESTION_URL: restoredAdmin.url,

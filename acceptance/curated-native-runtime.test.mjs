@@ -49,6 +49,25 @@ test("owner validation resolves a native published target in Workerd without req
   const valid = await send();
   assert.equal(valid.status, 200, await valid.clone().text());
   assert.equal((await valid.json()).valid, true);
+  const printingTarget = proposal.target;
+  proposal.target = { kind: "field", entity_type: "product", entity_id: "product_native", path: "/name" };
+  proposal.assertion.value = "Reviewed product";
+  proposal.reviewed_source_digest = createHash("sha256").update(JSON.stringify("Official product")).digest("hex");
+  const product = await send();
+  assert.equal(product.status, 200, await product.clone().text());
+  proposal.target = {
+    kind: "relationship",
+    relationship_kind: "printing-product",
+    from: { type: "printing", id: "printing_monk" },
+    to: { type: "product", id: "product_native" },
+  };
+  proposal.assertion = { kind: "relationship", presence: "absent" };
+  proposal.reviewed_source_digest = createHash("sha256").update(JSON.stringify("present")).digest("hex");
+  const relationship = await send();
+  assert.equal(relationship.status, 200, await relationship.clone().text());
+  proposal.target = printingTarget;
+  proposal.assertion = { kind: "field", value: 42 };
+  proposal.reviewed_source_digest = createHash("sha256").update("null").digest("hex");
   proposal.assertion.value = 42;
   const invalid = await send();
   assert.equal(invalid.status, 422);

@@ -354,3 +354,9 @@ The earlier AUyRnJ evidence and verified SQL import remain at their genuine
 schema 26. They are retained as historical proof and are not relabelled as
 schema 27 or 28. A fresh native journey is required on the reconciled migration
 chain; earlier functional successes and exact failures remain recorded above.
+
+### Native Product and relationship Curated authority extension
+
+After merging schema-27 main as `7d5b289`, native Curated target resolution now also reads Products, Distribution Contexts, Errata, nested Releases, and exact Product Relationship endpoint pairs. It reconstructs all completed Product reduction layers in reverse `official_errata.productGames` order, then inherited Products. Published membership, private content digests, retained cutoffs, endpoint ownership, and reviewed-source restoration remain mandatory; no legacy candidate hydration is used for native targets.
+
+The focused SQLite suite passes 20 tests, including missing/incomplete/corrupt Product authority, Erratum fields, later-game relationship overlays, and backup/restore source-presence preservation. The fresh schema-28 fixture now includes Product and relationship creation/supersession and restored source validation. These new native lifecycle steps are prepared but not yet executed; the earlier schema-26 state remains historical evidence only.
