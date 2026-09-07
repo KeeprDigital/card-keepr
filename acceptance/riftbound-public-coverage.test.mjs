@@ -33,14 +33,22 @@ test("retained Riot public English pagination exhausts exact links without inven
     assert.equal(document.metadata.totalItems, 1197);
     assert.equal(document.metadata.totalPages, 6);
     assert.equal(new URL(document.linkdata.self, capture.url).href, capture.url);
-    assert.equal(document.linkdata.next == null ? null : new URL(document.linkdata.next, capture.url).href,
-      pages[index + 1]?.capture.url ?? null);
+    assert.equal(
+      document.linkdata.next == null ? null : new URL(document.linkdata.next, capture.url).href,
+      pages[index + 1]?.capture.url ?? null,
+    );
     records.push(...document.data);
   }
-  assert.deepEqual(pages.map((p) => p.document.data.length), [200, 198, 200, 198, 198, 195]);
+  assert.deepEqual(
+    pages.map((p) => p.document.data.length),
+    [200, 198, 200, 198, 198, 195],
+  );
   assert.equal(records.length, 1189);
   assert.equal(new Set(records.map((r) => r.id)).size, 1189);
-  const old = await readFile(new URL("./fixtures/real-sources/2026-09-06/raw/riftbound-gallery.body", import.meta.url), "utf8");
+  const old = await readFile(
+    new URL("./fixtures/real-sources/2026-09-06/raw/riftbound-gallery.body", import.meta.url),
+    "utf8",
+  );
   const embedded = JSON.parse(old.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/)[1]);
   const oldRecords = embedded.props.pageProps.page.blades.flatMap((b) => b.cards?.items ?? []);
   assert.deepEqual(records.map((r) => r.id).sort(), oldRecords.map((r) => r.id).sort());

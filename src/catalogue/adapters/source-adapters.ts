@@ -1,3 +1,4 @@
+import { riftboundSourceAdapterRegistration } from "./riftbound-source-adapter";
 import { limitlessOnePieceSourceAdapterRegistration } from "./limitless-one-piece-source-adapter";
 import { sourceLineages } from "./source-registry";
 import { AdministrationProblem, gameProfileForGame } from "../shared";
@@ -154,6 +155,7 @@ function productionCatalogueRegistration(
 export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistration[] = Object.freeze(
   [
     limitlessOnePieceSourceAdapterRegistration,
+    riftboundSourceAdapterRegistration,
     {
       adapterVersion: "one-piece-official-errata-html@1",
       sourceLineage: "one-piece-en",

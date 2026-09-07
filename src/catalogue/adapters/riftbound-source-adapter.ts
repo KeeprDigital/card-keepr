@@ -6,7 +6,7 @@ import type { SourceAdapterRegistration } from "./source-adapters";
 const inventoryOrigin = "https://content.publishing.riotgames.com";
 const inventoryPath = "/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards";
 
-export const riftboundSourceAdapterRegistration: SourceAdapterRegistration = {
+export const riftboundSourceAdapterRegistration = {
   adapterVersion: "riftbound-en@1",
   sourceLineage: "riftbound-en",
   supportedGame: "riftbound",
@@ -18,6 +18,19 @@ export const riftboundSourceAdapterRegistration: SourceAdapterRegistration = {
   requestSurface: { kind: "credential-free-https" },
   reconciliationCapability: "catalogue",
   reconciliationAreas: ["catalogue"],
+  officialSourceContract: {
+    supportedGame: "riftbound",
+    partition: "EN-US",
+    origin: inventoryOrigin,
+    documentPathnamePrefixes: [inventoryPath],
+    imagePathnamePrefixes: ["/sanity/images/dsfx7636/game_data_live/"],
+    requiredSurfaces: ["catalogue"],
+  },
+  listingReconciliation: {
+    groupsPublisherPages: false,
+    strictListingIdentity: false,
+    duplicateLocatorCompatibility: "never",
+  },
   parseBytes(bytes, context) {
     if (context.mediaType?.startsWith("image/")) return [];
     const { cards, metadata } = inventory(bytes, context.url);
@@ -47,7 +60,7 @@ export const riftboundSourceAdapterRegistration: SourceAdapterRegistration = {
       })),
     ];
   },
-};
+} satisfies SourceAdapterRegistration;
 
 function inventory(bytes: Uint8Array, sourceUrl: string) {
   const url = new URL(sourceUrl);
