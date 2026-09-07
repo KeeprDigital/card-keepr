@@ -1529,6 +1529,7 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
   }
   if (
     scenario === "profile-fusion-world" ||
+    scenario === "profile-fusion-world-changed" ||
     scenario === "union-fusion-world" ||
     scenario === "profile-nested-unknown" ||
     scenario === "profile-invalid-number"
@@ -1539,7 +1540,12 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
           game: "fusion-world",
           profile: "fusion-world@1",
           cardNumber: scenario === "union-fusion-world" ? "FB99-999" : "FB01-001",
-          name: scenario === "union-fusion-world" ? "Union Son Goku" : "Son Goku",
+          name:
+            scenario === "union-fusion-world"
+              ? "Union Son Goku"
+              : scenario === "profile-fusion-world-changed"
+                ? "Son Goku revised"
+                : "Son Goku",
           cardAttributes: {
             card_type: "battle",
             colours: ["red"],

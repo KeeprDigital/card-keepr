@@ -13,6 +13,10 @@ import {
   testEnv,
 } from "./reconciliation-helpers";
 import { replaceGameHeadForFence } from "./query-helpers/game-candidates";
+import {
+  setOperationStateRecoveryHealth,
+  setOperationStateRecoveryHealthForRecoveryHealthGatesFixtureEvidenceInjectionReconciliationBeforeMutation,
+} from "./query-helpers/ingestion";
 import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
 installReconciliationSuite();
@@ -474,5 +478,50 @@ test.each(["link", "reject"])(
       status: action === "link" ? "admitted" : "rejected",
       generation: 1,
     });
+  },
+);
+
+test.each(["pause", "abandon-paused", "abandon-sealed"])(
+  "blocked recovery atomically fences native %s",
+  async (boundary) => {
+    const source = await collect("/reconciliation/base", `recovery-${boundary}-source`);
+    const created = await post("/v1/game-candidates", {
+      ingestion_run_id: source.id,
+      supported_game: "one-piece",
+      expected_game_revision_id: "catrev_spine_000",
+      idempotency_key: `recovery-${boundary}-candidate`,
+    });
+    expect(created.response.status).toBe(201);
+    const id = requiredString(created.document, "id");
+    if (boundary === "abandon-paused")
+      expect(
+        (await post(`/v1/game-candidates/${id}/pause`, { generation: 0, idempotency_key: "recovery-initial-pause" }))
+          .response.status,
+      ).toBe(200);
+    if (boundary === "abandon-sealed") {
+      const until = Date.now() + 15000;
+      while ((await get(`/v1/game-candidates/${id}`)).document.state === "preparing" && Date.now() < until)
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      expect((await get(`/v1/game-candidates/${id}`)).document.state).toBe("sealed");
+    }
+    const before = (await get(`/v1/game-candidates/${id}`)).document;
+    const action = boundary === "pause" ? "pause" : "abandon";
+    const body = { generation: before.generation, idempotency_key: `recovery-${boundary}-action` };
+    await setOperationStateRecoveryHealth(testEnv.CATALOGUE_DB).run();
+    try {
+      const refused = await post(`/v1/game-candidates/${id}/${action}`, body);
+      expect(refused.response.status, JSON.stringify(refused.document)).toBe(409);
+      expect(refused.document).toMatchObject({ code: "recovery_not_verified" });
+      expect((await get(`/v1/game-candidates/${id}`)).document).toMatchObject({
+        state: before.state,
+        generation: before.generation,
+        deadline: before.deadline,
+      });
+    } finally {
+      await setOperationStateRecoveryHealthForRecoveryHealthGatesFixtureEvidenceInjectionReconciliationBeforeMutation(
+        testEnv.CATALOGUE_DB,
+      ).run();
+    }
+    expect((await post(`/v1/game-candidates/${id}/${action}`, body)).response.status).toBe(200);
   },
 );

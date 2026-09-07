@@ -45,9 +45,12 @@ retained `ingestion_run_id`, `supported_game`, `expected_game_revision_id`, and 
 `text/:digest/:ordinal` chunks referenced by each partition. Collection provenance remains the real Ingestion
 Run ID; preparation artifacts and Workflow dispatch belong to `preparation_id`.
 The `pause`, `resume`, and `abandon` candidate routes accept the inspected
-generation and an action idempotency key. A paused candidate retains its game
-slot. Abandonment fences it before releasing that slot; another intent creates a
-new candidate from the same retained collection.
+generation and an action idempotency key. A paused or sealed candidate retains its game
+slot. The owner can abandon either state, including an expired sealed candidate.
+Abandonment increments its generation before releasing only its own slot; another
+intent creates a new candidate from the same retained collection. The original
+manifest, evidence and deadline remain inspectable. Every action is atomically
+fenced while shared-database recovery is blocked.
 
 Native Workflow terminal references use
 `card-keepr-game-reconciliation-workflow-result@1` and identify both the source
@@ -70,7 +73,8 @@ same existing large printed-text fixture.
 Each native dispatch uses one durable callback. It retains the original request
 and game predecessor before dispatch, and a parent restart reuses that identity.
 The parent returns bounded preparation identities without waiting for completion.
-An occupied game slot returns a blocked result while other games still dispatch.
+An occupied game slot or pending correction reconfirmation returns a bounded
+blocked result while other games still dispatch.
 Native creation releases the completed collection's reservation atomically after
 pinning. Preparation failure leaves source collection evidence intact.
 

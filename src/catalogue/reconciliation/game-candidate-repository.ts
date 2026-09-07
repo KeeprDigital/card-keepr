@@ -174,6 +174,8 @@ export function synchronizeGameCandidatePauseStatement(database: CatalogueStore,
     .prepare(`UPDATE game_candidates SET
     state = (SELECT state FROM reconciliation_operations WHERE id = ?),
     generation = (SELECT generation FROM reconciliation_operations WHERE id = ?)
-    WHERE preparation_id = ? AND state IN ('preparing', 'paused')`)
+    WHERE preparation_id = ? AND (state IN ('preparing', 'paused') OR
+      (state = 'sealed' AND EXISTS (SELECT 1 FROM reconciliation_operations AS operation
+        WHERE operation.id = game_candidates.preparation_id AND operation.supported_game IS NOT NULL AND operation.state = 'abandoned')))`)
     .bind(runId, runId, runId);
 }

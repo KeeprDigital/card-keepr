@@ -747,3 +747,44 @@ test("native ambiguous matches retain review evidence under their preparation an
   ]);
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
 });
+
+test("an owner can abandon an expired sealed candidate and create a fresh preparation without reviving old writers", async () => {
+  const source = await collect("/reconciliation/base", "sealed-abandon-source");
+  const intent = {
+    ingestion_run_id: source.id,
+    supported_game: "one-piece",
+    expected_game_revision_id: "catrev_spine_000",
+    idempotency_key: "sealed-abandon-candidate",
+  };
+  const created = await post("/v1/game-candidates", intent);
+  expect(created.response.status).toBe(201);
+  const id = requiredString(created.document, "id");
+  let sealed = created.document;
+  const until = Date.now() + 15000;
+  while (sealed.state === "preparing" && Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    sealed = (await get(`/v1/game-candidates/${id}`)).document;
+  }
+  expect(sealed).toMatchObject({ state: "sealed", generation: 0 });
+  const action = { generation: 0, idempotency_key: "abandon-expired-sealed" };
+  const abandoned = await post(`/v1/game-candidates/${id}/abandon`, action, {
+    "x-keepr-test-now": new Date(Date.parse(String(sealed.deadline)) + 1).toISOString(),
+  });
+  expect(abandoned.response.status, JSON.stringify(abandoned.document)).toBe(200);
+  expect(abandoned.document).toMatchObject({
+    state: "abandoned",
+    generation: 1,
+    deadline: sealed.deadline,
+    manifest_digest: sealed.manifest_digest,
+  });
+  expect((await post(`/v1/game-candidates/${id}/abandon`, action)).document).toEqual(abandoned.document);
+  expect((await get(`/v1/game-candidates/${id}`)).document).toMatchObject({ state: "abandoned", generation: 1 });
+  const replacement = await post("/v1/game-candidates", { ...intent, idempotency_key: "sealed-abandon-replacement" });
+  expect(replacement.response.status).toBe(201);
+  expect(replacement.document.id).not.toBe(id);
+  expect((await post("/v1/game-candidates", intent)).document).toMatchObject({ id, state: "abandoned", generation: 1 });
+  expect(
+    (await post(`/v1/game-candidates/${id}/resume`, { generation: 0, idempotency_key: "old-sealed-resume" })).response
+      .status,
+  ).toBe(409);
+});

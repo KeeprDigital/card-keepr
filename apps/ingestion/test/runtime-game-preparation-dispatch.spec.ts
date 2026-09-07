@@ -3,6 +3,8 @@ import { expect, test } from "vitest";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { administrationRequest, installRuntimeSuite, waitForWorkflowStatus } from "./runtime-helpers";
+import { collect, reconcile, approve, post, get, requiredString } from "./reconciliation-helpers";
+import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 
 installRuntimeSuite();
 
@@ -136,3 +138,91 @@ test("an occupied game slot does not prevent the collection parent from dispatch
   const retained = await administrationRequest(`/v1/game-candidates/${original.id}`, "GET");
   expect(await retained.json()).toMatchObject({ ingestion_run_id: prior.id, supported_game: "fusion-world" });
 }, 30000);
+
+test("pending reconfirmation in the first game does not prevent the collection parent from dispatching the next game", async () => {
+  const fusionSource = { game: "fusion-world", lineage: "fusion-world-en", adapter: "fixture-fusion-world-json@2" };
+  const seed = await reconcile(
+    (await collect("/reconciliation/profile-fusion-world", "pending-parent-seed", fusionSource)).id,
+  );
+  const card = (seed.document.cards as { id: string; name: string }[])[0]!;
+  const published = await approve(seed.document);
+  expect(published.response.status).toBe(200);
+  const predecessor = requiredString(published.document, "resulting_revision_id");
+  const proposal = {
+    game: "fusion-world",
+    target: { kind: "field", entity_type: "card", entity_id: card.id, path: "/name" },
+    assertion: { kind: "field", value: "Reviewed Son Goku" },
+    rationale: "Synthetic owner correction",
+    evidence: [{ kind: "owner_reference", uri: "https://owner.example/fusion-review", content_digest: "a".repeat(64) }],
+    effective_interval: { from: null, to: null },
+    reviewed_source_digest: await sha256Text(canonicalJson(card.name)),
+    supersedes_revision_id: null,
+  };
+  expect(
+    (
+      await post("/admin/v1/curated-revisions", {
+        environment: "production",
+        expected_current_revision_id: predecessor,
+        proposal,
+        proposal_digest: await sha256Text(canonicalJson(proposal)),
+        idempotency_key: "pending-parent-correction",
+      })
+    ).response.status,
+  ).toBe(201);
+  const changed = await collect("/reconciliation/profile-fusion-world-changed", "pending-parent-changed", fusionSource);
+  const collection = await injectFixtureEvidencePlan(env.CATALOGUE_DB, {
+    idempotency_key: "pending-parent-two-games",
+    plans: [
+      {
+        supported_game: "fusion-world",
+        source_lineage: "fusion-world-en",
+        adapter_version: "fixture-fusion-world-json@2",
+        requests: [
+          { id: "fusion-cards", url: "https://official-source.invalid/reconciliation/profile-fusion-world-changed" },
+        ],
+      },
+      {
+        supported_game: "one-piece",
+        source_lineage: "one-piece-en",
+        adapter_version: "fixture-one-piece-json@3",
+        requests: [{ id: "one-piece-cards", url: "https://official-source.invalid/reconciliation/base" }],
+      },
+    ],
+  });
+  const conflicted = await post("/v1/game-candidates", {
+    ingestion_run_id: changed.id,
+    supported_game: "fusion-world",
+    expected_game_revision_id: predecessor,
+    idempotency_key: "pending-parent-conflict",
+  });
+  expect(conflicted.response.status).toBe(201);
+  const id = requiredString(conflicted.document, "id");
+  let failed = conflicted.document;
+  const until = Date.now() + 15000;
+  while (failed.state === "preparing" && Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    failed = (await get(`/v1/game-candidates/${id}`)).document;
+  }
+  expect(failed).toMatchObject({ state: "failed", failure_code: "curated_revision_reconfirmation_required" });
+  const response = await administrationRequest(`/v1/ingestion-runs/${collection.id}/collection/resume`, "POST");
+  expect(response.status).toBe(202);
+  const accepted = await response.json<{ workflow: { id: string } }>();
+  const parent = await env.EVIDENCE_INGESTION_WORKFLOW.get(accepted.workflow.id);
+  await waitForWorkflowStatus(accepted.workflow.id, () => parent.status(), "complete", 20000);
+  const output = (await parent.status()).output as { game_preparations: Record<string, unknown>[] };
+  expect(output.game_preparations).toMatchObject([
+    { supported_game: "fusion-world", state: "blocked", code: "curated_revision_reconfirmation_required" },
+    { supported_game: "one-piece", id: expect.any(String) },
+  ]);
+  let candidate: Record<string, unknown> = {};
+  const deadline = Date.now() + 15000;
+  do {
+    candidate = (await get(`/v1/game-candidates/${output.game_preparations[1]!.id}`)).document;
+    if (candidate.state !== "preparing") break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  } while (Date.now() < deadline);
+  expect(candidate).toMatchObject({ state: "sealed", supported_game: "one-piece" });
+  await parent.restart();
+  await waitForWorkflowStatus(accepted.workflow.id, () => parent.status(), "complete", 20000);
+  expect((await parent.status()).output).toEqual(output);
+}, 45000);

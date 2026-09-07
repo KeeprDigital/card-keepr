@@ -152,7 +152,7 @@ export function reconciliationActionUpdate(
   const to = action === "pause" ? "paused" : action === "resume" ? "preparing" : "abandoned";
   return repositoryStatements(database)
     .prepare(`UPDATE reconciliation_operations SET state = ?, generation = generation + ?
-    WHERE id = ? AND state = ? AND generation = ?`)
+    WHERE id = ? AND (state = ? ${action === "abandon" ? "OR (supported_game IS NOT NULL AND state = 'sealed')" : ""}) AND generation = ?`)
     .bind(to, action === "resume" ? 0 : 1, runId, from, generation);
 }
 
@@ -163,8 +163,11 @@ export function reconciliationActionGuard(
   generation: number,
 ) {
   return repositoryStatements(database)
-    .prepare(`SELECT CASE WHEN EXISTS (
-    SELECT 1 FROM reconciliation_operations WHERE id = ? AND state = ? AND generation = ?
+    .prepare(`SELECT CASE WHEN NOT EXISTS (
+      SELECT 1 FROM operation_state WHERE singleton = 1 AND recovery_health <> 'blocked'
+    ) THEN json_extract('{}', 'recovery_not_verified') WHEN EXISTS (
+    SELECT 1 FROM reconciliation_operations WHERE id = ?
+      AND (state = ? ${action === "abandon" ? "OR (supported_game IS NOT NULL AND state = 'sealed')" : ""}) AND generation = ?
   ) THEN 1 ELSE json_extract('{}', 'reconciliation_generation_conflict') END`)
     .bind(runId, action === "pause" ? "preparing" : "paused", generation);
 }

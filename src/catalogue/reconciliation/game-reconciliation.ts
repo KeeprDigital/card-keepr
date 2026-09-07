@@ -41,8 +41,7 @@ export async function prepareCollectedGame(
     input = JSON.parse(retained.request_json) as GamePreparationIntent;
     if (input.ingestion_run_id !== runId || input.supported_game !== game)
       throw new AdministrationProblem(409, "idempotency_conflict", "This key binds another game preparation intent.");
-  }
-  else {
+  } else {
     const head = await collectionGamePredecessorStatement(database, game).first<{ revision_id: string }>();
     if (!head) throw new AdministrationProblem(422, "unsupported_game", "Select a Supported Game.");
     input = {
@@ -56,7 +55,10 @@ export async function prepareCollectedGame(
     const { document } = await createGameReconciliation(database, workflow, input, at);
     return { id: String(document.id), supported_game: game };
   } catch (error) {
-    if (error instanceof AdministrationProblem && error.code === "game_candidate_slot_occupied")
+    if (
+      error instanceof AdministrationProblem &&
+      (error.code === "game_candidate_slot_occupied" || error.code === "curated_revision_reconfirmation_required")
+    )
       return { supported_game: game, state: "blocked" as const, code: error.code };
     throw error;
   }

@@ -88,13 +88,15 @@ test.each([
 ])(
   "prior Cards from $base resume through durable returning groups ($interrupt)",
   async ({ base, changed, count, expectedCards, name, interrupt = "" }) => {
-    const prior = await collect(`/reconciliation/${base}`, "prior-state-base");
+    // Each case owns distinct immutable evidence keys, including across runtime resets.
+    const caseKey = `${base}-${changed}-${interrupt}`;
+    const prior = await collect(`/reconciliation/${base}`, `prior-state-base-${caseKey}`);
     const accepted = await reconcile(prior.id);
     expect(accepted.response.status).toBe(200);
     expect((await approve(accepted.document)).response.status).toBe(200);
     const run = await collect(
       `/reconciliation/${changed}`,
-      "prior-state-changed",
+      `prior-state-changed-${caseKey}`,
       interrupt === "official_errata"
         ? {
             game: "one-piece",
