@@ -57,6 +57,7 @@ export async function persistReviewableCandidate(
   database: CatalogueStore,
   input: {
     runId: string;
+    printingImageObjects: R2Bucket;
     independentGame?: boolean;
     partitions: AsyncIterable<EvidencePartitionInput>;
     plans: AsyncIterable<ObservationPlan>;
@@ -86,6 +87,7 @@ export async function persistReviewableCandidate(
       input.draft,
       manifest.digest,
       input.partitions,
+      input.printingImageObjects,
       input.yieldAtCheckpoint,
     );
     await database.batch([
@@ -109,6 +111,7 @@ export async function persistReviewableCandidate(
     input.draft,
     manifest.digest,
     input.partitions,
+    input.printingImageObjects,
     input.yieldAtCheckpoint,
   );
   const statements = [
@@ -133,6 +136,7 @@ export async function persistBlockedCandidate(
   database: CatalogueStore,
   input: {
     runId: string;
+    printingImageObjects: R2Bucket;
     independentGame?: boolean;
     partitions: AsyncIterable<EvidencePartitionInput>;
     plans: AsyncIterable<ObservationPlan>;
@@ -169,6 +173,7 @@ export async function persistBlockedCandidate(
       input.draft,
       manifest.digest,
       input.partitions,
+      input.printingImageObjects,
       input.yieldAtCheckpoint,
       "failed",
     );

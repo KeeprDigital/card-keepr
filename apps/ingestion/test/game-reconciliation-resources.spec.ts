@@ -183,6 +183,13 @@ test.each([
       : { state: "failed", failure_code: "reconciliation_capacity_exceeded" }),
   });
   if (fixture === "curated-text-target") {
+    const evidence = await get(`/v1/game-candidates/${id}/inspection/evidence/curated`);
+    expect(evidence.response.status).toBe(200);
+    expect(evidence.document.records).toEqual([
+      expect.objectContaining({
+        proposal: expect.objectContaining({ assertion: { kind: "field", value: "Reviewed curated text target" } }),
+      }),
+    ]);
     const page = (await get(`/v1/game-candidates/${id}/partitions`)).document;
     const cards = (page.partitions as { kind: string; ordinal: number }[]).filter((part) => part.kind === "cards");
     expect(cards).toHaveLength(1);

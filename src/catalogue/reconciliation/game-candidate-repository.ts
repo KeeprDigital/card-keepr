@@ -179,3 +179,33 @@ export function synchronizeGameCandidatePauseStatement(database: CatalogueStore,
         WHERE operation.id = game_candidates.preparation_id AND operation.supported_game IS NOT NULL AND operation.state = 'abandoned')))`)
     .bind(runId, runId, runId);
 }
+
+export function predecessorGameCandidateStatement(database: CatalogueStore, revisionId: string, game: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT candidate.id, candidate.preparation_id, candidate.partition_count
+    FROM catalogue_revisions AS revision JOIN game_candidates AS candidate
+      ON candidate.ingestion_run_id = revision.ingestion_run_id AND candidate.supported_game = ?
+    WHERE revision.id = ? AND candidate.manifest_digest IS NOT NULL
+      AND candidate.preparation_id = candidate.ingestion_run_id LIMIT 1`)
+    .bind(game, revisionId);
+}
+
+export function gameCandidateInspectionSummaryStatement(database: CatalogueStore, candidateId: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT ordinal FROM game_candidate_partitions
+    WHERE candidate_id = ? AND kind = 'inspection_summary' ORDER BY ordinal DESC LIMIT 1`)
+    .bind(candidateId);
+}
+export function gameCandidateInspectionCountsStatement(database: CatalogueStore, candidateId: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT kind, count(*) AS partitions, sum(record_count) AS records,
+    min(ordinal) AS first_ordinal, max(ordinal) AS last_ordinal
+    FROM game_candidate_partitions WHERE candidate_id = ? GROUP BY kind`)
+    .bind(candidateId);
+}
+
+export function inspectionGameHeadStatement(database: CatalogueStore, game: string) {
+  return repositoryStatements(database)
+    .prepare("SELECT revision_id FROM game_catalogue_heads WHERE supported_game = ?")
+    .bind(game);
+}
