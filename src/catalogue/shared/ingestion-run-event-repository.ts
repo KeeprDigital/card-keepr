@@ -223,8 +223,12 @@ export function releaseTerminalRunEventLockStatement(
   activeStatesJson: string,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`UPDATE operation_state SET active_ingestion_run_id = ${nextLiveIngestionReservationSql}
-    WHERE singleton = 1 AND (NOT EXISTS (SELECT 1 FROM ingestion_runs WHERE id = operation_state.active_ingestion_run_id) OR active_ingestion_run_id IN (
+    .prepare(`UPDATE operation_state SET active_ingestion_run_id = CASE
+      WHEN active_ingestion_run_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM ingestion_runs WHERE id = operation_state.active_ingestion_run_id
+      ) THEN NULL ELSE ${nextLiveIngestionReservationSql} END
+    WHERE singleton = 1 AND active_ingestion_run_id IS NOT NULL
+      AND (NOT EXISTS (SELECT 1 FROM ingestion_runs WHERE id = operation_state.active_ingestion_run_id) OR active_ingestion_run_id IN (
       SELECT current.ingestion_run_id FROM ingestion_run_current AS current
       WHERE current.state NOT IN (SELECT value FROM json_each(?)) AND ${verifiedRunCurrentSql}
     ))`)

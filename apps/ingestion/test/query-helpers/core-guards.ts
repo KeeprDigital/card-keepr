@@ -36,7 +36,10 @@ export async function seedCoreGuardRun(database: D1Database, id: string, state: 
     }),
   ]);
   if (active)
-    await database.prepare("UPDATE operation_state SET active_ingestion_run_id = ? WHERE singleton = 1").bind(id).run();
+    await catalogueStore(database).batch([
+      database.prepare("INSERT INTO ingestion_collection_reservations (ingestion_run_id) VALUES (?)").bind(id),
+      database.prepare("UPDATE operation_state SET active_ingestion_run_id = ? WHERE singleton = 1").bind(id),
+    ]);
 }
 
 export function coreGuardRun(database: CatalogueStore, id: string): D1PreparedStatement {
