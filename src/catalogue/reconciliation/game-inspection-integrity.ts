@@ -83,7 +83,7 @@ export async function verifyInspectionArtifacts(
         const key = `text:${reference.preparation}:${reference.part.sha256}`;
         if (!cursor.chunk && (await receipts.get(key))) {
           cursor.part++;
-          if (++work >= 8) await checkpoint();
+          if (++work >= 16) await checkpoint();
           continue;
         }
         const hash = new StreamingSha256(cursor.textHash ?? undefined);
@@ -139,12 +139,12 @@ export async function verifyInspectionArtifacts(
       }
       cursor.record++;
       cursor.part = 0;
-      if ((references.length || images.length) && ++work >= 8) await checkpoint();
+      if ((references.length || images.length) && ++work >= (images.length ? 8 : 16)) await checkpoint();
     }
     cursor.partition++;
     cursor.record = 0;
     bytes += partition.byte_length;
-    if (++work >= 8 || bytes >= 512000) await checkpoint();
+    if (++work >= 16 || bytes >= 512000) await checkpoint();
   }
   cursor.complete = true;
   await checkpoint();
