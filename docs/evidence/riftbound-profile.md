@@ -22,6 +22,22 @@ contradictory identity evidence under an identity exception blocks reconciliatio
 for review rather than silently reallocating consumer IDs. Full native refresh
 and restore acceptance must verify these persistent mappings before completion.
 
+The 1,189 returned records contain 935 exact full names, including 179 names with
+multiple source records. After ignoring array order, 102 name groups have
+non-identical mapped Card facts. Some differences are formatting, while others
+are inconsistent source metadata: OGN-235 lists `Vi` among Karma, Channeler's
+tags, and SFD-227 omits `Ionia` from Ahri, Inquisitive's tags even though the
+retained signature image prints it. These observations remain reviewable;
+the name policy does not authorize selecting or combining conflicting facts.
+
 The current gallery describes effective text. The retained Kinkou Monk image and
 Origins Errata establish that gallery text cannot be copied into Printed Rules
 Text. Unobserved printed wording, reverse faces and finishes remain explicit nulls.
+
+Coverage is declared independently for the complete returned public English
+inventory, all 31 named Origins corrections, and the nine principal Product
+announcements in the retained 2027 article. A source check is not a claim that all
+these Printings have been admitted or that every publisher article was captured.
+Product dates preserve day or quarter precision; an unreported release region
+stays unknown. Secret Garden's double-sided-token announcement does not establish
+an image, reverse face, or Printing identity for those tokens.

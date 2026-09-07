@@ -23,33 +23,46 @@ const initialAuthorityLineages = ["one-piece-en", "fusion-world-en", "digimon-en
 const areas = ["card_facts", "printing_details", "corrected_card_content"] as const;
 export async function sourceAuthorities(database: CatalogueStore, runId?: string) {
   const decisions = (await authorityDecisionsStatement(database, runId).all<AuthorityDecision>()).results;
-  return {
-    authorities: sourceLineages
-      .filter(({ id }) => initialAuthorityLineages.includes(id))
-      .flatMap((lineage) =>
-        areas.map((area) => {
-          const selected = decisions.find(
-            (decision) =>
-              decision.game === lineage.game &&
-              decision.locale === lineage.locale &&
-              decision.release_region === lineage.release_region &&
-              decision.area === area,
-          );
-          return selected
-            ? publicDecision(selected)
-            : {
-                game: lineage.game,
-                locale: lineage.locale,
-                release_region: lineage.release_region,
-                area,
-                source_lineage: lineage.id,
-                generation: 0,
-                rationale: "Initial publisher source designation",
-                decided_at: null,
-              };
-        }),
-      ),
-  };
+  const authorities = sourceLineages
+    .filter(({ id }) => initialAuthorityLineages.includes(id))
+    .flatMap((lineage) =>
+      areas.map((area) => {
+        const selected = decisions.find(
+          (decision) =>
+            decision.game === lineage.game &&
+            decision.locale === lineage.locale &&
+            decision.release_region === lineage.release_region &&
+            decision.area === area,
+        );
+        return selected
+          ? publicDecision(selected)
+          : {
+              game: lineage.game,
+              locale: lineage.locale,
+              release_region: lineage.release_region,
+              area,
+              source_lineage: lineage.id,
+              generation: 0,
+              rationale: "Initial publisher source designation",
+              decided_at: null,
+            };
+      }),
+    );
+  // New publisher scopes have no implicit authority. Once the owner selects
+  // one, expose that exact decision alongside the existing initial scopes.
+  for (const decision of decisions) {
+    if (
+      !authorities.some(
+        (authority) =>
+          authority.game === decision.game &&
+          authority.locale === decision.locale &&
+          authority.release_region === decision.release_region &&
+          authority.area === decision.area,
+      )
+    )
+      authorities.push(publicDecision(decision));
+  }
+  return { authorities };
 }
 
 export async function selectSourceAuthority(

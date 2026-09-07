@@ -24,3 +24,12 @@ listed four games. The regression in `test/domain/riftbound-workflow.spec.ts`
 failed before adding Riftbound and passed afterwards, including progress and
 restart classification and rejection of an unregistered game. A full native rerun
 is still required; this failed run is not a publication or recovery pass.
+
+## Explicit authority regression
+
+The source-authority Worker test reproduced a successful Riftbound designation
+that disappeared from authority inspection. The read path only enumerated the
+initial Bandai scopes. Including explicit decisions for new scopes, while keeping
+their initial authority empty, made all four tests in that file pass. Replay,
+stale-write rejection, the original defaults and idle-operation guards remain
+covered. No implicit Riot authority was added.
