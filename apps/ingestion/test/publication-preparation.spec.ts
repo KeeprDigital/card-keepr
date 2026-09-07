@@ -723,3 +723,46 @@ test("a lost old start replay cannot pause newer work when its original dispatch
   expect((await get(path)).document).toEqual(newer);
   await finish(path, intent, newer);
 });
+
+test.each(["inspection", "inspection_summary"])(
+  "publication preparation verifies retained %s metadata as part of the whole manifest",
+  async (kind) => {
+    const candidate = await sealedCandidate();
+    const statement = (original: D1PreparedStatement): D1PreparedStatement =>
+      new Proxy(original, {
+        get(target, property) {
+          if (property === "bind") return (...values: unknown[]) => statement(target.bind(...values));
+          if (property === "first")
+            return async (...args: unknown[]) => {
+              const value = await Reflect.apply(target.first, target, args);
+              return value && typeof value === "object" && "kind" in value && value.kind === kind
+                ? { ...value, sha256: "0".repeat(64) }
+                : value;
+            };
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    const database = new Proxy(testEnv.CATALOGUE_DB, {
+      get(target, property) {
+        if (property === "prepare") return (sql: string) => statement(target.prepare(sql));
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const path = `/v1/game-candidates/${candidate.id}/publication-preparation`;
+    const intent = { manifest_digest: candidate.manifest_digest, generation: 0 };
+    let status = { state: "preparing", sequence: 0 } as Record<string, unknown>;
+    for (let unit = 0; status.state === "preparing" && unit < 200; unit++) {
+      const result = await advanceWith({ ...testEnv, CATALOGUE_DB: database }, path, {
+        ...intent,
+        sequence: status.sequence,
+        idempotency_key: `verify-inspection-${unit}`,
+      });
+      expect(result.response.status, JSON.stringify(result.document)).toBe(200);
+      status = result.document;
+    }
+    expect(status).toMatchObject({ state: "failed", failure_code: "publication_partition_corrupt" });
+    expect((await get(`/v1/game-candidates/${candidate.id}/inspection`)).document).toMatchObject({ ready: true });
+  },
+);
