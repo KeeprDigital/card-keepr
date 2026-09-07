@@ -4,6 +4,21 @@ import { createHash } from "node:crypto";
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
 export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
+  if (scenario === "identity-chain-card-surface") {
+    return {
+      cards: Array.from({ length: 32 }, (_, index) => ({
+        card: {
+          game: "one-piece",
+          official_identity: { kind: "card_number", value: `OP96-${String(index + 1).padStart(3, "0")}` },
+          name: `Synthetic reviewed Card ${index}`,
+          effective_rules_text: "Official effective rules",
+          game_data: { profile: "one-piece@1", attributes: onePieceLeaderAttributes() },
+        },
+        completeness: completeEvidence(),
+        memberships: { products: [], distribution_contexts: [], source_buckets: [] },
+      })),
+    };
+  }
   if (scenario === "dedicated-errata-work-units") {
     return {
       cards: Array.from({ length: 32 }, (_, index) => ({

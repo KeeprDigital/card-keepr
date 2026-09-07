@@ -3,6 +3,7 @@ export class ReconciliationContinuation extends Error {
   constructor(
     readonly checkpoint: {
       phase:
+        | "identity_application"
         | "curated_revisions"
         | "source_selection"
         | "source_graph"

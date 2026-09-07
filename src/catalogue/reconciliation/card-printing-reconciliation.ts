@@ -1,3 +1,4 @@
+import { applyPinnedIdentityCorrectionsToDraft } from "./identity-correction-application";
 import { prepareCuratedDraft } from "./reconciliation-curated";
 import { prepareInitialWarnings } from "./reconciliation-initial-warnings";
 import { prepareDisappearanceWarnings } from "./reconciliation-disappearance";
@@ -24,11 +25,7 @@ import { canonicalStreamValueDigest } from "./reconciliation-preparation";
 import { CandidateImageStorageError } from "./reconciliation-images";
 import { initializeReconciliationProgress } from "./reconciliation-progress";
 import { reconciliationWriterGuard } from "./reconciliation-progress-repository";
-import {
-  pinCorrectionDecisions,
-  applyPinnedIdentityCorrectionsToDraft,
-  pinnedCardIdentityResolver,
-} from "./identity-correction-pins";
+import { pinCorrectionDecisions, pinnedCardIdentityResolver } from "./identity-correction-pins";
 import {
   assessSourceAdmission,
   completeSourceAdmission,
@@ -1706,7 +1703,12 @@ export async function reconcileRetainedCardPrintingEvidence(
     return { run_id: runId, candidate_digest: candidateDigest };
   }
   const corrected = new ReconciliationCandidateState(database, runId, "corrections", curated);
-  await applyPinnedIdentityCorrectionsToDraft(database, runId, corrected, warnings);
+  try {
+    await applyPinnedIdentityCorrectionsToDraft(database, runId, corrected, warnings, yieldAtCheckpoint);
+  } catch (error) {
+    if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
+    throw error;
+  }
   candidateCatalogueDigest = await catalogueDataDigest(
     database,
     runId,

@@ -1,16 +1,8 @@
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
-import type { ReconciliationRecordSink } from "./reconciliation-record-collection";
 import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
 import type { IdentityCorrectionProposal } from "./identity-corrections";
-import {
-  AdministrationProblem,
-  type CatalogueCandidate,
-  type CatalogueDraft,
-  type CatalogueStore,
-  canonicalJson,
-  sha256Text,
-} from "../shared";
+import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import {
   correctionPinStatement,
   correctionPinStatementsForNewRun,
@@ -43,118 +35,14 @@ export async function correctionDecisionPinMetadata(database: CatalogueStore, ru
   if (!pin) throw new Error("Correction decisions must be pinned before reconciliation.");
   return { decision_cutoff: pin.decision_cutoff, set_digest: await sha256Text(canonicalJson(pin)) };
 }
-export async function applyPinnedIdentityCorrectionsToDraft(
-  database: CatalogueStore,
-  runId: string,
-  draft: CatalogueDraft,
-  warnings: ReconciliationRecordSink<Record<string, unknown>>,
-): Promise<void> {
-  if ((await correctionDecisionPinMetadata(database, runId)).decision_cutoff === 0) return;
-  const correctedCardIdentity = await pinnedCardIdentityResolver(database, runId);
-  for await (const row of pinnedCorrectionRows(database, runId)) {
-    const decision = JSON.parse(row.request_json) as IdentityCorrectionProposal;
-    if (decision.action === "assign") {
-      await warnings.push({
-        code: "identity_assignment",
-        correction_id: row.id,
-        printing_assignments: decision.printing_assignments,
-        detail: "Owner assigned retained Printings to a reviewed replacement Card without changing Printing IDs.",
-      });
-      continue;
-    }
-    const retired = new Set(decision.source_ids);
-    for (const id of retired) {
-      await draft.set("identity_corrections", {
-        id,
-        game: decision.game as CatalogueCandidate["selected_games"][number],
-        entity_kind: decision.entity_kind,
-        action: decision.action,
-        replacement_ids: decision.replacement_ids,
-      });
-      await draft.delete(decision.entity_kind === "card" ? "cards" : "printings", id);
-    }
-    let affected = 0;
-    const countAffected = () => {
-      if (++affected > 500)
-        throw new Error("reconciliation_capacity_exceeded: one correction affects too many dependent entities.");
-    };
-    if (decision.entity_kind === "card") {
-      for await (const printing of draft.values("printings")) {
-        if (!retired.has(printing.card_id)) continue;
-        countAffected();
-        const resolved = await correctedCardIdentity(printing.card_id, printing.id);
-        if (resolved !== printing.card_id) await draft.set("printings", { ...printing, card_id: resolved });
-        else {
-          await draft.delete("printings", printing.id);
-          await warnings.push({
-            code: "identity_correction_exclusion",
-            detail: `Printing ${printing.id} has no reviewed split assignment and is excluded pending owner review.`,
-            printing_id: printing.id,
-            correction_id: row.id,
-          });
-        }
-      }
-    }
-    const excludedImages: string[] = [];
-    for await (const image of draft.values("printing_images")) {
-      if (await draft.has("printings", image.printing_id)) continue;
-      countAffected();
-      excludedImages.push(image.id);
-      await draft.delete("printing_images", image.id);
-    }
-    const validEndpoint = async (endpoint: { type: string; id: string }) =>
-      endpoint.type === "card"
-        ? await draft.has("cards", endpoint.id)
-        : endpoint.type === "printing"
-          ? await draft.has("printings", endpoint.id)
-          : true;
-    const excludedRelationships: string[] = [];
-    for await (const relationship of draft.values("product_relationships")) {
-      if ((await validEndpoint(relationship.from)) && (await validEndpoint(relationship.to))) continue;
-      countAffected();
-      excludedRelationships.push(relationship.id);
-      await draft.delete("product_relationships", relationship.id);
-    }
-    const excludedErrata: string[] = [];
-    for await (const erratum of draft.values("errata")) {
-      if (await draft.has(erratum.target_type === "card" ? "cards" : "printings", erratum.target_id)) continue;
-      countAffected();
-      excludedErrata.push(erratum.id);
-      await draft.delete("errata", erratum.id);
-    }
-    await warnings.push({
-      code: "identity_correction",
-      correction_id: row.id,
-      detail: `Reviewed ${decision.action}: retired identities retain consumer replacement links.`,
-      source_ids: decision.source_ids,
-      replacement_ids: decision.replacement_ids,
-      exclusions: {
-        printing_image_ids: excludedImages,
-        relationship_ids: excludedRelationships,
-        erratum_ids: excludedErrata,
-      },
-    });
-  }
-  for await (const correction of draft.values("identity_corrections")) {
-    for (const id of correction.replacement_ids) {
-      if (
-        !(await draft.has(correction.entity_kind === "card" ? "cards" : "printings", id)) &&
-        !(await draft.has("identity_corrections", id))
-      )
-        throw new AdministrationProblem(
-          409,
-          "identity_correction_target_unavailable",
-          "A reviewed replacement is unavailable; reconciliation cannot publish dangling correction links.",
-        );
-    }
-  }
-}
-
 // Identity corrections only relax the Card association explicitly reviewed by
 // the owner. Artwork, printed content, rarity and treatment still must agree.
 export async function pinnedCardIdentityResolver(database: CatalogueStore, runId: string, yieldAtCheckpoint = false) {
   const pin = await correctionDecisionPinMetadata(database, runId);
-  if (pin.decision_cutoff === 0) return async (cardId: string, _printingId: string) => cardId;
+  if (pin.decision_cutoff === 0)
+    return Object.assign(async (cardId: string, _printingId: string) => cardId, {
+      next: async (_cardId: string, _printingId: string): Promise<string | undefined> => undefined,
+    });
   const merges = new ReconciliationReducerIndex<string>(database, runId, "correction_merges");
   const assignments = new ReconciliationReducerIndex<string>(database, runId, "correction_assignments");
   type Cursor = {
@@ -230,12 +118,14 @@ export async function pinnedCardIdentityResolver(database: CatalogueStore, runId
     cursor.complete = true;
     await save();
   }
-  return async (cardId: string, printingId: string) => {
+  const nextIdentity = async (cardId: string, printingId: string) =>
+    (await assignments.get(canonicalJson([cardId, printingId]))) ?? (await merges.get(cardId));
+  const resolve = async (cardId: string, printingId: string) => {
     let resolved = cardId;
     const visited = new Set<string>();
     // A single identity chain is a bounded lookup unit, including at most 66 state reads.
     for (let depth = 0; ; depth++) {
-      const next = (await assignments.get(canonicalJson([resolved, printingId]))) ?? (await merges.get(resolved));
+      const next = await nextIdentity(resolved, printingId);
       if (!next || next === resolved) break;
       if (depth === 32)
         throw new Error("reconciliation_capacity_exceeded: one identity correction chain exceeds 32 links.");
@@ -245,9 +135,10 @@ export async function pinnedCardIdentityResolver(database: CatalogueStore, runId
     }
     return resolved;
   };
+  return Object.assign(resolve, { next: nextIdentity });
 }
 
-async function* pinnedCorrectionRows(
+export async function* pinnedCorrectionRows(
   database: CatalogueStore,
   runId: string,
   after = 0,
