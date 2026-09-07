@@ -25,7 +25,7 @@ export function publicationStateSnapshot(db: D1Database) {
 // proof; issue229 exercises actual exported SQL and independent restoration.
 export function admitSyntheticCurrentCheckpoint(db: D1Database) {
   return db
-    .prepare(`UPDATE catalogue_backup_attempts SET state='verified',d1_bookmark='synthetic-guard-test',manifest_sha256=?
+    .prepare(`UPDATE catalogue_backup_attempts SET state='verified',d1_bookmark='synthetic-guard-test',completed_at='2026-09-01T00:00:00.000Z',manifest_sha256=?
     WHERE catalogue_revision_id=(SELECT current_revision_id FROM catalogue_state WHERE singleton=1)`)
     .bind("f".repeat(64))
     .run();
