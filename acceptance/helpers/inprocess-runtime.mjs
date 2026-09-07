@@ -135,12 +135,14 @@ export async function startInprocessWorker({ config, envFile, pacingMode, port, 
       const result = await worker.fetch("http://acceptance-bridge.invalid/dispatch", {
         method: "POST",
         headers: {
-          "x-acceptance-dispatch": encodeURIComponent(JSON.stringify({
-            name: options.name,
-            url: `http://127.0.0.1:${port}${request.url}`,
-            method: request.method,
-            headers: request.headers,
-          })),
+          "x-acceptance-dispatch": encodeURIComponent(
+            JSON.stringify({
+              name: options.name,
+              url: `http://127.0.0.1:${port}${request.url}`,
+              method: request.method,
+              headers: request.headers,
+            }),
+          ),
         },
         body,
       });
