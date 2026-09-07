@@ -183,8 +183,11 @@ export function retainEvidenceObjectReferenceStatement(
 function cleanupOwnerIntegrity(db: CatalogueStore, key: string) {
   return repositoryStatements(db)
     .prepare(`SELECT CASE WHEN EXISTS(
- SELECT 1 FROM evidence_cleanup_inventory inventory LEFT JOIN ingestion_run_current current ON current.ingestion_run_id=inventory.ingestion_run_id
- WHERE inventory.object_key=? AND (${verifiedRunCurrentSql}) IS NOT 1
+ SELECT 1 FROM (
+ SELECT ingestion_run_id FROM evidence_cleanup_inventory WHERE object_key=?1
+ UNION SELECT ref.ingestion_run_id FROM source_capture_operations ref JOIN evidence_cleanup_snapshot_keys keys ON keys.snapshot_id=ref.reused_source_snapshot_id WHERE keys.object_key=?1
+ ) owners LEFT JOIN ingestion_run_current current ON current.ingestion_run_id=owners.ingestion_run_id
+ WHERE (${verifiedRunCurrentSql}) IS NOT 1
  ) THEN json_extract('{}','ingestion_run_projection_mismatch') ELSE 1 END`)
     .bind(key);
 }

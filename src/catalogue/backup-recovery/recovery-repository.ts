@@ -613,7 +613,8 @@ export function classifyRestoredWorkStatements(database: CatalogueStore, recover
         SELECT preparation_id FROM catalogue_recovery_work_classifications WHERE recovery_id=? AND classification='abandoned_after_restore')`)
       .bind(recoveryId),
     sql
-      .prepare(`UPDATE reconciliation_operations SET state='abandoned',generation=generation+1,failure_code='catalogue_recovered'
+      .prepare(`UPDATE reconciliation_operations SET state='abandoned',generation=generation+1,failure_code='catalogue_recovered',
+      terminal_at=COALESCE(terminal_at,strftime('%Y-%m-%dT%H:%M:%fZ','now'))
       WHERE id IN (SELECT preparation_id FROM catalogue_recovery_work_classifications WHERE recovery_id=?
         AND classification='abandoned_after_restore') AND state NOT IN ('failed','abandoned')`)
       .bind(recoveryId),

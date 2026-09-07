@@ -430,24 +430,36 @@ test("an ambiguous staging deletion keeps its ticket open and prevents reuse des
   expect(await retry.json()).toMatchObject({ state: "paused", deleted_objects: 0 });
 });
 
-test("a live uploaded 304 reference protects bytes before its new snapshot is finalized", async () => {
-  const key = await capturedObject("cleanup_revalidation");
-  await seedRunFixtureStatement(env.CATALOGUE_DB, { id: "live_revalidation", state: "paused" }).run();
-  await env.CATALOGUE_DB.prepare(
-    `INSERT INTO source_requests(ingestion_run_id,request_id,sequence_number,method,url,request_headers_json,representation_fingerprint,state) VALUES ('live_revalidation','request',1,'GET','https://source.invalid/304','{}','fixture','pending')`,
-  ).run();
-  await env.CATALOGUE_DB.prepare(
-    `INSERT INTO source_capture_operations(attempt_id,ingestion_run_id,request_id,attempt_number,source_snapshot_id,content_object_key,state,requested_at,reused_source_snapshot_id) VALUES ('live304','live_revalidation','request',1,'live304','source-snapshots/live304.bin','uploaded','2026-08-31T00:00:00.000Z','cleanup_revalidation')`,
-  ).run();
-  const begin = await request("/v1/ingestion-runs/cleanup_revalidation/evidence-cleanup", "2026-08-31T00:00:00.000Z", {
-    idempotency_key: "cleanup_revalidation",
-  });
-  expect(begin.status).toBe(202);
-  const intent = (await begin.json()) as { id: string };
-  const progress = await request(`/v1/evidence-cleanups/${intent.id}/advance`, "2026-08-31T00:00:01.000Z", {});
-  expect(await progress.json()).toMatchObject({ state: "completed", protected_objects: 1, deleted_objects: 0 });
-  expect(await env.EVIDENCE_OBJECTS.head(key)).not.toBeNull();
-});
+test.each([false, true])(
+  "a live uploaded 304 reference protects bytes before finalization (corrupt projection: %s)",
+  async (corrupt) => {
+    const key = await capturedObject("cleanup_revalidation");
+    await seedRunFixtureStatement(env.CATALOGUE_DB, { id: "live_revalidation", state: "paused" }).run();
+    await env.CATALOGUE_DB.prepare(
+      `INSERT INTO source_requests(ingestion_run_id,request_id,sequence_number,method,url,request_headers_json,representation_fingerprint,state) VALUES ('live_revalidation','request',1,'GET','https://source.invalid/304','{}','fixture','pending')`,
+    ).run();
+    await env.CATALOGUE_DB.prepare(
+      `INSERT INTO source_capture_operations(attempt_id,ingestion_run_id,request_id,attempt_number,source_snapshot_id,content_object_key,state,requested_at,reused_source_snapshot_id) VALUES ('live304','live_revalidation','request',1,'live304','source-snapshots/live304.bin','uploaded','2026-08-31T00:00:00.000Z','cleanup_revalidation')`,
+    ).run();
+    const begin = await request(
+      "/v1/ingestion-runs/cleanup_revalidation/evidence-cleanup",
+      "2026-08-31T00:00:00.000Z",
+      {
+        idempotency_key: "cleanup_revalidation",
+      },
+    );
+    expect(begin.status).toBe(202);
+    const intent = (await begin.json()) as { id: string };
+    if (corrupt)
+      await env.CATALOGUE_DB.prepare(
+        "UPDATE ingestion_run_current SET state='failed' WHERE ingestion_run_id='live_revalidation'",
+      ).run();
+    const progress = await request(`/v1/evidence-cleanups/${intent.id}/advance`, "2026-08-31T00:00:01.000Z", {});
+    if (corrupt) expect(progress.status).toBeGreaterThanOrEqual(400);
+    else expect(await progress.json()).toMatchObject({ state: "completed", protected_objects: 1, deleted_objects: 0 });
+    expect(await env.EVIDENCE_OBJECTS.head(key)).not.toBeNull();
+  },
+);
 
 test("a corrupted terminal projection cannot authorize a cleanup or physical delete", async () => {
   const key = await capturedObject("cleanup_corrupt");
@@ -539,4 +551,71 @@ test("an unrelated staging key progresses while a prior delete outcome remains u
   expect(progress).toMatchObject({ state: "paused", deleted_objects: 1 });
   expect(await env.CATALOGUE_EXPORTS.head(free)).toBeNull();
   expect(await env.CATALOGUE_EXPORTS.head(blocked)).not.toBeNull();
+});
+
+test("historical published candidate evidence remains retained without any parsed observations", async () => {
+  const key = await capturedObject("cleanup_historical");
+  await env.CATALOGUE_DB.batch([
+    env.CATALOGUE_DB.prepare(
+      `INSERT INTO reconciliation_operations(id,ingestion_run_id,state,created_at,deadline,definition_pins_json,observation_cutoff,identity_decision_cutoff,authority_decision_cutoff) VALUES ('historical-preparation','cleanup_historical','failed','2026-08-01T00:00:00.000Z','2026-08-08T00:00:00.000Z','{}',0,0,0)`,
+    ),
+    env.CATALOGUE_DB.prepare(
+      `INSERT INTO game_candidates(id,preparation_id,ingestion_run_id,supported_game,expected_game_revision_id,created_at,deadline,state,generation) VALUES ('historical-candidate','historical-preparation','cleanup_historical','one-piece','catrev_spine_000','2026-08-01T00:00:00.000Z','2026-08-08T00:00:00.000Z','published',0)`,
+    ),
+  ]);
+  const begin = await request("/v1/ingestion-runs/cleanup_historical/evidence-cleanup", "2026-08-31T00:00:00.000Z", {
+    idempotency_key: "cleanup_historical",
+  });
+  expect(begin.status).toBe(202);
+  const intent = (await begin.json()) as { id: string };
+  const progress = await request(`/v1/evidence-cleanups/${intent.id}/advance`, "2026-08-31T00:00:01.000Z", {});
+  expect(await progress.json()).toMatchObject({ state: "completed", protected_objects: 1, deleted_objects: 0 });
+  const content = await request("/v1/source-snapshots/cleanup_historical/content", "2026-08-31T00:00:01.000Z");
+  expect(content.status).toBe(200);
+  expect(await content.text()).toBe("fixture");
+  expect(await env.EVIDENCE_OBJECTS.head(key)).not.toBeNull();
+});
+
+test("an explicit retention policy is durable and its changed replay is rejected", async () => {
+  await terminalRun("cleanup_policy");
+  const path = "/v1/ingestion-runs/cleanup_policy/evidence-cleanup";
+  const early = await request(path, "2026-08-01T23:59:59.999Z", {
+    idempotency_key: "cleanup_policy",
+    retention_days: 1,
+  });
+  expect(early.status).toBe(409);
+  const due = await request(path, "2026-08-02T00:00:00.000Z", { idempotency_key: "cleanup_policy", retention_days: 1 });
+  expect(due.status).toBe(202);
+  expect(await due.json()).toMatchObject({ retention_days: 1, eligible_at: "2026-08-02T00:00:00.000Z" });
+  const conflict = await request(path, "2026-09-01T00:00:00.000Z", {
+    idempotency_key: "cleanup_policy",
+    retention_days: 30,
+  });
+  expect(conflict.status).toBe(409);
+});
+
+test("the production system clock ignores an owner supplied future deletion time", async () => {
+  const now = new Date().toISOString();
+  await seedRunFixtureStatement(env.CATALOGUE_DB, {
+    id: "cleanup_server_clock",
+    state: "failed",
+    failure_code: "synthetic_capture_failure",
+    started_at: now,
+    terminal_at: now,
+  }).run();
+  const worker = (await import("../src/index")).default;
+  const response = await worker.fetch(
+    new Request("https://card-keepr.invalid/v1/ingestion-runs/cleanup_server_clock/evidence-cleanup", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer vitest-administration-key",
+        "content-type": "application/json",
+        "x-keepr-test-now": new Date(Date.now() + 366 * 86400000).toISOString(),
+      },
+      body: JSON.stringify({ idempotency_key: "cleanup_server_clock" }),
+    }),
+    { ...env, ADMINISTRATION_CLOCK_MODE: "system" },
+  );
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ code: "evidence_cleanup_not_eligible" });
 });

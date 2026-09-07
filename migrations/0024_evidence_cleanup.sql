@@ -293,6 +293,7 @@ ALTER TABLE reconciliation_operations ADD COLUMN terminal_at TEXT;
 UPDATE reconciliation_operations SET terminal_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE state IN ('failed','abandoned');
 CREATE TRIGGER cleanup_preparation_terminal_clock AFTER UPDATE OF state ON reconciliation_operations
 WHEN NEW.state IN ('failed','abandoned') AND OLD.state NOT IN ('failed','abandoned')
+ AND NOT EXISTS(SELECT 1 FROM operation_state WHERE recovery_restore_guard='blocked')
 BEGIN UPDATE reconciliation_operations SET terminal_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=NEW.id; END;
 CREATE TRIGGER cleanup_preparation_clock_immutable BEFORE UPDATE OF terminal_at ON reconciliation_operations
 WHEN OLD.terminal_at IS NOT NULL AND NEW.terminal_at IS NOT OLD.terminal_at
