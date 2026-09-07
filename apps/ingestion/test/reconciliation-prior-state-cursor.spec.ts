@@ -16,6 +16,14 @@ installReconciliationSuite();
 test.each([
   {
     base: "curated-conflict-fanout-base",
+    changed: "withdrawal-work-units",
+    expectedCards: 32,
+    count: 32,
+    name: "Synthetic reviewed Card 0",
+    interrupt: "semantic_preparation",
+  },
+  {
+    base: "curated-conflict-fanout-base",
     changed: "prior-state-carry-forward",
     expectedCards: 40,
     count: 32,
@@ -99,6 +107,8 @@ test.each([
     const errataCalls: number[] = [];
     const withdrawalCursors: number[] = [];
     const withdrawalCalls: number[] = [];
+    const semanticCalls: number[] = [];
+    const semanticCursors: number[] = [];
     const disappearanceCursors: number[] = [];
     const disappearanceCalls: number[] = [];
     const sourceWarningCursors: number[] = [];
@@ -146,17 +156,19 @@ test.each([
                 return (
                   entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
                   entry.values.includes(
-                    interrupt === "prior_state"
-                      ? "prior_cards"
-                      : interrupt === "official_errata"
-                        ? "current_errata"
-                        : interrupt === "withdrawal_diagnostics"
-                          ? "withdrawal_assertion_groups"
-                          : interrupt === "official_assembly"
-                            ? "candidate_before_curated_cards"
-                            : interrupt === "source_warnings" || interrupt === "disappearance_warnings"
-                              ? "warning_records"
-                              : "card_facts",
+                    interrupt === "semantic_preparation"
+                      ? "semantic_withdrawal_values"
+                      : interrupt === "prior_state"
+                        ? "prior_cards"
+                        : interrupt === "official_errata"
+                          ? "current_errata"
+                          : interrupt === "withdrawal_diagnostics"
+                            ? "withdrawal_assertion_groups"
+                            : interrupt === "official_assembly"
+                              ? "candidate_before_curated_cards"
+                              : interrupt === "source_warnings" || interrupt === "disappearance_warnings"
+                                ? "warning_records"
+                                : "card_facts",
                   )
                 );
               }) &&
@@ -232,6 +244,15 @@ test.each([
           )!;
           errataCursors.push(checkpoint.cursor.processedErrata);
           if (interrupt === "official_errata" && checkpoint.cursor.processedErrata > 0) armed = true;
+        }
+        if (JSON.parse(result).continuation?.phase === "semantic_preparation") {
+          semanticCalls.push(calls);
+          const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+          const checkpoint = (status.checkpoints as { phase: string; cursor: { processedPlans: number } }[]).find(
+            ({ phase }) => phase === "semantic_preparation",
+          )!;
+          semanticCursors.push(checkpoint.cursor.processedPlans);
+          if (interrupt === "semantic_preparation" && checkpoint.cursor.processedPlans > 0) armed = true;
         }
         if (JSON.parse(result).continuation?.phase === "withdrawal_diagnostics") {
           withdrawalCalls.push(calls);
@@ -339,7 +360,12 @@ test.each([
       expect(assembledObserved.some(({ cards }) => cards > 0 && cards < 32)).toBe(true);
       expect(Math.max(...assemblyCalls)).toBeLessThanOrEqual(100);
     }
-    if (interrupt === "withdrawal_diagnostics") {
+    if (interrupt === "semantic_preparation") {
+      expect(semanticCursors.some((count) => count > 0 && count < 32)).toBe(true);
+      expect(semanticCursors).toContain(32);
+      expect(Math.max(...semanticCalls)).toBeLessThanOrEqual(100);
+    }
+    if (interrupt === "withdrawal_diagnostics" || interrupt === "semantic_preparation") {
       expect(withdrawalCursors.some((count) => count > 0 && count < 32)).toBe(true);
       expect(withdrawalCursors).toContain(32);
       expect(Math.max(...withdrawalCalls)).toBeLessThanOrEqual(100);

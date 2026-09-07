@@ -1,3 +1,4 @@
+import { prepareSemanticState } from "./reconciliation-semantic-state";
 import { applyPinnedIdentityCorrectionsToDraft } from "./identity-correction-application";
 import { prepareCuratedDraft } from "./reconciliation-curated";
 import { prepareInitialWarnings } from "./reconciliation-initial-warnings";
@@ -85,8 +86,6 @@ import {
 import { publicReconciledPrinting } from "./reconciliation-read";
 import {
   activeParsingRunStatement,
-  currentWithdrawalEvidenceStatement,
-  currentPrintingMembershipsStatement,
   errataProvenanceByIdsStatement,
   reconciliationRunStateStatement,
 } from "./reconciliation-read-repository";
@@ -1612,141 +1611,142 @@ export async function reconcileRetainedCardPrintingEvidence(
     if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
     throw error;
   }
-  const warnings = sourceWarnings;
-  let candidateCatalogueDigest: string;
-  if (diagnostics.length > 0) {
-    candidateCatalogueDigest = await catalogueDataDigest(
-      database,
-      runId,
-      official,
-      candidate,
-      plans,
-      checkedSourceLineages,
-    );
-    const stableDiagnostics = diagnostics;
-    const digestPayload = reconciliationDigestPayload({
-      candidate: await official.document(candidate),
-      partitions: retained.partitions,
-      plans,
-      state: "failed",
-      publishable: false,
-      sourceObservationSetId: retained.observationSetId,
-      observedCards,
-      observedPrintings,
-      observedProducts,
-      diagnostics: stableDiagnostics,
-      warnings,
-    });
-    const candidateDigest = await canonicalStreamValueDigest(digestPayload);
-    await persistBlockedCandidate(database, {
-      runId,
-      partitions: retained.partitions,
-      plans,
-      diagnostics: stableDiagnostics,
-      candidate: await official.document(candidate),
-      draft: official,
-      digestPayload,
-      candidateDigest,
-      candidateCatalogueDigest,
-      observedAt,
-    });
-    return { run_id: runId, candidate_digest: candidateDigest };
-  }
-  const curated = new ReconciliationCandidateState(database, runId, "curated", official);
   try {
-    await prepareCuratedDraft(database, runId, official, curated, observedAt, yieldAtCheckpoint);
-  } catch (error) {
-    if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
-    if (!(error instanceof CuratedDraftSourceChangeError)) throw error;
-    candidateCatalogueDigest = await catalogueDataDigest(
-      database,
-      runId,
-      official,
-      candidate,
-      plans,
-      checkedSourceLineages,
-    );
-    const diagnostics = new ReconciliationRecordCollection<Record<string, unknown>>(
-      database,
-      runId,
-      "curated_conflict_diagnostics",
-      false,
-    );
-    for await (const diagnostic of error.diagnostics) await diagnostics.push(diagnostic);
-    const digestPayload = reconciliationDigestPayload({
-      candidate: await official.document(candidate),
-      partitions: retained.partitions,
-      plans,
-      state: "failed",
-      publishable: false,
-      sourceObservationSetId: retained.observationSetId,
-      observedCards,
-      observedPrintings,
-      observedProducts,
-      diagnostics,
-      warnings,
-    });
-    const candidateDigest = await canonicalStreamValueDigest(digestPayload);
-    await persistBlockedCandidate(database, {
-      runId,
-      partitions: retained.partitions,
-      plans,
-      diagnostics,
-      candidate: await official.document(candidate),
-      draft: official,
-      digestPayload,
-      candidateDigest,
-      candidateCatalogueDigest,
-      observedAt,
-      failureCode: "curated_revision_reconfirmation_required",
-    });
-    return { run_id: runId, candidate_digest: candidateDigest };
-  }
-  const corrected = new ReconciliationCandidateState(database, runId, "corrections", curated);
-  try {
+    const warnings = sourceWarnings;
+    let candidateCatalogueDigest: string;
+    if (diagnostics.length > 0) {
+      candidateCatalogueDigest = await catalogueDataDigest(
+        database,
+        runId,
+        official,
+        candidate,
+        plans,
+        checkedSourceLineages,
+        yieldAtCheckpoint,
+      );
+      const stableDiagnostics = diagnostics;
+      const digestPayload = reconciliationDigestPayload({
+        candidate: await official.document(candidate),
+        partitions: retained.partitions,
+        plans,
+        state: "failed",
+        publishable: false,
+        sourceObservationSetId: retained.observationSetId,
+        observedCards,
+        observedPrintings,
+        observedProducts,
+        diagnostics: stableDiagnostics,
+        warnings,
+      });
+      const candidateDigest = await canonicalStreamValueDigest(digestPayload);
+      await persistBlockedCandidate(database, {
+        runId,
+        partitions: retained.partitions,
+        plans,
+        diagnostics: stableDiagnostics,
+        candidate: await official.document(candidate),
+        draft: official,
+        digestPayload,
+        candidateDigest,
+        candidateCatalogueDigest,
+        observedAt,
+      });
+      return { run_id: runId, candidate_digest: candidateDigest };
+    }
+    const curated = new ReconciliationCandidateState(database, runId, "curated", official);
+    try {
+      await prepareCuratedDraft(database, runId, official, curated, observedAt, yieldAtCheckpoint);
+    } catch (error) {
+      if (!(error instanceof CuratedDraftSourceChangeError)) throw error;
+      candidateCatalogueDigest = await catalogueDataDigest(
+        database,
+        runId,
+        official,
+        candidate,
+        plans,
+        checkedSourceLineages,
+        yieldAtCheckpoint,
+      );
+      const diagnostics = new ReconciliationRecordCollection<Record<string, unknown>>(
+        database,
+        runId,
+        "curated_conflict_diagnostics",
+        false,
+      );
+      for await (const diagnostic of error.diagnostics) await diagnostics.push(diagnostic);
+      const digestPayload = reconciliationDigestPayload({
+        candidate: await official.document(candidate),
+        partitions: retained.partitions,
+        plans,
+        state: "failed",
+        publishable: false,
+        sourceObservationSetId: retained.observationSetId,
+        observedCards,
+        observedPrintings,
+        observedProducts,
+        diagnostics,
+        warnings,
+      });
+      const candidateDigest = await canonicalStreamValueDigest(digestPayload);
+      await persistBlockedCandidate(database, {
+        runId,
+        partitions: retained.partitions,
+        plans,
+        diagnostics,
+        candidate: await official.document(candidate),
+        draft: official,
+        digestPayload,
+        candidateDigest,
+        candidateCatalogueDigest,
+        observedAt,
+        failureCode: "curated_revision_reconfirmation_required",
+      });
+      return { run_id: runId, candidate_digest: candidateDigest };
+    }
+    const corrected = new ReconciliationCandidateState(database, runId, "corrections", curated);
     await applyPinnedIdentityCorrectionsToDraft(database, runId, corrected, warnings, yieldAtCheckpoint);
+    candidateCatalogueDigest = await catalogueDataDigest(
+      database,
+      runId,
+      corrected,
+      candidate,
+      plans,
+      checkedSourceLineages,
+      yieldAtCheckpoint,
+    );
+    const digestPayload = reconciliationDigestPayload({
+      candidate: await corrected.document(candidate),
+      partitions: retained.partitions,
+      plans,
+      state: "awaiting_approval",
+      publishable: true,
+      sourceObservationSetId: retained.observationSetId,
+      observedCards,
+      observedPrintings,
+      observedProducts,
+      diagnostics: [],
+      warnings,
+    });
+    const candidateDigest = await canonicalStreamValueDigest(digestPayload);
+    await retainSourceMappings(database, runId, sourceMappings.records());
+    await persistReviewableCandidate(database, {
+      runId,
+      partitions: retained.partitions,
+      plans,
+      warnings,
+      candidate: await corrected.document(candidate),
+      draft: corrected,
+      digestPayload,
+      candidateDigest,
+      candidateCatalogueDigest,
+      observedAt,
+    });
+    return { run_id: runId, candidate_digest: candidateDigest };
   } catch (error) {
     if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
     throw error;
   }
-  candidateCatalogueDigest = await catalogueDataDigest(
-    database,
-    runId,
-    corrected,
-    candidate,
-    plans,
-    checkedSourceLineages,
-  );
-  const digestPayload = reconciliationDigestPayload({
-    candidate: await corrected.document(candidate),
-    partitions: retained.partitions,
-    plans,
-    state: "awaiting_approval",
-    publishable: true,
-    sourceObservationSetId: retained.observationSetId,
-    observedCards,
-    observedPrintings,
-    observedProducts,
-    diagnostics: [],
-    warnings,
-  });
-  const candidateDigest = await canonicalStreamValueDigest(digestPayload);
-  await retainSourceMappings(database, runId, sourceMappings.records());
-  await persistReviewableCandidate(database, {
-    runId,
-    partitions: retained.partitions,
-    plans,
-    warnings,
-    candidate: await corrected.document(candidate),
-    draft: corrected,
-    digestPayload,
-    candidateDigest,
-    candidateCatalogueDigest,
-    observedAt,
-  });
-  return { run_id: runId, candidate_digest: candidateDigest };
 }
-
 function fillAuthorityGaps<T>(authority: T, fallback: T): T {
   if (authority === null || authority === undefined) return fallback;
   if (
@@ -1841,124 +1841,18 @@ async function catalogueDataDigest(
   runId: string,
   draft: ReconciliationCandidateState,
   candidate: CatalogueCandidate,
-  plans: AsyncIterable<ObservationPlan>,
+  plans: ReconciliationPlanState,
   checkedSourceLineages: readonly string[],
+  yieldAtCheckpoint: boolean,
 ): Promise<string> {
-  const memberships = new ReconciliationReducerIndex<{ id: string; value: Record<string, unknown> }>(
+  const { memberships, withdrawals } = await prepareSemanticState(
     database,
     runId,
-    "semantic_membership_values",
+    draft,
+    plans,
+    checkedSourceLineages,
+    yieldAtCheckpoint,
   );
-  const withdrawals = new ReconciliationReducerIndex<{ id: string; value: Record<string, unknown> }>(
-    database,
-    runId,
-    "semantic_withdrawal_values",
-  );
-  const addMembership = async (value: Record<string, unknown>) => {
-    const id = await sha256Text(canonicalJson(value));
-    await memberships.seed(id, { id, value });
-  };
-  const observedSourceLineages = new Set(checkedSourceLineages);
-  let afterMembership = ["", "", "", ""];
-  for (;;) {
-    let rows: { printing_id: string; source_lineage: string; relationship_kind: string; relationship_value: string }[];
-    try {
-      rows = (
-        await currentPrintingMembershipsStatement(database, afterMembership).all<{
-          printing_id: string;
-          source_lineage: string;
-          relationship_kind: string;
-          relationship_value: string;
-        }>()
-      ).results;
-    } catch (cause) {
-      throw new ReconciliationReducerStorageError(cause);
-    }
-    if (!rows.length) break;
-    for (const row of rows) {
-      afterMembership = [row.printing_id, row.source_lineage, row.relationship_kind, row.relationship_value];
-      if (
-        !(await draft.has("printings", row.printing_id)) ||
-        observedSourceLineages.has(row.source_lineage) ||
-        row.relationship_kind === "source_bucket"
-      )
-        continue;
-      await addMembership(row);
-    }
-  }
-  for (const entityType of ["card", "printing"] as const) {
-    let after = "";
-    for (;;) {
-      let row: { id: string; withdrawal_evidence_json: string } | null;
-      try {
-        row = await currentWithdrawalEvidenceStatement(database, entityType, after).first<{
-          id: string;
-          withdrawal_evidence_json: string;
-        }>();
-      } catch (cause) {
-        throw new ReconciliationReducerStorageError(cause);
-      }
-      if (!row) break;
-      after = row.id;
-      if (!(await draft.has(entityType === "card" ? "cards" : "printings", row.id))) continue;
-      const evidence = JSON.parse(row.withdrawal_evidence_json) as Record<string, unknown>;
-      const id = `${entityType}:${row.id}`;
-      await withdrawals.seed(id, {
-        id,
-        value: {
-          entity_type: entityType,
-          entity_id: row.id,
-          assertion: evidence.assertion,
-          state: evidence.state,
-          effective_at: evidence.effective_at,
-        },
-      });
-    }
-  }
-  for await (const plan of plans) {
-    if (plan.printingId !== null) {
-      for (const membership of [
-        ...plan.memberships.products.map((value) => ({
-          kind: "product",
-          value,
-        })),
-        ...plan.memberships.distribution_contexts.map((value) => ({
-          kind: "distribution_context",
-          value,
-        })),
-      ]) {
-        const semantic = {
-          printing_id: plan.printingId,
-          source_lineage: plan.sourceLineage,
-          relationship_kind: membership.kind,
-          relationship_value: membership.value,
-        };
-        await addMembership(semantic);
-      }
-    }
-    if (plan.withdrawal === null) continue;
-    const targets = [
-      ...(plan.withdrawal.entity === "card" || plan.withdrawal.entity === "card_and_printing"
-        ? [{ entityType: "card", entityId: plan.cardId }]
-        : []),
-      ...(plan.printingId !== null &&
-      (plan.withdrawal.entity === "printing" || plan.withdrawal.entity === "card_and_printing")
-        ? [{ entityType: "printing", entityId: plan.printingId }]
-        : []),
-    ];
-    for (const target of targets) {
-      await withdrawals.seed(`${target.entityType}:${target.entityId}`, {
-        id: `${target.entityType}:${target.entityId}`,
-        value: {
-          entity_type: target.entityType,
-          entity_id: target.entityId,
-          assertion: plan.withdrawal.assertion,
-          state: plan.withdrawal.state,
-          effective_at: plan.withdrawal.effective_at,
-        },
-      });
-    }
-  }
   const sortedMemberships = new ReconciliationSortedRecords<Record<string, unknown>>(
     database,
     runId,

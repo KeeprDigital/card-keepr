@@ -176,6 +176,7 @@ test.each([
     const callsPerGroup: number[] = [];
     const selectionCalls: number[] = [];
     const curatedCalls: number[] = [];
+    const semanticCalls: number[] = [];
     const graphCalls: number[] = [];
     const graphCursors: number[] = [];
     const preparationCalls: number[] = [];
@@ -252,6 +253,8 @@ test.each([
           completedGroups.push(imagesInUnit);
           callsPerGroup.push(serviceCalls);
         }
+        if (JSON.parse(result as string).continuation?.phase === "semantic_preparation")
+          semanticCalls.push(serviceCalls);
         if (JSON.parse(result as string).continuation?.phase === "curated_revisions") curatedCalls.push(serviceCalls);
         if (JSON.parse(result as string).continuation?.phase === "source_selection") selectionCalls.push(serviceCalls);
         if (JSON.parse(result as string).continuation?.phase === "graph_validation") {
@@ -326,6 +329,8 @@ test.each([
     }
     expect(completedGroups).toEqual(groups);
     if (requireFrozenMetadata) {
+      expect(semanticCalls.length).toBeGreaterThan(0);
+      expect(Math.max(...semanticCalls)).toBeLessThanOrEqual(100);
       expect(curatedCalls.length).toBeGreaterThan(0);
       expect(Math.max(...curatedCalls)).toBeLessThanOrEqual(100);
       expect(selectionCalls.length).toBeGreaterThan(0);
