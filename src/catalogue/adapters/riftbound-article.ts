@@ -18,7 +18,8 @@ export function riftboundArticle(bytes: Uint8Array) {
   if (scripts.length !== 1) throw new AdapterParseFailure("Riftbound article needs one publisher document.");
   const data = withAdapterParseFailure(() => JSON.parse(nodeText(scripts[0]!)));
   const blades: Record<string, unknown>[] = data?.props?.pageProps?.page?.blades;
-  if (!Array.isArray(blades)) throw new AdapterParseFailure("Riftbound article blades are missing.");
+  if (!Array.isArray(blades) || blades.some((b) => b === null || typeof b !== "object" || Array.isArray(b)))
+    throw new AdapterParseFailure("Riftbound article blades are missing or malformed.");
   const mastheads = blades.filter((b) => b.type === "articleMasthead");
   const bodies = blades.filter((b) => b.type === "articleRichText");
   if (mastheads.length !== 1 || bodies.length !== 1)

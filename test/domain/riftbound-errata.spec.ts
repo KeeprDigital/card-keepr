@@ -8,7 +8,11 @@ import { AdapterParseFailure } from "../../src/catalogue/adapters/adapter-parse-
 
 const bytes = readFileSync("acceptance/fixtures/real-sources/2026-09-06/raw/riftbound-errata.body");
 test("malformed article decoding remains a source-contract failure", () => {
-  for (const bytes of [new Uint8Array([0xff]), new TextEncoder().encode('<script id="__NEXT_DATA__">{</script>')])
+  for (const bytes of [
+    new Uint8Array([0xff]),
+    new TextEncoder().encode('<script id="__NEXT_DATA__">{</script>'),
+    new TextEncoder().encode('<script id="__NEXT_DATA__">{"props":{"pageProps":{"page":{"blades":[null]}}}}</script>'),
+  ])
     expect(() => riftboundOriginsErrata(bytes, riftboundOriginsErrataUrl)).toThrow(AdapterParseFailure);
 });
 test("Origins preserves the evidenced Dark Child heading alias without creating a second Card", () => {

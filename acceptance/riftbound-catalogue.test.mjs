@@ -387,7 +387,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     for (const [field, value] of Object.entries(record)) assert.deepEqual(data[field], value, field);
     assert.equal(data.printing_images.length, 1);
     const image = data.printing_images[0];
-    const content = await fetch(image.links.content, { headers });
+    const content = await fetch(new URL(image.links.content, api.url), { headers });
     assert.equal(content.status, 200);
     const bytes = Buffer.from(await content.arrayBuffer());
     const capture = manifest.captures.find((c) => c.id === `riftbound-image-${locator}`);
@@ -590,7 +590,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   assert.equal(restoredResponse.status, 200);
   const restoredMonk = (await restoredResponse.json()).data;
   assert.equal(restoredMonk.printed_rules_text, printedMonk);
-  const restoredImage = await fetch(restoredMonk.printing_images[0].links.content, { headers });
+  const restoredImage = await fetch(new URL(restoredMonk.printing_images[0].links.content, api.url), { headers });
   assert.equal(restoredImage.status, 200);
   assert.equal(
     createHash("sha256")
