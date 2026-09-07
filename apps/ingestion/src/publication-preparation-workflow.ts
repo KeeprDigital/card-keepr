@@ -17,8 +17,11 @@ export async function runPublicationPreparationWorkflow(
   step: WorkflowStep,
   params: ReconciliationWorkflowParams,
 ) {
+  const ownership: { sequence: number; action_key?: string } = {
+    sequence: params.publication_preparation!.first_sequence,
+  };
   try {
-    return await runShard(env, step, params);
+    return await runShard(env, step, params, ownership);
   } catch (error) {
     await logProtectedFailure(
       "ingestion",
@@ -38,9 +41,9 @@ export async function runPublicationPreparationWorkflow(
             work.manifest_digest,
             work.generation,
             "publication_workflow_retry_exhausted",
+            ownership,
           );
         } catch (error) {
-          const state = await inspectPublicationPreparation(environment.CATALOGUE_DB, work.candidate_id);
           const code =
             error instanceof Error
               ? ["publication_ownership_conflict", "publication_deadline_expired", "game_revision_mismatch"].find(
@@ -53,7 +56,7 @@ export async function runPublicationPreparationWorkflow(
               work.candidate_id,
               work.manifest_digest,
               work.generation,
-              state.sequence,
+              ownership.sequence,
               code,
             );
           else throw error;
@@ -65,11 +68,18 @@ export async function runPublicationPreparationWorkflow(
   }
 }
 
-async function runShard(env: Env, step: WorkflowStep, params: ReconciliationWorkflowParams) {
+async function runShard(
+  env: Env,
+  step: WorkflowStep,
+  params: ReconciliationWorkflowParams,
+  ownership: { sequence: number; action_key?: string },
+) {
   const work = params.publication_preparation!;
   let last: Record<string, unknown> = {};
   for (let unit = 0; unit < 16; unit++) {
     const sequence = work.first_sequence + unit;
+    ownership.sequence = sequence;
+    ownership.action_key = `publication-${work.candidate_id}-${work.generation}-${sequence}`;
     const output = await step.do(
       `prepare publication artifacts ${sequence}`,
       {
@@ -88,6 +98,7 @@ async function runShard(env: Env, step: WorkflowStep, params: ReconciliationWork
             work.manifest_digest,
             work.generation,
             "publication_workflow_budget_exhausted",
+            { sequence },
           );
           return JSON.stringify(await inspectPublicationPreparation(environment.CATALOGUE_DB, work.candidate_id));
         }
@@ -133,6 +144,8 @@ async function runShard(env: Env, step: WorkflowStep, params: ReconciliationWork
     last = JSON.parse(output) as Record<string, unknown>;
     if (last.state !== "preparing" || last.writer_fenced) return { result_json: output };
   }
+  ownership.sequence = work.first_sequence + 16;
+  delete ownership.action_key;
   await step.do(
     "dispatch publication preparation successor",
     { retries: { limit: 3, delay: 250, backoff: "exponential" }, timeout: "1 minute" },

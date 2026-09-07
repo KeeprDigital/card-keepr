@@ -651,3 +651,48 @@ test("a fresh candidate reuses unchanged fact components while retaining a disti
     expect.objectContaining({ kind: "cards", object_key: originalCard.object_key, reused: 1 }),
   );
 });
+
+test("an exhausted stale Workflow cannot pause a newer owner's sequence", async () => {
+  const candidate = await sealedCandidate();
+  const path = `/v1/game-candidates/${candidate.id}/publication-preparation`;
+  let parameters: import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams | undefined;
+  const workflow = {
+    create: async (options: {
+      params: import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams;
+    }) => {
+      parameters = options.params;
+      return { status: async () => ({ status: "queued" }) };
+    },
+  } as unknown as Env["RECONCILIATION_WORKFLOW"];
+  const intent = {
+    manifest_digest: candidate.manifest_digest,
+    generation: 0,
+    sequence: 0,
+    idempotency_key: "stale-workflow-start",
+  };
+  await advanceWith({ ...testEnv, RECONCILIATION_WORKFLOW: workflow }, `${path}/start`, intent);
+  let newer: Record<string, unknown> | undefined;
+  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  await runReconciliationWorkflow(
+    testEnv,
+    {
+      payload: parameters!,
+      instanceId: "stale-failure",
+      timestamp: new Date(),
+    } as import("cloudflare:workers").WorkflowEvent<
+      import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+    >,
+    {
+      do: async (name: string, _config: unknown, callback: () => Promise<string>) => {
+        if (name.startsWith("prepare publication artifacts")) {
+          newer = (await post(path, { ...intent, sequence: 1, idempotency_key: "newer-owner-work" })).document;
+          throw new Error("Injected stale Workflow exhausts retries after the newer owner advances");
+        }
+        return callback();
+      },
+    } as unknown as import("cloudflare:workers").WorkflowStep,
+  );
+  expect(newer).toMatchObject({ state: "preparing", sequence: 2 });
+  expect((await get(path)).document).toEqual(newer);
+  await finish(path, intent, newer!);
+});

@@ -620,9 +620,25 @@ export async function pausePublicationWorkflow(
   manifest: string,
   generation: number,
   code: string,
+  ownership: { sequence: number; action_key?: string },
 ) {
   const current = await repository.publicationPreparationStatement(env.CATALOGUE_DB, id).first<PreparationState>();
   if (!current || current.state !== "preparing") return;
+  if (current.sequence !== ownership.sequence) {
+    if (current.sequence !== ownership.sequence + 1 || !ownership.action_key) return;
+    const receipt = await repository
+      .publicationPreparationActionStatement(env.CATALOGUE_DB, ownership.action_key)
+      .first<{ result_json: string }>();
+    if (!receipt) return;
+    const result = JSON.parse(receipt.result_json) as Record<string, unknown>;
+    if (
+      result.candidate_id !== id ||
+      result.manifest_digest !== manifest ||
+      result.generation !== generation ||
+      result.sequence !== current.sequence
+    )
+      return;
+  }
   await env.CATALOGUE_DB.batch([
     repository.publicationPreparationGuard(
       env.CATALOGUE_DB,
