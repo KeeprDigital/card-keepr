@@ -47,13 +47,22 @@ export class ReconciliationRecordCollection<T extends Record<string, unknown>>
       if (code === undefined || value.code === code) return true;
     return false;
   }
+  async prepareSorted(yieldAtCheckpoint = false): Promise<void> {
+    if (this.sorted) return;
+    const sorted = new ReconciliationSortedRecords<T>(this.database, this.runId, `${this.namespace}_sorted`);
+    const index = this.index;
+    await sorted.prepareRuns(
+      index.position,
+      async function* (after) {
+        for await (const entry of index.insertionEntries(after))
+          yield { ordinal: entry.ordinal, value: entry.value.value };
+      },
+      yieldAtCheckpoint,
+    );
+    this.sorted = sorted;
+  }
   async *[Symbol.asyncIterator](): AsyncGenerator<T> {
-    if (!this.sorted) {
-      const sorted = new ReconciliationSortedRecords<T>(this.database, this.runId, `${this.namespace}_sorted`);
-      for await (const { value } of this.index.insertionValues()) await sorted.append(value);
-      await sorted.seal();
-      this.sorted = sorted;
-    }
-    yield* this.sorted;
+    await this.prepareSorted();
+    yield* this.sorted!;
   }
 }

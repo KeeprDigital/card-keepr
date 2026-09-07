@@ -177,6 +177,7 @@ test.each([
     const selectionCalls: number[] = [];
     const curatedCalls: number[] = [];
     const semanticCalls: number[] = [];
+    const sortingCalls: number[] = [];
     const graphCalls: number[] = [];
     const graphCursors: number[] = [];
     const preparationCalls: number[] = [];
@@ -253,6 +254,8 @@ test.each([
           completedGroups.push(imagesInUnit);
           callsPerGroup.push(serviceCalls);
         }
+        if (JSON.parse(result as string).continuation?.phase?.startsWith("record_sorting:"))
+          sortingCalls.push(serviceCalls);
         if (JSON.parse(result as string).continuation?.phase === "semantic_preparation")
           semanticCalls.push(serviceCalls);
         if (JSON.parse(result as string).continuation?.phase === "curated_revisions") curatedCalls.push(serviceCalls);
@@ -329,6 +332,8 @@ test.each([
     }
     expect(completedGroups).toEqual(groups);
     if (requireFrozenMetadata) {
+      expect(sortingCalls.length).toBeGreaterThan(0);
+      expect(Math.max(...sortingCalls)).toBeLessThanOrEqual(100);
       expect(semanticCalls.length).toBeGreaterThan(0);
       expect(Math.max(...semanticCalls)).toBeLessThanOrEqual(100);
       expect(curatedCalls.length).toBeGreaterThan(0);
@@ -594,4 +599,126 @@ test("source selection resumes after an uncheckpointed evidence receipt without 
       .filter(({ kind }) => kind === "cards")
       .reduce((sum, part) => sum + part.record_count, 0),
   ).toBe(12);
+});
+
+test("canonical sorting replays an uncheckpointed merge batch and preserves every warning", async () => {
+  const run = await collectRequests([{ id: "cards", scenario: "single-card-warning-work-units" }], "sort-replay");
+  const phase = "record_sorting:warning_records_sorted";
+  let armed = false;
+  let resumed = false;
+  let failures = 0;
+  let serviceCalls = 0;
+  const calls: number[] = [];
+  const passes = new Set<number>();
+  const mergeWrites: string[] = [];
+  const wrap = (statement: D1PreparedStatement, sql: string): D1PreparedStatement =>
+    new Proxy(statement, {
+      get(target, property) {
+        if (property === "bind")
+          return (...bound: unknown[]) => {
+            if (armed && !resumed && sql.includes("INSERT INTO reconciliation_checkpoints") && bound.includes(phase)) {
+              failures++;
+              throw new Error("Injected checkpoint construction failure after a retained merge batch.");
+            }
+            if (
+              sql.includes("INSERT INTO reconciliation_sort_batches") &&
+              bound[1] === "warning_records_sorted" &&
+              Number(bound[2]) > 0
+            )
+              mergeWrites.push(JSON.stringify(bound));
+            return wrap(target.bind(...bound), sql);
+          };
+        const value = Reflect.get(target, property);
+        if (["run", "first", "all", "raw"].includes(String(property)))
+          return (...args: unknown[]) => {
+            serviceCalls++;
+            return Reflect.apply(value, target, args);
+          };
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  const database = new Proxy(testEnv.CATALOGUE_DB, {
+    get(target, property) {
+      if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
+      if (property === "batch")
+        return (...args: Parameters<D1Database["batch"]>) => {
+          serviceCalls++;
+          return target.batch(...args);
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const step = {
+    do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+      let result: string;
+      for (let attempt = 0; ; attempt++) {
+        serviceCalls = 0;
+        try {
+          result = await callback();
+          break;
+        } catch (error) {
+          if (attempt >= config.retries.limit) throw error;
+        }
+      }
+      if (JSON.parse(result).continuation?.phase === phase) {
+        calls.push(serviceCalls);
+        const progress = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+        const checkpoint = (
+          progress.checkpoints as { phase: string; cursor: { stage: string; pass: number; outputBatch: number } }[]
+        ).find((item) => item.phase === phase)!;
+        passes.add(checkpoint.cursor.pass);
+        if (checkpoint.cursor.stage === "merge" && checkpoint.cursor.outputBatch > 0) armed = true;
+      }
+      return result;
+    },
+  } as unknown as import("cloudflare:workers").WorkflowStep;
+  const event = {
+    payload: {
+      ingestion_run_id: run.id,
+      expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
+      idempotency_key: "sort-replay",
+      observed_at: new Date().toISOString(),
+      generation: 0,
+    },
+  } as import("cloudflare:workers").WorkflowEvent<
+    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+  >;
+  await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
+  expect(failures).toBe(4);
+  expect(mergeWrites.length - new Set(mergeWrites).size).toBe(3);
+  const paused = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+  expect(paused).toMatchObject({ state: "paused", generation: 1 });
+  expect(
+    (
+      await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+        generation: 1,
+        idempotency_key: "resume-sort-replay",
+      })
+    ).response.status,
+  ).toBe(200);
+  resumed = true;
+  await runReconciliationWorkflow(
+    { ...testEnv, CATALOGUE_DB: database },
+    { payload: { ...event.payload, generation: 1 } } as typeof event,
+    step,
+  );
+  const sealed = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+  expect(sealed).toMatchObject({ state: "sealed", deadline: paused.deadline });
+  expect(passes.has(2)).toBe(true);
+  expect(Math.max(...calls)).toBeLessThanOrEqual(100);
+  const page = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions`)).document;
+  const warnings: unknown[] = [];
+  for (const part of page.partitions as { kind: string; ordinal: number }[]) {
+    if (part.kind === "warnings")
+      warnings.push(
+        ...((await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${part.ordinal}`)).document
+          .records as unknown[]),
+      );
+  }
+  const { canonicalJson } = await import("../../../src/catalogue/shared");
+  const keys = warnings.map(canonicalJson);
+  expect(keys.length).toBeGreaterThanOrEqual(64);
+  expect(new Set(keys).size).toBe(keys.length);
+  expect(keys).toEqual([...keys].sort((a, b) => a.localeCompare(b)));
 });

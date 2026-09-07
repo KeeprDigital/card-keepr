@@ -102,8 +102,7 @@ export class CuratedConflictPreparation {
     if (retained?.content !== content || retained.sha256 !== digest)
       throw new Error("Curated conflict preparation replay changed its immutable content.");
   }
-  async *diagnostics(): AsyncGenerator<Record<string, unknown>> {
-    let id = "";
+  async *diagnostics(id = ""): AsyncGenerator<Record<string, unknown>> {
     while (true) {
       const row = await storage(() =>
         nextPreparedCuratedConflictStatement(this.database, this.runId, id).first<PreparedRow>(),

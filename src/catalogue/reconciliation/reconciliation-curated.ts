@@ -1,3 +1,4 @@
+import { ReconciliationRecordCollection } from "./reconciliation-record-collection";
 import { type CatalogueStore, canonicalJson } from "../shared";
 import { type CuratedDraftCursor, applyPinnedCuratedRevisionsToDraft } from "../curated";
 import type { ReconciliationCandidateState } from "./reconciliation-candidate-state";
@@ -52,4 +53,46 @@ export async function prepareCuratedDraft(
       bytes = 0;
     },
   });
+}
+
+/** Retain conflict diagnostics once in revision order before sorting or hashing them. */
+export async function prepareCuratedConflictDiagnostics(
+  database: CatalogueStore,
+  runId: string,
+  source: (after?: string) => AsyncIterable<Record<string, unknown>>,
+  yieldAtCheckpoint: boolean,
+) {
+  const records = new ReconciliationRecordCollection<Record<string, unknown>>(
+    database,
+    runId,
+    "curated_conflict_diagnostics",
+    false,
+  );
+  type Progress = { after: string; complete: boolean; records: typeof records.cursor };
+  const checkpoint = await reconciliationCheckpoint<Progress>(database, runId, "curated_diagnostics");
+  const cursor = checkpoint?.value ?? { after: "", complete: false, records: records.cursor };
+  records.resumeAt(cursor.records);
+  if (cursor.complete) return records;
+  let ordinal = (checkpoint?.ordinal ?? -1) + 1;
+  let work = 0,
+    bytes = 0;
+  const save = async () => {
+    cursor.records = records.cursor;
+    await retainReconciliationCheckpoint(database, runId, "curated_diagnostics", ordinal, cursor);
+    if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "curated_diagnostics", ordinal });
+    ordinal++;
+    work = 0;
+    bytes = 0;
+  };
+  for await (const diagnostic of source(cursor.after)) {
+    const size = new TextEncoder().encode(canonicalJson(diagnostic)).byteLength;
+    if (work && bytes + size > 512000) await save();
+    await records.push(diagnostic);
+    cursor.after = String(diagnostic.curated_revision_id);
+    bytes += size;
+    if (++work >= 4 || bytes >= 512000) await save();
+  }
+  cursor.complete = true;
+  await save();
+  return records;
 }

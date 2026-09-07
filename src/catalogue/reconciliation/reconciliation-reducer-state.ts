@@ -133,8 +133,10 @@ export class ReconciliationReducerIndex<T> {
 
   /** Stable first-insertion order for maps populated exclusively through seed(). */
   async *insertionValues(): AsyncGenerator<T> {
+    for await (const entry of this.insertionEntries()) yield entry.value;
+  }
+  async *insertionEntries(after = 0): AsyncGenerator<{ ordinal: number; value: T }> {
     if (this.ordinal === 0) return;
-    let after = 0;
     for (;;) {
       const page = await storage(
         nextReducerInsertionStateStatement(this.database, this.runId, this.namespace, this.ordinal, after).all<
@@ -145,7 +147,10 @@ export class ReconciliationReducerIndex<T> {
       for (const row of page.results) {
         if ((await sha256Text(row.content)) !== row.sha256)
           throw new Error("Reducer state failed integrity verification.");
-        yield (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T;
+        yield {
+          ordinal: row.first_ordinal,
+          value: (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T,
+        };
         after = row.first_ordinal;
       }
     }

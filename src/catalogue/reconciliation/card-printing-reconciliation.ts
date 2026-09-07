@@ -1,6 +1,6 @@
 import { prepareSemanticState } from "./reconciliation-semantic-state";
 import { applyPinnedIdentityCorrectionsToDraft } from "./identity-correction-application";
-import { prepareCuratedDraft } from "./reconciliation-curated";
+import { prepareCuratedDraft, prepareCuratedConflictDiagnostics } from "./reconciliation-curated";
 import { prepareInitialWarnings } from "./reconciliation-initial-warnings";
 import { prepareDisappearanceWarnings } from "./reconciliation-disappearance";
 import { prepareOfficialCandidate, omitUndefinedValues } from "./reconciliation-official-assembly";
@@ -1615,6 +1615,8 @@ export async function reconcileRetainedCardPrintingEvidence(
     const warnings = sourceWarnings;
     let candidateCatalogueDigest: string;
     if (diagnostics.length > 0) {
+      await diagnostics.prepareSorted(yieldAtCheckpoint);
+      await warnings.prepareSorted(yieldAtCheckpoint);
       candidateCatalogueDigest = await catalogueDataDigest(
         database,
         runId,
@@ -1658,6 +1660,14 @@ export async function reconcileRetainedCardPrintingEvidence(
       await prepareCuratedDraft(database, runId, official, curated, observedAt, yieldAtCheckpoint);
     } catch (error) {
       if (!(error instanceof CuratedDraftSourceChangeError)) throw error;
+      const diagnostics = await prepareCuratedConflictDiagnostics(
+        database,
+        runId,
+        error.diagnostics,
+        yieldAtCheckpoint,
+      );
+      await diagnostics.prepareSorted(yieldAtCheckpoint);
+      await warnings.prepareSorted(yieldAtCheckpoint);
       candidateCatalogueDigest = await catalogueDataDigest(
         database,
         runId,
@@ -1667,13 +1677,6 @@ export async function reconcileRetainedCardPrintingEvidence(
         checkedSourceLineages,
         yieldAtCheckpoint,
       );
-      const diagnostics = new ReconciliationRecordCollection<Record<string, unknown>>(
-        database,
-        runId,
-        "curated_conflict_diagnostics",
-        false,
-      );
-      for await (const diagnostic of error.diagnostics) await diagnostics.push(diagnostic);
       const digestPayload = reconciliationDigestPayload({
         candidate: await official.document(candidate),
         partitions: retained.partitions,
@@ -1705,6 +1708,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     }
     const corrected = new ReconciliationCandidateState(database, runId, "corrections", curated);
     await applyPinnedIdentityCorrectionsToDraft(database, runId, corrected, warnings, yieldAtCheckpoint);
+    await warnings.prepareSorted(yieldAtCheckpoint);
     candidateCatalogueDigest = await catalogueDataDigest(
       database,
       runId,
@@ -1863,8 +1867,22 @@ async function catalogueDataDigest(
     runId,
     "semantic_withdrawals",
   );
-  for await (const { value } of memberships.insertionValues()) await sortedMemberships.append(value);
-  for await (const { value } of withdrawals.insertionValues()) await sortedWithdrawals.append(value);
+  await sortedMemberships.prepareRuns(
+    memberships.position,
+    async function* (after) {
+      for await (const entry of memberships.insertionEntries(after))
+        yield { ordinal: entry.ordinal, value: entry.value.value };
+    },
+    yieldAtCheckpoint,
+  );
+  await sortedWithdrawals.prepareRuns(
+    withdrawals.position,
+    async function* (after) {
+      for await (const entry of withdrawals.insertionEntries(after))
+        yield { ordinal: entry.ordinal, value: entry.value.value };
+    },
+    yieldAtCheckpoint,
+  );
   const catalogueCandidate = await semanticDraftDocument(draft, candidate);
   return canonicalStreamValueDigest({
     catalogue_data: catalogueCandidate,

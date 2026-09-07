@@ -53,6 +53,8 @@ test("all 32 changed Curated Revisions become reconfirmable with a bounded final
   let interrupted = false;
   let serviceCalls = 0;
   const curatedCalls: number[] = [];
+  const sortingCalls: number[] = [];
+  const diagnosticCalls: number[] = [];
   const compared: number[] = [];
   const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement => {
     const proxy = new Proxy(statement, {
@@ -120,6 +122,8 @@ test("all 32 changed Curated Revisions become reconfirmable with a bounded final
         try {
           serviceCalls = 0;
           const result = await callback();
+          if (JSON.parse(result).continuation?.phase === "curated_diagnostics") diagnosticCalls.push(serviceCalls);
+          if (JSON.parse(result).continuation?.phase?.startsWith("record_sorting:")) sortingCalls.push(serviceCalls);
           if (JSON.parse(result).continuation?.phase === "curated_revisions") {
             curatedCalls.push(serviceCalls);
             const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
@@ -136,6 +140,10 @@ test("all 32 changed Curated Revisions become reconfirmable with a bounded final
     },
   } as unknown as import("cloudflare:workers").WorkflowStep;
   await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
+  expect(diagnosticCalls.length).toBeGreaterThan(0);
+  expect(Math.max(...diagnosticCalls)).toBeLessThanOrEqual(100);
+  expect(sortingCalls.length).toBeGreaterThan(0);
+  expect(Math.max(...sortingCalls)).toBeLessThanOrEqual(100);
   expect(curatedCalls.length).toBeGreaterThan(0);
   expect(Math.max(...curatedCalls)).toBeLessThanOrEqual(100);
   expect(compared.some((value) => value > 0 && value < 31)).toBe(true);

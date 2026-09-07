@@ -1,23 +1,26 @@
 import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
-import { ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
+import { documentStorage } from "./reconciliation-document";
 import { retainPartitionedRecord, restorePartitionedRecord } from "./reconciliation-text";
 import { retainSortBatchStatement, sortBatchStatement } from "./reconciliation-sort-repository";
+import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
+import { ReconciliationContinuation } from "./reconciliation-continuation";
 
 type Envelope = Awaited<ReturnType<typeof retainPartitionedRecord>>;
-type Item = { key: string; envelope: Envelope };
-async function storage<T>(operation: Promise<T>): Promise<T> {
-  try {
-    return await operation;
-  } catch (cause) {
-    throw new ReconciliationReducerStorageError(cause);
-  }
-}
+type Item<T> = { key: string; envelope: Envelope; value: T };
+type Position = { batch: number; offset: number };
+type Cursor = {
+  sourceVersion: number;
+  after: number;
+  stage: "runs" | "merge" | "complete";
+  count: number;
+  pass: number;
+  first: number;
+  outputBatch: number;
+  positions: Position[];
+};
 
-/** Four-way external merge preserves JavaScript's canonical text order with bounded resident batches. */
+/** Four-way canonical text merge with durable input and output batch cursors. */
 export class ReconciliationSortedRecords<T> implements AsyncIterable<T> {
-  private pending: Item[] = [];
-  private bytes = 0;
-  private runs = 0;
   private finalPass: number | undefined;
   constructor(
     private database: CatalogueStore,
@@ -25,78 +28,125 @@ export class ReconciliationSortedRecords<T> implements AsyncIterable<T> {
     private namespace: string,
   ) {}
 
-  async append(value: T): Promise<void> {
-    if (this.finalPass !== undefined) throw new Error("Cannot append to sealed sorted records.");
-    const key = canonicalJson(value);
-    const bytes = new TextEncoder().encode(key).byteLength;
-    if (this.pending.length && (this.pending.length === 100 || this.bytes + bytes > 512000)) await this.flush();
-    const envelope = await retainPartitionedRecord(this.database, this.runId, value);
-    this.pending.push({ key, envelope });
-    this.bytes += bytes;
-    // A large text record owns its batch; its retained metadata still has the ordinary byte limit.
-    if (this.bytes >= 512000) await this.flush();
-  }
-
-  private async flush(): Promise<void> {
-    if (!this.pending.length) return;
-    this.pending.sort((a, b) => a.key.localeCompare(b.key));
-    await this.writeRun(0, this.runs, this.pending);
-    this.runs++;
-    this.pending = [];
-    this.bytes = 0;
-  }
-
-  async seal(): Promise<void> {
-    if (this.finalPass !== undefined) return;
-    await this.flush();
-    if (!this.runs) {
-      await this.writeRun(0, 0, []);
-      this.runs = 1;
-    }
-    let pass = 0,
-      count = this.runs;
-    while (count > 1) {
-      let output = 0;
-      for (let first = 0; first < count; first += 4) {
-        await this.writeRun(pass + 1, output++, this.merge(pass, first, Math.min(4, count - first)));
+  async prepareRuns(
+    sourceVersion: number,
+    source: (after: number) => AsyncIterable<{ ordinal: number; value: T }>,
+    yieldAtCheckpoint: boolean,
+  ): Promise<void> {
+    const phase = `record_sorting:${this.namespace}` as const;
+    const checkpoint = await reconciliationCheckpoint<Cursor>(this.database, this.runId, phase);
+    const cursor: Cursor = checkpoint?.value ?? {
+      sourceVersion,
+      after: 0,
+      stage: "runs",
+      count: 0,
+      pass: 0,
+      first: 0,
+      outputBatch: 0,
+      positions: [],
+    };
+    if (cursor.sourceVersion !== sourceVersion) throw new Error("Sorted reconciliation source prefix changed.");
+    let ordinal = (checkpoint?.ordinal ?? -1) + 1;
+    const save = async () => {
+      await retainReconciliationCheckpoint(this.database, this.runId, phase, ordinal, cursor);
+      if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase, ordinal });
+      ordinal++;
+    };
+    if (cursor.stage === "runs") {
+      let pending: Item<T>[] = [],
+        bytes = 0;
+      const flush = async () => {
+        pending.sort((a, b) => a.key.localeCompare(b.key));
+        await this.writeBatch(0, cursor.count, 0, pending);
+        await this.writeBatch(0, cursor.count, 1, []);
+        cursor.count++;
+        pending = [];
+        bytes = 0;
+        await save();
+      };
+      for await (const entry of source(cursor.after)) {
+        const key = canonicalJson(entry.value);
+        const size = sortableSize(key);
+        if (pending.length && bytes + size > 512000) await flush();
+        const envelope = await retainPartitionedRecord(this.database, this.runId, entry.value);
+        pending.push({ key, envelope, value: entry.value });
+        bytes += size;
+        cursor.after = entry.ordinal;
+        if (pending.length === 8 || bytes >= 512000) await flush();
       }
-      count = output;
-      pass++;
+      if (pending.length) await flush();
+      if (!cursor.count) {
+        await this.writeBatch(0, 0, 0, []);
+        cursor.count = 1;
+      }
+      cursor.stage = cursor.count === 1 ? "complete" : "merge";
+      await save();
     }
-    this.finalPass = pass;
+    if (cursor.stage === "merge") {
+      while (cursor.count > 1) {
+        while (cursor.first < cursor.count) {
+          const count = Math.min(4, cursor.count - cursor.first);
+          if (!cursor.positions.length)
+            cursor.positions = Array.from({ length: count }, () => ({ batch: 0, offset: 0 }));
+          const heads = await Promise.all(
+            cursor.positions.map((position, offset) => this.readHead(cursor.pass, cursor.first + offset, position)),
+          );
+          let pending: Item<T>[] = [],
+            bytes = 0;
+          const flush = async () => {
+            await this.writeBatch(cursor.pass + 1, Math.floor(cursor.first / 4), cursor.outputBatch, pending);
+            cursor.outputBatch++;
+            pending = [];
+            bytes = 0;
+            await save();
+          };
+          for (;;) {
+            let selected = -1;
+            for (let index = 0; index < heads.length; index++)
+              if (heads[index] && (selected === -1 || heads[index]!.key.localeCompare(heads[selected]!.key) < 0))
+                selected = index;
+            if (selected === -1) break;
+            const head = heads[selected]!;
+            const size = sortableSize(head.key);
+            if (pending.length && bytes + size > 512000) await flush();
+            pending.push(head);
+            bytes += size;
+            cursor.positions[selected]!.offset++;
+            heads[selected] = await this.readHead(cursor.pass, cursor.first + selected, cursor.positions[selected]!);
+            if (pending.length === 8 || bytes >= 512000) await flush();
+          }
+          if (pending.length) await flush();
+          await this.writeBatch(cursor.pass + 1, Math.floor(cursor.first / 4), cursor.outputBatch, []);
+          cursor.first += 4;
+          cursor.outputBatch = 0;
+          cursor.positions = [];
+          await save();
+        }
+        cursor.count = Math.ceil(cursor.count / 4);
+        cursor.pass++;
+        cursor.first = 0;
+        if (cursor.count === 1) cursor.stage = "complete";
+        await save();
+      }
+    }
+    this.finalPass = cursor.pass;
   }
 
   async *[Symbol.asyncIterator](): AsyncGenerator<T> {
-    await this.seal();
-    for await (const item of this.readRun(this.finalPass!, 0))
-      yield (await restorePartitionedRecord(this.database, this.runId, item.envelope)) as T;
-  }
-
-  private async *merge(pass: number, first: number, count: number): AsyncGenerator<Item> {
-    const streams = Array.from({ length: count }, (_, offset) => this.readRun(pass, first + offset));
-    try {
-      const heads = await Promise.all(streams.map((stream) => stream.next()));
-      for (;;) {
-        let selected = -1;
-        for (let i = 0; i < heads.length; i++)
-          if (
-            !heads[i]!.done &&
-            (selected === -1 || heads[i]!.value!.key.localeCompare(heads[selected]!.value!.key) < 0)
-          )
-            selected = i;
-        if (selected === -1) return;
-        yield heads[selected]!.value!;
-        heads[selected] = await streams[selected]!.next();
-      }
-    } finally {
-      await Promise.all(streams.map((stream) => stream.return(undefined)));
+    if (this.finalPass === undefined) throw new Error("Sorted reconciliation records must be prepared before reading.");
+    const position = { batch: 0, offset: 0 };
+    for (;;) {
+      const item = await this.readHead(this.finalPass, 0, position);
+      if (!item) return;
+      yield item.value;
+      position.offset++;
     }
   }
 
-  private async *readRun(pass: number, run: number): AsyncGenerator<Item> {
-    for (let batch = 0; ; batch++) {
-      const row = await storage(
-        sortBatchStatement(this.database, this.runId, this.namespace, pass, run, batch).first<{
+  private async readHead(pass: number, run: number, position: Position): Promise<Item<T> | null> {
+    for (;;) {
+      const row = await documentStorage(() =>
+        sortBatchStatement(this.database, this.runId, this.namespace, pass, run, position.batch).first<{
           content: string;
           sha256: string;
         }>(),
@@ -104,51 +154,50 @@ export class ReconciliationSortedRecords<T> implements AsyncIterable<T> {
       if (!row || (await sha256Text(row.content)) !== row.sha256)
         throw new Error("Sorted reconciliation records failed integrity verification.");
       const records = JSON.parse(row.content) as Envelope[];
-      if (!records.length) return;
-      for (const envelope of records) {
-        const value = await restorePartitionedRecord(this.database, this.runId, envelope);
-        yield { envelope, key: canonicalJson(value) };
+      if (!records.length) return null;
+      if (position.offset >= records.length) {
+        position.batch++;
+        position.offset = 0;
+        continue;
       }
+      const envelope = records[position.offset]!;
+      const value = (await restorePartitionedRecord(this.database, this.runId, envelope)) as T;
+      const key = canonicalJson(value);
+      sortableSize(key);
+      return { key, envelope, value };
     }
   }
 
-  private async writeRun(pass: number, run: number, values: Iterable<Item> | AsyncIterable<Item>): Promise<void> {
-    let pending: Envelope[] = [],
-      bytes = 2,
-      ordinal = 0;
-    const write = async () => {
-      const content = canonicalJson(pending),
-        sha256 = await sha256Text(content);
-      const inserted = await storage(
-        retainSortBatchStatement(this.database, this.runId, this.namespace, pass, run, ordinal, content, sha256).first<{
+  private async writeBatch(pass: number, run: number, ordinal: number, items: Item<T>[]): Promise<void> {
+    const content = canonicalJson(items.map((item) => item.envelope));
+    if (new TextEncoder().encode(content).byteLength > 524288)
+      throw new Error("reconciliation_capacity_exceeded: one sorted batch exceeds 512 KiB.");
+    const sha256 = await sha256Text(content);
+    const inserted = await documentStorage(() =>
+      retainSortBatchStatement(this.database, this.runId, this.namespace, pass, run, ordinal, content, sha256).first<{
+        content: string;
+        sha256: string;
+      }>(),
+    );
+    const row =
+      inserted ??
+      (await documentStorage(() =>
+        sortBatchStatement(this.database, this.runId, this.namespace, pass, run, ordinal).first<{
           content: string;
           sha256: string;
         }>(),
-      );
-      const row =
-        inserted ??
-        (await storage(
-          sortBatchStatement(this.database, this.runId, this.namespace, pass, run, ordinal).first<{
-            content: string;
-            sha256: string;
-          }>(),
-        ));
-      if (!row || row.content !== content || row.sha256 !== sha256)
-        throw new Error("Sorted reconciliation replay differs from retained records.");
-      ordinal++;
-      pending = [];
-      bytes = 2;
-    };
-    for await (const { envelope } of values) {
-      const size = new TextEncoder().encode(canonicalJson(envelope)).byteLength;
-      if (size + 2 > 512000)
-        throw new Error("reconciliation_capacity_exceeded: one sorted record exceeds its metadata budget.");
-      if (pending.length && (pending.length === 100 || bytes + size + 1 > 512000)) await write();
-      bytes += size + (pending.length ? 1 : 0);
-      pending.push(envelope);
-    }
-    if (pending.length) await write();
-    // An immutable terminator distinguishes an empty or complete run from missing retained data.
-    await write();
+      ));
+    if (!row || row.content !== content || row.sha256 !== sha256)
+      throw new Error("Sorted reconciliation replay differs from retained records.");
   }
+}
+
+function sortableSize(key: string): number {
+  const bytes = new TextEncoder().encode(key).byteLength;
+  // Four resident merge heads must share one metadata-sized work budget.
+  if (bytes > 128000)
+    throw new Error(
+      "reconciliation_capacity_exceeded: one sortable diagnostic or semantic record exceeds 128000 bytes.",
+    );
+  return bytes;
 }

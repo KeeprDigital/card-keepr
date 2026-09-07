@@ -909,7 +909,7 @@ type PinnedDraftRevision = {
 };
 
 export class CuratedDraftSourceChangeError extends Error {
-  constructor(readonly diagnostics: AsyncIterable<Record<string, unknown>>) {
+  constructor(readonly diagnostics: (after?: string) => AsyncIterable<Record<string, unknown>>) {
     super("curated_revision_reconfirmation_required");
   }
 }
@@ -992,8 +992,7 @@ export async function applyPinnedCuratedRevisionsToDraft(
     }
     await advance(cursor.sourceChanged ? "conflict" : "apply");
   }
-  if (cursor.stage === "conflict")
-    throw new CuratedDraftSourceChangeError({ [Symbol.asyncIterator]: () => conflicts.diagnostics() });
+  if (cursor.stage === "conflict") throw new CuratedDraftSourceChangeError((after) => conflicts.diagnostics(after));
   if (cursor.stage === "apply") {
     for await (const row of pinnedDraftRevisions(database, runId, cursor.revision)) {
       const proposal = structuralProposal(JSON.parse(row.proposal_json));
