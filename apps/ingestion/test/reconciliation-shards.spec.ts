@@ -7,6 +7,68 @@ import { collectRequests, get, post, requiredString, testEnv } from "./reconcili
 
 afterEach(reset);
 
+test("a successor initialization outage exhausts bounded retries and returns the paused operation to its root", async () => {
+  await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
+  const run = await collectRequests([{ id: "cards", scenario: "curated-conflict-fanout-base" }], "shard-init-outage");
+  const trace = { callbacks: new Map<string, number>(), created: [] as string[] };
+  let failures = 0;
+  let activeStep = "";
+  const database = new Proxy(testEnv.CATALOGUE_DB, {
+    get(target, property) {
+      if (property === "prepare")
+        return (sql: string) => {
+          if (
+            activeStep !== "finalize exhausted reconciliation failure" &&
+            trace.created.length > 0 &&
+            failures < 4 &&
+            sql.includes("SELECT state, generation, candidate_digest, definition_pins_json")
+          ) {
+            failures++;
+            throw new Error("Injected successor initialization D1 outage.");
+          }
+          return target.prepare(sql);
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const output = await runReconciliationWorkflow(
+    { ...testEnv, CATALOGUE_DB: database },
+    {
+      instanceId: "shard-init-outage-root",
+      payload: {
+        ingestion_run_id: run.id,
+        observed_at: new Date().toISOString(),
+        expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
+        idempotency_key: "shard-init-outage-request",
+      },
+    } as WorkflowEvent<ReconciliationWorkflowParams>,
+    {
+      do: async (name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+        activeStep = name;
+        try {
+          for (let attempt = 0; ; attempt++) {
+            try {
+              return await callback();
+            } catch (error) {
+              if (attempt >= config.retries.limit) throw error;
+            }
+          }
+        } finally {
+          activeStep = "";
+        }
+      },
+    } as unknown as WorkflowStep,
+    trace,
+  );
+  expect(failures).toBe(4);
+  expect(JSON.parse(output.result_json)).toMatchObject({ run_id: run.id, result: { state: "paused" } });
+  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+    state: "paused",
+    generation: 1,
+  });
+});
+
 test.each([false, true])(
   "the authenticated reconciliation Workflow hands durable preparation to successive instances (restart=%s)",
   async (restart) => {

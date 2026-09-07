@@ -16,6 +16,7 @@ export const workflowSteps = {
     retry: "retry {request} pass {pass}",
   },
   reconciliation: {
+    initialize: "initialize reconciliation operation",
     reconcile: "reconcile retained Card, Printing, and Erratum evidence",
     unit: "reconcile retained Card, Printing, and Erratum evidence-unit-{unit}",
     dispatchState: "read reconciliation dispatch",

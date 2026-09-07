@@ -30,13 +30,16 @@ export async function runReconciliationWorkflow(
   step: WorkflowStep,
 ): Promise<{ result_json: string }> {
   ({ env, step } = observeOperationalWorkflow(step, event, env));
-  await initializeReconciliationProgress(
-    catalogueStore(env.CATALOGUE_DB),
-    event.payload.ingestion_run_id,
-    event.payload.observed_at,
-  );
   let reconciliationResultJson: string;
   try {
+    await step.do(workflowSteps.reconciliation.initialize, reconciliationStep, async () => {
+      await initializeReconciliationProgress(
+        catalogueStore(env.CATALOGUE_DB),
+        event.payload.ingestion_run_id,
+        event.payload.observed_at,
+      );
+      return JSON.stringify({ initialized: true });
+    });
     reconciliationResultJson = await runReconciliationWorkUnits(
       env,
       step,
