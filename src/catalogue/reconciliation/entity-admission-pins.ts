@@ -1,3 +1,4 @@
+import { documentStorage } from "./reconciliation-document";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
 import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
@@ -14,29 +15,82 @@ import {
 } from "../shared";
 import {
   admissionPinStatement,
+  admissionSelectionPageStatement,
+  retainAdmissionSelectionStatement,
+  admissionSelectionReceiptStatement,
   admissionPinMetadataPageStatement,
   pinAdmissionsStatement,
   pinnedAdmissionsStatement,
   type EntityProposalRow,
 } from "./entity-admission-repository";
 
-export async function pinEntityAdmissions(database: CatalogueStore, runId: string, games: readonly string[]) {
+export async function pinEntityAdmissions(
+  database: CatalogueStore,
+  runId: string,
+  games: readonly string[],
+  yieldAtCheckpoint = false,
+) {
   const gamesJson = canonicalJson([...new Set(games)].sort());
-  const existing = await admissionPinStatement(database, runId).first<{ games_json: string }>();
-  if (existing) {
-    if (existing.games_json !== gamesJson)
-      throw new AdministrationProblem(
-        409,
-        "admission_pin_conflict",
-        "The run's admission game selection is immutable.",
-      );
-    return;
+  let existing = await admissionPinStatement(database, runId).first<{
+    games_json: string;
+    decision_cutoff: number | null;
+  }>();
+  if (!existing) {
+    try {
+      await pinAdmissionsStatement(database, runId, gamesJson, canonicalJson(await sourceAuthorities(database))).run();
+    } catch (error) {
+      const winner = await admissionPinStatement(database, runId).first<{ games_json: string }>();
+      if (winner?.games_json !== gamesJson) throw error;
+    }
+    existing = await admissionPinStatement(database, runId).first<{
+      games_json: string;
+      decision_cutoff: number | null;
+    }>();
   }
-  try {
-    await pinAdmissionsStatement(database, runId, gamesJson, canonicalJson(await sourceAuthorities(database))).run();
-  } catch (error) {
-    const winner = await admissionPinStatement(database, runId).first<{ games_json: string }>();
-    if (winner?.games_json !== gamesJson) throw error;
+  if (!existing || existing.games_json !== gamesJson)
+    throw new AdministrationProblem(409, "admission_pin_conflict", "The run's admission game selection is immutable.");
+  if (existing.decision_cutoff === null) return;
+  type Cursor = { after: number; decisions: number; complete: boolean };
+  const checkpoint = await reconciliationCheckpoint<Cursor>(database, runId, "admission_selection");
+  const cursor = checkpoint?.value ?? { after: 0, decisions: 0, complete: false };
+  let ordinal = (checkpoint?.ordinal ?? -1) + 1;
+  while (!cursor.complete) {
+    const rows = (
+      await documentStorage(() =>
+        admissionSelectionPageStatement(database, runId, cursor.after).all<{
+          sequence: number;
+          proposal_id: string;
+          generation: number | null;
+        }>(),
+      )
+    ).results;
+    const selected = rows
+      .flatMap((row) => (row.generation === null ? [] : [{ proposal_id: row.proposal_id, generation: row.generation }]))
+      .sort((left, right) => left.proposal_id.localeCompare(right.proposal_id));
+    if (selected.length) {
+      await documentStorage(() =>
+        database.batch(
+          selected.map((row) => retainAdmissionSelectionStatement(database, runId, row.proposal_id, row.generation)),
+        ),
+      );
+      const receipt = (
+        await documentStorage(() =>
+          admissionSelectionReceiptStatement(
+            database,
+            runId,
+            selected.map((row) => row.proposal_id),
+          ).all<{ proposal_id: string; generation: number }>(),
+        )
+      ).results;
+      if (canonicalJson(receipt) !== canonicalJson(selected))
+        throw new Error("Admission selection replay changed immutable decisions.");
+      cursor.decisions += selected.length;
+    }
+    if (rows.length) cursor.after = rows[rows.length - 1]!.sequence;
+    cursor.complete = rows.length < 50;
+    await retainReconciliationCheckpoint(database, runId, "admission_selection", ordinal, cursor);
+    if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "admission_selection", ordinal });
+    ordinal++;
   }
 }
 export type AdmittedEntity = {

@@ -113,23 +113,50 @@ export function admissionEntityStatement(database: CatalogueStore, kind: "card" 
 }
 export function admissionPinStatement(database: CatalogueStore, run: string) {
   return repositoryStatements(database)
-    .prepare("SELECT games_json, policy_json FROM entity_admission_run_pins WHERE ingestion_run_id = ?")
+    .prepare(
+      "SELECT games_json, policy_json, decision_cutoff FROM entity_admission_run_pins WHERE ingestion_run_id = ?",
+    )
     .bind(run);
 }
 export function pinAdmissionsStatement(database: CatalogueStore, run: string, games: string, policy: string) {
   return atomicRepositoryStatement(database, {
     statement: repositoryStatements(database)
-      .prepare("INSERT INTO entity_admission_run_pins (ingestion_run_id, games_json, policy_json) VALUES (?, ?, ?)")
+      .prepare(`INSERT INTO entity_admission_run_pins (ingestion_run_id, games_json, policy_json, decision_cutoff)
+        VALUES (?, ?, ?, (SELECT COALESCE(MAX(sequence), 0) FROM entity_admission_events))`)
       .bind(run, games, policy),
     before: [identityRunGuard(database, run)],
-    after: [
-      repositoryStatements(database)
-        .prepare(`INSERT INTO entity_admission_pinned_decisions (ingestion_run_id, proposal_id, generation)
-      SELECT ?, p.id, COALESCE((SELECT MAX(generation) FROM entity_admission_decisions WHERE proposal_id = p.id), 0)
-      FROM entity_proposals p WHERE p.game IN (SELECT value FROM json_each(?))`)
-        .bind(run, games),
-    ],
   });
+}
+export function admissionSelectionPageStatement(database: CatalogueStore, run: string, after: number) {
+  return repositoryStatements(database)
+    .prepare(`SELECT event.sequence, event.proposal_id,
+      CASE WHEN event.generation = 0 AND p.game IN (SELECT value FROM json_each(pin.games_json))
+        THEN (SELECT chosen.generation FROM entity_admission_events chosen
+          WHERE chosen.proposal_id = event.proposal_id AND chosen.sequence <= pin.decision_cutoff
+          ORDER BY chosen.sequence DESC LIMIT 1)
+        ELSE NULL END AS generation
+      FROM entity_admission_run_pins pin JOIN entity_admission_events event
+        ON event.sequence > ? AND event.sequence <= pin.decision_cutoff
+      JOIN entity_proposals p ON p.id = event.proposal_id
+      WHERE pin.ingestion_run_id = ? ORDER BY event.sequence LIMIT 50`)
+    .bind(after, run);
+}
+export function retainAdmissionSelectionStatement(
+  database: CatalogueStore,
+  run: string,
+  proposal: string,
+  generation: number,
+) {
+  return repositoryStatements(database)
+    .prepare(`INSERT INTO entity_admission_pinned_decisions (ingestion_run_id, proposal_id, generation)
+      VALUES (?, ?, ?) ON CONFLICT(ingestion_run_id, proposal_id) DO NOTHING`)
+    .bind(run, proposal, generation);
+}
+export function admissionSelectionReceiptStatement(database: CatalogueStore, run: string, proposals: string[]) {
+  return repositoryStatements(database)
+    .prepare(`SELECT proposal_id, generation FROM entity_admission_pinned_decisions
+      WHERE ingestion_run_id = ? AND proposal_id IN (SELECT value FROM json_each(?)) ORDER BY proposal_id`)
+    .bind(run, canonicalJson(proposals));
 }
 export function pinnedAdmissionsStatement(database: CatalogueStore, run: string, after: string) {
   return repositoryStatements(database)

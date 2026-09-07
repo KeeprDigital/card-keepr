@@ -382,7 +382,14 @@ export async function reconcileRetainedCardPrintingEvidence(
     if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
     throw error;
   }
-  if (!reduction) await pinEntityAdmissions(database, runId, JSON.parse(run.selected_games_json) as string[]);
+  if (!reduction) {
+    try {
+      await pinEntityAdmissions(database, runId, JSON.parse(run.selected_games_json) as string[], yieldAtCheckpoint);
+    } catch (error) {
+      if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
+      throw error;
+    }
+  }
   let admittedEntities: Awaited<ReturnType<typeof applyPinnedEntityAdmissions>>;
   try {
     admittedEntities = await applyPinnedEntityAdmissions(database, runId, cards, printings, sourceWarnings, {

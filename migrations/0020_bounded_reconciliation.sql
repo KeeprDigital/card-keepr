@@ -1,6 +1,29 @@
 SELECT CASE WHEN (SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1) = 19
   THEN 1 ELSE json_extract('schema_level_mismatch_expected_19', '$') END;
 
+-- Immutable event order makes an admission snapshot independent of later intake.
+CREATE TABLE entity_admission_events (
+  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+  proposal_id TEXT NOT NULL REFERENCES entity_proposals(id),
+  generation INTEGER NOT NULL CHECK (generation >= 0),
+  UNIQUE(proposal_id, generation)
+);
+CREATE INDEX entity_admission_events_proposal_sequence ON entity_admission_events (proposal_id, sequence DESC);
+INSERT INTO entity_admission_events (proposal_id, generation)
+  SELECT id, 0 FROM entity_proposals ORDER BY id;
+INSERT INTO entity_admission_events (proposal_id, generation)
+  SELECT proposal_id, generation FROM entity_admission_decisions ORDER BY proposal_id, generation;
+CREATE TRIGGER entity_proposal_admission_event AFTER INSERT ON entity_proposals
+BEGIN INSERT INTO entity_admission_events (proposal_id, generation) VALUES (NEW.id, 0); END;
+CREATE TRIGGER entity_decision_admission_event AFTER INSERT ON entity_admission_decisions
+BEGIN INSERT INTO entity_admission_events (proposal_id, generation) VALUES (NEW.proposal_id, NEW.generation); END;
+CREATE TRIGGER entity_admission_events_no_update BEFORE UPDATE ON entity_admission_events
+BEGIN SELECT RAISE(ABORT, 'entity_admission_event_immutable'); END;
+CREATE TRIGGER entity_admission_events_no_delete BEFORE DELETE ON entity_admission_events
+BEGIN SELECT RAISE(ABORT, 'entity_admission_event_immutable'); END;
+-- Existing pins already contain their complete immutable selection.
+ALTER TABLE entity_admission_run_pins ADD COLUMN decision_cutoff INTEGER CHECK (decision_cutoff >= 0);
+
 -- A retained reservation belongs to each run; the legacy singleton is only
 -- the first live reservation used by conservative release/recovery idle gates.
 CREATE TABLE ingestion_collection_reservations (
@@ -282,7 +305,7 @@ WHERE NOT EXISTS (SELECT 1 FROM curated_revision_events AS event
   WHERE event.revision_id = conflict.revision_id AND event.event_version = conflict.event_version);
 CREATE TABLE reconciliation_checkpoints (
   ingestion_run_id TEXT NOT NULL REFERENCES reconciliation_operations(ingestion_run_id),
-  phase TEXT NOT NULL CHECK (phase IN ('source_graph', 'normalization', 'input_selection', 'input_verification', 'input_preparation', 'prior_state', 'initial_warnings', 'entity_admissions', 'identity_associations', 'official_reduction', 'official_errata', 'official_assembly', 'disappearance_warnings', 'withdrawal_diagnostics', 'product_reduction:one-piece', 'product_reduction:digimon', 'product_reduction:fusion-world', 'product_reduction:gundam')),
+  phase TEXT NOT NULL CHECK (phase IN ('source_graph', 'normalization', 'input_selection', 'input_verification', 'input_preparation', 'prior_state', 'initial_warnings', 'entity_admissions', 'admission_selection', 'identity_associations', 'official_reduction', 'official_errata', 'official_assembly', 'disappearance_warnings', 'withdrawal_diagnostics', 'product_reduction:one-piece', 'product_reduction:digimon', 'product_reduction:fusion-world', 'product_reduction:gundam')),
   ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
   content TEXT NOT NULL CHECK (json_valid(content) AND length(CAST(content AS BLOB)) <= 65536),
   sha256 TEXT NOT NULL CHECK (length(sha256) = 64),

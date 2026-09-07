@@ -1696,3 +1696,94 @@ test.each(retainedStateNamespaces)(
     expect(records.cards![0]).toMatchObject({ effective_rules_text: "[On Play] Draw 2 cards, then discard 1 card." });
   },
 );
+
+test("admission selection is frozen without an unbounded operation-start write", async () => {
+  const { default: worker } = await import("../src/index");
+  const { testEnv, post } = await import("./reconciliation-helpers");
+  const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+  for (let index = 0; index < 128; index++) {
+    expect(
+      (
+        await post("/v1/entity-proposals", {
+          game: "one-piece",
+          source_lineage: "owner",
+          reference: `pin-capacity-${index}`,
+          content: { card: { name: `Synthetic unresolved Card ${index}` } },
+          evidence: { attestation: "Synthetic personal inspection" },
+          idempotency_key: `pin-capacity-${index}`,
+        })
+      ).response.status,
+    ).toBe(201);
+  }
+  const mutations: number[] = [];
+  const database = new Proxy(testEnv.CATALOGUE_DB, {
+    get(target, property) {
+      if (property === "batch")
+        return async (...args: Parameters<D1Database["batch"]>) => {
+          const results = await target.batch(...args);
+          mutations.push(results.reduce((sum, result) => sum + result.meta.changes, 0));
+          return results;
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const run = await collect("/reconciliation/base", "early-admission-pin");
+  const instance = { status: async () => ({ status: "running" }) } as unknown as WorkflowInstance;
+  const workflow = {
+    create: async () => instance,
+    get: async () => instance,
+  } as unknown as Env["RECONCILIATION_WORKFLOW"];
+  const response = await worker.fetch(
+    new Request(`https://card-keepr.invalid/v1/ingestion-runs/${run.id}/reconciliation`, {
+      method: "POST",
+      headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+      body: JSON.stringify({
+        expected_current_revision_id: run.document.expected_current_revision_id,
+        idempotency_key: "early-admission-pin",
+      }),
+    }),
+    { ...testEnv, CATALOGUE_DB: database, RECONCILIATION_WORKFLOW: workflow },
+  );
+  expect(response.status).toBe(202);
+  expect(Math.max(...mutations)).toBeLessThanOrEqual(100);
+  const operation = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+  expect(operation.document).toMatchObject({ admission_selection_pinned: 1 });
+  const selectionGroups: number[] = [];
+  await runReconciliationWorkflow(
+    { ...testEnv, CATALOGUE_DB: database },
+    {
+      payload: {
+        ingestion_run_id: run.id,
+        expected_current_revision_id: run.document.expected_current_revision_id,
+        idempotency_key: "early-admission-pin",
+        observed_at: operation.document.created_at,
+      },
+    } as import("cloudflare:workers").WorkflowEvent<
+      import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+    >,
+    {
+      do: async (_name: string, _config: unknown, callback: () => Promise<string>) => {
+        mutations.length = 0;
+        const result = await callback();
+        if (JSON.parse(result).continuation?.phase === "admission_selection") {
+          selectionGroups.push(mutations.reduce((sum, count) => sum + count, 0));
+        }
+        return result;
+      },
+    } as unknown as import("cloudflare:workers").WorkflowStep,
+  );
+  expect(selectionGroups).toHaveLength(3);
+  expect(Math.max(...selectionGroups)).toBeLessThanOrEqual(100);
+  const sealed = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+  expect(sealed.document).toMatchObject({
+    state: "sealed",
+    admission_selection_pinned: 1,
+    admission_decision_count: 128,
+  });
+  expect(
+    (sealed.document.checkpoints as { phase: string; cursor: unknown }[]).find(
+      ({ phase }) => phase === "admission_selection",
+    ),
+  ).toMatchObject({ cursor: { complete: true, decisions: 128 } });
+});
