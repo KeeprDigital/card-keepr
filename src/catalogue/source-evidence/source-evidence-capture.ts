@@ -771,7 +771,7 @@ async function streamSnapshotToR2(
   retainMultipart: (uploadId: string) => Promise<void>,
   writeToken: string,
   registerWriter: () => Promise<void>,
-  acknowledgeAbort: () => Promise<void>,
+  acknowledgeSettledWriter: () => Promise<void>,
 ): Promise<{ byteLength: number; digest: string }> {
   const hash = createHash("sha256");
   const metadata = {
@@ -814,7 +814,10 @@ async function streamSnapshotToR2(
         ...metadata,
         onlyIf: { etagDoesNotMatch: "*" },
       });
-      if (stored === null) throw new Error("object key already exists");
+      if (stored === null) {
+        await acknowledgeSettledWriter();
+        throw new Error("object key already exists");
+      }
     } catch (error) {
       throw new CapturePersistenceError("storage_failure", errorMessage(error, "Evidence object write failed."));
     }
@@ -845,6 +848,11 @@ async function streamSnapshotToR2(
       }),
       response.body.pipeThrough(hashingStream).pipeTo(fixed.writable),
     ]);
+    const storageResult = results[0]!;
+    if (storageResult.status === "fulfilled" && storageResult.value === null) {
+      await acknowledgeSettledWriter();
+      throw new CapturePersistenceError("storage_failure", "Immutable evidence object key already exists.");
+    }
     const bodyResult = results[1]!;
     if (bodyResult.status === "rejected") {
       await bucket.delete(objectKey).catch(() => undefined);
@@ -853,7 +861,6 @@ async function streamSnapshotToR2(
         errorMessage(bodyResult.reason, "Official Source body stream failed."),
       );
     }
-    const storageResult = results[0]!;
     if (storageResult.status === "rejected" || storageResult.value === null) {
       throw new CapturePersistenceError(
         "storage_failure",
@@ -873,7 +880,7 @@ async function streamSnapshotToR2(
       await retainMultipart(multipart.uploadId);
     } catch (error) {
       await multipart.abort();
-      await acknowledgeAbort();
+      await acknowledgeSettledWriter();
       throw error;
     }
   } catch (error) {
@@ -947,7 +954,7 @@ async function streamSnapshotToR2(
   } catch (error) {
     await multipart
       .abort()
-      .then(acknowledgeAbort)
+      .then(acknowledgeSettledWriter)
       .catch(() => undefined);
     throw error;
   }

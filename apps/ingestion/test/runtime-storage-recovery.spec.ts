@@ -300,3 +300,52 @@ test("reparse observes and settles the exact writer after a lost successful put 
       .first(),
   ).toMatchObject({ n: 0 });
 });
+
+test.each([0, 2])(
+  "a conditional capture loser acknowledges its no-op without deleting the winner (%s bytes)",
+  async (size) => {
+    const run = await createCollection(`source_conditional_loser_${size}`, "https://official-source.invalid/cards");
+    const db = catalogueStore(env.CATALOGUE_DB);
+    const evidenceRun = await requiredEvidenceRun(db, run.id);
+    const request = (await pendingEvidenceRequests(db, run.id))[0]!;
+    const prepared = await prepareCaptureAttempt(db, evidenceRun, request);
+    if (prepared.kind !== "attempt") throw new Error("missing prepared capture");
+    const winner = `conditional-winner-${size}`;
+    await beginEvidenceObjectWrite(db, winner, run.id, prepared.content_object_key, new Date().toISOString()).run();
+    const bucket = new Proxy(env.EVIDENCE_OBJECTS, {
+      get(target, property) {
+        if (property === "put")
+          return async (key: string, body: unknown) => {
+            // The storage boundary supplies a concurrent winner and a conclusive null
+            // response; cancelling the unused stream must not delete that winner.
+            await target.put(key, size ? "{}" : "", { customMetadata: { cleanup_writer_token: winner } });
+            if (body instanceof ReadableStream) await body.cancel("conditional request did not consume the body");
+            return null;
+          };
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const transport = new Proxy(env.OFFICIAL_SOURCE_TRANSPORT, {
+      get(target, property) {
+        if (property === "fetch")
+          return async () =>
+            new Response(size ? "{}" : null, {
+              headers: { "content-type": "application/json", "content-length": String(size) },
+            });
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const result = await capturePreparedAttempt(db, bucket, transport, evidenceRun, request, prepared);
+    expect(result.kind).toBe("uploaded");
+    expect((await env.EVIDENCE_OBJECTS.head(prepared.content_object_key))?.size).toBe(size);
+    expect(
+      await env.CATALOGUE_DB.prepare(
+        "SELECT count(*) AS n FROM evidence_object_writers WHERE ingestion_run_id=? AND completed_at IS NULL",
+      )
+        .bind(run.id)
+        .first(),
+    ).toMatchObject({ n: 0 });
+  },
+);
