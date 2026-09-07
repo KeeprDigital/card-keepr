@@ -1,4 +1,11 @@
 #!/usr/bin/env node
+import {
+  correctionRowsSql,
+  correctionImportSql,
+  claimCorrectionSql,
+  correctionPhaseSql,
+  runFreshBaselineCorrection,
+} from "./fresh-baseline-correction.mjs";
 import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
@@ -170,10 +177,16 @@ export async function providerAdapter(environment, directory) {
     ...environment,
     RELEASE_WORKER: worker,
     RELEASE_WORKER_CONFIG: path,
-    RELEASE_VERSION_TAG: `release-${plan.release_id}-${suffix}`,
+    RELEASE_VERSION_TAG: environment.HANDOFF_CORRECTION_DIGEST
+      ? `correction-${environment.HANDOFF_CORRECTION_DIGEST.slice(0, 32)}-${suffix}`
+      : `release-${plan.release_id}-${suffix}`,
   });
   return {
     read,
+    correctionRows: async (role) => (await sql(role, correctionRowsSql(environment)))[0].results,
+    importCorrection: (role, records, existing) => sql(role, correctionImportSql(environment, records, existing)),
+    claimCorrection: (role) => sql(role, claimCorrectionSql(environment)),
+    correctionPhase: (role, from, evidence) => sql(role, correctionPhaseSql(environment, from, evidence)),
     async cancellation() {
       const rows = (await sql("source", cancellationReadSql(environment)))[0].results;
       return rows.length === 1 ? JSON.parse(rows[0].response_json) : null;
@@ -242,7 +255,7 @@ export async function providerAdapter(environment, directory) {
             "--tag",
             env.RELEASE_VERSION_TAG,
             "--message",
-            `${plan.release_id} ${plan.expected_head_sha}`,
+            `${plan.release_id} ${environment.EXPECTED_HEAD_SHA}`,
           ]);
           result.push(await verifyUploadedVersion(env));
         }
@@ -287,7 +300,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const run =
     process.env.HANDOFF_OPERATION === "cancel_fresh_baseline_handoff"
       ? cancelFreshBaselineRelease
-      : runFreshBaselineRelease;
+      : process.env.HANDOFF_OPERATION === "correct_fresh_baseline_handoff"
+        ? runFreshBaselineCorrection
+        : runFreshBaselineRelease;
   const result = await run(process.env, await providerAdapter(process.env, directory));
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }

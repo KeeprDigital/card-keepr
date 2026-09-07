@@ -3,6 +3,7 @@ import {
   freshBaselineCancellationStatement,
   recordFreshBaselineCancellationStatement,
 } from "./fresh-baseline-repository";
+import { resolveFreshBaselineCorrection } from "./fresh-baseline-correction";
 import { administrationStatus } from "./administration-inspection";
 import {
   type ProductionTarget,
@@ -31,6 +32,7 @@ export async function resolveProductionRelease(
     "replacement_handoff",
     "fresh_baseline_handoff",
     "cancel_handoff",
+    "correct_handoff",
     "prepare",
     "confirmation",
   ];
@@ -48,7 +50,23 @@ export async function resolveProductionRelease(
   if (prior !== null) {
     if (prior.operation !== "prepare_production_release")
       throw new AdministrationProblem(409, "idempotency_key_reused", "The idempotency key belongs to another request.");
-    const plan = validatedPlan(JSON.parse(prior.request_json) as Record<string, unknown>, target);
+    const storedPlan = JSON.parse(prior.request_json) as Record<string, unknown>;
+    const sourceTarget = storedPlan.production_target as ProductionTarget;
+    let planTarget = target;
+    if (request.correct_handoff !== undefined) {
+      if (request.cancel_handoff !== undefined) invalid();
+      const fresh = validateFreshBaseline(storedPlan.fresh_baseline_handoff, sourceTarget);
+      if (fresh === null) invalid();
+      const destinationTarget = {
+        ...sourceTarget,
+        d1_databases: sourceTarget.d1_databases.map((item, index) =>
+          index === 0 ? { ...item, id: fresh.destination_database_id } : item,
+        ),
+      };
+      if (![canonicalJson(sourceTarget), canonicalJson(destinationTarget)].includes(canonicalJson(target))) invalid();
+      planTarget = sourceTarget;
+    }
+    const plan = validatedPlan(storedPlan, planTarget);
     const desired =
       plan.replacement_handoff === null
         ? null
@@ -58,7 +76,9 @@ export async function resolveProductionRelease(
             retained_database_id: plan.replacement_handoff.retained_database_id,
           };
     const same = fields
-      .filter((key) => key !== "confirmation" && key !== "prepare" && key !== "cancel_handoff")
+      .filter(
+        (key) => key !== "confirmation" && key !== "prepare" && key !== "cancel_handoff" && key !== "correct_handoff",
+      )
       .every(
         (key) =>
           canonicalJson(request[key] ?? null) ===
@@ -67,6 +87,15 @@ export async function resolveProductionRelease(
     if (prior.operation !== "prepare_production_release" || !same) {
       throw new AdministrationProblem(409, "idempotency_key_reused", "The idempotency key belongs to another request.");
     }
+    if (request.correct_handoff !== undefined)
+      return resolveFreshBaselineCorrection(
+        database,
+        JSON.parse(prior.response_json) as Record<string, unknown>,
+        request.correct_handoff,
+        request.confirmation,
+        request.prepare === true,
+        observedAt,
+      );
     if (request.cancel_handoff === true && !plan.fresh_baseline_handoff) invalid();
     const confirmation = releaseConfirmation(plan, desired, target, request.cancel_handoff === true);
     if (request.prepare === true)
@@ -97,7 +126,7 @@ export async function resolveProductionRelease(
     }
     return response;
   }
-  if (request.cancel_handoff === true) invalid();
+  if (request.cancel_handoff === true || request.correct_handoff !== undefined) invalid();
   const fresh = validateFreshBaseline(request.fresh_baseline_handoff, target);
   const status = await administrationStatus(database, exports, observedAt, target, false);
   const safe = status.safe_state as Record<string, unknown>;

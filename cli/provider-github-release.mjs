@@ -13,7 +13,9 @@ export async function dispatchProductionRelease({
   if (
     typeof credential !== "string" ||
     credential.length < 20 ||
-    !["production_release", "cancel_fresh_baseline_handoff"].includes(inputs?.operation)
+    !["production_release", "cancel_fresh_baseline_handoff", "correct_fresh_baseline_handoff"].includes(
+      inputs?.operation,
+    )
   )
     return false;
   let response;

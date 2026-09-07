@@ -8,6 +8,7 @@ import {
   isReleaseHead,
   isReleaseIdentity,
 } from "../src/catalogue/shared/release-input-shapes.mjs";
+import { correctionPlan } from "./fresh-baseline-correction.mjs";
 import { handoffPlan, compileHandoffClaim } from "./fresh-baseline-handoff.mjs";
 import { SPINE_REVISION_ID } from "../src/catalogue/shared/spine-revision.mjs";
 import {
@@ -52,6 +53,8 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   // targets, and the live gate proves emptiness instead of recovery evidence.
   const bootstrap = booleanInput(required(environment, "BOOTSTRAP"));
   const preparedPlan = json("PREPARED_PLAN_JSON");
+  const correcting = environment.HANDOFF_OPERATION === "correct_fresh_baseline_handoff";
+  if (correcting) correctionPlan(environment);
   if (environment.HANDOFF_OPERATION === "cancel_fresh_baseline_handoff" && !preparedPlan.fresh_baseline_handoff)
     throw new Error("fresh_baseline_cancellation_not_applicable");
   if (preparedPlan?.bootstrap !== bootstrap) throw new Error("bootstrap_mismatch");
@@ -84,7 +87,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
     bootstrap,
     expected_actor: bot(required(environment, "EXPECTED_ACTOR")),
     expected_current_revision_id: opaque(required(environment, "EXPECTED_CURRENT_REVISION")),
-    expected_head_sha: head(required(environment, "EXPECTED_HEAD_SHA")),
+    expected_head_sha: head(correcting ? preparedPlan.expected_head_sha : required(environment, "EXPECTED_HEAD_SHA")),
     expected_migration_level: positiveInteger(required(environment, "EXPECTED_MIGRATION_LEVEL")),
     idempotency_key: opaque(required(environment, "IDEMPOTENCY_KEY")),
     production_target: json("PRODUCTION_TARGET_JSON"),

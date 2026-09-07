@@ -24,14 +24,20 @@ function executionId(environment) {
     throw new Error("fresh_baseline_execution_identity_missing");
   return environment.HANDOFF_EXECUTION_ID;
 }
+function correctionFence(environment) {
+  const digest = environment.HANDOFF_CORRECTION_DIGEST;
+  return digest
+    ? `EXISTS(SELECT 1 FROM fresh_baseline_corrections WHERE handoff_dispatch_digest=${q(environment.DISPATCH_DIGEST)} AND correction_digest=${q(digest)} AND generation=(SELECT MAX(generation) FROM fresh_baseline_corrections WHERE handoff_dispatch_digest=${q(environment.DISPATCH_DIGEST)}))`
+    : `NOT EXISTS(SELECT 1 FROM fresh_baseline_corrections WHERE handoff_dispatch_digest=${q(environment.DISPATCH_DIGEST)})`;
+}
 function leaseFence(environment) {
   const plan = handoffPlan(environment);
-  return `execution_id=${q(executionId(environment))} AND EXISTS(SELECT 1 FROM operation_state WHERE active_production_release_id=${q(plan.release_id)} AND active_production_release_expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
+  return `${correctionFence(environment)} AND execution_id=${q(executionId(environment))} AND EXISTS(SELECT 1 FROM operation_state WHERE active_production_release_id=${q(plan.release_id)} AND active_production_release_expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
 }
 export function renewHandoffSql(environment, role) {
   const identity = exact(environment, role);
   const plan = handoffPlan(environment);
-  return `UPDATE fresh_baseline_handoffs SET execution_id=${q(executionId(environment))} WHERE ${identity};
+  return `UPDATE fresh_baseline_handoffs SET execution_id=${q(executionId(environment))} WHERE ${identity} AND ${correctionFence(environment)};
  UPDATE operation_state SET active_production_release_expires_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','+45 minutes') WHERE active_production_release_id=${q(plan.release_id)} AND EXISTS(SELECT 1 FROM fresh_baseline_handoffs WHERE ${identity} AND execution_id=${q(executionId(environment))});
  ${assertion(`EXISTS(SELECT 1 FROM fresh_baseline_handoffs WHERE ${identity} AND ${leaseFence(environment)})`)}`;
 }

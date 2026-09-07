@@ -17,13 +17,20 @@ import {
   phaseSql,
   transferSql,
 } from "../scripts/fresh-baseline-handoff.mjs";
+import {
+  correctionRowsSql,
+  correctionImportSql,
+  claimCorrectionSql,
+  correctionPhaseSql,
+  runFreshBaselineCorrection,
+} from "../scripts/fresh-baseline-correction.mjs";
 import { d1Adapter } from "./helpers/query-helpers/sqlite-d1-adapter.mjs";
 import * as queries from "./helpers/query-helpers/fresh-baseline.mjs";
 
 const bundle = await build({
   stdin: {
     contents:
-      'export { prepareProductionRelease } from "./src/catalogue/ingestion/production-release"; export { catalogueStore } from "./src/catalogue/shared/catalogue-store-repository"; export { prepareCardSearchForD1ExportStatements, reconstructCardSearchAfterD1RestoreStatements } from "./src/catalogue/backup-recovery/card-search-recovery-statements";',
+      'export { resolveFreshBaselineCorrection } from "./src/catalogue/ingestion/fresh-baseline-correction"; export { prepareProductionRelease } from "./src/catalogue/ingestion/production-release"; export { catalogueStore } from "./src/catalogue/shared/catalogue-store-repository"; export { prepareCardSearchForD1ExportStatements, reconstructCardSearchAfterD1RestoreStatements } from "./src/catalogue/backup-recovery/card-search-recovery-statements";',
     resolveDir: process.cwd(),
   },
   bundle: true,
@@ -355,4 +362,128 @@ test("SQL restoration preserves retired-source evidence and destination shared-s
       assert.throws(() => queries.attemptSharedDelete(restored).run(), /fresh_baseline_retained_source_storage/);
     }
   }
+});
+
+async function approveCorrection(f, role, key, head) {
+  const db = role === "source" ? f.source : f.destination;
+  const original = JSON.parse(f.read(role).preparation_json);
+  const choices = { expected_head_sha: head.repeat(40), idempotency_key: key };
+  const store = runtime.catalogueStore(d1Adapter(db));
+  const preview = await runtime.resolveFreshBaselineCorrection(
+    store,
+    original,
+    choices,
+    undefined,
+    true,
+    new Date().toISOString(),
+  );
+  const response = await runtime.resolveFreshBaselineCorrection(
+    store,
+    original,
+    choices,
+    preview.confirmation,
+    false,
+    new Date().toISOString(),
+  );
+  return {
+    ...f.environment,
+    EXPECTED_HEAD_SHA: response.dispatch_inputs.expected_head_sha,
+    HANDOFF_OPERATION: "correct_fresh_baseline_handoff",
+    HANDOFF_CORRECTION_JSON: response.dispatch_inputs.correction_json,
+    HANDOFF_CORRECTION_DIGEST: response.dispatch_inputs.correction_digest,
+    HANDOFF_EXECUTION_ID: key,
+  };
+}
+function correctionAdapter(f, environment) {
+  const db = (role) => (role === "source" ? f.source : f.destination);
+  return {
+    ...f.adapter,
+    correctionRows: async (role) => db(role).prepare(correctionRowsSql(environment)).all(),
+    importCorrection: async (role, rows, existing) =>
+      f.execute(db(role), correctionImportSql(environment, rows, existing)),
+    claimCorrection: async (role) => f.execute(db(role), claimCorrectionSql(environment)),
+    correctionPhase: async (role, from, evidence) =>
+      f.execute(db(role), correctionPhaseSql(environment, from, evidence)),
+    advance: async (role, from, evidence) => f.execute(db(role), phaseSql(environment, role, from, evidence)),
+    accept: async (source) => f.execute(f.destination, destinationReleaseSql(environment, source)),
+    uploadAndVerify: async () => [
+      { worker: "card-keepr-api", version_id: environment.EXPECTED_HEAD_SHA },
+      { worker: "card-keepr-ingestion", version_id: environment.EXPECTED_HEAD_SHA },
+    ],
+  };
+}
+test("new SHA requires exact linked owner approval and supersedes original execution after intent", async (t) => {
+  const f = await setup(t);
+  await assert.rejects(
+    runFreshBaselineRelease(f.environment, {
+      ...f.adapter,
+      activate: async () => {
+        throw new Error("activation_failed");
+      },
+    }),
+    /activation_failed/,
+  );
+  const environment = await approveCorrection(f, "source", "repair_239", "b");
+  assert.throws(() => f.execute(f.source, renewHandoffSql(f.environment, "source")), /guard_failed/);
+  assert.throws(() => f.execute(f.source, phaseSql(f.environment, "source", 4, {})), /guard_failed/);
+  const adapter = correctionAdapter(f, environment);
+  const result = await runFreshBaselineCorrection(environment, adapter);
+  assert.equal(result.state, "handoff_accepted");
+  assert.equal(f.read("source").phase, 6);
+  assert.equal(f.read("destination").phase, 6);
+  assert.deepEqual(await runFreshBaselineCorrection(environment, adapter), result);
+  assert.throws(() => queries.mutateCatalogue(f.source).run(), /mutation_fenced/);
+});
+test("correction resumes every persisted boundary and revokes a superseded repair", async (t) => {
+  for (let stop = 1; stop <= 10; stop++)
+    await t.test(`repair interruption ${stop}`, async (t) => {
+      const f = await setup(t);
+      await assert.rejects(
+        runFreshBaselineRelease(f.environment, {
+          ...f.adapter,
+          activate: async () => {
+            throw new Error("activation_failed");
+          },
+        }),
+        /activation_failed/,
+      );
+      const environment = await approveCorrection(f, "destination", "repair_239", "b");
+      const adapter = correctionAdapter(f, environment);
+      const interrupted = { ...adapter };
+      let writes = 0;
+      for (const name of ["importCorrection", "claimCorrection", "correctionPhase", "advance", "accept"])
+        interrupted[name] = async (...args) => {
+          const result = await adapter[name](...args);
+          if (++writes === stop) throw new Error("lost_response");
+          return result;
+        };
+      await assert.rejects(runFreshBaselineCorrection(environment, interrupted), /lost_response/);
+      const result = await runFreshBaselineCorrection(environment, adapter);
+      assert.equal(result.state, "handoff_accepted");
+    });
+  await t.test("a second confirmed SHA revokes the first repair", async (t) => {
+    const f = await setup(t);
+    await assert.rejects(
+      runFreshBaselineRelease(f.environment, {
+        ...f.adapter,
+        activate: async () => {
+          throw new Error("activation_failed");
+        },
+      }),
+      /activation_failed/,
+    );
+    const first = await approveCorrection(f, "source", "repair_first", "b");
+    await assert.rejects(
+      runFreshBaselineCorrection(first, {
+        ...correctionAdapter(f, first),
+        activate: async () => {
+          throw new Error("activation_failed");
+        },
+      }),
+      /activation_failed/,
+    );
+    const second = await approveCorrection(f, "destination", "repair_second", "c");
+    await assert.rejects(runFreshBaselineCorrection(first, correctionAdapter(f, first)), /chain_invalid|superseded/);
+    assert.equal((await runFreshBaselineCorrection(second, correctionAdapter(f, second))).state, "handoff_accepted");
+  });
 });

@@ -26,15 +26,54 @@ CREATE TRIGGER fresh_baseline_cancel_immutable_update BEFORE UPDATE ON fresh_bas
 BEGIN SELECT RAISE(ABORT,'fresh_baseline_cancellation_immutable'); END;
 CREATE TRIGGER fresh_baseline_cancel_immutable_delete BEFORE DELETE ON fresh_baseline_cancellations
 BEGIN SELECT RAISE(ABORT,'fresh_baseline_cancellation_immutable'); END;
+-- Fresh owner confirmations form a monotonic repair chain; old approvals and
+-- their execution/observation evidence are never overwritten by another SHA.
+CREATE TABLE fresh_baseline_corrections (
+ correction_digest TEXT PRIMARY KEY,
+ handoff_dispatch_digest TEXT NOT NULL REFERENCES fresh_baseline_handoffs(dispatch_digest),
+ idempotency_key TEXT NOT NULL UNIQUE,
+ generation INTEGER NOT NULL CHECK(generation BETWEEN 1 AND 100),
+ previous_correction_digest TEXT REFERENCES fresh_baseline_corrections(correction_digest),
+ request_json TEXT NOT NULL CHECK(json_valid(request_json)),
+ response_json TEXT NOT NULL CHECK(json_valid(response_json)),
+ execution_id TEXT,
+ state INTEGER NOT NULL CHECK(state BETWEEN 0 AND 2),
+ evidence_json TEXT NOT NULL CHECK(json_valid(evidence_json)),
+ created_at TEXT NOT NULL,
+ UNIQUE(handoff_dispatch_digest,generation)
+);
+CREATE TRIGGER fresh_baseline_correction_chain BEFORE INSERT ON fresh_baseline_corrections
+WHEN NEW.state<>0 OR NEW.execution_id IS NOT NULL OR NEW.generation<>(SELECT COALESCE(MAX(generation),0)+1 FROM fresh_baseline_corrections WHERE handoff_dispatch_digest=NEW.handoff_dispatch_digest)
+ OR NEW.previous_correction_digest IS NOT (SELECT correction_digest FROM fresh_baseline_corrections WHERE handoff_dispatch_digest=NEW.handoff_dispatch_digest ORDER BY generation DESC LIMIT 1)
+ OR NOT EXISTS(SELECT 1 FROM fresh_baseline_handoffs WHERE dispatch_digest=NEW.handoff_dispatch_digest AND phase BETWEEN 4 AND 6)
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_correction_predecessor_changed'); END;
+CREATE TRIGGER fresh_baseline_correction_immutable BEFORE UPDATE ON fresh_baseline_corrections
+WHEN NEW.correction_digest<>OLD.correction_digest OR NEW.handoff_dispatch_digest<>OLD.handoff_dispatch_digest
+ OR NEW.idempotency_key<>OLD.idempotency_key OR NEW.generation<>OLD.generation OR NEW.previous_correction_digest IS NOT OLD.previous_correction_digest
+ OR NEW.request_json<>OLD.request_json OR NEW.response_json<>OLD.response_json OR NEW.created_at<>OLD.created_at
+ OR OLD.generation<>(SELECT MAX(generation) FROM fresh_baseline_corrections WHERE handoff_dispatch_digest=OLD.handoff_dispatch_digest)
+ OR NOT (
+  (NEW.state=OLD.state AND NEW.evidence_json=OLD.evidence_json AND (OLD.execution_id IS NULL OR NEW.execution_id=OLD.execution_id OR EXISTS(SELECT 1 FROM operation_state WHERE active_production_release_expires_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))))
+  OR (NEW.state=OLD.state+1 AND NEW.execution_id=OLD.execution_id AND EXISTS(SELECT 1 FROM fresh_baseline_handoffs h JOIN operation_state o ON o.active_production_release_id=h.release_id WHERE h.dispatch_digest=OLD.handoff_dispatch_digest AND h.execution_id=OLD.execution_id AND o.active_production_release_expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now')))
+ )
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_correction_owner_changed'); END;
+CREATE TRIGGER fresh_baseline_correction_retained BEFORE DELETE ON fresh_baseline_corrections
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_correction_retained'); END;
 CREATE TRIGGER fresh_baseline_identity BEFORE UPDATE ON fresh_baseline_handoffs
 WHEN NEW.release_id<>OLD.release_id OR NEW.role<>OLD.role OR NEW.dispatch_digest<>OLD.dispatch_digest
  OR NEW.request_json<>OLD.request_json OR NEW.preparation_json<>OLD.preparation_json OR NEW.created_at<>OLD.created_at
  OR NOT (
  (NEW.phase=7 AND OLD.phase<4 AND NEW.execution_id=OLD.execution_id AND json_extract(NEW.evidence_json,'$[#-1].source_still_active')=1)
  OR (OLD.phase<6 AND NEW.phase=OLD.phase+1 AND NEW.execution_id=OLD.execution_id AND EXISTS(SELECT 1 FROM operation_state WHERE active_production_release_id=OLD.release_id AND active_production_release_expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now')))
- OR (NEW.phase=OLD.phase AND NEW.evidence_json=OLD.evidence_json AND EXISTS(SELECT 1 FROM operation_state WHERE active_production_release_id=OLD.release_id AND (NEW.execution_id=OLD.execution_id OR active_production_release_expires_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))))
+ OR (NEW.phase=OLD.phase AND NEW.evidence_json=OLD.evidence_json AND EXISTS(SELECT 1 FROM operation_state WHERE active_production_release_id=OLD.release_id AND (NEW.execution_id=OLD.execution_id OR active_production_release_expires_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') OR EXISTS(SELECT 1 FROM fresh_baseline_corrections c WHERE c.handoff_dispatch_digest=OLD.dispatch_digest AND c.generation=(SELECT MAX(generation) FROM fresh_baseline_corrections WHERE handoff_dispatch_digest=OLD.dispatch_digest) AND c.execution_id=NEW.execution_id))))
  )
 BEGIN SELECT RAISE(ABORT,'fresh_baseline_transition_invalid'); END;
+CREATE TRIGGER fresh_baseline_correction_fence BEFORE UPDATE ON fresh_baseline_handoffs
+WHEN EXISTS(SELECT 1 FROM fresh_baseline_corrections WHERE handoff_dispatch_digest=OLD.dispatch_digest)
+ AND NOT EXISTS(SELECT 1 FROM fresh_baseline_corrections WHERE handoff_dispatch_digest=OLD.dispatch_digest
+ AND generation=(SELECT MAX(generation) FROM fresh_baseline_corrections WHERE handoff_dispatch_digest=OLD.dispatch_digest)
+ AND execution_id=NEW.execution_id AND (NEW.phase=OLD.phase OR state=2))
+BEGIN SELECT RAISE(ABORT,'fresh_baseline_correction_superseded'); END;
 CREATE TRIGGER fresh_baseline_retained BEFORE DELETE ON fresh_baseline_handoffs
 BEGIN SELECT RAISE(ABORT,'fresh_baseline_authority_retained'); END;
 CREATE VIEW fresh_baseline_mutation_fence AS
