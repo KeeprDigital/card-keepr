@@ -428,6 +428,50 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       ],
     };
   }
+  if (
+    [
+      "capacity-card-identity-fanout",
+      "capacity-card-facts-fanout",
+      "known-card-facts-fanout",
+      "capacity-nested-card-matches",
+    ].includes(scenario)
+  ) {
+    return {
+      cards: Array.from(
+        {
+          length:
+            scenario === "capacity-nested-card-matches" ? 65 : scenario === "capacity-card-facts-fanout" ? 18 : 17,
+        },
+        (_, index) => {
+          const observation = printingObservation({
+            game: "one-piece",
+            profile: "one-piece@1",
+            cardNumber: `OP95-${String(scenario === "capacity-nested-card-matches" ? Math.floor(index / 8) + 1 : index + 1).padStart(3, "0")}`,
+            name: "Synthetic same facts unknown identity",
+            cardAttributes: onePieceLeaderAttributes(),
+            printingAttributes: { illustration_types: [] },
+            locator: `/unknown-identity-fanout/${index}`,
+            lineageMarker: `unknown-identity-fanout-${index}`,
+            printedRulesText: `Synthetic distinct printed text ${index}`,
+            printedFieldsMarker: String(index),
+          });
+          const fingerprint = `sha256:${String(index).padStart(64, "0")}`;
+          observation.identity_evidence.artwork_fingerprint = fingerprint;
+          observation.identity_evidence.novelty_basis.artwork_fingerprint = fingerprint;
+          observation.appearance_evidence.images[0]!.artwork_fingerprint = fingerprint;
+          return {
+            ...observation,
+            card:
+              scenario === "capacity-card-identity-fanout" ||
+              (scenario === "capacity-card-facts-fanout" && index === 17) ||
+              (scenario === "capacity-nested-card-matches" && index === 64)
+                ? { ...observation.card, official_identity: { kind: "unknown", value: null } }
+                : observation.card,
+          };
+        },
+      ),
+    };
+  }
   if (scenario === "three-role-image-work-units") {
     return {
       cards: Array.from({ length: 8 }, (_, index) => {

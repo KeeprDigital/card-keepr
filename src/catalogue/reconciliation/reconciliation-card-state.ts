@@ -60,7 +60,7 @@ export class ReconciliationCardState {
     return this.references(this.namespace, canonicalJson([game, identity]), includeCurrent);
   }
   async sameFacts(card: Omit<CatalogueCard, "id">, unknownOnly: boolean): Promise<CardReference[]> {
-    const references = await this.references(`${this.namespace}_matches`, await factsDigest(card), false);
+    const references = await this.references(`${this.namespace}_matches`, await factsDigest(card), false, unknownOnly);
     const matches: CardReference[] = [];
     for (const reference of references) {
       if (unknownOnly && reference.identity_kind !== "unknown") continue;
@@ -76,7 +76,12 @@ export class ReconciliationCardState {
     }
     return matches;
   }
-  private async references(namespace: string, group: string, includeCurrent: boolean): Promise<CardReference[]> {
+  private async references(
+    namespace: string,
+    group: string,
+    includeCurrent: boolean,
+    unknownOnly = false,
+  ): Promise<CardReference[]> {
     const digest = await sha256Text(group);
     let after = "";
     let bytes = 0;
@@ -96,13 +101,14 @@ export class ReconciliationCardState {
           digest,
           this.cards.position + (includeCurrent ? 1 : 0),
           after,
+          unknownOnly,
         ).first<typeof row>();
       } catch (cause) {
         throw new ReconciliationReducerStorageError(cause);
       }
       if (!row) break;
       bytes += new TextEncoder().encode(canonicalJson(row)).byteLength;
-      if (references.length === 500 || bytes > 1048576)
+      if (references.length === 8 || bytes > 512000)
         throw new Error("reconciliation_capacity_exceeded: one Card identity has too many candidates.");
       references.push({
         id: row.id,

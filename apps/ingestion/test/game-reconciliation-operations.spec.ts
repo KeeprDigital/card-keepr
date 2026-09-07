@@ -129,6 +129,7 @@ test.each(["base", "large-card-content"])(
 test.each([
   ["capacity-high-degree-observation", "reconciliation_capacity_exceeded"],
   ["capacity-printing-image-fanout", "reconciliation_capacity_exceeded"],
+  ["capacity-card-identity-fanout", "reconciliation_capacity_exceeded"],
   ["identity-whitespace", "retained_evidence_invalid"],
   ["not-demonstrably-novel", "printing_reconciliation_blocked"],
 ])("a game preparation reports terminal %s failure without failing its collection", async (fixture, code) => {

@@ -92,6 +92,7 @@ export function nextReducerCardReferenceStatement(
   group: string,
   before: number,
   after: string,
+  unknownOnly = false,
 ) {
   return repositoryStatements(database)
     .prepare(`SELECT state.key_digest,
@@ -101,6 +102,7 @@ export function nextReducerCardReferenceStatement(
       WHERE first.preparation_id = state.preparation_id AND first.namespace = state.namespace AND first.key_digest = state.key_digest) AS first_ordinal
     FROM reconciliation_reducer_state state
     WHERE state.preparation_id = ? AND state.namespace = ? AND state.group_digest = ?
+      ${unknownOnly ? "AND json_extract(state.content, '$.value.identity_kind') = 'unknown'" : ""}
       AND state.key_digest > ? AND state.observation_ordinal < ?
       AND NOT EXISTS (SELECT 1 FROM reconciliation_reducer_state later
         WHERE later.preparation_id = state.preparation_id AND later.namespace = state.namespace

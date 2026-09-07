@@ -85,3 +85,18 @@ already published. Native publication integration (#226/#227) must use the
 preparation's retained mapping evidence and gate any published mapping projection
 on that candidate's publication; source collection state is not publication
 authority for a native candidate.
+
+Preparation rejects a genuine identity work unit with
+`reconciliation_capacity_exceeded` when it exceeds eight candidate references,
+eight records in one Printing match group, 512 KiB of match metadata, or eight
+nested matching visits for one observation. These are local identity-work
+limits, not a cap on the number of Cards or Printings in a game. Numbered Card
+confirmation searches an indexed unnumbered-facts subset so unrelated numbered
+identities do not consume that allowance. Unnumbered observations receive a
+separate reduction callback. Native capacity outcomes retain their original
+preparation identity and can be replayed.
+
+The resource regression probes actual D1 and R2 calls through the real Workflow
+for high-degree matches and distinct numbered Cards with equal facts. This is
+not yet proof of callback-wide CPU, memory, stream, or Workflow service-call
+limits; those remain part of final resource acceptance.

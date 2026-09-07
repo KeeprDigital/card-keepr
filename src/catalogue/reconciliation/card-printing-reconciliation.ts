@@ -499,7 +499,9 @@ export async function reconcileRetainedCardPrintingEvidence(
       after,
     )) {
       const work =
-        observation.kind === "card_printing" && observation.sourceWarnings.length > 1
+        observation.kind === "card_printing" &&
+        (observation.sourceWarnings.length > 1 ||
+          observation.observedCardAndPrinting.card?.official_identity.kind === "unknown")
           ? 12
           : observation.kind === "card_printing" && observation.observedCardAndPrinting.card !== null
             ? observation.observedCardAndPrinting.printing === null
@@ -532,6 +534,13 @@ export async function reconcileRetainedCardPrintingEvidence(
           localGundamProducts,
         ])
           index.beginObservation();
+        let identityMatchWork = 0;
+        const consumeIdentityMatch = () => {
+          if (++identityMatchWork > 8)
+            throw new Error(
+              "reconciliation_capacity_exceeded: one observation requires too many nested identity matches.",
+            );
+        };
         const sourceCard = observation.observedCardAndPrinting.card;
         for (const checks of [
           ...(sourceCard === null ? [] : [cardCheckTimes]),
@@ -604,7 +613,9 @@ export async function reconcileRetainedCardPrintingEvidence(
           const candidates: Pick<CataloguePrinting, "id" | "card_id">[] = [];
           if (printing !== null)
             for (const card of exactUnnumberedCards) {
+              consumeIdentityMatch();
               for await (const candidate of printings.matchingBeforeObservation(card.id)) {
+                consumeIdentityMatch();
                 if (
                   printingFactsFormattingEquivalent(
                     {
@@ -626,13 +637,16 @@ export async function reconcileRetainedCardPrintingEvidence(
           const provenCards: typeof exactUnnumberedCards = [];
           if (printing !== null) {
             for (const card of exactUnnumberedCards) {
+              consumeIdentityMatch();
               const expected = compatibilityFor(card.id, observation.sourceLineage, observation);
               const compatible = await compatiblePrintings(database, expected);
               const local: PrintingCompatibility[] = [];
               for await (const match of localPrintingCompatibility.matchingBeforeObservation(
                 compatibilityGroup(expected),
-              ))
+              )) {
+                consumeIdentityMatch();
                 if (isCompatible(match.compatibility, expected)) local.push(match.compatibility);
+              }
               const located =
                 observation.locator === null
                   ? null
@@ -897,6 +911,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           for await (const match of localPrintingCompatibility.matchingBeforeObservation(
             compatibilityGroup(compatibility),
           )) {
+            consumeIdentityMatch();
             if (isCompatible(match.compatibility, compatibility)) matchIds.add(match.printingId);
           }
           const unprovenCrossSourceAppearance =
@@ -904,6 +919,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           if (unprovenCrossSourceAppearance) crossSourceCandidates.forEach(({ id }) => matchIds.add(id));
           const crossSourceMatches: string[] = [];
           for (const id of matchIds) {
+            consumeIdentityMatch();
             const matched =
               databaseMatches.find((match) => match.id === id) ??
               (await localPrintingCompatibility.get(id))?.compatibility;
@@ -942,6 +958,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           const corroboratedCrossLocaleMatches: string[] = [];
           if (observation.supportedGame === "gundam") {
             for (const matchId of matchIds) {
+              consumeIdentityMatch();
               const observedLineages = new Set([
                 ...(await gundamPrintingLineages(database, matchId)).map(({ source_lineage }) => source_lineage),
                 ...((await localGundamPrintingProvenance.get(matchId)) ?? []),

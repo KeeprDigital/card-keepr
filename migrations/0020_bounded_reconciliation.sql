@@ -391,6 +391,9 @@ CREATE TABLE reconciliation_reducer_state (
 );
 CREATE INDEX reconciliation_reducer_state_group
 ON reconciliation_reducer_state (preparation_id, namespace, group_digest, key_digest, observation_ordinal);
+CREATE INDEX reconciliation_reducer_unknown_facts
+ON reconciliation_reducer_state (preparation_id, namespace, group_digest, key_digest, observation_ordinal)
+WHERE json_extract(content, '$.value.identity_kind') = 'unknown';
 CREATE TRIGGER reconciliation_reducer_state_no_update BEFORE UPDATE ON reconciliation_reducer_state
 BEGIN SELECT RAISE(ABORT, 'reconciliation_reducer_state_immutable'); END;
 CREATE TRIGGER reconciliation_reducer_state_no_delete BEFORE DELETE ON reconciliation_reducer_state
