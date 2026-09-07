@@ -1,3 +1,9 @@
+import {
+  startGamePublication,
+  advanceGamePublication,
+  approveGamePublication,
+  inspectPublication,
+} from "./game-publication";
 import { startPublicationPreparation } from "./publication-preparation-dispatch";
 import {
   advancePublicationPreparation,
@@ -54,6 +60,42 @@ type Environment = {
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const reconciliationRoutes = [
+  route<Context>("POST", "/v1/publications/:publication/advance", async ({ env, request, observedAt }, params) => {
+    const body = await readAdministrationBody(request);
+    assertOnlyFields(body, ["generation"]);
+    return Response.json(await advanceGamePublication(env, params.publication!, Number(body.generation), observedAt));
+  }),
+  route<Context>("GET", "/v1/publications/:publication", async ({ env }, params) =>
+    Response.json(await inspectPublication(env.CATALOGUE_DB, params.publication!)),
+  ),
+  ...(["", "/start"] as const).map((suffix) =>
+    route<Context>("POST", `/v1/publications${suffix}`, async ({ env, request, observedAt }) => {
+      const body = await readAdministrationBody(request);
+      assertOnlyFields(body, [
+        "candidate_id",
+        "manifest_digest",
+        "expected_game_revision_id",
+        "generation",
+        "idempotency_key",
+      ]);
+      return Response.json(
+        await (suffix
+          ? (input: Parameters<typeof approveGamePublication>[1], at: string) => startGamePublication(env, input, at)
+          : (input: Parameters<typeof approveGamePublication>[1], at: string) =>
+              approveGamePublication(env.CATALOGUE_DB, input, at))(
+          {
+            candidate_id: requiredString(body, "candidate_id"),
+            manifest_digest: requiredString(body, "manifest_digest"),
+            expected_game_revision_id: requiredString(body, "expected_game_revision_id"),
+            generation: Number(body.generation),
+            idempotency_key: requiredString(body, "idempotency_key"),
+          },
+          observedAt,
+        ),
+        { status: 202 },
+      );
+    }),
+  ),
   route<Context>(
     "GET",
     "/v1/game-candidates/:candidate/publication-preparation/query",

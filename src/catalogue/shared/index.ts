@@ -165,3 +165,8 @@ export {
   maximumSearchChunkCodePoints,
   searchChunkStride,
 } from "./card-search-contract";
+
+export {
+  publicationBackupReservationStatement,
+  publishedCompositionStatement,
+} from "./publication-composition-repository";

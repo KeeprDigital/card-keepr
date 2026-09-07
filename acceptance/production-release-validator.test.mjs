@@ -812,7 +812,7 @@ function liveGateDatabase(environment) {
     INSERT INTO catalogue_state VALUES (1,'catrev-current');
     INSERT INTO operation_state VALUES (1,NULL,NULL,NULL,'healthy',NULL,'clear');
     INSERT INTO catalogue_schema_state VALUES (1,${currentSchemaMigrationLevel});
-    INSERT INTO catalogue_revisions VALUES ('catrev-current','catrev-previous'),('catrev-previous','catrev-old'),('catrev-old',NULL);
+    INSERT INTO catalogue_revisions(id,ingestion_run_id,published_at,content_digest,expected_previous_revision_id,approved_candidate_digest) VALUES ('catrev-current','catrev-previous'),('catrev-previous','catrev-old'),('catrev-old',NULL);
     INSERT INTO catalogue_exports VALUES ('catrev-current',1,'available'),('catrev-previous',1,'available'),('catrev-old',1,'available');
     INSERT INTO catalogue_backup_attempts VALUES ('backup-current','catrev-current','verified','bookmark-current','${"a".repeat(64)}'),('backup-previous','catrev-previous','verified','bookmark-previous','${"b".repeat(64)}'),('backup-old','catrev-old','verified','bookmark-old','${"c".repeat(64)}');
     INSERT INTO catalogue_query_revisions VALUES ('catrev-archived','archived');

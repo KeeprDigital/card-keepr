@@ -1,3 +1,4 @@
+import { runGamePublicationWorkflow } from "./game-publication-workflow";
 import { runPublicationPreparationWorkflow } from "./publication-preparation-workflow";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import {
@@ -34,6 +35,7 @@ export async function runReconciliationWorkflow(
 ): Promise<{ result_json: string }> {
   ({ env, step } = observeOperationalWorkflow(step, event, env));
   ({ env, step } = boundedReconciliationResources(env, step));
+  if (event.payload.publication) return runGamePublicationWorkflow(env, step, event.payload.publication);
   if (event.payload.publication_preparation) return runPublicationPreparationWorkflow(env, step, event.payload);
   let reconciliationResultJson: string;
   try {
