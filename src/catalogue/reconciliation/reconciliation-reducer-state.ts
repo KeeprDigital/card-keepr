@@ -142,8 +142,7 @@ export class ReconciliationReducerIndex<T> {
   }
 
   /** Entity drafts retain stable ID order while applying deletions and updates during iteration. */
-  async *entityValues(): AsyncGenerator<T> {
-    let after = "";
+  async *entityValues(after = ""): AsyncGenerator<T> {
     for (;;) {
       const ordinal = this.ordinal;
       const page = await storage(

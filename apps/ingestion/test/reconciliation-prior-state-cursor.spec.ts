@@ -39,6 +39,14 @@ test.each([
     interrupt: "official_errata",
   },
   {
+    base: "curated-conflict-fanout-base",
+    changed: "withdrawal-work-units",
+    expectedCards: 32,
+    count: 32,
+    name: "Synthetic reviewed Card 0",
+    interrupt: "withdrawal_diagnostics",
+  },
+  {
     base: "prior-state-text-pages",
     changed: "prior-state-text-pages",
     expectedCards: 32,
@@ -65,6 +73,8 @@ test.each([
     );
     const errataCursors: number[] = [];
     const errataCalls: number[] = [];
+    const withdrawalCursors: number[] = [];
+    const withdrawalCalls: number[] = [];
     const restoredCards: number[] = [];
     let calls = 0;
     let armed = false;
@@ -109,7 +119,9 @@ test.each([
                       ? "prior_cards"
                       : interrupt === "official_errata"
                         ? "current_errata"
-                        : "card_facts",
+                        : interrupt === "withdrawal_diagnostics"
+                          ? "withdrawal_assertion_groups"
+                          : "card_facts",
                   )
                 );
               }) &&
@@ -166,6 +178,15 @@ test.each([
           errataCursors.push(checkpoint.cursor.processedErrata);
           if (interrupt === "official_errata" && checkpoint.cursor.processedErrata > 0) armed = true;
         }
+        if (JSON.parse(result).continuation?.phase === "withdrawal_diagnostics") {
+          withdrawalCalls.push(calls);
+          const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+          const checkpoint = (status.checkpoints as { phase: string; cursor: { processedPlans: number } }[]).find(
+            (row) => row.phase === "withdrawal_diagnostics",
+          )!;
+          withdrawalCursors.push(checkpoint.cursor.processedPlans);
+          if (interrupt === "withdrawal_diagnostics" && checkpoint.cursor.processedPlans > 0) armed = true;
+        }
         expect(new TextEncoder().encode(result).byteLength).toBeLessThan(65536);
         return result;
       },
@@ -217,6 +238,17 @@ test.each([
     const detail = await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions/${cards.ordinal}`);
     expect(detail.document.records).toHaveLength(expectedCards);
     expect(detail.document.records).toEqual(expect.arrayContaining([expect.objectContaining({ name })]));
+    if (interrupt === "withdrawal_diagnostics") {
+      expect(withdrawalCursors.some((count) => count > 0 && count < 32)).toBe(true);
+      expect(withdrawalCursors).toContain(32);
+      expect(Math.max(...withdrawalCalls)).toBeLessThanOrEqual(100);
+      const candidate = await get(`/v1/ingestion-runs/${run.id}/candidate`);
+      expect((await approve(candidate.document)).response.status).toBe(200);
+      const printing = (accepted.document.printings as { id: string }[])[0]!;
+      expect((await get(`/v1/reconciliation/printings/${printing.id}`)).document).toMatchObject({
+        lifecycle: { withdrawn: true },
+      });
+    }
     if (interrupt === "official_errata") {
       expect(errataCursors.some((count) => count > 0 && count < 32)).toBe(true);
       expect(errataCursors).toContain(32);

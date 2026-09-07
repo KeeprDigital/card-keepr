@@ -47,8 +47,11 @@ export class ReconciliationPlanState implements AsyncIterable<ObservationPlan> {
   async get(observationId: string) {
     return (await this.index.get(observationId))?.plan;
   }
-  async *[Symbol.asyncIterator]() {
-    for await (const value of this.index.entityValues()) yield value.plan;
+  [Symbol.asyncIterator]() {
+    return this.values();
+  }
+  async *values(after = "") {
+    for await (const value of this.index.entityValues(after)) yield value.plan;
   }
   async hasObserved(kind: "card" | "printing", entityId: string, lineage?: string): Promise<boolean> {
     let row: { content: string; sha256: string } | null;

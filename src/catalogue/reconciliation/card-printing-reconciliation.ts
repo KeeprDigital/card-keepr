@@ -1,3 +1,4 @@
+import { prepareWithdrawalDiagnostics } from "./reconciliation-withdrawals";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { candidateAtRevision, type PriorStatePositions } from "./reconciliation-prior-state";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
@@ -92,7 +93,6 @@ import {
   currentWithdrawalEvidenceStatement,
   currentPrintingMembershipsStatement,
   errataProvenanceByIdsStatement,
-  publishedWithdrawalAssertionsStatement,
   reconciliationRunStateStatement,
 } from "./reconciliation-read-repository";
 import {
@@ -149,6 +149,7 @@ type OfficialReductionCursor = {
   after: ReconciliationInputRecordCursor | null;
   processedObservations: number;
   dedicatedErrata: number;
+  hasWithdrawals: boolean;
   complete: boolean;
   errataAfter?: ReconciliationInputRecordCursor | null;
   processedErrata?: number;
@@ -422,6 +423,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   let reductionOrdinal = (reduction?.ordinal ?? -1) + 1;
   let processedObservations = reduction?.value.processedObservations ?? 0;
   let dedicatedErrata = reduction?.value.dedicatedErrata ?? 0;
+  let hasWithdrawals = reduction?.value.hasWithdrawals ?? false;
   const saveReduction = async (
     after: ReconciliationInputRecordCursor | null,
     complete: boolean,
@@ -452,6 +454,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       after,
       processedObservations,
       dedicatedErrata,
+      hasWithdrawals,
       complete,
       ...errata,
     } satisfies OfficialReductionCursor);
@@ -1238,6 +1241,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
       processedObservations++;
       if (observation.kind === "official_erratum") dedicatedErrata++;
+      else if (observation.withdrawal !== null) hasWithdrawals = true;
       after = cursor;
       inUnit += work;
       bytes += byteLength;
@@ -1404,10 +1408,12 @@ export async function reconcileRetainedCardPrintingEvidence(
     if (yieldAtCheckpoint) return next;
   }
 
-  for await (const diagnostic of withdrawalConflictDiagnostics(database, runId, plans))
-    await diagnostics.push(diagnostic);
-  for await (const diagnostic of publishedWithdrawalConflictDiagnostics(database, plans))
-    await diagnostics.push(diagnostic);
+  try {
+    await prepareWithdrawalDiagnostics(database, runId, plans, diagnostics, hasWithdrawals, yieldAtCheckpoint);
+  } catch (error) {
+    if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
+    throw error;
+  }
 
   let productCatalogue = {
     draft: priorProducts,
@@ -2086,102 +2092,6 @@ function omitUndefinedValues(value: unknown): unknown {
     );
   }
   return value;
-}
-
-async function* publishedWithdrawalConflictDiagnostics(
-  database: CatalogueStore,
-  plans: AsyncIterable<ObservationPlan>,
-): AsyncGenerator<Diagnostic> {
-  for await (const plan of plans) {
-    const withdrawal = plan.withdrawal;
-    if (withdrawal === null) continue;
-    const targets = [
-      ...(withdrawal.entity === "card" || withdrawal.entity === "card_and_printing"
-        ? [{ entityType: "card", entityId: plan.cardId }]
-        : []),
-      ...(plan.printingId !== null && (withdrawal.entity === "printing" || withdrawal.entity === "card_and_printing")
-        ? [{ entityType: "printing", entityId: plan.printingId }]
-        : []),
-    ];
-    for (const target of targets) {
-      let latest: { assertion: string; state: string; effective_at: string } | null;
-      try {
-        latest = await publishedWithdrawalAssertionsStatement(database, {
-          entityType: target.entityType,
-          entityId: target.entityId,
-        }).first<{ assertion: string; state: string; effective_at: string }>();
-      } catch (cause) {
-        throw new ReconciliationReducerStorageError(cause);
-      }
-      const proposedSemantic = canonicalJson({
-        assertion: withdrawal.assertion,
-        state: withdrawal.state,
-        effective_at: withdrawal.effective_at,
-      });
-      const repeated = latest !== null && canonicalJson(latest) === proposedSemantic;
-      const transition =
-        latest !== null && latest.state !== withdrawal.state && withdrawal.effective_at > latest.effective_at;
-      if ((latest === null && withdrawal.state === "reinstated") || (latest !== null && !repeated && !transition)) {
-        yield {
-          code: "withdrawal_evidence_conflict",
-          source_observation_id: plan.sourceObservationId,
-          locator: null,
-          matched_printing_ids: target.entityType === "printing" ? [target.entityId] : [],
-          detail:
-            "The explicit withdrawal assertion conflicts with the published withdrawal history for this identity.",
-        };
-      }
-    }
-  }
-}
-
-async function* withdrawalConflictDiagnostics(
-  database: CatalogueStore,
-  runId: string,
-  plans: AsyncIterable<ObservationPlan>,
-): AsyncGenerator<Diagnostic> {
-  const assertions = new ReconciliationReducerIndex<{
-    id: string;
-    semantic: string;
-    observationId: string;
-    conflict: boolean;
-  }>(database, runId, "withdrawal_assertion_groups");
-  for await (const plan of plans) {
-    const withdrawal = plan.withdrawal;
-    if (withdrawal === null) continue;
-    const targets = [
-      ...(withdrawal.entity === "card" || withdrawal.entity === "card_and_printing" ? [`card:${plan.cardId}`] : []),
-      ...(plan.printingId !== null && (withdrawal.entity === "printing" || withdrawal.entity === "card_and_printing")
-        ? [`printing:${plan.printingId}`]
-        : []),
-    ];
-    for (const target of targets) {
-      const semantic = canonicalJson({
-        assertion: withdrawal.assertion,
-        state: withdrawal.state,
-        effective_at: withdrawal.effective_at,
-      });
-      const prior = await assertions.get(target);
-      await assertions.seed(target, {
-        id: target,
-        semantic: prior?.semantic ?? semantic,
-        observationId:
-          prior && prior.observationId < plan.sourceObservationId ? prior.observationId : plan.sourceObservationId,
-        conflict: (prior?.conflict ?? false) || (prior !== undefined && prior.semantic !== semantic),
-      });
-    }
-  }
-  for await (const assertion of assertions.entityValues()) {
-    if (!assertion.conflict) continue;
-    yield {
-      code: "withdrawal_evidence_conflict",
-      source_observation_id: assertion.observationId,
-      locator: null,
-      matched_printing_ids: assertion.id.startsWith("printing:") ? [assertion.id.slice("printing:".length)] : [],
-      detail:
-        "Retained explicit withdrawal assertions conflict for the same entity and cannot be deterministically reconciled.",
-    };
-  }
 }
 
 async function addGundamProducts(
