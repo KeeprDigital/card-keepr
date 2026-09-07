@@ -1,3 +1,4 @@
+import { beginEvidenceObjectWrite } from "../../../src/catalogue/source-evidence/evidence-cleanup-repository";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as ingestionQueries from "./query-helpers/ingestion";
@@ -108,9 +109,24 @@ test("resume recovers the deterministic object after an upload-before-D1 restart
   );
   const identity = await captureOperationIdentity(run.id, "one-piece-en:discovery", 1);
   const bytes = new TextEncoder().encode('{"cards":[{"card_number":"OP01-001"}]}');
+  await beginEvidenceObjectWrite(
+    catalogueStore(env.CATALOGUE_DB),
+    "observed-restart-writer",
+    run.id,
+    identity.objectKey,
+    new Date().toISOString(),
+  ).run();
+  await beginEvidenceObjectWrite(
+    catalogueStore(env.CATALOGUE_DB),
+    "unrelated-restart-writer",
+    run.id,
+    identity.objectKey,
+    new Date().toISOString(),
+  ).run();
   await env.EVIDENCE_OBJECTS.put(identity.objectKey, bytes, {
     onlyIf: { etagDoesNotMatch: "*" },
     httpMetadata: { contentType: "application/json" },
+    customMetadata: { cleanup_writer_token: "observed-restart-writer" },
   });
   const now = new Date().toISOString();
   await sourceEvidenceQueries
@@ -143,6 +159,18 @@ test("resume recovers the deterministic object after an upload-before-D1 restart
     content_digest: expect.stringMatching(/^[a-f0-9]{64}$/),
   });
   expect(await env.EVIDENCE_OBJECTS.head(identity.objectKey)).not.toBeNull();
+  expect(
+    (
+      await env.CATALOGUE_DB.prepare(
+        "SELECT completed_at FROM evidence_object_writers WHERE token='observed-restart-writer'",
+      ).first<{ completed_at: string | null }>()
+    )?.completed_at,
+  ).not.toBeNull();
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      "SELECT completed_at FROM evidence_object_writers WHERE token='unrelated-restart-writer'",
+    ).first(),
+  ).toMatchObject({ completed_at: null });
 });
 
 test("reparse retries recover one staged immutable observation set while new intents append", async () => {
@@ -223,3 +251,101 @@ test("reparse retries recover one staged immutable observation set while new int
       .sort(),
   ).toEqual([reparsed, appended].map((set) => set.object_key).sort());
 });
+
+test("reparse observes and settles the exact writer after a lost successful put response", async () => {
+  const run = await createCollection("source_parse_lost_put", "https://official-source.invalid/raw-one-piece-products");
+  const completed = await resumeCollection(run.id);
+  const snapshot = completed.snapshots[0];
+  if (!snapshot) throw new Error("missing snapshot");
+  const { reparseSourceSnapshot } = await import("../../../src/catalogue/source-evidence");
+  const bucket = new Proxy(env.EVIDENCE_OBJECTS, {
+    get(target, property) {
+      if (property === "put")
+        return async (...args: Parameters<R2Bucket["put"]>) => {
+          await target.put(...args);
+          throw new Error("synthetic lost successful put response");
+        };
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  await expect(
+    reparseSourceSnapshot(
+      catalogueStore(env.CATALOGUE_DB),
+      bucket,
+      snapshot.id,
+      "fixture-one-piece-json@3",
+      "lost-parse-put",
+    ),
+  ).rejects.toThrow("synthetic lost successful put response");
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      "SELECT count(*) AS n FROM evidence_object_writers WHERE ingestion_run_id=? AND completed_at IS NULL",
+    )
+      .bind(run.id)
+      .first(),
+  ).toMatchObject({ n: 1 });
+  await reparseSourceSnapshot(
+    catalogueStore(env.CATALOGUE_DB),
+    env.EVIDENCE_OBJECTS,
+    snapshot.id,
+    "fixture-one-piece-json@3",
+    "lost-parse-put",
+  );
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      "SELECT count(*) AS n FROM evidence_object_writers WHERE ingestion_run_id=? AND completed_at IS NULL",
+    )
+      .bind(run.id)
+      .first(),
+  ).toMatchObject({ n: 0 });
+});
+
+test.each([0, 2])(
+  "a conditional capture loser acknowledges its no-op without deleting the winner (%s bytes)",
+  async (size) => {
+    const run = await createCollection(`source_conditional_loser_${size}`, "https://official-source.invalid/cards");
+    const db = catalogueStore(env.CATALOGUE_DB);
+    const evidenceRun = await requiredEvidenceRun(db, run.id);
+    const request = (await pendingEvidenceRequests(db, run.id))[0]!;
+    const prepared = await prepareCaptureAttempt(db, evidenceRun, request);
+    if (prepared.kind !== "attempt") throw new Error("missing prepared capture");
+    const winner = `conditional-winner-${size}`;
+    await beginEvidenceObjectWrite(db, winner, run.id, prepared.content_object_key, new Date().toISOString()).run();
+    const bucket = new Proxy(env.EVIDENCE_OBJECTS, {
+      get(target, property) {
+        if (property === "put")
+          return async (key: string, body: unknown) => {
+            // The storage boundary supplies a concurrent winner and a conclusive null
+            // response; cancelling the unused stream must not delete that winner.
+            await target.put(key, size ? "{}" : "", { customMetadata: { cleanup_writer_token: winner } });
+            if (body instanceof ReadableStream) await body.cancel("conditional request did not consume the body");
+            return null;
+          };
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const transport = new Proxy(env.OFFICIAL_SOURCE_TRANSPORT, {
+      get(target, property) {
+        if (property === "fetch")
+          return async () =>
+            new Response(size ? "{}" : null, {
+              headers: { "content-type": "application/json", "content-length": String(size) },
+            });
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const result = await capturePreparedAttempt(db, bucket, transport, evidenceRun, request, prepared);
+    expect(result.kind).toBe("uploaded");
+    expect((await env.EVIDENCE_OBJECTS.head(prepared.content_object_key))?.size).toBe(size);
+    expect(
+      await env.CATALOGUE_DB.prepare(
+        "SELECT count(*) AS n FROM evidence_object_writers WHERE ingestion_run_id=? AND completed_at IS NULL",
+      )
+        .bind(run.id)
+        .first(),
+    ).toMatchObject({ n: 0 });
+  },
+);

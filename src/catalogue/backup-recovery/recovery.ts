@@ -262,6 +262,12 @@ export async function beginCatalogueRecovery(
       recoveryStatements.guardRecoveryReservationStatement(database, { recoveryId: input.recoveryId }),
     ]);
   } catch (_error) {
+    if (_error instanceof Error && _error.message.includes("recovery_writer_unsettled"))
+      throw new AdministrationProblem(
+        409,
+        "recovery_writer_unsettled",
+        "Recovery must wait for every source and staging write to conclusively finish.",
+      );
     const winner = await recoveryByIdempotency(database, input.idempotencyKey);
     if (winner !== null) {
       if (winner.request_json !== requestJson) throw idempotencyReused();

@@ -1,3 +1,4 @@
+import { trackedStagingBucket } from "../shared";
 import {
   type CatalogueStore,
   AdministrationProblem,
@@ -120,7 +121,16 @@ export async function advancePublicationExports(env: Environment, id: string, ge
   const cursor = JSON.parse(state.cursor_json) as Cursor;
   const statements: D1PreparedStatement[] = [];
   try {
-    await prepareUnit(env, owner, state, cursor, statements);
+    await prepareUnit(
+      {
+        CATALOGUE_DB: db,
+        CATALOGUE_EXPORTS: trackedStagingBucket(db, env.CATALOGUE_EXPORTS, "CATALOGUE_EXPORTS", owner.candidate_id),
+      },
+      owner,
+      state,
+      cursor,
+      statements,
+    );
     state.cursor_json = canonicalJson(cursor);
   } catch (error) {
     if (!(error instanceof InvalidPublicExport)) throw error;

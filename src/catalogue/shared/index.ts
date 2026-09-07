@@ -78,6 +78,7 @@ export {
   runEventIdentitySql,
   runEventStatement,
   verifiedRunCurrentSql,
+  runCurrentIntegrityGuardStatement,
 } from "./ingestion-run-event-repository";
 export {
   projectIngestionRunEvent,
@@ -170,3 +171,4 @@ export {
   publicationBackupReservationStatement,
   publishedCompositionStatement,
 } from "./publication-composition-repository";
+export { trackedStagingBucket } from "./staging-object-storage";

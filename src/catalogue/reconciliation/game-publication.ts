@@ -1,3 +1,4 @@
+import { trackedStagingBucket } from "../shared";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { inspectGameCandidate, inspectGameCandidateReadiness } from "./game-candidate";
 import { publicationPreparationGuard, publicationPreparationStatement } from "./publication-preparation-repository";
@@ -195,7 +196,11 @@ export async function advanceGamePublication(
     );
     const packageKey = `catalogue-public-manifests/catrev_${id.slice("publication_".length)}/${composition.root_digest}.json`;
     const packageContent = canonicalJson({ contract: composition.contract, games: composition.games });
-    await env.CATALOGUE_EXPORTS.put(packageKey, packageContent, { onlyIf: { etagDoesNotMatch: "*" } });
+    await trackedStagingBucket(db, env.CATALOGUE_EXPORTS, "CATALOGUE_EXPORTS", candidate.preparation_id).put(
+      packageKey,
+      packageContent,
+      { onlyIf: { etagDoesNotMatch: "*" } },
+    );
     const retainedPackage = await env.CATALOGUE_EXPORTS.get(packageKey);
     if (
       !retainedPackage ||

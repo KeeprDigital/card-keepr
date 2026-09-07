@@ -1,3 +1,8 @@
+import {
+  beginEvidenceObjectWrite,
+  completeEvidenceObjectWrite,
+  completeObservedEvidenceWrite,
+} from "./evidence-cleanup-repository";
 import { MissingObjectError } from "../shared";
 import {
   AdapterParseFailure,
@@ -142,7 +147,32 @@ export async function parseSnapshot(
     };
     const observationBytes = utf8(canonicalJson(observationDocument));
     const digest = await sha256(observationBytes);
-    await putImmutableBytes(evidenceObjects, operation.content_object_key, observationBytes, digest);
+    const writeToken = crypto.randomUUID();
+    const observedToken = await putImmutableBytes(
+      evidenceObjects,
+      operation.content_object_key,
+      observationBytes,
+      digest,
+      writeToken,
+      async () => {
+        await beginEvidenceObjectWrite(
+          database,
+          writeToken,
+          snapshot.ingestion_run_id,
+          operation.content_object_key,
+          new Date().toISOString(),
+        ).run();
+      },
+    );
+    if (observedToken && observedToken !== writeToken)
+      await completeObservedEvidenceWrite(
+        database,
+        observedToken,
+        snapshot.ingestion_run_id,
+        operation.content_object_key,
+        new Date().toISOString(),
+      ).run();
+    await completeEvidenceObjectWrite(database, writeToken, new Date().toISOString()).run();
     await uploadedParseStatement(database, {
       digest: digest,
       byteLength: observationBytes.byteLength,
@@ -437,24 +467,33 @@ async function requiredObservationSet(database: CatalogueStore, operationId: str
   return stored;
 }
 
-async function putImmutableBytes(bucket: R2Bucket, key: string, bytes: Uint8Array, digest: string): Promise<void> {
+async function putImmutableBytes(
+  bucket: R2Bucket,
+  key: string,
+  bytes: Uint8Array,
+  digest: string,
+  writeToken: string,
+  registerWriter: () => Promise<void>,
+): Promise<string | undefined> {
   const existing = await bucket.head(key);
   if (existing !== null) {
     assertMatchingObject(existing, bytes, digest);
-    return;
+    return existing.customMetadata?.cleanup_writer_token;
   }
+  await registerWriter();
   const stored = await bucket.put(key, bytes, {
     onlyIf: { etagDoesNotMatch: "*" },
     httpMetadata: {
       contentType: "application/json",
       cacheControl: "private, max-age=31536000, immutable",
     },
-    customMetadata: { sha256: digest },
+    customMetadata: { sha256: digest, cleanup_writer_token: writeToken },
   });
-  if (stored !== null) return;
+  if (stored !== null) return writeToken;
   const concurrent = await bucket.head(key);
   if (concurrent === null) throw new Error("Immutable evidence write conflict");
   assertMatchingObject(concurrent, bytes, digest);
+  return concurrent.customMetadata?.cleanup_writer_token;
 }
 
 function assertMatchingObject(object: R2Object, bytes: Uint8Array, digest: string): void {

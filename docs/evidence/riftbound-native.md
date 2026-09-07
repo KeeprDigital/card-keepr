@@ -58,11 +58,12 @@ documents, eight native publications and real SQL verification imports to check
 five-game sibling components and the current-plus-two query window. It makes no
 real publisher coverage or production throughput claim and is also unexecuted.
 
-The branch includes the unchanged Limitless registration migration 0025 from
-`38fa7a82` because the shared adapter code is installed. The populated rehearsal
-passes the actual `23 → 25 → 26` chain. Integration must reconcile migration
-ordering and guards against current main, including the separately owned cleanup
-migration; it must not weaken predecessor checks.
+The branch includes the Limitless registration migration 0025 from `38fa7a82`
+because the shared adapter code is installed. After integrating main
+`ea51172a` and its cleanup migration 0024, migration 0025 strictly requires
+schema 24 and migration 0026 strictly requires schema 25. The populated rehearsal
+passes the actual `23 → 24 → 25 → 26` chain, preserving ancestor data and inbound
+foreign keys.
 
 ## Paused document preparation and bounded gap regression
 
@@ -86,7 +87,11 @@ and normalization likewise retain progress through these gaps. Selection order,
 selection integrity verification and the 100-call ceiling remain intact. The
 original failing callback now yields after 23 SQLite calls; the saved-state
 reproduction continued through document preparation, graph verification and
-normalization to input preparation. This local reproduction used SQLite and a
+normalization to input preparation in 801 continuation callbacks from the saved
+checkpoint. That callback count includes document and observation work as well as
+repeated gap traversal; it is a functional result, not a capacity success. The
+checkpoint amplification should inform the separate #233 performance work.
+This local reproduction used SQLite and a
 small R2 interface over copied retained bytes, including multipart images; it is
 not a native Workflow or publication/recovery pass. Focused regressions cover
 long gaps, terminal cursors, a partial gap before a document, and graph-stage

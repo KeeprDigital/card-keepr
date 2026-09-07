@@ -23,7 +23,11 @@ export function guardRecoveryStartStatement(
   input: Readonly<{ expectedCurrentRevisionId: string; observedAt: string; linkedOperationId: string | null }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT CASE WHEN EXISTS (
+    .prepare(`SELECT CASE
+         WHEN EXISTS(SELECT 1 FROM evidence_object_writers WHERE completed_at IS NULL)
+           OR EXISTS(SELECT 1 FROM staging_object_writes WHERE completed_at IS NULL)
+         THEN json_extract('{}','recovery_writer_unsettled')
+         WHEN EXISTS (
            SELECT 1 FROM catalogue_state AS catalogue
            JOIN operation_state AS operation ON operation.singleton = 1
            WHERE catalogue.singleton = 1
@@ -613,7 +617,8 @@ export function classifyRestoredWorkStatements(database: CatalogueStore, recover
         SELECT preparation_id FROM catalogue_recovery_work_classifications WHERE recovery_id=? AND classification='abandoned_after_restore')`)
       .bind(recoveryId),
     sql
-      .prepare(`UPDATE reconciliation_operations SET state='abandoned',generation=generation+1,failure_code='catalogue_recovered'
+      .prepare(`UPDATE reconciliation_operations SET state='abandoned',generation=generation+1,failure_code='catalogue_recovered',
+      terminal_at=COALESCE(terminal_at,strftime('%Y-%m-%dT%H:%M:%fZ','now'))
       WHERE id IN (SELECT preparation_id FROM catalogue_recovery_work_classifications WHERE recovery_id=?
         AND classification='abandoned_after_restore') AND state NOT IN ('failed','abandoned')`)
       .bind(recoveryId),
