@@ -4,6 +4,7 @@ import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { riftboundReplayTransport } from "./helpers/riftbound-replay-transport.mjs";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
 import {
   applyMigrations,
@@ -31,6 +32,8 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   const startedAt = performance.now();
   const resumeDirectory = process.env.KEEPR_RIFTBOUND_RESUME_DIRECTORY;
   const resumeRunId = process.env.KEEPR_RIFTBOUND_RESUME_RUN_ID;
+  const resumePublicationId = process.env.KEEPR_RIFTBOUND_RESUME_PUBLICATION_ID;
+  assert.ok(!resumePublicationId || resumeDirectory, "Published resume requires retained run state");
   assert.equal(Boolean(resumeDirectory), Boolean(resumeRunId), "Resume requires both retained directory and run id");
   const directory = resumeDirectory ? resolve(resumeDirectory) : await mkdtemp(join(tmpdir(), "keepr-real-riftbound-"));
   if (resumeDirectory) t.diagnostic(`Resuming retained run ${resumeRunId}; original collection is not repeated.`);
@@ -67,17 +70,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     config: configPath,
     statePath,
     vars: { ...checkpoint.vars, ADMINISTRATION_KEY: key, SOURCE_HOST_PACING_MODE: "immediate" },
-    outboundService: async (request) => {
-      if (new URL(request.url).hostname === "api.cloudflare.com") return checkpoint.outboundService(request);
-      const capture = captures.get(request.url);
-      if (!capture) {
-        assert.equal(new URL(request.url).hostname, "cmsassets.rgpub.io", `undeclared request ${request.url}`);
-        // Injected unavailable image, not an observed Riot outage or a retained image.
-        return new Response("Image not retained in this deterministic replay", { status: 404 });
-      }
-      served.push(capture.id);
-      return new Response(capture.bodyBytes, { headers: { "content-type": capture.contentType } });
-    },
+    outboundService: riftboundReplayTransport(checkpoint, captures, served),
   });
   let api, restoredAdmin;
   let journeyCompleted = false;
@@ -183,6 +176,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     1229,
   );
   const proposals = [];
+  const ownerProposals = [];
   let after = null;
   do {
     const result = await runCli(
@@ -192,6 +186,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     assert.equal(result.code, 0, result.stdout);
     const page = JSON.parse(result.stdout);
     proposals.push(...page.proposals.filter((p) => p.source_lineage === "riftbound-en"));
+    ownerProposals.push(...page.proposals.filter((p) => p.source_lineage === "owner"));
     after = page.next_cursor;
   } while (after);
   assert.equal(proposals.length, 1189);
@@ -207,7 +202,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
       ].sort(),
     );
   }
-  const intake = await cli(["game-candidate", "list", "--run-id", run.id]);
+  const intake = resumePublicationId ? { candidates: [] } : await cli(["game-candidate", "list", "--run-id", run.id]);
   // Missing Erratum targets may fail the first preparation. Retain that
   // diagnostic; explicit Card admission below must make the next one publish.
   for (const candidate of intake.candidates.filter((c) => c.state === "sealed"))
@@ -257,15 +252,9 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
         },
       }),
     );
-    const admitted = await cli([
-      "entity-proposal",
-      "admit",
-      "--proposal-id",
-      proposal.id,
-      "--decision",
-      decisionPath,
-      "--yes",
-    ]);
+    const admitted = resumePublicationId
+      ? await cli(["entity-proposal", "inspect", "--proposal-id", proposal.id])
+      : await cli(["entity-proposal", "admit", "--proposal-id", proposal.id, "--decision", decisionPath, "--yes"]);
     assert.equal(admitted.status, "admitted");
     admittedPrintings.set(locator, admitted.history[0].decision.printing.id);
     admittedCards.set(admitted.history[0].decision.card.name, admitted.history[0].decision.card.id);
@@ -312,6 +301,15 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   ).flat();
   const proposalPath = join(directory, "owner-card.json");
   for (const name of erratumTargets.filter((name) => !admittedCards.has(name))) {
+    if (resumePublicationId) {
+      const prior = ownerProposals.find((p) => p.reference === `origins-target:${name}`);
+      assert.ok(prior, name);
+      const admitted = await cli(["entity-proposal", "inspect", "--proposal-id", prior.id]);
+      assert.equal(admitted.status, "admitted");
+      assert.equal(admitted.history[0].decision.printing, null);
+      admittedCards.set(name, admitted.history[0].decision.card.id);
+      continue;
+    }
     const record = gallery.find((r) => r.name === name && (name !== "Karma, Channeler" || r.id.startsWith("sfd-")));
     assert.ok(record, name);
     const source = proposals.find((p) => JSON.parse(p.reference)[0] === record.id);
@@ -351,33 +349,87 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     ]);
     admittedCards.set(name, admitted.history[0].decision.card.id);
   }
-  const prepared = await cli([
-    "game-candidate",
-    "prepare",
-    "--run-id",
-    run.id,
-    "--game",
-    "riftbound",
-    "--expected-game-revision-id",
-    "catrev_spine_000",
-    "--idempotency-key",
-    resumeDirectory ? "reviewed-riftbound-public-v5" : "reviewed-riftbound",
-    "--yes",
-  ]);
-  const candidate = await waitForAdministrationDocument(
-    `/v1/game-candidates/${prepared.id}`,
-    (d) => d.state === "sealed" || (["failed", "paused"].includes(d.state) ? JSON.stringify(d) : false),
-    environment,
-    worker,
-    { deadlineMs: 600_000 },
-  );
-  const publication = await publishNativeCollection(
-    { candidates: [candidate] },
-    resumeDirectory ? "reviewed-riftbound-public-v5-publication" : "reviewed-riftbound-publication",
-    environment,
-    worker,
-    120_000,
-  );
+  let publication;
+  if (resumePublicationId) {
+    publication = await waitForAdministrationDocument(
+      `/v1/publications/${resumePublicationId}`,
+      (d) => d.state === "published",
+      environment,
+      worker,
+    );
+    const failed = await cli(["backup", "status", "--attempt-id", publication.backup_attempt_id]);
+    assert.equal(failed.state, "failed");
+    const idempotency = "riftbound-signed-transport-backup-retry";
+    await paceNativeRequest(environment);
+    const statusResponse = await fetch(
+      `${worker.url}/v1/status?${new URLSearchParams({ expected_current_revision_id: publication.resulting_revision_id })}`,
+      { headers: { authorization: `Bearer ${key}` } },
+    );
+    assert.equal(statusResponse.status, 200);
+    const status = await statusResponse.json();
+    const binding = {
+      production_target: status.resolved_target.production_target,
+      expected_current_revision_id: publication.resulting_revision_id,
+      idempotency_key: idempotency,
+      failed_attempt_id: failed.idempotency_key,
+      failed_attempt_digest: failed.attempt_digest,
+    };
+    await cli([
+      "backup",
+      "retry",
+      "--expected-current-revision",
+      publication.resulting_revision_id,
+      "--idempotency-key",
+      idempotency,
+      "--failed-attempt-id",
+      failed.idempotency_key,
+      "--failed-attempt-digest",
+      failed.attempt_digest,
+      "--environment",
+      "production",
+      "--confirm",
+      JSON.stringify(binding),
+      "--yes",
+    ]);
+    const backup = await waitForAdministrationDocument(
+      `/v1/backups/${idempotency}`,
+      (d) => d.state === "verified" || (d.state === "failed" ? JSON.stringify(d) : false),
+      environment,
+      worker,
+      { deadlineMs: 120_000 },
+    );
+    assert.equal(backup.catalogue_revision_id, publication.resulting_revision_id);
+    assert.equal(backup.linked_attempt_id, failed.idempotency_key);
+    t.diagnostic(`Verified supported backup retry for existing publication ${publication.id}`);
+  } else {
+    const prepared = await cli([
+      "game-candidate",
+      "prepare",
+      "--run-id",
+      run.id,
+      "--game",
+      "riftbound",
+      "--expected-game-revision-id",
+      "catrev_spine_000",
+      "--idempotency-key",
+      resumeDirectory ? "reviewed-riftbound-public-v5" : "reviewed-riftbound",
+      "--yes",
+    ]);
+    const candidate = await waitForAdministrationDocument(
+      `/v1/game-candidates/${prepared.id}`,
+      (d) => d.state === "sealed" || (["failed", "paused"].includes(d.state) ? JSON.stringify(d) : false),
+      environment,
+      worker,
+      { deadlineMs: 600_000 },
+    );
+    publication = await publishNativeCollection(
+      { candidates: [candidate] },
+      resumeDirectory ? "reviewed-riftbound-public-v5-publication" : "reviewed-riftbound-publication",
+      environment,
+      worker,
+      120_000,
+    );
+  }
   const apiKey = crypto.randomUUID();
   api = await startWorker({ config: "apps/api/wrangler.jsonc", statePath, vars: { API_BEARER_KEY: apiKey } });
   await waitForHealth(`${api.url}/health`, apiKey, api);
@@ -648,7 +700,11 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   assert.deepEqual(JSON.parse(freshAfterRestore.stdout).observation_sets, freshEvidence.observation_sets);
   t.diagnostic(
     JSON.stringify({
-      replay_mode: resumeDirectory ? "resumed_retained_run" : "fresh_retained_collection",
+      replay_mode: resumePublicationId
+        ? "resumed_published_revision"
+        : resumeDirectory
+          ? "resumed_retained_run"
+          : "fresh_retained_collection",
       retained_snapshots: 14,
       observed_inventory_records: 1189,
       observed_errata: 31,

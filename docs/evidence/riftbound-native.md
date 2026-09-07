@@ -163,3 +163,39 @@ idempotency keys, and prepares/publishes under new keys through shipped owner
 operations. It skips the original collection and migrations; all subsequent
 consumer, Curated Revision, fresh Origins collection and recovery assertions
 remain required. A resumed result must not be reported as a fresh full journey.
+
+## Published revision and failed backup continuation
+
+Frozen commit `85b00f2` resumed the retained pre-publication run and stopped after
+323.07 seconds. The supported owner flow published
+`catrev_aac461c4-afba-4fc1-ab96-3eb6c335a8f5`. Its automatic backup attempt failed
+with `backup_failed`, detail `Network connection lost.` The helper waits for
+verified backup before returning, so no consumer, Curated Revision, fresh
+collection or restore assertions ran. All runtimes stopped and state remains
+retained. This was a resumed publication, not another collection.
+
+Two fixture defects were independently reproduced after that failure. The
+Riftbound outbound router recognized Cloudflare management but omitted the
+checkpoint transport's signed SQL download/upload hosts. The focused regression
+fails at `native-export.invalid` with the old routing, then passes forwarding
+all three original requests and rejecting an undeclared host. The retained
+published database's raw SQLite dump also measures 162,431,985 bytes (longest
+line 524,478 characters), above the helper's 64 MiB subprocess stdout buffer.
+That raw diagnostic dump includes derived FTS rebuilt after the failed attempt;
+it is not a backup artifact. A separate actual SQLite roundtrip exceeding
+64 MiB fails with `ENOBUFS` under the old helper and passes with SQL streamed to
+a file. Existing export filtering, virtual-table rejection and full SQL import
+verification remain intact. Neither isolated reproduction establishes which
+fixture defect produced the earlier generic network failure.
+
+The shared linear virtual-table scan from #239 (`b5208cc`, consumed as
+`564f7f4c`) is also retained. Its scan of the raw Riftbound dump took 110.9 ms;
+this measurement is distinct from native recovery and production capacity.
+
+For the published failure checkpoint,
+`KEEPR_RIFTBOUND_RESUME_PUBLICATION_ID` additionally selects the existing
+publication. The fixture rechecks retained evidence and admitted identities,
+retries its failed backup through the owner CLI using the exact failed-attempt
+digest and resolved target, and requires verified backup before continuing.
+All consumer, Curated Revision, fresh-collection and restoration assertions
+remain required and pending. No publication ledger or backup receipt is edited.
