@@ -58,3 +58,14 @@ export function trySearchMaintenance(database) {
     "UPDATE card_search_fts_state SET state='reconstructing',owner_token='late_owner',lease_expires_at='2099-01-01T00:00:00.000Z' WHERE singleton=1",
   );
 }
+
+export function retainedIdentityAndEvidence(database) {
+  return {
+    decisions: database.prepare("SELECT * FROM canonical_identity_decisions ORDER BY rowid").all(),
+    allocations: database.prepare("SELECT * FROM canonical_identity_allocations ORDER BY rowid").all(),
+    mappings: database.prepare("SELECT * FROM canonical_source_mappings ORDER BY rowid").all(),
+    references: database.prepare("SELECT * FROM evidence_object_references ORDER BY rowid").all(),
+    compositions: database.prepare("SELECT * FROM catalogue_composition_games ORDER BY rowid").all(),
+    backups: database.prepare("SELECT * FROM catalogue_backup_attempts ORDER BY rowid").all(),
+  };
+}
