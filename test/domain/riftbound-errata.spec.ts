@@ -2,9 +2,17 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { riftboundOriginsErrata, riftboundOriginsErrataUrl } from "../../src/catalogue/adapters/riftbound-errata";
 import { parseReconciliationObservation } from "../../src/catalogue/reconciliation/reconciliation-observation";
+import { sourceAdapterForCoverage } from "../../src/catalogue/adapters/source-adapters";
+import { riftboundSourceAdapterRegistration } from "../../src/catalogue/adapters/riftbound-source-adapter";
 
 const bytes = readFileSync("acceptance/fixtures/real-sources/2026-09-06/raw/riftbound-errata.body");
 test("Origins retains all named corrections with article heading provenance", () => {
+  expect(sourceAdapterForCoverage(riftboundSourceAdapterRegistration, "origins-errata").reconciliationCapability).toBe(
+    "errata",
+  );
+  expect(sourceAdapterForCoverage(riftboundSourceAdapterRegistration, "origins-errata").reconciliationAreas).toEqual([
+    "errata",
+  ]);
   const observations = riftboundOriginsErrata(bytes, riftboundOriginsErrataUrl);
   expect(observations).toHaveLength(31);
   const monk = observations.find((o) => o.source.heading === "Kinkou Monk")!;

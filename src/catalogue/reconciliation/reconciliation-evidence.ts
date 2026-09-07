@@ -288,7 +288,10 @@ async function collectRetainedReconciliationObservation(
         for (const image of parsed.printingImages) references.push(await retainCandidateImage(printingImages, image));
         parsed = { ...parsed, printingImages: references };
       }
-      const adapter = requiredSourceAdapter(row.adapter_version);
+      const adapter = sourceAdapterForCoverage(
+        requiredSourceAdapter(row.adapter_version),
+        selectedPlans.find((plan) => plan.source_lineage === row.source_lineage)?.coverage?.subset,
+      );
       assertObservationAuthority(parsed, adapter, sourceSurface);
       await retainNormalizedObservation(
         database,
@@ -403,7 +406,10 @@ async function collectRetainedReconciliationObservation(
         supportedGame: supportedGame(plan.supported_game),
         adapterVersion: plan.adapter_version,
         subset: plan.coverage?.subset ?? "complete",
-        reconciliationCapability: requiredSourceAdapter(plan.adapter_version).reconciliationCapability,
+        reconciliationCapability: sourceAdapterForCoverage(
+          requiredSourceAdapter(plan.adapter_version),
+          plan.coverage?.subset,
+        ).reconciliationCapability,
       };
     }),
     observations: stagedNormalizedObservations<NormalizedReconciliationObservation>(database, runId),
@@ -776,7 +782,13 @@ function validEvidenceSummary(value: unknown, observed: number, observationCount
 }
 
 function supportedGame(value: string): SupportedGame {
-  if (value !== "one-piece" && value !== "fusion-world" && value !== "digimon" && value !== "gundam" && value !== "riftbound") {
+  if (
+    value !== "one-piece" &&
+    value !== "fusion-world" &&
+    value !== "digimon" &&
+    value !== "gundam" &&
+    value !== "riftbound"
+  ) {
     throw new Error("Retained Source Observation Set game is unsupported.");
   }
   return value;

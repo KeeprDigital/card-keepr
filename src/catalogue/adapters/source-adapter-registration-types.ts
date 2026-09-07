@@ -61,6 +61,8 @@ export type SourceAdapterRegistration = Readonly<{
       string,
       Readonly<{
         description: string;
+        reconciliationAreas?: readonly ("catalogue" | "errata")[];
+        reconciliationCapability?: "catalogue" | "errata";
         requiredSurfaces: readonly string[];
         requestUrlForSurface: (surface: string) => string;
       }>

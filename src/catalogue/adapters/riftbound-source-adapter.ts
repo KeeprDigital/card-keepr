@@ -65,6 +65,8 @@ export const riftboundSourceAdapterRegistration = {
     },
     "origins-errata": {
       description: "All 31 named corrections in the registered Origins Errata article.",
+      reconciliationAreas: ["errata"],
+      reconciliationCapability: "errata",
       requiredSurfaces: ["errata"],
       requestUrlForSurface(surface) {
         if (surface !== "errata") throw new AdapterParseFailure("Unknown Riftbound Errata surface.");

@@ -318,6 +318,9 @@ export function sourceAdapterForCoverage(
     requiredSurfaces: contract.requiredSurfaces,
     requestUrlForSurface: contract.requestUrlForSurface,
     requestUrlForDiscovery: undefined,
-    reconciliationAreas: [adapter.reconciliationCapability === "errata" ? "errata" : "catalogue"],
+    reconciliationCapability: contract.reconciliationCapability ?? adapter.reconciliationCapability,
+    reconciliationAreas: contract.reconciliationAreas ?? [
+      adapter.reconciliationCapability === "errata" ? "errata" : "catalogue",
+    ],
   };
 }
