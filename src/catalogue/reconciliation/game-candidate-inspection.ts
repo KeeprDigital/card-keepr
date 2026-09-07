@@ -1,3 +1,4 @@
+import { documentStorage } from "./reconciliation-document";
 import { AdministrationProblem, canonicalJson, sha256Text, type CatalogueStore } from "../shared";
 import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
 import { gameCandidatePartitionStatement, predecessorGameCandidateStatement } from "./game-candidate-repository";
@@ -17,13 +18,13 @@ export type InspectionCursor = {
 };
 
 export async function verifiedCandidatePartition(database: CatalogueStore, id: string, ordinal: number) {
-  const row = await gameCandidatePartitionStatement(database, id, ordinal).first<{
+  const row = await documentStorage(() => gameCandidatePartitionStatement(database, id, ordinal).first<{
     content: string;
     kind: string;
     sha256: string;
     byte_length: number;
     record_count: number;
-  }>();
+  }>());
   if (!row)
     throw new AdministrationProblem(409, "candidate_artifact_missing", "A required candidate partition is missing.");
   if (
@@ -68,11 +69,11 @@ export async function prepareCandidateInspection(
 ) {
   const cursor: InspectionCursor = state ?? {
     stage: "before",
-    predecessor: await predecessorGameCandidateStatement(
+    predecessor: await documentStorage(() => predecessorGameCandidateStatement(
       database,
       candidate.expected_game_revision_id,
       candidate.supported_game,
-    ).first(),
+    ).first<{ id: string; preparation_id: string; partition_count: number }>()),
     partition: 0,
     record: 0,
     beforePosition: 0,

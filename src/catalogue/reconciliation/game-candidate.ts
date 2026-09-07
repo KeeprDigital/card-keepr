@@ -1,3 +1,4 @@
+import { verifyInspectionArtifacts, inspectionIntegrityReceipt, type InspectionIntegrityCursor } from "./game-inspection-integrity";
 import { inspectionEvidenceClasses, inspectionEvidenceStatement } from "./game-inspection-evidence-repository";
 import {
   prepareCandidateInspection,
@@ -59,6 +60,7 @@ type PreparationCursor = {
   seals: { id: string; digest: string; count: number }[];
   inspection?: InspectionCursor;
   contentPartitions?: number;
+  integrity?: InspectionIntegrityCursor;
 };
 
 /** Legacy run adapter: each game manifest is prepared through durable bounded scans. */
@@ -68,6 +70,7 @@ export async function prepareGameCandidateManifests(
   candidate: CatalogueDraft,
   inputManifest: string,
   lineages: AsyncIterable<{ supportedGame: string; sourceLineage: string }>,
+  printingImageObjects: R2Bucket,
   yieldAtCheckpoint = false,
   terminalState: "sealed" | "failed" = "sealed",
 ) {
@@ -258,6 +261,8 @@ export async function prepareGameCandidateManifests(
           cursor.ordinal++;
         },
       );
+      const integrity = await verifyInspectionArtifacts(database, printingImageObjects, header, cursor.ordinal, cursor.digest!, cursor.integrity,
+        async (integrity) => { cursor.integrity = integrity; await save(); });
       const summaryContent = canonicalJson([
         {
           contract: "card-keepr-partitioned-record@1",
@@ -265,6 +270,7 @@ export async function prepareGameCandidateManifests(
             game: header.supported_game,
             approval_scope: "whole_candidate",
             expected_game_revision_id: header.expected_game_revision_id,
+            integrity: await inspectionIntegrityReceipt(integrity),
             counts: cursor.inspection!.counts,
             record_count: cursor.inspection!.count,
             content_partitions: cursor.contentPartitions,
@@ -298,6 +304,7 @@ export async function prepareGameCandidateManifests(
       cursor.seals.push({ id: header.id, digest: cursor.digest!, count: cursor.ordinal });
       cursor.game++;
       delete cursor.inspection;
+      delete cursor.integrity;
       delete cursor.contentPartitions;
       cursor.partition = -1;
       cursor.ordinal = 0;
@@ -421,7 +428,16 @@ export async function inspectGameCandidateReadiness(
     counts: Record<string, Record<string, number>>;
     record_count: number;
     content_partitions: number;
+    integrity: { manifest_prefix: string; partitions: number; texts: number; images: number; complete: boolean; sha256: string };
   };
+  if (!value.integrity?.complete || value.integrity.partitions !== summary.ordinal)
+    throw new AdministrationProblem(409, "candidate_artifact_invalid", "Candidate inspection has no complete integrity receipt.");
+  const { sha256: receiptSha, ...receipt } = value.integrity;
+  if (await sha256Text(canonicalJson(receipt)) !== receiptSha || await sha256Text(canonicalJson({
+    previous: receipt.manifest_prefix, ordinal: summary.ordinal, kind: "inspection_summary", sha256: partition.sha256,
+    record_count: 1, byte_length: partition.byte_length,
+  })) !== candidate.manifest_digest)
+    throw new AdministrationProblem(409, "candidate_artifact_invalid", "Inspection integrity receipt is not bound to this candidate manifest.");
   const counts = (
     await gameCandidateInspectionCountsStatement(database, candidateId).all<{
       kind: string;
@@ -461,6 +477,7 @@ export async function inspectGameCandidateReadiness(
     ready: reason === null,
     reason,
     approval_scope: "whole_candidate",
+    integrity: value.integrity,
     counts: value.counts,
     record_count: value.record_count,
     evidence_counts: Object.fromEntries(

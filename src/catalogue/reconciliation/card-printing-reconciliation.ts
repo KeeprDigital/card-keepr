@@ -1753,6 +1753,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       const failed = await persistBlockedCandidate(database, {
         runId,
         independentGame: run.supported_game !== null,
+        printingImageObjects,
         partitions: retained.partitions,
         plans,
         diagnostics: stableDiagnostics,
@@ -1831,6 +1832,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       const failed = await persistBlockedCandidate(database, {
         runId,
         independentGame: run.supported_game !== null,
+        printingImageObjects,
         partitions: retained.partitions,
         plans,
         diagnostics,
@@ -1883,6 +1885,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     await persistReviewableCandidate(database, {
       runId,
       independentGame: run.supported_game !== null,
+      printingImageObjects,
       partitions: retained.partitions,
       plans,
       warnings,
