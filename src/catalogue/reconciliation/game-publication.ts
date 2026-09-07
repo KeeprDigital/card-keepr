@@ -107,7 +107,7 @@ export async function approveGamePublication(
         approval: canonicalJson(document),
       }),
     ]);
-  } catch (error) {
+  } catch {
     const winner = await replay();
     if (winner) return winner;
     throw new AdministrationProblem(
@@ -228,7 +228,7 @@ export async function startGamePublication(
         await inspectPublication(env.CATALOGUE_DB, approval.id),
       );
       break;
-    } catch (error) {
+    } catch {
       if (attempt === 2)
         await pauseGamePublication(
           env.CATALOGUE_DB,
@@ -296,7 +296,7 @@ export async function resumeGamePublication(
         at,
       ),
     );
-  } catch (error) {
+  } catch {
     const winner = await publicationResumeAction(env.CATALOGUE_DB, input.idempotency_key).first<{
       request_json: string;
     }>();

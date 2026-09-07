@@ -1,10 +1,15 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 
-export function nativeRevisionStatement(db: CatalogueStore, revision: string | null, queryable = true) {
+export function nativeRevisionStatement(
+  db: CatalogueStore,
+  revision: string | null,
+  queryable = true,
+  nativeOnly = true,
+) {
   return repositoryStatements(db)
-    .prepare(`SELECT r.id,r.published_at,r.content_digest,(SELECT state FROM catalogue_query_revisions WHERE catalogue_revision_id=r.id) AS query_state FROM catalogue_revisions r
+    .prepare(`SELECT r.id,r.published_at,r.content_digest,r.publication_operation_id,(SELECT state FROM card_search_fts_state WHERE singleton=1) AS search_state,(SELECT state FROM catalogue_query_revisions WHERE catalogue_revision_id=r.id) AS query_state FROM catalogue_revisions r
  ${queryable ? "JOIN catalogue_query_revisions q ON q.catalogue_revision_id=r.id AND q.state='available'" : ""}
- WHERE r.id=COALESCE(?,(SELECT current_revision_id FROM catalogue_state WHERE singleton=1)) AND r.publication_operation_id IS NOT NULL`)
+ WHERE r.id=COALESCE(?,(SELECT current_revision_id FROM catalogue_state WHERE singleton=1)) ${nativeOnly ? "AND r.publication_operation_id IS NOT NULL" : ""}`)
     .bind(revision);
 }
 export function composedDocumentStatement(db: CatalogueStore, revision: string, kind: string, id: string) {
@@ -103,7 +108,7 @@ export function composedCollectionStatement(
  WHERE ${conditions.join(" AND ")} ORDER BY e.sort1,e.sort2,e.sort3,e.sort4,e.sort5,e.entity_id LIMIT ?),
  sized AS (SELECT *,sum(record_bytes) OVER(ORDER BY sort1,sort2,sort3,sort4,sort5,entity_id) response_bytes FROM page)
  SELECT e.entity_id,json_array(e.sort1,e.sort2,e.sort3,e.sort4,e.sort5,e.entity_id) AS position,e.candidate_id,e.preparation_id,
- m.game_revision_id,CASE WHEN e.response_bytes<=4000000 THEN b.content ELSE NULL END AS content
+ m.game_revision_id,(SELECT json_group_array(entity_id) FROM (SELECT entity_id FROM publication_read_entities printing WHERE printing.candidate_id=e.candidate_id AND printing.kind='printings' AND printing.card_id=e.entity_id ORDER BY entity_id)) AS printing_ids,CASE WHEN e.response_bytes<=4000000 THEN b.content ELSE NULL END AS content
  FROM sized e JOIN catalogue_composition_games m ON m.candidate_id=e.candidate_id AND m.catalogue_revision_id=?
  JOIN publication_projection_batches b ON b.candidate_id=e.candidate_id AND b.ordinal=e.batch_ordinal
  WHERE e.response_bytes-e.record_bytes<4000000 ORDER BY e.sort1,e.sort2,e.sort3,e.sort4,e.sort5,e.entity_id`)

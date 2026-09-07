@@ -101,6 +101,8 @@ export function publicationSwitchGuard(
  AND active_recovery_id IS NULL AND recovery_restore_guard='clear' AND active_production_release_id IS NULL)
  THEN json_extract('{}','recovery_not_verified')
  WHEN (SELECT current_revision_id FROM catalogue_state WHERE singleton=1)<>?3 THEN json_extract('{}','publication_composition_conflict')
+ WHEN ?3<>'catrev_spine_000' AND NOT EXISTS(SELECT 1 FROM catalogue_composition_games WHERE catalogue_revision_id=?3)
+ THEN json_extract('{}','publication_legacy_composition_unprepared')
  WHEN ?3<>'catrev_spine_000' AND NOT EXISTS(SELECT 1 FROM catalogue_backup_attempts WHERE catalogue_revision_id=?3
  AND state='verified' AND d1_bookmark IS NOT NULL AND manifest_sha256 IS NOT NULL) THEN json_extract('{}','publication_backup_pending')
  WHEN NOT EXISTS(SELECT 1 FROM verified_publication_compositions WHERE sha256=?4)

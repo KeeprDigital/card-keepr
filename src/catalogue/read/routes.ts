@@ -28,7 +28,10 @@ export const catalogueRoutes = [
   ),
   route<Context>("GET", "/v1/cards", async ({ env, request, base }) =>
     nativeOrLegacy(
-      () => compositionEntityResponse(env.CATALOGUE_DB, request, base, "cards"),
+      () =>
+        compositionEntityResponse(env.CATALOGUE_DB, request, base, "cards", undefined, (revision) =>
+          cardCollectionResponse(env.CATALOGUE_DB, request, base, revision),
+        ),
       () => cardCollectionResponse(env.CATALOGUE_DB, request, base),
     ),
   ),

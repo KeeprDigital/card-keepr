@@ -1,3 +1,5 @@
+import { installLegacyCurrentHead, restoreFixtureSpine } from "./query-helpers/atomic-publication";
+import { admitSyntheticCurrentCheckpoint, currentGameMembers } from "./query-helpers/atomic-publication";
 import { rejectedAtomicSwitch, publicationStateSnapshot } from "./query-helpers/atomic-publication";
 import { expect, test } from "vitest";
 import { collect, get, post, installReconciliationSuite, requiredString, testEnv } from "./reconciliation-helpers";
@@ -83,6 +85,13 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
     expect(await publicationStateSnapshot(testEnv.CATALOGUE_DB)).toEqual(before);
     expect((await get(`/v1/publications/${approved.document.id}`)).document.state).toBe("approved");
   }
+  await installLegacyCurrentHead(testEnv.CATALOGUE_DB, source.id);
+  const legacyBefore = await publicationStateSnapshot(testEnv.CATALOGUE_DB);
+  await expect(
+    rejectedAtomicSwitch(testEnv.CATALOGUE_DB, { ...switchInput, predecessor: "catrev_legacy_guard" }),
+  ).rejects.toThrow("publication_legacy_composition_unprepared");
+  expect(await publicationStateSnapshot(testEnv.CATALOGUE_DB)).toEqual(legacyBefore);
+  await restoreFixtureSpine(testEnv.CATALOGUE_DB);
   const switched = await post(`/v1/publications/${approved.document.id}/advance`, { generation: 0 });
   expect(switched.response.status, JSON.stringify(switched.document)).toBe(200);
   expect(switched.document).toMatchObject({
@@ -160,4 +169,75 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
   expect((await get(`/v1/publications/${approved.document.id}`)).document.resulting_revision_id).toBe(
     switched.document.resulting_revision_id,
   );
+  const otherSource = await collect("/reconciliation/profile-fusion-world", "atomic-fusion-source", {
+    game: "fusion-world",
+    lineage: "fusion-world-en",
+    adapter: "fixture-fusion-world-json@2",
+  });
+  let other = (
+    await post("/v1/game-candidates", {
+      ingestion_run_id: otherSource.id,
+      supported_game: "fusion-world",
+      expected_game_revision_id: "catrev_spine_000",
+      idempotency_key: "atomic-fusion-candidate",
+    })
+  ).document;
+  const otherDeadline = Date.now() + 15000;
+  while (other.state === "preparing" && Date.now() < otherDeadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    other = (await get(`/v1/game-candidates/${other.id}`)).document;
+  }
+  expect(other.state, JSON.stringify(other)).toBe("sealed");
+  const otherApproval = await post("/v1/publications", {
+    candidate_id: other.id,
+    manifest_digest: other.manifest_digest,
+    expected_game_revision_id: "catrev_spine_000",
+    generation: other.generation,
+    idempotency_key: "atomic-fusion-approval",
+  });
+  expect(otherApproval.response.status).toBe(202);
+  const otherPath = `/v1/game-candidates/${other.id}/publication-preparation`;
+  let otherPrepared = (
+    await post(otherPath, {
+      manifest_digest: other.manifest_digest,
+      generation: 0,
+      sequence: 0,
+      idempotency_key: "other-artifacts",
+    })
+  ).document;
+  for (let unit = 0; otherPrepared.state === "preparing" && unit < 250; unit++)
+    otherPrepared = (
+      await post(otherPath, {
+        manifest_digest: other.manifest_digest,
+        generation: 0,
+        sequence: otherPrepared.sequence,
+        idempotency_key: `other-artifacts-${unit}`,
+      })
+    ).document;
+  expect(otherPrepared.state).toBe("verified");
+  expect((await post(`/v1/publications/${otherApproval.document.id}/advance`, { generation: 0 })).document.state).toBe(
+    "waiting_backup",
+  );
+  const initialMembers = (await currentGameMembers(testEnv.CATALOGUE_DB)).results;
+  await admitSyntheticCurrentCheckpoint(testEnv.CATALOGUE_DB);
+  await Promise.all([
+    post(`/v1/publications/${secondApproval.document.id}/advance`, { generation: 1 }),
+    post(`/v1/publications/${otherApproval.document.id}/advance`, { generation: 0 }),
+  ]);
+  await admitSyntheticCurrentCheckpoint(testEnv.CATALOGUE_DB);
+  for (const [operation, generation] of [
+    [secondApproval.document.id, 1],
+    [otherApproval.document.id, 0],
+  ] as const) {
+    const result = await post(`/v1/publications/${operation}/advance`, { generation });
+    expect(result.document.state, JSON.stringify(result.document)).toBe("published");
+  }
+  const members = (await currentGameMembers(testEnv.CATALOGUE_DB)).results;
+  expect(members).toHaveLength(2);
+  expect(members.find((member) => member.supported_game === "one-piece")).toMatchObject({
+    candidate_id: second.id,
+    card_ids: initialMembers[0]!.card_ids,
+  });
+  expect(members.find((member) => member.supported_game === "fusion-world")).toMatchObject({ candidate_id: other.id });
+  expect((await get(`/v1/publications/${otherApproval.document.id}`)).document.deadline).toBe(other.deadline);
 });

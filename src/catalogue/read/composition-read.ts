@@ -30,9 +30,17 @@ import {
   nativeRevisionStatement,
 } from "./composition-read-repository";
 
-type Revision = { id: string; published_at: string; content_digest: string; query_state: string };
+type Revision = {
+  id: string;
+  published_at: string;
+  content_digest: string;
+  query_state: string;
+  publication_operation_id: string | null;
+  search_state: string;
+};
 export type DocumentRow = {
   entity_id?: string;
+  printing_ids?: string;
   position?: string;
   candidate_id: string;
   preparation_id: string;
@@ -55,6 +63,12 @@ async function hydrate(db: CatalogueStore, row: DocumentRow): Promise<Value> {
     value: Value;
     text_parts: { path: (string | number)[]; sha256: string; chunks: number; byte_length: number }[];
   };
+  if (
+    new TextEncoder().encode(row.content).byteLength +
+      envelope.text_parts.reduce((bytes, part) => bytes + part.byte_length, 0) >
+    4_000_000
+  )
+    throw new ReadProblem(503, "catalogue_query_unavailable", "The requested entity exceeds its response budget.");
   for (const part of envelope.text_parts) {
     if (part.byte_length > 4_000_000)
       throw new ReadProblem(503, "catalogue_query_unavailable", "The requested entity exceeds its response budget.");
@@ -104,7 +118,9 @@ async function representation(db: CatalogueStore, revision: Revision, kind: stri
   const type = kind === "cards" ? "card" : kind === "printings" ? "printing" : "product";
   const data: Value = { type, ...value, links: { self: `/v1/${kind}/${id}` } };
   if (kind === "cards")
-    data.printing_ids = (await related(db, revision.id, "printings", "card_id", id)).map((v) => v.id);
+    data.printing_ids = row.printing_ids
+      ? JSON.parse(row.printing_ids)
+      : (await related(db, revision.id, "printings", "card_id", id)).map((v) => v.id);
   if (kind === "printings") {
     const images = await related(db, revision.id, "printing_images", "printing_id", id);
     data.printing_images = images.map((image) => ({
@@ -120,12 +136,23 @@ async function representation(db: CatalogueStore, revision: Revision, kind: stri
     const relationships = await related(db, revision.id, "product_relationships", "from.id", id);
     const products: Value[] = [];
     const contexts: Value[] = [];
+    let targetBytes = 0;
     for (const relation of relationships) {
       const to = relation.to as { id: string };
       if (relation.kind !== "printing-product" && relation.kind !== "printing-distribution-context") continue;
       const targetKind = relation.kind === "printing-product" ? "products" : "distribution_contexts";
       const target = await composedDocumentStatement(db, revision.id, targetKind, to.id).first<DocumentRow>();
-      if (target) (targetKind === "products" ? products : contexts).push(await hydrate(db, target));
+      if (target) {
+        const document = await hydrate(db, target);
+        targetBytes += new TextEncoder().encode(JSON.stringify(document)).byteLength;
+        if (targetBytes > 4_000_000)
+          throw new ReadProblem(
+            503,
+            "catalogue_query_unavailable",
+            "The requested Printing relationships exceed their response budget.",
+          );
+        (targetKind === "products" ? products : contexts).push(document);
+      }
     }
     data.products = products;
     data.distribution_contexts = contexts;
@@ -146,21 +173,9 @@ export async function compositionEntityResponse(
   base: PublicBase,
   kind: string,
   id?: string,
+  legacy?: (revision: { id: string; published_at: string }) => Promise<Response>,
 ): Promise<Response | null | undefined> {
   const url = new URL(request.url);
-  const raw = url.searchParams.get("after");
-  const cursor = raw
-    ? (decodeCursor(raw) as {
-        contract?: string;
-        revision_id?: string;
-        after?: string;
-        filters?: string;
-        limit?: number;
-      })
-    : null;
-  if (cursor && cursor.contract !== "card-keepr-composition-cursor@1") return undefined;
-  if (cursor && url.searchParams.has("revision") && url.searchParams.get("revision") !== cursor.revision_id)
-    throw new ReadProblem(400, "invalid_cursor", "The revision must match the cursor's pinned composition.");
   if (id !== undefined) collectionParameters(url, ["include", "revision"]);
   if (id === undefined)
     collectionParameters(url, [
@@ -176,11 +191,29 @@ export async function compositionEntityResponse(
       "revision",
       ...Array.from(url.searchParams.keys()).filter((k) => kind === "cards" && k.startsWith("attribute.")),
     ]);
+  const raw = url.searchParams.get("after");
+  const cursor = raw
+    ? (decodeCursor(raw) as {
+        contract?: string;
+        revision_id?: string;
+        after?: string;
+        filters?: string;
+        limit?: number;
+      })
+    : null;
+  if (cursor && cursor.contract !== "card-keepr-composition-cursor@1") return undefined;
+  if (cursor && url.searchParams.has("revision") && url.searchParams.get("revision") !== cursor.revision_id)
+    throw new ReadProblem(400, "invalid_cursor", "The revision must match the cursor's pinned composition.");
   const limit = collectionLimit(url.searchParams.get("limit"));
   const filters = { ...emptyFilters };
   for (const key of Object.keys(filters) as (keyof ComposedFilters)[]) {
     if (key !== "attributes") filters[key] = collectionFilter(url, key);
   }
+  for (const field of ["game", "card_number"] as const)
+    if (filters[field] !== null) {
+      filters[field] = filters[field].normalize("NFC").trim();
+      if (!filters[field]) throw invalidParameter(field, `${field} must contain at least one character.`);
+    }
   if (filters.game !== null && !["one-piece", "fusion-world", "digimon", "gundam"].includes(filters.game))
     throw invalidParameter("game", "game is not a Supported Game.");
   if (
@@ -208,12 +241,16 @@ export async function compositionEntityResponse(
     }
   if (Object.keys(attributes).length) filters.attributes = attributes;
   const pinned = url.searchParams.get("revision") ?? cursor?.revision_id ?? null;
-  const revision = await nativeRevisionStatement(db, pinned, false).first<Revision>();
+  const revision = await nativeRevisionStatement(db, pinned, false, !legacy).first<Revision>();
   if (!revision) {
     if (cursor?.contract === "card-keepr-composition-cursor@1")
       throw new ReadProblem(409, "cursor_revision_unavailable", "The cursor Catalogue Revision is unavailable.", null, {
         extensions: { links: { collection: publicUrl(base, url.pathname) } },
       });
+    return undefined;
+  }
+  if (!revision.publication_operation_id) {
+    if (legacy && revision.query_state === "available" && revision.search_state === "ready") return legacy(revision);
     return undefined;
   }
   if (revision.query_state !== "available")
@@ -338,7 +375,7 @@ export async function compositionEntityResponse(
     data,
     meta: { catalogue_revision_id: revision.id, published_at: revision.published_at },
     page: { limit, next_cursor: next },
-    links: { self: publicUrl(base, url.pathname + "?" + canonical.toString()) },
+    links: { self: publicUrl(base, `${url.pathname}?${canonical.toString()}`) },
   });
 }
 

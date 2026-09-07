@@ -172,6 +172,15 @@ test("one owner CLI start verifies native artifacts without exposing any unfinis
   assert.equal(detail.status, 200, JSON.stringify(detail));
   assert.equal(detail.body.data.name, cards.records[0].name);
   assert.ok(detail.body.included.length > 0);
+  const rarity = detail.body.included.find((printing) => printing.rarity?.normalized)?.rarity.normalized;
+  assert.ok(rarity, "Synthetic publisher provides a normalized Printing rarity.");
+  const filteredCards = await consumer(`/v1/cards?game=digimon&rarity=${encodeURIComponent(rarity)}`);
+  assert.equal(filteredCards.status, 200, JSON.stringify(filteredCards));
+  assert.ok(filteredCards.body.data.some((card) => card.id === cards.records[0].id));
+  const filteredPrintings = await consumer(`/v1/printings?game=digimon&rarity=${encodeURIComponent(rarity)}`);
+  assert.equal(filteredPrintings.status, 200, JSON.stringify(filteredPrintings));
+  assert.ok(filteredPrintings.body.data.some((printing) => printing.card_id === cards.records[0].id));
+
   assert.equal(
     (await consumer(`/v1/cards?game=digimon&q=${encodeURIComponent(cards.records[0].name)}`)).body.data.length > 0,
     true,
