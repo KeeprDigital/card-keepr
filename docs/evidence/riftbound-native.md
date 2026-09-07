@@ -213,3 +213,21 @@ failed status, another retry key and other nonzero codes are rejected by a
 focused regression. On continuation it inspects the existing retry, validates and invokes its
 advertised resume body with the same identity if active, then polls it without
 allocating another retry. Consumer and restoration proof remain pending.
+
+Frozen commit `725b073` reached the bounded 120-second backup poll deadline
+(238.37 seconds total including evidence/admission reinspection). The existing
+attempt still reported `exporting`, no failure, no exported byte count. The
+revised SQLite export helper was never invoked. All runtimes stopped.
+
+Offline inspection of the local Workflow SQLite decodes `ENGINE_STATUS` as
+Running (1). Its entire history still contains only four events ending at the
+first step attempt start, `2026-09-07 21:08:44.808`, from the preceding run. No
+events were added during the exact-identity resume. The installed Miniflare
+status method reads that persisted state. The shipped Workflow driver correctly
+observes an existing Running instance and invokes resume only for Paused state;
+a runtime-free invocation confirms neither create nor resume is called for
+Running. This local interrupted-Workflow limitation prevents this retained
+attempt from supplying completion evidence through the available owner path.
+There is no claim that a production Workflow has this limitation. No ledger or
+Workflow metadata was altered. A fresh corrected native journey is required;
+continued polling or another retry identity is not a substitute.
