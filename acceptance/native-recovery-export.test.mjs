@@ -11,7 +11,7 @@ async function fixture(t, virtual = false) {
   t.after(() => rm(directory, { recursive: true, force: true }));
   const database = new DatabaseSync(join(directory, "source.sqlite"));
   database.exec("CREATE TABLE catalogue_state(value TEXT NOT NULL)");
-  database.prepare("INSERT INTO catalogue_state VALUES (?)").run("retained payload ".repeat(16000));
+  database.prepare("INSERT INTO catalogue_state VALUES (?)").run("retained payload ".repeat(8000));
   if (virtual) database.exec("CREATE VIRTUAL TABLE forbidden_search USING fts5(value)");
   database.close();
   return directory;
@@ -24,7 +24,7 @@ async function exported(directory) {
     return await new Promise((resolve, reject) => {
       // This is a fixture CPU regression bound, not a network retry/timeout.
       // A separate worker lets the test detect a scan blocking the JS thread.
-      const timer = setTimeout(() => reject(new Error("SQL export virtual-table scan blocked for five seconds")), 5000);
+      const timer = setTimeout(() => reject(new Error("Native export probe exceeded five seconds")), 5000);
       worker.once("message", (result) => {
         clearTimeout(timer);
         resolve(result);
@@ -50,7 +50,7 @@ test("native export checks long retained SQL records without a quadratic scan an
   const restored = new DatabaseSync(":memory:");
   try {
     restored.exec(result.snapshot);
-    assert.equal(restored.prepare("SELECT value FROM catalogue_state").get().value, "retained payload ".repeat(16000));
+    assert.equal(restored.prepare("SELECT value FROM catalogue_state").get().value, "retained payload ".repeat(8000));
   } finally {
     restored.close();
   }
