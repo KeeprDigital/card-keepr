@@ -9,6 +9,7 @@ export class ReconciliationContinuation extends Error {
         | "input_verification"
         | "prior_state"
         | "initial_warnings"
+        | "entity_admissions"
         | "official_reduction"
         | "official_errata"
         | "official_assembly"

@@ -377,14 +377,16 @@ export async function reconcileRetainedCardPrintingEvidence(
   if (!reduction) await pinCorrectionDecisions(database, runId, JSON.parse(run.selected_games_json) as string[]);
   const correctedCardIdentity = await pinnedCardIdentityResolver(database, runId);
   if (!reduction) await pinEntityAdmissions(database, runId, JSON.parse(run.selected_games_json) as string[]);
-  const admittedEntities = await applyPinnedEntityAdmissions(
-    database,
-    runId,
-    cards,
-    printings,
-    sourceWarnings,
-    reduction?.value.admissions,
-  );
+  let admittedEntities: Awaited<ReturnType<typeof applyPinnedEntityAdmissions>>;
+  try {
+    admittedEntities = await applyPinnedEntityAdmissions(database, runId, cards, printings, sourceWarnings, {
+      cursor: reduction?.value.admissions,
+      yieldAtCheckpoint,
+    });
+  } catch (error) {
+    if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
+    throw error;
+  }
   const targetedCardIds = new ReconciliationReducerIndex<boolean>(database, runId, "erratum_target_cards");
   const targetedPrintingIds = new ReconciliationReducerIndex<boolean>(database, runId, "erratum_target_printings");
   const cardCheckTimes = new Map<SupportedGame, string>(reduction?.value.cardCheckTimes);

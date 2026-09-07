@@ -1,3 +1,5 @@
+import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
+import { ReconciliationContinuation } from "./reconciliation-continuation";
 import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
 import type { ReconciliationRecordSink } from "./reconciliation-record-collection";
 import { admissionPolicyDigest } from "./entity-admission-source";
@@ -44,17 +46,32 @@ export type AdmittedEntity = {
   warnings: Record<string, unknown>[];
 };
 type AdmissionEntityIndex<T> = {
+  readonly position: number;
+  resumeAt(position: number): void;
   has(id: string): boolean | Promise<boolean>;
   set(id: string, value: T): unknown;
   beginObservation?(): void;
+};
+type AdmissionCursor = {
+  after: string;
+  cards: number;
+  printings: number;
+  cardPosition: number;
+  printingPosition: number;
+  warnings: { position: number; count: number };
+  processedDecisions: number;
+  complete: boolean;
 };
 export async function applyPinnedEntityAdmissions(
   database: CatalogueStore,
   runId: string,
   cards: AdmissionEntityIndex<CatalogueCard>,
   printings: AdmissionEntityIndex<CataloguePrinting>,
-  warnings: ReconciliationRecordSink<Record<string, unknown>>,
-  cursor?: { cards: number; printings: number },
+  warnings: ReconciliationRecordSink<Record<string, unknown>> & {
+    readonly cursor: { position: number; count: number };
+    resumeAt(cursor: { position: number; count: number }): void;
+  },
+  options: { cursor?: { cards: number; printings: number }; yieldAtCheckpoint: boolean },
 ) {
   let after = "";
   const admittedCards = new ReconciliationReducerIndex<boolean>(database, runId, "admitted_card_ids");
@@ -68,13 +85,43 @@ export async function applyPinnedEntityAdmissions(
     hasCard: (id: string) => (cardCount === 0 ? false : admittedCards.has(id)),
     hasPrinting: (id: string) => (printingCount === 0 ? false : admittedPrintings.has(id)),
   };
-  if (cursor) {
-    admittedCards.resumeAt(cursor.cards);
-    admittedPrintings.resumeAt(cursor.printings);
-    cardCount = cursor.cards;
-    printingCount = cursor.printings;
+  if (options.cursor) {
+    admittedCards.resumeAt(options.cursor.cards);
+    admittedPrintings.resumeAt(options.cursor.printings);
+    cardCount = options.cursor.cards;
+    printingCount = options.cursor.printings;
     return admitted;
   }
+  const checkpoint = await reconciliationCheckpoint<AdmissionCursor>(database, runId, "entity_admissions");
+  let processedDecisions = checkpoint?.value.processedDecisions ?? 0;
+  let ordinal = (checkpoint?.ordinal ?? -1) + 1;
+  if (checkpoint) {
+    after = checkpoint.value.after;
+    cardCount = checkpoint.value.cards;
+    printingCount = checkpoint.value.printings;
+    admittedCards.resumeAt(cardCount);
+    admittedPrintings.resumeAt(printingCount);
+    cards.resumeAt(checkpoint.value.cardPosition);
+    printings.resumeAt(checkpoint.value.printingPosition);
+    warnings.resumeAt(checkpoint.value.warnings);
+    if (checkpoint.value.complete) return admitted;
+  }
+  const save = async (complete: boolean) => {
+    await retainReconciliationCheckpoint(database, runId, "entity_admissions", ordinal, {
+      after,
+      cards: cardCount,
+      printings: printingCount,
+      cardPosition: cards.position,
+      printingPosition: printings.position,
+      warnings: warnings.cursor,
+      processedDecisions,
+      complete,
+    } satisfies AdmissionCursor);
+    if (options.yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "entity_admissions", ordinal });
+    ordinal++;
+  };
+  let records = 0,
+    bytes = 0;
   while (true) {
     const rows = (
       await pinnedAdmissionsStatement(database, runId, after).all<
@@ -86,50 +133,66 @@ export async function applyPinnedEntityAdmissions(
       >()
     ).results;
     for (const row of rows) {
-      cards.beginObservation?.();
-      printings.beginObservation?.();
-      if (row.action !== "admit" && row.action !== "link") {
-        await warnings.push({
-          code: "entity_proposal_excluded",
-          proposal_id: row.id,
-          generation: row.generation,
-          detail: `Entity Proposal ${row.id} is ${row.action === "reject" ? "owner-rejected" : "unresolved"} and excluded from this candidate.`,
-        });
-        continue;
+      const size = new TextEncoder().encode(canonicalJson(row)).byteLength;
+      if (records > 0 && (records === 4 || bytes + size > 512000)) {
+        await save(false);
+        records = 0;
+        bytes = 0;
       }
-      const decision = JSON.parse(row.decision_json!) as AdmittedEntity & { policy_digest?: string };
-      if (decision.policy_digest !== (await admissionPolicyDigest(row.source_lineage, decision.card.game_data.profile)))
-        await warnings.push({
-          code: "entity_admission_reassessment_required",
-          proposal_id: row.id,
-          generation: row.generation,
-          detail: `Entity Proposal ${row.id} was admitted under changed requirements. Reassess the accepted identity; policy change alone does not remove it.`,
-        });
-      if (!decision.linked) {
-        if (!(await cards.has(decision.card.id))) await cards.set(decision.card.id, decision.card);
-        if (decision.printing && !(await printings.has(decision.printing.id)))
-          await printings.set(decision.printing.id, decision.printing);
+      admission: {
+        cards.beginObservation?.();
+        printings.beginObservation?.();
+        if (row.action !== "admit" && row.action !== "link") {
+          await warnings.push({
+            code: "entity_proposal_excluded",
+            proposal_id: row.id,
+            generation: row.generation,
+            detail: `Entity Proposal ${row.id} is ${row.action === "reject" ? "owner-rejected" : "unresolved"} and excluded from this candidate.`,
+          });
+          break admission;
+        }
+        const decision = JSON.parse(row.decision_json!) as AdmittedEntity & { policy_digest?: string };
+        if (
+          decision.policy_digest !== (await admissionPolicyDigest(row.source_lineage, decision.card.game_data.profile))
+        )
+          await warnings.push({
+            code: "entity_admission_reassessment_required",
+            proposal_id: row.id,
+            generation: row.generation,
+            detail: `Entity Proposal ${row.id} was admitted under changed requirements. Reassess the accepted identity; policy change alone does not remove it.`,
+          });
+        if (!decision.linked) {
+          if (!(await cards.has(decision.card.id))) await cards.set(decision.card.id, decision.card);
+          if (decision.printing && !(await printings.has(decision.printing.id)))
+            await printings.set(decision.printing.id, decision.printing);
+        }
+        await admittedCards.seed(decision.card.id, true);
+        cardCount++;
+        if (decision.printing) {
+          await admittedPrintings.seed(decision.printing.id, true);
+          printingCount++;
+        }
+        await warnings.push(
+          {
+            code: "entity_admission",
+            proposal_id: row.id,
+            generation: row.generation,
+            card_id: decision.card.id,
+            printing_id: decision.printing?.id ?? null,
+            detail: `Entity Proposal ${row.id} admitted by immutable decision ${row.generation}; candidate approval is still required.`,
+          },
+          ...decision.warnings,
+        );
       }
-      await admittedCards.seed(decision.card.id, true);
-      cardCount++;
-      if (decision.printing) {
-        await admittedPrintings.seed(decision.printing.id, true);
-        printingCount++;
-      }
-      await warnings.push(
-        {
-          code: "entity_admission",
-          proposal_id: row.id,
-          generation: row.generation,
-          card_id: decision.card.id,
-          printing_id: decision.printing?.id ?? null,
-          detail: `Entity Proposal ${row.id} admitted by immutable decision ${row.generation}; candidate approval is still required.`,
-        },
-        ...decision.warnings,
-      );
+      after = row.id;
+      processedDecisions++;
+      records++;
+      bytes += size;
     }
-    if (rows.length === 0) return admitted;
-    after = rows.at(-1)!.id;
+    if (rows.length === 0) {
+      await save(true);
+      return admitted;
+    }
   }
 }
 

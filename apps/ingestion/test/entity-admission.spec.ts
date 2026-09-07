@@ -1,5 +1,6 @@
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { expect, test } from "vitest";
+import { runReconciliationWorkflow } from "../src/reconciliation-workflow";
 import {
   installReconciliationSuite,
   post,
@@ -151,6 +152,105 @@ test("owner admission enters the next candidate and consumer catalogue only afte
         name: "Synthetic owner card",
         official_identity: { kind: "unknown", value: null },
       }),
+    ]),
+  );
+});
+
+test("owner admissions enter a candidate through inspectable bounded preparation groups", async () => {
+  for (let index = 0; index < 32; index++) {
+    const created = await post("/v1/entity-proposals", {
+      game: "one-piece",
+      source_lineage: "owner",
+      reference: `bounded-admission-${index}`,
+      content: { card: { ...syntheticCard, name: `Synthetic admitted Card ${index}` } },
+      evidence: { attestation: "Synthetic personal inspection." },
+      idempotency_key: `bounded-proposal-${index}`,
+    });
+    expect(created.response.status).toBe(201);
+    expect(
+      (
+        await post(`/v1/entity-proposals/${created.document.id}/decisions`, {
+          action: "admit",
+          expected_generation: "0",
+          rationale: "Inspected synthetic fixture",
+          idempotency_key: `bounded-admit-${index}`,
+        })
+      ).response.status,
+    ).toBe(200);
+  }
+  const run = await collect("/reconciliation/card-without-printing", "bounded-admission-publish");
+  let calls = 0;
+  const admissionCalls: number[] = [];
+  const wrap = (statement: D1PreparedStatement): D1PreparedStatement =>
+    new Proxy(statement, {
+      get(target, property) {
+        if (property === "bind") return (...values: unknown[]) => wrap(target.bind(...values));
+        const value = Reflect.get(target, property);
+        if (["run", "first", "all", "raw"].includes(String(property)))
+          return (...args: unknown[]) => {
+            calls++;
+            return Reflect.apply(value, target, args);
+          };
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  const database = new Proxy(testEnv.CATALOGUE_DB, {
+    get(target, property) {
+      if (property === "prepare") return (sql: string) => wrap(target.prepare(sql));
+      if (property === "batch")
+        return (...args: Parameters<D1Database["batch"]>) => {
+          calls++;
+          return target.batch(...args);
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  await runReconciliationWorkflow(
+    { ...testEnv, CATALOGUE_DB: database },
+    {
+      payload: {
+        ingestion_run_id: run.id,
+        expected_current_revision_id: String(run.document.expected_current_revision_id),
+        idempotency_key: `reconcile-${run.id}`,
+        observed_at: new Date().toISOString(),
+        generation: 0,
+      },
+    } as import("cloudflare:workers").WorkflowEvent<
+      import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+    >,
+    {
+      do: async (_name: string, _config: unknown, callback: () => Promise<string>) => {
+        calls = 0;
+        const result = await callback();
+        if (JSON.parse(result).continuation?.phase === "entity_admissions") admissionCalls.push(calls);
+        return result;
+      },
+    } as unknown as import("cloudflare:workers").WorkflowStep,
+  );
+  expect(admissionCalls.length).toBeGreaterThanOrEqual(8);
+  expect(Math.max(...admissionCalls)).toBeLessThanOrEqual(100);
+  const candidate = await get(`/v1/ingestion-runs/${run.id}/candidate`);
+  expect(candidate.response.status, JSON.stringify(candidate.document)).toBe(200);
+  const partitions = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions`)).document.partitions as {
+    kind: string;
+    record_count: number;
+  }[];
+  expect(partitions.filter(({ kind }) => kind === "cards").reduce((sum, part) => sum + part.record_count, 0)).toBe(33);
+  const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+  const checkpoint = (status.checkpoints as { phase: string; ordinal: number; cursor: unknown }[]).find(
+    ({ phase }) => phase === "entity_admissions",
+  );
+  expect(checkpoint).toMatchObject({ cursor: { complete: true, processedDecisions: 32 } });
+  expect(checkpoint!.ordinal).toBeGreaterThanOrEqual(7);
+  const published = await approve(candidate.document);
+  expect(published.response.status).toBe(200);
+  const cards = await exportComponentRecords(String(published.document.resulting_revision_id), "cards");
+  expect(cards).toHaveLength(33);
+  expect(cards).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: "Synthetic admitted Card 0" }),
+      expect.objectContaining({ name: "Synthetic admitted Card 31" }),
     ]),
   );
 });
