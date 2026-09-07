@@ -1,33 +1,24 @@
 # Issue 231: retained One Piece verification
 
-The complete declared P-001 journey passed on 2026-09-08 (Australia/Melbourne).
-The tested working-tree code was committed unchanged as `bc3a739` after the run
-started. A later commit, `94fa729`, adds explicit API link/image-membership and
-restored WINNER image-byte assertions; those additional assertions were not part
-of this run and remain for final acceptance validation. Review also added a
-seven-to-six in-scope disappearance refresh, a durable-cursor regression, and
-optional-field retention checks. The earlier measurements below remain the
-unchanged results of the five-publication run; they do not measure these additions.
+The complete declared P-001 journey passed on 2026-09-08 (Australia/Melbourne)
+at frozen commit `a46aeb8`. This run includes the seven-to-six in-scope
+disappearance refresh, explicit consumer image-membership checks, and restored
+WINNER image-byte verification. The measurements below replace the earlier
+five-publication replay with this six-publication result.
 
-The final runtime-free domain suite passes 200 tests across 33 files. Static
-review fixes preserve unknown Limitless labels in the source sidecar, classify
-malformed source URLs/UTF-8 correctly, and keep P-001 registration facts in the
-One Piece module. The optional-field regression fails against the prior parser.
-Both Standards and Spec rechecks found no remaining actionable production-code
-finding; native and broad Worker/acceptance validation remain queued.
-
-The command was:
+The serial acceptance command was:
 
 ```sh
-KEEPR_P001_METRICS_PATH=/tmp/issue231-metrics.json \
-  node --test acceptance/one-piece-two-source.test.mjs
+KEEPR_P001_METRICS_PATH=/tmp/issue231-final-metrics.json \
+  node --test --test-concurrency=1 acceptance/*.test.mjs
 ```
 
-The single test passed in 589.0 seconds. It overlapped the Riftbound task's native
-intake on the shared host. Owner calls and polling were paced at 2.2 seconds to
-preserve the normal 30-per-minute administration limit. **These elapsed-time,
-CPU and memory observations are not capacity evidence.** No configured limit is
-substituted for a measurement. See the [raw measured report](issue-231-one-piece-measurements.json).
+The P-001 test passed in 703.0 seconds. Heavy runtime work was serialized under
+the coordinator's shared-host slot; peer static work could overlap. Owner calls
+and polling were paced at 2.2 seconds to preserve the normal 30-per-minute
+administration limit. **These elapsed-time, CPU and memory observations are not
+capacity evidence.** No configured limit is substituted for a measurement.
+See the [raw measured report](issue-231-one-piece-measurements.json).
 
 ## Functional evidence
 
@@ -44,10 +35,14 @@ The journey completed:
 - Explicit owner admission of the seven Bandai appearances and the distinct
   Limitless WINNER appearance, with a current-native-Card lookup and absent-target
   rejection. Seven reviewed cross-source pairs were linked to stable Printing IDs.
-- Five exact candidate approvals and verified backup checkpoints: base Printing,
-  eight appearances, linked source pairs, official-only refresh, and optional
-  Limitless outage. All refreshes preserved the eight IDs. The optional source
-  reported incomplete coverage with no successful-check or content-capture date.
+- Six exact candidate approvals and verified backup checkpoints: base Printing,
+  eight appearances, linked source pairs, official-only refresh, seven-to-six
+  Bandai scope refresh, and optional Limitless outage. The disappearance and
+  outage are synthetic fault injections; the retained Bandai capture contains
+  seven variants. All refreshes preserved
+  the eight IDs. The scope refresh reported only the missing P-001_p6 Printing
+  within the checked Card scope, without declaring the Card missing. The
+  optional source reported incomplete coverage with no successful-check or content-capture date.
 - Separate synthetic missing-identifier and conflicting-known-fact responses
   failed closed. The published catalogue remained readable with the same IDs.
 - Ordinary search, Card/Printing reads, all fifteen consumer image bytes against
@@ -56,7 +51,8 @@ The journey completed:
   not appear in the inspected public records.
 - A new API boot using the actual verification-import database after runtime
   shutdown. Its Printing export matched the original exactly, and its ordinary
-  WINNER Printing endpoint returned the same identity. Retained R2 objects were
+  WINNER Printing endpoint returned the same identity and exact image bytes.
+  Consumer links and image membership were also checked. Retained R2 objects were
   preserved through this local D1 restore.
 
 No global Bandai absence or physical finish was inferred. The supplemental-only
@@ -73,34 +69,34 @@ Bandai event publication corroborates the WINNER appearance.
 | Source catalogue records per complete two-source collection | 15 |
 | Final accepted Printings | 8 |
 | Final consumer Printing Images | 15 |
-| Response deliveries across the journey, including injected faults/retries | 165 |
-| Verified public export compressed bytes | 8,760 |
+| Response deliveries across the journey, including injected faults/retries | 174 |
+| Verified public export compressed bytes | 8,770 |
 | Verified public export uncompressed bytes | 11,256 |
 | Public export records / components, including catalogue metadata | 26 / 26 |
-| Retained SQLite table rows across the complete local database | 9,482 |
-| Allocated SQLite table pages, bytes | 12,812,288 |
-| Allocated named SQLite index pages, bytes | 1,921,024 |
-| Instrumented workflow step attempts | 3,877 |
-| Instrumented D1 statement preparations | 94,984 |
-| Instrumented D1 batch calls / submitted batch statements | 12,680 / 38,455 |
-| Sum of instrumented workflow elapsed durations | 93,976 ms |
+| Retained SQLite table rows across the complete local database | 11,862 |
+| Allocated SQLite table pages, bytes | 14,843,904 |
+| Allocated named SQLite index pages, bytes | 2,752,512 |
+| Instrumented workflow step attempts | 4,562 |
+| Instrumented D1 statement preparations | 118,623 |
+| Instrumented D1 batch calls / submitted batch statements | 15,322 / 46,694 |
+| Sum of instrumented workflow elapsed durations | 122,806 ms |
 
-These are whole-journey values: eight collection attempts, five publications,
+These are whole-journey values: nine collection attempts, six publications,
 retained abandoned/failed work and initial database data. They are not the cost
-of one ordinary refresh. Table/index allocation is 14,733,312 bytes, or 1,841,664
-bytes per final Printing for this journey. There are 1,185.25 retained table rows
-and 11,873 instrumented statement preparations per final Printing. Retained rows
+of one ordinary refresh. Table/index allocation is 17,596,416 bytes, or 2,199,552
+bytes per final Printing for this journey. There are 1,482.75 retained table rows
+and 14,827.875 instrumented statement preparations per final Printing. Retained rows
 are not a count of SQL writes; statement preparations and batch submissions are
 separate counters and must not be added as independent executions.
 
-The largest retained tables were reconciliation checkpoints (2,502 rows;
-2,420,736 allocated bytes), reducer state (2,080 rows; 2,379,776 bytes), publication
-preparation actions (750 rows; 1,536,000 bytes), and candidate partitions (183 rows;
-868,352 bytes). The raw report includes every table and named index measured by
+The largest retained tables were reconciliation checkpoints (2,921 rows;
+2,805,760 allocated bytes), reducer state (2,445 rows; 2,785,280 bytes), publication
+preparation actions (920 rows; 1,880,064 bytes), and candidate partitions (213 rows;
+1,007,616 bytes). The raw report includes every table and named index measured by
 SQLite `dbstat`. This measures D1 footprint, not the separate R2 object store.
 
-The Node test driver reported 59,065,645 user and 8,925,568 system CPU microseconds,
-and maximum RSS of 614,992 KiB. These exclude workerd and CLI processes and must
+The Node test driver reported 75,535,590 user and 11,579,138 system CPU microseconds,
+and maximum RSS of 525,184 KiB. These exclude workerd and CLI processes and must
 not be described as isolate CPU or peak memory. The coordinated capacity campaign
 owns those conclusions.
 
@@ -117,4 +113,29 @@ persisted-cursor regression correctly failed: SQLite rejected the standalone
 uses `scoped_printings` and `scoped_cards` stages within the existing
 `disappearance_warnings` phase. Its interrupted-stage regression covers six
 observed variants and a completely missing Card, retaining outside-scope records.
-The persisted regression and remaining broad validation are pending rerun.
+Both persisted cases passed at `ca14966` and again in the final affected-file run.
+
+The full ingestion suite at `ca14966` passed 685 tests and failed ten. Five
+failures exposed overly broad admission routing; a pinned adapter/coverage
+Printing admission policy now confines mandatory owner review to declared scopes.
+An owner-review scope accepts only an owner decision containing a Printing;
+prior automatic and Card-only decisions remain history without authorizing a
+new Printing. Five direct Worker regressions cover these distinctions.
+
+Four normalization expectation failures reproduced exactly on unchanged main
+`ea51172` (four failed, six passed). Its weighted image work budget already used
+`1 + 2 * images`; expectations and the injected outage boundary now match that
+budget while retaining total-record, no-reread continuation, and 100-call checks.
+The remaining threshold test passed on unchanged main in 19.7 seconds with its
+30-second deadline unchanged, and passed again on this branch.
+
+All seven complete affected Worker files passed at `a46aeb8`: 101 tests. The
+runtime-free domain suite passed 204 tests. Typechecking, changed-file lint,
+import cycles and catalogue boundaries passed. Standards and Spec reviews found
+no remaining actionable findings. The final serial acceptance run passed all
+245 tests with none skipped in 1,468.4 seconds (24 minutes 28 seconds) at the
+same frozen head.
+
+Formatting passes for all 43 files changed from main. The generic `--changed`
+formatter reports seven unchanged files, with the same seven failures reproduced
+on unchanged `ea51172`; these inherited formatting issues were not modified.

@@ -1,18 +1,19 @@
 {
   "contract": "card-keepr-local-p001-measurements@1",
   "scope": "Complete local acceptance journey; retained 2026-09-06 responses, simulated HTTP delivery and Cloudflare control plane, actual SQLite/export/import. No live-source freshness or production-capacity claim.",
-  "elapsed_ms": 587181.533083,
+  "concurrency": "Coordinator-serialized heavy validation; peer static work may overlap. Not a controlled workerd capacity campaign.",
+  "elapsed_ms": 700905.4775,
   "driver_only": {
     "cpu_microseconds": {
-      "user": 59065645,
-      "system": 8925568
+      "user": 75535590,
+      "system": 11579138
     },
-    "maximum_rss_kib": 614992,
+    "maximum_rss_kib": 525184,
     "limitation": "Node test driver only; excludes workerd and short-lived CLI processes. Workflow elapsed time is not CPU time."
   },
   "source": {
     "unique_responses": 26,
-    "response_deliveries_including_faults": 165,
+    "response_deliveries_including_faults": 174,
     "unique_entity_bytes": 3690112,
     "unique_original_header_bytes": 13185,
     "parsed_catalogue_records_per_complete_two_source_collection": 15,
@@ -20,1604 +21,1604 @@
   },
   "workflow": {
     "load retained hostname Workflow identities": {
-      "attempts": 8,
-      "elapsed_ms": 23,
-      "prepared_statements": 48,
-      "batch_calls": 16,
-      "batch_statements": 32
+      "attempts": 9,
+      "elapsed_ms": 29,
+      "prepared_statements": 54,
+      "batch_calls": 18,
+      "batch_statements": 36
     },
     "load pending evidence page 0 barrier 0": {
-      "attempts": 8,
-      "elapsed_ms": 12,
-      "prepared_statements": 48,
-      "batch_calls": 16,
-      "batch_statements": 32
+      "attempts": 9,
+      "elapsed_ms": 11,
+      "prepared_statements": 54,
+      "batch_calls": 18,
+      "batch_statements": 36
     },
     "read run state stage 0": {
-      "attempts": 20,
-      "elapsed_ms": 70,
-      "prepared_statements": 120,
-      "batch_calls": 40,
-      "batch_statements": 80
+      "attempts": 21,
+      "elapsed_ms": 82,
+      "prepared_statements": 126,
+      "batch_calls": 42,
+      "batch_statements": 84
     },
     "recover pending hostname workflows stage 0": {
-      "attempts": 8,
-      "elapsed_ms": 81,
-      "prepared_statements": 63,
-      "batch_calls": 24,
-      "batch_statements": 47
+      "attempts": 9,
+      "elapsed_ms": 90,
+      "prepared_statements": 70,
+      "batch_calls": 27,
+      "batch_statements": 52
     },
     "load shard page 0 stage 0": {
-      "attempts": 20,
-      "elapsed_ms": 66,
-      "prepared_statements": 120,
-      "batch_calls": 40,
-      "batch_statements": 80
+      "attempts": 21,
+      "elapsed_ms": 69,
+      "prepared_statements": 126,
+      "batch_calls": 42,
+      "batch_statements": 84
     },
     "record hostname Workflow identities stage 0": {
-      "attempts": 8,
-      "elapsed_ms": 31,
-      "prepared_statements": 71,
-      "batch_calls": 24,
-      "batch_statements": 63
+      "attempts": 9,
+      "elapsed_ms": 29,
+      "prepared_statements": 79,
+      "batch_calls": 27,
+      "batch_statements": 70
     },
     "finalize collection barrier stage 0": {
-      "attempts": 8,
-      "elapsed_ms": 48,
-      "prepared_statements": 72,
-      "batch_calls": 16,
-      "batch_statements": 32
+      "attempts": 9,
+      "elapsed_ms": 45,
+      "prepared_statements": 81,
+      "batch_calls": 18,
+      "batch_statements": 36
     },
     "collect stage 0 batch 0 from 0 pass 0": {
-      "attempts": 20,
-      "elapsed_ms": 1662,
-      "prepared_statements": 2798,
-      "batch_calls": 206,
-      "batch_statements": 578
+      "attempts": 21,
+      "elapsed_ms": 1743,
+      "prepared_statements": 3177,
+      "batch_calls": 216,
+      "batch_statements": 606
     },
     "reload shard page 0 stage 0": {
-      "attempts": 20,
-      "elapsed_ms": 21,
-      "prepared_statements": 120,
-      "batch_calls": 40,
-      "batch_statements": 80
+      "attempts": 21,
+      "elapsed_ms": 23,
+      "prepared_statements": 126,
+      "batch_calls": 42,
+      "batch_statements": 84
     },
     "read run state stage 1": {
-      "attempts": 13,
-      "elapsed_ms": 12,
-      "prepared_statements": 78,
-      "batch_calls": 26,
-      "batch_statements": 52
+      "attempts": 14,
+      "elapsed_ms": 14,
+      "prepared_statements": 84,
+      "batch_calls": 28,
+      "batch_statements": 56
     },
     "load shard page 0 stage 1": {
-      "attempts": 13,
+      "attempts": 14,
       "elapsed_ms": 11,
-      "prepared_statements": 78,
-      "batch_calls": 26,
-      "batch_statements": 52
+      "prepared_statements": 84,
+      "batch_calls": 28,
+      "batch_statements": 56
     },
     "collect stage 1 batch 0 from 0 pass 0": {
-      "attempts": 13,
-      "elapsed_ms": 2831,
-      "prepared_statements": 4369,
-      "batch_calls": 294,
-      "batch_statements": 856
+      "attempts": 14,
+      "elapsed_ms": 3078,
+      "prepared_statements": 5120,
+      "batch_calls": 310,
+      "batch_statements": 902
     },
     "reload shard page 0 stage 1": {
-      "attempts": 13,
-      "elapsed_ms": 12,
-      "prepared_statements": 78,
-      "batch_calls": 26,
-      "batch_statements": 52
+      "attempts": 14,
+      "elapsed_ms": 18,
+      "prepared_statements": 84,
+      "batch_calls": 28,
+      "batch_statements": 56
     },
     "load pending evidence page 0 barrier 1": {
-      "attempts": 8,
-      "elapsed_ms": 32,
-      "prepared_statements": 48,
-      "batch_calls": 16,
-      "batch_statements": 32
+      "attempts": 9,
+      "elapsed_ms": 34,
+      "prepared_statements": 54,
+      "batch_calls": 18,
+      "batch_statements": 36
     },
     "recover pending hostname workflows stage 1": {
       "attempts": 6,
-      "elapsed_ms": 49,
+      "elapsed_ms": 50,
       "prepared_statements": 43,
       "batch_calls": 18,
       "batch_statements": 30
     },
     "record hostname Workflow identities stage 1": {
-      "attempts": 8,
-      "elapsed_ms": 21,
-      "prepared_statements": 76,
-      "batch_calls": 24,
-      "batch_statements": 68
+      "attempts": 9,
+      "elapsed_ms": 24,
+      "prepared_statements": 84,
+      "batch_calls": 27,
+      "batch_statements": 75
     },
     "finalize collection barrier stage 1": {
-      "attempts": 8,
-      "elapsed_ms": 35,
-      "prepared_statements": 90,
-      "batch_calls": 18,
-      "batch_statements": 49
+      "attempts": 9,
+      "elapsed_ms": 48,
+      "prepared_statements": 107,
+      "batch_calls": 21,
+      "batch_statements": 61
     },
     "load pending evidence page 0 barrier 2": {
       "attempts": 6,
-      "elapsed_ms": 23,
+      "elapsed_ms": 18,
       "prepared_statements": 36,
       "batch_calls": 12,
       "batch_statements": 24
     },
     "record hostname Workflow identities stage 2": {
       "attempts": 6,
-      "elapsed_ms": 26,
+      "elapsed_ms": 15,
       "prepared_statements": 59,
       "batch_calls": 18,
       "batch_statements": 53
     },
     "finalize collection barrier stage 2": {
       "attempts": 6,
-      "elapsed_ms": 25,
+      "elapsed_ms": 18,
       "prepared_statements": 94,
       "batch_calls": 17,
       "batch_statements": 64
     },
     "initialize reconciliation operation": {
-      "attempts": 64,
-      "elapsed_ms": 53,
-      "prepared_statements": 64,
+      "attempts": 75,
+      "elapsed_ms": 62,
+      "prepared_statements": 75,
       "batch_calls": 0,
       "batch_statements": 0
     },
     "dispatch retained evidence preparation for one-piece": {
-      "attempts": 7,
-      "elapsed_ms": 141,
-      "prepared_statements": 203,
-      "batch_calls": 21,
-      "batch_statements": 126
+      "attempts": 8,
+      "elapsed_ms": 148,
+      "prepared_statements": 232,
+      "batch_calls": 24,
+      "batch_statements": 144
     },
     "read reconciliation dispatch": {
-      "attempts": 64,
-      "elapsed_ms": 49,
-      "prepared_statements": 128,
+      "attempts": 75,
+      "elapsed_ms": 111,
+      "prepared_statements": 150,
       "batch_calls": 0,
       "batch_statements": 0
     },
     "reconcile retained Card, Printing, and Erratum evidence": {
-      "attempts": 2452,
-      "elapsed_ms": 10606,
-      "prepared_statements": 61987,
-      "batch_calls": 10751,
-      "batch_statements": 31938
+      "attempts": 2862,
+      "elapsed_ms": 12244,
+      "prepared_statements": 72987,
+      "batch_calls": 12899,
+      "batch_statements": 38660
     },
     "retain reconciliation successor": {
-      "attempts": 57,
-      "elapsed_ms": 12,
-      "prepared_statements": 114,
-      "batch_calls": 57,
-      "batch_statements": 114
+      "attempts": 67,
+      "elapsed_ms": 17,
+      "prepared_statements": 134,
+      "batch_calls": 67,
+      "batch_statements": 134
     },
     "dispatch reconciliation successor": {
-      "attempts": 57,
-      "elapsed_ms": 127,
+      "attempts": 67,
+      "elapsed_ms": 156,
       "prepared_statements": 0,
       "batch_calls": 0,
       "batch_statements": 0
     },
     "notify reconciliation root": {
-      "attempts": 7,
-      "elapsed_ms": 13,
+      "attempts": 8,
+      "elapsed_ms": 18,
       "prepared_statements": 0,
       "batch_calls": 0,
       "batch_statements": 0
     },
     "prepare publication artifacts 1": {
-      "attempts": 5,
-      "elapsed_ms": 20,
-      "prepared_statements": 60,
-      "batch_calls": 5,
-      "batch_statements": 15
+      "attempts": 6,
+      "elapsed_ms": 33,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
     },
     "prepare publication artifacts 2": {
-      "attempts": 5,
-      "elapsed_ms": 13,
-      "prepared_statements": 60,
-      "batch_calls": 5,
-      "batch_statements": 15
+      "attempts": 6,
+      "elapsed_ms": 38,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
     },
     "prepare publication artifacts 3": {
-      "attempts": 5,
-      "elapsed_ms": 18,
-      "prepared_statements": 60,
-      "batch_calls": 5,
-      "batch_statements": 15
+      "attempts": 6,
+      "elapsed_ms": 16,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
     },
     "prepare publication artifacts 4": {
-      "attempts": 5,
-      "elapsed_ms": 38,
-      "prepared_statements": 65,
-      "batch_calls": 5,
-      "batch_statements": 20
+      "attempts": 6,
+      "elapsed_ms": 68,
+      "prepared_statements": 78,
+      "batch_calls": 6,
+      "batch_statements": 24
     },
     "prepare publication artifacts 5": {
-      "attempts": 5,
-      "elapsed_ms": 16,
-      "prepared_statements": 64,
-      "batch_calls": 5,
-      "batch_statements": 19
+      "attempts": 6,
+      "elapsed_ms": 43,
+      "prepared_statements": 77,
+      "batch_calls": 6,
+      "batch_statements": 23
     },
     "prepare publication artifacts 6": {
-      "attempts": 5,
-      "elapsed_ms": 52,
-      "prepared_statements": 64,
-      "batch_calls": 5,
-      "batch_statements": 19
+      "attempts": 6,
+      "elapsed_ms": 43,
+      "prepared_statements": 77,
+      "batch_calls": 6,
+      "batch_statements": 23
     },
     "prepare publication artifacts 7": {
-      "attempts": 5,
-      "elapsed_ms": 26,
-      "prepared_statements": 64,
-      "batch_calls": 5,
-      "batch_statements": 19
+      "attempts": 6,
+      "elapsed_ms": 32,
+      "prepared_statements": 77,
+      "batch_calls": 6,
+      "batch_statements": 23
     },
     "prepare publication artifacts 8": {
-      "attempts": 5,
-      "elapsed_ms": 15,
-      "prepared_statements": 64,
-      "batch_calls": 5,
-      "batch_statements": 19
+      "attempts": 6,
+      "elapsed_ms": 25,
+      "prepared_statements": 77,
+      "batch_calls": 6,
+      "batch_statements": 23
     },
     "prepare publication artifacts 9": {
-      "attempts": 5,
-      "elapsed_ms": 24,
-      "prepared_statements": 64,
-      "batch_calls": 5,
-      "batch_statements": 19
+      "attempts": 6,
+      "elapsed_ms": 22,
+      "prepared_statements": 77,
+      "batch_calls": 6,
+      "batch_statements": 23
     },
     "prepare publication artifacts 10": {
-      "attempts": 5,
-      "elapsed_ms": 18,
-      "prepared_statements": 64,
-      "batch_calls": 5,
-      "batch_statements": 19
+      "attempts": 6,
+      "elapsed_ms": 21,
+      "prepared_statements": 77,
+      "batch_calls": 6,
+      "batch_statements": 23
     },
     "prepare publication artifacts 11": {
-      "attempts": 5,
-      "elapsed_ms": 16,
-      "prepared_statements": 64,
-      "batch_calls": 5,
-      "batch_statements": 19
+      "attempts": 6,
+      "elapsed_ms": 21,
+      "prepared_statements": 77,
+      "batch_calls": 6,
+      "batch_statements": 23
     },
     "prepare publication artifacts 12": {
-      "attempts": 5,
-      "elapsed_ms": 14,
-      "prepared_statements": 63,
-      "batch_calls": 5,
-      "batch_statements": 18
+      "attempts": 6,
+      "elapsed_ms": 81,
+      "prepared_statements": 76,
+      "batch_calls": 6,
+      "batch_statements": 22
     },
     "prepare publication artifacts 13": {
-      "attempts": 5,
-      "elapsed_ms": 13,
-      "prepared_statements": 62,
-      "batch_calls": 5,
-      "batch_statements": 18
+      "attempts": 6,
+      "elapsed_ms": 49,
+      "prepared_statements": 75,
+      "batch_calls": 6,
+      "batch_statements": 22
     },
     "prepare publication artifacts 14": {
-      "attempts": 5,
-      "elapsed_ms": 32,
-      "prepared_statements": 64,
-      "batch_calls": 5,
-      "batch_statements": 19
+      "attempts": 6,
+      "elapsed_ms": 20,
+      "prepared_statements": 80,
+      "batch_calls": 7,
+      "batch_statements": 25
     },
     "prepare publication artifacts 15": {
-      "attempts": 5,
-      "elapsed_ms": 16,
-      "prepared_statements": 64,
-      "batch_calls": 5,
-      "batch_statements": 19
+      "attempts": 6,
+      "elapsed_ms": 28,
+      "prepared_statements": 80,
+      "batch_calls": 7,
+      "batch_statements": 25
     },
     "prepare publication artifacts 16": {
-      "attempts": 5,
-      "elapsed_ms": 14,
-      "prepared_statements": 63,
-      "batch_calls": 5,
-      "batch_statements": 18
+      "attempts": 6,
+      "elapsed_ms": 16,
+      "prepared_statements": 76,
+      "batch_calls": 6,
+      "batch_statements": 22
     },
     "dispatch publication preparation successor": {
-      "attempts": 45,
-      "elapsed_ms": 130,
+      "attempts": 55,
+      "elapsed_ms": 124,
       "prepared_statements": 0,
       "batch_calls": 0,
       "batch_statements": 0
     },
     "prepare publication artifacts 17": {
-      "attempts": 5,
+      "attempts": 6,
+      "elapsed_ms": 44,
+      "prepared_statements": 80,
+      "batch_calls": 7,
+      "batch_statements": 25
+    },
+    "prepare publication artifacts 18": {
+      "attempts": 6,
+      "elapsed_ms": 14,
+      "prepared_statements": 76,
+      "batch_calls": 6,
+      "batch_statements": 22
+    },
+    "prepare publication artifacts 19": {
+      "attempts": 6,
+      "elapsed_ms": 12,
+      "prepared_statements": 76,
+      "batch_calls": 7,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 20": {
+      "attempts": 6,
+      "elapsed_ms": 14,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 21": {
+      "attempts": 6,
+      "elapsed_ms": 13,
+      "prepared_statements": 76,
+      "batch_calls": 7,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 22": {
+      "attempts": 6,
+      "elapsed_ms": 11,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 23": {
+      "attempts": 6,
+      "elapsed_ms": 18,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 24": {
+      "attempts": 6,
+      "elapsed_ms": 11,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 25": {
+      "attempts": 6,
+      "elapsed_ms": 10,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 26": {
+      "attempts": 6,
+      "elapsed_ms": 11,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 27": {
+      "attempts": 6,
+      "elapsed_ms": 26,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 28": {
+      "attempts": 6,
+      "elapsed_ms": 12,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 29": {
+      "attempts": 6,
+      "elapsed_ms": 13,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 30": {
+      "attempts": 6,
+      "elapsed_ms": 12,
+      "prepared_statements": 71,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 31": {
+      "attempts": 6,
+      "elapsed_ms": 19,
+      "prepared_statements": 81,
+      "batch_calls": 7,
+      "batch_statements": 26
+    },
+    "prepare publication artifacts 32": {
+      "attempts": 6,
+      "elapsed_ms": 13,
+      "prepared_statements": 81,
+      "batch_calls": 7,
+      "batch_statements": 26
+    },
+    "prepare publication artifacts 33": {
+      "attempts": 6,
+      "elapsed_ms": 16,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 34": {
+      "attempts": 6,
+      "elapsed_ms": 16,
+      "prepared_statements": 78,
+      "batch_calls": 7,
+      "batch_statements": 23
+    },
+    "prepare publication artifacts 35": {
+      "attempts": 6,
+      "elapsed_ms": 12,
+      "prepared_statements": 78,
+      "batch_calls": 7,
+      "batch_statements": 23
+    },
+    "prepare publication artifacts 36": {
+      "attempts": 6,
+      "elapsed_ms": 11,
+      "prepared_statements": 78,
+      "batch_calls": 7,
+      "batch_statements": 23
+    },
+    "prepare publication artifacts 37": {
+      "attempts": 6,
+      "elapsed_ms": 45,
+      "prepared_statements": 88,
+      "batch_calls": 8,
+      "batch_statements": 30
+    },
+    "prepare publication artifacts 38": {
+      "attempts": 6,
+      "elapsed_ms": 14,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 39": {
+      "attempts": 6,
+      "elapsed_ms": 14,
+      "prepared_statements": 88,
+      "batch_calls": 8,
+      "batch_statements": 30
+    },
+    "prepare publication artifacts 40": {
+      "attempts": 6,
+      "elapsed_ms": 15,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 41": {
+      "attempts": 6,
+      "elapsed_ms": 12,
+      "prepared_statements": 81,
+      "batch_calls": 7,
+      "batch_statements": 26
+    },
+    "prepare publication artifacts 42": {
+      "attempts": 6,
+      "elapsed_ms": 13,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 43": {
+      "attempts": 6,
+      "elapsed_ms": 14,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 44": {
+      "attempts": 6,
+      "elapsed_ms": 10,
+      "prepared_statements": 71,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 45": {
+      "attempts": 6,
+      "elapsed_ms": 13,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 19
+    },
+    "prepare publication artifacts 46": {
+      "attempts": 6,
+      "elapsed_ms": 23,
+      "prepared_statements": 78,
+      "batch_calls": 6,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 47": {
+      "attempts": 6,
+      "elapsed_ms": 12,
+      "prepared_statements": 76,
+      "batch_calls": 6,
+      "batch_statements": 20
+    },
+    "prepare publication artifacts 48": {
+      "attempts": 6,
+      "elapsed_ms": 12,
+      "prepared_statements": 74,
+      "batch_calls": 6,
+      "batch_statements": 19
+    },
+    "prepare publication artifacts 49": {
+      "attempts": 6,
+      "elapsed_ms": 16,
+      "prepared_statements": 76,
+      "batch_calls": 6,
+      "batch_statements": 20
+    },
+    "prepare publication artifacts 50": {
+      "attempts": 6,
+      "elapsed_ms": 14,
+      "prepared_statements": 74,
+      "batch_calls": 7,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 51": {
+      "attempts": 6,
+      "elapsed_ms": 18,
+      "prepared_statements": 84,
+      "batch_calls": 7,
+      "batch_statements": 25
+    },
+    "prepare publication artifacts 52": {
+      "attempts": 6,
+      "elapsed_ms": 35,
+      "prepared_statements": 85,
+      "batch_calls": 8,
+      "batch_statements": 26
+    },
+    "prepare public export 0": {
+      "attempts": 6,
+      "elapsed_ms": 33,
+      "prepared_statements": 69,
+      "batch_calls": 7,
+      "batch_statements": 26
+    },
+    "prepare public export 1": {
+      "attempts": 6,
+      "elapsed_ms": 21,
+      "prepared_statements": 69,
+      "batch_calls": 7,
+      "batch_statements": 26
+    },
+    "prepare public export 2": {
+      "attempts": 6,
+      "elapsed_ms": 27,
+      "prepared_statements": 84,
+      "batch_calls": 12,
+      "batch_statements": 36
+    },
+    "prepare public export 3": {
+      "attempts": 6,
+      "elapsed_ms": 23,
+      "prepared_statements": 96,
+      "batch_calls": 12,
+      "batch_statements": 36
+    },
+    "prepare public export 4": {
+      "attempts": 6,
+      "elapsed_ms": 23,
+      "prepared_statements": 94,
+      "batch_calls": 12,
+      "batch_statements": 36
+    },
+    "prepare public export 5": {
+      "attempts": 6,
       "elapsed_ms": 22,
-      "prepared_statements": 64,
+      "prepared_statements": 85,
+      "batch_calls": 10,
+      "batch_statements": 31
+    },
+    "prepare public export 6": {
+      "attempts": 6,
+      "elapsed_ms": 17,
+      "prepared_statements": 81,
+      "batch_calls": 9,
+      "batch_statements": 30
+    },
+    "prepare public export 7": {
+      "attempts": 6,
+      "elapsed_ms": 21,
+      "prepared_statements": 93,
+      "batch_calls": 12,
+      "batch_statements": 35
+    },
+    "publication switch 7": {
+      "attempts": 1,
+      "elapsed_ms": 14,
+      "prepared_statements": 41,
+      "batch_calls": 3,
+      "batch_statements": 17
+    },
+    "dispatch composition backup": {
+      "attempts": 6,
+      "elapsed_ms": 35,
+      "prepared_statements": 60,
+      "batch_calls": 6,
+      "batch_statements": 12
+    },
+    "export, retain, restore, and verify Catalogue D1": {
+      "attempts": 6,
+      "elapsed_ms": 100748,
+      "prepared_statements": 20022,
+      "batch_calls": 24,
+      "batch_statements": 162
+    },
+    "prepare publication artifacts 53": {
+      "attempts": 5,
+      "elapsed_ms": 16,
+      "prepared_statements": 70,
+      "batch_calls": 6,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 54": {
+      "attempts": 5,
+      "elapsed_ms": 70,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 22
+    },
+    "prepare publication artifacts 55": {
+      "attempts": 5,
+      "elapsed_ms": 40,
+      "prepared_statements": 68,
+      "batch_calls": 6,
+      "batch_statements": 20
+    },
+    "prepare publication artifacts 56": {
+      "attempts": 5,
+      "elapsed_ms": 23,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 22
+    },
+    "prepare publication artifacts 57": {
+      "attempts": 5,
+      "elapsed_ms": 19,
+      "prepared_statements": 70,
+      "batch_calls": 6,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 58": {
+      "attempts": 5,
+      "elapsed_ms": 55,
+      "prepared_statements": 68,
       "batch_calls": 5,
       "batch_statements": 19
     },
-    "prepare publication artifacts 18": {
+    "prepare publication artifacts 59": {
       "attempts": 5,
-      "elapsed_ms": 19,
-      "prepared_statements": 63,
-      "batch_calls": 5,
-      "batch_statements": 18
+      "elapsed_ms": 17,
+      "prepared_statements": 68,
+      "batch_calls": 6,
+      "batch_statements": 20
     },
-    "prepare publication artifacts 19": {
+    "prepare publication artifacts 60": {
       "attempts": 5,
-      "elapsed_ms": 13,
-      "prepared_statements": 61,
+      "elapsed_ms": 16,
+      "prepared_statements": 70,
+      "batch_calls": 5,
+      "batch_statements": 20
+    },
+    "prepare publication artifacts 61": {
+      "attempts": 5,
+      "elapsed_ms": 14,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 22
+    },
+    "prepare publication artifacts 62": {
+      "attempts": 5,
+      "elapsed_ms": 11,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 22
+    },
+    "prepare publication artifacts 63": {
+      "attempts": 5,
+      "elapsed_ms": 15,
+      "prepared_statements": 72,
+      "batch_calls": 6,
+      "batch_statements": 22
+    },
+    "prepare publication artifacts 64": {
+      "attempts": 5,
+      "elapsed_ms": 14,
+      "prepared_statements": 70,
+      "batch_calls": 6,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 65": {
+      "attempts": 5,
+      "elapsed_ms": 20,
+      "prepared_statements": 74,
+      "batch_calls": 7,
+      "batch_statements": 24
+    },
+    "prepare publication artifacts 66": {
+      "attempts": 5,
+      "elapsed_ms": 11,
+      "prepared_statements": 70,
+      "batch_calls": 6,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 67": {
+      "attempts": 5,
+      "elapsed_ms": 12,
+      "prepared_statements": 70,
+      "batch_calls": 6,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 68": {
+      "attempts": 5,
+      "elapsed_ms": 12,
+      "prepared_statements": 68,
+      "batch_calls": 5,
+      "batch_statements": 19
+    },
+    "prepare publication artifacts 69": {
+      "attempts": 5,
+      "elapsed_ms": 14,
+      "prepared_statements": 70,
+      "batch_calls": 6,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 70": {
+      "attempts": 5,
+      "elapsed_ms": 14,
+      "prepared_statements": 68,
+      "batch_calls": 5,
+      "batch_statements": 19
+    },
+    "prepare publication artifacts 71": {
+      "attempts": 5,
+      "elapsed_ms": 41,
+      "prepared_statements": 68,
+      "batch_calls": 5,
+      "batch_statements": 19
+    },
+    "prepare publication artifacts 72": {
+      "attempts": 5,
+      "elapsed_ms": 15,
+      "prepared_statements": 70,
+      "batch_calls": 6,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 73": {
+      "attempts": 5,
+      "elapsed_ms": 15,
+      "prepared_statements": 68,
+      "batch_calls": 5,
+      "batch_statements": 19
+    },
+    "prepare publication artifacts 74": {
+      "attempts": 5,
+      "elapsed_ms": 16,
+      "prepared_statements": 68,
+      "batch_calls": 5,
+      "batch_statements": 19
+    },
+    "prepare publication artifacts 75": {
+      "attempts": 5,
+      "elapsed_ms": 12,
+      "prepared_statements": 66,
+      "batch_calls": 6,
+      "batch_statements": 19
+    },
+    "prepare publication artifacts 76": {
+      "attempts": 5,
+      "elapsed_ms": 12,
+      "prepared_statements": 64,
+      "batch_calls": 5,
+      "batch_statements": 17
+    },
+    "prepare publication artifacts 77": {
+      "attempts": 5,
+      "elapsed_ms": 12,
+      "prepared_statements": 66,
+      "batch_calls": 6,
+      "batch_statements": 19
+    },
+    "prepare publication artifacts 78": {
+      "attempts": 5,
+      "elapsed_ms": 38,
+      "prepared_statements": 64,
+      "batch_calls": 5,
+      "batch_statements": 17
+    },
+    "prepare publication artifacts 79": {
+      "attempts": 5,
+      "elapsed_ms": 12,
+      "prepared_statements": 66,
+      "batch_calls": 6,
+      "batch_statements": 19
+    },
+    "prepare publication artifacts 80": {
+      "attempts": 5,
+      "elapsed_ms": 8,
+      "prepared_statements": 62,
       "batch_calls": 5,
       "batch_statements": 16
     },
-    "prepare publication artifacts 20": {
+    "prepare publication artifacts 81": {
+      "attempts": 5,
+      "elapsed_ms": 12,
+      "prepared_statements": 62,
+      "batch_calls": 5,
+      "batch_statements": 16
+    },
+    "prepare publication artifacts 82": {
+      "attempts": 5,
+      "elapsed_ms": 35,
+      "prepared_statements": 60,
+      "batch_calls": 5,
+      "batch_statements": 15
+    },
+    "prepare publication artifacts 83": {
       "attempts": 5,
       "elapsed_ms": 10,
       "prepared_statements": 60,
       "batch_calls": 5,
       "batch_statements": 15
     },
-    "prepare publication artifacts 21": {
-      "attempts": 5,
-      "elapsed_ms": 11,
-      "prepared_statements": 61,
-      "batch_calls": 5,
-      "batch_statements": 16
-    },
-    "prepare publication artifacts 22": {
+    "prepare publication artifacts 84": {
       "attempts": 5,
       "elapsed_ms": 11,
       "prepared_statements": 60,
       "batch_calls": 5,
       "batch_statements": 15
     },
-    "prepare publication artifacts 23": {
+    "prepare publication artifacts 85": {
+      "attempts": 5,
+      "elapsed_ms": 16,
+      "prepared_statements": 60,
+      "batch_calls": 5,
+      "batch_statements": 15
+    },
+    "prepare publication artifacts 86": {
+      "attempts": 5,
+      "elapsed_ms": 10,
+      "prepared_statements": 60,
+      "batch_calls": 5,
+      "batch_statements": 15
+    },
+    "prepare publication artifacts 87": {
+      "attempts": 5,
+      "elapsed_ms": 9,
+      "prepared_statements": 60,
+      "batch_calls": 5,
+      "batch_statements": 15
+    },
+    "prepare publication artifacts 88": {
+      "attempts": 5,
+      "elapsed_ms": 8,
+      "prepared_statements": 60,
+      "batch_calls": 5,
+      "batch_statements": 15
+    },
+    "prepare publication artifacts 89": {
+      "attempts": 5,
+      "elapsed_ms": 8,
+      "prepared_statements": 60,
+      "batch_calls": 5,
+      "batch_statements": 15
+    },
+    "prepare publication artifacts 90": {
       "attempts": 5,
       "elapsed_ms": 11,
       "prepared_statements": 60,
       "batch_calls": 5,
       "batch_statements": 15
     },
-    "prepare publication artifacts 24": {
+    "prepare publication artifacts 91": {
       "attempts": 5,
-      "elapsed_ms": 15,
+      "elapsed_ms": 6,
       "prepared_statements": 60,
       "batch_calls": 5,
       "batch_statements": 15
     },
-    "prepare publication artifacts 25": {
+    "prepare publication artifacts 92": {
       "attempts": 5,
-      "elapsed_ms": 12,
+      "elapsed_ms": 28,
       "prepared_statements": 60,
       "batch_calls": 5,
       "batch_statements": 15
     },
-    "prepare publication artifacts 26": {
+    "prepare publication artifacts 93": {
       "attempts": 5,
-      "elapsed_ms": 24,
+      "elapsed_ms": 7,
       "prepared_statements": 60,
       "batch_calls": 5,
       "batch_statements": 15
     },
-    "prepare publication artifacts 27": {
+    "prepare publication artifacts 94": {
       "attempts": 5,
-      "elapsed_ms": 14,
+      "elapsed_ms": 9,
       "prepared_statements": 60,
       "batch_calls": 5,
       "batch_statements": 15
     },
-    "prepare publication artifacts 28": {
+    "prepare publication artifacts 95": {
       "attempts": 5,
-      "elapsed_ms": 11,
+      "elapsed_ms": 7,
       "prepared_statements": 60,
       "batch_calls": 5,
       "batch_statements": 15
     },
-    "prepare publication artifacts 29": {
+    "prepare publication artifacts 96": {
       "attempts": 5,
-      "elapsed_ms": 12,
+      "elapsed_ms": 9,
       "prepared_statements": 60,
       "batch_calls": 5,
       "batch_statements": 15
     },
-    "prepare publication artifacts 30": {
+    "prepare publication artifacts 97": {
       "attempts": 5,
-      "elapsed_ms": 11,
+      "elapsed_ms": 10,
+      "prepared_statements": 60,
+      "batch_calls": 5,
+      "batch_statements": 15
+    },
+    "prepare publication artifacts 98": {
+      "attempts": 5,
+      "elapsed_ms": 7,
+      "prepared_statements": 60,
+      "batch_calls": 5,
+      "batch_statements": 15
+    },
+    "prepare publication artifacts 99": {
+      "attempts": 5,
+      "elapsed_ms": 29,
       "prepared_statements": 59,
       "batch_calls": 5,
       "batch_statements": 15
     },
-    "prepare publication artifacts 31": {
-      "attempts": 5,
-      "elapsed_ms": 18,
-      "prepared_statements": 66,
-      "batch_calls": 5,
-      "batch_statements": 21
-    },
-    "prepare publication artifacts 32": {
-      "attempts": 5,
-      "elapsed_ms": 16,
-      "prepared_statements": 66,
-      "batch_calls": 5,
-      "batch_statements": 21
-    },
-    "prepare publication artifacts 33": {
-      "attempts": 5,
-      "elapsed_ms": 27,
-      "prepared_statements": 60,
-      "batch_calls": 5,
-      "batch_statements": 15
-    },
-    "prepare publication artifacts 34": {
-      "attempts": 5,
-      "elapsed_ms": 17,
-      "prepared_statements": 63,
-      "batch_calls": 5,
-      "batch_statements": 18
-    },
-    "prepare publication artifacts 35": {
-      "attempts": 5,
-      "elapsed_ms": 12,
-      "prepared_statements": 63,
-      "batch_calls": 5,
-      "batch_statements": 18
-    },
-    "prepare publication artifacts 36": {
+    "prepare publication artifacts 100": {
       "attempts": 5,
       "elapsed_ms": 11,
-      "prepared_statements": 63,
+      "prepared_statements": 67,
+      "batch_calls": 5,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 101": {
+      "attempts": 5,
+      "elapsed_ms": 8,
+      "prepared_statements": 65,
+      "batch_calls": 5,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 102": {
+      "attempts": 5,
+      "elapsed_ms": 13,
+      "prepared_statements": 74,
+      "batch_calls": 5,
+      "batch_statements": 27
+    },
+    "prepare publication artifacts 103": {
+      "attempts": 5,
+      "elapsed_ms": 13,
+      "prepared_statements": 78,
+      "batch_calls": 5,
+      "batch_statements": 30
+    },
+    "prepare publication artifacts 104": {
+      "attempts": 5,
+      "elapsed_ms": 6,
+      "prepared_statements": 64,
       "batch_calls": 5,
       "batch_statements": 18
     },
-    "prepare publication artifacts 37": {
+    "prepare publication artifacts 105": {
+      "attempts": 5,
+      "elapsed_ms": 10,
+      "prepared_statements": 72,
+      "batch_calls": 5,
+      "batch_statements": 24
+    },
+    "prepare publication artifacts 106": {
+      "attempts": 5,
+      "elapsed_ms": 15,
+      "prepared_statements": 82,
+      "batch_calls": 6,
+      "batch_statements": 31
+    },
+    "prepare publication artifacts 107": {
+      "attempts": 5,
+      "elapsed_ms": 11,
+      "prepared_statements": 68,
+      "batch_calls": 5,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 108": {
+      "attempts": 5,
+      "elapsed_ms": 41,
+      "prepared_statements": 104,
+      "batch_calls": 9,
+      "batch_statements": 47
+    },
+    "prepare publication artifacts 109": {
+      "attempts": 5,
+      "elapsed_ms": 11,
+      "prepared_statements": 74,
+      "batch_calls": 6,
+      "batch_statements": 25
+    },
+    "prepare publication artifacts 110": {
+      "attempts": 5,
+      "elapsed_ms": 35,
+      "prepared_statements": 104,
+      "batch_calls": 9,
+      "batch_statements": 47
+    },
+    "prepare publication artifacts 111": {
+      "attempts": 5,
+      "elapsed_ms": 22,
+      "prepared_statements": 103,
+      "batch_calls": 9,
+      "batch_statements": 47
+    },
+    "prepare publication artifacts 112": {
       "attempts": 5,
       "elapsed_ms": 45,
-      "prepared_statements": 70,
-      "batch_calls": 5,
-      "batch_statements": 23
+      "prepared_statements": 111,
+      "batch_calls": 9,
+      "batch_statements": 53
     },
-    "prepare publication artifacts 38": {
+    "prepare publication artifacts 113": {
+      "attempts": 5,
+      "elapsed_ms": 25,
+      "prepared_statements": 111,
+      "batch_calls": 9,
+      "batch_statements": 53
+    },
+    "prepare publication artifacts 114": {
+      "attempts": 5,
+      "elapsed_ms": 22,
+      "prepared_statements": 104,
+      "batch_calls": 9,
+      "batch_statements": 47
+    },
+    "prepare publication artifacts 115": {
+      "attempts": 5,
+      "elapsed_ms": 23,
+      "prepared_statements": 107,
+      "batch_calls": 9,
+      "batch_statements": 50
+    },
+    "prepare publication artifacts 116": {
+      "attempts": 5,
+      "elapsed_ms": 31,
+      "prepared_statements": 99,
+      "batch_calls": 7,
+      "batch_statements": 44
+    },
+    "prepare publication artifacts 117": {
+      "attempts": 5,
+      "elapsed_ms": 20,
+      "prepared_statements": 108,
+      "batch_calls": 8,
+      "batch_statements": 52
+    },
+    "prepare publication artifacts 118": {
+      "attempts": 5,
+      "elapsed_ms": 23,
+      "prepared_statements": 81,
+      "batch_calls": 6,
+      "batch_statements": 31
+    },
+    "prepare publication artifacts 119": {
+      "attempts": 5,
+      "elapsed_ms": 16,
+      "prepared_statements": 87,
+      "batch_calls": 6,
+      "batch_statements": 38
+    },
+    "prepare publication artifacts 120": {
+      "attempts": 5,
+      "elapsed_ms": 19,
+      "prepared_statements": 101,
+      "batch_calls": 7,
+      "batch_statements": 48
+    },
+    "prepare publication artifacts 121": {
+      "attempts": 5,
+      "elapsed_ms": 17,
+      "prepared_statements": 101,
+      "batch_calls": 7,
+      "batch_statements": 48
+    },
+    "prepare publication artifacts 122": {
+      "attempts": 5,
+      "elapsed_ms": 26,
+      "prepared_statements": 111,
+      "batch_calls": 8,
+      "batch_statements": 55
+    },
+    "prepare publication artifacts 123": {
+      "attempts": 5,
+      "elapsed_ms": 17,
+      "prepared_statements": 97,
+      "batch_calls": 7,
+      "batch_statements": 45
+    },
+    "prepare publication artifacts 124": {
+      "attempts": 5,
+      "elapsed_ms": 24,
+      "prepared_statements": 111,
+      "batch_calls": 8,
+      "batch_statements": 55
+    },
+    "prepare publication artifacts 125": {
+      "attempts": 5,
+      "elapsed_ms": 18,
+      "prepared_statements": 102,
+      "batch_calls": 7,
+      "batch_statements": 47
+    },
+    "prepare publication artifacts 126": {
+      "attempts": 5,
+      "elapsed_ms": 22,
+      "prepared_statements": 102,
+      "batch_calls": 7,
+      "batch_statements": 47
+    },
+    "prepare publication artifacts 127": {
+      "attempts": 5,
+      "elapsed_ms": 21,
+      "prepared_statements": 102,
+      "batch_calls": 7,
+      "batch_statements": 47
+    },
+    "prepare publication artifacts 128": {
+      "attempts": 5,
+      "elapsed_ms": 16,
+      "prepared_statements": 88,
+      "batch_calls": 6,
+      "batch_statements": 37
+    },
+    "prepare publication artifacts 129": {
+      "attempts": 5,
+      "elapsed_ms": 20,
+      "prepared_statements": 97,
+      "batch_calls": 7,
+      "batch_statements": 45
+    },
+    "prepare publication artifacts 130": {
+      "attempts": 5,
+      "elapsed_ms": 16,
+      "prepared_statements": 95,
+      "batch_calls": 6,
+      "batch_statements": 43
+    },
+    "prepare publication artifacts 131": {
+      "attempts": 5,
+      "elapsed_ms": 17,
+      "prepared_statements": 97,
+      "batch_calls": 7,
+      "batch_statements": 45
+    },
+    "prepare publication artifacts 132": {
       "attempts": 5,
       "elapsed_ms": 13,
+      "prepared_statements": 81,
+      "batch_calls": 5,
+      "batch_statements": 33
+    },
+    "prepare publication artifacts 133": {
+      "attempts": 5,
+      "elapsed_ms": 15,
+      "prepared_statements": 90,
+      "batch_calls": 6,
+      "batch_statements": 41
+    },
+    "prepare publication artifacts 134": {
+      "attempts": 5,
+      "elapsed_ms": 10,
+      "prepared_statements": 74,
+      "batch_calls": 5,
+      "batch_statements": 27
+    },
+    "prepare publication artifacts 135": {
+      "attempts": 5,
+      "elapsed_ms": 13,
+      "prepared_statements": 74,
+      "batch_calls": 5,
+      "batch_statements": 27
+    },
+    "prepare publication artifacts 136": {
+      "attempts": 5,
+      "elapsed_ms": 19,
+      "prepared_statements": 76,
+      "batch_calls": 6,
+      "batch_statements": 29
+    },
+    "prepare publication artifacts 137": {
+      "attempts": 5,
+      "elapsed_ms": 13,
+      "prepared_statements": 74,
+      "batch_calls": 5,
+      "batch_statements": 27
+    },
+    "prepare publication artifacts 138": {
+      "attempts": 5,
+      "elapsed_ms": 9,
+      "prepared_statements": 74,
+      "batch_calls": 5,
+      "batch_statements": 27
+    },
+    "prepare publication artifacts 139": {
+      "attempts": 5,
+      "elapsed_ms": 11,
+      "prepared_statements": 76,
+      "batch_calls": 6,
+      "batch_statements": 29
+    },
+    "prepare publication artifacts 140": {
+      "attempts": 5,
+      "elapsed_ms": 25,
+      "prepared_statements": 74,
+      "batch_calls": 5,
+      "batch_statements": 27
+    },
+    "prepare publication artifacts 141": {
+      "attempts": 5,
+      "elapsed_ms": 11,
+      "prepared_statements": 76,
+      "batch_calls": 6,
+      "batch_statements": 29
+    },
+    "prepare publication artifacts 142": {
+      "attempts": 5,
+      "elapsed_ms": 11,
+      "prepared_statements": 74,
+      "batch_calls": 5,
+      "batch_statements": 27
+    },
+    "prepare publication artifacts 143": {
+      "attempts": 5,
+      "elapsed_ms": 11,
+      "prepared_statements": 76,
+      "batch_calls": 6,
+      "batch_statements": 29
+    },
+    "prepare publication artifacts 144": {
+      "attempts": 5,
+      "elapsed_ms": 9,
+      "prepared_statements": 67,
+      "batch_calls": 5,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 145": {
+      "attempts": 5,
+      "elapsed_ms": 12,
+      "prepared_statements": 67,
+      "batch_calls": 5,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 146": {
+      "attempts": 5,
+      "elapsed_ms": 10,
+      "prepared_statements": 67,
+      "batch_calls": 5,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 147": {
+      "attempts": 5,
+      "elapsed_ms": 9,
+      "prepared_statements": 67,
+      "batch_calls": 5,
+      "batch_statements": 21
+    },
+    "prepare publication artifacts 148": {
+      "attempts": 5,
+      "elapsed_ms": 5,
       "prepared_statements": 60,
       "batch_calls": 5,
       "batch_statements": 15
     },
-    "prepare publication artifacts 39": {
+    "prepare publication artifacts 149": {
       "attempts": 5,
-      "elapsed_ms": 20,
-      "prepared_statements": 70,
+      "elapsed_ms": 6,
+      "prepared_statements": 60,
       "batch_calls": 5,
-      "batch_statements": 23
+      "batch_statements": 15
     },
-    "prepare publication artifacts 40": {
+    "prepare publication artifacts 150": {
       "attempts": 5,
       "elapsed_ms": 9,
       "prepared_statements": 60,
       "batch_calls": 5,
       "batch_statements": 15
     },
-    "prepare publication artifacts 41": {
+    "prepare publication artifacts 151": {
       "attempts": 5,
-      "elapsed_ms": 29,
-      "prepared_statements": 66,
+      "elapsed_ms": 8,
+      "prepared_statements": 60,
       "batch_calls": 5,
-      "batch_statements": 21
+      "batch_statements": 15
     },
-    "prepare publication artifacts 42": {
+    "prepare publication artifacts 152": {
+      "attempts": 5,
+      "elapsed_ms": 8,
+      "prepared_statements": 60,
+      "batch_calls": 5,
+      "batch_statements": 15
+    },
+    "prepare publication artifacts 153": {
+      "attempts": 5,
+      "elapsed_ms": 8,
+      "prepared_statements": 60,
+      "batch_calls": 5,
+      "batch_statements": 15
+    },
+    "prepare publication artifacts 154": {
+      "attempts": 5,
+      "elapsed_ms": 8,
+      "prepared_statements": 60,
+      "batch_calls": 5,
+      "batch_statements": 15
+    },
+    "prepare publication artifacts 155": {
       "attempts": 5,
       "elapsed_ms": 10,
       "prepared_statements": 60,
       "batch_calls": 5,
       "batch_statements": 15
     },
-    "prepare publication artifacts 43": {
+    "prepare publication artifacts 156": {
       "attempts": 5,
-      "elapsed_ms": 16,
+      "elapsed_ms": 10,
       "prepared_statements": 60,
       "batch_calls": 5,
       "batch_statements": 15
     },
-    "prepare publication artifacts 44": {
+    "prepare publication artifacts 157": {
+      "attempts": 5,
+      "elapsed_ms": 9,
+      "prepared_statements": 59,
+      "batch_calls": 5,
+      "batch_statements": 15
+    },
+    "prepare publication artifacts 158": {
       "attempts": 5,
       "elapsed_ms": 10,
+      "prepared_statements": 64,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 159": {
+      "attempts": 5,
+      "elapsed_ms": 11,
+      "prepared_statements": 64,
+      "batch_calls": 6,
+      "batch_statements": 18
+    },
+    "prepare publication artifacts 160": {
+      "attempts": 5,
+      "elapsed_ms": 9,
       "prepared_statements": 58,
       "batch_calls": 5,
       "batch_statements": 15
     },
-    "prepare publication artifacts 45": {
-      "attempts": 5,
-      "elapsed_ms": 16,
-      "prepared_statements": 62,
-      "batch_calls": 5,
-      "batch_statements": 17
-    },
-    "prepare publication artifacts 46": {
-      "attempts": 5,
-      "elapsed_ms": 17,
-      "prepared_statements": 62,
-      "batch_calls": 5,
-      "batch_statements": 17
-    },
-    "prepare publication artifacts 47": {
-      "attempts": 5,
-      "elapsed_ms": 9,
-      "prepared_statements": 60,
-      "batch_calls": 5,
-      "batch_statements": 15
-    },
-    "prepare publication artifacts 48": {
-      "attempts": 5,
-      "elapsed_ms": 12,
-      "prepared_statements": 62,
-      "batch_calls": 5,
-      "batch_statements": 17
-    },
-    "prepare publication artifacts 49": {
-      "attempts": 5,
-      "elapsed_ms": 13,
-      "prepared_statements": 60,
-      "batch_calls": 5,
-      "batch_statements": 15
-    },
-    "prepare publication artifacts 50": {
-      "attempts": 5,
-      "elapsed_ms": 14,
-      "prepared_statements": 60,
-      "batch_calls": 5,
-      "batch_statements": 17
-    },
-    "prepare publication artifacts 51": {
-      "attempts": 5,
-      "elapsed_ms": 16,
-      "prepared_statements": 64,
-      "batch_calls": 5,
-      "batch_statements": 19
-    },
-    "prepare publication artifacts 52": {
-      "attempts": 5,
-      "elapsed_ms": 29,
-      "prepared_statements": 63,
-      "batch_calls": 5,
-      "batch_statements": 18
-    },
-    "prepare public export 0": {
-      "attempts": 5,
-      "elapsed_ms": 36,
-      "prepared_statements": 55,
-      "batch_calls": 5,
-      "batch_statements": 20
-    },
-    "prepare public export 1": {
-      "attempts": 5,
-      "elapsed_ms": 15,
-      "prepared_statements": 55,
-      "batch_calls": 5,
-      "batch_statements": 20
-    },
-    "prepare public export 2": {
-      "attempts": 5,
-      "elapsed_ms": 21,
-      "prepared_statements": 55,
-      "batch_calls": 5,
-      "batch_statements": 20
-    },
-    "prepare public export 3": {
-      "attempts": 5,
-      "elapsed_ms": 35,
-      "prepared_statements": 65,
-      "batch_calls": 5,
-      "batch_statements": 20
-    },
-    "prepare public export 4": {
-      "attempts": 5,
-      "elapsed_ms": 16,
-      "prepared_statements": 61,
-      "batch_calls": 5,
-      "batch_statements": 20
-    },
-    "prepare public export 5": {
-      "attempts": 5,
-      "elapsed_ms": 14,
-      "prepared_statements": 61,
-      "batch_calls": 5,
-      "batch_statements": 19
-    },
-    "prepare public export 6": {
-      "attempts": 5,
-      "elapsed_ms": 16,
-      "prepared_statements": 62,
-      "batch_calls": 5,
-      "batch_statements": 20
-    },
-    "prepare public export 7": {
-      "attempts": 5,
-      "elapsed_ms": 13,
-      "prepared_statements": 62,
-      "batch_calls": 5,
-      "batch_statements": 19
-    },
-    "publication switch 7": {
-      "attempts": 1,
-      "elapsed_ms": 11,
-      "prepared_statements": 35,
-      "batch_calls": 1,
-      "batch_statements": 13
-    },
-    "dispatch composition backup": {
-      "attempts": 5,
-      "elapsed_ms": 32,
-      "prepared_statements": 50,
-      "batch_calls": 5,
-      "batch_statements": 10
-    },
-    "export, retain, restore, and verify Catalogue D1": {
-      "attempts": 5,
-      "elapsed_ms": 74653,
-      "prepared_statements": 12250,
-      "batch_calls": 20,
-      "batch_statements": 135
-    },
-    "prepare publication artifacts 53": {
-      "attempts": 4,
-      "elapsed_ms": 13,
-      "prepared_statements": 51,
-      "batch_calls": 4,
-      "batch_statements": 15
-    },
-    "prepare publication artifacts 54": {
-      "attempts": 4,
-      "elapsed_ms": 8,
-      "prepared_statements": 52,
-      "batch_calls": 4,
-      "batch_statements": 16
-    },
-    "prepare publication artifacts 55": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 50,
-      "batch_calls": 4,
-      "batch_statements": 14
-    },
-    "prepare publication artifacts 56": {
-      "attempts": 4,
-      "elapsed_ms": 17,
-      "prepared_statements": 52,
-      "batch_calls": 4,
-      "batch_statements": 16
-    },
-    "prepare publication artifacts 57": {
-      "attempts": 4,
-      "elapsed_ms": 11,
-      "prepared_statements": 51,
-      "batch_calls": 4,
-      "batch_statements": 15
-    },
-    "prepare publication artifacts 58": {
-      "attempts": 4,
-      "elapsed_ms": 12,
-      "prepared_statements": 50,
-      "batch_calls": 4,
-      "batch_statements": 14
-    },
-    "prepare publication artifacts 59": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 52,
-      "batch_calls": 4,
-      "batch_statements": 16
-    },
-    "prepare publication artifacts 60": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 52,
-      "batch_calls": 4,
-      "batch_statements": 16
-    },
-    "prepare publication artifacts 61": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 52,
-      "batch_calls": 4,
-      "batch_statements": 16
-    },
-    "prepare publication artifacts 62": {
-      "attempts": 4,
-      "elapsed_ms": 16,
-      "prepared_statements": 52,
-      "batch_calls": 4,
-      "batch_statements": 16
-    },
-    "prepare publication artifacts 63": {
-      "attempts": 4,
-      "elapsed_ms": 13,
-      "prepared_statements": 52,
-      "batch_calls": 4,
-      "batch_statements": 16
-    },
-    "prepare publication artifacts 64": {
-      "attempts": 4,
-      "elapsed_ms": 16,
-      "prepared_statements": 51,
-      "batch_calls": 4,
-      "batch_statements": 15
-    },
-    "prepare publication artifacts 65": {
-      "attempts": 4,
-      "elapsed_ms": 45,
-      "prepared_statements": 52,
-      "batch_calls": 4,
-      "batch_statements": 16
-    },
-    "prepare publication artifacts 66": {
-      "attempts": 4,
-      "elapsed_ms": 15,
-      "prepared_statements": 51,
-      "batch_calls": 4,
-      "batch_statements": 15
-    },
-    "prepare publication artifacts 67": {
-      "attempts": 4,
-      "elapsed_ms": 13,
-      "prepared_statements": 51,
-      "batch_calls": 4,
-      "batch_statements": 15
-    },
-    "prepare publication artifacts 68": {
-      "attempts": 4,
-      "elapsed_ms": 11,
-      "prepared_statements": 51,
-      "batch_calls": 4,
-      "batch_statements": 15
-    },
-    "prepare publication artifacts 69": {
-      "attempts": 4,
-      "elapsed_ms": 12,
-      "prepared_statements": 51,
-      "batch_calls": 4,
-      "batch_statements": 15
-    },
-    "prepare publication artifacts 70": {
-      "attempts": 4,
-      "elapsed_ms": 15,
-      "prepared_statements": 51,
-      "batch_calls": 4,
-      "batch_statements": 15
-    },
-    "prepare publication artifacts 71": {
-      "attempts": 4,
-      "elapsed_ms": 12,
-      "prepared_statements": 51,
-      "batch_calls": 4,
-      "batch_statements": 15
-    },
-    "prepare publication artifacts 72": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 51,
-      "batch_calls": 4,
-      "batch_statements": 15
-    },
-    "prepare publication artifacts 73": {
-      "attempts": 4,
-      "elapsed_ms": 8,
-      "prepared_statements": 51,
-      "batch_calls": 4,
-      "batch_statements": 15
-    },
-    "prepare publication artifacts 74": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 50,
-      "batch_calls": 4,
-      "batch_statements": 14
-    },
-    "prepare publication artifacts 75": {
-      "attempts": 4,
-      "elapsed_ms": 14,
-      "prepared_statements": 50,
-      "batch_calls": 4,
-      "batch_statements": 14
-    },
-    "prepare publication artifacts 76": {
-      "attempts": 4,
-      "elapsed_ms": 15,
-      "prepared_statements": 50,
-      "batch_calls": 4,
-      "batch_statements": 14
-    },
-    "prepare publication artifacts 77": {
-      "attempts": 4,
-      "elapsed_ms": 16,
-      "prepared_statements": 50,
-      "batch_calls": 4,
-      "batch_statements": 14
-    },
-    "prepare publication artifacts 78": {
-      "attempts": 4,
-      "elapsed_ms": 12,
-      "prepared_statements": 50,
-      "batch_calls": 4,
-      "batch_statements": 14
-    },
-    "prepare publication artifacts 79": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 50,
-      "batch_calls": 4,
-      "batch_statements": 14
-    },
-    "prepare publication artifacts 80": {
-      "attempts": 4,
-      "elapsed_ms": 61,
-      "prepared_statements": 49,
-      "batch_calls": 4,
-      "batch_statements": 13
-    },
-    "prepare publication artifacts 81": {
-      "attempts": 4,
-      "elapsed_ms": 24,
-      "prepared_statements": 49,
-      "batch_calls": 4,
-      "batch_statements": 13
-    },
-    "prepare publication artifacts 82": {
-      "attempts": 4,
-      "elapsed_ms": 11,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 83": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 84": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 85": {
-      "attempts": 4,
-      "elapsed_ms": 11,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 86": {
-      "attempts": 4,
-      "elapsed_ms": 7,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 87": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 88": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 89": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 90": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 91": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 92": {
-      "attempts": 4,
-      "elapsed_ms": 8,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 93": {
-      "attempts": 4,
-      "elapsed_ms": 11,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 94": {
-      "attempts": 4,
-      "elapsed_ms": 11,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 95": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 96": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 97": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 98": {
-      "attempts": 4,
-      "elapsed_ms": 8,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 99": {
-      "attempts": 4,
-      "elapsed_ms": 7,
-      "prepared_statements": 46,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 100": {
-      "attempts": 4,
-      "elapsed_ms": 13,
-      "prepared_statements": 60,
-      "batch_calls": 4,
-      "batch_statements": 24
-    },
-    "prepare publication artifacts 101": {
-      "attempts": 4,
-      "elapsed_ms": 18,
-      "prepared_statements": 60,
-      "batch_calls": 4,
-      "batch_statements": 24
-    },
-    "prepare publication artifacts 102": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 103": {
-      "attempts": 4,
-      "elapsed_ms": 13,
-      "prepared_statements": 54,
-      "batch_calls": 4,
-      "batch_statements": 18
-    },
-    "prepare publication artifacts 104": {
-      "attempts": 4,
-      "elapsed_ms": 11,
-      "prepared_statements": 54,
-      "batch_calls": 4,
-      "batch_statements": 18
-    },
-    "prepare publication artifacts 105": {
-      "attempts": 4,
-      "elapsed_ms": 11,
-      "prepared_statements": 54,
-      "batch_calls": 4,
-      "batch_statements": 18
-    },
-    "prepare publication artifacts 106": {
-      "attempts": 4,
-      "elapsed_ms": 27,
-      "prepared_statements": 68,
-      "batch_calls": 4,
-      "batch_statements": 28
-    },
-    "prepare publication artifacts 107": {
-      "attempts": 4,
-      "elapsed_ms": 12,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 108": {
-      "attempts": 4,
-      "elapsed_ms": 14,
-      "prepared_statements": 68,
-      "batch_calls": 4,
-      "batch_statements": 28
-    },
-    "prepare publication artifacts 109": {
-      "attempts": 4,
-      "elapsed_ms": 15,
-      "prepared_statements": 68,
-      "batch_calls": 4,
-      "batch_statements": 28
-    },
-    "prepare publication artifacts 110": {
-      "attempts": 4,
-      "elapsed_ms": 17,
-      "prepared_statements": 68,
-      "batch_calls": 4,
-      "batch_statements": 28
-    },
-    "prepare publication artifacts 111": {
-      "attempts": 4,
-      "elapsed_ms": 17,
-      "prepared_statements": 67,
-      "batch_calls": 4,
-      "batch_statements": 28
-    },
-    "prepare publication artifacts 112": {
-      "attempts": 4,
-      "elapsed_ms": 19,
-      "prepared_statements": 74,
-      "batch_calls": 4,
-      "batch_statements": 34
-    },
-    "prepare publication artifacts 113": {
-      "attempts": 4,
-      "elapsed_ms": 31,
-      "prepared_statements": 74,
-      "batch_calls": 4,
-      "batch_statements": 34
-    },
-    "prepare publication artifacts 114": {
-      "attempts": 4,
-      "elapsed_ms": 16,
-      "prepared_statements": 68,
-      "batch_calls": 4,
-      "batch_statements": 28
-    },
-    "prepare publication artifacts 115": {
-      "attempts": 4,
-      "elapsed_ms": 16,
-      "prepared_statements": 70,
-      "batch_calls": 4,
-      "batch_statements": 31
-    },
-    "prepare publication artifacts 116": {
-      "attempts": 4,
-      "elapsed_ms": 14,
-      "prepared_statements": 57,
-      "batch_calls": 4,
-      "batch_statements": 21
-    },
-    "prepare publication artifacts 117": {
-      "attempts": 4,
-      "elapsed_ms": 16,
-      "prepared_statements": 69,
-      "batch_calls": 4,
-      "batch_statements": 33
-    },
-    "prepare publication artifacts 118": {
-      "attempts": 4,
-      "elapsed_ms": 22,
-      "prepared_statements": 70,
-      "batch_calls": 4,
-      "batch_statements": 32
-    },
-    "prepare publication artifacts 119": {
-      "attempts": 4,
-      "elapsed_ms": 11,
-      "prepared_statements": 63,
-      "batch_calls": 4,
-      "batch_statements": 27
-    },
-    "prepare publication artifacts 120": {
-      "attempts": 4,
-      "elapsed_ms": 20,
-      "prepared_statements": 73,
-      "batch_calls": 4,
-      "batch_statements": 35
-    },
-    "prepare publication artifacts 121": {
-      "attempts": 4,
-      "elapsed_ms": 21,
-      "prepared_statements": 73,
-      "batch_calls": 4,
-      "batch_statements": 35
-    },
-    "prepare publication artifacts 122": {
-      "attempts": 4,
-      "elapsed_ms": 30,
-      "prepared_statements": 80,
-      "batch_calls": 4,
-      "batch_statements": 40
-    },
-    "prepare publication artifacts 123": {
-      "attempts": 4,
-      "elapsed_ms": 16,
-      "prepared_statements": 70,
-      "batch_calls": 4,
-      "batch_statements": 32
-    },
-    "prepare publication artifacts 124": {
-      "attempts": 4,
-      "elapsed_ms": 24,
-      "prepared_statements": 80,
-      "batch_calls": 4,
-      "batch_statements": 40
-    },
-    "prepare publication artifacts 125": {
-      "attempts": 4,
-      "elapsed_ms": 18,
-      "prepared_statements": 74,
-      "batch_calls": 4,
-      "batch_statements": 34
-    },
-    "prepare publication artifacts 126": {
-      "attempts": 4,
-      "elapsed_ms": 18,
-      "prepared_statements": 74,
-      "batch_calls": 4,
-      "batch_statements": 34
-    },
-    "prepare publication artifacts 127": {
-      "attempts": 4,
-      "elapsed_ms": 18,
-      "prepared_statements": 74,
-      "batch_calls": 4,
-      "batch_statements": 34
-    },
-    "prepare publication artifacts 128": {
-      "attempts": 4,
-      "elapsed_ms": 14,
-      "prepared_statements": 64,
-      "batch_calls": 4,
-      "batch_statements": 26
-    },
-    "prepare publication artifacts 129": {
-      "attempts": 4,
-      "elapsed_ms": 17,
-      "prepared_statements": 70,
-      "batch_calls": 4,
-      "batch_statements": 32
-    },
-    "prepare publication artifacts 130": {
-      "attempts": 4,
-      "elapsed_ms": 21,
-      "prepared_statements": 70,
-      "batch_calls": 4,
-      "batch_statements": 32
-    },
-    "prepare publication artifacts 131": {
-      "attempts": 4,
-      "elapsed_ms": 19,
-      "prepared_statements": 70,
-      "batch_calls": 4,
-      "batch_statements": 32
-    },
-    "prepare publication artifacts 132": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 54,
-      "batch_calls": 4,
-      "batch_statements": 18
-    },
-    "prepare publication artifacts 133": {
-      "attempts": 4,
-      "elapsed_ms": 12,
-      "prepared_statements": 60,
-      "batch_calls": 4,
-      "batch_statements": 24
-    },
-    "prepare publication artifacts 134": {
-      "attempts": 4,
-      "elapsed_ms": 12,
-      "prepared_statements": 60,
-      "batch_calls": 4,
-      "batch_statements": 24
-    },
-    "prepare publication artifacts 135": {
-      "attempts": 4,
-      "elapsed_ms": 12,
-      "prepared_statements": 60,
-      "batch_calls": 4,
-      "batch_statements": 24
-    },
-    "prepare publication artifacts 136": {
-      "attempts": 4,
-      "elapsed_ms": 12,
-      "prepared_statements": 60,
-      "batch_calls": 4,
-      "batch_statements": 24
-    },
-    "prepare publication artifacts 137": {
-      "attempts": 4,
-      "elapsed_ms": 13,
-      "prepared_statements": 60,
-      "batch_calls": 4,
-      "batch_statements": 24
-    },
-    "prepare publication artifacts 138": {
-      "attempts": 4,
-      "elapsed_ms": 11,
-      "prepared_statements": 60,
-      "batch_calls": 4,
-      "batch_statements": 24
-    },
-    "prepare publication artifacts 139": {
-      "attempts": 4,
-      "elapsed_ms": 12,
-      "prepared_statements": 60,
-      "batch_calls": 4,
-      "batch_statements": 24
-    },
-    "prepare publication artifacts 140": {
-      "attempts": 4,
-      "elapsed_ms": 14,
-      "prepared_statements": 60,
-      "batch_calls": 4,
-      "batch_statements": 24
-    },
-    "prepare publication artifacts 141": {
-      "attempts": 4,
-      "elapsed_ms": 12,
-      "prepared_statements": 60,
-      "batch_calls": 4,
-      "batch_statements": 24
-    },
-    "prepare publication artifacts 142": {
-      "attempts": 4,
-      "elapsed_ms": 17,
-      "prepared_statements": 60,
-      "batch_calls": 4,
-      "batch_statements": 24
-    },
-    "prepare publication artifacts 143": {
-      "attempts": 4,
-      "elapsed_ms": 11,
-      "prepared_statements": 60,
-      "batch_calls": 4,
-      "batch_statements": 24
-    },
-    "prepare publication artifacts 144": {
-      "attempts": 4,
-      "elapsed_ms": 8,
-      "prepared_statements": 54,
-      "batch_calls": 4,
-      "batch_statements": 18
-    },
-    "prepare publication artifacts 145": {
-      "attempts": 4,
-      "elapsed_ms": 14,
-      "prepared_statements": 54,
-      "batch_calls": 4,
-      "batch_statements": 18
-    },
-    "prepare publication artifacts 146": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 54,
-      "batch_calls": 4,
-      "batch_statements": 18
-    },
-    "prepare publication artifacts 147": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 54,
-      "batch_calls": 4,
-      "batch_statements": 18
-    },
-    "prepare publication artifacts 148": {
-      "attempts": 4,
-      "elapsed_ms": 7,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 149": {
-      "attempts": 4,
-      "elapsed_ms": 8,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 150": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 151": {
-      "attempts": 4,
-      "elapsed_ms": 7,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 152": {
-      "attempts": 4,
-      "elapsed_ms": 7,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 153": {
-      "attempts": 4,
-      "elapsed_ms": 8,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 154": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 155": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 156": {
-      "attempts": 4,
-      "elapsed_ms": 11,
-      "prepared_statements": 48,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 157": {
-      "attempts": 4,
-      "elapsed_ms": 6,
-      "prepared_statements": 46,
-      "batch_calls": 4,
-      "batch_statements": 12
-    },
-    "prepare publication artifacts 158": {
-      "attempts": 4,
-      "elapsed_ms": 8,
-      "prepared_statements": 50,
-      "batch_calls": 4,
-      "batch_statements": 14
-    },
-    "prepare publication artifacts 159": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 50,
-      "batch_calls": 4,
-      "batch_statements": 14
-    },
-    "prepare publication artifacts 160": {
-      "attempts": 4,
-      "elapsed_ms": 8,
-      "prepared_statements": 49,
-      "batch_calls": 4,
-      "batch_statements": 13
-    },
     "prepare publication artifacts 161": {
-      "attempts": 4,
-      "elapsed_ms": 11,
-      "prepared_statements": 49,
-      "batch_calls": 4,
-      "batch_statements": 13
+      "attempts": 5,
+      "elapsed_ms": 15,
+      "prepared_statements": 68,
+      "batch_calls": 6,
+      "batch_statements": 20
     },
     "prepare publication artifacts 162": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 50,
-      "batch_calls": 4,
-      "batch_statements": 13
+      "attempts": 5,
+      "elapsed_ms": 12,
+      "prepared_statements": 72,
+      "batch_calls": 8,
+      "batch_statements": 23
     },
     "prepare public export 8": {
-      "attempts": 4,
-      "elapsed_ms": 11,
-      "prepared_statements": 52,
-      "batch_calls": 4,
-      "batch_statements": 16
+      "attempts": 5,
+      "elapsed_ms": 18,
+      "prepared_statements": 80,
+      "batch_calls": 10,
+      "batch_statements": 30
     },
     "prepare public export 9": {
-      "attempts": 4,
-      "elapsed_ms": 14,
-      "prepared_statements": 52,
-      "batch_calls": 4,
-      "batch_statements": 16
+      "attempts": 5,
+      "elapsed_ms": 15,
+      "prepared_statements": 80,
+      "batch_calls": 10,
+      "batch_statements": 30
     },
     "prepare public export 10": {
-      "attempts": 4,
-      "elapsed_ms": 15,
-      "prepared_statements": 52,
-      "batch_calls": 4,
-      "batch_statements": 16
+      "attempts": 5,
+      "elapsed_ms": 21,
+      "prepared_statements": 80,
+      "batch_calls": 10,
+      "batch_statements": 30
     },
     "prepare public export 11": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 44,
-      "batch_calls": 4,
-      "batch_statements": 16
+      "attempts": 5,
+      "elapsed_ms": 15,
+      "prepared_statements": 61,
+      "batch_calls": 7,
+      "batch_statements": 24
     },
     "prepare public export 12": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 44,
-      "batch_calls": 4,
-      "batch_statements": 16
+      "attempts": 5,
+      "elapsed_ms": 12,
+      "prepared_statements": 55,
+      "batch_calls": 5,
+      "batch_statements": 20
     },
     "prepare public export 13": {
-      "attempts": 4,
-      "elapsed_ms": 8,
-      "prepared_statements": 44,
-      "batch_calls": 4,
-      "batch_statements": 16
+      "attempts": 5,
+      "elapsed_ms": 13,
+      "prepared_statements": 61,
+      "batch_calls": 7,
+      "batch_statements": 24
     },
     "prepare public export 14": {
-      "attempts": 4,
-      "elapsed_ms": 7,
-      "prepared_statements": 44,
-      "batch_calls": 4,
-      "batch_statements": 16
+      "attempts": 5,
+      "elapsed_ms": 24,
+      "prepared_statements": 58,
+      "batch_calls": 6,
+      "batch_statements": 22
     },
     "prepare public export 15": {
-      "attempts": 4,
-      "elapsed_ms": 8,
-      "prepared_statements": 44,
-      "batch_calls": 4,
-      "batch_statements": 16
+      "attempts": 5,
+      "elapsed_ms": 15,
+      "prepared_statements": 61,
+      "batch_calls": 7,
+      "batch_statements": 24
     },
     "dispatch publication successor": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 4,
+      "attempts": 5,
+      "elapsed_ms": 11,
+      "prepared_statements": 5,
       "batch_calls": 0,
       "batch_statements": 0
     },
     "prepare public export 16": {
-      "attempts": 4,
-      "elapsed_ms": 11,
-      "prepared_statements": 44,
-      "batch_calls": 4,
-      "batch_statements": 16
+      "attempts": 5,
+      "elapsed_ms": 14,
+      "prepared_statements": 58,
+      "batch_calls": 6,
+      "batch_statements": 22
     },
     "prepare public export 17": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 44,
-      "batch_calls": 4,
-      "batch_statements": 16
+      "attempts": 5,
+      "elapsed_ms": 10,
+      "prepared_statements": 58,
+      "batch_calls": 6,
+      "batch_statements": 22
     },
     "prepare public export 18": {
-      "attempts": 4,
-      "elapsed_ms": 10,
-      "prepared_statements": 44,
-      "batch_calls": 4,
-      "batch_statements": 16
+      "attempts": 5,
+      "elapsed_ms": 12,
+      "prepared_statements": 61,
+      "batch_calls": 7,
+      "batch_statements": 24
     },
     "prepare public export 19": {
-      "attempts": 4,
+      "attempts": 5,
       "elapsed_ms": 7,
-      "prepared_statements": 42,
-      "batch_calls": 4,
-      "batch_statements": 15
+      "prepared_statements": 53,
+      "batch_calls": 5,
+      "batch_statements": 19
     },
     "prepare public export 20": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 43,
-      "batch_calls": 4,
-      "batch_statements": 16
+      "attempts": 5,
+      "elapsed_ms": 10,
+      "prepared_statements": 57,
+      "batch_calls": 6,
+      "batch_statements": 22
     },
     "prepare public export 21": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 43,
-      "batch_calls": 4,
-      "batch_statements": 16
+      "attempts": 5,
+      "elapsed_ms": 12,
+      "prepared_statements": 60,
+      "batch_calls": 7,
+      "batch_statements": 24
     },
     "prepare public export 22": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 42,
-      "batch_calls": 4,
-      "batch_statements": 15
+      "attempts": 5,
+      "elapsed_ms": 10,
+      "prepared_statements": 53,
+      "batch_calls": 5,
+      "batch_statements": 19
     },
     "prepare public export 23": {
-      "attempts": 4,
-      "elapsed_ms": 9,
-      "prepared_statements": 43,
-      "batch_calls": 4,
-      "batch_statements": 16
+      "attempts": 5,
+      "elapsed_ms": 10,
+      "prepared_statements": 60,
+      "batch_calls": 7,
+      "batch_statements": 24
     },
     "prepare public export 24": {
-      "attempts": 4,
-      "elapsed_ms": 8,
-      "prepared_statements": 43,
-      "batch_calls": 4,
-      "batch_statements": 15
+      "attempts": 5,
+      "elapsed_ms": 15,
+      "prepared_statements": 57,
+      "batch_calls": 6,
+      "batch_statements": 21
     },
     "publication switch 24": {
       "attempts": 1,
-      "elapsed_ms": 8,
-      "prepared_statements": 35,
-      "batch_calls": 1,
-      "batch_statements": 13
+      "elapsed_ms": 9,
+      "prepared_statements": 41,
+      "batch_calls": 3,
+      "batch_statements": 17
     },
     "prepare publication artifacts 163": {
-      "attempts": 3,
-      "elapsed_ms": 6,
-      "prepared_statements": 37,
-      "batch_calls": 3,
-      "batch_statements": 9
+      "attempts": 4,
+      "elapsed_ms": 8,
+      "prepared_statements": 52,
+      "batch_calls": 4,
+      "batch_statements": 14
     },
     "prepare publication artifacts 164": {
-      "attempts": 2,
-      "elapsed_ms": 4,
-      "prepared_statements": 24,
-      "batch_calls": 2,
-      "batch_statements": 6
+      "attempts": 4,
+      "elapsed_ms": 7,
+      "prepared_statements": 48,
+      "batch_calls": 4,
+      "batch_statements": 12
     },
     "prepare publication artifacts 165": {
-      "attempts": 2,
-      "elapsed_ms": 3,
-      "prepared_statements": 24,
-      "batch_calls": 2,
-      "batch_statements": 6
+      "attempts": 4,
+      "elapsed_ms": 9,
+      "prepared_statements": 56,
+      "batch_calls": 6,
+      "batch_statements": 18
     },
     "prepare publication artifacts 166": {
-      "attempts": 2,
-      "elapsed_ms": 5,
-      "prepared_statements": 24,
-      "batch_calls": 2,
-      "batch_statements": 6
+      "attempts": 4,
+      "elapsed_ms": 11,
+      "prepared_statements": 56,
+      "batch_calls": 6,
+      "batch_statements": 16
     },
     "prepare publication artifacts 167": {
       "attempts": 2,
-      "elapsed_ms": 5,
+      "elapsed_ms": 2,
       "prepared_statements": 24,
       "batch_calls": 2,
       "batch_statements": 6
     },
     "prepare publication artifacts 168": {
       "attempts": 2,
-      "elapsed_ms": 4,
+      "elapsed_ms": 3,
       "prepared_statements": 24,
       "batch_calls": 2,
       "batch_statements": 6
     },
     "prepare publication artifacts 169": {
       "attempts": 2,
-      "elapsed_ms": 4,
+      "elapsed_ms": 3,
       "prepared_statements": 24,
       "batch_calls": 2,
       "batch_statements": 6
     },
     "prepare publication artifacts 170": {
       "attempts": 2,
-      "elapsed_ms": 4,
+      "elapsed_ms": 3,
       "prepared_statements": 24,
       "batch_calls": 2,
       "batch_statements": 6
     },
     "prepare publication artifacts 171": {
       "attempts": 2,
-      "elapsed_ms": 5,
+      "elapsed_ms": 4,
       "prepared_statements": 24,
       "batch_calls": 2,
       "batch_statements": 6
@@ -1631,21 +1632,21 @@
     },
     "prepare publication artifacts 173": {
       "attempts": 2,
-      "elapsed_ms": 5,
+      "elapsed_ms": 3,
       "prepared_statements": 24,
       "batch_calls": 2,
       "batch_statements": 6
     },
     "prepare publication artifacts 174": {
       "attempts": 2,
-      "elapsed_ms": 7,
+      "elapsed_ms": 2,
       "prepared_statements": 24,
       "batch_calls": 2,
       "batch_statements": 6
     },
     "prepare publication artifacts 175": {
       "attempts": 2,
-      "elapsed_ms": 11,
+      "elapsed_ms": 4,
       "prepared_statements": 23,
       "batch_calls": 2,
       "batch_statements": 6
@@ -1653,27 +1654,27 @@
     "prepare publication artifacts 176": {
       "attempts": 2,
       "elapsed_ms": 6,
-      "prepared_statements": 25,
-      "batch_calls": 2,
-      "batch_statements": 7
+      "prepared_statements": 28,
+      "batch_calls": 3,
+      "batch_statements": 9
     },
     "prepare publication artifacts 177": {
       "attempts": 2,
-      "elapsed_ms": 10,
-      "prepared_statements": 25,
-      "batch_calls": 2,
-      "batch_statements": 7
+      "elapsed_ms": 5,
+      "prepared_statements": 28,
+      "batch_calls": 3,
+      "batch_statements": 9
     },
     "prepare publication artifacts 178": {
       "attempts": 2,
-      "elapsed_ms": 9,
-      "prepared_statements": 25,
-      "batch_calls": 2,
-      "batch_statements": 7
+      "elapsed_ms": 6,
+      "prepared_statements": 28,
+      "batch_calls": 3,
+      "batch_statements": 9
     },
     "prepare publication artifacts 179": {
       "attempts": 2,
-      "elapsed_ms": 5,
+      "elapsed_ms": 3,
       "prepared_statements": 24,
       "batch_calls": 2,
       "batch_statements": 6
@@ -1681,91 +1682,91 @@
     "prepare publication artifacts 180": {
       "attempts": 2,
       "elapsed_ms": 6,
-      "prepared_statements": 25,
-      "batch_calls": 2,
-      "batch_statements": 7
+      "prepared_statements": 28,
+      "batch_calls": 3,
+      "batch_statements": 9
     },
     "prepare publication artifacts 181": {
       "attempts": 2,
-      "elapsed_ms": 46,
-      "prepared_statements": 24,
-      "batch_calls": 2,
-      "batch_statements": 6
+      "elapsed_ms": 14,
+      "prepared_statements": 27,
+      "batch_calls": 3,
+      "batch_statements": 8
     },
     "prepare public export 25": {
-      "attempts": 3,
-      "elapsed_ms": 5,
-      "prepared_statements": 33,
-      "batch_calls": 3,
-      "batch_statements": 12
+      "attempts": 4,
+      "elapsed_ms": 9,
+      "prepared_statements": 47,
+      "batch_calls": 5,
+      "batch_statements": 18
     },
     "prepare public export 26": {
-      "attempts": 3,
-      "elapsed_ms": 3,
-      "prepared_statements": 27,
-      "batch_calls": 3,
-      "batch_statements": 9
+      "attempts": 4,
+      "elapsed_ms": 7,
+      "prepared_statements": 36,
+      "batch_calls": 4,
+      "batch_statements": 12
     },
     "prepare public export 27": {
-      "attempts": 3,
-      "elapsed_ms": 9,
-      "prepared_statements": 30,
-      "batch_calls": 3,
-      "batch_statements": 12
+      "attempts": 4,
+      "elapsed_ms": 11,
+      "prepared_statements": 52,
+      "batch_calls": 8,
+      "batch_statements": 24
     },
     "prepare public export 28": {
-      "attempts": 3,
-      "elapsed_ms": 8,
-      "prepared_statements": 30,
-      "batch_calls": 3,
-      "batch_statements": 12
+      "attempts": 4,
+      "elapsed_ms": 12,
+      "prepared_statements": 55,
+      "batch_calls": 8,
+      "batch_statements": 24
     },
     "prepare public export 29": {
-      "attempts": 3,
+      "attempts": 4,
       "elapsed_ms": 4,
-      "prepared_statements": 27,
-      "batch_calls": 3,
-      "batch_statements": 9
-    },
-    "prepare public export 30": {
-      "attempts": 3,
-      "elapsed_ms": 6,
-      "prepared_statements": 30,
-      "batch_calls": 3,
+      "prepared_statements": 36,
+      "batch_calls": 4,
       "batch_statements": 12
     },
+    "prepare public export 30": {
+      "attempts": 4,
+      "elapsed_ms": 11,
+      "prepared_statements": 52,
+      "batch_calls": 8,
+      "batch_statements": 24
+    },
     "prepare public export 31": {
-      "attempts": 3,
-      "elapsed_ms": 9,
-      "prepared_statements": 30,
-      "batch_calls": 3,
-      "batch_statements": 9
+      "attempts": 4,
+      "elapsed_ms": 12,
+      "prepared_statements": 52,
+      "batch_calls": 8,
+      "batch_statements": 20
     },
     "publication switch 31": {
-      "attempts": 3,
-      "elapsed_ms": 25,
-      "prepared_statements": 105,
-      "batch_calls": 3,
-      "batch_statements": 39
+      "attempts": 4,
+      "elapsed_ms": 41,
+      "prepared_statements": 164,
+      "batch_calls": 12,
+      "batch_statements": 68
     },
     "prepare publication artifacts 182": {
       "attempts": 1,
-      "elapsed_ms": 4,
-      "prepared_statements": 13,
+      "elapsed_ms": 3,
+      "prepared_statements": 14,
       "batch_calls": 1,
       "batch_statements": 4
     },
     "prepare publication artifacts 183": {
       "attempts": 1,
-      "elapsed_ms": 4,
-      "prepared_statements": 13,
-      "batch_calls": 1,
-      "batch_statements": 4
+      "elapsed_ms": 3,
+      "prepared_statements": 16,
+      "batch_calls": 2,
+      "batch_statements": 6
     },
     "prepare publication artifacts 184": {
       "attempts": 1,
       "elapsed_ms": 3,
-      "prepared_statements": 13,
+      "prepared_statements": 14,
       "batch_calls": 1,
       "batch_statements": 4
     },
@@ -1778,49 +1779,49 @@
     },
     "prepare publication artifacts 186": {
       "attempts": 1,
-      "elapsed_ms": 4,
-      "prepared_statements": 13,
-      "batch_calls": 1,
-      "batch_statements": 4
+      "elapsed_ms": 3,
+      "prepared_statements": 16,
+      "batch_calls": 2,
+      "batch_statements": 6
     },
     "prepare publication artifacts 187": {
       "attempts": 1,
-      "elapsed_ms": 5,
-      "prepared_statements": 13,
-      "batch_calls": 1,
-      "batch_statements": 3
+      "elapsed_ms": 3,
+      "prepared_statements": 16,
+      "batch_calls": 2,
+      "batch_statements": 5
     },
     "collect stage 0 batch 0 from 0 pass 1": {
       "attempts": 1,
-      "elapsed_ms": 8,
+      "elapsed_ms": 14,
       "prepared_statements": 23,
       "batch_calls": 3,
       "batch_statements": 6
     },
     "collect stage 0 batch 0 from 0 pass 2": {
       "attempts": 1,
-      "elapsed_ms": 6,
+      "elapsed_ms": 16,
       "prepared_statements": 23,
       "batch_calls": 3,
       "batch_statements": 6
     },
     "recover pending hostname workflows stage 2": {
       "attempts": 1,
-      "elapsed_ms": 3,
+      "elapsed_ms": 7,
       "prepared_statements": 8,
       "batch_calls": 3,
       "batch_statements": 5
     },
     "load pending evidence page 0 barrier 3": {
       "attempts": 1,
-      "elapsed_ms": 2,
+      "elapsed_ms": 4,
       "prepared_statements": 6,
       "batch_calls": 2,
       "batch_statements": 4
     },
     "recover pending hostname workflows stage 3": {
       "attempts": 1,
-      "elapsed_ms": 2,
+      "elapsed_ms": 7,
       "prepared_statements": 8,
       "batch_calls": 3,
       "batch_statements": 5
@@ -1834,7 +1835,7 @@
     },
     "finalize collection barrier stage 3": {
       "attempts": 1,
-      "elapsed_ms": 2,
+      "elapsed_ms": 1,
       "prepared_statements": 9,
       "batch_calls": 2,
       "batch_statements": 4
@@ -1848,14 +1849,14 @@
     },
     "load pending evidence page 0 barrier 4": {
       "attempts": 1,
-      "elapsed_ms": 6,
+      "elapsed_ms": 4,
       "prepared_statements": 6,
       "batch_calls": 2,
       "batch_statements": 4
     },
     "record hostname Workflow identities stage 4": {
       "attempts": 1,
-      "elapsed_ms": 7,
+      "elapsed_ms": 2,
       "prepared_statements": 9,
       "batch_calls": 3,
       "batch_statements": 8
@@ -1920,7 +1921,7 @@
     },
     "catalogue_backup_attempts": {
       "type": "table",
-      "rows": 5,
+      "rows": 6,
       "allocated_page_bytes": 12288
     },
     "catalogue_backup_attempts_by_revision": {
@@ -1929,27 +1930,27 @@
     },
     "catalogue_backup_dispatch": {
       "type": "table",
-      "rows": 5,
+      "rows": 6,
       "allocated_page_bytes": 4096
     },
     "catalogue_backup_retention": {
       "type": "table",
-      "rows": 5,
+      "rows": 6,
       "allocated_page_bytes": 4096
     },
     "catalogue_backup_workflow_requests": {
       "type": "table",
-      "rows": 5,
+      "rows": 6,
       "allocated_page_bytes": 4096
     },
     "catalogue_candidate_publications": {
       "type": "table",
-      "rows": 5,
+      "rows": 6,
       "allocated_page_bytes": 4096
     },
     "catalogue_composition_games": {
       "type": "table",
-      "rows": 5,
+      "rows": 6,
       "allocated_page_bytes": 4096
     },
     "catalogue_curated_provenance": {
@@ -1979,7 +1980,7 @@
     },
     "catalogue_exports": {
       "type": "table",
-      "rows": 5,
+      "rows": 6,
       "allocated_page_bytes": 4096
     },
     "catalogue_legacy_collection_identity": {
@@ -1992,7 +1993,7 @@
     },
     "catalogue_query_revisions": {
       "type": "table",
-      "rows": 5,
+      "rows": 6,
       "allocated_page_bytes": 4096
     },
     "catalogue_recovery_collection_classifications": {
@@ -2012,7 +2013,7 @@
     },
     "catalogue_revisions": {
       "type": "table",
-      "rows": 5,
+      "rows": 6,
       "allocated_page_bytes": 4096
     },
     "catalogue_schema_state": {
@@ -2029,6 +2030,78 @@
       "type": "table",
       "rows": 1,
       "allocated_page_bytes": 4096
+    },
+    "cleanup_artifact_key": {
+      "type": "index",
+      "allocated_page_bytes": 49152
+    },
+    "cleanup_candidate_collection": {
+      "type": "index",
+      "allocated_page_bytes": 4096
+    },
+    "cleanup_candidate_image_partition": {
+      "type": "index",
+      "allocated_page_bytes": 4096
+    },
+    "cleanup_export_component_key": {
+      "type": "index",
+      "allocated_page_bytes": 20480
+    },
+    "cleanup_export_node_key": {
+      "type": "index",
+      "allocated_page_bytes": 4096
+    },
+    "cleanup_export_root_key": {
+      "type": "index",
+      "allocated_page_bytes": 4096
+    },
+    "cleanup_node_key": {
+      "type": "index",
+      "allocated_page_bytes": 4096
+    },
+    "cleanup_parse_snapshot": {
+      "type": "index",
+      "allocated_page_bytes": 40960
+    },
+    "cleanup_preparation_collection": {
+      "type": "index",
+      "allocated_page_bytes": 4096
+    },
+    "cleanup_selection_snapshot": {
+      "type": "index",
+      "allocated_page_bytes": 20480
+    },
+    "cleanup_snapshot_canonical_identity_review_runs": {
+      "type": "index",
+      "allocated_page_bytes": 4096
+    },
+    "cleanup_snapshot_canonical_identity_reviews": {
+      "type": "index",
+      "allocated_page_bytes": 4096
+    },
+    "cleanup_snapshot_canonical_source_mappings": {
+      "type": "index",
+      "allocated_page_bytes": 4096
+    },
+    "cleanup_snapshot_entity_proposal_source_evidence": {
+      "type": "index",
+      "allocated_page_bytes": 12288
+    },
+    "cleanup_snapshot_reconciled_withdrawal_assertions": {
+      "type": "index",
+      "allocated_page_bytes": 4096
+    },
+    "cleanup_snapshot_reconciliation_candidates": {
+      "type": "index",
+      "allocated_page_bytes": 4096
+    },
+    "cleanup_snapshot_reconciliation_evidence_partitions": {
+      "type": "index",
+      "allocated_page_bytes": 4096
+    },
+    "cleanup_snapshot_reconciliation_source_mappings": {
+      "type": "index",
+      "allocated_page_bytes": 12288
     },
     "curated_revision_events": {
       "type": "table",
@@ -2063,7 +2136,7 @@
     },
     "d1_migrations": {
       "type": "table",
-      "rows": 24,
+      "rows": 25,
       "allocated_page_bytes": 4096
     },
     "entity_admission_decisions": {
@@ -2092,8 +2165,8 @@
     },
     "entity_proposal_source_evidence": {
       "type": "table",
-      "rows": 89,
-      "allocated_page_bytes": 32768
+      "rows": 95,
+      "allocated_page_bytes": 36864
     },
     "entity_proposals": {
       "type": "table",
@@ -2105,15 +2178,52 @@
       "rows": 0,
       "allocated_page_bytes": 4096
     },
+    "evidence_cleanup_objects": {
+      "type": "table",
+      "rows": 0,
+      "allocated_page_bytes": 4096
+    },
+    "evidence_cleanup_operations": {
+      "type": "table",
+      "rows": 0,
+      "allocated_page_bytes": 4096
+    },
+    "evidence_cleanup_results": {
+      "type": "table",
+      "rows": 0,
+      "allocated_page_bytes": 4096
+    },
+    "evidence_cleanup_snapshot_key": {
+      "type": "index",
+      "allocated_page_bytes": 36864
+    },
+    "evidence_cleanup_waiting": {
+      "type": "index",
+      "allocated_page_bytes": 4096
+    },
+    "evidence_object_references": {
+      "type": "table",
+      "rows": 0,
+      "allocated_page_bytes": 4096
+    },
+    "evidence_object_writers": {
+      "type": "table",
+      "rows": 339,
+      "allocated_page_bytes": 114688
+    },
+    "evidence_object_writers_key": {
+      "type": "index",
+      "allocated_page_bytes": 53248
+    },
     "game_candidate_entity_scopes": {
       "type": "table",
-      "rows": 47,
+      "rows": 56,
       "allocated_page_bytes": 12288
     },
     "game_candidate_partitions": {
       "type": "table",
-      "rows": 183,
-      "allocated_page_bytes": 868352
+      "rows": 213,
+      "allocated_page_bytes": 1007616
     },
     "game_candidate_slots": {
       "type": "table",
@@ -2122,7 +2232,7 @@
     },
     "game_candidates": {
       "type": "table",
-      "rows": 7,
+      "rows": 8,
       "allocated_page_bytes": 4096
     },
     "game_candidates_collection_page": {
@@ -2136,17 +2246,17 @@
     },
     "game_publication_actions": {
       "type": "table",
-      "rows": 263,
-      "allocated_page_bytes": 159744
+      "rows": 328,
+      "allocated_page_bytes": 196608
     },
     "game_publication_operations": {
       "type": "table",
-      "rows": 5,
+      "rows": 6,
       "allocated_page_bytes": 16384
     },
     "game_reconciliation_requests": {
       "type": "table",
-      "rows": 7,
+      "rows": 8,
       "allocated_page_bytes": 12288
     },
     "identity_correction_decisions": {
@@ -2161,7 +2271,7 @@
     },
     "ingestion_collection_completions": {
       "type": "table",
-      "rows": 7,
+      "rows": 8,
       "allocated_page_bytes": 4096
     },
     "ingestion_collection_reservations": {
@@ -2171,7 +2281,7 @@
     },
     "ingestion_evidence_plans": {
       "type": "table",
-      "rows": 8,
+      "rows": 9,
       "allocated_page_bytes": 20480
     },
     "ingestion_no_change_results": {
@@ -2196,7 +2306,7 @@
     },
     "ingestion_run_curated_revision_sets": {
       "type": "table",
-      "rows": 8,
+      "rows": 9,
       "allocated_page_bytes": 4096
     },
     "ingestion_run_curated_revisions": {
@@ -2206,7 +2316,7 @@
     },
     "ingestion_run_current": {
       "type": "table",
-      "rows": 8,
+      "rows": 9,
       "allocated_page_bytes": 4096
     },
     "ingestion_run_event_payload_chunks": {
@@ -2216,7 +2326,7 @@
     },
     "ingestion_run_events": {
       "type": "table",
-      "rows": 16,
+      "rows": 18,
       "allocated_page_bytes": 28672
     },
     "ingestion_run_retry_pauses": {
@@ -2226,7 +2336,7 @@
     },
     "ingestion_run_selected_games": {
       "type": "table",
-      "rows": 8,
+      "rows": 9,
       "allocated_page_bytes": 4096
     },
     "ingestion_run_terminations": {
@@ -2241,7 +2351,7 @@
     },
     "ingestion_runs": {
       "type": "table",
-      "rows": 8,
+      "rows": 9,
       "allocated_page_bytes": 4096
     },
     "ingestion_runs_by_state": {
@@ -2254,12 +2364,12 @@
     },
     "ingestion_workflow_attempts": {
       "type": "table",
-      "rows": 28,
+      "rows": 30,
       "allocated_page_bytes": 12288
     },
     "ingestion_workflow_progress": {
       "type": "table",
-      "rows": 28,
+      "rows": 30,
       "allocated_page_bytes": 12288
     },
     "legacy_reconciliation_for_run": {
@@ -2307,48 +2417,48 @@
     },
     "publication_composition_nodes": {
       "type": "table",
-      "rows": 16,
-      "allocated_page_bytes": 4096
+      "rows": 20,
+      "allocated_page_bytes": 12288
     },
     "publication_export_components": {
       "type": "table",
-      "rows": 102,
-      "allocated_page_bytes": 102400
+      "rows": 128,
+      "allocated_page_bytes": 126976
     },
     "publication_export_nodes": {
       "type": "table",
-      "rows": 13,
+      "rows": 16,
       "allocated_page_bytes": 4096
     },
     "publication_export_preparations": {
       "type": "table",
-      "rows": 5,
+      "rows": 6,
       "allocated_page_bytes": 4096
     },
     "publication_preparation_actions": {
       "type": "table",
-      "rows": 750,
-      "allocated_page_bytes": 1536000
+      "rows": 920,
+      "allocated_page_bytes": 1880064
     },
     "publication_preparation_artifacts": {
       "type": "table",
-      "rows": 311,
-      "allocated_page_bytes": 90112
+      "rows": 390,
+      "allocated_page_bytes": 110592
     },
     "publication_preparations": {
       "type": "table",
-      "rows": 5,
+      "rows": 6,
       "allocated_page_bytes": 4096
     },
     "publication_projection_batches": {
       "type": "table",
-      "rows": 102,
-      "allocated_page_bytes": 86016
+      "rows": 128,
+      "allocated_page_bytes": 106496
     },
     "publication_query_documents": {
       "type": "table",
-      "rows": 102,
-      "allocated_page_bytes": 20480
+      "rows": 128,
+      "allocated_page_bytes": 24576
     },
     "publication_read_attribute_value": {
       "type": "index",
@@ -2356,7 +2466,7 @@
     },
     "publication_read_attributes": {
       "type": "table",
-      "rows": 60,
+      "rows": 72,
       "allocated_page_bytes": 16384
     },
     "publication_read_batch": {
@@ -2365,37 +2475,37 @@
     },
     "publication_read_card": {
       "type": "index",
-      "allocated_page_bytes": 28672
+      "allocated_page_bytes": 40960
     },
     "publication_read_entities": {
       "type": "table",
-      "rows": 102,
-      "allocated_page_bytes": 40960
+      "rows": 128,
+      "allocated_page_bytes": 49152
     },
     "publication_read_from": {
       "type": "index",
-      "allocated_page_bytes": 24576
+      "allocated_page_bytes": 32768
     },
     "publication_read_identity": {
       "type": "index",
-      "allocated_page_bytes": 24576
+      "allocated_page_bytes": 32768
     },
     "publication_read_lifecycles": {
       "type": "table",
-      "rows": 38,
-      "allocated_page_bytes": 16384
+      "rows": 47,
+      "allocated_page_bytes": 20480
     },
     "publication_read_order": {
       "type": "index",
-      "allocated_page_bytes": 28672
+      "allocated_page_bytes": 36864
     },
     "publication_read_product": {
       "type": "index",
-      "allocated_page_bytes": 24576
+      "allocated_page_bytes": 32768
     },
     "publication_read_rarity": {
       "type": "index",
-      "allocated_page_bytes": 32768
+      "allocated_page_bytes": 40960
     },
     "publication_read_region": {
       "type": "index",
@@ -2413,16 +2523,16 @@
     },
     "publication_read_to": {
       "type": "index",
-      "allocated_page_bytes": 16384
+      "allocated_page_bytes": 20480
     },
     "publication_search_chunks": {
       "type": "table",
-      "rows": 15,
+      "rows": 18,
       "allocated_page_bytes": 4096
     },
     "publication_search_fts": {
       "type": "table",
-      "rows": 15
+      "rows": 18
     },
     "publication_search_fts_config": {
       "type": "table",
@@ -2431,27 +2541,27 @@
     },
     "publication_search_fts_content": {
       "type": "table",
-      "rows": 15,
-      "allocated_page_bytes": 4096
+      "rows": 18,
+      "allocated_page_bytes": 12288
     },
     "publication_search_fts_data": {
       "type": "table",
-      "rows": 4,
-      "allocated_page_bytes": 16384
+      "rows": 5,
+      "allocated_page_bytes": 20480
     },
     "publication_search_fts_docsize": {
       "type": "table",
-      "rows": 15,
+      "rows": 18,
       "allocated_page_bytes": 4096
     },
     "publication_search_fts_idx": {
       "type": "table",
-      "rows": 2,
+      "rows": 3,
       "allocated_page_bytes": 4096
     },
     "publication_workflow_budgets": {
       "type": "table",
-      "rows": 50,
+      "rows": 61,
       "allocated_page_bytes": 12288
     },
     "reconciled_card_observations": {
@@ -2545,8 +2655,8 @@
     },
     "reconciliation_admission_decisions": {
       "type": "table",
-      "rows": 90,
-      "allocated_page_bytes": 20480
+      "rows": 105,
+      "allocated_page_bytes": 24576
     },
     "reconciliation_admission_legacy_selection": {
       "type": "index",
@@ -2554,8 +2664,8 @@
     },
     "reconciliation_admission_pins": {
       "type": "table",
-      "rows": 7,
-      "allocated_page_bytes": 32768
+      "rows": 8,
+      "allocated_page_bytes": 36864
     },
     "reconciliation_automatic_admissions": {
       "type": "table",
@@ -2574,12 +2684,12 @@
     },
     "reconciliation_checkpoints": {
       "type": "table",
-      "rows": 2502,
-      "allocated_page_bytes": 2420736
+      "rows": 2921,
+      "allocated_page_bytes": 2805760
     },
     "reconciliation_checkpoints_recent": {
       "type": "index",
-      "allocated_page_bytes": 253952
+      "allocated_page_bytes": 290816
     },
     "reconciliation_contexts": {
       "type": "table",
@@ -2588,7 +2698,7 @@
     },
     "reconciliation_correction_pins": {
       "type": "table",
-      "rows": 7,
+      "rows": 8,
       "allocated_page_bytes": 4096
     },
     "reconciliation_curated_conflicts": {
@@ -2602,7 +2712,7 @@
     },
     "reconciliation_curated_pins": {
       "type": "table",
-      "rows": 7,
+      "rows": 8,
       "allocated_page_bytes": 4096
     },
     "reconciliation_evidence_partitions": {
@@ -2612,8 +2722,8 @@
     },
     "reconciliation_evidence_selection": {
       "type": "table",
-      "rows": 151,
-      "allocated_page_bytes": 397312
+      "rows": 160,
+      "allocated_page_bytes": 417792
     },
     "reconciliation_identity_reviews": {
       "type": "table",
@@ -2626,27 +2736,27 @@
     },
     "reconciliation_input_partitions": {
       "type": "table",
-      "rows": 46,
-      "allocated_page_bytes": 348160
+      "rows": 51,
+      "allocated_page_bytes": 376832
     },
     "reconciliation_normalized_card_erratum_target": {
       "type": "index",
-      "allocated_page_bytes": 20480
+      "allocated_page_bytes": 24576
     },
     "reconciliation_normalized_observations": {
       "type": "table",
-      "rows": 89,
-      "allocated_page_bytes": 368640
+      "rows": 95,
+      "allocated_page_bytes": 393216
     },
     "reconciliation_observation_origins": {
       "type": "table",
-      "rows": 89,
+      "rows": 95,
       "allocated_page_bytes": 28672
     },
     "reconciliation_operations": {
       "type": "table",
-      "rows": 7,
-      "allocated_page_bytes": 106496
+      "rows": 8,
+      "allocated_page_bytes": 122880
     },
     "reconciliation_payload_chunks": {
       "type": "table",
@@ -2655,11 +2765,11 @@
     },
     "reconciliation_plan_card": {
       "type": "index",
-      "allocated_page_bytes": 12288
+      "allocated_page_bytes": 16384
     },
     "reconciliation_plan_printing": {
       "type": "index",
-      "allocated_page_bytes": 12288
+      "allocated_page_bytes": 16384
     },
     "reconciliation_preparation_batches": {
       "type": "table",
@@ -2668,25 +2778,25 @@
     },
     "reconciliation_record_partitions": {
       "type": "table",
-      "rows": 60,
-      "allocated_page_bytes": 176128
+      "rows": 69,
+      "allocated_page_bytes": 204800
     },
     "reconciliation_reducer_entity_cursor": {
       "type": "index",
-      "allocated_page_bytes": 512000
+      "allocated_page_bytes": 557056
     },
     "reconciliation_reducer_insertion_cursor": {
       "type": "index",
-      "allocated_page_bytes": 327680
+      "allocated_page_bytes": 376832
     },
     "reconciliation_reducer_state": {
       "type": "table",
-      "rows": 2080,
-      "allocated_page_bytes": 2379776
+      "rows": 2445,
+      "allocated_page_bytes": 2785280
     },
     "reconciliation_reducer_state_group": {
       "type": "index",
-      "allocated_page_bytes": 192512
+      "allocated_page_bytes": 196608
     },
     "reconciliation_reducer_unknown_facts": {
       "type": "index",
@@ -2698,32 +2808,32 @@
     },
     "reconciliation_sort_batches": {
       "type": "table",
-      "rows": 92,
-      "allocated_page_bytes": 229376
+      "rows": 104,
+      "allocated_page_bytes": 258048
     },
     "reconciliation_source_byte_chunks": {
       "type": "table",
-      "rows": 150,
-      "allocated_page_bytes": 593920
+      "rows": 159,
+      "allocated_page_bytes": 638976
     },
     "reconciliation_source_documents": {
       "type": "table",
-      "rows": 150,
-      "allocated_page_bytes": 208896
+      "rows": 159,
+      "allocated_page_bytes": 221184
     },
     "reconciliation_source_image_lookup": {
       "type": "index",
-      "allocated_page_bytes": 36864
+      "allocated_page_bytes": 40960
     },
     "reconciliation_source_mappings": {
       "type": "table",
-      "rows": 76,
-      "allocated_page_bytes": 278528
+      "rows": 88,
+      "allocated_page_bytes": 327680
     },
     "reconciliation_source_observations": {
       "type": "table",
-      "rows": 89,
-      "allocated_page_bytes": 446464
+      "rows": 95,
+      "allocated_page_bytes": 479232
     },
     "reconciliation_terminal_results": {
       "type": "table",
@@ -2737,7 +2847,7 @@
     },
     "reconciliation_workflow_budgets": {
       "type": "table",
-      "rows": 64,
+      "rows": 75,
       "allocated_page_bytes": 12288
     },
     "reconciliation_workflow_requests": {
@@ -2937,22 +3047,22 @@
     },
     "source_capture_operations": {
       "type": "table",
-      "rows": 165,
-      "allocated_page_bytes": 225280
+      "rows": 174,
+      "allocated_page_bytes": 237568
     },
     "source_discovery_request_plans": {
       "type": "table",
-      "rows": 139,
-      "allocated_page_bytes": 61440
+      "rows": 146,
+      "allocated_page_bytes": 65536
     },
     "source_fetch_attempts": {
       "type": "table",
-      "rows": 165,
-      "allocated_page_bytes": 155648
+      "rows": 174,
+      "allocated_page_bytes": 163840
     },
     "source_fetch_attempts_by_run": {
       "type": "index",
-      "allocated_page_bytes": 40960
+      "allocated_page_bytes": 45056
     },
     "source_freshness": {
       "type": "table",
@@ -2971,48 +3081,91 @@
     },
     "source_observation_set_snapshot_identity": {
       "type": "index",
-      "allocated_page_bytes": 32768
+      "allocated_page_bytes": 36864
     },
     "source_observation_sets": {
       "type": "table",
-      "rows": 160,
-      "allocated_page_bytes": 86016
+      "rows": 169,
+      "allocated_page_bytes": 94208
     },
     "source_parse_operations": {
       "type": "table",
-      "rows": 161,
-      "allocated_page_bytes": 118784
+      "rows": 170,
+      "allocated_page_bytes": 122880
     },
     "source_requests": {
       "type": "table",
-      "rows": 162,
-      "allocated_page_bytes": 86016
+      "rows": 171,
+      "allocated_page_bytes": 90112
     },
     "source_snapshots": {
       "type": "table",
-      "rows": 161,
-      "allocated_page_bytes": 253952
+      "rows": 170,
+      "allocated_page_bytes": 266240
     },
     "source_snapshots_by_run": {
       "type": "index",
-      "allocated_page_bytes": 36864
+      "allocated_page_bytes": 40960
     },
     "source_snapshots_revalidation": {
       "type": "index",
-      "allocated_page_bytes": 40960
+      "allocated_page_bytes": 45056
+    },
+    "staging_deleter_cursor": {
+      "type": "index",
+      "allocated_page_bytes": 4096
+    },
+    "staging_deletes_unsettled": {
+      "type": "index",
+      "allocated_page_bytes": 4096
+    },
+    "staging_inventory_cursor": {
+      "type": "index",
+      "allocated_page_bytes": 77824
+    },
+    "staging_object_cursor": {
+      "type": "index",
+      "allocated_page_bytes": 36864
+    },
+    "staging_object_deletes": {
+      "type": "table",
+      "rows": 0,
+      "allocated_page_bytes": 4096
+    },
+    "staging_object_writes": {
+      "type": "table",
+      "rows": 311,
+      "allocated_page_bytes": 94208
+    },
+    "staging_objects": {
+      "type": "table",
+      "rows": 228,
+      "allocated_page_bytes": 36864
+    },
+    "staging_writer_cursor": {
+      "type": "index",
+      "allocated_page_bytes": 53248
+    },
+    "staging_writes_inventory": {
+      "type": "index",
+      "allocated_page_bytes": 77824
+    },
+    "staging_writes_unsettled": {
+      "type": "index",
+      "allocated_page_bytes": 53248
     },
     "verified_publication_compositions": {
       "type": "table",
-      "rows": 5,
+      "rows": 6,
       "allocated_page_bytes": 4096
     }
   },
   "restored_api_and_export_verified": true,
   "verified_public_export": {
-    "compressed": 8760,
+    "compressed": 8770,
     "uncompressed": 11256,
     "records": 26,
     "components": 26
   },
-  "complete_journey_elapsed_ms": 588225.5015
+  "complete_journey_elapsed_ms": 701844.911834
 }
