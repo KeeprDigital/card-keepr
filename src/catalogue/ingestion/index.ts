@@ -27,4 +27,4 @@ export type {
   RetryRunRequest,
 } from "./run-types";
 
-export { advancePublicationExports } from "./publication-export-preparation";
+export { advancePublicationExports, reservePublicExportAttempt } from "./publication-export-preparation";

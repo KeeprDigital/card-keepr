@@ -31,7 +31,7 @@ export type ReconciliationWorkflowParams = Readonly<{
   idempotency_key: string;
   observed_at: string;
   generation?: number;
-  publication?: { id: string; generation: number };
+  publication?: { id: string; generation: number; shard?: number; waits?: number };
   publication_preparation?: import("./publication-preparation-dispatch").PublicationPreparationWorkflow;
   shard?: Readonly<{
     ordinal: number;

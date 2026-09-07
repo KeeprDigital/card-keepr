@@ -12,6 +12,24 @@ export type PublicExportState = {
   root_bytes: number | null;
   failure_code: string | null;
 };
+export function reserveExportAttempt(db: CatalogueStore, id: string, generation: number, shard: number) {
+  const prefix = `public-export-attempt:${id}:${generation}:${shard}:`;
+  return repositoryStatements(db)
+    .prepare(`INSERT INTO game_publication_actions
+ SELECT ?,id,?,? FROM game_publication_operations WHERE id=? AND generation=?
+ AND state IN ('approved','waiting_artifacts','waiting_backup','retry_paused') AND julianday(deadline)>julianday('now')
+ AND (SELECT count(*) FROM game_publication_actions WHERE idempotency_key>=? AND idempotency_key<?)<40
+ RETURNING idempotency_key`)
+    .bind(
+      `${prefix}${crypto.randomUUID()}`,
+      JSON.stringify({ contract: "public-export-attempt@1", generation, shard }),
+      "{}",
+      id,
+      generation,
+      prefix,
+      `${prefix}~`,
+    );
+}
 export function exportPreparation(db: CatalogueStore, id: string) {
   return repositoryStatements(db)
     .prepare("SELECT * FROM publication_export_preparations WHERE publication_operation_id=?")

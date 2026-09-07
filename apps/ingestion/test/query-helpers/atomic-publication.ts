@@ -1,6 +1,22 @@
 import { catalogueStore } from "../../../../src/catalogue/shared";
 import { publicationSwitchStatements } from "../../../../src/catalogue/reconciliation/game-publication-repository";
 
+export function publicComponents(db: D1Database, candidate: string) {
+  return db
+    .prepare(
+      "SELECT kind,entity_id,input_digest,object_key,sha256,byte_length FROM publication_export_components WHERE candidate_id=? ORDER BY kind,entity_id",
+    )
+    .bind(candidate)
+    .all<{
+      kind: string;
+      entity_id: string;
+      input_digest: string;
+      object_key: string;
+      sha256: string;
+      byte_length: number;
+    }>();
+}
+
 // Failure injection at the database transaction boundary: a sibling write before
 // the production guard must roll back with every failed switch predicate.
 export async function rejectedAtomicSwitch(db: D1Database, input: Parameters<typeof publicationSwitchStatements>[1]) {

@@ -1,4 +1,6 @@
 import { catalogueStore } from "../../../src/catalogue/shared";
+import { advancePublicationExports } from "../../../src/catalogue/ingestion";
+import { publicComponents } from "./query-helpers/atomic-publication";
 import { compositionEntityResponse } from "../../../src/catalogue/read/composition-read";
 import { compositionExportResponse } from "../../../src/catalogue/read/composition-export";
 import { installLegacyCurrentHead, restoreFixtureSpine } from "./query-helpers/atomic-publication";
@@ -66,7 +68,14 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
     ).document;
   }
   expect(preparation.state).toBe("verified");
+  const beforePublic = await publicationStateSnapshot(testEnv.CATALOGUE_DB);
+  expect((await post(`/v1/publications/${approved.document.id}/advance`, { generation: 0 })).document.state).toBe(
+    "waiting_artifacts",
+  );
+  expect(await publicationStateSnapshot(testEnv.CATALOGUE_DB)).toEqual(beforePublic);
   await preparePublicExports(String(approved.document.id), 0);
+  const firstComponents = (await publicComponents(testEnv.CATALOGUE_DB, id)).results;
+  expect(firstComponents.length).toBeGreaterThan(0);
   const composition = await post("/v1/publication-compositions", { candidate_ids: [id] });
   expect(composition.response.status).toBe(200);
   const switchInput = {
@@ -87,7 +96,7 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
   ] as const) {
     await expect(rejectedAtomicSwitch(testEnv.CATALOGUE_DB, { ...switchInput, ...change })).rejects.toThrow(code);
     expect(await publicationStateSnapshot(testEnv.CATALOGUE_DB)).toEqual(before);
-    expect((await get(`/v1/publications/${approved.document.id}`)).document.state).toBe("approved");
+    expect((await get(`/v1/publications/${approved.document.id}`)).document.state).toBe("waiting_artifacts");
   }
   await installLegacyCurrentHead(testEnv.CATALOGUE_DB, source.id);
   const legacyBefore = await publicationStateSnapshot(testEnv.CATALOGUE_DB);
@@ -177,7 +186,21 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
       })
     ).document;
   expect(secondPreparation.state).toBe("verified");
-  await preparePublicExports(String(secondApproval.document.id), 0);
+  const recordPuts: string[] = [];
+  const reuseBucket = new Proxy(testEnv.CATALOGUE_EXPORTS, {
+    get(target, property) {
+      if (property === "put")
+        return (...args: Parameters<R2Bucket["put"]>) => {
+          if (args[0].startsWith("catalogue-public-components/")) recordPuts.push(args[0]);
+          return target.put(...args);
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  await preparePublicExports(String(secondApproval.document.id), 0, reuseBucket);
+  expect(recordPuts).toEqual([]);
+  expect((await publicComponents(testEnv.CATALOGUE_DB, String(second.id))).results).toEqual(firstComponents);
   const waiting = await post(`/v1/publications/${secondApproval.document.id}/advance`, { generation: 0 });
   expect(waiting.document.state, JSON.stringify(waiting.document)).toBe("waiting_backup");
   const resumed = await post(`/v1/publications/${secondApproval.document.id}/resume`, {
@@ -291,13 +314,31 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
   expect(retainedExport.data).toEqual(firstExport.data);
 });
 
-async function preparePublicExports(operation: string, generation: number) {
+async function preparePublicExports(operation: string, generation: number, bucket?: R2Bucket) {
   for (let sequence = 0; sequence < 250; sequence++) {
+    if (bucket) {
+      const result = await advancePublicationExports(
+        { CATALOGUE_DB: catalogueStore(testEnv.CATALOGUE_DB), CATALOGUE_EXPORTS: bucket },
+        operation,
+        generation,
+        `public-unit-${operation}-${sequence}`,
+      );
+      if (result.state === "preparing") continue;
+      expect(result.state, JSON.stringify(result)).toBe("verified");
+      return;
+    }
     const result = await post(`/v1/publications/${operation}/export-preparation/advance`, {
       generation,
       idempotency_key: `public-unit-${operation}-${sequence}`,
     });
     expect(result.response.status, JSON.stringify(result.document)).toBe(200);
+    if (sequence === 0) {
+      const replay = await post(`/v1/publications/${operation}/export-preparation/advance`, {
+        generation,
+        idempotency_key: `public-unit-${operation}-${sequence}`,
+      });
+      expect(replay.document).toEqual(result.document);
+    }
     if (result.document.state !== "preparing") {
       expect(result.document.state, JSON.stringify(result.document)).toBe("verified");
       return;

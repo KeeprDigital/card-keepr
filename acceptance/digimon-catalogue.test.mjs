@@ -105,14 +105,19 @@ test("native publication: the owner publishes a complete Digimon catalogue consu
   const noErrataResumed = await runCli(["source", "resume", "--run-id", noErrataRun.id, "--json"], cliEnvironment);
   assert.equal(noErrataResumed.code, 0, noErrataResumed.stderr);
   const noErrataFailed = await waitForRunState(noErrataRun.id, "failed", cliEnvironment, ingestion);
+  const noErrataEvidenceResponse = await fetch(`${ingestion.url}/v1/ingestion-runs/${noErrataRun.id}/evidence`, {
+    headers: { authorization: `Bearer ${administrationKey}` },
+  });
+  assert.equal(noErrataEvidenceResponse.status, 200);
+  const noErrataEvidence = await noErrataEvidenceResponse.json();
   assert.equal(
     noErrataFailed.failure_code,
     "printing_reconciliation_blocked",
     JSON.stringify(
-      noErrataFailed.snapshots
+      noErrataEvidence.snapshots
         .filter(
           (snapshot) =>
-            !noErrataFailed.observation_sets.some(({ source_snapshot_id }) => source_snapshot_id === snapshot.id),
+            !noErrataEvidence.observation_sets.some(({ source_snapshot_id }) => source_snapshot_id === snapshot.id),
         )
         .map(({ request }) => request.url),
     ),

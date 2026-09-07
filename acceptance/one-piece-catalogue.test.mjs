@@ -68,6 +68,8 @@ test("native publication: the owner publishes a complete One Piece catalogue for
   const cliEnvironment = {
     KEEPR_INGESTION_URL: ingestion.url,
     KEEPR_ADMINISTRATION_KEY: administrationKey,
+    // Keep the production 30/minute limit; reserve room for CLI actions and status polling.
+    KEEPR_NATIVE_REQUEST_INTERVAL_MS: "4000",
   };
   const collected = await runCli(
     ["source", "collect", "--plan-file", planPath, "--idempotency-key", "one-piece-complete-collect", "--json"],
@@ -103,7 +105,9 @@ test("native publication: the owner publishes a complete One Piece catalogue for
     assert.equal(observationSet.observation_count, expectedCount);
   }
 
-  const inspected = await inspectNativeCollection(run.id, cliEnvironment);
+  const inspected = await inspectNativeCollection(run.id, cliEnvironment, {
+    partitionKinds: ["warnings", "shared_warnings"],
+  });
   const candidate = inspected;
   assert.equal(candidate.counts.cards.added, 2);
   assert.equal(candidate.counts.printings.added, 2);
@@ -127,7 +131,7 @@ test("native publication: the owner publishes a complete One Piece catalogue for
   await waitForNativeCollection(errataRun.id, "sealed", cliEnvironment, {
     getOutput: () => `${ingestion.getOutput()}\n${source.getOutput()}`,
   });
-  const errataInspected = await inspectNativeCollection(errataRun.id, cliEnvironment);
+  const errataInspected = await inspectNativeCollection(errataRun.id, cliEnvironment, { partitionKinds: [] });
   const errataCandidate = errataInspected;
   assert.equal(errataCandidate.candidates[0].expected_game_revision_id, catalogueRevisionId);
   const errataApproved = await publishNativeCollection(

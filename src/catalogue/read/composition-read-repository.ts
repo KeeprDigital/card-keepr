@@ -19,14 +19,13 @@ function lifecycleProjection(entity: string, staging = false) {
 }
 
 /** A candidate selection is private staging input, never a persisted or visible composition. */
-export type PublicRecordSelection = string | { candidateId: string; revisionId: string };
+export type PublicRecordSelection = string | { candidateId: string; revisionId: string; supportedGame: string };
 function recordSelection(selection: PublicRecordSelection) {
   return typeof selection === "string"
     ? { source: "catalogue_composition_games", bindings: [] as string[], revision: selection }
     : {
-        source:
-          "(SELECT id AS candidate_id,supported_game,? AS game_revision_id,? AS catalogue_revision_id FROM game_candidates WHERE id=?)",
-        bindings: [selection.revisionId, selection.revisionId, selection.candidateId],
+        source: "(SELECT ? AS candidate_id,? AS supported_game,? AS game_revision_id,? AS catalogue_revision_id)",
+        bindings: [selection.candidateId, selection.supportedGame, selection.revisionId, selection.revisionId],
         revision: selection.revisionId,
       };
 }
@@ -168,7 +167,9 @@ export function composedRelationsStatement(
   return repositoryStatements(db)
     .prepare(`SELECT e.entity_id,e.candidate_id,e.preparation_id,m.game_revision_id,b.content,b.sha256,${lifecycleProjection("e", typeof selection !== "string")} FROM ${scope.source} m
  JOIN publication_read_entities e ON e.candidate_id=m.candidate_id JOIN publication_projection_batches b ON b.candidate_id=e.candidate_id AND b.ordinal=e.batch_ordinal
- WHERE m.catalogue_revision_id=? AND e.kind=? AND e.${column}=? AND e.entity_id>? ORDER BY e.entity_id LIMIT 32`)
+ WHERE m.catalogue_revision_id=? AND e.kind=? AND e.${column}=? AND e.entity_id>?
+ ${kind === "product_relationships" ? "AND e.relationship_kind IN ('printing-product','printing-distribution-context') AND EXISTS(SELECT 1 FROM publication_read_lifecycles l WHERE l.candidate_id=e.candidate_id AND l.kind=e.kind AND l.entity_id=e.entity_id AND l.withdrawn=0)" : ""}
+ ORDER BY e.entity_id LIMIT 32`)
     .bind(...scope.bindings, scope.revision, kind, id, after);
 }
 export function composedFilterValueStatement(
@@ -231,8 +232,9 @@ export function publicationExportSourceStatement(
   candidateId: string,
   revisionId: string,
   afterOrdinal: number,
+  supportedGame: string,
 ) {
-  const scope = recordSelection({ candidateId, revisionId });
+  const scope = recordSelection({ candidateId, revisionId, supportedGame });
   return repositoryStatements(db)
     .prepare(`SELECT m.supported_game,e.kind,e.batch_ordinal AS ordinal,e.entity_id,e.candidate_id,e.preparation_id,m.game_revision_id,b.content,b.sha256,${lifecycleProjection("e", true)}
  FROM ${scope.source} m JOIN publication_read_entities e ON e.candidate_id=m.candidate_id

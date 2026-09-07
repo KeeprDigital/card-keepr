@@ -1,30 +1,47 @@
-import { advancePublicationExports } from "../../../src/catalogue/ingestion";
+import { advancePublicationExports, reservePublicExportAttempt } from "../../../src/catalogue/ingestion";
 import { snapshotRecoveryWait } from "./snapshot-recovery-wait";
 import { startOrObserveCatalogueBackupWorkflow } from "../../../src/catalogue/backup-recovery";
 import type { WorkflowStep } from "cloudflare:workers";
-import { advanceGamePublication, pauseGamePublication } from "../../../src/catalogue/reconciliation";
+import {
+  advanceGamePublication,
+  pauseGamePublication,
+  dispatchGamePublication,
+  inspectPublication,
+} from "../../../src/catalogue/reconciliation";
 import { catalogueStore } from "../../../src/catalogue/shared";
 
 /** The operation's persisted deadline, never this Workflow's lifetime, governs approval. */
 export async function runGamePublicationWorkflow(
   env: Env,
   step: WorkflowStep,
-  work: { id: string; generation: number },
+  work: { id: string; generation: number; shard?: number; waits?: number },
 ) {
   step = snapshotRecoveryWait(env, step);
-  let waits = 0;
-  for (let attempt = 0; ; attempt++) {
+  let waits = work.waits ?? 0;
+  const shard = work.shard ?? 0;
+  for (let unit = 0; unit < 16; unit++) {
+    const attempt = shard * 16 + unit;
     const exports = await step
       .do(
         `prepare public export ${attempt}`,
         { retries: { limit: 3, delay: 250, backoff: "exponential" }, timeout: "1 minute" },
-        () =>
-          advancePublicationExports(
+        async () => {
+          const db = catalogueStore(env.CATALOGUE_DB);
+          const owner = await inspectPublication(db, work.id);
+          if (owner.generation !== work.generation || ["published", "failed", "retry_paused"].includes(owner.state))
+            return { state: "complete" };
+          if (owner.deadline <= new Date().toISOString()) return { state: "invalid" };
+          if (!(await reservePublicExportAttempt(db, work.id, work.generation, shard))) {
+            await pauseGamePublication(db, work.id, work.generation, "public_export_workflow_budget_exhausted");
+            return { state: "complete" };
+          }
+          return advancePublicationExports(
             { ...env, CATALOGUE_DB: catalogueStore(env.CATALOGUE_DB) },
             work.id,
             work.generation,
             `public-export:${work.id}:${work.generation}:${attempt}`,
-          ),
+          );
+        },
       )
       .catch(async (error) => {
         await step.do("pause public export after retry exhaustion", () =>
@@ -77,4 +94,15 @@ export async function runGamePublicationWorkflow(
     // Backoff bounds polling during a long backup wait; approval retains its exact deadline.
     await step.sleep(`publication wait ${attempt}`, `${Math.min(900, 2 ** Math.min(waits++, 10))} seconds`);
   }
+  await step.do(
+    "dispatch publication successor",
+    { retries: { limit: 3, delay: 250 }, timeout: "1 minute" },
+    async () => {
+      const owner = await inspectPublication(catalogueStore(env.CATALOGUE_DB), work.id);
+      if (owner.generation === work.generation && !["published", "failed", "retry_paused"].includes(owner.state))
+        await dispatchGamePublication(env.RECONCILIATION_WORKFLOW, owner, shard + 1, waits);
+      return { state: owner.state };
+    },
+  );
+  return { result_json: JSON.stringify({ id: work.id, generation: work.generation, shard, state: "continued" }) };
 }

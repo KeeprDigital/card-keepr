@@ -262,9 +262,11 @@ export async function startGamePublication(
 export async function dispatchGamePublication(
   workflow: Workflow<ReconciliationWorkflowParams>,
   operation: Awaited<ReturnType<typeof inspectPublication>>,
+  shard = 0,
+  waits = 0,
 ) {
   if (operation.state === "published" || operation.state === "failed") return;
-  const id = `switch-${await sha256Text(`${operation.id}:${operation.generation}`)}`;
+  const id = `switch-${await sha256Text(`${operation.id}:${operation.generation}${shard ? `:${shard}` : ""}`)}`;
   await workflowDriver(workflow).ensure(
     id,
     {
@@ -273,7 +275,7 @@ export async function dispatchGamePublication(
       expected_current_revision_id: operation.expected_game_revision_id,
       idempotency_key: operation.id,
       observed_at: operation.approved_at,
-      publication: { id: operation.id, generation: operation.generation },
+      publication: { id: operation.id, generation: operation.generation, shard, waits },
     },
     { createRequested: true },
   );

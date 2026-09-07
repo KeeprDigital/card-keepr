@@ -116,7 +116,7 @@ export default {
         status: 201,
       });
     }
-    return /^\/v1\/(cards|printings|printing-images|products|catalogue|catalogue-exports)(\/|$)/.test(url.pathname)
+    return url.pathname === "/health" || /^\/v1\/(cards|printings|printing-images|products|catalogue|catalogue-exports)(\/|$)/.test(url.pathname)
       ? apiWorker.fetch(request, env)
       : ingestionWorker.fetch(request, env);
   },

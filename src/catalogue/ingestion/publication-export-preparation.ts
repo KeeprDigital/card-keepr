@@ -36,6 +36,9 @@ type Owner = {
   recovery_health: string;
 };
 class InvalidPublicExport extends Error {}
+export async function reservePublicExportAttempt(db: CatalogueStore, id: string, generation: number, shard: number) {
+  return Boolean(await repository.reserveExportAttempt(db, id, generation, shard).first());
+}
 const schemas: Record<string, string> = {
   supported_games: "SupportedGameRecord",
   game_profiles: "GameProfileRecord",
@@ -149,6 +152,7 @@ async function prepareUnit(
       state.candidate_id,
       state.revision_id,
       cursor.after,
+      owner.supported_game,
     ).first<Source>();
     if (!source) {
       cursor.phase = "nodes";
@@ -205,7 +209,7 @@ async function prepareUnit(
       try {
         value = await composedPublicRecord(
           db,
-          { candidateId: state.candidate_id, revisionId: state.revision_id },
+          { candidateId: state.candidate_id, revisionId: state.revision_id, supportedGame: owner.supported_game },
           source.kind,
           source,
         );
