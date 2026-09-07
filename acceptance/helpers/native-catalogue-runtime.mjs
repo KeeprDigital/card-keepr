@@ -1,3 +1,7 @@
+import { readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { isWranglerSmokeFile } from "./smoke-tier.mjs";
+import { nativeCloudflareHttp } from "./native-cloudflare-http.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { gunzipSync } from "node:zlib";
@@ -22,12 +26,21 @@ async function cli(args, environment) {
   return JSON.parse(response.stdout);
 }
 
-export async function nativeCheckpointTransport(t, statePath, directory) {
+export async function nativeCheckpointTransport(t, statePath, directory, configFile) {
   const cloudflare = nativeRecoveryCloudflare({
     databaseDirectory: await persistedDatabaseDirectory(statePath),
     directory,
   });
   t.after(() => cloudflare.close());
+  if (isWranglerSmokeFile(process.argv[1])) {
+    const proxy = await nativeCloudflareHttp(t, cloudflare);
+    const config = JSON.parse(await readFile(configFile, "utf8"));
+    config.main = resolve("acceptance/fixtures/native-ingestion-cloudflare-transport.ts");
+    config.define = { ...config.define, NATIVE_CLOUDFLARE_REST_PROXY: JSON.stringify(proxy) };
+    await writeFile(configFile, JSON.stringify(config));
+    return { vars: { D1_EXPORT_TOKEN: "local-export", D1_VERIFICATION_TOKEN: "local-verify" } };
+  }
+
   return {
     outboundService: (request) => cloudflare.fetch(request),
     vars: { D1_EXPORT_TOKEN: "local-export", D1_VERIFICATION_TOKEN: "local-verify" },

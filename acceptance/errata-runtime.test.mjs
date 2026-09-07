@@ -27,7 +27,7 @@ test("the repository CLI rejects Official Errata authority outside the documente
     writeFile(environmentFile, `API_BEARER_KEY=${apiKey}\nADMINISTRATION_KEY=${administrationKey}\n`, { mode: 0o600 }),
     writeRuntimeConfig(runtimeConfig),
   ]);
-  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory);
+  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory, runtimeConfig);
   const runtime = await startWorker({
     ...checkpointTransport,
     config: runtimeConfig,
@@ -124,7 +124,7 @@ test("Bandai Errata HTML shape drift fails closed through the CLI and Worker sea
     writeFile(environmentFile, `API_BEARER_KEY=${apiKey}\nADMINISTRATION_KEY=${administrationKey}\n`, { mode: 0o600 }),
     writeRuntimeConfig(runtimeConfig, "AcceptanceShapeDriftOfficialSourceTransport"),
   ]);
-  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory);
+  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory, runtimeConfig);
   const runtime = await startWorker({
     ...checkpointTransport,
     config: runtimeConfig,
@@ -192,7 +192,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
       { mode: 0o600 },
     ),
   ]);
-  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory);
+  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory, runtimeConfig);
   const runtime = await startWorker({
     ...checkpointTransport,
     config: runtimeConfig,

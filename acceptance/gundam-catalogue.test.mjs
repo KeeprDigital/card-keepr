@@ -92,7 +92,7 @@ test("native publication: the owner publishes a complete Gundam catalogue from b
     config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
     statePath: join(directory, "source-state"),
   });
-  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory);
+  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory, ingestionConfig);
   const ingestion = await startWorker({
     ...checkpointTransport,
     config: ingestionConfig,

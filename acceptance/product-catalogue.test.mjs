@@ -94,7 +94,7 @@ test("native publication: the CLI publishes separated Product catalogue data con
     config: "acceptance/fixtures/fusion-world-official-source.wrangler.jsonc",
     statePath: join(directory, "source-state"),
   });
-  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory);
+  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory, ingestionConfig);
   const ingestion = await startWorker({
     ...checkpointTransport,
     config: ingestionConfig,
