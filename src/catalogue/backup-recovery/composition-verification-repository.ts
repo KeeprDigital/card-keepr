@@ -4,6 +4,11 @@ import { type CatalogueStore, repositoryStatements } from "../shared";
 // per page bounds retained partition/text buffers, independently of catalogue size.
 export const compositionSnapshotTables = [
   "catalogue_revisions",
+  "catalogue_exports",
+  "catalogue_export_deletion_plans",
+  "catalogue_export_deletions",
+  "catalogue_export_deletion_tombstones",
+  "catalogue_export_deletion_retries",
   "catalogue_composition_games",
   "catalogue_candidate_publications",
   "game_catalogue_heads",
