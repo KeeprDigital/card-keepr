@@ -9,7 +9,14 @@ import test from "node:test";
 import { build } from "esbuild";
 import { validateDispatchAndWriteSql } from "../scripts/production-release.mjs";
 import { cancelFreshBaselineRelease, runFreshBaselineRelease } from "../scripts/fresh-baseline-release.mjs";
-import { destinationReleaseSql, handoffReadSql, phaseSql, transferSql } from "../scripts/fresh-baseline-handoff.mjs";
+import {
+  renewHandoffSql,
+  cancellationSql,
+  destinationReleaseSql,
+  handoffReadSql,
+  phaseSql,
+  transferSql,
+} from "../scripts/fresh-baseline-handoff.mjs";
 import { d1Adapter } from "./helpers/query-helpers/sqlite-d1-adapter.mjs";
 import * as queries from "./helpers/query-helpers/fresh-baseline.mjs";
 
@@ -25,7 +32,7 @@ const bundle = await build({
   platform: "node",
 });
 const runtime = await import(
-  `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text + "\n//# sourceURL=fresh-baseline-runtime.mjs").toString("base64")}`
+  `data:text/javascript;base64,${Buffer.from(`${bundle.outputFiles[0].text}\n//# sourceURL=fresh-baseline-runtime.mjs`).toString("base64")}`
 );
 const migrations = await Promise.all(
   (await readdir("migrations"))
@@ -61,7 +68,7 @@ async function setup(t) {
     maxBuffer: 16 * 1024 * 1024,
     encoding: "utf8",
   });
-  const baseline = exportedBaseline + "\n" + runtime.reconstructCardSearchAfterD1RestoreStatements.join(";\n") + ";";
+  const baseline = `${exportedBaseline}\n${runtime.reconstructCardSearchAfterD1RestoreStatements.join(";\n")};`;
   const destination = new DatabaseSync(join(directory, "destination.sqlite"));
   t.after(() => {
     source.close();

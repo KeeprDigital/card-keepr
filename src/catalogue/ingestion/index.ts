@@ -28,3 +28,5 @@ export type {
 } from "./run-types";
 
 export { advancePublicationExports, reservePublicExportAttempt } from "./publication-export-preparation";
+
+export { enforceFreshBaselineMutationGuard } from "./fresh-baseline";
