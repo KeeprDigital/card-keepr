@@ -51,7 +51,11 @@ function parsePage(bytes: Uint8Array, url: string) {
   const optionalFields = [...text.matchAll(/<span data-tooltip="([^"]+)">([\s\S]*?)<\/span>/gu)]
     .map((match) => ({ label: htmlText(match[1]!), value: htmlText(match[2]!) }))
     .filter(({ label }) => !recognizedLabels.has(label));
-  const effect = htmlText(sections[1]![1]!);
+  const effect = htmlText(
+    sections[1]![1]!.replace(/<span data-tooltip="([^"]+)">[\s\S]*?<\/span>/gu, (span, label: string) =>
+      recognizedLabels.has(htmlText(label)) ? span : "",
+    ),
+  );
   const raw = {
     Category: tooltip("Category"),
     Color: tooltip("Color"),

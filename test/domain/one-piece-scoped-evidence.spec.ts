@@ -22,25 +22,25 @@ const parse = async (value: string) =>
     [key: string]: unknown;
   };
 
-test("Limitless retains an unfamiliar labelled card field for review without changing canonical facts", async () => {
-  const original = await parse(html);
-  const changed = await parse(
-    html.replace(
-      '<span data-tooltip="Type">',
-      '<span data-tooltip="Illustrator">Example Artist</span><span data-tooltip="Type">',
-    ),
-  );
-  expect(changed.source_sidecar.raw.optional_fields).toEqual([{ label: "Illustrator", value: "Example Artist" }]);
-  expect(changed.source_sidecar.unmapped_optional_fields).toEqual([
-    {
-      path: "source_sidecar.raw.optional_fields[0]",
-      value: { label: "Illustrator", value: "Example Artist" },
-    },
-  ]);
-  const { source_sidecar: _before, ...beforeFacts } = original;
-  const { source_sidecar: _after, ...afterFacts } = changed;
-  expect(afterFacts).toEqual(beforeFacts);
-});
+test.each(['<span data-tooltip="Type">', '<span class="reminder-text">'])(
+  "Limitless retains an unfamiliar labelled field at %s without changing canonical facts",
+  async (marker) => {
+    const original = await parse(html);
+    const changed = await parse(
+      html.replace(marker, `<span data-tooltip="Illustrator">Example Artist</span>${marker}`),
+    );
+    expect(changed.source_sidecar.raw.optional_fields).toEqual([{ label: "Illustrator", value: "Example Artist" }]);
+    expect(changed.source_sidecar.unmapped_optional_fields).toEqual([
+      {
+        path: "source_sidecar.raw.optional_fields[0]",
+        value: { label: "Illustrator", value: "Example Artist" },
+      },
+    ]);
+    const { source_sidecar: _before, ...beforeFacts } = original;
+    const { source_sidecar: _after, ...afterFacts } = changed;
+    expect(afterFacts).toEqual(beforeFacts);
+  },
+);
 
 test("named absence scope excludes other Card identities and unselected source lineages", () => {
   const card: CatalogueCard = {

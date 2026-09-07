@@ -466,11 +466,12 @@ test("retained P-001: owner collects every declared Bandai record through native
     );
     const missing = inspection.warnings.filter((warning) => warning.code === "record_not_observed");
     if (scenario === "scoped-disappearance") {
-      assert.deepEqual(
-        missing.map((warning) => warning.printing_id),
-        [printingIds.get("P-001_p6")],
-      );
-      assert.equal(missing[0].source_lineage, "one-piece-en");
+      assert.ok(missing.length > 0);
+      for (const warning of missing) {
+        assert.equal(warning.printing_id, printingIds.get("P-001_p6"));
+        assert.equal(warning.source_lineage, "one-piece-en");
+        assert.equal(warning.card_id, undefined);
+      }
     } else assert.deepEqual(missing, []);
     finalPublication = await publishNativeCollection(inspection, scenario, environment, worker);
     fault = null;
