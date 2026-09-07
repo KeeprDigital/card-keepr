@@ -224,3 +224,11 @@ Production Release failures after migration require compatible roll-forward as
 specified in the [release runbook](production-release.md). Schema-changing
 pre-Go-Live work may instead require deliberate data regeneration under ADR 0008;
 that is a separate owner decision, not recovery acceptance.
+
+Stored public exports participate in the same recovery closure. Snapshot evidence
+includes public export preparations, component descriptors and Merkle nodes; all
+three tables are fenced during SQL export and actual recovery. Verification
+follows each composition member's public root and checks its operation, candidate,
+revision, manifest, private root and deadline bindings. It hashes the retained
+gzip components, validates their descriptor digests and lengths, and checks the
+leaf count. Missing or corrupt public bytes prevent verification and acceptance.
