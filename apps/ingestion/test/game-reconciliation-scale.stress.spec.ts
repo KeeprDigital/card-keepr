@@ -73,7 +73,8 @@ test("a 1001-Product native candidate stays within the D1/R2 callback budget", a
         if (["run", "first", "all", "raw"].includes(String(property)))
           return (...args: unknown[]) => {
             charge(`D1.${String(property)}`);
-            return observe(Reflect.apply(value, target, args));
+            const result = Reflect.apply(value, target, args);
+            return ["run", "all"].includes(String(property)) ? observe(result) : result;
           };
         return typeof value === "function" ? value.bind(target) : value;
       },
