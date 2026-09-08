@@ -5,7 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { onePieceEvidenceMetrics } from "./helpers/one-piece-evidence-metrics.mjs";
-import { nativeRetainedOccupancy, operationalCapacityMetrics } from "./helpers/native-capacity-metrics.mjs";
+import {
+  nativeOperationalTimeline,
+  nativeRetainedOccupancy,
+  operationalCapacityMetrics,
+} from "./helpers/native-capacity-metrics.mjs";
 
 test("storage census includes automatic indexes and separates retained rows from allocations", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "keepr-capacity-census-"));
@@ -55,4 +59,38 @@ test("operational census counts retries and observed owner routes without invent
   assert.equal(group.failures, 1);
   assert.deepEqual(group.elapsed_ms, { sum: 36, maximum: 24, p95: 24 });
   assert.deepEqual(group.d1, { prepared_statements: 6, batch_calls: 2, batch_statements: 4 });
+});
+
+test("phase timeline handles split streams, drops old events and excludes payload fields", () => {
+  const timeline = nativeOperationalTimeline(2);
+  const started = performance.now();
+  const line = (step) =>
+    JSON.stringify({
+      contract: "card-keepr-operational-log@1",
+      event: "workflow.step.completed",
+      runtime: "ingestion",
+      request: { method: "WORKFLOW", route: "/workflows/reconciliation", id: "private-id" },
+      workflow: { step },
+      duration_ms: 7,
+      status: 200,
+      payload: "secret-source-body",
+    }) + "\n";
+  const first = line("first");
+  timeline.observe(first.slice(0, 20), "stdout");
+  timeline.observe(line("second"), "stderr");
+  timeline.observe(first.slice(20), "stdout");
+  timeline.observe(line("third"), "stdout");
+  timeline.observe('{"contract":"card-keepr-operational-log@1",broken}\n', "stdout");
+  timeline.observe("x".repeat(65537), "stderr");
+  const report = timeline.snapshot(started);
+  assert.deepEqual(
+    report.events.map((event) => event.step),
+    ["first", "third"],
+  );
+  assert.equal(report.dropped_events, 1);
+  assert.equal(report.malformed_records, 1);
+  assert.equal(report.oversized_lines, 1);
+  assert.ok(report.events.every((event) => event.observed_elapsed_ms >= 0));
+  assert.ok(!JSON.stringify(report).includes("secret-source-body"));
+  assert.ok(!JSON.stringify(report).includes("private-id"));
 });

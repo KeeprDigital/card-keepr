@@ -162,6 +162,7 @@ export async function profileNativeIsolates(runtime, destination, local) {
               },
               occupancy,
               operations: local ? operationalCapacityMetrics(local.output()) : null,
+              operational_timeline: local?.timeline?.snapshot(started) ?? null,
               errors,
               isolates: sessions.map(({ report }) => report),
             },

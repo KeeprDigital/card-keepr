@@ -81,3 +81,71 @@ export async function nativeRetainedOccupancy(directory) {
       "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal.",
   };
 }
+
+// Receipt timestamps belong to the Node observer, not the isolate's execution
+// clock. Keep bounded, allow-listed metadata only; never retain payload lines.
+export function nativeOperationalTimeline(limit = 4096) {
+  if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Timeline limit must be a positive integer");
+  const events = [];
+  const partial = new Map();
+  let received = 0;
+  let malformed = 0;
+  let oversized = 0;
+  return {
+    observe(chunk, stream) {
+      const lines = `${partial.get(stream) ?? ""}${chunk}`.split("\n");
+      const remainder = lines.pop();
+      if (remainder.length <= 65536) partial.set(stream, remainder);
+      else {
+        partial.set(stream, "");
+        oversized++;
+      }
+      for (const line of lines) {
+        if (line.length > 65536) {
+          oversized++;
+          continue;
+        }
+        const offset = line.indexOf('{"contract":"card-keepr-operational-log@1"');
+        if (offset < 0) continue;
+        try {
+          const record = JSON.parse(line.slice(offset));
+          if (!["request.completed", "workflow.step.completed"].includes(record.event)) continue;
+          if (
+            typeof record.runtime !== "string" ||
+            typeof record.request?.method !== "string" ||
+            typeof record.request?.route !== "string" ||
+            !(record.workflow?.step === null || typeof record.workflow?.step === "string") ||
+            typeof record.duration_ms !== "number" ||
+            typeof record.status !== "number"
+          )
+            throw new Error("Malformed operational metadata");
+          events[received++ % limit] = {
+            observer_ms: performance.now(),
+            event: record.event,
+            runtime: record.runtime,
+            method: record.request.method,
+            route: record.request.route,
+            step: record.workflow.step,
+            duration_ms: record.duration_ms,
+            status: record.status,
+          };
+        } catch {
+          malformed++;
+        }
+      }
+    },
+    snapshot(started) {
+      return {
+        limitation:
+          "Bounded operational-log receipt timeline in the Node observer clock, not exact isolate execution boundaries. Duration is logged wall time, not CPU; buffering may delay receipt. No source payloads, SQL, request identifiers or parameters are retained.",
+        retained_limit: limit,
+        dropped_events: Math.max(0, received - limit),
+        malformed_records: malformed,
+        oversized_lines: oversized,
+        events: [...events]
+          .sort((a, b) => a.observer_ms - b.observer_ms)
+          .map(({ observer_ms, ...event }) => ({ observed_elapsed_ms: observer_ms - started, ...event })),
+      };
+    },
+  };
+}

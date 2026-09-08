@@ -7,6 +7,7 @@ import { inspect, parseEnv } from "node:util";
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";
 import { unstable_getMiniflareWorkerOptions, unstable_splitSqlQuery } from "wrangler";
+import { nativeOperationalTimeline } from "./native-capacity-metrics.mjs";
 import { profileNativeIsolates } from "./native-isolate-metrics.mjs";
 import { appliedMigrations, createMigrationLedger, recordMigration } from "./query-helpers/migrations.mjs";
 
@@ -189,6 +190,7 @@ export async function startInprocessWorker({
         for (const stream of [stdout, stderr])
           stream.on("data", (chunk) => {
             group.output += chunk.toString();
+            group.timeline?.observe(chunk.toString(), stream);
           });
       },
       workers: [
@@ -215,6 +217,7 @@ export async function startInprocessWorker({
       await group.stopProfile();
       group.stopProfile = undefined;
     }
+    if (process.env.KEEPR_CAPACITY_OUTPUT_PREFIX) group.timeline = nativeOperationalTimeline();
     if (group.runtime) await group.runtime.setOptions(all);
     else group.runtime = new Miniflare(all);
     await group.runtime.ready;
@@ -223,7 +226,7 @@ export async function startInprocessWorker({
       group.stopProfile = await profileNativeIsolates(
         group.runtime,
         `${process.env.KEEPR_CAPACITY_OUTPUT_PREFIX}-isolate-${++profileSequence}.json`,
-        { directory: dirname(resolve(statePath)), output: () => group.output.slice(offset) },
+        { directory: dirname(resolve(statePath)), output: () => group.output.slice(offset), timeline: group.timeline },
       );
     }
   });
