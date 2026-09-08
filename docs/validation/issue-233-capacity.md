@@ -909,3 +909,90 @@ combined-run context but does not establish why it timed out there. The report
 records **58 full-run passes plus one isolated pass**, never a 59/59 complete-file
 pass. All planned new fault cases are verified; suite-wide timing/isolation,
 capacity, memory and accounting limitations remain open.
+
+## Bounded binding-method and result census
+
+The next approved local accounting step audits the existing 1,001-Product seam.
+`f880445` adds a test-only observer; `1a0da9b` adds a structured artifact reporter.
+Production source, the **15 s** elapsed guard and **100 calls per callback** guard
+are unchanged. Four focused observer tests and seven existing Workflow-driver
+tests pass (**11/11**, 10.09 s tests / 13.00 s harness). Type checking and lint
+pass; initial proxy-type errors were corrected and retained in a separate log.
+
+| Method/result surface | Instrumentation and verification | Final workload observation / exclusion |
+| --- | --- | --- |
+| D1 statement `first`, `run`, `all`, `raw`; database `batch`, `exec` | Preserve receiver/arguments/overloads and exact exceptions; unwrap batch statements so submission is counted once | `first`, `all`, `batch` exercised; `run`, `raw`, `exec` covered by small real-D1 tests, unexercised in this workload |
+| D1 session statement methods and `batch` | Session execution is wrapped; bookmark and session construction semantics preserved | Small real-session test exercises `first`/`batch`; other session statement methods use the same wrapper and are not separately exercised |
+| D1 returned execution metadata | Aggregate finite numeric `rows_read`, `rows_written`, `changes`, `duration`, optional `total_attempts` and `timings.sql_duration_ms`; `exec` count/duration separately | Four original fields returned; optional timing/retry fields absent, not zero. `first`/`raw` expose no execution metadata |
+| Two R2 buckets: `get`, `head`, `put`, `delete`, `list`, multipart create/resume | Attempts/outcomes; returned null/body/object-size/list-count metadata; no body consumption, key, custom metadata or content retention | Only `EVIDENCE_OBJECTS.get` exercised here; other methods verified on a small real-R2 fixture |
+| Returned R2 multipart `uploadPart`, `complete`, `abort` | Each method counted independently of initialization; synchronous resume stays synchronous | All three verified in small real-R2 tests; unexercised in the 1,001-Product reconciliation |
+| Simulated Workflow driver `create`, `get`, instance `status`, `sendEvent` | Hooks at the actual substituted driver methods; included in callback method counts | All four exercised; these are simulated control-plane method entries, not hosted Workflow requests or billing |
+| Driver `waitForEvent` and out-of-callback activity | Separate event and scope records; pending outcomes stay with the scope where the call started | One wait outside callbacks; no observed binding calls outside callbacks |
+| Excluded surfaces | D1 `prepare`/`bind`/session construction/bookmarks are plumbing, deprecated `dump` is not instrumented; unused Workflow `createBatch` and administration methods are not simulated | Collection, publication, export, backup/restore and HTTP work outside this measured reconciliation window are not covered. The collection-root `EVIDENCE_INGESTION_WORKFLOW.get/sendEvent` branch is also outside this driver fixture |
+
+Method counts are entries at the observed interface. They are distinct from
+submitted statement counts, returned metadata observations, successful outcomes,
+executed provider requests and billed units. R2 multipart resume is a handle
+operation even though the existing resource guard counts its method entry.
+Returned object sizes can repeat the same full object across ranged/repeated gets;
+they are not transferred, consumed, newly written or uniquely retained bytes.
+
+The first two functional runs at `f880445` pass both guards (12.98 s and 12.52 s
+whole-test time), but their retained console logs contain no census JSON, including
+the second run with explicit `--silent=false`. They establish no recoverable
+numerical census. A test-only host reporter now writes task metadata independently
+of console interception. It requires exactly one report and uses exclusive file
+creation to avoid overwriting evidence. The report is attached in `finally` before
+budget assertions, and reporting stays outside the measured elapsed interval.
+
+The structured roundtrip passes all four observer tests (1.16 s); a 968-byte smoke
+artifact is checked on the host. A temporary intentionally failing test then
+verifies that its rejected-operation artifact survives failure (expected exit 1).
+That test source and log are retained; it is removed from the suite and is not
+reported as a passing application test. Only after these checks was the final
+same-workload capture executed. No console-workaround loop or additional capacity
+variant follows.
+
+The final structured capture at `1a0da9b` **passes** in **11,711 ms** measured
+reconciliation time (12.51 s whole test / 14.55 s harness):
+
+| Observation | Value |
+| --- | ---: |
+| Callback attempts / failed callback attempts | 1,295 / 0 |
+| Maximum method entries in one callback | 78 |
+| Total method entries in callbacks | 34,191 |
+| D1 `first` / `batch` / `all` entries | 15,364 / 18,207 / 425 |
+| Submitted D1 batch statements | 49,231 |
+| Simulated Workflow create / status / get / sendEvent | 29 / 29 / 1 / 1 |
+| R2 evidence gets / null results / body results | 135 / 0 / 135 |
+| Sum of returned R2 object-size metadata, with repetition | 1,190,206,980 bytes |
+| D1 metadata records per returned field | 49,656 |
+| Returned D1 rows read / rows written / changes | 310,059 / 61,641 / 18,128 |
+| Sum of returned local D1 duration | 1,168 ms |
+
+All observed method promises fulfilled in this capture. The extra 60 entries over
+the historical 34,131-call result are the newly observed simulated Workflow
+methods; D1/R2 method counts match the earlier census. This is not a timing
+regression/improvement experiment. Submitted batch statements plus `all` results
+account for the 49,656 returned metadata records. The local duration is neither
+application CPU nor provider billing. No independent index-write multiplier is
+available in these result fields, and absent metadata through `first`/`raw` cannot
+be reconstructed by pretending zero work occurred.
+
+Reproduction requires a new output path because existing artifacts are protected:
+
+```sh
+KEEPR_TEST_SUITE=stress KEEPR_CALLBACK_ARTIFACT=/tmp/new-callback-census.json \
+  npx vitest run --config apps/ingestion/vitest.config.ts \
+  apps/ingestion/test/game-reconciliation-scale.stress.spec.ts --maxWorkers=1 \
+  --reporter=default --reporter=./test/support/reconciliation-callback-reporter.mjs
+```
+
+This completes the locally observable method/result additions in the approved
+seam. Exact billed CPU, provider requests, index-specific writes and service costs
+remain unavailable from these local interfaces. The next concrete local coverage
+option is the existing collection-root notification branch: a small fixture could
+observe `EVIDENCE_INGESTION_WORKFLOW.get/sendEvent` with the same outcome/callback
+rules, without a real-source or large-tier campaign. It is not executed here.
+Broader collection/export/backup accounting needs its own declared measurement
+window; this reconciliation census cannot retroactively cover those journeys.

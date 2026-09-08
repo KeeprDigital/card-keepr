@@ -1,0 +1,32 @@
+{
+  "contract": "card-keepr-local-reconciliation-callbacks@2",
+  "workload": "intentional artifact failure smoke",
+  "callbacks": [
+    {
+      "calls": 1,
+      "methods": {
+        "Workflow.driver.smoke": 1
+      },
+      "outcomes": {
+        "Workflow.driver.smoke": {
+          "attempted": 1,
+          "fulfilled": 0,
+          "rejected": 1
+        }
+      },
+      "returned_d1_metadata": {},
+      "returned_r2_metadata": {},
+      "d1_batch_statements": 0,
+      "driver_events": {}
+    }
+  ],
+  "outside_callbacks": {
+    "calls": 0,
+    "methods": {},
+    "outcomes": {},
+    "returned_d1_metadata": {},
+    "returned_r2_metadata": {},
+    "d1_batch_statements": 0,
+    "driver_events": {}
+  }
+}

@@ -27,7 +27,8 @@
     "dac124b Productreducerfaultfollowup3/3selectedpassed;45testsnowinfile,42skippedinthisrun. Earlier43-testwholefilepasspredatesit. Isolateduninterruptedcaseassertssameexactsemanticexpectations,notcrossrunbyteequality.",
     "CanonicalUTF8prototype remains test-support-only. Nodeequivalencepasses,butrefined54.161ms/88.17MBsampledalloc exceedslegacy34.311ms/83.09MB. Lowerpostcallheapnotpeakproof;productionserializerandparseunchanged,noadditionalnativecampaign.",
     "12daafa Context reducer extension: selected 4/4 with 42 skipped, then complete affected file 46/46 passed. This is bounded fault evidence, not exhaustive durable-phase coverage. Typecheck/lint/format pass; broader Biome check flags existing import ordering.",
-    "Finite13newfaultcases: final3e3ab4d selected17/17passed50.47s; completefile58passed1admissiontimeout305.12s; isolatedadmission1/1passed1.68s unchanged30stimeout. NOT59/59fullpass. Earlierf3be533full39pass1preinjectionimmutablecollision19unexecuted retained; isolatedcheckpointpassed, per-caseidentityaliasremoved butrootcauseunproven. Initialfull1ee4fd8interruptedexit130forreview-oraclefix. Tombstoneisdirectvalidcuratedreducerseam,notWorkflowreachabilityproof."
+    "Finite13newfaultcases: final3e3ab4d selected17/17passed50.47s; completefile58passed1admissiontimeout305.12s; isolatedadmission1/1passed1.68s unchanged30stimeout. NOT59/59fullpass. Earlierf3be533full39pass1preinjectionimmutablecollision19unexecuted retained; isolatedcheckpointpassed, per-caseidentityaliasremoved butrootcauseunproven. Initialfull1ee4fd8interruptedexit130forreview-oraclefix. Tombstoneisdirectvalidcuratedreducerseam,notWorkflowreachabilityproof.",
+    "1a0da9b structured1001ProductcapturePASS11711ms,max78methodentries,1295callbacks,34191entries includes60simulatedWorkflowmethods.49231submittedbatchstatements;R2object-size sum1190206980 repeatsmetadata,notbytestransferred. OptionalD1timing/retrymetadataabsent. Twoearlierfunctionalpasses omittedconsolecensus,notnumericmeasurements. Tinyintentionalfailedartifactsmokeexpectedexit1retained. Providerbilling/indexcost/fullpipelinecoverage remainunavailable."
   ],
   "files": [
     {
@@ -811,6 +812,104 @@
       "retained_local_log": "/tmp/issue-233-matrix-typecheck.log",
       "bytes": 0,
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-methods-1001-capture.log",
+      "bytes": 280,
+      "sha256": "7b4edbafa4817e04a040d81c510ddcaaad04eafb38e7942129cd2223b4109300"
+    },
+    {
+      "file": "issue-233-methods-1001-structured.json",
+      "bytes": 1324849,
+      "sha256": "e1829ec81086f5b43f373ced1b4d68a423b1b9c664d7716e29646e0a0740a221",
+      "original_local_source": "/tmp/issue-233-methods-1001-structured.json",
+      "original_source_sha256": "e1829ec81086f5b43f373ced1b4d68a423b1b9c664d7716e29646e0a0740a221"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-methods-1001-structured.log",
+      "bytes": 1641892,
+      "sha256": "74e3df48ac62f919859ecbc0665d0eccacf71a0fec36a754cb98fbff77482686"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-methods-1001.log",
+      "bytes": 280,
+      "sha256": "e14478f844c90f65ac187d69afca2d856a8cc1476df5a4d5d8fad2e148dbfba1"
+    },
+    {
+      "file": "issue-233-methods-artifact-failure.json",
+      "bytes": 710,
+      "sha256": "c299b4c4c91048aacf2dc4f6d729a65fc2739a903ea685b9ee3c62f685160804",
+      "original_local_source": "/tmp/issue-233-methods-artifact-failure.json",
+      "original_source_sha256": "c299b4c4c91048aacf2dc4f6d729a65fc2739a903ea685b9ee3c62f685160804"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-methods-artifact-failure.log",
+      "bytes": 1302,
+      "sha256": "9ee0bd9df2360fb1c9ef56611187c1d2b95d849cef6ab99df52f12d5b3a4322b"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-methods-artifact-failure.spec.ts",
+      "bytes": 720,
+      "sha256": "0911dd217d230dd566d4d011f2b3b79101c6a886b5e6e6a8623a350ae5ab304f"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-methods-artifact-lint.log",
+      "bytes": 43,
+      "sha256": "64aafdf38b19757056d13c8a90e40fa5d39dd5595a13f94ff19b0951a8c8f6aa"
+    },
+    {
+      "file": "issue-233-methods-artifact-smoke.json",
+      "bytes": 968,
+      "sha256": "36ba8d8e22bec6062894d8b1c25356eb8321fd6edf49112bebd73f62160ce5b0",
+      "original_local_source": "/tmp/issue-233-methods-artifact-smoke.json",
+      "original_source_sha256": "36ba8d8e22bec6062894d8b1c25356eb8321fd6edf49112bebd73f62160ce5b0"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-methods-artifact-smoke.log",
+      "bytes": 520,
+      "sha256": "5d6b42b0e8db8472d7aeec9ea5cefaaff30de4d414b13f5be2c868781da2a089"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-methods-artifact-typecheck.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-methods-focused-final.log",
+      "bytes": 1906,
+      "sha256": "a316600ed67dbd25c225ff0c462562c6a6bb4c76a05443b22ae756d1db2f26f0"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-methods-focused.log",
+      "bytes": 320,
+      "sha256": "f06ec7982d6c43dd25a3590e183385c47f51679f02bec7d24cff55dc6adb7ae6"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-methods-lint.log",
+      "bytes": 43,
+      "sha256": "3989cd67d8ac3cbe363de83c529a71d77ca7282048fcef028e242e3c62660c4c"
+    },
+    {
+      "file": "issue-233-methods-summary.json",
+      "bytes": 2073,
+      "sha256": "f6df58654a1bb80de459f95529390326b49269708f404dc8cafbc2878d10c563",
+      "original_local_source": "/tmp/issue-233-methods-summary.json",
+      "original_source_sha256": "f6df58654a1bb80de459f95529390326b49269708f404dc8cafbc2878d10c563"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-methods-typecheck-final.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-methods-typecheck-initial.log",
+      "bytes": 2164,
+      "sha256": "0bf7f7732994df9073e5b232e1903b7d9b838876425a83f866491e1f5902dfdf"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-methods-typecheck.log",
+      "bytes": 2164,
+      "sha256": "0bf7f7732994df9073e5b232e1903b7d9b838876425a83f866491e1f5902dfdf"
     }
   ],
   "riftbound_frozen_commit": "2cdb4592",
@@ -835,5 +934,7 @@
   "context_reducer_committed_response_commit": "12daafa",
   "finite_product_fault_batch_commit": "1ee4fd8",
   "finite_product_fault_oracle_correction_commit": "f3be533",
-  "finite_product_fault_identity_correction_commit": "3e3ab4d"
+  "finite_product_fault_identity_correction_commit": "3e3ab4d",
+  "binding_observer_commit": "f880445",
+  "structured_callback_reporter_commit": "1a0da9b"
 }

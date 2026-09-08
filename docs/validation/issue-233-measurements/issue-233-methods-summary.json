@@ -1,0 +1,103 @@
+{
+  "elapsed_ms": 11711,
+  "callbacks": 1295,
+  "maximum_calls": 78,
+  "calls": 34191,
+  "failed_callbacks": 0,
+  "methods": {
+    "D1.first": 15364,
+    "D1.batch": 18207,
+    "D1.all": 425,
+    "EVIDENCE_OBJECTS.get": 135,
+    "Workflow.driver.create": 29,
+    "Workflow.driver.status": 29,
+    "Workflow.driver.get": 1,
+    "Workflow.driver.sendEvent": 1
+  },
+  "d1_submitted_batch_statements": 49231,
+  "d1_returned_metadata": {
+    "rows_read": {
+      "observations": 49656,
+      "total": 310059
+    },
+    "rows_written": {
+      "observations": 49656,
+      "total": 61641
+    },
+    "changes": {
+      "observations": 49656,
+      "total": 18128
+    },
+    "duration": {
+      "observations": 49656,
+      "total": 1168
+    }
+  },
+  "r2_returned_metadata": {
+    "get.null_results": {
+      "observations": 135,
+      "total": 0
+    },
+    "get.object_size": {
+      "observations": 135,
+      "total": 1190206980
+    },
+    "get.body_results": {
+      "observations": 135,
+      "total": 135
+    }
+  },
+  "outcomes": {
+    "D1.first": {
+      "attempted": 15364,
+      "fulfilled": 15364,
+      "rejected": 0
+    },
+    "D1.batch": {
+      "attempted": 18207,
+      "fulfilled": 18207,
+      "rejected": 0
+    },
+    "D1.all": {
+      "attempted": 425,
+      "fulfilled": 425,
+      "rejected": 0
+    },
+    "EVIDENCE_OBJECTS.get": {
+      "attempted": 135,
+      "fulfilled": 135,
+      "rejected": 0
+    },
+    "Workflow.driver.create": {
+      "attempted": 29,
+      "fulfilled": 29,
+      "rejected": 0
+    },
+    "Workflow.driver.status": {
+      "attempted": 29,
+      "fulfilled": 29,
+      "rejected": 0
+    },
+    "Workflow.driver.get": {
+      "attempted": 1,
+      "fulfilled": 1,
+      "rejected": 0
+    },
+    "Workflow.driver.sendEvent": {
+      "attempted": 1,
+      "fulfilled": 1,
+      "rejected": 0
+    }
+  },
+  "outside_callbacks": {
+    "calls": 0,
+    "methods": {},
+    "outcomes": {},
+    "returned_d1_metadata": {},
+    "returned_r2_metadata": {},
+    "d1_batch_statements": 0,
+    "driver_events": {
+      "waitForEvent": 1
+    }
+  }
+}
