@@ -340,8 +340,9 @@
   ],
   "riftbound_frozen_commit": "2cdb4592",
   "handoff_fixture_fix_commit": "847f6cb",
-  "final_runtime_implementation_commit": "2cdb459",
   "bounded_callback_commit": "02f82bd",
   "curated_cli_probe_commit": "f733f07",
-  "native_curated_repeated_probe_commit": "80587b3"
+  "native_curated_repeated_probe_commit": "80587b3",
+  "initial_native_campaign_runtime_commit": "2cdb459",
+  "latest_bounded_diagnostics_code_commit": "80587b3"
 }
