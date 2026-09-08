@@ -18,7 +18,10 @@ export default {
         idempotency_key: "capacity-memory-source",
         requests: [{id: "cards", method: "GET", url: "https://official-source.invalid/reconciliation/scale-1001-products"}],
       });
-      const transport = {fetch: async (url: string) => Response.json(reconciliationSourceDocument("scale-1001-products", "", String(url)))} as unknown as Fetcher;
+      const { source_url: sourceUrl } = await request.json<{source_url?: string}>();
+      const transport = {fetch: async (url: string) => sourceUrl
+        ? fetch(sourceUrl)
+        : Response.json(reconciliationSourceDocument("scale-1001-products", "", String(url)))} as unknown as Fetcher;
       await collectFixtureEvidence(env.CATALOGUE_DB, env.EVIDENCE_OBJECTS, transport, String(source.id));
       let params: ReconciliationWorkflowParams | undefined;
       const queued = {status: async () => ({status: "queued"})} as unknown as WorkflowInstance;

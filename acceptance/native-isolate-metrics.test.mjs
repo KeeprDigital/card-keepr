@@ -40,6 +40,7 @@ test("local isolate measurements read actual workerd heap and CPU profiles", asy
   assert.ok(report.operational_timeline.events.at(-1).observed_elapsed_ms >= 0);
   assert.equal(report.isolates.length, 1);
   assert.ok(report.isolates[0].heap_samples.every((sample) => sample.usedSize > 0));
+  assert.ok(report.isolates[0].heap_samples.every((sample) => sample.received_elapsed_ms >= sample.elapsed_ms));
   assert.ok(report.isolates[0].cpu_profile.duration_microseconds > 0);
   assert.ok(report.isolates[0].allocation_profile.trigger_heap_sample.usedSize > 64 * 1024 ** 2);
   assert.ok(report.isolates[0].allocation_profile.allocations.length > 0);

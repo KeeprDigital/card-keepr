@@ -3,6 +3,10 @@ import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { createServer } from "node:http";
+import { createHash } from "node:crypto";
+import { pathToFileURL } from "node:url";
+import { build } from "esbuild";
 import { applyMigrations, startWorker, stopWorker } from "./helpers/acceptance-runtime.mjs";
 
 test("bounded synthetic Product reconciliation isolates memory from the Vitest runner", {
@@ -19,6 +23,38 @@ test("bounded synthetic Product reconciliation isolates memory from the Vitest r
     if (passed) await rm(directory, { recursive: true, force: true });
     else t.diagnostic(`Probe state retained at ${directory}`);
   });
+  // Same pure fixture generator and JSON encoding as Response.json in workerd.
+  // Generation and serving buffers live in Node; application capture owns the response stream.
+  const outfile = join(directory, "source.mjs");
+  await build({
+    entryPoints: ["test/support/fake-publisher/reconciliation-documents.ts"],
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    outfile,
+    logLevel: "silent",
+  });
+  const { reconciliationSourceDocument } = await import(pathToFileURL(outfile).href);
+  const sourceBytes = Buffer.from(
+    JSON.stringify(
+      reconciliationSourceDocument(
+        "scale-1001-products",
+        "",
+        "https://official-source.invalid/reconciliation/scale-1001-products",
+      ),
+    ),
+  );
+  const externalSource = Boolean(process.env.KEEPR_RECONCILIATION_EXTERNAL_SOURCE);
+  let sourceUrl;
+  if (externalSource) {
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(sourceBytes);
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    t.after(() => new Promise((resolve) => server.close(resolve)));
+    sourceUrl = `http://127.0.0.1:${server.address().port}/source`;
+  }
   await applyMigrations(statePath);
   const config = JSON.parse(await readFile("apps/ingestion/wrangler.jsonc", "utf8"));
   delete config.$schema;
@@ -31,7 +67,11 @@ test("bounded synthetic Product reconciliation isolates memory from the Vitest r
     statePath,
     vars: { ADMINISTRATION_KEY: "probe-owner", SOURCE_HOST_PACING_MODE: "immediate" },
   });
-  const setup = await fetch(`${worker.url}/setup`, { method: "POST" });
+  const setup = await fetch(`${worker.url}/setup`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ source_url: sourceUrl }),
+  });
   assert.equal(setup.status, 200, await setup.clone().text());
   const { candidate, params } = await setup.json();
   const response = await fetch(`${worker.url}/run`, {
@@ -47,6 +87,11 @@ test("bounded synthetic Product reconciliation isolates memory from the Vitest r
       {
         scope:
           "Synthetic 1001 Products; real retained collection and reconciliation, direct test Workflow driver, no publication/backup. Driver phase receipt markers are labelled probe-driver.",
+        source: {
+          generation: externalSource ? "external-node" : "application-isolate",
+          bytes: sourceBytes.length,
+          sha256: createHash("sha256").update(sourceBytes).digest("hex"),
+        },
         ...result,
       },
       null,
@@ -67,7 +112,9 @@ test("bounded synthetic Product reconciliation isolates memory from the Vitest r
   );
   assert.equal(result.candidate.state, "sealed");
   assert.ok(result.elapsed_ms < 15000, `Reconciliation took ${result.elapsed_ms} ms`);
-  assert.deepEqual(report.errors, []);
-  assert.ok(maximum <= 64 * 1024 ** 2, `Sampled used heap ${maximum} exceeds the initial 64 MiB target`);
+  const failures = [];
+  if (maximum > 64 * 1024 ** 2) failures.push(`Sampled used heap ${maximum} exceeds the initial 64 MiB target`);
+  if (report.errors.length) failures.push(`Observer errors: ${report.errors.join("; ")}`);
+  assert.deepEqual(failures, [], failures.join("\n"));
   passed = true;
 });

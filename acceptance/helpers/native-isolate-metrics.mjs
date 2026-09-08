@@ -78,6 +78,7 @@ export async function profileNativeIsolates(runtime, destination, local, { sampl
           const heap = {
             elapsed_ms: performance.now() - started,
             ...(await session.call("Runtime.getHeapUsage")),
+            received_elapsed_ms: performance.now() - started,
           };
           session.report.heap_samples.push(heap);
           if (heap.usedSize > 64 * 1024 ** 2 && session.report.allocation_profile === null) {
@@ -154,7 +155,7 @@ export async function profileNativeIsolates(runtime, destination, local, { sampl
             {
               contract: "card-keepr-local-isolate-measurements@1",
               limitation:
-                "Local workerd DevTools samples with profiler overhead. Heap samples include V8 used/allocated heap, embedder heap and backing storage as separate fields; they are not continuous peak working set. CPU profile deltas are sampling attribution, not billed CPU or invocation CPU. Runtime restarts produce separate reports.",
+                "Local workerd DevTools samples with profiler overhead. Heap samples include V8 used/allocated heap, embedder heap and backing storage as separate fields; they are not continuous peak working set. Heap elapsed_ms and received_elapsed_ms bound the observer request/response window, not exact isolate sampling time. CPU profile deltas are sampling attribution, not billed CPU or invocation CPU. Runtime restarts produce separate reports.",
               skipped_sampling_intervals: skippedIntervals,
               sample_interval_ms: sampleIntervalMs,
               observer_started_ms: started,
