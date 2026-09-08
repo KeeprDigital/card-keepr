@@ -1,0 +1,11 @@
+✔ storage census includes automatic indexes and separates retained rows from allocations (28.87875ms)
+✔ operational census counts retries and observed owner routes without inventing SQL executions (4.978334ms)
+✔ phase timeline handles split streams, drops old events and excludes payload fields (0.916333ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 111.274167

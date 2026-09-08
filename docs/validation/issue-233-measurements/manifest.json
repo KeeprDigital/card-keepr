@@ -1514,6 +1514,118 @@
       "sha256": "1c6eec8a6554ea5655b78b5ccdf2d8f04145aa3d2b7a93ceb689efeaddc35caf",
       "original_local_source": "/tmp/issue-233-all-intake-vertical.log",
       "original_source_sha256": "1c6eec8a6554ea5655b78b5ccdf2d8f04145aa3d2b7a93ceb689efeaddc35caf"
+    },
+    {
+      "file": "issue-233-pr-final-affected-typecheck.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_local_source": "/tmp/issue-233-pr-final-affected-typecheck.log",
+      "original_source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "issue-233-pr-final-affected.log",
+      "bytes": 551,
+      "sha256": "0d58061ff7a1024cc5aa7150b8b40a4edf929da4a7f7de5cacc3840b503d8d38",
+      "original_local_source": "/tmp/issue-233-pr-final-affected.log",
+      "original_source_sha256": "0d58061ff7a1024cc5aa7150b8b40a4edf929da4a7f7de5cacc3840b503d8d38"
+    },
+    {
+      "file": "issue-233-pr-final-api.log",
+      "bytes": 237,
+      "sha256": "df42bc294d3662143fd298064756bb42be25c1aaec2d21aa93e07907819107d6",
+      "original_local_source": "/tmp/issue-233-pr-final-api.log",
+      "original_source_sha256": "df42bc294d3662143fd298064756bb42be25c1aaec2d21aa93e07907819107d6"
+    },
+    {
+      "file": "issue-233-pr-final-boundary.log",
+      "bytes": 157,
+      "sha256": "8ba83f9eb2730b72ca1156de0568d180cb71bab1459dad19d2906e07a6242b7e",
+      "original_local_source": "/tmp/issue-233-pr-final-boundary.log",
+      "original_source_sha256": "8ba83f9eb2730b72ca1156de0568d180cb71bab1459dad19d2906e07a6242b7e"
+    },
+    {
+      "file": "issue-233-pr-final-cycles.log",
+      "bytes": 194,
+      "sha256": "38034634d4577f9cc457982602efcf3a8968b111104738f52ad7e02c2f702eec",
+      "original_local_source": "/tmp/issue-233-pr-final-cycles.log",
+      "original_source_sha256": "38034634d4577f9cc457982602efcf3a8968b111104738f52ad7e02c2f702eec"
+    },
+    {
+      "file": "issue-233-pr-final-domain.log",
+      "bytes": 239,
+      "sha256": "8479b25781e411cfc43c84f0b8dfb2a47f468d2ebc9aabef06a405c9bb476467",
+      "original_local_source": "/tmp/issue-233-pr-final-domain.log",
+      "original_source_sha256": "8479b25781e411cfc43c84f0b8dfb2a47f468d2ebc9aabef06a405c9bb476467"
+    },
+    {
+      "file": "issue-233-pr-final-failure-followup.log",
+      "bytes": 2555,
+      "sha256": "e876ce3e3aa49c66ade4fa8e0b79756873e02bfa49b52fad3bde74a7a1c40cf9",
+      "original_local_source": "/tmp/issue-233-pr-final-failure-followup.log",
+      "original_source_sha256": "e876ce3e3aa49c66ade4fa8e0b79756873e02bfa49b52fad3bde74a7a1c40cf9"
+    },
+    {
+      "file": "issue-233-pr-final-fix-lint.log",
+      "bytes": 43,
+      "sha256": "443798f015deae8d693c4809e3f9f97b7d57b3869bd447b0df3a9072bf1d861c",
+      "original_local_source": "/tmp/issue-233-pr-final-fix-lint.log",
+      "original_source_sha256": "443798f015deae8d693c4809e3f9f97b7d57b3869bd447b0df3a9072bf1d861c"
+    },
+    {
+      "file": "issue-233-pr-final-fix-typecheck.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_local_source": "/tmp/issue-233-pr-final-fix-typecheck.log",
+      "original_source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "issue-233-pr-final-format.log",
+      "bytes": 44,
+      "sha256": "cd1353b427994ff62f2b4dc8aee1bac4f06845272115d03eb48eb35a9a455558",
+      "original_local_source": "/tmp/issue-233-pr-final-format.log",
+      "original_source_sha256": "cd1353b427994ff62f2b4dc8aee1bac4f06845272115d03eb48eb35a9a455558"
+    },
+    {
+      "file": "issue-233-pr-final-high-degree-native.log",
+      "bytes": 398,
+      "sha256": "00f1800447b18e18f3323505d96148dc8b188fb50bc40f45a35cf8502cb6e07c",
+      "original_local_source": "/tmp/issue-233-pr-final-high-degree-native.log",
+      "original_source_sha256": "00f1800447b18e18f3323505d96148dc8b188fb50bc40f45a35cf8502cb6e07c"
+    },
+    {
+      "file": "issue-233-pr-final-ingestion.log",
+      "bytes": 477184,
+      "sha256": "37b593cc047b4ea198aca7f15f9653fea5f5e5d8d752c72d78e366e1216cd06c",
+      "original_local_source": "/tmp/issue-233-pr-final-ingestion.log",
+      "original_source_sha256": "37b593cc047b4ea198aca7f15f9653fea5f5e5d8d752c72d78e366e1216cd06c"
+    },
+    {
+      "file": "issue-233-pr-final-lint.log",
+      "bytes": 14858,
+      "sha256": "9a0037917d35f7729267819f2df47df6a797f412b7d29c47346642e063943105",
+      "original_local_source": "/tmp/issue-233-pr-final-lint.log",
+      "original_source_sha256": "9a0037917d35f7729267819f2df47df6a797f412b7d29c47346642e063943105"
+    },
+    {
+      "file": "issue-233-pr-final-metrics.log",
+      "bytes": 429,
+      "sha256": "354e09c975ff054ebf8fce1a226665e0d22484db205eb599219b0d4008423ea1",
+      "original_local_source": "/tmp/issue-233-pr-final-metrics.log",
+      "original_source_sha256": "354e09c975ff054ebf8fce1a226665e0d22484db205eb599219b0d4008423ea1"
+    },
+    {
+      "file": "issue-233-pr-final-typecheck.log",
+      "bytes": 238,
+      "sha256": "968585aeca6f852f0ec5e56b91c6ce428ab85b869d2536740d8b82d826bd7a7f",
+      "original_local_source": "/tmp/issue-233-pr-final-typecheck.log",
+      "original_source_sha256": "968585aeca6f852f0ec5e56b91c6ce428ab85b869d2536740d8b82d826bd7a7f"
+    },
+    {
+      "file": "issue-233-pr-final-review.json",
+      "bytes": 1570,
+      "sha256": "a61c1b5b97db4ffb0312d6bc4f0243555dff3b3058cad91a3f457a35c5688c85",
+      "original_local_source": "/tmp/issue-233-pr-final-review.json",
+      "original_source_sha256": "a61c1b5b97db4ffb0312d6bc4f0243555dff3b3058cad91a3f457a35c5688c85"
     }
   ],
   "riftbound_frozen_commit": "2cdb4592",
@@ -1544,7 +1656,11 @@
   "collection_root_notification_commit": "9cfa83d",
   "observation_retention_experiment_commit": "98bd07a",
   "observation_retention_revert_commit": "e622ab0",
-  "current_design_status": "Remaining adapter intake/discovery migration implemented locally and reviewed; explicit historical import, lossless large fields and uniform native reader. No push/deployment or heap/capacity certification.",
+  "current_design_status": "Completed sealed indexed intake implementation prepared for PR #266 merge. Original capacity acceptance remains incomplete in #268. Full ingestion 745 passed / 3 failed; corrected affected cases 3/3 pass. Historical memory failures remain unresolved.",
   "bounded_intake_functional_commit": "31de829f86239c25713e610482b8d2bf46ca0824",
-  "remaining_intake_functional_commit": "2af5db70"
+  "remaining_intake_functional_commit": "2af5db70",
+  "full_pr_review_base": "0bb3b7d26c6744b4c037d788e6b45c334ae8aa83",
+  "full_pr_review_head": "ebb67a075ac646dcba39bb6c98945b8f61999283",
+  "final_incremental_review_and_check_head": "762dffb6e54104e6dfd11dc5eaa038feb32be029",
+  "follow_up_issue": "https://github.com/KeeprDigital/card-keepr/issues/268"
 }

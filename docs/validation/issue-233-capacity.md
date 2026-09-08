@@ -11,6 +11,67 @@ synthetic fixture with two persisted inline-base64 copies; they are not a
 real-source baseline or a hardware requirement for the proposed pipeline. Any
 earlier suggestion to size user hardware from that topology is superseded.
 
+## PR merge scope and deferred acceptance
+
+The owner authorized merging the completed intake implementation and retained
+evidence in PR #266, with outstanding work tracked explicitly in
+[#268](https://github.com/KeeprDigital/card-keepr/issues/268), under #216.
+This supersedes earlier instructions in the historical checkpoint sections to
+keep the PR draft until every original #233 criterion passes. It does **not**
+establish original #233 acceptance, waive budgets or authorize Go-Live.
+
+Outstanding #268 requirements are: realistic separate-image capacity fixtures and
+new storage budgets; the 128-image case and both full capacity tiers; representative
+post-migration isolate memory/CPU/time/operational/billing accounting; worst-case
+HTML and individual-record expansion validation; image conversion/reference work;
+intentional old publication-interface retirement; completion of the durable-boundary
+fault map; final representative consumer and SQL-restore integration; and evidence-
+based operating/cost targets. Historical failed and incomplete results remain so.
+No work on those deferred campaigns is part of this merge preparation.
+
+Full-PR Standards and Spec review used fixed base
+`0bb3b7d26c6744b4c037d788e6b45c334ae8aa83` through implementation/evidence head
+`ebb67a075ac646dcba39bb6c98945b8f61999283`, covering the entire 167-file net diff:
+production intake, diagnostics/observers, fault tests, unwired prototypes and reports.
+Both axes found no actionable correctness blockers or unauthorized scope additions.
+Both independently verified all 257 then-retained artifact hashes; Standards also
+verified semantic equality of 43 available original JSON artifacts. No reviewer ran
+tests or live operations. The final test-only correction `762dffb6` was reviewed
+incrementally by both axes, with no actionable findings; the full-base review remains
+clear through that commit. Production code and migration files are byte-identical
+to the previously verified `2af5db70` implementation.
+
+Final local merge-preparation checks:
+
+| Check | Outcome |
+| --- | --- |
+| Full non-stress ingestion suite at `ebb67a07` | **745 passed / 3 failed**, 87 files, 789.71 s; not a wholly green run |
+| Affected cases at `762dffb6` | **3/3 pass**, 4.31 s; two structural-rejection expectations corrected, unchanged admission timeout case passes in isolation |
+| API suite | **95/95 pass**, 13 files, 14.57 s |
+| Domain suite | **246/246 pass**, 44 files, 4.20 s |
+| Storage/operational metric census | **3/3 pass**, 111.274 ms; no new profiling campaign |
+| TypeScript | Full projects pass; affected test project rechecked after the test-only correction |
+| Lint / formatting | All 63 changed code files pass (one warning, 13 informational messages); all three corrected test files pass without diagnostics |
+| Catalogue boundaries / cycles | Pass |
+| Current-production compact native publication / actual SQL restore | Prior final implementation proof **18,836.412 ms**, unchanged production code; no redundant repeat |
+
+The two deterministic suite failures used the same 40,000-trait metadata fixture.
+The documented structural intake budget now rejects it during collection, before
+it can reach the old reconciliation capacity guard. Revised tests assert visible
+`source_parse_failed`, zero authoritative observation sets, all 40,000 traits still
+retained in raw evidence, and no publishable native candidate. They do not weaken
+the fixture, intake bounds, publication guards or timeouts. The native API may still
+create an inspection/preparation intent for a failed collection; that candidate
+ends failed. An intermediate test incorrectly expected HTTP 409 on intent creation;
+its corrected terminal-state assertion passes and the intermediate failure is kept.
+
+The third failure is the previously observed suite-context admission-selection
+30-second timeout; the unchanged isolated test passes. Its root cause remains
+unresolved in #268. The full-suite outcome remains 745/748, separately from the
+three focused passes; no second full run or usable-capacity claim is substituted.
+Hosted CI is excluded from this owner-authorized merge preparation. Live deployment,
+provisioning, cleanup and Go-Live remain unauthorized.
+
 ## Remaining intake migration — local checkpoint
 
 Reviewed implementation checkpoint: `2af5db70` (initial slice `b99a23ee`), fixed base
