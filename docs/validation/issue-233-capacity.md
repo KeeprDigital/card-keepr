@@ -748,5 +748,54 @@ informational style notices. This changes neither the encoder nor its measured
 results. The most direct remaining local fault extension is the corresponding
 committed-response loss for the `product_contexts_one-piece` reducer index before
 its `contexts` cursor advances, using the existing small typed-relationship fixture
-and exact-target/replay assertions. That extension has not been executed here.
-It is independent of the unresolved memory diagnosis and external tier capacity.
+and exact-target/replay assertions. At that checkpoint the extension was unexecuted; the bounded follow-up below
+records its later result. It is independent of the unresolved memory diagnosis and external tier capacity.
+
+## Context reducer response loss and finite follow-up matrix
+
+The next bounded extension is implemented at `12daafa`. The shared typed fixture
+now runs uninterrupted, Product-group pre-commit failure, Product-group committed
+response loss, and Context committed response loss. The Context case targets
+`product_contexts_one-piece`: after each of four real D1 commits it reads back the
+exact payload and SHA-256 and verifies the retained `contexts` cursor remains
+behind the committed ordinal. All four readbacks agree. After owner resume, the
+candidate has exactly two distinct Products, one observed promotion Context with
+the expected key/label/Product ID, and four distinct typed relationships pointing
+to the expected Context and Products. Replaying the sealed generation preserves
+the status and complete native candidate records. The uninterrupted case runs in
+its own isolated database with the same assertions; this is not cross-run byte
+equality.
+
+The selected run passes **4/4**, with 42 skipped (3.40 s tests, 5.38 s harness).
+The complete affected file then passes **46/46** at `12daafa` (112.41 s tests,
+114.59 s harness). The historical 43-case full-file and later 3-case selected runs
+remain separate measurements. Ingestion test type checking, lint and formatting
+pass. A broader Biome check reports pre-existing import ordering at lines 1–2
+(unchanged from `3f4099a`); its failure is retained separately, not reported as a
+passing check. Standards and Spec reviews of the code report no findings.
+
+The following is a finite planning matrix for the Product reducer's seven indexes,
+result writes and checkpoint boundary, plus the already exercised adjacent fault
+families. It is a source-based inventory, not an exhaustive inventory of every
+Workflow, publication or backup write. “Open” means this specific ambiguity has
+not been established by this campaign; successful ordinary execution and shared
+storage implementations do not substitute for injection evidence.
+
+| Boundary family | Executed evidence | Remaining bounded check | Priority |
+| --- | --- | --- | --- |
+| Input Product groups (`groups`) | Pre-commit and post-commit response loss; exact effect, lagging cursor, resume and sealed replay | None for this single-input fixture; multi-observation aggregation remains separate | Covered |
+| Input Contexts (`contexts`) | Post-commit response loss with exact retained effect and typed targets | Pre-commit rejection is not separately injected here | Low |
+| Input relationships (`relationships`) | Ordinary typed output and replay only | One post-commit loss before `indexes.relationships`; verify all four typed edges remain exact and unique | 1 |
+| Prior Product lookup indexes (`names`, `codes`) | Ordinary identity reads; Product-pass checkpoint read outages | Lost response between the two prior Product seed writes, using an existing Product with both name and code matches | 2 |
+| Prior Context and relationship indexes (`priorContexts`, `priorRelationships`) | Ordinary prior-state handling | One post-commit case for each prior seed index, preserving existing IDs and observed/history semantics | 3 |
+| Product result writes (`result.set` / `result.delete`) | Ordinary existing/new Product, Context and relationship stages | Parameterized post-commit cases for Product set, Context set, relationship set and curated relationship delete before result cursor retention | 4 |
+| Product reduction checkpoint (`save`) | Read outage, three fixture orderings | A lost checkpoint-write response after durable advancement; verify retry consumes the retained cursor and preserves output | 5 |
+| Preparation batches | Pre-commit rejection, post-commit lost response with readable receipt, and lost response plus receipt outage | No new case proposed for this bounded follow-up | Covered |
+| Source/image and normalization reads | Verified source reuse, transient image pause, retained image read outage, retained normalization progress | Broader effect/receipt ambiguity is not established by read failures | Separate scope |
+| Retained Erratum/sort namespaces and curated edits | Twelve selected retained-state/read paths and two curated storage failures | Post-commit ambiguity for these families remains unproven | Separate scope |
+
+Priorities identify a finite queue for a later decision, not authorization to run
+another series now. Each future batch should state its complete parameter set and
+oracle before execution, then run selected cases and the affected file once.
+No memory, transport, encoder, real-source or full-tier campaign accompanies this
+extension. The original 15 s / 64 MiB targets and unresolved acceptance gaps remain.
