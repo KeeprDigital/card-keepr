@@ -1179,12 +1179,16 @@ test("a published catalogue larger than 1 MiB is streamed into the next candidat
   expect(cards).toEqual(first.document.cards);
 });
 
-test.each(["uninterrupted", "before commit", "after commit"])(
-  "a Product-group storage outage pauses and resumes typed relationships without losing observed Products (%s)",
+test.each(["uninterrupted", "before commit", "after commit", "context after commit"])(
+  "a Product reducer storage outage pauses and resumes exact typed relationships (%s)",
   async (boundary) => {
     const { testEnv, post } = await import("./reconciliation-helpers");
     const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
     const run = await collect("/reconciliation/product-typed-relationships", "product-group-outage");
+    const reducerNamespace =
+      boundary === "context after commit" ? "product_contexts_one-piece" : "product_observations_one-piece";
+    const cursorIndex = boundary === "context after commit" ? "contexts" : "groups";
+    const afterCommit = boundary === "after commit" || boundary === "context after commit";
     const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
     let unavailable = boundary !== "uninterrupted";
     let failures = 0;
@@ -1212,19 +1216,19 @@ test.each(["uninterrupted", "before commit", "after commit"])(
                 const entry = statements.get(statement);
                 return (
                   entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
-                  entry.values.includes("product_observations_one-piece")
+                  entry.values.includes(reducerNamespace)
                 );
               })
             ) {
               failures++;
-              if (boundary === "after commit") {
+              if (afterCommit) {
                 await target.batch(batch);
                 const entry = batch
                   .map((statement) => statements.get(statement))
                   .find(
                     (entry) =>
                       entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
-                      entry.values.includes("product_observations_one-piece"),
+                      entry.values.includes(reducerNamespace),
                   )!;
                 const [preparation, namespace, key, ordinal, content, sha256] = entry.values;
                 const retained = await target
@@ -1241,7 +1245,7 @@ test.each(["uninterrupted", "before commit", "after commit"])(
                   )
                   .bind(preparation, "product_reduction:one-piece")
                   .first<{ content: string }>();
-                const position = JSON.parse(checkpoint!.content).indexes.groups as number;
+                const position = JSON.parse(checkpoint!.content).indexes[cursorIndex] as number;
                 expect(position).toBeLessThan(Number(ordinal));
                 checkpointPositions.push(position);
               }
@@ -1276,7 +1280,7 @@ test.each(["uninterrupted", "before commit", "after commit"])(
     } as unknown as import("cloudflare:workers").WorkflowStep;
     await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
     expect(failures).toBe(boundary === "uninterrupted" ? 0 : 4);
-    if (boundary === "after commit") {
+    if (afterCommit) {
       expect(committedEffects).toHaveLength(4);
       expect(committedEffects.every((effect) => JSON.stringify(effect) === JSON.stringify(committedEffects[0]))).toBe(
         true,
@@ -1308,13 +1312,17 @@ test.each(["uninterrupted", "before commit", "after commit"])(
     const candidateId = (status.document.candidates as { id: string }[])[0]!.id;
     const page = await get(`/v1/game-candidates/${candidateId}/partitions`);
     const products: Record<string, unknown>[] = [];
+    const contexts: Record<string, unknown>[] = [];
     const relationships: Record<string, unknown>[] = [];
     for (const partition of page.document.partitions as { kind: string; ordinal: number }[]) {
-      if (!["products", "product_relationships"].includes(partition.kind)) continue;
+      if (!["products", "distribution_contexts", "product_relationships"].includes(partition.kind)) continue;
       const detail = await get(`/v1/game-candidates/${candidateId}/partitions/${partition.ordinal}`);
-      (partition.kind === "products" ? products : relationships).push(
-        ...(detail.document.records as Record<string, unknown>[]),
-      );
+      (partition.kind === "products"
+        ? products
+        : partition.kind === "distribution_contexts"
+          ? contexts
+          : relationships
+      ).push(...(detail.document.records as Record<string, unknown>[]));
     }
     expect(products).toHaveLength(2);
     expect(products.every(({ observed }) => observed === true)).toBe(true);
@@ -1345,6 +1353,25 @@ test.each(["uninterrupted", "before commit", "after commit"])(
     ]);
     expect(new Set(relationships.map(({ id }) => id)).size).toBe(4);
     const codeProduct = products.find(({ official_code }) => official_code === "CODE-X")!;
+    expect(new Set(products.map(({ id }) => id)).size).toBe(2);
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]).toMatchObject({
+      game: "one-piece",
+      key: "typed-context",
+      kind: "promotion",
+      label: "Typed relationship context",
+      product_id: codeProduct.id,
+      evidence_category: "explicit",
+      observed: true,
+    });
+    expect(relationships.find(({ kind }) => kind === "printing-distribution-context")?.to).toEqual({
+      type: "distribution_context",
+      id: contexts[0]!.id,
+    });
+    expect(relationships.find(({ kind }) => kind === "distribution-context-product")?.from).toEqual({
+      type: "distribution_context",
+      id: contexts[0]!.id,
+    });
     const namedProduct = products.find(({ official_code }) => official_code === null)!;
     expect(relationships.find(({ kind }) => kind === "printing-product")?.to).toEqual({
       type: "product",
