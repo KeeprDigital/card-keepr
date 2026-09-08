@@ -122,6 +122,14 @@ test("bounded synthetic Product reconciliation isolates memory from the Vitest r
   assert.equal(result.candidate.state, "sealed");
   assert.ok(result.elapsed_ms < 15000, `Reconciliation took ${result.elapsed_ms} ms`);
   const failures = [];
+  if (process.env.KEEPR_PARSE_ALLOCATION_TRACE) {
+    assert.deepEqual(ingestion.parse_allocation_trace.errors, []);
+    assert.deepEqual(ingestion.parse_allocation_trace.unvisited_boundaries, []);
+    assert.equal(ingestion.parse_allocation_trace.boundaries.length, 4);
+    t.diagnostic(
+      "Intrusive debugger trace: timing/heap do not establish normal-run capacity; original guards remain checks only.",
+    );
+  }
   if (maximum > 64 * 1024 ** 2) failures.push(`Sampled used heap ${maximum} exceeds the initial 64 MiB target`);
   if (report.errors.length) failures.push(`Observer errors: ${report.errors.join("; ")}`);
   assert.deepEqual(failures, [], failures.join("\n"));

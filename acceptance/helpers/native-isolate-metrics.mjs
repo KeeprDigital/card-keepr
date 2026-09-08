@@ -1,9 +1,15 @@
+import { traceNativeParseAllocations } from "./native-parse-allocation-trace.mjs";
 import { writeFile } from "node:fs/promises";
 import { nativeRetainedOccupancy, operationalCapacityMetrics } from "./native-capacity-metrics.mjs";
 
 // Opt-in local DevTools measurements. A sample maximum is not a continuous
 // peak, and a sampling profile is not Cloudflare's billed CPU accounting.
-export async function profileNativeIsolates(runtime, destination, local, { sampleIntervalMs = 3000 } = {}) {
+export async function profileNativeIsolates(
+  runtime,
+  destination,
+  local,
+  { sampleIntervalMs = 3000, traceParseAllocations = false } = {},
+) {
   if (!Number.isSafeInteger(sampleIntervalMs) || sampleIntervalMs < 100 || sampleIntervalMs > 30000)
     throw new Error("Heap sample interval must be 100–30000 milliseconds");
   const inspector = await runtime.getInspectorURL();
@@ -35,7 +41,7 @@ export async function profileNativeIsolates(runtime, destination, local, { sampl
         );
       });
       let sequence = 0;
-      const call = (method) =>
+      const call = (method, params) =>
         new Promise((resolve, reject) => {
           const id = ++sequence;
           const timer = setTimeout(() => {
@@ -51,13 +57,18 @@ export async function profileNativeIsolates(runtime, destination, local, { sampl
             else resolve(result.result);
           };
           socket.addEventListener("message", listener);
-          socket.send(JSON.stringify({ id, method }));
+          socket.send(JSON.stringify({ id, method, ...(params ? { params } : {}) }));
         });
       const report = { target: target.id, heap_samples: [], cpu_profile: null, allocation_profile: null };
       Object.assign(sessions.at(-1), { call, report });
       await call("Profiler.enable");
       await call("Profiler.start");
-      await call("HeapProfiler.startSampling");
+      const traceParse = traceParseAllocations && target.id === "core:user:card-keepr-ingestion";
+      await call(
+        "HeapProfiler.startSampling",
+        traceParse ? { includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true } : undefined,
+      );
+      if (traceParse) sessions.at(-1).stopParseTrace = await traceNativeParseAllocations(socket, call);
     }
     if (sessions.length === 0) throw new Error("No user isolate targets available for native measurement");
     const started = performance.now();
@@ -81,7 +92,7 @@ export async function profileNativeIsolates(runtime, destination, local, { sampl
             received_elapsed_ms: performance.now() - started,
           };
           session.report.heap_samples.push(heap);
-          if (heap.usedSize > 64 * 1024 ** 2 && session.report.allocation_profile === null) {
+          if (!session.stopParseTrace && heap.usedSize > 64 * 1024 ** 2 && session.report.allocation_profile === null) {
             const { profile } = await session.call("HeapProfiler.getSamplingProfile");
             const allocations = [];
             const visit = (node, stack) => {
@@ -128,6 +139,7 @@ export async function profileNativeIsolates(runtime, destination, local, { sampl
           });
         for (const session of sessions) {
           try {
+            if (session.stopParseTrace) session.report.parse_allocation_trace = await session.stopParseTrace();
             const { profile } = await session.call("Profiler.stop");
             await session.call("HeapProfiler.stopSampling");
             const functions = new Map(profile.nodes.map((node) => [node.id, node.callFrame.functionName]));
