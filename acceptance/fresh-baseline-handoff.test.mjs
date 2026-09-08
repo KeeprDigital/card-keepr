@@ -26,6 +26,7 @@ import {
 } from "../scripts/fresh-baseline-correction.mjs";
 import { d1Adapter } from "./helpers/query-helpers/sqlite-d1-adapter.mjs";
 import * as queries from "./helpers/query-helpers/fresh-baseline.mjs";
+import { schemaMigrationLevel } from "./helpers/query-helpers/schema.mjs";
 
 const bundle = await build({
   stdin: {
@@ -93,7 +94,7 @@ async function setup(t) {
     expected_current_revision_id: "catrev_spine_000",
     expected_head_sha: "a".repeat(40),
     expected_actor: "owner[bot]",
-    expected_migration_level: 27,
+    expected_migration_level: schemaMigrationLevel(source).get().migration_level,
     production_target: target,
     production_target_digest: sha(JSON.stringify(canonical(target))),
     bootstrap: true,
