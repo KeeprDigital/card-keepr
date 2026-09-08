@@ -22,7 +22,9 @@
     "Standalone synthetic 1001 Product reconciliation exceeds 64 MiB with both in-isolate and external Node fixture generation; three samples and two inspector timeouts per run leave peaks under-observed. Network chunking differs, so the paired maxima are not a pure causal allocation estimate.",
     "Available local space increased after the earlier rejected preflights; those historical failures do not establish the current host floor. Full tiers remain unexecuted.",
     "Declared-length external source also exceeds64MiB (118447544bytes): completed writer records prove multipart was avoided. Four samples/two timeouts/114skips leave incomplete coverage; observed maximum differences do not establish causality.",
-    "Corrected code-derived tier1 storage lower bound19685349120bytes includes two retained base64 copies plus raw images; latest16965410816availablebytes is insufficient before metadata/SQL/staging/exports/restore/margin. It is not a measured peak."
+    "Corrected code-derived tier1 storage lower bound19685349120bytes includes two retained base64 copies plus raw images; latest16965410816availablebytes is insufficient before metadata/SQL/staging/exports/restore/margin. It is not a measured peak.",
+    "ALL phase attribution in3bfc2e6debuggertrace is invalid: workerd reported mismatched breakpoint IDs. Tiny exact-location calibration still missesoneof4boundaries. No allocation cause inferred; experimental tracer removedd889ece. Paused19319ms failsunchanged15sguardbutdoesnotprovenormal-runregression.",
+    "dac124b Productreducerfaultfollowup3/3selectedpassed;45testsnowinfile,42skippedinthisrun. Earlier43-testwholefilepasspredatesit. Isolateduninterruptedcaseassertssameexactsemanticexpectations,notcrossrunbyteequality."
   ],
   "files": [
     {
@@ -484,6 +486,87 @@
       "retained_local_log": "/tmp/issue-233-diagnostics-format-final.log",
       "bytes": 43,
       "sha256": "fcf7da5261a0ba5f56bd5f33e3edc8a917b63b8866eae288fdc2699440b964c0"
+    },
+    {
+      "file": "issue-233-parse-allocation-trace-isolate-1.json",
+      "bytes": 857843,
+      "sha256": "f569d97a9372ab7418d9664d4be7b0df383452dc0454184437ee945873d6ff48",
+      "original_local_source": "/tmp/issue-233-parse-allocation-trace-isolate-1.json",
+      "original_source_sha256": "0d7267ba52e8b7cd4b455d09cdf3f378a87cfd8cd356907c46e73dd1cc9a254f"
+    },
+    {
+      "file": "issue-233-parse-allocation-trace-workload.json",
+      "bytes": 133820,
+      "sha256": "30f9632ae67ff35acde3ef455a599a67bae2542a8f5a4f93cbbbea9bc9c15e9c",
+      "original_local_source": "/tmp/issue-233-parse-allocation-trace-workload.json",
+      "original_source_sha256": "30f9632ae67ff35acde3ef455a599a67bae2542a8f5a4f93cbbbea9bc9c15e9c"
+    },
+    {
+      "file": "issue-233-debugger-calibration.json",
+      "bytes": 13240,
+      "sha256": "658a598027b0b06dd888d1c76d3ee3602874a2a154b2413bf2964679170895ab",
+      "original_local_source": "/tmp/issue-233-debugger-calibration.json",
+      "original_source_sha256": "8da6aadc02ee063b66d4d5a7376143a17280dd1a73a7f3c30a9da9eb6bc09036"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-product-commit-probe.log",
+      "bytes": 226209,
+      "sha256": "12b9ad919c297598f38fff222e1d83825f15954f744219d9e746e6b0857026cd"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-product-reference-diagnosis.log",
+      "bytes": 114068,
+      "sha256": "311ee5105d4328e32c3d393cfd77abb72d615ff81606e2abd3b07e6ab1131d50"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-product-commit-final.log",
+      "bytes": 262582,
+      "sha256": "22d2eb84732bf2ac08b614b309920a0650b65bf8c82a6f3b8d9d9baf83b554fe"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-product-commit-isolated-final.log",
+      "bytes": 292,
+      "sha256": "68eea258dc9245fb2d30d65b96e72db0f7e73f24e316529e24798e541d21de79"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-product-commit-typecheck.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-parse-allocation-trace.log",
+      "bytes": 1102,
+      "sha256": "9d09795aec061c763f2bdb64a00b403d17e359c4ddcf2e345a4e370cb5d86659"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-trace-default-calibration.log",
+      "bytes": 515,
+      "sha256": "4f9ce5380b947606650be4e3c8e55375bb9ed8026feeb6a43af5cc209c546fe8"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-trace-tiny-calibration.log",
+      "bytes": 1884,
+      "sha256": "61665b9f5d010be7c423500b14d473fc9fb8a7ade74e9302b5d79802f92f60e5"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-trace-tiny-calibration-fixed.log",
+      "bytes": 1317,
+      "sha256": "d54e4c1372bca62cb4b7be5e3240d33eb32975afbac1b9a6ef5505e70ecbcf1f"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-trace-tiny-mapping.log",
+      "bytes": 1633,
+      "sha256": "091951bfba68eb58856c5f94c3855f222d64c8f26f1d524d2ab51d55af725b75"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-trace-tiny-events.log",
+      "bytes": 2569,
+      "sha256": "3aefea88cfa34587f502dd7026be832315e3543a75549641a4b4210db454add8"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-trace-tiny-location-final.log",
+      "bytes": 2445,
+      "sha256": "02924de585202600e42a23a07dc6831cc40681f3194d786f4e26c4b5666de788"
     }
   ],
   "riftbound_frozen_commit": "2cdb4592",
@@ -497,5 +580,8 @@
   "external_source_reconciliation_probe_commit": "6eb3b9e",
   "five_game_followup_commit": "b1d8306",
   "captured_receipt_assertion_commit": "8561698",
-  "declared_length_capture_probe_commit": "f747d8a"
+  "declared_length_capture_probe_commit": "f747d8a",
+  "product_reducer_committed_response_commit": "dac124b",
+  "invalid_debugger_trace_commit": "3bfc2e6",
+  "debugger_trace_removal_commit": "d889ece"
 }

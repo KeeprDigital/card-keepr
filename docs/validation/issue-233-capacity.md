@@ -612,8 +612,8 @@ local lead, not an established cause.
 
 | Gap | Next bounded action / completion evidence | Dependency |
 | --- | --- | --- |
-| 64 MiB cause | Inspect the lifetime overlap in `parseSnapshot`: retained-body `arrayBuffer`, decoded JSON/observation graph, recursive `canonicalJson` strings, then UTF-8 observation bytes held across hashing/R2 writes. The CPU profile contains canonicalization, and collection already crosses the threshold, but simultaneous live size is unproven. Allocation tracing aligned to those boundaries in the existing 8.7 MB reproducer could distinguish transient string/graph allocation from later retained state. | Locally diagnosable without another full campaign. Current periodic inspector requests time out behind long work and the delayed live allocation profile cannot establish short-lived allocation totals. Any debugger/instrumentation overhead must be separated from the unchanged timing target; no forced GC or budget increase. |
-| Durable reduction ambiguity | Highest-priority unmapped seam: commit a Product-group reducer-state batch, lose its response before the enclosing Product cursor checkpoint advances, then resume and compare typed relationships, counts and sealed replay with the uninterrupted result. Existing Product-group test throws **before** `target.batch`; the Product-pass cases deny checkpoint reads. | Small existing `product-typed-relationships` fixture. Lost committed writes in individual prior/new Product/context/relationship reduction stages are not established by the mapped tests; the verified-preparation receipt test is a different boundary. A complete write-boundary map remains required before calling coverage exhaustive. |
+| 64 MiB cause | Inspect the lifetime overlap in `parseSnapshot`: retained-body `arrayBuffer`, decoded JSON/observation graph, recursive `canonicalJson` strings, then UTF-8 observation bytes held across hashing/R2 writes. The CPU profile contains canonicalization, and collection already crosses the threshold, but simultaneous live size is unproven. Allocation tracing aligned to those boundaries in the existing 8.7 MB reproducer could distinguish transient string/graph allocation from later retained state. | Locally diagnosable without another full campaign, but the attempted debugger method failed calibration and was removed (follow-up below). Current periodic inspector requests time out behind long work and the delayed live allocation profile cannot establish short-lived allocation totals. Any debugger/instrumentation overhead must be separated from the unchanged timing target; no forced GC or budget increase. |
+| Durable reduction ambiguity | The selected Product-group committed-response/pre-checkpoint seam is now covered at `dac124b` (follow-up below). Remaining unmapped seams include corresponding individual prior/new Product/context/relationship reduction writes; the Product-pass cases deny checkpoint reads rather than establishing every lost committed write. | Small existing `product-typed-relationships` fixture. Lost committed writes in individual prior/new Product/context/relationship reduction stages are not established by the mapped tests; the verified-preparation receipt test is a different boundary. A complete write-boundary map remains required before calling coverage exhaustive. |
 | Complete service and write attribution | Extend observation beyond the selected callback seam to collection, preparation, publication and backup; distinguish returned D1 metadata from opaque calls and index effects. | Local binding counters can improve call coverage; provider/billed CPU and index costs cannot be invented from local return metadata. |
 | Full retained tiers | Use the lower bound below plus a complete SQL/staging/export/restore and margin estimate before choosing storage and executing a tier. | Current host is insufficient even for the corrected tier-1 lower bound. Tier-2 admission also exceeds the existing request guard. |
 | Cost/completion ceilings | Derive only after representative workload and complete resource dimensions are available. | Missing evidence above; no defensible numeric ceiling yet. |
@@ -631,3 +631,61 @@ even that tier-1 lower bound. The earlier “over 11.7 GiB” estimate counted o
 one base64 copy and raw images; it was insufficient for peak-retention planning.
 This establishes why increased space enabled five-game validation but still does
 not justify executing a full retained tier.
+
+## Product reducer fault closure and debugger limitation
+
+At `dac124b`, the Product-group regression adds isolated **uninterrupted**,
+**before commit**, and **after commit** cases. Each checks the same exact fixture
+semantics: two observed Products, four unique typed relationships, and correct
+code-reference versus name-reference Product targets. In the post-commit case,
+four lost batch responses retain identical content/digest while the saved Product
+cursor remains behind the committed effect. Resume seals, and replay preserves
+all sealed records and status. The three cases pass in **2.80 s** (5.29 s harness);
+affected TypeScript checking and both review axes pass. The earlier whole-file
+43-test pass predates this change; the new file contains 45 tests, of which these
+three were selected and 42 skipped in the follow-up. No full-file rerun is claimed.
+
+The first attempted uninterrupted comparison reused the same database and hit
+`game_candidate_slot_occupied`; trying the native abandon route for the legacy
+direct-Workflow fixture returned 404. The corrected comparison uses isolated test
+cases with the same exact semantic expectations. It does not claim cross-run
+byte equality or alter the candidate slot guard. This closes the selected
+Product-group post-commit/pre-checkpoint seam; it does not enumerate every write
+inside all other reduction stages.
+
+Code-lifetime analysis distinguishes a shallow observation wrapper map from a
+potentially avoidable representation: `canonicalJson` recursively builds strings,
+and `utf8` subsequently allocates the complete encoded observation document for
+digest and R2 storage. The observation map reuses its values rather than deeply
+copying them. Whether the JSON/string/buffer lifetimes cause the measured overrun
+still requires reliable allocation evidence; lexical scope is not proof of live
+retention, and backing storage is distinct from V8 used heap.
+
+One intrusive debugger trace at `3bfc2e6` attempted four boundaries in unchanged
+`parseSnapshot`/`utf8` code. It used allocation sampling configured to include
+objects discarded by GC, which differs from the default live-object profile.
+Those semantics are described in the [DevTools HeapProfiler protocol](https://chromedevtools.github.io/devtools-protocol/tot/HeapProfiler/#method-startSampling).
+No forced GC or object-content inspection was used. The run sealed in **19,319 ms**
+and failed the unchanged 15 s guard; three periodic samples, three inspector
+timeouts and 193 skipped intervals do not establish normal-run performance.
+Debugger pauses/deoptimization perturb execution, so the timing failure is not
+proof that uninstrumented reconciliation regressed. Its low periodic maximum of
+22,382,264 bytes likewise does not clear the earlier memory failures.
+
+**All phase attribution in that frozen debugger trace is invalid.** It recorded
+three unmatched pauses and one observation labelled “after-r2-write”, but tiny
+workerd calibration showed the reported breakpoint ID can refer to a different
+boundary from the paused call frame's location. In the calibration, the first
+pause's location was before canonicalization while its ID named the after-R2
+breakpoint; later IDs were empty. Consequently neither that label nor its
+36,173,772-byte observation can be attributed to the claimed phase. No allocation
+cause is inferred from it.
+
+Matching only exact resolved script/line/column repaired attribution for three
+boundaries, but the tiny calibration still failed to observe the boundary after
+UTF-8 encoding/before digest. The expected four-point coverage never passed.
+No further 8.7 MB trace was run. `d889ece` removes the experimental tracer from
+active code; its frozen source, raw measurements, calibration source/events and
+log hashes remain available. A reliable boundary-observation method is still
+needed before optimizing this suspected string/buffer overlap. This is a local
+measurement limitation, not a budget waiver or proof of a production cause.
