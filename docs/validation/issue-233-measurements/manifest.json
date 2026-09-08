@@ -30,7 +30,8 @@
     "Finite13newfaultcases: final3e3ab4d selected17/17passed50.47s; completefile58passed1admissiontimeout305.12s; isolatedadmission1/1passed1.68s unchanged30stimeout. NOT59/59fullpass. Earlierf3be533full39pass1preinjectionimmutablecollision19unexecuted retained; isolatedcheckpointpassed, per-caseidentityaliasremoved butrootcauseunproven. Initialfull1ee4fd8interruptedexit130forreview-oraclefix. Tombstoneisdirectvalidcuratedreducerseam,notWorkflowreachabilityproof.",
     "1a0da9b structured1001ProductcapturePASS11711ms,max78methodentries,1295callbacks,34191entries includes60simulatedWorkflowmethods.49231submittedbatchstatements;R2object-size sum1190206980 repeatsmetadata,notbytestransferred. OptionalD1timing/retrymetadataabsent. Twoearlierfunctionalpasses omittedconsolecensus,notnumericmeasurements. Tinyintentionalfailedartifactsmokeexpectedexit1retained. Providerbilling/indexcost/fullpipelinecoverage remainunavailable.",
     "Collection-root normal and lost-response cases pass separately at 9cfa83d. Simulated receiver accepts 2/3 deliveries across initial invocation and replay, while sendEvent outcomes fulfill 2/2 and reject 0/1. Maximum 2 method entries per callback; exact sealed status, partitions and terminal payload preserved. This is not hosted or exactly-once delivery evidence. Focused observer/driver regression passes 11/11; no further 1001-Product run.",
-    "98bd07a stream retention eliminated whole output buffering but native1001 still failed64MiB: 114119536bytes,4samples,2timeouts,125skips; sealed12458ms. Historical declared-length comparison is not a same-head paired control and establishes no causal benefit. Production wiring reverted e622ab0; only unwired proof retained. No new memory fix, second variant or full campaign."
+    "98bd07a stream retention eliminated whole output buffering but native1001 still failed64MiB: 114119536bytes,4samples,2timeouts,125skips; sealed12458ms. Historical declared-length comparison is not a same-head paired control and establishes no causal benefit. Production wiring reverted e622ab0; only unwired proof retained. No new memory fix, second variant or full campaign.",
+    "Tiny synthetic heap snapshot canary supports retention graph edges;1362130bytes/33.994ms. Heap596352 before/control to292732 after snapshot; no explicitGC but snapshot-associated collection means it is not normal-peak/timing evidence. Raw synthetic/runtime strings stay local. No realfixture snapshot or fullcampaign performed; larger snapshot size/observer overhead unknown."
   ],
   "files": [
     {
@@ -1062,6 +1063,28 @@
       "retained_local_log": "/tmp/issue-233-stream-unwired-typecheck.log",
       "bytes": 0,
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "issue-233-heap-snapshot-canary.json",
+      "bytes": 1553,
+      "sha256": "c3dd0f74d2c95d15d5b9d1a99a7e848dd84b2b0c4049c6c02f3173a108c16c85",
+      "original_local_source": "/tmp/issue-233-heap-snapshot-canary.json",
+      "original_source_sha256": "c3dd0f74d2c95d15d5b9d1a99a7e848dd84b2b0c4049c6c02f3173a108c16c85"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-heap-snapshot-canary.mjs",
+      "bytes": 5207,
+      "sha256": "b3c153fe4ad84d6ce656f628d6f4db4ff2a788bab4c88e02b34de47986cbd8db"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-heap-snapshot-canary.log",
+      "bytes": 1357,
+      "sha256": "bd5fb33ad0deb5e7f4df403d18c10db1824cacf4ca703c9f28a7b26dfc7817ee"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-heap-snapshot-canary.heapsnapshot",
+      "bytes": 1362130,
+      "sha256": "1088e02f9d893ab1220fa438603a51b6096ec710adbb9c9ec6f5d5c6913e829f"
     }
   ],
   "riftbound_frozen_commit": "2cdb4592",

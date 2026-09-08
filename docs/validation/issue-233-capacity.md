@@ -1113,3 +1113,34 @@ would justify an explicitly bounded retained-root capture at a durable callback
 boundary. Such a capture is intrusive and separate from acceptance timing. It has
 not been run. Full tiers/storage and unavailable provider billing remain separate
 unresolved acceptance gaps.
+
+
+### Tiny heap-snapshot capability canary
+
+After the stream experiment was reverted, one separately authorized synthetic
+standalone workerd canary checked `HeapProfiler.takeHeapSnapshot`. It retains 256
+small synthetic records under a known global root and creates then releases 8,192
+temporary records. It has no application bindings, real source fixture or secrets.
+No breakpoint or explicit garbage-collection command is used.
+
+Snapshot capture succeeds in 33.994 ms and produces 1,362,130 bytes, below its
+16 MiB byte cap. Its graph contains 16,247 nodes and 58,686 edges. The expected
+global property → `RetainedCanary` instance → payload property edges are present,
+establishing that the capability exposes usable reference/retention relationships.
+This is not a retained-size or dominator calculation.
+
+Used heap is 596,352 bytes before and on an immediate control read, then 292,732
+bytes after snapshot capture. The 303,620-byte drop makes collection-associated
+perturbation explicit; snapshot-induced versus concurrent natural GC is not
+separately established. The snapshot represents its own intrusive observation,
+not the high-water heap immediately beforehand, and its duration is not normal
+application execution time. It cannot retrospectively explain the failed native
+sample or exonerate the 64 MiB overrun.
+
+The summary is committed. The raw snapshot, canary source and log are retained
+locally with manifest hashes; snapshot strings may include synthetic object values
+and runtime code, so raw contents are not copied into the report/model output.
+Observed temporary-volume space is 16,234,332,160 bytes. Larger snapshot size and
+Node parsing overhead cannot be extrapolated from this tiny case. A real-fixture
+capture would require its own explicit size/space/privacy budget and intrusive
+measurement scope. No such capture or further capacity campaign has been run.
