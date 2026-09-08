@@ -1,0 +1,29 @@
+✖ bounded Riftbound records retain owner review, native publication and actual SQL restore (15793.342375ms)
+ℹ Retained bounded intake state: /var/folders/h9/r2hp35sx2bs4v69vcsxsls900000gn/T/keepr-bounded-riftbound-u1bcMB
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 16136.116166
+
+✖ failing tests:
+
+test at acceptance/riftbound-bounded-intake.test.mjs:23:1
+✖ bounded Riftbound records retain owner review, native publication and actual SQL restore (15793.342375ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  3 !== 1
+  
+      at TestContext.<anonymous> (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/acceptance/riftbound-bounded-intake.test.mjs:237:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 3,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -1,15 +1,73 @@
 # Issue 233 capacity and fault evidence
 
 **Decision update — bounded intake implementation:** further profiling/experiments
-are stopped. The authorized first [bounded source intake](../plans/bounded-source-intake.md)
-slice replaces whole-document Riftbound inventory parsing with streamed extraction,
-immutable record batches, a sealed manifest and direct native reconciliation.
+are stopped. The authorized [bounded source intake](../plans/bounded-source-intake.md) migration
+now covers all adapter entry points, immutable record batches, indexed requests/text,
+sealed manifests and direct native reconciliation.
 A compact publication/actual SQL restore test passes; this is functional evidence,
 not a new heap measurement or capacity certification. All measurements below
 remain historical evidence. The 18.33/183.33 GiB estimates describe only the old
 synthetic fixture with two persisted inline-base64 copies; they are not a
 real-source baseline or a hardware requirement for the proposed pipeline. Any
 earlier suggestion to size user hardware from that topology is superseded.
+
+## Remaining intake migration — local checkpoint
+
+Reviewed implementation checkpoint: `2af5db70` (initial slice `b99a23ee`), fixed base
+`dc37c14be5ed40052a0a382c73bf722d47b9cac5`. Migration 30 adds requests, large text
+(including large field names), discovery facts and the manifest as independently
+indexed immutable records. All normal adapter entry points use sealed intake.
+Bandai discovery queries its fixed surface vocabulary instead of loading a lineage.
+Native preparation no longer writes or reparses observation-document byte chunks,
+and no longer creates per-preparation source-observation copies.
+
+Historical observation JSON and schema-29 manifests require the explicit import
+operation documented in the design. Original R2 bytes, IDs and ordinals are
+preserved. Normal readers have no automatic format fallback. The operator-only
+import has explicit bounds and a retirement condition tied to retained preparation
+and backup obligations.
+
+- **246 domain tests pass**, including decoded HTML, embedded JSON/rich-HTML budgets,
+  single-record JSON and stable observation order. Full TypeScript checks and
+  changed-file lint pass. Catalogue boundaries and cycles pass.
+- **13 intake tests pass**, including first-slice replay/concurrency/cleanup cases,
+  lost text/request responses, more than 32 KiB of indexed requests, field restoration,
+  explicit historical prefix replay and actual schema-29 → 30 request import.
+- The **20 cursor tests and 12 collection tests pass** in the combined run; its only
+  failure was the intake assertion's old error wording, corrected in the final
+  13-test intake run. Preserve that distinction: the combined run was 44/45.
+  Six storage-recovery tests and four Gundam transport tests also passed in earlier
+  scoped runs. **All 23 existing cleanup tests pass.**
+- **Compact native publication/actual SQL restore passes in 18,836.412 ms** with
+  two retained Riot records, accepted synthetic unmapped large publisher text and
+  real image URLs/bytes. Restored text/manifest hashes, sealed progress, foreign
+  keys and consumer exports are verified; legacy byte chunks and per-preparation
+  observation copies remain absent.
+- **Five-game composition and current-plus-two recovery pass in 64,016.176 ms**
+  through actual SQL import, with 15,189,106,688 bytes free at the native preflight.
+
+HTML remains one explicitly bounded page and output array. Native normalization
+still reconstructs one bounded record. These tests establish structural and
+functional behavior, not a whole-isolate heap ceiling, provider billing or full
+capacity-tier certification. Printing Images buckets/serving and the legacy
+whole-candidate publication API remain unchanged. No push, hosted CI, deployment,
+live cleanup, merge or issue closure was performed.
+
+Intermediate failures are retained: legacy assertions that expected observations
+inside R2 documents; obsolete byte-range replay expectations after manifests became
+small; initial large-field-name handling; an incomplete domain SQL stub; type/lint
+errors; and an auxiliary restore census that initially counted only inventory and
+omitted two image sets. These were corrected rather than represented as green runs.
+**Standards review: clear. Spec review: clear after two P2 corrections.** Generic
+JSON container names now belong to each adapter; mixed/unwrapped inputs preserve
+its existing semantics. Text chunks use canonical JSON strings so lone UTF-16
+surrogates remain distinct from U+FFFD, including large field names. Historical
+import verifies these distinctions through a lost committed prefix and exact
+reconstruction. Three retained-evidence test callers were migrated with five
+focused cases passing. Review used fixed base `dc37c14b` through `2af5db70`.
+Reviewers did not run tests; the final 246-domain and 18,836.412 ms restore results
+were completed independently in this task. Changed-file lint has three style
+information messages and no warnings/errors after the correction.
 
 ## First bounded Riftbound slice — local checkpoint
 

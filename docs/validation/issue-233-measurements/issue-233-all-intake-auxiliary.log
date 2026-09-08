@@ -1,0 +1,22 @@
+
+ RUN  v4.1.10 /Users/marcus/.codex/worktrees/55a9/card-keepr
+
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+NOSENTRY R2MultipartUpload::getUploadId called
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+
+ Test Files  2 passed (2)
+      Tests  4 passed | 19 skipped (23)
+   Start at  18:50:21
+   Duration  7.57s (transform 1.42s, setup 0ms, import 3.10s, tests 6.07s, environment 1ms)
+
