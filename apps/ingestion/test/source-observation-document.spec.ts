@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
-import { prepareObservationDocument } from "../../../src/catalogue/source-evidence/source-observation-document";
+import { prepareObservationDocument } from "../../../test/support/source-observation-document-prototype";
 
 const header = { id: "srcobsset_stream-proof", contract: "card-keepr-source-observations@1", coverage_proof: null };
 

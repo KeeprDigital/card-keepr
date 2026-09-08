@@ -1,5 +1,6 @@
+// Unwired allocation-shape proof. Native evaluation did not establish a memory benefit.
 import { createHash } from "node:crypto";
-import { canonicalJson, compareUtf8, utf8 } from "../shared";
+import { canonicalJson, compareUtf8, utf8 } from "../../src/catalogue/shared";
 
 type Header = Record<string, unknown> & { id: string };
 

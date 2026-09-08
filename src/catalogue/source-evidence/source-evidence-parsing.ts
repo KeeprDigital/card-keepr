@@ -1,4 +1,3 @@
-import { prepareObservationDocument } from "./source-observation-document";
 import {
   beginEvidenceObjectWrite,
   completeEvidenceObjectWrite,
@@ -140,14 +139,20 @@ export async function parseSnapshot(
             }
           : null,
       evidence_summary: observationEvidenceSummary(observations),
+      observations: observations.map((value, index) => ({
+        id: `srcobs_${operation.observation_set_id.slice(10)}_${index + 1}`,
+        ordinal: index + 1,
+        value,
+      })),
     };
-    const prepared = prepareObservationDocument(observationDocument, observations);
-    const digest = prepared.digest;
+    const observationBytes = utf8(canonicalJson(observationDocument));
+    const digest = await sha256(observationBytes);
     const writeToken = crypto.randomUUID();
-    const observedToken = await putImmutableObservationDocument(
+    const observedToken = await putImmutableBytes(
       evidenceObjects,
       operation.content_object_key,
-      prepared,
+      observationBytes,
+      digest,
       writeToken,
       async () => {
         await beginEvidenceObjectWrite(
@@ -170,8 +175,8 @@ export async function parseSnapshot(
     await completeEvidenceObjectWrite(database, writeToken, new Date().toISOString()).run();
     await uploadedParseStatement(database, {
       digest: digest,
-      byteLength: prepared.byteLength,
-      observationCount: prepared.observationCount,
+      byteLength: observationBytes.byteLength,
+      observationCount: observations.length,
       operationId: operation.id,
     }).run();
   }
@@ -462,53 +467,37 @@ async function requiredObservationSet(database: CatalogueStore, operationId: str
   return stored;
 }
 
-async function putImmutableObservationDocument(
+async function putImmutableBytes(
   bucket: R2Bucket,
   key: string,
-  document: ReturnType<typeof prepareObservationDocument>,
+  bytes: Uint8Array,
+  digest: string,
   writeToken: string,
   registerWriter: () => Promise<void>,
 ): Promise<string | undefined> {
-  const { byteLength, digest } = document;
   const existing = await bucket.head(key);
   if (existing !== null) {
-    assertMatchingObject(existing, byteLength, digest);
+    assertMatchingObject(existing, bytes, digest);
     return existing.customMetadata?.cleanup_writer_token;
   }
   await registerWriter();
-  const fixed = new FixedLengthStream(byteLength);
-  const pumping = document.body().pipeTo(fixed.writable);
-  const storing = Promise.resolve()
-    .then(() =>
-      bucket.put(key, fixed.readable, {
-        onlyIf: { etagDoesNotMatch: "*" },
-        // Reject second-pass drift before accepting an object with the first-pass digest.
-        sha256: digest,
-        httpMetadata: {
-          contentType: "application/json",
-          cacheControl: "private, max-age=31536000, immutable",
-        },
-        customMetadata: { sha256: digest, cleanup_writer_token: writeToken },
-      }),
-    )
-    .finally(async () => {
-      // A conditional loser or early rejection may leave the body unconsumed.
-      // Close that path so backpressure cannot leave the producer pending.
-      await fixed.readable.cancel().catch(() => undefined);
-    });
-  const [storageResult, bodyResult] = await Promise.allSettled([storing, pumping]);
-  if (storageResult.status === "rejected") throw storageResult.reason;
-  const stored = storageResult.value;
-  if (stored !== null && bodyResult.status === "rejected") throw bodyResult.reason;
+  const stored = await bucket.put(key, bytes, {
+    onlyIf: { etagDoesNotMatch: "*" },
+    httpMetadata: {
+      contentType: "application/json",
+      cacheControl: "private, max-age=31536000, immutable",
+    },
+    customMetadata: { sha256: digest, cleanup_writer_token: writeToken },
+  });
   if (stored !== null) return writeToken;
   const concurrent = await bucket.head(key);
   if (concurrent === null) throw new Error("Immutable evidence write conflict");
-  assertMatchingObject(concurrent, byteLength, digest);
+  assertMatchingObject(concurrent, bytes, digest);
   return concurrent.customMetadata?.cleanup_writer_token;
 }
 
-function assertMatchingObject(object: R2Object, byteLength: number, digest: string): void {
-  if (object.size !== byteLength || object.customMetadata?.sha256 !== digest) {
+function assertMatchingObject(object: R2Object, bytes: Uint8Array, digest: string): void {
+  if (object.size !== bytes.byteLength || object.customMetadata?.sha256 !== digest) {
     throw new Error("Immutable evidence object key collision");
   }
 }
