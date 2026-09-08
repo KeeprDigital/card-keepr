@@ -227,6 +227,7 @@ export async function startInprocessWorker({
         group.runtime,
         `${process.env.KEEPR_CAPACITY_OUTPUT_PREFIX}-isolate-${++profileSequence}.json`,
         { directory: dirname(resolve(statePath)), output: () => group.output.slice(offset), timeline: group.timeline },
+        { sampleIntervalMs: Number(process.env.KEEPR_CAPACITY_SAMPLE_INTERVAL_MS ?? 3000) },
       );
     }
   });

@@ -666,105 +666,166 @@ test.each(["base", "deterministic-forward", "deterministic-reverse"])(
   },
 );
 
-test("interrupted preparation resumes verified batches before sealing for review", async () => {
-  const { testEnv, post } = await import("./reconciliation-helpers");
-  const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
-  const run = await collect("/reconciliation/base", "preparation-interruption");
-  const sqlByStatement = new WeakMap<object, string>();
-  const wrap = (statement: D1PreparedStatement, sql: string): D1PreparedStatement => {
-    const proxy = new Proxy(statement, {
+test.each(["before commit", "after commit", "after commit with receipt outage"])(
+  "interrupted preparation resumes verified batches before sealing for review (%s)",
+  async (boundary) => {
+    const { testEnv, post } = await import("./reconciliation-helpers");
+    const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
+    const run = await collect("/reconciliation/base", "preparation-interruption");
+    let lostCommittedResponse = false;
+    const sqlByStatement = new WeakMap<object, string>();
+    const wrap = (statement: D1PreparedStatement, sql: string): D1PreparedStatement => {
+      const proxy = new Proxy(statement, {
+        get(target, property) {
+          if (property === "bind") return (...values: unknown[]) => wrap(target.bind(...values), sql);
+          if (
+            property === "first" &&
+            boundary === "after commit with receipt outage" &&
+            sql.includes("SELECT kind, sha256 FROM reconciliation_preparation_batches")
+          )
+            return (...args: unknown[]) => {
+              if (lostCommittedResponse) throw new Error("Injected unavailable receipt after lost committed response");
+              return Reflect.apply(target.first, target, args);
+            };
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      sqlByStatement.set(proxy, sql);
+      return proxy;
+    };
+    let preparationBatches = 0;
+    const database = new Proxy(testEnv.CATALOGUE_DB, {
       get(target, property) {
-        if (property === "bind") return (...values: unknown[]) => wrap(target.bind(...values), sql);
+        if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
+        if (property === "batch")
+          return async (statements: D1PreparedStatement[]) => {
+            if (
+              statements.some((statement) =>
+                sqlByStatement.get(statement)?.includes("INSERT INTO reconciliation_preparation_batches"),
+              )
+            ) {
+              preparationBatches++;
+              if (preparationBatches === 3) {
+                if (boundary !== "before commit") {
+                  await target.batch(statements);
+                  lostCommittedResponse = true;
+                }
+                throw new Error("injected bounded preparation interruption");
+              }
+            }
+            return target.batch(statements);
+          };
         const value = Reflect.get(target, property);
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-    sqlByStatement.set(proxy, sql);
-    return proxy;
-  };
-  let preparationBatches = 0;
-  const database = new Proxy(testEnv.CATALOGUE_DB, {
-    get(target, property) {
-      if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
-      if (property === "batch")
-        return async (statements: D1PreparedStatement[]) => {
-          if (
-            statements.some((statement) =>
-              sqlByStatement.get(statement)?.includes("INSERT INTO reconciliation_preparation_batches"),
-            )
-          ) {
-            preparationBatches++;
-            if (preparationBatches === 3) throw new Error("injected bounded preparation interruption");
-          }
-          return target.batch(statements);
-        };
-      const value = Reflect.get(target, property);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
-  const payload = {
-    ingestion_run_id: run.id,
-    expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
-    idempotency_key: "preparation-interruption",
-    observed_at: new Date().toISOString(),
-    generation: 0,
-  };
-  const event = { payload } as import("cloudflare:workers").WorkflowEvent<
-    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
-  >;
-  const step = {
-    do: async (_name: string, _config: unknown, callback: () => Promise<string>) => callback(),
-  } as unknown as import("cloudflare:workers").WorkflowStep;
-  await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
-  expect(preparationBatches).toBe(3);
-  const paused = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
-  expect(paused.document).toMatchObject({
-    state: "paused",
-    generation: 1,
-    completed_batches: 2,
-    candidate_digest: null,
-  });
-  const inputs = await get(`/v1/ingestion-runs/${run.id}/reconciliation/inputs`);
-  expect(inputs.document).toMatchObject({ verified: true, manifest_digest: expect.stringMatching(/^[a-f0-9]{64}$/) });
-  const partitions = inputs.document.partitions as { ordinal: number; kind: string; byte_length: number }[];
-  expect(partitions.every((partition) => partition.byte_length <= 524288)).toBe(true);
-  const observations = partitions.find((partition) => partition.kind === "observations")!;
-  const inputPage = await get(`/v1/ingestion-runs/${run.id}/reconciliation/inputs/${observations.ordinal}`);
-  expect(inputPage.response.status).toBe(200);
-  expect(JSON.stringify(inputPage.document)).not.toContain("content_base64");
+    const payload = {
+      ingestion_run_id: run.id,
+      expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
+      idempotency_key: "preparation-interruption",
+      observed_at: new Date().toISOString(),
+      generation: 0,
+    };
+    const event = { payload } as import("cloudflare:workers").WorkflowEvent<
+      import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+    >;
+    const step = {
+      do: async (_name: string, _config: unknown, callback: () => Promise<string>) => callback(),
+    } as unknown as import("cloudflare:workers").WorkflowStep;
+    await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
+    if (boundary === "after commit") {
+      expect(preparationBatches).toBeGreaterThan(3);
+      const sealed = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+      expect(sealed.document).toMatchObject({ state: "sealed", generation: 0, completed_batches: preparationBatches });
+      const { preparationBatchStatement } = await import(
+        "../../../src/catalogue/reconciliation/reconciliation-preparation-repository"
+      );
+      const { catalogueStore } = await import("../../../src/catalogue/shared");
+      const receipt = () =>
+        preparationBatchStatement(
+          catalogueStore(testEnv.CATALOGUE_DB),
+          requiredString(sealed.document, "reconciliation_id"),
+          2,
+        ).first();
+      const committed = await receipt();
+      expect(committed).toMatchObject({ kind: expect.any(String), sha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
+      await runReconciliationWorkflow(testEnv, event, step);
+      expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toEqual(sealed.document);
+      expect(await receipt()).toEqual(committed);
+      return;
+    }
+    expect(preparationBatches).toBe(3);
+    const paused = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+    expect(paused.document).toMatchObject({
+      state: "paused",
+      generation: 1,
+      completed_batches: boundary === "before commit" ? 2 : 3,
+      candidate_digest: null,
+    });
+    const { preparationBatchStatement } = await import(
+      "../../../src/catalogue/reconciliation/reconciliation-preparation-repository"
+    );
+    const { catalogueStore } = await import("../../../src/catalogue/shared");
+    const receipt = () =>
+      preparationBatchStatement(
+        catalogueStore(testEnv.CATALOGUE_DB),
+        requiredString(paused.document, "reconciliation_id"),
+        2,
+      ).first();
+    const committed = await receipt();
+    if (boundary !== "before commit")
+      expect(committed).toMatchObject({ kind: expect.any(String), sha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    const inputs = await get(`/v1/ingestion-runs/${run.id}/reconciliation/inputs`);
+    expect(inputs.document).toMatchObject({ verified: true, manifest_digest: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    const partitions = inputs.document.partitions as { ordinal: number; kind: string; byte_length: number }[];
+    expect(partitions.every((partition) => partition.byte_length <= 524288)).toBe(true);
+    const observations = partitions.find((partition) => partition.kind === "observations")!;
+    const inputPage = await get(`/v1/ingestion-runs/${run.id}/reconciliation/inputs/${observations.ordinal}`);
+    expect(inputPage.response.status).toBe(200);
+    expect(JSON.stringify(inputPage.document)).not.toContain("content_base64");
 
-  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
-  expect(
-    (
-      await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
-        generation: 1,
-        idempotency_key: "preparation-resume",
-      })
-    ).response.status,
-  ).toBe(200);
-  const unavailableEvidence = new Proxy(testEnv.EVIDENCE_OBJECTS, {
-    get(target, property) {
-      if (property === "get")
-        return async () => {
-          throw new Error("Verified inputs must be reused without rereading evidence objects.");
-        };
-      const value = Reflect.get(target, property);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
-  await runReconciliationWorkflow(
-    { ...testEnv, EVIDENCE_OBJECTS: unavailableEvidence },
-    { payload: { ...payload, generation: 1 } } as typeof event,
-    step,
-  );
-  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
-    state: "sealed",
-    generation: 1,
-    deadline: paused.document.deadline,
-    completed_batches: expect.any(Number),
-  });
-  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "awaiting_approval" });
-});
+    expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
+    expect(
+      (
+        await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+          generation: 1,
+          idempotency_key: "preparation-resume",
+        })
+      ).response.status,
+    ).toBe(200);
+    const unavailableEvidence = new Proxy(testEnv.EVIDENCE_OBJECTS, {
+      get(target, property) {
+        if (property === "get")
+          return async () => {
+            throw new Error("Verified inputs must be reused without rereading evidence objects.");
+          };
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    await runReconciliationWorkflow(
+      { ...testEnv, EVIDENCE_OBJECTS: unavailableEvidence },
+      { payload: { ...payload, generation: 1 } } as typeof event,
+      step,
+    );
+    expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+      state: "sealed",
+      generation: 1,
+      deadline: paused.document.deadline,
+      completed_batches: expect.any(Number),
+    });
+    expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "awaiting_approval" });
+    const sealed = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+    expect(sealed.input_manifest_digest).toBe(paused.document.input_manifest_digest);
+    expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation/inputs`)).document.manifest_digest).toBe(
+      inputs.document.manifest_digest,
+    );
+    if (boundary !== "before commit") expect(await receipt()).toEqual(committed);
+    await runReconciliationWorkflow(testEnv, { payload: { ...payload, generation: 1 } } as typeof event, step);
+    expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toEqual(sealed);
+  },
+);
 
 test("operation initialization pins even an empty admission selection before Workflow delivery", async () => {
   const { default: worker } = await import("../src/index");
