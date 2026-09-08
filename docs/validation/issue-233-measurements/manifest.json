@@ -1,0 +1,158 @@
+{
+  "contract": "card-keepr-capacity-artifact-manifest@1",
+  "base": "0bb3b7d26c6744b4c037d788e6b45c334ae8aa83",
+  "p001_frozen_commit": "2bfc81b",
+  "unprofiled_stress_commit": "0e60268",
+  "tier_admission_and_expiry_commit": "462ccb0",
+  "limitations": [
+    "P001 frozen source census excludes automatic indexes; corrected helper begins at daaa739.",
+    "P001 driver/workflow/storage snapshot precedes restored consumer verification; complete_journey_elapsed_ms covers complete journey.",
+    "P001 sampled heap exceeds the 64 MiB target; profile time deltas are sample attribution only.",
+    "Full retained synthetic tiers remain incomplete due host disk capacity.",
+    "Riftbound functional journey passes but sampled used heap reaches 88,569,880 bytes: the 64 MiB target fails.",
+    "Riftbound heap coverage has 44 inspector query timeouts and 67 skipped timer intervals; sample maximum is a lower bound.",
+    "Riftbound generic response_deliveries_including_faults counts successful body deliveries; injected_missing_images separately counts 404s.",
+    "Copied JSON is whitespace-normalized with Biome; original local source hashes are recorded separately."
+  ],
+  "files": [
+    {
+      "file": "issue-233-p001-isolate-1.json",
+      "bytes": 150292,
+      "sha256": "3a76999dc97eb88f08d27a15ccc15ad2715ed49a359fe04361c8aa5454fe2b68",
+      "original_local_source": "/tmp/issue-233-p001-isolate-1.json",
+      "original_source_sha256": "3a76999dc97eb88f08d27a15ccc15ad2715ed49a359fe04361c8aa5454fe2b68"
+    },
+    {
+      "file": "issue-233-p001-isolate-2.json",
+      "bytes": 9118,
+      "sha256": "4d7fa03c54687a8b8c85eaffa4567fc6767fbd666d9432c2c8a1df22c0f2a9d7",
+      "original_local_source": "/tmp/issue-233-p001-isolate-2.json",
+      "original_source_sha256": "4d7fa03c54687a8b8c85eaffa4567fc6767fbd666d9432c2c8a1df22c0f2a9d7"
+    },
+    {
+      "file": "issue-233-p001-isolate-3.json",
+      "bytes": 8452,
+      "sha256": "b466c3d4032b5359450e4b7c6e03381b6269f444ee68e52b3cef756f96597fb8",
+      "original_local_source": "/tmp/issue-233-p001-isolate-3.json",
+      "original_source_sha256": "b466c3d4032b5359450e4b7c6e03381b6269f444ee68e52b3cef756f96597fb8"
+    },
+    {
+      "file": "issue-233-p001.json",
+      "bytes": 81782,
+      "sha256": "21cf77ce01121c6805c1a16524c91121b9d3d25a114db770ae2e3048ffabff32",
+      "original_local_source": "/tmp/issue-233-p001.json",
+      "original_source_sha256": "21cf77ce01121c6805c1a16524c91121b9d3d25a114db770ae2e3048ffabff32"
+    },
+    {
+      "file": "issue-233-riftbound-isolate-1.json",
+      "bytes": 139727,
+      "sha256": "9e4f41248a11088dd205b6e051817c99fb227a167c5567b80734687dd399bb4a",
+      "original_local_source": "/tmp/issue-233-riftbound-isolate-1.json",
+      "original_source_sha256": "26a64f47765ee33f1ec6e7f7a0e9746b9751a3b1e64dd543e7fb850e7c6128f4"
+    },
+    {
+      "file": "issue-233-riftbound-isolate-2.json",
+      "bytes": 112762,
+      "sha256": "37fe4305f538a1cec1308a920d5a166a38b39aedcba02c6032747cc05931c505",
+      "original_local_source": "/tmp/issue-233-riftbound-isolate-2.json",
+      "original_source_sha256": "b1a67d22e2732ebce251db349e51435505aa7874c8bc31bd4c7dd8dfc99a06fe"
+    },
+    {
+      "file": "issue-233-riftbound-isolate-3.json",
+      "bytes": 17230,
+      "sha256": "277f4c8b89e416a72b953585b582ba36a75ee493eca6426b1d4308bdbcab8277",
+      "original_local_source": "/tmp/issue-233-riftbound-isolate-3.json",
+      "original_source_sha256": "277f4c8b89e416a72b953585b582ba36a75ee493eca6426b1d4308bdbcab8277"
+    },
+    {
+      "file": "issue-233-riftbound-isolate-4.json",
+      "bytes": 10736,
+      "sha256": "aaa1293be907b81669f7ca1b42f0da0257c5df2dfefca9581681d3487c916b6d",
+      "original_local_source": "/tmp/issue-233-riftbound-isolate-4.json",
+      "original_source_sha256": "aaa1293be907b81669f7ca1b42f0da0257c5df2dfefca9581681d3487c916b6d"
+    },
+    {
+      "file": "issue-233-riftbound.json",
+      "bytes": 865490,
+      "sha256": "a007d3b9c78bf2656a35354c2362bb6224b9546855d3c62cea142e8a2b77b643",
+      "original_local_source": "/tmp/issue-233-riftbound.json",
+      "original_source_sha256": "a007d3b9c78bf2656a35354c2362bb6224b9546855d3c62cea142e8a2b77b643"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-baseline-stress.log",
+      "bytes": 701,
+      "sha256": "82ba2744434a2ea1def7ad5077a3af1c5a6f17e3279a2c5012a3c387476cd9fb"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-p001.log",
+      "bytes": 568,
+      "sha256": "7214fb0a89a047542a083dbf879326b7bf36b69eb875236e1a4963771989c271"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-tier-admission.log",
+      "bytes": 1711,
+      "sha256": "3e25c99970861d867d953e6c52b39aac1068156de39350c19851f91a0a3114f1"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-tier-admission-final.log",
+      "bytes": 2647,
+      "sha256": "3be569902f5f2c82c2a4a53fb931edc825e0527e7c3f938587e2ff297db6ad84"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-expiry.log",
+      "bytes": 278,
+      "sha256": "cc43cc0eb26f7ce143967037e8f96a2e3b37dd3dbc5d253cdbf445cff532cdcc"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-riftbound.log",
+      "bytes": 732,
+      "sha256": "8ca701fce986f701515a2b021459175a88055c21c38fe6b44fe1be17f48797c6"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-final-api.log",
+      "bytes": 321,
+      "sha256": "bc266804fe133ae07175729ce86efd4984f8f786c20dac2d02bb96c5f07be7c2"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-final-domain.log",
+      "bytes": 305,
+      "sha256": "b19d2df613def84ade22bee3161a7fd95cce4c964b351496893814b06433d5dc"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-final-typecheck.log",
+      "bytes": 238,
+      "sha256": "968585aeca6f852f0ec5e56b91c6ce428ab85b869d2536740d8b82d826bd7a7f"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-final-static.log",
+      "bytes": 23555,
+      "sha256": "d828f26aa62cc8b5a7364246b5211278a7516a88f575ed661ff579ee0231cd29"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-packaging.log",
+      "bytes": 4415,
+      "sha256": "feab493376e8dbc68f051326a852189a58cfe2a40bbe48b85a11f38788194cff"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-five-game-preflight.log",
+      "bytes": 211,
+      "sha256": "80a4526c495c79981c8f56fa10338276d4309a30afe79ee4188d2e585a202bbf"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-allocation-profile-test.log",
+      "bytes": 201,
+      "sha256": "60d0cca7f10f7f2b623086252329df5f05ad6eb46c1a870406a5d13dcd8cff81"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-metric-tests.log",
+      "bytes": 531,
+      "sha256": "e6c756249c184f8d941d8ef023363b5ba6f364629cb3d1bb3acfc3ce49170be6"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-format-check.log",
+      "bytes": 17630,
+      "sha256": "4aeea2dc9072f103c149fe094fc0d8b58fbaccbdab429e6d59ad709c0cdff64d"
+    }
+  ],
+  "riftbound_frozen_commit": "2cdb4592"
+}

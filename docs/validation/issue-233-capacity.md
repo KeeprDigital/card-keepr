@@ -1,7 +1,7 @@
 # Issue 233 capacity and fault evidence
 
 Campaign base: `0bb3b7d26c6744b4c037d788e6b45c334ae8aa83`, schema 28.
-This is an initial acceptance/evidence matrix, not a passing capacity report.
+This is a partial capacity and fault evidence report, not a passing capacity certification.
 Heavy campaigns run serially with a frozen commit and a fresh `/tmp` filesystem
 preflight. Historical issue 232 failure states remain owned by the coordinator.
 
@@ -27,7 +27,7 @@ then exact case and complete 11-test file passed unchanged. It is not a fix.
 
 No dollar estimate, completion SLA, isolate headroom claim, deployment, resource
 provisioning, live cleanup, release-gate waiver, merge, or issue closure is part
-of this initial matrix.
+of this campaign.
 
 ## Campaign boundaries and initial observations
 
@@ -137,3 +137,147 @@ Complete service-call execution counts, exact read/write and index amplification
 provider billing observations, continuous isolate peak and per-unit CPU remain
 unmeasured by this increment. Do not derive a monthly ceiling or completion SLA
 from those gaps. These are open acceptance requirements, not waived targets.
+
+## P-001 measured campaign (`2bfc81b`)
+
+```sh
+KEEPR_CAPACITY_OUTPUT_PREFIX=/tmp/issue-233-p001 \
+KEEPR_P001_METRICS_PATH=/tmp/issue-233-p001.json \
+KEEPR_EVIDENCE_CONCURRENCY_NOTE='Sole heavy campaign, serial native acceptance; static review may overlap.' \
+node --test --test-concurrency=1 acceptance/one-piece-two-source.test.mjs
+```
+
+The complete declared replay passed in 674.0 s, including six publications,
+verified backup checkpoints and restored consumer/image verification. CPU and heap
+sampling were enabled; allocation-stack sampling was added only in `2cdb459` and
+was **not** part of this P-001 run. Raw reports and local-log hashes are retained
+in [the artifact manifest](issue-233-measurements/manifest.json).
+
+| Observed P-001 measurement | Value / scope |
+| --- | --- |
+| Unique original responses / entity bytes / original header bytes | 26 / 3,690,112 / 13,185 |
+| Source records per complete collection / accepted Printings | 15 / 8 |
+| Response deliveries including synthetic faults | 174 |
+| Verified public export compressed / uncompressed bytes | 8,773 / 11,256 |
+| Export records / components | 26 / 26 |
+| Retained source database rows | 11,866 at the pre-restore snapshot |
+| Allocated table pages / named-index pages | 14,946,304 / 2,744,320 bytes; automatic indexes omitted in this frozen helper |
+| Workflow step attempts / sum of step wall durations | 4,566 / 44,575 ms; overlapping durations are not total CPU |
+| Workflow D1 preparations / batch submissions / submitted statements | 125,724 / 15,332 / 46,715; not independent executions or billed rows |
+| Observed administration GET / POST requests | 249 / 47; includes polling, replay and one expected POST failure |
+| Observed consumer GET requests | 102 across original/restored API boots |
+| Largest sampled concurrent local logical occupancy | 399,214,906 bytes across the runtime reports; includes coexisting restore copies |
+| Ingestion isolate sampled V8 used-heap maximum | **67,715,264 bytes**, 224 samples |
+| At that same sample: allocated V8 heap / embedder heap / backing storage | 99,811,328 / 3,610,912 / 4,666,032 bytes, reported separately |
+| Ingestion profile coverage | About 667 s; 9,092 CPU profile samples, no measurement errors |
+| Driver CPU user / system | 15,501,296 / 2,196,065 microseconds before restored consumer verification |
+| Driver lifetime maximum RSS | 632,496 KiB; excludes workerd/CLI children and is not isolate memory |
+
+**The initial memory target failed:** used V8 heap alone exceeded 64 MiB
+(67,108,864 bytes) by 606,400 bytes at approximately 639.2 s into profiling.
+This is an observed exceedance under profiling, not a provider hard-limit error,
+a continuous peak, or an explained memory defect. Sampling overhead cannot erase
+that observation. No budget or assertion was relaxed. CPU function attribution
+alone cannot identify the retained allocation cause; the next frozen Riftbound
+campaign adds sampled live-allocation stacks at its first observed exceedance.
+
+The table/index figures above omit automatic indexes because this campaign ran
+before the reviewed census fix at `daaa739`; they are not complete D1 index
+occupancy. The final helper has a SQLite regression that verifies both primary-key
+and UNIQUE automatic index pages. A later helper change does not retroactively
+correct this retained report. The 399.2 MB local footprint is about 108 times the
+3.69 MB unique source input across this six-publication journey, **not** an
+ordinary refresh amplification factor or a linear forecast for the large tiers.
+
+## New focused outcomes
+
+At `462ccb0`, the exact admission-only tier cases passed. Tier 1 admitted 625
+requests in 150 ms. Tier 2 rejected 6,250 planned requests in 80 ms with the exact
+`RequestCapacityProblem` / `source_discovery_too_large` facts: capacity 5,000,
+used 1, required 6,250. The repository left the run collecting with one root and
+zero captures; the collection driver owns the durable pause. The initial
+`daaa739` test expected a pause at the wrong seam and failed (1/2); the correction
+asserts the actual repository contract and does not change production code.
+
+The same head passed both complete `game-publication.spec.ts` cases in 9.75 s,
+including the new backup-wait deadline boundary and the unchanged substantive
+contention/atomicity/retention assertions. The generator's two domain cases pass
+exact counts/bytes/digests. Generated image bodies are deterministic opaque noise
+labelled by the existing synthetic fixture as PNG, **not decodable image files**;
+this fixture measures byte transport/storage shape, not image validity.
+
+Both native campaigns use the existing immediate source-host replay mode and
+2.2-second owner request pacing. Their elapsed times include local control-plane
+simulation and test-driver orchestration; neither is live-source throughput.
+The 128-image and Product stress cases use the stress suite's production pacing
+configuration, while their fixture injection/capture boundary retains its existing
+explicit behavior. No elapsed-time comparison isolates profiler overhead: that
+would require a matched controlled run, which has not been performed.
+
+
+## Riftbound measured campaign (`2cdb459`)
+
+```sh
+KEEPR_CAPACITY_OUTPUT_PREFIX=/tmp/issue-233-riftbound \
+KEEPR_RIFTBOUND_METRICS_PATH=/tmp/issue-233-riftbound.json \
+KEEPR_EVIDENCE_CONCURRENCY_NOTE='Sole heavy campaign; local isolate CPU and allocation sampling enabled; static review may overlap.' \
+node --test --test-concurrency=1 acceptance/riftbound-catalogue.test.mjs
+```
+
+The complete declared replay passed: 1/1 test, 1,284.304 s harness duration and
+1,279.613 s functional journey. All three publications passed their actual SQL
+export/import verification, followed by restored consumer, image, export and
+private source-authority checks. The declared inventory contains 1,189 records,
+31 initial Errata observations and nine Products. The owner admits six visually
+reviewed Printings and 30 additional Card-only identities, resulting in 36 Cards.
+The 1,183 unretained images receive injected 404s; this is not complete image
+coverage or a 1,189-Printing usable-capacity result.
+
+| Observed Riftbound measurement | Value / scope |
+| --- | --- |
+| Unique retained bodies / bytes | 14 / 9,340,234; original header-byte census unavailable |
+| Source requests / injected missing-image responses | 1,198 / 1,183 |
+| Successful retained-body deliveries / bytes delivered | 15 / 9,511,347; the report's generic `response_deliveries_including_faults` field counts these deliveries, not the injected 404s |
+| Journey retained snapshots / observations | 15 / 1,260 |
+| Retained source database rows | 124,516 at the pre-restore snapshot |
+| Allocated table / index pages | 260,894,720 / 48,545,792 bytes, including automatic indexes |
+| Workflow step attempts / sum of wall durations | 46,385 / 384,611 ms |
+| Workflow D1 preparations / batch submissions / submitted statements | 1,200,158 / 179,125 / 543,257; not executed or billed rows |
+| Largest sampled concurrent local logical occupancy | 3,941,169,124 bytes, including source, staging, exports and actual restore copies |
+| Ingestion isolate sampled V8 used-heap maximum | **88,569,880 bytes** (about 84.47 MiB) |
+| Heap query timeouts / skipped timer intervals | 44 / 67 across four runtime reports; coverage is incomplete |
+| Driver CPU user / system, complete journey | 116,975,817 / 11,497,181 microseconds |
+| Driver lifetime maximum RSS, pre-restore snapshot | 2,336,224 KiB; excludes workerd/CLI children |
+
+**The initial 64 MiB memory target failed.** The maximum is a measured lower
+bound under profiling, not a continuous peak or a provider hard-limit failure.
+Segment 1 covers initial collection/admission through the first publication;
+segment 2 covers the later published-source journey; segments 3 and 4 cover
+restored API/admin boots. Their heap-query error counts are 15, 29, 0 and 0.
+The skipped-interval count is recorded on each report's final occupancy sample.
+
+The samples show large decreases as well as growth: segment 1 falls from
+67,129,572 to 18,289,080 bytes in approximately three seconds; segment 2 falls
+from 78,398,576 to 19,039,068 bytes in approximately 7.9 seconds, and later from
+88,569,880 to 29,443,072 bytes in approximately three seconds. These are observed
+sample changes, not identified GC events or measured post-GC floors. They do not
+prove a monotonic retained leak or explain away the target failure.
+
+The first-exceedance live-allocation samples contain reconciliation, Curated
+Revision validation, export validation and backup stacks. They do not account
+for the entire heap, identify a dominant cause, or establish exact phase timing:
+operational counters are aggregated and CPU sample attribution is not a GC event
+trace. The [DevTools sampling profile](https://chromedevtools.github.io/devtools-protocol/v8/HeapProfiler/)
+is sampled live allocation attribution, not an exact retained-object census.
+No production memory fix, forced collection, budget increase or deadline change
+is justified by these observations. A minimal targeted reproduction with phase
+correlation remains necessary before a causal fix can be claimed.
+
+The campaign began with 9,147,523,072 free bytes on shared APFS; minimum sampled
+free space was 773,509,120 bytes. The final verified database is copied in place,
+not into a cloned state directory. The coordinator removed only completed issue
+232's reinstallable dependencies to recover roughly 0.32 GiB. Successful cleanup
+of this campaign's own disposable state returned free space to about 5.2 GB.
+This near-full shared-host run is not isolated storage-capacity evidence. All
+four profile reports and the final census were preserved outside that cleanup;
+historical failed replay states were untouched.
