@@ -121,7 +121,9 @@ test("binding observer preserves receiver, result identity and exact synchronous
   expect(JSON.stringify(scope)).not.toContain("unrecorded");
 });
 
-test("binding observer attributes pending outcomes to their original callback and separates driver waits", async () => {
+test("binding observer attributes pending outcomes to their original callback and separates driver waits", async ({
+  task,
+}) => {
   const observer = reconciliationBindingObserver();
   observer.driverEvent("waitForEvent");
   const first = observer.begin();
@@ -145,4 +147,12 @@ test("binding observer attributes pending outcomes to their original callback an
   expect(second.driver_events).toEqual({ waitForEvent: 1 });
   expect(observer.outsideCallbacks.calls).toBe(0);
   expect(observer.outsideCallbacks.driver_events).toEqual({ waitForEvent: 1 });
+  Object.assign(task.meta, {
+    reconciliationBindingReport: {
+      contract: "card-keepr-local-reconciliation-callbacks@2",
+      workload: "tiny observer artifact smoke",
+      callbacks: [first, second],
+      outside_callbacks: observer.outsideCallbacks,
+    },
+  });
 });

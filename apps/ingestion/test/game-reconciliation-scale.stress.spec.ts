@@ -7,7 +7,7 @@ import { collect, get, installReconciliationSuite, requiredString, testEnv } fro
 
 installReconciliationSuite();
 
-test("a 1001-Product native candidate stays within the D1/R2 callback budget", async () => {
+test("a 1001-Product native candidate stays within the D1/R2 callback budget", async ({ task }) => {
   const fixture = "scale-1001-products";
   const predecessor = "catrev_spine_000";
   const source = await collect(`/reconciliation/${fixture}`, "native-resource-evidence");
@@ -45,58 +45,60 @@ test("a 1001-Product native candidate stays within the D1/R2 callback budget", a
     succeeded: boolean;
   })[] = [];
   const started = Date.now();
-  await runReconciliationWorkflow(
-    {
-      ...testEnv,
-      CATALOGUE_DB: observer.database(testEnv.CATALOGUE_DB),
-      EVIDENCE_OBJECTS: observer.bucket(testEnv.EVIDENCE_OBJECTS, "EVIDENCE_OBJECTS"),
-      PRINTING_IMAGES: observer.bucket(testEnv.PRINTING_IMAGES, "PRINTING_IMAGES"),
-    },
-    {
-      instanceId: "native-resource-root",
-      payload: params!,
-    } as import("cloudflare:workers").WorkflowEvent<ReconciliationWorkflowParams>,
-    {
-      do: async (name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
-        for (let attempt = 0; ; attempt++) {
-          const observation = observer.begin();
-          let succeeded = false;
-          const attemptStarted = Date.now();
-          let phase = name;
-          try {
-            const result = await callback();
-            phase = JSON.parse(result).continuation?.phase ?? name;
-            succeeded = true;
-            return result;
-          } catch (error) {
-            if (attempt >= config.retries.limit) throw error;
-          } finally {
-            measured.push({
-              name,
-              ...observation,
-              succeeded,
-              phase,
-              started_ms: attemptStarted - started,
-              milliseconds: Date.now() - attemptStarted,
-            });
-            observer.end();
-          }
-        }
-      },
-    } as unknown as import("cloudflare:workers").WorkflowStep,
-    { callbacks: new Map(), created: [], observeMethod: observer.driverMethod, observeEvent: observer.driverEvent },
-  );
-  const elapsed = Date.now() - started;
+  let elapsed = 0;
   const phases = new Map<string, { callbacks: number; milliseconds: number; maximumCalls: number }>();
-  for (const attempt of measured) {
-    const phase = phases.get(attempt.phase) ?? { callbacks: 0, milliseconds: 0, maximumCalls: 0 };
-    phase.callbacks++;
-    phase.milliseconds += attempt.milliseconds;
-    phase.maximumCalls = Math.max(phase.maximumCalls, attempt.calls);
-    phases.set(attempt.phase, phase);
-  }
-  console.info(
-    JSON.stringify({
+  try {
+    await runReconciliationWorkflow(
+      {
+        ...testEnv,
+        CATALOGUE_DB: observer.database(testEnv.CATALOGUE_DB),
+        EVIDENCE_OBJECTS: observer.bucket(testEnv.EVIDENCE_OBJECTS, "EVIDENCE_OBJECTS"),
+        PRINTING_IMAGES: observer.bucket(testEnv.PRINTING_IMAGES, "PRINTING_IMAGES"),
+      },
+      {
+        instanceId: "native-resource-root",
+        payload: params!,
+      } as import("cloudflare:workers").WorkflowEvent<ReconciliationWorkflowParams>,
+      {
+        do: async (name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+          for (let attempt = 0; ; attempt++) {
+            const observation = observer.begin();
+            let succeeded = false;
+            const attemptStarted = Date.now();
+            let phase = name;
+            try {
+              const result = await callback();
+              phase = JSON.parse(result).continuation?.phase ?? name;
+              succeeded = true;
+              return result;
+            } catch (error) {
+              if (attempt >= config.retries.limit) throw error;
+            } finally {
+              measured.push({
+                name,
+                ...observation,
+                succeeded,
+                phase,
+                started_ms: attemptStarted - started,
+                milliseconds: Date.now() - attemptStarted,
+              });
+              observer.end();
+            }
+          }
+        },
+      } as unknown as import("cloudflare:workers").WorkflowStep,
+      { callbacks: new Map(), created: [], observeMethod: observer.driverMethod, observeEvent: observer.driverEvent },
+    );
+  } finally {
+    elapsed = Date.now() - started;
+    for (const attempt of measured) {
+      const phase = phases.get(attempt.phase) ?? { callbacks: 0, milliseconds: 0, maximumCalls: 0 };
+      phase.callbacks++;
+      phase.milliseconds += attempt.milliseconds;
+      phase.maximumCalls = Math.max(phase.maximumCalls, attempt.calls);
+      phases.set(attempt.phase, phase);
+    }
+    const report = {
       contract: "card-keepr-local-reconciliation-callbacks@2",
       workload: "1001 synthetic Products; actual local D1/R2 and shipped reconciliation callbacks",
       limitation:
@@ -105,8 +107,10 @@ test("a 1001-Product native candidate stays within the D1/R2 callback budget", a
       phases: Object.fromEntries(phases),
       callbacks: measured,
       outside_callbacks: observer.outsideCallbacks,
-    }),
-  );
+    };
+    Object.assign(task.meta, { reconciliationBindingReport: report });
+    console.info(JSON.stringify(report));
+  }
   expect(elapsed, JSON.stringify(Object.fromEntries(phases))).toBeLessThan(15_000);
   expect(measured.filter(({ calls }) => calls > 100)).toEqual([]);
   expect((await get(`/v1/game-candidates/${id}`)).document).toMatchObject({ state: "sealed" });
