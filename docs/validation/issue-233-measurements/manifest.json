@@ -20,7 +20,8 @@
     "Operational timeline records observer receipt times, not exact isolate execution boundaries; earlier full campaigns do not acquire it retroactively.",
     "The repeated native validation probe directly seeds synthetic Riftbound tables/records; native identifies the shipped validation function/runtime, not retained publisher-response replay.",
     "Standalone synthetic 1001 Product reconciliation exceeds 64 MiB with both in-isolate and external Node fixture generation; three samples and two inspector timeouts per run leave peaks under-observed. Network chunking differs, so the paired maxima are not a pure causal allocation estimate.",
-    "Available local space increased after the earlier rejected preflights; those historical failures do not establish the current host floor. Full tiers remain unexecuted."
+    "Available local space increased after the earlier rejected preflights; those historical failures do not establish the current host floor. Full tiers remain unexecuted.",
+    "Declared-length external source also exceeds64MiB (118447544bytes): completed writer records prove multipart was avoided. Four samples/two timeouts/114skips leave incomplete coverage; observed maximum differences do not establish causality."
   ],
   "files": [
     {
@@ -439,6 +440,32 @@
       "retained_local_log": "/tmp/issue-233-five-game-preflight-restored-space.log",
       "bytes": 13,
       "sha256": "bcfc83e380bdce6a3cbf992138501dc9e8cb1da472e053743e3325fca0a31698"
+    },
+    {
+      "file": "issue-233-reconciliation-declared-isolate-1.json",
+      "bytes": 844332,
+      "sha256": "b1b73e2e28401365314de65d8b5ad3dcc2e1ee2e50add820de3a2900e4097a27",
+      "original_local_source": "/tmp/issue-233-reconciliation-declared-isolate-1.json",
+      "original_source_sha256": "dadf71527ae08af713bb6fec1a9e3f4fdd799f838d82398b7a670b2e48d1c8e4"
+    },
+    {
+      "file": "issue-233-reconciliation-declared-workload.json",
+      "bytes": 132983,
+      "sha256": "74acdeed0d36bedbbea71ca4803314ea9d8e742cede7de1f8213a60eabe7ed3a",
+      "original_local_source": "/tmp/issue-233-reconciliation-declared-workload.json",
+      "original_source_sha256": "74acdeed0d36bedbbea71ca4803314ea9d8e742cede7de1f8213a60eabe7ed3a"
+    },
+    {
+      "file": "issue-233-reconciliation-capture-paths.json",
+      "bytes": 1154,
+      "sha256": "536af9c42bb1323a0658151047a5ba8bb9871fc273caca29e130b3863886aeb8",
+      "original_local_source": "/tmp/issue-233-reconciliation-capture-paths.json",
+      "original_source_sha256": "536af9c42bb1323a0658151047a5ba8bb9871fc273caca29e130b3863886aeb8"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-reconciliation-declared.log",
+      "bytes": 1688,
+      "sha256": "a1f48060066f2b786a26a9679df8b691adeffc3d10d3c1431854e31ec79c615f"
     }
   ],
   "riftbound_frozen_commit": "2cdb4592",
@@ -447,9 +474,10 @@
   "curated_cli_probe_commit": "f733f07",
   "native_curated_repeated_probe_commit": "80587b3",
   "initial_native_campaign_runtime_commit": "2cdb459",
-  "latest_bounded_diagnostics_code_commit": "6eb3b9e",
+  "latest_bounded_diagnostics_code_commit": "f747d8a",
   "standalone_reconciliation_probe_commit": "6f79447",
   "external_source_reconciliation_probe_commit": "6eb3b9e",
   "five_game_followup_commit": "b1d8306",
-  "captured_receipt_assertion_commit": "8561698"
+  "captured_receipt_assertion_commit": "8561698",
+  "declared_length_capture_probe_commit": "f747d8a"
 }

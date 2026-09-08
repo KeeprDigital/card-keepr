@@ -580,3 +580,30 @@ verified five-game composition and current plus two through an actual SQL import
 its successful owned state was cleaned up by the existing test teardown. This
 closes that previously blocked check, not a full retained tier. No full retained
 tier has been executed on the basis of this space change.
+
+One further controlled capture variant at `f747d8a` adds
+`KEEPR_RECONCILIATION_CONTENT_LENGTH=1` to the external-source command. It declares
+8,708,711 bytes on the same Node-served response. Code inspection showed that
+unknown length allocates a 5 MiB multipart buffer, whereas known length streams
+through `FixedLengthStream` and a hashing transform into R2. Parsing subsequently
+reads the retained body, builds JSON observations and canonical observation bytes;
+this sequence does not itself prove simultaneous live retention.
+
+The declared-length variant seals in **11,416 ms**, but sampled used heap reaches
+**118,447,544 bytes**, still failing 64 MiB. Four samples, two heap-query timeouts
+and 114 skipped intervals leave incomplete coverage. Its first over-limit query
+window is 101.77–369.96 ms (71,719,892 bytes); a late window spans
+10,485.14–11,800.05 ms (118,447,544 bytes). This is not an exact peak timestamp.
+The captured-source assertion passes: length and digest match the prior runs.
+
+The retained capture-path artifact joins each snapshot to its completed evidence
+writer. The earlier external unknown-length run records a multipart upload; the
+declared-length run records a completed writer with no multipart upload and the
+expected captured `Content-Length` header. This verifies the branch difference
+from durable records, not merely the supplied server header. Multipart buffering
+is therefore **not necessary** for this bounded overrun. The higher observed
+maximum does not establish that declaring length causes a regression: sparse
+sampling, garbage collection and HTTP framing remain relevant. No production
+buffer, parsing behavior, limit or GC policy changed. This is the last executed
+memory variant in this follow-up; source parsing/canonicalization is an unresolved
+local lead, not an established cause.
