@@ -1188,7 +1188,7 @@ non-weak edges**. Five dominator passes yield these numeric observations:
 Dominator calculations use every recorded non-weak edge, including shortcut
 edges. This is an explicit graph model, not an independently validated GC-retention
 model. Top entries may nest and **must not be summed**. Sizes exclude native backing
-storage and describe the intrusive post-collection graph, not the earlier sampled
+storage and describe the intrusive snapshot-time graph, not the earlier sampled
 heap. The tagged fixture history is identifiable; ownership of the other entries
 between production, simulated driver and runtime remains unknown. Node types alone
 do not establish ownership. The host's Node observer is outside the selected user
@@ -1201,7 +1201,7 @@ raw snapshot and teardown log are hashed in the manifest. The two disposable rep
 fixture/runtime copies were moved to retained local files after analysis. No
 shared teardown helper was changed and no production wiring remains.
 
-This establishes a small post-collection live graph at the selected boundary,
+This establishes a small snapshot-time graph at the selected boundary,
 with substantial ownership uncertainty. It does not account for the earlier
 114,119,536-byte sampled overrun, distinguish its unreachable transient allocations,
 or identify a justified second production fix. The missing capture summary also
