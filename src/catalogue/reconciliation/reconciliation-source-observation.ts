@@ -56,7 +56,7 @@ export async function readSourceObservation(
   setId: string,
   ordinal: number,
 ): Promise<unknown> {
-  if (await sealedSourceRecordProgress(database, setId)) {
+  if (await sealedSourceRecordProgress(database, setId, documentStorage)) {
     const record = await documentStorage(() => sourceRecordAt(database, setId, ordinal).first<SourceRecordRow>());
     if (!record || (await sha256Text(record.content)) !== record.sha256)
       throw new Error("Retained source observation failed integrity verification.");

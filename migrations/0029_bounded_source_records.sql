@@ -104,4 +104,16 @@ WHEN NOT EXISTS(SELECT 1 FROM source_parse_operations p JOIN evidence_cleanup_ob
 BEGIN SELECT RAISE(ABORT,'immutable_source_record'); END;
 CREATE TRIGGER source_records_progress_immutable_delete BEFORE DELETE ON source_record_progress
 BEGIN SELECT RAISE(ABORT,'immutable_source_record_progress'); END;
+-- A single indexed identity binds all page declarations in a run/lineage.
+-- Returned record counts may remain below the declared publisher total.
+CREATE TRIGGER source_records_pagination_identity BEFORE INSERT ON source_record_progress
+WHEN EXISTS(
+ SELECT 1 FROM source_parse_operations incoming_parse JOIN source_snapshots incoming ON incoming.id=incoming_parse.source_snapshot_id
+ JOIN source_snapshots prior ON prior.ingestion_run_id=incoming.ingestion_run_id AND prior.source_lineage=incoming.source_lineage
+ JOIN source_parse_operations prior_parse ON prior_parse.source_snapshot_id=prior.id
+ JOIN source_record_progress progress ON progress.observation_set_id=prior_parse.observation_set_id
+ WHERE incoming_parse.observation_set_id=NEW.observation_set_id
+ AND json_extract(progress.header_json,'$.pagination') IS NOT json_extract(NEW.header_json,'$.pagination')
+)
+BEGIN SELECT RAISE(ABORT,'source_pagination_changed'); END;
 UPDATE catalogue_schema_state SET migration_level=29 WHERE singleton=1;

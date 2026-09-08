@@ -200,6 +200,12 @@ async function extractInventoryRecords(source: () => AsyncIterable<string>, cont
   const { metadata, next } = inventoryHeader(header, count, context.url);
   return {
     count,
+    pagination: Object.fromEntries(
+      ["locale", "smartListMachineName", "channelMachineName", "limit", "totalItems", "totalPages"].map((key) => [
+        key,
+        metadata[key],
+      ]),
+    ),
     requests: next === null ? [] : [{ role: "listing" as const, url: next, headers: { accept: "application/json" } }],
     records: (async function* () {
       for await (const { member } of inventoryMembers(source, limits)) {

@@ -25,6 +25,10 @@ and resumes D1 writes after that prefix. Discovery may replay that page's bounde
 request batches; persisted request identities and atomic capacity guards deduplicate
 admission. No per-run array or giant list of record references is introduced.
 The rolling root binds the immutable header, ordered record hashes and requests.
+A SQL insertion guard binds every page in the run/lineage to the same locale,
+channel, list, page size and declared totals. Later self-consistent pages cannot
+shorten the initial pagination declaration; returned-record discrepancies remain
+explicitly accepted as before.
 Finalization and the sealed flag commit atomically; partial sets cannot be read by
 reconciliation. Native verification checkpoints every bounded record page.
 
@@ -37,6 +41,15 @@ The compact vertical regression uses two retained Riot records and real image UR
 with synthetic two-record pagination metadata. It exercises owner admission, native
 publication, verified backup, actual SQL import and restored export equality; it is
 not a full upstream inventory or capacity certification.
+
+Focused one-page and four-page runs keep page size (17 fixture records), record
+budgets and writer concurrency fixed. A delayed D1 sink observes at most nine
+emitted observations ahead of committed progress (eight pending plus one current),
+one active writer, nine statements per batch, and reads of at most eight records /
+512,000 content bytes. Raw whole-body methods throw in this test. This establishes
+bounded buffering/backpressure at the intake seam, not a measured isolate heap
+ceiling. Concurrent replay and cleanup between a partial commit and receipt are
+also exercised; transient progress reads retain storage-retry classification.
 
 ## Diagnosis
 

@@ -51,6 +51,7 @@ export type SourceAdapterRegistration = Readonly<{
       context: { url: string },
     ) => Promise<{
       count: number;
+      pagination: Record<string, unknown>;
       requests: readonly { role: "listing"; url: string; headers: Record<string, string> }[];
       records: AsyncIterable<{
         sourceKey: string;

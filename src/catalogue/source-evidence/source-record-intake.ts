@@ -57,10 +57,16 @@ export async function retainExtractedSourceRecords(
   header: Record<string, unknown>,
   extraction: Extraction,
 ) {
-  const headerJson = canonicalJson({ ...header, requests: extraction.requests });
+  const headerJson = canonicalJson({ ...header, pagination: extraction.pagination, requests: extraction.requests });
   if (utf8(headerJson).byteLength > 32768) throw new Error("Source record header exceeds 32 KiB");
   const initialDigest = await sourceRecordInitialDigest(id, headerJson);
-  await initializeSourceRecords(db, id, initialDigest, headerJson).run();
+  try {
+    await initializeSourceRecords(db, id, initialDigest, headerJson).run();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("source_pagination_changed"))
+      throw new AdapterParseFailure("Riftbound pagination identity changed within the collection.", { cause: error });
+    throw error;
+  }
   const progress = await sourceRecordProgress(db, id).first<SourceRecordProgress>();
   if (
     !progress ||
@@ -156,8 +162,13 @@ export async function retainExtractedSourceRecords(
 }
 
 /** A sealed manifest alone is not enough: consumers require the finalized SQL authority too. */
-export async function sealedSourceRecordProgress(db: CatalogueStore, id: string) {
-  const progress = await sourceRecordProgress(db, id).first<SourceRecordProgress>();
+export async function sealedSourceRecordProgress(
+  db: CatalogueStore,
+  id: string,
+  read: (operation: () => Promise<SourceRecordProgress | null>) => Promise<SourceRecordProgress | null> = (operation) =>
+    operation(),
+) {
+  const progress = await read(() => sourceRecordProgress(db, id).first<SourceRecordProgress>());
   if (!progress) return null;
   if (progress.sealed !== 1 || progress.authoritative !== 1) throw new Error("Source records are not sealed.");
   return progress;

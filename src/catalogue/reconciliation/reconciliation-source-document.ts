@@ -108,7 +108,7 @@ export async function prepareSourceDocuments<T extends SourceRow>(
       }
       continue;
     }
-    const bounded = await sealedSourceRecordProgress(database, row.observation_set_id);
+    const bounded = await sealedSourceRecordProgress(database, row.observation_set_id, documentStorage);
     if (bounded) {
       if (cursor.recordDigest === undefined) {
         if (row.content_byte_length > 32768) throw new Error("Source record manifest exceeds 32 KiB.");
