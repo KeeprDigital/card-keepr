@@ -127,45 +127,48 @@ test("five-game composition and current plus two survive an actual SQL import", 
     } while (after);
     return result;
   };
-  let riftboundRun;
-  for (const [game, lineage, adapter, scenario] of sources) {
-    const planPath = join(directory, `${game}.json`);
-    await writeFile(
-      planPath,
-      JSON.stringify({
-        plans: [
-          {
-            supported_game: game,
-            source_lineage: lineage,
-            adapter_version: adapter,
-            requests: [
-              { id: `${lineage}:discovery`, url: `https://official-source.invalid/reconciliation/${scenario}` },
-            ],
-          },
-        ],
-      }),
-    );
-    const source = await cli([
-      "source",
-      "collect",
-      "--plan-file",
-      planPath,
-      "--idempotency-key",
-      `five-source-${game}`,
-    ]);
-    if (game === "riftbound") riftboundRun = source.id;
-    await cli(["source", "resume", "--run-id", source.id]);
-    const collection = await waitForAdministrationDocument(
-      `/v1/ingestion-runs/${source.id}/game-candidates`,
-      (d) =>
-        d.candidates.some((c) => ["failed", "paused"].includes(c.state))
-          ? JSON.stringify(d)
-          : d.candidates.length === 1 && d.candidates[0].state === "sealed",
-      environment,
-      worker,
-      { deadlineMs: 120_000 },
-    );
-    const candidate = await cli(["game-candidate", "show", "--candidate-id", collection.candidates[0].id]);
+  const planPath = join(directory, "five-games.json");
+  await writeFile(
+    planPath,
+    JSON.stringify({
+      plans: sources.map(([game, lineage, adapter, scenario]) => ({
+        supported_game: game,
+        source_lineage: lineage,
+        adapter_version: adapter,
+        requests: [{ id: `${lineage}:discovery`, url: `https://official-source.invalid/reconciliation/${scenario}` }],
+      })),
+    }),
+  );
+  // A declared multi-game collection selects the shipped native preparation
+  // path. Single-game synthetic adapters intentionally retain the legacy path.
+  const source = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "five-game-source"]);
+  const riftboundRun = source.id;
+  await cli(["source", "resume", "--run-id", source.id]);
+  await waitForAdministrationDocument(
+    `/v1/ingestion-runs/${source.id}/evidence`,
+    (d) =>
+      d.state === "parsing" ||
+      (["failed", "paused", "awaiting_approval"].includes(d.state)
+        ? `Expected native collection preparation, observed ${d.state}`
+        : false),
+    environment,
+    worker,
+    { deadlineMs: 120_000 },
+  );
+  const collection = await waitForAdministrationDocument(
+    `/v1/ingestion-runs/${source.id}/game-candidates`,
+    (d) =>
+      d.candidates.some((c) => ["failed", "paused"].includes(c.state))
+        ? JSON.stringify(d)
+        : d.candidates.length === sources.length && d.candidates.every((c) => c.state === "sealed"),
+    environment,
+    worker,
+    { deadlineMs: 120_000 },
+  );
+  assert.deepEqual(collection.candidates.map((c) => c.supported_game).sort(), sources.map(([game]) => game).sort());
+  for (const [game] of sources) {
+    const selected = collection.candidates.find((c) => c.supported_game === game);
+    const candidate = await cli(["game-candidate", "show", "--candidate-id", selected.id]);
     const published = await publishNativeCollection(
       { candidates: [candidate] },
       `five-publication-${game}`,

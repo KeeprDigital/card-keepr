@@ -406,3 +406,26 @@ output was removed while logs and the original failure state were preserved.
 No timeout, backup ledger, or production code was changed for this failure.
 Further native gates require adequate disk capacity. The complete fresh journey,
 final restoration, and five-game recovery gate remain unverified.
+
+
+### Complete fresh native proof (`445d4ce`)
+
+After capacity was reclaimed, the complete fresh Riftbound journey passed in
+1,222 seconds. It retained 14 initial snapshots and 15 across the journey,
+1,260 observations, 1,189 inventory records and nine Products. Six Printing
+admissions plus 30 Card-only admissions, six Curated operations, all three
+publications and verified backups, fresh Origins evidence, and the final actual
+SQL restoration checks passed. Restored exports, image bytes, Product and
+relationship effects, reviewed source values, and both source evidence histories
+were verified. The successful run cleaned only its new disposable state.
+The full log is `/tmp/riftbound-native-capacity-fresh.log`.
+
+The separate five-game fixture initially timed out waiting for its first native
+candidate. Its single-game synthetic adapter had correctly reached legacy
+`awaiting_approval`; the fixture had selected the wrong dispatch path. The fixture
+now declares one five-game collection, then publishes each native candidate
+independently and retains the three subsequent Riftbound preparations. A focused
+Worker regression passes both two- and five-game dispatch, sealed candidate
+identities and parent replay (four tests in the file). The full five-game replay
+must pass separately; the first failed state is preserved at
+`keepr-five-game-restore-mREWV5`.
