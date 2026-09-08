@@ -349,3 +349,84 @@ test.each([0, 2])(
     ).toMatchObject({ n: 0 });
   },
 );
+
+test.each(["matching winner", "collision", "early rejection"])(
+  "streamed reparse settles its producer and preserves immutable recovery (%s)",
+  async (boundary) => {
+    const run = await createCollection(
+      `stream-parse-${boundary.replaceAll(" ", "-")}`,
+      "https://official-source.invalid/raw-one-piece-products",
+    );
+    const completed = await resumeCollection(run.id);
+    const snapshot = completed.snapshots[0]!;
+    const { reparseSourceSnapshot } = await import("../../../src/catalogue/source-evidence");
+    const db = catalogueStore(env.CATALOGUE_DB);
+    const intent = `stream-${boundary.replaceAll(" ", "-")}`;
+    const lost = new Error("lost streamed put response");
+    let winnerKey = "";
+    let winnerToken = "";
+    const initialBucket = new Proxy(env.EVIDENCE_OBJECTS, {
+      get(target, property) {
+        if (property === "put")
+          return async (...args: Parameters<R2Bucket["put"]>) => {
+            expect(args[1]).toBeInstanceOf(ReadableStream);
+            const stored = await target.put(...args);
+            winnerKey = args[0];
+            winnerToken = stored!.customMetadata!.cleanup_writer_token!;
+            throw lost;
+          };
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    await expect(
+      reparseSourceSnapshot(db, initialBucket, snapshot.id, "fixture-one-piece-json@3", intent),
+    ).rejects.toBe(lost);
+    const winner = await env.EVIDENCE_OBJECTS.get(winnerKey);
+    const winnerBytes = await winner!.arrayBuffer();
+    let heads = 0;
+    let puts = 0;
+    const early = new Error("early streamed put rejection");
+    const racingBucket = new Proxy(env.EVIDENCE_OBJECTS, {
+      get(target, property) {
+        if (property === "head")
+          return async (key: string) => {
+            if (++heads === 1) return null;
+            const object = await target.head(key);
+            return boundary === "collision" ? { ...object!, size: object!.size + 1 } : object;
+          };
+        if (property === "put")
+          return async (_key: string, body: unknown) => {
+            puts++;
+            expect(body).toBeInstanceOf(ReadableStream);
+            // Deliberately do not consume or cancel: production must settle its producer.
+            if (boundary === "early rejection") throw early;
+            return null;
+          };
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const retry = reparseSourceSnapshot(db, racingBucket, snapshot.id, "fixture-one-piece-json@3", intent);
+    if (boundary === "matching winner") await expect(retry).resolves.toMatchObject({ source_snapshot_id: snapshot.id });
+    else if (boundary === "collision") await expect(retry).rejects.toThrow("Immutable evidence object key collision");
+    else await expect(retry).rejects.toBe(early);
+    expect(puts).toBe(1);
+    const retained = await env.EVIDENCE_OBJECTS.get(winnerKey);
+    expect(await retained!.arrayBuffer()).toEqual(winnerBytes);
+    expect(retained!.customMetadata!.cleanup_writer_token).toBe(winnerToken);
+    const ticket = await env.CATALOGUE_DB.prepare("SELECT completed_at FROM evidence_object_writers WHERE token=?")
+      .bind(winnerToken)
+      .first<{ completed_at: string | null }>();
+    if (boundary === "matching winner") {
+      expect(ticket!.completed_at).not.toBeNull();
+      expect(
+        await env.CATALOGUE_DB.prepare(
+          "SELECT count(*) AS n FROM evidence_object_writers WHERE ingestion_run_id=? AND completed_at IS NULL",
+        )
+          .bind(run.id)
+          .first(),
+      ).toMatchObject({ n: 0 });
+    } else expect(ticket!.completed_at).toBeNull();
+  },
+);
