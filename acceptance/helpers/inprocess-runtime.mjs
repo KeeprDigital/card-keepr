@@ -18,11 +18,18 @@ let profileSequence = 0;
 // A setup failure can occur before a test installs its per-handle cleanup.
 // The file-level hook still closes any runtime created before that failure.
 after(async () => {
+  const failures = [];
   for (const group of groups.values()) {
-    await Promise.all([...group.handles].map((handle) => handle.dispose()));
-    if (group.runtime && !group.disposing) await group.runtime.dispose();
+    const results = await Promise.allSettled([...group.handles].map((handle) => handle.dispose()));
+    for (const result of results) if (result.status === "rejected") failures.push(result.reason);
+    try {
+      if (group.runtime && !group.disposing) await group.runtime.dispose();
+    } catch (error) {
+      failures.push(error);
+    }
   }
   groups.clear();
+  if (failures.length) throw new AggregateError(failures, "Native runtime cleanup failed");
 });
 
 function identity(statePath, id) {
@@ -233,13 +240,17 @@ export async function startInprocessWorker({
       await new Promise((done) => server.close(done));
       group.handles.delete(handle);
       if (group.handles.size === 0) {
-        if (group.stopProfile) {
-          await group.stopProfile();
+        try {
+          if (group.stopProfile) await group.stopProfile();
+        } finally {
           group.stopProfile = undefined;
+          group.disposing ??= group.runtime.dispose();
+          try {
+            await group.disposing;
+          } finally {
+            groups.delete(key);
+          }
         }
-        group.disposing ??= group.runtime.dispose();
-        await group.disposing;
-        groups.delete(key);
       }
     },
   };

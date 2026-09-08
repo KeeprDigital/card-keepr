@@ -1019,6 +1019,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
       "Complete declared retained Riot inventory/Errata/Product replay; original retained response bodies, injected unretained-image 404s, actual native SQL export/import and restored consumer verification. No full-image or production-capacity claim.";
     measuredEvidence.restored_api_and_export_verified = true;
     measuredEvidence.complete_journey_elapsed_ms = performance.now() - startedAt;
+    measuredEvidence.complete_journey_driver_cpu_microseconds = process.cpuUsage(initialCpu);
     await writeFile(process.env.KEEPR_RIFTBOUND_METRICS_PATH, JSON.stringify(measuredEvidence, null, 2) + "\n");
   }
 });

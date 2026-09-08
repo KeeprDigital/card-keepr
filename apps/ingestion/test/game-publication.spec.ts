@@ -16,7 +16,7 @@ import { collect, get, post, installReconciliationSuite, requiredString, testEnv
 installReconciliationSuite();
 
 // Synthetic retained source evidence; exercises authenticated owner operations.
-test("exact whole-candidate approval is durable before acknowledgement and a lost response reuses its operation", async () => {
+test.each(["contention", "backup-wait expiry"])("whole-candidate approval and %s", async (scenario) => {
   const source = await collect("/reconciliation/base", "atomic-source");
   const created = await post("/v1/game-candidates", {
     ingestion_run_id: source.id,
@@ -207,6 +207,43 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
   expect((await publicComponents(testEnv.CATALOGUE_DB, String(second.id))).results).toEqual(firstComponents);
   const waiting = await post(`/v1/publications/${secondApproval.document.id}/advance`, { generation: 0 });
   expect(waiting.document.state, JSON.stringify(waiting.document)).toBe("waiting_backup");
+  if (scenario === "backup-wait expiry") {
+    const publicState = await publicationStateSnapshot(testEnv.CATALOGUE_DB);
+    const beforeDeadline = await post(
+      `/v1/publications/${secondApproval.document.id}/advance`,
+      { generation: 0 },
+      { "x-keepr-test-now": new Date(Date.parse(String(second.deadline)) - 1).toISOString() },
+    );
+    expect(beforeDeadline.document.state).toBe("waiting_backup");
+    const expired = await post(
+      `/v1/publications/${secondApproval.document.id}/advance`,
+      { generation: 0 },
+      { "x-keepr-test-now": String(second.deadline) },
+    );
+    expect(expired.document).toMatchObject({
+      state: "failed",
+      failure_code: "publication_deadline_expired",
+      deadline: second.deadline,
+      candidate_id: second.id,
+      manifest_digest: second.manifest_digest,
+      resulting_revision_id: null,
+      backup_attempt_id: null,
+    });
+    expect(await publicationStateSnapshot(testEnv.CATALOGUE_DB)).toEqual(publicState);
+    expect((await post(`/v1/publications/${secondApproval.document.id}/advance`, { generation: 0 })).document).toEqual(
+      expired.document,
+    );
+    expect(
+      (
+        await post(`/v1/publications/${secondApproval.document.id}/resume`, {
+          generation: 0,
+          idempotency_key: "cannot-resume-expired-approval",
+        })
+      ).response.status,
+    ).toBe(409);
+    expect(await publicationStateSnapshot(testEnv.CATALOGUE_DB)).toEqual(publicState);
+    return;
+  }
   const resumed = await post(`/v1/publications/${secondApproval.document.id}/resume`, {
     generation: 0,
     idempotency_key: "resume-exact-approval",
@@ -298,7 +335,9 @@ test("exact whole-candidate approval is durable before acknowledgement and a los
     candidate_id: second.id,
     card_ids: initialMembers[0]!.card_ids,
   });
-  expect(members.find((member) => member.supported_game === "fusion-world")).toMatchObject({ candidate_id: other.id });
+  expect(members.find((member) => member.supported_game === "fusion-world")).toMatchObject({
+    candidate_id: other.id,
+  });
   expect((await get(`/v1/publications/${otherApproval.document.id}`)).document.deadline).toBe(other.deadline);
   const carriedCards = (await (await compositionEntityResponse(
     catalogueStore(testEnv.CATALOGUE_DB),
