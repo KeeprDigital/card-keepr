@@ -442,7 +442,7 @@ remain failures. Earlier full campaigns do not acquire this timeline retroactive
 
 | Requirement | Current proof | Remaining work and dependency |
 | --- | --- | --- |
-| Full 5 / 50 GiB synthetic tiers | Exact generators and zero-capture admission outcomes | External local-volume capacity: tier 1 needs over 11.7 GiB before database/staging/export/restore. Larger storage enables execution; it does not guarantee passing application capacity. |
+| Full 5 / 50 GiB synthetic tiers | Exact generators and zero-capture admission outcomes | External local-volume capacity: the corrected lower bound is 18.33 GiB before structured JSON/database/staging/export/restore (two retained base64 copies plus raw images). Larger storage enables execution; it does not guarantee passing application capacity. |
 | Five-game final-head journey | `b1d8306`: 1/1 pass, actual SQL import | Earlier attempts failed the unchanged 6 GiB floor; later available space enabled the actual b1d8306 follow-up, which passed 1/1 with SQL import. |
 | Memory target / cause | Actual exceedances plus sampled allocation stacks; small conflict probe does not reproduce them | Still locally diagnosable, not a disk-only blocker. A standalone synthetic 1,001 Product collection/reconciliation now reproduces the 64 MiB overrun (see follow-up below); causal allocation minimization remains open. The new timeline supports phase selection in an approved targeted probe; sparse negative samples are insufficient. |
 | Complete calls and D1/write attribution | Complete reported counters for the selected D1/R2 callback seam; local metadata for result-bearing methods | Locally implementable broader binding observation remains for collection, preparation, publication, backup and opaque D1 methods. Exact index effects need controlled query/result comparisons; existing counters do not establish them. |
@@ -607,3 +607,27 @@ sampling, garbage collection and HTTP framing remain relevant. No production
 buffer, parsing behavior, limit or GC policy changed. This is the last executed
 memory variant in this follow-up; source parsing/canonicalization is an unresolved
 local lead, not an established cause.
+
+## Remaining concrete work after the bounded probes
+
+| Gap | Next bounded action / completion evidence | Dependency |
+| --- | --- | --- |
+| 64 MiB cause | Inspect the lifetime overlap in `parseSnapshot`: retained-body `arrayBuffer`, decoded JSON/observation graph, recursive `canonicalJson` strings, then UTF-8 observation bytes held across hashing/R2 writes. The CPU profile contains canonicalization, and collection already crosses the threshold, but simultaneous live size is unproven. Allocation tracing aligned to those boundaries in the existing 8.7 MB reproducer could distinguish transient string/graph allocation from later retained state. | Locally diagnosable without another full campaign. Current periodic inspector requests time out behind long work and the delayed live allocation profile cannot establish short-lived allocation totals. Any debugger/instrumentation overhead must be separated from the unchanged timing target; no forced GC or budget increase. |
+| Durable reduction ambiguity | Highest-priority unmapped seam: commit a Product-group reducer-state batch, lose its response before the enclosing Product cursor checkpoint advances, then resume and compare typed relationships, counts and sealed replay with the uninterrupted result. Existing Product-group test throws **before** `target.batch`; the Product-pass cases deny checkpoint reads. | Small existing `product-typed-relationships` fixture. Lost committed writes in individual prior/new Product/context/relationship reduction stages are not established by the mapped tests; the verified-preparation receipt test is a different boundary. A complete write-boundary map remains required before calling coverage exhaustive. |
+| Complete service and write attribution | Extend observation beyond the selected callback seam to collection, preparation, publication and backup; distinguish returned D1 metadata from opaque calls and index effects. | Local binding counters can improve call coverage; provider/billed CPU and index costs cannot be invented from local return metadata. |
+| Full retained tiers | Use the lower bound below plus a complete SQL/staging/export/restore and margin estimate before choosing storage and executing a tier. | Current host is insufficient even for the corrected tier-1 lower bound. Tier-2 admission also exceeds the existing request guard. |
+| Cost/completion ceilings | Derive only after representative workload and complete resource dimensions are available. | Missing evidence above; no defensible numeric ceiling yet. |
+
+The corrected storage lower-bound artifact is a **code-derived estimate**, not
+measured occupancy. The fixture embeds images as `content_base64`; the source
+snapshot retains it and `parseSnapshot` retains it again inside each observation
+value. For tier 1, exact base64 rounding totals 7,158,320,000 bytes per copy. Two
+copies plus the required 5,368,709,120 raw image bytes total
+**19,685,349,120 bytes (18.3334 GiB)**. Tier 2 analogously needs at least
+196,853,491,200 bytes (183.3341 GiB). These deliberately exclude structured JSON,
+SQL tables/indexes/WAL, staging, exports, backup/restore copies and safety margin.
+The latest temporary-volume observation is 16,965,410,816 available bytes, below
+even that tier-1 lower bound. The earlier “over 11.7 GiB” estimate counted only
+one base64 copy and raw images; it was insufficient for peak-retention planning.
+This establishes why increased space enabled five-game validation but still does
+not justify executing a full retained tier.

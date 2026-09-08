@@ -21,7 +21,8 @@
     "The repeated native validation probe directly seeds synthetic Riftbound tables/records; native identifies the shipped validation function/runtime, not retained publisher-response replay.",
     "Standalone synthetic 1001 Product reconciliation exceeds 64 MiB with both in-isolate and external Node fixture generation; three samples and two inspector timeouts per run leave peaks under-observed. Network chunking differs, so the paired maxima are not a pure causal allocation estimate.",
     "Available local space increased after the earlier rejected preflights; those historical failures do not establish the current host floor. Full tiers remain unexecuted.",
-    "Declared-length external source also exceeds64MiB (118447544bytes): completed writer records prove multipart was avoided. Four samples/two timeouts/114skips leave incomplete coverage; observed maximum differences do not establish causality."
+    "Declared-length external source also exceeds64MiB (118447544bytes): completed writer records prove multipart was avoided. Four samples/two timeouts/114skips leave incomplete coverage; observed maximum differences do not establish causality.",
+    "Corrected code-derived tier1 storage lower bound19685349120bytes includes two retained base64 copies plus raw images; latest16965410816availablebytes is insufficient before metadata/SQL/staging/exports/restore/margin. It is not a measured peak."
   ],
   "files": [
     {
@@ -466,6 +467,23 @@
       "retained_local_log": "/tmp/issue-233-reconciliation-declared.log",
       "bytes": 1688,
       "sha256": "a1f48060066f2b786a26a9679df8b691adeffc3d10d3c1431854e31ec79c615f"
+    },
+    {
+      "file": "issue-233-tier-retention-lower-bound.json",
+      "bytes": 1002,
+      "sha256": "c3b6f39e71d31a0b356f9373d82268c77f431800407ead01290843ac2b6eb9d6",
+      "original_local_source": "/tmp/issue-233-tier-retention-lower-bound.json",
+      "original_source_sha256": "c3b6f39e71d31a0b356f9373d82268c77f431800407ead01290843ac2b6eb9d6"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-diagnostics-default-final.log",
+      "bytes": 621,
+      "sha256": "21e9c57ce184e43d259b74cd992056be5086093ceb1a9cc76b3312cad84fed89"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-diagnostics-format-final.log",
+      "bytes": 43,
+      "sha256": "fcf7da5261a0ba5f56bd5f33e3edc8a917b63b8866eae288fdc2699440b964c0"
     }
   ],
   "riftbound_frozen_commit": "2cdb4592",
