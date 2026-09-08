@@ -54,7 +54,7 @@ test("owner validation resolves a native published target in Workerd without req
   assert.equal(valid.status, 200, await valid.clone().text());
   assert.equal((await valid.json()).valid, true);
   if (capacityOutput) {
-    // Optional bounded minimization probe: repeat one real native validation
+    // Optional bounded minimization probe: repeat the shipped native validation
     // boundary. This cannot stand in for the full Riftbound candidate workload.
     const stop = await profileNativeIsolates(runtime, capacityOutput, undefined, { sampleIntervalMs: 100 });
     const phases = [];
@@ -75,7 +75,7 @@ test("owner validation resolves a native published target in Workerd without req
         JSON.stringify(
           {
             limitation:
-              "Driver-observed boundaries for 1,000 sequential validations of one retained native Printing. Not full-candidate capacity or an established reproduction of the earlier memory failure.",
+              "Driver-observed boundaries for 1,000 sequential validations of one synthetically seeded Riftbound Printing using the shipped native validation function. Not full-candidate capacity or an established reproduction of the earlier memory failure.",
             phases,
           },
           null,

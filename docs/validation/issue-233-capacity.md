@@ -469,8 +469,9 @@ locally diagnosable gaps above remain explicitly open.
 
 
 A more targeted minimization probe at `80587b3` repeats the shipped native
-`validateCuratedRevision` boundary 1,000 times against the same retained Riftbound
-Printing fixture. It preserves and asserts the initial 64 MiB sampled-heap target;
+`validateCuratedRevision` boundary 1,000 times against one synthetically seeded Riftbound
+Printing using the shipped native validation function. The fixture directly
+constructs selected tables/records; it does not replay retained publisher bodies. It preserves and asserts the initial 64 MiB sampled-heap target;
 there is no forced GC or production budget change. Ten driver-observed batches
 of 100 calls carry monotonic timestamps. The profiler records its observer origin
 and explicit 100 ms cadence, leaving the default three-second cadence unchanged.
