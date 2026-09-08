@@ -1,71 +1,36 @@
-import { sealedSourceRecordProgress, sourceRecordAt, type SourceRecordRow } from "../source-evidence";
-import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
-import { documentStorage } from "./reconciliation-document";
-import { retainPartitionedRecord, restorePartitionedRecord } from "./reconciliation-text";
 import {
-  retainSourceObservationStatement,
-  sourceObservationStatement,
-} from "./reconciliation-source-observation-repository";
-
-type SourceObservationRow = { content: string; sha256: string };
-
-/** Stage addressable records while the source document's verified bytes are already available. */
-export async function retainSourceObservations(
-  database: CatalogueStore,
-  runId: string,
-  setId: string,
-  observations: unknown[],
-  firstOrdinal = 0,
-) {
-  let pending: { ordinal: number; content: string; sha256: string }[] = [];
-  let bytes = 0;
-  const flush = async () => {
-    if (!pending.length) return;
-    const results = await documentStorage(() =>
-      database.batch<SourceObservationRow>(
-        pending.flatMap((record) => [
-          retainSourceObservationStatement(database, runId, setId, record.ordinal, record.content, record.sha256),
-          sourceObservationStatement(database, runId, setId, record.ordinal),
-        ]),
-      ),
-    );
-    for (const [index, record] of pending.entries()) {
-      const retained = results[index * 2 + 1]?.results[0];
-      if (retained?.content !== record.content || retained.sha256 !== record.sha256)
-        throw new Error("Retained source observation replay changed immutable content.");
-    }
-    pending = [];
-    bytes = 0;
-  };
-  for (const [offset, observation] of observations.entries()) {
-    const ordinal = firstOrdinal + offset;
-    const content = canonicalJson(await retainPartitionedRecord(database, runId, canonicalJson(observation)));
-    const size = new TextEncoder().encode(content).byteLength;
-    if (size > 512000)
-      throw new Error("reconciliation_capacity_exceeded: one source observation exceeds 512 KiB metadata.");
-    if (pending.length === 8 || bytes + size > 512000) await flush();
-    pending.push({ ordinal, content, sha256: await sha256Text(content) });
-    bytes += size;
-  }
-  await flush();
-}
-
+  restoreSourceRecordText,
+  type SourceRecordEnvelope,
+  sealedSourceRecordProgress,
+  sourceRecordAt,
+  type SourceRecordRow,
+} from "../source-evidence";
+import { type CatalogueStore, sha256Text } from "../shared";
+import { documentStorage } from "./reconciliation-document";
 export async function readSourceObservation(
   database: CatalogueStore,
-  runId: string,
+  _runId: string,
   setId: string,
   ordinal: number,
 ): Promise<unknown> {
-  if (await sealedSourceRecordProgress(database, setId, documentStorage)) {
-    const record = await documentStorage(() => sourceRecordAt(database, setId, ordinal).first<SourceRecordRow>());
-    if (!record || (await sha256Text(record.content)) !== record.sha256)
-      throw new Error("Retained source observation failed integrity verification.");
-    return JSON.parse(record.content) as unknown;
-  }
-  const record = await documentStorage(() =>
-    sourceObservationStatement(database, runId, setId, ordinal).first<SourceObservationRow>(),
-  );
+  if (!(await sealedSourceRecordProgress(database, setId, documentStorage)))
+    throw new Error("source_record_migration_required: explicitly import retained observations before preparation.");
+  const record = await documentStorage(() => sourceRecordAt(database, setId, ordinal).first<SourceRecordRow>());
   if (!record || (await sha256Text(record.content)) !== record.sha256)
     throw new Error("Retained source observation failed integrity verification.");
-  return JSON.parse((await restorePartitionedRecord(database, runId, JSON.parse(record.content))) as string) as unknown;
+  const wrapped = JSON.parse(record.content) as Record<string, unknown>;
+  const parts = wrapped.source_text_parts as SourceRecordEnvelope["text_parts"] | undefined;
+  delete wrapped.source_text_parts;
+  return parts
+    ? restoreSourceRecordText(
+        database,
+        setId,
+        {
+          contract: "card-keepr-source-record-envelope@1",
+          value: wrapped,
+          text_parts: parts,
+        },
+        documentStorage,
+      )
+    : wrapped;
 }

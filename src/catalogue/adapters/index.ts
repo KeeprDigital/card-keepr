@@ -35,3 +35,5 @@ export { publishers, sources, sourceLineages, gameProfileRegistrations } from ".
 
 export { sourceAdapterForCoverage } from "./source-adapters";
 export { riftboundOriginsTargetName } from "./riftbound-errata";
+
+export { extractBoundedAdapterPage } from "./bounded-page-extraction";

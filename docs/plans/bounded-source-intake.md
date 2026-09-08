@@ -1,57 +1,85 @@
 # Bounded source intake and one publication model
 
-Status: **first implementation slice authorized and implemented locally** for #233 / #216.
-The user accepted proceeding with Riftbound paginated JSON intake. This replaces
-further profiling as the current work; historical measurements remain evidence.
+Status: **intake-first migration authorized; second slice implemented locally** for #233 / #216.
 
-The slice streams bounded tokens from retained raw R2 bytes, persists immutable
-D1 records with atomic prefix receipts, and finalizes a small count/root manifest.
-Discovery admits batches through the existing indexed request/capacity repository;
-Riftbound inventory capture never enters full-lineage discovery. Native preparation
-verifies these records directly, without copying observation JSON into byte chunks
-or another per-preparation record table. Other adapters, Riftbound HTML articles,
-legacy observation sets and the still-routed whole-candidate publication interface
-remain explicit migration work. Printing Images retain their separate bucket.
+All registered source intake now writes the same sealed records and progress contract.
+Riftbound inventory uses its streaming extractor. Bandai One Piece, Fusion World,
+Digimon and Gundam, Limitless, One Piece errata and Riftbound articles use explicitly
+bounded HTML pages before their existing semantic parsers. Synthetic JSON adapters
+transform individual records, preserving cards-before-products order and single
+unwrapped observations. Original raw evidence remains immutable in R2.
 
-Current limits: raw Riftbound snapshots 2 MiB; decoded stream chunks 64 KiB; JSON
-tokens 256 KiB, depth 32 and 16,384 structural tokens; up to 200 records per page;
-serialized observations and record batches at most 512,000 bytes, eight records;
-headers 32 KiB and image request metadata 4 KiB. Oversize input fails explicitly.
-These record limits are a restriction of this first slice; arbitrary large fields
-and reference-based field storage remain future work. No truncation is performed.
+Migration 30 adds independently addressed requests, large text, discovery facts and
+a small SQL manifest. Record roots bind immutable headers and record/request hashes;
+the sealed progress also binds the SQL manifest and indexed request root. Native
+preparation hashes the original R2 object in 64 KiB ranges, reads the SQL manifest,
+and verifies record pages directly. The old observation JSON → D1 byte chunks →
+reparse pipeline and per-preparation observation copies have no remaining code
+callers. Historical tables remain in schema history and retained backups.
 
-Each retry rescans at most its bounded raw page, recomputes its committed prefix,
-and resumes D1 writes after that prefix. Discovery may replay that page's bounded
-request batches; persisted request identities and atomic capacity guards deduplicate
-admission. No per-run array or giant list of record references is introduced.
-The rolling root binds the immutable header, ordered record hashes and requests.
-A SQL insertion guard binds every page in the run/lineage to the same locale,
-channel, list, page size and declared totals. Later self-consistent pages cannot
-shorten the initial pagination declaration; returned-record discrepancies remain
-explicitly accepted as before.
-Finalization and the sealed flag commit atomically; partial sets cannot be read by
-reconciliation. Native verification checkpoints every bounded record page.
+Bandai discovery queries each required surface and its optional navigation parent
+through indexes, with at most two results per surface to detect duplicates. It does
+not load all observations for a run or lineage. Discovery vocabulary is capped at
+32 required surfaces, 256 facts per page and 8 KiB per fact. Request records are
+written/read in batches of eight, with 4 KiB per request and 32,768 per source page;
+existing durable request admission and capacity guards remain authoritative.
 
-Migration 29 includes both tables in actual SQL export/import and adds recovery,
-fresh-baseline, abandoned-collector and cleanup fences. Evidence cleanup drains
-record payloads in batches of eight after existing reference/backup guards authorize
-removal, retaining the small progress/audit receipt. Cleaned sets are unreadable.
+HTML limits apply before semantic parsing: 2,097,152 UTF-16 code units (4 MiB decoded
+text), 32,768 elements and 65,536 attributes. Publisher JSON, including Next.js
+article bodies, is checked before the semantic parser constructs its objects;
+embedded rich HTML shares the page element budget. JSON tokens have byte, depth
+and structure limits; output is limited to 2,048 observations. HTML still constructs
+one bounded page and its bounded output array. This is not a fully streaming HTML
+parser or a proof of a whole-isolate heap ceiling.
 
-The compact vertical regression uses two retained Riot records and real image URLs
-with synthetic two-record pagination metadata. It exercises owner admission, native
-publication, verified backup, actual SQL import and restored export equality; it is
-not a full upstream inventory or capacity certification.
+Riftbound inventory retains its 2 MiB raw-page limit, 256 KiB tokens, depth 32,
+16,384 structural tokens and 200-record page limit. Generic JSON and explicit
+historical import accept individual tokens up to 16 MiB, depth 128 and 16,384
+structural tokens. Record metadata and batches remain at most 512,000 bytes / eight
+records. Fields and field names over 32,768 characters use independent text chunks;
+each accepted field is at most 16,777,216 UTF-16 code units, with at most 256 parts
+and 16,384 visited nodes per observation. Reference paths live outside source values.
+Native consumers reconstruct one bounded record, including large fields, because
+the existing normalizer still takes an object. No claim of eliminating all
+per-record materialization is made. Headers and manifests remain at most 32 KiB.
 
-Focused one-page and four-page runs keep page size (17 fixture records), record
-budgets and writer concurrency fixed. A delayed D1 sink observes at most nine
-emitted observations ahead of committed progress (eight pending plus one current),
-one active writer, nine statements per batch, and reads of at most eight records /
-512,000 content bytes. Raw whole-body methods throw in this test. This establishes
-bounded buffering/backpressure at the intake seam, not a measured isolate heap
-ceiling. Concurrent replay and cleanup between a partial commit and receipt are
-also exercised; transient progress reads retain storage-retry classification.
+Retries recompute a bounded source page's committed prefix and continue immutable
+writes after it. Partial records, requests and text cannot become authoritative.
+Lost write responses replay exact receipts. Schema guards preserve recovery,
+fresh-baseline, abandoned-collector and cleanup fences. Cleanup drains record and
+auxiliary payloads eight rows at a time and retains sealed progress audit receipts.
+Printing Images keep their current separate bucket and serving behavior. The
+still-routed whole-candidate publication API is outside this slice.
 
-## Diagnosis
+### Explicit historical import and retirement
+
+`POST /v1/source-observation-sets/:observationSet/records` with `{}` is an authenticated,
+explicit migration/recovery operation. Its only callers are the operator and focused
+migration tests; normal capture and native preparation never invoke it. It verifies
+original R2 bytes, retains original observation IDs/ordinals and historical header
+facts, and creates the uniform indexed representation without rewriting or deleting
+the original object. A retry resumes the same immutable prefix. Import bounds are
+64 MiB per retained document, 2,048 observations and a 32 KiB header. Inputs exceeding
+these bounds remain retained and fail explicitly. Schema-29 small manifests have
+an explicit import of their inline request metadata too; normal readers contain no
+inline-request or observation-document fallback.
+
+Retire the migration route and its module after an operator has established that
+all retained sets selected by resumable preparations or required recovery backups
+have the sealed manifest/indexed contract, or those obligations have expired under
+existing retention rules. Preserve original bytes for their remaining retention
+obligations. A missing contract fails with `source_record_migration_required`; it
+does not silently turn into empty evidence or start automatic conversion.
+
+The first slice's delayed-sink one/four-page test established at most nine emitted
+records ahead (eight pending plus one current), one writer and bounded reads.
+Second-slice tests cover production staged discovery, text/request write ambiguity,
+cleanup, historical import, large-field checkpoint replay and actual SQL restore.
+The compact restore fixture adds accepted unmapped publisher text to two retained
+Riot records and uses real image URLs/bytes. These are structural/functional proofs,
+not full upstream coverage, capacity-tier certification or a new heap measurement.
+
+## Original diagnosis before the intake migration
 
 Capture already streams raw bytes, and native reconciliation/publication already
 have durable record-oriented processing. Between them, the source interface
@@ -65,7 +93,7 @@ live heap. Earlier gigabyte figures describe retained storage or cumulative work
 Nevertheless, working memory should depend on bounded pages/records and active
 concurrency, not the total source or run size.
 
-| Current interface / location | Materialization and actual bound |
+| Pre-migration interface / location | Materialization and actual bound |
 | --- | --- |
 | `SourceAdapterRegistration.parse`, `parseBytes`, `discoverRequests`, [registration types](../../src/catalogue/adapters/source-adapter-registration-types.ts#L48) | Whole document/byte input and complete output arrays. Raw limits are 16 MiB for Bandai catalogue, 2 MiB Riftbound, 1 MiB Limitless/One Piece errata. No output-byte budget in this interface. |
 | [parseSnapshot](../../src/catalogue/source-evidence/source-evidence-parsing.ts#L91) | Raw buffer → decoded document → adapter array → wrapped array → canonical string → UTF-8 buffer at lines 91–148. Input size does not bound object overhead or expanded output. Parsing and discovery reread the same snapshot separately. |

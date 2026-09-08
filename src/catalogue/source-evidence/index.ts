@@ -117,3 +117,7 @@ export { retainEvidenceObjectReferenceStatement } from "./evidence-cleanup-repos
 
 export { sealedSourceRecordProgress, sourceRecordInitialDigest, sourceRecordNextDigest } from "./source-record-intake";
 export { sourceRecordAt, sourceRecordPage, type SourceRecordRow } from "./source-record-repository";
+
+export { restoreSourceRecordText, type SourceRecordEnvelope } from "./source-record-text";
+
+export { readSourceRecordManifest } from "./source-record-manifest";

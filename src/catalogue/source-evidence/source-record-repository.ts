@@ -12,10 +12,14 @@ export type SourceRecordProgress = {
   header_json: string;
   sealed: number;
   authoritative: number;
+  requests_next_ordinal: number;
+  requests_digest: string | null;
+  requests_complete: number;
+  manifest_digest: string | null;
 };
 export function sourceRecordProgress(db: CatalogueStore, id: string) {
   return repositoryStatements(db)
-    .prepare(`SELECT next_ordinal,digest,header_json,sealed,
+    .prepare(`SELECT next_ordinal,digest,header_json,sealed,requests_next_ordinal,requests_digest,requests_complete,manifest_digest,
       EXISTS(SELECT 1 FROM source_observation_sets s WHERE s.id=p.observation_set_id
         AND NOT EXISTS(SELECT 1 FROM evidence_cleanup_objects d WHERE d.object_key=s.content_object_key)) AS authoritative
       FROM source_record_progress p WHERE observation_set_id=?`)
@@ -39,7 +43,7 @@ export function sourceRecordAt(db: CatalogueStore, id: string, ordinal: number) 
 export function initializeSourceRecords(db: CatalogueStore, id: string, digest: string, header: string) {
   return repositoryStatements(db)
     .prepare(
-      "INSERT INTO source_record_progress(observation_set_id,next_ordinal,digest,header_json) VALUES (?,0,?,?) ON CONFLICT DO NOTHING",
+      "INSERT INTO source_record_progress(observation_set_id,next_ordinal,digest,header_json,requests_complete) VALUES (?,0,?,?,0) ON CONFLICT DO NOTHING",
     )
     .bind(id, digest, header);
 }

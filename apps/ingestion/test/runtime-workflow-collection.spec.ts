@@ -1,3 +1,4 @@
+import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { waitForCollectionCompletion } from "./runtime-helpers";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
@@ -128,13 +129,13 @@ test("a successful Official Source response is snapshotted before parsing", asyn
   const observationDocument = await observationContent.json<{
     source_snapshot_id: string;
     adapter_version: string;
-    observations: unknown[];
+    record_storage: unknown;
   }>();
   expect(observationDocument).toMatchObject({
     source_snapshot_id: snapshot.id,
     adapter_version: "fixture-one-piece-json@3",
   });
-  expect(observationDocument.observations).toHaveLength(1);
+  expect(observationDocument.record_storage).toMatchObject({ contract: "card-keepr-source-records@1", count: 1 });
 
   const shown = await administrationRequest(`/v1/ingestion-runs/${planned.id}/evidence`, "GET");
   expect(shown.status).toBe(200);
@@ -239,6 +240,13 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
   await expect(retainedObservation.json()).resolves.toMatchObject({
     source_snapshot_id: discoveryObservation!.source_snapshot_id,
     adapter_version: "fusion-world-en@9",
+    record_storage: { contract: "card-keepr-source-records@1", count: 1 },
+  });
+  expect({
+    observations: [
+      await readSourceObservation(catalogueStore(env.CATALOGUE_DB), "discovery-test", discoveryObservation!.id, 0),
+    ],
+  }).toMatchObject({
     observations: [
       {
         value: {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, writeFile, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -28,6 +29,9 @@ test("bounded Riftbound records retain owner review, native publication and actu
   const selected = ["ogn-001-298", "ogn-066a-298"];
   page.data = page.data.filter((card) => selected.includes(card.id));
   assert.equal(page.data.length, 2);
+  // Accepted, unmapped publisher text forces independently addressed field
+  // chunks while preserving the two records' Card and Printing semantics.
+  page.data[0].bounded_intake_validation_text = "retained publisher field ".repeat(1800);
   page.metadata.totalItems = 2;
   page.metadata.totalPages = 1;
   page.linkdata.last = page.linkdata.first;
@@ -225,6 +229,18 @@ test("bounded Riftbound records retain owner review, native publication and actu
         )
         .get().n,
       0,
+    );
+    const auxiliary = restoredDb.prepare("SELECT kind,content,sha256 FROM source_record_auxiliary").all();
+    assert.ok(auxiliary.some((row) => row.kind === "text"));
+    assert.ok(auxiliary.some((row) => row.kind === "manifest"));
+    for (const row of auxiliary) assert.equal(createHash("sha256").update(row.content).digest("hex"), row.sha256);
+    assert.equal(
+      restoredDb
+        .prepare(
+          "SELECT COUNT(*) AS n FROM source_record_progress WHERE sealed=1 AND manifest_digest IS NOT NULL AND requests_complete=1",
+        )
+        .get().n,
+      3,
     );
     assert.equal(restoredDb.prepare("PRAGMA foreign_key_check").all().length, 0);
   } finally {
