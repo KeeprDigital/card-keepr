@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { capacityByteShare, capacityPrintingsPerPage, syntheticCapacityTier } from "./capacity-workloads";
+import { capacityByteShare, capacityPrintingsPerPage, syntheticCapacityTier } from "./capacity-workloads.ts";
 
 // Synthetic reconciliation source documents served from
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
