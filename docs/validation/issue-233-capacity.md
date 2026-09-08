@@ -442,8 +442,8 @@ remain failures. Earlier full campaigns do not acquire this timeline retroactive
 | Requirement | Current proof | Remaining work and dependency |
 | --- | --- | --- |
 | Full 5 / 50 GiB synthetic tiers | Exact generators and zero-capture admission outcomes | External local-volume capacity: tier 1 needs over 11.7 GiB before database/staging/export/restore. Larger storage enables execution; it does not guarantee passing application capacity. |
-| Five-game final-head journey | Historical proof; current preflight blocks | Host must satisfy the unchanged 6 GiB floor. No final-head pass is claimed. |
-| Memory target / cause | Actual exceedances plus sampled allocation stacks; small conflict probe does not reproduce them | Still locally diagnosable, not a disk-only blocker. A small reproducer retaining the load-bearing reconciliation/publication state is not yet established. The new timeline supports phase selection in an approved targeted probe; sparse negative samples are insufficient. |
+| Five-game final-head journey | Historical proof; current preflight blocks | Earlier attempts failed the unchanged 6 GiB floor; later available space enabled the actual b1d8306 follow-up, which passed 1/1 with SQL import. |
+| Memory target / cause | Actual exceedances plus sampled allocation stacks; small conflict probe does not reproduce them | Still locally diagnosable, not a disk-only blocker. A standalone synthetic 1,001 Product collection/reconciliation now reproduces the 64 MiB overrun (see follow-up below); causal allocation minimization remains open. The new timeline supports phase selection in an approved targeted probe; sparse negative samples are insufficient. |
 | Complete calls and D1/write attribution | Complete reported counters for the selected D1/R2 callback seam; local metadata for result-bearing methods | Locally implementable broader binding observation remains for collection, preparation, publication, backup and opaque D1 methods. Exact index effects need controlled query/result comparisons; existing counters do not establish them. |
 | Per-unit CPU / continuous working-set peak | Local sampled attribution, callback wall time, sampled V8 and backing metrics | Local phase correlation can improve sample attribution, but cannot create exact billed CPU or a continuous peak from missing samples. Provider accounting would require separately authorized provider observations, not a larger disk or a budget waiver. |
 | Cost/completion targets | Local wall/occupancy and selected dimensions recorded | Depends on complete representative workload/call/write/CPU evidence and an explicit operating workload; deriving a ceiling now would invent missing measurements. |
@@ -498,3 +498,84 @@ with three informational formatting suggestions, no errors. The large suites
 and real journeys retain their earlier frozen-commit provenance; they were not
 rerun merely for the new optional measurement/probe paths. Final Standards and
 Spec reviews include the new code and resolved parser/skip-reporting findings.
+
+## Bounded preparation fault and standalone memory follow-up
+
+At `6f79447`, the verified-preparation regression now distinguishes three exact
+third-batch boundaries: rejection before commit; response loss after commit with
+the receipt readable; and response loss after commit with receipt reads also
+unavailable. The second case completes without pausing because shipped preparation
+code verifies the committed receipt. The other cases pause with respectively two
+and three verified batches, then resume without source rereads, preserving the
+receipt, input manifest and deadline. All cases assert stable sealed replay. The
+initial two-case probe incorrectly expected the readable-receipt case to pause;
+that test expectation was corrected to match the intended ambiguity recovery.
+The final three selected cases passed, and the affected file passed **43/43** in
+89.46 s. This adds those boundaries, not exhaustive coverage of all durable writes.
+
+The standalone opt-in probe uses the existing synthetic 1,001 Product fixture,
+actual source capture and reconciliation, and a direct test Workflow driver in a
+workerd application isolate without Vitest. It excludes publication and backup.
+Its original 15 s reconciliation and 64 MiB sampled used-heap assertions remain.
+No forced GC, isolate restart, budget change or production fix is involved.
+
+| Frozen probe | Source construction | Reconciliation | Sampled used-heap maximum | Coverage |
+| --- | --- | --- | --- | --- |
+| `6f79447` | Fixture generated inside application isolate | Sealed, 12,839 ms | **103,179,848 bytes: fails 64 MiB** | 3 samples, 2 heap-query timeouts, 132 skipped 100 ms intervals |
+| `6eb3b9e` | Identical generator JSON served by Node over local HTTP | Sealed, 11,653 ms | **69,826,100 bytes: fails 64 MiB** | 3 samples, 2 heap-query timeouts, 117 skipped intervals |
+
+Both processes therefore failed their acceptance assertion. The first report's
+assertion surfaced observer errors before checking the memory budget; its recorded
+heap still establishes an overrun. The second reports both failures together.
+These are observed lower bounds, not continuous peaks or a claim of monotonic
+retention. The difference between the two maxima does **not** establish a causal
+allocation reduction: moving generation also changes HTTP transport and chunking.
+
+Read-only inspection of the two preserved D1 databases confirms each captured
+snapshot receipt has **8,708,711 bytes** and SHA-256
+`ddade75e173e535c8108881ff1fd6814a2c93c9c895b116187bdedabf0264dea`,
+matching the generated bytes. Source URL and `application/json` media type match;
+the Node response additionally records connection/date/transfer-encoding headers.
+The separate captured-source receipt artifact preserves this verification without
+rewriting either frozen workload report. At `8561698`, future probes distinguish
+`generated_source` from `captured_source` and assert the captured receipt against
+the generated census. That additional assertion was type-checked; it does not
+retroactively change the frozen executions.
+
+At `6eb3b9e`, heap records add `received_elapsed_ms`: together with `elapsed_ms`
+(the request-send time), this bounds the observer query window. Neither timestamp
+is an exact isolate allocation time. Older files contain only send timestamps.
+In the external-source run the first over-limit sample is 68,379,420 bytes over
+102.05–369.18 ms, before the first reconciliation step receipt. The final sample
+is 69,826,100 bytes over 12,038.04–12,038.47 ms. First-trigger sampled allocation
+stacks include collection/capture and D1 dispatch; they attribute only a small
+sample of live allocations, not the whole heap. CPU sampling includes JSON
+conversion/canonicalization and reconciliation, but does not establish a memory
+cause or billed CPU. Fixture generation alone does not explain the overrun. A
+bounded workload now reproduces it; capture-path transient allocations remain a
+local diagnostic lead. Historical real-source overrun evidence remains unchanged.
+
+```sh
+KEEPR_RECONCILIATION_CAPACITY_PROBE=1 \
+KEEPR_RECONCILIATION_EXTERNAL_SOURCE=1 \
+KEEPR_CAPACITY_OUTPUT_PREFIX=/tmp/issue-233-reconciliation-external \
+KEEPR_CAPACITY_SAMPLE_INTERVAL_MS=100 \
+node --test --test-concurrency=1 acceptance/reconciliation-capacity-probe.test.mjs
+```
+
+Omit `KEEPR_RECONCILIATION_EXTERNAL_SOURCE` for in-isolate fixture generation. Failed
+states are deliberately retained. A newer checkout may produce different results;
+the table identifies the actual frozen measurements.
+
+Available space later increased independently: the actual temporary-volume
+preflight observed 17,141,743,616 bytes, above the unchanged 6 GiB floor. Earlier
+preflight rejections remain historical evidence, not the current host state.
+The newly unblocked five-game check first failed before execution because a
+new fixture import omitted `.ts`; `b1d8306` corrects the import for native Node,
+as required by the existing TypeScript configuration. Direct module loading
+passes. The corrected bounded five-game check passed at `b1d8306`: **1/1**, 64.715 s test
+time (65.280 s harness), with an in-test preflight of 17,157,324,800 bytes. It
+verified five-game composition and current plus two through an actual SQL import;
+its successful owned state was cleaned up by the existing test teardown. This
+closes that previously blocked check, not a full retained tier. No full retained
+tier has been executed on the basis of this space change.

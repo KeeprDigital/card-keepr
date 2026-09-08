@@ -8,17 +8,19 @@
     "P001 frozen source census excludes automatic indexes; corrected helper begins at daaa739.",
     "P001 driver/workflow/storage snapshot precedes restored consumer verification; complete_journey_elapsed_ms covers complete journey.",
     "P001 sampled heap exceeds the 64 MiB target; profile time deltas are sample attribution only.",
-    "Full retained synthetic tiers remain incomplete due host disk capacity.",
+    "Full retained synthetic tiers remain unexecuted; earlier disk shortage was observed, later free-space growth requires a complete peak-retention estimate before a tier run.",
     "Riftbound functional journey passes but sampled used heap reaches 88,569,880 bytes: the 64 MiB target fails.",
     "Riftbound heap coverage has 44 inspector query timeouts and 67 skipped timer intervals; sample maximum is a lower bound.",
     "Riftbound generic response_deliveries_including_faults counts successful body deliveries; injected_missing_images separately counts 404s.",
     "Copied JSON is whitespace-normalized with Biome; original local source hashes are recorded separately.",
     "The initial 63-file command was interrupted on a stale handoff fixture; 18 files completed, the corrected 37-test file passed independently, and 44 pending files passed in the resumed run.",
-    "Five-game recovery did not execute at final head because the unchanged 6 GiB preflight rejected available disk space.",
+    "Earlier five-game recovery attempts were preflight-blocked; after space increased, b1d8306 passed the actual journey. The preceding native import failure and fix are separately retained.",
     "Follow-up callback counters describe 1001 synthetic Products at a direct Workflow driver seam; D1 first has no returned execution metadata and control-plane calls are simulated.",
     "The final repeated native validation probe samples every 100 ms and does not reproduce the earlier large-workload memory failure; it is not full-candidate capacity.",
     "Operational timeline records observer receipt times, not exact isolate execution boundaries; earlier full campaigns do not acquire it retroactively.",
-    "The repeated native validation probe directly seeds synthetic Riftbound tables/records; native identifies the shipped validation function/runtime, not retained publisher-response replay."
+    "The repeated native validation probe directly seeds synthetic Riftbound tables/records; native identifies the shipped validation function/runtime, not retained publisher-response replay.",
+    "Standalone synthetic 1001 Product reconciliation exceeds 64 MiB with both in-isolate and external Node fixture generation; three samples and two inspector timeouts per run leave peaks under-observed. Network chunking differs, so the paired maxima are not a pure causal allocation estimate.",
+    "Available local space increased after the earlier rejected preflights; those historical failures do not establish the current host floor. Full tiers remain unexecuted."
   ],
   "files": [
     {
@@ -337,6 +339,106 @@
       "retained_local_log": "/tmp/issue-233-bounded-evidence-format.log",
       "bytes": 46,
       "sha256": "5a6cb8f647b8d21ee1327c9f6e35cc55b7ac01c35980f9ba027e073f24fc4d70"
+    },
+    {
+      "file": "issue-233-reconciliation-memory-isolate-1.json",
+      "bytes": 845825,
+      "sha256": "98266acbd532877afc80383a32316685c92eff8fa721dcab53290a24339ca0c9",
+      "original_local_source": "/tmp/issue-233-reconciliation-memory-isolate-1.json",
+      "original_source_sha256": "37130eedaef50a830910cf4b188468863d1d4f1cfadec4381e98510fd4cf72b0"
+    },
+    {
+      "file": "issue-233-reconciliation-memory-workload.json",
+      "bytes": 132926,
+      "sha256": "023d482cbc6a19c2001c52e5d09712a4a4d428cf450e654bc792dca7bfe9e9f8",
+      "original_local_source": "/tmp/issue-233-reconciliation-memory-workload.json",
+      "original_source_sha256": "023d482cbc6a19c2001c52e5d09712a4a4d428cf450e654bc792dca7bfe9e9f8"
+    },
+    {
+      "file": "issue-233-reconciliation-external-isolate-1.json",
+      "bytes": 844886,
+      "sha256": "516614dd71a30d582b5cedce9be632cd796f48220f0762b6231f7b77d2c96d2d",
+      "original_local_source": "/tmp/issue-233-reconciliation-external-isolate-1.json",
+      "original_source_sha256": "7c63a66b684dc2068b4321693215493cb2c0520ab17083c90b2032187965bbac"
+    },
+    {
+      "file": "issue-233-reconciliation-external-workload.json",
+      "bytes": 132825,
+      "sha256": "0fdd8883a0e625b40bddff1da295609ab9cee91738c3cae5371ff02ecd7d7f32",
+      "original_local_source": "/tmp/issue-233-reconciliation-external-workload.json",
+      "original_source_sha256": "0fdd8883a0e625b40bddff1da295609ab9cee91738c3cae5371ff02ecd7d7f32"
+    },
+    {
+      "file": "issue-233-reconciliation-captured-source.json",
+      "bytes": 1575,
+      "sha256": "5dba6a9d6041c060c9201570266eaaeb3d73e4d16952de69fcceb2fa359e6722",
+      "original_local_source": "/tmp/issue-233-reconciliation-captured-source.json",
+      "original_source_sha256": "5dba6a9d6041c060c9201570266eaaeb3d73e4d16952de69fcceb2fa359e6722"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-after-commit-probe.log",
+      "bytes": 94029,
+      "sha256": "29a0336f432a8246b578969083e022ca23db10cbdb1315c4352be727a78b7bed"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-after-commit-probe-final.log",
+      "bytes": 292,
+      "sha256": "6c0f8372cf98fb098fad52301283b87d2a4a5ebdc81f16cb310ace06dce53b2f"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-progress-final.log",
+      "bytes": 17244,
+      "sha256": "06ace9cd929f6abd9aa90b380f05719245379301fe49efadda1a7cb4eb816431"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-reconciliation-memory.log",
+      "bytes": 1384,
+      "sha256": "85f5cdae0913febb9ac7d8787c57aee200ddba3c8a95212e5a9c6545d6092e89"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-reconciliation-external.log",
+      "bytes": 1684,
+      "sha256": "a18df54cd4e734a21022778eca359e512954f69f5e35b2ed1e5dabcfc8adcb57"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-window-metrics-final.log",
+      "bytes": 517,
+      "sha256": "532a4e8e98521dfd177a4e377e248bc532bddfc9e671102a62727b6c3e30d474"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-probe-typecheck-reviewed.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-phase-typecheck-reviewed.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-probes-lint.log",
+      "bytes": 3626,
+      "sha256": "a89392aa5eb8966f462bdf2ab904b7b8a388e7fc28180fb4ee03740980931f54"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-five-game-final.log",
+      "bytes": 1540,
+      "sha256": "c61a09d34d48b94515487436b4e82a385e9aebfe3e4347dd03b73b0e7922a36e"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-five-game-fixed-final.log",
+      "bytes": 259,
+      "sha256": "2ee246a21bf13f371937dda5e1d7c5c89e78bc98d3124ab8385c41e54926490b"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-fixture-import.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-five-game-preflight-restored-space.log",
+      "bytes": 13,
+      "sha256": "bcfc83e380bdce6a3cbf992138501dc9e8cb1da472e053743e3325fca0a31698"
     }
   ],
   "riftbound_frozen_commit": "2cdb4592",
@@ -345,5 +447,9 @@
   "curated_cli_probe_commit": "f733f07",
   "native_curated_repeated_probe_commit": "80587b3",
   "initial_native_campaign_runtime_commit": "2cdb459",
-  "latest_bounded_diagnostics_code_commit": "80587b3"
+  "latest_bounded_diagnostics_code_commit": "6eb3b9e",
+  "standalone_reconciliation_probe_commit": "6f79447",
+  "external_source_reconciliation_probe_commit": "6eb3b9e",
+  "five_game_followup_commit": "b1d8306",
+  "captured_receipt_assertion_commit": "8561698"
 }
