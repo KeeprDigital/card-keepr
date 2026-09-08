@@ -32,7 +32,8 @@ test("canonical key ordering agrees with NFC UTF-8 bytes across ASCII and Unicod
 });
 
 test("direct canonical UTF-8 preserves reference bytes across JSON and Unicode boundaries", async () => {
-  const { canonicalUtf8, utf8 } = await import("../../src/catalogue/shared/serialization");
+  const { canonicalUtf8 } = await import("../support/canonical-utf8-prototype");
+  const { utf8 } = await import("../../src/catalogue/shared/serialization");
   const strings = [
     "",
     "plain",
@@ -72,7 +73,8 @@ test("direct canonical UTF-8 preserves reference bytes across JSON and Unicode b
 });
 
 test("direct canonical UTF-8 preserves unsupported-value and cycle error contracts", async () => {
-  const { canonicalUtf8, utf8 } = await import("../../src/catalogue/shared/serialization");
+  const { canonicalUtf8 } = await import("../support/canonical-utf8-prototype");
+  const { utf8 } = await import("../../src/catalogue/shared/serialization");
   const cycle: Record<string, unknown> = {};
   cycle.self = cycle;
   const arrayCycle: unknown[] = [];
@@ -104,7 +106,8 @@ test("direct canonical UTF-8 preserves unsupported-value and cycle error contrac
 });
 
 test("direct canonical UTF-8 agrees with deterministic nested reference corpus", async () => {
-  const { canonicalUtf8, utf8 } = await import("../../src/catalogue/shared/serialization");
+  const { canonicalUtf8 } = await import("../support/canonical-utf8-prototype");
+  const { utf8 } = await import("../../src/catalogue/shared/serialization");
   let state = 233;
   const next = () => (state = (Math.imul(state, 1664525) + 1013904223) >>> 0);
   const value = (depth: number): unknown => {

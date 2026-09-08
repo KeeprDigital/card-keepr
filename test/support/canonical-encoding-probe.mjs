@@ -4,7 +4,8 @@ import { Session } from "node:inspector";
 import { promisify } from "node:util";
 import { readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { canonicalJson, canonicalUtf8, utf8 } from "../../src/catalogue/shared/serialization.ts";
+import { canonicalJson, utf8 } from "../../src/catalogue/shared/serialization.ts";
+import { canonicalUtf8 } from "./canonical-utf8-prototype.ts";
 
 const [variant, input, destination] = process.argv.slice(2);
 if (!["legacy", "direct"].includes(variant) || !input || !destination)
