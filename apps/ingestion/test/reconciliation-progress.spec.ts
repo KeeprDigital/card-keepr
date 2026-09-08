@@ -1225,10 +1225,11 @@ test.each(productFaultCases)(
     const { testEnv, post, approve, exportComponentRecords } = await import("./reconciliation-helpers");
     const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
     const boundary = fault.name;
+    const caseKey = `product-fault-${fault.name.replaceAll(" ", "-")}`;
     let priorDocument: Record<string, unknown> | undefined;
     if (fault.prior) {
       const seed = await reconcile(
-        (await collect("/reconciliation/product-typed-relationships", "product-fault-seed")).id,
+        (await collect("/reconciliation/product-typed-relationships", `${caseKey}-seed`)).id,
       );
       expect(seed.response.status).toBe(200);
       const published = await approve(seed.document);
@@ -1240,7 +1241,7 @@ test.each(productFaultCases)(
         product_relationships: await exportComponentRecords(revision, "relationships"),
       };
     }
-    const run = await collect("/reconciliation/product-typed-relationships", "product-group-outage");
+    const run = await collect("/reconciliation/product-typed-relationships", caseKey);
     const afterCommit = boundary !== "uninterrupted" && boundary !== "before commit";
     const pauses = boundary !== "uninterrupted" && !fault.checkpoint;
     let advancedCheckpointReads = 0;
@@ -1362,7 +1363,7 @@ test.each(productFaultCases)(
     const payload = {
       ingestion_run_id: run.id,
       expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
-      idempotency_key: "product-group-outage",
+      idempotency_key: caseKey,
       observed_at: new Date().toISOString(),
       generation: 0,
     };
@@ -1403,7 +1404,7 @@ test.each(productFaultCases)(
         (
           await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
             generation: 1,
-            idempotency_key: "resume-product-group",
+            idempotency_key: `${caseKey}-resume`,
           })
         ).response.status,
       ).toBe(200);
