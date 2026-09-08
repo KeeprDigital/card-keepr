@@ -45,10 +45,15 @@ test("bounded synthetic Product reconciliation isolates memory from the Vitest r
     ),
   );
   const externalSource = Boolean(process.env.KEEPR_RECONCILIATION_EXTERNAL_SOURCE);
+  const declaredLength = Boolean(process.env.KEEPR_RECONCILIATION_CONTENT_LENGTH);
+  assert.ok(!declaredLength || externalSource, "Content-Length variant requires the external source");
   let sourceUrl;
   if (externalSource) {
     const server = createServer((_request, response) => {
-      response.writeHead(200, { "content-type": "application/json" });
+      response.writeHead(200, {
+        "content-type": "application/json",
+        ...(declaredLength ? { "content-length": String(sourceBytes.length) } : {}),
+      });
       response.end(sourceBytes);
     });
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -92,6 +97,7 @@ test("bounded synthetic Product reconciliation isolates memory from the Vitest r
         captured_source: capturedSource,
         generated_source: {
           generation: externalSource ? "external-node" : "application-isolate",
+          declared_content_length: declaredLength ? sourceBytes.length : null,
           bytes: sourceBytes.length,
           sha256: sourceDigest,
         },
