@@ -429,3 +429,43 @@ Worker regression passes both two- and five-game dispatch, sealed candidate
 identities and parent replay (four tests in the file). The full five-game replay
 must pass separately; the first failed state is preserved at
 `keepr-five-game-restore-mREWV5`.
+
+
+### Final branch gates and coverage ledger
+
+The corrected five-game journey passed on `7292bc9` in 63.7 seconds: five
+independent publications, three later Riftbound preparations, unchanged sibling
+components, current-plus-two reads, retired-revision rejection, and the same
+checks after actual SQL restoration. Production code is unchanged since the
+fresh Riot proof on `445d4ce`; the intervening changes affect only the five-game
+fixture, its dispatch regression, and this evidence document.
+
+Final validation on `7292bc9`:
+
+- API Workers: 95/95 tests passed across 13 files.
+- Ingestion Workers with `--maxWorkers=2`: 705/706 passed across 83 files. The
+  identity-corrections test “reviewed identity lookup prepare through durable
+  bounded groups” failed with `Immutable evidence object key collision`. The
+  exact case then passed unchanged, and the complete identity-corrections file
+  passed 11/11 unchanged. The collision remains unexplained; it is not claimed
+  fixed or attributed to a baseline flake. The earlier unrestricted run was
+  interrupted and is not counted as a pass.
+- Serial acceptance: 60/60 tests across 26 files passed. This includes every
+  changed acceptance file except the two independently passing native journeys,
+  all direct consumers of the changed native recovery/catalogue helpers, and
+  Curated CLI/source-change and SQL-restore callers. Other unchanged acceptance
+  files retain main's baseline coverage and were not rerun on this branch.
+- Domain: 232/232 tests across 41 files passed.
+- TypeScript, generated Worker types and documents, module boundary/cycle checks,
+  formatting, lint, and API/ingestion packaging dry runs passed. Lint reports
+  29 warnings and 13 informational findings; no lint errors.
+- Read-only standards and specification reviews found no remaining actionable
+  blockers, including a follow-up review of the five-game fixture correction.
+
+Logs: `/tmp/riftbound-five-game-native-final.log`, `/tmp/riftbound-final-api.log`,
+`/tmp/riftbound-final-ingestion-2.log`, `/tmp/riftbound-identity-collision-isolated.log`,
+`/tmp/riftbound-identity-collision-file.log`, `/tmp/riftbound-final-acceptance.log`,
+and `/tmp/riftbound-final-checks.log`. The explicit 26-file list is retained at
+`/tmp/riftbound-final-acceptance-files.json`. No deployment, resource provisioning,
+production enablement, backup-ledger repair, or deletion of prior failure evidence
+was performed.
