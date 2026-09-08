@@ -940,18 +940,24 @@ test("a completed Workflow that paused durable work reports paused without requi
   });
 });
 
-test("a high degree metadata record produces an explicit terminal capacity result", async () => {
-  const run = await collect("/reconciliation/capacity-high-degree-observation", "explicit-capacity-result");
+test("a high degree metadata record is rejected at intake while its raw evidence remains retained", async () => {
+  const run = await collect(
+    "/reconciliation/capacity-high-degree-observation",
+    "explicit-capacity-result",
+    undefined,
+    15000,
+    "failed",
+  );
+  expect(run.document).toMatchObject({ state: "failed", failure_code: "source_parse_failed", observation_sets: [] });
+  const snapshots = run.document.snapshots as { id: string }[];
+  expect(snapshots).toHaveLength(1);
+  const retained = await get(`/v1/source-snapshots/${snapshots[0]!.id}/content`);
+  expect(retained.response.status).toBe(200);
+  const sourceCards = retained.document.cards as { card: { game_data: { attributes: { traits: string[] } } } }[];
+  expect(sourceCards[0]!.card.game_data.attributes.traits).toHaveLength(40000);
+  expect(sourceCards[0]!.card.game_data.attributes.traits.at(-1)).toBe("Synthetic trait 00039999");
   const result = await reconcile(run.id);
   expect(result.response.status).toBe(409);
-  expect(result.document).toMatchObject({
-    state: "failed",
-    diagnostics: expect.arrayContaining([expect.objectContaining({ code: "reconciliation_capacity_exceeded" })]),
-  });
-  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
-    state: "failed",
-    failure_code: "reconciliation_capacity_exceeded",
-  });
 });
 
 test("oversized warning text stays inspectable through bounded immutable text chunks", async () => {
