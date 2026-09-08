@@ -297,7 +297,7 @@ artifact hashes and metric totals.
 | API suite, `npm run test:workers:api -- --maxWorkers=2` | 95 tests / 13 files passed, 12.09 s |
 | Ingestion suite, `npm run test:workers:ingestion -- --maxWorkers=2` | 707 tests / 83 files passed, 572.00 s |
 | Remaining acceptance (63 files, serial split described below) | 53 earlier passes + 37 corrected handoff cases + 250 resumed cases = 340 passing tests (including subtests) |
-| Five-game recovery | Host preflight blocked before execution; no final-head pass |
+| Five-game recovery | Earlier preflights blocked; bounded follow-up at `b1d8306` passed 1/1 with actual SQL import (64.715 s) |
 | TypeScript, generated Worker types and document validators | Passed |
 | Catalogue cycles and module boundary | Passed |
 | Lint | Passed with 29 warnings and 15 informational diagnostics; no errors |
@@ -326,7 +326,8 @@ After the full ingestion suite, the remaining acceptance launch observed
 5,857,894,400 free bytes. The gate was neither lowered nor bypassed. Historical
 five-game results remain provenance, not a final-head pass: this branch changes
 the shared in-process runtime's optional profiling/disposal lifecycle, so the
-historical journey cannot substitute for validation of that helper delta.
+historical journey could not substitute for validation of that helper delta.
+The later `b1d8306` run below supplies the missing validation.
 
 
 The initial 63-file serial acceptance run stopped on a concrete stale fixture:
@@ -351,13 +352,13 @@ The 44-file resumed run passed all 250 tests in 488.415 s at `847f6cb`.
 The completed 18-file prefix contains 53 passing tests (34 top-level cases and 19 subtests); with the corrected
 37-test handoff file, these cover the intended 63 files with 340 passing tests
 across the recorded runs. This is not a claim that the original interrupted
-command passed. No code changed after the handoff fixture correction.
+command passed. That resumed run used the handoff fixture correction unchanged.
 
 Shared free space rose above 6 GiB during the serial run, but the final unchanged
 five-game preflight measured only 6,390,845,440 bytes against its required
 6,442,450,944. The chained test command therefore did not execute the journey.
-Both blocked preflight observations are retained; the five-game validation gap
-remains open, separate from the much larger retained synthetic-tier disk gap.
+Both blocked preflight observations are retained. The later `b1d8306` actual
+journey closes this validation gap; full retained synthetic tiers remain unexecuted.
 
 The remaining-file command lists are in
 [the initial list](issue-233-measurements/issue-233-executed-acceptance-files.json)
@@ -442,7 +443,7 @@ remain failures. Earlier full campaigns do not acquire this timeline retroactive
 | Requirement | Current proof | Remaining work and dependency |
 | --- | --- | --- |
 | Full 5 / 50 GiB synthetic tiers | Exact generators and zero-capture admission outcomes | External local-volume capacity: tier 1 needs over 11.7 GiB before database/staging/export/restore. Larger storage enables execution; it does not guarantee passing application capacity. |
-| Five-game final-head journey | Historical proof; current preflight blocks | Earlier attempts failed the unchanged 6 GiB floor; later available space enabled the actual b1d8306 follow-up, which passed 1/1 with SQL import. |
+| Five-game final-head journey | `b1d8306`: 1/1 pass, actual SQL import | Earlier attempts failed the unchanged 6 GiB floor; later available space enabled the actual b1d8306 follow-up, which passed 1/1 with SQL import. |
 | Memory target / cause | Actual exceedances plus sampled allocation stacks; small conflict probe does not reproduce them | Still locally diagnosable, not a disk-only blocker. A standalone synthetic 1,001 Product collection/reconciliation now reproduces the 64 MiB overrun (see follow-up below); causal allocation minimization remains open. The new timeline supports phase selection in an approved targeted probe; sparse negative samples are insufficient. |
 | Complete calls and D1/write attribution | Complete reported counters for the selected D1/R2 callback seam; local metadata for result-bearing methods | Locally implementable broader binding observation remains for collection, preparation, publication, backup and opaque D1 methods. Exact index effects need controlled query/result comparisons; existing counters do not establish them. |
 | Per-unit CPU / continuous working-set peak | Local sampled attribution, callback wall time, sampled V8 and backing metrics | Local phase correlation can improve sample attribution, but cannot create exact billed CPU or a continuous peak from missing samples. Provider accounting would require separately authorized provider observations, not a larger disk or a budget waiver. |
