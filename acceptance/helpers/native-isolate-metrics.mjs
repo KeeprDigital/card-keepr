@@ -51,10 +51,11 @@ export async function profileNativeIsolates(runtime, destination, local) {
           socket.addEventListener("message", listener);
           socket.send(JSON.stringify({ id, method }));
         });
-      const report = { target: target.id, heap_samples: [], cpu_profile: null };
+      const report = { target: target.id, heap_samples: [], cpu_profile: null, allocation_profile: null };
       Object.assign(sessions.at(-1), { call, report });
       await call("Profiler.enable");
       await call("Profiler.start");
+      await call("HeapProfiler.startSampling");
     }
     if (sessions.length === 0) throw new Error("No user isolate targets available for native measurement");
     const started = performance.now();
@@ -72,10 +73,27 @@ export async function profileNativeIsolates(runtime, destination, local) {
         });
       for (const session of sessions) {
         try {
-          session.report.heap_samples.push({
+          const heap = {
             elapsed_ms: performance.now() - started,
             ...(await session.call("Runtime.getHeapUsage")),
-          });
+          };
+          session.report.heap_samples.push(heap);
+          if (heap.usedSize > 64 * 1024 ** 2 && session.report.allocation_profile === null) {
+            const { profile } = await session.call("HeapProfiler.getSamplingProfile");
+            const allocations = [];
+            const visit = (node, stack) => {
+              const frames = [...stack, node.callFrame.functionName];
+              if (node.selfSize > 0) allocations.push({ sampled_live_bytes: node.selfSize, stack: frames });
+              for (const child of node.children) visit(child, frames);
+            };
+            visit(profile.head, []);
+            session.report.allocation_profile = {
+              trigger_heap_sample: heap,
+              limitation:
+                "Sampled live V8 allocation attribution at the first observed 64 MiB used-heap exceedance; excludes native backing allocations and is not exact retained size. No object contents are captured.",
+              allocations,
+            };
+          }
         } catch (error) {
           errors.push(String(error));
         }
@@ -108,6 +126,7 @@ export async function profileNativeIsolates(runtime, destination, local) {
         for (const session of sessions) {
           try {
             const { profile } = await session.call("Profiler.stop");
+            await session.call("HeapProfiler.stopSampling");
             const functions = new Map(profile.nodes.map((node) => [node.id, node.callFrame.functionName]));
             const sampled = {};
             for (let index = 0; index < (profile.samples?.length ?? 0); index++) {
