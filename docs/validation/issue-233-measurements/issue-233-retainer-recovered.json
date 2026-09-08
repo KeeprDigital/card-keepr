@@ -1,0 +1,28 @@
+{
+  "scope": "Recovered artifact census after capture teardown failed; not the lost capture summary. No pre/post heap or capture-duration values reconstructed.",
+  "boundary": {
+    "attempt": 887,
+    "phase": "source_mappings",
+    "evidence": "Raw file creation occurs only after successful callback/phase and own-state cap assertions in preserved capture script; no independent boundary log survived."
+  },
+  "raw_bytes": 11977938,
+  "raw_sha256": "a263c2c0772b9ede3b79421decbacd89f5b68b61bfe40b078ae3a8e05c287400",
+  "mode": "0o600",
+  "raw_json_valid": true,
+  "limits": {
+    "raw_bytes": 67108864,
+    "snapshot_timeout_ms": 10000,
+    "free_floor_bytes": 8589934592,
+    "own_state_bytes": 2147483648,
+    "analysis_old_space_mib": 512,
+    "analysis_timeout_ms": 20000
+  },
+  "capture_duration_ms": null,
+  "heap_before": null,
+  "heap_after": null,
+  "command_completion_summary": "Unavailable after ERR_SERVER_NOT_RUNNING during teardown; valid complete snapshot file independently parsed. No recapture.",
+  "state_directory": "/var/folders/h9/r2hp35sx2bs4v69vcsxsls900000gn/T/keepr-retainer-afgGeE",
+  "state_logical_bytes_after": 98433884,
+  "production_changes": false,
+  "raw_content_policy": "Local0600 only. No node names, property keys, values, identifiers or strings emitted. Numeric analysis summary only."
+}

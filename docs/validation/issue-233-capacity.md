@@ -1144,3 +1144,67 @@ Observed temporary-volume space is 16,234,332,160 bytes. Larger snapshot size an
 Node parsing overhead cannot be extrapolated from this tiny case. A real-fixture
 capture would require its own explicit size/space/privacy budget and intrusive
 measurement scope. No such capture or further capacity campaign has been run.
+
+
+### One bounded synthetic retainer capture, with capture-summary loss
+
+The coordinator approved exactly one capture using the restored production path
+and existing 1,001-Product external-source/declared-length fixture. The diagnostic
+selects global `step.do` attempt **887**, requires a successfully returned
+`source_mappings` continuation, then holds a test-only barrier before further
+callbacks. This boundary follows `canonical_digest:candidate` in the earlier
+frozen callback sequence. It is a reproducible late boundary, not an attribution
+of the earlier heap peak. Only the already-live fixture phase history receives an
+explicit root tag; the barrier retains its current frames and is intrusive.
+
+The approved limits were 64 MiB raw output, a 10 s snapshot command timeout, an
+8 GiB free-space floor, 2 GiB owned runtime state, and a separate analysis child
+with 512 MiB V8 old-space and 20 s wall timeout. Raw chunks were written directly
+to an exclusive mode-0600 local file. No explicit GC, real credentials, production
+edit, full real-source campaign or repeat capture was performed.
+
+A valid **11,977,938-byte** snapshot survives. File creation is reached only after
+the boundary and owned-state assertions in the preserved script. This is
+**assertion-enforced script-path evidence**, not an independently retained boundary
+log. Teardown failed with `ERR_SERVER_NOT_RUNNING`, preventing the final capture
+summary from being written. Consequently before/after heap, capture duration and
+the final CDP command outcome are unavailable; none is reconstructed. The complete
+raw JSON was independently parsed, its hash and 0600 mode verified, and owned state
+measures 98,433,884 logical bytes afterward. The configuration emitted an unused
+top-level `migrations_dir` warning; no second run corrected it.
+
+Analysis of that existing file completed once in **144.649 ms**, within the child
+limits. It reports **136,765 nodes**, **564,753 recorded edges**, and **527,336
+non-weak edges**. Five dominator passes yield these numeric observations:
+
+| Snapshot graph observation | Bytes |
+| --- | ---: |
+| Sum of node shallow sizes | 16,956,943 |
+| Dominated shallow-size sum under tagged fixture history | 74,656 |
+| Largest listed code node's dominated shallow-size sum | 8,279,584 |
+| Largest listed string node's shallow size | 7,922,760 |
+| Largest listed object node's dominated shallow-size sum | 2,086,366 |
+
+Dominator calculations use every recorded non-weak edge, including shortcut
+edges. This is an explicit graph model, not an independently validated GC-retention
+model. Top entries may nest and **must not be summed**. Sizes exclude native backing
+storage and describe the intrusive post-collection graph, not the earlier sampled
+heap. The tagged fixture history is identifiable; ownership of the other entries
+between production, simulated driver and runtime remains unknown. Node types alone
+do not establish ownership. The host's Node observer is outside the selected user
+isolate. An independent read-only review found no actionable algorithm defect and
+confirmed these qualifications.
+
+Raw node names, property keys, values, identifiers and strings remain local; only
+numeric summaries, scope and confidence are committed. Capture/analyzer sources,
+raw snapshot and teardown log are hashed in the manifest. The two disposable repo
+fixture/runtime copies were moved to retained local files after analysis. No
+shared teardown helper was changed and no production wiring remains.
+
+This establishes a small post-collection live graph at the selected boundary,
+with substantial ownership uncertainty. It does not account for the earlier
+114,119,536-byte sampled overrun, distinguish its unreachable transient allocations,
+or identify a justified second production fix. The missing capture summary also
+prevents a same-capture GC/heap comparison. The 64 MiB failure, full-tier storage
+requirements and unavailable provider billing remain open; no further capture or
+speculative production change follows this finite evaluation.

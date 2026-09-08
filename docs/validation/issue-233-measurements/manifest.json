@@ -31,7 +31,8 @@
     "1a0da9b structured1001ProductcapturePASS11711ms,max78methodentries,1295callbacks,34191entries includes60simulatedWorkflowmethods.49231submittedbatchstatements;R2object-size sum1190206980 repeatsmetadata,notbytestransferred. OptionalD1timing/retrymetadataabsent. Twoearlierfunctionalpasses omittedconsolecensus,notnumericmeasurements. Tinyintentionalfailedartifactsmokeexpectedexit1retained. Providerbilling/indexcost/fullpipelinecoverage remainunavailable.",
     "Collection-root normal and lost-response cases pass separately at 9cfa83d. Simulated receiver accepts 2/3 deliveries across initial invocation and replay, while sendEvent outcomes fulfill 2/2 and reject 0/1. Maximum 2 method entries per callback; exact sealed status, partitions and terminal payload preserved. This is not hosted or exactly-once delivery evidence. Focused observer/driver regression passes 11/11; no further 1001-Product run.",
     "98bd07a stream retention eliminated whole output buffering but native1001 still failed64MiB: 114119536bytes,4samples,2timeouts,125skips; sealed12458ms. Historical declared-length comparison is not a same-head paired control and establishes no causal benefit. Production wiring reverted e622ab0; only unwired proof retained. No new memory fix, second variant or full campaign.",
-    "Tiny synthetic heap snapshot canary supports retention graph edges;1362130bytes/33.994ms. Heap596352 before/control to292732 after snapshot; no explicitGC but snapshot-associated collection means it is not normal-peak/timing evidence. Raw synthetic/runtime strings stay local. No realfixture snapshot or fullcampaign performed; larger snapshot size/observer overhead unknown."
+    "Tiny synthetic heap snapshot canary supports retention graph edges;1362130bytes/33.994ms. Heap596352 before/control to292732 after snapshot; no explicitGC but snapshot-associated collection means it is not normal-peak/timing evidence. Raw synthetic/runtime strings stay local. No realfixture snapshot or fullcampaign performed; larger snapshot size/observer overhead unknown.",
+    "ONE synthetic retainercapture produced valid11977938byte0600snapshot after assertion-enforced attempt887/source_mappings. Teardown ERR_SERVER_NOT_RUNNING lost final summary: no independent boundarylog/prepostheap/captureduration/CDPcompletion outcome. No recapture. Boundedanalysis144.649ms yields16956943node-shallowbytes and74656fixture-historydominatedbytes under explicit nonweak-edge model including shortcuts; other ownership unknown. Postcollection graph does not explain114MBsample or justify productionfix. Raw local only."
   ],
   "files": [
     {
@@ -1085,6 +1086,55 @@
       "retained_local_log": "/tmp/issue-233-heap-snapshot-canary.heapsnapshot",
       "bytes": 1362130,
       "sha256": "1088e02f9d893ab1220fa438603a51b6096ec710adbb9c9ec6f5d5c6913e829f"
+    },
+    {
+      "file": "issue-233-retainer-analysis.json",
+      "bytes": 5976,
+      "sha256": "ee721320d983f91bce4a2aedb8de2a93c7969feb13ea7a77ba167b358ecf3bee",
+      "original_local_source": "/tmp/issue-233-retainer-analysis.json",
+      "original_source_sha256": "ee721320d983f91bce4a2aedb8de2a93c7969feb13ea7a77ba167b358ecf3bee"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-retainer-analysis.log",
+      "bytes": 86,
+      "sha256": "46364da03ce7d45bd8e6c569688f8398a4dc361c77e43ff781d96c32bd492929"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-retainer-analyze.mjs",
+      "bytes": 4787,
+      "sha256": "823253a27620dbc2db01c72304f315383fd43e5186d694ba435f4fada927e907"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-retainer-capture.log",
+      "bytes": 855,
+      "sha256": "eaed71ce8bffe907ee0d7e24b9a44ff177d7a3fa26d75ff586313581ad0d3744"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-retainer-capture.mjs",
+      "bytes": 6618,
+      "sha256": "ac0cdce0672087b4c7775f44c5d4be988137498e8cea1b7f42d8edb554b0c893"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-retainer-fixture.ts",
+      "bytes": 6094,
+      "sha256": "745b2668539dbc3b101b97068c87806fada8de411c273122ebb46212bb194576"
+    },
+    {
+      "file": "issue-233-retainer-recovered.json",
+      "bytes": 1330,
+      "sha256": "3dd7c7e5185f325a52883a2a0dbf0176c066efc40faf8d0a9eb7ebed4bac586b",
+      "original_local_source": "/tmp/issue-233-retainer-recovered.json",
+      "original_source_sha256": "3dd7c7e5185f325a52883a2a0dbf0176c066efc40faf8d0a9eb7ebed4bac586b"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-retainer-runtime.mjs",
+      "bytes": 12413,
+      "sha256": "b61365a4504d6fae4808f4ac567aec30eee178464a14020662aa9992112e6d0c"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-retainer.heapsnapshot",
+      "bytes": 11977938,
+      "sha256": "a263c2c0772b9ede3b79421decbacd89f5b68b61bfe40b078ae3a8e05c287400"
     }
   ],
   "riftbound_frozen_commit": "2cdb4592",
