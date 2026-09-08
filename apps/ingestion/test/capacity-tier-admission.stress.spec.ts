@@ -5,6 +5,7 @@ import {
   appendDiscoveredEvidenceRequests,
   pendingEvidenceRequests,
   requiredEvidenceRun,
+  RequestCapacityProblem,
 } from "../../../src/catalogue/source-evidence";
 import {
   capacityPageUrl,
@@ -59,9 +60,16 @@ test.each(syntheticCapacityTiers)(
       expect(current.state).toBe("collecting");
       expect(status.requests.total).toBe(pages);
     } else {
-      expect(current.state).toBe("paused");
+      expect(error).toBeInstanceOf(RequestCapacityProblem);
+      expect(error).toMatchObject({
+        code: "source_discovery_too_large",
+        capacity: { required_capacity: pages, used_capacity: 1, request_capacity: 5000 },
+      });
+      // This repository rejects admission; the collection driver owns the
+      // durable pause, covered separately by runtime-capacity-resume.
+      expect(current.state).toBe("collecting");
       expect(status.requests.total).toBe(1);
-      expect(status.capacity[0]!.required_capacity).toBe(pages);
+      expect(status.capacity[0]!.required_capacity).toBeNull();
     }
     console.info(
       JSON.stringify({
@@ -78,7 +86,7 @@ test.each(syntheticCapacityTiers)(
         outcome:
           tier.id === "tier-1"
             ? "graph_admitted_retained_pipeline_not_exercised"
-            : "capacity_pause_not_usable_capacity",
+            : "request_capacity_guard_rejection_not_usable_capacity",
       }),
     );
   },

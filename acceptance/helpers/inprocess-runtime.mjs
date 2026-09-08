@@ -23,9 +23,16 @@ after(async () => {
     const results = await Promise.allSettled([...group.handles].map((handle) => handle.dispose()));
     for (const result of results) if (result.status === "rejected") failures.push(result.reason);
     try {
-      if (group.runtime && !group.disposing) await group.runtime.dispose();
+      if (group.stopProfile) await group.stopProfile();
     } catch (error) {
       failures.push(error);
+    } finally {
+      group.stopProfile = undefined;
+      try {
+        if (group.runtime && !group.disposing) await group.runtime.dispose();
+      } catch (error) {
+        failures.push(error);
+      }
     }
   }
   groups.clear();
