@@ -1179,16 +1179,72 @@ test("a published catalogue larger than 1 MiB is streamed into the next candidat
   expect(cards).toEqual(first.document.cards);
 });
 
-test.each(["uninterrupted", "before commit", "after commit", "context after commit"])(
-  "a Product reducer storage outage pauses and resumes exact typed relationships (%s)",
-  async (boundary) => {
-    const { testEnv, post } = await import("./reconciliation-helpers");
+type ProductFaultCase = {
+  name: string;
+  namespace: string;
+  cursor: string;
+  prior?: boolean;
+  stage?: string;
+  checkpoint?: boolean;
+};
+const productFaultCases: ProductFaultCase[] = [
+  { name: "uninterrupted", namespace: "product_observations_one-piece", cursor: "groups" },
+  { name: "before commit", namespace: "product_observations_one-piece", cursor: "groups" },
+  { name: "after commit", namespace: "product_observations_one-piece", cursor: "groups" },
+  { name: "context after commit", namespace: "product_contexts_one-piece", cursor: "contexts" },
+  { name: "relationship after commit", namespace: "product_relationships_one-piece", cursor: "relationships" },
+  { name: "prior names after commit", namespace: "prior_product_names_one-piece", cursor: "names", prior: true },
+  { name: "prior codes after commit", namespace: "prior_product_codes_one-piece", cursor: "codes", prior: true },
+  {
+    name: "prior contexts after commit",
+    namespace: "prior_product_contexts_one-piece",
+    cursor: "priorContexts",
+    prior: true,
+  },
+  {
+    name: "prior relationships after commit",
+    namespace: "prior_product_relationships_one-piece",
+    cursor: "priorRelationships",
+    prior: true,
+  },
+  ...["products", "distribution_contexts", "product_relationships"].flatMap((kind) =>
+    [false, true].map((prior) => ({
+      name: `${prior ? "existing" : "new"} ${kind} result after commit`,
+      namespace: `candidate_product_result_one-piece_${kind}`,
+      cursor: kind,
+      prior,
+      stage: `${prior ? "existing" : "new"}_${kind === "distribution_contexts" ? "contexts" : kind === "product_relationships" ? "relationships" : kind}`,
+    })),
+  ),
+  { name: "checkpoint after commit", namespace: "product_reduction:one-piece", cursor: "", checkpoint: true },
+];
+
+test.each(productFaultCases)(
+  "a Product reducer storage outage pauses and resumes exact typed relationships ($name)",
+  async (fault) => {
+    const { testEnv, post, approve, exportComponentRecords } = await import("./reconciliation-helpers");
     const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
+    const boundary = fault.name;
+    let priorDocument: Record<string, unknown> | undefined;
+    if (fault.prior) {
+      const seed = await reconcile(
+        (await collect("/reconciliation/product-typed-relationships", "product-fault-seed")).id,
+      );
+      expect(seed.response.status).toBe(200);
+      const published = await approve(seed.document);
+      expect(published.response.status).toBe(200);
+      const revision = requiredString(published.document, "resulting_revision_id");
+      priorDocument = {
+        products: await exportComponentRecords(revision, "products"),
+        distribution_contexts: await exportComponentRecords(revision, "distribution-contexts"),
+        product_relationships: await exportComponentRecords(revision, "relationships"),
+      };
+    }
     const run = await collect("/reconciliation/product-typed-relationships", "product-group-outage");
-    const reducerNamespace =
-      boundary === "context after commit" ? "product_contexts_one-piece" : "product_observations_one-piece";
-    const cursorIndex = boundary === "context after commit" ? "contexts" : "groups";
-    const afterCommit = boundary === "after commit" || boundary === "context after commit";
+    const afterCommit = boundary !== "uninterrupted" && boundary !== "before commit";
+    const pauses = boundary !== "uninterrupted" && !fault.checkpoint;
+    let advancedCheckpointReads = 0;
+    let lostCheckpoint: { ordinal: number; content: string; sha256: string } | undefined;
     const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
     let unavailable = boundary !== "uninterrupted";
     let failures = 0;
@@ -1210,48 +1266,94 @@ test.each(["uninterrupted", "before commit", "after commit", "context after comm
         if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
         if (property === "batch")
           return async (batch: D1PreparedStatement[]) => {
-            if (
-              unavailable &&
-              batch.some((statement) => {
-                const entry = statements.get(statement);
-                return (
-                  entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
-                  entry.values.includes(reducerNamespace)
-                );
-              })
-            ) {
+            const entry = batch
+              .map((statement) => statements.get(statement))
+              .find(
+                (entry) =>
+                  entry?.sql.includes(
+                    fault.checkpoint
+                      ? "INSERT INTO reconciliation_checkpoints"
+                      : "INSERT INTO reconciliation_reducer_state",
+                  ) && entry.values.includes(fault.namespace),
+              );
+            if (unavailable && entry) {
+              const preparation = entry.values[0];
+              const checkpoint = await target
+                .prepare(
+                  "SELECT ordinal, content, sha256 FROM reconciliation_checkpoints WHERE preparation_id = ? AND phase = ? ORDER BY ordinal DESC LIMIT 1",
+                )
+                .bind(preparation, "product_reduction:one-piece")
+                .first<{ ordinal: number; content: string; sha256: string }>();
+              const cursor = checkpoint ? JSON.parse(checkpoint.content) : null;
+              const proposed = fault.checkpoint ? JSON.parse(String(entry.values[3])) : null;
+              // Target a retained input transition, not the initial empty checkpoint.
+              if (
+                (fault.stage && cursor?.stage !== fault.stage) ||
+                (fault.checkpoint && proposed?.stage !== "existing_products")
+              )
+                return target.batch(batch);
               failures++;
               if (afterCommit) {
                 await target.batch(batch);
-                const entry = batch
-                  .map((statement) => statements.get(statement))
-                  .find(
-                    (entry) =>
-                      entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
-                      entry.values.includes(reducerNamespace),
-                  )!;
-                const [preparation, namespace, key, ordinal, content, sha256] = entry.values;
-                const retained = await target
-                  .prepare(
-                    "SELECT content, sha256 FROM reconciliation_reducer_state WHERE preparation_id = ? AND namespace = ? AND key_digest = ? AND observation_ordinal = ?",
-                  )
-                  .bind(preparation, namespace, key, ordinal)
-                  .first<{ content: string; sha256: string }>();
-                expect(retained).toEqual({ content, sha256 });
-                committedEffects.push(retained!);
-                const checkpoint = await target
-                  .prepare(
-                    "SELECT content FROM reconciliation_checkpoints WHERE preparation_id = ? AND phase = ? ORDER BY ordinal DESC LIMIT 1",
-                  )
-                  .bind(preparation, "product_reduction:one-piece")
-                  .first<{ content: string }>();
-                const position = JSON.parse(checkpoint!.content).indexes[cursorIndex] as number;
-                expect(position).toBeLessThan(Number(ordinal));
-                checkpointPositions.push(position);
+                if (fault.checkpoint) {
+                  const [preparation, phase, ordinal, content, sha256] = entry.values;
+                  const retained = await target
+                    .prepare(
+                      "SELECT ordinal, content, sha256 FROM reconciliation_checkpoints WHERE preparation_id = ? AND phase = ? AND ordinal = ?",
+                    )
+                    .bind(preparation, phase, ordinal)
+                    .first<{ ordinal: number; content: string; sha256: string }>();
+                  expect(retained).toEqual({ ordinal, content, sha256 });
+                  expect(Number(ordinal)).toBeGreaterThan(checkpoint!.ordinal);
+                  expect(proposed.indexes.relationships).toBeGreaterThan(cursor.indexes.relationships);
+                  lostCheckpoint = retained!;
+                  unavailable = false;
+                } else {
+                  const [preparation, namespace, key, ordinal, content, sha256] = entry.values;
+                  const retained = await target
+                    .prepare(
+                      "SELECT content, sha256 FROM reconciliation_reducer_state WHERE preparation_id = ? AND namespace = ? AND key_digest = ? AND observation_ordinal = ?",
+                    )
+                    .bind(preparation, namespace, key, ordinal)
+                    .first<{ content: string; sha256: string }>();
+                  expect(retained).toEqual({ content, sha256 });
+                  committedEffects.push(retained!);
+                  const position = (fault.stage ? cursor.result[fault.cursor] : cursor.indexes[fault.cursor]) ?? 0;
+                  expect(position).toBeLessThan(Number(ordinal));
+                  checkpointPositions.push(position);
+                  if (fault.cursor === "names") expect(cursor.indexes.codes).toBe(0);
+                  if (fault.cursor === "codes") {
+                    expect(cursor.indexes.names).toBe(0);
+                    const names = await target
+                      .prepare(
+                        "SELECT COUNT(*) AS count FROM reconciliation_reducer_state WHERE preparation_id = ? AND namespace = ?",
+                      )
+                      .bind(preparation, "prior_product_names_one-piece")
+                      .first<{ count: number }>();
+                    expect(names!.count).toBeGreaterThan(0);
+                  }
+                }
               }
-              throw new Error("Injected Product-group storage outage");
+              throw new Error("Injected Product reducer committed-response outage");
             }
-            return target.batch(batch);
+            const results = await target.batch<{ ordinal: number; content: string; sha256: string }>(batch);
+            if (lostCheckpoint) {
+              for (const [index, statement] of batch.entries()) {
+                const entry = statements.get(statement);
+                if (
+                  entry?.sql.includes("FROM reconciliation_checkpoints") &&
+                  entry.values.includes("product_reduction:one-piece") &&
+                  results[index]?.results.some(
+                    (row) =>
+                      row.ordinal === lostCheckpoint!.ordinal &&
+                      row.content === lostCheckpoint!.content &&
+                      row.sha256 === lostCheckpoint!.sha256,
+                  )
+                )
+                  advancedCheckpointReads++;
+              }
+            }
+            return results;
           };
         const value = Reflect.get(target, property);
         return typeof value === "function" ? value.bind(target) : value;
@@ -1279,15 +1381,19 @@ test.each(["uninterrupted", "before commit", "after commit", "context after comm
       },
     } as unknown as import("cloudflare:workers").WorkflowStep;
     await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
-    expect(failures).toBe(boundary === "uninterrupted" ? 0 : 4);
-    if (afterCommit) {
+    expect(failures).toBe(boundary === "uninterrupted" ? 0 : fault.checkpoint ? 1 : 4);
+    if (fault.checkpoint) {
+      expect(lostCheckpoint).toBeDefined();
+      expect(advancedCheckpointReads).toBeGreaterThan(0);
+    }
+    if (afterCommit && !fault.checkpoint) {
       expect(committedEffects).toHaveLength(4);
       expect(committedEffects.every((effect) => JSON.stringify(effect) === JSON.stringify(committedEffects[0]))).toBe(
         true,
       );
       expect(new Set(checkpointPositions).size).toBe(1);
     }
-    if (boundary !== "uninterrupted") {
+    if (pauses) {
       expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
         state: "paused",
         generation: 1,
@@ -1324,6 +1430,17 @@ test.each(["uninterrupted", "before commit", "after commit", "context after comm
           : relationships
       ).push(...(detail.document.records as Record<string, unknown>[]));
     }
+    if (priorDocument) {
+      for (const [kind, records] of [
+        ["products", products],
+        ["distribution_contexts", contexts],
+        ["product_relationships", relationships],
+      ] as const) {
+        expect(records.map(({ id }) => id).sort()).toEqual(
+          (priorDocument[kind] as { id: string }[]).map(({ id }) => id).sort(),
+        );
+      }
+    }
     expect(products).toHaveLength(2);
     expect(products.every(({ observed }) => observed === true)).toBe(true);
     expect(relationships.map(({ kind }) => kind)).toEqual(
@@ -1332,7 +1449,7 @@ test.each(["uninterrupted", "before commit", "after commit", "context after comm
     const sealedRecords = await nativeCandidateRecords(candidateId);
     await runReconciliationWorkflow(
       { ...testEnv, CATALOGUE_DB: database },
-      { payload: { ...payload, generation: boundary === "uninterrupted" ? 0 : 1 } } as typeof event,
+      { payload: { ...payload, generation: pauses ? 1 : 0 } } as typeof event,
       step,
     );
     expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toEqual(status.document);
@@ -1387,6 +1504,179 @@ test.each(["uninterrupted", "before commit", "after commit", "context after comm
     });
   },
 );
+
+test("a Product reducer committed tombstone replays without restoring a curated relationship", async () => {
+  const { testEnv, post, approve, exportComponentRecords } = await import("./reconciliation-helpers");
+  const { catalogueStore, canonicalJson, sha256Text } = await import("../../../src/catalogue/shared");
+  const { applyPinnedCuratedRevisions, pinCuratedRevisionsForRun } = await import("../../../src/catalogue/curated");
+  const { initializeReconciliationProgress } = await import(
+    "../../../src/catalogue/reconciliation/reconciliation-progress"
+  );
+  const { ReconciliationCandidateState } = await import(
+    "../../../src/catalogue/reconciliation/reconciliation-candidate-state"
+  );
+  const { ReconciliationRecordCollection } = await import(
+    "../../../src/catalogue/reconciliation/reconciliation-record-collection"
+  );
+  const { reconcileProductReleaseState } = await import("../../../src/catalogue/reconciliation/product-release-state");
+  const seed = await reconcile((await collect("/reconciliation/product-typed-relationships", "tombstone-seed")).id);
+  expect(seed.response.status).toBe(200);
+  const published = await approve(seed.document);
+  expect(published.response.status).toBe(200);
+  const revision = requiredString(published.document, "resulting_revision_id");
+  const cards = await exportComponentRecords(revision, "cards");
+  const printings = await exportComponentRecords(revision, "printings");
+  const { reconciliationSourceDocument } = await import(
+    "../../../test/support/fake-publisher/reconciliation-documents"
+  );
+  const { reconcileProductReleaseCatalogue } = await import(
+    "../../../src/catalogue/reconciliation/product-release-catalogue"
+  );
+  const source = reconciliationSourceDocument(
+    "product-typed-relationships",
+    "cards",
+    "https://official-source.invalid/reconciliation/product-typed-relationships",
+  ) as { cards: { product_release_catalogue: unknown }[] };
+  const surface = await reconcileProductReleaseCatalogue(
+    null,
+    [
+      {
+        value: source.cards[0]!.product_release_catalogue,
+        sourceObservationId: "tombstone-observation",
+        sourceObservationSetId: "tombstone-observation-set",
+        sourceSnapshotId: "tombstone-snapshot",
+        sourceLineage: "one-piece-en",
+        capturedAt: new Date().toISOString(),
+        currentCardId: String(cards[0]!.id),
+        currentPrintingId: String(printings[0]!.id),
+      },
+    ],
+    "one-piece",
+  );
+  const candidate = {
+    contract: "card-keepr-catalogue-candidate@1",
+    selected_games: ["one-piece"],
+    cards,
+    printings,
+    products: surface.products,
+    distribution_contexts: surface.distribution_contexts,
+    product_relationships: surface.product_relationships,
+  } as unknown as import("../../../src/catalogue/shared").CatalogueCandidate;
+  const product = candidate.products!.find(({ official_code }) => official_code === "CODE-X")!;
+  const proposal = {
+    game: "one-piece",
+    target: {
+      kind: "relationship",
+      relationship_kind: "product-card",
+      from: { type: "product", id: product.id },
+      to: { type: "card", id: candidate.cards[0]!.id },
+    },
+    assertion: { kind: "relationship", presence: "present" },
+    rationale: "Synthetic owner-reviewed relationship for reducer deletion proof",
+    evidence: [
+      { kind: "owner_reference", uri: "https://owner.example/review/tombstone", content_digest: "d".repeat(64) },
+    ],
+    effective_interval: { from: null, to: null },
+    reviewed_source_digest: await sha256Text(canonicalJson("absent")),
+    supersedes_revision_id: null,
+  };
+  expect(
+    (
+      await post("/admin/v1/curated-revisions", {
+        environment: "production",
+        expected_current_revision_id: published.document.resulting_revision_id,
+        proposal,
+        proposal_digest: await sha256Text(canonicalJson(proposal)),
+        idempotency_key: "tombstone-curated-create",
+      })
+    ).response.status,
+  ).toBe(201);
+  const run = await collect("/reconciliation/product-typed-relationships", "tombstone-reducer");
+  const db = catalogueStore(testEnv.CATALOGUE_DB);
+  const at = new Date().toISOString();
+  await initializeReconciliationProgress(db, run.id, at);
+  await pinCuratedRevisionsForRun(db, run.id, at);
+  const curated = await applyPinnedCuratedRevisions(db, run.id, candidate, at);
+  const edge = curated.product_relationships!.find(({ evidence_category }) => evidence_category === "curated")!;
+  expect(edge).toMatchObject({ from: proposal.target.from, to: proposal.target.to, evidence_category: "curated" });
+  expect(edge.curated_provenance).toHaveLength(1);
+  const prior = new ReconciliationCandidateState(db, run.id, "tombstone_prior");
+  await prior.seed(curated);
+  let unavailable = true;
+  const committed: { content: string; sha256: string }[] = [];
+  const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement =>
+    new Proxy(statement, {
+      get(target, property) {
+        if (property === "bind") return (...bound: unknown[]) => wrap(target.bind(...bound), sql, bound);
+        if (
+          property === "first" &&
+          sql.includes("INSERT INTO reconciliation_reducer_state") &&
+          values[1] === "candidate_product_result_one-piece_product_relationships" &&
+          JSON.parse(String(values[4])).value.entity === null
+        )
+          return async () => {
+            const result = await target.first();
+            if (unavailable) {
+              const [preparation, namespace, key, ordinal, content, sha256] = values;
+              const retained = await testEnv.CATALOGUE_DB.prepare(
+                "SELECT content, sha256 FROM reconciliation_reducer_state WHERE preparation_id = ? AND namespace = ? AND key_digest = ? AND observation_ordinal = ?",
+              )
+                .bind(preparation, namespace, key, ordinal)
+                .first<{ content: string; sha256: string }>();
+              expect(retained).toEqual({ content, sha256 });
+              expect(JSON.parse(retained!.content).value).toEqual({ id: edge.id, entity: null });
+              committed.push(retained!);
+              const checkpoint = await testEnv.CATALOGUE_DB.prepare(
+                "SELECT content FROM reconciliation_checkpoints WHERE preparation_id = ? AND phase = ? ORDER BY ordinal DESC LIMIT 1",
+              )
+                .bind(run.id, "product_reduction:one-piece")
+                .first<{ content: string }>();
+              const cursor = JSON.parse(checkpoint!.content);
+              expect(cursor.stage).toBe("existing_relationships");
+              expect(cursor.result.product_relationships ?? 0).toBeLessThan(Number(ordinal));
+              throw new Error("Injected tombstone response loss");
+            }
+            return result;
+          };
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  const database = new Proxy(testEnv.CATALOGUE_DB, {
+    get(target, property) {
+      if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const reduce = () =>
+    reconcileProductReleaseState(
+      catalogueStore(database),
+      run.id,
+      prior,
+      async function* () {},
+      "one-piece",
+      new ReconciliationRecordCollection(catalogueStore(database), run.id, "tombstone_warnings"),
+      { hasInputs: false, yieldAtCheckpoint: false },
+    );
+  // Direct reducer seam: valid prior curated output, no current evidence; no Workflow or sealed-candidate claim.
+  for (let attempt = 0; attempt < 4; attempt++)
+    await expect(reduce()).rejects.toThrow("Reconciliation reducer storage is temporarily unavailable");
+  expect(committed).toHaveLength(4);
+  expect(committed.every((effect) => JSON.stringify(effect) === JSON.stringify(committed[0]))).toBe(true);
+  unavailable = false;
+  const resumed = await reduce();
+  const records = async (draft: InstanceType<typeof ReconciliationCandidateState>) => {
+    const result = [];
+    for await (const edge of draft.values("product_relationships")) result.push(edge);
+    return result;
+  };
+  const remaining = await records(resumed.draft);
+  expect(remaining).toEqual([...candidate.product_relationships!].sort((a, b) => a.id.localeCompare(b.id)));
+  expect(new Set(remaining.map(({ id }) => id)).size).toBe(4);
+  expect(await resumed.draft.has("product_relationships", edge.id)).toBe(false);
+  expect(await records((await reduce()).draft)).toEqual(remaining);
+});
 
 test("one Product evidence group's capacity budget includes partitioned source text", async () => {
   const run = await collect("/reconciliation/product-group-large-text", "product-group-large-text");
