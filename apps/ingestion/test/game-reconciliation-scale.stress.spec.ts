@@ -36,7 +36,35 @@ test("a 1001-Product native candidate stays within the D1/R2 callback budget", a
   const id = requiredString(await created.json<Record<string, unknown>>(), "id");
   expect(params).toBeDefined();
   let calls = 0;
-  const measured: { name: string; calls: number; phase: string; milliseconds: number }[] = [];
+  let methods: Record<string, number> = {};
+  let metadata: Record<string, { observations: number; total: number }> = {};
+  const charge = (method: string) => {
+    calls++;
+    methods[method] = (methods[method] ?? 0) + 1;
+  };
+  const observe = async (operation: unknown): Promise<unknown> => {
+    const result = await operation;
+    for (const value of Array.isArray(result) ? result : [result]) {
+      if (!value || typeof value !== "object" || !("meta" in value)) continue;
+      for (const field of ["rows_read", "rows_written", "changes", "duration"]) {
+        const amount = (value.meta as Record<string, unknown>)[field];
+        if (typeof amount !== "number" || !Number.isFinite(amount)) continue;
+        metadata[field] ??= { observations: 0, total: 0 };
+        metadata[field].observations++;
+        metadata[field].total += amount;
+      }
+    }
+    return result;
+  };
+  const measured: {
+    name: string;
+    calls: number;
+    phase: string;
+    started_ms: number;
+    milliseconds: number;
+    methods: typeof methods;
+    returned_d1_metadata: typeof metadata;
+  }[] = [];
   const statement = (original: D1PreparedStatement): D1PreparedStatement =>
     new Proxy(original, {
       get(target, property) {
@@ -44,8 +72,8 @@ test("a 1001-Product native candidate stays within the D1/R2 callback budget", a
         const value = Reflect.get(target, property);
         if (["run", "first", "all", "raw"].includes(String(property)))
           return (...args: unknown[]) => {
-            calls++;
-            return Reflect.apply(value, target, args);
+            charge(`D1.${String(property)}`);
+            return observe(Reflect.apply(value, target, args));
           };
         return typeof value === "function" ? value.bind(target) : value;
       },
@@ -55,20 +83,20 @@ test("a 1001-Product native candidate stays within the D1/R2 callback budget", a
       if (property === "prepare") return (sql: string) => statement(target.prepare(sql));
       if (property === "batch")
         return (...args: Parameters<D1Database["batch"]>) => {
-          calls++;
-          return target.batch(...args);
+          charge("D1.batch");
+          return observe(target.batch(...args));
         };
       const value = Reflect.get(target, property);
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
-  const bucket = (original: R2Bucket) =>
+  const bucket = (original: R2Bucket, binding: string) =>
     new Proxy(original, {
       get(target, property) {
         const value = Reflect.get(target, property);
         if (typeof value !== "function") return value;
         return (...args: unknown[]) => {
-          calls++;
+          charge(`${binding}.${String(property)}`);
           return Reflect.apply(value, target, args);
         };
       },
@@ -78,8 +106,8 @@ test("a 1001-Product native candidate stays within the D1/R2 callback budget", a
     {
       ...testEnv,
       CATALOGUE_DB: database,
-      EVIDENCE_OBJECTS: bucket(testEnv.EVIDENCE_OBJECTS),
-      PRINTING_IMAGES: bucket(testEnv.PRINTING_IMAGES),
+      EVIDENCE_OBJECTS: bucket(testEnv.EVIDENCE_OBJECTS, "EVIDENCE_OBJECTS"),
+      PRINTING_IMAGES: bucket(testEnv.PRINTING_IMAGES, "PRINTING_IMAGES"),
     },
     {
       instanceId: "native-resource-root",
@@ -89,6 +117,8 @@ test("a 1001-Product native candidate stays within the D1/R2 callback budget", a
       do: async (name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
         for (let attempt = 0; ; attempt++) {
           calls = 0;
+          methods = {};
+          metadata = {};
           const attemptStarted = Date.now();
           let phase = name;
           try {
@@ -98,7 +128,15 @@ test("a 1001-Product native candidate stays within the D1/R2 callback budget", a
           } catch (error) {
             if (attempt >= config.retries.limit) throw error;
           } finally {
-            measured.push({ name, calls, phase, milliseconds: Date.now() - attemptStarted });
+            measured.push({
+              name,
+              calls,
+              phase,
+              started_ms: attemptStarted - started,
+              milliseconds: Date.now() - attemptStarted,
+              methods,
+              returned_d1_metadata: metadata,
+            });
           }
         }
       },
@@ -113,6 +151,17 @@ test("a 1001-Product native candidate stays within the D1/R2 callback budget", a
     phase.maximumCalls = Math.max(phase.maximumCalls, attempt.calls);
     phases.set(attempt.phase, phase);
   }
+  console.info(
+    JSON.stringify({
+      contract: "card-keepr-local-reconciliation-callbacks@1",
+      workload: "1001 synthetic Products; actual local D1/R2 and shipped reconciliation callbacks",
+      limitation:
+        "Callback wall time, not CPU. Phase is returned continuation (or step name on failure), not an exact operation trace. Counts cover D1 execution methods and two R2 bindings only; the driver simulates Workflow control calls. D1 metadata is local emulator output, unavailable through first/raw and not provider billing or independent index-write accounting. No SQL, parameters or result rows are retained.",
+      elapsed_ms: elapsed,
+      phases: Object.fromEntries(phases),
+      callbacks: measured,
+    }),
+  );
   expect(elapsed, JSON.stringify(Object.fromEntries(phases))).toBeLessThan(15_000);
   expect(measured.filter(({ calls }) => calls > 100)).toEqual([]);
   expect((await get(`/v1/game-candidates/${id}`)).document).toMatchObject({ state: "sealed" });
