@@ -689,3 +689,54 @@ active code; its frozen source, raw measurements, calibration source/events and
 log hashes remain available. A reliable boundary-observation method is still
 needed before optimizing this suspected string/buffer overlap. This is a local
 measurement limitation, not a budget waiver or proof of a production cause.
+
+## Unwired canonical UTF-8 experiment
+
+The proposed representation change was tested independently: count canonical
+UTF-8 bytes, allocate one exact-size array, then encode bounded string pieces into
+it. It avoids assembling a complete canonical JSON string, but traverses the
+stable data twice. Four differential tests cover 500 deterministic nested values,
+NFC/key ordering, escaping, paired and unpaired surrogates across chunk boundaries,
+negative zero/large finite integers, unsupported values, cycles and the existing
+sparse-array behavior. The retained test-support implementation passes all four
+in 125 ms at `c497389`; type checking and formatting pass. Changing getters or
+proxies are explicitly outside its stable-data precondition, so it is not a
+general drop-in replacement for arbitrary JavaScript objects.
+
+An isolated Node allocation-sampling probe uses the exact 8,708,711-byte synthetic
+source body. Source generation and JSON parsing precede profiling. No debugger
+pauses or forced GC are used; sampling overhead and process-level CPU bookkeeping
+remain. All encoders return **8,708,711 identical canonical bytes**, SHA-256
+`c8d916fa88fa662bb57420500ee71a74b21ec7c57f1276ad414fd9256db4f882`.
+
+| Frozen implementation | Encoder wall time | Node user + system CPU | Sampled allocations including GC-discarded objects | Heap before → after |
+| --- | --- | --- | --- | --- |
+| Legacy encoder at `e8c90ae` | 34.311 ms | 56,427 µs | 83,086,480 bytes | 18,346,240 → 42,462,120 bytes |
+| Initial generator prototype at `e8c90ae` | 150.429 ms | 168,432 µs | 227,847,976 bytes | 18,350,408 → 19,096,736 bytes |
+| Synchronous sink refinement at `36e0a79` | 54.161 ms | 72,053 µs | 88,168,472 bytes | 18,352,720 → 25,612,400 bytes |
+
+The initial prototype introduced substantial per-token iterator and buffer-view
+allocation. One refinement removed generator wrappers and writes ASCII punctuation
+directly. It reduced that overhead, but still used more CPU and sampled allocation
+than the legacy encoder. These samples are cumulative estimates, not live heap or
+exact allocation totals. Before/after heap in separate Node processes is not peak
+memory evidence and cannot be transferred to workerd. No full-reconciliation
+15 s or 64 MiB outcome is established by these encoder timings.
+
+The peak-memory benefit remains unproven, so **production serialization and source
+parsing are unchanged**. `c497389` retains the experiment only in test support,
+with differential tests and a reproducible Node probe; no additional native or
+real-source campaign was run. No further micro-variants are included. The memory
+cause remains open alongside the full-tier host limitation, unavailable provider
+accounting and non-exhaustive durable-phase coverage. Future implementation should
+start from a reliable expected working-set benefit and byte/error equivalence,
+not assume the lower post-call Node heap proves the accepted memory target.
+
+```sh
+node test/support/canonical-encoding-probe.mjs legacy input.json legacy.json
+node test/support/canonical-encoding-probe.mjs direct input.json direct.json
+```
+
+Use the fixed source body/digest identified above to reproduce the recorded
+comparison. The artifact manifest retains the actual input hash and the frozen
+measurement files; the benchmark does not create a substitute capacity tier.

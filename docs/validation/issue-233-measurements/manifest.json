@@ -24,7 +24,8 @@
     "Declared-length external source also exceeds64MiB (118447544bytes): completed writer records prove multipart was avoided. Four samples/two timeouts/114skips leave incomplete coverage; observed maximum differences do not establish causality.",
     "Corrected code-derived tier1 storage lower bound19685349120bytes includes two retained base64 copies plus raw images; latest16965410816availablebytes is insufficient before metadata/SQL/staging/exports/restore/margin. It is not a measured peak.",
     "ALL phase attribution in3bfc2e6debuggertrace is invalid: workerd reported mismatched breakpoint IDs. Tiny exact-location calibration still missesoneof4boundaries. No allocation cause inferred; experimental tracer removedd889ece. Paused19319ms failsunchanged15sguardbutdoesnotprovenormal-runregression.",
-    "dac124b Productreducerfaultfollowup3/3selectedpassed;45testsnowinfile,42skippedinthisrun. Earlier43-testwholefilepasspredatesit. Isolateduninterruptedcaseassertssameexactsemanticexpectations,notcrossrunbyteequality."
+    "dac124b Productreducerfaultfollowup3/3selectedpassed;45testsnowinfile,42skippedinthisrun. Earlier43-testwholefilepasspredatesit. Isolateduninterruptedcaseassertssameexactsemanticexpectations,notcrossrunbyteequality.",
+    "CanonicalUTF8prototype remains test-support-only. Nodeequivalencepasses,butrefined54.161ms/88.17MBsampledalloc exceedslegacy34.311ms/83.09MB. Lowerpostcallheapnotpeakproof;productionserializerandparseunchanged,noadditionalnativecampaign."
   ],
   "files": [
     {
@@ -567,6 +568,67 @@
       "retained_local_log": "/tmp/issue-233-trace-tiny-location-final.log",
       "bytes": 2445,
       "sha256": "02924de585202600e42a23a07dc6831cc40681f3194d786f4e26c4b5666de788"
+    },
+    {
+      "file": "issue-233-encoder-legacy.json",
+      "bytes": 31224,
+      "sha256": "2a47e6e96d957e5f446a7d1b41a69315c1835c0de2a49e6106391946f97470be",
+      "original_local_source": "/tmp/issue-233-encoder-legacy.json",
+      "original_source_sha256": "e9414e6e7156b5085ba7ca61debc06f99b4584002b12ead85335b782a7b56a9a"
+    },
+    {
+      "file": "issue-233-encoder-direct.json",
+      "bytes": 24498,
+      "sha256": "af0c53ff75aaebec9cbffbcbc90aab0bb223e3ca435460f17618c0ac71514430",
+      "original_local_source": "/tmp/issue-233-encoder-direct.json",
+      "original_source_sha256": "f8a9ab35449fe226529864f3ac95b21c5e2c90c40bca3015dc174b9a108dc567"
+    },
+    {
+      "file": "issue-233-encoder-direct-sink.json",
+      "bytes": 22398,
+      "sha256": "74b5196f80943b29fa57513097c3456c7a78971d4b5a2a590263995e1eeb114d",
+      "original_local_source": "/tmp/issue-233-encoder-direct-sink.json",
+      "original_source_sha256": "57fce1a5ee6df1812f545e58025349bfbd38d4d6e5680458e8447233217b4d1d"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-canonical-utf8-differential.log",
+      "bytes": 229,
+      "sha256": "3e048a07450b36433d1e9d78c156598d9dc06c004776c5f503b8fb7518884d8a"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-canonical-utf8-sink-differential.log",
+      "bytes": 229,
+      "sha256": "5c13a32a1fe1fa34c7952b1e579562e7bdba9d94249ba3c9fbc3709706209274"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-canonical-prototype-final-tests.log",
+      "bytes": 229,
+      "sha256": "b076bfea3206f1f25bf648cc70123071b19cb5a2a88f047c18af3bdb5b5ace6a"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-canonical-prototype-final-typecheck.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-prototype-lint-final.log",
+      "bytes": 3475,
+      "sha256": "e27eca904b60f5dec551644c058f7305f88b1778590fe260d57a17db38a36e45"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-canonical-typecheck.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-canonical-lint.log",
+      "bytes": 3475,
+      "sha256": "27bdfa9a1928eb0369d036c246a3c8f172b6aa40442bd02138f681eb477fa0e0"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-product-commit-format.log",
+      "bytes": 42,
+      "sha256": "902110c427d5751c7be69e95ab3d12cfb3c5a1b830e2d530705d1b67d67245e6"
     }
   ],
   "riftbound_frozen_commit": "2cdb4592",
@@ -575,7 +637,7 @@
   "curated_cli_probe_commit": "f733f07",
   "native_curated_repeated_probe_commit": "80587b3",
   "initial_native_campaign_runtime_commit": "2cdb459",
-  "latest_bounded_diagnostics_code_commit": "f747d8a",
+  "latest_bounded_diagnostics_code_commit": "c497389",
   "standalone_reconciliation_probe_commit": "6f79447",
   "external_source_reconciliation_probe_commit": "6eb3b9e",
   "five_game_followup_commit": "b1d8306",
@@ -583,5 +645,8 @@
   "declared_length_capture_probe_commit": "f747d8a",
   "product_reducer_committed_response_commit": "dac124b",
   "invalid_debugger_trace_commit": "3bfc2e6",
-  "debugger_trace_removal_commit": "d889ece"
+  "debugger_trace_removal_commit": "d889ece",
+  "canonical_encoder_initial_probe_commit": "e8c90ae",
+  "canonical_encoder_sink_probe_commit": "36e0a79",
+  "canonical_encoder_test_support_commit": "c497389"
 }
