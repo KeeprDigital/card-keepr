@@ -19,6 +19,7 @@ import { nativeExportReader } from "./helpers/native-export-reader.mjs";
 import { withNativeRequestPacing } from "./helpers/native-request-pacing.mjs";
 import { riftboundReplayTransport } from "./helpers/riftbound-replay-transport.mjs";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
+import { requireNativeDiskSpace } from "./helpers/native-disk-preflight.mjs";
 
 // Actual retained HTTP bodies. External HTTP and Cloudflare control plane are
 // replayed locally; collection, parsing and all owner operations are shipped code.
@@ -36,6 +37,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   );
   assert.ok(!resumePublicationId || resumeDirectory, "Published resume requires retained run state");
   assert.equal(Boolean(resumeDirectory), Boolean(resumeRunId), "Resume requires both retained directory and run id");
+  t.diagnostic(`Native disk preflight: ${await requireNativeDiskSpace(resumeDirectory ?? tmpdir())} bytes free.`);
   const directory = resumeDirectory ? resolve(resumeDirectory) : await mkdtemp(join(tmpdir(), "keepr-real-riftbound-"));
   if (resumeDirectory) t.diagnostic(`Resuming retained run ${resumeRunId}; original collection is not repeated.`);
   const statePath = join(directory, "state");

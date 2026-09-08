@@ -19,10 +19,12 @@ import {
 } from "./helpers/acceptance-runtime.mjs";
 import { nativeCheckpointTransport, publishNativeCollection } from "./helpers/native-catalogue-runtime.mjs";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
+import { requireNativeDiskSpace } from "./helpers/native-disk-preflight.mjs";
 
 // Synthetic source facts, actual publication/backup Workflows and SQL imports.
 // This bounded composition regression is separate from real Riot evidence.
 test("five-game composition and current plus two survive an actual SQL import", async (t) => {
+  t.diagnostic(`Native disk preflight: ${await requireNativeDiskSpace(tmpdir())} bytes free.`);
   const exportReader = nativeExportReader(250);
   const nativeExportRecords = exportReader.records;
   const directory = await mkdtemp(join(tmpdir(), "keepr-five-game-restore-"));
