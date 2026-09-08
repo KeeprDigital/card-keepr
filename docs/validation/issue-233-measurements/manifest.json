@@ -32,7 +32,8 @@
     "Collection-root normal and lost-response cases pass separately at 9cfa83d. Simulated receiver accepts 2/3 deliveries across initial invocation and replay, while sendEvent outcomes fulfill 2/2 and reject 0/1. Maximum 2 method entries per callback; exact sealed status, partitions and terminal payload preserved. This is not hosted or exactly-once delivery evidence. Focused observer/driver regression passes 11/11; no further 1001-Product run.",
     "98bd07a stream retention eliminated whole output buffering but native1001 still failed64MiB: 114119536bytes,4samples,2timeouts,125skips; sealed12458ms. Historical declared-length comparison is not a same-head paired control and establishes no causal benefit. Production wiring reverted e622ab0; only unwired proof retained. No new memory fix, second variant or full campaign.",
     "Tiny synthetic heap snapshot canary supports retention graph edges;1362130bytes/33.994ms. Heap596352 before/control to292732 after snapshot; no explicitGC but snapshot-associated collection means it is not normal-peak/timing evidence. Raw synthetic/runtime strings stay local. No realfixture snapshot or fullcampaign performed; larger snapshot size/observer overhead unknown.",
-    "ONE synthetic retainercapture produced valid11977938byte0600snapshot after assertion-enforced attempt887/source_mappings. Teardown ERR_SERVER_NOT_RUNNING lost final summary: no independent boundarylog/prepostheap/captureduration/CDPcompletion outcome. No recapture. Boundedanalysis144.649ms yields16956943node-shallowbytes and74656fixture-historydominatedbytes under explicit nonweak-edge model including shortcuts; other ownership unknown. Snapshot-time graph does not explain114MBsample or justify productionfix. Raw local only."
+    "ONE synthetic retainercapture produced valid11977938byte0600snapshot after assertion-enforced attempt887/source_mappings. Teardown ERR_SERVER_NOT_RUNNING lost final summary: no independent boundarylog/prepostheap/captureduration/CDPcompletion outcome. No recapture. Boundedanalysis144.649ms yields16956943node-shallowbytes and74656fixture-historydominatedbytes under explicit nonweak-edge model including shortcuts; other ownership unknown. Snapshot-time graph does not explain114MBsample or justify productionfix. Raw local only.",
+    "Bounded intake: final 31de829f native publication/actual SQL restore passes 19006.233 ms; 33 ingestion/cleanup and 19 domain tests pass. Fixed 1/4-page delayed-sink tests prove seam buffering/backpressure, not a heap ceiling. Intermediate failures retained: a broad wrapper masked cleaned-set errors, and same-run fixtures initially reused sequence_number; both corrected. Other adapters/HTML/whole-candidate retirement, large-field references and image bucket migration remain deferred."
   ],
   "files": [
     {
@@ -1135,6 +1136,111 @@
       "retained_local_log": "/tmp/issue-233-retainer.heapsnapshot",
       "bytes": 11977938,
       "sha256": "a263c2c0772b9ede3b79421decbacd89f5b68b61bfe40b078ae3a8e05c287400"
+    },
+    {
+      "file": "issue-233-bounded-domain.log",
+      "bytes": 233,
+      "sha256": "eb7c74e8a19fdb64e80754bf4d630663a7b72953339ce27f61f869aacaef9fd2",
+      "original_local_source": "/tmp/issue-233-bounded-domain.log",
+      "original_source_sha256": "eb7c74e8a19fdb64e80754bf4d630663a7b72953339ce27f61f869aacaef9fd2"
+    },
+    {
+      "file": "issue-233-bounded-domain-reviewed.log",
+      "bytes": 233,
+      "sha256": "50f3af79d3422514d20e74eaf9d0d6cd07d8ff28fce1a006db5694abf7bc760c",
+      "original_local_source": "/tmp/issue-233-bounded-domain-reviewed.log",
+      "original_source_sha256": "50f3af79d3422514d20e74eaf9d0d6cd07d8ff28fce1a006db5694abf7bc760c"
+    },
+    {
+      "file": "issue-233-bounded-focused.log",
+      "bytes": 546,
+      "sha256": "4d3a0e0047573c7aee9811dcbe1bf247a649fef48534ba80a3d7b9046f702c21",
+      "original_local_source": "/tmp/issue-233-bounded-focused.log",
+      "original_source_sha256": "4d3a0e0047573c7aee9811dcbe1bf247a649fef48534ba80a3d7b9046f702c21"
+    },
+    {
+      "file": "issue-233-bounded-focused-final.log",
+      "bytes": 546,
+      "sha256": "bf07554f2c6ccf2fc95f2ab04031e5fa2375e2232731d5091b215a8e25e7900b",
+      "original_local_source": "/tmp/issue-233-bounded-focused-final.log",
+      "original_source_sha256": "bf07554f2c6ccf2fc95f2ab04031e5fa2375e2232731d5091b215a8e25e7900b"
+    },
+    {
+      "file": "issue-233-bounded-focused-reviewed.log",
+      "bytes": 547,
+      "sha256": "9b1efc6d42d59ce8a059a27992cb1b847bd9911b9ffa6ab0bd1466011cf3fc08",
+      "original_local_source": "/tmp/issue-233-bounded-focused-reviewed.log",
+      "original_source_sha256": "9b1efc6d42d59ce8a059a27992cb1b847bd9911b9ffa6ab0bd1466011cf3fc08"
+    },
+    {
+      "file": "issue-233-bounded-intake-tests.log",
+      "bytes": 231,
+      "sha256": "bf460734e2b1eaa1637ece5d0dbc8fb4f4f0c5a07f7a1ea10c4e70128921a73f",
+      "original_local_source": "/tmp/issue-233-bounded-intake-tests.log",
+      "original_source_sha256": "bf460734e2b1eaa1637ece5d0dbc8fb4f4f0c5a07f7a1ea10c4e70128921a73f"
+    },
+    {
+      "file": "issue-233-bounded-lint-reviewed.log",
+      "bytes": 44,
+      "sha256": "2ed1a3990e7e58989d415151fc0727d1ad2ec3cbda61f5b20910a5f05c25abba",
+      "original_local_source": "/tmp/issue-233-bounded-lint-reviewed.log",
+      "original_source_sha256": "2ed1a3990e7e58989d415151fc0727d1ad2ec3cbda61f5b20910a5f05c25abba"
+    },
+    {
+      "file": "issue-233-bounded-review-fixes.log",
+      "bytes": 3223,
+      "sha256": "4eec2d58af6939f935e52dc902324c9fe68b0b9e2c685f0444788ef3a0a1ae9f",
+      "original_local_source": "/tmp/issue-233-bounded-review-fixes.log",
+      "original_source_sha256": "4eec2d58af6939f935e52dc902324c9fe68b0b9e2c685f0444788ef3a0a1ae9f"
+    },
+    {
+      "file": "issue-233-bounded-reviewed-tests.log",
+      "bytes": 233,
+      "sha256": "4053ec1c0ba27a3452d7f3d2d37afb961aaeb025ec1c7af5391bb808e92bd886",
+      "original_local_source": "/tmp/issue-233-bounded-reviewed-tests.log",
+      "original_source_sha256": "4053ec1c0ba27a3452d7f3d2d37afb961aaeb025ec1c7af5391bb808e92bd886"
+    },
+    {
+      "file": "issue-233-bounded-scaling.log",
+      "bytes": 1295,
+      "sha256": "d95eec2fe2fd541c81cb7ce5bc8f5ae0ce058014daa933028166f7e2d59d929a",
+      "original_local_source": "/tmp/issue-233-bounded-scaling.log",
+      "original_source_sha256": "d95eec2fe2fd541c81cb7ce5bc8f5ae0ce058014daa933028166f7e2d59d929a"
+    },
+    {
+      "file": "issue-233-bounded-typecheck.log",
+      "bytes": 238,
+      "sha256": "968585aeca6f852f0ec5e56b91c6ce428ab85b869d2536740d8b82d826bd7a7f",
+      "original_local_source": "/tmp/issue-233-bounded-typecheck.log",
+      "original_source_sha256": "968585aeca6f852f0ec5e56b91c6ce428ab85b869d2536740d8b82d826bd7a7f"
+    },
+    {
+      "file": "issue-233-bounded-typecheck-reviewed.log",
+      "bytes": 238,
+      "sha256": "968585aeca6f852f0ec5e56b91c6ce428ab85b869d2536740d8b82d826bd7a7f",
+      "original_local_source": "/tmp/issue-233-bounded-typecheck-reviewed.log",
+      "original_source_sha256": "968585aeca6f852f0ec5e56b91c6ce428ab85b869d2536740d8b82d826bd7a7f"
+    },
+    {
+      "file": "issue-233-bounded-vertical.log",
+      "bytes": 227,
+      "sha256": "5944aedd088fdb6d3cd17df2ce8130b02554ea5f688c3f1bc9a89a391cb26e85",
+      "original_local_source": "/tmp/issue-233-bounded-vertical.log",
+      "original_source_sha256": "5944aedd088fdb6d3cd17df2ce8130b02554ea5f688c3f1bc9a89a391cb26e85"
+    },
+    {
+      "file": "issue-233-bounded-vertical-final.log",
+      "bytes": 227,
+      "sha256": "510865ffa7e0762ab422bfa7bcf6dd429f6b418d6b09106bd854dfede91307b5",
+      "original_local_source": "/tmp/issue-233-bounded-vertical-final.log",
+      "original_source_sha256": "510865ffa7e0762ab422bfa7bcf6dd429f6b418d6b09106bd854dfede91307b5"
+    },
+    {
+      "file": "issue-233-bounded-vertical-reviewed.log",
+      "bytes": 227,
+      "sha256": "97aae01faadf1ebb14cc7bf7b784fe024d9c385c17263f49f75c6bb0dfc8752a",
+      "original_local_source": "/tmp/issue-233-bounded-vertical-reviewed.log",
+      "original_source_sha256": "97aae01faadf1ebb14cc7bf7b784fe024d9c385c17263f49f75c6bb0dfc8752a"
     }
   ],
   "riftbound_frozen_commit": "2cdb4592",
@@ -1167,7 +1273,8 @@
   "observation_retention_revert_commit": "e622ab0",
   "current_design_status": {
     "proposal": "docs/plans/bounded-source-intake.md",
-    "status": "pending user review; no rewrite or further experiments",
+    "status": "First bounded Riftbound inventory slice implemented locally; Standards and Spec reviews clear at 31de829f. Functional and bounded-buffer tests pass; broader migrations and memory/capacity certification remain open.",
     "storage_estimate_scope": "Historical 18.33/183.33 GiB lower bounds apply only to legacy synthetic inline-base64 topology, not real-source baseline or redesigned pipeline hardware requirements."
-  }
+  },
+  "bounded_intake_functional_commit": "31de829f86239c25713e610482b8d2bf46ca0824"
 }

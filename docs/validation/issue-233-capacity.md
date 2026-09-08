@@ -11,6 +11,42 @@ synthetic fixture with two persisted inline-base64 copies; they are not a
 real-source baseline or a hardware requirement for the proposed pipeline. Any
 earlier suggestion to size user hardware from that topology is superseded.
 
+## First bounded Riftbound slice — local checkpoint
+
+Implementation and reviewed test head: `31de829f86239c25713e610482b8d2bf46ca0824`.
+Migration 29 stores ordered immutable records and atomic prefix receipts; inventory
+capture uses indexed request batches, and native reconciliation consumes sealed
+records directly. Cross-page metadata identity is enforced atomically without
+requiring returned record counts to equal the publisher's declared total.
+
+- **33 ingestion/cleanup tests pass**, including ten intake tests: committed
+  response loss, duplicate identifiers, same-size raw corruption, bounded cleanup,
+  one/four-page slow-sink bounds, pagination drift, transient read/resume,
+  concurrent retry and cleanup racing a partial commit.
+- **19 domain tests pass** for retained Riot equivalence, bounds and shared streaming
+  parsing. Full TypeScript checks, changed-file lint, cluster boundaries and cycles pass.
+- **Compact native vertical passes in 19,006.233 ms**: two retained Riot records with
+  synthetic compact pagination and real image URLs, owner admission, publication,
+  verified backup, actual SQL restore and equal restored Printing exports. The
+  restored census contains sealed records and zero legacy byte chunks or
+  per-preparation observation copies for that set; foreign keys are valid.
+- **Standards and Spec reviews clear** after correcting pagination identity and
+  preserving query-only storage-error classification. No hosted CI or deployment.
+
+At fixed 17-record fixture pages, one versus four pages preserves concurrency one,
+at most nine emitted records ahead of committed progress (eight queued plus current),
+nine statements per batch and reads capped at eight records / 512,000 content bytes.
+Raw whole-body methods are forbidden by the focused test. This verifies buffering
+and backpressure at the intake seam; it does **not** measure whole-isolate heap or
+certify either full capacity tier. Other adapters, Riftbound HTML, large-field
+references, image serving/GC migration and whole-candidate interface retirement
+remain outside this first slice. #233 stays open and PR #266 stays draft.
+
+Intermediate test failures are retained with passing final logs: a broad storage
+wrapper initially masked cleaned-set integrity errors, and a synthetic same-run
+fixture initially reused request sequence 1. Both were corrected; neither is
+represented as a passing run.
+
 Campaign base: `0bb3b7d26c6744b4c037d788e6b45c334ae8aa83`, schema 28.
 This is a partial capacity and fault evidence report, not a passing capacity certification.
 Heavy campaigns run serially with a frozen commit and a fresh `/tmp` filesystem
