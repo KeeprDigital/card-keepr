@@ -47,6 +47,9 @@ test("direct canonical UTF-8 preserves reference bytes across JSON and Unicode b
     "x".repeat(32767) + "\ud800!",
     "e\u0301".repeat(40000),
   ];
+  const sparse = new Array(3);
+  sparse[0] = 1;
+  sparse[2] = 3;
   const values: unknown[] = [
     null,
     true,
@@ -59,7 +62,7 @@ test("direct canonical UTF-8 preserves reference bytes across JSON and Unicode b
     [],
     {},
     new Array(3),
-    [1, , 3],
+    sparse,
     ...strings,
   ];
   for (const key of strings)
