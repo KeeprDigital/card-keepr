@@ -96,5 +96,5 @@
       }
     ]
   },
-  "source_limitation": "Retained sources capture the earlier ID/fallback diagnostic version; final observed location-only correction is described by the event report and validation narrative."
+  "source_limitation": "Retained helper uses exact resolved script/line/column attribution; the final calibration still leaves after-UTF8/before-digest unvisited. The event report is from that failed exact-location calibration."
 }

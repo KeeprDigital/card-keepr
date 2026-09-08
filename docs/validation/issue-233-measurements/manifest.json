@@ -503,10 +503,10 @@
     },
     {
       "file": "issue-233-debugger-calibration.json",
-      "bytes": 13240,
-      "sha256": "658a598027b0b06dd888d1c76d3ee3602874a2a154b2413bf2964679170895ab",
+      "bytes": 13276,
+      "sha256": "639bfabdfcd711406887e4c186cc5f0d6d6ce43164901dc676a22878251b0737",
       "original_local_source": "/tmp/issue-233-debugger-calibration.json",
-      "original_source_sha256": "8da6aadc02ee063b66d4d5a7376143a17280dd1a73a7f3c30a9da9eb6bc09036"
+      "original_source_sha256": "44ed1085a52c4b95d489e895c3555edbb5296e2fbfcc11c34ed6ede10e027f3a"
     },
     {
       "retained_local_log": "/tmp/issue-233-product-commit-probe.log",
