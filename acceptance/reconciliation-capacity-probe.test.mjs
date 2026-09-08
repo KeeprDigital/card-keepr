@@ -73,7 +73,9 @@ test("bounded synthetic Product reconciliation isolates memory from the Vitest r
     body: JSON.stringify({ source_url: sourceUrl }),
   });
   assert.equal(setup.status, 200, await setup.clone().text());
-  const { candidate, params } = await setup.json();
+  const { candidate, params, captured_source: capturedSource } = await setup.json();
+  const sourceDigest = createHash("sha256").update(sourceBytes).digest("hex");
+  assert.deepEqual(capturedSource, [{ content_digest: sourceDigest, content_byte_length: sourceBytes.length }]);
   const response = await fetch(`${worker.url}/run`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -87,10 +89,11 @@ test("bounded synthetic Product reconciliation isolates memory from the Vitest r
       {
         scope:
           "Synthetic 1001 Products; real retained collection and reconciliation, direct test Workflow driver, no publication/backup. Driver phase receipt markers are labelled probe-driver.",
-        source: {
+        captured_source: capturedSource,
+        generated_source: {
           generation: externalSource ? "external-node" : "application-isolate",
           bytes: sourceBytes.length,
-          sha256: createHash("sha256").update(sourceBytes).digest("hex"),
+          sha256: sourceDigest,
         },
         ...result,
       },
