@@ -1,3 +1,4 @@
+import { reconciliationBindingObserver, type BindingObservation } from "./reconciliation-binding-observer";
 import { expect, test } from "vitest";
 import worker from "../src/index";
 import type { ReconciliationWorkflowParams } from "../../../src/catalogue/reconciliation";
@@ -35,80 +36,21 @@ test("a 1001-Product native candidate stays within the D1/R2 callback budget", a
   expect(created.status).toBe(201);
   const id = requiredString(await created.json<Record<string, unknown>>(), "id");
   expect(params).toBeDefined();
-  let calls = 0;
-  let methods: Record<string, number> = {};
-  let metadata: Record<string, { observations: number; total: number }> = {};
-  const charge = (method: string) => {
-    calls++;
-    methods[method] = (methods[method] ?? 0) + 1;
-  };
-  const observe = async (operation: unknown): Promise<unknown> => {
-    const result = await operation;
-    for (const value of Array.isArray(result) ? result : [result]) {
-      if (!value || typeof value !== "object" || !("meta" in value)) continue;
-      for (const field of ["rows_read", "rows_written", "changes", "duration"]) {
-        const amount = (value.meta as Record<string, unknown>)[field];
-        if (typeof amount !== "number" || !Number.isFinite(amount)) continue;
-        metadata[field] ??= { observations: 0, total: 0 };
-        metadata[field].observations++;
-        metadata[field].total += amount;
-      }
-    }
-    return result;
-  };
-  const measured: {
+  const observer = reconciliationBindingObserver();
+  const measured: (BindingObservation & {
     name: string;
-    calls: number;
     phase: string;
     started_ms: number;
     milliseconds: number;
-    methods: typeof methods;
-    returned_d1_metadata: typeof metadata;
-  }[] = [];
-  const statement = (original: D1PreparedStatement): D1PreparedStatement =>
-    new Proxy(original, {
-      get(target, property) {
-        if (property === "bind") return (...values: unknown[]) => statement(target.bind(...values));
-        const value = Reflect.get(target, property);
-        if (["run", "first", "all", "raw"].includes(String(property)))
-          return (...args: unknown[]) => {
-            charge(`D1.${String(property)}`);
-            const result = Reflect.apply(value, target, args);
-            return ["run", "all"].includes(String(property)) ? observe(result) : result;
-          };
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    });
-  const database = new Proxy(testEnv.CATALOGUE_DB, {
-    get(target, property) {
-      if (property === "prepare") return (sql: string) => statement(target.prepare(sql));
-      if (property === "batch")
-        return (...args: Parameters<D1Database["batch"]>) => {
-          charge("D1.batch");
-          return observe(target.batch(...args));
-        };
-      const value = Reflect.get(target, property);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
-  const bucket = (original: R2Bucket, binding: string) =>
-    new Proxy(original, {
-      get(target, property) {
-        const value = Reflect.get(target, property);
-        if (typeof value !== "function") return value;
-        return (...args: unknown[]) => {
-          charge(`${binding}.${String(property)}`);
-          return Reflect.apply(value, target, args);
-        };
-      },
-    });
+    succeeded: boolean;
+  })[] = [];
   const started = Date.now();
   await runReconciliationWorkflow(
     {
       ...testEnv,
-      CATALOGUE_DB: database,
-      EVIDENCE_OBJECTS: bucket(testEnv.EVIDENCE_OBJECTS, "EVIDENCE_OBJECTS"),
-      PRINTING_IMAGES: bucket(testEnv.PRINTING_IMAGES, "PRINTING_IMAGES"),
+      CATALOGUE_DB: observer.database(testEnv.CATALOGUE_DB),
+      EVIDENCE_OBJECTS: observer.bucket(testEnv.EVIDENCE_OBJECTS, "EVIDENCE_OBJECTS"),
+      PRINTING_IMAGES: observer.bucket(testEnv.PRINTING_IMAGES, "PRINTING_IMAGES"),
     },
     {
       instanceId: "native-resource-root",
@@ -117,31 +59,32 @@ test("a 1001-Product native candidate stays within the D1/R2 callback budget", a
     {
       do: async (name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
         for (let attempt = 0; ; attempt++) {
-          calls = 0;
-          methods = {};
-          metadata = {};
+          const observation = observer.begin();
+          let succeeded = false;
           const attemptStarted = Date.now();
           let phase = name;
           try {
             const result = await callback();
             phase = JSON.parse(result).continuation?.phase ?? name;
+            succeeded = true;
             return result;
           } catch (error) {
             if (attempt >= config.retries.limit) throw error;
           } finally {
             measured.push({
               name,
-              calls,
+              ...observation,
+              succeeded,
               phase,
               started_ms: attemptStarted - started,
               milliseconds: Date.now() - attemptStarted,
-              methods,
-              returned_d1_metadata: metadata,
             });
+            observer.end();
           }
         }
       },
     } as unknown as import("cloudflare:workers").WorkflowStep,
+    { callbacks: new Map(), created: [], observeMethod: observer.driverMethod, observeEvent: observer.driverEvent },
   );
   const elapsed = Date.now() - started;
   const phases = new Map<string, { callbacks: number; milliseconds: number; maximumCalls: number }>();
@@ -154,13 +97,14 @@ test("a 1001-Product native candidate stays within the D1/R2 callback budget", a
   }
   console.info(
     JSON.stringify({
-      contract: "card-keepr-local-reconciliation-callbacks@1",
+      contract: "card-keepr-local-reconciliation-callbacks@2",
       workload: "1001 synthetic Products; actual local D1/R2 and shipped reconciliation callbacks",
       limitation:
-        "Callback wall time, not CPU. Phase is returned continuation (or step name on failure), not an exact operation trace. Counts cover D1 execution methods and two R2 bindings only; the driver simulates Workflow control calls. D1 metadata is local emulator output, unavailable through first/raw and not provider billing or independent index-write accounting. No SQL, parameters or result rows are retained.",
+        "Callback wall time, not CPU. Phase is returned continuation (or step name on failure), not an exact operation trace. Counts are method entries, including D1 exec/session execution, two R2 bindings and nested multipart methods, plus simulated driver create/get/status/sendEvent. Batch statement totals are submitted, not executed counts. R2 size is returned object metadata, not consumed/transferred bytes. Workflow wait events and outside-callback calls are separate. D1 optional metadata is recorded only when returned; first/raw have no execution metadata. No provider billing, CPU, independent index-write accounting, SQL, keys, parameters, bodies or row values are retained. Deprecated D1 dump and unused Workflow administration/createBatch methods are excluded.",
       elapsed_ms: elapsed,
       phases: Object.fromEntries(phases),
       callbacks: measured,
+      outside_callbacks: observer.outsideCallbacks,
     }),
   );
   expect(elapsed, JSON.stringify(Object.fromEntries(phases))).toBeLessThan(15_000);
