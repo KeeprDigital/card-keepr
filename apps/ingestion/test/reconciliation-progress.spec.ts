@@ -1179,108 +1179,187 @@ test("a published catalogue larger than 1 MiB is streamed into the next candidat
   expect(cards).toEqual(first.document.cards);
 });
 
-test("a Product-group storage outage pauses and resumes typed relationships without losing observed Products", async () => {
-  const { testEnv, post } = await import("./reconciliation-helpers");
-  const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
-  const run = await collect("/reconciliation/product-typed-relationships", "product-group-outage");
-  const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
-  let unavailable = true;
-  let failures = 0;
-  const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement => {
-    const proxy = new Proxy(statement, {
+test.each(["uninterrupted", "before commit", "after commit"])(
+  "a Product-group storage outage pauses and resumes typed relationships without losing observed Products (%s)",
+  async (boundary) => {
+    const { testEnv, post } = await import("./reconciliation-helpers");
+    const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
+    const run = await collect("/reconciliation/product-typed-relationships", "product-group-outage");
+    const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
+    let unavailable = boundary !== "uninterrupted";
+    let failures = 0;
+    const committedEffects: { content: string; sha256: string }[] = [];
+    const checkpointPositions: number[] = [];
+    const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement => {
+      const proxy = new Proxy(statement, {
+        get(target, property) {
+          if (property === "bind") return (...bound: unknown[]) => wrap(target.bind(...bound), sql, bound);
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      statements.set(proxy, { sql, values });
+      return proxy;
+    };
+    const database = new Proxy(testEnv.CATALOGUE_DB, {
       get(target, property) {
-        if (property === "bind") return (...bound: unknown[]) => wrap(target.bind(...bound), sql, bound);
+        if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
+        if (property === "batch")
+          return async (batch: D1PreparedStatement[]) => {
+            if (
+              unavailable &&
+              batch.some((statement) => {
+                const entry = statements.get(statement);
+                return (
+                  entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
+                  entry.values.includes("product_observations_one-piece")
+                );
+              })
+            ) {
+              failures++;
+              if (boundary === "after commit") {
+                await target.batch(batch);
+                const entry = batch
+                  .map((statement) => statements.get(statement))
+                  .find(
+                    (entry) =>
+                      entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
+                      entry.values.includes("product_observations_one-piece"),
+                  )!;
+                const [preparation, namespace, key, ordinal, content, sha256] = entry.values;
+                const retained = await target
+                  .prepare(
+                    "SELECT content, sha256 FROM reconciliation_reducer_state WHERE preparation_id = ? AND namespace = ? AND key_digest = ? AND observation_ordinal = ?",
+                  )
+                  .bind(preparation, namespace, key, ordinal)
+                  .first<{ content: string; sha256: string }>();
+                expect(retained).toEqual({ content, sha256 });
+                committedEffects.push(retained!);
+                const checkpoint = await target
+                  .prepare(
+                    "SELECT content FROM reconciliation_checkpoints WHERE preparation_id = ? AND phase = ? ORDER BY ordinal DESC LIMIT 1",
+                  )
+                  .bind(preparation, "product_reduction:one-piece")
+                  .first<{ content: string }>();
+                const position = JSON.parse(checkpoint!.content).indexes.groups as number;
+                expect(position).toBeLessThan(Number(ordinal));
+                checkpointPositions.push(position);
+              }
+              throw new Error("Injected Product-group storage outage");
+            }
+            return target.batch(batch);
+          };
         const value = Reflect.get(target, property);
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-    statements.set(proxy, { sql, values });
-    return proxy;
-  };
-  const database = new Proxy(testEnv.CATALOGUE_DB, {
-    get(target, property) {
-      if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
-      if (property === "batch")
-        return (batch: D1PreparedStatement[]) => {
-          if (
-            unavailable &&
-            batch.some((statement) => {
-              const entry = statements.get(statement);
-              return (
-                entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
-                entry.values.includes("product_observations_one-piece")
-              );
-            })
-          ) {
-            failures++;
-            throw new Error("Injected Product-group storage outage");
+    const payload = {
+      ingestion_run_id: run.id,
+      expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
+      idempotency_key: "product-group-outage",
+      observed_at: new Date().toISOString(),
+      generation: 0,
+    };
+    const event = { payload } as import("cloudflare:workers").WorkflowEvent<
+      import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+    >;
+    const step = {
+      do: async (_name: string, _config: unknown, callback: () => Promise<string>) => {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            return await callback();
+          } catch (error) {
+            if (attempt === 3) throw error;
           }
-          return target.batch(batch);
-        };
-      const value = Reflect.get(target, property);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
-  const payload = {
-    ingestion_run_id: run.id,
-    expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
-    idempotency_key: "product-group-outage",
-    observed_at: new Date().toISOString(),
-    generation: 0,
-  };
-  const event = { payload } as import("cloudflare:workers").WorkflowEvent<
-    import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
-  >;
-  const step = {
-    do: async (_name: string, _config: unknown, callback: () => Promise<string>) => {
-      for (let attempt = 0; ; attempt++) {
-        try {
-          return await callback();
-        } catch (error) {
-          if (attempt === 3) throw error;
         }
-      }
-    },
-  } as unknown as import("cloudflare:workers").WorkflowStep;
-  await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
-  expect(failures).toBe(4);
-  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
-    state: "paused",
-    generation: 1,
-  });
-  expect(
-    (
-      await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+      },
+    } as unknown as import("cloudflare:workers").WorkflowStep;
+    await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
+    expect(failures).toBe(boundary === "uninterrupted" ? 0 : 4);
+    if (boundary === "after commit") {
+      expect(committedEffects).toHaveLength(4);
+      expect(committedEffects.every((effect) => JSON.stringify(effect) === JSON.stringify(committedEffects[0]))).toBe(
+        true,
+      );
+      expect(new Set(checkpointPositions).size).toBe(1);
+    }
+    if (boundary !== "uninterrupted") {
+      expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+        state: "paused",
         generation: 1,
-        idempotency_key: "resume-product-group",
-      })
-    ).response.status,
-  ).toBe(200);
-  unavailable = false;
-  await runReconciliationWorkflow(
-    { ...testEnv, CATALOGUE_DB: database },
-    { payload: { ...payload, generation: 1 } } as typeof event,
-    step,
-  );
-  const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
-  expect(status.document.state).toBe("sealed");
-  const candidateId = (status.document.candidates as { id: string }[])[0]!.id;
-  const page = await get(`/v1/game-candidates/${candidateId}/partitions`);
-  const products: Record<string, unknown>[] = [];
-  const relationships: Record<string, unknown>[] = [];
-  for (const partition of page.document.partitions as { kind: string; ordinal: number }[]) {
-    if (!["products", "product_relationships"].includes(partition.kind)) continue;
-    const detail = await get(`/v1/game-candidates/${candidateId}/partitions/${partition.ordinal}`);
-    (partition.kind === "products" ? products : relationships).push(
-      ...(detail.document.records as Record<string, unknown>[]),
+      });
+      expect(
+        (
+          await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
+            generation: 1,
+            idempotency_key: "resume-product-group",
+          })
+        ).response.status,
+      ).toBe(200);
+      unavailable = false;
+      await runReconciliationWorkflow(
+        { ...testEnv, CATALOGUE_DB: database },
+        { payload: { ...payload, generation: 1 } } as typeof event,
+        step,
+      );
+    }
+    const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+    expect(status.document.state).toBe("sealed");
+    const candidateId = (status.document.candidates as { id: string }[])[0]!.id;
+    const page = await get(`/v1/game-candidates/${candidateId}/partitions`);
+    const products: Record<string, unknown>[] = [];
+    const relationships: Record<string, unknown>[] = [];
+    for (const partition of page.document.partitions as { kind: string; ordinal: number }[]) {
+      if (!["products", "product_relationships"].includes(partition.kind)) continue;
+      const detail = await get(`/v1/game-candidates/${candidateId}/partitions/${partition.ordinal}`);
+      (partition.kind === "products" ? products : relationships).push(
+        ...(detail.document.records as Record<string, unknown>[]),
+      );
+    }
+    expect(products).toHaveLength(2);
+    expect(products.every(({ observed }) => observed === true)).toBe(true);
+    expect(relationships.map(({ kind }) => kind)).toEqual(
+      expect.arrayContaining(["printing-product", "product-card", "distribution-context-product"]),
     );
-  }
-  expect(products).toHaveLength(2);
-  expect(products.every(({ observed }) => observed === true)).toBe(true);
-  expect(relationships.map(({ kind }) => kind)).toEqual(
-    expect.arrayContaining(["printing-product", "product-card", "distribution-context-product"]),
-  );
-});
+    const sealedRecords = await nativeCandidateRecords(candidateId);
+    await runReconciliationWorkflow(
+      { ...testEnv, CATALOGUE_DB: database },
+      { payload: { ...payload, generation: boundary === "uninterrupted" ? 0 : 1 } } as typeof event,
+      step,
+    );
+    expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toEqual(status.document);
+    expect(await nativeCandidateRecords(candidateId)).toEqual(sealedRecords);
+    expect(
+      products
+        .map(({ name, official_code }) => ({ name, official_code }))
+        .sort((a, b) => String(a.name).localeCompare(String(b.name))),
+    ).toEqual([
+      { name: "CODE-X", official_code: null },
+      { name: "Official Code Product", official_code: "CODE-X" },
+    ]);
+    expect(relationships.map(({ kind }) => kind).sort()).toEqual([
+      "distribution-context-product",
+      "printing-distribution-context",
+      "printing-product",
+      "product-card",
+    ]);
+    expect(new Set(relationships.map(({ id }) => id)).size).toBe(4);
+    const codeProduct = products.find(({ official_code }) => official_code === "CODE-X")!;
+    const namedProduct = products.find(({ official_code }) => official_code === null)!;
+    expect(relationships.find(({ kind }) => kind === "printing-product")?.to).toEqual({
+      type: "product",
+      id: codeProduct.id,
+    });
+    expect(relationships.find(({ kind }) => kind === "distribution-context-product")?.to).toEqual({
+      type: "product",
+      id: codeProduct.id,
+    });
+    expect(relationships.find(({ kind }) => kind === "product-card")?.from).toEqual({
+      type: "product",
+      id: namedProduct.id,
+    });
+  },
+);
 
 test("one Product evidence group's capacity budget includes partitioned source text", async () => {
   const run = await collect("/reconciliation/product-group-large-text", "product-group-large-text");
