@@ -296,7 +296,7 @@ artifact hashes and metric totals.
 | Domain suite | 234 tests / 42 files passed, 3.68 s |
 | API suite, `npm run test:workers:api -- --maxWorkers=2` | 95 tests / 13 files passed, 12.09 s |
 | Ingestion suite, `npm run test:workers:ingestion -- --maxWorkers=2` | 707 tests / 83 files passed, 572.00 s |
-| Remaining acceptance (63 files, serial split described below) | 34 earlier passes + 37 corrected handoff cases + 250 resumed cases = 321 passing tests |
+| Remaining acceptance (63 files, serial split described below) | 53 earlier passes + 37 corrected handoff cases + 250 resumed cases = 340 passing tests (including subtests) |
 | Five-game recovery | Host preflight blocked before execution; no final-head pass |
 | TypeScript, generated Worker types and document validators | Passed |
 | Catalogue cycles and module boundary | Passed |
@@ -348,8 +348,8 @@ and Riftbound commands were not rerun for this unrelated test-fixture change.
 
 
 The 44-file resumed run passed all 250 tests in 488.415 s at `847f6cb`.
-The completed 18-file prefix contains 34 passing tests; with the corrected
-37-test handoff file, these cover the intended 63 files with 321 passing tests
+The completed 18-file prefix contains 53 passing tests (34 top-level cases and 19 subtests); with the corrected
+37-test handoff file, these cover the intended 63 files with 340 passing tests
 across the recorded runs. This is not a claim that the original interrupted
 command passed. No code changed after the handoff fixture correction.
 
@@ -366,3 +366,11 @@ Each list was passed to `node --test --test-concurrency=1`; the handoff file use
 that same serial command independently. Full local logs and SHA-256 hashes are
 indexed by the artifact manifest, including the initial failure, isolated red
 case, inspected gate inputs, fixed case, and complete affected-file result.
+
+
+A final bounded inventory found no single disposable copy larger than 100 MB
+owned by this task: successful native campaigns had cleaned their own state,
+`.wrangler` was 24 KiB, and remaining successful test directories were each about
+7–14 MB. No historical evidence or unrelated application files were deleted to
+chase a preflight pass. The final review corrected the prefix count to include
+its 19 subtests consistently with Node's later run summaries.
