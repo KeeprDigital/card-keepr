@@ -740,3 +740,13 @@ node test/support/canonical-encoding-probe.mjs direct input.json direct.json
 Use the fixed source body/digest identified above to reproduce the recorded
 comparison. The artifact manifest retains the actual input hash and the frozen
 measurement files; the benchmark does not create a substitute capacity tier.
+
+Final prototype lint checking initially flagged the deliberately sparse array
+literal in the equivalence test. The fixture now constructs the same hole
+explicitly; the four tests pass again (124 ms) and lint passes with three
+informational style notices. This changes neither the encoder nor its measured
+results. The most direct remaining local fault extension is the corresponding
+committed-response loss for the `product_contexts_one-piece` reducer index before
+its `contexts` cursor advances, using the existing small typed-relationship fixture
+and exact-target/replay assertions. That extension has not been executed here.
+It is independent of the unresolved memory diagnosis and external tier capacity.

@@ -629,6 +629,21 @@
       "retained_local_log": "/tmp/issue-233-product-commit-format.log",
       "bytes": 42,
       "sha256": "902110c427d5751c7be69e95ab3d12cfb3c5a1b830e2d530705d1b67d67245e6"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-prototype-node-import.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-prototype-lint-corrected.log",
+      "bytes": 2454,
+      "sha256": "8ab8ea8ee209dc8db74004198df42861d73aba99c749a7d1ac1542da5fd0a8fc"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-prototype-tests-corrected.log",
+      "bytes": 229,
+      "sha256": "51a15895268dca3ddf95a6e63345ce6f6c5ba99199d47a562bcaf30e151650b6"
     }
   ],
   "riftbound_frozen_commit": "2cdb4592",
@@ -648,5 +663,6 @@
   "debugger_trace_removal_commit": "d889ece",
   "canonical_encoder_initial_probe_commit": "e8c90ae",
   "canonical_encoder_sink_probe_commit": "36e0a79",
-  "canonical_encoder_test_support_commit": "c497389"
+  "canonical_encoder_test_support_commit": "c497389",
+  "prototype_sparse_fixture_fix_commit": "08a136f"
 }
