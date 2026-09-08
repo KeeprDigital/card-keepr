@@ -799,3 +799,113 @@ another series now. Each future batch should state its complete parameter set an
 oracle before execution, then run selected cases and the affected file once.
 No memory, transport, encoder, real-source or full-tier campaign accompanies this
 extension. The original 15 s / 64 MiB targets and unresolved acceptance gaps remain.
+
+## Finite Product write-boundary batch
+
+The coordinator approved the enumerated batch before editing: **13 new cases**,
+all using small local fixtures, with no additional fault families. Initial code
+is frozen at `1ee4fd8`; the reviewed oracle correction is frozen at `f3be533`,
+and the final per-case identity correction is frozen at `3e3ab4d`. Twelve extend the existing typed-relationship Workflow test; the
+thirteenth is a direct Product reducer tombstone test. Existing/new result sets
+are separate because fresh insertion and merging prior history take distinct
+branches. Prior-state cases first publish the same two-Product, one-Context,
+four-relationship fixture and compare resumed IDs against its published export.
+
+| Previously prioritized boundary | New cases | Oracle and result established by selected run |
+| --- | ---: | --- |
+| Input relationship index | 1 | Four exact committed payload/digest readbacks before `indexes.relationships`, then exact unique typed output and sealed replay |
+| Prior Product names and codes | 2 | Lost response after each index write; names failure precedes codes, codes failure sees a retained names effect with both checkpoint positions still zero; stable published IDs after resume |
+| Prior Context and relationship indexes | 2 | Exact retained effect with its index cursor behind, then stable published IDs and exact observed output |
+| Existing/new Product, Context and relationship result sets | 6 | Stage-specific injection; exact effect before its `result` cursor, then unique output and sealed replay |
+| Curated relationship deletion | 1 | Direct reducer D1 `first()` response loss retains the exact same tombstone on four attempts; result cursor remains behind; resumed and completed reducer replay retain exactly the four official relationships |
+| Product checkpoint response loss | 1 | One committed checkpoint advances the relationship cursor; retry reads that exact ordinal/content/digest and seals without owner pause; complete sealed replay is unchanged |
+
+The direct deletion fixture starts with the existing synthetic typed source,
+converted by `reconcileProductReleaseCatalogue` into canonical domain records.
+It adds an absent Product-to-Card edge through the real curated proposal API and
+`applyPinnedCuratedRevisions`, verifies its owner provenance, and seeds that valid
+prior state into the Product reducer with no current evidence. It does not forge
+an Official Source observation carrying curated authority. The reducer's deletion
+branch is exercised directly. Upstream prior-state handling strips curated effects,
+so this is **not evidence that the branch is reached through the current Workflow**,
+nor a sealed-candidate/publication or end-to-end claim. Its replay oracle is the
+completed reducer output. The other twelve additions use the Workflow seam and
+preserve complete sealed candidate records.
+
+The initial pre-review selected batch passes **17/17**, with 42 skipped, in **48.34 s** test time
+(**50.15 s** harness). This includes the four previously established cases and
+all thirteen additions. Initial ingestion test type checking, lint and formatting
+pass. Before the initial freeze, an unused import accidentally added to an
+unrelated test block was removed. No assertion changed between that selected run
+and `1ee4fd8`; the later review correction below changes the oracle and requires
+new validation. Historical measurements remain separate.
+
+Initial selected/diagnostic runs exposed test harness assumptions, not demonstrated
+production defects. The reconciliation response did not contain the prior arrays;
+legacy preparation was not discoverable using the native-candidate listing helper;
+export Product records were not canonical reducer records with nested Releases;
+the direct unguarded store executes `first()` rather than the Workflow's guarded
+batch; and the canonical Product helper returns snake-case collection names.
+These failures, the corrected one-case/two-case diagnostic runs, an intermediate
+typecheck failure, and the initial unused-import lint warning are retained with
+hashes. The final fixture uses published exports only for prior ID comparison and
+canonical reducer output for domain seeding. No production change was required.
+
+This batch closes the five prioritized groups in the preceding finite matrix at
+the stated fixture/seam granularity. It does not establish all possible payloads,
+multi-observation aggregation, unobserved/history transitions, post-commit faults
+in other phase families, cost ceilings, or full capacity acceptance. Context
+pre-commit rejection and the previously separate source/normalization/Erratum/
+curated ambiguity families remain outside this batch. No memory, transport,
+encoder, real-source or full-tier runs were added, and the original 15 s / 64 MiB
+targets remain unchanged.
+
+Spec review found a test-oracle weakness at `1ee4fd8`: cursor assertions inside
+the direct D1 fault hook could be wrapped as the expected storage error. The
+correction records all four cursor observations and asserts stage/lag outside the
+expected rejection. The shared Workflow cases also require four cursor records,
+appended only after counterpart-index checks succeed, so those checks cannot be
+swallowed either. The in-flight full-file run at `1ee4fd8` was intentionally
+stopped (exit 130) for this correction; it is not a full-file pass or an application
+failure. Selected and complete-file validation below use the corrected oracle.
+
+The corrected selected run passes **17/17**, with 42 skipped, at `f3be533`: **50.50 s**
+tests and **52.77 s** harness. Corrected ingestion test type checking, lint and
+formatting pass. Spec review confirms its finding is resolved.
+
+The complete run at `f3be533` **failed** after 39 passing cases: the checkpoint
+case raised `Immutable evidence object key collision` during source collection,
+before reaching its fault hook. With `--bail=1`, the other 19 cases did not run.
+Elapsed time was 124.50 s tests / 126.62 s harness. The checkpoint case then passes
+alone (937 ms tests, 3.13 s harness). These results do not establish a checkpoint
+recovery defect or a successful complete file.
+
+The expanded parameter set reused the same seed/collection idempotency keys;
+`startEvidenceRun` derives run identity from that key. The next fixture correction
+gives each parameter case distinct deterministic seed, collection and resume keys.
+This removes shared identity between cases without altering fault semantics. It
+is a bounded test-isolation improvement, not proof of the collision's root cause.
+No production source change is justified by this observation. The failed full run
+and isolated diagnosis remain retained separately from subsequent validation.
+
+At `3e3ab4d`, the final per-case identity fixture passes **17/17 selected**
+(42 skipped), in **50.47 s** tests / **52.71 s** harness. Type checking, lint and
+formatting pass. Repeated delivery within each case preserves its idempotency key
+and all exact effect/cursor/replay assertions.
+
+The final complete file at `3e3ab4d` finishes with **58 passed, 1 failed**
+(**305.12 s** tests / **307.11 s** harness). All thirteen additions pass, including
+the checkpoint case, and the immutable source-object collision does not recur.
+The final pre-existing test, `admission selection is frozen without an unbounded
+operation-start write`, times out at its unchanged **30,000 ms** limit. This test
+creates 128 entity proposals before checking bounded admission pinning. There is
+no 59/59 full-file pass. A single isolated run of that exact existing test is the
+next bounded diagnosis; no timeout increase or another full-file run is included.
+The lack of a repeated collision does not prove its root cause.
+
+The isolated admission test passes **1/1**, with 58 skipped, in **1.68 s** tests /
+**3.75 s** harness under the unchanged timeout. This narrows the symptom to the
+combined-run context but does not establish why it timed out there. The report
+records **58 full-run passes plus one isolated pass**, never a 59/59 complete-file
+pass. All planned new fault cases are verified; suite-wide timing/isolation,
+capacity, memory and accounting limitations remain open.

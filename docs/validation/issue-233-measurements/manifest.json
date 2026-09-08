@@ -26,7 +26,8 @@
     "ALL phase attribution in3bfc2e6debuggertrace is invalid: workerd reported mismatched breakpoint IDs. Tiny exact-location calibration still missesoneof4boundaries. No allocation cause inferred; experimental tracer removedd889ece. Paused19319ms failsunchanged15sguardbutdoesnotprovenormal-runregression.",
     "dac124b Productreducerfaultfollowup3/3selectedpassed;45testsnowinfile,42skippedinthisrun. Earlier43-testwholefilepasspredatesit. Isolateduninterruptedcaseassertssameexactsemanticexpectations,notcrossrunbyteequality.",
     "CanonicalUTF8prototype remains test-support-only. Nodeequivalencepasses,butrefined54.161ms/88.17MBsampledalloc exceedslegacy34.311ms/83.09MB. Lowerpostcallheapnotpeakproof;productionserializerandparseunchanged,noadditionalnativecampaign.",
-    "12daafa Context reducer extension: selected 4/4 with 42 skipped, then complete affected file 46/46 passed. This is bounded fault evidence, not exhaustive durable-phase coverage. Typecheck/lint/format pass; broader Biome check flags existing import ordering."
+    "12daafa Context reducer extension: selected 4/4 with 42 skipped, then complete affected file 46/46 passed. This is bounded fault evidence, not exhaustive durable-phase coverage. Typecheck/lint/format pass; broader Biome check flags existing import ordering.",
+    "Finite13newfaultcases: final3e3ab4d selected17/17passed50.47s; completefile58passed1admissiontimeout305.12s; isolatedadmission1/1passed1.68s unchanged30stimeout. NOT59/59fullpass. Earlierf3be533full39pass1preinjectionimmutablecollision19unexecuted retained; isolatedcheckpointpassed, per-caseidentityaliasremoved butrootcauseunproven. Initialfull1ee4fd8interruptedexit130forreview-oraclefix. Tombstoneisdirectvalidcuratedreducerseam,notWorkflowreachabilityproof."
   ],
   "files": [
     {
@@ -675,6 +676,141 @@
       "retained_local_log": "/tmp/issue-233-context-format.log",
       "bytes": 42,
       "sha256": "fccbba1da35e39ef217935089a5877ff9da111fc45e2faa0e5e032eda934d1be"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-admission-isolated.log",
+      "bytes": 292,
+      "sha256": "71f121680b9718a5d28aee34380b66a15e94a959a2c067bc191284e661de6881"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-checkpoint-isolated.log",
+      "bytes": 292,
+      "sha256": "7a12aba25303964f4590d9b90571524e3ea7f71a752da1544b9d64efb3604089"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-fixture-diagnosis.log",
+      "bytes": 106806,
+      "sha256": "d9a72fb44bdd62495dfeb187962c18c1564bfc9a31320a0f53b8e6dcdc7c859d"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-format-final.log",
+      "bytes": 42,
+      "sha256": "ab421f8bb0b2e91b278dde5daac285417d6a52d157dd09bbc597811eb3f2211b"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-format.log",
+      "bytes": 42,
+      "sha256": "80957279f04fef408a47b3355e65c6432c31e1991bb84e3d5a77c297e9d7ab39"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-full.log",
+      "bytes": 11558,
+      "sha256": "0f676537b9d1795c5d09ef0b45e0bd1db8508446fb69dd47542b265fe07796c3"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-isolated-format.log",
+      "bytes": 42,
+      "sha256": "eca03899430ba94edd9dc52b65db14f47bcfd382adc492afd58bc1b81e86df14"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-isolated-full.log",
+      "bytes": 61166,
+      "sha256": "0989300c10b7e9bb76f6041777159b9766817939603c36402f88ce5a4d61b01b"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-isolated-lint.log",
+      "bytes": 42,
+      "sha256": "175770efbe58a4f8c7d7f8184e669486443abeb49e51e62cb4aa61fa2f89fa3d"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-isolated-selected.log",
+      "bytes": 295,
+      "sha256": "d06b91be760c32e01e57bee348b6ee8496e723bba57f34aae8e1e02b40c41ec8"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-isolated-typecheck.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-lint-final.log",
+      "bytes": 42,
+      "sha256": "ece3897e7855a7596b64279dea8bd8f8eefd2af1af361b9179ca22460aefa17f"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-lint.log",
+      "bytes": 820,
+      "sha256": "70dafa62974379a981fb08bd1d942eb85c3eba4fd4e5d8df004e61792d658585"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-prior-diagnosis.log",
+      "bytes": 240110,
+      "sha256": "543e3c37b911cdddb23e257fba7398bf0f7fe24706ccc1f8f760d77eb831f293"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-reviewed-format.log",
+      "bytes": 42,
+      "sha256": "b28e5367769f8689ab72b4e526690612baebed97c0fbfcbffc27aaef841842cd"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-reviewed-full.log",
+      "bytes": 13403,
+      "sha256": "dbd078642f3e7da9aa9edd1966f36420bc91d65ef175de6a027b0434d34b9fe0"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-reviewed-lint.log",
+      "bytes": 42,
+      "sha256": "0793a60e17b3799a0b5b0f184099c8572e8b3d137f772f89c324c4ce8c57b5bf"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-reviewed-selected.log",
+      "bytes": 295,
+      "sha256": "1d8df1b1f787f7f2386362d4a462b316740abef63ba39f7aafd94b95b45bda11"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-reviewed-typecheck.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-selected-final.log",
+      "bytes": 295,
+      "sha256": "36be796c98c80e2f5293dcc844e2137199cc956b009089526c57126b138e06bc"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-selected.log",
+      "bytes": 243671,
+      "sha256": "4688259d6ecc9af033b38644be922a8b73f02846610fca8aede8e6c735e2e1db"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-tombstone-diagnosis.log",
+      "bytes": 118344,
+      "sha256": "1a9fd6d533dd67a0ea7707ae4367d8a50859e416ee5ef70e4c75a165671f416c"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-tombstone-final.log",
+      "bytes": 292,
+      "sha256": "eb3e2ca42a1f4149b7d3b3830389b62ae49c00bd190cce35384866ee85fa7fa5"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-tombstone-first.log",
+      "bytes": 105926,
+      "sha256": "9f106c4c5f696f42ac4b83515a402ee3153bd27999dcef7166649dc164465f90"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-typecheck-diagnosis.log",
+      "bytes": 761,
+      "sha256": "9292e1d3cd4cbaeb31d84f2a436fd0a509f24232319383912ca0945fe26fe324"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-typecheck-final.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-matrix-typecheck.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
   "riftbound_frozen_commit": "2cdb4592",
@@ -696,5 +832,8 @@
   "canonical_encoder_sink_probe_commit": "36e0a79",
   "canonical_encoder_test_support_commit": "c497389",
   "prototype_sparse_fixture_fix_commit": "08a136f",
-  "context_reducer_committed_response_commit": "12daafa"
+  "context_reducer_committed_response_commit": "12daafa",
+  "finite_product_fault_batch_commit": "1ee4fd8",
+  "finite_product_fault_oracle_correction_commit": "f3be533",
+  "finite_product_fault_identity_correction_commit": "3e3ab4d"
 }
