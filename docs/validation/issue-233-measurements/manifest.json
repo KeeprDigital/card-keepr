@@ -14,15 +14,53 @@
     "Riftbound generic response_deliveries_including_faults counts successful body deliveries; injected_missing_images separately counts 404s.",
     "Copied JSON is whitespace-normalized with Biome; original local source hashes are recorded separately.",
     "The initial 63-file command was interrupted on a stale handoff fixture; 18 files completed, the corrected 37-test file passed independently, and 44 pending files passed in the resumed run.",
-    "Five-game recovery did not execute at final head because the unchanged 6 GiB preflight rejected available disk space."
+    "Five-game recovery did not execute at final head because the unchanged 6 GiB preflight rejected available disk space.",
+    "Follow-up callback counters describe 1001 synthetic Products at a direct Workflow driver seam; D1 first has no returned execution metadata and control-plane calls are simulated.",
+    "The final repeated native validation probe samples every 100 ms and does not reproduce the earlier large-workload memory failure; it is not full-candidate capacity.",
+    "Operational timeline records observer receipt times, not exact isolate execution boundaries; earlier full campaigns do not acquire it retroactively."
   ],
   "files": [
+    {
+      "file": "issue-233-callback-census-final.json",
+      "bytes": 824761,
+      "sha256": "265fa414eb5a594736b3e066f9f8ac3e028c95270d0713a972afddeddd05f870",
+      "original_local_source": "/tmp/issue-233-callback-census-final.json",
+      "original_source_sha256": "265fa414eb5a594736b3e066f9f8ac3e028c95270d0713a972afddeddd05f870"
+    },
+    {
+      "file": "issue-233-curated-probe-isolate-1.json",
+      "bytes": 7330,
+      "sha256": "d4abb44fd4aeb567c00bac619532ee2473ffff5e8faaef4829653abeabe7e4d8",
+      "original_local_source": "/tmp/issue-233-curated-probe-isolate-1.json",
+      "original_source_sha256": "d4abb44fd4aeb567c00bac619532ee2473ffff5e8faaef4829653abeabe7e4d8"
+    },
+    {
+      "file": "issue-233-curated-probe-isolate-2.json",
+      "bytes": 10453,
+      "sha256": "e3ca8b0eac309ac7f0a8f6d063a3ff9f2502c4a309b3dfeff16fd027be9a1a98",
+      "original_local_source": "/tmp/issue-233-curated-probe-isolate-2.json",
+      "original_source_sha256": "e3ca8b0eac309ac7f0a8f6d063a3ff9f2502c4a309b3dfeff16fd027be9a1a98"
+    },
     {
       "file": "issue-233-executed-acceptance-files.json",
       "bytes": 2982,
       "sha256": "79fe698a9bb542fb6b66d4659632978948e0b05ad8070c8ef33d49d7199a60ce",
       "original_local_source": "/tmp/issue-233-executed-acceptance-files.json",
       "original_source_sha256": "79fe698a9bb542fb6b66d4659632978948e0b05ad8070c8ef33d49d7199a60ce"
+    },
+    {
+      "file": "issue-233-native-curated-repeat-final.json",
+      "bytes": 6750,
+      "sha256": "d7ac4c7fc06c10440c69d77a2a7c99055dafdb6a09a76cabd52ee5e153eae941",
+      "original_local_source": "/tmp/issue-233-native-curated-repeat-final.json",
+      "original_source_sha256": "d7ac4c7fc06c10440c69d77a2a7c99055dafdb6a09a76cabd52ee5e153eae941"
+    },
+    {
+      "file": "issue-233-native-curated-repeat-final.json.phases.json",
+      "bytes": 1570,
+      "sha256": "8ead857506a66f5bfdc1d1df6e1755d3739673178d84aa86a3789a6e789f6ffc",
+      "original_local_source": "/tmp/issue-233-native-curated-repeat-final.json.phases.json",
+      "original_source_sha256": "8ead857506a66f5bfdc1d1df6e1755d3739673178d84aa86a3789a6e789f6ffc"
     },
     {
       "file": "issue-233-p001-isolate-1.json",
@@ -213,9 +251,97 @@
       "retained_local_log": "/tmp/issue-233-final-changed-format.log",
       "bytes": 45,
       "sha256": "e0d8f5f4d56a1b7135a17a4518944a27ff681f49fa25e29156a26119f422741d"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-callback-census.log",
+      "bytes": 1356749,
+      "sha256": "dff93d8172159edaf540f726c9c10681c8987403d5653f7a0d6a6ac3f296da95"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-callback-census-final.log",
+      "bytes": 1356632,
+      "sha256": "a595ee13df15b1405d21b523568c9f18ca12d2e2c4c3d714ca245fc83a3c102b"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-callback-typecheck-final.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-timeline-tests.log",
+      "bytes": 517,
+      "sha256": "0089656e9b30a8ab33636f28bc16ccead5b59fa5f6f00361c20d40c7a9e5e837"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-timeline-tests-final.log",
+      "bytes": 517,
+      "sha256": "014d2831c77763c34779de168af8f7138733170986ed23e1403bb4ba477cec92"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-curated-probe.log",
+      "bytes": 217,
+      "sha256": "239c45927d7fb08f86153c5118e47f9db667aaf0b5e5b3d81922f9836410b228"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-native-curated-repeat.log",
+      "bytes": 351,
+      "sha256": "74a53f817abacfb19190c19b092a36476139649f4c697e7a7e5539e9d92889d8"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-native-curated-repeat.json",
+      "bytes": 2558,
+      "sha256": "f37b9f839cb2ee7e36462e9baf731e09c3c434c1f3cc7616497e1ba3947bf42b"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-native-curated-repeat.json.phases.json",
+      "bytes": 1563,
+      "sha256": "4b8c41f852bdcdb33ecb1791e04fe827c58aecc94acf7a4d5881de1f81772779"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-native-curated-repeat-dense.log",
+      "bytes": 357,
+      "sha256": "a33027df9fde2ba94c37e59f921f206eccabd957b6df7614f328bb31a2e55ec8"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-native-curated-repeat-dense.json",
+      "bytes": 6580,
+      "sha256": "63a9b78619f06b5b8da9b1b257eed7df5718b08ef090b15f229d28e16bb8b7b5"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-native-curated-repeat-dense.json.phases.json",
+      "bytes": 1567,
+      "sha256": "914c04777a72ceab7a32e5be66f49cc07a4b92d78ee81459c3b0a0dd66532fcd"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-native-curated-repeat-final.log",
+      "bytes": 357,
+      "sha256": "77c9ff11eeec55dab8b325f40526d2fedaf5c33311810a2f6d87f2261e3c1d62"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-bounded-tests-final.log",
+      "bytes": 637,
+      "sha256": "c316acda9f39e43c2046f34d203c2574d34d0b728e95eaa5bd06e19eeac58be2"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-bounded-lint.log",
+      "bytes": 3558,
+      "sha256": "e8b55193856240209e4796956a9bc92ef5425bc4386b13c4678aeaa3fe0b3ac0"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-metrics-last.log",
+      "bytes": 515,
+      "sha256": "7047c29db57b6d74049f3ddf0e72d74e7fbdced168a42a5567dbeba91aff4c75"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-bounded-evidence-format.log",
+      "bytes": 46,
+      "sha256": "5a6cb8f647b8d21ee1327c9f6e35cc55b7ac01c35980f9ba027e073f24fc4d70"
     }
   ],
   "riftbound_frozen_commit": "2cdb4592",
   "handoff_fixture_fix_commit": "847f6cb",
-  "final_runtime_implementation_commit": "2cdb459"
+  "final_runtime_implementation_commit": "2cdb459",
+  "bounded_callback_commit": "02f82bd",
+  "curated_cli_probe_commit": "f733f07",
+  "native_curated_repeated_probe_commit": "80587b3"
 }

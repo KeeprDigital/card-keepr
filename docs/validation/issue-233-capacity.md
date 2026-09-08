@@ -374,3 +374,126 @@ owned by this task: successful native campaigns had cleaned their own state,
 7–14 MB. No historical evidence or unrelated application files were deleted to
 chase a preflight pass. The final review corrected the prefix count to include
 its 19 subtests consistently with Node's later run summaries.
+
+
+## Bounded follow-up diagnostics
+
+PR readiness did not end locally available measurement work. At `02f82bd`, the
+existing 1,001-Product native reconciliation case now retains its per-callback
+method counts, returned D1 metadata, relative start, wall duration and returned
+continuation phase. It passed in 14.71 s including setup; the measured
+reconciliation remained within the unchanged 15-second assertion at **11,904 ms**.
+All 1,295 callbacks remained within the unchanged 100-call assertion, maximum 78.
+The earlier instrumented observation at `37f19db` also passed (12,106 ms).
+
+```sh
+KEEPR_TEST_SUITE=stress npx vitest run --config apps/ingestion/vitest.config.ts \
+  --maxWorkers=1 --silent=false --reporter=verbose \
+  apps/ingestion/test/game-reconciliation-scale.stress.spec.ts
+```
+
+| Observed local callback dimension | Final value / scope |
+| --- | --- |
+| D1 `first` calls | 15,364; result rows have no execution metadata |
+| D1 `batch` / `all` calls | 18,207 / 425 |
+| Evidence R2 `get` calls | 135 |
+| Total classified D1/R2 calls | 34,131, excluding simulated Workflow control calls |
+| Returned D1 metadata records | 49,656 across result-bearing `batch` / `all` calls |
+| Returned rows read / written / changes | 310,059 / 61,641 / 18,128 |
+| Sum of returned D1 duration | 1,238 ms, local emulator query-duration metadata |
+
+The [D1 return-object contract](https://developers.cloudflare.com/d1/worker-api/return-object/)
+provides execution metadata for result-bearing calls. The observer never replaces
+`first()` with `all()`, adds queries, captures SQL/results, or alters a production
+binding. Counts of metadata records and binding calls differ because one batch
+returns multiple statement results. Local metadata is not account billing,
+independent index-write attribution, or complete pipeline write amplification.
+The driver simulates Workflow control-plane calls; this is a targeted callback
+measurement, not the complete real-source request census. Phase labels describe
+the returned continuation (or the step name), not an exact instruction trace;
+wall duration is not CPU. The raw per-callback report preserves those limits.
+
+At `f733f07`, a bounded 4,096-event ring adds operational-log receipt times beside
+isolate samples. It records selected route/step/status/duration fields only,
+reports dropped events and malformed/oversized lines, and explicitly uses the
+Node observer clock. Stdio buffering can delay receipt; these are not isolate
+execution boundaries. A review correction at `ddf17a0` discards oversized lines
+through their terminating newline across chunks. Four focused tests pass,
+including actual workerd heap/allocation/timeline calibration and the split-line
+regression. This synthetic allocation calibration is not a reproduction of the
+application's observed memory failure.
+
+```sh
+KEEPR_CAPACITY_OUTPUT_PREFIX=/tmp/issue-233-curated-probe \
+  node --test --test-concurrency=1 acceptance/curated-revision-source-changes.test.mjs
+```
+
+That small actual CLI/Worker source-conflict probe passed in 8.010 s at `f733f07`.
+Its two runtime profiles retained 4 and 9 route observations, no measurement
+errors, and ingestion used-heap sample maxima of 16,748,480 and 17,515,160 bytes.
+Only two heap samples per isolate were taken because the profiled portions were
+short. The probe exercises creation/reaffirmation and source-conflict handling;
+it does not reproduce the large Riftbound reconciliation/publication workload,
+identify its cause, or rule out transient peaks. The failed 64 MiB observations
+remain failures. Earlier full campaigns do not acquire this timeline retroactively.
+
+## Remaining acceptance work by dependency
+
+| Requirement | Current proof | Remaining work and dependency |
+| --- | --- | --- |
+| Full 5 / 50 GiB synthetic tiers | Exact generators and zero-capture admission outcomes | External local-volume capacity: tier 1 needs over 11.7 GiB before database/staging/export/restore. Larger storage enables execution; it does not guarantee passing application capacity. |
+| Five-game final-head journey | Historical proof; current preflight blocks | Host must satisfy the unchanged 6 GiB floor. No final-head pass is claimed. |
+| Memory target / cause | Actual exceedances plus sampled allocation stacks; small conflict probe does not reproduce them | Still locally diagnosable, not a disk-only blocker. A small reproducer retaining the load-bearing reconciliation/publication state is not yet established. The new timeline supports phase selection in an approved targeted probe; sparse negative samples are insufficient. |
+| Complete calls and D1/write attribution | Complete reported counters for the selected D1/R2 callback seam; local metadata for result-bearing methods | Locally implementable broader binding observation remains for collection, preparation, publication, backup and opaque D1 methods. Exact index effects need controlled query/result comparisons; existing counters do not establish them. |
+| Per-unit CPU / continuous working-set peak | Local sampled attribution, callback wall time, sampled V8 and backing metrics | Local phase correlation can improve sample attribution, but cannot create exact billed CPU or a continuous peak from missing samples. Provider accounting would require separately authorized provider observations, not a larger disk or a budget waiver. |
+| Cost/completion targets | Local wall/occupancy and selected dimensions recorded | Depends on complete representative workload/call/write/CPU evidence and an explicit operating workload; deriving a ceiling now would invent missing measurements. |
+| Durable fault matrix | Exact mapped cases below and in the earlier index passed in the full 707-test ingestion suite | The tested named boundaries are established; an exhaustive injection at every durable write within every reconciliation phase has not been demonstrated. That audit/probe work is locally implementable and is not replaced by a green test-family name. |
+
+The fault audit maps the accepted categories to concrete boundaries rather than
+claiming an unqualified exhaustive proof. In addition to the earlier index:
+
+| Accepted category / exact boundary | Executable evidence and current limit |
+| --- | --- |
+| High-degree entity / image or identity fanout | `game-reconciliation-operations.spec.ts`: “a game preparation reports terminal %s failure without failing its collection”, with `capacity-high-degree-observation`, `capacity-printing-image-fanout`, `capacity-card-identity-fanout`. These prove explicit guard failure, not usable high-degree capacity. |
+| Successor initialization, dispatch and lost work result | `reconciliation-shards.spec.ts`: “a successor initialization outage exhausts bounded retries and returns the paused operation to its root”; “lost dispatch and work outputs preserve one chain within the shard attempt allowance (attempts=%s)”, attempts 1 and 4; “a Workflow restart preserves reservations made before a lost work result”. These are specific reservation/dispatch boundaries, not every reduction phase. |
+| Source-read and verified-batch resume | `reconciliation-progress.spec.ts`: “verified source documents survive a later read outage and resume without rereading completed documents”; “interrupted preparation resumes verified batches before sealing for review”. These exercise retained verified work and resumed batches; they do not enumerate every durable reduction write. |
+| Projection/composition partial write and lost success | `publication-preparation.spec.ts`: “%s recovers partial staging and a lost transaction response”, both `projections` and `composition`. Distinct from corruption cases and source upload faults in the earlier index. |
+| Inspection content and summary corruption | `publication-preparation.spec.ts`: “publication preparation verifies retained %s metadata as part of the whole manifest”, both `inspection` and `inspection_summary`; asserts `publication_partition_corrupt` before readiness. |
+| Approval and backup-wait expiry | The complete `game-publication.spec.ts` contention and backup-wait expiry cases pass; exact deadline and late resume were added without manufacturing a verified checkpoint. Actual restore proof remains the separate native journeys. |
+| Cleanup race / terminal age / multipart and old incarnation | Exact cases in the earlier `evidence-cleanup.spec.ts` index passed with the full ingestion suite; this covers those injected boundaries, not every possible process instruction between them. |
+| Release/cutover durable phases | The corrected 37-case handoff file covers 12 ambiguous phase writes, 10 correction interruptions, cancellation/retirement/activation outcomes. This is two local SQL databases and simulated provider actions; live cutover and exact-SHA release evidence remain outside this local campaign. |
+
+No new production safeguard, limit, live resource, or account-billing assertion
+was introduced by these bounded diagnostics. The draft remains partial while the
+locally diagnosable gaps above remain explicitly open.
+
+
+A more targeted minimization probe at `80587b3` repeats the shipped native
+`validateCuratedRevision` boundary 1,000 times against the same retained Riftbound
+Printing fixture. It preserves and asserts the initial 64 MiB sampled-heap target;
+there is no forced GC or production budget change. Ten driver-observed batches
+of 100 calls carry monotonic timestamps. The profiler records its observer origin
+and explicit 100 ms cadence, leaving the default three-second cadence unchanged.
+
+```sh
+KEEPR_CURATED_CAPACITY_OUTPUT=/tmp/issue-233-native-curated-repeat-final.json \
+  node --test --test-concurrency=1 acceptance/curated-native-runtime.test.mjs
+```
+
+This final probe passed in 3.195 s (2.076 s profile), with 22 heap samples,
+**12,429,208 bytes** maximum used heap, zero skipped timer intervals, zero inspector
+errors and 218 CPU profile samples. The skip count is now top-level even when no
+filesystem census is requested. Earlier sparse and dense probe reports remain
+available locally and are hash-indexed; the final report and driver phases are
+retained in the artifact directory. This does not reproduce the 64 MiB failure
+and is not a minimal reproduction of it. It narrows only repeated validation on
+one small retained record; it says nothing conclusive about large retained
+candidate state, normalization, publication or backup transients.
+
+After the diagnostics changes, the affected default acceptance tests passed
+5/5 in 1.241 s, followed by 4/4 final metric regressions after exposing the skip
+count. The affected ingestion-test typecheck passed and changed-code lint passed
+with three informational formatting suggestions, no errors. The large suites
+and real journeys retain their earlier frozen-commit provenance; they were not
+rerun merely for the new optional measurement/probe paths. Final Standards and
+Spec reviews include the new code and resolved parser/skip-reporting findings.
