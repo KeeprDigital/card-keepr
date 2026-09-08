@@ -12,9 +12,18 @@
     "Riftbound functional journey passes but sampled used heap reaches 88,569,880 bytes: the 64 MiB target fails.",
     "Riftbound heap coverage has 44 inspector query timeouts and 67 skipped timer intervals; sample maximum is a lower bound.",
     "Riftbound generic response_deliveries_including_faults counts successful body deliveries; injected_missing_images separately counts 404s.",
-    "Copied JSON is whitespace-normalized with Biome; original local source hashes are recorded separately."
+    "Copied JSON is whitespace-normalized with Biome; original local source hashes are recorded separately.",
+    "The initial 63-file command was interrupted on a stale handoff fixture; 18 files completed, the corrected 37-test file passed independently, and 44 pending files passed in the resumed run.",
+    "Five-game recovery did not execute at final head because the unchanged 6 GiB preflight rejected available disk space."
   ],
   "files": [
+    {
+      "file": "issue-233-executed-acceptance-files.json",
+      "bytes": 2982,
+      "sha256": "79fe698a9bb542fb6b66d4659632978948e0b05ad8070c8ef33d49d7199a60ce",
+      "original_local_source": "/tmp/issue-233-executed-acceptance-files.json",
+      "original_source_sha256": "79fe698a9bb542fb6b66d4659632978948e0b05ad8070c8ef33d49d7199a60ce"
+    },
     {
       "file": "issue-233-p001-isolate-1.json",
       "bytes": 150292,
@@ -42,6 +51,13 @@
       "sha256": "21cf77ce01121c6805c1a16524c91121b9d3d25a114db770ae2e3048ffabff32",
       "original_local_source": "/tmp/issue-233-p001.json",
       "original_source_sha256": "21cf77ce01121c6805c1a16524c91121b9d3d25a114db770ae2e3048ffabff32"
+    },
+    {
+      "file": "issue-233-resumed-acceptance-files.json",
+      "bytes": 2080,
+      "sha256": "c1490c99f48a30882ffdaf7218a72622695d78173f6cc379dfbccca51004c48f",
+      "original_local_source": "/tmp/issue-233-resumed-acceptance-files.json",
+      "original_source_sha256": "c1490c99f48a30882ffdaf7218a72622695d78173f6cc379dfbccca51004c48f"
     },
     {
       "file": "issue-233-riftbound-isolate-1.json",
@@ -152,7 +168,54 @@
       "retained_local_log": "/tmp/issue-233-format-check.log",
       "bytes": 17630,
       "sha256": "4aeea2dc9072f103c149fe094fc0d8b58fbaccbdab429e6d59ad709c0cdff64d"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-final-ingestion.log",
+      "bytes": 452412,
+      "sha256": "f3d1136b092b14c74fd5a462a1cb239b205331ed381cd0db64dbaf6c3e401b22"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-final-acceptance.log",
+      "bytes": 55415,
+      "sha256": "9115491ae40eb2a61b0f600c8ba1e713da7956b10f8af290c113c0f6f3aa70df"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-resumed-acceptance.log",
+      "bytes": 25798,
+      "sha256": "bf7fd8a06e37a5f062720c95df6b1580314002efcd32c7acbbe88efde978b542"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-handoff-repro.log",
+      "bytes": 1082,
+      "sha256": "3923804c482d5568134172617097394841a9eaa925d11b0dab70c15426c884d5"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-handoff-gate-inputs.log",
+      "bytes": 331,
+      "sha256": "898f0850c33bb5007cb68d88d3ba99039cf2a198dc574e840a8ffb480128bf5a"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-handoff-repro-fixed.log",
+      "bytes": 228,
+      "sha256": "8843f49c9c69862c003cd42415b88e0d78ebaf90b01603a7cb86eeadd5d19f24"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-handoff-file-fixed.log",
+      "bytes": 2621,
+      "sha256": "49988bd4a1fa924f91ba9cb6b1bbae60979126ee87cb6f489c2b9becbba39c4d"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-five-game-preflight-final.log",
+      "bytes": 676,
+      "sha256": "62d63ddeddfb81e402b06ce86d2610f938ce9875287c54374b7a63bb6f992da9"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-final-changed-format.log",
+      "bytes": 45,
+      "sha256": "e0d8f5f4d56a1b7135a17a4518944a27ff681f49fa25e29156a26119f422741d"
     }
   ],
-  "riftbound_frozen_commit": "2cdb4592"
+  "riftbound_frozen_commit": "2cdb4592",
+  "handoff_fixture_fix_commit": "847f6cb",
+  "final_runtime_implementation_commit": "2cdb459"
 }

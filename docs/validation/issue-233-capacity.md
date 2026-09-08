@@ -281,3 +281,88 @@ of this campaign's own disposable state returned free space to about 5.2 GB.
 This near-full shared-host run is not isolated storage-capacity evidence. All
 four profile reports and the final census were preserved outside that cleanup;
 historical failed replay states were untouched.
+
+
+## Final local validation and open requirements
+
+The runtime implementation under test is `2cdb459`; `c6066e5` adds only the
+reviewed reports and normalized artifacts. Validation is serialized across heavy
+Worker/native suites, with at most two Vitest workers. The independent Standards
+and Spec reviews found no actionable issue through `c6066e5`, including verified
+artifact hashes and metric totals.
+
+| Check | Local result |
+| --- | --- |
+| Domain suite | 234 tests / 42 files passed, 3.68 s |
+| API suite, `npm run test:workers:api -- --maxWorkers=2` | 95 tests / 13 files passed, 12.09 s |
+| Ingestion suite, `npm run test:workers:ingestion -- --maxWorkers=2` | 707 tests / 83 files passed, 572.00 s |
+| Remaining acceptance (63 files, serial split described below) | 34 earlier passes + 37 corrected handoff cases + 250 resumed cases = 321 passing tests |
+| Five-game recovery | Host preflight blocked before execution; no final-head pass |
+| TypeScript, generated Worker types and document validators | Passed |
+| Catalogue cycles and module boundary | Passed |
+| Lint | Passed with 29 warnings and 15 informational diagnostics; no errors |
+| Both Worker packaging dry runs | Passed; dry run only |
+| Changed-file formatting against fixed base | Passed for all changed code and artifact files |
+
+The generic `npm run format:check` uses the local branch comparison and reports
+six files outside this fixed-base diff. They are byte-identical to `0bb3b7d`:
+`src/http/cors.ts`, `src/http/health.ts`, `src/http/public-base.ts`, and
+`test/support/fake-publisher/{cloudflare-api,hostnames,scenario}.ts`. Those unrelated
+files were not reformatted; the explicit fixed-base changed-file check passed.
+
+Open acceptance requirements remain: both complete retained synthetic tiers;
+the failed 64 MiB target and its unexplained cause; complete service-call,
+executed/billed D1 and index-write accounting; continuous peak and per-unit CPU;
+and evidence sufficient to derive cost/completion targets. The historical
+Product-heavy timing failures remain unexplained despite the unchanged passing
+reproduction. No capacity acceptance item is closed by a functional pass alone.
+Hosted Actions were not used as validation evidence. Exact-SHA live release gates
+remain required; this branch neither deploys nor relaxes them.
+
+
+The five-game recovery journey's unchanged 6 GiB preflight rejected this host
+before test execution: 6,120,595,456 bytes available versus 6,442,450,944 required.
+After the full ingestion suite, the remaining acceptance launch observed
+5,857,894,400 free bytes. The gate was neither lowered nor bypassed. Historical
+five-game results remain provenance, not a final-head pass: this branch changes
+the shared in-process runtime's optional profiling/disposal lifecycle, so the
+historical journey cannot substitute for validation of that helper delta.
+
+
+The initial 63-file serial acceptance run stopped on a concrete stale fixture:
+`fresh-baseline-handoff.test.mjs` applied all migrations (source level 28), but
+prepared its release request with fixed expected level 27. The first isolated
+case reproduced `409 release_preflight_failed` in 1.325 s. A read-only migrated
+fixture census confirmed the other bootstrap gate inputs were an empty spine,
+no active owners, and healthy recovery. The correction at `847f6cb` uses the
+existing `schemaMigrationLevel(source)` query for that fixture request. The same
+case passed in 1.616 s, then all 37 cases in the complete file passed in 46.758 s.
+Production guards, exact-SHA bindings, destination baseline level 1 and negative
+version tests were unchanged. Both review axes found no actionable delta issue.
+
+The stopped run's later file cancellations are consequences of SIGINT, not
+additional application failures. Its first 18 files completed successfully;
+the corrected handoff file was run separately and only the 44 pending files
+were resumed. The artifact command lists preserve this split. The long P-001
+and Riftbound commands were not rerun for this unrelated test-fixture change.
+
+
+The 44-file resumed run passed all 250 tests in 488.415 s at `847f6cb`.
+The completed 18-file prefix contains 34 passing tests; with the corrected
+37-test handoff file, these cover the intended 63 files with 321 passing tests
+across the recorded runs. This is not a claim that the original interrupted
+command passed. No code changed after the handoff fixture correction.
+
+Shared free space rose above 6 GiB during the serial run, but the final unchanged
+five-game preflight measured only 6,390,845,440 bytes against its required
+6,442,450,944. The chained test command therefore did not execute the journey.
+Both blocked preflight observations are retained; the five-game validation gap
+remains open, separate from the much larger retained synthetic-tier disk gap.
+
+The remaining-file command lists are in
+[the initial list](issue-233-measurements/issue-233-executed-acceptance-files.json)
+and [the resumed list](issue-233-measurements/issue-233-resumed-acceptance-files.json).
+Each list was passed to `node --test --test-concurrency=1`; the handoff file used
+that same serial command independently. Full local logs and SHA-256 hashes are
+indexed by the artifact manifest, including the initial failure, isolated red
+case, inspected gate inputs, fixed case, and complete affected-file result.
