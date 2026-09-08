@@ -1164,5 +1164,10 @@
   "structured_callback_reporter_commit": "1a0da9b",
   "collection_root_notification_commit": "9cfa83d",
   "observation_retention_experiment_commit": "98bd07a",
-  "observation_retention_revert_commit": "e622ab0"
+  "observation_retention_revert_commit": "e622ab0",
+  "current_design_status": {
+    "proposal": "docs/plans/bounded-source-intake.md",
+    "status": "pending user review; no rewrite or further experiments",
+    "storage_estimate_scope": "Historical 18.33/183.33 GiB lower bounds apply only to legacy synthetic inline-base64 topology, not real-source baseline or redesigned pipeline hardware requirements."
+  }
 }

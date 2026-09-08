@@ -1,5 +1,13 @@
 # Issue 233 capacity and fault evidence
 
+**Decision update — architecture review pending:** further profiling/experiments
+are stopped. The proposed next step is [bounded source intake](../plans/bounded-source-intake.md),
+not a target increase or another serializer experiment. All measurements below
+remain historical evidence. The 18.33/183.33 GiB estimates describe only the old
+synthetic fixture with two persisted inline-base64 copies; they are not a
+real-source baseline or a hardware requirement for the proposed pipeline. Any
+earlier suggestion to size user hardware from that topology is superseded.
+
 Campaign base: `0bb3b7d26c6744b4c037d788e6b45c334ae8aa83`, schema 28.
 This is a partial capacity and fault evidence report, not a passing capacity certification.
 Heavy campaigns run serially with a frozen commit and a fresh `/tmp` filesystem
@@ -618,7 +626,8 @@ local lead, not an established cause.
 | Full retained tiers | Use the lower bound below plus a complete SQL/staging/export/restore and margin estimate before choosing storage and executing a tier. | Current host is insufficient even for the corrected tier-1 lower bound. Tier-2 admission also exceeds the existing request guard. |
 | Cost/completion ceilings | Derive only after representative workload and complete resource dimensions are available. | Missing evidence above; no defensible numeric ceiling yet. |
 
-The corrected storage lower-bound artifact is a **code-derived estimate**, not
+The corrected storage lower-bound artifact is a **legacy-fixture-topology-only,
+code-derived estimate**, not
 measured occupancy. The fixture embeds images as `content_base64`; the source
 snapshot retains it and `parseSnapshot` retains it again inside each observation
 value. For tier 1, exact base64 rounding totals 7,158,320,000 bytes per copy. Two
