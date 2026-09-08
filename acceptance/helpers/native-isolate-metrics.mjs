@@ -155,6 +155,7 @@ export async function profileNativeIsolates(runtime, destination, local, { sampl
               contract: "card-keepr-local-isolate-measurements@1",
               limitation:
                 "Local workerd DevTools samples with profiler overhead. Heap samples include V8 used/allocated heap, embedder heap and backing storage as separate fields; they are not continuous peak working set. CPU profile deltas are sampling attribution, not billed CPU or invocation CPU. Runtime restarts produce separate reports.",
+              skipped_sampling_intervals: skippedIntervals,
               sample_interval_ms: sampleIntervalMs,
               observer_started_ms: started,
               elapsed_ms: performance.now() - started,

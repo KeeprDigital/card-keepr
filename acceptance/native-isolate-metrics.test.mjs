@@ -35,6 +35,7 @@ test("local isolate measurements read actual workerd heap and CPU profiles", asy
   await stop();
   const report = JSON.parse(await readFile(destination, "utf8"));
   assert.deepEqual(report.errors, []);
+  assert.ok(Number.isSafeInteger(report.skipped_sampling_intervals));
   assert.equal(report.operational_timeline.events.at(-1).route, "/allocation-calibration");
   assert.ok(report.operational_timeline.events.at(-1).observed_elapsed_ms >= 0);
   assert.equal(report.isolates.length, 1);
