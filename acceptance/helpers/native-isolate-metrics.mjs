@@ -3,7 +3,9 @@ import { nativeRetainedOccupancy, operationalCapacityMetrics } from "./native-ca
 
 // Opt-in local DevTools measurements. A sample maximum is not a continuous
 // peak, and a sampling profile is not Cloudflare's billed CPU accounting.
-export async function profileNativeIsolates(runtime, destination, local) {
+export async function profileNativeIsolates(runtime, destination, local, { sampleIntervalMs = 3000 } = {}) {
+  if (!Number.isSafeInteger(sampleIntervalMs) || sampleIntervalMs < 100 || sampleIntervalMs > 30000)
+    throw new Error("Heap sample interval must be 100–30000 milliseconds");
   const inspector = await runtime.getInspectorURL();
   inspector.protocol = "http:";
   const targets = await (await fetch(new URL("/json", inspector), { signal: AbortSignal.timeout(5000) })).json();
@@ -111,7 +113,7 @@ export async function profileNativeIsolates(runtime, destination, local) {
         .finally(() => {
           sampling = false;
         });
-    }, 3000);
+    }, sampleIntervalMs);
     return async () => {
       clearInterval(interval);
       try {
@@ -153,6 +155,7 @@ export async function profileNativeIsolates(runtime, destination, local) {
               contract: "card-keepr-local-isolate-measurements@1",
               limitation:
                 "Local workerd DevTools samples with profiler overhead. Heap samples include V8 used/allocated heap, embedder heap and backing storage as separate fields; they are not continuous peak working set. CPU profile deltas are sampling attribution, not billed CPU or invocation CPU. Runtime restarts produce separate reports.",
+              sample_interval_ms: sampleIntervalMs,
               observer_started_ms: started,
               elapsed_ms: performance.now() - started,
               driver_only: {

@@ -56,7 +56,7 @@ test("owner validation resolves a native published target in Workerd without req
   if (capacityOutput) {
     // Optional bounded minimization probe: repeat one real native validation
     // boundary. This cannot stand in for the full Riftbound candidate workload.
-    const stop = await profileNativeIsolates(runtime, capacityOutput);
+    const stop = await profileNativeIsolates(runtime, capacityOutput, undefined, { sampleIntervalMs: 100 });
     const phases = [];
     try {
       for (let batch = 0; batch < 10; batch++) {
