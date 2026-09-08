@@ -1,9 +1,42 @@
 # Bounded source intake and one publication model
 
-Status: **proposal pending user review**. Read-only architectural assessment for
-#233 / #216 at `a24b9796`; no rewrite, ADR change, deployment or new experiment is
-authorized by this document. This proposal supersedes further incremental memory
-probing as the next decision. Historical failed measurements remain valid evidence.
+Status: **first implementation slice authorized and implemented locally** for #233 / #216.
+The user accepted proceeding with Riftbound paginated JSON intake. This replaces
+further profiling as the current work; historical measurements remain evidence.
+
+The slice streams bounded tokens from retained raw R2 bytes, persists immutable
+D1 records with atomic prefix receipts, and finalizes a small count/root manifest.
+Discovery admits batches through the existing indexed request/capacity repository;
+Riftbound inventory capture never enters full-lineage discovery. Native preparation
+verifies these records directly, without copying observation JSON into byte chunks
+or another per-preparation record table. Other adapters, Riftbound HTML articles,
+legacy observation sets and the still-routed whole-candidate publication interface
+remain explicit migration work. Printing Images retain their separate bucket.
+
+Current limits: raw Riftbound snapshots 2 MiB; decoded stream chunks 64 KiB; JSON
+tokens 256 KiB, depth 32 and 16,384 structural tokens; up to 200 records per page;
+serialized observations and record batches at most 512,000 bytes, eight records;
+headers 32 KiB and image request metadata 4 KiB. Oversize input fails explicitly.
+These record limits are a restriction of this first slice; arbitrary large fields
+and reference-based field storage remain future work. No truncation is performed.
+
+Each retry rescans at most its bounded raw page, recomputes its committed prefix,
+and resumes D1 writes after that prefix. Discovery may replay that page's bounded
+request batches; persisted request identities and atomic capacity guards deduplicate
+admission. No per-run array or giant list of record references is introduced.
+The rolling root binds the immutable header, ordered record hashes and requests.
+Finalization and the sealed flag commit atomically; partial sets cannot be read by
+reconciliation. Native verification checkpoints every bounded record page.
+
+Migration 29 includes both tables in actual SQL export/import and adds recovery,
+fresh-baseline, abandoned-collector and cleanup fences. Evidence cleanup drains
+record payloads in batches of eight after existing reference/backup guards authorize
+removal, retaining the small progress/audit receipt. Cleaned sets are unreadable.
+
+The compact vertical regression uses two retained Riot records and real image URLs
+with synthetic two-record pagination metadata. It exercises owner admission, native
+publication, verified backup, actual SQL import and restored export equality; it is
+not a full upstream inventory or capacity certification.
 
 ## Diagnosis
 
@@ -141,8 +174,8 @@ requires bounded durable preparation and whole-candidate approval, not whole-
 candidate RAM. The redesign fulfills both. [ADR 0012](../adr/0012-official-source-adapters-fail-closed.md)
 requires incomplete evidence to fail closed. [ADR 0008](../adr/0008-no-version-retention-before-go-live.md)
 permits one current definition and regeneration before Go-Live; it does not waive
-retained-evidence, published-history or recovery obligations. This proposal changes
-no accepted ADR and requires user review before implementation.
+retained-evidence, published-history or recovery obligations. This slice changes no accepted ADR. Broader interface retirement remains outside
+the first implementation slice.
 
 Tests should cross the replacement intake interface and establish:
 

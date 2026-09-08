@@ -114,3 +114,6 @@ export {
 
 export { beginStagingCleanup, advanceStagingCleanup } from "./staging-cleanup";
 export { retainEvidenceObjectReferenceStatement } from "./evidence-cleanup-repository";
+
+export { sealedSourceRecordProgress, sourceRecordInitialDigest, sourceRecordNextDigest } from "./source-record-intake";
+export { sourceRecordAt, sourceRecordPage, type SourceRecordRow } from "./source-record-repository";

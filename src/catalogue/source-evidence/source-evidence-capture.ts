@@ -1,3 +1,4 @@
+import { discoveredSourceRecordRequests, sealedSourceRecordProgress } from "./source-record-intake";
 import {
   beginEvidenceObjectWrite,
   completeEvidenceObjectWrite,
@@ -620,7 +621,7 @@ export async function parseCapturedRequest(
   }
   const evidencePlan = evidencePlanForRequest(run, sourceRequest.request_id);
   try {
-    const _observationSet = await parseSnapshot(database, evidenceObjects, snapshotId, evidencePlan.adapter_version, {
+    const observationSet = await parseSnapshot(database, evidenceObjects, snapshotId, evidencePlan.adapter_version, {
       intent: "collection",
       idempotencyKey: `${run.id}:${sourceRequest.request_id}`,
     });
@@ -628,14 +629,22 @@ export async function parseCapturedRequest(
       requiredSourceAdapter(evidencePlan.adapter_version),
       evidencePlan.coverage?.subset,
     );
-    const discovered = await discoverSnapshotRequests(
-      database,
-      evidenceObjects,
-      snapshotId,
-      evidencePlan.adapter_version,
-    );
-    await appendDiscoveredEvidenceRequests(database, run, sourceRequest, discovered);
+    const boundedRecords = await sealedSourceRecordProgress(database, observationSet.id);
+    if (boundedRecords) {
+      for await (const requests of discoveredSourceRecordRequests(database, observationSet.id)) {
+        await appendDiscoveredEvidenceRequests(database, run, sourceRequest, requests);
+      }
+    } else {
+      const discovered = await discoverSnapshotRequests(
+        database,
+        evidenceObjects,
+        snapshotId,
+        evidencePlan.adapter_version,
+      );
+      await appendDiscoveredEvidenceRequests(database, run, sourceRequest, discovered);
+    }
     if (
+      !boundedRecords &&
       run.plan_origin === "production" &&
       adapter.requestUrlForDiscovery !== undefined &&
       (sourceRequest.request_id === `${evidencePlan.source_lineage}:discovery` ||

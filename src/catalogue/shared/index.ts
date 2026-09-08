@@ -152,7 +152,12 @@ export {
 
 export { persistReconciliationPayloadChunkStatement } from "./reconciliation-payload-repository";
 
-export { streamedObjectMembers, resumableObjectMembers, type ObjectMemberCursor } from "./streamed-object-members";
+export {
+  ObjectMemberParseFailure,
+  streamedObjectMembers,
+  resumableObjectMembers,
+  type ObjectMemberCursor,
+} from "./streamed-object-members";
 export {
   catalogueEntityCollections,
   type CatalogueDraft,

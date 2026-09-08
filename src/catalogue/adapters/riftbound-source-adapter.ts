@@ -1,3 +1,4 @@
+import { ObjectMemberParseFailure, resumableObjectMembers } from "../shared";
 import { decodeHTML } from "entities";
 import { createHash } from "node:crypto";
 import { officialArtworkFingerprint } from "./official-artwork-identity";
@@ -41,6 +42,10 @@ export const riftboundSourceAdapterRegistration = {
     groupsPublisherPages: false,
     strictListingIdentity: false,
     duplicateLocatorCompatibility: "never",
+  },
+  recordExtraction: {
+    matches: ({ mediaType, url }) => !mediaType?.startsWith("image/") && new URL(url).origin === inventoryOrigin,
+    extract: extractInventoryRecords,
   },
   parseBytes(bytes, context) {
     if (context.mediaType?.startsWith("image/")) return [];
@@ -119,6 +124,12 @@ function inventorySurfaceUrl(surface: string) {
 }
 
 function inventory(bytes: Uint8Array, sourceUrl: string) {
+  const document = record(withAdapterParseFailure(() => JSON.parse(decodeAdapterUtf8(bytes))));
+  const cards = array(document.data);
+  return { cards, ...inventoryHeader(document, cards.length, sourceUrl) };
+}
+
+function inventoryHeader(document: Record<string, unknown>, count: number, sourceUrl: string) {
   const url = new URL(sourceUrl);
   if (
     url.origin !== inventoryOrigin ||
@@ -129,7 +140,6 @@ function inventory(bytes: Uint8Array, sourceUrl: string) {
   )
     throw new AdapterParseFailure("Riftbound inventory must use the registered English publisher surface.");
   const from = Number(url.searchParams.get("from"));
-  const document = record(withAdapterParseFailure(() => JSON.parse(decodeAdapterUtf8(bytes))));
   const metadata = record(document.metadata);
   const total = number(metadata.totalItems);
   const pages = number(metadata.totalPages);
@@ -147,8 +157,7 @@ function inventory(bytes: Uint8Array, sourceUrl: string) {
     pages > 100
   )
     throw new AdapterParseFailure("Riftbound inventory locale or pagination contract changed.");
-  const cards = array(document.data);
-  if (cards.length === 0 || cards.length > Math.min(200, total - from))
+  if (count === 0 || count > Math.min(200, total - from))
     throw new AdapterParseFailure("Riftbound page does not fit its declared pagination window.");
   const links = record(document.linkdata);
   const pageUrl = (offset: number) => `${inventoryOrigin}${inventoryPath}?locale=en_US&from=${offset}&limit=200`;
@@ -162,7 +171,52 @@ function inventory(bytes: Uint8Array, sourceUrl: string) {
     if (expected === null ? links[key] != null : adapterUrl(text(links[key]), inventoryOrigin).href !== expected)
       throw new AdapterParseFailure("Riftbound pagination does not close over exact publisher links.");
   }
-  return { cards, metadata, next };
+  return { metadata, next };
+}
+
+/** Scan bounded tokens before constructing one publisher record; never collect the page array. */
+async function extractInventoryRecords(source: () => AsyncIterable<string>, context: { url: string }) {
+  const limits = {
+    maximumTokenBytes: 262144,
+    maximumTokenCharacters: 262144,
+    maximumDepth: 32,
+    maximumStructuralTokens: 16384,
+  };
+  const header: Record<string, unknown> = {};
+  let count = 0,
+    dataSeen = false;
+  for await (const { member } of inventoryMembers(source, limits)) {
+    if (member.key === "data") {
+      if (member.kind === "array") dataSeen = true;
+      else if (member.array) {
+        if (++count > 200) throw new AdapterParseFailure("Riftbound page exceeds 200 records.");
+      } else throw new AdapterParseFailure("Riftbound page data must be an array.");
+    } else {
+      if (member.kind !== "value" || member.array) throw new AdapterParseFailure("Riftbound page header is invalid.");
+      if (member.key === "metadata" || member.key === "linkdata") header[member.key] = member.value;
+    }
+  }
+  if (!dataSeen) throw new AdapterParseFailure("Riftbound page data is missing.");
+  const { metadata, next } = inventoryHeader(header, count, context.url);
+  return {
+    count,
+    requests: next === null ? [] : [{ role: "listing" as const, url: next, headers: { accept: "application/json" } }],
+    records: (async function* () {
+      for await (const { member } of inventoryMembers(source, limits)) {
+        if (member.key !== "data" || member.kind !== "value" || !member.array) continue;
+        const card = record(member.value);
+        yield {
+          sourceKey: text(card.id),
+          value: observation(card, count, metadata),
+          request: {
+            role: "image" as const,
+            url: publisherImageUrl(record(card.cardImage).url).href,
+            headers: {},
+          },
+        };
+      }
+    })(),
+  };
 }
 
 function observation(card: Record<string, unknown>, count: number, metadata: Record<string, unknown>) {
@@ -341,4 +395,17 @@ function richText(value: unknown): string | null {
       .replace(/<br\s*\/?\s*>|<\/p>/giu, "\n")
       .replace(/<[^>]*>/gu, ""),
   ).trim();
+}
+
+async function* inventoryMembers(
+  source: () => AsyncIterable<string>,
+  limits: Parameters<typeof resumableObjectMembers>[2],
+) {
+  try {
+    yield* resumableObjectMembers(() => source(), null, limits);
+  } catch (error) {
+    if (error instanceof ObjectMemberParseFailure || error instanceof SyntaxError)
+      throw new AdapterParseFailure(error.message, { cause: error });
+    throw error;
+  }
 }

@@ -44,6 +44,21 @@ export type SourceAdapterRegistration = Readonly<{
   reconciliationAreas?: readonly ("catalogue" | "errata")[];
   inheritDiscoveryRequestHeaders?: boolean;
   listingReconciliation?: ListingReconciliationTraits;
+  recordExtraction?: {
+    matches: (context: { mediaType: string | null; url: string }) => boolean;
+    extract: (
+      source: () => AsyncIterable<string>,
+      context: { url: string },
+    ) => Promise<{
+      count: number;
+      requests: readonly { role: "listing"; url: string; headers: Record<string, string> }[];
+      records: AsyncIterable<{
+        sourceKey: string;
+        value: unknown;
+        request: { role: "image"; url: string; headers: Record<string, string> };
+      }>;
+    }>;
+  };
   parse?: (document: unknown) => readonly unknown[] | Promise<readonly unknown[]>;
   parseBytes?: (
     bytes: Uint8Array,

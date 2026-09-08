@@ -1,3 +1,5 @@
+import { retainExtractedSourceRecords, verifiedSnapshotChunks } from "./source-record-intake";
+import { sealSourceRecords } from "./source-record-repository";
 import {
   beginEvidenceObjectWrite,
   completeEvidenceObjectWrite,
@@ -83,61 +85,86 @@ export async function parseSnapshot(
   if (operation.state === "uploaded") {
     return finalizeParseOperation(database, operation.id, snapshot);
   }
-  const object = await evidenceObjects.get(snapshot.content_object_key);
-  if (object === null) throw new MissingObjectError();
-  if (object.size !== snapshot.content_byte_length) {
-    throw new Error("Source Snapshot bytes are unavailable or truncated");
-  }
-  const bytes = new Uint8Array(await object.arrayBuffer());
-  if ((await sha256(bytes)) !== snapshot.content_digest) {
-    throw new Error("Source Snapshot bytes failed digest verification");
-  }
-  let observations: readonly unknown[];
-  try {
-    if (adapter.parseBytes !== undefined) {
-      observations = await adapter.parseBytes(bytes, {
-        mediaType: snapshot.media_type,
-        url: snapshot.request_url,
-        requestId: snapshot.request_id,
-      });
-    } else {
-      let document: unknown;
-      try {
-        document = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes));
-      } catch {
-        throw new AdapterParseFailure("The Source Snapshot is not valid UTF-8 JSON.");
-      }
-      if (adapter.parse === undefined) {
-        throw new Error("The Source Snapshot adapter has no parser.");
-      }
-      observations = await adapter.parse(document);
+  const header = {
+    contract: "card-keepr-source-observations@1",
+    id: operation.observation_set_id,
+    source_snapshot_id: snapshot.id,
+    source_lineage: snapshot.source_lineage,
+    supported_game: snapshot.supported_game,
+    game_profile_version: snapshot.game_profile_version,
+    adapter_version: adapter.adapterVersion,
+    parsed_at: operation.parsed_at,
+    coverage_proof:
+      adapter.reconciliationCapability !== "unavailable"
+        ? {
+            kind: adapter.reconciliationCapability,
+            adapter_version: adapter.adapterVersion,
+            parser_contract: adapter.parserContract,
+          }
+        : null,
+  };
+  let observationDocument: Record<string, unknown>;
+  let observationCount: number;
+  if (adapter.recordExtraction?.matches({ mediaType: snapshot.media_type, url: snapshot.request_url })) {
+    try {
+      const extraction = await adapter.recordExtraction.extract(
+        () => verifiedSnapshotChunks(evidenceObjects, snapshot),
+        {
+          url: snapshot.request_url,
+        },
+      );
+      observationDocument = await retainExtractedSourceRecords(
+        database,
+        operation.observation_set_id,
+        header,
+        extraction,
+      );
+      observationCount = extraction.count;
+    } catch (error) {
+      if (!(error instanceof AdapterParseFailure) || error.category !== "source-contract") throw error;
+      throw new AdministrationProblem(422, "source_parse_failed", error.message);
     }
-  } catch (error) {
-    if (!(error instanceof AdapterParseFailure) || error.category !== "source-contract") throw error;
-    throw new AdministrationProblem(
-      422,
-      "source_parse_failed",
-      error instanceof Error ? error.message : "The Official Source document does not satisfy its adapter contract.",
-    );
-  }
-  if (operation.state === "planned") {
-    const observationDocument = {
-      contract: "card-keepr-source-observations@1",
-      id: operation.observation_set_id,
-      source_snapshot_id: snapshot.id,
-      source_lineage: snapshot.source_lineage,
-      supported_game: snapshot.supported_game,
-      game_profile_version: snapshot.game_profile_version,
-      adapter_version: adapter.adapterVersion,
-      parsed_at: operation.parsed_at,
-      coverage_proof:
-        adapter.reconciliationCapability !== "unavailable"
-          ? {
-              kind: adapter.reconciliationCapability,
-              adapter_version: adapter.adapterVersion,
-              parser_contract: adapter.parserContract,
-            }
-          : null,
+  } else {
+    const object = await evidenceObjects.get(snapshot.content_object_key);
+    if (object === null) throw new MissingObjectError();
+    if (object.size !== snapshot.content_byte_length) {
+      throw new Error("Source Snapshot bytes are unavailable or truncated");
+    }
+    const bytes = new Uint8Array(await object.arrayBuffer());
+    if ((await sha256(bytes)) !== snapshot.content_digest) {
+      throw new Error("Source Snapshot bytes failed digest verification");
+    }
+    let observations: readonly unknown[];
+    try {
+      if (adapter.parseBytes !== undefined) {
+        observations = await adapter.parseBytes(bytes, {
+          mediaType: snapshot.media_type,
+          url: snapshot.request_url,
+          requestId: snapshot.request_id,
+        });
+      } else {
+        let document: unknown;
+        try {
+          document = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes));
+        } catch {
+          throw new AdapterParseFailure("The Source Snapshot is not valid UTF-8 JSON.");
+        }
+        if (adapter.parse === undefined) {
+          throw new Error("The Source Snapshot adapter has no parser.");
+        }
+        observations = await adapter.parse(document);
+      }
+    } catch (error) {
+      if (!(error instanceof AdapterParseFailure) || error.category !== "source-contract") throw error;
+      throw new AdministrationProblem(
+        422,
+        "source_parse_failed",
+        error instanceof Error ? error.message : "The Official Source document does not satisfy its adapter contract.",
+      );
+    }
+    observationCount = observations.length;
+    observationDocument = {
+      ...header,
       evidence_summary: observationEvidenceSummary(observations),
       observations: observations.map((value, index) => ({
         id: `srcobs_${operation.observation_set_id.slice(10)}_${index + 1}`,
@@ -145,6 +172,8 @@ export async function parseSnapshot(
         value,
       })),
     };
+  }
+  {
     const observationBytes = utf8(canonicalJson(observationDocument));
     const digest = await sha256(observationBytes);
     const writeToken = crypto.randomUUID();
@@ -176,7 +205,7 @@ export async function parseSnapshot(
     await uploadedParseStatement(database, {
       digest: digest,
       byteLength: observationBytes.byteLength,
-      observationCount: observations.length,
+      observationCount,
       operationId: operation.id,
     }).run();
   }
@@ -450,6 +479,7 @@ async function finalizeParseOperation(
       objectKey: operation.content_object_key,
       observationCount: operation.observation_count,
     }),
+    sealSourceRecords(database, operation.observation_set_id),
     finalizeParseStatement(database, operation.id),
   ]);
   return requiredObservationSet(database, operation.id);

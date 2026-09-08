@@ -1,4 +1,11 @@
 import {
+  sourceRecordInitialDigest,
+  sourceRecordNextDigest,
+  sealedSourceRecordProgress,
+  sourceRecordPage,
+  type SourceRecordRow,
+} from "../source-evidence";
+import {
   type CatalogueStore,
   type ObjectMemberCursor,
   type StreamingSha256State,
@@ -37,6 +44,7 @@ type Cursor = {
   member: ObjectMemberCursor | null;
   values: Record<string, unknown>;
   observations: number;
+  recordDigest?: string;
 };
 type Stored = { content: string; sha256: string };
 type Header = { provenance: string; values: Record<string, unknown>; observationCount: number };
@@ -100,100 +108,152 @@ export async function prepareSourceDocuments<T extends SourceRow>(
       }
       continue;
     }
-    if (cursor.stage === "bytes") {
-      const hash = new StreamingSha256(cursor.hash);
-      let chunksInUnit = 0;
-      let retainedBytes = 0;
-      while (cursor.offset < row.content_byte_length) {
-        const length = Math.min(65536, row.content_byte_length - cursor.offset);
-        const object = await documentStorage(() =>
-          objects.get(row.content_object_key, { range: { offset: cursor.offset, length } }),
-        );
+    const bounded = await sealedSourceRecordProgress(database, row.observation_set_id);
+    if (bounded) {
+      if (cursor.recordDigest === undefined) {
+        if (row.content_byte_length > 32768) throw new Error("Source record manifest exceeds 32 KiB.");
+        const object = await documentStorage(() => objects.get(row.content_object_key));
         if (!object || object.size !== row.content_byte_length)
-          throw new Error("Retained Source Observation Set bytes are unavailable.");
-        const bytes = new Uint8Array(await documentStorage(() => object.arrayBuffer()));
-        if (bytes.byteLength !== length) throw new Error("Retained source byte range is incomplete.");
-        const joined = new Uint8Array(cursor.carry.length + bytes.byteLength);
-        joined.set(cursor.carry);
-        joined.set(bytes, cursor.carry.length);
-        const end = completeUtf8Prefix(joined);
-        const content = canonicalJson([
-          new TextDecoder("utf-8", { fatal: true, ignoreBOM: cursor.offset > 0 }).decode(joined.subarray(0, end)),
-        ]);
-        const digest = await sha256Text(content);
-        await documentStorage(() =>
-          retainSourceByteChunkStatement(database, runId, row.observation_set_id, cursor.chunks, content, digest).run(),
-        );
-        await verifyStored(
-          () => sourceByteChunkStatement(database, runId, row.observation_set_id, cursor.chunks),
-          content,
-          digest,
-        );
-        hash.update(bytes);
-        cursor.offset += bytes.byteLength;
-        cursor.chunks++;
-        cursor.carry = [...joined.subarray(end)];
-        cursor.hash = hash.checkpoint;
-        if (cursor.offset === row.content_byte_length) {
-          if (cursor.carry.length || hash.digestHex() !== row.content_digest)
-            throw new Error("Retained Source Observation Set digest or UTF-8 is invalid.");
-          cursor.stage = "records";
-        }
-        chunksInUnit++;
-        retainedBytes += new TextEncoder().encode(content).byteLength;
-        if (chunksInUnit === 4 || retainedBytes >= 512000 || cursor.stage === "records") {
-          await save();
-          chunksInUnit = 0;
-          retainedBytes = 0;
-        }
+          throw new Error("Source record manifest is unavailable.");
+        const content = await documentStorage(() => object.text());
+        if ((await sha256Text(content)) !== row.content_digest)
+          throw new Error("Source record manifest digest changed.");
+        const manifest = JSON.parse(content) as Record<string, unknown>;
+        const storage = manifest.record_storage as { contract?: string; count?: number; sha256?: string } | undefined;
+        if (
+          storage?.contract !== "card-keepr-source-records@1" ||
+          storage.count !== bounded.next_ordinal ||
+          storage.sha256 !== bounded.digest
+        )
+          throw new Error("Source record manifest is not sealed to its persisted records.");
+        cursor.values = { ...manifest, observations: true };
+        cursor.recordDigest = await sourceRecordInitialDigest(row.observation_set_id, bounded.header_json);
       }
-      if (cursor.stage === "bytes") throw new Error("Retained Source Observation Set is empty.");
-    }
-    let records = 0;
-    let bytes = 0;
-    let previous = cursor.member;
-    for await (const { member, cursor: next } of resumableObjectMembers(
-      (chunk) => sourceChunks(database, runId, row.observation_set_id, cursor.chunks, chunk),
-      cursor.member,
-      {
-        maximumTokenCharacters: 4194304,
-        maximumTokenBytes: 4194304,
-        maximumStructuralTokens: 16384,
-        maximumDepth: 128,
-      },
-    )) {
-      const size = member.kind === "value" ? new TextEncoder().encode(canonicalJson(member.value)).byteLength : 0;
-      if (records > 0 && bytes + size > 512000) {
-        cursor.member = previous;
-        await save();
-        records = 0;
-        bytes = 0;
-      }
-      if (member.key === "observations") {
-        if (member.kind === "array") cursor.values.observations = true;
-        else if (member.array) {
-          await retainSourceObservations(database, runId, row.observation_set_id, [member.value], cursor.observations);
+      while (cursor.observations < bounded.next_ordinal) {
+        const records = (
+          await documentStorage(() =>
+            sourceRecordPage(database, row.observation_set_id, cursor.observations - 1).all<SourceRecordRow>(),
+          )
+        ).results;
+        if (!records.length) throw new Error("Source record manifest has missing records.");
+        for (const record of records) {
+          if (record.ordinal !== cursor.observations || (await sha256Text(record.content)) !== record.sha256)
+            throw new Error("Source record manifest failed integrity verification.");
+          cursor.recordDigest = await sourceRecordNextDigest(cursor.recordDigest, record);
           cursor.observations++;
-        } else throw new Error("Retained observations must be an array.");
-      } else {
-        if (member.kind === "array" || member.array)
-          throw new Error("Retained source document has an unexpected array member.");
-        Object.defineProperty(cursor.values, member.key, {
-          value: member.value,
-          writable: true,
-          enumerable: true,
-          configurable: true,
-        });
-        if (new TextEncoder().encode(canonicalJson(cursor.values)).byteLength > 32768)
-          throw new Error("reconciliation_capacity_exceeded: one source document header exceeds 32 KiB.");
-      }
-      cursor.member = next;
-      previous = next;
-      bytes += size;
-      if (++records === 32 || bytes >= 512000) {
+        }
         await save();
-        records = 0;
-        bytes = 0;
+      }
+      if (cursor.recordDigest !== bounded.digest) throw new Error("Source record root digest changed.");
+    } else {
+      if (cursor.stage === "bytes") {
+        const hash = new StreamingSha256(cursor.hash);
+        let chunksInUnit = 0;
+        let retainedBytes = 0;
+        while (cursor.offset < row.content_byte_length) {
+          const length = Math.min(65536, row.content_byte_length - cursor.offset);
+          const object = await documentStorage(() =>
+            objects.get(row.content_object_key, { range: { offset: cursor.offset, length } }),
+          );
+          if (!object || object.size !== row.content_byte_length)
+            throw new Error("Retained Source Observation Set bytes are unavailable.");
+          const bytes = new Uint8Array(await documentStorage(() => object.arrayBuffer()));
+          if (bytes.byteLength !== length) throw new Error("Retained source byte range is incomplete.");
+          const joined = new Uint8Array(cursor.carry.length + bytes.byteLength);
+          joined.set(cursor.carry);
+          joined.set(bytes, cursor.carry.length);
+          const end = completeUtf8Prefix(joined);
+          const content = canonicalJson([
+            new TextDecoder("utf-8", { fatal: true, ignoreBOM: cursor.offset > 0 }).decode(joined.subarray(0, end)),
+          ]);
+          const digest = await sha256Text(content);
+          await documentStorage(() =>
+            retainSourceByteChunkStatement(
+              database,
+              runId,
+              row.observation_set_id,
+              cursor.chunks,
+              content,
+              digest,
+            ).run(),
+          );
+          await verifyStored(
+            () => sourceByteChunkStatement(database, runId, row.observation_set_id, cursor.chunks),
+            content,
+            digest,
+          );
+          hash.update(bytes);
+          cursor.offset += bytes.byteLength;
+          cursor.chunks++;
+          cursor.carry = [...joined.subarray(end)];
+          cursor.hash = hash.checkpoint;
+          if (cursor.offset === row.content_byte_length) {
+            if (cursor.carry.length || hash.digestHex() !== row.content_digest)
+              throw new Error("Retained Source Observation Set digest or UTF-8 is invalid.");
+            cursor.stage = "records";
+          }
+          chunksInUnit++;
+          retainedBytes += new TextEncoder().encode(content).byteLength;
+          if (chunksInUnit === 4 || retainedBytes >= 512000 || cursor.stage === "records") {
+            await save();
+            chunksInUnit = 0;
+            retainedBytes = 0;
+          }
+        }
+        if (cursor.stage === "bytes") throw new Error("Retained Source Observation Set is empty.");
+      }
+      let records = 0;
+      let bytes = 0;
+      let previous = cursor.member;
+      for await (const { member, cursor: next } of resumableObjectMembers(
+        (chunk) => sourceChunks(database, runId, row.observation_set_id, cursor.chunks, chunk),
+        cursor.member,
+        {
+          maximumTokenCharacters: 4194304,
+          maximumTokenBytes: 4194304,
+          maximumStructuralTokens: 16384,
+          maximumDepth: 128,
+        },
+      )) {
+        const size = member.kind === "value" ? new TextEncoder().encode(canonicalJson(member.value)).byteLength : 0;
+        if (records > 0 && bytes + size > 512000) {
+          cursor.member = previous;
+          await save();
+          records = 0;
+          bytes = 0;
+        }
+        if (member.key === "observations") {
+          if (member.kind === "array") cursor.values.observations = true;
+          else if (member.array) {
+            await retainSourceObservations(
+              database,
+              runId,
+              row.observation_set_id,
+              [member.value],
+              cursor.observations,
+            );
+            cursor.observations++;
+          } else throw new Error("Retained observations must be an array.");
+        } else {
+          if (member.kind === "array" || member.array)
+            throw new Error("Retained source document has an unexpected array member.");
+          Object.defineProperty(cursor.values, member.key, {
+            value: member.value,
+            writable: true,
+            enumerable: true,
+            configurable: true,
+          });
+          if (new TextEncoder().encode(canonicalJson(cursor.values)).byteLength > 32768)
+            throw new Error("reconciliation_capacity_exceeded: one source document header exceeds 32 KiB.");
+        }
+        cursor.member = next;
+        previous = next;
+        bytes += size;
+        if (++records === 32 || bytes >= 512000) {
+          await save();
+          records = 0;
+          bytes = 0;
+        }
       }
     }
     validate(row, cursor.values, cursor.observations);

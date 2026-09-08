@@ -1,3 +1,4 @@
+import { sealedSourceRecordProgress, sourceRecordAt, type SourceRecordRow } from "../source-evidence";
 import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { documentStorage } from "./reconciliation-document";
 import { retainPartitionedRecord, restorePartitionedRecord } from "./reconciliation-text";
@@ -55,6 +56,12 @@ export async function readSourceObservation(
   setId: string,
   ordinal: number,
 ): Promise<unknown> {
+  if (await sealedSourceRecordProgress(database, setId)) {
+    const record = await documentStorage(() => sourceRecordAt(database, setId, ordinal).first<SourceRecordRow>());
+    if (!record || (await sha256Text(record.content)) !== record.sha256)
+      throw new Error("Retained source observation failed integrity verification.");
+    return JSON.parse(record.content) as unknown;
+  }
   const record = await documentStorage(() =>
     sourceObservationStatement(database, runId, setId, ordinal).first<SourceObservationRow>(),
   );

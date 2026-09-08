@@ -1,8 +1,11 @@
 # Issue 233 capacity and fault evidence
 
-**Decision update — architecture review pending:** further profiling/experiments
-are stopped. The proposed next step is [bounded source intake](../plans/bounded-source-intake.md),
-not a target increase or another serializer experiment. All measurements below
+**Decision update — bounded intake implementation:** further profiling/experiments
+are stopped. The authorized first [bounded source intake](../plans/bounded-source-intake.md)
+slice replaces whole-document Riftbound inventory parsing with streamed extraction,
+immutable record batches, a sealed manifest and direct native reconciliation.
+A compact publication/actual SQL restore test passes; this is functional evidence,
+not a new heap measurement or capacity certification. All measurements below
 remain historical evidence. The 18.33/183.33 GiB estimates describe only the old
 synthetic fixture with two persisted inline-base64 copies; they are not a
 real-source baseline or a hardware requirement for the proposed pipeline. Any
