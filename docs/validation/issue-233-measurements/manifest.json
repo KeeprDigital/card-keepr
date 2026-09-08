@@ -28,7 +28,8 @@
     "CanonicalUTF8prototype remains test-support-only. Nodeequivalencepasses,butrefined54.161ms/88.17MBsampledalloc exceedslegacy34.311ms/83.09MB. Lowerpostcallheapnotpeakproof;productionserializerandparseunchanged,noadditionalnativecampaign.",
     "12daafa Context reducer extension: selected 4/4 with 42 skipped, then complete affected file 46/46 passed. This is bounded fault evidence, not exhaustive durable-phase coverage. Typecheck/lint/format pass; broader Biome check flags existing import ordering.",
     "Finite13newfaultcases: final3e3ab4d selected17/17passed50.47s; completefile58passed1admissiontimeout305.12s; isolatedadmission1/1passed1.68s unchanged30stimeout. NOT59/59fullpass. Earlierf3be533full39pass1preinjectionimmutablecollision19unexecuted retained; isolatedcheckpointpassed, per-caseidentityaliasremoved butrootcauseunproven. Initialfull1ee4fd8interruptedexit130forreview-oraclefix. Tombstoneisdirectvalidcuratedreducerseam,notWorkflowreachabilityproof.",
-    "1a0da9b structured1001ProductcapturePASS11711ms,max78methodentries,1295callbacks,34191entries includes60simulatedWorkflowmethods.49231submittedbatchstatements;R2object-size sum1190206980 repeatsmetadata,notbytestransferred. OptionalD1timing/retrymetadataabsent. Twoearlierfunctionalpasses omittedconsolecensus,notnumericmeasurements. Tinyintentionalfailedartifactsmokeexpectedexit1retained. Providerbilling/indexcost/fullpipelinecoverage remainunavailable."
+    "1a0da9b structured1001ProductcapturePASS11711ms,max78methodentries,1295callbacks,34191entries includes60simulatedWorkflowmethods.49231submittedbatchstatements;R2object-size sum1190206980 repeatsmetadata,notbytestransferred. OptionalD1timing/retrymetadataabsent. Twoearlierfunctionalpasses omittedconsolecensus,notnumericmeasurements. Tinyintentionalfailedartifactsmokeexpectedexit1retained. Providerbilling/indexcost/fullpipelinecoverage remainunavailable.",
+    "Collection-root normal and lost-response cases pass separately at 9cfa83d. Simulated receiver accepts 2/3 deliveries across initial invocation and replay, while sendEvent outcomes fulfill 2/2 and reject 0/1. Maximum 2 method entries per callback; exact sealed status, partitions and terminal payload preserved. This is not hosted or exactly-once delivery evidence. Focused observer/driver regression passes 11/11; no further 1001-Product run."
   ],
   "files": [
     {
@@ -910,6 +911,60 @@
       "retained_local_log": "/tmp/issue-233-methods-typecheck.log",
       "bytes": 2164,
       "sha256": "0bf7f7732994df9073e5b232e1903b7d9b838876425a83f866491e1f5902dfdf"
+    },
+    {
+      "file": "issue-233-root-normal.json",
+      "bytes": 3477,
+      "sha256": "d9de3560acf80e9ba453f47e939318e1f216a44ff42020dbb8e79842bfd04f03",
+      "original_local_source": "/tmp/issue-233-root-normal.json",
+      "original_source_sha256": "d9de3560acf80e9ba453f47e939318e1f216a44ff42020dbb8e79842bfd04f03"
+    },
+    {
+      "file": "issue-233-root-lost-response.json",
+      "bytes": 4104,
+      "sha256": "2fe9c85a1540ea4220e1e7347671166896b9f91a927b9819fd91da42356e72f3",
+      "original_local_source": "/tmp/issue-233-root-lost-response.json",
+      "original_source_sha256": "2fe9c85a1540ea4220e1e7347671166896b9f91a927b9819fd91da42356e72f3"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-root-focused-regression.log",
+      "bytes": 1905,
+      "sha256": "8300ac8d99f283c1a7b132048a77b67bd868b9b7e1ac0bd97fb217c93961ee1f"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-root-format.log",
+      "bytes": 42,
+      "sha256": "e5c30fc07d09bf4c6e4bebda58977489ec426c11c066f667073812b4cad1e1af"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-root-lint.log",
+      "bytes": 42,
+      "sha256": "f4f298ec49c798f206049e4af1008dd63bf645c033894d9b3c21ef520b9808c1"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-root-lost-response.log",
+      "bytes": 99080,
+      "sha256": "e07989b7f43c269024b40073b0f3b2f0d7a7cc3e370626ffd42457d824574e0b"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-root-normal.log",
+      "bytes": 97061,
+      "sha256": "fa6f823b3b2d3b2fdc17cfd9c6af98f7974423a4d509dd5ce856a174e4544bf1"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-root-typecheck-final.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-root-typecheck-initial.log",
+      "bytes": 2015,
+      "sha256": "77fb20fcc8dffa9831f35471449a583a6221d15b06e5b1620d2f6c85e9afa07d"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-root-typecheck.log",
+      "bytes": 138,
+      "sha256": "1d3438472a15b5ff70c70fa834da6d9f469024b091cca8eaf6af55ee3e234782"
     }
   ],
   "riftbound_frozen_commit": "2cdb4592",
@@ -936,5 +991,6 @@
   "finite_product_fault_oracle_correction_commit": "f3be533",
   "finite_product_fault_identity_correction_commit": "3e3ab4d",
   "binding_observer_commit": "f880445",
-  "structured_callback_reporter_commit": "1a0da9b"
+  "structured_callback_reporter_commit": "1a0da9b",
+  "collection_root_notification_commit": "9cfa83d"
 }

@@ -990,9 +990,49 @@ KEEPR_TEST_SUITE=stress KEEPR_CALLBACK_ARTIFACT=/tmp/new-callback-census.json \
 
 This completes the locally observable method/result additions in the approved
 seam. Exact billed CPU, provider requests, index-specific writes and service costs
-remain unavailable from these local interfaces. The next concrete local coverage
-option is the existing collection-root notification branch: a small fixture could
-observe `EVIDENCE_INGESTION_WORKFLOW.get/sendEvent` with the same outcome/callback
-rules, without a real-source or large-tier campaign. It is not executed here.
+remain unavailable from these local interfaces. The collection-root notification branch is covered by the finite follow-up below.
 Broader collection/export/backup accounting needs its own declared measurement
 window; this reconciliation census cannot retroactively cover those journeys.
+
+
+### Collection-root notification closure (`9cfa83d`)
+
+Exactly two tiny cases exercise the shipped terminal notification branch against a
+simulated collection Workflow receiver after a native candidate is sealed. The
+normal case passes independently (798 ms tests / 2.78 s harness), and the accepted
+notification with a lost response passes independently (744 ms / 2.46 s). Each run
+selects one case and skips the other; these are two separate passing captures.
+
+| Observation across initial invocation and replay | Normal | Lost response |
+| --- | ---: | ---: |
+| Callback attempts | 6 | 7 |
+| Method entries | 10 | 12 |
+| Maximum entries per callback | 2 | 2 |
+| D1 first entries | 6 | 6 |
+| Simulated collection get / sendEvent entries | 2 / 2 | 3 / 3 |
+| sendEvent fulfilled / rejected outcomes | 2 / 0 | 2 / 1 |
+| Accepted simulated deliveries | 2 | 3 |
+
+The lost-response receiver records acceptance before rejecting the first call.
+The existing retry configuration bounds the retry; the original resource guard
+remains active and all observed callbacks stay below 100 calls. Both cases assert
+exact terminal payload, sealed status and native candidate partitions across
+replay. Repeated accepted messages are explicit: this does not prove exactly-once
+or hosted delivery. There are no observed calls outside callbacks, no submitted
+D1 batches, and no returned D1 execution metadata through `first`.
+
+Artifacts contain counts/outcomes only, without IDs, payloads or row data. Setup,
+status and partition verification, and publication remain outside observation.
+The focused observer/driver regression passes **11/11** (9.82 s tests / 12.34 s
+harness); type checking, lint and formatting pass. Initial static-check errors
+were corrected before the two passing captures and their logs remain retained.
+No additional 1,001-Product workload or method family was added.
+
+The declared observer expansion is complete. The coverage table above remains
+scoped to its 1,001-Product window, with this separate fixture covering collection
+root `get`/`sendEvent`. Broader collection, publication, export, backup/restore and
+HTTP accounting are excluded; provider billed CPU, requests, index-specific writes
+and service costs are unavailable locally. Full retained tiers remain unexecuted
+pending sufficient storage; the measured 64 MiB overruns and the earlier full-file
+58-pass/1-timeout outcome remain unresolved. These results do not complete all
+acceptance criteria for #233.
