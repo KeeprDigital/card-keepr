@@ -1320,7 +1320,6 @@ test.each(productFaultCases)(
                   committedEffects.push(retained!);
                   const position = (fault.stage ? cursor.result[fault.cursor] : cursor.indexes[fault.cursor]) ?? 0;
                   expect(position).toBeLessThan(Number(ordinal));
-                  checkpointPositions.push(position);
                   if (fault.cursor === "names") expect(cursor.indexes.codes).toBe(0);
                   if (fault.cursor === "codes") {
                     expect(cursor.indexes.names).toBe(0);
@@ -1332,6 +1331,7 @@ test.each(productFaultCases)(
                       .first<{ count: number }>();
                     expect(names!.count).toBeGreaterThan(0);
                   }
+                  checkpointPositions.push(position);
                 }
               }
               throw new Error("Injected Product reducer committed-response outage");
@@ -1391,6 +1391,7 @@ test.each(productFaultCases)(
       expect(committedEffects.every((effect) => JSON.stringify(effect) === JSON.stringify(committedEffects[0]))).toBe(
         true,
       );
+      expect(checkpointPositions).toHaveLength(4);
       expect(new Set(checkpointPositions).size).toBe(1);
     }
     if (pauses) {
@@ -1604,6 +1605,7 @@ test("a Product reducer committed tombstone replays without restoring a curated 
   await prior.seed(curated);
   let unavailable = true;
   const committed: { content: string; sha256: string }[] = [];
+  const cursorObservations: { stage: string; position: number; ordinal: number }[] = [];
   const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement =>
     new Proxy(statement, {
       get(target, property) {
@@ -1632,8 +1634,11 @@ test("a Product reducer committed tombstone replays without restoring a curated 
                 .bind(run.id, "product_reduction:one-piece")
                 .first<{ content: string }>();
               const cursor = JSON.parse(checkpoint!.content);
-              expect(cursor.stage).toBe("existing_relationships");
-              expect(cursor.result.product_relationships ?? 0).toBeLessThan(Number(ordinal));
+              cursorObservations.push({
+                stage: cursor.stage,
+                position: cursor.result.product_relationships ?? 0,
+                ordinal: Number(ordinal),
+              });
               throw new Error("Injected tombstone response loss");
             }
             return result;
@@ -1663,6 +1668,11 @@ test("a Product reducer committed tombstone replays without restoring a curated 
   for (let attempt = 0; attempt < 4; attempt++)
     await expect(reduce()).rejects.toThrow("Reconciliation reducer storage is temporarily unavailable");
   expect(committed).toHaveLength(4);
+  expect(cursorObservations).toHaveLength(4);
+  for (const cursor of cursorObservations) {
+    expect(cursor.stage).toBe("existing_relationships");
+    expect(cursor.position).toBeLessThan(cursor.ordinal);
+  }
   expect(committed.every((effect) => JSON.stringify(effect) === JSON.stringify(committed[0]))).toBe(true);
   unavailable = false;
   const resumed = await reduce();
