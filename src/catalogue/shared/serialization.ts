@@ -33,21 +33,28 @@ function canonicalJsonAt(value: unknown, path: string): string {
  */
 export function canonicalUtf8(value: unknown): Uint8Array {
   let length = 0;
-  for (const part of canonicalJsonParts(value, "$")) length += encodedLength(part);
+  visitCanonicalParts(value, "$", (part) => {
+    length += encodedLength(part);
+  });
   const result = new Uint8Array(length);
   let offset = 0;
-  for (const part of canonicalJsonParts(value, "$")) {
+  visitCanonicalParts(value, "$", (part) => {
+    if (part.length === 1 && part.charCodeAt(0) < 0x80) {
+      if (offset >= length) throw new Error("Canonical JSON input changed during encoding.");
+      result[offset++] = part.charCodeAt(0);
+      return;
+    }
     const encoded = encoder.encodeInto(part, result.subarray(offset));
     if (encoded.read !== part.length) throw new Error("Canonical JSON input changed during encoding.");
     offset += encoded.written;
-  }
+  });
   if (offset !== length) throw new Error("Canonical JSON input changed during encoding.");
   return result;
 }
 
-function* canonicalJsonParts(value: unknown, path: string): Generator<string> {
+function visitCanonicalParts(value: unknown, path: string, emit: (part: string) => void): void {
   if (typeof value === "string") {
-    yield '"';
+    emit('"');
     const normalized = value.normalize("NFC");
     for (let offset = 0; offset < normalized.length; ) {
       let end = Math.min(offset + 32768, normalized.length);
@@ -57,32 +64,32 @@ function* canonicalJsonParts(value: unknown, path: string): Generator<string> {
         normalized.charCodeAt(end - 1) <= 0xdbff
       )
         end--;
-      yield JSON.stringify(normalized.slice(offset, end)).slice(1, -1);
+      emit(JSON.stringify(normalized.slice(offset, end)).slice(1, -1));
       offset = end;
     }
-    yield '"';
+    emit('"');
   } else if (Array.isArray(value)) {
-    yield "[";
+    emit("[");
     for (let index = 0; index < value.length; index++) {
-      if (index) yield ",";
+      if (index) emit(",");
       // Array.map in the reference skips holes, but visits inherited elements.
-      if (index in value) yield* canonicalJsonParts(value[index], `${path}[${index}]`);
+      if (index in value) visitCanonicalParts(value[index], `${path}[${index}]`, emit);
     }
-    yield "]";
+    emit("]");
   } else if (value !== null && typeof value === "object") {
-    yield "{";
+    emit("{");
     let first = true;
     const record = value as Record<string, unknown>;
     for (const key of Object.keys(record).sort(compareUtf8)) {
-      if (!first) yield ",";
+      if (!first) emit(",");
       first = false;
-      yield* canonicalJsonParts(key, path);
-      yield ":";
-      yield* canonicalJsonParts(record[key], `${path}.${key}`);
+      visitCanonicalParts(key, path, emit);
+      emit(":");
+      visitCanonicalParts(record[key], `${path}.${key}`, emit);
     }
-    yield "}";
+    emit("}");
   } else {
-    yield canonicalJsonAt(value, path);
+    emit(canonicalJsonAt(value, path));
   }
 }
 
