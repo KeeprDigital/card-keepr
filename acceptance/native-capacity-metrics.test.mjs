@@ -82,6 +82,7 @@ test("phase timeline handles split streams, drops old events and excludes payloa
   timeline.observe(line("third"), "stdout");
   timeline.observe('{"contract":"card-keepr-operational-log@1",broken}\n', "stdout");
   timeline.observe("x".repeat(65537), "stderr");
+  timeline.observe(line("oversized-suffix"), "stderr");
   const report = timeline.snapshot(started);
   assert.deepEqual(
     report.events.map((event) => event.step),
@@ -93,4 +94,6 @@ test("phase timeline handles split streams, drops old events and excludes payloa
   assert.ok(report.events.every((event) => event.observed_elapsed_ms >= 0));
   assert.ok(!JSON.stringify(report).includes("secret-source-body"));
   assert.ok(!JSON.stringify(report).includes("private-id"));
+  timeline.observe(line("after-discard"), "stderr");
+  assert.equal(timeline.snapshot(started).events.at(-1).step, "after-discard");
 });

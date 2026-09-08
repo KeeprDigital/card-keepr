@@ -88,16 +88,24 @@ export function nativeOperationalTimeline(limit = 4096) {
   if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Timeline limit must be a positive integer");
   const events = [];
   const partial = new Map();
+  const discarding = new Set();
   let received = 0;
   let malformed = 0;
   let oversized = 0;
   return {
     observe(chunk, stream) {
+      if (discarding.has(stream)) {
+        const newline = chunk.indexOf("\n");
+        if (newline < 0) return;
+        discarding.delete(stream);
+        chunk = chunk.slice(newline + 1);
+      }
       const lines = `${partial.get(stream) ?? ""}${chunk}`.split("\n");
       const remainder = lines.pop();
       if (remainder.length <= 65536) partial.set(stream, remainder);
       else {
         partial.set(stream, "");
+        discarding.add(stream);
         oversized++;
       }
       for (const line of lines) {
