@@ -1036,3 +1036,80 @@ and service costs are unavailable locally. Full retained tiers remain unexecuted
 pending sufficient storage; the measured 64 MiB overruns and the earlier full-file
 58-pass/1-timeout outcome remain unresolved. These results do not complete all
 acceptance criteria for #233.
+
+
+### Observation retention experiment and production revert (`98bd07a` → `e622ab0`)
+
+The production allocation path was inspected before editing. Capture already
+streams exact bytes into private R2 with incremental hashing. `parseSnapshot`
+then verifies a whole snapshot buffer, decodes/parses it, obtains the adapter's
+observations, wraps all observations, and builds a whole canonical string plus
+UTF-8 output buffer before immutable retention. Reconciliation subsequently uses
+64 KiB ranged reads, verified durable chunks and resumable record parsing. The
+adapter's bounded whole-document parse contract remains distinct from the latter
+bounded reconciliation reader (ADR 0010 and ADR 0015).
+
+One production experiment replaced only observation-set retention. It reused the
+existing `canonicalJson` per header value and wrapped observation, with no full
+wrapping array. A synchronous incremental SHA-256/length pass preceded a demand-
+driven second pass through `FixedLengthStream`; R2 checked the first-pass SHA-256
+while retaining the same conditional creation, digest metadata and writer token.
+This removed the whole output string/buffer but retained parsed observations and
+one serialized observation at a time. It did not introduce a new parser or revive
+the earlier generic encoder. Current [R2 binding documentation](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/)
+specifies stream inputs, conditional creation and received-body checksum validation.
+
+Before production implementation, a Node differential proof used the exact
+8,708,711-byte source fixture (unchanged `ddade75e…` digest) in an explicitly
+synthetic observation envelope. Its 8,756,889 canonical bytes matched byte-for-byte
+and by incremental SHA-256 across both passes; the largest emitted piece was
+8,749 bytes. Empty and Unicode/NFC/escaping/lone-surrogate cases also matched.
+This proves emission shape, not heap reduction. The proof deliberately collects
+bytes for comparison and is not a memory benchmark.
+
+At `98bd07a`, four tiny runtime tests pass (52 ms / 874 ms harness), including real
+R2 rejection of same-size checksum drift and serialization failure without partial
+retention. Five selected reparse tests pass (7.24 s / 9.10 s, four skipped), covering
+staged recovery, lost successful put response, matching conditional winner,
+immutable collision, and early unconsumed rejection. Winner bytes and exact writer
+tickets are checked. An initial new fixture ID contained spaces and failed before
+its race path; it was corrected, with the failed log retained. Type checks and lint
+pass. Both code reviews found no actionable findings before native evaluation.
+
+Exactly one native evaluation followed with the existing external-source,
+declared-length 1,001-Product harness, unchanged 15 s/64 MiB assertions and 100 ms
+sampling configuration:
+
+| Observation | Previous declared-length `f747d8a` | Stream experiment `98bd07a` |
+| --- | ---: | ---: |
+| Reconciliation sealed elapsed | 11,416 ms | 12,458 ms |
+| Sampled used-heap maximum | 118,447,544 bytes | 114,119,536 bytes |
+| Heap samples / query timeouts | 4 / 2 | 4 / 2 |
+| Skipped sample intervals | 114 | 125 |
+| Original 64 MiB target | Fail | Fail |
+
+The experiment **fails** acceptance. Its whole test takes 18.810 s / 18.914 s
+harness; the 15 s reconciliation guard passes. The historical comparison is not a
+same-head paired control, and sparse samples/GC do not establish a meaningful
+benefit or causal percentage. The peak query spans 10,557–12,945 ms on the observer
+clock; the following sample is 17,173,872 bytes at 12,955 ms. These windows neither
+locate an allocation nor prove a persistent leak. Sampled allocation stacks do not
+account for the peak or identify a dominant retained root. No debugger attribution
+or post-GC memory claim is substituted for the failed result.
+
+Per the agreed decision rule, `e622ab0` restores production and runtime recovery
+source byte-for-byte to the pre-experiment head. The module is now explicitly
+unwired test support. Its four runtime proof tests pass after relocation, and test
+type checking passes. The experiment's exact production implementation and race
+tests remain in `98bd07a` and retained local copies; all failed artifacts and raw
+state remain available. No production memory fix is claimed, and no second variant
+or full campaign was run.
+
+The missing evidence for another production change is the retained object/root
+structure during the late reconciliation window, distinguished from allocations
+awaiting collection. A next investigation would first validate heap-snapshot and
+retainer support on a tiny standalone workerd canary; only demonstrated support
+would justify an explicitly bounded retained-root capture at a durable callback
+boundary. Such a capture is intrusive and separate from acceptance timing. It has
+not been run. Full tiers/storage and unavailable provider billing remain separate
+unresolved acceptance gaps.

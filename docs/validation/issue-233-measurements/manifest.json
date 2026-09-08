@@ -29,7 +29,8 @@
     "12daafa Context reducer extension: selected 4/4 with 42 skipped, then complete affected file 46/46 passed. This is bounded fault evidence, not exhaustive durable-phase coverage. Typecheck/lint/format pass; broader Biome check flags existing import ordering.",
     "Finite13newfaultcases: final3e3ab4d selected17/17passed50.47s; completefile58passed1admissiontimeout305.12s; isolatedadmission1/1passed1.68s unchanged30stimeout. NOT59/59fullpass. Earlierf3be533full39pass1preinjectionimmutablecollision19unexecuted retained; isolatedcheckpointpassed, per-caseidentityaliasremoved butrootcauseunproven. Initialfull1ee4fd8interruptedexit130forreview-oraclefix. Tombstoneisdirectvalidcuratedreducerseam,notWorkflowreachabilityproof.",
     "1a0da9b structured1001ProductcapturePASS11711ms,max78methodentries,1295callbacks,34191entries includes60simulatedWorkflowmethods.49231submittedbatchstatements;R2object-size sum1190206980 repeatsmetadata,notbytestransferred. OptionalD1timing/retrymetadataabsent. Twoearlierfunctionalpasses omittedconsolecensus,notnumericmeasurements. Tinyintentionalfailedartifactsmokeexpectedexit1retained. Providerbilling/indexcost/fullpipelinecoverage remainunavailable.",
-    "Collection-root normal and lost-response cases pass separately at 9cfa83d. Simulated receiver accepts 2/3 deliveries across initial invocation and replay, while sendEvent outcomes fulfill 2/2 and reject 0/1. Maximum 2 method entries per callback; exact sealed status, partitions and terminal payload preserved. This is not hosted or exactly-once delivery evidence. Focused observer/driver regression passes 11/11; no further 1001-Product run."
+    "Collection-root normal and lost-response cases pass separately at 9cfa83d. Simulated receiver accepts 2/3 deliveries across initial invocation and replay, while sendEvent outcomes fulfill 2/2 and reject 0/1. Maximum 2 method entries per callback; exact sealed status, partitions and terminal payload preserved. This is not hosted or exactly-once delivery evidence. Focused observer/driver regression passes 11/11; no further 1001-Product run.",
+    "98bd07a stream retention eliminated whole output buffering but native1001 still failed64MiB: 114119536bytes,4samples,2timeouts,125skips; sealed12458ms. Historical declared-length comparison is not a same-head paired control and establishes no causal benefit. Production wiring reverted e622ab0; only unwired proof retained. No new memory fix, second variant or full campaign."
   ],
   "files": [
     {
@@ -965,6 +966,102 @@
       "retained_local_log": "/tmp/issue-233-root-typecheck.log",
       "bytes": 138,
       "sha256": "1d3438472a15b5ff70c70fa834da6d9f469024b091cca8eaf6af55ee3e234782"
+    },
+    {
+      "file": "issue-233-stream-retention-proof.json",
+      "bytes": 895,
+      "sha256": "bc0e7bd18befcabeb5a42e4087ee5e1c3fd3f2f86c98914a34af8ca12ddadb8d",
+      "original_local_source": "/tmp/issue-233-stream-retention-proof.json",
+      "original_source_sha256": "bc0e7bd18befcabeb5a42e4087ee5e1c3fd3f2f86c98914a34af8ca12ddadb8d"
+    },
+    {
+      "file": "issue-233-stream-native-isolate-1.json",
+      "bytes": 851479,
+      "sha256": "78c991eb620f5ff683137839c584949e35622ab0a0a362ed45f160427304ab87",
+      "original_local_source": "/tmp/issue-233-stream-native-isolate-1.json",
+      "original_source_sha256": "a45429fcb077898b2b0cc44a3b4099a63b2dc6699af963d05cc1ba5f6ff63315"
+    },
+    {
+      "file": "issue-233-stream-native-workload.json",
+      "bytes": 133267,
+      "sha256": "ef08eff9ec3dfc9c2e1ea61ee8fe51d452914d36d9a40f521b04386564bf7f4a",
+      "original_local_source": "/tmp/issue-233-stream-native-workload.json",
+      "original_source_sha256": "ef08eff9ec3dfc9c2e1ea61ee8fe51d452914d36d9a40f521b04386564bf7f4a"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-stream-lint.log",
+      "bytes": 43,
+      "sha256": "2dbd3164b3353c50fbe9020fe207d1df607823579687d255df7bce201b9c513a"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-stream-native.log",
+      "bytes": 1688,
+      "sha256": "7379a9146b8186328f7552b90b3399d4436a422651478da2387f18d573dc784a"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-stream-production-module.ts",
+      "bytes": 1822,
+      "sha256": "f955ade86f2452826b874c2cee135af8a1fed6e40cde188ce1590e546d6f9d4a"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-stream-production-parsing.ts",
+      "bytes": 19053,
+      "sha256": "1b9efd11c4a3c61cd49c670ad9074f2f285dedccd22d7f9aada12e0688f77b0b"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-stream-production-recovery.spec.ts",
+      "bytes": 18090,
+      "sha256": "9977d31b2adbe32852911d5ccbf24c5554e4a8912c2d3c666ac09111322988e9"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-stream-recovery-final.log",
+      "bytes": 4010,
+      "sha256": "746183fc78bf8e3335ab571f946c2f362d1c0a35648d1ccdc6a2ddb9687cd7a8"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-stream-recovery.log",
+      "bytes": 2993,
+      "sha256": "84edc7488c7749acb3b5dae72d0741058d0bfd66ff18fb8551813cd2b438ba3f"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-stream-retention-fixture.mjs",
+      "bytes": 104519,
+      "sha256": "0d60dd7f38521c7062589222bee9e6f9e50354bfa88ff44dad64647082ed9f16"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-stream-retention-proof.mjs",
+      "bytes": 3125,
+      "sha256": "2aca4dab9a1670b3a8d579f9270c8b0d43e78e866c01a72b4d84f579b393e43a"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-stream-small-final.log",
+      "bytes": 414,
+      "sha256": "871ced60fb968dc0e57f5f2abe35c5de98d3b2b56db14a76a6e7b4d2733a2225"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-stream-small.log",
+      "bytes": 230,
+      "sha256": "973a2d6e9a76a8a774fe8f3e64363665c1e7c57a51f3a2a4858d1bfe898e0b28"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-stream-test-typecheck.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-stream-typecheck.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-stream-unwired-proof.log",
+      "bytes": 414,
+      "sha256": "39069d724acd4e2b5cbe74d90ff9fc8712824b489de00201132acb9be78f97da"
+    },
+    {
+      "retained_local_log": "/tmp/issue-233-stream-unwired-typecheck.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
   "riftbound_frozen_commit": "2cdb4592",
@@ -992,5 +1089,7 @@
   "finite_product_fault_identity_correction_commit": "3e3ab4d",
   "binding_observer_commit": "f880445",
   "structured_callback_reporter_commit": "1a0da9b",
-  "collection_root_notification_commit": "9cfa83d"
+  "collection_root_notification_commit": "9cfa83d",
+  "observation_retention_experiment_commit": "98bd07a",
+  "observation_retention_revert_commit": "e622ab0"
 }
