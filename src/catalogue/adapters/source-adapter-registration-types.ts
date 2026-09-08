@@ -67,6 +67,8 @@ export type SourceAdapterRegistration = Readonly<{
       }>;
     }>;
   };
+  /** Ordered top-level record containers understood by this JSON parser. */
+  jsonRecordContainers?: readonly string[];
   parse?: (document: unknown) => readonly unknown[] | Promise<readonly unknown[]>;
   parseBytes?: (
     bytes: Uint8Array,

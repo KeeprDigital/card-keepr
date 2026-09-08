@@ -5,9 +5,9 @@ Status: **intake-first migration authorized; second slice implemented locally** 
 All registered source intake now writes the same sealed records and progress contract.
 Riftbound inventory uses its streaming extractor. Bandai One Piece, Fusion World,
 Digimon and Gundam, Limitless, One Piece errata and Riftbound articles use explicitly
-bounded HTML pages before their existing semantic parsers. Synthetic JSON adapters
-transform individual records, preserving cards-before-products order and single
-unwrapped observations. Original raw evidence remains immutable in R2.
+bounded HTML pages before their existing semantic parsers. Synthetic JSON adapters declare their own ordered record containers and transform
+individual records, preserving cards-before-products order and single unwrapped
+observations. Original raw evidence remains immutable in R2.
 
 Migration 30 adds independently addressed requests, large text, discovery facts and
 a small SQL manifest. Record roots bind immutable headers and record/request hashes;
@@ -38,7 +38,9 @@ historical import accept individual tokens up to 16 MiB, depth 128 and 16,384
 structural tokens. Record metadata and batches remain at most 512,000 bytes / eight
 records. Fields and field names over 32,768 characters use independent text chunks;
 each accepted field is at most 16,777,216 UTF-16 code units, with at most 256 parts
-and 16,384 visited nodes per observation. Reference paths live outside source values.
+and 16,384 visited nodes per observation. Reference paths live outside source values. Text chunks use lossless canonical JSON
+strings (16,384 code units before escaping), so lone surrogates remain distinct
+from U+FFFD; stored chunk bytes and their length receipt include JSON escaping.
 Native consumers reconstruct one bounded record, including large fields, because
 the existing normalizer still takes an object. No claim of eliminating all
 per-record materialization is made. Headers and manifests remain at most 32 KiB.

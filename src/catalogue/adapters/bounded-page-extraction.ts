@@ -112,6 +112,9 @@ async function* oneChunk(value: string) {
 /** Synthetic/admitted JSON adapters transform one source record at a time. */
 async function extractJsonRecords(adapter: SourceAdapterRegistration, source: () => AsyncIterable<string>) {
   if (!adapter.parse) throw new Error("Source adapter parser is missing.");
+  const containers = adapter.jsonRecordContainers ?? [];
+  if (containers.length > 32 || new Set(containers).size !== containers.length)
+    throw new Error("Source adapter record containers must be a bounded ordered vocabulary.");
   const limits = {
     maximumTokenBytes: 16777216,
     maximumTokenCharacters: 16777216,
@@ -123,7 +126,7 @@ async function extractJsonRecords(adapter: SourceAdapterRegistration, source: ()
   const arrays = new Set<string>();
   for await (const { member } of checkedMembers(source, limits)) {
     if (++members > 32768) throw new AdapterParseFailure("Source JSON page exceeds its member budget.");
-    if (["cards", "product_surfaces", "rows"].includes(member.key)) {
+    if (containers.includes(member.key)) {
       if (member.kind === "array") arrays.add(member.key);
       if (member.kind === "value" && member.array && ++count > 2048)
         throw new AdapterParseFailure("Source JSON page exceeds 2048 records.");
@@ -157,7 +160,7 @@ async function extractJsonRecords(adapter: SourceAdapterRegistration, source: ()
       let ordinal = 0;
       // Preserve the admitted parser's cards-before-products observation order,
       // even when the publisher document places the arrays in another order.
-      for (const key of ["cards", "product_surfaces", "rows"].filter((key) => arrays.has(key)))
+      for (const key of containers.filter((key) => arrays.has(key)))
         for await (const { member } of checkedMembers(source, limits)) {
           if (member.kind !== "value" || !member.array || member.key !== key) continue;
           const parsed = await adapter.parse!({ [key]: [member.value] });

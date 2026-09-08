@@ -93,10 +93,11 @@ export async function retainSourceRecordText(
 }
 function* textChunks(value: string) {
   for (let offset = 0; offset < value.length; ) {
-    let end = Math.min(offset + 32768, value.length);
+    let end = Math.min(offset + 16384, value.length);
     const last = value.charCodeAt(end - 1);
     if (end < value.length && last >= 0xd800 && last <= 0xdbff) end--;
-    yield value.slice(offset, end);
+    // JSON escaping is lossless for lone UTF-16 surrogates; raw UTF-8 is not.
+    yield canonicalJson(value.slice(offset, end));
     offset = end;
   }
 }
@@ -123,9 +124,10 @@ export async function restoreSourceRecordText(
         const encoded = utf8(row.content);
         hash.update(encoded);
         bytes += encoded.length;
-        if (bytes > part.byte_length || text.length + row.content.length > 16777216)
+        const decoded: unknown = JSON.parse(row.content);
+        if (typeof decoded !== "string" || bytes > part.byte_length || text.length + decoded.length > 16777216)
           throw new Error("Source text part exceeds its retained bound.");
-        text += row.content;
+        text += decoded;
       }
     }
     if (bytes !== part.byte_length || hash.digest("hex") !== part.sha256) throw new Error("Source text root changed.");

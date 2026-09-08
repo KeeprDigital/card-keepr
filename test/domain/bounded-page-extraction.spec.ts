@@ -72,3 +72,24 @@ test("publisher rich HTML nested in JSON shares the page construction budget", a
   ).rejects.toThrow("construction budget");
   expect(parseBytes).not.toHaveBeenCalled();
 });
+
+test("array-container interpretation belongs to the adapter, including mixed and unwrapped inputs", async () => {
+  for (const document of [
+    { kind: "card", rows: [] },
+    { kind: "card", rows: [1, 2] },
+    { cards: "not an array", rows: [] },
+  ]) {
+    const extracted = await extractBoundedAdapterPage(base, chunks(JSON.stringify(document)), context);
+    expect(extracted.count).toBe(1);
+    expect((await collect(extracted.records)).map((record) => record.value)).toEqual([document]);
+  }
+  const mixed = { product_surfaces: [{ product: 1 }], rows: [{ ignored: true }], cards: [{ card: 1 }] };
+  const extracted = await extractBoundedAdapterPage(base, chunks(JSON.stringify(mixed)), context);
+  expect((await collect(extracted.records)).map((record) => record.value)).toEqual(await base.parse!(mixed));
+  const tabular = syntheticAdapterRegistrations.find(
+    (adapter) => adapter.adapterVersion === "fixture-one-piece-tabular@1",
+  )!;
+  const document = { cards: [{ ignored: true }], rows: [{ cells: ["OP01-001", "Name", "Rules", {}], evidence: {} }] };
+  const rows = await extractBoundedAdapterPage(tabular, chunks(JSON.stringify(document)), context);
+  expect((await collect(rows.records)).map((record) => record.value)).toEqual(await tabular.parse!(document));
+});

@@ -516,7 +516,14 @@ test("historical observation import is explicit, preserves original bytes and id
   const observations = Array.from({ length: 17 }, (_, index) => ({
     id: `srcobs_historical-import_${index + 1}`,
     ordinal: index + 1,
-    value: { name: `card ${index}`, text: "historic text ".repeat(4000) },
+    value: {
+      name: `card ${index}`,
+      text: "historic text ".repeat(4000),
+      lone: "x".repeat(32769) + "\ud800",
+      replacement: "x".repeat(32769) + "\ufffd",
+      escaped: "\u0000\udfff".repeat(20000),
+      ["field".repeat(8000) + "\ud800"]: "distinct key",
+    },
   }));
   const original = JSON.stringify({
     contract: "card-keepr-source-observations@1",
