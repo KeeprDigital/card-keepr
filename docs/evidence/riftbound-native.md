@@ -378,3 +378,31 @@ The `e558a81` continuation passed retained Curated-operation checks and public P
 Read-only profiling of its actual SQL import found 95,139 census queries, including about 65,000 private checkpoint/reducer rows. Local SQL/hash work took 5.0 seconds. Byte-capped pages now reduce this to 46,171 queries with an exactly identical snapshot: at most four candidate rows and 1 MiB of serialized row content, only for the two schema-bounded private tables. Oversized rows fail closed; other tables keep their prior behavior. Gapped/partial-page, changed-record, oversized-payload, and repeated-cursor regressions pass. Native measurements verified the same snapshot in 11.8 seconds through source D1 and 19.6 seconds through the provider boundary; maximum observed provider response was 25,548 bytes.
 
 The retained 223,550,207-byte SQL took 30.0 seconds to process and 61.9 seconds to import because the local fixture autocommitted every statement. One transaction per disposable import reduces the measured import to 2.5 seconds; SQL processing remains 29.3 seconds. Regression checks prove rollback on invalid SQL, foreign-key restoration, and committed rows after an injected lost response. Review cleared both changes. The measured phases total about 64 seconds; the existing 120-second deadline is unchanged. A new complete fresh run is still required for terminal backup and final restore proof.
+
+
+### Confirmed local disk exhaustion (`89bfefc`)
+
+The fresh run at `keepr-real-riftbound-U9SSpJ` completed collection, owner admissions,
+first publication and verified backup, six Curated operations, and the second
+publication. It stopped after 1,042 seconds while the second backup remained
+`exporting`. This is not a terminal backup or restore pass.
+
+The actual runtime log contains `pwrite: No space left on device`, followed by
+SQLite `SQLITE_IOERR_SHMSIZE` and `SQLITE_CANTOPEN`. Read-only inspection found
+search ready and the recovery fence clear: export cleanup had completed before
+SQL retention failed. The source dump was 188,687,716 bytes and finished about
+12 seconds after the backup step began. The initial search for Worker errors
+missed the filesystem errors; the disk error supersedes the earlier tentative
+export-performance explanation for this run.
+
+An isolated probe using that exact saved SQL and the shipped provider, SHA
+transform, FixedLengthStream, and native R2 retained 188,687,437 transformed bytes
+in 34.8 seconds (SHA-256
+`75721056afd01412d95cd523899ab63ac706ce5ed2d8d74228e0b5c8bd46f8af`). A sequential
+probe retained its first export and upload, then reproduced `No space left on
+device` during its second R2 write, after the provider returned in 38.4 seconds.
+The volume reported only 318 MiB available. Both probes stopped; disposable probe
+output was removed while logs and the original failure state were preserved.
+No timeout, backup ledger, or production code was changed for this failure.
+Further native gates require adequate disk capacity. The complete fresh journey,
+final restoration, and five-game recovery gate remain unverified.
