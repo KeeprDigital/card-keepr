@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";
+import { profileNativeIsolates } from "./helpers/native-isolate-metrics.mjs";
 import { curatedNativeD1Statements } from "./helpers/query-helpers/curated-native-fixture.mjs";
 
 test("owner validation resolves a native published target in Workerd without request-time code generation", async (t) => {
@@ -16,7 +18,9 @@ test("owner validation resolves a native published target in Workerd without req
     conditions: ["workerd", "worker", "browser"],
     external: ["node:*", "cloudflare:*"],
   });
+  const capacityOutput = process.env.KEEPR_CURATED_CAPACITY_OUTPUT;
   const runtime = new Miniflare({
+    ...(capacityOutput ? { inspectorPort: 0 } : {}),
     modules: true,
     script: bundled.outputFiles[0].text,
     compatibilityDate: "2026-07-29",
@@ -49,6 +53,44 @@ test("owner validation resolves a native published target in Workerd without req
   const valid = await send();
   assert.equal(valid.status, 200, await valid.clone().text());
   assert.equal((await valid.json()).valid, true);
+  if (capacityOutput) {
+    // Optional bounded minimization probe: repeat the shipped native validation
+    // boundary. This cannot stand in for the full Riftbound candidate workload.
+    const stop = await profileNativeIsolates(runtime, capacityOutput, undefined, { sampleIntervalMs: 100 });
+    const phases = [];
+    try {
+      for (let batch = 0; batch < 10; batch++) {
+        const started = performance.now();
+        for (let call = 0; call < 100; call++) {
+          const response = await send();
+          assert.equal(response.status, 200);
+          assert.equal((await response.json()).valid, true);
+        }
+        phases.push({ batch, calls: 100, observer_started_ms: started, observer_finished_ms: performance.now() });
+      }
+    } finally {
+      await stop();
+      await writeFile(
+        `${capacityOutput}.phases.json`,
+        JSON.stringify(
+          {
+            limitation:
+              "Driver-observed boundaries for 1,000 sequential validations of one synthetically seeded Riftbound Printing using the shipped native validation function. Not full-candidate capacity or an established reproduction of the earlier memory failure.",
+            phases,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    }
+    const report = JSON.parse(await readFile(capacityOutput, "utf8"));
+    assert.deepEqual(report.errors, []);
+    const maximum = Math.max(
+      ...report.isolates.flatMap((isolate) => isolate.heap_samples.map((sample) => sample.usedSize)),
+    );
+    t.diagnostic(JSON.stringify({ validations: 1000, sampled_used_heap_maximum: maximum, report: capacityOutput }));
+    assert.ok(maximum <= 64 * 1024 ** 2, `Sampled used heap ${maximum} exceeds the initial 64 MiB target`);
+  }
   const printingTarget = proposal.target;
   proposal.target = { kind: "field", entity_type: "product", entity_id: "product_native", path: "/name" };
   proposal.assertion.value = "Reviewed product";

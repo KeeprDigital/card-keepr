@@ -1,0 +1,574 @@
+{
+  "contract": "card-keepr-local-isolate-measurements@1",
+  "limitation": "Local workerd DevTools samples with profiler overhead. Heap samples include V8 used/allocated heap, embedder heap and backing storage as separate fields; they are not continuous peak working set. CPU profile deltas are sampling attribution, not billed CPU or invocation CPU. Runtime restarts produce separate reports.",
+  "elapsed_ms": 47737.20033300016,
+  "driver_only": {
+    "cpu_microseconds": {
+      "user": 920365,
+      "system": 239539
+    },
+    "process_lifetime_maximum_rss_kib": 2336224,
+    "limitation": "Node driver only, excludes workerd and CLI children; RSS maximum covers the process lifetime."
+  },
+  "occupancy": [
+    {
+      "elapsed_ms": 0.010666000191122293,
+      "files": 5234,
+      "logical_bytes": 3937436996,
+      "allocated_bytes": 3943587840,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 190,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 5226,
+          "logical_bytes": 3010492425,
+          "allocated_bytes": 3016630272
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 223555383,
+          "allocated_bytes": 223555584
+        },
+        "owner-card.json": {
+          "files": 1,
+          "logical_bytes": 834,
+          "allocated_bytes": 4096
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 272,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 137592832,
+          "allocated_bytes": 137592832
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 255717376,
+          "allocated_bytes": 255717376
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 310075392,
+          "allocated_bytes": 310075392
+        }
+      },
+      "free_bytes": 897073152,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 30073.553916000063,
+      "files": 5238,
+      "logical_bytes": 3939504884,
+      "allocated_bytes": 3945656320,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 190,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 5230,
+          "logical_bytes": 3012560313,
+          "allocated_bytes": 3018698752
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 223555383,
+          "allocated_bytes": 223555584
+        },
+        "owner-card.json": {
+          "files": 1,
+          "logical_bytes": 834,
+          "allocated_bytes": 4096
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 272,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 137592832,
+          "allocated_bytes": 137592832
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 255717376,
+          "allocated_bytes": 255717376
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 310075392,
+          "allocated_bytes": 310075392
+        }
+      },
+      "free_bytes": 1243766784,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 47654.51925000013,
+      "skipped_sampling_intervals": 0,
+      "files": 5240,
+      "logical_bytes": 3940452292,
+      "allocated_bytes": 3946606592,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 190,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 5232,
+          "logical_bytes": 3013507721,
+          "allocated_bytes": 3019649024
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 223555383,
+          "allocated_bytes": 223555584
+        },
+        "owner-card.json": {
+          "files": 1,
+          "logical_bytes": 834,
+          "allocated_bytes": 4096
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 272,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 137592832,
+          "allocated_bytes": 137592832
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 255717376,
+          "allocated_bytes": 255717376
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 310075392,
+          "allocated_bytes": 310075392
+        }
+      },
+      "free_bytes": 1242071040,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    }
+  ],
+  "operations": {
+    "limitation": "Operational log observations; includes polls and retries, excludes unlogged health checks. Preparations and submitted batch statements are not executed rows or billed writes. Workflow wall durations overlap across concurrent Workflows.",
+    "malformed_records": 0,
+    "groups": {
+      "api:request.completed:GET:/health": {
+        "count": 1,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 14,
+          "maximum": 14,
+          "p95": 14
+        },
+        "d1": {
+          "prepared_statements": 3,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "api:request.completed:GET:/v1/catalogue-exports/:ref": {
+        "count": 33,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 290,
+          "maximum": 14,
+          "p95": 13
+        },
+        "d1": {
+          "prepared_statements": 165,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "api:request.completed:GET:/v1/catalogue-exports/:ref/components/:ref": {
+        "count": 131,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 986,
+          "maximum": 58,
+          "p95": 11
+        },
+        "d1": {
+          "prepared_statements": 524,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "api:request.completed:GET:/v1/printings/:ref": {
+        "count": 2,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 14,
+          "maximum": 10,
+          "p95": 10
+        },
+        "d1": {
+          "prepared_statements": 10,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "api:request.completed:GET:/v1/printing-images/:ref/content": {
+        "count": 1,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 7,
+          "maximum": 7,
+          "p95": 7
+        },
+        "d1": {
+          "prepared_statements": 2,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      }
+    }
+  },
+  "errors": [],
+  "isolates": [
+    {
+      "target": "core:user:card-keepr-api",
+      "heap_samples": [
+        {
+          "elapsed_ms": 63.77625000011176,
+          "usedSize": 1621936,
+          "totalSize": 3604480,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 253430
+        },
+        {
+          "elapsed_ms": 3064.466791000217,
+          "usedSize": 1675004,
+          "totalSize": 5177344,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 260888
+        },
+        {
+          "elapsed_ms": 6065.734708000207,
+          "usedSize": 1708480,
+          "totalSize": 4390912,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 254463
+        },
+        {
+          "elapsed_ms": 9066.37120800023,
+          "usedSize": 2448332,
+          "totalSize": 4390912,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 274070
+        },
+        {
+          "elapsed_ms": 12067.056750000222,
+          "usedSize": 2670108,
+          "totalSize": 4128768,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 277595
+        },
+        {
+          "elapsed_ms": 15068.018875000067,
+          "usedSize": 2669764,
+          "totalSize": 5439488,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 270655
+        },
+        {
+          "elapsed_ms": 18069.44812500011,
+          "usedSize": 2663084,
+          "totalSize": 4915200,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 262308
+        },
+        {
+          "elapsed_ms": 21070.22862500022,
+          "usedSize": 2714336,
+          "totalSize": 4390912,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 260809
+        },
+        {
+          "elapsed_ms": 24071.946208000183,
+          "usedSize": 2855528,
+          "totalSize": 4653056,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 260826
+        },
+        {
+          "elapsed_ms": 27072.61404100014,
+          "usedSize": 2823492,
+          "totalSize": 4653056,
+          "embedderHeapUsedSize": 515856,
+          "backingStorageSize": 253767
+        },
+        {
+          "elapsed_ms": 30164.695541000227,
+          "usedSize": 3600716,
+          "totalSize": 5177344,
+          "embedderHeapUsedSize": 515856,
+          "backingStorageSize": 272316
+        },
+        {
+          "elapsed_ms": 33074.935791000025,
+          "usedSize": 3602052,
+          "totalSize": 5177344,
+          "embedderHeapUsedSize": 515856,
+          "backingStorageSize": 269910
+        },
+        {
+          "elapsed_ms": 36075.96387500013,
+          "usedSize": 3736184,
+          "totalSize": 5439488,
+          "embedderHeapUsedSize": 515856,
+          "backingStorageSize": 269617
+        },
+        {
+          "elapsed_ms": 39076.95712500019,
+          "usedSize": 3709944,
+          "totalSize": 5439488,
+          "embedderHeapUsedSize": 644816,
+          "backingStorageSize": 262485
+        },
+        {
+          "elapsed_ms": 42078.960875000106,
+          "usedSize": 3666020,
+          "totalSize": 5177344,
+          "embedderHeapUsedSize": 644816,
+          "backingStorageSize": 254967
+        },
+        {
+          "elapsed_ms": 45079.49116600002,
+          "usedSize": 4179612,
+          "totalSize": 5701632,
+          "embedderHeapUsedSize": 644816,
+          "backingStorageSize": 272084
+        },
+        {
+          "elapsed_ms": 47653.930291000055,
+          "usedSize": 4439176,
+          "totalSize": 5701632,
+          "embedderHeapUsedSize": 644816,
+          "backingStorageSize": 282928
+        }
+      ],
+      "cpu_profile": {
+        "duration_microseconds": 47739915,
+        "samples": 249,
+        "sampled_microseconds_by_function": {
+          "(idle)": 4766834,
+          "parsePublicBase": 179327,
+          "list": 1251,
+          "handleApiRequest": 2737132,
+          "(program)": 3411566,
+          "": 5516684,
+          "_wrappedFetch": 1326806,
+          "RegExp: ^\\/v1\\/catalogue-exports(?:\\/([^\\/]+?))\\/components(?:\\/([^\\/]+?))$": 262866,
+          "composedPublicExportReadyStatement": 266853,
+          "exec": 1827196,
+          "toJson": 557929,
+          "safeRoute": 539290,
+          "enterSpan": 1039833,
+          "Response": 10104,
+          "parseRange": 7563,
+          "compositionExportComponentResponse": 546818,
+          "fetch": 7954203,
+          "withSpan": 521334,
+          "URL": 516154,
+          "get": 2136919,
+          "limit": 1559168,
+          "text": 534632,
+          "json": 267484,
+          "(garbage collector)": 1345884,
+          "_send": 1323519,
+          "setAttribute": 3547,
+          "catalogueStore": 775957,
+          "digest": 784495,
+          "withOperationalRequestLog": 803616,
+          "requirePublicExport": 260506,
+          "mapD1Result": 2504,
+          "nativeRevisionStatement": 261620,
+          "isLivenessRequest": 254121,
+          "bind": 511801,
+          "timingSafeSecretEqual": 258272,
+          "toArrayOfObjects": 2578,
+          "matchesAnyKey": 265379,
+          "rateLimitFailure": 257362,
+          "timingSafeEqual": 263819,
+          "canonicalJsonAt": 2534,
+          "catalogueExportStatement": 259806,
+          "compositionExportResponse": 511513,
+          "catalogueEnvironment": 525775,
+          "_sendOrThrow": 1183,
+          "set": 269767,
+          "compareUtf8": 6259,
+          "hydrate": 2509
+        }
+      },
+      "allocation_profile": null
+    },
+    {
+      "target": "core:user:acceptance-http-bridge",
+      "heap_samples": [
+        {
+          "elapsed_ms": 64.04637500015087,
+          "usedSize": 426812,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 3065.248250000179,
+          "usedSize": 480800,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 6066.560375000117,
+          "usedSize": 528452,
+          "totalSize": 1048576,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 9067.240958000068,
+          "usedSize": 571824,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 12067.51170800021,
+          "usedSize": 619404,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 15068.51575000002,
+          "usedSize": 662776,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 18071.41883300012,
+          "usedSize": 706148,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 21070.80858300021,
+          "usedSize": 753404,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 24072.673916000174,
+          "usedSize": 797100,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 27073.396916000172,
+          "usedSize": 840472,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 30165.081125000026,
+          "usedSize": 887736,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 33075.680291000055,
+          "usedSize": 931108,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 36076.4392080002,
+          "usedSize": 978688,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 39077.84716600017,
+          "usedSize": 1022060,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 42080.0205000001,
+          "usedSize": 1065432,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 45080.24337500008,
+          "usedSize": 1088952,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 47654.35633300012,
+          "usedSize": 1096784,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        }
+      ],
+      "cpu_profile": {
+        "duration_microseconds": 47737096,
+        "samples": 34,
+        "sampled_microseconds_by_function": {
+          "(idle)": 21373111,
+          "fetch": 14874873,
+          "(program)": 4295833,
+          "get": 527768,
+          "default": 6572489
+        }
+      },
+      "allocation_profile": null
+    }
+  ]
+}

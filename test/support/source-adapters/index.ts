@@ -33,6 +33,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       reconciliationCapability: "catalogue" as const,
       requiredSurfaces: ["errata"],
       requestUrlForSurface: () => "https://official-source.invalid/reconciliation/erratum-target-large-text",
+      jsonRecordContainers: ["cards", "product_surfaces"],
       parse: parseCardSourceDocument,
     },
     {
@@ -47,6 +48,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       reconciliationCapability: "errata" as const,
       requiredSurfaces: ["errata"],
       requestUrlForSurface: () => "https://official-source.invalid/reconciliation/source-refresh-empty-errata",
+      jsonRecordContainers: ["cards", "product_surfaces"],
       parse: parseCardSourceDocument,
     },
     {
@@ -59,6 +61,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       origin: "production" as const,
       requestSurface: { kind: "credential-free-https" as const },
       reconciliationCapability: "errata" as const,
+      jsonRecordContainers: ["cards", "product_surfaces"],
       parse: parseCardSourceDocument,
     },
     {
@@ -73,6 +76,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       reconciliationCapability: "catalogue" as const,
       // Synthetic presentation, not a Limitless parser. The source uses positional
       // cells for card facts, while the other fixture uses nested named fields.
+      jsonRecordContainers: ["rows"],
       parse: (document: unknown) => {
         if (
           typeof document !== "object" ||
@@ -175,6 +179,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       origin: "production" as const,
       requestSurface: { kind: "credential-free-https" as const },
       reconciliationCapability: "catalogue" as const,
+      jsonRecordContainers: ["cards", "product_surfaces"],
       parse: parseCardSourceDocument,
     })),
   ].map((adapter) =>

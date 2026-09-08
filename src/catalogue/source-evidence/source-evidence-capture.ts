@@ -1,3 +1,5 @@
+import { indexedOfficialCollectionRequests } from "./source-record-discovery";
+import { discoveredSourceRecordRequests } from "./source-record-intake";
 import {
   beginEvidenceObjectWrite,
   completeEvidenceObjectWrite,
@@ -33,7 +35,6 @@ import {
 } from "./source-capture-repository";
 import {
   type CollectionWorkflowAttempt,
-  completeOfficialCollectionRequestsFromDiscovery,
   defaultSourceHostPacingIntervalMilliseconds,
   headersRecord,
   parseStringRecord,
@@ -43,11 +44,7 @@ import {
   terminalHttpFailureClass,
   transportPolicyForRole,
 } from "./source-evidence-model";
-import {
-  discoverSnapshotRequests,
-  parseSnapshot,
-  retainedOfficialDiscoveryRunRecords,
-} from "./source-evidence-parsing";
+import { parseSnapshot } from "./source-evidence-parsing";
 import {
   appendDiscoveredEvidenceRequests,
   captureAttemptsPerRetryGeneration,
@@ -620,7 +617,7 @@ export async function parseCapturedRequest(
   }
   const evidencePlan = evidencePlanForRequest(run, sourceRequest.request_id);
   try {
-    const _observationSet = await parseSnapshot(database, evidenceObjects, snapshotId, evidencePlan.adapter_version, {
+    const observationSet = await parseSnapshot(database, evidenceObjects, snapshotId, evidencePlan.adapter_version, {
       intent: "collection",
       idempotencyKey: `${run.id}:${sourceRequest.request_id}`,
     });
@@ -628,32 +625,28 @@ export async function parseCapturedRequest(
       requiredSourceAdapter(evidencePlan.adapter_version),
       evidencePlan.coverage?.subset,
     );
-    const discovered = await discoverSnapshotRequests(
-      database,
-      evidenceObjects,
-      snapshotId,
-      evidencePlan.adapter_version,
-    );
-    await appendDiscoveredEvidenceRequests(database, run, sourceRequest, discovered);
+    for await (const requests of discoveredSourceRecordRequests(database, observationSet.id)) {
+      await appendDiscoveredEvidenceRequests(database, run, sourceRequest, requests);
+    }
     if (
       run.plan_origin === "production" &&
       adapter.requestUrlForDiscovery !== undefined &&
       (sourceRequest.request_id === `${evidencePlan.source_lineage}:discovery` ||
         /:listing:[a-z0-9]+(?:-[a-z0-9]+)*:[a-f0-9]{64}$/u.test(sourceRequest.request_id))
     ) {
-      const discovery = await retainedOfficialDiscoveryRunRecords(
+      const complete = await indexedOfficialCollectionRequests(
         database,
-        evidenceObjects,
         run.id,
-        evidencePlan.source_lineage,
-      );
-      const complete = await completeOfficialCollectionRequestsFromDiscovery(
         adapter,
-        discovery.records,
         evidencePlan.requests[0]?.headers ?? {},
       );
       if (complete !== null) {
-        await persistOfficialSourceCollectionPlan(database, run.id, discovery.discoveryObservationSetId, complete);
+        await persistOfficialSourceCollectionPlan(
+          database,
+          run.id,
+          complete.discoveryObservationSetId,
+          complete.requests,
+        );
       } else {
         // A catalogue-complete adapter whose finished discovery derives an
         // empty Official Source Collection Plan must fail closed here with a

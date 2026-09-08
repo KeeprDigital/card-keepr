@@ -1,0 +1,10 @@
+
+ RUN  v4.1.10 /Users/marcus/.codex/worktrees/55a9/card-keepr
+
+NOSENTRY R2MultipartUpload::getUploadId called
+
+ Test Files  1 passed (1)
+      Tests  2 passed | 18 skipped (20)
+   Start at  18:48:41
+   Duration  3.83s (transform 724ms, setup 0ms, import 1.41s, tests 2.12s, environment 0ms)
+

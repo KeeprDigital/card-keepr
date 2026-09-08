@@ -27,6 +27,13 @@ export type OfficialSourceContract = Readonly<{
   requiredSurfaces: readonly string[];
 }>;
 
+export type ExtractedSourceRequest = {
+  role: "listing" | "detail" | "product_detail" | "image";
+  discoveryKey?: string;
+  url: string;
+  headers: Record<string, string>;
+};
+
 export type SourceAdapterRegistration = Readonly<{
   adapterVersion: string;
   sourceLineage: string;
@@ -44,6 +51,24 @@ export type SourceAdapterRegistration = Readonly<{
   reconciliationAreas?: readonly ("catalogue" | "errata")[];
   inheritDiscoveryRequestHeaders?: boolean;
   listingReconciliation?: ListingReconciliationTraits;
+  recordExtraction?: {
+    matches: (context: { mediaType: string | null; url: string }) => boolean;
+    extract: (
+      source: () => AsyncIterable<string>,
+      context: { url: string; mediaType: string | null; requestId?: string },
+    ) => Promise<{
+      count: number;
+      pagination: Record<string, unknown> | null;
+      requests: Iterable<ExtractedSourceRequest> | AsyncIterable<ExtractedSourceRequest>;
+      records: AsyncIterable<{
+        sourceKey: string;
+        value: unknown;
+        request: ExtractedSourceRequest | null;
+      }>;
+    }>;
+  };
+  /** Ordered top-level record containers understood by this JSON parser. */
+  jsonRecordContainers?: readonly string[];
   parse?: (document: unknown) => readonly unknown[] | Promise<readonly unknown[]>;
   parseBytes?: (
     bytes: Uint8Array,

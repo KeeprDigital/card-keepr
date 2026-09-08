@@ -1,3 +1,6 @@
+/** Invalid JSON structure or configured token limits, separate from source I/O failures. */
+export class ObjectMemberParseFailure extends Error {}
+
 /** Read one top-level array element at a time; large catalogues never need a joined JSON string. */
 export type ObjectMember =
   | { kind: "array"; key: string }
@@ -44,17 +47,19 @@ export async function* resumableObjectMembers(
       await input.require("{");
       if ((await input.peek()) === "}") {
         input.advance();
-        if ((await input.peek()) !== undefined) throw new Error("A retained payload contains trailing data.");
+        if ((await input.peek()) !== undefined)
+          throw new ObjectMemberParseFailure("A retained payload contains trailing data.");
         return;
       }
       state = "key";
     }
     while (true) {
       if (state === "key") {
-        if ((await input.peek()) !== '"') throw new Error("A retained payload member requires a JSON key.");
+        if ((await input.peek()) !== '"')
+          throw new ObjectMemberParseFailure("A retained payload member requires a JSON key.");
         const value: unknown = JSON.parse(await input.token());
         if (typeof value !== "string" || keys.has(value))
-          throw new Error("A retained payload contains an invalid or duplicate key.");
+          throw new ObjectMemberParseFailure("A retained payload contains an invalid or duplicate key.");
         key = value;
         keys.add(key);
         await input.require(":");
@@ -83,13 +88,15 @@ export async function* resumableObjectMembers(
         } else {
           await input.require(",");
           // A trailing comma cannot be accepted as an empty suffix.
-          if ((await input.peek()) === "]") throw new Error("A retained payload contains a trailing comma.");
+          if ((await input.peek()) === "]")
+            throw new ObjectMemberParseFailure("A retained payload contains a trailing comma.");
           state = "array_value";
         }
       } else {
         if ((await input.peek()) === "}") {
           input.advance();
-          if ((await input.peek()) !== undefined) throw new Error("A retained payload contains trailing data.");
+          if ((await input.peek()) !== undefined)
+            throw new ObjectMemberParseFailure("A retained payload contains trailing data.");
           return;
         }
         await input.require(",");
@@ -135,7 +142,8 @@ class JsonChunks {
       this.offset = this.initialOffset;
       this.initialOffset = 0;
       this.chunkIndex++;
-      if (this.offset > this.chunk.length) throw new Error("A retained payload cursor exceeds its chunk.");
+      if (this.offset > this.chunk.length)
+        throw new ObjectMemberParseFailure("A retained payload cursor exceeds its chunk.");
     }
     return this.offset < this.chunk.length;
   }
@@ -154,23 +162,28 @@ class JsonChunks {
   }
 
   async require(character: string): Promise<void> {
-    if ((await this.peek()) !== character) throw new Error(`A retained payload requires ${character}.`);
+    if ((await this.peek()) !== character)
+      throw new ObjectMemberParseFailure(`A retained payload requires ${character}.`);
     this.advance();
   }
 
   async token(): Promise<string> {
-    if ((await this.peek()) === undefined) throw new Error("A retained payload is incomplete.");
+    if ((await this.peek()) === undefined) throw new ObjectMemberParseFailure("A retained payload is incomplete.");
     const parts: string[] = [];
     let characters = 0;
     let bytes = 0;
     const append = (value: string) => {
       characters += value.length;
       if (characters > this.maximumTokenCharacters)
-        throw new Error("reconciliation_capacity_exceeded: one source JSON token exceeds its character budget.");
+        throw new ObjectMemberParseFailure(
+          "reconciliation_capacity_exceeded: one source JSON token exceeds its character budget.",
+        );
       if (Number.isFinite(this.maximumTokenBytes)) {
         bytes += new TextEncoder().encode(value).byteLength;
         if (bytes > this.maximumTokenBytes)
-          throw new Error("reconciliation_capacity_exceeded: one source JSON token exceeds its byte budget.");
+          throw new ObjectMemberParseFailure(
+            "reconciliation_capacity_exceeded: one source JSON token exceeds its byte budget.",
+          );
       }
       parts.push(value);
     };
@@ -188,7 +201,9 @@ class JsonChunks {
         }
         this.offset += 1;
         if (!quoted && "[]{}:,".includes(character) && ++structuralTokens > this.maximumStructuralTokens)
-          throw new Error("reconciliation_capacity_exceeded: one source JSON token exceeds its structural budget.");
+          throw new ObjectMemberParseFailure(
+            "reconciliation_capacity_exceeded: one source JSON token exceeds its structural budget.",
+          );
         if (quoted) {
           if (escaped) escaped = false;
           else if (character === "\\") escaped = true;
@@ -202,7 +217,9 @@ class JsonChunks {
         } else if (character === '"') quoted = true;
         else if (character === "[" || character === "{") {
           if (++depth > this.maximumDepth)
-            throw new Error("reconciliation_capacity_exceeded: one source JSON token exceeds its depth budget.");
+            throw new ObjectMemberParseFailure(
+              "reconciliation_capacity_exceeded: one source JSON token exceeds its depth budget.",
+            );
         } else if (character === "]" || character === "}") {
           depth -= 1;
           if (depth === 0) {

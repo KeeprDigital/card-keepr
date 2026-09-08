@@ -1,0 +1,4980 @@
+{
+  "contract": "card-keepr-local-isolate-measurements@1",
+  "limitation": "Local workerd DevTools samples with profiler overhead. Heap samples include V8 used/allocated heap, embedder heap and backing storage as separate fields; they are not continuous peak working set. CPU profile deltas are sampling attribution, not billed CPU or invocation CPU. Runtime restarts produce separate reports.",
+  "elapsed_ms": 667045.344125,
+  "driver_only": {
+    "cpu_microseconds": {
+      "user": 13492857,
+      "system": 1932221
+    },
+    "process_lifetime_maximum_rss_kib": 632496,
+    "limitation": "Node driver only, excludes workerd and CLI children; RSS maximum covers the process lifetime."
+  },
+  "occupancy": [
+    {
+      "elapsed_ms": 0.035917000000154076,
+      "files": 22,
+      "logical_bytes": 6961332,
+      "allocated_bytes": 6987776,
+      "by_directory": {
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 21,
+          "logical_bytes": 6959040,
+          "allocated_bytes": 6983680
+        }
+      },
+      "free_bytes": 8213991424,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 30010.825999999997,
+      "files": 229,
+      "logical_bytes": 49739003,
+      "allocated_bytes": 50077696,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 421,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 226,
+          "logical_bytes": 49735295,
+          "allocated_bytes": 50065408
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 995,
+          "allocated_bytes": 4096
+        }
+      },
+      "free_bytes": 8174956544,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 60019.947,
+      "files": 225,
+      "logical_bytes": 48923379,
+      "allocated_bytes": 49258496,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 421,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 222,
+          "logical_bytes": 48919671,
+          "allocated_bytes": 49246208
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 995,
+          "allocated_bytes": 4096
+        }
+      },
+      "free_bytes": 8174743552,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 90029.13062499999,
+      "files": 274,
+      "logical_bytes": 63201021,
+      "allocated_bytes": 63647744,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 491,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 269,
+          "logical_bytes": 55157754,
+          "allocated_bytes": 55595008
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 2444353,
+          "allocated_bytes": 2445312
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 995,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        }
+      },
+      "free_bytes": 8164237312,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 120037.565083,
+      "files": 365,
+      "logical_bytes": 87688949,
+      "allocated_bytes": 88264704,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 853,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 360,
+          "logical_bytes": 79645320,
+          "allocated_bytes": 80211968
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 2444353,
+          "allocated_bytes": 2445312
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 995,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        }
+      },
+      "free_bytes": 8138776576,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 150044.20675,
+      "files": 365,
+      "logical_bytes": 87688949,
+      "allocated_bytes": 88264704,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 853,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 360,
+          "logical_bytes": 79645320,
+          "allocated_bytes": 80211968
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 2444353,
+          "allocated_bytes": 2445312
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 995,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        }
+      },
+      "free_bytes": 8138043392,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 180052.152292,
+      "files": 365,
+      "logical_bytes": 87688949,
+      "allocated_bytes": 88264704,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 853,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 360,
+          "logical_bytes": 79645320,
+          "allocated_bytes": 80211968
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 2444353,
+          "allocated_bytes": 2445312
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 995,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        }
+      },
+      "free_bytes": 8139210752,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 210060.68475000001,
+      "files": 480,
+      "logical_bytes": 114396867,
+      "allocated_bytes": 115249152,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 474,
+          "logical_bytes": 96068664,
+          "allocated_bytes": 96911360
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 4312041,
+          "allocated_bytes": 4313088
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 995,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        }
+      },
+      "free_bytes": 8122626048,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 240068.562,
+      "files": 578,
+      "logical_bytes": 144575073,
+      "allocated_bytes": 145559552,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 572,
+          "logical_bytes": 126246870,
+          "allocated_bytes": 127221760
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 4312041,
+          "allocated_bytes": 4313088
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 995,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        }
+      },
+      "free_bytes": 8091766784,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 270077.934958,
+      "files": 574,
+      "logical_bytes": 143668785,
+      "allocated_bytes": 144650240,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 568,
+          "logical_bytes": 125340582,
+          "allocated_bytes": 126312448
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 4312041,
+          "allocated_bytes": 4313088
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 995,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        }
+      },
+      "free_bytes": 8089026560,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 300085.900333,
+      "files": 574,
+      "logical_bytes": 143668785,
+      "allocated_bytes": 144650240,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 568,
+          "logical_bytes": 125340582,
+          "allocated_bytes": 126312448
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 4312041,
+          "allocated_bytes": 4313088
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 995,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        }
+      },
+      "free_bytes": 8088399872,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 330094.40275,
+      "files": 656,
+      "logical_bytes": 155756588,
+      "allocated_bytes": 156909568,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 650,
+          "logical_bytes": 137428385,
+          "allocated_bytes": 138571776
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 4312041,
+          "allocated_bytes": 4313088
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 995,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        }
+      },
+      "free_bytes": 8074002432,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 360100.58945800003,
+      "files": 729,
+      "logical_bytes": 199945887,
+      "allocated_bytes": 201228288,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 722,
+          "logical_bytes": 167510131,
+          "allocated_bytes": 168779776
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 6545845,
+          "allocated_bytes": 6549504
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 440,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 11874304,
+          "allocated_bytes": 11874304
+        }
+      },
+      "free_bytes": 7435530240,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 390109.793708,
+      "files": 729,
+      "logical_bytes": 199945887,
+      "allocated_bytes": 201228288,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 722,
+          "logical_bytes": 167510131,
+          "allocated_bytes": 168779776
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 6545845,
+          "allocated_bytes": 6549504
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 440,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 11874304,
+          "allocated_bytes": 11874304
+        }
+      },
+      "free_bytes": 7434543104,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 420119.919125,
+      "files": 729,
+      "logical_bytes": 199945887,
+      "allocated_bytes": 201228288,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 722,
+          "logical_bytes": 167510131,
+          "allocated_bytes": 168779776
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 6545845,
+          "allocated_bytes": 6549504
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 440,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 11874304,
+          "allocated_bytes": 11874304
+        }
+      },
+      "free_bytes": 7433256960,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 450128.056958,
+      "files": 809,
+      "logical_bytes": 237245915,
+      "allocated_bytes": 238673920,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 801,
+          "logical_bytes": 188925818,
+          "allocated_bytes": 190341120
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 8167914,
+          "allocated_bytes": 8171520
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 440,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 11874304,
+          "allocated_bytes": 11874304
+        },
+        "restore-4.sqlite": {
+          "files": 1,
+          "logical_bytes": 14262272,
+          "allocated_bytes": 14262272
+        }
+      },
+      "free_bytes": 7394123776,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 480136.659792,
+      "files": 857,
+      "logical_bytes": 259210587,
+      "allocated_bytes": 260698112,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 849,
+          "logical_bytes": 210890490,
+          "allocated_bytes": 212365312
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 8167914,
+          "allocated_bytes": 8171520
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 440,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 11874304,
+          "allocated_bytes": 11874304
+        },
+        "restore-4.sqlite": {
+          "files": 1,
+          "logical_bytes": 14262272,
+          "allocated_bytes": 14262272
+        }
+      },
+      "free_bytes": 7371223040,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 510145.902875,
+      "files": 857,
+      "logical_bytes": 259210587,
+      "allocated_bytes": 260698112,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 849,
+          "logical_bytes": 210890490,
+          "allocated_bytes": 212365312
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 8167914,
+          "allocated_bytes": 8171520
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 440,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 11874304,
+          "allocated_bytes": 11874304
+        },
+        "restore-4.sqlite": {
+          "files": 1,
+          "logical_bytes": 14262272,
+          "allocated_bytes": 14262272
+        }
+      },
+      "free_bytes": 7370579968,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 540155.9072499999,
+      "files": 906,
+      "logical_bytes": 269226313,
+      "allocated_bytes": 270794752,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 898,
+          "logical_bytes": 220906216,
+          "allocated_bytes": 222461952
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 8167914,
+          "allocated_bytes": 8171520
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 440,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 11874304,
+          "allocated_bytes": 11874304
+        },
+        "restore-4.sqlite": {
+          "files": 1,
+          "logical_bytes": 14262272,
+          "allocated_bytes": 14262272
+        }
+      },
+      "free_bytes": 7356989440,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 570162.0906669999,
+      "files": 983,
+      "logical_bytes": 322045118,
+      "allocated_bytes": 323739648,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 974,
+          "logical_bytes": 255528099,
+          "allocated_bytes": 257212416
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 9669250,
+          "allocated_bytes": 9670656
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 730,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 11874304,
+          "allocated_bytes": 11874304
+        },
+        "restore-4.sqlite": {
+          "files": 1,
+          "logical_bytes": 14262272,
+          "allocated_bytes": 14262272
+        },
+        "restore-5.sqlite": {
+          "files": 1,
+          "logical_bytes": 16695296,
+          "allocated_bytes": 16695296
+        }
+      },
+      "free_bytes": 7305506816,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 600171.4596249999,
+      "files": 983,
+      "logical_bytes": 322045118,
+      "allocated_bytes": 323739648,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 974,
+          "logical_bytes": 255528099,
+          "allocated_bytes": 257212416
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 9669250,
+          "allocated_bytes": 9670656
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 730,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 11874304,
+          "allocated_bytes": 11874304
+        },
+        "restore-4.sqlite": {
+          "files": 1,
+          "logical_bytes": 14262272,
+          "allocated_bytes": 14262272
+        },
+        "restore-5.sqlite": {
+          "files": 1,
+          "logical_bytes": 16695296,
+          "allocated_bytes": 16695296
+        }
+      },
+      "free_bytes": 7303413760,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 630179.098,
+      "files": 983,
+      "logical_bytes": 322045118,
+      "allocated_bytes": 323739648,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 974,
+          "logical_bytes": 255528099,
+          "allocated_bytes": 257212416
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 9669250,
+          "allocated_bytes": 9670656
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 730,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 11874304,
+          "allocated_bytes": 11874304
+        },
+        "restore-4.sqlite": {
+          "files": 1,
+          "logical_bytes": 14262272,
+          "allocated_bytes": 14262272
+        },
+        "restore-5.sqlite": {
+          "files": 1,
+          "logical_bytes": 16695296,
+          "allocated_bytes": 16695296
+        }
+      },
+      "free_bytes": 7310110720,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 660184.986542,
+      "files": 1086,
+      "logical_bytes": 369751908,
+      "allocated_bytes": 371650560,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 1076,
+          "logical_bytes": 282634360,
+          "allocated_bytes": 284520448
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 11223379,
+          "allocated_bytes": 11227136
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 730,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 11874304,
+          "allocated_bytes": 11874304
+        },
+        "restore-4.sqlite": {
+          "files": 1,
+          "logical_bytes": 14262272,
+          "allocated_bytes": 14262272
+        },
+        "restore-5.sqlite": {
+          "files": 1,
+          "logical_bytes": 16695296,
+          "allocated_bytes": 16695296
+        },
+        "restore-6.sqlite": {
+          "files": 1,
+          "logical_bytes": 19046400,
+          "allocated_bytes": 19046400
+        }
+      },
+      "free_bytes": 7257993216,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 667000.8881669999,
+      "files": 1185,
+      "logical_bytes": 398989626,
+      "allocated_bytes": 401018880,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 1175,
+          "logical_bytes": 311872078,
+          "allocated_bytes": 313888768
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 11223379,
+          "allocated_bytes": 11227136
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 730,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 11874304,
+          "allocated_bytes": 11874304
+        },
+        "restore-4.sqlite": {
+          "files": 1,
+          "logical_bytes": 14262272,
+          "allocated_bytes": 14262272
+        },
+        "restore-5.sqlite": {
+          "files": 1,
+          "logical_bytes": 16695296,
+          "allocated_bytes": 16695296
+        },
+        "restore-6.sqlite": {
+          "files": 1,
+          "logical_bytes": 19046400,
+          "allocated_bytes": 19046400
+        }
+      },
+      "free_bytes": 7228715008,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    }
+  ],
+  "operations": {
+    "limitation": "Operational log observations; includes polls and retries, excludes unlogged health checks. Preparations and submitted batch statements are not executed rows or billed writes. Workflow wall durations overlap across concurrent Workflows.",
+    "malformed_records": 0,
+    "groups": {
+      "ingestion:request.completed:GET:/health": {
+        "count": 1,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 41,
+          "maximum": 41,
+          "p95": 41
+        },
+        "d1": {
+          "prepared_statements": 3,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "ingestion:request.completed:POST:/v1/ingestion-runs/evidence": {
+        "count": 9,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 132,
+          "maximum": 37,
+          "p95": 37
+        },
+        "d1": {
+          "prepared_statements": 462,
+          "batch_calls": 9,
+          "batch_statements": 171
+        }
+      },
+      "ingestion:request.completed:POST:/v1/ingestion-runs/:ref/collection/resume": {
+        "count": 9,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 66,
+          "maximum": 13,
+          "p95": 13
+        },
+        "d1": {
+          "prepared_statements": 72,
+          "batch_calls": 9,
+          "batch_statements": 9
+        }
+      },
+      "ingestion:workflow.step.completed:WORKFLOW:/workflows/card-keepr-evidence-ingestion": {
+        "count": 116,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 599,
+          "maximum": 32,
+          "p95": 13
+        },
+        "d1": {
+          "prepared_statements": 1151,
+          "batch_calls": 294,
+          "batch_statements": 788
+        }
+      },
+      "ingestion:workflow.step.completed:WORKFLOW:/workflows/card-keepr-evidence-host": {
+        "count": 143,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 4348,
+          "maximum": 364,
+          "p95": 197
+        },
+        "d1": {
+          "prepared_statements": 8997,
+          "batch_calls": 745,
+          "batch_statements": 1947
+        }
+      },
+      "ingestion:workflow.step.completed:WORKFLOW:/workflows/card-keepr-reconciliation": {
+        "count": 4301,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 16206,
+          "maximum": 139,
+          "p95": 9
+        },
+        "d1": {
+          "prepared_statements": 88485,
+          "batch_calls": 14269,
+          "batch_statements": 43818
+        }
+      },
+      "ingestion:request.completed:GET:/v1/ingestion-runs/:ref/evidence": {
+        "count": 20,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 368,
+          "maximum": 30,
+          "p95": 29
+        },
+        "d1": {
+          "prepared_statements": 542,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "ingestion:request.completed:GET:/v1/ingestion-runs/:ref/game-candidates": {
+        "count": 15,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 55,
+          "maximum": 5,
+          "p95": 5
+        },
+        "d1": {
+          "prepared_statements": 30,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "ingestion:request.completed:GET:/v1/entity-proposals": {
+        "count": 1,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 12,
+          "maximum": 12,
+          "p95": 12
+        },
+        "d1": {
+          "prepared_statements": 62,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "ingestion:request.completed:POST:/v1/game-candidates/:ref/abandon": {
+        "count": 1,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 3,
+          "maximum": 3,
+          "p95": 3
+        },
+        "d1": {
+          "prepared_statements": 10,
+          "batch_calls": 1,
+          "batch_statements": 5
+        }
+      },
+      "ingestion:request.completed:GET:/v1/entity-proposals/:ref": {
+        "count": 2,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 4,
+          "maximum": 2,
+          "p95": 2
+        },
+        "d1": {
+          "prepared_statements": 10,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "ingestion:request.completed:POST:/v1/entity-proposals/:ref/decisions": {
+        "count": 16,
+        "failures": 1,
+        "elapsed_ms": {
+          "sum": 72,
+          "maximum": 7,
+          "p95": 7
+        },
+        "d1": {
+          "prepared_statements": 296,
+          "batch_calls": 15,
+          "batch_statements": 69
+        }
+      },
+      "ingestion:request.completed:GET:/v1/game-candidates/:ref": {
+        "count": 6,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 23,
+          "maximum": 5,
+          "p95": 5
+        },
+        "d1": {
+          "prepared_statements": 12,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "ingestion:request.completed:GET:/v1/game-candidates/:ref/inspection": {
+        "count": 6,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 64,
+          "maximum": 14,
+          "p95": 14
+        },
+        "d1": {
+          "prepared_statements": 60,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "ingestion:request.completed:GET:/v1/game-candidates/:ref/partitions": {
+        "count": 6,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 29,
+          "maximum": 7,
+          "p95": 7
+        },
+        "d1": {
+          "prepared_statements": 18,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "ingestion:request.completed:GET:/v1/game-candidates/:ref/partitions/:ref": {
+        "count": 174,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 973,
+          "maximum": 34,
+          "p95": 8
+        },
+        "d1": {
+          "prepared_statements": 522,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "ingestion:request.completed:POST:/v1/game-candidates/:ref/publication-preparation/start": {
+        "count": 6,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 168,
+          "maximum": 101,
+          "p95": 101
+        },
+        "d1": {
+          "prepared_statements": 78,
+          "batch_calls": 6,
+          "batch_statements": 24
+        }
+      },
+      "ingestion:request.completed:GET:/v1/game-candidates/:ref/publication-preparation": {
+        "count": 6,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 36,
+          "maximum": 11,
+          "p95": 11
+        },
+        "d1": {
+          "prepared_statements": 18,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "ingestion:request.completed:POST:/v1/publications/start": {
+        "count": 6,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 53,
+          "maximum": 12,
+          "p95": 12
+        },
+        "d1": {
+          "prepared_statements": 96,
+          "batch_calls": 6,
+          "batch_statements": 12
+        }
+      },
+      "ingestion:request.completed:GET:/v1/publications/:ref": {
+        "count": 6,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 4,
+          "maximum": 1,
+          "p95": 1
+        },
+        "d1": {
+          "prepared_statements": 12,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "ingestion:workflow.step.completed:WORKFLOW:/workflows/card-keepr-catalogue-backup": {
+        "count": 6,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 23422,
+          "maximum": 5089,
+          "p95": 5089
+        },
+        "d1": {
+          "prepared_statements": 27091,
+          "batch_calls": 24,
+          "batch_statements": 162
+        }
+      },
+      "ingestion:request.completed:GET:/v1/backups/:ref": {
+        "count": 6,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 31,
+          "maximum": 7,
+          "p95": 7
+        },
+        "d1": {
+          "prepared_statements": 24,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      }
+    }
+  },
+  "errors": [],
+  "isolates": [
+    {
+      "target": "core:user:card-keepr-ingestion",
+      "heap_samples": [
+        {
+          "elapsed_ms": 0.9699580000005881,
+          "usedSize": 16749128,
+          "totalSize": 23478272,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 739277
+        },
+        {
+          "elapsed_ms": 3002.846292,
+          "usedSize": 16726728,
+          "totalSize": 25051136,
+          "embedderHeapUsedSize": 305592,
+          "backingStorageSize": 5191332
+        },
+        {
+          "elapsed_ms": 6003.885792000001,
+          "usedSize": 36528048,
+          "totalSize": 71352320,
+          "embedderHeapUsedSize": 1089264,
+          "backingStorageSize": 1057011
+        },
+        {
+          "elapsed_ms": 9005.206750000001,
+          "usedSize": 36597900,
+          "totalSize": 71352320,
+          "embedderHeapUsedSize": 1089264,
+          "backingStorageSize": 1057147
+        },
+        {
+          "elapsed_ms": 12005.764583,
+          "usedSize": 37915284,
+          "totalSize": 71352320,
+          "embedderHeapUsedSize": 1112352,
+          "backingStorageSize": 1057283
+        },
+        {
+          "elapsed_ms": 15006.324542000002,
+          "usedSize": 38544276,
+          "totalSize": 71614464,
+          "embedderHeapUsedSize": 1159024,
+          "backingStorageSize": 1065747
+        },
+        {
+          "elapsed_ms": 18007.370958,
+          "usedSize": 38635648,
+          "totalSize": 71614464,
+          "embedderHeapUsedSize": 1159024,
+          "backingStorageSize": 1065883
+        },
+        {
+          "elapsed_ms": 21008.609583,
+          "usedSize": 38929148,
+          "totalSize": 71614464,
+          "embedderHeapUsedSize": 1159024,
+          "backingStorageSize": 1075711
+        },
+        {
+          "elapsed_ms": 24009.325792,
+          "usedSize": 39431744,
+          "totalSize": 71614464,
+          "embedderHeapUsedSize": 1189632,
+          "backingStorageSize": 1085677
+        },
+        {
+          "elapsed_ms": 27009.605708,
+          "usedSize": 19258624,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 101672,
+          "backingStorageSize": 1042912
+        },
+        {
+          "elapsed_ms": 30025.316333,
+          "usedSize": 20294588,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 101672,
+          "backingStorageSize": 1043184
+        },
+        {
+          "elapsed_ms": 33012.393542000005,
+          "usedSize": 21290412,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 101672,
+          "backingStorageSize": 1043320
+        },
+        {
+          "elapsed_ms": 36012.780125000005,
+          "usedSize": 21322000,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 101672,
+          "backingStorageSize": 1043456
+        },
+        {
+          "elapsed_ms": 39013.972417,
+          "usedSize": 21489992,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 184224,
+          "backingStorageSize": 1045636
+        },
+        {
+          "elapsed_ms": 42015.2375,
+          "usedSize": 21538780,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 184224,
+          "backingStorageSize": 1045772
+        },
+        {
+          "elapsed_ms": 45016.199292000005,
+          "usedSize": 21584576,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 184224,
+          "backingStorageSize": 1046108
+        },
+        {
+          "elapsed_ms": 48017.522542000006,
+          "usedSize": 21676348,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 184224,
+          "backingStorageSize": 1049046
+        },
+        {
+          "elapsed_ms": 51018.541333,
+          "usedSize": 21721212,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 184224,
+          "backingStorageSize": 1050346
+        },
+        {
+          "elapsed_ms": 54018.815,
+          "usedSize": 21764264,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 184224,
+          "backingStorageSize": 1050682
+        },
+        {
+          "elapsed_ms": 57020.527667,
+          "usedSize": 21865564,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 184224,
+          "backingStorageSize": 1051552
+        },
+        {
+          "elapsed_ms": 60033.602917,
+          "usedSize": 21909448,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 184224,
+          "backingStorageSize": 1052370
+        },
+        {
+          "elapsed_ms": 63021.24975,
+          "usedSize": 22008912,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 184224,
+          "backingStorageSize": 1078556
+        },
+        {
+          "elapsed_ms": 66022.650792,
+          "usedSize": 22299156,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 184224,
+          "backingStorageSize": 1169412
+        },
+        {
+          "elapsed_ms": 69024.27025,
+          "usedSize": 30783932,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 543864,
+          "backingStorageSize": 1990700
+        },
+        {
+          "elapsed_ms": 72025.143292,
+          "usedSize": 30823088,
+          "totalSize": 59588608,
+          "embedderHeapUsedSize": 543864,
+          "backingStorageSize": 1990836
+        },
+        {
+          "elapsed_ms": 75026.10274999999,
+          "usedSize": 23055240,
+          "totalSize": 38092800,
+          "embedderHeapUsedSize": 867024,
+          "backingStorageSize": 784877
+        },
+        {
+          "elapsed_ms": 78026.244917,
+          "usedSize": 23129408,
+          "totalSize": 38092800,
+          "embedderHeapUsedSize": 867024,
+          "backingStorageSize": 786212
+        },
+        {
+          "elapsed_ms": 81026.353542,
+          "usedSize": 23294588,
+          "totalSize": 38092800,
+          "embedderHeapUsedSize": 867024,
+          "backingStorageSize": 794540
+        },
+        {
+          "elapsed_ms": 84026.8315,
+          "usedSize": 23587940,
+          "totalSize": 38092800,
+          "embedderHeapUsedSize": 908224,
+          "backingStorageSize": 804504
+        },
+        {
+          "elapsed_ms": 87028.009125,
+          "usedSize": 23829504,
+          "totalSize": 38092800,
+          "embedderHeapUsedSize": 908224,
+          "backingStorageSize": 814332
+        },
+        {
+          "elapsed_ms": 90045.772875,
+          "usedSize": 24055724,
+          "totalSize": 38092800,
+          "embedderHeapUsedSize": 908224,
+          "backingStorageSize": 824160
+        },
+        {
+          "elapsed_ms": 93030.18274999999,
+          "usedSize": 24509712,
+          "totalSize": 38092800,
+          "embedderHeapUsedSize": 951744,
+          "backingStorageSize": 843816
+        },
+        {
+          "elapsed_ms": 96031.72425,
+          "usedSize": 24735764,
+          "totalSize": 38092800,
+          "embedderHeapUsedSize": 951744,
+          "backingStorageSize": 853644
+        },
+        {
+          "elapsed_ms": 99032.735542,
+          "usedSize": 25960104,
+          "totalSize": 38092800,
+          "embedderHeapUsedSize": 951744,
+          "backingStorageSize": 853780
+        },
+        {
+          "elapsed_ms": 102034.355833,
+          "usedSize": 22773524,
+          "totalSize": 28655616,
+          "embedderHeapUsedSize": 996664,
+          "backingStorageSize": 745357
+        },
+        {
+          "elapsed_ms": 105034.33875,
+          "usedSize": 22925488,
+          "totalSize": 28688384,
+          "embedderHeapUsedSize": 788504,
+          "backingStorageSize": 809860
+        },
+        {
+          "elapsed_ms": 108035.39070799999,
+          "usedSize": 29594608,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 702032,
+          "backingStorageSize": 2802414
+        },
+        {
+          "elapsed_ms": 111035.587333,
+          "usedSize": 29626660,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 702032,
+          "backingStorageSize": 2802550
+        },
+        {
+          "elapsed_ms": 114035.74949999999,
+          "usedSize": 30531056,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 702032,
+          "backingStorageSize": 2802686
+        },
+        {
+          "elapsed_ms": 117037.34595799999,
+          "usedSize": 30596704,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 702032,
+          "backingStorageSize": 2802958
+        },
+        {
+          "elapsed_ms": 120057.18487499999,
+          "usedSize": 30703236,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 702032,
+          "backingStorageSize": 2805286
+        },
+        {
+          "elapsed_ms": 123037.779042,
+          "usedSize": 30766032,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 702032,
+          "backingStorageSize": 2805422
+        },
+        {
+          "elapsed_ms": 126039.634958,
+          "usedSize": 30854056,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 702032,
+          "backingStorageSize": 2807358
+        },
+        {
+          "elapsed_ms": 129040.08195800001,
+          "usedSize": 30915076,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 702032,
+          "backingStorageSize": 2816810
+        },
+        {
+          "elapsed_ms": 132040.84004200003,
+          "usedSize": 30975236,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 702032,
+          "backingStorageSize": 2826080
+        },
+        {
+          "elapsed_ms": 135042.395583,
+          "usedSize": 31067248,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 702032,
+          "backingStorageSize": 2826752
+        },
+        {
+          "elapsed_ms": 138052.63566700002,
+          "usedSize": 31110332,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 702032,
+          "backingStorageSize": 2827286
+        },
+        {
+          "elapsed_ms": 141043.410833,
+          "usedSize": 31251408,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 702032,
+          "backingStorageSize": 2855802
+        },
+        {
+          "elapsed_ms": 144044.04150000002,
+          "usedSize": 31296624,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 739584,
+          "backingStorageSize": 2857406
+        },
+        {
+          "elapsed_ms": 147044.424667,
+          "usedSize": 31347168,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 739584,
+          "backingStorageSize": 2861568
+        },
+        {
+          "elapsed_ms": 150059.30745800002,
+          "usedSize": 31473340,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 739584,
+          "backingStorageSize": 2882494
+        },
+        {
+          "elapsed_ms": 153045.369042,
+          "usedSize": 31541248,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 739584,
+          "backingStorageSize": 2893580
+        },
+        {
+          "elapsed_ms": 156046.04991700003,
+          "usedSize": 31604152,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 739584,
+          "backingStorageSize": 2903696
+        },
+        {
+          "elapsed_ms": 159047.031542,
+          "usedSize": 31694928,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 739584,
+          "backingStorageSize": 2906930
+        },
+        {
+          "elapsed_ms": 162047.81225000002,
+          "usedSize": 31743424,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 739584,
+          "backingStorageSize": 2910108
+        },
+        {
+          "elapsed_ms": 165049.107667,
+          "usedSize": 31798960,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 739584,
+          "backingStorageSize": 2913882
+        },
+        {
+          "elapsed_ms": 168049.82995800002,
+          "usedSize": 31940604,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 739584,
+          "backingStorageSize": 2940158
+        },
+        {
+          "elapsed_ms": 171051.06225000002,
+          "usedSize": 32007412,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 773944,
+          "backingStorageSize": 2952464
+        },
+        {
+          "elapsed_ms": 174051.51629200001,
+          "usedSize": 32074220,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 773944,
+          "backingStorageSize": 2964770
+        },
+        {
+          "elapsed_ms": 177052.45745800002,
+          "usedSize": 32210632,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 773944,
+          "backingStorageSize": 2989934
+        },
+        {
+          "elapsed_ms": 180069.474958,
+          "usedSize": 32277988,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 773944,
+          "backingStorageSize": 3002516
+        },
+        {
+          "elapsed_ms": 183052.374458,
+          "usedSize": 32387660,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 773944,
+          "backingStorageSize": 3015254
+        },
+        {
+          "elapsed_ms": 186052.40050000002,
+          "usedSize": 32452588,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 773944,
+          "backingStorageSize": 3026680
+        },
+        {
+          "elapsed_ms": 189053.256208,
+          "usedSize": 32508424,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 773944,
+          "backingStorageSize": 3033042
+        },
+        {
+          "elapsed_ms": 192053.71975000002,
+          "usedSize": 32628144,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 773944,
+          "backingStorageSize": 3050830
+        },
+        {
+          "elapsed_ms": 195054.913375,
+          "usedSize": 32693092,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 773944,
+          "backingStorageSize": 3062256
+        },
+        {
+          "elapsed_ms": 198055.880333,
+          "usedSize": 32752952,
+          "totalSize": 61161472,
+          "embedderHeapUsedSize": 811424,
+          "backingStorageSize": 3071150
+        },
+        {
+          "elapsed_ms": 201056.083042,
+          "usedSize": 31742404,
+          "totalSize": 38092800,
+          "embedderHeapUsedSize": 1677904,
+          "backingStorageSize": 990211
+        },
+        {
+          "elapsed_ms": 204057.206708,
+          "usedSize": 31781224,
+          "totalSize": 38092800,
+          "embedderHeapUsedSize": 1680464,
+          "backingStorageSize": 990347
+        },
+        {
+          "elapsed_ms": 207059.093583,
+          "usedSize": 29570804,
+          "totalSize": 47792128,
+          "embedderHeapUsedSize": 2063392,
+          "backingStorageSize": 768749
+        },
+        {
+          "elapsed_ms": 210080.64466700002,
+          "usedSize": 31014804,
+          "totalSize": 48316416,
+          "embedderHeapUsedSize": 1031712,
+          "backingStorageSize": 1255366
+        },
+        {
+          "elapsed_ms": 213061.817083,
+          "usedSize": 22904040,
+          "totalSize": 48316416,
+          "embedderHeapUsedSize": 1031712,
+          "backingStorageSize": 740671
+        },
+        {
+          "elapsed_ms": 216062.606375,
+          "usedSize": 23135840,
+          "totalSize": 48316416,
+          "embedderHeapUsedSize": 1031712,
+          "backingStorageSize": 750509
+        },
+        {
+          "elapsed_ms": 219063.532917,
+          "usedSize": 23595552,
+          "totalSize": 48316416,
+          "embedderHeapUsedSize": 1031712,
+          "backingStorageSize": 770185
+        },
+        {
+          "elapsed_ms": 222063.683083,
+          "usedSize": 23825296,
+          "totalSize": 48316416,
+          "embedderHeapUsedSize": 1031712,
+          "backingStorageSize": 780023
+        },
+        {
+          "elapsed_ms": 225064.401083,
+          "usedSize": 24054968,
+          "totalSize": 48316416,
+          "embedderHeapUsedSize": 1031712,
+          "backingStorageSize": 789861
+        },
+        {
+          "elapsed_ms": 228064.66875,
+          "usedSize": 24804348,
+          "totalSize": 48316416,
+          "embedderHeapUsedSize": 1031712,
+          "backingStorageSize": 809673
+        },
+        {
+          "elapsed_ms": 231065.825833,
+          "usedSize": 27533204,
+          "totalSize": 34947072,
+          "embedderHeapUsedSize": 1805472,
+          "backingStorageSize": 2923584
+        },
+        {
+          "elapsed_ms": 234065.984375,
+          "usedSize": 34113124,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1326784,
+          "backingStorageSize": 2857333
+        },
+        {
+          "elapsed_ms": 237067.526458,
+          "usedSize": 35083200,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1335424,
+          "backingStorageSize": 2857605
+        },
+        {
+          "elapsed_ms": 240091.792125,
+          "usedSize": 36056008,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1358624,
+          "backingStorageSize": 2857741
+        },
+        {
+          "elapsed_ms": 243069.101292,
+          "usedSize": 36087268,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1358624,
+          "backingStorageSize": 2857877
+        },
+        {
+          "elapsed_ms": 246069.662167,
+          "usedSize": 36226928,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1367024,
+          "backingStorageSize": 2860350
+        },
+        {
+          "elapsed_ms": 249070.724458,
+          "usedSize": 36288736,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1375264,
+          "backingStorageSize": 2860486
+        },
+        {
+          "elapsed_ms": 252071.773625,
+          "usedSize": 36331404,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1375264,
+          "backingStorageSize": 2860822
+        },
+        {
+          "elapsed_ms": 255073.26,
+          "usedSize": 36443820,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1389384,
+          "backingStorageSize": 2875062
+        },
+        {
+          "elapsed_ms": 258073.701542,
+          "usedSize": 36519768,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1389384,
+          "backingStorageSize": 2892398
+        },
+        {
+          "elapsed_ms": 261075.68133300002,
+          "usedSize": 36569008,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1389384,
+          "backingStorageSize": 2892734
+        },
+        {
+          "elapsed_ms": 264076.403708,
+          "usedSize": 36654508,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1389384,
+          "backingStorageSize": 2893604
+        },
+        {
+          "elapsed_ms": 267077.462625,
+          "usedSize": 36698952,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1405344,
+          "backingStorageSize": 2894422
+        },
+        {
+          "elapsed_ms": 270108.516292,
+          "usedSize": 36844712,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1405344,
+          "backingStorageSize": 2925236
+        },
+        {
+          "elapsed_ms": 273079.503708,
+          "usedSize": 36895128,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1405344,
+          "backingStorageSize": 2929398
+        },
+        {
+          "elapsed_ms": 276079.824833,
+          "usedSize": 36969168,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1405344,
+          "backingStorageSize": 2945300
+        },
+        {
+          "elapsed_ms": 279080.32275,
+          "usedSize": 37108084,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1416864,
+          "backingStorageSize": 2972706
+        },
+        {
+          "elapsed_ms": 282080.48637500004,
+          "usedSize": 37174304,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1416864,
+          "backingStorageSize": 2984840
+        },
+        {
+          "elapsed_ms": 285080.763292,
+          "usedSize": 37240420,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1416864,
+          "backingStorageSize": 2996970
+        },
+        {
+          "elapsed_ms": 288081.91629200004,
+          "usedSize": 37346824,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1425184,
+          "backingStorageSize": 3008252
+        },
+        {
+          "elapsed_ms": 291083.045042,
+          "usedSize": 37397172,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1425184,
+          "backingStorageSize": 3009872
+        },
+        {
+          "elapsed_ms": 294084.091417,
+          "usedSize": 37450844,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1438304,
+          "backingStorageSize": 3013050
+        },
+        {
+          "elapsed_ms": 297085.342667,
+          "usedSize": 37570572,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1438304,
+          "backingStorageSize": 3030794
+        },
+        {
+          "elapsed_ms": 300111.113458,
+          "usedSize": 37640724,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1438304,
+          "backingStorageSize": 3044764
+        },
+        {
+          "elapsed_ms": 303086.840833,
+          "usedSize": 37710876,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1438304,
+          "backingStorageSize": 3058734
+        },
+        {
+          "elapsed_ms": 306088.623542,
+          "usedSize": 37847720,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1452552,
+          "backingStorageSize": 3085010
+        },
+        {
+          "elapsed_ms": 309089.35625,
+          "usedSize": 37921344,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1452552,
+          "backingStorageSize": 3100644
+        },
+        {
+          "elapsed_ms": 312090.603542,
+          "usedSize": 37994968,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1452552,
+          "backingStorageSize": 3116278
+        },
+        {
+          "elapsed_ms": 315090.149625,
+          "usedSize": 38115796,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1466944,
+          "backingStorageSize": 3133942
+        },
+        {
+          "elapsed_ms": 318091.298208,
+          "usedSize": 38180592,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1466944,
+          "backingStorageSize": 3145368
+        },
+        {
+          "elapsed_ms": 321092.387542,
+          "usedSize": 38298924,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1466944,
+          "backingStorageSize": 3162592
+        },
+        {
+          "elapsed_ms": 324093.360833,
+          "usedSize": 38344504,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 1483224,
+          "backingStorageSize": 3164494
+        },
+        {
+          "elapsed_ms": 327093.699083,
+          "usedSize": 25169164,
+          "totalSize": 43335680,
+          "embedderHeapUsedSize": 801152,
+          "backingStorageSize": 972269
+        },
+        {
+          "elapsed_ms": 330103.13337500003,
+          "usedSize": 33493956,
+          "totalSize": 52772864,
+          "embedderHeapUsedSize": 2450272,
+          "backingStorageSize": 1136807
+        },
+        {
+          "elapsed_ms": 333093.940542,
+          "usedSize": 30657136,
+          "totalSize": 52772864,
+          "embedderHeapUsedSize": 962944,
+          "backingStorageSize": 933177
+        },
+        {
+          "elapsed_ms": 336095.60045800003,
+          "usedSize": 35432312,
+          "totalSize": 52772864,
+          "embedderHeapUsedSize": 2192352,
+          "backingStorageSize": 1126593
+        },
+        {
+          "elapsed_ms": 339096.013333,
+          "usedSize": 35868960,
+          "totalSize": 52772864,
+          "embedderHeapUsedSize": 2192352,
+          "backingStorageSize": 1136123
+        },
+        {
+          "elapsed_ms": 342096.418167,
+          "usedSize": 42443224,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2192352,
+          "backingStorageSize": 3878131
+        },
+        {
+          "elapsed_ms": 345097.01262500003,
+          "usedSize": 42916676,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 3878403
+        },
+        {
+          "elapsed_ms": 348097.998167,
+          "usedSize": 43333468,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 3878539
+        },
+        {
+          "elapsed_ms": 351099.046542,
+          "usedSize": 43399236,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 3878811
+        },
+        {
+          "elapsed_ms": 354098.798208,
+          "usedSize": 43506452,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 3881106
+        },
+        {
+          "elapsed_ms": 357100.492417,
+          "usedSize": 43569760,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 3881242
+        },
+        {
+          "elapsed_ms": 360130.394208,
+          "usedSize": 43659016,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 3883178
+        },
+        {
+          "elapsed_ms": 363101.413083,
+          "usedSize": 43726648,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 3895818
+        },
+        {
+          "elapsed_ms": 366102.23470800003,
+          "usedSize": 43802908,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 3913154
+        },
+        {
+          "elapsed_ms": 369103.160708,
+          "usedSize": 43888616,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 3913826
+        },
+        {
+          "elapsed_ms": 372103.597167,
+          "usedSize": 43933012,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 3914168
+        },
+        {
+          "elapsed_ms": 375105.872583,
+          "usedSize": 43976820,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 3914986
+        },
+        {
+          "elapsed_ms": 378105.928208,
+          "usedSize": 44107612,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 3938072
+        },
+        {
+          "elapsed_ms": 381107.71925,
+          "usedSize": 44158336,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 3942234
+        },
+        {
+          "elapsed_ms": 384107.874292,
+          "usedSize": 44236596,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 3960004
+        },
+        {
+          "elapsed_ms": 387109.012958,
+          "usedSize": 44385600,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 3990844
+        },
+        {
+          "elapsed_ms": 390136.470833,
+          "usedSize": 44456164,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 4005014
+        },
+        {
+          "elapsed_ms": 393111.615417,
+          "usedSize": 44590356,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 4029860
+        },
+        {
+          "elapsed_ms": 396111.730667,
+          "usedSize": 44635824,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 4031474
+        },
+        {
+          "elapsed_ms": 399112.855583,
+          "usedSize": 44681300,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 4033094
+        },
+        {
+          "elapsed_ms": 402114.32429200003,
+          "usedSize": 44781948,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 4038512
+        },
+        {
+          "elapsed_ms": 405115.352042,
+          "usedSize": 44855904,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 4054162
+        },
+        {
+          "elapsed_ms": 408115.648375,
+          "usedSize": 44931460,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 4069796
+        },
+        {
+          "elapsed_ms": 411117.2145,
+          "usedSize": 45079672,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 4101096
+        },
+        {
+          "elapsed_ms": 414118.534,
+          "usedSize": 45153608,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 4116730
+        },
+        {
+          "elapsed_ms": 417118.713583,
+          "usedSize": 45211892,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 4124648
+        },
+        {
+          "elapsed_ms": 420152.845583,
+          "usedSize": 45306124,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 4129502
+        },
+        {
+          "elapsed_ms": 423121.55,
+          "usedSize": 45354808,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 4132704
+        },
+        {
+          "elapsed_ms": 426121.765542,
+          "usedSize": 45403504,
+          "totalSize": 83935232,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 4135906
+        },
+        {
+          "elapsed_ms": 429122.877083,
+          "usedSize": 45523324,
+          "totalSize": 84197376,
+          "embedderHeapUsedSize": 2321312,
+          "backingStorageSize": 4145342
+        },
+        {
+          "elapsed_ms": 432124.43745800003,
+          "usedSize": 45572008,
+          "totalSize": 84197376,
+          "embedderHeapUsedSize": 2450272,
+          "backingStorageSize": 4148544
+        },
+        {
+          "elapsed_ms": 435124.891375,
+          "usedSize": 45666460,
+          "totalSize": 84197376,
+          "embedderHeapUsedSize": 2450272,
+          "backingStorageSize": 4153606
+        },
+        {
+          "elapsed_ms": 438125.544042,
+          "usedSize": 46191896,
+          "totalSize": 84197376,
+          "embedderHeapUsedSize": 2450272,
+          "backingStorageSize": 4153742
+        },
+        {
+          "elapsed_ms": 441126.251667,
+          "usedSize": 23726788,
+          "totalSize": 50413568,
+          "embedderHeapUsedSize": 672584,
+          "backingStorageSize": 846803
+        },
+        {
+          "elapsed_ms": 444127.53875,
+          "usedSize": 23766020,
+          "totalSize": 50413568,
+          "embedderHeapUsedSize": 672584,
+          "backingStorageSize": 846939
+        },
+        {
+          "elapsed_ms": 447126.710542,
+          "usedSize": 25411596,
+          "totalSize": 61423616,
+          "embedderHeapUsedSize": 337144,
+          "backingStorageSize": 883554
+        },
+        {
+          "elapsed_ms": 450156.23766700004,
+          "usedSize": 33140180,
+          "totalSize": 61947904,
+          "embedderHeapUsedSize": 1676512,
+          "backingStorageSize": 1124852
+        },
+        {
+          "elapsed_ms": 453129.501708,
+          "usedSize": 33580256,
+          "totalSize": 61947904,
+          "embedderHeapUsedSize": 1805472,
+          "backingStorageSize": 1134396
+        },
+        {
+          "elapsed_ms": 456130.28625,
+          "usedSize": 32497872,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 953232,
+          "backingStorageSize": 3592130
+        },
+        {
+          "elapsed_ms": 459131.194875,
+          "usedSize": 32529808,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1004784,
+          "backingStorageSize": 3592266
+        },
+        {
+          "elapsed_ms": 462132.446583,
+          "usedSize": 32924964,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1004784,
+          "backingStorageSize": 3592402
+        },
+        {
+          "elapsed_ms": 465132.733125,
+          "usedSize": 32991304,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1004784,
+          "backingStorageSize": 3592674
+        },
+        {
+          "elapsed_ms": 468133.778417,
+          "usedSize": 33103828,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1004784,
+          "backingStorageSize": 3594965
+        },
+        {
+          "elapsed_ms": 471134.712667,
+          "usedSize": 33162648,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1004784,
+          "backingStorageSize": 3595101
+        },
+        {
+          "elapsed_ms": 474135.15870800003,
+          "usedSize": 33250976,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1004784,
+          "backingStorageSize": 3597037
+        },
+        {
+          "elapsed_ms": 477136.166458,
+          "usedSize": 33318608,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1004784,
+          "backingStorageSize": 3609677
+        },
+        {
+          "elapsed_ms": 480165.734875,
+          "usedSize": 33401224,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1004784,
+          "backingStorageSize": 3627013
+        },
+        {
+          "elapsed_ms": 483138.057792,
+          "usedSize": 33486932,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1004784,
+          "backingStorageSize": 3627685
+        },
+        {
+          "elapsed_ms": 486138.565375,
+          "usedSize": 33531324,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1004784,
+          "backingStorageSize": 3628027
+        },
+        {
+          "elapsed_ms": 489139.256667,
+          "usedSize": 33575132,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1045224,
+          "backingStorageSize": 3628845
+        },
+        {
+          "elapsed_ms": 492140.3125,
+          "usedSize": 33711992,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1045224,
+          "backingStorageSize": 3651583
+        },
+        {
+          "elapsed_ms": 495141.280917,
+          "usedSize": 33762716,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1045224,
+          "backingStorageSize": 3655745
+        },
+        {
+          "elapsed_ms": 498142.520708,
+          "usedSize": 33916960,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1045224,
+          "backingStorageSize": 3690209
+        },
+        {
+          "elapsed_ms": 501142.67229200003,
+          "usedSize": 33987528,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1045224,
+          "backingStorageSize": 3704355
+        },
+        {
+          "elapsed_ms": 504143.7685,
+          "usedSize": 34058092,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1045224,
+          "backingStorageSize": 3718525
+        },
+        {
+          "elapsed_ms": 507145.62450000003,
+          "usedSize": 34192268,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1045224,
+          "backingStorageSize": 3743371
+        },
+        {
+          "elapsed_ms": 510174.635708,
+          "usedSize": 34238008,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1045224,
+          "backingStorageSize": 3744985
+        },
+        {
+          "elapsed_ms": 513146.775333,
+          "usedSize": 34283484,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1045224,
+          "backingStorageSize": 3746605
+        },
+        {
+          "elapsed_ms": 516147.685833,
+          "usedSize": 34383476,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1045224,
+          "backingStorageSize": 3752023
+        },
+        {
+          "elapsed_ms": 519149.415292,
+          "usedSize": 34457432,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1087952,
+          "backingStorageSize": 3767673
+        },
+        {
+          "elapsed_ms": 522149.658875,
+          "usedSize": 34531368,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1087952,
+          "backingStorageSize": 3783307
+        },
+        {
+          "elapsed_ms": 525150.67525,
+          "usedSize": 34679316,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1087952,
+          "backingStorageSize": 3814623
+        },
+        {
+          "elapsed_ms": 528152.181958,
+          "usedSize": 34753256,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1087952,
+          "backingStorageSize": 3830257
+        },
+        {
+          "elapsed_ms": 531153.322125,
+          "usedSize": 34808356,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1087952,
+          "backingStorageSize": 3836625
+        },
+        {
+          "elapsed_ms": 534153.691292,
+          "usedSize": 34902804,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1087952,
+          "backingStorageSize": 3841683
+        },
+        {
+          "elapsed_ms": 537155.5512079999,
+          "usedSize": 35433440,
+          "totalSize": 85016576,
+          "embedderHeapUsedSize": 1087952,
+          "backingStorageSize": 3841819
+        },
+        {
+          "elapsed_ms": 540378.5685419999,
+          "usedSize": 32855976,
+          "totalSize": 53559296,
+          "embedderHeapUsedSize": 2181432,
+          "backingStorageSize": 750965
+        },
+        {
+          "elapsed_ms": 543156.053583,
+          "usedSize": 27637400,
+          "totalSize": 54083584,
+          "embedderHeapUsedSize": 810344,
+          "backingStorageSize": 1243888
+        },
+        {
+          "elapsed_ms": 546155.9706669999,
+          "usedSize": 42613592,
+          "totalSize": 65880064,
+          "embedderHeapUsedSize": 2450272,
+          "backingStorageSize": 1168684
+        },
+        {
+          "elapsed_ms": 549156.2940829999,
+          "usedSize": 25439696,
+          "totalSize": 66142208,
+          "embedderHeapUsedSize": 156232,
+          "backingStorageSize": 1077755
+        },
+        {
+          "elapsed_ms": 552157.243542,
+          "usedSize": 25919216,
+          "totalSize": 66142208,
+          "embedderHeapUsedSize": 275272,
+          "backingStorageSize": 1087723
+        },
+        {
+          "elapsed_ms": 555158.4398749999,
+          "usedSize": 27433360,
+          "totalSize": 66142208,
+          "embedderHeapUsedSize": 902752,
+          "backingStorageSize": 6466448
+        },
+        {
+          "elapsed_ms": 558159.234583,
+          "usedSize": 64499644,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3481952,
+          "backingStorageSize": 4412433
+        },
+        {
+          "elapsed_ms": 561160.1645,
+          "usedSize": 64531348,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3481952,
+          "backingStorageSize": 4412569
+        },
+        {
+          "elapsed_ms": 564160.5495829999,
+          "usedSize": 65101244,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3481952,
+          "backingStorageSize": 4412841
+        },
+        {
+          "elapsed_ms": 567160.953292,
+          "usedSize": 65133216,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3481952,
+          "backingStorageSize": 4412977
+        },
+        {
+          "elapsed_ms": 570183.4409169999,
+          "usedSize": 65239884,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3481952,
+          "backingStorageSize": 4415268
+        },
+        {
+          "elapsed_ms": 573162.8415829999,
+          "usedSize": 65340548,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3481952,
+          "backingStorageSize": 4415740
+        },
+        {
+          "elapsed_ms": 576163.9550419999,
+          "usedSize": 65385644,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3481952,
+          "backingStorageSize": 4417340
+        },
+        {
+          "elapsed_ms": 579165.526292,
+          "usedSize": 65452964,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3481952,
+          "backingStorageSize": 4429980
+        },
+        {
+          "elapsed_ms": 582165.5688329999,
+          "usedSize": 65571488,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3481952,
+          "backingStorageSize": 4447652
+        },
+        {
+          "elapsed_ms": 585166.2763329999,
+          "usedSize": 65617472,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3481952,
+          "backingStorageSize": 4447988
+        },
+        {
+          "elapsed_ms": 588166.8793749999,
+          "usedSize": 65660708,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3481952,
+          "backingStorageSize": 4448330
+        },
+        {
+          "elapsed_ms": 591168.6000829999,
+          "usedSize": 65790912,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3481952,
+          "backingStorageSize": 4471448
+        },
+        {
+          "elapsed_ms": 594169.900958,
+          "usedSize": 65836068,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3481952,
+          "backingStorageSize": 4473052
+        },
+        {
+          "elapsed_ms": 597171.16875,
+          "usedSize": 65964372,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3481952,
+          "backingStorageSize": 4494984
+        },
+        {
+          "elapsed_ms": 600205.3729579999,
+          "usedSize": 66040100,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3610912,
+          "backingStorageSize": 4511678
+        },
+        {
+          "elapsed_ms": 603171.906417,
+          "usedSize": 66110344,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3610912,
+          "backingStorageSize": 4525824
+        },
+        {
+          "elapsed_ms": 606172.8708329999,
+          "usedSize": 66250836,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3610912,
+          "backingStorageSize": 4554156
+        },
+        {
+          "elapsed_ms": 609174.159,
+          "usedSize": 66314148,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3610912,
+          "backingStorageSize": 4564840
+        },
+        {
+          "elapsed_ms": 612174.4879579999,
+          "usedSize": 66359304,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3610912,
+          "backingStorageSize": 4566454
+        },
+        {
+          "elapsed_ms": 615175.2337499999,
+          "usedSize": 66455024,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3610912,
+          "backingStorageSize": 4569718
+        },
+        {
+          "elapsed_ms": 618176.0869999999,
+          "usedSize": 66504600,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3610912,
+          "backingStorageSize": 4573492
+        },
+        {
+          "elapsed_ms": 621176.3136669999,
+          "usedSize": 66578244,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3610912,
+          "backingStorageSize": 4589142
+        },
+        {
+          "elapsed_ms": 624177.449375,
+          "usedSize": 66725536,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3610912,
+          "backingStorageSize": 4620442
+        },
+        {
+          "elapsed_ms": 627177.872625,
+          "usedSize": 66797424,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3610912,
+          "backingStorageSize": 4635246
+        },
+        {
+          "elapsed_ms": 630209.0867079999,
+          "usedSize": 66871048,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3610912,
+          "backingStorageSize": 4650880
+        },
+        {
+          "elapsed_ms": 633180.015958,
+          "usedSize": 66981476,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3610912,
+          "backingStorageSize": 4664040
+        },
+        {
+          "elapsed_ms": 636180.7180829999,
+          "usedSize": 67026928,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3610912,
+          "backingStorageSize": 4665896
+        },
+        {
+          "elapsed_ms": 639181.2675419999,
+          "usedSize": 67715264,
+          "totalSize": 99811328,
+          "embedderHeapUsedSize": 3610912,
+          "backingStorageSize": 4666032
+        },
+        {
+          "elapsed_ms": 642182.0217919999,
+          "usedSize": 27743384,
+          "totalSize": 47267840,
+          "embedderHeapUsedSize": 1234064,
+          "backingStorageSize": 897645
+        },
+        {
+          "elapsed_ms": 645182.6244999999,
+          "usedSize": 27241096,
+          "totalSize": 49889280,
+          "embedderHeapUsedSize": 1457952,
+          "backingStorageSize": 1060742
+        },
+        {
+          "elapsed_ms": 648182.6342079999,
+          "usedSize": 29549508,
+          "totalSize": 49889280,
+          "embedderHeapUsedSize": 1547552,
+          "backingStorageSize": 918512
+        },
+        {
+          "elapsed_ms": 651183.5072079999,
+          "usedSize": 35178848,
+          "totalSize": 62472192,
+          "embedderHeapUsedSize": 2450272,
+          "backingStorageSize": 982728
+        },
+        {
+          "elapsed_ms": 654184.041417,
+          "usedSize": 35036092,
+          "totalSize": 62734336,
+          "embedderHeapUsedSize": 3095072,
+          "backingStorageSize": 3976270
+        },
+        {
+          "elapsed_ms": 657185.006417,
+          "usedSize": 35820628,
+          "totalSize": 62996480,
+          "embedderHeapUsedSize": 3095072,
+          "backingStorageSize": 3976406
+        },
+        {
+          "elapsed_ms": 660217.747708,
+          "usedSize": 36279948,
+          "totalSize": 62996480,
+          "embedderHeapUsedSize": 3224032,
+          "backingStorageSize": 3986360
+        },
+        {
+          "elapsed_ms": 663185.102583,
+          "usedSize": 28088180,
+          "totalSize": 92356608,
+          "embedderHeapUsedSize": 1153344,
+          "backingStorageSize": 801867
+        },
+        {
+          "elapsed_ms": 666185.9903749999,
+          "usedSize": 29025092,
+          "totalSize": 92356608,
+          "embedderHeapUsedSize": 1153344,
+          "backingStorageSize": 802003
+        },
+        {
+          "elapsed_ms": 667000.206792,
+          "usedSize": 29056872,
+          "totalSize": 92356608,
+          "embedderHeapUsedSize": 1153344,
+          "backingStorageSize": 802139
+        }
+      ],
+      "cpu_profile": {
+        "duration_microseconds": 667062657,
+        "samples": 9092,
+        "sampled_microseconds_by_function": {
+          "(idle)": 102622005,
+          "(program)": 48005265,
+          "digest": 5375510,
+          "checkObjects": 1248,
+          "getInstance": 4592528,
+          "list": 2479,
+          "clearTimeout": 29883,
+          "formatWithOptions": 1252,
+          "administrationObservedAt": 2265708,
+          "getReader": 7522,
+          "decode": 8761,
+          "validateEvidencePlans": 1254,
+          "adapterRequestCapacity": 10037,
+          "": 95365089,
+          "create": 12523,
+          "workflowStepName": 4577556,
+          "requiredCaptureOperation": 11050,
+          "createMultipartUpload": 12543,
+          "(garbage collector)": 9531385,
+          "streamSnapshotToR2": 72657,
+          "_send": 17237871,
+          "parseBytes": 1257,
+          "normalizedText": 1254,
+          "parse": 7189,
+          "htmlText": 8642,
+          "RegExp: [^\\S\\r\\n]+": 6024,
+          "read": 53665,
+          "URL": 18436493,
+          "_wrappedFetch": 11954395,
+          "fetch": 100565094,
+          "D1PreparedStatement": 1015191,
+          "ReadableState": 2505,
+          "setAttribute": 16743818,
+          "putImmutableBytes": 5014,
+          "pageIdentity": 8768,
+          "get": 7912330,
+          "enterSpan": 5637601,
+          "parseEvidencePlans": 4602834,
+          "pipeThrough": 60528,
+          "compareUtf8": 282642,
+          "Headers": 287578,
+          "set": 2382498,
+          "loadPendingHostShards": 6312,
+          "update": 1449875,
+          "toJson": 7031931,
+          "ownsCollectionAttempt": 2510,
+          "headersRecord": 7583,
+          "enqueue": 50992,
+          "sha256": 4202551,
+          "wrapped": 76609,
+          "initializeReconciliationProgress": 700852,
+          "canonicalJsonAt": 1675967,
+          "repositoryStatements": 2240526,
+          "text": 1110703,
+          "addD1MetaToSpan": 4583453,
+          "assertSelectedAuthoritiesCollected": 8678,
+          "exportedSchema": 194389,
+          "storage3": 10033,
+          "parseEvidencePlan": 28324,
+          "canonicalValueChunks": 64354,
+          "statement": 38230,
+          "prepareSourceSelection": 22441,
+          "canonicalParts": 51463,
+          "prepare": 904163,
+          "charge": 4,
+          "reconcileRetainedCardPrintingEvidence": 508843,
+          "rotateRight": 880034,
+          "reconciliationCheckpoint": 66625,
+          "#compress": 5220394,
+          "decodeDocument": 2507,
+          "bind": 1117151,
+          "selectionsAfter": 2513,
+          "prepareSourceDocuments": 33717,
+          "batch": 10003,
+          "withSpan": 7367663,
+          "_sendOrThrow": 2283845,
+          "append": 24771,
+          "beginRequest": 2507,
+          "collectRetainedReconciliationObservation": 41179,
+          "normalize": 3765,
+          "base64": 460961,
+          "parseReconciliationObservation": 1257,
+          "decodeBase642": 424663,
+          "retainCandidateImage": 418332,
+          "sanitize": 2267744,
+          "atob": 17537,
+          "put": 131487,
+          "runReconciliationWorkUnits": 46935,
+          "ReconciliationContinuation": 58573,
+          "close": 2637,
+          "verifiedSelection": 14840,
+          "assertPinnedDefinitions": 8478,
+          "verifiedReconciliationRecordEntries": 3752,
+          "scannedReconciliationRecordEntries": 11129,
+          "resumeAt": 11826,
+          "canonicalRecordSource": 27578,
+          "toArrayOfObjects": 4487241,
+          "sha256Text": 56548,
+          "semanticDraftDocument": 2370,
+          "addAggregatedD1MetaToSpan": 22249,
+          "reconcileProductReleaseState": 17554,
+          "prepareGameCandidateManifests": 24620,
+          "parseStringRecord": 17297,
+          "timingSafeSecretEqual": 4421547,
+          "listCollectionGameCandidates": 1133,
+          "exec": 16434031,
+          "validateAdmission": 2288641,
+          "fenced": 6308,
+          "parsePage": 13835,
+          "collectSourceRequestBatch": 11306,
+          "htmlLabelPairs": 32618,
+          "head": 142709,
+          "RegExp: <([a-z][a-z0-9]*)\\b([^>]*\\bdata-field=[\"']([^\"']+)[\"'][^>]*)>([\\s\\S]*?)<\\/\\1>": 5022,
+          "discoverSnapshotRequests": 6295,
+          "assertBoundedOfficialSourceRequest": 1256,
+          "RegExp: <span data-tooltip=\"([^\"]+)\">[\\s\\S]*?<\\/span>": 3766,
+          "transform": 962626,
+          "beginEvidenceObjectWrite": 18840,
+          "findReusableSnapshot": 9864,
+          "responseVary": 2512,
+          "boundedReconciliationResources": 1468343,
+          "mapD1Result": 37120,
+          "encode": 147399,
+          "TextEncoder": 110104,
+          "retainSourceObservations": 5024,
+          "assertClosedRequestGraph": 3759,
+          "parsedOfficialArtworkIdentity": 1253,
+          "pull": 75204,
+          "setAlongside": 1251,
+          "sourceAdmissionPolicy": 6176,
+          "omitUndefinedValues": 18515,
+          "snapshot.evidencePlans": 3189,
+          "entityValues": 14877,
+          "applyPinnedEntityAdmissions": 11053,
+          "prepareSorted": 5010,
+          "insertGameCandidatePartitionStatement": 12861,
+          "verifyInspectionArtifacts": 3761,
+          "inspectWorkflowInstance": 2413,
+          "status": 8760,
+          "inspectGameCandidateReadiness": 2209164,
+          "withOperationalRequestLog": 6475630,
+          "limit": 19054719,
+          "advancePublicationPreparation": 43146,
+          "RegExp: ^[a-f0-9]{64}$": 3536,
+          "updatePublicationPreparation": 1255,
+          "prepareUnit": 80549,
+          "normalizeCardSearchText": 3767,
+          "atomicBatch": 24732,
+          "readBoundedJsonObject": 1252,
+          "validate23": 17589,
+          "deflate$1": 5660,
+          "validate62": 6016,
+          "retain2": 3735,
+          "safeLogReference": 12537,
+          "currentSchemaMigrationLevel": 8483,
+          "catalogueVerificationStatement": 34576,
+          "captureCompositionSnapshot": 325531,
+          "catalogueVerificationQuery": 9180,
+          "compositionVerificationQuery": 19906,
+          "completeBackupExportStatement": 2509,
+          "json": 4708334,
+          "cloudflareD1Request": 667123,
+          "RegExp: ^\\/v1\\/game-candidates(?:\\/([^\\/]+?))\\/publication-preparation$": 2063927,
+          "isLivenessRequest": 9181398,
+          "catalogueEnvironment": 8928760,
+          "completeUploadedCapture": 16037,
+          "parseOnePieceBandaiCardListV1": 27544,
+          "RegExp: <br\\b[^>]*>": 1251,
+          "RegExp: <div class=\"card-image\">\\s*<img\\b[^>]*\\bsrc=\"([^\"]+)\"": 4816,
+          "Duplex": 4953,
+          "canonicalValueDigest": 19872,
+          "prepareWrite": 32343,
+          "token": 6070,
+          "digestHex": 56666,
+          "aggregateD1Meta": 26653,
+          "selectedRequestById": 5025,
+          "visit": 57737,
+          "savePrefix": 1254,
+          "sourceSurfaceForRequest": 7392,
+          "retainedPrintingImage": 2507,
+          "retainedReconciliationObservation": 15950,
+          "finalizedReconciliationResult": 11278,
+          "latestEntries": 1248,
+          "budget": 7524,
+          "readHead": 11093,
+          "entityAdmissionPinMetadata": 3759,
+          "retainPartitionedRecord": 4972,
+          "gameCandidatesForPreparationStatement": 6265,
+          "showEvidenceRun": 7352,
+          "matchesAnyKey": 1202222,
+          "collectionInspection": 12600,
+          "validateObject": 2208972,
+          "verifiedCandidatePartition": 4512422,
+          "gameCandidatePartitionStatement": 2530,
+          "handleIngestionRequest": 15632022,
+          "RegExp: ^\\/v1\\/game-candidates(?:\\/([^\\/]+?))\\/inspection\\/evidence(?:\\/([^\\/]+?))$": 2214365,
+          "safeRoute": 2225394,
+          "dispatchPublicationPreparation": 3754,
+          "runPublicationPreparationWorkflow": 5039,
+          "verifyPublicationObject": 17495,
+          "runShard": 2505,
+          "formatLog": 23783,
+          "inspectGameCandidate": 13952,
+          "firstIfArray": 5605,
+          "TransformStream": 26220,
+          "deflate_slow": 11092,
+          "representation": 4868,
+          "validate58": 5005,
+          "onEnd": 5011,
+          "ucs2length": 7515,
+          "deflateInit2": 5014,
+          "zero": 6197,
+          "advanceGamePublication": 7528,
+          "DigestStream": 6261,
+          "all": 6270,
+          "_updateBookmark": 19927,
+          "exportSql": 465298,
+          "queryRows": 1256,
+          "RegExp: ^Bearer ([^\\s]+)$": 1332686,
+          "authenticateBearer": 6794504,
+          "enforceRecoveryRestoreGuard": 4498193,
+          "ensure": 3747,
+          "advancesCollectionProgress": 8534,
+          "RegExp: \\r?\\n": 7521,
+          "RegExp: <(?:dt|th)\\b[^>]*>([\\s\\S]*?)<\\/(?:dt|th)>\\s*<(?:dd|td)\\b[^>]*>([\\s\\S]*?)<\\/(?:dd|td)>": 1253,
+          "decodeAdapterUtf8": 16240,
+          "cardObservation": 1034,
+          "entries": 1251,
+          "gameProfileForGame": 2503,
+          "readSourceDocument": 11282,
+          "wrap": 22037,
+          "toString": "function toString() { [native code] }1177",
+          "evidencePlanForRequest": 7144,
+          "latestReconciliationCheckpointStatement": 15675,
+          "readVerifiedReconciliationInput": 11066,
+          "beginObservation": 20892,
+          "accept": 5018,
+          "printingAtLocatorVariant": 8774,
+          "insertionEntries": 1254,
+          "sortableSize": 1045,
+          "pinnedCardIdentityResolver": 11286,
+          "prepareCheckpointReadWindow": 14625,
+          "retainReconciliationCheckpoint": 21090,
+          "reconciliationRunStateStatement": 1255,
+          "prepareWithdrawalDiagnostics": 6116,
+          "catalogueStore": 8474284,
+          "structuredClone": 11226,
+          "gameCandidateStatement": 2216712,
+          "enforceFreshBaselineMutationGuard": 2213891,
+          "inspectGameCandidatePartition": 3767,
+          "document": 11242,
+          "acknowledgeObserved": 13648,
+          "retainPublicationObject": 11916,
+          "prepareUnit2": 5013,
+          "verifyReference": 17439,
+          "boundedEvidenceDetail": 29,
+          "htmlAttribute": 2218,
+          "capturePreparedAttempt": 8659,
+          "run": 13585,
+          "reconciliationWriterGuard": 24809,
+          "retainVerifiedReconciliationInput": 46235,
+          "candidateAtRevision": 2302,
+          "ReconciliationReducerIndex": 20965,
+          "nextReducerInsertionStateStatement": 1060,
+          "persistCandidatePartitions": 24562,
+          "retainSourceMappings": 1256,
+          "retainGameEntityScopesStatement": 5891,
+          "prepareCandidateInspection": 27239,
+          "correctionPinStatement": 4938,
+          "nextReducerEntityStateStatement": 8334,
+          "enforceRestoreGuardStatement": 2207139,
+          "RegExp: ^\\/v1\\/ingestion-runs(?:\\/([^\\/]+?))\\/candidate$": 2350,
+          "randomUUID": 4424936,
+          "routePath": 2211816,
+          "publicationPreparationActionStatement": 19772,
+          "publicationRecord": 16290,
+          "publicationPreparationStatement": 8666,
+          "RegExp: ^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,511}$": 4862,
+          "inspectPublication": 1265,
+          "validate24": 14880,
+          "INSERT_STRING": 11098,
+          "templatePattern": 2267031,
+          "utf8": 5021,
+          "RegExp: <dl\\b[^>]*\\bclass=[\"'][^\"']*\\bmodalCol\\b[^\"']*[\"'][^>]*\\s+id=[\"']([^\"']+)[\"'][^>]*>([\\s\\S]*?)<\\/dl>": 5021,
+          "enqueuePersistence": 2511,
+          "sourceChunks": 1252,
+          "retainNormalizedObservationStatement": 4865,
+          "reconciliationEvidencePlanStatement": 2504,
+          "RegExp: ^[A-Za-z0-9][A-Za-z0-9 .,:@_-]*$": 2504,
+          "atomicRepositoryStatement": 21018,
+          "applyPinnedCuratedRevisionsToDraft": 1246,
+          "ReconciliationCardState": 3762,
+          "index": 2503,
+          "RegExp: ^\\s*SELECT\\b": 8654,
+          "prepareCuratedDraft": 8719,
+          "observeD1": 2212294,
+          "RegExp: ^\\/v1\\/source-observation-sets(?:\\/([^\\/]+?))\\/content$": 2214395,
+          "ReadableStream": 1129,
+          "args.<computed>": 22249,
+          "publicationNodes": 9827,
+          "advancePublicationExports": 11096,
+          "pickPublicFields": 5033,
+          "Deflate": 7518,
+          "RegExp: <div\\b[^>]*>\\s*<h[1-6]\\b[^>]*>([\\s\\S]*?)<\\/h[1-6]>([\\s\\S]*?)<\\/div>": 2506,
+          "isCurrentCollectionWorkflowAttempt": 1259,
+          "terminalIngestionReservationEffects": 10081,
+          "prepareVerifiedReconciliationInput": 3512,
+          "readSourceObservation": 6270,
+          "exportedGameProfileSchema": 1255,
+          "ReconciliationRecordCollection": 2386,
+          "guardedCatalogueStore": 3656,
+          "prepareDisappearanceWarnings": 1257,
+          "first": 5014,
+          "restorePriorPositions": 5010,
+          "save": 3758,
+          "sourceHostPacingIntervalMilliseconds": 2291076,
+          "formatEvidenceVolume": 9897,
+          "verify": 6106,
+          "pqdownheap": 2507,
+          "backupWorkflowIdentityStatement": 130306,
+          "requiredHtmlMatch": 23702,
+          "collectionProgressFacts": 12562,
+          "requiredSourceAdapter": 5013,
+          "pipeTo": 13797,
+          "finalizeParseOperation": 14829,
+          "parseSnapshot": 7526,
+          "Hash.digest": 22218,
+          "assertCurrent": 910480,
+          "sourceRequests": 2510,
+          "TextDecoder": 4923,
+          "peek": 13605,
+          "resumableObjectMembers": 2507,
+          "boundedAsyncRecordArrays": 3666,
+          "documentStorage": 13619,
+          "saveReduction": 1255,
+          "values": 13361,
+          "persistBlockedCandidate": 7532,
+          "prepareOfficialCandidate": 8767,
+          "publicBase": 2205878
+        }
+      }
+    },
+    {
+      "target": "core:user:acceptance-http-bridge",
+      "heap_samples": [
+        {
+          "elapsed_ms": 1.4487920000001395,
+          "usedSize": 426816,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 3003.545833,
+          "usedSize": 447256,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 6004.229583,
+          "usedSize": 451204,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 9005.640125,
+          "usedSize": 455172,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 12006.399333000001,
+          "usedSize": 459236,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 15006.632667000002,
+          "usedSize": 467276,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 18007.752417,
+          "usedSize": 471608,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 21009.670542,
+          "usedSize": 477344,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 24010.352625,
+          "usedSize": 481452,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 27641.656542,
+          "usedSize": 489516,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 30026.186583,
+          "usedSize": 493452,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 33013.393625,
+          "usedSize": 497368,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 36013.57058299999,
+          "usedSize": 501304,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 39014.872042,
+          "usedSize": 509148,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 42015.5245,
+          "usedSize": 513108,
+          "totalSize": 1048576,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 45017.072457999995,
+          "usedSize": 517056,
+          "totalSize": 1048576,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 48018.431708000004,
+          "usedSize": 524952,
+          "totalSize": 1048576,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 51019.453333,
+          "usedSize": 528900,
+          "totalSize": 1048576,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 54019.529582999996,
+          "usedSize": 532848,
+          "totalSize": 1048576,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 57021.41433299999,
+          "usedSize": 540744,
+          "totalSize": 1048576,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 60034.339792,
+          "usedSize": 544692,
+          "totalSize": 1048576,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 63022.330917,
+          "usedSize": 548640,
+          "totalSize": 1048576,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 66023.584042,
+          "usedSize": 556544,
+          "totalSize": 1048576,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 69025.03412499999,
+          "usedSize": 560884,
+          "totalSize": 1048576,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 72025.702792,
+          "usedSize": 564864,
+          "totalSize": 1048576,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 75027.489125,
+          "usedSize": 572716,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 78027.149708,
+          "usedSize": 576504,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 81027.605083,
+          "usedSize": 580668,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 84028.13608299999,
+          "usedSize": 588800,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 87028.870333,
+          "usedSize": 592948,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 90046.5305,
+          "usedSize": 597096,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 93031.007792,
+          "usedSize": 605392,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 96032.504417,
+          "usedSize": 609540,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 99033.673042,
+          "usedSize": 613572,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 102035.198333,
+          "usedSize": 621784,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 105039.349458,
+          "usedSize": 625932,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 108036.046,
+          "usedSize": 629848,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 111036.240917,
+          "usedSize": 633784,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 114036.586042,
+          "usedSize": 637700,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 117039.47675,
+          "usedSize": 645540,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 120057.72287499999,
+          "usedSize": 649480,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 123038.90108299999,
+          "usedSize": 653420,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 126041.30574999998,
+          "usedSize": 661316,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 129041.00304200001,
+          "usedSize": 665264,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 132041.479125,
+          "usedSize": 669212,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 135043.276958,
+          "usedSize": 677108,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 138053.79666700002,
+          "usedSize": 681056,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 141044.2,
+          "usedSize": 688952,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 144044.99712500002,
+          "usedSize": 692900,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 147045.291792,
+          "usedSize": 696856,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 150059.68812500002,
+          "usedSize": 704768,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 153046.355958,
+          "usedSize": 708724,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 156047.57912500002,
+          "usedSize": 712680,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 159047.429833,
+          "usedSize": 720592,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 162048.328042,
+          "usedSize": 724548,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 165049.57475,
+          "usedSize": 728504,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 168050.557333,
+          "usedSize": 736416,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 171051.431542,
+          "usedSize": 740372,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 174052.49929200002,
+          "usedSize": 744328,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 177053.39500000002,
+          "usedSize": 752240,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 180069.69925,
+          "usedSize": 756196,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 183057.71158300003,
+          "usedSize": 764108,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 186053.334833,
+          "usedSize": 768064,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 189053.90387500002,
+          "usedSize": 772020,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 192054.46758300002,
+          "usedSize": 779932,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 195055.718708,
+          "usedSize": 783888,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 198057.70908300002,
+          "usedSize": 787844,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 201573.244917,
+          "usedSize": 796140,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 204057.95658300002,
+          "usedSize": 800120,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 207059.66441700002,
+          "usedSize": 804152,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 210081.35666700001,
+          "usedSize": 811760,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 213062.554417,
+          "usedSize": 815924,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 216063.34175000002,
+          "usedSize": 820072,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 219064.209292,
+          "usedSize": 828368,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 222064.340333,
+          "usedSize": 832516,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 225065.274375,
+          "usedSize": 836680,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 228064.902333,
+          "usedSize": 844876,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 231066.73162500001,
+          "usedSize": 849024,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 234641.072542,
+          "usedSize": 852940,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 237067.916708,
+          "usedSize": 856876,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 240092.38220800002,
+          "usedSize": 860792,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 243069.831917,
+          "usedSize": 864728,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 246070.724875,
+          "usedSize": 872572,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 249071.61929200002,
+          "usedSize": 876512,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 252073.14458300002,
+          "usedSize": 880796,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 255074.30037500002,
+          "usedSize": 888692,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 258074.26929199998,
+          "usedSize": 892640,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 261076.635833,
+          "usedSize": 896588,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 264077.357375,
+          "usedSize": 904484,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 267078.373917,
+          "usedSize": 908432,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 270108.98425000004,
+          "usedSize": 916328,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 273080.350125,
+          "usedSize": 920284,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 276080.750958,
+          "usedSize": 924240,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 279081.191292,
+          "usedSize": 932152,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 282081.322292,
+          "usedSize": 936108,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 285081.095917,
+          "usedSize": 940064,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 288082.62116700003,
+          "usedSize": 947976,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 291083.86866700003,
+          "usedSize": 951932,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 294084.94745800004,
+          "usedSize": 955888,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 297085.930583,
+          "usedSize": 963800,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 300111.645375,
+          "usedSize": 967756,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 303087.451667,
+          "usedSize": 971712,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 306089.778167,
+          "usedSize": 979624,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 309090.415125,
+          "usedSize": 983580,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 312091.089417,
+          "usedSize": 987536,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 315090.95050000004,
+          "usedSize": 995448,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 318092.070833,
+          "usedSize": 999404,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 321093.331125,
+          "usedSize": 1007316,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 324094.36866700003,
+          "usedSize": 1011272,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 327094.464792,
+          "usedSize": 1015612,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 331749.264083,
+          "usedSize": 1023624,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 333094.42637500004,
+          "usedSize": 1027444,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 336096.15733300004,
+          "usedSize": 1031232,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 339096.5055,
+          "usedSize": 1035280,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 342137.336,
+          "usedSize": 1043344,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 345097.40150000004,
+          "usedSize": 1047280,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 348098.386375,
+          "usedSize": 1051196,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 351099.483833,
+          "usedSize": 1059036,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 354099.285667,
+          "usedSize": 1062976,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 357101.436958,
+          "usedSize": 1066916,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 360131.008208,
+          "usedSize": 1074812,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 363102.208667,
+          "usedSize": 1078760,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 366102.925583,
+          "usedSize": 1082708,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 369104.133792,
+          "usedSize": 1090604,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 372104.13875,
+          "usedSize": 1094552,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 375107.451208,
+          "usedSize": 1098500,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 378106.98083300004,
+          "usedSize": 1106396,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 381108.377625,
+          "usedSize": 1110352,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 384108.799833,
+          "usedSize": 1114308,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 387109.995458,
+          "usedSize": 1122220,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 390136.923833,
+          "usedSize": 1126176,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 393112.352833,
+          "usedSize": 1134088,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 396112.496625,
+          "usedSize": 1138044,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 399113.4445,
+          "usedSize": 1142000,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 402115.10120800004,
+          "usedSize": 1149912,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 405116.317875,
+          "usedSize": 1153868,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 408116.810667,
+          "usedSize": 1157824,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 411117.948292,
+          "usedSize": 1165736,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 414119.0445,
+          "usedSize": 1169692,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 417119.313792,
+          "usedSize": 1173648,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 420153.226125,
+          "usedSize": 1181560,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 423122.451875,
+          "usedSize": 1185516,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 426123.110333,
+          "usedSize": 1189472,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 429123.765375,
+          "usedSize": 1197384,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 432125.277833,
+          "usedSize": 1201340,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 435125.569542,
+          "usedSize": 1209252,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 438126.37358300004,
+          "usedSize": 1213284,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 441127.638708,
+          "usedSize": 1217624,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 444128.303333,
+          "usedSize": 1221604,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 447127.267917,
+          "usedSize": 1229456,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 450156.57937500003,
+          "usedSize": 1233244,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 453130.420292,
+          "usedSize": 1237292,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 456130.572125,
+          "usedSize": 1245356,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 459132.114958,
+          "usedSize": 1249312,
+          "totalSize": 1835008,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 462133.166875,
+          "usedSize": 1253228,
+          "totalSize": 1835008,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 465133.46187500004,
+          "usedSize": 1261068,
+          "totalSize": 1835008,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 468134.662333,
+          "usedSize": 1265008,
+          "totalSize": 1835008,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 471135.741042,
+          "usedSize": 1268948,
+          "totalSize": 1835008,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 474135.882875,
+          "usedSize": 1276844,
+          "totalSize": 1835008,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 477137.02187500003,
+          "usedSize": 1280792,
+          "totalSize": 1835008,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 480166.51425,
+          "usedSize": 1284740,
+          "totalSize": 1835008,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 483139.169875,
+          "usedSize": 1292636,
+          "totalSize": 1835008,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 486139.660167,
+          "usedSize": 1296584,
+          "totalSize": 1835008,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 489140.283583,
+          "usedSize": 1300532,
+          "totalSize": 1835008,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 492141.047708,
+          "usedSize": 1308428,
+          "totalSize": 1835008,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 495142.182542,
+          "usedSize": 1312384,
+          "totalSize": 1835008,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 498143.444708,
+          "usedSize": 1320296,
+          "totalSize": 1835008,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 501143.454583,
+          "usedSize": 754868,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 504144.551667,
+          "usedSize": 758824,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 507146.38125000003,
+          "usedSize": 766736,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 510174.969625,
+          "usedSize": 770692,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 513147.557333,
+          "usedSize": 774648,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 516148.53629200003,
+          "usedSize": 782560,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 519150.16366699996,
+          "usedSize": 786516,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 522150.475333,
+          "usedSize": 790472,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 525151.913375,
+          "usedSize": 798384,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 528153.0436669999,
+          "usedSize": 802340,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 531154.113458,
+          "usedSize": 806296,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 534154.54825,
+          "usedSize": 814208,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 537156.394583,
+          "usedSize": 818240,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 540379.274625,
+          "usedSize": 826560,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 544389.276917,
+          "usedSize": 830592,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 546156.490292,
+          "usedSize": 834412,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 549157.22,
+          "usedSize": 838200,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 552157.8994999999,
+          "usedSize": 842248,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 555159.660375,
+          "usedSize": 850312,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 559413.197583,
+          "usedSize": 858184,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 561160.97425,
+          "usedSize": 858184,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 564161.389,
+          "usedSize": 866036,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 567161.695292,
+          "usedSize": 869940,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 570183.7613329999,
+          "usedSize": 873880,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 573163.346083,
+          "usedSize": 881768,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 576164.8099999999,
+          "usedSize": 885716,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 579166.290708,
+          "usedSize": 889664,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 582166.267,
+          "usedSize": 897560,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 585166.939333,
+          "usedSize": 901508,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 588168.3088329999,
+          "usedSize": 905456,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 591168.9735419999,
+          "usedSize": 913352,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 594170.5456249999,
+          "usedSize": 917300,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 597172.222125,
+          "usedSize": 925212,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 600206.00775,
+          "usedSize": 929168,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 603172.961042,
+          "usedSize": 933124,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 606173.8557079999,
+          "usedSize": 941036,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 609175.0524169999,
+          "usedSize": 944992,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 612175.2625419999,
+          "usedSize": 948948,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 615176.402042,
+          "usedSize": 956860,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 618176.7965419999,
+          "usedSize": 960816,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 621177.0152919999,
+          "usedSize": 964772,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 624178.1936669999,
+          "usedSize": 972684,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 627178.3221669999,
+          "usedSize": 976640,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 630209.6767079999,
+          "usedSize": 980596,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 633180.7561669999,
+          "usedSize": 988508,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 636181.5069579999,
+          "usedSize": 992464,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 639182.0444169999,
+          "usedSize": 996496,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 642182.709333,
+          "usedSize": 1004816,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 645750.941958,
+          "usedSize": 1008848,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 648182.935583,
+          "usedSize": 1012668,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 651184.477917,
+          "usedSize": 1016456,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 654184.872917,
+          "usedSize": 1024652,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 657185.7284169999,
+          "usedSize": 1028568,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 660218.3104579999,
+          "usedSize": 1032616,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 664717.143708,
+          "usedSize": 1040680,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 666186.868833,
+          "usedSize": 1040680,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 667000.7349579999,
+          "usedSize": 1044616,
+          "totalSize": 1572864,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 5877
+        }
+      ],
+      "cpu_profile": {
+        "duration_microseconds": 667045615,
+        "samples": 85,
+        "sampled_microseconds_by_function": {
+          "(idle)": 299670149,
+          "fetch": 193257285,
+          "(program)": 114116951,
+          "default": 26635795,
+          "WorkerEntrypoint": 2213824,
+          "(garbage collector)": 13286746
+        }
+      }
+    }
+  ]
+}

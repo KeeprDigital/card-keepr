@@ -1,0 +1,42 @@
+{
+  "contract": "card-keepr-pr-review@1",
+  "pull_request": 266,
+  "base": "0bb3b7d26c6744b4c037d788e6b45c334ae8aa83",
+  "reviewed_head": "ebb67a075ac646dcba39bb6c98945b8f61999283",
+  "scope": "Full net PR diff: 167 files including production, diagnostics, fault tests, prototypes and retained evidence",
+  "standards": {
+    "actionable_findings": 0,
+    "summary": "Immutable evidence, query-only storage retry classification, bounded processing and cleanup/recovery fences preserved. No actionable documented-standard or smell finding."
+  },
+  "spec": {
+    "correctness_blockers": 0,
+    "unauthorized_scope_findings": 0,
+    "summary": "Original acceptance remains partial and explicitly deferred to #268; diagnostics distinguish usable capacity, guard rejection and historical failures."
+  },
+  "independent_artifact_verification": {
+    "entries": 257,
+    "committed_artifacts": 97,
+    "local_artifacts": 160,
+    "original_json_semantic_checks": 43,
+    "mismatches": 0
+  },
+  "reviewers_ran_tests": false,
+  "follow_up_issue": 268,
+  "final_reviewed_head": "762dffb6e54104e6dfd11dc5eaa038feb32be029",
+  "incremental_review": "Both axes clear for test-only structural-rejection expectations; no production, fixture, guard or timeout change.",
+  "validation_summary": {
+    "full_ingestion": {
+      "passed": 745,
+      "failed": 3,
+      "duration_seconds": 789.71
+    },
+    "affected_followup": {
+      "passed": 3,
+      "failed": 0,
+      "duration_seconds": 4.31
+    },
+    "api_passed": 95,
+    "domain_passed": 246,
+    "metric_census_passed": 3
+  }
+}

@@ -13,21 +13,6 @@ export function uploadedParseStatement(
     .bind(input.digest, input.byteLength, input.observationCount, input.operationId);
 }
 
-export function retainedDiscoveryObservationsStatement(
-  database: CatalogueStore,
-  input: Readonly<{ runId: string; sourceLineage: string }>,
-): D1PreparedStatement {
-  return repositoryStatements(database)
-    .prepare(`SELECT observation_set.*, snapshot.request_id
-     FROM source_observation_sets AS observation_set
-     JOIN source_snapshots AS snapshot
-       ON snapshot.id = observation_set.source_snapshot_id
-     WHERE snapshot.ingestion_run_id = ?
-       AND snapshot.source_lineage = ?
-     ORDER BY snapshot.retrieved_at, observation_set.id`)
-    .bind(input.runId, input.sourceLineage);
-}
-
 export function createParseOperationStatement(
   database: CatalogueStore,
   input: Readonly<{

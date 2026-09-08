@@ -1,3 +1,5 @@
+import { deleteSourceAuxiliaryForObject } from "./source-record-auxiliary-repository";
+import { deleteSourceRecordsForObject } from "./source-record-repository";
 import { AdministrationProblem, type CatalogueStore, sha256Text } from "../shared";
 import {
   cleanupById,
@@ -146,6 +148,9 @@ export async function advanceEvidenceCleanup(db: CatalogueStore, bucket: R2Bucke
       await cleanupDeleteGuard(db, next.object_key).first();
       try {
         await bucket.delete(next.object_key);
+        const removed = await deleteSourceRecordsForObject(db, next.object_key).run();
+        if (removed.meta.changes > 0) continue;
+        if ((await deleteSourceAuxiliaryForObject(db, next.object_key).run()).meta.changes > 0) continue;
         await deletedCleanupObject(db, next.object_key, at).run();
       } catch {
         await pauseCleanup(db, id, "evidence_cleanup_storage_retry_required").run();

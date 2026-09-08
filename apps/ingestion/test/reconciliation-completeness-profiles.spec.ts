@@ -1,3 +1,5 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { expect, test } from "vitest";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import { canonicalJson, sha256 } from "../../../src/catalogue/shared";
@@ -164,7 +166,11 @@ test("unknown controlled vocabulary remains retained evidence, warns, and stays 
   const observationSetId = requiredString(requiredFirst(run.document, "observation_sets"), "id");
   const retained = await get(`/v1/source-observation-sets/${observationSetId}/content`);
   expect(retained.response.status).toBe(200);
-  expect(JSON.stringify(retained.document)).toContain("etched-future");
+  expect(
+    JSON.stringify(
+      await readSourceObservation(catalogueStore(testEnv.CATALOGUE_DB), "retained-vocabulary", observationSetId, 0),
+    ),
+  ).toContain("etched-future");
   const rejected = await post(`/v1/ingestion-runs/${run.id}/rejection`, {
     candidate_digest: requiredString(reconciled.document, "candidate_digest"),
     idempotency_key: "reject-unknown-vocabulary",

@@ -1,0 +1,290 @@
+{
+  "contract": "card-keepr-local-isolate-measurements@1",
+  "limitation": "Local workerd DevTools samples with profiler overhead. Heap samples include V8 used/allocated heap, embedder heap and backing storage as separate fields; they are not continuous peak working set. CPU profile deltas are sampling attribution, not billed CPU or invocation CPU. Runtime restarts produce separate reports.",
+  "elapsed_ms": 168.68866700003855,
+  "driver_only": {
+    "cpu_microseconds": {
+      "user": 87853,
+      "system": 24054
+    },
+    "process_lifetime_maximum_rss_kib": 632496,
+    "limitation": "Node driver only, excludes workerd and CLI children; RSS maximum covers the process lifetime."
+  },
+  "occupancy": [
+    {
+      "elapsed_ms": 0.009624999947845936,
+      "files": 1185,
+      "logical_bytes": 392476786,
+      "allocated_bytes": 394502144,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 1175,
+          "logical_bytes": 305359238,
+          "allocated_bytes": 307372032
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 11223379,
+          "allocated_bytes": 11227136
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 730,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 11874304,
+          "allocated_bytes": 11874304
+        },
+        "restore-4.sqlite": {
+          "files": 1,
+          "logical_bytes": 14262272,
+          "allocated_bytes": 14262272
+        },
+        "restore-5.sqlite": {
+          "files": 1,
+          "logical_bytes": 16695296,
+          "allocated_bytes": 16695296
+        },
+        "restore-6.sqlite": {
+          "files": 1,
+          "logical_bytes": 19046400,
+          "allocated_bytes": 19046400
+        }
+      },
+      "free_bytes": 7234412544,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 152.68954199994914,
+      "files": 1187,
+      "logical_bytes": 393135826,
+      "allocated_bytes": 395161600,
+      "by_directory": {
+        "decision.json": {
+          "files": 1,
+          "logical_bytes": 459,
+          "allocated_bytes": 4096
+        },
+        "ingestion.json": {
+          "files": 1,
+          "logical_bytes": 2292,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 1177,
+          "logical_bytes": 306018278,
+          "allocated_bytes": 308031488
+        },
+        "native-export.sql": {
+          "files": 1,
+          "logical_bytes": 11223379,
+          "allocated_bytes": 11227136
+        },
+        "plan.json": {
+          "files": 1,
+          "logical_bytes": 730,
+          "allocated_bytes": 4096
+        },
+        "restore-1.sqlite": {
+          "files": 1,
+          "logical_bytes": 5595136,
+          "allocated_bytes": 5595136
+        },
+        "restore-2.sqlite": {
+          "files": 1,
+          "logical_bytes": 8417280,
+          "allocated_bytes": 8417280
+        },
+        "restore-3.sqlite": {
+          "files": 1,
+          "logical_bytes": 11874304,
+          "allocated_bytes": 11874304
+        },
+        "restore-4.sqlite": {
+          "files": 1,
+          "logical_bytes": 14262272,
+          "allocated_bytes": 14262272
+        },
+        "restore-5.sqlite": {
+          "files": 1,
+          "logical_bytes": 16695296,
+          "allocated_bytes": 16695296
+        },
+        "restore-6.sqlite": {
+          "files": 1,
+          "logical_bytes": 19046400,
+          "allocated_bytes": 19046400
+        }
+      },
+      "free_bytes": 7233654784,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    }
+  ],
+  "operations": {
+    "limitation": "Operational log observations; includes polls and retries, excludes unlogged health checks. Preparations and submitted batch statements are not executed rows or billed writes. Workflow wall durations overlap across concurrent Workflows.",
+    "malformed_records": 0,
+    "groups": {
+      "api:request.completed:GET:/health": {
+        "count": 1,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 12,
+          "maximum": 12,
+          "p95": 12
+        },
+        "d1": {
+          "prepared_statements": 3,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "api:request.completed:GET:/v1/catalogue-exports/:ref": {
+        "count": 7,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 12,
+          "maximum": 4,
+          "p95": 4
+        },
+        "d1": {
+          "prepared_statements": 35,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "api:request.completed:GET:/v1/catalogue-exports/:ref/components/:ref": {
+        "count": 26,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 36,
+          "maximum": 2,
+          "p95": 2
+        },
+        "d1": {
+          "prepared_statements": 104,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "api:request.completed:GET:/v1/printings/:ref": {
+        "count": 1,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 2,
+          "maximum": 2,
+          "p95": 2
+        },
+        "d1": {
+          "prepared_statements": 4,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "api:request.completed:GET:/v1/printing-images/:ref/content": {
+        "count": 1,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 1,
+          "maximum": 1,
+          "p95": 1
+        },
+        "d1": {
+          "prepared_statements": 2,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      }
+    }
+  },
+  "errors": [],
+  "isolates": [
+    {
+      "target": "core:user:card-keepr-api",
+      "heap_samples": [
+        {
+          "elapsed_ms": 13.489707999979146,
+          "usedSize": 1621936,
+          "totalSize": 3866624,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 253430
+        },
+        {
+          "elapsed_ms": 152.35312500002328,
+          "usedSize": 2572764,
+          "totalSize": 5439488,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 273663
+        }
+      ],
+      "cpu_profile": {
+        "duration_microseconds": 173447,
+        "samples": 19,
+        "sampled_microseconds_by_function": {
+          "(idle)": 25502,
+          "": 75891,
+          "exec": 2273,
+          "compositionExportComponentResponse": 9877,
+          "(garbage collector)": 12310,
+          "toJson": 4743,
+          "timingSafeSecretEqual": 1252,
+          "URL": 7310,
+          "(program)": 2413,
+          "limit": 14794,
+          "setAttribute": 1254,
+          "addD1MetaToSpan": 10883,
+          "digest": 3660,
+          "ifNoneMatchMatches": 1252
+        }
+      }
+    },
+    {
+      "target": "core:user:acceptance-http-bridge",
+      "heap_samples": [
+        {
+          "elapsed_ms": 13.717333000036888,
+          "usedSize": 426812,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 152.57454199995846,
+          "usedSize": 575652,
+          "totalSize": 1310720,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        }
+      ],
+      "cpu_profile": {
+        "duration_microseconds": 169069,
+        "samples": 2,
+        "sampled_microseconds_by_function": {
+          "(idle)": 458,
+          "fetch": 140565
+        }
+      }
+    }
+  ]
+}

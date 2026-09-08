@@ -1,3 +1,4 @@
+import { importRetainedSourceRecords } from "./source-record-migration";
 import { advanceStagingCleanup } from "./staging-cleanup";
 import { inspectEvidenceCleanup, inspectEvidenceCleanupResults, advanceEvidenceCleanup } from "./evidence-cleanup";
 import { sourceLifecycleHistory, decideSourceLifecycle } from "./source-lifecycle";
@@ -38,6 +39,12 @@ type Environment = {
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const sourceEvidenceRoutes = [
+  route<Context>("POST", "/v1/source-observation-sets/:observationSet/records", async ({ env, request }, params) => {
+    assertOnlyFields(await readAdministrationBody(request), []);
+    return Response.json(
+      await importRetainedSourceRecords(env.CATALOGUE_DB, env.EVIDENCE_OBJECTS, params.observationSet!),
+    );
+  }),
   route<Context>("GET", "/v1/evidence-cleanups/:cleanup/objects", async ({ env, request }, params) =>
     Response.json(
       await inspectEvidenceCleanupResults(

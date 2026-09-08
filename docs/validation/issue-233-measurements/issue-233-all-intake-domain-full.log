@@ -1,0 +1,39 @@
+
+ RUN  v4.1.10 /Users/marcus/.codex/worktrees/55a9/card-keepr
+
+ ❯ test/domain/source-document-gaps.test.mjs (3 tests | 1 failed) 133ms
+   × source document work starts in a fresh callback after a partial unavailable-image gap 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/domain/source-document-gaps.test.mjs > source document work starts in a fresh callback after a partial unavailable-image gap
+ReconciliationDocumentStorageError: Reconciliation document storage is temporarily unavailable.
+ ❯ documentStorage src/catalogue/reconciliation/reconciliation-document.ts:11:11
+      9|     return await operation();
+     10|   } catch (cause) {
+     11|     throw new ReconciliationDocumentStorageError(cause);
+       |           ^
+     12|   }
+     13| }
+ ❯ sealedSourceRecordProgress src/catalogue/source-evidence/source-record-intake.ts:190:20
+ ❯ prepareSourceDocuments src/catalogue/reconciliation/reconciliation-source-document.ts:94:21
+ ❯ test/domain/source-document-gaps.test.mjs:73:9
+
+Caused by: Error: no such table: source_record_progress
+ ❯ Object.first acceptance/helpers/query-helpers/sqlite-d1-adapter.mjs:30:27
+ ❯ src/catalogue/source-evidence/source-record-intake.ts:190:66
+ ❯ documentStorage src/catalogue/reconciliation/reconciliation-document.ts:9:18
+ ❯ sealedSourceRecordProgress src/catalogue/source-evidence/source-record-intake.ts:190:26
+ ❯ prepareSourceDocuments src/catalogue/reconciliation/reconciliation-source-document.ts:94:27
+ ❯ test/domain/source-document-gaps.test.mjs:73:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'ERR_SQLITE_ERROR', errcode: 1, errstr: 'SQL logic error' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 43 passed (44)
+      Tests  1 failed | 243 passed (244)
+   Start at  18:54:50
+   Duration  2.72s (transform 3.99s, setup 0ms, import 8.99s, tests 8.65s, environment 3ms)
+

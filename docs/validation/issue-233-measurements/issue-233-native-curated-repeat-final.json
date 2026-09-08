@@ -1,0 +1,220 @@
+{
+  "contract": "card-keepr-local-isolate-measurements@1",
+  "limitation": "Local workerd DevTools samples with profiler overhead. Heap samples include V8 used/allocated heap, embedder heap and backing storage as separate fields; they are not continuous peak working set. CPU profile deltas are sampling attribution, not billed CPU or invocation CPU. Runtime restarts produce separate reports.",
+  "skipped_sampling_intervals": 0,
+  "sample_interval_ms": 100,
+  "observer_started_ms": 1058.844125,
+  "elapsed_ms": 2075.649166,
+  "driver_only": {
+    "cpu_microseconds": {
+      "user": 562712,
+      "system": 89440
+    },
+    "process_lifetime_maximum_rss_kib": 299040,
+    "limitation": "Node driver only, excludes workerd and CLI children; RSS maximum covers the process lifetime."
+  },
+  "occupancy": [],
+  "operations": null,
+  "operational_timeline": null,
+  "errors": [],
+  "isolates": [
+    {
+      "target": "core:user:",
+      "heap_samples": [
+        {
+          "elapsed_ms": 0.08637499999986176,
+          "usedSize": 2337820,
+          "totalSize": 5423104,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 252834
+        },
+        {
+          "elapsed_ms": 99.81670799999984,
+          "usedSize": 4352380,
+          "totalSize": 7667712,
+          "embedderHeapUsedSize": 386896,
+          "backingStorageSize": 275766
+        },
+        {
+          "elapsed_ms": 200.03858300000002,
+          "usedSize": 4550568,
+          "totalSize": 8978432,
+          "embedderHeapUsedSize": 515856,
+          "backingStorageSize": 262662
+        },
+        {
+          "elapsed_ms": 299.840291,
+          "usedSize": 6178092,
+          "totalSize": 9502720,
+          "embedderHeapUsedSize": 644816,
+          "backingStorageSize": 289068
+        },
+        {
+          "elapsed_ms": 400.0409159999999,
+          "usedSize": 6655408,
+          "totalSize": 10289152,
+          "embedderHeapUsedSize": 773776,
+          "backingStorageSize": 282516
+        },
+        {
+          "elapsed_ms": 499.7182499999999,
+          "usedSize": 7201516,
+          "totalSize": 10813440,
+          "embedderHeapUsedSize": 902736,
+          "backingStorageSize": 277602
+        },
+        {
+          "elapsed_ms": 599.738625,
+          "usedSize": 7756856,
+          "totalSize": 11599872,
+          "embedderHeapUsedSize": 1031696,
+          "backingStorageSize": 272688
+        },
+        {
+          "elapsed_ms": 700.475166,
+          "usedSize": 8455068,
+          "totalSize": 12386304,
+          "embedderHeapUsedSize": 1289616,
+          "backingStorageSize": 271050
+        },
+        {
+          "elapsed_ms": 800.4715409999999,
+          "usedSize": 9073052,
+          "totalSize": 13172736,
+          "embedderHeapUsedSize": 1418576,
+          "backingStorageSize": 267774
+        },
+        {
+          "elapsed_ms": 900.6773329999999,
+          "usedSize": 10058200,
+          "totalSize": 15532032,
+          "embedderHeapUsedSize": 1676496,
+          "backingStorageSize": 272490
+        },
+        {
+          "elapsed_ms": 1000.3634160000001,
+          "usedSize": 10812728,
+          "totalSize": 17891328,
+          "embedderHeapUsedSize": 1805456,
+          "backingStorageSize": 272445
+        },
+        {
+          "elapsed_ms": 1099.695416,
+          "usedSize": 11546740,
+          "totalSize": 18677760,
+          "embedderHeapUsedSize": 1934416,
+          "backingStorageSize": 271050
+        },
+        {
+          "elapsed_ms": 1199.7196249999997,
+          "usedSize": 12429208,
+          "totalSize": 19202048,
+          "embedderHeapUsedSize": 2192336,
+          "backingStorageSize": 272688
+        },
+        {
+          "elapsed_ms": 1300.337,
+          "usedSize": 6394124,
+          "totalSize": 18415616,
+          "embedderHeapUsedSize": 285184,
+          "backingStorageSize": 325104
+        },
+        {
+          "elapsed_ms": 1399.8243750000001,
+          "usedSize": 7068712,
+          "totalSize": 18415616,
+          "embedderHeapUsedSize": 466384,
+          "backingStorageSize": 321828
+        },
+        {
+          "elapsed_ms": 1499.6977080000001,
+          "usedSize": 8094392,
+          "totalSize": 18415616,
+          "embedderHeapUsedSize": 648024,
+          "backingStorageSize": 328182
+        },
+        {
+          "elapsed_ms": 1600.6198749999999,
+          "usedSize": 8566176,
+          "totalSize": 18415616,
+          "embedderHeapUsedSize": 797224,
+          "backingStorageSize": 321828
+        },
+        {
+          "elapsed_ms": 1700.9475830000001,
+          "usedSize": 9571976,
+          "totalSize": 18415616,
+          "embedderHeapUsedSize": 980984,
+          "backingStorageSize": 326742
+        },
+        {
+          "elapsed_ms": 1800.982708,
+          "usedSize": 10593928,
+          "totalSize": 18415616,
+          "embedderHeapUsedSize": 1163784,
+          "backingStorageSize": 333051
+        },
+        {
+          "elapsed_ms": 1901.045458,
+          "usedSize": 8298936,
+          "totalSize": 18415616,
+          "embedderHeapUsedSize": 1331264,
+          "backingStorageSize": 251394
+        },
+        {
+          "elapsed_ms": 2001.053958,
+          "usedSize": 9552372,
+          "totalSize": 18415616,
+          "embedderHeapUsedSize": 1499144,
+          "backingStorageSize": 261859
+        },
+        {
+          "elapsed_ms": 2072.0613749999998,
+          "usedSize": 12249036,
+          "totalSize": 18415616,
+          "embedderHeapUsedSize": 1622624,
+          "backingStorageSize": 319189
+        }
+      ],
+      "cpu_profile": {
+        "duration_microseconds": 2086558,
+        "samples": 218,
+        "sampled_microseconds_by_function": {
+          "(idle)": 268135,
+          "o": 183139,
+          "canonicalJsonAt": 74441,
+          "(garbage collector)": 136413,
+          "(program)": 196819,
+          "nativeCuratedTarget": 19911,
+          "validateCuratedRevision": 14591,
+          "sha256": 51499,
+          "decodeDocument": 28963,
+          "_send": 45475,
+          "": 166205,
+          "digest": 52078,
+          "enterSpan": 21989,
+          "_wrappedFetch": 45840,
+          "verified": 21051,
+          "setAttribute": 74420,
+          "mt": 1502,
+          "fetch": 330513,
+          "toJson": 130592,
+          "URL": 34146,
+          "structuredClone": 16012,
+          "toArrayOfObjects": 39122,
+          "structuralProposal": 4508,
+          "addD1MetaToSpan": 3003,
+          "Headers": 8824,
+          "stripCuratedEntityEffects": 53959,
+          "validCuratedFieldAssertion": 22157,
+          "text": 5260,
+          "withSpan": 24857,
+          "_sendOrThrow": 1502,
+          "curatedFieldSchema": 1514,
+          "encode": 3839
+        }
+      },
+      "allocation_profile": null
+    }
+  ]
+}

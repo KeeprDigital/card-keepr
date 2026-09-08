@@ -40,6 +40,7 @@ export async function collect(
   key: string,
   source?: { game: string; lineage: string; adapter: string },
   waitTimeoutMs = 15_000,
+  completionState: "parsing" | "failed" = "parsing",
 ): Promise<{
   id: string;
   document: Record<string, unknown>;
@@ -61,7 +62,7 @@ export async function collect(
   expect(started.response.status).toBe(201);
   const id = requiredString(started.document, "id");
   await collectFixtureEvidence(testEnv.CATALOGUE_DB, testEnv.EVIDENCE_OBJECTS, testEnv.OFFICIAL_SOURCE_TRANSPORT, id);
-  const document = await waitForRunState(id, "parsing", waitTimeoutMs);
+  const document = await waitForRunState(id, completionState, waitTimeoutMs);
   return { id, document };
 }
 

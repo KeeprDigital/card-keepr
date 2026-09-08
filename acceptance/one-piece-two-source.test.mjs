@@ -605,6 +605,7 @@ test("retained P-001: owner collects every declared Bandai record through native
   metrics.restored_api_and_export_verified = true;
   metrics.verified_public_export = exportBytes;
   metrics.complete_journey_elapsed_ms = performance.now() - started;
+  metrics.complete_journey_driver_cpu_microseconds = process.cpuUsage(initialCpu);
   if (process.env.KEEPR_P001_METRICS_PATH)
     await writeFile(process.env.KEEPR_P001_METRICS_PATH, JSON.stringify(metrics, null, 2) + "\n");
   t.diagnostic(

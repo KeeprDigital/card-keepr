@@ -1,6 +1,6 @@
-import { DatabaseSync } from "node:sqlite";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 // Read-only local measurements. D1 preparations and batch submissions are
 // separate counters; table counts measure retained rows, not exact SQL writes.
@@ -27,9 +27,7 @@ export async function onePieceEvidenceMetrics(
   const storage = {};
   try {
     for (const { name, type } of database
-      .prepare(
-        "SELECT name,type FROM sqlite_schema WHERE type IN ('table','index') AND name NOT LIKE 'sqlite_%' ORDER BY name",
-      )
+      .prepare("SELECT name,type FROM sqlite_schema WHERE type IN ('table','index') ORDER BY name")
       .all()) {
       storage[name] = { type };
       if (type === "table")
@@ -76,12 +74,16 @@ export async function onePieceEvidenceMetrics(
       process.env.KEEPR_EVIDENCE_CONCURRENCY_NOTE ??
       "Uncontrolled shared host; no CPU, memory or timing capacity claim.",
     elapsed_ms: elapsedMs,
+    measurement_interval:
+      "Source database and runtime snapshot before restored consumer verification; final journey timing is recorded separately.",
     driver_only: driverUsage,
     source: {
       unique_responses: selected.length,
       response_deliveries_including_faults: served.length,
       unique_entity_bytes: selected.reduce((sum, capture) => sum + capture.bodyBytes.length, 0),
-      unique_original_header_bytes: selected.reduce((sum, capture) => sum + capture.headerByteLength, 0),
+      unique_original_header_bytes: selected.every((capture) => Number.isSafeInteger(capture.headerByteLength))
+        ? selected.reduce((sum, capture) => sum + capture.headerByteLength, 0)
+        : null,
       ...census,
     },
     workflow,

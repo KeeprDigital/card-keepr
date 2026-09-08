@@ -1,3 +1,5 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { expect, test } from "vitest";
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import type { ReconciliationWorkflowParams } from "../../../src/catalogue/reconciliation";
@@ -429,10 +431,15 @@ test.each(["link", "reject"])(
     const id = requiredString(await response.json<Record<string, unknown>>(), "id");
     const evidence = (await get(`/v1/ingestion-runs/${source.id}/evidence`)).document;
     const setId = (evidence.observation_sets as { id: string }[])[0]!.id;
-    const observations = (await get(`/v1/source-observation-sets/${setId}/content`)).document.observations as {
+    const observation = (await readSourceObservation(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      "proposal-identity",
+      setId,
+      0,
+    )) as {
       value: { identity_evidence: { locator: string; variant_key?: string | null } };
-    }[];
-    const identity = observations[0]!.value.identity_evidence;
+    };
+    const identity = observation.value.identity_evidence;
     const proposal = await post("/v1/entity-proposals", {
       game: "one-piece",
       source_lineage: "limitless-one-piece-en",

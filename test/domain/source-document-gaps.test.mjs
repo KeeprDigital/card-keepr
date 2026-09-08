@@ -48,9 +48,19 @@ test("source document traversal checkpoints long unavailable-image gaps and thei
 test("source document work starts in a fresh callback after a partial unavailable-image gap", async () => {
   const db = new DatabaseSync(":memory:");
   createSourceDocumentCheckpointTable(db);
-  const store = catalogueStore(d1Adapter(db));
   const reachedDocument = new Error("reached retained document");
   let calls = 0;
+  const adapter = d1Adapter(db);
+  const store = catalogueStore({
+    ...adapter,
+    prepare(sql) {
+      if (sql.includes("FROM source_record_progress")) {
+        assert.equal(calls, 1);
+        throw reachedDocument;
+      }
+      return adapter.prepare(sql);
+    },
+  });
   const objects = {
     async get() {
       assert.equal(calls, 1);

@@ -1,26 +1,43 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, join, resolve } from "node:path";
+import { after } from "node:test";
+import { inspect, parseEnv } from "node:util";
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";
-import { parseEnv, inspect } from "node:util";
-import { after } from "node:test";
-import { createMigrationLedger, appliedMigrations, recordMigration } from "./query-helpers/migrations.mjs";
 import { unstable_getMiniflareWorkerOptions, unstable_splitSqlQuery } from "wrangler";
+import { nativeOperationalTimeline } from "./native-capacity-metrics.mjs";
+import { profileNativeIsolates } from "./native-isolate-metrics.mjs";
+import { appliedMigrations, createMigrationLedger, recordMigration } from "./query-helpers/migrations.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const groups = new Map();
 const bundles = new Map();
+let profileSequence = 0;
 
 // A setup failure can occur before a test installs its per-handle cleanup.
 // The file-level hook still closes any runtime created before that failure.
 after(async () => {
+  const failures = [];
   for (const group of groups.values()) {
-    await Promise.all([...group.handles].map((handle) => handle.dispose()));
-    if (group.runtime && !group.disposing) await group.runtime.dispose();
+    const results = await Promise.allSettled([...group.handles].map((handle) => handle.dispose()));
+    for (const result of results) if (result.status === "rejected") failures.push(result.reason);
+    try {
+      if (group.stopProfile) await group.stopProfile();
+    } catch (error) {
+      failures.push(error);
+    } finally {
+      group.stopProfile = undefined;
+      try {
+        if (group.runtime && !group.disposing) await group.runtime.dispose();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
   }
   groups.clear();
+  if (failures.length) throw new AggregateError(failures, "Native runtime cleanup failed");
 });
 
 function identity(statePath, id) {
@@ -168,10 +185,12 @@ export async function startInprocessWorker({
     group.workers.set(options.name, options);
     const all = {
       ...group.options,
+      ...(process.env.KEEPR_CAPACITY_OUTPUT_PREFIX ? { inspectorPort: 0 } : {}),
       handleRuntimeStdio: (stdout, stderr) => {
         for (const stream of [stdout, stderr])
           stream.on("data", (chunk) => {
             group.output += chunk.toString();
+            group.timeline?.observe(chunk.toString(), stream);
           });
       },
       workers: [
@@ -194,9 +213,23 @@ export async function startInprocessWorker({
         },
       ],
     };
+    if (group.stopProfile) {
+      await group.stopProfile();
+      group.stopProfile = undefined;
+    }
+    if (process.env.KEEPR_CAPACITY_OUTPUT_PREFIX) group.timeline = nativeOperationalTimeline();
     if (group.runtime) await group.runtime.setOptions(all);
     else group.runtime = new Miniflare(all);
     await group.runtime.ready;
+    if (process.env.KEEPR_CAPACITY_OUTPUT_PREFIX) {
+      const offset = group.output.length;
+      group.stopProfile = await profileNativeIsolates(
+        group.runtime,
+        `${process.env.KEEPR_CAPACITY_OUTPUT_PREFIX}-isolate-${++profileSequence}.json`,
+        { directory: dirname(resolve(statePath)), output: () => group.output.slice(offset), timeline: group.timeline },
+        { sampleIntervalMs: Number(process.env.KEEPR_CAPACITY_SAMPLE_INTERVAL_MS ?? 3000) },
+      );
+    }
   });
   await group.serial;
   await new Promise((done, reject) => {
@@ -218,9 +251,17 @@ export async function startInprocessWorker({
       await new Promise((done) => server.close(done));
       group.handles.delete(handle);
       if (group.handles.size === 0) {
-        group.disposing ??= group.runtime.dispose();
-        await group.disposing;
-        groups.delete(key);
+        try {
+          if (group.stopProfile) await group.stopProfile();
+        } finally {
+          group.stopProfile = undefined;
+          group.disposing ??= group.runtime.dispose();
+          try {
+            await group.disposing;
+          } finally {
+            groups.delete(key);
+          }
+        }
       }
     },
   };

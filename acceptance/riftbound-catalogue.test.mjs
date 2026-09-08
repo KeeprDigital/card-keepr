@@ -7,6 +7,7 @@ import test from "node:test";
 import { isDeepStrictEqual } from "node:util";
 import {
   applyMigrations,
+  persistedDatabaseDirectory,
   runCli,
   startWorker,
   stopWorker,
@@ -15,16 +16,18 @@ import {
 } from "./helpers/acceptance-runtime.mjs";
 import { acceptedBackupRetry, resumeExistingBackupAttempt } from "./helpers/native-backup-retry.mjs";
 import { nativeCheckpointTransport, publishNativeCollection } from "./helpers/native-catalogue-runtime.mjs";
+import { requireNativeDiskSpace } from "./helpers/native-disk-preflight.mjs";
 import { nativeExportReader } from "./helpers/native-export-reader.mjs";
 import { withNativeRequestPacing } from "./helpers/native-request-pacing.mjs";
+import { onePieceEvidenceMetrics } from "./helpers/one-piece-evidence-metrics.mjs";
 import { riftboundReplayTransport } from "./helpers/riftbound-replay-transport.mjs";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
-import { requireNativeDiskSpace } from "./helpers/native-disk-preflight.mjs";
 
 // Actual retained HTTP bodies. External HTTP and Cloudflare control plane are
 // replayed locally; collection, parsing and all owner operations are shipped code.
 test("retained Riot catalogue: owner reviews, publishes and restores English inventory, Errata and Products", async (t) => {
   const startedAt = performance.now();
+  const initialCpu = process.cpuUsage();
   const exportReader = nativeExportReader(250);
   const nativeExportRecords = exportReader.records;
   const resumeDirectory = process.env.KEEPR_RIFTBOUND_RESUME_DIRECTORY;
@@ -68,12 +71,13 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   const checkpoint = await nativeCheckpointTransport(t, statePath, directory, configPath);
   const key = crypto.randomUUID();
   const served = [];
+  const transportMetrics = { source_requests: 0, injected_missing_images: 0, delivered_body_bytes: 0 };
   const worker = await startWorker({
     ...checkpoint,
     config: configPath,
     statePath,
     vars: { ...checkpoint.vars, ADMINISTRATION_KEY: key, SOURCE_HOST_PACING_MODE: "immediate" },
-    outboundService: riftboundReplayTransport(checkpoint, captures, served),
+    outboundService: riftboundReplayTransport(checkpoint, captures, served, transportMetrics),
   });
   let api, restoredAdmin;
   let journeyCompleted = false;
@@ -854,6 +858,25 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   assert.equal(freshEvidence.snapshots[0].content.digest, errataCapture.sha256);
   assert.ok(!evidence.snapshots.some((s) => s.id === freshEvidence.snapshots[0].id));
   const restoredEvidence = await cli(["source", "show", "--run-id", run.id]);
+  const measuredEvidence = process.env.KEEPR_RIFTBOUND_METRICS_PATH
+    ? await onePieceEvidenceMetrics(
+        await persistedDatabaseDirectory(statePath),
+        worker.getOutput(),
+        captures,
+        served,
+        performance.now() - startedAt,
+        {
+          cpu_microseconds: process.cpuUsage(initialCpu),
+          maximum_rss_kib: process.resourceUsage().maxRSS,
+          limitation: "Node driver only; excludes workerd and CLI children.",
+        },
+        {
+          ...transportMetrics,
+          accepted_cards: cards.length,
+          accepted_printings: finalPrintings.length,
+        },
+      )
+    : null;
   await stopWorker(api);
   await stopWorker(worker);
   const restoredState = await verifiedBackupApiState(statePath, directory);
@@ -990,4 +1013,13 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
     }),
   );
   journeyCompleted = true;
+  if (measuredEvidence) {
+    measuredEvidence.contract = "card-keepr-local-riftbound-measurements@1";
+    measuredEvidence.scope =
+      "Complete declared retained Riot inventory/Errata/Product replay; original retained response bodies, injected unretained-image 404s, actual native SQL export/import and restored consumer verification. No full-image or production-capacity claim.";
+    measuredEvidence.restored_api_and_export_verified = true;
+    measuredEvidence.complete_journey_elapsed_ms = performance.now() - startedAt;
+    measuredEvidence.complete_journey_driver_cpu_microseconds = process.cpuUsage(initialCpu);
+    await writeFile(process.env.KEEPR_RIFTBOUND_METRICS_PATH, JSON.stringify(measuredEvidence, null, 2) + "\n");
+  }
 });

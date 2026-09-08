@@ -1,0 +1,239 @@
+{
+  "contract": "card-keepr-local-isolate-measurements@1",
+  "limitation": "Local workerd DevTools samples with profiler overhead. Heap samples include V8 used/allocated heap, embedder heap and backing storage as separate fields; they are not continuous peak working set. CPU profile deltas are sampling attribution, not billed CPU or invocation CPU. Runtime restarts produce separate reports.",
+  "elapsed_ms": 259.0101249999998,
+  "driver_only": {
+    "cpu_microseconds": {
+      "user": 72993,
+      "system": 8129
+    },
+    "process_lifetime_maximum_rss_kib": 671712,
+    "limitation": "Node driver only, excludes workerd and CLI children; RSS maximum covers the process lifetime."
+  },
+  "occupancy": [
+    {
+      "elapsed_ms": 0.06558399999994435,
+      "files": 23,
+      "logical_bytes": 7013264,
+      "allocated_bytes": 8699904,
+      "by_directory": {
+        "baseline.sql": {
+          "files": 1,
+          "logical_bytes": 54134,
+          "allocated_bytes": 57344
+        },
+        "ingestion.env": {
+          "files": 1,
+          "logical_bytes": 90,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 21,
+          "logical_bytes": 6959040,
+          "allocated_bytes": 8638464
+        }
+      },
+      "free_bytes": 13648179200,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    },
+    {
+      "elapsed_ms": 252.55112499999996,
+      "skipped_sampling_intervals": 0,
+      "files": 48,
+      "logical_bytes": 7506875,
+      "allocated_bytes": 9228288,
+      "by_directory": {
+        "baseline.sql": {
+          "files": 1,
+          "logical_bytes": 54134,
+          "allocated_bytes": 57344
+        },
+        "ingestion.env": {
+          "files": 1,
+          "logical_bytes": 90,
+          "allocated_bytes": 4096
+        },
+        "miniflare": {
+          "files": 45,
+          "logical_bytes": 7451968,
+          "allocated_bytes": 9162752
+        },
+        "proposal.json": {
+          "files": 1,
+          "logical_bytes": 683,
+          "allocated_bytes": 4096
+        }
+      },
+      "free_bytes": 13647626240,
+      "limitation": "Point-in-time local filesystem census including concurrent source, staging, export, SQL and restore copies. Not a continuous peak, R2 billed size, or physical unique bytes on copy-on-write storage. Files may change during traversal."
+    }
+  ],
+  "operations": {
+    "limitation": "Operational log observations; includes polls and retries, excludes unlogged health checks. Preparations and submitted batch statements are not executed rows or billed writes. Workflow wall durations overlap across concurrent Workflows.",
+    "malformed_records": 0,
+    "groups": {
+      "ingestion:request.completed:GET:/health": {
+        "count": 1,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 42,
+          "maximum": 42,
+          "p95": 42
+        },
+        "d1": {
+          "prepared_statements": 3,
+          "batch_calls": 0,
+          "batch_statements": 0
+        }
+      },
+      "ingestion:request.completed:GET:/v1/status": {
+        "count": 2,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 25,
+          "maximum": 20,
+          "p95": 20
+        },
+        "d1": {
+          "prepared_statements": 43,
+          "batch_calls": 1,
+          "batch_statements": 8
+        }
+      },
+      "ingestion:request.completed:POST:/admin/v1/curated-revisions": {
+        "count": 1,
+        "failures": 0,
+        "elapsed_ms": {
+          "sum": 6,
+          "maximum": 6,
+          "p95": 6
+        },
+        "d1": {
+          "prepared_statements": 12,
+          "batch_calls": 1,
+          "batch_statements": 5
+        }
+      }
+    }
+  },
+  "operational_timeline": {
+    "limitation": "Bounded operational-log receipt timeline in the Node observer clock, not exact isolate execution boundaries. Duration is logged wall time, not CPU; buffering may delay receipt. No source payloads, SQL, request identifiers or parameters are retained.",
+    "retained_limit": 4096,
+    "dropped_events": 0,
+    "malformed_records": 0,
+    "oversized_lines": 0,
+    "events": [
+      {
+        "observed_elapsed_ms": 91.34875000000011,
+        "event": "request.completed",
+        "runtime": "ingestion",
+        "method": "GET",
+        "route": "/health",
+        "step": null,
+        "duration_ms": 42,
+        "status": 200
+      },
+      {
+        "observed_elapsed_ms": 166.8858340000006,
+        "event": "request.completed",
+        "runtime": "ingestion",
+        "method": "GET",
+        "route": "/v1/status",
+        "step": null,
+        "duration_ms": 20,
+        "status": 200
+      },
+      {
+        "observed_elapsed_ms": 221.62725000000046,
+        "event": "request.completed",
+        "runtime": "ingestion",
+        "method": "GET",
+        "route": "/v1/status",
+        "step": null,
+        "duration_ms": 5,
+        "status": 200
+      },
+      {
+        "observed_elapsed_ms": 233.56029200000012,
+        "event": "request.completed",
+        "runtime": "ingestion",
+        "method": "POST",
+        "route": "/admin/v1/curated-revisions",
+        "step": null,
+        "duration_ms": 6,
+        "status": 201
+      }
+    ]
+  },
+  "errors": [],
+  "isolates": [
+    {
+      "target": "core:user:card-keepr-ingestion",
+      "heap_samples": [
+        {
+          "elapsed_ms": 1.015584000000672,
+          "usedSize": 16748480,
+          "totalSize": 22953984,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 739277
+        },
+        {
+          "elapsed_ms": 251.31908400000066,
+          "usedSize": 14945836,
+          "totalSize": 23478272,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 739334
+        }
+      ],
+      "cpu_profile": {
+        "duration_microseconds": 302179,
+        "samples": 28,
+        "sampled_microseconds_by_function": {
+          "(idle)": 67828,
+          "digest": 55303,
+          "": 1106,
+          "getInstance": 6186,
+          "list": 2420,
+          "administrationObservedAt": 90550,
+          "handleIngestionRequest": 1249,
+          "expireOverdueRuns": 1109,
+          "toJson": 6244,
+          "parseCandidate": 1254,
+          "decodeDocument": 2395,
+          "administrationPresentation": 1249,
+          "count": 54456,
+          "opaque": 9704,
+          "(garbage collector)": 1106
+        }
+      },
+      "allocation_profile": null
+    },
+    {
+      "target": "core:user:acceptance-http-bridge",
+      "heap_samples": [
+        {
+          "elapsed_ms": 1.1983749999999418,
+          "usedSize": 426816,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        },
+        {
+          "elapsed_ms": 252.36745900000005,
+          "usedSize": 451116,
+          "totalSize": 786432,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 5877
+        }
+      ],
+      "cpu_profile": {
+        "duration_microseconds": 259001,
+        "samples": 1,
+        "sampled_microseconds_by_function": {
+          "(idle)": 488
+        }
+      },
+      "allocation_profile": null
+    }
+  ]
+}

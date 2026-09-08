@@ -126,8 +126,37 @@ test.each(["base", "large-card-content"])(
   30000,
 );
 
+test("rejected high degree intake cannot produce a publishable game candidate", async () => {
+  const run = await collect(
+    "/reconciliation/capacity-high-degree-observation",
+    "native-intake-capacity",
+    undefined,
+    15000,
+    "failed",
+  );
+  expect(run.document).toMatchObject({ state: "failed", failure_code: "source_parse_failed", observation_sets: [] });
+  const created = await post("/v1/game-candidates", {
+    ingestion_run_id: run.id,
+    supported_game: "one-piece",
+    expected_game_revision_id: "catrev_spine_000",
+    idempotency_key: "rejected-intake",
+  });
+  expect(created.response.status).toBe(201);
+  const id = requiredString(created.document, "id");
+  let candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  const deadline = Date.now() + 15000;
+  while (candidate.state === "preparing" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  }
+  expect(candidate, JSON.stringify(candidate)).toMatchObject({ state: "failed" });
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({
+    state: "failed",
+    failure_code: "source_parse_failed",
+  });
+});
+
 test.each([
-  ["capacity-high-degree-observation", "reconciliation_capacity_exceeded"],
   ["capacity-printing-image-fanout", "reconciliation_capacity_exceeded"],
   ["capacity-card-identity-fanout", "reconciliation_capacity_exceeded"],
   ["identity-whitespace", "retained_evidence_invalid"],

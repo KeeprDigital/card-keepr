@@ -1,3 +1,4 @@
+import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, describe, expect, test } from "vitest";
@@ -502,7 +503,13 @@ describe("Errata rules-text lifecycle", () => {
       .bind(run.id)
       .first<{ content_object_key: string }>();
     const retainedObservation = await testEnv.EVIDENCE_OBJECTS.get(observationSet?.content_object_key ?? "");
-    expect(await retainedObservation?.text()).toContain('"effective_rules_text":"[On Play] Draw 1 card."');
+    const manifest = await retainedObservation!.json<{ id: string; record_storage: { count: number } }>();
+    const retainedRecords: unknown[] = [];
+    for (let ordinal = 0; ordinal < manifest.record_storage.count; ordinal++)
+      retainedRecords.push(
+        await readSourceObservation(catalogueStore(testEnv.CATALOGUE_DB), "printed-text", manifest.id, ordinal),
+      );
+    expect(JSON.stringify(retainedRecords)).toContain('"effective_rules_text":"[On Play] Draw 1 card."');
   });
 
   test("a dedicated nullable-date Printing Erratum resolves one already-published Printing without rewriting physical text", async () => {
