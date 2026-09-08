@@ -306,7 +306,7 @@ export async function compositionEntityResponse(
       filters[field] = filters[field].normalize("NFC").trim();
       if (!filters[field]) throw invalidParameter(field, `${field} must contain at least one character.`);
     }
-  if (filters.game !== null && !["one-piece", "fusion-world", "digimon", "gundam"].includes(filters.game))
+  if (filters.game !== null && !["one-piece", "fusion-world", "digimon", "gundam", "riftbound"].includes(filters.game))
     throw invalidParameter("game", "game is not a Supported Game.");
   if (
     filters.release_region !== null &&

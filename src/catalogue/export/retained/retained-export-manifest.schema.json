@@ -115,7 +115,7 @@
       "pattern": "Z$"
     },
     "SupportedGame": {
-      "enum": ["one-piece", "fusion-world", "digimon", "gundam"]
+      "enum": ["one-piece", "fusion-world", "digimon", "gundam", "riftbound"]
     },
     "Component": {
       "type": "object",

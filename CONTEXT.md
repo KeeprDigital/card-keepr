@@ -198,7 +198,7 @@ An official release grouping associated with Cards or Printings, such as a boost
 _Avoid_: Marketplace listing, owned sealed product
 
 **Release**:
-A region-scoped availability event for a Product, expressed with the precision Bandai publishes.
+A region-scoped availability event for a Product, expressed with the precision its Publisher provides.
 _Avoid_: Product, Distribution Context
 
 **Production Release**:

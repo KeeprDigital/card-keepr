@@ -63,6 +63,8 @@ export type SourceAdapterRegistration = Readonly<{
       string,
       Readonly<{
         description: string;
+        reconciliationAreas?: readonly ("catalogue" | "errata")[];
+        reconciliationCapability?: "catalogue" | "errata";
         printingAdmission?: "owner_review" | "source_qualification";
         /** Exact Card identities whose complete variant inventory belongs to this scope. */
         cardIdentities?: readonly { kind: string; value: string }[];

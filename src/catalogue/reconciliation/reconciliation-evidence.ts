@@ -319,7 +319,10 @@ async function collectRetainedReconciliationObservation(
           );
         parsed = { ...parsed, printingImages: references };
       }
-      const adapter = requiredSourceAdapter(row.adapter_version);
+      const adapter = sourceAdapterForCoverage(
+        requiredSourceAdapter(row.adapter_version),
+        selectedPlans.find((plan) => plan.source_lineage === row.source_lineage)?.coverage?.subset,
+      );
       assertObservationAuthority(parsed, adapter, sourceSurface);
       await retainNormalizedObservation(
         database,
@@ -430,21 +433,7 @@ async function collectRetainedReconciliationObservation(
     countChangeWarnings,
     unavailablePrintingImages,
     partitions,
-    evidencePlans: selectedPlans.map((plan) => {
-      return {
-        sourceLineage: plan.source_lineage,
-        supportedGame: supportedGame(plan.supported_game),
-        adapterVersion: plan.adapter_version,
-        subset: plan.coverage?.subset ?? "complete",
-        printingAdmission:
-          sourceAdapterForCoverage(requiredSourceAdapter(plan.adapter_version), plan.coverage?.subset)
-            .printingAdmission ?? "source_qualification",
-        cardIdentities: requiredSourceAdapter(plan.adapter_version).coverageContracts?.[
-          plan.coverage?.subset ?? "complete"
-        ]?.cardIdentities,
-        reconciliationCapability: requiredSourceAdapter(plan.adapter_version).reconciliationCapability,
-      };
-    }),
+    evidencePlans: selectedPlans.map(resolvedReconciliationEvidencePlan),
     observations: stagedNormalizedObservations<NormalizedReconciliationObservation>(database, runId),
   };
 }
@@ -815,7 +804,13 @@ function validEvidenceSummary(value: unknown, observed: number, observationCount
 }
 
 function supportedGame(value: string): SupportedGame {
-  if (value !== "one-piece" && value !== "fusion-world" && value !== "digimon" && value !== "gundam") {
+  if (
+    value !== "one-piece" &&
+    value !== "fusion-world" &&
+    value !== "digimon" &&
+    value !== "gundam" &&
+    value !== "riftbound"
+  ) {
     throw new Error("Retained Source Observation Set game is unsupported.");
   }
   return value;
@@ -823,4 +818,24 @@ function supportedGame(value: string): SupportedGame {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function resolvedReconciliationEvidencePlan(plan: ReturnType<typeof parseEvidencePlans>[number]) {
+  const cardIdentities = requiredSourceAdapter(plan.adapter_version).coverageContracts?.[
+    plan.coverage?.subset ?? "complete"
+  ]?.cardIdentities;
+  return {
+    sourceLineage: plan.source_lineage,
+    supportedGame: supportedGame(plan.supported_game),
+    adapterVersion: plan.adapter_version,
+    subset: plan.coverage?.subset ?? "complete",
+    printingAdmission:
+      sourceAdapterForCoverage(requiredSourceAdapter(plan.adapter_version), plan.coverage?.subset).printingAdmission ??
+      "source_qualification",
+    reconciliationCapability: sourceAdapterForCoverage(
+      requiredSourceAdapter(plan.adapter_version),
+      plan.coverage?.subset,
+    ).reconciliationCapability,
+    ...(cardIdentities === undefined ? {} : { cardIdentities }),
+  };
 }

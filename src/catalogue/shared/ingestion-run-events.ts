@@ -163,7 +163,7 @@ export function projectIngestionRunEvent(previous: RunCurrent | null, event: Run
       !Array.isArray(games) ||
       games.length === 0 ||
       new Set(games).size !== games.length ||
-      games.some((game) => !["one-piece", "fusion-world", "digimon", "gundam"].includes(game))
+      games.some((game) => !["one-piece", "fusion-world", "digimon", "gundam", "riftbound"].includes(game))
     )
       fail();
   } else {

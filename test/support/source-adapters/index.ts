@@ -142,6 +142,13 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
         parserContract: "synthetic-fixture-card-document@2",
       },
       {
+        adapterVersion: "fixture-riftbound-json@1",
+        sourceLineage: "riftbound-en",
+        supportedGame: "riftbound",
+        gameProfileVersion: "riftbound@1",
+        parserContract: "synthetic-fixture-card-document@2",
+      },
+      {
         adapterVersion: "fixture-digimon-json@2",
         sourceLineage: "digimon-en",
         supportedGame: "digimon",

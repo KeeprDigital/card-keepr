@@ -33,7 +33,7 @@ export class ReconciliationContinuation extends Error {
         | "official_assembly"
         | "disappearance_warnings"
         | "withdrawal_diagnostics"
-        | `product_reduction:${"one-piece" | "digimon" | "fusion-world" | "gundam"}`;
+        | `product_reduction:${"one-piece" | "digimon" | "fusion-world" | "gundam" | "riftbound"}`;
       ordinal: number;
     },
   ) {

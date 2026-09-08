@@ -4,6 +4,53 @@ import { administrationRequest, installRuntimeSuite, resumeCollection, waitForEv
 
 installRuntimeSuite();
 
+test.each([
+  {
+    subset: "public-english-inventory",
+    area: "catalogue",
+    surface: "catalogue",
+    url: "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=0&limit=200",
+  },
+  {
+    subset: "origins-errata",
+    area: "errata",
+    surface: "errata",
+    url: "https://playriftbound.com/en-us/news/rules-and-releases/riftbound-origins-card-errata/",
+  },
+  {
+    subset: "announced-products-2027",
+    area: "catalogue",
+    surface: "products",
+    url: "https://playriftbound.com/en-us/news/announcements/products-and-sets-into-2027/",
+  },
+])("Riot collection pins the owner's registered $subset scope", async ({ subset, area, surface, url }) => {
+  const body = {
+    plans: [
+      {
+        supported_game: "riftbound",
+        source_lineage: "riftbound-en",
+        adapter_version: "riftbound-en@1",
+        subset,
+        requests: [
+          {
+            id: `riftbound-en:${surface}`,
+            url,
+          },
+        ],
+      },
+    ],
+    idempotency_key: "riftbound-inventory-subset",
+  };
+  const response = await administrationRequest("/v1/ingestion-runs/evidence", "POST", body);
+  expect(response.status).toBe(201);
+  expect(await response.json()).toMatchObject({
+    evidence_plans: [{ coverage: { locale: "en", area, subset } }],
+  });
+  body.plans[0]!.subset = "unregistered-inventory";
+  body.idempotency_key = "riftbound-unregistered-subset";
+  expect((await administrationRequest("/v1/ingestion-runs/evidence", "POST", body)).status).toBe(422);
+});
+
 // Synthetic transport plans: these tests establish policy, not real-source coverage.
 const plan = {
   supported_game: "one-piece",

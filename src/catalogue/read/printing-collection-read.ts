@@ -20,7 +20,7 @@ import { printingCollectionStatement } from "./printing-collection-repository";
 
 const printingRoute = "/v1/printings";
 const printingOrder = "card-id,printing-id";
-const supportedGames = new Set(["one-piece", "fusion-world", "digimon", "gundam"]);
+const supportedGames = new Set(["one-piece", "fusion-world", "digimon", "gundam", "riftbound"]);
 const releaseRegions = new Set(["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"]);
 
 type PrintingCursor = {

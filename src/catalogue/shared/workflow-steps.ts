@@ -36,7 +36,7 @@ export type WorkflowKind = keyof typeof workflowSteps;
 export type WorkflowRestartTarget = { name: string; count: number; type: "do" | "sleep" | "waitForEvent" };
 
 function parameterPattern(key: string): string {
-  if (key === "game") return "(?:one-piece|fusion-world|digimon|gundam)";
+  if (key === "game") return "(?:one-piece|fusion-world|digimon|gundam|riftbound)";
   if (key === "purpose") return "(?:load|reload)";
   if (key === "request") return "[A-Za-z0-9][A-Za-z0-9_.:@-]{0,199}";
   return "(?:0|[1-9][0-9]*)";

@@ -104,7 +104,8 @@
         "one-piece",
         "fusion-world",
         "digimon",
-        "gundam"
+        "gundam",
+        "riftbound"
       ]
     },
     "Component": {
@@ -125,7 +126,7 @@
       "properties": {
         "name": {
           "type": "string",
-          "pattern": "^(one-piece|fusion-world|digimon|gundam)\\.(0|[1-9][0-9]*)$"
+          "pattern": "^(one-piece|fusion-world|digimon|gundam|riftbound)\\.(0|[1-9][0-9]*)$"
         },
         "media_type": {
           "const": "application/x-ndjson"

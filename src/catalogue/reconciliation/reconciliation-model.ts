@@ -70,6 +70,8 @@ export function hasCrossSourceArtworkEvidence(observation: ParsedCardPrintingObs
     observation.artworkFingerprint === null ? null : parsedOfficialArtworkIdentity(observation.artworkFingerprint);
   if (!card || !artwork?.artwork_id || artwork.official_card_identity !== card.official_identity.value) return false;
   switch (card.game) {
+    case "riftbound":
+      return false; // No cross-source artwork equivalence rule is established.
     case "one-piece":
       return artwork.roles.join(",") === "front";
     case "fusion-world":

@@ -53,6 +53,7 @@ export function currentGameMembers(db: D1Database) {
  FROM catalogue_composition_games m WHERE m.catalogue_revision_id=(SELECT current_revision_id FROM catalogue_state WHERE singleton=1) ORDER BY m.supported_game`)
     .all<{ supported_game: string; candidate_id: string; game_revision_id: string; card_ids: string }>();
 }
+
 export async function installLegacyCurrentHead(db: D1Database, sourceId: string) {
   await db.batch([
     db

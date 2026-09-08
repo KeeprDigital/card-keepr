@@ -1,5 +1,9 @@
 import { canonicalJson, StreamingSha256 } from "../shared";
-import { compositionSnapshotTables, type CompositionVerificationQuery } from "./composition-verification-repository";
+import {
+  type CompositionVerificationQuery,
+  compositionSnapshotTables,
+  maximumPrivateSnapshotPageBytes,
+} from "./composition-verification-repository";
 
 export type CompositionSnapshotEvidence = {
   revision_id: string;
@@ -25,7 +29,7 @@ export async function captureCompositionSnapshot(
     typeof state.migration_level !== "number" ||
     typeof state.members !== "number" ||
     state.members < 1 ||
-    state.members > 4 ||
+    state.members > 5 ||
     Number(state.cards) + Number(state.products) < 1 ||
     state.missing_search !== 0 ||
     state.missing_lifecycle !== 0 ||
@@ -47,14 +51,22 @@ export async function captureCompositionSnapshot(
     let after = 0,
       rows = 0;
     for (;;) {
-      const [row] = await query({ kind: "composition-page", table, after });
-      if (!row) break;
-      if (typeof row.snapshot_rowid !== "number" || row.snapshot_rowid <= after)
-        throw new Error("Invalid snapshot cursor.");
-      after = row.snapshot_rowid;
-      const { snapshot_rowid: _, ...record } = row;
-      digest.update(new TextEncoder().encode(canonicalJson(record) + "\n"));
-      rows++;
+      const page = await query({ kind: "composition-page", table, after });
+      if (page.length === 0) break;
+      const privatePage = table === "reconciliation_checkpoints" || table === "reconciliation_reducer_state";
+      if (page.length > (privatePage ? 4 : 1)) throw new Error("Snapshot page exceeds its row budget.");
+      let pageBytes = 0;
+      for (const row of page) {
+        if (typeof row.snapshot_rowid !== "number" || row.snapshot_rowid <= after)
+          throw new Error("Invalid snapshot cursor.");
+        pageBytes += new TextEncoder().encode(canonicalJson(row)).byteLength;
+        if (privatePage && pageBytes > maximumPrivateSnapshotPageBytes)
+          throw new Error("Private snapshot page exceeds its byte budget.");
+        after = row.snapshot_rowid;
+        const { snapshot_rowid: _, ...record } = row;
+        digest.update(new TextEncoder().encode(canonicalJson(record) + "\n"));
+        rows++;
+      }
     }
     tables.push({ table, rows, sha256: digest.digestHex() });
   }

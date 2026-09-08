@@ -7,6 +7,7 @@ export type OfficialSourceScope = Readonly<{
 }>;
 
 const scopes: readonly OfficialSourceScope[] = Object.freeze([
+  Object.freeze({ sourceLineage: "riftbound-en", game: "riftbound" }),
   Object.freeze({
     sourceLineage: "one-piece-en",
     game: "one-piece",

@@ -25,7 +25,8 @@ function decodeCandidate(input: unknown): CatalogueCandidate {
     value.cards.some(
       (card) =>
         card.game_data.profile !== `${card.game}@1` ||
-        (card.official_identity.kind === "functional_designation" && card.game !== "one-piece"),
+        (card.official_identity.kind === "functional_designation" && card.game !== "one-piece") ||
+        (card.official_identity.kind === "publisher_name" && card.game !== "riftbound"),
     ) ||
     value.printings.some((printing) => !cardIds.has(printing.card_id)) ||
     value.source_checks?.some((check) => !isCatalogueSourceCheck(check))

@@ -1,3 +1,4 @@
+import { riftboundSourceAdapterRegistration } from "./riftbound-source-adapter";
 import { onePieceCoverageContracts } from "./one-piece-adapter";
 import { limitlessOnePieceSourceAdapterRegistration } from "./limitless-one-piece-source-adapter";
 import { sourceLineages } from "./source-registry";
@@ -102,6 +103,7 @@ function productionCatalogueRegistration(
 export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistration[] = Object.freeze(
   [
     limitlessOnePieceSourceAdapterRegistration,
+    riftboundSourceAdapterRegistration,
     {
       adapterVersion: "one-piece-official-errata-html@1",
       sourceLineage: "one-piece-en",
@@ -299,6 +301,9 @@ export function sourceAdapterForCoverage(
     printingAdmission: contract.printingAdmission ?? adapter.printingAdmission,
     requestUrlForSurface: contract.requestUrlForSurface,
     requestUrlForDiscovery: undefined,
-    reconciliationAreas: [adapter.reconciliationCapability === "errata" ? "errata" : "catalogue"],
+    reconciliationCapability: contract.reconciliationCapability ?? adapter.reconciliationCapability,
+    reconciliationAreas: contract.reconciliationAreas ?? [
+      adapter.reconciliationCapability === "errata" ? "errata" : "catalogue",
+    ],
   };
 }

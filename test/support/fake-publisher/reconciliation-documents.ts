@@ -1748,6 +1748,40 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       ],
     };
   }
+  if (scenario === "profile-riftbound") {
+    const observation = printingObservation({
+      game: "riftbound",
+      profile: "riftbound@1",
+      cardNumber: "SYN-001",
+      name: "Synthetic Riftbound Unit",
+      cardAttributes: {
+        card_types: ["unit"],
+        supertypes: [],
+        domains: ["fury"],
+        energy: 1,
+        power: 0,
+        might: 1,
+        might_bonus: null,
+        tags: [],
+        ability_text: null,
+        effect_text: null,
+      },
+      printingAttributes: {
+        public_code: "SYN-001",
+        collector_number: 1,
+        set_code: "SYN",
+        orientation: "portrait",
+        reverse_face: null,
+        finish: null,
+        artists: [],
+      },
+      locator: "/synthetic/riftbound/SYN-001",
+      lineageMarker: "riftbound",
+      memberships: { products: [], distribution_contexts: [], source_buckets: ["synthetic"] },
+    });
+    observation.card.official_identity = { kind: "publisher_name", value: observation.card.name };
+    return { cards: [observation] };
+  }
   if (scenario === "profile-gundam") {
     return {
       cards: [

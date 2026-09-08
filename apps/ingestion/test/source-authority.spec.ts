@@ -3,6 +3,38 @@ import { administrationRequest, installRuntimeSuite } from "./runtime-helpers";
 
 installRuntimeSuite();
 
+test("new publisher authority remains opt-in and an explicit owner designation is visible", async () => {
+  const before = await (await administrationRequest("/v1/source-authorities", "GET")).json<{
+    authorities: { game: string }[];
+  }>();
+  expect(before.authorities.some((a) => a.game === "riftbound")).toBe(false);
+  const selection = {
+    game: "riftbound",
+    locale: "en",
+    release_region: "US",
+    area: "corrected_card_content",
+    source_lineage: "riftbound-en",
+    expected_generation: "0",
+    rationale: "Use retained Riot corrections for the English scope.",
+    idempotency_key: "riftbound-corrections-authority",
+  };
+  const changed = await administrationRequest("/v1/source-authorities", "POST", selection);
+  expect(changed.status).toBe(200);
+  const decision = await changed.json();
+  const after = await (await administrationRequest("/v1/source-authorities", "GET")).json<{ authorities: unknown[] }>();
+  expect(after.authorities).toContainEqual(decision);
+  expect(after.authorities).toHaveLength(before.authorities.length + 1);
+  expect(await (await administrationRequest("/v1/source-authorities", "POST", selection)).json()).toEqual(decision);
+  expect(
+    (
+      await administrationRequest("/v1/source-authorities", "POST", {
+        ...selection,
+        idempotency_key: "riftbound-stale-authority",
+      })
+    ).status,
+  ).toBe(409);
+});
+
 test("owner inspects source ownership and shared profiles independently of authority", async () => {
   const response = await administrationRequest("/v1/source-registry", "GET");
   expect(response.status).toBe(200);

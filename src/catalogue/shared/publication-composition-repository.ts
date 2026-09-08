@@ -1,6 +1,6 @@
 import { type CatalogueStore, repositoryStatements } from "./catalogue-store-repository";
 
-/** Bounded handoff to backup/recovery: exact durable identities and four game roots. */
+/** Bounded handoff to backup/recovery: exact durable identities and five game roots. */
 export function publicationBackupReservationStatement(db: CatalogueStore, attemptId: string) {
   return repositoryStatements(db)
     .prepare(`SELECT b.idempotency_key AS backup_attempt_id,b.publication_operation_id,
@@ -16,6 +16,6 @@ export function publishedCompositionStatement(db: CatalogueStore, revisionId: st
     .prepare(`SELECT m.supported_game,m.game_revision_id,m.candidate_id,m.root_digest,
  c.preparation_id,c.ingestion_run_id,c.manifest_digest
  FROM catalogue_composition_games m JOIN game_candidates c ON c.id=m.candidate_id
- WHERE m.catalogue_revision_id=? ORDER BY m.supported_game LIMIT 4`)
+ WHERE m.catalogue_revision_id=? ORDER BY m.supported_game LIMIT 5`)
     .bind(revisionId);
 }

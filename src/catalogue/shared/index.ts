@@ -172,3 +172,6 @@ export {
   publishedCompositionStatement,
 } from "./publication-composition-repository";
 export { trackedStagingBucket } from "./staging-object-storage";
+
+export { sharedCuratableFieldSchemas } from "./curated-field-schemas";
+export { validCuratedField } from "./curated-field-validation";

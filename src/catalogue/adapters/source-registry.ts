@@ -1,7 +1,11 @@
 import { exportedGameProfileSchema, gameProfileForGame, type SupportedGame } from "../shared";
 
-export const publishers = [{ id: "bandai", name: "Bandai" }];
+export const publishers = [
+  { id: "bandai", name: "Bandai" },
+  { id: "riot-games", name: "Riot Games" },
+];
 export const sources = [
+  { id: "riot-riftbound", publisher_id: "riot-games", name: "Riot Riftbound" },
   ...(["one-piece", "fusion-world", "digimon", "gundam"] as const).map((game) => ({
     id: `bandai-${game}`,
     publisher_id: "bandai",
@@ -17,6 +21,7 @@ export type SourceLineageRegistration = Readonly<{
   release_region: "OCEANIA" | "ASIA" | "US";
 }>;
 export const sourceLineages: readonly SourceLineageRegistration[] = [
+  { id: "riftbound-en", source_id: "riot-riftbound", game: "riftbound", locale: "en", release_region: "US" },
   { id: "one-piece-en", source_id: "bandai-one-piece", game: "one-piece", locale: "en", release_region: "OCEANIA" },
   {
     id: "limitless-one-piece-en",
@@ -38,8 +43,13 @@ export const sourceLineages: readonly SourceLineageRegistration[] = [
 ];
 
 export function gameProfileRegistrations() {
-  return (["one-piece", "fusion-world", "digimon", "gundam"] as const).map((game) => {
+  return (["one-piece", "fusion-world", "digimon", "gundam", "riftbound"] as const).map((game) => {
     const id = gameProfileForGame(game)!;
-    return { id, game, publisher_id: "bandai", schema: exportedGameProfileSchema(id) };
+    return {
+      id,
+      game,
+      publisher_id: game === "riftbound" ? "riot-games" : "bandai",
+      schema: exportedGameProfileSchema(id),
+    };
   });
 }

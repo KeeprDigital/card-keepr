@@ -312,7 +312,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
       adapter.officialSourceContract ||
       adapter.reconciliationCapability === "errata"
     ) {
-      if (games.length > 4) throw new Error("Collection selected too many Supported Games.");
+      if (games.length > 5) throw new Error("Collection selected too many Supported Games.");
       const preparations: Awaited<ReturnType<typeof prepareCollectedGame>>[] = [];
       for (const game of [...games].sort()) {
         const prepared = await step.do(

@@ -222,7 +222,7 @@ export function composedExportArtifactStatement(db: CatalogueStore, revision: st
 export function composedSupportedGamesStatement(db: CatalogueStore, revision: string) {
   return repositoryStatements(db)
     .prepare(
-      `SELECT supported_game FROM catalogue_composition_games WHERE catalogue_revision_id=? ORDER BY supported_game LIMIT 4`,
+      `SELECT supported_game FROM catalogue_composition_games WHERE catalogue_revision_id=? ORDER BY supported_game LIMIT 5`,
     )
     .bind(revision);
 }

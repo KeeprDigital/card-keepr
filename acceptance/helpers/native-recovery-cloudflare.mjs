@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { readdir } from "node:fs/promises";
+import { open, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { unstable_splitSqlQuery } from "wrangler";
+import { nativeSqliteExport } from "./native-sqlite-export.mjs";
 
 // Only the Cloudflare control-plane boundary is simulated. SQL export/import
 // and every verification query execute against actual independent SQLite files.
@@ -57,10 +57,7 @@ export function nativeRecoveryCloudflare({ databaseDirectory, directory }) {
           faults.exportFailures--;
           return Response.json({ success: false, errors: [{ message: "Injected SQL export failure" }] });
         }
-        exported = execFileSync("/usr/bin/sqlite3", [await sourceFile(), ".dump"], {
-          encoding: "utf8",
-          maxBuffer: 64 * 1024 * 1024,
-        });
+        exported = await nativeSqliteExport(await sourceFile(), join(directory, "native-export.sql"));
         const virtual = exported.split("\n").filter((line) => line.includes("CREATE VIRTUAL TABLE"));
         if (virtual.length > 0) throw new Error(`Export still contains virtual tables: ${virtual.join(" | ")}`);
         // D1 management exports omit provider-owned bookkeeping; AUTOINCREMENT
@@ -92,7 +89,18 @@ export function nativeRecoveryCloudflare({ databaseDirectory, directory }) {
         if (body.action === "init")
           return success({ upload_url: "https://native-upload.invalid/snapshot", filename: "snapshot.sql" });
         assert.ok(target);
-        target.exec("PRAGMA foreign_keys=OFF;\n" + uploaded + "\nPRAGMA foreign_keys=ON;");
+        // One uploaded SQL file is one local import unit. Autocommitting each
+        // retained row adds filesystem sync work unrelated to provider verification.
+        target.exec("PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE;");
+        try {
+          target.exec(uploaded);
+          target.exec("COMMIT;");
+        } catch (error) {
+          target.exec("ROLLBACK;");
+          throw error;
+        } finally {
+          target.exec("PRAGMA foreign_keys=ON;");
+        }
         await hooks.afterImport?.();
         if (faults.lostImportResponses > 0) {
           faults.lostImportResponses--;
@@ -124,9 +132,23 @@ export function nativeRecoveryCloudflare({ databaseDirectory, directory }) {
         return success(targetId ? [{ uuid: targetId, name: "card-keepr-disposable-verification" }] : []);
       if (request.method === "POST" && url.pathname.endsWith("/database")) {
         target?.close();
-        generation++;
-        targetId = `00000000-0000-4000-8000-${String(generation).padStart(12, "0")}`;
-        target = new DatabaseSync(join(directory, `restore-${generation}.sqlite`));
+        const retainedGenerations = (await readdir(directory))
+          .filter((name) => /^restore-[0-9]+\.sqlite$/.test(name))
+          .map((name) => Number(name.match(/[0-9]+/)[0]));
+        let allocatedGeneration = Math.max(generation, ...retainedGenerations) + 1;
+        for (;;) {
+          try {
+            const reserved = await open(join(directory, `restore-${allocatedGeneration}.sqlite`), "wx");
+            await reserved.close();
+            break;
+          } catch (error) {
+            if (error.code !== "EEXIST") throw error;
+            allocatedGeneration++;
+          }
+        }
+        generation = Math.max(generation, allocatedGeneration);
+        targetId = `00000000-0000-4000-8000-${String(allocatedGeneration).padStart(12, "0")}`;
+        target = new DatabaseSync(join(directory, `restore-${allocatedGeneration}.sqlite`));
         return success({ uuid: targetId });
       }
       throw new Error(`Unexpected native Cloudflare request ${request.method} ${url}`);

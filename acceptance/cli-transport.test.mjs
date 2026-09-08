@@ -47,3 +47,26 @@ test("the shared client refuses non-local plaintext credentials before transport
   await request("https://production.invalid/v1/status", { headers: { authorization: "Bearer private" } }, fetchImpl);
   assert.equal(calls, 2);
 });
+
+test("candidate list omits an absent cursor and preserves a supplied opaque cursor", async (t) => {
+  const paths = [];
+  const server = createServer((request, response) => {
+    paths.push(request.url);
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ candidates: [], next_cursor: null }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const environment = {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${server.address().port}`,
+    KEEPR_ADMINISTRATION_KEY: "cursor-test-key",
+  };
+  for (const cursor of [[], ["--after", "candidate:next_123"]]) {
+    const result = await runCli(["game-candidate", "list", "--run-id", "run_123", ...cursor, "--json"], environment);
+    assert.equal(result.code, 0, result.stdout + result.stderr);
+  }
+  assert.deepEqual(paths, [
+    "/v1/ingestion-runs/run_123/game-candidates",
+    "/v1/ingestion-runs/run_123/game-candidates?after=candidate%3Anext_123",
+  ]);
+});
