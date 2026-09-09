@@ -317,3 +317,19 @@ verification. Every original Errata/retention assertion passes without filling
 legacy tables from native publication. Full red/green logs and digests are
 retained. Background canceled/hung diagnostics remain visible; every run exited
 naturally. Independent review of the historical provider is still required.
+
+The four-file historical provider is independently clear against fixed
+`664c51e5..ad42319e`: coordinator Spec and capacity-agent Standards found no
+actionable findings. Reviewed idle-R2 reset provider `c455f841` was cherry-picked
+as `a11f10d7`, retaining all four configured Workflow bindings before the pending
+identity suite.
+
+`source-refresh-publication.spec.ts` now observes actual collection-triggered
+native candidates and approves their exact manifests. The existing decision to
+decline the first supplemental intake is expressed as native abandonment. All
+checks remain: same consumer revision for no-change refresh, supplemental carry,
+immutable earlier checks, withdrawal/reinstatement, incomplete 100-to-1 coverage,
+independent Errata scope, and revalidated/reverted provenance dates. Failed
+collection remains a failed collection rather than a fabricated candidate.
+Typecheck passes; the five-case runtime is pending, including the separately
+diagnosed native no-change contract gap. No global timeout changed.
