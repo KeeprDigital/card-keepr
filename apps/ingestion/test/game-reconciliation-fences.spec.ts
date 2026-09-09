@@ -431,12 +431,7 @@ test.each(["link", "reject"])(
     const id = requiredString(await response.json<Record<string, unknown>>(), "id");
     const evidence = (await get(`/v1/ingestion-runs/${source.id}/evidence`)).document;
     const setId = (evidence.observation_sets as { id: string }[])[0]!.id;
-    const observation = (await readSourceObservation(
-      catalogueStore(testEnv.CATALOGUE_DB),
-      "proposal-identity",
-      setId,
-      0,
-    )) as {
+    const observation = (await readSourceObservation(catalogueStore(testEnv.CATALOGUE_DB), setId, 0)) as {
       value: { identity_evidence: { locator: string; variant_key?: string | null } };
     };
     const identity = observation.value.identity_evidence;

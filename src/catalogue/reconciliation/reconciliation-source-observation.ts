@@ -9,7 +9,6 @@ import { type CatalogueStore, sha256Text } from "../shared";
 import { documentStorage } from "./reconciliation-document";
 export async function readSourceObservation(
   database: CatalogueStore,
-  _runId: string,
   setId: string,
   ordinal: number,
 ): Promise<unknown> {

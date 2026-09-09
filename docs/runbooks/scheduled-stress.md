@@ -4,6 +4,11 @@
 03:17 UTC and on `workflow_dispatch`. Nobody watches a scheduled run, so the
 workflow reports its own failures and its liveness must be checked by hand.
 
+The command runs the ingestion `*.stress.spec.ts` suites with production source-host
+pacing. The API currently has no separate stress files; its functional checks run
+in the normal API suite. An empty ingestion selection remains an error. New API
+performance coverage must be added explicitly before extending this command.
+
 ## Failure reporting
 
 When the `stress` job fails, the `report-failure` job opens a GitHub issue

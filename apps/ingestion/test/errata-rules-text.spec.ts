@@ -506,9 +506,7 @@ describe("Errata rules-text lifecycle", () => {
     const manifest = await retainedObservation!.json<{ id: string; record_storage: { count: number } }>();
     const retainedRecords: unknown[] = [];
     for (let ordinal = 0; ordinal < manifest.record_storage.count; ordinal++)
-      retainedRecords.push(
-        await readSourceObservation(catalogueStore(testEnv.CATALOGUE_DB), "printed-text", manifest.id, ordinal),
-      );
+      retainedRecords.push(await readSourceObservation(catalogueStore(testEnv.CATALOGUE_DB), manifest.id, ordinal));
     expect(JSON.stringify(retainedRecords)).toContain('"effective_rules_text":"[On Play] Draw 1 card."');
   });
 

@@ -1,4 +1,4 @@
-import { ObjectMemberParseFailure, resumableObjectMembers } from "../shared";
+import { adapterObjectMembers } from "./adapter-object-members";
 import { decodeHTML } from "entities";
 import { createHash } from "node:crypto";
 import { officialArtworkFingerprint } from "./official-artwork-identity";
@@ -185,7 +185,7 @@ async function extractInventoryRecords(source: () => AsyncIterable<string>, cont
   const header: Record<string, unknown> = {};
   let count = 0,
     dataSeen = false;
-  for await (const { member } of inventoryMembers(source, limits)) {
+  for await (const { member } of adapterObjectMembers(source, limits)) {
     if (member.key === "data") {
       if (member.kind === "array") dataSeen = true;
       else if (member.array) {
@@ -208,7 +208,7 @@ async function extractInventoryRecords(source: () => AsyncIterable<string>, cont
     ),
     requests: next === null ? [] : [{ role: "listing" as const, url: next, headers: { accept: "application/json" } }],
     records: (async function* () {
-      for await (const { member } of inventoryMembers(source, limits)) {
+      for await (const { member } of adapterObjectMembers(source, limits)) {
         if (member.key !== "data" || member.kind !== "value" || !member.array) continue;
         const card = record(member.value);
         yield {
@@ -401,17 +401,4 @@ function richText(value: unknown): string | null {
       .replace(/<br\s*\/?\s*>|<\/p>/giu, "\n")
       .replace(/<[^>]*>/gu, ""),
   ).trim();
-}
-
-async function* inventoryMembers(
-  source: () => AsyncIterable<string>,
-  limits: Parameters<typeof resumableObjectMembers>[2],
-) {
-  try {
-    yield* resumableObjectMembers(() => source(), null, limits);
-  } catch (error) {
-    if (error instanceof ObjectMemberParseFailure || error instanceof SyntaxError)
-      throw new AdapterParseFailure(error.message, { cause: error });
-    throw error;
-  }
 }

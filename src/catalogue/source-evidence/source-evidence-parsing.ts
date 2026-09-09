@@ -15,7 +15,7 @@ import {
   requiredSourceAdapter,
 } from "../adapters";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256, utf8 } from "../shared";
-import { sourceSnapshotStatement } from "./evidence-repository";
+import type { SourceRequestRole } from "./source-evidence-model";
 import { publicObservationSet } from "./source-evidence-repository";
 import type { ObservationSetRow, SnapshotRow } from "./source-evidence-repository-types";
 import {
@@ -25,6 +25,7 @@ import {
   observationSetByParseOperationStatement,
   parseOperationStatement,
   uploadedParseStatement,
+  sourceSnapshotForParsingStatement,
 } from "./source-parse-repository";
 
 type ParseOperationRow = {
@@ -54,7 +55,9 @@ export async function parseSnapshot(
   adapterVersion: string,
   parseIntent: ParseIntent,
 ): Promise<ObservationSetRow> {
-  const snapshot = await sourceSnapshotStatement(database, snapshotId).first<SnapshotRow>();
+  const snapshot = await sourceSnapshotForParsingStatement(database, snapshotId).first<
+    SnapshotRow & { request_role: SourceRequestRole }
+  >();
   if (snapshot === null) {
     throw new AdministrationProblem(404, "source_snapshot_not_found", "The requested Source Snapshot does not exist.");
   }
@@ -108,7 +111,9 @@ export async function parseSnapshot(
   let observationCount: number;
   try {
     const context = { url: snapshot.request_url, mediaType: snapshot.media_type, requestId: snapshot.request_id };
-    const image = snapshot.request_id.includes(":image:") || snapshot.media_type?.startsWith("image/");
+    const image = snapshot.request_role === "image";
+    if (!image && snapshot.media_type?.startsWith("image/"))
+      throw new AdapterParseFailure("A catalogue document request cannot retain an image response as card facts.");
     let extraction: Awaited<ReturnType<NonNullable<SourceAdapterRegistration["recordExtraction"]>["extract"]>>;
     if (image) {
       if (!snapshot.media_type?.startsWith("image/") || snapshot.content_byte_length === 0)

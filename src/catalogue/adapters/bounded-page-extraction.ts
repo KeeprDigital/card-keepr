@@ -1,3 +1,4 @@
+import { adapterObjectMembers } from "./adapter-object-members";
 import { Tokenizer, TokenizerMode, type TokenHandler } from "parse5";
 import { resumableObjectMembers, ObjectMemberParseFailure, utf8 } from "../shared";
 import { AdapterParseFailure } from "./adapter-parse-failure";
@@ -124,7 +125,7 @@ async function extractJsonRecords(adapter: SourceAdapterRegistration, source: ()
   let count = 0,
     members = 0;
   const arrays = new Set<string>();
-  for await (const { member } of checkedMembers(source, limits)) {
+  for await (const { member } of adapterObjectMembers(source, limits)) {
     if (++members > 32768) throw new AdapterParseFailure("Source JSON page exceeds its member budget.");
     if (containers.includes(member.key)) {
       if (member.kind === "array") arrays.add(member.key);
@@ -161,7 +162,7 @@ async function extractJsonRecords(adapter: SourceAdapterRegistration, source: ()
       // Preserve the admitted parser's cards-before-products observation order,
       // even when the publisher document places the arrays in another order.
       for (const key of containers.filter((key) => arrays.has(key)))
-        for await (const { member } of checkedMembers(source, limits)) {
+        for await (const { member } of adapterObjectMembers(source, limits)) {
           if (member.kind !== "value" || !member.array || member.key !== key) continue;
           const parsed = await adapter.parse!({ [key]: [member.value] });
           if (parsed.length !== 1) throw new AdapterParseFailure("One source record must produce one observation.");
@@ -169,18 +170,6 @@ async function extractJsonRecords(adapter: SourceAdapterRegistration, source: ()
         }
     })(),
   };
-}
-async function* checkedMembers(
-  source: () => AsyncIterable<string>,
-  limits: Parameters<typeof resumableObjectMembers>[2],
-) {
-  try {
-    yield* resumableObjectMembers(() => source(), null, limits);
-  } catch (error) {
-    if (error instanceof ObjectMemberParseFailure || error instanceof SyntaxError)
-      throw new AdapterParseFailure(error.message, { cause: error });
-    throw error;
-  }
 }
 export async function extractBoundedAdapterPage(...args: Parameters<typeof extractPage>) {
   try {

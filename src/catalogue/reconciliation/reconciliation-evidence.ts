@@ -362,7 +362,7 @@ async function collectRetainedReconciliationObservation(
       work = workBytes = 0;
     };
     for (let sourceOrdinal = startOrdinal; sourceOrdinal < row.observation_count; sourceOrdinal++) {
-      const wrapped = await readSourceObservation(database, runId, row.observation_set_id, sourceOrdinal);
+      const wrapped = await readSourceObservation(database, row.observation_set_id, sourceOrdinal);
       const value = isRecord(wrapped) ? wrapped.value : null;
       const appearance = isRecord(value) ? value.appearance_evidence : null;
       // Image retention also registers and settles a durable staging writer.
