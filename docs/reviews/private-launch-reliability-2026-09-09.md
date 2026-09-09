@@ -298,3 +298,43 @@ exact head, unlike the earlier incomplete run whose causes were unavailable.
 The identity collision is under focused Node 22 context diagnosis; native caller
 migration must preserve the latter two completeness assertions. Full raw logs
 are `reliability-complete-ci-ingestion-{1,2,3}.log`.
+
+## Completed hosted acceptance and identity repetition
+
+CI `34336773653` at `a016843ac15e24bb37f46b3b9492743883a011ff`
+finished every job naturally. Acceptance totals are **344 passed, 1 failed,
+1 opt-in skip, 346 selected**. Shard 1 passed 109 with one skip in 374.46s;
+shard 3 passed 156 in 1446.45s; shard 2 passed 79 and failed one in 2190.26s.
+The remaining failure is full retained Riftbound's final scoped Errata refresh:
+`riftbound-catalogue.test.mjs:816` exhausted its unchanged 120-second candidate
+wait, retaining state `preparing`, generation 0, no failure code. The full
+scenario had run 1747.29s. This is an actual failed check, not an interrupted
+job or a rate-limit diagnosis. Its final logs are preserved under
+`/tmp/card-keepr-launch-20260909/reliability-complete-ci-acceptance-2.log`.
+The local complete Riftbound pass on provider `0b4b41dd` remains separate.
+
+Unchanged Node 22 identity context diagnosis at `905dd2a0` passed the complete
+11-case file (38.44s Vitest / 39.38s harness). The original three durable-group
+cases then ran in their original order five times via a temporary test parameter
+expansion: 15 passed, eight unselected, 86.54s Vitest / 87.72s harness against
+a finite 180-second process bound. No interruption or collision occurred.
+Both checks retained workerd cancelled-request diagnostics. The temporary diff,
+its exact original/test SHA-256 values, raw log and result are retained as
+`identity-repeat-*` and `identity-node22-repeated.*` in that evidence directory;
+the test file was restored exactly and the worktree is clean. These are local
+non-reproductions, not a fix or evidence that the hosted failure is harmless.
+
+The earlier three-case context harness read HEAD at completion rather than
+startup. `identity-node22-context-provenance.json` preserves the correction:
+started at `7e7b62f9`, completed at the documentation-only `905dd2a0`; executable
+code was unchanged. Its original JSON remains intact. The later complete-file
+and repeated-case runs have the explicit frozen provenance above.
+
+The complete preliminary #253 stress callback artifact at foundation `b28d2afc`
+contains 1,360 successful callbacks, zero failed callbacks and zero callbacks
+above 100 observed binding calls. Total elapsed time is still a failure:
+50,118ms against 15,000ms. Largest accumulated phases were Product reduction
+10,392ms, official reduction 8,350ms, normalization 6,651ms and game preparation
+6,318ms. This spread identifies measurements for investigation, not a cause or
+permission to change the performance target. Parsed callback data is retained
+as `253-native-callback-report.json` alongside its raw hosted log.
