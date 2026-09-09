@@ -1,0 +1,1024 @@
+{
+  "ok": false,
+  "summary": {
+    "unresolved_drift": 30,
+    "out_of_scope": 10,
+    "cosmetic_drift": 17,
+    "semantic_drift": 2,
+    "unchanged": 1
+  },
+  "captures": [
+    {
+      "file": "digimon-en-card-list-appmon-leaf.json",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522204&cardcategory=Digimon&color=Purple",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "b6d0b24d0f719bfd2f64a150ac1c0043fed8ed701caf63b8b03ae776c3f75ece",
+      "actual_full_body_sha256": "aa54372640aea9a5961ca3925899a330e04a7275a6a26b048db93f05561c1375",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "digimon-en-card-list-bt01-leaf.json",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522001&cardcategory=Digimon&color=Blue",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "f0059b9115c9875b864f5df2eca80dd9767e36fa4e19c4def916825cf88a937f",
+      "actual_full_body_sha256": "ec21fa46a80f9d06d5293f18e8b9e591e50e828a4097b4dd907f20c456d4cb66",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "digimon-en-card-list-promo-leaf.json",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522901&cardcategory=Digimon&color=Red",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "acb2543e7510c921c8d55bc33dae90703044b17e4dfb07055af33219e27d9b37",
+      "actual_full_body_sha256": "cfb9f8065f25d4d4440e956c61dceea372a91138d50976ba4cf34262e58be5d8",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "digimon-en-card-list-related-qa-leaf.json",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522035&cardcategory=Digimon&color=Black",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "397bf7f67db4d6a82e9057475f6e9371f72b6fa1b0491af34975739322609c8d",
+      "actual_full_body_sha256": "329d06ea5e9d7eb5f96bc61c65138f97e82e66a8468653624f6317c2dcd2e55b",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "digimon-en-discovery.json",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size"
+      ],
+      "expected_full_body_sha256": "8864fca763faa23cbac064a6269d5a0d2d93af882e4e3591fbe652977ba264bf",
+      "actual_full_body_sha256": "d6e1b37e930a844cf145a1c5cc0775f8b827393dae1edcc9df2fb36301164b00",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "digimon-en-policy.json",
+      "source_url": "https://world.digimoncard.com/rule/restriction_card/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "95057f521b57054f3ade89885a06f0d1891219fbbbe3b80a70923b5bc975350c",
+      "actual_full_body_sha256": "4bd2f7969cf1062e1a2dea556f4a21dcc6085402da53b02a40c2f4870973c783",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "file": "digimon-en-product-gift-box.json",
+      "source_url": "https://world.digimoncard.com/products/goods/gift_box.php",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "003dbab28a09f4f343fc1309a30487b45cf7f57c658b2e7c7b3f13d8bc768053",
+      "actual_full_body_sha256": "03fd2d10500fd2ed4b6db57c7f159cefe328b89cfd68f6e78ec032ccb552ba06",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "digimon-en-product-starter-deck.json",
+      "source_url": "https://world.digimoncard.com/products/deck/st-24/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "31aff5ddb2c7b02b9c355965af1b0281082f928dc7dfdd2bb045a601c9b37905",
+      "actual_full_body_sha256": "9515edf58fff9802c5f8ffae6fbe56683032a7946271063a93a6490b29919f9b",
+      "adapter_version": "digimon-en@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "digimon-en-product-starter-deck.json",
+      "expected_observations_sha256": "40a1309d9ca3caf8a259f6e77221002b1f66ea0287c247dd0f2ca6b86dfbc2ad",
+      "actual_observations_sha256": "40a1309d9ca3caf8a259f6e77221002b1f66ea0287c247dd0f2ca6b86dfbc2ad",
+      "observation_count": 1,
+      "request_count": 62
+    },
+    {
+      "file": "digimon-en-product-theme-booster.json",
+      "source_url": "https://world.digimoncard.com/products/pack/ex-01.php",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "33722dc59e9aca9073d9f108613f0d9867f6fe9896382cff01f5baae4a419513",
+      "actual_full_body_sha256": "a40bf1a568b734aace146dea1ae5986aeb562aae85493b0d257ca3d40d7a0a98",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "digimon-en-restructured-card-search.json",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "8864fca763faa23cbac064a6269d5a0d2d93af882e4e3591fbe652977ba264bf",
+      "actual_full_body_sha256": "d6e1b37e930a844cf145a1c5cc0775f8b827393dae1edcc9df2fb36301164b00",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "digimon-en-rules-hub.json",
+      "source_url": "https://world.digimoncard.com/rule/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "d200327fe189b867a14cff2bb3cfcc0bf26e04895421dcd39e18d4413f97e1db",
+      "actual_full_body_sha256": "7751106d0803cf7fc154950eb0aac4f9104d5c545ca9e62d04a879cf97d28f11",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "fusion-world-en-card-detail-battle.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=ST01-002",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "bb9f3d565ea9939cea9c6e9270581e92102fe44aaa5d945a663555996fa92c06",
+      "actual_full_body_sha256": "51976ac1c8b18a8fe60bf6c79e25a231c0f17395d83f1c2f842f517a281e02d3",
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "fusion-world-en-card-detail-battle.json",
+      "expected_observations_sha256": "b97edaaa210746cc16bf77320e9b29d761bbc857820294c816570f5246c5d003",
+      "actual_observations_sha256": "b97edaaa210746cc16bf77320e9b29d761bbc857820294c816570f5246c5d003",
+      "observation_count": 1,
+      "request_count": 2
+    },
+    {
+      "file": "fusion-world-en-card-detail-energy-marker-p1.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=E-148&p=_p1",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "34b60738ba29fe2cbae7c8c706249d7b1ecc3eea8fee6c49b635e4fefd272f5e",
+      "actual_full_body_sha256": "2a7744fd01314d9684ac428cd937f73a7d6de5a1d3e8fe86fecd96b693bf3ae9",
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "fusion-world-en-card-detail-energy-marker-p1.json",
+      "expected_observations_sha256": "bfc9e0dfbed04dec33a15932c9b6bfe18332f36af3b67ac56bfe8e4d31b10489",
+      "actual_observations_sha256": "bfc9e0dfbed04dec33a15932c9b6bfe18332f36af3b67ac56bfe8e4d31b10489",
+      "observation_count": 1,
+      "request_count": 2
+    },
+    {
+      "file": "fusion-world-en-card-detail-energy-marker.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=E-148",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "8c168a6c66d3a7a1e8cb054d73d33079d9f92a6f65f1b2cebaa8be0944b2b791",
+      "actual_full_body_sha256": "45edb81c5a065c63614c8e62ce3c615643bb1e608f38f820a27727915ee11a02",
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "fusion-world-en-card-detail-energy-marker.json",
+      "expected_observations_sha256": "7cb643365993fa453a2fd5443b791b2fe2f0a36bf0b2c89f161ca419989014fc",
+      "actual_observations_sha256": "7cb643365993fa453a2fd5443b791b2fe2f0a36bf0b2c89f161ca419989014fc",
+      "observation_count": 1,
+      "request_count": 2
+    },
+    {
+      "file": "fusion-world-en-card-detail-errata-leader-p1.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FS10-01&p=_p1",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "2f441fc66a10e81759570f466929ff5a8a709a98a8765c7b4129ff45e28b81ac",
+      "actual_full_body_sha256": "18627001c2dfa5628397d99e400ccf8f750209dbe8832ac78b8a5e0d8b95c714",
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "fusion-world-en-card-detail-errata-leader-p1.json",
+      "expected_observations_sha256": "e64dcec782d0301111c5c94f9b318b14f80b2a7dc2573d968939c7134843cbee",
+      "actual_observations_sha256": "e64dcec782d0301111c5c94f9b318b14f80b2a7dc2573d968939c7134843cbee",
+      "observation_count": 1,
+      "request_count": 3
+    },
+    {
+      "file": "fusion-world-en-card-detail-errata-leader.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FS10-01",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "ded74a8aeccf1369248b17148b63868f61c6adcb0e6a8f05e9972348fe052641",
+      "actual_full_body_sha256": "d1c95548a1a21c7922143a33b3b080d347ed597c2358e73ab8878a0f653e416d",
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "fusion-world-en-card-detail-errata-leader.json",
+      "expected_observations_sha256": "b837b296e3e2609cc7e8b45d2b86b166dc7afc4249dcf28407d28e6ddfa19aad",
+      "actual_observations_sha256": "b837b296e3e2609cc7e8b45d2b86b166dc7afc4249dcf28407d28e6ddfa19aad",
+      "observation_count": 1,
+      "request_count": 3
+    },
+    {
+      "file": "fusion-world-en-card-detail-errata-skills.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=SB01-039",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "5cadc76613d228eedced2ee0ceef649681bc1b1a904f4aded0bd4a8f8fbaac74",
+      "actual_full_body_sha256": "0667c6f5083de6bf880047c043544ee66deb1081005b53109b3a50f2feb6232a",
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "fusion-world-en-card-detail-errata-skills.json",
+      "expected_observations_sha256": "f9630baabf0dd91786d765b9ed98a7d4fff305c212ee775f92b19189cf780a81",
+      "actual_observations_sha256": "f9630baabf0dd91786d765b9ed98a7d4fff305c212ee775f92b19189cf780a81",
+      "observation_count": 1,
+      "request_count": 2
+    },
+    {
+      "file": "fusion-world-en-card-detail-errata-traits.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FP-088",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "6916546f329f04728f2f5d82287bb90a7a1dad2040688d58681bc6429ec0a8a2",
+      "actual_full_body_sha256": "2e6cd286eedca432b5d06370fbc66e1fa53ffe03c92d21948e8e5c47e7c11c95",
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "fusion-world-en-card-detail-errata-traits.json",
+      "expected_observations_sha256": "24b00cd72b2e628223a4c3de0a2e77e8ea3dcbfa96e196ef56db679a17ba1e9e",
+      "actual_observations_sha256": "24b00cd72b2e628223a4c3de0a2e77e8ea3dcbfa96e196ef56db679a17ba1e9e",
+      "observation_count": 1,
+      "request_count": 1
+    },
+    {
+      "file": "fusion-world-en-card-detail-leader-p1.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=ST01-001&p=_p1",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "ccf9c52bc27be1e4894540a1a6a044fa1d73cf4f6045fba8dd133c58db5ee57b",
+      "actual_full_body_sha256": "66f7be5deffd721b6617b84a525dfdc9b566665fc28c83d02b4e664b988fdce8",
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "fusion-world-en-card-detail-leader-p1.json",
+      "expected_observations_sha256": "71a13fbe7558ed4ac4564bc0938e964fa29c6f26c9c30bd112e0c1684cf23d48",
+      "actual_observations_sha256": "71a13fbe7558ed4ac4564bc0938e964fa29c6f26c9c30bd112e0c1684cf23d48",
+      "observation_count": 1,
+      "request_count": 3
+    },
+    {
+      "file": "fusion-world-en-card-detail-leader.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=ST01-001",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "ff84c6e23d0d0a38fce3ec280e5f90a85fb192495c3b5eb8e0800ffba0f93577",
+      "actual_full_body_sha256": "cd821431d3a20ff1ec97ccab033152c16e388b050c235ec6468a824cc5ef2a70",
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "fusion-world-en-card-detail-leader.json",
+      "expected_observations_sha256": "ec5a913cf4ce888621adf6e97df1efff2dd5f2fa0cec9eded9e922ceee71b798",
+      "actual_observations_sha256": "ec5a913cf4ce888621adf6e97df1efff2dd5f2fa0cec9eded9e922ceee71b798",
+      "observation_count": 1,
+      "request_count": 3
+    },
+    {
+      "file": "fusion-world-en-card-detail-promo.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FP-001",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "3c09a0f01875549e5139b304bc5e9da678923e341170d6e772916917f36c9413",
+      "actual_full_body_sha256": "91d5ad8cb5686b78195826014309ce8ffab5cad53b19b292b83909c4bf246691",
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "fusion-world-en-card-detail-promo.json",
+      "expected_observations_sha256": "cde95e4c9a2475322e088f4de6db542cffb612e81780daec719834b019fbcee5",
+      "actual_observations_sha256": "cde95e4c9a2475322e088f4de6db542cffb612e81780daec719834b019fbcee5",
+      "observation_count": 1,
+      "request_count": 1
+    },
+    {
+      "file": "fusion-world-en-legality-history-news.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "354441c04b78573a610ce4841b23338345760658097db2b80025d2d0441e88c1",
+      "actual_full_body_sha256": "e03bdf51d41dee31a557000379678fbd93e482a4e6e0bce29314804d2cfccbf6",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "file": "fusion-world-en-policy-detail.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "67c9e75cae71dbf34d97fcc74f322ca15baa0a5172053b72e3db91a987ac4df2",
+      "actual_full_body_sha256": "0da67bb99e75fa56b8a137acb3d39022159521844d1f130dca7886c7f25c91c5",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "file": "fusion-world-en-policy-live.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/news/01_31.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "34996d0add2c9a10555050b5f80fdf078cd05dfabc8b5da76c8eac8cc0442b5c",
+      "actual_full_body_sha256": "e50f19034dd0c7db198676b3da436a696638d2993738550f33db28256205c943",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "file": "fusion-world-en-product-starter-deck.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/products/02_229.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "23f233c125d5647873c2a133421d9065c03da2573585590df8089ef9a6e43a92",
+      "actual_full_body_sha256": "ae2763ce29f25002b2087230ce242df40880e8f4453e41615662ce08264db8c6",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "fusion-world-en-product-story-booster.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/products/01_401.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "74edf1b5eee05c1b997d35a9296803d82a88e9930f56dd9138cb1b3cdb9c6278",
+      "actual_full_body_sha256": "212087778ef928dadef038f75785352332468ecaeffac9a879170431487f8450",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "fusion-world-en-product-winter-booster.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/products/01_477.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "553820eccd491b2119be3b54c703e93c734c785e80e2e0c467dab4aca9801261",
+      "actual_full_body_sha256": "2e39d558f767b16b75384b902aacd5575f93c36f62e1a5f93d125bd31f9dfaed",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "fusion-world-en-products-hub.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/products/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "f9fdb5a2a514ebfc50066a19843dabec6e27a4b51515ba240d4ba200432808b7",
+      "actual_full_body_sha256": "1909ad7917bf74c5345e70e3f8ea8c1133da804483e6247ded05a7f58d826f57",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "fusion-world-en-products-page2.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/products/?page=2",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "812a278faf12f2d2531d8d42f35cfa457534d88b77df1dc1aec544d20e644a16",
+      "actual_full_body_sha256": "1368ccab2b2ff21a9c3e282fc840cc1afeaec167ae73119170237e3b08b5e62e",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "fusion-world-en-products-starter-tag.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/products/?tags=StarterDecks&page=1",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "3441883f7fb4b7f5688381e2aadd49dcb7554857a9fc9cd7478fae099db824ae",
+      "actual_full_body_sha256": "81f5f4615bc582be97c8e261abf5ac90d7f1413ef700cc25dc8642320b093d57",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "fusion-world-en-restructured-card-search.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "fa1e0da1737cb46c3eedd5ae1f1a1d0ed47deefd987de48f9f724dfaa2db7cea",
+      "actual_full_body_sha256": "10a451bae01163c18e15eaa330bf80c1a454af51405b9f576b953ade069edcda",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "gundam-en-asia-card-detail-dash-live.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/cards/detail.php?detailSearch=GD02-016",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "72c8313a09b72d27fe6c71997f36f11da9cb20203c9e834f250b955768a3e126",
+      "actual_full_body_sha256": "ee953c992615c8667ed1c9a3b5e95c32f8569d34e0663a8b2c0a460155689f69",
+      "adapter_version": "gundam-en-asia@7",
+      "category": "semantic_drift",
+      "actionable": true,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "gundam-en-asia-card-detail-dash-live.json",
+      "expected_observations_sha256": "bc68a698d187fc6177f8aef3f0822e37633ea4e9553a65c2448dfb77afbdf0a4",
+      "actual_observations_sha256": "04aa1b1dbbe3beb083d3ee178fb351b9fe45d1301ee6d0419a65b248c502881c",
+      "observation_count": 1,
+      "request_count": 3,
+      "changed_paths": [
+        "$.observations.0.identity_evidence.novelty_basis.source_url",
+        "$.observations.0.appearance_evidence.images.0.source_url",
+        "$.observations.0.source_sidecar.raw.detail.image",
+        "$.observations.0.source_sidecar.raw.detail.images.0.source_url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.Printing Image URL",
+        "$.requests.0.url"
+      ]
+    },
+    {
+      "file": "gundam-en-asia-card-list-complete-live.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "3b678f7fb36732fdcbed089b6d365bfe21a6f630047dbc2f31338747cbb32b0e",
+      "actual_full_body_sha256": "09f2b911b7ea629c63fad5aca63e10ce465c7215b9d700a09fdbc438ca6e7e13",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "gundam-en-asia-discovery.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/cards/index.php",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size"
+      ],
+      "expected_full_body_sha256": "3cc0d146b170502bee3ec7e62a9fdaf78ea73b8088f74d138748476c81473ffa",
+      "actual_full_body_sha256": "7606bbb648ebb3dd369dbba31c448e07f4e8d12c951b46ed31bf870834a02a5f",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "gundam-en-asia-errata-listing.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/news/?subcategory=news&tag=all&page=1",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "5ae78bf07eec81af4487afe6309fc045c90c96f365b763ad2f19473a20dac30d",
+      "actual_full_body_sha256": "bc10f1c5e61189ef48a4c64ffab8051d729f618675bc0c91b50a08e85af9ebfc",
+      "adapter_version": "gundam-en-asia@7",
+      "category": "semantic_drift",
+      "actionable": true,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "gundam-en-asia-errata-listing.json",
+      "expected_observations_sha256": "52e9d6ff1ad333805725bc7e683312450ed78e92e9f9f10ccbb4bca688988a53",
+      "actual_observations_sha256": "9edbf0e7b8ea179e7121cc40a509c9b05af0fee90f19a62935af52a7da8a24ed",
+      "observation_count": 1,
+      "request_count": 8,
+      "changed_paths": [
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.33.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.33.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.34.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.34.label",
+        "$.requests.2.url",
+        "$.requests.3.url",
+        "$.requests.4.url"
+      ]
+    },
+    {
+      "file": "gundam-en-asia-news-hub.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/news/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "6bfb1a587431fece22fa0193142f5bb27e01fa41850293b5125812706a72646d",
+      "actual_full_body_sha256": "314ccb04e1f847a989cb7493ca9b460954c2a8f1588f216043cebc5af9e8e2b5",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "gundam-en-asia-policy-detail.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/news/01_279.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "b5289eb79fc7852679d3928442caf8009a35fda44b20df039d0bcc48b54f3aa4",
+      "actual_full_body_sha256": "d5dc744e9beb07ae46e62876c9bc0199c555c8e05d20a74e11645a8db0694581",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "file": "gundam-en-asia-policy.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/rules/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "94c9c13dc5954a6f2a126ac31b536bd41273630c919917f06f7193b378ba2ecf",
+      "actual_full_body_sha256": "b37acb0e8620545c330f004d02feb6a1e9565129c450134deec9b65156c8e02d",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "file": "gundam-en-asia-product-anniversary-set.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/products/pb03.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "d7511f52e820cbb8b4113d2d43267e0bedb8899d2997c97aa82ba19957b5bf00",
+      "actual_full_body_sha256": "e8eb47865c3a9c622c8fe490c1c9d992650b92dcc455565777566b0fd9d5d822",
+      "adapter_version": "gundam-en-asia@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "gundam-en-asia-product-anniversary-set.json",
+      "expected_observations_sha256": "ecaff7eeeb7b42a9a1174683dbf326ec9b37cacf5eaae3000038ab69785cda2a",
+      "actual_observations_sha256": "ecaff7eeeb7b42a9a1174683dbf326ec9b37cacf5eaae3000038ab69785cda2a",
+      "observation_count": 1,
+      "request_count": 7
+    },
+    {
+      "file": "gundam-en-asia-product-booster.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/products/gd05.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "d8a49d8f15f885edd0190e8dab2d5fc9b50b31be5d2ba27bffd05cea23ad5784",
+      "actual_full_body_sha256": "9d959e3ca80e0468bdade3bb7df6e64fda8a1c93f54e033af9bf962f4023a02b",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "gundam-en-asia-product-card-case.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/products/deck-case02.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "31ff00bee5d9b4156a24fb8e7a611e8bd9511576f77c299dd68e6e751f9b0550",
+      "actual_full_body_sha256": "1590f8846021ffd3c7356a3937ae7b91fefc11ebfe165b64dabd4f8f7e259278",
+      "adapter_version": "gundam-en-asia@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "gundam-en-asia-product-card-case.json",
+      "expected_observations_sha256": "8ce8f6d08aed3258b4e667b1ecffefbb68ddaaa3bd0cf9ecb446df4cbc45e654",
+      "actual_observations_sha256": "8ce8f6d08aed3258b4e667b1ecffefbb68ddaaa3bd0cf9ecb446df4cbc45e654",
+      "observation_count": 1,
+      "request_count": 3
+    },
+    {
+      "file": "gundam-en-asia-product-deck-build-box.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/products/deck-build-box.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "8e166af19bd29d3d680639686f30d5c11d2aab7cc3b9374b770236a3c496978f",
+      "actual_full_body_sha256": "5da5f4fc3eb2ede20808d58f5e3c01b486b0a2b06a26e0fe90ae8f16886aaaf8",
+      "adapter_version": "gundam-en-asia@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "gundam-en-asia-product-deck-build-box.json",
+      "expected_observations_sha256": "7425e2d10cc7e03c56edd76d5c3c3d1e307e776f4b70be0695a3128de436d51b",
+      "actual_observations_sha256": "7425e2d10cc7e03c56edd76d5c3c3d1e307e776f4b70be0695a3128de436d51b",
+      "observation_count": 1,
+      "request_count": 10
+    },
+    {
+      "file": "gundam-en-asia-restructured-card-search.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/cards/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "3cc0d146b170502bee3ec7e62a9fdaf78ea73b8088f74d138748476c81473ffa",
+      "actual_full_body_sha256": "7606bbb648ebb3dd369dbba31c448e07f4e8d12c951b46ed31bf870834a02a5f",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "gundam-en-us-discovery.json",
+      "source_url": "https://www.gundam-gcg.com/en/cards/index.php",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size"
+      ],
+      "expected_full_body_sha256": "a50888ca95e35c9e7c7eba56fee2a82667b2d25c547fcf47c9d6240ced7d3283",
+      "actual_full_body_sha256": "ed24498aa3a92bde9e0b5f958763e55b06168c49bb963dbbf9fbddd70c51a1d5",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "gundam-en-us-news-hub.json",
+      "source_url": "https://www.gundam-gcg.com/en/news/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "492b3eed2846b86c43aeebb64fad925b7d2033e5547820878e549b37322ae23e",
+      "actual_full_body_sha256": "c1c7082e1a388924be1347bc198a9c14355730add060ed3549be2cb37f3f47f0",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "gundam-en-us-policy-detail.json",
+      "source_url": "https://www.gundam-gcg.com/en/news/01_279.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "e905fcc2521e976804a2024c0fad5f5a15c1f5251c1faec60ec2c619c0b14d56",
+      "actual_full_body_sha256": "db6d108500db1f59a69b5dab1c47f01c4989eb1bd0423756c6f7636f1c426151",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "file": "gundam-en-us-policy.json",
+      "source_url": "https://www.gundam-gcg.com/en/rules/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "f96f2c431b2370500faee7dcb67e34d644095f0fcfec87ca36501bfed65a9d23",
+      "actual_full_body_sha256": "7fe2a73d99f5be815e18496087b39a9176b39208df6377175eeb57b1de06d627",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "file": "gundam-en-us-product-card-case.json",
+      "source_url": "https://www.gundam-gcg.com/en/products/deck-case02.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "b2f2d9e50eaeec11d92accf4fa816d83b999e7981c9117e7240307c3c59bd589",
+      "actual_full_body_sha256": "ce553cea6c49fb57b55a2cf4db246f2cb30b4f085efb6fb8e799d7e7b2f4d331",
+      "adapter_version": "gundam-en-us@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "gundam-en-us-product-card-case.json",
+      "expected_observations_sha256": "2d8bccd15b4d7cd6fdb33ebf85b5a720c0e675a3da0cada8fa562820a872a82e",
+      "actual_observations_sha256": "2d8bccd15b4d7cd6fdb33ebf85b5a720c0e675a3da0cada8fa562820a872a82e",
+      "observation_count": 1,
+      "request_count": 3
+    },
+    {
+      "file": "gundam-en-us-product-playmat.json",
+      "source_url": "https://www.gundam-gcg.com/en/products/playmat01.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "bbf44a21fc3100808f6cc90557fb9b1dca6145cab04d589fabc9962c52d67f6c",
+      "actual_full_body_sha256": "e122169957f963d40c53e86229c1369fff0ff3fde672c149691ad2208a22d1d4",
+      "adapter_version": "gundam-en-us@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "gundam-en-us-product-playmat.json",
+      "expected_observations_sha256": "f3474a46e91bfdaffacf76b251c7750549575fbd9c8ef2cd5576f3e3d5ea551c",
+      "actual_observations_sha256": "f3474a46e91bfdaffacf76b251c7750549575fbd9c8ef2cd5576f3e3d5ea551c",
+      "observation_count": 1,
+      "request_count": 3
+    },
+    {
+      "file": "gundam-en-us-restructured-card-search.json",
+      "source_url": "https://www.gundam-gcg.com/en/cards/index.php",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "a50888ca95e35c9e7c7eba56fee2a82667b2d25c547fcf47c9d6240ced7d3283",
+      "actual_full_body_sha256": "ed24498aa3a92bde9e0b5f958763e55b06168c49bb963dbbf9fbddd70c51a1d5",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "one-piece-en-block-policy-topic.json",
+      "source_url": "https://en.onepiece-cardgame.com/topics/013.php",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "4b71a77f5cd778a50cd94171cab3ffd55e8f6d208ef74bf6172a86eb1028f4c4",
+      "actual_full_body_sha256": "942ce3cf3c98a75cec1c2787b2f83c3118e7081b21a33cb685e0ded5d39df246",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "file": "one-piece-en-card-list.json",
+      "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569001&freewords=ST01-001",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "93a49866c157de61bf503a81beb0b9951e98f658bf68687e060a4d616eb3872d",
+      "actual_full_body_sha256": "9ad39cdad8993fa3564185d3536dcbd1abbc7c19e5a13b19a30465c8a9c371da",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "one-piece-en-don-rules-hub.json",
+      "source_url": "https://en.onepiece-cardgame.com/rules/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256",
+        "range_end_exclusive"
+      ],
+      "expected_full_body_sha256": "b532c2761fb8621b744a9618f48e1141030b82f77c07ece02e5a00ad3f8414b8",
+      "actual_full_body_sha256": "443c74a9c9e628246aebd87955848e811971cc5df34459200f11efbaf20741d9",
+      "adapter_version": "one-piece-en@6",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "one-piece-en-don-rules-hub.json",
+      "expected_observations_sha256": "0b70c2620b5ff4100c5fca978b23e905905db90c50056a025b75b47c136f62af",
+      "actual_observations_sha256": "0b70c2620b5ff4100c5fca978b23e905905db90c50056a025b75b47c136f62af",
+      "observation_count": 1,
+      "request_count": 0
+    },
+    {
+      "file": "one-piece-en-policy.json",
+      "source_url": "https://en.onepiece-cardgame.com/rules/restriction/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256",
+        "range_end_exclusive",
+        "http_status",
+        "effective_url"
+      ],
+      "expected_full_body_sha256": "4aea56c204bc7b3e49a37e85781dbac23062cb9995572a18ee4f9b91d5ac0cb0",
+      "actual_full_body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "file": "one-piece-en-product-anniversary-set.json",
+      "source_url": "https://en.onepiece-cardgame.com/products/other/3rd_anniversary_set.php",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "d4c325e3fe10e0cc7bf3da3229dea2402087b2b60d49a76a2c01cf91c765280a",
+      "actual_full_body_sha256": "9746cda0e71a4dde34e09333240c88f022c923fae89b80d334f2b733e22a3790",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "one-piece-en-product-booster-stub.json",
+      "source_url": "https://en.onepiece-cardgame.com/products/op17.html",
+      "status": "unchanged",
+      "differences": [],
+      "expected_full_body_sha256": "b2e1c643c4e9b3ec519b370107d53f40bf653c900e70dd1dab4ee01d8e3f7f4c",
+      "actual_full_body_sha256": "b2e1c643c4e9b3ec519b370107d53f40bf653c900e70dd1dab4ee01d8e3f7f4c",
+      "adapter_version": "one-piece-en@6",
+      "category": "unchanged",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+      "baseline_file": "one-piece-en-product-booster-stub.json",
+      "expected_observations_sha256": "0ba971e94b72837331ff776cc1507bf34b3f59032a299fcf17562cb21827e8d5",
+      "actual_observations_sha256": "0ba971e94b72837331ff776cc1507bf34b3f59032a299fcf17562cb21827e8d5",
+      "observation_count": 1,
+      "request_count": 0
+    },
+    {
+      "file": "one-piece-en-product-card-collection.json",
+      "source_url": "https://en.onepiece-cardgame.com/products/card_collection_asl.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "38683e6759993bdc6617e7622209325f0bd53b5e6518c6e6ad98694153b559a0",
+      "actual_full_body_sha256": "48f9c55f2e485122b12ee4d75ee7957efbc1e7979100f3cebf33bb37556bbcf4",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "one-piece-en-product-sleeve.json",
+      "source_url": "https://en.onepiece-cardgame.com/products/sleeve041.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "225c3f1014548ea14a3d34fd2aa2ee68b368c36e104a0a65e7415e380b263d7a",
+      "actual_full_body_sha256": "6b5b2a90932da1897543016f95f8bba5880abe66f52f3d1bb951a2392c7fe109",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "one-piece-en-restructured-discovery.json",
+      "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569116",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "27e169e3345d29cbe60c8e4db87647a16b3adf37de299c5ca64dc3b185a09fe6",
+      "actual_full_body_sha256": "9efff60c30161e3835e998832b2d33784359e710bdf263bad122f18c8d347a7e",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    },
+    {
+      "file": "one-piece-en-rules-hub.json",
+      "source_url": "https://en.onepiece-cardgame.com/rules/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "c9de2076bf785f2a42b94aecdd6fac97540f488ae709e726b216ec0be787e916",
+      "actual_full_body_sha256": "443c74a9c9e628246aebd87955848e811971cc5df34459200f11efbaf20741d9",
+      "category": "unresolved_drift",
+      "actionable": true,
+      "reason": "Original recapture discarded bytes outside the retained range; complete current response unavailable."
+    }
+  ]
+}

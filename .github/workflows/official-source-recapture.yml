@@ -25,6 +25,9 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
+      - run: npm ci
+      - name: Verify recapture report contracts
+        run: node --test acceptance/retained-recapture*.test.mjs
       - name: Verify retained digests and recapture official responses
         run: node scripts/recapture-official-bytes.mjs "$RUNNER_TEMP/official-source-recapture"
       - name: Retain recaptured bytes and drift report
@@ -54,7 +57,7 @@ jobs:
           set -euo pipefail
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           body_file="${RUNNER_TEMP}/recapture-issue.md"
-          printf 'The retained Official Source recapture failed.\n\n- Run: %s\n- Trigger: `%s`\n- Commit: `%s`\n\nDownload the `official-source-recapture` artifact and inspect `report.json`. It distinguishes changed response digests, invalid retained goldens, and fetch failures. Review the publisher output before updating any golden bytes. Close this issue once the scheduled run is green. Cadence and liveness instructions: `acceptance/fixtures/retained-official-source/README.md`.\n' "${run_url}" "${EVENT_NAME}" "${GITHUB_SHA}" > "${body_file}"
+          printf 'The retained Official Source recapture failed.\n\n- Run: %s\n- Trigger: `%s`\n- Commit: `%s`\n\nDownload the `official-source-recapture` artifact and inspect `report.json`. It distinguishes changed adapter observations or discovery, structural failures, cosmetic bytes, unresolved drift, retained-evidence integrity failures, and transport failures. Complete new response bodies are retained beside the exact-range capture records. Review the publisher output before updating any golden bytes. Resolve actionable and unresolved drift, then record a successful default-branch scheduled run before closing; a manual run alone is not scheduled proof. Cadence and liveness instructions: `acceptance/fixtures/retained-official-source/README.md`.\n' "${run_url}" "${EVENT_NAME}" "${GITHUB_SHA}" > "${body_file}"
           existing="$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --label bug --search "\"${TITLE}\" in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)] | .[0].number // empty')"
           if test -n "${existing}"; then
             gh issue comment "${existing}" --repo "${GITHUB_REPOSITORY}" --body-file "${body_file}"
