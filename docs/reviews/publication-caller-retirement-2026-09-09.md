@@ -423,11 +423,15 @@ The complete Errata file ran on Node 22.23.2 at clean
 `0988e2bdb1ab108c126553278e2bcf1d30fba49d`: 21 passed and 4 failed,
 54.00s Vitest / 55.031s harness. The accepted ADR 0015 date-crossing and
 other-game publication case passed in 7.368s. Two failures expose the native
-Printing administration lookup returning 404; two expose absent Erratum
-first/last-observed lifecycle metadata in native public exports. Retained
-Erratum facts and original/current record equality pass. These are unresolved
-oracles, not removed assertions. The coordinator owns the Erratum metadata
-follow-up; this lane owns the native Printing administration read.
+Printing administration lookup returning 404. The other two were initially
+attributed to missing public Erratum lifecycle fields, but independent Spec
+review found a test migration error: the accepted ErratumRecord/exportErratum
+contract never exposes these private history fields. The original private
+Erratum and per-provenance first/last-observed assertions must be restored at an
+exact native retained-evidence seam. Retained Erratum facts and original/current
+record equality pass. The coordinator owns that fixture/private lifecycle
+correction and this lane owns the native Printing administration read. No public
+Erratum schema expansion is authorized by the mistaken test projection.
 
 At the same clean commit, the eighteen migrated Card identity cases ran:
 15 passed and 3 failed, 56.39s Vitest / 57.376s harness; five longitudinal
