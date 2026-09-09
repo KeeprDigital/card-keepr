@@ -26,6 +26,9 @@ import {
 import * as ingestionQueries from "./query-helpers/ingestion";
 import { disableExportTransitionTriggers } from "./query-helpers/maintenance-guards";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import { installWorkflowIsolation } from "./workflow-isolation";
+
+installWorkflowIsolation();
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -300,111 +303,6 @@ test("competing starts fail closed while an identical retry replays its original
   expect(changedFailedReplay.response.status).toBe(409);
   expect(changedFailedReplay.document).toMatchObject({
     code: "idempotency_key_reused",
-  });
-});
-
-test("stale and mismatched approvals leave the candidate unchanged before exact approval publishes", async () => {
-  const started = await startRun("start-approval");
-  const runId = requiredDocumentString(started.document, "id");
-  const digest = requiredDocumentString(started.document, "candidate_digest");
-  const expectedRevision = requiredDocumentString(started.document, "expected_current_revision_id");
-  const attemptedRewrite = await administrationRequest(`/v1/ingestion-runs/${runId}/approval`, {
-    candidate_digest: digest,
-    expected_current_revision_id: expectedRevision,
-    idempotency_key: "approve-rewrite",
-    approval_deadline: "2999-01-01T00:00:00.000Z",
-    candidate_created_at: "1970-01-01T00:00:00.000Z",
-  });
-  expect(attemptedRewrite.response.status).toBe(422);
-  expect(attemptedRewrite.document).toMatchObject({
-    code: "invalid_parameter",
-  });
-  expect((await showRun(runId)).document).toEqual(started.document);
-
-  const staleDigest = await approve(runId, "0".repeat(64), expectedRevision, "approve-stale-digest");
-  expect(staleDigest.response.status).toBe(409);
-  expect(staleDigest.document).toMatchObject({
-    code: "candidate_digest_mismatch",
-  });
-  const staleRevision = await approve(runId, digest, "catrev_stale", "approve-stale-revision");
-  expect(staleRevision.response.status).toBe(409);
-  expect(staleRevision.document).toMatchObject({
-    code: "current_revision_mismatch",
-  });
-  expect((await showRun(runId)).document).toEqual(started.document);
-  const guardedStatus = await administrationRequest("/v1/status");
-  expect(guardedStatus.document).toMatchObject({
-    diagnostics: {
-      catalogue_export_object_count: 0,
-      orphaned_catalogue_export_object_count: 0,
-    },
-  });
-
-  await ingestionQueries
-    .setOperationStateActiveIngestionRunIdForStaleMismatchedApprovalsLeaveCandidateUnchangedBeforeExactApproval(
-      testEnv.CATALOGUE_DB,
-    )
-    .run();
-  const mismatchedIdentity = await approve(runId, digest, expectedRevision, "approve-mismatched-identity");
-  expect(mismatchedIdentity.response.status).toBe(409);
-  expect(mismatchedIdentity.document).toMatchObject({
-    code: "run_not_active",
-  });
-  await ingestionQueries
-    .setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-      testEnv.CATALOGUE_DB,
-    )
-    .bind(runId)
-    .run();
-  expect((await showRun(runId)).document).toEqual(started.document);
-
-  const published = await approve(runId, digest, expectedRevision, "approve-exact");
-  expect(published.response.status).toBe(200);
-  expect(published.document).toMatchObject({
-    id: runId,
-    state: "published",
-    publication_outcome: "revision",
-    approval_history: [
-      {
-        action: "approved",
-        candidate_digest: digest,
-        expected_current_revision_id: expectedRevision,
-      },
-    ],
-    progress: {
-      current_stage: "published",
-    },
-    failure_code: null,
-  });
-  expect(published.document.resulting_revision_id).toBe(published.document.published_revision_id);
-
-  const replay = await approve(runId, digest, expectedRevision, "approve-exact");
-  expect(replay.document).toEqual(published.document);
-  const changedReplay = await approve(runId, "f".repeat(64), expectedRevision, "approve-exact");
-  expect(changedReplay.response.status).toBe(409);
-  expect(changedReplay.document).toMatchObject({
-    code: "idempotency_key_reused",
-  });
-});
-
-test("identical concurrent approvals replay one original publication result", async () => {
-  const started = await startRun("start-concurrent-approval");
-  const runId = requiredDocumentString(started.document, "id");
-  const digest = requiredDocumentString(started.document, "candidate_digest");
-  const expectedRevision = requiredDocumentString(started.document, "expected_current_revision_id");
-  const approvals = await Promise.all([
-    approve(runId, digest, expectedRevision, "approve-concurrently"),
-    approve(runId, digest, expectedRevision, "approve-concurrently"),
-  ]);
-  expect(approvals.every(({ response }) => [200, 202].includes(response.status))).toBe(true);
-  const original = approvals.find(({ response }) => response.status === 200);
-  expect(original).toBeDefined();
-  const replay = await approve(runId, digest, expectedRevision, "approve-concurrently");
-  expect(replay.response.status).toBe(200);
-  expect(replay.document).toEqual(original?.document);
-  expect(replay.document).toMatchObject({
-    id: runId,
-    state: "published",
   });
 });
 

@@ -159,3 +159,20 @@ committed at `3dccd78a` with typecheck/Biome checks, but their runtime cases hav
 not run. Remaining caller migrations, complete native/provider coverage, final
 independent reviews and full validation remain open. The host runtime lease was
 returned after verifying no Workers/Vitest process remained.
+
+## Native caller migration ledger
+
+The old stale/mismatched-new-approval and concurrent-new-approval lifecycle cases
+move to `publication-caller-retirement.spec.ts`. They now supply the actual sealed
+candidate ID, manifest, game predecessor and generation. The owner boundary
+rejects extra deadline fields and wrong manifest/predecessor/generation without
+changing the candidate; simultaneous exact approvals retain one original 202
+acknowledgement, and explicit dispatch publishes that exact intent. Historical
+replay remains separately exercised in lifecycle tests. These additional native
+assertions are prepared after the four-case green checkpoint and await rerun.
+
+`reconciliation-missing-images.spec.ts` now prepares an actual native candidate
+from retained collection, inspects its bounded records and exact warnings, checks
+the native preparation's retained warning checkpoint, and uses native approval.
+It retains every tolerated image-failure scenario and the 32-warning continuation
+assertions. It has typecheck/Biome validation; runtime is pending.

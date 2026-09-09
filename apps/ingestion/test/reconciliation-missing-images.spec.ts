@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import {
   appendDiscoveredEvidenceRequests,
@@ -6,12 +7,11 @@ import {
   requiredEvidenceRun,
 } from "../../../src/catalogue/source-evidence";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import {
-  approve,
-  get,
   installReconciliationSuite,
   postFixtureEvidence,
-  reconcile,
   requiredString,
   testEnv,
   waitForRunState,
@@ -86,12 +86,11 @@ for (const scenario of [
 
     // The failed image is not missing catalogue facts: the candidate carries
     // the cards and an explicit, safe record of the Printing Image gap.
-    const reconciled = await reconcile(id);
-    if (reconciled.response.status !== 200) {
-      throw new Error(JSON.stringify(reconciled.document));
-    }
-    expect(reconciled.document.cards).toHaveLength(1);
-    expect(reconciled.document.warnings).toContainEqual({
+    const candidate = await prepareNativeCandidate(id, "one-piece", "catrev_spine_000", `${scenario.key}-candidate`);
+    const records = await nativeCandidateRecords(String(candidate.id));
+    expect(records.cards).toHaveLength(1);
+    const warnings = [...(records.warnings ?? []), ...(records.shared_warnings ?? [])];
+    expect(warnings).toContainEqual({
       code: "printing_image_unavailable",
       request_id: image.request_id,
       source_url: scenario.url,
@@ -100,19 +99,16 @@ for (const scenario of [
       detail: expect.any(String),
     });
     if (imageCount === 32) {
-      expect(
-        (reconciled.document.warnings as { code: string }[]).filter(
-          ({ code }) => code === "printing_image_unavailable",
-        ),
-      ).toHaveLength(32);
-      const status = (await get(`/v1/ingestion-runs/${id}/reconciliation`)).document;
-      const checkpoint = (status.checkpoints as { phase: string; ordinal: number; cursor: unknown }[]).find(
-        ({ phase }) => phase === "initial_warnings",
+      expect(warnings.filter(({ code }) => code === "printing_image_unavailable")).toHaveLength(32);
+      const checkpoint = await reconciliationCheckpoint(
+        catalogueStore(testEnv.CATALOGUE_DB),
+        String(candidate.preparation_id),
+        "initial_warnings",
       );
-      expect(checkpoint).toMatchObject({ cursor: { complete: true, processedWarnings: 32 } });
+      expect(checkpoint).toMatchObject({ value: { complete: true, processedWarnings: 32 } });
       expect(checkpoint!.ordinal).toBeGreaterThanOrEqual(3);
     }
-    const published = await approve(reconciled.document);
+    const published = await approveNativeCandidate(candidate, `${scenario.key}-publication`);
     expect(published.response.status).toBe(200);
   });
 }
