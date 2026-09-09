@@ -99,3 +99,43 @@ made that the entire local and hosted failure sets are equivalent.
 - `apps/ingestion/test/reconciliation-progress.spec.ts > a published catalogue larger than 1 MiB is streamed into the next candidate without an aggregate prior-payload read`
 - `apps/ingestion/test/reconciliation-progress.spec.ts > admission selection is frozen without an unbounded operation-start write`
 
+
+## Staging cleanup clock regression
+
+On the reconciled #272 runtime at provider commit
+`0b4b41ddc6be9501a6e810e83c3e6955fba55741`, the single abandoned-orphan
+cleanup test reproduced its 409-versus-202 failure in 2.18 seconds. A temporary
+probe showed SQLite's immutable `terminal_at` was
+`2026-09-09T09:02:58.845Z`, while the fixture requested cleanup at
+`2026-10-09T00:00:00.000Z`: less than 30 days later. The API correctly returned
+`evidence_cleanup_not_eligible`. The other four staging failures depended on
+this same fixture, sometimes surfacing later as missing cleanup intents.
+
+The fixture now reads the actual retained terminal instant and uses the
+existing request-clock seam to select the exact 30-day eligibility boundary.
+The orphan test also asserts rejection one millisecond before that boundary.
+Production clock ownership and retention guards are unchanged. All 23 tests
+in `evidence-cleanup.spec.ts` pass in 10.00 seconds, and typechecking passes.
+The temporary probe has been removed. Logs are retained under
+`/tmp/card-keepr-launch-20260909/cleanup-clock-{red,probe,green}.log` and
+`cleanup-clock-typecheck.log` on the validation host.
+
+## Suite concurrency investigation
+
+The unmodified reconciled provider's complete local ingestion selection failed
+17 of 753 tests across 88 files in 427.90 seconds (3,569.59 seconds summed test
+time). Apart from the five clock failures above, failures included timeouts,
+incomplete Workflow polling and an immutable evidence collision after earlier
+tests had timed out. Hosted Node 22 results are tracked separately in the
+#272 toolchain ledger; a matching test name does not establish a matching cause.
+
+A controlled serial comparison retained normal per-file storage isolation and
+all existing timeouts, changing only the Vitest worker count to one. The four
+files `reconciliation-curated-lookup`, `publication-preparation`,
+`identity-corrections` and `reconciliation-workflow-binding` passed all 49 tests
+in 99.98 seconds (95.45 seconds summed test time). The log is
+`/tmp/card-keepr-launch-20260909/reliability-serial-comparison.log`.
+This supports investigating host contention and timeout cascades; it does not
+establish that all suite failures are resolved. Operational error logs from
+intentional fault paths and runtime teardown remain visible in the retained
+log; the process exited normally with status zero.
