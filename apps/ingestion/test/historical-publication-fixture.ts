@@ -16,7 +16,9 @@ import { get, post, requiredString, testEnv } from "./reconciliation-helpers";
 
 /** Seed only retained historical materializers; current publication fixtures must use native approval. */
 export async function recoverHistoricalPublication(runId: string, approvalKey: string) {
-  const shown = (await get(`/v1/ingestion-runs/${runId}`)).document;
+  const inspection = await get(`/v1/ingestion-runs/${runId}/candidate`);
+  expect(inspection.response.status, JSON.stringify(inspection.document)).toBe(200);
+  const shown = inspection.document;
   const digest = requiredString(shown, "candidate_digest");
   const predecessor = requiredString(shown, "expected_current_revision_id");
   const retained = await readReconciliationPayloadChunks(testEnv.CATALOGUE_DB)
