@@ -22,6 +22,7 @@ export async function preparePublicLifecycle(
     candidate.supported_game,
     kind,
     id,
+    candidate.preparation_id,
   ).first<PublicLifecycleFact>();
   let observed = false;
   let withdrawal: Record<string, unknown> | null = null;

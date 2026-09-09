@@ -1,0 +1,11 @@
+# Native identity correction CLI proof
+
+The owner CLI acceptance journey now begins with retained collection and the native whole-game candidate protocol. It completely inspects the candidate, prepares publication artifacts, approves the exact manifest and predecessor, and waits for a real verified backup. The existing transport exports the actual local D1 SQL and verifies an independent SQLite restore. The original entity admissions, reviewed Card merge and split, append-only Printing reassignment, authenticated consumer replacement choice, hidden owner evidence and conditional response assertions remain in place.
+
+The retired aggregate approval baseline failed in hosted run `34346618971` at `15bf19e3` with `run_approval_retired` after 15.829 seconds. Code `e7d2fe30a1b11c3f3b8f8383b72149912e29d173`, against fixed base `45ccf76c7b34e112fb7893ae7b919e27599af0ef`, passed independent Standards and Spec reviews with no findings. Full typechecking, syntax, focused lint/format and whitespace checks passed.
+
+The exact clean code commit passed the complete acceptance file: **1/1 tests**, naturally in **178.729 seconds** (178.186 seconds for the owner journey) on Node 22.23.2. No test was interrupted, cancelled or skipped. Its existing 30 requests/minute administration guard remains in force; the shared request queue uses 2500 milliseconds across CLI commands, inspection, polling and direct fixture setup. The 900-second outer harness bound covers the finite paced owner journey and its existing candidate and publication/backup phase deadlines. No production limit or phase deadline changed.
+
+The [manifest](evidence/identity-corrections-cli-20260909/manifest.json) records the exact command, clean commit, timestamps, outcome and SHA-256 hashes of the complete [runtime log](evidence/identity-corrections-cli-20260909/native-cli-e7d2fe30.log.gz). Failure artifacts would be retained; this successful fixture disposed its own temporary state normally. The Node experimental SQLite warning is retained in the log.
+
+This is PR #291's bounded #274 caller proof. It does not establish that the remaining publication callers, complete integration suite, or private-launch acceptance are fulfilled. No live operation was performed.

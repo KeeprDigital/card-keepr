@@ -2202,6 +2202,16 @@ async function semanticDraftDocument(draft: ReconciliationCandidateState, metada
     "identity_corrections",
   ] as const) {
     if (!(kind in document)) continue;
+    if (kind === "identity_corrections") {
+      // Native predecessors retain an empty collection. Its absence and []
+      // express the same facts; keep the historical empty canonical form.
+      const corrections = draft.values(kind);
+      try {
+        if ((await corrections.next()).done) continue;
+      } finally {
+        await corrections.return(undefined);
+      }
+    }
     result[kind] = canonicalRecordSource(async function* (after) {
       for await (const entity of draft.values(kind, after)) {
         const value = semanticCatalogueCandidate({ ...shell, [kind]: [entity] });
@@ -2216,9 +2226,9 @@ function semanticCatalogueCandidate(candidate: CatalogueCandidate): Record<strin
   return {
     contract: candidate.contract,
     selected_games: candidate.selected_games,
-    ...(candidate.identity_corrections ? { identity_corrections: candidate.identity_corrections } : {}),
+    ...(candidate.identity_corrections?.length ? { identity_corrections: candidate.identity_corrections } : {}),
     cards: candidate.cards,
-    printings: candidate.printings,
+    printings: candidate.printings.map(({ locator_evidence: _locators, ...printing }) => printing),
     printing_images: (candidate.printing_images ?? []).map((image) => ({
       id: image.id,
       printing_id: image.printing_id,

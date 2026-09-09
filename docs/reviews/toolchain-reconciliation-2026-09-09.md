@@ -91,6 +91,163 @@ Wrangler/Miniflare releases is rejected. `npm audit --omit=dev` reports zero
 production vulnerabilities. This is an audit result, not a claim of exploitable
 production exposure or a completely clean development dependency tree.
 
-Validation is in progress. The final evidence below will name the implementation
-commit, complete suite results, and any unresolved #271 failures; a successful
-focused check will not be presented as a successful complete suite.
+Implementation commit: `0b4b41ddc6be9501a6e810e83c3e6955fba55741`.
+The complete default selection runs its phases sequentially, including later
+phases after an earlier failure. The host has one heavy-test lease. No runtime
+configuration, test assertion, or per-test timeout changes during this run.
+
+| Check | Result |
+| --- | --- |
+| Lockfile installation and dependency tree | Passed; runtime dependency lock entries unchanged. |
+| Type generation/check, typecheck | Passed on Node 26.3.0; typecheck also passed on Node 22.23.2. |
+| Lint, changed-file formatting, whitespace | Passed; 30 existing warning and 24 info diagnostics remain. |
+| Catalogue cycles/boundary, document validators | Passed. |
+| Both deployment dry runs | Passed; no deployment. |
+| Focused API health / source intake | 9/9 and 13/13 passed. |
+| Focused native validation / isolate metrics / combined CLI health | 2/2 and 1/1 passed after the compatibility fixes. |
+| Complete domain | 246/246, 44 files, 3.251 seconds including command startup. |
+| Complete API | 95/95, 13 files, 13.134 seconds including command startup. |
+| Complete ingestion | 736 passed, 17 failed, 88 files, 428.981 seconds; exit 1, no interruption. |
+| Complete acceptance | 343 passed, 2 failed, 1 opt-in skip across all 346 tests and 68 files; 2,623.437 seconds; exit 1, no interruption. |
+
+The outer validation bounds are 5 minutes for domain, 20 for API (the combined
+checks job), 36 for ingestion (three 12-minute CI shards), and 90 for the serial
+acceptance selection. The acceptance bound includes the prior 2,128-second partial
+run and the retained Riftbound scenario's four separate 600-second waits plus
+its 120-second publication/backup waits. No individual Riftbound scenario is
+stopped at the previous 10m58s cutoff. Exceeding a bound is an interrupted check,
+never a passing assertion. Existing per-request and per-test bounds remain intact.
+
+Raw local logs, exact command arrays, timing and exit status are under
+`/tmp/card-keepr-launch-20260909/issue-272-full`; focused/static logs use the
+`issue-272-*` prefix in the parent directory. These local files are diagnostic
+artifacts, not durable Actions evidence. PR #279's CI is separate and remains
+subject to all required checks.
+The completed phase logs, command metadata and failure inventory are hashed in
+`issue-272-full/validation-manifest.json` beside those local artifacts.
+
+## Complete ingestion failure ledger
+
+Ten failures have the same test names as the original cleanup ledger; seven
+other names failed in this suite context. Matching names alone do not establish
+an identical cause, and original failures absent here are not certified fixed.
+The coordinator owns classification and regression fixes in #271.
+
+- `apps/ingestion/test/evidence-cleanup.spec.ts`: owner reclaims a positively inventoried abandoned preparation orphan without traversing shared roots. Same name in the original baseline.
+- `apps/ingestion/test/evidence-cleanup.spec.ts`: a conclusively deleted staging key can hold the same bytes for a new preparation; old delete tickets cannot cross incarnations. Same name in the original baseline.
+- `apps/ingestion/test/evidence-cleanup.spec.ts`: an ambiguous staging deletion keeps its ticket open and prevents reuse despite another HEAD showing absence. Same name in the original baseline.
+- `apps/ingestion/test/evidence-cleanup.spec.ts`: an unrelated staging key progresses while a prior delete outcome remains unknown. Same name in the original baseline.
+- `apps/ingestion/test/evidence-cleanup.spec.ts`: concurrent conflicting staging starts cannot silently share an idempotency key. Same name in the original baseline.
+- `apps/ingestion/test/game-reconciliation-operations.spec.ts`: a native source change retains reconfirmable curated diagnostics without failing the collection. Same name in the original baseline.
+- `apps/ingestion/test/identity-corrections.spec.ts`: reviewed known-number merge preserves a source Printing through corrected evidence and subsequent refresh. Additional failure in this suite context.
+- `apps/ingestion/test/identity-corrections.spec.ts`: new Printing discovered after a Card split can receive an append-only owner assignment. Additional failure in this suite context.
+- `apps/ingestion/test/identity-corrections.spec.ts`: reviewed identity application prepare through durable bounded groups. Same name in the original baseline.
+- `apps/ingestion/test/identity-corrections.spec.ts`: reviewed identity lookup prepare through durable bounded groups. Same name in the original baseline.
+- `apps/ingestion/test/reconciliation-card-identity.spec.ts`: Gundam EN-ASIA and EN-US evidence converges on one Printing while substantive conflict blocks. Additional failure in this suite context.
+- `apps/ingestion/test/reconciliation-card-identity.spec.ts`: historical Gundam locators survive disappearance without retaining stale Card authority. Additional failure in this suite context.
+- `apps/ingestion/test/reconciliation-export-and-repair.spec.ts`: publication rejects an over-budget candidate before writing any immutable object. Additional failure in this suite context.
+- `apps/ingestion/test/reconciliation-progress.spec.ts`: a published catalogue larger than 1 MiB is streamed into the next candidate without an aggregate prior-payload read. Additional failure in this suite context.
+- `apps/ingestion/test/reconciliation-provenance-locators.spec.ts`: locator variant evolution preserves effective-dated suffix history across disappearance and reactivation. Additional failure in this suite context.
+- `apps/ingestion/test/reconciliation-workflow-binding.spec.ts`: parsed observation count warnings use the normative absolute threshold. Same name in the original baseline.
+- `apps/ingestion/test/source-refresh-publication.spec.ts`: unexplained substantial coverage loss blocks completeness rather than becoming ordinary disappearance. Same name in the original baseline.
+
+The observed symptoms are five cleanup-guard/failed-intent consequences, seven
+test timeouts, one immutable evidence object collision, three reconciliation
+polling deadlines, and one source run still parsing. The #271 lane must
+reproduce these in context; the toolchain upgrade does not resolve them by
+itself. Stress remains the separate corrected `test:stress` selection under #253.
+
+## Complete local acceptance evidence
+
+The serial selection finished naturally at implementation head `0b4b41dd`,
+from `2026-09-09T09:10:51.041884Z` to `2026-09-09T09:54:34.511011Z`.
+Node reported 2,623.349 seconds; the command including startup took 2,623.437
+seconds. There were zero cancellations. The one skipped test is the separately
+opted-in synthetic Product capacity probe; this is not a capacity measurement.
+
+Both failing tests returned an administration HTTP 429:
+
+- `composed-recovery.test.mjs`: native owner publication Workflow verifies recovery with retained composition, 46.148 seconds. `waitBackup` failed at line 857, called from `proveNativeComposition` at line 907. The runtime failure log and retained state remain at `/var/folders/h9/r2hp35sx2bs4v69vcsxsls900000gn/T/card-keepr-native-preparation-r3nK4i/failure-runtime.log`.
+- `product-catalogue.test.mjs`: the CLI publishes separated Product catalogue data consumed through authenticated HTTP, 56.740 seconds. `inspectNativeCollection` received 429 instead of 200 through `native-catalogue-runtime.mjs:96`, called at `product-catalogue.test.mjs:495`. This fixture's existing unconditional teardown removes its temporary state; the complete failure stack is retained in the suite log. No unpublished runtime state is claimed as available evidence.
+
+The #271 lane owns reproduction and request-pacing fixes. These final stacks
+establish the local failures' symptoms; they do not establish that the remote
+Product candidate-preparation failure has the same cause.
+
+The longest retained scenarios completed without relaxing their deadlines:
+
+| Scenario | Passed duration |
+| --- | --- |
+| Full retained Riot inventory, Errata and Products, publication and actual SQL restore | 1,151.255 seconds |
+| Retained P-001 two-source One Piece journey | 663.772 seconds |
+| Native One Piece publication and backup | 119.069 seconds |
+| Five-game current-plus-two backup and actual SQL import | 65.577 seconds |
+| Bounded Riftbound actual SQL restore | 24.797 seconds |
+| Retained source-evidence CLI journey | 17.779 seconds |
+
+The full Riot scenario used a fresh retained collection: 14 initial snapshots,
+15 journey snapshots, 1,260 observations, 1,189 inventory records, 31 initial
+Errata observations and nine Products. It included six visually reviewed
+Printings and 30 additional Card-only admissions, with 1,183 intentional
+unretained-image failures. Its disk preflight reported 15,154,978,816 bytes free.
+This proves the existing bounded functional journey, not full-image coverage or
+production capacity. All three planned publications and backups were verified,
+including restored consumer and export checks.
+
+The host lease was released only after the driver exited and no acceptance
+process or workerd remained. The complete local selection is still failed;
+independent reviews and individual passing journeys do not remove that gate.
+
+## Pull request CI
+
+[PR #279 run 34331767421](https://github.com/KeeprDigital/card-keepr/actions/runs/34331767421)
+completed naturally against implementation head `0b4b41dd` with an overall failed
+result. Its Node 22 Linux runner results are distinct from the serial local run.
+Lint, domain tests and the combined typecheck, generation, boundary, document,
+API and deployment-dry-run checks passed.
+
+| CI selection | Result | Test duration |
+| --- | --- | --- |
+| Ingestion shard 1 | 246 passed, 7 failed | 343.89 seconds |
+| Ingestion shard 2 | 242 passed, 7 failed | 457.17 seconds |
+| Ingestion shard 3 | 250 passed, 1 failed | 489.64 seconds |
+| Acceptance shard 1 | 109 passed, 1 opt-in skip | 189.233 seconds |
+| Acceptance shard 2 | 75 passed, 5 failed | 1,048.454 seconds |
+| Acceptance shard 3 | 156 passed | 1,018.429 seconds |
+
+The complete CI ingestion selection therefore reports 738 passed and 15 failed;
+acceptance reports 340 passed, 5 failed and 1 opt-in skip. No job was cancelled.
+The acceptance shard runner uses Node's default file concurrency, while the
+local complete selection explicitly runs one file at a time. These are separate
+suite contexts, not interchangeable green/red comparisons.
+
+All five acceptance failures were in shard 2:
+
+- `one-piece-catalogue.test.mjs`: backup remained `exporting` at its existing polling deadline; runtime logs include a broken pipe, cancelled requests and a D1 operation failure.
+- `product-catalogue.test.mjs`: game candidates remained `preparing` at the existing polling deadline.
+- `publication-preparation.test.mjs`: the native artifact preparation assertion failed after 46.578 seconds.
+- `riftbound-catalogue.test.mjs`: candidate preparation reached its existing polling deadline after 960.579 seconds for the scenario. This was a natural failure, not the earlier coordinator interruption.
+- `source-evidence-cli.test.mjs`: retained evidence reached `awaiting_approval`, but its parent Workflow remained `running` at the existing polling deadline.
+
+Raw job logs are retained locally as
+`/tmp/card-keepr-launch-20260909/issue-272-ci-{ingestion,acceptance}-{1,2,3}.log`.
+The linked Actions run is the durable evidence. Cause classification and fixes
+remain with #271; this result does not certify the upgrade or the release green.
+
+## Independent review
+
+Two read-only review axes used fixed base
+`a14a803434dcc7bb150802dad3476989d0f61355` and implementation head
+`0b4b41ddc6be9501a6e810e83c3e6955fba55741`.
+
+### Standards
+
+The independent source-recapture agent reported zero hard documented-standard
+violations and zero actionable smells. The review covered the scoped package,
+generated-type and acceptance compatibility changes against the repository rules.
+
+### Spec
+
+The independent fixture/census agent reported zero code findings against #272.
+The complete-suite acceptance gate was explicitly still pending; the review did
+not call unresolved suite failures green or authorize integration without checks.

@@ -14,8 +14,12 @@ const files = (await readdir(resolve(root, "acceptance")))
   .filter((name) => name.endsWith(".test.mjs") && smoke.has(name) === (tier === "smoke"))
   .sort();
 console.log(`${tier}: ${files.join(" ")}`);
-const child = spawn(process.execPath, ["--test", ...files.map((name) => `acceptance/${name}`)], {
-  cwd: root,
-  stdio: "inherit",
-});
+const child = spawn(
+  process.execPath,
+  ["--test", "--test-concurrency=1", ...files.map((name) => `acceptance/${name}`)],
+  {
+    cwd: root,
+    stdio: "inherit",
+  },
+);
 child.once("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));

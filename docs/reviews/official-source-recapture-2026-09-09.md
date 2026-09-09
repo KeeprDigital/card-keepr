@@ -216,3 +216,116 @@ an exhaustive before/after comparison verifies all 68 changed outputs remove
 exactly one root-URL detail request, with all parse results and every other
 request identical. Top-level raw captures remain unchanged. The first full
 suite correctly failed against those historical hashes before this audit.
+
+## Reviewed monitoring selections
+
+After the source corrections above, twenty complete captured responses are
+selected in `monitoring/baselines.json`; none of the top-level regression bytes
+is overwritten. Its per-file digest, URL, retrieval time and review reason bind
+each selection to the complete September response in `current-capture.tar.gz`.
+`reviewed-semantic-changes.json` retains per-capture Card, Printing and Product
+comparison counts/digests, changed Product catalogues and complete request
+additions/removals using the corrected current adapters. Exact sidecar changes
+remain in the original report and full raw evidence. These selections accept
+actual publisher changes for future monitoring; they do not prove image-byte
+identity, infer new Printings, or establish enabled-source readiness by themselves.
+
+| Captures | Reviewed official evidence and decision |
+| --- | --- |
+| Four Digimon card leaves: appmon, BT01, promo, related QA | Respectively 1, 24, 19 and 5 Card/Printing facts remain identical. Category `522038` and `/images/products/pack/ver26/thumb.png` are added in raw navigation. Accept the exact discovery additions. |
+| Digimon root | The same category is present in the source; summary count changes 98 → 99, with new publication links and image navigation. No card facts are inferred at the root. |
+| Digimon Gift Box and theme booster | Their Product/Release facts remain identical. Navigation adds Gallantmon/Imperialdramon sleeves, WC26–27 playmat and Scramble premium collection; 17 existing image queries change `260604` → `260818`. Accept navigation evidence without asserting newly discovered detail contents. |
+| Three Fusion Product details: starter, story and winter | Product/Release facts remain identical. FB11 `01_422.html` is added; FB08 `01_294.html` is replaced where it appeared in navigation. |
+| Fusion card root | All 172 listing observations retain their Product catalogue. Raw category `583011` adds FB11 discovery; corresponding source links change. |
+| Fusion products hub, page2 and starter tag | ST01 moves to AVAILABLE NOW with its unchanged 2026-08-21 date. Raw upcoming entries add Broly/Vegeta sleeves (accessories), PLAYMAT & CARD SET Limited Edition 02 and Premium Card Collection 03 (Card-bearing Products). The literal `.` dates remain unknown, with raw evidence retained. Older FB07/FB08 and other entries move between pages. Product pagination remains followed, so a page move is not a Product deletion. |
+| Gundam GD02-016 detail | Card/Printing facts are identical; image query changes `260710` → `260818`. Accept the new evidence-bearing image request without inferring image equality or a new Printing. |
+| Gundam GD02 complete listing | Establish the first complete monitoring baseline: 187 detail requests and 188 image requests are now retained. The earlier partial response cannot prove whole-response equivalence; this historical limitation remains explicit in the comparison artifact. The registered Products root is no longer scheduled under an invalid detail role. |
+| Gundam errata listing | Product facts and Errata article discovery remain unchanged. Three collaboration thumbnail query tokens and source navigation ordering/labels change. Accept these exact source sidecars and requests. |
+| Gundam GD05 Product | Product/Release facts and discovery remain unchanged. Raw Rarity adds `138+10 Card Types`, with 50 Common, 36 Uncommon, 32 Rare, 12 Legend Rare, 8 Special, 2 Token and 8 Special EXResource. Preserve this as optional source evidence. |
+| Two One Piece card lists | Respectively 1 and 155 Card/Printing facts remain identical. Image queries change `260731` → `260828`; raw Recording `569117` is added to discovery. No new Printing is inferred from an image URL change. |
+
+Replaying the preserved September capture against these reviewed baselines is
+successful: 21 unchanged, 29 cosmetic and 10 out of scope; zero semantic,
+structural, unresolved, transport or integrity failures. Replaying without the
+explicit reviewed-baseline option still reports 19 semantic and one unresolved
+capture, preserving the old comparison and Gundam limitation. A changed baseline
+body, incomplete capture or digest/URL mismatch fails as an integrity error.
+
+Independent review of `6a258fb6` → `92ce2549` is complete on both axes: coordinator
+Spec review and toolchain Standards review each found no actionable findings,
+independently verified four retained complete body digests and checked the
+Fusion-only policy and both exact Gundam root URLs. These reviews do not assert
+that the separate monitoring-baseline commit or required future schedule passed.
+
+## Repeated capture and reviewed display equivalence
+
+A fresh complete manual recapture after baseline selection exited 1, reporting
+33 cosmetic, 4 semantic, 13 unchanged and 10 excluded captures. This failed run
+is retained as `fresh-capture.tar.gz` and `fresh-before-cosmetic-review.json`.
+It exposed recurring display differences rather than a new publisher Card or
+Product fact. The four complete repeat responses are also retained individually
+under `history/2026-09-09/cosmetic-repeat/` for focused regression checks.
+
+The three Fusion Product pages reorder complete `prpductListItem cardCol` entries
+within COMING SOON. This changes raw observation order, sidecar publication-link
+order and the generic last-seen MSRP aggregate, while each complete item retains
+its contents and status section. The comparison-only rule sorts exact complete
+item bodies only inside the exact `prpductList` within each recognized AVAILABLE
+NOW or COMING SOON section, then invokes the current adapter again. It neither
+moves an item across statuses nor drops an item, field, value or unknown markup.
+Unsupported list structure receives no equivalence. This rule is limited to the
+three reviewed Fusion Product captures.
+
+The Gundam errata page also regenerates a 32-hex `?_=` token on three decorative
+collaboration thumbnails. Only those three exact HTTPS hostname/path pairs and
+that exact single-query shape receive a comparison-only stable token. Every
+observation and every other request remains exact; in particular actual Printing
+Image URLs, changed paths and added query parameters remain actionable.
+
+Both original raw responses must parse and discover successfully before either
+rule is considered. Reports retain original body/output digests, changed paths
+and values, with a separate `cosmetic_equivalence_rule`; the original evidence
+is never rewritten. Exceptions during comparison leave the drift actionable.
+The coordinator explicitly approved these narrow rules after reviewing the
+repeated-capture findings. They improve the initial deliberately exact monitor
+without turning unreviewed fields into ignored differences.
+
+Reassessment of that same fresh artifact now passes: 37 cosmetic, 13 unchanged,
+10 excluded and no actionable failures (`fresh-reviewed-assessment.json`). Node
+regressions cover all four real repeat captures and prove changed Product names,
+Release dates, MSRP content, movement across status sections, thumbnail paths,
+extra query parameters, actual Printing Image query values, Card facts and
+structural rejection remain actionable. The preceding failed fresh run remains
+failed evidence; replay success is not claimed as a new network or scheduled run.
+
+Fresh archive SHA-256:
+`e76a43a83bb3447a523f5cabc1f967e20d3ac27eaa834c8777b69b6d906912da`.
+Final focused validation passes 14 Node recapture tests. Most recent full domain
+validation passes 46 files / 252 tests and typecheck; those production files
+have not changed since. No heavy runtime test or live environment operation ran
+in this lane. Full runtime validation and integration remain coordinator-owned.
+
+## Reviewed hosted manual proof
+
+Both independent reviews of `92ce2549` →
+`afbd4495baeb86874eb3a481392c6a3b380dc40c` are clear: coordinator Spec and toolchain
+Standards reported zero actionable findings. The Spec review independently
+matched all twenty baseline bodies (2,091,639 bytes) to their original complete
+capture artifact and checked URL, full range and digest integrity. Both reviewed
+the limited cosmetic rules, raw-first parsing and negative contract cases.
+
+After those reviews, manual workflow run
+[34335244239](https://github.com/KeeprDigital/card-keepr/actions/runs/34335244239)
+succeeded at exact commit `afbd4495baeb86874eb3a481392c6a3b380dc40c`. Locked install,
+14 recapture contracts, actual network acquisition and artifact upload all pass.
+The hosted report records 37 cosmetic, 13 unchanged and 10 out of scope, with no
+actionable failures. Its complete artifact, report and GitHub run/job metadata
+are retained as `manual-run-34335244239.tar.gz`,
+`manual-run-34335244239-report.json` and `manual-run-34335244239.json`.
+Archive SHA-256:
+`453cb1581a2874a58f0132023115f3c849644bb28b4e9d1237977d0e77b566a3`.
+
+This is `workflow_dispatch` on the reviewed feature branch, not `schedule` on the
+default branch. #267 remains open until integration checks, the actual scheduled
+run and enabled-source convergence through #240 meet its acceptance. The weekly
+Tuesday 04:23 UTC schedule was not changed or simulated to manufacture that proof.

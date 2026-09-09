@@ -120,3 +120,64 @@ test("shipped CLI, native reads and administration polls use the same queue", as
   for (let i = 1; i < arrivals.length; i++)
     assert.ok(arrivals[i].at - arrivals[i - 1].at >= 45, JSON.stringify(arrivals));
 });
+
+test("a CLI mutation paces its confirmation and write before the next administration poll", async (t) => {
+  const { createServer } = await import("node:http");
+  const { runCli, administrationDocument } = await import("./helpers/acceptance-runtime.mjs");
+  const arrivals = [];
+  const server = createServer((request, response) => {
+    arrivals.push({ path: new URL(request.url, "http://fixture.invalid").pathname, at: performance.now() });
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(
+      JSON.stringify(
+        request.url.startsWith("/v1/status")
+          ? { resolved_target: { confirmation: "synthetic-confirmation" } }
+          : { code: "curated_revision_created" },
+      ),
+    );
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const env = {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${server.address().port}`,
+    KEEPR_ADMINISTRATION_KEY: "synthetic-queue-key",
+    KEEPR_NATIVE_REQUEST_INTERVAL_MS: "80",
+  };
+  const [cli] = await Promise.all([
+    runCli(
+      [
+        "curated-revision",
+        "create",
+        "--proposal",
+        "-",
+        "--proposal-digest",
+        "synthetic-digest",
+        "--expected-current-revision",
+        "catrev_synthetic",
+        "--idempotency-key",
+        "synthetic-create",
+        "--environment",
+        "production",
+        "--confirm",
+        "synthetic-confirmation",
+        "--yes",
+        "--secrets-stdin-fd",
+        "3",
+        "--json",
+      ],
+      env,
+      {
+        secrets: { administration_key: "synthetic-queue-key" },
+        stdin: JSON.stringify({ game: "one-piece", target: {} }),
+      },
+    ),
+    administrationDocument("/v1/after-mutation", env),
+  ]);
+  assert.equal(cli.code, 0, cli.stdout + cli.stderr);
+  assert.deepEqual(
+    arrivals.map(({ path }) => path),
+    ["/v1/status", "/admin/v1/curated-revisions", "/v1/after-mutation"],
+  );
+  for (let i = 1; i < arrivals.length; i++)
+    assert.ok(arrivals[i].at - arrivals[i - 1].at >= 75, JSON.stringify(arrivals));
+});
