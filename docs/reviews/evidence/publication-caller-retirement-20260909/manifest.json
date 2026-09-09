@@ -28,6 +28,106 @@
       "duration_seconds": 24.09,
       "interrupted": false,
       "notes": "Historical no-write/replay/recovery/cleanup and first native publication guards pass. Second native publication remains waiting_backup after15s because actual Workflow restore check throws Restored composition snapshot differs. Full background diagnostics retained. No checkpoint granted."
+    },
+    {
+      "file": "faithful-backup-first-runtime.log.gz",
+      "uncompressed_sha256": "32b6caca652b3b8e59f5d4e9b56bd91bb2be4914c7b427cb95b897faa262e55d",
+      "commit": "working tree before a8dafc76",
+      "node": "26.3.0",
+      "result": "1 failed (coverage observation); 1 unselected; both publications and restores completed",
+      "duration_seconds": 6.5,
+      "interrupted": false,
+      "notes": "Full raw output retained, including background workerd canceled/hung diagnostics where emitted. Actual SQL restore/query used; no synthetic verified checkpoint."
+    },
+    {
+      "file": "faithful-backup-focused-runtime.log.gz",
+      "uncompressed_sha256": "0097ed359c769b3744a2385382e23e6adc656711addba2de1c2d156cf580f0c9",
+      "commit": "working tree before a8dafc76",
+      "node": "22.23.2",
+      "result": "7 passed; 20 unselected",
+      "duration_seconds": 12.53,
+      "interrupted": false,
+      "notes": "Full raw output retained, including background workerd canceled/hung diagnostics where emitted. Actual SQL restore/query used; no synthetic verified checkpoint."
+    },
+    {
+      "file": "faithful-backup-a8dafc76-runtime.log.gz",
+      "uncompressed_sha256": "7c86f5a784e40ce885a56b195e275ce91c368fe7825057890710c344f0d70b75",
+      "commit": "a8dafc76f147e112a64edcdc5625355ccdeb819d",
+      "node": "22.23.2",
+      "result": "7 passed; 21 unselected",
+      "duration_seconds": 13.08,
+      "interrupted": false,
+      "notes": "Full raw output retained, including background workerd canceled/hung diagnostics where emitted. Actual SQL restore/query used; no synthetic verified checkpoint."
+    },
+    {
+      "file": "faithful-backup-node-contracts.log.gz",
+      "uncompressed_sha256": "da67a63e9d25cc9010a21e692fa8b97693f2398277f2daef54b826c44056fa93",
+      "commit": "a8dafc76f147e112a64edcdc5625355ccdeb819d",
+      "node": "22.23.2",
+      "result": "2 passed",
+      "duration_seconds": 0.066,
+      "interrupted": false,
+      "notes": "Full raw output retained, including background workerd canceled/hung diagnostics where emitted. Actual SQL restore/query used; no synthetic verified checkpoint."
+    },
+    {
+      "file": "native-export-and-repository-runtime.log.gz",
+      "uncompressed_sha256": "168b1442fb6737a348477a1f2d1d1241cd99b7edf4df56cce42519f2834e5ddb",
+      "commit": "working tree before378e6075",
+      "node": "22.23.2",
+      "result": "2 passed; 2 failed. Native reader and explicit duplicate relationship repository case pass; incorrect native seeds for historical Errata/retention materializers fail.",
+      "duration_seconds": 16.9,
+      "interrupted": false,
+      "notes": "Raw background cancellation diagnostics retained. Test-reader whole fixture output is not Worker isolate capacity evidence."
+    },
+    {
+      "file": "native-export-reader-fixed-runtime.log.gz",
+      "uncompressed_sha256": "ef1e82eac9f1b3759dd576c792c71a17174064010daaa64a11306ed91615e6e6",
+      "commit": "378e60756ad8f1f2bf350b5db85f046695abe2b6",
+      "node": "22.23.2",
+      "result": "1 passed:32Card native reader pages plus manifest/component integrity guards",
+      "duration_seconds": 9.01,
+      "interrupted": false,
+      "notes": "Raw background cancellation diagnostics retained. Test-reader whole fixture output is not Worker isolate capacity evidence."
+    },
+    {
+      "file": "historical-fixture-b0817d9f-runtime.log.gz",
+      "uncompressed_sha256": "a6d080f3eb1f846aaa019ba89dca73b08ea81a4dabc9065fa8fa969db5e33528",
+      "commit": "b0817d9fbf6fa76a18f3f63dc5a09f302fca7797",
+      "node": "22.23.2",
+      "result": "1 passed; 2 failed: evidence-run summary omits candidate digest",
+      "duration_seconds": 5.3,
+      "interrupted": false,
+      "notes": "Actual historical exports, expired reservation observer, exact replay and restored SQLite backup. Raw background cancellation diagnostics retained; no synthetic checkpoint or native capacity claim."
+    },
+    {
+      "file": "historical-fixture-state-probe.log.gz",
+      "uncompressed_sha256": "557f199aa34042fbdfeb61c9de4ed33479f62cb36ff27854380cd434f71249e1",
+      "commit": "b0817d9f plus state diagnostic",
+      "node": "22.23.2",
+      "result": "1 failed: retained run awaiting_approval but evidence summary omits candidate digest",
+      "duration_seconds": 3.04,
+      "interrupted": false,
+      "notes": "Actual historical exports, expired reservation observer, exact replay and restored SQLite backup. Raw background cancellation diagnostics retained; no synthetic checkpoint or native capacity claim."
+    },
+    {
+      "file": "historical-fixture-candidate-inspection-runtime.log.gz",
+      "uncompressed_sha256": "41d86ca9b23693f82b2ad4c21c23f60c6e15f2499b3a394ed7a3bd9ffb33d74c",
+      "commit": "working tree before ad42319e",
+      "node": "22.23.2",
+      "result": "3 passed across 2 files",
+      "duration_seconds": 6.33,
+      "interrupted": false,
+      "notes": "Actual historical exports, expired reservation observer, exact replay and restored SQLite backup. Raw background cancellation diagnostics retained; no synthetic checkpoint or native capacity claim."
+    },
+    {
+      "file": "historical-fixture-exact-runtime.log.gz",
+      "uncompressed_sha256": "b985a104506c87964f7b7901e93523032d7cf8f4431a82be6505cae883ad8f5e",
+      "commit": "ad42319ee09279e516a1713ba41f3a96fd1d317d",
+      "node": "22.23.2",
+      "result": "3 passed across 2 files",
+      "duration_seconds": 5.66,
+      "interrupted": false,
+      "notes": "Actual historical exports, expired reservation observer, exact replay and restored SQLite backup. Raw background cancellation diagnostics retained; no synthetic checkpoint or native capacity claim."
     }
   ]
 }

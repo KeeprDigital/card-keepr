@@ -1,23 +1,80 @@
 import { expect, test } from "vitest";
+import type { ReconciliationWorkflowParams } from "../../../src/catalogue/reconciliation";
+import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import worker from "../src/index";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import { retainLegacyCorrectionPin } from "./query-helpers/legacy-decision-pins";
-import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 import {
+  collect,
+  exportComponentRecords,
+  get,
   installReconciliationSuite,
   post,
-  get,
-  collect,
   reconcile,
-  approve,
-  exportComponentRecords,
   testEnv,
 } from "./reconciliation-helpers";
+import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
 installReconciliationSuite();
 
+async function prepareIdentityFixture(path: string, key: string, predecessor: string) {
+  const source = await collect(path, key);
+  const candidate = await prepareNativeCandidate(source.id, "one-piece", predecessor, `${key}-native-candidate`);
+  return { candidate, records: await nativeCandidateRecords(String(candidate.id)) };
+}
+
+async function publishIdentityFixture(path: string, key: string, predecessor: string) {
+  const { candidate } = await prepareIdentityFixture(path, key, predecessor);
+  return approveNativeCandidate(candidate, `${key}-native-publication`);
+}
+
+/** Capture the native dispatch so the existing fault driver exclusively runs each durable unit. */
+async function retainedIdentityPreparation(runId: string, predecessor: string, key: string) {
+  let params: ReconciliationWorkflowParams | undefined;
+  const queued = { status: async () => ({ status: "queued" }) } as unknown as WorkflowInstance;
+  const binding = {
+    create: async (options: { params: ReconciliationWorkflowParams }) => {
+      params = options.params;
+      return queued;
+    },
+    get: async () => queued,
+  } as unknown as Env["RECONCILIATION_WORKFLOW"];
+  const request = (path: string, body: Record<string, unknown>) =>
+    worker.fetch(
+      new Request(`https://card-keepr.invalid${path}`, {
+        method: "POST",
+        headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      { ...testEnv, RECONCILIATION_WORKFLOW: binding },
+    );
+  const created = await request("/v1/game-candidates", {
+    ingestion_run_id: runId,
+    supported_game: "one-piece",
+    expected_game_revision_id: predecessor,
+    idempotency_key: key,
+  });
+  expect(created.status).toBe(201);
+  const header = await created.json<Record<string, unknown>>();
+  expect(params).toBeDefined();
+  expect(params?.preparation_id).toBe(header.id);
+  return {
+    candidateId: String(header.id),
+    params: params!,
+    resume: (generation: number, idempotencyKey: string) =>
+      request(`/v1/game-candidates/${header.id}/resume`, { generation, idempotency_key: idempotencyKey }),
+  };
+}
+
 // Synthetic owner attestations exercise decisions; they are not real-source findings.
 test("reviewed Card merge retains its decision and changes only a newly approved revision", async () => {
-  const seed = await reconcile((await collect("/reconciliation/card-without-printing", "correction-seed")).id);
-  const publication = await approve(seed.document);
+  const publication = await publishIdentityFixture(
+    "/reconciliation/card-without-printing",
+    "correction-seed",
+    "catrev_spine_000",
+  );
   expect(publication.response.status, JSON.stringify(publication.document)).toBe(200);
   const revision = String(publication.document.resulting_revision_id);
   const cards = await exportComponentRecords(revision, "cards");
@@ -46,8 +103,11 @@ test("reviewed Card merge retains its decision and changes only a newly approved
   });
   expect(admission.response.status, JSON.stringify(admission.document)).toBe(200);
   const duplicate = (admission.document.history as { decision: { card: { id: string } } }[])[0]!.decision.card.id;
-  const next = await reconcile((await collect("/reconciliation/card-without-printing", "duplicate-publish")).id);
-  const published = await approve(next.document);
+  const published = await publishIdentityFixture(
+    "/reconciliation/card-without-printing",
+    "duplicate-publish",
+    revision,
+  );
   expect(published.response.status, JSON.stringify(published.document)).toBe(200);
   const expected = String(published.document.resulting_revision_id);
   const proposal = {
@@ -71,8 +131,7 @@ test("reviewed Card merge retains its decision and changes only a newly approved
     action: "merge",
     source_ids: [duplicate],
   });
-  const corrected = await reconcile((await collect("/reconciliation/card-without-printing", "merge-publish")).id);
-  const accepted = await approve(corrected.document);
+  const accepted = await publishIdentityFixture("/reconciliation/card-without-printing", "merge-publish", expected);
   expect(accepted.response.status, JSON.stringify(accepted.document)).toBe(200);
   const current = String(accepted.document.resulting_revision_id);
   expect(await exportComponentRecords(current, "cards")).not.toEqual(
@@ -139,8 +198,10 @@ test("an empty legacy correction snapshot excludes decisions recorded before its
   const original = await admitSyntheticPrinting("legacy-original");
   const left = await admitSyntheticPrinting("legacy-left");
   const right = await admitSyntheticPrinting("legacy-right");
-  const seed = await approve(
-    (await reconcile((await collect("/reconciliation/card-without-printing", "legacy-correction-seed")).id)).document,
+  const seed = await publishIdentityFixture(
+    "/reconciliation/card-without-printing",
+    "legacy-correction-seed",
+    "catrev_spine_000",
   );
   expect(seed.response.status).toBe(200);
   const proposal = {
@@ -186,9 +247,7 @@ test("Printing split publishes all replacements and never chooses a consumer-own
   const original = await admitSyntheticPrinting("synthetic-conflated");
   const left = await admitSyntheticPrinting("synthetic-left");
   const right = await admitSyntheticPrinting("synthetic-right");
-  const seed = await approve(
-    (await reconcile((await collect("/reconciliation/card-without-printing", "split-seed")).id)).document,
-  );
+  const seed = await publishIdentityFixture("/reconciliation/card-without-printing", "split-seed", "catrev_spine_000");
   expect(seed.response.status, JSON.stringify(seed.document)).toBe(200);
   const revision = String(seed.document.resulting_revision_id);
   const proposal = {
@@ -210,8 +269,7 @@ test("Printing split publishes all replacements and never chooses a consumer-own
     idempotency_key: "split",
   });
   expect(decided.response.status).toBe(201);
-  const next = await reconcile((await collect("/reconciliation/card-without-printing", "split-next")).id);
-  const published = await approve(next.document);
+  const published = await publishIdentityFixture("/reconciliation/card-without-printing", "split-next", revision);
   expect(published.response.status, JSON.stringify(published.document)).toBe(200);
   const current = String(published.document.resulting_revision_id);
   expect(await exportComponentRecords(current, "identity-corrections")).toEqual([
@@ -241,8 +299,10 @@ test("Card split requires reviewed catalogue Printing assignments and preserves 
   const original = await admitSyntheticPrinting("card-split-conflated");
   const left = await admitSyntheticPrinting("card-split-left");
   const right = await admitSyntheticPrinting("card-split-right");
-  const published = await approve(
-    (await reconcile((await collect("/reconciliation/card-without-printing", "card-split-seed")).id)).document,
+  const published = await publishIdentityFixture(
+    "/reconciliation/card-without-printing",
+    "card-split-seed",
+    "catrev_spine_000",
   );
   const proposal = {
     game: "one-piece",
@@ -272,8 +332,10 @@ test("Card split requires reviewed catalogue Printing assignments and preserves 
     idempotency_key: "card-split",
   });
   expect(accepted.response.status, JSON.stringify(accepted.document)).toBe(201);
-  const corrected = await approve(
-    (await reconcile((await collect("/reconciliation/card-without-printing", "card-split-publish")).id)).document,
+  const corrected = await publishIdentityFixture(
+    "/reconciliation/card-without-printing",
+    "card-split-publish",
+    String(published.document.resulting_revision_id),
   );
   expect(corrected.response.status, JSON.stringify(corrected.document)).toBe(200);
   const printings = await exportComponentRecords(String(corrected.document.resulting_revision_id), "printings");
@@ -284,10 +346,14 @@ test("Card split requires reviewed catalogue Printing assignments and preserves 
 });
 
 test("reviewed known-number merge preserves a source Printing through corrected evidence and subsequent refresh", async () => {
-  const before = await reconcile((await collect("/reconciliation/identity-correction-before", "known-before")).id);
-  const card = (before.document.cards as Record<string, unknown>[])[0]!;
-  const printing = (before.document.printings as { id: string }[])[0]!;
-  await approve(before.document);
+  const before = await prepareIdentityFixture(
+    "/reconciliation/identity-correction-before",
+    "known-before",
+    "catrev_spine_000",
+  );
+  const card = (before.records.cards as Record<string, unknown>[])[0]!;
+  const printing = (before.records.printings as { id: string }[])[0]!;
+  const beforePublished = await approveNativeCandidate(before.candidate, "known-before-native-publication");
   const created = await post("/v1/entity-proposals", {
     game: "one-piece",
     source_lineage: "owner",
@@ -304,9 +370,10 @@ test("reviewed known-number merge preserves a source Printing through corrected 
   });
   expect(admitted.response.status, JSON.stringify(admitted.document)).toBe(200);
   const target = (admitted.document.history as { decision: { card: { id: string } } }[])[0]!.decision.card.id;
-  const published = await approve(
-    (await reconcile((await collect("/reconciliation/identity-correction-before", "known-target-publish")).id))
-      .document,
+  const published = await publishIdentityFixture(
+    "/reconciliation/identity-correction-before",
+    "known-target-publish",
+    String(beforePublished.document.resulting_revision_id),
   );
   const proposal = {
     game: "one-piece",
@@ -330,10 +397,14 @@ test("reviewed known-number merge preserves a source Printing through corrected 
       })
     ).response.status,
   ).toBe(201);
+  let knownPredecessor = String(published.document.resulting_revision_id);
   for (const key of ["known-corrected", "known-refreshed"]) {
-    const corrected = await reconcile((await collect("/reconciliation/identity-correction-renumbered", key)).id);
-    expect(corrected.response.status, JSON.stringify(corrected.document)).toBe(200);
-    const accepted = await approve(corrected.document);
+    const accepted = await publishIdentityFixture(
+      "/reconciliation/identity-correction-renumbered",
+      key,
+      knownPredecessor,
+    );
+    knownPredecessor = String(accepted.document.resulting_revision_id);
     expect(accepted.response.status, JSON.stringify(accepted.document)).toBe(200);
     const records = await exportComponentRecords(String(accepted.document.resulting_revision_id), "printings");
     expect(records).toEqual([expect.objectContaining({ id: printing.id, card_id: target })]);
@@ -350,14 +421,20 @@ test("reviewed known-number merge preserves a source Printing through corrected 
 });
 
 test("new Printing discovered after a Card split can receive an append-only owner assignment", async () => {
-  const source = await reconcile((await collect("/reconciliation/identity-correction-before", "late-seed")).id);
-  const original = (source.document.cards as { id: string }[])[0]!;
-  const originalPrinting = (source.document.printings as { id: string }[])[0]!;
-  await approve(source.document);
+  const source = await prepareIdentityFixture(
+    "/reconciliation/identity-correction-before",
+    "late-seed",
+    "catrev_spine_000",
+  );
+  const original = (source.records.cards as { id: string }[])[0]!;
+  const originalPrinting = (source.records.printings as { id: string }[])[0]!;
+  const sourcePublished = await approveNativeCandidate(source.candidate, "late-seed-native-publication");
   const left = await admitSyntheticPrinting("late-left"),
     right = await admitSyntheticPrinting("late-right");
-  const seeded = await approve(
-    (await reconcile((await collect("/reconciliation/identity-correction-before", "late-targets")).id)).document,
+  const seeded = await publishIdentityFixture(
+    "/reconciliation/identity-correction-before",
+    "late-targets",
+    String(sourcePublished.document.resulting_revision_id),
   );
   const proposal = {
     game: "one-piece",
@@ -378,18 +455,24 @@ test("new Printing discovered after a Card split can receive an append-only owne
     idempotency_key: "late-split",
   });
   expect(decision.response.status).toBe(201);
-  await approve(
-    (await reconcile((await collect("/reconciliation/identity-correction-before", "late-split-publish")).id)).document,
+  const splitPublished = await publishIdentityFixture(
+    "/reconciliation/identity-correction-before",
+    "late-split-publish",
+    String(seeded.document.resulting_revision_id),
   );
-  const discovery = await reconcile(
-    (await collect("/reconciliation/identity-correction-discovered", "late-discovered")).id,
+  const discovery = await prepareIdentityFixture(
+    "/reconciliation/identity-correction-discovered",
+    "late-discovered",
+    String(splitPublished.document.resulting_revision_id),
   );
-  expect(discovery.response.status, JSON.stringify(discovery.document)).toBe(200);
-  const exclusion = (discovery.document.warnings as { code: string; printing_id: string }[]).find(
-    (w) => w.code === "identity_correction_exclusion",
-  )!;
+  const exclusion = (
+    [...(discovery.records.warnings ?? []), ...(discovery.records.shared_warnings ?? [])] as {
+      code: string;
+      printing_id: string;
+    }[]
+  ).find((w) => w.code === "identity_correction_exclusion")!;
   expect(exclusion).toBeDefined();
-  const published = await approve(discovery.document);
+  const published = await approveNativeCandidate(discovery.candidate, "late-discovered-native-publication");
   expect(published.response.status, JSON.stringify(published.document)).toBe(200);
   const assignment = {
     ...proposal,
@@ -407,11 +490,11 @@ test("new Printing discovered after a Card split can receive an append-only owne
     idempotency_key: "late-assign",
   });
   expect(assigned.response.status, JSON.stringify(assigned.document)).toBe(201);
-  const refreshed = await reconcile(
-    (await collect("/reconciliation/identity-correction-discovered", "late-assigned-refresh")).id,
+  const final = await publishIdentityFixture(
+    "/reconciliation/identity-correction-discovered",
+    "late-assigned-refresh",
+    String(published.document.resulting_revision_id),
   );
-  expect(refreshed.response.status, JSON.stringify(refreshed.document)).toBe(200);
-  const final = await approve(refreshed.document);
   expect(final.response.status, JSON.stringify(final.document)).toBe(200);
   expect(await exportComponentRecords(String(final.document.resulting_revision_id), "printings")).toEqual(
     expect.arrayContaining([expect.objectContaining({ id: exclusion.printing_id, card_id: right.card.id })]),
@@ -424,12 +507,14 @@ test("new Printing discovered after a Card split can receive an append-only owne
 test.each(["lookup", "application"])(
   "a retained correction %s storage outage pauses and resumes the same reviewed Card association",
   async (phase) => {
-    const { testEnv, requiredString } = await import("./reconciliation-helpers");
+    const { testEnv } = await import("./reconciliation-helpers");
     const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
     const original = await admitSyntheticPrinting("lookup-source");
     const replacement = await admitSyntheticPrinting("lookup-replacement");
-    const seed = await approve(
-      (await reconcile((await collect("/reconciliation/product-typed-relationships", "lookup-seed")).id)).document,
+    const seed = await publishIdentityFixture(
+      "/reconciliation/product-typed-relationships",
+      "lookup-seed",
+      "catrev_spine_000",
     );
     expect(seed.response.status).toBe(200);
     const proposal = {
@@ -455,6 +540,11 @@ test.each(["lookup", "application"])(
       ).response.status,
     ).toBe(201);
     const run = await collect("/reconciliation/product-typed-relationships", "lookup-next");
+    const preparation = await retainedIdentityPreparation(
+      run.id,
+      String(seed.document.resulting_revision_id),
+      "lookup-next",
+    );
     const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
     let unavailable = true;
     let failures = 0;
@@ -499,13 +589,7 @@ test.each(["lookup", "application"])(
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-    const payload = {
-      ingestion_run_id: run.id,
-      expected_current_revision_id: requiredString(run.document, "expected_current_revision_id"),
-      idempotency_key: "lookup-next",
-      observed_at: new Date().toISOString(),
-      generation: 0,
-    };
+    const payload = preparation.params;
     const event = { payload } as import("cloudflare:workers").WorkflowEvent<
       import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
     >;
@@ -522,31 +606,20 @@ test.each(["lookup", "application"])(
     } as unknown as import("cloudflare:workers").WorkflowStep;
     await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
     expect(failures).toBe(4);
-    expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+    expect((await get(`/v1/game-candidates/${preparation.candidateId}`)).document).toMatchObject({
       state: "paused",
       generation: 1,
     });
-    expect(
-      (
-        await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
-          generation: 1,
-          idempotency_key: "resume-lookup",
-        })
-      ).response.status,
-    ).toBe(200);
+    expect((await preparation.resume(1, "resume-lookup")).status).toBe(200);
     unavailable = false;
     await runReconciliationWorkflow(
       { ...testEnv, CATALOGUE_DB: database },
       { payload: { ...payload, generation: 1 } } as typeof event,
       step,
     );
-    const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
+    const status = await get(`/v1/game-candidates/${preparation.candidateId}`);
     expect(status.document.state).toBe("sealed");
-    const published = await post(`/v1/ingestion-runs/${run.id}/approval`, {
-      candidate_digest: status.document.candidate_digest,
-      expected_current_revision_id: payload.expected_current_revision_id,
-      idempotency_key: "publish-resumed-lookup",
-    });
+    const published = await approveNativeCandidate(status.document, "publish-resumed-lookup");
     expect(published.response.status, JSON.stringify(published.document)).toBe(200);
     const printings = await exportComponentRecords(String(published.document.resulting_revision_id), "printings");
     for (const component of ["products", "distribution-contexts", "relationships"] as const) {
@@ -565,10 +638,11 @@ test.each(["lookup", "application"])(
 test.each(["associations", "application", "lookup"])(
   "reviewed identity %s prepare through durable bounded groups",
   async (failurePhase) => {
-    const prior = await reconcile(
-      (await collect("/reconciliation/curated-conflict-fanout-base", "association-seed")).id,
+    const published = await publishIdentityFixture(
+      "/reconciliation/curated-conflict-fanout-base",
+      "association-seed",
+      "catrev_spine_000",
     );
-    const published = await approve(prior.document);
     expect(published.response.status).toBe(200);
     const cards = await exportComponentRecords(String(published.document.resulting_revision_id), "cards");
     for (let index = 0; index < 12; index++) {
@@ -600,6 +674,11 @@ test.each(["associations", "application", "lookup"])(
         ? "/reconciliation/identity-chain-card-surface"
         : "/reconciliation/curated-conflict-fanout-base",
       "association-refresh",
+    );
+    const preparation = await retainedIdentityPreparation(
+      run.id,
+      String(published.document.resulting_revision_id),
+      `reconcile-${run.id}`,
     );
     let calls = 0;
     const associationCalls: number[] = [];
@@ -675,13 +754,7 @@ test.each(["associations", "application", "lookup"])(
       },
     });
     const event = {
-      payload: {
-        ingestion_run_id: run.id,
-        expected_current_revision_id: String(run.document.expected_current_revision_id),
-        idempotency_key: `reconcile-${run.id}`,
-        observed_at: new Date().toISOString(),
-        generation: 0,
-      },
+      payload: preparation.params,
     } as import("cloudflare:workers").WorkflowEvent<
       import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
     >;
@@ -702,10 +775,11 @@ test.each(["associations", "application", "lookup"])(
         if (JSON.parse(result).continuation?.phase === "identity_lookup") {
           lookupCalls.push(calls);
           if (failurePhase === "lookup" && !armed) {
-            const progress = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
-            const cursor = (progress.checkpoints as { phase: string; cursor: { visited: string[] } }[]).find(
-              (item) => item.phase === "identity_lookup",
-            )!.cursor;
+            const cursor = (await reconciliationCheckpoint<{ visited: string[] }>(
+              catalogueStore(testEnv.CATALOGUE_DB),
+              preparation.candidateId,
+              "identity_lookup",
+            ))!.value;
             if (cursor.visited.length > 0) {
               armed = true;
               sawChain = true;
@@ -715,49 +789,41 @@ test.each(["associations", "application", "lookup"])(
         if (JSON.parse(result).continuation?.phase === "identity_application") {
           applicationCalls.push(calls);
           if (failurePhase === "application" && (!armed || !sawChain)) {
-            const progress = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
-            const checkpoint = (
-              progress.checkpoints as {
-                phase: string;
-                cursor: { stage: string; source: number; chain: { visited: string[] } | null };
-              }[]
-            ).find(({ phase }) => phase === "identity_application")!;
-            sawChain ||= (checkpoint.cursor.chain?.visited.length ?? 0) > 0;
-            if (checkpoint.cursor.stage === "retire" && checkpoint.cursor.source > 0) armed = true;
+            const checkpoint = (await reconciliationCheckpoint<{
+              stage: string;
+              source: number;
+              chain: { visited: string[] } | null;
+            }>(catalogueStore(testEnv.CATALOGUE_DB), preparation.candidateId, "identity_application"))!.value;
+            sawChain ||= (checkpoint.chain?.visited.length ?? 0) > 0;
+            if (checkpoint.stage === "retire" && checkpoint.source > 0) armed = true;
           }
         }
         if (JSON.parse(result).continuation?.phase === "identity_associations") {
           associationCalls.push(calls);
-          const progress = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
-          const checkpoint = (progress.checkpoints as { phase: string; cursor: { association: number } }[]).find(
-            ({ phase }) => phase === "identity_associations",
-          )!;
-          associationOffsets.push(checkpoint.cursor.association);
-          if (failurePhase === "associations" && checkpoint.cursor.association > 0) armed = true;
+          const checkpoint = (await reconciliationCheckpoint<{ association: number }>(
+            catalogueStore(testEnv.CATALOGUE_DB),
+            preparation.candidateId,
+            "identity_associations",
+          ))!.value;
+          associationOffsets.push(checkpoint.association);
+          if (failurePhase === "associations" && checkpoint.association > 0) armed = true;
         }
         return result;
       },
     } as unknown as import("cloudflare:workers").WorkflowStep;
     const environment = { ...testEnv, CATALOGUE_DB: database };
     await runReconciliationWorkflow(environment, event, step);
-    const paused = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+    const paused = (await get(`/v1/game-candidates/${preparation.candidateId}`)).document;
     expect(failures, JSON.stringify({ state: paused.state, failure_code: paused.failure_code })).toBe(4);
     expect(paused).toMatchObject({ state: "paused", generation: 1 });
-    expect(
-      (
-        await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
-          generation: 1,
-          idempotency_key: "resume-identity-associations",
-        })
-      ).response.status,
-    ).toBe(200);
+    expect((await preparation.resume(1, "resume-identity-associations")).status).toBe(200);
     resumed = true;
     await runReconciliationWorkflow(
       environment,
       { payload: { ...event.payload, generation: 1 } } as typeof event,
       step,
     );
-    expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document.deadline).toBe(paused.deadline);
+    expect((await get(`/v1/game-candidates/${preparation.candidateId}`)).document.deadline).toBe(paused.deadline);
     if (failurePhase !== "associations") expect(sawChain).toBe(true);
     if (failurePhase === "lookup") {
       expect(lookupCalls.length).toBeGreaterThan(0);
@@ -769,15 +835,16 @@ test.each(["associations", "application", "lookup"])(
     expect(associationOffsets.some((offset) => offset > 0)).toBe(true);
     expect(associationCalls.length).toBeGreaterThanOrEqual(4);
     expect(Math.max(...associationCalls)).toBeLessThanOrEqual(100);
-    const candidate = await get(`/v1/ingestion-runs/${run.id}/candidate`);
+    const candidate = await get(`/v1/game-candidates/${preparation.candidateId}`);
     expect(candidate.response.status, JSON.stringify(candidate.document)).toBe(200);
-    const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
-    const checkpoint = (status.checkpoints as { phase: string; ordinal: number; cursor: unknown }[]).find(
-      ({ phase }) => phase === "identity_associations",
+    const checkpoint = await reconciliationCheckpoint(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      preparation.candidateId,
+      "identity_associations",
     );
-    expect(checkpoint).toMatchObject({ cursor: { complete: true, processedDecisions: 12 } });
+    expect(checkpoint).toMatchObject({ value: { complete: true, processedDecisions: 12 } });
     expect(checkpoint!.ordinal).toBeGreaterThan(0);
-    const accepted = await approve(candidate.document);
+    const accepted = await approveNativeCandidate(candidate.document, "association-reviewed-publication");
     expect(accepted.response.status, JSON.stringify(accepted.document)).toBe(200);
     const current = String(accepted.document.resulting_revision_id);
     expect(await exportComponentRecords(current, "cards")).toHaveLength(12);
