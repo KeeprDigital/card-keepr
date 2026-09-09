@@ -724,10 +724,29 @@ export async function reconcileRetainedCardPrintingEvidence(
             }
           const provenCards: typeof exactUnnumberedCards = [];
           if (printing !== null) {
+            const locator = observation.locator;
+            if (locator === null) throw new Error("A Printing observation has no locator.");
             for (const card of exactUnnumberedCards) {
               consumeIdentityMatch();
               const expected = compatibilityFor(card.id, observation.sourceLineage, observation);
-              const compatible = await compatiblePrintings(database, expected);
+              const nativeMatches = await nativePrintingMatches(
+                database,
+                {
+                  preparationId: runId,
+                  revision: run.expected_current_revision_id,
+                  game: observation.supportedGame,
+                  through: priorPrintingIdentities.position,
+                  locatorThrough: priorPrintingLocators.position,
+                },
+                expected,
+                { locator, variantKey: observation.variantKey, reviewed: false },
+              );
+              const [located, compatible] =
+                nativeMatches ??
+                (await Promise.all([
+                  printingAtLocatorVariant(database, observation.sourceLineage, locator, observation.variantKey),
+                  compatiblePrintings(database, expected),
+                ]));
               const local: PrintingCompatibility[] = [];
               for await (const match of localPrintingCompatibility.matchingBeforeObservation(
                 compatibilityGroup(expected),
@@ -736,15 +755,6 @@ export async function reconcileRetainedCardPrintingEvidence(
                 consumeIdentityMatch();
                 if (isCompatible(match.compatibility, expected)) local.push(match.compatibility);
               }
-              const located =
-                observation.locator === null
-                  ? null
-                  : await printingAtLocatorVariant(
-                      database,
-                      observation.sourceLineage,
-                      observation.locator,
-                      observation.variantKey,
-                    );
               const mapped = located !== null && isCompatible(located, expected);
               if (
                 mapped ||

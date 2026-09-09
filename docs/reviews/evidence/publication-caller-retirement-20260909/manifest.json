@@ -138,6 +138,26 @@
       "duration_seconds": 111.39,
       "interrupted": false,
       "notes": "Native caller migration includes reviewed9a43 compatibility and c455 idle-R2 reset providers. Original identity keys retained; all5 controlled interruption cases pass, no immutable collision observed. All workerd cancellation/RPC-stub warnings retained. No assertion weakened."
+    },
+    {
+      "file": "entity-admission-bounded-adda135b.log.gz",
+      "uncompressed_sha256": "9f13cd65b34321080b49056b6f49eeb65ebe68d9400baea95dd193159113397e",
+      "commit": "adda135b0aeca2d3035f506ed32f04a27b78acbf",
+      "node": "22.23.2",
+      "result": "2 passed; 20 unselected. Exact 32-admission and interrupted64-warning native preparation/publication/backup proof.",
+      "duration_seconds": 9.72,
+      "interrupted": false,
+      "notes": "Natural completion. Original deadlines and identity assertions retained; actual restored SQLite backups. Raw workerd cancellation diagnostics included; no isolated-capacity claim."
+    },
+    {
+      "file": "entity-admission-full-adda135b.log.gz",
+      "uncompressed_sha256": "e8357339baf1d223412904f889ddba4b1adafbe8648ffff9d3dd2226db591e60",
+      "commit": "adda135b0aeca2d3035f506ed32f04a27b78acbf",
+      "node": "22.23.2",
+      "result": "21 passed; 1 failed. Unknown-number supplemental Card cannot use retained native prior Printing compatibility during publisher confirmation; known-number companion and all other owner/fault cases pass.",
+      "duration_seconds": 42.53,
+      "interrupted": false,
+      "notes": "Natural completion. Original deadlines and identity assertions retained; actual restored SQLite backups. Raw workerd cancellation diagnostics included; no isolated-capacity claim."
     }
   ]
 }

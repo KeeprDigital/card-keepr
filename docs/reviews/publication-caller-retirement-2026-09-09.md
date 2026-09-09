@@ -367,3 +367,40 @@ approves the second pair with their exact game predecessors. Fusion World
 locator history remains bound to its actual publication. Historical export
 repair assertions and explicit retired approval remain separate. Typecheck and
 focused formatting pass; the export/repair runtime selection remains queued.
+
+The reviewed owner-identity provider `4705f498` is incorporated byte-identically
+as `adda135b`. Independent Standards and Spec reviews found no actionable
+findings, and its entire identity file passed 11/11 in 117.94 seconds on the
+provider branch with the actual native mapping and assignment-evidence assertions.
+The native preparation helper now accepts optional request headers only on the
+actual preparation POST; ordinary callers retain their existing behavior.
+
+Exact clean `adda135b0aeca2d3035f506ed32f04a27b78acbf` admission verification on
+Node22.23.2 completed naturally. The bounded pair passed 2/2 in 9.72 seconds;
+the complete file passed 21/22 in 42.53 seconds. Both interruption cases retained
+the original four failures, cursor bounds and deadline, then published through
+actual verified backups. The sole failure is unknown-number supplemental Card
+confirmation: the early equivalence proof still queried legacy Printing
+compatibility and locator rows, so it could not see its native predecessor's
+retained evidence. The known-number companion and all other admission, owner
+rejection/reconsideration and identity guards passed. Raw logs and SHA-256 are
+retained, including background runtime cancellation diagnostics.
+
+The narrow correction reuses the existing bounded native prior-identity lookup
+in that early branch, before the equivalence decision. Only a legacy predecessor
+falls back to the old queries. The same compatibility, explicit artwork,
+cross-source evidence, exactly-one candidate and owner-review conditions remain
+in force. The original 21/22 result is its TDD baseline; focused and full green
+proof remain pending at this checkpoint.
+
+Errata migration follows the accepted [#214 publication decision](https://github.com/KeeprDigital/card-keepr/issues/214#issuecomment-5558801899)
+and ADR0015: approval "preserves collected/reviewed facts without
+applicability-date activation" and replaces date-crossing invalidation.
+The obsolete `candidate_errata_stale` expectation is therefore intentionally
+replaced with proof that the reviewed wording survives a date crossing and an
+unselected game's publication. The existing synthetic 2099 Erratum supplies a
+real boundary that stays within the candidate's original seven-day deadline
+while export preparation still checks its actual wall clock. No production
+clock, deadline or effective-date activation rule is added. Historical D1
+Erratum immutability and typed-target guards remain actual retained-reservation
+recovery tests; native consumer cases read verified native records and exports.
