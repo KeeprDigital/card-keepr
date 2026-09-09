@@ -347,3 +347,15 @@ new aggregate over-budget approval now asserts the documented 410 retirement,
 unchanged run/failure state, catalogue head and immutable objects. Its former
 new-writer capacity error is intentionally retired; no limit was increased.
 Focused formatting and typecheck pass; these changed selections await runtime.
+
+The exact `cd0fc2d0baaee613f46deccd158422db865a2844` identity file ran all
+11 cases naturally in 111.39 seconds on Node22.23.2: nine passed and two failed.
+All five controlled interruption/cursor cases pass with original collection and
+identity keys; no immutable-object collision occurred. The failures preserve
+meaningful semantics: a reviewed known-number merge exports two Printings instead
+of the exact one retained identity, and the next candidate after a reviewed Card
+split pauses because prior compatibility still names the former Card. The native
+identity provider owner is diagnosing both at those exact existing tests.
+No fixture oracle is weakened; neither failure is called a harmless flake. Full
+raw log and SHA-256 remain alongside the background cancellation/RPC-stub warnings.
+The runtime lease was returned to the coordinator with no Workers process left.
