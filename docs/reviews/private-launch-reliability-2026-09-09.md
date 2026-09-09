@@ -210,3 +210,33 @@ retried or ignored, no request limit is raised, and all existing deadlines remai
 The established queue tests pass 4/4; the release-contract tests pass 10/10 after
 the CI allocation change. The complete native journey rerun is queued behind
 the provider's exclusive full acceptance lease and has **not yet passed**.
+
+## Serial ingestion CI boundary
+
+At `12f996bc56488a8ee33ab825b9bc1eea070f4e58`, CI run `34334241396`
+naturally cancelled all three ingestion jobs at their 12-minute outer cap.
+They were still progressing through files, not hung after completion. The
+completed-file verdicts cover 517 passes and three failures out of 520 tests:
+13/16/8 completed files in shards 1/2/3, with 677.287/695.577/669.335 seconds
+summed completed-file durations. Other tests/files remained unfinished; these
+counts do not constitute a complete 753-test selection result.
+
+The three reported failures were the normative observation threshold (28.946s),
+reviewed identity application (0.907s), and larger-than-1-MiB prior catalogue
+(32.596s). Cancellation prevented Vitest's final failure stacks. Their names
+match earlier failures, but their exact causes on this head are **unconfirmed**;
+no earlier collision or deadline stack is relabelled as evidence for this run.
+The full 23-test cleanup file passed remotely.
+
+The ingestion job allocation is now 36 minutes to cover serial files, based on
+these measured partial durations and the repository's prior 12-minute shard cap.
+Individual test, hook and polling deadlines are unchanged. Three-times the old
+job allocation is a finite verification bound, not a claim of success or an
+operating performance target. Raw logs remain
+`/tmp/card-keepr-launch-20260909/reliability-serial-ci-ingestion-{1,2,3}.log`.
+
+Independent incremental Standards and Spec reviews of `12f996bc` through
+`5e0503d1daa581f9d707938bf649ff518b63623d` found no actionable findings
+(Standards: zero hard violations and zero smells). Both confirmed that the
+composed-recovery rerun and final complete suites remain pending. This later
+outer ingestion allocation and its new evidence are subsequent changes.
