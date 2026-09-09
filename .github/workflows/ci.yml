@@ -1,147 +1,36 @@
-name: ci
+name: diagnostic-private-launch
 
-# Pull requests build refs/pull/N/merge, the PR merged into main as of the
-# run. That tree only matches the eventual merge when the PR was current with
-# main at run time, which parallel merges routinely violate, so main is also
-# run on push. The concurrency group below cancels a superseded main run, so
-# a burst of merges tests only the newest tree.
+# Manual-only diagnostic. Never merge this workflow or use it as release CI.
 on:
-  pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
-
-# A push to a pull request supersedes the run in flight for it; a push to
-# main supersedes the main run in flight; a manual run is keyed by its ref so
-# it never cancels a pull request's run.
-concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
-# Every job id here is a required check of the guarded production release
-# (production-release.yml resolves the dispatched SHA's ci check runs), and
-# acceptance/production-release-contract.test.mjs keeps the two lists equal.
 jobs:
-  # Biome lints the whole tree and formats only the files a pull request
-  # changes (biome.jsonc explains the ratchet). fetch-depth 0 makes the base
-  # branch reachable for the changed-file diff.
-  lint:
+  riftbound-preparation-duration:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    env:
-      BASE_REF: ${{ github.base_ref || 'main' }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          package-manager-cache: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: node-modules
-        with:
-          path: node_modules
-          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
-      - if: steps.node-modules.outputs.cache-hit != 'true'
-        run: npm ci
-      - run: npm run lint
-      - run: npm run format:check -- --since="origin/${BASE_REF}"
-
-  checks:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          package-manager-cache: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: node-modules
-        with:
-          path: node_modules
-          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
-      - if: steps.node-modules.outputs.cache-hit != 'true'
-        run: npm ci
-      - run: npm run typecheck
-      - run: npm run types:check
-      - run: npm run check:catalogue-cycles
-      - run: npm run check:catalogue-boundary
-      - run: npm run deploy:dry-run
-      - run: npm run test:workers:api
-
-  # Runtime-free catalogue tests (parsers, reconciliation identity, legality,
-  # export, contract checks) run under plain node vitest: no Workers pool, no
-  # wrangler boot, so this job finishes in well under a minute.
-  domain-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          package-manager-cache: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: node-modules
-        with:
-          path: node_modules
-          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
-      - if: steps.node-modules.outputs.cache-hit != 'true'
-        run: npm ci
-      - run: npm run test:domain
-
-  ingestion-tests:
-    runs-on: ubuntu-latest
-    # Serial files avoid competing Workers runtimes. At the old 12-minute
-    # cap, completed files alone consumed 669–696s while other files remained.
-    # Keep test/poll deadlines unchanged and budget the complete serial shard.
-    timeout-minutes: 36
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          package-manager-cache: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: node-modules
-        with:
-          path: node_modules
-          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
-      - if: steps.node-modules.outputs.cache-hit != 'true'
-        run: npm ci
-      - run: npm run test:workers:ingestion -- --shard=${{ matrix.shard }}/3
-
-  acceptance:
-    runs-on: ubuntu-latest
-    # Files run serially to avoid competing real Worker/restore runtimes.
-    # Retained Riftbound has four 600s waits plus publication/backup phases;
-    # this job budget leaves room for the remaining files and setup. Individual
-    # test/poll deadlines are unchanged and still surface failed scenarios.
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
           package-manager-cache: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: node-modules
+      - run: npm ci
+      - name: Run the complete retained Riftbound owner and restore journey
+        env:
+          KEEPR_RIFTBOUND_METRICS_PATH: /tmp/riftbound-metrics.json
+        run: |
+          set +e
+          /usr/bin/time -v timeout 3300s node --test acceptance/riftbound-catalogue.test.mjs > /tmp/riftbound-preparation.log 2>&1
+          result=$?
+          tail -80 /tmp/riftbound-preparation.log
+          exit "$result"
+      - name: Preserve natural completion or explicit bounded failure
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          path: node_modules
-          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
-      - if: steps.node-modules.outputs.cache-hit != 'true'
-        run: npm ci
-      - run: npm run test:acceptance:shard -- --shard=${{ matrix.shard }}/3
+          name: riftbound-preparation-duration
+          path: |
+            /tmp/riftbound-preparation.log
+            /tmp/riftbound-metrics.json
+          if-no-files-found: error
