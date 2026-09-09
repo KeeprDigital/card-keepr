@@ -1,6 +1,7 @@
-import type { CatalogueCandidate, CatalogueStore, SupportedGame } from "../shared";
+import type { CatalogueCandidate, CataloguePrinting, CatalogueStore, SupportedGame } from "../shared";
 import { verifiedCandidatePartition } from "./game-candidate-inspection";
 import { nativePredecessorGameCandidateStatement } from "./game-candidate-repository";
+import { nativePriorPrintingIdentity } from "./native-printing-locators";
 import type { PriorStateContinuation, PriorStatePositions, PriorStateSeed } from "./prior-state-types";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
@@ -84,7 +85,10 @@ export async function nativeCandidateAtRevision(
       candidate.preparation_id,
       partition.records[cursor.record]! as Parameters<typeof restorePartitionedRecord>[2],
     );
-    await handler(value as never);
+    if (partition.kind === "printings") {
+      const printing = value as CataloguePrinting;
+      await seed.printing(printing, await nativePriorPrintingIdentity(db, candidate.preparation_id, printing));
+    } else await handler(value as never);
     cursor.record++;
     await save();
   }

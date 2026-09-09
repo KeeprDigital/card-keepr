@@ -9,11 +9,18 @@ import type {
   ProductRelationship,
 } from "../shared";
 import type { ReconciliationCandidateState } from "./reconciliation-candidate-state";
+import type { PrintingCompatibility } from "./reconciliation-model";
+export type NativePrintingIdentity = {
+  id: string;
+  compatibility: PrintingCompatibility;
+  locators: NonNullable<CataloguePrinting["locator_evidence"]>;
+};
 export type PriorStatePositions = {
   cards: number;
   priorCards: number;
   printings: number;
   priorPrintings: number;
+  priorPrintingIdentities?: number;
   printingImages: number;
   priorProducts: ReconciliationCandidateState["positions"];
   priorErrata: number;
@@ -21,7 +28,7 @@ export type PriorStatePositions = {
 };
 export type PriorStateSeed = {
   card: (card: CatalogueCard) => Promise<void>;
-  printing: (printing: CataloguePrinting) => Promise<void>;
+  printing: (printing: CataloguePrinting, identity?: NativePrintingIdentity) => Promise<void>;
   image: (image: CataloguePrintingImage) => Promise<void>;
   product: (product: CatalogueProduct) => Promise<void>;
   context: (context: CatalogueDistributionContext) => Promise<void>;
