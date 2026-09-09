@@ -415,3 +415,33 @@ assertion weakened. The host lease was returned after verifying no runtime
 process remained. Logs and hashes retain all background cancellation diagnostics.
 This closes the specific admission regression; other caller families and the
 full combined validation remain pending.
+
+
+## Native Errata and Card identity proof at 0988e2bd
+
+The complete Errata file ran on Node 22.23.2 at clean
+`0988e2bdb1ab108c126553278e2bcf1d30fba49d`: 21 passed and 4 failed,
+54.00s Vitest / 55.031s harness. The accepted ADR 0015 date-crossing and
+other-game publication case passed in 7.368s. Two failures expose the native
+Printing administration lookup returning 404; two expose absent Erratum
+first/last-observed lifecycle metadata in native public exports. Retained
+Erratum facts and original/current record equality pass. These are unresolved
+oracles, not removed assertions. The coordinator owns the Erratum metadata
+follow-up; this lane owns the native Printing administration read.
+
+At the same clean commit, the eighteen migrated Card identity cases ran:
+15 passed and 3 failed, 56.39s Vitest / 57.376s harness; five longitudinal
+legacy-origin cases were explicitly filtered and remain migration work.
+Passing cases include all seven Card/DON/number guards, moved unknown-number
+identity, paginated mappings, explicit source-authority change and the opposite
+Gundam locale order. The remaining actual failures are Asia-first Gundam raw
+Printing precedence (US whitespace replaces the original Asia wording) and two
+native owner identity-review resolutions returning 409. Their original identity,
+canonical-fact and owner-decision assertions remain in place for diagnosis.
+
+Both commands completed naturally with no interruption. Existing per-case
+bounds were unchanged; finite outer bounds derived from their summed repository
+limits were 900s and 600s. Full raw logs and SHA-256 digests are retained in the
+evidence manifest, including canceled/hung background request diagnostics.
+No remaining caller family or full integrated suite is claimed green. After a
+clean process check, the exclusive runtime lease passed to the no-change lane.

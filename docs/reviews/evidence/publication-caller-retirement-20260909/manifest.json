@@ -178,6 +178,24 @@
       "duration_seconds": 42.26,
       "interrupted": false,
       "notes": "Natural completion with unchanged deadlines and original assertions. Actual independently restored SQLite backup verification; all runtime cancellation diagnostics retained. Production fix36c8883d independently Standards/Spec reviewed with0 findings."
+    },
+    {
+      "file": "errata-full-0988e2bd.log.gz",
+      "uncompressed_sha256": "b9785c8c988acd1bb62dfaac2e3fec26ead041cc0426d7c39ceabe6296105a44",
+      "commit": "0988e2bdb1ab108c126553278e2bcf1d30fba49d",
+      "result": "21 passed; 4 failed; full 25 cases",
+      "duration_seconds": 54.0,
+      "interrupted": false,
+      "notes": "Node 22.23.2; all processes exited naturally. Original individual test deadlines preserved; raw workerd canceled/hung request diagnostics retained. This is functional proof, not isolate capacity evidence."
+    },
+    {
+      "file": "card-identity-native-18-0988e2bd.log.gz",
+      "uncompressed_sha256": "9ecf14a5815169f02e5c6b2b1e1a3761922b4a0559e9b50fbf279f054e46dda4",
+      "commit": "0988e2bdb1ab108c126553278e2bcf1d30fba49d",
+      "result": "15 passed; 3 failed; 5 explicitly unselected legacy cases",
+      "duration_seconds": 56.39,
+      "interrupted": false,
+      "notes": "Node 22.23.2; all processes exited naturally. Original individual test deadlines preserved; raw workerd canceled/hung request diagnostics retained. This is functional proof, not isolate capacity evidence."
     }
   ]
 }
