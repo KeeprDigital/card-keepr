@@ -19,3 +19,7 @@ The Product/membership producer belongs to the toolchain lane. Reuse its actual 
 ## Proof gates
 
 Retain the original native Erratum404, Gundam canonical precedence and historical disappearance/authority reds. Exercise both locale orders, complete and scoped disappearance, no-change acceptance and later corroboration, unchanged historical bytes, missing/corrupt prefix, and older native reconstruction. Recheck the actual authenticated administration response and current source-authority decisions. Independent fixed-base Standards and Spec reviews, focused/full affected tests and combined integration remain required. This plan is not a completed history provider or a capacity measurement.
+
+## First original red
+
+At exact clean `d66710e5bcccb83c3d54d963c80ae89d9fc971d1`, the historical Gundam test completed naturally: one failure, 22 unselected, 7.78s Vitest / 8.849s harness. Both actual native publications and verified backups completed. The first administration assertion returned `404 printing_not_found` instead of the retained Asia locator marked historical/current:false and lifecycle.withdrawn:false. The unchanged case limit was 45 seconds, with a 90-second outer bound. The raw log and SHA-256 are retained in the publication caller evidence manifest. No producer code preceded this red.

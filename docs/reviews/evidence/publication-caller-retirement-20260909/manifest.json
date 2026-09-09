@@ -236,6 +236,16 @@
       "duration_seconds": 3.765,
       "interrupted": false,
       "notes": "Existing schema hygiene and populated no-change migration proof through schema32; no live database mutation."
+    },
+    {
+      "file": "native-gundam-history-d66710e5.log.gz",
+      "uncompressed_sha256": "1a836974cea34e7c7d27a846042f5dbcaa7f89fed69588554ec14506c6f5ab8d",
+      "commit": "d66710e5bcccb83c3d54d963c80ae89d9fc971d1",
+      "node": "22.23.2",
+      "result": "1 failed;22 unselected. Original native historical Gundam oracle reaches actual Printing administration404 after two publications and verified backups.",
+      "duration_seconds": 7.78,
+      "interrupted": false,
+      "notes": "Natural8.849s harness; unchanged45s case/90s outer. Original current/historical locator and separate withdrawal assertions retained; no history producer implementation yet."
     }
   ]
 }
