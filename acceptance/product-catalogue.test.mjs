@@ -1,10 +1,3 @@
-import {
-  inspectNativeCollection,
-  publishNativeCollection,
-  waitForNativeCollection,
-  nativeCheckpointTransport,
-  nativeExportRecords,
-} from "./helpers/native-catalogue-runtime.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -22,6 +15,13 @@ import {
   waitForHealth,
 } from "./fixtures/catalogue-runtime-harness.mjs";
 import { persistedDatabaseDirectory } from "./helpers/acceptance-runtime.mjs";
+import {
+  inspectNativeCollection,
+  nativeCheckpointTransport,
+  nativeExportRecords,
+  publishNativeCollection,
+  waitForNativeCollection,
+} from "./helpers/native-catalogue-runtime.mjs";
 import * as schemaQueries from "./helpers/query-helpers/schema.mjs";
 import * as sourceEvidenceQueries from "./helpers/query-helpers/source-evidence.mjs";
 
