@@ -2137,6 +2137,7 @@ test("persistent curated comparison records every changed source field before fa
   }
 });
 
+// Three actual native publications and verified backups took 35.324s on the hosted runner.
 test("persistent curated edits retain Release ownership and official relationship evidence through refresh", async () => {
   const { post, exportComponentRecords, requiredFirst } = await import("./reconciliation-helpers");
   const { canonicalJson, sha256Text } = await import("../../../src/catalogue/shared");
@@ -2238,7 +2239,7 @@ test("persistent curated edits retain Release ownership and official relationshi
     expect(accepted.response.status).toBe(200);
     predecessor = requiredString(accepted.document, "resulting_revision_id");
   }
-});
+}, 60_000);
 
 const retainedStateNamespaces = [
   "current_errata",
