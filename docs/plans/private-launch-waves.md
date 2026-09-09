@@ -11,6 +11,11 @@ Read the repository instructions, CONTEXT.md, relevant ADRs, and the full curren
 issue bodies/comments before implementation. Fetch main and recompute native
 GitHub dependencies. Check whether the audit cleanup PR is merged before
 reimplementing its #270 fix, #253 entrypoint fix or small parser cleanup.
+If existing CI failures prevent integration, start the independent foundations
+and diagnose #271 against the cleanup commit. Stack dependent reliability fixes
+on that commit when necessary, then integrate the verified combined result and
+update the issue dependencies. Keep the cleanup's implementation status distinct
+from its pending merge and the wider validation result.
 
 The ordinary checkout was fast-forwarded from 9cfc5dd to 51e1c83f after preserving
 all 26 local edits. Git tag `codex-preserved-pre-audit-20260909` points to the stash
@@ -28,8 +33,8 @@ execution plan; refresh them when new evidence or merged work changes the graph.
 | --- | --- | --- |
 | Cleanup integration | Review/integrate the audit cleanup PR for #270, small parser cleanup, README and #253's entrypoint. | Exact reviewed commit integrated; #253 stays open until the complete stress result is acceptable. |
 | Wave 1: independent foundations | #267 active-source recapture; #272 compatible toolchain update; #273 realistic fixtures and source/storage census. | Each ticket has reviewed implementation and its required evidence. Capture the original #271 failure baseline before changing toolchain; final reliability validation follows #272. |
-| Wave 2: reliability and publication | #271 final suite reliability after #270/#272; #274 native publication/image migration. | Both integrated and validated on the selected runtime. Coordinate shared source files and run heavy suites serially. |
-| Wave 3: proof | #275 usable capacity after #273/#274/#271; #276 durable fault and actual composed recovery after #274/#271. | Evidence names exact tested commits, distinguishes usable capacity from rejection, and records remaining failures. Measurement has exclusive host resources. |
+| Wave 2: reliability and publication | #271 final suite reliability after #270/#272, with #253 stress diagnosis in the same lane; #274 native publication/image migration in parallel. | Implementations integrated and validated on the selected runtime. Coordinate shared source files and run heavy suites serially. |
+| Wave 3: proof | #275 usable capacity after #273/#274/#271; #276 durable fault and actual composed recovery after #274/#271; finish #253's full stress and scheduled/manual Actions proof once required fixes are integrated. | Evidence names exact tested commits, distinguishes usable capacity from rejection, and records remaining failures. Measurement has exclusive host resources. |
 | Release lane | Resolve #236's human/account prerequisite; reconcile existing PR #246; then #237 manual staging and #238 automatic production. | Actual isolated environments and guarded exact-commit release evidence, with the accepted credential boundary. |
 | Handoff lane | #239 after final relevant schema/publication changes and #271; reuse merged protocol from PR #264. | Prerequisite released through the pre-fold runtime and supported live handoff proven. |
 | Final convergence | Close #268 only after all four children satisfy the original combined criteria; complete #240; refresh PR #204/#136 from the final schema. | Enabled-game journeys, capacity, recovery and rollout proven; separate explicit owner Go-Live declaration. Close #151/#216 only when their acceptance is complete. |
