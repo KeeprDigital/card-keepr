@@ -99,3 +99,65 @@ test("dev provisioning refuses unknown capacity and preserves replacement recove
   assert.throws(() => verifyDevCapacity({ ...evidence, d1_count: 7 }, now), /insufficient_dev_replacement_headroom/u);
   assert.throws(() => verifyDevCapacity(evidence, now + 3600_000), /fresh_confirmed_capacity_evidence_required/u);
 });
+
+for (const [label, command, values] of [
+  [
+    "backup retry",
+    ["backup", "retry"],
+    ["expected-current-revision", "idempotency-key", "failed-attempt-id", "failed-attempt-digest"],
+  ],
+  [
+    "export deletion",
+    ["catalogue-export", "deletion", "confirm"],
+    [
+      "plan-id",
+      "plan-digest",
+      "catalogue-revision",
+      "manifest-digest",
+      "expected-current-revision",
+      "confirm-revision",
+      "deletion-id",
+      "idempotency-key",
+    ],
+  ],
+  [
+    "export deletion retry",
+    ["catalogue-export", "deletion", "retry"],
+    ["deletion-id", "object-set-digest", "expected-current-revision", "idempotency-key"],
+  ],
+  [
+    "curated retirement",
+    ["curated-revision", "retire"],
+    ["revision-id", "expected-current-revision", "idempotency-key", "rationale", "event-version"],
+  ],
+])
+  test(`dev ${label} names its selected confirmation target before requesting mutation`, async (t) => {
+    const { main } = await import("../cli/keepr.mjs");
+    const output = [];
+    const originalWrite = process.stdout.write;
+    const originalFetch = globalThis.fetch;
+    t.after(() => {
+      process.stdout.write = originalWrite;
+      globalThis.fetch = originalFetch;
+    });
+    process.stdout.write = (text) => {
+      output.push(text);
+      return true;
+    };
+    globalThis.fetch = () => assert.fail("Invalid target must not make a provider request");
+    const code = await main(
+      [
+        ...command,
+        ...values.flatMap((name) => [`--${name}`, "1"]),
+        "--target",
+        "dev",
+        "--environment",
+        "production",
+        "--yes",
+        "--json",
+      ],
+      { KEEPR_DEV_ADMINISTRATION_KEY: "synthetic-dev" },
+    );
+    assert.equal(code, 2);
+    assert.match(JSON.parse(output.join("")).detail, /requires --environment dev\./u);
+  });

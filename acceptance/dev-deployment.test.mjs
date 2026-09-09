@@ -1,11 +1,11 @@
-import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { createServer } from "vite";
-import { d1Adapter } from "./helpers/query-helpers/sqlite-d1-adapter.mjs";
 import { devAudience, requiredCiChecks } from "../src/http/dev-workflow-identity.mjs";
+import { d1Adapter } from "./helpers/query-helpers/sqlite-d1-adapter.mjs";
 
 // Synthetic GitHub attestations are cryptographically signed with a test-only
 // key. No retained real-source data or live CI success is claimed here.
@@ -166,7 +166,7 @@ test("owner first install uses the canonical preparation transaction on an unuse
     try {
       const result = batch.map(({ sql, params }) => {
         const statement = database.prepare(sql);
-        const results = statement.columns().length > 0 ? statement.all(...params) : (statement.run(...params), []);
+        const results = sqliteResults(statement, params);
         return { success: true, results, meta: {} };
       });
       database.exec("COMMIT");
@@ -211,3 +211,216 @@ test("a signed dev run cannot substitute another independently passing main comm
     (error) => error.code === "invalid_dev_workflow_attestation",
   );
 });
+
+// The operating-system command and provider HTTP boundaries are simulated;
+// preparation, generated release SQL, SQLite state and all observers are real.
+for (const [scenario, expectedError] of [
+  ["approved", null],
+  ["older version", /release_active_version_mismatch/u],
+  ["split traffic", /release_active_version_mismatch/u],
+  ["foreign route", /release_route_mismatch/u],
+])
+  test(`dev executor ${scenario} preserves exact activation before releasing its fence`, async (t) => {
+    const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    const { call, env, database } = await fixture(t, head);
+    const prepared = await (await call()).json();
+    const { devConfigurations } = await import("../scripts/dev-environment.mjs");
+    const configs = await devConfigurations({
+      accountId: env.CLOUDFLARE_ACCOUNT_ID,
+      catalogueId: env.CATALOGUE_D1_DATABASE_ID,
+      disposableId: env.DISPOSABLE_D1_DATABASE_ID,
+    });
+    for (const [app, config] of Object.entries(configs)) {
+      const path = `apps/${app}/wrangler.dev.json`;
+      const previous = await readFile(path).catch((error) => {
+        if (error.code !== "ENOENT") throw error;
+        return null;
+      });
+      t.after(() => (previous === null ? rm(path, { force: true }) : writeFile(path, previous)));
+      await writeFile(path, JSON.stringify(config));
+    }
+    const target = JSON.parse(prepared.prepared_plan_json).production_target;
+    const byName = Object.fromEntries(Object.values(configs).map((config) => [config.name, config]));
+    const githubFetch = globalThis.fetch;
+    const requests = [];
+    globalThis.fetch = async (input, init = {}) => {
+      const url = new URL(input);
+      requests.push(url.pathname);
+      if (url.hostname === "api.github.com") return githubFetch(input, init);
+      if (url.hostname === "dev.card.keepr.digital") {
+        const runtime = url.pathname.includes("/ingest/") ? "ingestion" : "api";
+        if (
+          url.pathname.endsWith("/health") &&
+          (runtime === "ingestion" || init.headers.authorization !== "Bearer synthetic-traffic")
+        )
+          return Response.json({ code: "authentication_required" }, { status: 401 });
+        return Response.json(
+          url.pathname.endsWith("/v1/catalogue")
+            ? { meta: { catalogue_revision_id: "catrev_spine_000" } }
+            : { status: "ok", runtime, checks: {} },
+          { headers: { "x-catalogue-revision": "catrev_spine_000" } },
+        );
+      }
+      assert.equal(url.hostname, "api.cloudflare.com");
+      if (url.pathname.includes("/workflows/")) return new Response(null, { status: 404 });
+      let result;
+      if (url.pathname.endsWith("/query")) {
+        const { sql } = JSON.parse(init.body);
+        result = sql
+          .split(/;\s*/u)
+          .filter((text) => text.trim())
+          .map((text) => {
+            const statement = database.prepare(text);
+            const results = sqliteResults(statement);
+            return { success: true, results };
+          });
+      } else if (url.pathname.endsWith("/zones"))
+        result = [{ id: "synthetic-zone", name: "keepr.digital", account: { id: env.CLOUDFLARE_ACCOUNT_ID } }];
+      else if (url.pathname.endsWith("/workers/routes"))
+        result = Object.values(configs).flatMap((config) =>
+          config.routes.map((route) => ({
+            pattern: route.pattern,
+            script: scenario === "foreign route" ? "foreign" : config.name,
+          })),
+        );
+      else if (url.pathname.endsWith("/domains/managed"))
+        result = { enabled: false, bucketId: "synthetic-bucket", domain: "private.r2.dev" };
+      else if (url.pathname.endsWith("/domains/custom")) result = { domains: [] };
+      else if (url.pathname.includes("/r2/buckets/")) result = { name: url.pathname.split("/").at(-1) };
+      else if (url.pathname.includes("/d1/database/")) {
+        const id = url.pathname.split("/").at(-1);
+        result = { uuid: id, name: target.d1_databases.find((item) => item.id === id)?.name };
+      } else {
+        const worker = /\/workers\/scripts\/([^/]+)/u.exec(url.pathname)?.[1];
+        const config = byName[worker];
+        assert.ok(config, `Unexpected simulated provider request ${url.pathname}`);
+        if (url.pathname.endsWith("/deployments"))
+          result = {
+            deployments: [
+              {
+                id: `deployment-${worker}`,
+                versions:
+                  scenario === "split traffic"
+                    ? [
+                        { version_id: `version-${worker}`, percentage: 50 },
+                        { version_id: "older", percentage: 50 },
+                      ]
+                    : [{ version_id: scenario === "older version" ? "older" : `version-${worker}`, percentage: 100 }],
+              },
+            ],
+          };
+        else if (url.pathname.endsWith("/versions"))
+          result = {
+            items: [
+              {
+                id: `version-${worker}`,
+                annotations: {
+                  "workers/tag": `release-${prepared.release_id}-${worker === configs.api.name ? "api" : "ingestion"}`,
+                },
+              },
+            ],
+          };
+        else if (url.pathname.includes("/versions/")) result = { resources: { bindings: devBindings(config) } };
+        else if (url.pathname.endsWith("/settings")) result = { bindings: devBindings(config) };
+        else assert.fail(`Unexpected simulated provider request ${url.pathname}`);
+      }
+      return Response.json({ success: true, result });
+    };
+    const commands = [];
+    const executeCommand = async (command, args) => {
+      if (command === "git") return { stdout: head };
+      commands.push({ command, args });
+      assert.ok(command.endsWith("/wrangler") || command === "bash");
+      return { stdout: "" };
+    };
+    const { deployDev } = await import("../scripts/deploy-dev.mjs");
+    const input = {
+      ...Object.fromEntries(Object.entries(prepared.dispatch_inputs).map(([key, value]) => [key.toUpperCase(), value])),
+      RELEASE_ENVIRONMENT: "dev",
+      EXPECTED_HEAD_SHA: head,
+      CI_RUN_ID: "123",
+      GH_TOKEN: "synthetic-github-token",
+      CLOUDFLARE_ACCOUNT_ID: env.CLOUDFLARE_ACCOUNT_ID,
+      DEV_CLOUDFLARE_ACCOUNT_ID: env.CLOUDFLARE_ACCOUNT_ID,
+      DEV_CATALOGUE_DATABASE_ID: env.CATALOGUE_D1_DATABASE_ID,
+      DEV_DISPOSABLE_DATABASE_ID: env.DISPOSABLE_D1_DATABASE_ID,
+      CLOUDFLARE_API_TOKEN: "synthetic-provider",
+      API_TRAFFIC_TOKEN: "synthetic-traffic",
+    };
+    if (expectedError) {
+      await assert.rejects(deployDev(input, executeCommand), expectedError);
+      assert.equal(
+        database.prepare("SELECT active_production_release_id FROM operation_state WHERE singleton=1").get()
+          .active_production_release_id,
+        prepared.release_id,
+      );
+      assert.equal(
+        database
+          .prepare(
+            "SELECT count(*) AS count FROM administration_idempotency WHERE operation IN ('production_release_binding_observed','production_release_succeeded')",
+          )
+          .get().count,
+        0,
+      );
+      assert.equal(
+        requests.some((path) => path === "/api/health"),
+        false,
+      );
+      assert.ok(commands.some(({ command }) => command === "bash"));
+    } else {
+      const result = await deployDev(input, executeCommand);
+      assert.equal(result.head_sha, head);
+      assert.equal(
+        database.prepare("SELECT active_production_release_id FROM operation_state WHERE singleton=1").get()
+          .active_production_release_id,
+        null,
+      );
+      assert.equal(
+        database
+          .prepare(
+            "SELECT count(*) AS count FROM administration_idempotency WHERE operation='production_release_succeeded'",
+          )
+          .get().count,
+        1,
+      );
+      assert.equal(requests.filter((path) => path.endsWith("/deployments")).length, 2);
+    }
+  });
+
+function devBindings(config) {
+  return [
+    ...Object.entries(config.vars ?? {}).map(([name, text]) => ({ name, type: "plain_text", text: String(text) })),
+    ...config.d1_databases.map((item) => ({ name: item.binding, type: "d1", database_id: item.database_id })),
+    ...config.r2_buckets.map((item) => ({ name: item.binding, type: "r2_bucket", bucket_name: item.bucket_name })),
+    ...(config.services ?? []).map((item) => ({
+      name: item.binding,
+      type: "service",
+      service: item.service,
+      entrypoint: item.entrypoint,
+    })),
+    ...(config.workflows ?? []).map((item) => ({
+      name: item.binding,
+      type: "workflow",
+      workflow_name: item.name,
+      class_name: item.class_name,
+      script_name: config.name,
+    })),
+    ...config.ratelimits.map((item) => ({
+      name: item.name,
+      type: "ratelimit",
+      namespace_id: item.namespace_id,
+      simple: item.simple,
+    })),
+    ...(config.version_metadata ? [{ name: config.version_metadata.binding, type: "version_metadata" }] : []),
+    ...(config.name === "card-keepr-api-dev"
+      ? ["API_BEARER_KEY", "API_BEARER_KEY_REPLACEMENT"]
+      : ["ADMINISTRATION_KEY", "ADMINISTRATION_KEY_REPLACEMENT", "D1_EXPORT_TOKEN", "D1_VERIFICATION_TOKEN"]
+    ).map((name) => ({ name, type: "secret_text" })),
+  ];
+}
+
+function sqliteResults(statement, params = []) {
+  if (statement.columns().length) return statement.all(...params);
+  statement.run(...params);
+  return [];
+}

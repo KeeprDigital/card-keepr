@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { parseOptions, writeCliFailure } from "./command-support.mjs";
+import { parseOptions, targetConfirmationDetail, writeCliFailure } from "./command-support.mjs";
 import { requestDocument } from "./lib/json-client.mjs";
 import { readAdministrationSecret } from "./lib/secret-input.mjs";
 
@@ -201,7 +201,7 @@ async function mutationContext(operation, options, environment, json, binding) {
       json,
       {
         code: "production_target_required",
-        detail: "Curated Revision mutation requires --environment production.",
+        detail: targetConfirmationDetail("Curated Revision mutation", environment),
       },
       2,
     );
