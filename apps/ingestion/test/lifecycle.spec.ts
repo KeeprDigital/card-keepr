@@ -3,10 +3,10 @@ import { exports } from "cloudflare:workers";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import {
-  observeHistoricalRunApproval as observeHistoricalRunApprovalDirect,
   retryPublicationCleanup as retryPublicationCleanupDirect,
   showRun as showRunDirect,
 } from "../../../src/catalogue/ingestion/ingestion";
+import { publicationLeaseMilliseconds } from "../../../src/catalogue/ingestion/run-types";
 import {
   AdministrationProblem,
   canonicalJson,
@@ -26,6 +26,9 @@ import {
 import * as ingestionQueries from "./query-helpers/ingestion";
 import { disableExportTransitionTriggers } from "./query-helpers/maintenance-guards";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import { installWorkflowIsolation } from "./workflow-isolation";
+
+installWorkflowIsolation();
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -300,111 +303,6 @@ test("competing starts fail closed while an identical retry replays its original
   expect(changedFailedReplay.response.status).toBe(409);
   expect(changedFailedReplay.document).toMatchObject({
     code: "idempotency_key_reused",
-  });
-});
-
-test("stale and mismatched approvals leave the candidate unchanged before exact approval publishes", async () => {
-  const started = await startRun("start-approval");
-  const runId = requiredDocumentString(started.document, "id");
-  const digest = requiredDocumentString(started.document, "candidate_digest");
-  const expectedRevision = requiredDocumentString(started.document, "expected_current_revision_id");
-  const attemptedRewrite = await administrationRequest(`/v1/ingestion-runs/${runId}/approval`, {
-    candidate_digest: digest,
-    expected_current_revision_id: expectedRevision,
-    idempotency_key: "approve-rewrite",
-    approval_deadline: "2999-01-01T00:00:00.000Z",
-    candidate_created_at: "1970-01-01T00:00:00.000Z",
-  });
-  expect(attemptedRewrite.response.status).toBe(422);
-  expect(attemptedRewrite.document).toMatchObject({
-    code: "invalid_parameter",
-  });
-  expect((await showRun(runId)).document).toEqual(started.document);
-
-  const staleDigest = await approve(runId, "0".repeat(64), expectedRevision, "approve-stale-digest");
-  expect(staleDigest.response.status).toBe(409);
-  expect(staleDigest.document).toMatchObject({
-    code: "candidate_digest_mismatch",
-  });
-  const staleRevision = await approve(runId, digest, "catrev_stale", "approve-stale-revision");
-  expect(staleRevision.response.status).toBe(409);
-  expect(staleRevision.document).toMatchObject({
-    code: "current_revision_mismatch",
-  });
-  expect((await showRun(runId)).document).toEqual(started.document);
-  const guardedStatus = await administrationRequest("/v1/status");
-  expect(guardedStatus.document).toMatchObject({
-    diagnostics: {
-      catalogue_export_object_count: 0,
-      orphaned_catalogue_export_object_count: 0,
-    },
-  });
-
-  await ingestionQueries
-    .setOperationStateActiveIngestionRunIdForStaleMismatchedApprovalsLeaveCandidateUnchangedBeforeExactApproval(
-      testEnv.CATALOGUE_DB,
-    )
-    .run();
-  const mismatchedIdentity = await approve(runId, digest, expectedRevision, "approve-mismatched-identity");
-  expect(mismatchedIdentity.response.status).toBe(409);
-  expect(mismatchedIdentity.document).toMatchObject({
-    code: "run_not_active",
-  });
-  await ingestionQueries
-    .setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
-      testEnv.CATALOGUE_DB,
-    )
-    .bind(runId)
-    .run();
-  expect((await showRun(runId)).document).toEqual(started.document);
-
-  const published = await approve(runId, digest, expectedRevision, "approve-exact");
-  expect(published.response.status).toBe(200);
-  expect(published.document).toMatchObject({
-    id: runId,
-    state: "published",
-    publication_outcome: "revision",
-    approval_history: [
-      {
-        action: "approved",
-        candidate_digest: digest,
-        expected_current_revision_id: expectedRevision,
-      },
-    ],
-    progress: {
-      current_stage: "published",
-    },
-    failure_code: null,
-  });
-  expect(published.document.resulting_revision_id).toBe(published.document.published_revision_id);
-
-  const replay = await approve(runId, digest, expectedRevision, "approve-exact");
-  expect(replay.document).toEqual(published.document);
-  const changedReplay = await approve(runId, "f".repeat(64), expectedRevision, "approve-exact");
-  expect(changedReplay.response.status).toBe(409);
-  expect(changedReplay.document).toMatchObject({
-    code: "idempotency_key_reused",
-  });
-});
-
-test("identical concurrent approvals replay one original publication result", async () => {
-  const started = await startRun("start-concurrent-approval");
-  const runId = requiredDocumentString(started.document, "id");
-  const digest = requiredDocumentString(started.document, "candidate_digest");
-  const expectedRevision = requiredDocumentString(started.document, "expected_current_revision_id");
-  const approvals = await Promise.all([
-    approve(runId, digest, expectedRevision, "approve-concurrently"),
-    approve(runId, digest, expectedRevision, "approve-concurrently"),
-  ]);
-  expect(approvals.every(({ response }) => [200, 202].includes(response.status))).toBe(true);
-  const original = approvals.find(({ response }) => response.status === 200);
-  expect(original).toBeDefined();
-  const replay = await approve(runId, digest, expectedRevision, "approve-concurrently");
-  expect(replay.response.status).toBe(200);
-  expect(replay.document).toEqual(original?.document);
-  expect(replay.document).toMatchObject({
-    id: runId,
-    state: "published",
   });
 });
 
@@ -1002,144 +900,6 @@ test.each([true, false])(
   },
 );
 
-test("a stalled late publication write reopens completed cleanup when exact compensation fails", async () => {
-  const startedAt = "2026-07-29T02:00:00.000Z";
-  const reconcileAt = "2026-07-29T02:05:00.000Z";
-  const cleanupAt = "2026-07-29T02:10:00.000Z";
-  testObservedAt = startedAt;
-  const priorCurrentRevision = await publishedCatalogueQueries
-    .readCatalogueStateIdContentDigest(testEnv.CATALOGUE_DB)
-    .first<{ id: string; content_digest: string }>();
-  if (priorCurrentRevision !== null) {
-    await publishedCatalogueQueries
-      .setCatalogueRevisionsContentDigest(testEnv.CATALOGUE_DB)
-      .bind("0".repeat(64), priorCurrentRevision.id)
-      .run();
-  }
-  const started = await startRun("start-stalled-late-writer");
-  const runId = requiredDocumentString(started.document, "id");
-  const candidateDigest = requiredDocumentString(started.document, "candidate_digest");
-  const expectedRevision = requiredDocumentString(started.document, "expected_current_revision_id");
-  const putStarted = deferred<string>();
-  const releasePut = deferred<void>();
-  let lateObjectKey: string | null = null;
-  const stalledBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
-    async put(
-      key: string,
-      value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null | Blob,
-      options?: R2PutOptions,
-    ) {
-      lateObjectKey = key;
-      putStarted.resolve(key);
-      await releasePut.promise;
-      return testEnv.CATALOGUE_EXPORTS.put(key, value, options);
-    },
-    async delete() {
-      throw new Error("synthetic late compensation failure");
-    },
-  });
-  const approval = observeHistoricalRunApprovalDirect(
-    catalogueStore(testEnv.CATALOGUE_DB),
-    stalledBucket,
-    runId,
-    {
-      candidate_digest: candidateDigest,
-      expected_current_revision_id: expectedRevision,
-      idempotency_key: "approve-stalled-late-writer",
-    },
-    startedAt,
-  );
-  await putStarted.promise;
-  const identicalInFlight = await approve(runId, candidateDigest, expectedRevision, "approve-stalled-late-writer");
-  expect(identicalInFlight.response.status).toBe(202);
-  expect(identicalInFlight.document).toMatchObject({
-    contract: "card-keepr-administration-operation@1",
-    operation: "approve_ingestion_run",
-    status: "in_progress",
-    idempotency_key: "approve-stalled-late-writer",
-  });
-  const crossOperationReuse = await administrationRequest(`/v1/ingestion-runs/${runId}/rejection`, {
-    candidate_digest: candidateDigest,
-    idempotency_key: "approve-stalled-late-writer",
-  });
-  expect(crossOperationReuse.response.status).toBe(409);
-  expect(crossOperationReuse.document).toMatchObject({
-    code: "idempotency_key_reused",
-  });
-  testObservedAt = reconcileAt;
-  const expiredClaimRecovery = await approve(runId, candidateDigest, expectedRevision, "approve-stalled-late-writer");
-  expect(expiredClaimRecovery.response.status).toBe(500);
-  expect(expiredClaimRecovery.document).toMatchObject({
-    code: "publication_abandoned",
-  });
-
-  const failed = await showRunDirect(
-    catalogueStore(testEnv.CATALOGUE_DB),
-    testEnv.CATALOGUE_EXPORTS,
-    runId,
-    reconcileAt,
-  );
-  expect(failed).toMatchObject({
-    state: "failed",
-    publication_cleanup: { state: "pending", generation: 0 },
-  });
-  const completed = await retryPublicationCleanupDirect(
-    catalogueStore(testEnv.CATALOGUE_DB),
-    testEnv.CATALOGUE_EXPORTS,
-    runId,
-    { idempotency_key: "cleanup-before-late-write" },
-    cleanupAt,
-  );
-  expect(completed).toMatchObject({
-    publication_cleanup: { state: "completed" },
-  });
-
-  releasePut.resolve(undefined);
-  await expect(approval).rejects.toMatchObject({
-    code: "publication_abandoned",
-  });
-  expect(lateObjectKey).not.toBeNull();
-  expect(await testEnv.CATALOGUE_EXPORTS.get(lateObjectKey!)).not.toBeNull();
-  const reopened = await showRunDirect(
-    catalogueStore(testEnv.CATALOGUE_DB),
-    testEnv.CATALOGUE_EXPORTS,
-    runId,
-    cleanupAt,
-  );
-  expect(reopened).toMatchObject({
-    publication_cleanup: {
-      state: "failed",
-      failure_code: "late_publication_write",
-    },
-  });
-  await expect(
-    retryPublicationCleanupDirect(
-      catalogueStore(testEnv.CATALOGUE_DB),
-      testEnv.CATALOGUE_EXPORTS,
-      runId,
-      { idempotency_key: "cleanup-before-late-write" },
-      cleanupAt,
-    ),
-  ).rejects.toThrow("persisted administration success outcome does not match");
-  const recovered = await retryPublicationCleanupDirect(
-    catalogueStore(testEnv.CATALOGUE_DB),
-    testEnv.CATALOGUE_EXPORTS,
-    runId,
-    { idempotency_key: "cleanup-after-late-write" },
-    "2026-07-29T02:11:00.000Z",
-  );
-  expect(recovered).toMatchObject({
-    publication_cleanup: { state: "completed" },
-  });
-  expect(await testEnv.CATALOGUE_EXPORTS.get(lateObjectKey!)).toBeNull();
-  if (priorCurrentRevision !== null) {
-    await publishedCatalogueQueries
-      .setCatalogueRevisionsContentDigest(testEnv.CATALOGUE_DB)
-      .bind(priorCurrentRevision.content_digest, priorCurrentRevision.id)
-      .run();
-  }
-});
-
 test("a cleanup CAS loser replays the immutable completion that won the race", async () => {
   const startedAt = "2026-07-29T02:30:00.000Z";
   testObservedAt = startedAt;
@@ -1154,27 +914,18 @@ test("a cleanup CAS loser replays the immutable completion that won the race", a
   }
   const started = await startRun("start-cleanup-cas-replay");
   const runId = requiredDocumentString(started.document, "id");
-  const failingBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
-    async put() {
-      throw new Error("synthetic publication write failure");
-    },
-  });
-  await expect(
-    observeHistoricalRunApprovalDirect(
-      catalogueStore(testEnv.CATALOGUE_DB),
-      failingBucket,
-      runId,
-      {
-        candidate_digest: requiredDocumentString(started.document, "candidate_digest"),
-        expected_current_revision_id: requiredDocumentString(started.document, "expected_current_revision_id"),
-        idempotency_key: "approve-cleanup-cas-replay",
-      },
-      startedAt,
-    ),
-  ).rejects.toMatchObject({
-    code: "export_verification_failed",
-  });
-  const failed = await showRunDirect(catalogueStore(testEnv.CATALOGUE_DB), testEnv.CATALOGUE_EXPORTS, runId, startedAt);
+  const { reconcileAfter } = await seedHistoricalPublicationReservation(
+    started.document,
+    "approve-cleanup-cas-replay",
+    startedAt,
+  );
+  const failed = await showRunDirect(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    testEnv.CATALOGUE_EXPORTS,
+    runId,
+    reconcileAfter,
+  );
+  expect(failed).toMatchObject({ state: "failed", failure_code: "publication_abandoned" });
   const pendingCleanup = requiredDocumentRecord(failed, "publication_cleanup");
   const cleanupAt = requiredDocumentString(pendingCleanup, "not_before");
   const cleanupKey = "cleanup-cas-replay";
@@ -1246,119 +997,6 @@ test("a cleanup CAS loser replays the immutable completion that won the race", a
   }
 });
 
-test("normal approval never adopts a prefix that becomes a registered export", async () => {
-  const startedAt = "2026-07-29T02:40:00.000Z";
-  testObservedAt = startedAt;
-  const priorCurrentRevision = await publishedCatalogueQueries
-    .readCatalogueStateIdContentDigest(testEnv.CATALOGUE_DB)
-    .first<{ id: string; content_digest: string }>();
-  if (priorCurrentRevision !== null) {
-    await publishedCatalogueQueries
-      .setCatalogueRevisionsContentDigest(testEnv.CATALOGUE_DB)
-      .bind("0".repeat(64), priorCurrentRevision.id)
-      .run();
-  }
-  const started = await startRun("start-normal-prefix-registration-race");
-  const runId = requiredDocumentString(started.document, "id");
-  const candidateDigest = requiredDocumentString(started.document, "candidate_digest");
-  const expectedRevision = requiredDocumentString(started.document, "expected_current_revision_id");
-  const revisionId = await catalogueRevisionIdentity({
-    runId,
-    candidateDigest,
-    expectedCurrentRevisionId: expectedRevision,
-  });
-  const registeredManifestKey = `catalogue-exports/${revisionId}/registered-manifest.json`;
-  const registeredBytes = new TextEncoder().encode("registered-export");
-  await testEnv.CATALOGUE_EXPORTS.put(registeredManifestKey, registeredBytes);
-  let registered = false;
-  const racingBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
-    async put() {
-      if (!registered) {
-        registered = true;
-        const run = await ingestionQueries
-          .readIngestionRunsCandidateCatalogueDigest(testEnv.CATALOGUE_DB)
-          .bind(runId)
-          .first<{ candidate_catalogue_digest: string }>();
-        await catalogueStore(testEnv.CATALOGUE_DB).batch([
-          ingestionQueries
-            .insertCatalogueRevisionsForNormalApprovalNeverAdoptsPrefixThatBecomesRegisteredExport(testEnv.CATALOGUE_DB)
-            .bind(
-              revisionId,
-              runId,
-              startedAt,
-              run?.candidate_catalogue_digest ?? candidateDigest,
-              expectedRevision,
-              candidateDigest,
-            ),
-          catalogueExportQueries
-            .insertCatalogueExports(testEnv.CATALOGUE_DB)
-            .bind(revisionId, registeredManifestKey, "a".repeat(64)),
-        ]);
-      }
-      throw new Error("the deterministic publication prefix became registered");
-    },
-  });
-
-  await expect(
-    observeHistoricalRunApprovalDirect(
-      catalogueStore(testEnv.CATALOGUE_DB),
-      racingBucket,
-      runId,
-      {
-        candidate_digest: candidateDigest,
-        expected_current_revision_id: expectedRevision,
-        idempotency_key: "approve-normal-prefix-registration-race",
-      },
-      startedAt,
-    ),
-  ).rejects.toMatchObject({ code: "publication_abandoned" });
-
-  const stored = await ingestionQueries.countIngestionPublicationCleanupState(testEnv.CATALOGUE_DB).bind(runId).first<{
-    state: string;
-    cleanup_count: number;
-    current_revision_id: string;
-  }>();
-  expect(stored).toEqual({
-    state: "failed",
-    cleanup_count: 0,
-    current_revision_id: expectedRevision,
-  });
-  expect(
-    await showRunDirect(catalogueStore(testEnv.CATALOGUE_DB), testEnv.CATALOGUE_EXPORTS, runId, startedAt),
-  ).toMatchObject({
-    state: "failed",
-    failure_code: "publication_abandoned",
-    publication_cleanup: null,
-  });
-  expect(
-    await catalogueExportQueries
-      .readCatalogueExportsCatalogueRevisionIdManifestKey(testEnv.CATALOGUE_DB)
-      .bind(revisionId)
-      .first(),
-  ).toEqual({
-    catalogue_revision_id: revisionId,
-    manifest_key: registeredManifestKey,
-    manifest_digest: "a".repeat(64),
-    verified: 1,
-  });
-  expect(new Uint8Array(await (await testEnv.CATALOGUE_EXPORTS.get(registeredManifestKey))!.arrayBuffer())).toEqual(
-    registeredBytes,
-  );
-  expect(
-    (
-      await testEnv.CATALOGUE_EXPORTS.list({
-        prefix: `catalogue-exports/${revisionId}/`,
-      })
-    ).objects.map((object) => object.key),
-  ).toEqual([registeredManifestKey]);
-  if (priorCurrentRevision !== null) {
-    await publishedCatalogueQueries
-      .setCatalogueRevisionsContentDigest(testEnv.CATALOGUE_DB)
-      .bind(priorCurrentRevision.content_digest, priorCurrentRevision.id)
-      .run();
-  }
-});
-
 test("cleanup deletes nothing when its failed prefix becomes registered", async () => {
   const startedAt = "2026-07-29T02:50:00.000Z";
   testObservedAt = startedAt;
@@ -1382,30 +1020,19 @@ test("cleanup deletes nothing when its failed prefix becomes registered", async 
   });
   const failedObjectKey = `catalogue-exports/${revisionId}/partial-publication.bin`;
   const failedObjectBytes = new TextEncoder().encode("partial-publication");
-  let failedAfterWrite = false;
-  const failingBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
-    async put(...arguments_) {
-      if (!failedAfterWrite) {
-        failedAfterWrite = true;
-        await testEnv.CATALOGUE_EXPORTS.put(failedObjectKey, failedObjectBytes);
-        throw new Error("synthetic publication write failure");
-      }
-      return testEnv.CATALOGUE_EXPORTS.put(...arguments_);
-    },
-  });
-  await expect(
-    observeHistoricalRunApprovalDirect(
-      catalogueStore(testEnv.CATALOGUE_DB),
-      failingBucket,
-      runId,
-      {
-        candidate_digest: candidateDigest,
-        expected_current_revision_id: expectedRevision,
-        idempotency_key: "approve-cleanup-prefix-registration-race",
-      },
-      startedAt,
-    ),
-  ).rejects.toMatchObject({ code: "export_verification_failed" });
+  const { reconcileAfter } = await seedHistoricalPublicationReservation(
+    started.document,
+    "approve-cleanup-prefix-registration-race",
+    startedAt,
+  );
+  await testEnv.CATALOGUE_EXPORTS.put(failedObjectKey, failedObjectBytes);
+  const failed = await showRunDirect(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    testEnv.CATALOGUE_EXPORTS,
+    runId,
+    reconcileAfter,
+  );
+  expect(failed).toMatchObject({ state: "failed", failure_code: "publication_abandoned" });
   const cleanup = await ingestionQueries
     .readIngestionPublicationCleanupNotBefore(testEnv.CATALOGUE_DB)
     .bind(runId)
@@ -2246,6 +1873,48 @@ test("a crashed failed retry remains stable after another key succeeds", async (
   expect(failedReplay.document).toEqual(failed.document);
   expect(failedReplayR2Calls).toBe(0);
 });
+
+/** Inject a pre-retirement reservation; no retired approval writer is invoked. */
+async function seedHistoricalPublicationReservation(
+  document: Record<string, unknown>,
+  key: string,
+  observedAt: string,
+) {
+  const runId = requiredDocumentString(document, "id");
+  const digest = requiredDocumentString(document, "candidate_digest");
+  const predecessor = requiredDocumentString(document, "expected_current_revision_id");
+  const revisionId = await catalogueRevisionIdentity({
+    runId,
+    candidateDigest: digest,
+    expectedCurrentRevisionId: predecessor,
+  });
+  const reconcileAfter = new Date(Date.parse(observedAt) + publicationLeaseMilliseconds).toISOString();
+  const approval = {
+    action: "approved",
+    approved_at: observedAt,
+    candidate_digest: digest,
+    expected_current_revision_id: predecessor,
+  };
+  await ingestionQueries
+    .setIngestionRunsStateApprovalJson(testEnv.CATALOGUE_DB)
+    .bind(
+      JSON.stringify(approval),
+      key,
+      JSON.stringify([approval]),
+      JSON.stringify({
+        completed_stages: ["planning", "collecting", "parsing", "reconciling", "awaiting_approval"],
+        current_stage: "publishing",
+      }),
+      revisionId,
+      observedAt,
+      reconcileAfter,
+      "f".repeat(64),
+      `writer:${revisionId}`,
+      runId,
+    )
+    .run();
+  return { reconcileAfter, revisionId };
+}
 
 async function administrationRequest(
   pathname: string,

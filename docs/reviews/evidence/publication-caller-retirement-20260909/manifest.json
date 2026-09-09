@@ -1,0 +1,24 @@
+{
+  "command": "npm run test:workers:ingestion -- apps/ingestion/test/lifecycle.spec.ts apps/ingestion/test/publication-caller-retirement.spec.ts -t 'retired aggregate approval|an interrupted publication finalizes only its exact verified export|a collected source publishes through exact native owner operations'",
+  "selection": "New approval creates no writes; exact reserved historical approval with/without original claim; real native owner candidate/artifact/publication/replay journey. All other lifecycle cases remain unselected and unmigrated at this checkpoint.",
+  "runs": [
+    {
+      "file": "focused-b32abca9.log.gz",
+      "uncompressed_sha256": "21787e64c6611fdd38f01880e794603920447b8205da2221dff0da7647cd7c11",
+      "commit": "b32abca9",
+      "result": "3 passed; 1 failed; 27 unselected",
+      "duration_seconds": 4.62,
+      "interrupted": false,
+      "notes": "Full log retains workerd canceled/hung background request diagnostics; these are not suppressed or claimed as backup/restore proof."
+    },
+    {
+      "file": "focused-b32abca9-unique-intents.log.gz",
+      "uncompressed_sha256": "64174aa3be1c2c3bfc2fe80ee3218ec362dd370ca0be63b47d14edd251952e44",
+      "commit": "20661b33",
+      "result": "4 passed; 27 unselected",
+      "duration_seconds": 4.64,
+      "interrupted": false,
+      "notes": "Full log retains workerd canceled/hung background request diagnostics; these are not suppressed or claimed as backup/restore proof."
+    }
+  ]
+}
