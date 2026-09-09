@@ -6,7 +6,9 @@ The private-launch coordinator confirmed that identical consumer catalogue conte
 
 The focused test in `reconciliation-provenance-locators.spec.ts` at `3e0247538860a26367dd64ad611e775429addf4a` collected the same retained synthetic source twice, prepared two independently reviewed native manifests and completed both native publications and actual SQL restore checkpoints. Distinct manifests, newer complete successful-check evidence, new snapshots and unchanged first-run snapshots passed. The same-revision assertion failed: a second consumer revision was minted. The run exited naturally in 7.993 seconds (5.602 seconds in the test); it was not interrupted. `/tmp/issue-274-native-nochange-3e024753.log` retains the raw output.
 
-The strengthened oracle additionally compares the integrity-verified `canonical_digest:catalogue` checkpoints. That equality check must pass before this existing digest is selected as the no-change receipt. It is not yet runtime evidence.
+The strengthened oracle at `fba8905b64e2c7597707888d15855483319522e2` compared the integrity-verified `canonical_digest:catalogue` checkpoints. Equality failed before the second publication: `96f57f9dfd3274cc8c6b7aa97cc0a082766deb0d2fc6f0ad4fc5d59d91e5543b` versus `974804d7f7c7b13dfebb1366537a0618d10f516ae9f727e343e4d151b88addcc`. The selected test exited naturally in 6.331 seconds (3.662 seconds in the test); ten other cases were filtered out. `/tmp/issue-274-native-nochange-digest-fba8905b.log` retains the output.
+
+Production changes remain on hold. The existing digest is not yet a valid equality receipt: native candidate records now include administrative evidence absent from the historical candidate shape. A bounded comparison of the tiny synthetic candidate records and the actual verified public export records must identify the difference before choosing a digest correction. The original same-revision oracle and both red logs remain preserved; no runtime success or no-change fix is claimed.
 
 ## Bounded acceptance model under review
 
