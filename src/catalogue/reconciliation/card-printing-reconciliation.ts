@@ -2200,7 +2200,7 @@ function semanticCatalogueCandidate(candidate: CatalogueCandidate): Record<strin
     selected_games: candidate.selected_games,
     ...(candidate.identity_corrections?.length ? { identity_corrections: candidate.identity_corrections } : {}),
     cards: candidate.cards,
-    printings: candidate.printings,
+    printings: candidate.printings.map(({ locator_evidence: _locators, ...printing }) => printing),
     printing_images: (candidate.printing_images ?? []).map((image) => ({
       id: image.id,
       printing_id: image.printing_id,
