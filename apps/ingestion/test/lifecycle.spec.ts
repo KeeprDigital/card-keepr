@@ -84,6 +84,34 @@ test("administration status excludes the unpublished bootstrap spine from the re
   });
 });
 
+test("retired aggregate approval creates no claim, reservation, outcome or export for a new intent", async () => {
+  const started = await startRun("retired-approval-candidate");
+  const runId = requiredDocumentString(started.document, "id");
+  const digest = requiredDocumentString(started.document, "candidate_digest");
+  const predecessor = requiredDocumentString(started.document, "expected_current_revision_id");
+  const key = "retired-new-approval";
+  const before = await ingestionQueries.countIngestionPublicationCleanup(testEnv.CATALOGUE_DB).bind(runId, key).first();
+  const exportsBefore = await testEnv.CATALOGUE_EXPORTS.list();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const rejected = await approve(runId, digest, predecessor, key);
+    expect(rejected.response.status).toBe(410);
+    expect(rejected.document).toMatchObject({ code: "run_approval_retired" });
+  }
+  expect(
+    await ingestionQueries.countIngestionPublicationCleanup(testEnv.CATALOGUE_DB).bind(runId, key).first(),
+  ).toEqual(before);
+  expect(
+    await ingestionQueries.countAdministrationIdempotencyClaims(testEnv.CATALOGUE_DB).bind(key, key).first(),
+  ).toMatchObject({ claims: 0, outcomes: 0 });
+  expect((await testEnv.CATALOGUE_EXPORTS.list()).objects).toEqual(exportsBefore.objects);
+  expect((await showRun(runId)).document).toMatchObject({
+    state: "awaiting_approval",
+    candidate_digest: digest,
+    expected_current_revision_id: predecessor,
+    publication_reservation: null,
+  });
+});
+
 test("the public run boundary reads and retries an immutable retained candidate", async () => {
   const runId = "run_historical_fixed_point_candidate";
   const historicalCandidate = {

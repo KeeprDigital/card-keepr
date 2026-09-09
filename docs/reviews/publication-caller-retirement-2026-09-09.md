@@ -71,8 +71,9 @@ Direct old-approval runtime consumers:
 Acceptance harness consumers:
 `catalogue-publication-ingestion-harness.ts`, `retained-evidence-base-harness.ts`,
 `combined-card-keepr-runtime.ts` attach legacy approval backup waiters. CLI contracts
-are in `acceptance/ingestion-cli.test.mjs`; operational contract definitions are
-in `prototype/formalize-implementation-contracts/openapi.json`. Existing runbook
+are in `acceptance/ingestion-cli.test.mjs`; the prototype OpenAPI is read-only and contains no approval operation to retire.
+Its administration schema retains historical approval records and must continue
+to decode them. Existing runbook
 native workflows are `atomic-game-publication.md`, `publication-preparation.md`
 and `one-piece-two-source.md`. Earlier audit/planning documents remain historical.
 
@@ -91,3 +92,29 @@ and source reachability checks. Runtime tests require the coordinator's host
 lease; the toolchain lane currently owns it. Final evidence must name exact
 commits and any interrupted/failing checks, independent Standards/Spec reviews,
 native approval/publication/image/export/cleanup tests and actual restore proof.
+
+
+## First implementation checkpoint
+
+The CLI now returns explicit `run_approval_retired` guidance before any network
+request. All 22 CLI contract tests pass, including the initial failing retirement
+regression. Help now names native publication and preparation commands.
+
+The old API implementation now observes only historical outcomes/reservations:
+exact persisted success/problem replay remains unchanged, changed reused keys
+retain 409, and an existing publishing reservation must match key, digest and
+predecessor before observing its prior active claim or invoking historical
+recovery. An unreserved new intent gets HTTP 410 without acquiring a claim,
+reserving a writer or persisting an outcome. This is deliberately not a native
+approval translator. The old function name temporarily remains for existing
+runtime caller migration; its aggregate writer has been deleted.
+
+Deleted sole-new-writer code includes aggregate/export allocation guards, the
+16 MiB constant, transient image base64 conversion/writing, new export writes,
+new reservation helper, old no-change publication and unreserved failure helper.
+Historical prefix verification, verified commit, owned cleanup and pending/replay
+primitives remain. Typecheck passes after correcting intermediate removed-import
+errors. The new public/runtime no-write regression and existing exact reserved
+publication recovery test are queued for the host lease; they have not run yet.
+Supported test callers still need native approval migration, so this checkpoint
+is not ready for integration or issue completion.

@@ -5,7 +5,6 @@ import {
   type PublicationEvidenceResource,
   productReleasePublicationStatements,
   type ReconciliationPublicationPlan,
-  reconciliationPublication,
   typedPrintingProjections,
 } from "../reconciliation";
 import {
@@ -15,12 +14,11 @@ import {
   guardedAtomicBatch,
   type SupportedGame,
 } from "../shared";
-import { idempotencyCompletionStatements, replayAfterConflict } from "./administration-idempotency";
+import { idempotencyCompletionStatements } from "./administration-idempotency";
 import { cardAttributeProjectionStatement } from "./card-attribute-repository";
 import { printingQueryProjectionStatements } from "./printing-query-materialization";
 import {
   advanceCatalogueRevisionStatement,
-  approveNoChangeRunStatement,
   archiveOldQueryRevisionsStatement,
   createPublicationBackupStatement,
   degradeRecoveryAfterPublicationStatement,
@@ -29,11 +27,9 @@ import {
   publishCardDocumentsStatement,
   publishCardQueryDocumentsStatement,
   publishCardSearchChunksStatement,
-  publishNoChangeRunStatement,
   publishPrintingDocumentsStatement,
   publishReconciledPrintingImagesStatement,
   publishRevisionPrintingImagesStatement,
-  recordNoChangeResultStatement,
   registerAvailableQueryRevisionStatement,
   registerCatalogueRevisionStatement,
   registerVerifiedCatalogueExportStatement,
@@ -41,88 +37,9 @@ import {
 import { requiredCandidateCatalogueDigest } from "./publication-storage";
 import { progressFor, publicRun } from "./run-document-codec";
 import { freshnessStatementsForRun } from "./run-freshness";
-import { releaseRunLockStatement, throwApprovalFailure } from "./run-storage";
-import type { ApproveRunRequest, IdempotencyClaimOwner, RunRow } from "./run-types";
+import { releaseRunLockStatement } from "./run-storage";
+import type { IdempotencyClaimOwner, RunRow } from "./run-types";
 import { parseSelectedGames, requiredPublicationValue } from "./run-values";
-
-export async function publishNoChange(
-  database: CatalogueStore,
-  run: RunRow,
-  request: ApproveRunRequest,
-  requestJson: string,
-  approval: Record<string, unknown>,
-  now: string,
-  claimOwner: IdempotencyClaimOwner,
-  candidate: CatalogueCandidate,
-): Promise<Record<string, unknown>> {
-  const resultingRun = publicRun({
-    ...run,
-    state: "published",
-    approval_json: JSON.stringify(approval),
-    approval_idempotency_key: request.idempotency_key,
-    approval_history_json: JSON.stringify([approval]),
-    terminal_at: now,
-    progress_json: JSON.stringify(progressFor("published")),
-    publication_outcome: "no_change",
-    resulting_revision_id: request.expected_current_revision_id,
-    freshness_checked_at: now,
-  });
-  const reconciliation = await reconciliationPublication(database, run.id, request.expected_current_revision_id, now);
-  const runFreshnessStatements = await freshnessStatementsForRun(
-    database,
-    parseSelectedGames(run.selected_games_json),
-    run.id,
-    candidate,
-    now,
-  );
-  try {
-    await database.batch([
-      recordNoChangeResultStatement(database, {
-        runId: run.id,
-        revisionId: request.expected_current_revision_id,
-        candidateDigest: request.candidate_digest,
-        checkedAt: now,
-      }),
-      approveNoChangeRunStatement(database, {
-        occurredAt: now,
-        approvalJson: JSON.stringify(approval),
-        idempotencyKey: request.idempotency_key,
-        progressJson: JSON.stringify(progressFor("publishing")),
-        runId: run.id,
-      }),
-      ...(reconciliation?.statements ?? []),
-      ...runFreshnessStatements,
-      publishNoChangeRunStatement(database, {
-        terminalAt: now,
-        progressJson: JSON.stringify(progressFor("published")),
-        revisionId: request.expected_current_revision_id,
-        checkedAt: now,
-        runId: run.id,
-      }),
-      releaseRunLockStatement(database, run.id),
-      ...idempotencyCompletionStatements(database, {
-        key: request.idempotency_key,
-        operation: "approve_ingestion_run",
-        requestJson,
-        response: resultingRun,
-        status: 200,
-        createdAt: now,
-        claimOwner,
-      }),
-    ]);
-  } catch (error) {
-    const concurrentReplay = await replayAfterConflict(
-      database,
-      request.idempotency_key,
-      "approve_ingestion_run",
-      requestJson,
-      error,
-    );
-    if (concurrentReplay !== null) return concurrentReplay;
-    await throwApprovalFailure(database, run, error, now);
-  }
-  return resultingRun;
-}
 
 function catalogueCard(
   card: CatalogueCandidate["cards"][number],
