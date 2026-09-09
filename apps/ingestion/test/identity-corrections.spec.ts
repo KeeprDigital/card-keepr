@@ -1,9 +1,8 @@
 import { expect, test } from "vitest";
-import type { ReconciliationWorkflowParams } from "../../../src/catalogue/reconciliation";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import { catalogueStore } from "../../../src/catalogue/shared";
-import worker from "../src/index";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
+import { retainNativePreparation } from "./native-preparation-fixture";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import { retainLegacyCorrectionPin } from "./query-helpers/legacy-decision-pins";
 import {
@@ -27,45 +26,7 @@ async function prepareIdentityFixture(path: string, key: string, predecessor: st
 
 async function publishIdentityFixture(path: string, key: string, predecessor: string) {
   const { candidate } = await prepareIdentityFixture(path, key, predecessor);
-  return approveNativeCandidate(candidate, `${key}-native-publication`);
-}
-
-/** Capture the native dispatch so the existing fault driver exclusively runs each durable unit. */
-async function retainedIdentityPreparation(runId: string, predecessor: string, key: string) {
-  let params: ReconciliationWorkflowParams | undefined;
-  const queued = { status: async () => ({ status: "queued" }) } as unknown as WorkflowInstance;
-  const binding = {
-    create: async (options: { params: ReconciliationWorkflowParams }) => {
-      params = options.params;
-      return queued;
-    },
-    get: async () => queued,
-  } as unknown as Env["RECONCILIATION_WORKFLOW"];
-  const request = (path: string, body: Record<string, unknown>) =>
-    worker.fetch(
-      new Request(`https://card-keepr.invalid${path}`, {
-        method: "POST",
-        headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
-        body: JSON.stringify(body),
-      }),
-      { ...testEnv, RECONCILIATION_WORKFLOW: binding },
-    );
-  const created = await request("/v1/game-candidates", {
-    ingestion_run_id: runId,
-    supported_game: "one-piece",
-    expected_game_revision_id: predecessor,
-    idempotency_key: key,
-  });
-  expect(created.status).toBe(201);
-  const header = await created.json<Record<string, unknown>>();
-  expect(params).toBeDefined();
-  expect(params?.preparation_id).toBe(header.id);
-  return {
-    candidateId: String(header.id),
-    params: params!,
-    resume: (generation: number, idempotencyKey: string) =>
-      request(`/v1/game-candidates/${header.id}/resume`, { generation, idempotency_key: idempotencyKey }),
-  };
+  return { ...(await approveNativeCandidate(candidate, `${key}-native-publication`)), candidate };
 }
 
 // Synthetic owner attestations exercise decisions; they are not real-source findings.
@@ -397,6 +358,7 @@ test("reviewed known-number merge preserves a source Printing through corrected 
       })
     ).response.status,
   ).toBe(201);
+  const acceptedPreparations = [String(before.candidate.id), String(published.candidate.id)];
   let knownPredecessor = String(published.document.resulting_revision_id);
   for (const key of ["known-corrected", "known-refreshed"]) {
     const accepted = await publishIdentityFixture(
@@ -405,6 +367,7 @@ test("reviewed known-number merge preserves a source Printing through corrected 
       knownPredecessor,
     );
     knownPredecessor = String(accepted.document.resulting_revision_id);
+    acceptedPreparations.push(String(accepted.candidate.id));
     expect(accepted.response.status, JSON.stringify(accepted.document)).toBe(200);
     const records = await exportComponentRecords(String(accepted.document.resulting_revision_id), "printings");
     expect(records).toEqual([expect.objectContaining({ id: printing.id, card_id: target })]);
@@ -416,8 +379,16 @@ test("reviewed known-number merge preserves a source Printing through corrected 
   expect(contradicted.document.diagnostics).toEqual(
     expect.arrayContaining([expect.objectContaining({ code: "printing_match_contradictory" })]),
   );
-  const mappings = await get(`/v1/reconciliation/identities/${printing.id}`);
-  expect((mappings.document.mappings as unknown[]).length).toBeGreaterThanOrEqual(3);
+  const mappings: Record<string, unknown>[] = [];
+  for (const preparationId of acceptedPreparations) {
+    const inspected = await get(`/v1/reconciliation/identities/${printing.id}?preparation_id=${preparationId}`);
+    expect(inspected.response.status).toBe(200);
+    const retained = inspected.document.mappings as Record<string, unknown>[];
+    expect(retained).toEqual(expect.arrayContaining([expect.objectContaining({ preparation_id: preparationId })]));
+    expect(inspected.document.next_cursor).toBeNull();
+    mappings.push(...retained);
+  }
+  expect(mappings.length).toBeGreaterThanOrEqual(3);
 });
 
 test("new Printing discovered after a Card split can receive an append-only owner assignment", async () => {
@@ -484,6 +455,12 @@ test("new Printing discovered after a Card split can receive an append-only owne
   };
   const reviewed = await post("/v1/identity-corrections/validate", assignment);
   expect(reviewed.response.status, JSON.stringify(reviewed.document)).toBe(200);
+  expect((reviewed.document.reviewed as Record<string, unknown>).assignment_evidence).toEqual([
+    expect.objectContaining({
+      preparation_id: discovery.candidate.id,
+      printing_id: exclusion.printing_id,
+    }),
+  ]);
   const assigned = await post("/v1/identity-corrections", {
     ...assignment,
     review_digest: reviewed.document.review_digest,
@@ -540,7 +517,7 @@ test.each(["lookup", "application"])(
       ).response.status,
     ).toBe(201);
     const run = await collect("/reconciliation/product-typed-relationships", "lookup-next");
-    const preparation = await retainedIdentityPreparation(
+    const preparation = await retainNativePreparation(
       run.id,
       String(seed.document.resulting_revision_id),
       "lookup-next",
@@ -675,7 +652,7 @@ test.each(["associations", "application", "lookup"])(
         : "/reconciliation/curated-conflict-fanout-base",
       "association-refresh",
     );
-    const preparation = await retainedIdentityPreparation(
+    const preparation = await retainNativePreparation(
       run.id,
       String(published.document.resulting_revision_id),
       `reconcile-${run.id}`,
