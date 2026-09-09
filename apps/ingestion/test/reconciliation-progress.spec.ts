@@ -62,13 +62,20 @@ test("game predecessor follows pinned ancestry despite publication clock skew", 
     // Drive the real switch clock; approval metadata alone does not affect the
     // native Workflow's independently chosen publication timestamp.
     const publishedAt = new Date(now + (2 - index) * 60000).toISOString();
+    const switchStarted = Date.now();
     const published = await advanceGamePublication(env, operation, 0, publishedAt);
     expect(published.state, JSON.stringify(published)).toBe("published");
     const revision = requiredString(published, "resulting_revision_id");
     const retained = await readCatalogueRevisionPublishedAt(testEnv.CATALOGUE_DB)
       .bind(revision)
       .first<{ published_at: string }>();
-    expect(retained?.published_at).toBe(publishedAt);
+    expect(retained).not.toBeNull();
+    // The transaction computes its own timestamp from the supplied clock offset.
+    // Bound that real time by the measured switch duration, then compare ancestry.
+    expect(Date.parse(retained!.published_at)).toBeGreaterThanOrEqual(Date.parse(publishedAt));
+    expect(Date.parse(retained!.published_at)).toBeLessThanOrEqual(
+      Date.parse(publishedAt) + Date.now() - switchStarted,
+    );
     publicationTimes.push(retained!.published_at);
     revisions.push(revision);
     await startOrObserveCatalogueBackupWorkflow(
