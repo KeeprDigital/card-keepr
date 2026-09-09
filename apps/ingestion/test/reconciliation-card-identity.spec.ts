@@ -427,21 +427,28 @@ test("Gundam Printing identity is independent of locale observation order when E
     lineage: "gundam-en-us",
     adapter: "fixture-gundam-en-us-json@2",
   });
-  const us = await reconcile(usRun.id);
-  const printingId = requiredString(requiredFirst(us.document, "printings"), "id");
+  const us = await prepareNativeCandidate(usRun.id, "gundam", "catrev_spine_000", "gundam-canonical-0-first");
+  const usRecords = await nativeCandidateRecords(String(us.id));
+  const printingId = requiredString(requiredFirst(usRecords, "printings"), "id");
   expect(printingId).toMatch(/^printing_[a-f0-9]{32}$/);
-  await approve(us.document);
+  const firstPublished = await approveNativeCandidate(us, "gundam-canonical-0-first-publication");
 
   const asiaRun = await collect("/reconciliation/gundam-mirror-asia", "stable-id-en-asia-second", {
     game: "gundam",
     lineage: "gundam-en-asia",
     adapter: "fixture-gundam-en-asia-json@2",
   });
-  const asia = await reconcile(asiaRun.id);
-  expect(requiredFirst(asia.document, "printings")).toMatchObject({
+  const asia = await prepareNativeCandidate(
+    asiaRun.id,
+    "gundam",
+    String(firstPublished.document.resulting_revision_id),
+    "gundam-canonical-0-second",
+  );
+  const asiaRecords = await nativeCandidateRecords(String(asia.id));
+  expect(requiredFirst(asiaRecords, "printings")).toMatchObject({
     id: printingId,
   });
-  await approve(asia.document);
+  await approveNativeCandidate(asia, "gundam-canonical-0-second-publication");
 }, 20_000);
 
 test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent EN-US evidence arrives later", async () => {
@@ -454,9 +461,10 @@ test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent 
       adapter: "fixture-gundam-en-asia-json@2",
     },
   );
-  const asia = await reconcile(asiaRun.id);
-  const printingId = requiredString(requiredFirst(asia.document, "printings"), "id");
-  const firstPublished = await approve(asia.document);
+  const asia = await prepareNativeCandidate(asiaRun.id, "gundam", "catrev_spine_000", "gundam-canonical-1-first");
+  const asiaRecords = await nativeCandidateRecords(String(asia.id));
+  const printingId = requiredString(requiredFirst(asiaRecords, "printings"), "id");
+  const firstPublished = await approveNativeCandidate(asia, "gundam-canonical-1-first-publication");
   expect(firstPublished.response.status).toBe(200);
 
   const usRun = await collect("/reconciliation/gundam-printing-format-us-second", "gundam-printing-format-us-second", {
@@ -464,8 +472,14 @@ test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent 
     lineage: "gundam-en-us",
     adapter: "fixture-gundam-en-us-json@2",
   });
-  const us = await reconcile(usRun.id);
-  expect(requiredFirst(us.document, "printings")).toMatchObject({
+  const us = await prepareNativeCandidate(
+    usRun.id,
+    "gundam",
+    String(firstPublished.document.resulting_revision_id),
+    "gundam-canonical-1-second",
+  );
+  const usRecords = await nativeCandidateRecords(String(us.id));
+  expect(requiredFirst(usRecords, "printings")).toMatchObject({
     id: printingId,
     rarity: { raw: "L", normalized: "leader" },
     printed_rules_text: "Official printed rules",
@@ -474,7 +488,7 @@ test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent 
       attributes: { alternate_art: false },
     },
   });
-  const published = await approve(us.document);
+  const published = await approveNativeCandidate(us, "gundam-canonical-1-second-publication");
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const exported = await exportComponentRecords(revisionId, "printings");
   expect(exported).toContainEqual(
@@ -718,9 +732,10 @@ test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent 
     lineage: "gundam-en-us",
     adapter: "fixture-gundam-en-us-json@2",
   });
-  const us = await reconcile(usRun.id);
-  const printingId = requiredString(requiredFirst(us.document, "printings"), "id");
-  await approve(us.document);
+  const us = await prepareNativeCandidate(usRun.id, "gundam", "catrev_spine_000", "gundam-canonical-2-first");
+  const usRecords = await nativeCandidateRecords(String(us.id));
+  const printingId = requiredString(requiredFirst(usRecords, "printings"), "id");
+  const firstPublished = await approveNativeCandidate(us, "gundam-canonical-2-first-publication");
 
   const asiaRun = await collect(
     "/reconciliation/gundam-printing-format-asia-second",
@@ -731,8 +746,14 @@ test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent 
       adapter: "fixture-gundam-en-asia-json@2",
     },
   );
-  const asia = await reconcile(asiaRun.id);
-  expect(requiredFirst(asia.document, "printings")).toMatchObject({
+  const asia = await prepareNativeCandidate(
+    asiaRun.id,
+    "gundam",
+    String(firstPublished.document.resulting_revision_id),
+    "gundam-canonical-2-second",
+  );
+  const asiaRecords = await nativeCandidateRecords(String(asia.id));
+  expect(requiredFirst(asiaRecords, "printings")).toMatchObject({
     id: printingId,
     rarity: { raw: "L", normalized: "leader" },
     printed_rules_text: "Official printed rules",
@@ -741,7 +762,7 @@ test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent 
       attributes: { alternate_art: false },
     },
   });
-  const published = await approve(asia.document);
+  const published = await approveNativeCandidate(asia, "gundam-canonical-2-second-publication");
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const exported = await exportComponentRecords(revisionId, "printings");
   expect(exported).toContainEqual(
