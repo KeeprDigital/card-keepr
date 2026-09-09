@@ -1175,7 +1175,7 @@ test("a single Card's Erratum budget includes externally retained text", async (
 });
 
 test("a published catalogue larger than 1 MiB is streamed into the next candidate without an aggregate prior-payload read", async () => {
-  const { post, testEnv } = await import("./reconciliation-helpers");
+  const { testEnv } = await import("./reconciliation-helpers");
   const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
   const firstRun = await collect("/reconciliation/prior-candidate-stream", "prior-stream-first");
   const first = await reconcile(firstRun.id);
@@ -1184,64 +1184,10 @@ test("a published catalogue larger than 1 MiB is streamed into the next candidat
     new TextEncoder().encode(JSON.stringify(first.document.cards) + JSON.stringify(first.document.printings))
       .byteLength,
   ).toBeGreaterThan(1024 * 1024);
-  // Explicit historical fixture: preserve the legacy bounded prior-payload read seam.
-  // Recover an already reserved writer with its actual completed export, never start a new aggregate approval.
-  const { catalogueRevisionIdentity } = await import("../../../src/catalogue/shared");
-  const { buildCatalogueExport } = await import("../../../src/catalogue/export");
-  const { publicationLeaseMilliseconds } = await import("../../../src/catalogue/ingestion/run-types");
-  const { setIngestionRunsStateApprovalJson } = await import("./query-helpers/ingestion");
-  const digest = requiredString(first.document, "candidate_digest");
-  const predecessor = requiredString(first.document, "expected_current_revision_id");
-  const revisionId = await catalogueRevisionIdentity({
-    runId: firstRun.id,
-    candidateDigest: digest,
-    expectedCurrentRevisionId: predecessor,
-  });
-  const startedAt = new Date(Date.now() - publicationLeaseMilliseconds - 1_000).toISOString();
-  const catalogueExport = await buildCatalogueExport(
-    first.document as import("../../../src/catalogue/shared").CatalogueCandidate,
-    digest,
-    revisionId,
-    startedAt,
-  );
-  const approval = {
-    action: "approved",
-    approved_at: startedAt,
-    candidate_digest: digest,
-    expected_current_revision_id: predecessor,
-  };
-  const approvalKey = "prior-stream-historical-publish";
-  await setIngestionRunsStateApprovalJson(testEnv.CATALOGUE_DB)
-    .bind(
-      JSON.stringify(approval),
-      approvalKey,
-      JSON.stringify([approval]),
-      JSON.stringify({
-        completed_stages: ["planning", "collecting", "parsing", "reconciling", "awaiting_approval"],
-        current_stage: "publishing",
-      }),
-      revisionId,
-      startedAt,
-      new Date(Date.parse(startedAt) + publicationLeaseMilliseconds).toISOString(),
-      catalogueExport.manifest.manifest_sha256,
-      `writer:${revisionId}`,
-      firstRun.id,
-    )
-    .run();
-  for (const object of catalogueExport.objects) {
-    const body = object.body();
-    await Promise.all([
-      testEnv.CATALOGUE_EXPORTS.put(object.key, body.readable, { sha256: object.sha256 }),
-      body.completed,
-    ]);
-  }
-  const published = await post(`/v1/ingestion-runs/${firstRun.id}/approval`, {
-    candidate_digest: digest,
-    expected_current_revision_id: predecessor,
-    idempotency_key: approvalKey,
-  });
-  expect(published.response.status, JSON.stringify(published.document)).toBe(200);
-  expect(published.document).toMatchObject({ state: "published", resulting_revision_id: revisionId });
+  // Explicit historical fixture: preserve the legacy bounded prior-payload read seam
+  // through a reserved original writer, verified exports and its actual backup.
+  const { recoverHistoricalPublication } = await import("./historical-publication-fixture");
+  await recoverHistoricalPublication(firstRun.id, "prior-stream-historical-publish");
   const nextRun = await collect("/reconciliation/prior-candidate-stream", "prior-stream-next");
   const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
   let priorReads = 0;
