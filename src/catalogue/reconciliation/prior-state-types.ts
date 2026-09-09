@@ -21,6 +21,7 @@ export type PriorStatePositions = {
   printings: number;
   priorPrintings: number;
   priorPrintingIdentities?: number;
+  priorPrintingLocators?: number;
   printingImages: number;
   priorProducts: ReconciliationCandidateState["positions"];
   priorErrata: number;
@@ -29,6 +30,7 @@ export type PriorStatePositions = {
 export type PriorStateSeed = {
   card: (card: CatalogueCard) => Promise<void>;
   printing: (printing: CataloguePrinting, identity?: NativePrintingIdentity) => Promise<void>;
+  printingLocator: (identity: NativePrintingIdentity) => Promise<void>;
   image: (image: CataloguePrintingImage) => Promise<void>;
   product: (product: CatalogueProduct) => Promise<void>;
   context: (context: CatalogueDistributionContext) => Promise<void>;

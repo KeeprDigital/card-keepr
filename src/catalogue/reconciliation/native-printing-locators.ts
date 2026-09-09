@@ -1,5 +1,6 @@
 import { type CataloguePrinting, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { nativePredecessorGameCandidateStatement } from "./game-candidate-repository";
+import { pinnedCardIdentityResolver } from "./identity-correction-pins";
 import {
   type NativePrintingMatchKind,
   nativePriorPrintingIdentityMatchesStatement,
@@ -112,16 +113,46 @@ export async function nativePriorPrintingIdentity(
       throw new Error("Native prior Printing compatibility evidence is unavailable.");
     return undefined;
   }
-  if (compatibility.card_id !== printing.card_id || (identity && identity.printingId !== printing.id))
+  if (identity && identity.printingId !== printing.id)
     throw new Error("Native prior Printing compatibility has another identity.");
+  if (compatibility.card_id !== printing.card_id) {
+    const associations = await reconciliationCheckpoint<{ complete: boolean }>(
+      db,
+      preparation,
+      "identity_associations",
+    );
+    if (!associations?.value.complete) throw new Error("Native prior Printing compatibility has another identity.");
+    const corrected = await pinnedCardIdentityResolver(db, preparation);
+    let card = compatibility.card_id;
+    const visited = new Set<string>();
+    for (;;) {
+      const next = await corrected.next(card, printing.id);
+      if (!next || next === card) break;
+      if (visited.size === 32 || visited.has(next))
+        throw new Error("Native prior Printing owner correction is cyclic or exceeds its bounded chain.");
+      visited.add(card);
+      card = next;
+    }
+    if (card !== printing.card_id) throw new Error("Native prior Printing compatibility has another identity.");
+  }
   return { id: printing.id, compatibility, locators: printing.locator_evidence ?? [] };
+}
+
+export function nativePrintingLocatorKey(
+  locator: Pick<NativePrintingIdentity["locators"][number], "source_lineage" | "locator" | "variant_key">,
+) {
+  return canonicalJson([locator.source_lineage, locator.locator, locator.variant_key]);
+}
+export function nativePrintingLocatorStateKey(identity: NativePrintingIdentity) {
+  if (identity.locators.length !== 1) throw new Error("One native locator unit must retain exactly one locator.");
+  return canonicalJson([identity.id, nativePrintingLocatorKey(identity.locators[0]!)]);
 }
 
 type PrintingMatch = PrintingCompatibility & { id: string };
 /** An exact native member never consults mutable legacy identity tables. */
 export async function nativePrintingMatches(
   db: CatalogueStore,
-  prior: { preparationId: string; revision: string; game: string; through: number },
+  prior: { preparationId: string; revision: string; game: string; through: number; locatorThrough: number },
   compatibility: PrintingCompatibility,
   locator: { locator: string; variantKey: string | null; reviewed: boolean },
 ): Promise<[PrintingMatch | null, PrintingMatch[], PrintingMatch[], PrintingMatch[]] | undefined> {
@@ -129,9 +160,27 @@ export async function nativePrintingMatches(
     return undefined;
   const group = await sha256Text(compatibility.card_id);
   const read = async (kind: NativePrintingMatchKind): Promise<PrintingMatch[]> => {
+    const namespace = kind === "locator" ? "prior_printing_locators" : "prior_printing_identities";
+    const matchingGroup =
+      kind === "locator"
+        ? await sha256Text(
+            nativePrintingLocatorKey({
+              source_lineage: compatibility.source_lineage,
+              locator: locator.locator,
+              variant_key: locator.variantKey,
+            }),
+          )
+        : group;
+    const through = kind === "locator" ? prior.locatorThrough : prior.through;
     const matches = (
       await documentStorage(() =>
-        nativePriorPrintingIdentityMatchesStatement(db, { ...prior, group }, compatibility, locator, kind).all<{
+        nativePriorPrintingIdentityMatchesStatement(
+          db,
+          { ...prior, group: matchingGroup, through, namespace },
+          compatibility,
+          locator,
+          kind,
+        ).all<{
           key_digest: string;
           observation_ordinal: number;
           byte_length: number;
@@ -146,7 +195,7 @@ export async function nativePrintingMatches(
         exactReducerStateStatement(
           db,
           prior.preparationId,
-          "prior_printing_identities",
+          namespace,
           match.key_digest,
           match.observation_ordinal,
         ).first<{ content: string; sha256: string }>(),
@@ -158,7 +207,11 @@ export async function nativePrintingMatches(
       )
         throw new Error("Native prior Printing identity failed integrity verification.");
       const value = JSON.parse(row.content).value as NativePrintingIdentity;
-      if (value.compatibility.card_id !== compatibility.card_id || (await sha256Text(value.id)) !== match.key_digest)
+      const key = kind === "locator" ? nativePrintingLocatorStateKey(value) : value.id;
+      if (
+        (kind !== "locator" && value.compatibility.card_id !== compatibility.card_id) ||
+        (await sha256Text(key)) !== match.key_digest
+      )
         throw new Error("Native prior Printing match has another identity.");
       values.push({ id: value.id, ...value.compatibility });
     }

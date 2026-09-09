@@ -12,6 +12,7 @@ type Cursor = {
   pass: number;
   partition: number;
   record: number;
+  locator?: number;
   positions: PriorStatePositions;
   complete: boolean;
 };
@@ -87,7 +88,25 @@ export async function nativeCandidateAtRevision(
     );
     if (partition.kind === "printings") {
       const printing = value as CataloguePrinting;
-      await seed.printing(printing, await nativePriorPrintingIdentity(db, candidate.preparation_id, printing));
+      const identity = await nativePriorPrintingIdentity(db, candidate.preparation_id, printing);
+      if (cursor.locator === undefined) {
+        await seed.printing(printing, identity);
+        if (identity?.locators.length) {
+          cursor.locator = 0;
+          await save();
+          continue;
+        }
+      } else {
+        if (!identity || cursor.locator >= identity.locators.length)
+          throw new Error("Native prior locator continuation changed its retained identity.");
+        await seed.printingLocator({ ...identity, locators: [identity.locators[cursor.locator]!] });
+        cursor.locator++;
+        if (cursor.locator < identity.locators.length) {
+          await save();
+          continue;
+        }
+        delete cursor.locator;
+      }
     } else await handler(value as never);
     cursor.record++;
     await save();
