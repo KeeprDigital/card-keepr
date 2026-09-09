@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import { nativeDiagnosticRecords } from "./query-helpers/native-diagnostic-records";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
 import {
   approve,
@@ -505,6 +506,13 @@ test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent 
 });
 
 test("historical Gundam locators survive disappearance without retaining stale Card authority", async () => {
+  let predecessor = "catrev_spine_000";
+  const publish = async (candidate: Record<string, unknown>, key: string) => {
+    const published = await approveNativeCandidate(candidate, key);
+    expect(published.response.status, JSON.stringify(published.document)).toBe(200);
+    predecessor = requiredString(published.document, "resulting_revision_id");
+    return published;
+  };
   const asiaOptions = {
     game: "gundam",
     lineage: "gundam-en-asia",
@@ -521,18 +529,24 @@ test("historical Gundam locators survive disappearance without retaining stale C
     "historical-authority-asia-first",
     asiaOptions,
   );
-  const asia = await reconcile(asiaRun.id);
-  const cardId = requiredString(requiredFirst(asia.document, "cards"), "id");
-  const printingId = requiredString(requiredFirst(asia.document, "printings"), "id");
-  await approve(asia.document);
+  const asia = await prepareNativeCandidate(asiaRun.id, "gundam", predecessor, "historical-native-asia");
+  const asiaRecords = await nativeCandidateRecords(String(asia.id));
+  const cardId = requiredString(requiredFirst(asiaRecords, "cards"), "id");
+  const printingId = requiredString(requiredFirst(asiaRecords, "printings"), "id");
+  await publish(asia, "historical-native-asia-publication");
 
   const asiaMissingRun = await collect(
     "/reconciliation/complete-empty-lineage",
     "historical-authority-asia-missing",
     asiaOptions,
   );
-  const asiaMissing = await reconcile(asiaMissingRun.id);
-  await approve(asiaMissing.document);
+  const asiaMissing = await prepareNativeCandidate(
+    asiaMissingRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-asiaMissing",
+  );
+  await publish(asiaMissing, "historical-native-asiaMissing-publication");
   const missingPrinting = await get(`/v1/reconciliation/printings/${printingId}`);
   expect(missingPrinting.document).toMatchObject({
     lifecycle: { withdrawn: false },
@@ -551,9 +565,13 @@ test("historical Gundam locators survive disappearance without retaining stale C
     "historical-provenance-us-product-conflict",
     usOptions,
   );
-  const historicalProductConflict = await reconcile(historicalProductConflictRun.id);
-  expect(historicalProductConflict.response.status).toBe(409);
-  expect(historicalProductConflict.document.diagnostics).toEqual(
+  const historicalProductConflict = await prepareFailedNativeIdentity(
+    historicalProductConflictRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-product-conflict",
+  );
+  expect(await nativeDiagnosticRecords(testEnv.CATALOGUE_DB, String(historicalProductConflict.id))).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
         code: "printing_match_insufficient_evidence",
@@ -568,8 +586,14 @@ test("historical Gundam locators survive disappearance without retaining stale C
     "historical-authority-us-equivalent",
     usOptions,
   );
-  const usEquivalent = await reconcile(usEquivalentRun.id);
-  expect(requiredFirst(usEquivalent.document, "cards")).toMatchObject({
+  const usEquivalent = await prepareNativeCandidate(
+    usEquivalentRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-usEquivalent",
+  );
+  const usEquivalentRecords = await nativeCandidateRecords(String(usEquivalent.id));
+  expect(requiredFirst(usEquivalentRecords, "cards")).toMatchObject({
     id: cardId,
     name: "  Printing   authority  ",
     effective_rules_text: "Official effective rules",
@@ -578,7 +602,7 @@ test("historical Gundam locators survive disappearance without retaining stale C
       attributes: { effect_text: "  Official   effect  " },
     },
   });
-  expect(requiredFirst(usEquivalent.document, "printings")).toMatchObject({
+  expect(requiredFirst(usEquivalentRecords, "printings")).toMatchObject({
     id: printingId,
     rarity: { raw: "  L  ", normalized: "leader" },
     printed_rules_text: "  Official   printed rules  ",
@@ -587,7 +611,7 @@ test("historical Gundam locators survive disappearance without retaining stale C
       attributes: { alternate_art: false },
     },
   });
-  const usEquivalentPublished = await approve(usEquivalent.document);
+  const usEquivalentPublished = await publish(usEquivalent, "historical-native-usEquivalent-publication");
   const usEquivalentRevision = requiredString(usEquivalentPublished.document, "resulting_revision_id");
   expect(await exportComponentRecords(usEquivalentRevision, "cards")).toContainEqual(
     expect.objectContaining({
@@ -614,9 +638,14 @@ test("historical Gundam locators survive disappearance without retaining stale C
     "historical-authority-us-conflict",
     usOptions,
   );
-  const usConflict = await reconcile(usConflictRun.id);
-  expect(usConflict.response.status).toBe(200);
-  expect(requiredFirst(usConflict.document, "cards")).toMatchObject({
+  const usConflict = await prepareNativeCandidate(
+    usConflictRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-usConflict",
+  );
+  const usConflictRecords = await nativeCandidateRecords(String(usConflict.id));
+  expect(requiredFirst(usConflictRecords, "cards")).toMatchObject({
     id: cardId,
     name: "Contradictory historical-authority Card",
     game_data: {
@@ -625,18 +654,25 @@ test("historical Gundam locators survive disappearance without retaining stale C
       },
     },
   });
-  await post(`/v1/ingestion-runs/${usConflictRun.id}/rejection`, {
-    candidate_digest: requiredString(usConflict.document, "candidate_digest"),
+  const usConflictAbandoned = await post(`/v1/game-candidates/${usConflict.id}/abandon`, {
+    generation: usConflict.generation,
     idempotency_key: "reject-absent-asia-card-authority",
   });
+  expect(usConflictAbandoned.response.status).toBe(200);
+  expect(usConflictAbandoned.document.state).toBe("abandoned");
   const usPrintingConflictRun = await collect(
     "/reconciliation/gundam-printing-lifecycle-primary-disappearance-us-printing-conflict",
     "historical-authority-us-printing-conflict",
     usOptions,
   );
-  const usPrintingConflict = await reconcile(usPrintingConflictRun.id);
-  expect(usPrintingConflict.response.status).toBe(200);
-  expect(requiredFirst(usPrintingConflict.document, "printings")).toMatchObject({
+  const usPrintingConflict = await prepareNativeCandidate(
+    usPrintingConflictRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-usPrintingConflict",
+  );
+  const usPrintingConflictRecords = await nativeCandidateRecords(String(usPrintingConflict.id));
+  expect(requiredFirst(usPrintingConflictRecords, "printings")).toMatchObject({
     id: printingId,
     rarity: { raw: "Leader Rare", normalized: "leader" },
     printed_rules_text: "Substantively different printed rules",
@@ -644,34 +680,43 @@ test("historical Gundam locators survive disappearance without retaining stale C
       attributes: { alternate_art: true },
     },
   });
-  await post(`/v1/ingestion-runs/${usPrintingConflictRun.id}/rejection`, {
-    candidate_digest: requiredString(usPrintingConflict.document, "candidate_digest"),
+  const usPrintingConflictAbandoned = await post(`/v1/game-candidates/${usPrintingConflict.id}/abandon`, {
+    generation: usPrintingConflict.generation,
     idempotency_key: "reject-current-us-printing-evolution",
   });
+  expect(usPrintingConflictAbandoned.response.status).toBe(200);
+  expect(usPrintingConflictAbandoned.document.state).toBe("abandoned");
 
   const usFirstRun = await collect(
     "/reconciliation/gundam-printing-lifecycle-reverse-format-us-first",
     "historical-authority-us-first",
     usOptions,
   );
-  const usFirst = await reconcile(usFirstRun.id);
-  const reverseCardId = requiredString(requiredFirst(usFirst.document, "cards"), "id");
-  const reversePrintingId = requiredString(requiredFirst(usFirst.document, "printings"), "id");
-  await approve(usFirst.document);
+  const usFirst = await prepareNativeCandidate(usFirstRun.id, "gundam", predecessor, "historical-native-usFirst");
+  const usFirstRecords = await nativeCandidateRecords(String(usFirst.id));
+  const reverseCardId = requiredString(requiredFirst(usFirstRecords, "cards"), "id");
+  const reversePrintingId = requiredString(requiredFirst(usFirstRecords, "printings"), "id");
+  await publish(usFirst, "historical-native-usFirst-publication");
   const usMissingRun = await collect(
     "/reconciliation/complete-empty-lineage",
     "historical-authority-us-missing",
     usOptions,
   );
-  const usMissing = await reconcile(usMissingRun.id);
-  await approve(usMissing.document);
+  const usMissing = await prepareNativeCandidate(usMissingRun.id, "gundam", predecessor, "historical-native-usMissing");
+  await publish(usMissing, "historical-native-usMissing-publication");
   const asiaEquivalentRun = await collect(
     "/reconciliation/gundam-printing-lifecycle-reverse-format-asia-second",
     "historical-authority-asia-equivalent",
     asiaOptions,
   );
-  const asiaEquivalent = await reconcile(asiaEquivalentRun.id);
-  expect(requiredFirst(asiaEquivalent.document, "cards")).toMatchObject({
+  const asiaEquivalent = await prepareNativeCandidate(
+    asiaEquivalentRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-asiaEquivalent",
+  );
+  const asiaEquivalentRecords = await nativeCandidateRecords(String(asiaEquivalent.id));
+  expect(requiredFirst(asiaEquivalentRecords, "cards")).toMatchObject({
     id: reverseCardId,
     name: "Printing authority",
     effective_rules_text: "Official effective rules",
@@ -680,50 +725,68 @@ test("historical Gundam locators survive disappearance without retaining stale C
       attributes: { effect_text: "Official effect" },
     },
   });
-  expect(requiredFirst(asiaEquivalent.document, "printings")).toMatchObject({
+  expect(requiredFirst(asiaEquivalentRecords, "printings")).toMatchObject({
     id: reversePrintingId,
     rarity: { raw: "L", normalized: "leader" },
     printed_rules_text: "Official printed rules",
   });
-  await approve(asiaEquivalent.document);
+  await publish(asiaEquivalent, "historical-native-asiaEquivalent-publication");
 
   const reverseConflictUsRun = await collect(
     "/reconciliation/gundam-printing-lifecycle-reverse-conflict-us-first",
     "historical-authority-conflict-us-first",
     usOptions,
   );
-  const reverseConflictUs = await reconcile(reverseConflictUsRun.id);
-  const reverseConflictCardId = requiredString(requiredFirst(reverseConflictUs.document, "cards"), "id");
-  const reverseConflictPrintingId = requiredString(requiredFirst(reverseConflictUs.document, "printings"), "id");
-  await approve(reverseConflictUs.document);
+  const reverseConflictUs = await prepareNativeCandidate(
+    reverseConflictUsRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-reverseConflictUs",
+  );
+  const reverseConflictUsRecords = await nativeCandidateRecords(String(reverseConflictUs.id));
+  const reverseConflictCardId = requiredString(requiredFirst(reverseConflictUsRecords, "cards"), "id");
+  const reverseConflictPrintingId = requiredString(requiredFirst(reverseConflictUsRecords, "printings"), "id");
+  await publish(reverseConflictUs, "historical-native-reverseConflictUs-publication");
   const reverseConflictMissingRun = await collect(
     "/reconciliation/complete-empty-lineage",
     "historical-authority-conflict-us-missing",
     usOptions,
   );
-  const reverseConflictMissing = await reconcile(reverseConflictMissingRun.id);
-  await approve(reverseConflictMissing.document);
+  const reverseConflictMissing = await prepareNativeCandidate(
+    reverseConflictMissingRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-reverseConflictMissing",
+  );
+  await publish(reverseConflictMissing, "historical-native-reverseConflictMissing-publication");
   const reverseConflictAsiaRun = await collect(
     "/reconciliation/gundam-printing-lifecycle-reverse-disappearance-asia-conflict",
     "historical-authority-conflict-asia-second",
     asiaOptions,
   );
-  const reverseConflictAsia = await reconcile(reverseConflictAsiaRun.id);
-  expect(reverseConflictAsia.response.status).toBe(200);
-  expect(requiredFirst(reverseConflictAsia.document, "cards")).toMatchObject({
+  const reverseConflictAsia = await prepareNativeCandidate(
+    reverseConflictAsiaRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-reverseConflictAsia",
+  );
+  const reverseConflictAsiaRecords = await nativeCandidateRecords(String(reverseConflictAsia.id));
+  expect(requiredFirst(reverseConflictAsiaRecords, "cards")).toMatchObject({
     id: reverseConflictCardId,
     name: "Contradictory historical-authority Card",
   });
-  expect(requiredFirst(reverseConflictAsia.document, "printings")).toMatchObject({
+  expect(requiredFirst(reverseConflictAsiaRecords, "printings")).toMatchObject({
     id: reverseConflictPrintingId,
     rarity: { raw: "Leader Rare", normalized: "leader" },
     printed_rules_text: "Different substantive Asia printed rules",
     game_data: { attributes: { alternate_art: true } },
   });
-  await post(`/v1/ingestion-runs/${reverseConflictAsiaRun.id}/rejection`, {
-    candidate_digest: requiredString(reverseConflictAsia.document, "candidate_digest"),
+  const reverseConflictAsiaAbandoned = await post(`/v1/game-candidates/${reverseConflictAsia.id}/abandon`, {
+    generation: reverseConflictAsia.generation,
     idempotency_key: "reject-current-asia-printing-evolution",
   });
+  expect(reverseConflictAsiaAbandoned.response.status).toBe(200);
+  expect(reverseConflictAsiaAbandoned.document.state).toBe("abandoned");
 }, 45_000);
 
 test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent EN-US evidence arrived first", async () => {
