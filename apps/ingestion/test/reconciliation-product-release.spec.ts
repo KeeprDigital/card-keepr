@@ -431,7 +431,7 @@ test("same-authority Product conflicts fail closed before publication", async ()
   });
   expect(created.response.status).toBe(201);
   const [candidate] = await waitForNativeCandidates(run.id, 1, 15_000, { "one-piece": "failed" });
-  expect(candidate).toMatchObject({ state: "failed", failure_code: "retained_evidence_invalid" });
+  expect(candidate).toMatchObject({ state: "failed", failure_code: "printing_reconciliation_blocked" });
   expect(candidate?.outcome).toMatchObject({
     state: "failed",
     diagnostics: [
