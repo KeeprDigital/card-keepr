@@ -246,3 +246,21 @@ restored facts/FTS reconstruction, database isolation and failed-import rollback
 Typecheck and focused Biome checks pass. Full logs retain eight workerd
 canceled/hung background warnings; they are not silently suppressed. Broader
 caller/provider runtime validation and final independent reviews remain open.
+
+The exact committed provider `a8dafc76f147e112a64edcdc5625355ccdeb819d`
+was then rerun on Node 22.23.2: 7/7 selected cases passed across two files in
+13.08 seconds, 21 unselected (the pending old no-change scenario was restored).
+All processes exited naturally. The lease was handed to the five-file migration
+agent after confirming no Workers/Vitest process remained. Raw red/green logs
+and SHA-256 digests are retained in the evidence manifest. Independent provider
+reviews are requested against fixed `a0968e6e..a8dafc76`.
+
+Both independent provider reviews against `a0968e6e..a8dafc76` are clear:
+coordinator Spec found no material issue; capacity agent Standards found no hard
+violation or actionable smell. These test-host SQL allocations prove restore
+behavior; they are not Worker isolate capacity measurements.
+
+The Errata target-guard and evidence-retention repository tests now seed through
+real native preparation/publication. Their existing invalid-target, sibling
+rollback and every-observation retention assertions remain intact. Typechecking
+is required before their dedicated runtime selection; no runtime claim yet.
