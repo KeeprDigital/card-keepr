@@ -2385,7 +2385,11 @@ test.each(retainedStateNamespaces)(
       records[partition.kind]!.push(...(detail.document.records as Record<string, unknown>[]));
     }
     expect(records.cards).toEqual(seedRecords.cards);
-    expect(records.printings).toEqual(seedRecords.printings);
+    const { consumerContent } = await import("../../../src/catalogue/shared");
+    // Native inspection also retains private locator receipts. Compare the
+    // recovered consumer facts and separately preserve the complete before-image.
+    expect(consumerContent(records.printings)).toEqual(consumerContent(seedRecords.printings));
+    expect(await nativeCandidateRecords(requiredString(seed, "id"))).toEqual(seedRecords);
     expect(records.errata!.map(({ id }) => id)).toEqual(seedRecords.errata!.map(({ id }) => id));
     expect(records.cards![0]).toMatchObject({ effective_rules_text: "[On Play] Draw 2 cards, then discard 1 card." });
   },
